@@ -77,7 +77,7 @@
     "hasSimpleAdminMode": "2e7c2002077a877a91048356b4ba93dfafdf5bb8e36aa3e9c020d72093bd2160",
     "makeSimpleAccessUser": "75cbf3aafa2c2eefee0a2a82f4364cdad9b49eb93b73bc4d13791c119faa9117",
     "handleSimpleAdminStatus": "c4e070ed6eea58220b0dc64a18312e98eb04c888716b2e0f3b8785e14ff2e519",
-    "verifySimpleAdminPassword": "428a8a90ec9ec242766f0ac14d5dc361b2ea10036bc9b7affe3c8c9ef3211e49",
+    "verifySimpleAdminPassword": "f1ca85157d2515a9378233d3db5da63a40d847f8168426a797fe5be3b6e5b1f1",
     "handleSimpleAdminLogin": "7a6044450fa2e34f3ed6c055d27c1e40b419a46f869eb9379569d8697f482b88",
     "handleSimpleAdminLogout": "3f7a19a3089c42383346d02bd4ec1e2eba729dcd064094f41d7eedb60267685e",
     "handleSimpleAdminPasswordChange": "577075bb965463c41c04342e29517a72a3de4ca8c36ff872031891fec3a8fae5",
