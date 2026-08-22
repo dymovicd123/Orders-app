@@ -1,0 +1,155 @@
+name: Cloudflare deploy monitor
+
+on:
+  push:
+    branches:
+      - branch2
+      - main
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  monitor:
+    name: Cloudflare deploy / ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_API: https://api.cloudflare.com/client/v4
+    steps:
+      - name: Resolve target Worker
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            main) WORKER_NAME="orders-app" ;;
+            branch2) WORKER_NAME="orders-app-branch2" ;;
+            *) echo "Unsupported branch: $GITHUB_REF_NAME" >&2; exit 2 ;;
+          esac
+          echo "worker_name=$WORKER_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Mark deploy pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -sS \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -d "$(jq -nc --arg c "cloudflare-deploy/$GITHUB_REF_NAME" '{state:"pending",context:$c,description:"Waiting for Cloudflare Workers Build"}')" >/dev/null
+
+      - name: Wait for matching Cloudflare build
+        id: wait
+        shell: bash
+        env:
+          WORKER_NAME: ${{ steps.target.outputs.worker_name }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CF_ACCOUNT_ID:-}" || -z "${CF_API_TOKEN:-}" ]]; then
+            echo "Cloudflare monitoring secrets are missing." >&2
+            exit 3
+          fi
+
+          AUTH=(-H "Authorization: Bearer $CF_API_TOKEN")
+
+          workers_json="$(curl --fail-with-body -sS "${AUTH[@]}" "$CF_API/accounts/$CF_ACCOUNT_ID/workers/scripts")"
+          worker_tag="$(jq -r --arg name "$WORKER_NAME" '.result[] | select(.id == $name) | .tag // empty' <<<"$workers_json" | head -n1)"
+          if [[ -z "$worker_tag" ]]; then
+            echo "Could not resolve immutable tag for Worker $WORKER_NAME." >&2
+            jq -r '.errors[]?.message' <<<"$workers_json" >&2 || true
+            exit 4
+          fi
+          echo "Resolved $WORKER_NAME tag: $worker_tag"
+
+          build_uuid=""
+          outcome=""
+          status=""
+          for attempt in $(seq 1 48); do
+            builds_json="$(curl --fail-with-body -sS "${AUTH[@]}" "$CF_API/accounts/$CF_ACCOUNT_ID/builds/workers/$worker_tag/builds")"
+            match="$(jq -c --arg sha "$GITHUB_SHA" --arg branch "$GITHUB_REF_NAME" '
+              [.result[]? | select(.build_trigger_metadata.commit_hash == $sha and .build_trigger_metadata.branch == $branch)]
+              | sort_by(.created_on) | last // empty
+            ' <<<"$builds_json")"
+
+            if [[ -n "$match" ]]; then
+              build_uuid="$(jq -r '.build_uuid // empty' <<<"$match")"
+              status="$(jq -r '.status // empty' <<<"$match")"
+              outcome="$(jq -r '.build_outcome // empty' <<<"$match")"
+              echo "Cloudflare build $build_uuid: status=$status outcome=${outcome:-pending}"
+              if [[ "$status" == "stopped" ]]; then
+                break
+              fi
+            else
+              echo "Waiting for Cloudflare build for $GITHUB_SHA (attempt $attempt/48)..."
+            fi
+            sleep 10
+          done
+
+          if [[ -z "$build_uuid" ]]; then
+            echo "Cloudflare build for commit $GITHUB_SHA did not appear within 8 minutes." >&2
+            exit 5
+          fi
+          if [[ "$status" != "stopped" ]]; then
+            echo "Cloudflare build $build_uuid did not finish within 8 minutes." >&2
+            exit 6
+          fi
+
+          echo "build_uuid=$build_uuid" >> "$GITHUB_OUTPUT"
+          echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
+
+          if [[ "$outcome" != "success" ]]; then
+            echo "Cloudflare build failed with outcome: ${outcome:-unknown}" >&2
+            echo "----- Cloudflare build log -----"
+            cursor=""
+            for page in $(seq 1 20); do
+              url="$CF_API/accounts/$CF_ACCOUNT_ID/builds/builds/$build_uuid/logs"
+              if [[ -n "$cursor" ]]; then
+                url="$url?cursor=$(printf '%s' "$cursor" | jq -sRr @uri)"
+              fi
+              logs_json="$(curl --fail-with-body -sS "${AUTH[@]}" "$url")"
+              jq -r '.result.lines[]? | if type == "array" then (map(tostring) | join(" ")) else tostring end' <<<"$logs_json"
+              truncated="$(jq -r '.result.truncated // false' <<<"$logs_json")"
+              cursor="$(jq -r '.result.cursor // empty' <<<"$logs_json")"
+              [[ "$truncated" == "true" && -n "$cursor" ]] || break
+            done
+            echo "----- end Cloudflare build log -----"
+            exit 7
+          fi
+
+      - name: Mark deploy success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -sS \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -d "$(jq -nc --arg c "cloudflare-deploy/$GITHUB_REF_NAME" --arg d "Cloudflare deploy succeeded" '{state:"success",context:$c,description:$d}')" >/dev/null
+
+      - name: Mark deploy failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -sS \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -d "$(jq -nc --arg c "cloudflare-deploy/$GITHUB_REF_NAME" --arg d "Cloudflare deploy failed; inspect workflow log" '{state:"failure",context:$c,description:$d}')" >/dev/null
