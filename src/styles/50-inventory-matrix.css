@@ -1,0 +1,316 @@
+/* Arrival matrix and Step 115B controls. Preserves original cascade order. */
+/* Step 115: matrix editor for arrivals and exact stock setup */
+.inventory-matrix-workspace {
+  display: grid;
+  gap: 18px;
+}
+
+.inventory-matrix-selector-layout {
+  align-items: stretch;
+}
+
+.inventory-matrix-product-panel,
+.inventory-matrix-config-panel {
+  min-height: 330px;
+}
+
+.inventory-new-product-button {
+  width: 100%;
+  margin-top: 10px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.inventory-matrix-config-panel {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+}
+
+.inventory-matrix-config-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.inventory-matrix-config-grid label,
+.inventory-matrix-add-axis,
+.inventory-matrix-add-size-row th {
+  min-width: 0;
+}
+
+.inventory-matrix-build-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px;
+  border: 1px solid #dbe6f4;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #f8fbff, #f0fdf9);
+}
+
+.inventory-matrix-build-row > div {
+  display: grid;
+  gap: 5px;
+}
+
+.inventory-matrix-build-row span {
+  color: #64748b;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.inventory-matrix-section {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #d8e4f2;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.07);
+}
+
+.inventory-matrix-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.inventory-matrix-head > div {
+  display: grid;
+  gap: 4px;
+}
+
+.inventory-matrix-head strong {
+  font-size: 1.05rem;
+}
+
+.inventory-matrix-head small {
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.inventory-matrix-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.inventory-matrix-summary > div {
+  display: grid;
+  gap: 4px;
+  padding: 13px 15px;
+  border-radius: 16px;
+  border: 1px solid #dce7f4;
+  background: #f8fafc;
+}
+
+.inventory-matrix-summary span {
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.inventory-matrix-summary strong {
+  font-size: 1.05rem;
+}
+
+.inventory-matrix-table-shell {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid #d9e5f2;
+  border-radius: 18px;
+  background: #fff;
+}
+
+.inventory-matrix-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.inventory-matrix-table th,
+.inventory-matrix-table td {
+  min-width: 145px;
+  padding: 10px;
+  border-right: 1px solid #e4edf6;
+  border-bottom: 1px solid #e4edf6;
+  vertical-align: middle;
+  background: #fff;
+}
+
+.inventory-matrix-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  color: #334155;
+  font-size: 0.82rem;
+  text-align: center;
+  background: #f1f5f9;
+}
+
+.inventory-matrix-table tbody th,
+.inventory-matrix-corner {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 125px;
+  text-align: left;
+  background: #f8fafc;
+}
+
+.inventory-matrix-corner {
+  z-index: 5 !important;
+}
+
+.inventory-matrix-table td.is-edited {
+  background: #effcf7;
+  box-shadow: inset 0 0 0 1px #86efac;
+}
+
+.inventory-matrix-table td.is-disabled {
+  background: #f8fafc;
+}
+
+.inventory-matrix-input {
+  width: 100%;
+  min-width: 92px;
+  box-sizing: border-box;
+  padding: 10px 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 11px;
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 750;
+  background: #fff;
+}
+
+.inventory-matrix-input:focus {
+  outline: 3px solid rgba(37, 99, 235, 0.16);
+  border-color: #2563eb;
+}
+
+.inventory-matrix-cell-meta {
+  display: block;
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 0.73rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.inventory-matrix-unavailable {
+  display: grid;
+  place-items: center;
+  min-height: 55px;
+  color: #94a3b8;
+  font-size: 1.15rem;
+}
+
+.inventory-matrix-add-axis {
+  min-width: 185px !important;
+}
+
+.inventory-matrix-add-axis select,
+.inventory-matrix-add-size-row select {
+  width: 100%;
+  margin-bottom: 7px;
+}
+
+.inventory-matrix-add-axis button,
+.inventory-matrix-add-size-row button {
+  width: 100%;
+}
+
+.inventory-matrix-axis-spacer {
+  background: #f8fafc !important;
+}
+
+.inventory-matrix-add-size-row th {
+  z-index: 2;
+  min-width: 170px;
+}
+
+.inventory-matrix-add-size-row td {
+  color: #64748b;
+  font-size: 0.86rem;
+  background: #f8fafc;
+}
+
+.inventory-matrix-hint {
+  padding: 12px 14px;
+  border-radius: 14px;
+  color: #475569;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  background: #f1f5f9;
+}
+
+.inventory-matrix-empty-axes {
+  display: grid;
+  gap: 10px;
+  padding: 20px;
+  border: 1px dashed #a8bdd3;
+  border-radius: 18px;
+  background: #f8fbff;
+}
+
+.inventory-matrix-empty-axes > span {
+  color: #64748b;
+}
+
+.inventory-matrix-empty-axes > div {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto minmax(150px, 1fr) auto;
+  gap: 8px;
+}
+
+@media (max-width: 1100px) {
+  .inventory-matrix-config-grid {
+    grid-template-columns: repeat(2, minmax(150px, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .inventory-matrix-config-grid,
+  .inventory-matrix-summary,
+  .inventory-matrix-empty-axes > div {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-matrix-build-row,
+  .inventory-matrix-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inventory-matrix-build-row button,
+  .inventory-matrix-head button {
+    width: 100%;
+  }
+
+  .inventory-matrix-section {
+    padding: 12px;
+    border-radius: 16px;
+  }
+}
+
+/* Step 115B: simple selectors before the size × color matrix */
+.inventory-matrix-simple-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dbe6f2;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.inventory-matrix-simple-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+

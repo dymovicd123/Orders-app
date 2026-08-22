@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "step": "192b2a3",
+  "changes": {
+    "fetchOrderStockHandoverRows": {
+      "before": "aed1c8e31417fccb09e312a461108adc1eb65332c589deb095d7028da52ee47c",
+      "after": "adc5186481201556bfc73f3e4beb75cbe6a454fd397b2cdbbfddf0193cdbb609"
+    }
+  },
+  "added": {},
+  "removed": {}
+}

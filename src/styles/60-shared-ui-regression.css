@@ -1,0 +1,1290 @@
+/* Shared UI, orders, finance, team and regression-safe fixes. Preserves original cascade order. */
+/* Step 130: all shared UI below must stay top-level, outside the inventory header. */
+/* Step 126: clearer finance, clients and team */
+.manager-picker {
+  position: relative;
+  width: 100%;
+}
+
+.manager-picker-trigger {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  border: 1px solid #dbe3f0;
+  border-radius: 12px;
+  background: #fff;
+  color: #0f172a;
+  text-align: left;
+  font: inherit;
+}
+
+.manager-picker-trigger:hover,
+.manager-picker-trigger.is-open {
+  border-color: #93b4ff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .08);
+}
+
+.manager-picker-trigger > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
+.manager-picker-caret {
+  color: #64748b;
+  font-weight: 900;
+}
+
+.manager-picker-menu {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 6px);
+  left: 0;
+  width: min(360px, 92vw);
+  padding: 8px;
+  border: 1px solid #dbe3f0;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, .18);
+}
+
+.manager-picker-menu > input {
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.manager-picker-options {
+  max-height: 280px;
+  overflow: auto;
+}
+
+.manager-picker-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #0f172a;
+  text-align: left;
+}
+
+.manager-picker-option:hover,
+.manager-picker-option.is-selected {
+  background: #eff6ff;
+}
+
+.manager-picker-option-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.manager-picker-option-copy small {
+  color: #64748b;
+}
+
+.manager-color-dot {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 11px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgba(15, 23, 42, .1);
+}
+
+.manager-color-dot.is-empty {
+  background: #cbd5e1;
+}
+
+.manager-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.manager-badge.is-compact {
+  min-height: 25px;
+  padding: 3px 7px;
+  font-size: 12px;
+}
+
+.manager-color-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+.manager-color-choice {
+  width: 30px;
+  height: 30px;
+  border: 3px solid #fff;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px #cbd5e1;
+}
+
+.manager-color-choice.is-selected {
+  box-shadow: 0 0 0 3px #2563eb;
+}
+
+.finance-meaning-overview {
+  padding: 18px;
+}
+
+.finance-meaning-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.finance-meaning-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #dbe3f0;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .04);
+}
+
+.finance-meaning-card.is-sales { border-top: 4px solid #2563eb; }
+.finance-meaning-card.is-cash { border-top: 4px solid #0f9f6e; }
+.finance-meaning-card.is-debt { border-top: 4px solid #f59e0b; }
+
+.finance-meaning-head {
+  min-height: 56px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.finance-meaning-head h4 {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.finance-meaning-kicker {
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.finance-meaning-values {
+  display: grid;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.finance-meaning-values > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 9px;
+  border-top: 1px solid #eef2f7;
+}
+
+.finance-meaning-values span {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.finance-meaning-values strong {
+  color: #0f172a;
+  font-size: 19px;
+  text-align: right;
+}
+
+.clients-clean-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.clients-clean-head h2 {
+  margin: 4px 0 6px;
+}
+
+.clients-clean-head p {
+  margin: 0;
+  color: #64748b;
+}
+
+.clients-summary-clean {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.clients-toolbar-clean {
+  display: grid;
+  grid-template-columns: auto minmax(260px, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.client-search-field-wide {
+  min-width: 0;
+}
+
+.clients-stream-full {
+  margin-top: 14px;
+}
+
+.clients-scroll-table-wide {
+  max-height: 570px;
+  overflow: auto;
+}
+
+.clients-table-clean .client-row {
+  cursor: pointer;
+}
+
+.clients-table-clean .client-row:hover td {
+  background: #f8fbff;
+}
+
+.client-main-button-clean {
+  min-width: 160px;
+  align-items: flex-start;
+}
+
+.client-manager-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.client-drawer-backdrop {
+  position: fixed;
+  z-index: 250;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(15, 23, 42, .28);
+  backdrop-filter: blur(2px);
+}
+
+.client-drawer {
+  width: min(620px, 96vw);
+  height: 100%;
+  overflow: auto;
+  padding: 22px;
+  background: #f8fafc;
+  box-shadow: -20px 0 50px rgba(15, 23, 42, .18);
+}
+
+.client-drawer-head {
+  position: sticky;
+  z-index: 3;
+  top: -22px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin: -22px -22px 16px;
+  padding: 22px;
+  border-bottom: 1px solid #dbe3f0;
+  background: rgba(248, 250, 252, .96);
+  backdrop-filter: blur(10px);
+}
+
+.inventory-matrix-simple-head > div {
+  display: grid;
+  gap: 3px;
+}
+
+.inventory-matrix-simple-head span,
+.inventory-matrix-simple-note {
+  color: #64748b;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.inventory-matrix-ready-badge {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: #166534 !important;
+  font-size: 0.76rem !important;
+  font-weight: 800;
+  background: #dcfce7;
+}
+
+.inventory-matrix-simple-form {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.5fr) repeat(4, minmax(125px, 0.75fr)) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.inventory-matrix-simple-form label {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.inventory-matrix-simple-form label > span {
+  color: #475569;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.inventory-matrix-simple-form input,
+.inventory-matrix-simple-form select {
+  width: 100%;
+  min-width: 0;
+}
+
+.inventory-matrix-show-button {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+.inventory-matrix-simple-note {
+  padding-top: 2px;
+}
+
+@media (max-width: 1280px) {
+  .inventory-matrix-simple-form {
+    grid-template-columns: minmax(240px, 1.5fr) repeat(2, minmax(140px, 1fr));
+  }
+
+  .inventory-matrix-show-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .inventory-matrix-simple-head {
+    flex-direction: column;
+  }
+
+  .inventory-matrix-simple-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Step 117 — compact source availability in order creation */
+.order-source-availability {
+  margin-top: 10px;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.order-source-availability summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 11px;
+  cursor: pointer;
+  list-style: none;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.order-source-availability summary::-webkit-details-marker { display: none; }
+.order-source-availability summary::after {
+  content: '›';
+  margin-left: 2px;
+  color: #94a3b8;
+  font-size: 18px;
+  line-height: 1;
+  transition: transform .15s ease;
+}
+.order-source-availability[open] summary::after { transform: rotate(90deg); }
+.order-source-availability summary small {
+  margin-left: auto;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+.order-source-availability-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #94a3b8;
+}
+.order-source-availability.is-success { border-color: #bbf7d0; background: #f0fdf4; }
+.order-source-availability.is-success .order-source-availability-dot { background: #16a34a; }
+.order-source-availability.is-warning { border-color: #fde68a; background: #fffbeb; }
+.order-source-availability.is-warning .order-source-availability-dot { background: #d97706; }
+.order-source-availability.is-danger { border-color: #fecaca; background: #fef2f2; }
+.order-source-availability.is-danger .order-source-availability-dot { background: #dc2626; }
+.order-source-availability-body {
+  padding: 0 11px 11px;
+  border-top: 1px solid rgba(148, 163, 184, .22);
+}
+.order-source-availability-body p {
+  margin: 9px 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.order-source-availability-list {
+  display: grid;
+  gap: 5px;
+}
+.order-source-availability-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .8);
+  font-size: 12px;
+}
+.order-source-availability-list span { min-width: 0; overflow-wrap: anywhere; }
+.order-source-availability-list strong,
+.order-source-availability-list small { white-space: nowrap; color: #334155; }
+
+/* Step 117 — finance payments arranged like the familiar wide ledger */
+.finance-payment-ledger {
+  display: grid;
+  gap: 18px;
+}
+.finance-payment-ledger .report-block {
+  min-width: 0;
+}
+.finance-payment-ledger .strict-section-head {
+  margin-bottom: 10px;
+}
+.finance-ledger-table {
+  width: 100%;
+}
+.finance-ledger-table th,
+.finance-ledger-table td {
+  padding: 11px 14px;
+}
+.finance-ledger-table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+.finance-ledger-days {
+  min-width: 920px;
+}
+.finance-ledger-days th:first-child,
+.finance-ledger-days td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: inherit;
+  min-width: 110px;
+}
+.finance-ledger-days thead th:first-child {
+  z-index: 2;
+}
+
+@media (max-width: 760px) {
+  .order-source-availability summary small { display: none; }
+  .finance-ledger-table th,
+  .finance-ledger-table td { padding: 9px 10px; }
+}
+
+/* Step 121: compact create-order composition and bottom add-item action */
+.order-add-item-bottom {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 12px;
+}
+
+.order-create-item-summary {
+  margin-top: 14px;
+  border: 1px solid var(--line, #dbe5f3);
+  border-radius: 14px;
+  background: rgba(245, 248, 253, 0.9);
+  overflow: hidden;
+}
+
+.order-create-item-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line, #dbe5f3);
+}
+
+.order-create-item-summary-head strong {
+  font-size: 0.95rem;
+}
+
+.order-create-item-summary-head span {
+  color: var(--muted, #66758f);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.order-create-item-summary-list {
+  display: grid;
+  gap: 0;
+  max-height: 230px;
+  overflow: auto;
+}
+
+.order-create-item-summary-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 7px 12px;
+  border-bottom: 1px solid rgba(219, 229, 243, 0.8);
+}
+
+.order-create-item-summary-row:last-child {
+  border-bottom: 0;
+}
+
+.order-create-item-summary-index {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #e8effb;
+  color: #46617f;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.order-create-item-summary-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.order-create-item-summary-source {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #edf2f8;
+  color: #52647d;
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.order-create-item-summary-source.source-workshop {
+  background: #fff1d8;
+  color: #9b5b00;
+}
+
+.order-create-item-summary-source.source-boutique {
+  background: #f0eaff;
+  color: #6241a7;
+}
+
+.order-create-item-summary-row > strong {
+  white-space: nowrap;
+  font-size: 0.84rem;
+}
+
+@media (max-width: 760px) {
+  .order-add-item-bottom {
+    justify-content: stretch;
+  }
+
+  .order-add-item-bottom button {
+    width: 100%;
+  }
+
+  .order-create-item-summary-row {
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+  }
+
+  .order-create-item-summary-source {
+    grid-column: 2 / 3;
+    justify-self: start;
+  }
+
+  .order-create-item-summary-row > strong {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+}
+
+/* Step 122 — unified warehouse pickers, controllable auto-writeoff and reversible journal */
+.inventory-picker-toolbar {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  align-items: end;
+  gap: 12px;
+}
+
+.inventory-picker-toolbar .wide-field {
+  grid-column: span 2;
+}
+
+.inventory-picker-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.inventory-picker-field > span,
+.inventory-picker-field > label > span {
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+
+.inventory-picker-field .smart-picker,
+.inventory-picker-field .smart-picker-shell,
+.inventory-picker-field select {
+  width: 100%;
+  min-width: 0;
+}
+
+.inventory-picker-field .smart-picker-shell input,
+.inventory-picker-field select,
+.inventory-variant-filter-grid input,
+.inventory-variant-filter-grid select {
+  min-height: 44px;
+  border-radius: 12px;
+  border-color: #dbe4f0;
+  background: #fff;
+}
+
+.inventory-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.inventory-auto-writeoff-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px;
+  border: 1px solid #bfdbfe;
+  background: linear-gradient(135deg, #eff6ff, #fff);
+}
+
+.inventory-auto-writeoff-card.is-disabled {
+  border-color: #fed7aa;
+  background: linear-gradient(135deg, #fff7ed, #fff);
+}
+
+.inventory-auto-writeoff-card > div:first-child {
+  display: grid;
+  gap: 5px;
+}
+
+.inventory-auto-writeoff-card strong {
+  font-size: 1.05rem;
+}
+
+.inventory-auto-writeoff-card p {
+  margin: 0;
+  color: #475569;
+}
+
+.inventory-control-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.inventory-movement-side {
+  display: flex;
+  min-width: 150px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.inventory-movement-row.is-reversed {
+  opacity: .72;
+  background: #fff7ed;
+}
+
+.inventory-movement-row.is-reversal {
+  background: #f0fdf4;
+}
+
+.inventory-reverse-button {
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+.inventory-matrix-product-field .smart-picker-menu,
+.inventory-product-selector-panel .smart-picker-menu,
+.inventory-picker-toolbar .smart-picker-menu {
+  z-index: 60;
+}
+
+@media (max-width: 1280px) {
+  .inventory-picker-toolbar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .inventory-picker-toolbar .wide-field {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 760px) {
+  .inventory-picker-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-picker-toolbar .wide-field,
+  .inventory-toolbar-actions {
+    grid-column: span 1;
+  }
+
+  .inventory-toolbar-actions,
+  .inventory-control-actions {
+    justify-content: stretch;
+  }
+
+  .inventory-toolbar-actions button,
+  .inventory-control-actions button {
+    flex: 1;
+  }
+
+  .inventory-auto-writeoff-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inventory-movement-row {
+    align-items: stretch;
+  }
+
+  .inventory-movement-side {
+    align-items: flex-start;
+  }
+}
+
+.client-drawer-head h3 {
+  margin: 4px 0 3px;
+  font-size: 25px;
+}
+
+.client-drawer-head p {
+  margin: 0;
+  color: #64748b;
+}
+
+.client-drawer-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.client-drawer-stats > div {
+  padding: 13px;
+  border: 1px solid #dbe3f0;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.client-drawer-stats span,
+.client-drawer-meta span,
+.client-drawer-managers > span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.client-drawer-stats strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 19px;
+}
+
+.client-drawer-meta,
+.client-drawer-managers {
+  margin-top: 12px;
+  padding: 13px;
+  border: 1px solid #dbe3f0;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.client-drawer-meta {
+  display: grid;
+  gap: 7px;
+}
+
+.client-drawer-managers > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.client-orders-list-drawer {
+  max-height: none;
+}
+
+.team-summary-clean {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.team-roster-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 0 12px;
+}
+
+.team-roster-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.team-editor-panel {
+  margin-bottom: 14px;
+}
+
+.team-editor-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.team-roster-note {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.team-person-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.team-person-cell small {
+  color: #64748b;
+}
+
+.team-roster-table .table-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+@media (max-width: 1100px) {
+  .finance-meaning-grid { grid-template-columns: 1fr; }
+  .clients-summary-clean { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .clients-clean-head,
+  .team-roster-toolbar { align-items: stretch; flex-direction: column; }
+  .clients-toolbar-clean { grid-template-columns: 1fr; }
+  .clients-summary-clean,
+  .team-summary-clean,
+  .client-drawer-stats,
+  .team-editor-grid { grid-template-columns: 1fr; }
+  .client-drawer { width: 100%; }
+}
+
+.timesheet-manager-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timesheet-assignment-pill-v2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timesheet-assignment-pill-v2 .manager-color-dot {
+  width: 8px;
+  height: 8px;
+  flex-basis: 8px;
+}
+
+.team-plan-card-name > strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.team-plan-index {
+  color: #64748b;
+}
+
+/* Step 127: clearer manager colors and compact team controls */
+.team-summary-clean {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 620px;
+}
+
+.manager-badge {
+  border-width: 2px;
+}
+
+.manager-custom-color,
+.team-custom-color-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.manager-custom-color input[type="color"],
+.team-custom-color-inline input[type="color"] {
+  width: 32px;
+  height: 32px;
+  padding: 2px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.team-inline-color-editor {
+  position: relative;
+  min-width: 118px;
+}
+
+.team-color-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid #dbe3f0;
+  border-radius: 11px;
+  background: #fff;
+  color: #0f172a;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.team-color-trigger:hover:not(:disabled) {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.team-inline-color-palette {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 7px);
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(6, 24px);
+  gap: 7px;
+  width: max-content;
+  max-width: 224px;
+  padding: 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, .16);
+}
+
+.manager-color-choice.is-small {
+  width: 24px;
+  height: 24px;
+  border-width: 2px;
+}
+
+.team-custom-color-inline {
+  grid-column: 1 / -1;
+  padding-top: 4px;
+}
+
+.team-roster-table td:nth-child(4) {
+  overflow: visible;
+}
+
+@media (max-width: 760px) {
+  .team-summary-clean { grid-template-columns: 1fr; max-width: none; }
+  .team-inline-color-palette { left: 0; right: auto; grid-template-columns: repeat(5, 24px); }
+}
+
+/* Keep the quick palette inside the row so table scrolling cannot clip it. */
+.team-inline-color-palette {
+  position: static;
+  margin-top: 7px;
+}
+
+/* Step 129: regression-safe flexible forms and readable product cards */
+.inventory-matrix-simple-panel {
+  padding: 20px;
+  border-radius: 18px;
+}
+
+.inventory-matrix-simple-head > div {
+  display: grid;
+  gap: 5px;
+}
+
+.inventory-matrix-simple-head strong {
+  font-size: 1.05rem;
+}
+
+.inventory-matrix-simple-head span,
+.inventory-matrix-simple-note {
+  line-height: 1.55;
+}
+
+.inventory-matrix-flexible-form {
+  display: grid;
+  grid-template-columns: minmax(320px, 1.7fr) minmax(250px, 1fr) minmax(310px, 1.25fr);
+  align-items: end;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.inventory-matrix-flexible-form > .inventory-matrix-product-field {
+  grid-column: 1 / -1;
+}
+
+.inventory-matrix-flexible-form > .inventory-picker-field,
+.inventory-matrix-flexible-form > .field-block {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.inventory-matrix-flexible-form > .inventory-picker-field > span,
+.inventory-matrix-flexible-form > .field-block > span {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #475569;
+  letter-spacing: .02em;
+}
+
+.inventory-matrix-flexible-form .choice-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.inventory-matrix-flexible-form .choice-pill {
+  min-height: 42px;
+  padding: 9px 14px;
+}
+
+.inventory-matrix-flexible-form .smart-picker-shell input {
+  min-height: 44px;
+}
+
+.inventory-matrix-show-button {
+  min-height: 44px;
+  width: 100%;
+}
+
+.inventory-matrix-simple-note {
+  margin-top: 14px;
+  padding: 11px 13px;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.inventory-matrix-add-axis {
+  min-width: 190px;
+}
+
+.inventory-matrix-add-axis .smart-picker,
+.inventory-matrix-add-size-row .smart-picker {
+  min-width: 150px;
+}
+
+.inventory-matrix-add-axis .smart-picker-shell input,
+.inventory-matrix-add-size-row .smart-picker-shell input {
+  min-height: 36px;
+  font-size: 0.8rem;
+}
+
+.inventory-matrix-empty-axis-controls {
+  display: grid !important;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(180px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  width: 100%;
+}
+
+.order-item-card {
+  gap: 7px;
+  padding: 11px 12px;
+  min-width: 230px;
+  border: 1px solid #dbe4f0;
+  background: #fff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, .04);
+}
+
+.order-item-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.order-item-card-head strong {
+  font-size: 0.87rem;
+  line-height: 1.35;
+  color: #0f172a;
+}
+
+.order-item-quantity-badge {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8 !important;
+  font-weight: 900;
+  font-size: 0.72rem !important;
+}
+
+.order-item-card-details {
+  color: #475569 !important;
+  font-size: 0.75rem !important;
+  line-height: 1.45 !important;
+  overflow-wrap: anywhere;
+}
+
+.order-item-source-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #334155 !important;
+  font-weight: 800;
+  font-size: 0.7rem !important;
+}
+
+.order-item-source-badge.source-workshop {
+  background: #fff7ed;
+  color: #9a3412 !important;
+}
+
+.order-item-source-badge.source-boutique {
+  background: #f5f3ff;
+  color: #6d28d9 !important;
+}
+
+.order-create-item-summary-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  gap: 10px;
+}
+
+.order-create-item-summary-row.order-summary-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 78px;
+  padding: 12px 14px;
+  border: 1px solid #dbe4f0;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.order-summary-card-body {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.order-summary-card-body > strong {
+  color: #0f172a;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.order-summary-card-body > span,
+.order-summary-card-body > small {
+  color: #64748b;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.order-summary-card-side {
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+}
+
+.order-summary-card-side > strong {
+  color: #0f172a;
+  font-size: 0.86rem;
+}
+
+@media (max-width: 1100px) {
+  .inventory-matrix-flexible-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-matrix-flexible-form > .inventory-matrix-product-field {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 720px) {
+  .inventory-matrix-flexible-form,
+  .inventory-matrix-empty-axis-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .order-create-item-summary-list {
+    grid-template-columns: 1fr;
+  }
+
+  .order-create-item-summary-row.order-summary-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .order-summary-card-side {
+    grid-column: 2;
+    display: flex;
+    justify-content: flex-start;
+    justify-items: start;
+  }
+}

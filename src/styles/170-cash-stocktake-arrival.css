@@ -1,0 +1,703 @@
+/* Step 174 UI recovery: prevent CSS grid from stretching the two visible page rows to 100vh. */
+@media (min-width: 821px) {
+  .erp-main {
+    align-content: start !important;
+    grid-auto-rows: max-content !important;
+  }
+}
+
+/* Arrival pickers must escape the position table instead of being clipped. */
+.inventory-arrival-position-card,
+.inventory-arrival-common-grid,
+.inventory-arrival-size-table,
+.inventory-arrival-size-row {
+  overflow: visible !important;
+}
+
+.inventory-arrival-position-card .smart-picker {
+  z-index: 2;
+}
+
+.inventory-arrival-position-card .smart-picker:focus-within {
+  z-index: 80;
+}
+
+.inventory-arrival-position-card .smart-picker-menu {
+  z-index: 100;
+}
+
+.finance-report-loading-state .empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+
+/* Step 174: familiar arrival flow, printable stocktake and office cash register. */
+
+.inventory-arrival-legacy-workspace,
+.inventory-stocktake-panel,
+.cash-register-content {
+  display: grid;
+  gap: 16px;
+}
+
+.inventory-arrival-legacy-summary,
+.inventory-arrival-position-head,
+.inventory-stocktake-headline,
+.inventory-stocktake-product-head,
+.cash-register-status-line,
+.cash-register-setup-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.inventory-arrival-legacy-summary {
+  padding: 15px 17px;
+  border: 1px solid #cbd5e1;
+  border-radius: 16px;
+  background: #f8fafc;
+}
+
+.inventory-arrival-legacy-summary > div:first-child,
+.inventory-arrival-position-head > div,
+.inventory-stocktake-product-head > div,
+.cash-register-status-line > div:first-child,
+.cash-register-setup-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.inventory-arrival-legacy-summary strong,
+.inventory-arrival-position-head strong,
+.inventory-stocktake-product-head strong {
+  color: #0f172a;
+}
+
+.inventory-arrival-legacy-summary span,
+.inventory-stocktake-product-head span {
+  color: #64748b;
+}
+
+.inventory-arrival-summary-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.inventory-arrival-summary-chips span,
+.inventory-arrival-summary-chips strong {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 1px solid #dbe5ef;
+  border-radius: 999px;
+  background: #fff;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.inventory-arrival-position-list {
+  display: grid;
+  gap: 14px;
+}
+
+.inventory-arrival-position-card {
+  display: grid;
+  gap: 15px;
+  padding: 17px;
+  border: 1px solid #ccd8e5;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.inventory-arrival-common-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.6fr) repeat(5, minmax(125px, 1fr));
+  gap: 10px;
+}
+
+.inventory-arrival-common-grid label,
+.inventory-arrival-size-row > label,
+.cash-register-setup-form label,
+.cash-manual-form label {
+  min-width: 0;
+}
+
+.inventory-arrival-size-table {
+  position: relative;
+  overflow: visible;
+  border: 1px solid #d7e0ea;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.inventory-arrival-size-head,
+.inventory-arrival-size-row {
+  display: grid;
+  grid-template-columns: 42px minmax(180px, 1fr) minmax(120px, 0.55fr) 42px;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+}
+
+.inventory-arrival-size-head {
+  color: #475569;
+  background: #f1f5f9;
+  border-bottom: 1px solid #d7e0ea;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.inventory-arrival-size-row + .inventory-arrival-size-row {
+  border-top: 1px solid #edf2f7;
+}
+
+.inventory-arrival-size-row > strong {
+  color: #64748b;
+  text-align: center;
+}
+
+.inventory-arrival-size-row input,
+.inventory-arrival-size-row select,
+.inventory-arrival-common-grid input,
+.inventory-arrival-common-grid select {
+  width: 100%;
+  min-width: 0;
+}
+
+.inventory-arrival-position-actions,
+.inventory-stocktake-actions,
+.cash-direction-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inventory-arrival-ready-variants {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 8px;
+  padding: 11px;
+  border: 1px solid #d7e0ea;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.inventory-arrival-ready-variant {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 10px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  color: #0f172a;
+  text-align: left;
+  background: #fff;
+  cursor: pointer;
+}
+
+.inventory-arrival-ready-variant:hover {
+  border-color: #60a5fa;
+  background: #eff6ff;
+}
+
+.inventory-arrival-ready-variant span {
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.inventory-arrival-add-position {
+  width: 100%;
+  min-height: 50px;
+  border: 1px dashed #94a3b8;
+  border-radius: 14px;
+  color: #334155;
+  font-weight: 800;
+  background: #f8fafc;
+  cursor: pointer;
+}
+
+.inventory-arrival-add-position:hover {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+/* Stocktake / revision */
+.inventory-stocktake-toolbar {
+  display: grid;
+  grid-template-columns: minmax(250px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.inventory-stocktake-toolbar > label {
+  min-width: 0;
+}
+
+.inventory-stocktake-summary {
+  margin: 0;
+}
+
+.inventory-stocktake-print {
+  display: grid;
+  gap: 14px;
+}
+
+.inventory-stocktake-print-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 11px 13px;
+  border: 1px solid #d9e2ec;
+  border-radius: 12px;
+  color: #475569;
+  background: #f8fafc;
+  font-size: 0.82rem;
+}
+
+.inventory-stocktake-product {
+  overflow: hidden;
+  border: 1px solid #d5dee9;
+  border-radius: 15px;
+  background: #fff;
+}
+
+.inventory-stocktake-product-head {
+  padding: 12px 14px;
+  border-bottom: 1px solid #dce5ee;
+  background: #f8fafc;
+}
+
+.inventory-stocktake-product-head > div:last-child {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.inventory-stocktake-table-shell {
+  border: 0;
+  border-radius: 0;
+}
+
+.inventory-stocktake-table {
+  min-width: 980px;
+}
+
+.inventory-stocktake-table td,
+.inventory-stocktake-table th {
+  vertical-align: middle;
+}
+
+.inventory-stocktake-table tr.is-zero td {
+  color: #64748b;
+  background: #fafafa;
+}
+
+.inventory-stocktake-table tr.is-negative td {
+  background: #fff1f2;
+}
+
+.stocktake-paper-column {
+  min-width: 88px;
+  width: 88px;
+  border-left: 1px dashed #b8c4d2 !important;
+}
+
+.stocktake-paper-comment {
+  min-width: 190px;
+  width: 190px;
+  border-left: 1px dashed #b8c4d2 !important;
+}
+
+/* Cash register / collection */
+.cash-register-setup-card,
+.cash-register-status-line {
+  padding: 18px;
+  border: 1px solid #cbd5e1;
+  border-radius: 18px;
+  background: #fff;
+}
+
+.cash-register-setup-card {
+  align-items: stretch;
+}
+
+.cash-register-setup-copy {
+  flex: 1 1 520px;
+}
+
+.cash-register-setup-copy h3,
+.cash-register-status-line h3 {
+  margin: 0;
+  color: #0f172a;
+}
+
+.cash-register-setup-copy p,
+.cash-register-status-line p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.cash-register-warning {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 11px 13px;
+  border: 1px solid #f5cf7d;
+  border-radius: 12px;
+  color: #854d0e;
+  background: #fffbeb;
+}
+
+.cash-register-warning span {
+  color: #92400e;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.cash-register-setup-form {
+  min-width: min(320px, 100%);
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  padding: 15px;
+  border: 1px solid #dbe5ef;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.cash-auto-status {
+  max-width: 390px;
+  display: grid;
+  gap: 6px;
+  padding: 12px 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+}
+
+.cash-auto-status.is-enabled {
+  border-color: #86d4ae;
+  color: #065f46;
+  background: #ecfdf5;
+}
+
+.cash-auto-status.is-paused {
+  border-color: #f5cf7d;
+  color: #854d0e;
+  background: #fffbeb;
+}
+
+.cash-auto-status span {
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.cash-register-summary {
+  margin: 0;
+}
+
+.cash-balance-card {
+  border-top: 3px solid #0f766e;
+}
+
+.cash-balance-card.danger-card {
+  border-top-color: #dc2626;
+  background: #fff7f7;
+}
+
+.cash-manual-form {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 0.4fr) minmax(260px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.cash-direction-switch {
+  align-items: stretch;
+}
+
+.cash-direction-switch button.is-active {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.cash-register-retry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.cash-register-ledger {
+  min-width: 970px;
+}
+
+.cash-register-ledger tr.is-in td {
+  background: #fbfffd;
+}
+
+.cash-register-ledger tr.is-out td {
+  background: #fffdfd;
+}
+
+.cash-entry-meta {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 0.74rem;
+  font-weight: 500;
+}
+
+.cash-in {
+  color: #047857;
+  font-weight: 800;
+}
+
+.cash-out {
+  color: #b91c1c;
+  font-weight: 800;
+}
+
+@media (max-width: 1080px) {
+  .inventory-arrival-common-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-arrival-common-grid .wide-field {
+    grid-column: 1 / -1;
+  }
+
+  .cash-manual-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cash-manual-form .wide-field {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 720px) {
+  .inventory-arrival-legacy-summary,
+  .inventory-arrival-position-head,
+  .inventory-stocktake-headline,
+  .inventory-stocktake-product-head,
+  .cash-register-status-line,
+  .cash-register-setup-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .inventory-arrival-summary-chips,
+  .inventory-stocktake-product-head > div:last-child {
+    justify-content: flex-start;
+  }
+
+  .inventory-arrival-common-grid,
+  .cash-manual-form,
+  .inventory-stocktake-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-arrival-size-table {
+    border: 0;
+    overflow: visible;
+    background: transparent;
+  }
+
+  .inventory-arrival-size-head {
+    display: none;
+  }
+
+  .inventory-arrival-size-row {
+    grid-template-columns: 34px minmax(0, 1fr) 38px;
+    gap: 8px;
+    padding: 11px;
+    border: 1px solid #d7e0ea;
+    border-radius: 12px;
+    background: #fff;
+  }
+
+  .inventory-arrival-size-row + .inventory-arrival-size-row {
+    margin-top: 8px;
+    border-top: 1px solid #d7e0ea;
+  }
+
+  .inventory-arrival-size-row > :nth-child(2),
+  .inventory-arrival-size-row > :nth-child(3) {
+    grid-column: 2 / 3;
+  }
+
+  .inventory-arrival-size-row > :last-child {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .cash-auto-status {
+    max-width: none;
+  }
+}
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  #inventoryStocktakePrint,
+  #inventoryStocktakePrint * {
+    visibility: visible !important;
+  }
+
+  #inventoryStocktakePrint {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    display: block;
+    color: #000;
+    background: #fff;
+  }
+
+  #inventoryStocktakePrint .inventory-stocktake-product {
+    break-inside: avoid;
+    margin-bottom: 12px;
+    border: 1px solid #666;
+    border-radius: 0;
+  }
+
+  #inventoryStocktakePrint .inventory-stocktake-table-shell {
+    overflow: visible !important;
+  }
+
+  #inventoryStocktakePrint .inventory-stocktake-table {
+    width: 100%;
+    min-width: 0;
+    font-size: 8.5pt;
+  }
+
+  #inventoryStocktakePrint .inventory-stocktake-table th,
+  #inventoryStocktakePrint .inventory-stocktake-table td {
+    padding: 5px 6px;
+    border-color: #777 !important;
+  }
+
+  #inventoryStocktakePrint .stocktake-paper-column {
+    width: 9%;
+    min-width: 0;
+    height: 27px;
+  }
+
+  #inventoryStocktakePrint .stocktake-paper-comment {
+    width: 20%;
+    min-width: 0;
+  }
+}
+
+
+/* Step 174 cash setup polish: compact first-run onboarding with a dominant amount field. */
+.cash-register-setup-card-v2 { display: grid; gap: 18px; padding: 20px; }
+.cash-register-setup-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid #e2e8f0; }
+.cash-register-setup-header > div:first-child { display: grid; gap: 5px; max-width: 760px; }
+.cash-register-setup-header h3 { margin: 0; color: #0f172a; font-size: clamp(1.2rem, 1.7vw, 1.55rem); line-height: 1.25; }
+.cash-register-setup-header p { margin: 0; color: #64748b; line-height: 1.45; }
+.cash-register-setup-once { flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 30px; padding: 5px 10px; border: 1px solid #c7d7fe; border-radius: 999px; color: #1d4ed8; background: #eff6ff; font-size: 0.78rem; font-weight: 800; white-space: nowrap; }
+.cash-register-setup-grid { display: grid; grid-template-columns: minmax(300px, 0.9fr) minmax(420px, 1.35fr); gap: 16px; align-items: stretch; }
+.cash-register-setup-form-v2 { min-width: 0; align-content: start; gap: 14px; padding: 18px; border-color: #bfdbfe; background: linear-gradient(180deg, #f8fbff 0%, #f1f6ff 100%); }
+.cash-register-amount-field { display: grid; gap: 8px; }
+.cash-register-amount-field > span:first-child { color: #334155; font-size: 0.82rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.025em; }
+.cash-register-amount-input-wrap { position: relative; display: flex; align-items: center; }
+.cash-register-amount-input-wrap input { width: 100%; min-height: 58px; padding: 10px 52px 10px 15px; border: 2px solid #93b4ff; border-radius: 14px; background: #fff; color: #0f172a; font-size: 1.45rem; font-weight: 800; font-variant-numeric: tabular-nums; box-shadow: 0 8px 24px rgba(37, 99, 235, 0.08); }
+.cash-register-amount-input-wrap input:focus { border-color: #2563eb; box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12), 0 10px 28px rgba(37, 99, 235, 0.12); }
+.cash-register-amount-input-wrap > span { position: absolute; right: 16px; color: #475569; font-size: 1.05rem; font-weight: 800; pointer-events: none; }
+.cash-register-amount-field small { color: #64748b; font-size: 0.8rem; }
+.cash-register-setup-submit { width: 100%; min-height: 44px; }
+.cash-register-start-checklist { display: grid; gap: 12px; padding: 16px 17px; border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; }
+.cash-register-start-checklist-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cash-register-start-checklist-head > strong { color: #0f172a; }
+.cash-register-start-checklist-head > span { color: #64748b; font-size: 0.78rem; white-space: nowrap; }
+.cash-register-start-checklist ol { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.cash-register-start-checklist li { display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: start; gap: 10px; padding: 9px 10px; border-radius: 11px; background: #f8fafc; }
+.cash-register-check-number { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; background: #2563eb; font-size: 0.78rem; font-weight: 900; }
+.cash-register-start-checklist li > div { display: grid; gap: 2px; }
+.cash-register-start-checklist li strong { color: #0f172a; font-size: 0.88rem; }
+.cash-register-start-checklist li p { margin: 0; color: #64748b; font-size: 0.8rem; line-height: 1.35; }
+.cash-register-start-note { padding: 10px 12px; border: 1px solid #fde68a; border-radius: 11px; color: #854d0e; background: #fffbeb; font-size: 0.8rem; line-height: 1.4; }
+@media (max-width: 980px) { .cash-register-setup-grid { grid-template-columns: 1fr; } .cash-register-setup-header { display: grid; } .cash-register-setup-once { justify-self: start; } }
+@media (max-width: 640px) { .cash-register-setup-card-v2 { padding: 14px; } .cash-register-setup-form-v2, .cash-register-start-checklist { padding: 13px; } .cash-register-start-checklist-head { align-items: flex-start; } }
+
+
+/* Step 175 cash register stabilization: visible pause, exact reconciliation, reversible manual actions. */
+.cash-register-v2 { gap: 16px; }
+.cash-register-status-v2 { align-items: stretch; }
+.cash-cycle-note { display: inline-flex; margin-top: 6px; padding: 5px 9px; border-radius: 999px; background: #f1f5f9; color: #64748b; font-size: .78rem; font-weight: 700; }
+.cash-register-summary-v2 { grid-template-columns: repeat(5, minmax(150px, 1fr)); }
+.cash-register-tools-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr); gap: 14px; align-items: start; }
+.cash-manual-form-v2 { grid-template-columns: minmax(190px, .8fr) minmax(160px, .55fr) minmax(260px, 1.2fr) auto; }
+.cash-reconcile-panel { border-color: #cbd5e1; }
+.cash-reconcile-form { display: grid; grid-template-columns: minmax(180px, .65fr) minmax(260px, 1.2fr) auto; gap: 10px; align-items: end; }
+.cash-reconcile-form label { display: grid; gap: 6px; }
+.cash-reconcile-form label > span { color: #475569; font-size: .78rem; font-weight: 800; }
+.cash-ledger-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.danger-outline { border-color: #fecaca !important; color: #b91c1c !important; background: #fff !important; }
+.danger-outline:hover { background: #fef2f2 !important; }
+.cash-register-ledger td:last-child { white-space: nowrap; }
+@media (max-width: 1180px) { .cash-register-summary-v2 { grid-template-columns: repeat(3, minmax(150px, 1fr)); } .cash-register-tools-grid { grid-template-columns: 1fr; } .cash-manual-form-v2, .cash-reconcile-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cash-manual-form-v2 .wide-field { grid-column: 1 / -1; } }
+@media (max-width: 720px) { .cash-register-summary-v2 { grid-template-columns: 1fr 1fr; } .cash-manual-form-v2, .cash-reconcile-form { grid-template-columns: 1fr; } .cash-register-status-v2 { grid-template-columns: 1fr; } .cash-ledger-actions { width: 100%; } }
+
+
+/* Step 176: calm, compact manual cash movement layout. */
+.cash-manual-movement-panel { min-width: 0; }
+.cash-manual-form-v2 {
+  display: grid;
+  grid-template-columns: minmax(150px, .7fr) minmax(220px, 1.3fr);
+  gap: 12px 14px;
+  align-items: end;
+  width: 100%;
+}
+.cash-manual-form-v2 .cash-direction-switch {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+.cash-manual-form-v2 .cash-direction-switch > button { min-width: 0; }
+.cash-manual-form-v2 label {
+  display: grid !important;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+}
+.cash-manual-form-v2 label > span { display: block; position: static; white-space: nowrap; }
+.cash-manual-form-v2 .wide-field { grid-column: auto; min-width: 0; }
+.cash-manual-form-v2 input { width: 100%; min-width: 0; box-sizing: border-box; }
+.cash-manual-form-v2 > button.primary {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-width: 170px;
+  min-height: 42px;
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .cash-manual-form-v2 { grid-template-columns: 1fr; }
+  .cash-manual-form-v2 .cash-direction-switch,
+  .cash-manual-form-v2 .wide-field,
+  .cash-manual-form-v2 > button.primary { grid-column: 1; width: 100%; }
+  .cash-manual-form-v2 .cash-direction-switch > button { flex: 1 1 140px; }
+}

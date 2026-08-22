@@ -1,0 +1,745 @@
+/* Step 142 — mobile desktop-parity layout.
+   Mobile keeps the same information architecture and wording as desktop.
+   Only navigation, spacing and wide-table interaction are adapted to a narrow screen. */
+
+.mobile-nav-toggle,
+.mobile-nav-backdrop {
+  display: none;
+}
+
+@media (max-width: 820px) {
+  :root {
+    --mobile-appbar-height: 64px;
+    --mobile-page-gap: 10px;
+    --operator-control-height: 44px;
+  }
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    min-width: 0;
+    min-height: 100%;
+    overflow-x: hidden !important;
+  }
+
+  body {
+    background: #eef4ff;
+  }
+
+  body.mobile-nav-open {
+    overflow: hidden !important;
+    overscroll-behavior: none;
+  }
+
+  .erp-shell {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 100vh !important;
+    padding: 0 !important;
+    background: #eef4ff !important;
+  }
+
+  /* A compact mobile app bar opens the same navigation used on desktop. */
+  .erp-sidebar {
+    position: fixed !important;
+    inset: 0 0 auto 0 !important;
+    z-index: 60 !important;
+    display: block !important;
+    width: 100% !important;
+    height: var(--mobile-appbar-height) !important;
+    min-height: var(--mobile-appbar-height) !important;
+    max-height: var(--mobile-appbar-height) !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    border-bottom: 1px solid #dbe5f4 !important;
+    border-radius: 0 !important;
+    background: rgba(255, 255, 255, .98) !important;
+    color: #0f172a !important;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, .10) !important;
+    backdrop-filter: blur(14px);
+  }
+
+  .erp-sidebar.is-mobile-open {
+    height: min(100dvh, 100vh) !important;
+    max-height: min(100dvh, 100vh) !important;
+    overflow: hidden !important;
+  }
+
+  .erp-sidebar-scroll {
+    position: relative;
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    padding: 0 12px 14px !important;
+    overflow: hidden !important;
+  }
+
+  .erp-sidebar.is-mobile-open .erp-sidebar-scroll {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .erp-brand {
+    width: calc(100% - 112px);
+    height: var(--mobile-appbar-height);
+    min-height: var(--mobile-appbar-height);
+    gap: 10px !important;
+    padding: 0 !important;
+  }
+
+  .erp-brand-mark {
+    width: 38px !important;
+    height: 38px !important;
+    flex: 0 0 38px;
+    border-radius: 11px !important;
+    font-size: 1rem !important;
+  }
+
+  .erp-brand-title {
+    font-size: 15px !important;
+    line-height: 1.08 !important;
+  }
+
+  .erp-brand-subtitle {
+    display: none !important;
+  }
+
+  .mobile-nav-toggle {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 100px;
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid #bfd3ff;
+    border-radius: 11px;
+    background: #eef5ff;
+    color: #1d4ed8;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .mobile-nav-toggle-icon {
+    display: grid;
+    gap: 3px;
+    width: 17px;
+  }
+
+  .mobile-nav-toggle-icon i {
+    display: block;
+    width: 17px;
+    height: 2px;
+    border-radius: 999px;
+    background: currentColor;
+    transition: transform .18s ease, opacity .18s ease;
+  }
+
+  .erp-sidebar.is-mobile-open .mobile-nav-toggle-icon i:nth-child(1) {
+    transform: translateY(5px) rotate(45deg);
+  }
+
+  .erp-sidebar.is-mobile-open .mobile-nav-toggle-icon i:nth-child(2) {
+    opacity: 0;
+  }
+
+  .erp-sidebar.is-mobile-open .mobile-nav-toggle-icon i:nth-child(3) {
+    transform: translateY(-5px) rotate(-45deg);
+  }
+
+  .erp-sidebar:not(.is-mobile-open) .access-role-card,
+  .erp-sidebar:not(.is-mobile-open) .erp-primary-nav,
+  .erp-sidebar:not(.is-mobile-open) .erp-sidebar-footer {
+    display: none !important;
+  }
+
+  .erp-sidebar .access-role-card {
+    display: block !important;
+    margin: 8px 0 10px !important;
+    padding: 12px !important;
+    border: 1px solid #dbe5f4 !important;
+    border-radius: 12px !important;
+    background: #f7faff !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+  }
+
+  .access-role-card .card-label {
+    margin-bottom: 7px;
+    color: #64748b !important;
+  }
+
+  .access-role-control {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px !important;
+  }
+
+  .auth-user-card {
+    min-width: 0;
+  }
+
+  .auth-user-card strong,
+  .auth-user-card em {
+    color: #0f172a !important;
+  }
+
+  .auth-user-card span {
+    display: none !important;
+  }
+
+  .access-role-control > button {
+    min-height: 42px !important;
+    white-space: nowrap;
+  }
+
+  .erp-primary-nav {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 5px !important;
+    padding: 0 0 12px !important;
+    overflow: visible !important;
+  }
+
+  .erp-primary-nav-button {
+    min-height: 46px !important;
+    padding: 9px 11px !important;
+    border: 1px solid transparent !important;
+    border-radius: 10px !important;
+    background: transparent !important;
+    color: #172033 !important;
+    font-size: 15px !important;
+    font-weight: 750 !important;
+    transform: none !important;
+  }
+
+  .erp-primary-nav-button:hover,
+  .erp-primary-nav-button.is-current {
+    border-color: #bfd3ff !important;
+    background: #edf4ff !important;
+    color: #1749c7 !important;
+  }
+
+  .erp-nav-icon {
+    width: 28px !important;
+    height: 28px !important;
+    flex: 0 0 28px;
+    border-radius: 8px !important;
+    background: #f0f4f9 !important;
+    color: #5f7188 !important;
+  }
+
+  .erp-primary-nav-button.is-current .erp-nav-icon {
+    background: #dce9ff !important;
+    color: #1d4ed8 !important;
+  }
+
+  .erp-sidebar-footer {
+    display: none !important;
+  }
+
+  .mobile-nav-backdrop {
+    position: fixed;
+    inset: var(--mobile-appbar-height) 0 0;
+    z-index: 55;
+    width: 100%;
+    height: calc(100dvh - var(--mobile-appbar-height));
+    padding: 0;
+    border: 0;
+    background: rgba(15, 23, 42, .34);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .16s ease;
+  }
+
+  .mobile-nav-backdrop.is-visible {
+    display: block;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* Main mobile workspace keeps the desktop section order and terminology. */
+  .erp-main {
+    display: grid !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 100vh !important;
+    padding: calc(var(--mobile-appbar-height) + 8px) 10px 28px !important;
+    gap: var(--mobile-page-gap) !important;
+    overflow: visible !important;
+  }
+
+  .erp-topbar {
+    position: sticky !important;
+    top: var(--mobile-appbar-height) !important;
+    z-index: 25 !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    min-height: 54px !important;
+    gap: 8px !important;
+    padding: 8px 10px !important;
+    border-radius: 12px !important;
+    background: rgba(255, 255, 255, .97) !important;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, .08) !important;
+    backdrop-filter: blur(12px);
+  }
+
+  .erp-page-context {
+    min-width: 0;
+  }
+
+  .erp-page-kicker,
+  .erp-page-subtitle {
+    display: none !important;
+  }
+
+  .erp-page-title {
+    margin: 0 !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 20px !important;
+    line-height: 1.15 !important;
+  }
+
+  .erp-topbar-actions {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 7px !important;
+  }
+
+  .erp-topbar-actions > .primary {
+    min-height: 40px !important;
+    padding: 7px 11px !important;
+    border-radius: 10px !important;
+    font-size: 13px !important;
+    white-space: nowrap;
+  }
+
+  .erp-topbar-status {
+    display: flex !important;
+    align-items: center !important;
+    gap: 5px !important;
+  }
+
+  .erp-topbar-status .hint {
+    display: none !important;
+  }
+
+  .erp-topbar-status .status-pill {
+    min-height: 30px;
+    padding: 5px 8px !important;
+    font-size: 11px !important;
+  }
+
+  .card,
+  .mini-panel,
+  .orders-workspace-header,
+  .order-filter-card {
+    min-width: 0 !important;
+    padding: 14px !important;
+    border-radius: 13px !important;
+  }
+
+  .orders-workspace-header {
+    padding: 8px !important;
+  }
+
+  .card-label {
+    font-size: 13px !important;
+  }
+
+  .card-meta,
+  .mini-panel-note,
+  .hint {
+    font-size: 13px !important;
+    line-height: 1.45 !important;
+  }
+
+  h2,
+  h3,
+  h4 {
+    scroll-margin-top: calc(var(--mobile-appbar-height) + 66px);
+  }
+
+  /* Desktop tabs remain recognizable, but slide horizontally instead of wrapping. */
+  .order-panel-tabs,
+  .finance-tabs,
+  .team-mode-tabs,
+  .compact-tabs,
+  .inventory-module-tabs,
+  .workspace-nav {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 6px !important;
+    max-width: 100% !important;
+    padding: 1px 1px 5px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    overscroll-behavior-inline: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .order-panel-tabs > *,
+  .finance-tabs > *,
+  .team-mode-tabs > *,
+  .compact-tabs > *,
+  .inventory-module-tabs > *,
+  .workspace-nav > * {
+    flex: 0 0 auto !important;
+    min-height: 42px !important;
+    white-space: nowrap !important;
+    scroll-snap-align: start;
+  }
+
+  /* Order filters keep the desktop mental model: manager, then status and shipping. */
+  .orders-filter-panel {
+    gap: 10px !important;
+  }
+
+  .orders-period-row {
+    display: flex !important;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+    width: 100%;
+    min-height: 48px !important;
+    padding: 7px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .orders-period-row > * {
+    flex: 0 0 auto;
+  }
+
+  .orders-period-row .choice-pills {
+    flex-wrap: nowrap !important;
+  }
+
+  .orders-date-range {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .orders-date-range label {
+    min-width: 150px !important;
+  }
+
+  .orders-filter-grid-simple {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+    align-items: end !important;
+  }
+
+  .orders-filter-grid-simple .order-filter-manager,
+  .orders-filter-grid-simple .order-search-main {
+    grid-column: 1 / -1 !important;
+  }
+
+  .orders-filter-grid-simple .order-filter-status,
+  .orders-filter-grid-simple .order-filter-shipping {
+    grid-column: auto !important;
+  }
+
+  .orders-filter-grid-simple label,
+  .form-grid label,
+  .filter-row label {
+    min-width: 0 !important;
+  }
+
+  label > span,
+  .field-label {
+    font-size: 13px !important;
+  }
+
+  input,
+  select,
+  textarea,
+  .manager-picker-trigger,
+  .smart-picker-input {
+    min-width: 0 !important;
+    min-height: 44px !important;
+    font-size: 16px !important;
+  }
+
+  textarea {
+    min-height: 92px !important;
+  }
+
+  button.primary,
+  button.secondary,
+  .choice-pill {
+    min-height: 42px;
+    font-size: 14px;
+  }
+
+  .orders-filter-actions {
+    justify-content: flex-start !important;
+  }
+
+  .orders-filter-actions .secondary {
+    width: auto !important;
+  }
+
+  /* Keep KPI cards readable without creating a long one-column wall. */
+  .order-table-summary,
+  .orders-workspace-kpis,
+  .summary-grid,
+  .clients-summary-grid,
+  .client-detail-stats,
+  .team-summary-clean,
+  .finance-meaning-grid,
+  .dashboard-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .order-table-summary > div,
+  .orders-workspace-kpis > div,
+  .summary-grid > div {
+    min-width: 0;
+    min-height: 72px;
+    padding: 10px !important;
+  }
+
+  .order-table-summary span {
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+  }
+
+  .order-table-summary strong {
+    font-size: 16px !important;
+  }
+
+  /* Wide tables stay tables, exactly like desktop, and move by touch. */
+  .linked-table-scroll,
+  .table-shell,
+  .orders-table-shell,
+  .workshop-table-shell {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .linked-table-scroll.has-horizontal-overflow::before {
+    content: 'Проведите по таблице влево или вправо';
+    display: block;
+    margin: 7px 0 6px;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.3;
+  }
+
+  .table-scrollbar-top,
+  .table-horizontal-control {
+    display: none !important;
+  }
+
+  .table-shell {
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+    padding-bottom: 5px;
+    scroll-behavior: smooth;
+    scrollbar-width: auto !important;
+    scrollbar-color: #8ea7ca #e7eef8;
+    touch-action: pan-x pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table-shell::-webkit-scrollbar {
+    display: block !important;
+    height: 12px !important;
+  }
+
+  .table-shell::-webkit-scrollbar-track {
+    background: #e7eef8 !important;
+    border-radius: 999px;
+  }
+
+  .table-shell::-webkit-scrollbar-thumb {
+    min-width: 48px;
+    border: 2px solid #e7eef8;
+    border-radius: 999px;
+    background: #8ea7ca !important;
+  }
+
+  .data-table {
+    width: max-content !important;
+    max-width: none !important;
+  }
+
+  .order-list-table {
+    min-width: 1380px !important;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 10px !important;
+    font-size: 13px !important;
+    line-height: 1.35 !important;
+  }
+
+  .data-table th {
+    font-size: 12px !important;
+  }
+
+  .data-table th:last-child,
+  .data-table td:last-child {
+    position: static !important;
+    right: auto !important;
+    z-index: auto !important;
+    border-left: 0 !important;
+    box-shadow: none !important;
+    background: inherit !important;
+  }
+
+  .order-item-card,
+  .order-payment-chip {
+    font-size: 12px !important;
+  }
+
+  /* Forms and editors stack predictably while preserving their desktop order. */
+  .form-grid,
+  .filter-row,
+  .editor-columns,
+  .subgrid,
+  .inventory-layout,
+  .inventory-toolbar,
+  .inventory-free-picker-grid,
+  .inventory-picker-toolbar,
+  .inventory-matrix-flexible-form,
+  .catalog-product-form-v2,
+  .catalog-product-edit-strip,
+  .catalog-variant-form-grid-v2,
+  .clients-toolbar,
+  .clients-toolbar-clean,
+  .team-editor-grid,
+  .workshop-filters {
+    grid-template-columns: 1fr !important;
+  }
+
+  .inventory-module-tabs {
+    display: flex !important;
+  }
+
+  .actions,
+  .modal-actions,
+  .inventory-toolbar-actions,
+  .inventory-control-actions,
+  .inventory-submit-bar {
+    gap: 8px !important;
+  }
+
+  .actions > button,
+  .modal-actions > button {
+    flex: 0 1 auto;
+  }
+
+  .manager-picker-menu,
+  .smart-picker-menu {
+    position: absolute !important;
+    left: 0 !important;
+    right: auto !important;
+    width: min(420px, calc(100vw - 40px)) !important;
+    max-width: calc(100vw - 40px) !important;
+    max-height: min(55dvh, 440px) !important;
+  }
+
+  .modal-backdrop {
+    padding: 10px !important;
+    align-items: flex-end !important;
+  }
+
+  .modal-card,
+  .auth-users-modal {
+    width: 100% !important;
+    max-width: none !important;
+    max-height: calc(100dvh - 20px) !important;
+    padding: 14px !important;
+    border-radius: 16px 16px 10px 10px !important;
+    overflow-y: auto !important;
+  }
+
+  .modal-head {
+    align-items: flex-start !important;
+    gap: 8px !important;
+  }
+
+  .global-alert-stack {
+    top: calc(var(--mobile-appbar-height) + 8px) !important;
+    right: 8px !important;
+    width: calc(100vw - 16px) !important;
+  }
+}
+
+@media (max-width: 440px) {
+  .erp-main {
+    padding-inline: 7px !important;
+  }
+
+  .erp-topbar {
+    padding-inline: 8px !important;
+  }
+
+  .erp-page-title {
+    font-size: 18px !important;
+  }
+
+  .erp-topbar-actions > .primary {
+    padding-inline: 9px !important;
+  }
+
+  .erp-topbar-status .status-pill {
+    display: none !important;
+  }
+
+  .access-role-control {
+    grid-template-columns: 1fr !important;
+  }
+
+  .access-role-control > button {
+    width: 100% !important;
+  }
+
+  .order-table-summary,
+  .orders-workspace-kpis,
+  .summary-grid,
+  .clients-summary-grid,
+  .client-detail-stats,
+  .team-summary-clean,
+  .finance-meaning-grid,
+  .dashboard-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .orders-filter-grid-simple {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .orders-filter-grid-simple .order-filter-manager,
+  .orders-filter-grid-simple .order-search-main {
+    grid-column: 1 / -1 !important;
+  }
+}

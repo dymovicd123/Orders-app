@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "changes": {
+    "OrderStockHandoverState": {
+      "before": "18a36c3b5922d043c06f569ba63b65daf697b20ac6a7b75ffcb650155ecc0a6b",
+      "after": "e777ef75500f75ce8d0d5d3e9fce44de78a926c60cde66515b0f95a730fba20d"
+    },
+    "fetchOrderStockHandoverRows": {
+      "before": "1bff620df2adfeb19416c3524816ead9ffed904ddadaf9e4c6e2721ebf154d42",
+      "after": "aed1c8e31417fccb09e312a461108adc1eb65332c589deb095d7028da52ee47c"
+    },
+    "getOrderStockHandoverState": {
+      "before": "905797951b98ced66052314c77e18e6d1768f01b2b0023648fe84f6ef140ffda",
+      "after": "eb1964398dfc51e492b85e045725a81aaf954af663c5ebb298e3cddc90eff727"
+    },
+    "ATTENTION_DETAIL_LIMIT": {
+      "before": "f2b3cc1be3f2363dbd6e31d6c90e5eaf00af8d8ec042049cdc9672eba90c98ca",
+      "after": "86559564c2e1d8921f94218009d2fc3826f5daa8f5e93a03f84e3f5121fb018d"
+    },
+    "getWarehouseAttentionSummary": {
+      "before": "d8833609f5769ef146ff084c801330b6f3e70c5f71fdac5b46c300505990a01d",
+      "after": "ef5a92f986a11c2a995d142f4f3cd1d07940846fde7407c728afc9f25dba7f0e"
+    }
+  },
+  "added": {
+    "reconcileKnownPendingInventoryInbound": "fdd3465fea62a3d1d719f3f0fd32b2176c8771aa82de4eb0f9e743688bc8b968",
+    "handoverKey": "2aea42564e98f3bc3ce3ed142d248671ed31f95efa69887c17b8efee8a8b05c3",
+    "handoverSortMillis": "10b1f2f8d385ffac8bcdc1d5ee55e78d5f6193f31d29edde8daaeb4044ceb4ca"
+  },
+  "removed": {},
+  "router": {
+    "before": "92d2bf766a14be13b3975b4510cfc9f2e8ab208b48ef1ede38b28701d197db6a",
+    "after": "73d123f3a396f1ff8fd42a0d7e5dea6c7785fb782efe4f27807bda4d6751df74"
+  },
+  "step": "192b2a2"
+}

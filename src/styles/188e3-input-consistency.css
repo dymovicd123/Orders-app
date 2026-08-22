@@ -1,0 +1,150 @@
+/* Step 188E.3 — canonical input consistency + calmer stocktake navigation */
+
+.stocktake-e-toolbar-v3 {
+  align-items: flex-start;
+  gap: 18px;
+}
+
+.stocktake-product-browser {
+  flex: 1 1 520px;
+  min-width: 0;
+}
+
+.stocktake-product-filter {
+  display: grid;
+  gap: 6px;
+}
+
+.stocktake-product-filter > span {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.stocktake-product-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 6px;
+  max-height: 190px;
+  overflow: auto;
+  margin-top: 8px;
+  padding: 4px;
+  border: 1px solid var(--line, #d9e2ef);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+}
+
+.stocktake-product-list button {
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  text-align: left;
+}
+
+.stocktake-product-list button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.stocktake-product-list button small {
+  flex: 0 0 auto;
+  opacity: .7;
+}
+
+.stocktake-product-list button:hover,
+.stocktake-product-list button.is-active {
+  border-color: var(--accent, #4f7df3);
+  background: color-mix(in srgb, var(--accent, #4f7df3) 7%, transparent);
+}
+
+.stocktake-product-list button.needs-attention small {
+  font-weight: 800;
+}
+
+.stocktake-product-list-empty {
+  padding: 12px;
+  opacity: .7;
+}
+
+.stocktake-reference-loading {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px dashed var(--line, #d9e2ef);
+  border-radius: 12px;
+}
+
+.stocktake-reference-choice {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.stocktake-new-reference-toggle {
+  justify-self: start;
+}
+
+.stocktake-new-reference-field {
+  padding: 9px;
+  border: 1px dashed var(--line, #d9e2ef);
+  border-radius: 10px;
+}
+
+.catalog-review-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.catalog-resolution-known-product,
+.catalog-resolution-known-fact {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  padding: 10px 12px;
+  border: 1px solid var(--line, #d9e2ef);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+}
+
+.catalog-resolution-known-product > span,
+.catalog-resolution-known-fact > span,
+.catalog-resolution-known-fact > small {
+  opacity: .7;
+  font-size: 12px;
+}
+
+.catalog-resolution-known-product > strong,
+.catalog-resolution-known-fact > strong {
+  font-size: 14px;
+}
+
+@media (max-width: 900px) {
+  .stocktake-e-toolbar-v3 {
+    display: grid;
+  }
+  .stocktake-product-list {
+    grid-template-columns: 1fr;
+    max-height: 220px;
+  }
+  .catalog-review-head-actions {
+    justify-content: flex-start;
+  }
+}
+
+.catalog-reference-loading-note {
+  grid-column: 1 / -1;
+  padding: 10px 12px;
+  border: 1px dashed var(--line, #d9e2ef);
+  border-radius: 10px;
+  opacity: .78;
+}

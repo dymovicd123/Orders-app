@@ -1,0 +1,33 @@
+/* Step 188G — adaptive desktop sidebar scrolling.
+   The sidebar itself remains fixed. When its content fits the viewport, behavior is unchanged.
+   When the viewport is too short, only .erp-sidebar-scroll becomes vertically scrollable. */
+
+@media (min-width: 821px) {
+  .erp-sidebar-scroll {
+    --step188g-adaptive-sidebar-scroll: 1;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: auto !important;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
+  }
+
+  .erp-sidebar-scroll::-webkit-scrollbar {
+    display: block;
+    width: 7px;
+  }
+
+  .erp-sidebar-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .erp-sidebar-scroll::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.42);
+  }
+
+  .erp-sidebar-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(203, 213, 225, 0.62);
+  }
+}

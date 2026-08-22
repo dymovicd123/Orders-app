@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "step": "192b1",
+  "changes": {
+    "canAutoApplyFreshWorkshopInbound": {
+      "before": "cf0d9bca66384f9bcae2d3b0150275188f0aa99b1a647409f509d84934147a50",
+      "after": "4d5d8f49710ae0e63ba13ecb8f127fe0c206e9b5fa720faa26a1da99cbf39604"
+    },
+    "resolveInventoryLifecycleFacts": {
+      "before": "e9a419e896b30338c2e25bf42741d3184aec88b7d49c08b975533639bba3ca8b",
+      "after": "f347f7188ce928e7bc549ec789bee77b9be4293db1304beb8ea2d426e0cfe2ef"
+    },
+    "getOrderStockHandoverState": {
+      "before": "06b2dc1ea099aeed01d5df22b1eb36cfd606e7c3fc32b619b01948c142731f28",
+      "after": "905797951b98ced66052314c77e18e6d1768f01b2b0023648fe84f6ef140ffda"
+    },
+    "fetchOrderRelations": {
+      "before": "35840ce3c8ea103442b3e0a48fe05600fcb8873947efe83bf0e65e6a7e416e50",
+      "after": "7269bb7c951a5edcf579ba7582416c67ca1c83b43ccafe37d795d3a19823bd9b"
+    },
+    "insertOrderContent": {
+      "before": "87d9727fd100c44c1e5867fa5df9cee3af3c1725f0609953e8ede3fccb06bbbd",
+      "after": "b3314aa7d9ed942c842df3f23516e7fc4ea17648c973de30ff9cca5788a15213"
+    },
+    "updateOrderCritical": {
+      "before": "6ed09a925ae527484120fe4f4f61a4842fd432923fd208172b714d21dfd7e751",
+      "after": "e02932d7bc921cd1e1db701d036d9848df985e876f29e4c555483fa0ad1286e8"
+    }
+  },
+  "added": {
+    "InventoryLifecycleDeferredInboundDisposition": "56757db1068917966316a18c135d04178414799497f2f000934c33d33a4114c0",
+    "inventoryLifecycleDeferredInboundDisposition": "1e8f7250b8be80345879d2dc398bb55b3c945f7b1e5695ed58a83fc0353f96e3",
+    "supersedeInventoryLifecycleInboundWithoutStockChange": "1caf7470abeee21c7e514adf0eb90a5b1bebb3d214b8579b873fade766f4fe2d",
+    "fetchOrderStockHandoverRows": "81d8208acf66f329089e09e6f106708753baef2f30aabe0d335b923146165f9a",
+    "stockHandoverItemFromRow": "ce5ec36350e4bb098a109580c8916f37e7f96a0beea7aec31a65b737d328910f",
+    "countOrderStockHandoverReviewCandidates": "bfcc2ca7c0a4aa2d1f1b1beeebe32e6a39930ccfd52c38f40b495ee89b289586",
+    "inventoryObligationIdentityKey": "050745a742c41c538928514a9510e500cadb73f221263270013142aa9ed58bb9",
+    "inventoryObligationLineageForRewrite": "9a9232744275dd3bed6198e3da5185a55b08b00828df8ca4bb5d811fafa2e895",
+    "getWarehouseAttentionSummary": "81b1d81fce36197f9fdd0164f5e573e8656097a641b326704c085a5a522387cd"
+  },
+  "router": {
+    "before": "f82e226158f02d6ccae636a0b843a72f99afa212033e8accdc19f78552ab51bc",
+    "after": "4e304adc23edfd39aa9e782db4c9971129dc0c6f4b74fd01380d05d9d455b5c6"
+  },
+  "frontend": {
+    "appHookInsertions": [
+      {
+        "index": 57,
+        "hook": "useState",
+        "purpose": "warehouse attention summary state"
+      }
+    ]
+  }
+}

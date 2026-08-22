@@ -1,0 +1,463 @@
+/* Step 158: matrix-contained axis controls and a visible multi-product action. */
+.inventory-matrix-table th,
+.inventory-matrix-table td {
+  min-width: 150px;
+}
+
+.inventory-matrix-table tbody th,
+.inventory-matrix-corner {
+  min-width: 135px;
+}
+
+.inventory-matrix-inline-control-row > th,
+.inventory-matrix-inline-control-row > td {
+  min-width: 0;
+  padding: 13px 14px;
+  border-right: 0;
+  text-align: left;
+  background: linear-gradient(180deg, #f8fbff, #f1f6fd);
+}
+
+.inventory-matrix-inline-color-row > th {
+  position: static !important;
+  z-index: auto !important;
+  border-bottom: 1px solid #cfddeb;
+}
+
+.inventory-matrix-inline-size-row > td {
+  border-top: 2px solid #cfddeb;
+  border-bottom: 0;
+}
+
+.inventory-matrix-inline-control {
+  min-width: 560px;
+  display: grid;
+  grid-template-columns: minmax(190px, 0.65fr) minmax(360px, 1.35fr);
+  align-items: center;
+  gap: 16px;
+}
+
+.inventory-matrix-inline-control-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.inventory-matrix-inline-control-copy strong {
+  color: #0f172a;
+  font-size: 0.95rem;
+}
+
+.inventory-matrix-inline-control-copy span {
+  color: #64748b;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.inventory-matrix-inline-control-field {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(230px, 1fr) auto;
+  align-items: start;
+  gap: 9px;
+}
+
+.inventory-matrix-inline-control-field > input {
+  min-width: 0;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  color: #0f172a;
+  background: #fff;
+}
+
+.inventory-matrix-inline-control-field > input:focus {
+  border-color: #60a5fa;
+  outline: 3px solid rgba(59, 130, 246, 0.14);
+}
+
+.inventory-matrix-inline-control-field > button {
+  min-height: 44px;
+  padding-inline: 18px;
+  white-space: nowrap;
+}
+
+.inventory-matrix-corner {
+  text-align: center !important;
+}
+
+.inventory-matrix-corner span,
+.inventory-matrix-corner small {
+  display: block;
+}
+
+.inventory-matrix-corner span {
+  color: #0f172a;
+  font-weight: 850;
+}
+
+.inventory-matrix-corner small {
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
+.inventory-matrix-visible-axis-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 5px 11px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  color: #1d4ed8;
+  font-size: 0.82rem;
+  font-weight: 850;
+  background: #eff6ff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.inventory-matrix-inline-empty-row td {
+  padding: 22px 16px;
+  text-align: center;
+  background: #fff;
+}
+
+.inventory-matrix-inline-empty-row td strong,
+.inventory-matrix-inline-empty-row td span {
+  display: block;
+}
+
+.inventory-matrix-inline-empty-row td strong {
+  color: #334155;
+}
+
+.inventory-matrix-inline-empty-row td span {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 0.84rem;
+}
+
+.inventory-matrix-bottom-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px;
+  border: 1px solid #b9d6ff;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #f8fbff, #edf5ff);
+  box-shadow: 0 10px 25px rgba(37, 99, 235, 0.08);
+}
+
+.inventory-matrix-bottom-actions > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.inventory-matrix-bottom-actions > div:first-child strong {
+  color: #0f172a;
+  font-size: 0.98rem;
+}
+
+.inventory-matrix-bottom-actions > div:first-child span {
+  color: #64748b;
+  font-size: 0.84rem;
+}
+
+.inventory-matrix-bottom-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.inventory-matrix-bottom-action-buttons button {
+  min-height: 46px;
+}
+
+.inventory-matrix-add-product-button {
+  min-width: 250px;
+  padding-inline: 20px;
+  font-size: 0.95rem;
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.2);
+}
+
+.inventory-matrix-batch {
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid #cfe3d9;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fbfffd, #f2fbf6);
+}
+
+.inventory-matrix-batch-persistent {
+  margin-top: 2px;
+}
+
+.inventory-matrix-batch-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.inventory-matrix-batch-head > div {
+  display: grid;
+  gap: 4px;
+}
+
+.inventory-matrix-batch-head span:not(.soft-badge) {
+  color: #64748b;
+  font-size: 0.84rem;
+}
+
+.inventory-matrix-batch-list {
+  display: grid;
+  gap: 8px;
+}
+
+.inventory-matrix-batch-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 12px;
+  border: 1px solid #dbe7e1;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.inventory-matrix-batch-item.is-active {
+  border-color: #60a5fa;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.14);
+}
+
+.inventory-matrix-batch-item > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.inventory-matrix-batch-item > div:first-child span,
+.inventory-matrix-batch-item > div:first-child small {
+  overflow-wrap: anywhere;
+  color: #64748b;
+}
+
+.inventory-matrix-batch-item > div:first-child span {
+  font-size: 0.82rem;
+}
+
+.inventory-matrix-batch-item > div:first-child small {
+  font-size: 0.76rem;
+}
+
+.inventory-matrix-batch-totals {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.inventory-matrix-batch-totals span {
+  color: #64748b;
+  font-size: 0.76rem;
+}
+
+.inventory-matrix-batch-actions {
+  display: flex;
+  gap: 7px;
+}
+
+@media (max-width: 980px) {
+  .inventory-matrix-batch-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .inventory-matrix-batch-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 620px) {
+  .inventory-matrix-head {
+    display: grid;
+  }
+
+  .inventory-matrix-batch-head,
+  .inventory-matrix-batch-item {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-matrix-batch-totals {
+    text-align: left;
+  }
+
+  .inventory-matrix-batch-actions button {
+    flex: 1;
+  }
+}
+
+@media (max-width: 760px) {
+  .inventory-matrix-inline-control {
+    min-width: 500px;
+    grid-template-columns: 1fr;
+    gap: 9px;
+  }
+
+  .inventory-matrix-inline-control-field {
+    grid-template-columns: minmax(220px, 1fr) auto;
+  }
+
+  .inventory-matrix-bottom-actions {
+    display: grid;
+  }
+
+  .inventory-matrix-bottom-action-buttons {
+    display: grid;
+    justify-content: stretch;
+  }
+
+  .inventory-matrix-bottom-action-buttons button,
+  .inventory-matrix-add-product-button {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* Step 159: compact axis controls and real two-way matrix scrolling. */
+.inventory-matrix-inline-control {
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.inventory-matrix-inline-control-copy {
+  flex: 0 0 220px;
+  max-width: 220px;
+}
+
+.inventory-matrix-inline-control-field {
+  width: auto;
+  min-width: 0;
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.inventory-matrix-inline-control-field > input {
+  flex: 0 1 290px;
+  width: clamp(190px, 24vw, 290px);
+  min-width: 190px;
+  max-width: 290px;
+}
+
+.inventory-matrix-inline-control-field > button {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding-inline: 14px;
+}
+
+.inventory-matrix-scroll-region {
+  min-width: 0;
+}
+
+.inventory-matrix-scroll-region .linked-table-scroll {
+  margin-top: 0;
+}
+
+.inventory-matrix-scroll-region .linked-table-scroll.has-horizontal-overflow::before {
+  content: "↔ Таблица шире экрана: потяните её мышью или используйте полосы сверху и снизу";
+  display: block;
+  margin: 0 0 7px;
+  padding: 8px 11px;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  color: #1e40af;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: #eff6ff;
+}
+
+.inventory-matrix-scroll-region .table-scrollbar-top {
+  margin-bottom: 7px;
+}
+
+.inventory-matrix-scroll-region .table-shell.inventory-matrix-table-shell {
+  scrollbar-gutter: stable;
+}
+
+.inventory-matrix-scroll-region .table-shell.inventory-matrix-table-shell::-webkit-scrollbar,
+.inventory-matrix-scroll-region .table-scrollbar-top::-webkit-scrollbar {
+  height: 18px;
+}
+
+.inventory-matrix-scroll-region .table-shell.inventory-matrix-table-shell::-webkit-scrollbar-thumb,
+.inventory-matrix-scroll-region .table-scrollbar-top::-webkit-scrollbar-thumb {
+  border: 3px solid #e8eef5;
+  background: #64748b;
+}
+
+@media (max-width: 760px) {
+  .inventory-matrix-inline-control {
+    width: max-content;
+    max-width: 100%;
+    min-width: 0;
+    display: flex;
+    grid-template-columns: none;
+    gap: 10px;
+  }
+
+  .inventory-matrix-inline-control-copy {
+    flex-basis: 185px;
+    max-width: 185px;
+  }
+
+  .inventory-matrix-inline-control-field {
+    display: flex;
+    grid-template-columns: none;
+  }
+
+  .inventory-matrix-inline-control-field > input {
+    width: 220px;
+    min-width: 180px;
+    max-width: 220px;
+  }
+}
+
+@media (max-width: 520px) {
+  .inventory-matrix-inline-control {
+    width: 100%;
+    display: grid;
+    gap: 8px;
+  }
+
+  .inventory-matrix-inline-control-copy {
+    max-width: none;
+  }
+
+  .inventory-matrix-inline-control-field {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(170px, 1fr) auto;
+  }
+
+  .inventory-matrix-inline-control-field > input {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+}

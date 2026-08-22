@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "baseline": "1906d",
+  "changes": {
+    "publicApiError": {
+      "before": "ee28dc9ec1812de160817c8ee5f795cce343ed7bfce8dfcb92b7c0aa1fb8209b",
+      "after": "349b0f8951a9f76e616da09d22e5caed98cf2257ec0c483ee954cbe822346db0"
+    },
+    "readJson": {
+      "before": "aa7f51d2a171bea112a764b9ed991b7b9bfbb87ce4ebac38cac6aac85c54de43",
+      "after": "de6bc65baf2f4a783aa39963ba9f7256cd48d93577763a1ec1c1eacae54e052d"
+    },
+    "normalizeAudienceCategory": {
+      "before": "87ceb0113da1d12d1965aad4c8d1bbc52d4b763a885557870666ad9601f7a79d",
+      "after": "7bb21146b2d66309cadeae29fdc1ed33e85ed680263dcb56787defef97223b56"
+    },
+    "getCatalogReviewContext": {
+      "before": "ccadfbdc0faccef614934afbf2823dae4dd76c496211d3728a0b2022eb09269a",
+      "after": "af97184886838a3213c8969e52205b2dfd5a1c4139ed06364f0facb7da801153"
+    },
+    "resolveCatalogReviewFacts": {
+      "before": "e559b0c127dbe9438e1984249aec9c3c9c36dd4ad4f3b718326dc48c03e7e4f5",
+      "after": "594a3d1a01046e3d57cf42ebdcba410a59e662ffe36165d25e39aa12c40ab65b"
+    },
+    "CriticalOperationHandle": {
+      "before": "4c3a3591d34b206787a8d85427c5a98dcd30b0a8ae70e3c66fc2d1254af337dc",
+      "after": "3557279f23338ff5d03033bd8f4af40afc2a08d83f5e23f6e9477e34009609b8"
+    },
+    "stableJsonValue": {
+      "before": "11bf652d31796dacbeb0f032771fb69ac5bb95fe56ca4d62d90ac04c017c1b85",
+      "after": "bbed1987b7f236753c9c5b249cfdeb10ebac7a146e33a0c957e51989661de634"
+    },
+    "beginCriticalOperation": {
+      "before": "3018c21d4ddbe013261887e97f7d75515bb2b739f75cb7aa0bcb70ada4e7779c",
+      "after": "ac2b107abfc6a24bcd54797ba6c0655c8fc03175c5ffe45f25bff901bc9648f4"
+    },
+    "listInventoryReservations": {
+      "before": "847a5870860051de80a30414de09c29a8b42726281567e075445661add3b670f",
+      "after": "a5147e28c12db90e5562017cf078a5dbee96bba42a2b6ad6eccadc54699432f8"
+    },
+    "serializeInventoryStocktakeSession": {
+      "before": "a15b0c878b8784ec4ac6f3032b2787f019151a267410e5c21ab7c39137ed212c",
+      "after": "c3950a5b887a69e3fc296b939ae516bae27c303843986361691928aac745668f"
+    },
+    "listInventoryStocktakeSessions": {
+      "before": "89c40080f7cdf427f1160f80edd5f9b62df8dab325c0041b643bf02fafcec424",
+      "after": "423441b11f50af43d938a338e942cbabb896c64d52f4b542d81da27769f3bd6d"
+    },
+    "createInventoryStocktakeSession": {
+      "before": "0b951e80e13954647f0f300f7b574b3dacf474071bac28b4a5c116fa230660cf",
+      "after": "edad0a4f8220e97dd3b797dd2626996f0c222ff122622e0c7ec95ba136b7fe0d"
+    },
+    "listInventoryCycleCountSuggestions": {
+      "before": "ef9661dc0323dc83266cda9e99d0b61bd686331c888930f3e3a415d25cfdae7e",
+      "after": "dc089578a66ab37d995847ed31bc2630019ab50734f613ddf918e29badb0fef3"
+    },
+    "quickInventoryStocktakeBatch": {
+      "before": "915c6e8ec93c8c2777a1e451898f48c7229a26fc5a86d278fd78e85a98d3b760",
+      "after": "69ddd9d795593ca4cbd6286c40cc2a5758cd842f483d9913a3be6bec7847ec2d"
+    },
+    "quickInventoryStocktake": {
+      "before": "49fca249b63734e32d2840009676605241a1bbcda0b356388837347fe140c6c4",
+      "after": "383ff5fa419dc6c16b5524d02a27cb42c33f347b4dcccc51cc839af4be1088c3"
+    },
+    "getInventoryLifecycleContext": {
+      "before": "c10e475c5b83f371f4b6f9ffc28244eab680f41165115f674c8042be623ae9c8",
+      "after": "4e74cb4911d2dc1ec4e5dbe13a8f5cfb174d40b9ee67161ed0aa000a637ea41e"
+    },
+    "resolveInventoryLifecycleFacts": {
+      "before": "aaf7e250c66b389a95da1d21b58be8eb37a65ad28f59d2e7161aa9d2bdf431db",
+      "after": "e9a419e896b30338c2e25bf42741d3184aec88b7d49c08b975533639bba3ca8b"
+    }
+  }
+}

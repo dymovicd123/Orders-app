@@ -1,0 +1,110 @@
+/* Step 188F — manager stock observation inside order entry. */
+.order-stock-observation {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, .28);
+}
+
+.order-stock-observation > .secondary {
+  width: auto;
+}
+
+.order-stock-observation-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.order-stock-observation-head > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.order-stock-observation-head strong {
+  color: #0f172a;
+}
+
+.order-stock-observation-head span {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.order-stock-observation-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 190px) minmax(0, 1fr);
+  align-items: end;
+  gap: 14px;
+}
+
+.order-stock-observation-row label {
+  margin: 0;
+}
+
+.order-stock-observation-row input {
+  min-width: 0;
+}
+
+.order-stock-observation-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  min-height: 42px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.order-stock-observation-result strong {
+  color: #0f172a;
+}
+
+.order-stock-observation-result .is-shortage {
+  color: #b45309;
+}
+
+@media (max-width: 760px) {
+  .order-stock-observation-head,
+  .order-stock-observation-row {
+    grid-template-columns: 1fr;
+  }
+
+  .order-stock-observation-head {
+    display: grid;
+  }
+
+  .order-stock-observation-head .ghost {
+    justify-self: start;
+  }
+}
+
+
+/* Step 188F1: shortages should invite correction instead of hiding it behind a quiet details row. */
+.order-source-availability.needs-attention {
+  border-width: 2px;
+}
+.order-source-availability.needs-attention > summary {
+  font-weight: 800;
+}
+.order-source-availability.needs-attention .order-stock-observation {
+  border-top-width: 2px;
+}
+.catalog-resolution-new-product.is-open {
+  align-items: stretch;
+}
+.catalog-resolution-new-product.is-open > label {
+  display: grid;
+  gap: 6px;
+  width: min(100%, 560px);
+  margin-top: 8px;
+}
+.catalog-resolution-new-product.is-open > label > input {
+  width: 100%;
+}
+.catalog-resolution-new-product.is-open > label > small {
+  opacity: .75;
+  line-height: 1.35;
+}

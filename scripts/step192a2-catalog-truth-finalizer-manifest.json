@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "step": "192a2",
+  "changes": {
+    "resolveCatalogProductAndVariantV2": {
+      "before": "240a9d58ef37ae2f16d0d37502cb7e34f3396d1183c4282be3e696e47e41eb80",
+      "after": "ae9d35ef2c4e13807a432f390ee8f17eb0b1fe3c06830eae9f82b57558a5600c"
+    }
+  },
+  "router": {
+    "before": "f82e226158f02d6ccae636a0b843a72f99afa212033e8accdc19f78552ab51bc",
+    "after": "f82e226158f02d6ccae636a0b843a72f99afa212033e8accdc19f78552ab51bc"
+  }
+}

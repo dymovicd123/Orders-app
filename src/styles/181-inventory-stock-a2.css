@@ -1,0 +1,345 @@
+/* Step 178 / Step A.2: reduce visual weight of the daily stock view.
+   Presentation only. Inventory business rules and D1 schema remain unchanged. */
+
+.inventory-compact-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.inventory-compact-title .card-label {
+  margin: 0;
+}
+
+.inventory-compact-statuses {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.inventory-module-tabs.inventory-module-tabs-v177 {
+  align-items: center;
+  padding: 4px;
+  border-radius: 13px;
+  gap: 6px;
+}
+
+.inventory-module-tabs.inventory-module-tabs-v177 .inventory-primary-tabs > button {
+  min-width: 112px;
+  min-height: 42px;
+  padding: 8px 14px;
+}
+
+.inventory-module-tabs.inventory-module-tabs-v177 .inventory-primary-tabs > button strong {
+  font-size: .92rem;
+}
+
+.inventory-more-tabs > summary {
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 10px;
+}
+
+.simple-stock-view-a2 {
+  gap: 9px;
+}
+
+.simple-stock-header-a2 {
+  min-height: 36px;
+}
+
+.simple-stock-header-a2 h3 {
+  margin: 0;
+  font-size: 1.16rem;
+}
+
+.simple-stock-toolbar-a2 {
+  grid-template-columns: minmax(280px, 1fr) auto auto;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 12px;
+}
+
+.simple-stock-empty-toggle-a2 {
+  min-height: 36px;
+  padding: 0 5px;
+  font-size: .82rem;
+}
+
+.simple-stock-meta-line {
+  display: flex;
+  align-items: center;
+  gap: 8px 16px;
+  min-height: 28px;
+  padding: 0 3px;
+  color: #64748b;
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
+  flex-wrap: wrap;
+}
+
+.simple-stock-meta-line b {
+  color: #334155;
+}
+
+.simple-stock-meta-line .is-danger,
+.simple-stock-meta-line .is-danger b {
+  color: #dc2626;
+}
+
+.simple-stock-products-a2 {
+  gap: 6px;
+}
+
+.simple-stock-product-a2 {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: none;
+}
+
+.simple-stock-product-summary {
+  appearance: none;
+  width: 100%;
+  border: 0;
+  background: #fff;
+  color: inherit;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 8px 10px 8px 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.simple-stock-product-summary:hover {
+  background: #f8fbff;
+}
+
+.simple-stock-product-a2.is-open .simple-stock-product-summary {
+  background: #f8fbff;
+  border-bottom: 1px solid rgba(148, 163, 184, .16);
+}
+
+.simple-stock-product-title {
+  gap: 2px;
+}
+
+.simple-stock-product-title strong {
+  font-size: .96rem;
+}
+
+.simple-stock-product-title span {
+  font-size: .73rem;
+  font-weight: 650;
+}
+
+.simple-stock-product-quantity {
+  display: grid;
+  justify-items: end;
+  gap: 1px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.simple-stock-product-quantity strong {
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.simple-stock-product-quantity span {
+  color: #64748b;
+  font-size: .67rem;
+  font-weight: 700;
+}
+
+.simple-stock-admin-warning {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #b45309;
+  font-size: .68rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.simple-stock-product-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  color: #64748b;
+  font-size: 1rem;
+  transition: transform .15s ease;
+}
+
+.simple-stock-product-a2.is-open .simple-stock-product-chevron {
+  transform: rotate(180deg);
+}
+
+.simple-stock-product-body-a2 {
+  gap: 8px;
+  padding: 8px;
+  background: #fbfdff;
+}
+
+.simple-stock-position-tabs {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 1px 1px 3px;
+  scrollbar-width: thin;
+}
+
+.simple-stock-position-tabs button {
+  appearance: none;
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid rgba(148, 163, 184, .26);
+  border-radius: 9px;
+  background: #fff;
+  color: #475569;
+  font-size: .75rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.simple-stock-position-tabs button.is-active {
+  border-color: rgba(37, 99, 235, .3);
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.simple-stock-position-a2 {
+  border-radius: 10px;
+}
+
+.simple-stock-position-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 35px;
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, .14);
+  flex-wrap: wrap;
+}
+
+.simple-stock-position-meta strong {
+  color: #0f172a;
+  font-size: .82rem;
+}
+
+.simple-stock-position-meta span {
+  color: #64748b;
+  font-size: .72rem;
+}
+
+.simple-stock-view-a2 .simple-stock-matrix th,
+.simple-stock-view-a2 .simple-stock-matrix td {
+  min-width: 66px;
+  height: 40px;
+  padding: 4px 7px;
+}
+
+.simple-stock-view-a2 .simple-stock-matrix tbody th,
+.simple-stock-view-a2 .simple-stock-matrix .simple-stock-size-head {
+  min-width: 72px;
+}
+
+.simple-stock-view-a2 .simple-stock-matrix td strong {
+  font-size: .92rem;
+}
+
+.inventory-operation-auto-writeoff {
+  margin: 2px 0 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+}
+
+.inventory-operation-auto-writeoff p {
+  margin-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .simple-stock-toolbar-a2 {
+    grid-template-columns: 1fr auto;
+  }
+
+  .simple-stock-empty-toggle-a2 {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .inventory-compact-title {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .inventory-compact-statuses {
+    justify-content: flex-start;
+  }
+
+  .inventory-module-tabs.inventory-module-tabs-v177 .inventory-primary-tabs > button {
+    min-width: 104px !important;
+    min-height: 40px !important;
+    padding: 7px 10px !important;
+  }
+
+  .simple-stock-toolbar-a2 {
+    grid-template-columns: 1fr;
+  }
+
+  .simple-stock-empty-toggle-a2 {
+    grid-column: 1;
+  }
+
+  .simple-stock-product-summary {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 7px;
+    padding: 8px 9px 8px 11px;
+  }
+
+  .simple-stock-admin-warning {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .simple-stock-product-title span {
+    white-space: normal;
+  }
+
+  .simple-stock-product-quantity strong {
+    font-size: .94rem;
+  }
+
+  .simple-stock-product-chevron {
+    width: 22px;
+  }
+
+  .simple-stock-meta-line {
+    gap: 5px 12px;
+  }
+
+  .simple-stock-position-meta {
+    display: grid;
+    gap: 1px;
+  }
+}
+
+@media print {
+  .simple-stock-view-a2 { display: none !important; }
+}

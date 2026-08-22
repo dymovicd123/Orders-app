@@ -1,0 +1,52 @@
+/* Step 188: human-facing inventory integrity recovery. */
+.inventory-health-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.inventory-health-audit-problem-row {
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.inventory-health-audit-problem-row > span {
+  min-width: 0;
+  flex: 1 1 360px;
+}
+
+.inventory-health-problem-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.inventory-health-problem-actions strong {
+  min-width: 38px;
+  text-align: right;
+}
+
+.inventory-health-resolved-row button {
+  align-self: flex-start;
+}
+
+@media (max-width: 760px) {
+  .inventory-health-inline-actions,
+  .inventory-health-problem-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .inventory-health-inline-actions button,
+  .inventory-health-problem-actions button {
+    flex: 1 1 auto;
+  }
+
+  .inventory-health-audit-problem-row {
+    flex-direction: column;
+  }
+}

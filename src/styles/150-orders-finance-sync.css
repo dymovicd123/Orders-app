@@ -1,0 +1,216 @@
+/* Step 152: automatic finance refresh, clear order-table summary, and direct anomaly navigation. */
+.finance-auto-refresh {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  min-height: 42px;
+  padding-bottom: 2px;
+}
+
+.orders-finance-summary-shell {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 16px;
+  padding: 14px;
+  border: 1px solid #d9e3f0;
+  border-radius: 16px;
+  background: #f8fbff;
+}
+
+.orders-finance-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.orders-finance-summary-head > div {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.orders-finance-summary-head strong {
+  color: #0f172a;
+  font-size: 15px;
+}
+
+.orders-finance-summary-head span:not(.soft-badge) {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.orders-finance-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.orders-finance-summary-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #dbe4f1;
+  border-top: 4px solid #2563eb;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .04);
+}
+
+.orders-finance-summary-card.is-money { border-top-color: #059669; }
+.orders-finance-summary-card.is-current { border-top-color: #d97706; }
+
+.orders-finance-summary-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.orders-finance-summary-card-head > span {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.orders-finance-summary-card-head > small {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.orders-finance-summary-main {
+  margin: 11px 0;
+  color: #0f172a;
+  font-size: clamp(22px, 1.8vw, 29px);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -.025em;
+}
+
+.orders-finance-summary-lines {
+  display: grid;
+  gap: 7px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.orders-finance-summary-lines > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.orders-finance-summary-lines span { color: #64748b; }
+.orders-finance-summary-lines strong { color: #0f172a; text-align: right; }
+
+.orders-current-filter-note {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.orders-current-filter-note strong { color: #0f172a; }
+
+.orders-finance-summary-loading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 12px 0 16px;
+  padding: 14px 16px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.orders-finance-summary-loading strong { color: #0f172a; }
+.orders-finance-summary-loading span { color: #64748b; font-size: 12px; }
+
+.finance-order-link {
+  white-space: nowrap;
+}
+
+/* Without the obsolete lifecycle filter, manager and shipping sit together without a visual gap. */
+.orders-filter-grid-simple .order-filter-manager {
+  flex: 1 1 560px;
+}
+
+.orders-filter-grid-simple .order-filter-shipping {
+  flex: 0 1 230px;
+}
+
+@media (max-width: 1100px) {
+  .orders-finance-summary-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .orders-finance-summary-card.is-current {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 820px) {
+  .finance-auto-refresh {
+    min-height: auto;
+    padding: 2px 0;
+  }
+
+  .orders-finance-summary-head,
+  .orders-finance-summary-head > div,
+  .orders-finance-summary-loading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .orders-finance-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .orders-finance-summary-card.is-current {
+    grid-column: auto;
+  }
+
+  .orders-filter-grid-simple .order-filter-manager,
+  .orders-filter-grid-simple .order-filter-shipping {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+}
+
+
+/* Step 154: manager is mandatory for every newly created order. */
+.required-mark {
+  color: #dc2626;
+  font-weight: 800;
+}
+
+.order-manager-required {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #fca5a5;
+  border-radius: 12px;
+  background: #fff1f2;
+  color: #9f1239;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.order-create-actions .primary:disabled {
+  cursor: not-allowed;
+}
+
+/* Step 160: hidden payment rows can be expanded directly in the orders table. */
+button.order-payment-chip-more {
+  width: 100%;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  cursor: pointer;
+  text-align: center;
+}
+
+button.order-payment-chip-more:hover,
+button.order-payment-chip-more:focus-visible {
+  background: #dbeafe;
+  border-color: rgba(37, 99, 235, 0.38);
+}

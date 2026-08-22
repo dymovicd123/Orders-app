@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "changes": {
+    "applyInventoryTransfer": {
+      "before": "5bec4f8ed02758a1f05136f4f7a8fac99d475751a0ba20490ad6203b0804b0e3",
+      "after": "3fd0e4251e0df0e3a92d0cf8b25d836d74a7b1fd4fee0a964505be1bbbf98b8e"
+    }
+  }
+}

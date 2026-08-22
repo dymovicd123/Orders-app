@@ -1,0 +1,404 @@
+/* Step 181: revision workflow polish for paper -> computer entry. */
+.stocktake-workflow-v2 {
+  gap: 12px;
+}
+
+.stocktake-human-head-v2 p {
+  max-width: 760px;
+}
+
+.stocktake-session-bar-v2 {
+  padding: 11px 12px;
+}
+
+.stocktake-session-progress-v2 {
+  margin-left: auto;
+}
+
+.stocktake-progress-line {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8eef6;
+}
+
+.stocktake-progress-line > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #2563eb;
+  transition: width .18s ease;
+}
+
+.stocktake-more-menu {
+  position: relative;
+}
+
+.stocktake-more-menu > summary {
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  color: #334155;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.stocktake-more-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.stocktake-more-menu[open] > summary {
+  border-color: #94a3b8;
+}
+
+.stocktake-more-menu > button {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  min-width: 170px;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fff;
+  color: #b91c1c;
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, .15);
+  cursor: pointer;
+}
+
+.stocktake-quick-navigation {
+  display: grid;
+  grid-template-columns: minmax(210px, .8fr) minmax(300px, 1.3fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid #dbe4ef;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.stocktake-nav-control {
+  display: grid;
+  gap: 5px;
+}
+
+.stocktake-nav-control > label {
+  color: #64748b;
+  font-size: .76rem;
+  font-weight: 800;
+}
+
+.stocktake-nav-inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+}
+
+.stocktake-nav-inline input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  font-weight: 750;
+}
+
+.stocktake-nav-inline input:focus {
+  outline: 2px solid rgba(37, 99, 235, .16);
+  border-color: #2563eb;
+}
+
+.stocktake-next-empty-button {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.stocktake-entry-tip {
+  padding: 0 2px;
+  color: #64748b;
+  font-size: .8rem;
+}
+
+.stocktake-entry-product-v2 {
+  border-radius: 16px;
+}
+
+.stocktake-entry-product-head-v2 {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+}
+
+.stocktake-product-arrow {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.stocktake-product-arrow:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+.stocktake-current-product-title {
+  min-width: 0;
+}
+
+.stocktake-current-product-title h4 {
+  overflow: hidden;
+  margin: 0;
+  font-size: 1.05rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stocktake-current-product-title span,
+.stocktake-current-product-progress span {
+  color: #64748b;
+  font-size: .76rem;
+}
+
+.stocktake-current-product-progress {
+  display: grid;
+  min-width: 92px;
+  justify-items: end;
+  gap: 1px;
+}
+
+.stocktake-current-product-progress strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.stocktake-entry-table-v2 th,
+.stocktake-entry-table-v2 td {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.stocktake-entry-table-v2 .stocktake-fact-head,
+.stocktake-entry-table-v2 .stocktake-fact-cell {
+  background: #f7fbff;
+}
+
+.stocktake-entry-table-v2 .stocktake-fact-cell input {
+  width: 96px;
+  min-height: 42px;
+  border-width: 1.5px;
+  font-size: 1rem;
+}
+
+.stocktake-entry-table-v2 tr.has-difference .stocktake-fact-cell,
+.stocktake-entry-table-v2 tr.has-difference .stocktake-difference {
+  background: #fff7ed;
+}
+
+.stocktake-work-footer,
+.stocktake-review-actions {
+  position: sticky;
+  bottom: 10px;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .97);
+  box-shadow: 0 8px 26px rgba(15, 23, 42, .12);
+  backdrop-filter: blur(6px);
+}
+
+.stocktake-work-footer.is-ready {
+  border-color: #bfdbfe;
+}
+
+.stocktake-work-footer > div,
+.stocktake-review-actions > div {
+  display: grid;
+  gap: 2px;
+}
+
+.stocktake-work-footer span,
+.stocktake-review-actions span {
+  color: #64748b;
+  font-size: .79rem;
+}
+
+.stocktake-review-panel {
+  display: grid;
+  gap: 12px;
+  scroll-margin-top: 20px;
+}
+
+.stocktake-review-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid #dbe4ef;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.stocktake-review-head h4 {
+  margin: 3px 0 2px;
+  font-size: 1.12rem;
+}
+
+.stocktake-review-head p {
+  margin: 0;
+  color: #64748b;
+  font-size: .82rem;
+}
+
+.stocktake-review-table-shell {
+  overflow-x: auto;
+  border: 1px solid #dbe4ef;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.stocktake-review-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+}
+
+.stocktake-review-table th,
+.stocktake-review-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #edf2f7;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.stocktake-review-table th {
+  color: #64748b;
+  font-size: .73rem;
+  font-weight: 800;
+  background: #f8fafc;
+}
+
+.stocktake-review-table td {
+  font-size: .86rem;
+}
+
+.stocktake-review-table td:nth-child(2) span {
+  display: block;
+  margin-top: 2px;
+  color: #64748b;
+  font-size: .72rem;
+}
+
+.stocktake-review-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.stocktake-review-table .is-negative {
+  color: #dc2626;
+  font-weight: 900;
+}
+
+.stocktake-review-table .is-positive {
+  color: #047857;
+  font-weight: 900;
+}
+
+.stocktake-review-empty {
+  padding: 28px 20px;
+  border: 1px solid #bbf7d0;
+  border-radius: 14px;
+  background: #f0fdf4;
+  color: #166534;
+  font-weight: 800;
+  text-align: center;
+}
+
+.stocktake-paper-product-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.stocktake-paper-product-title > span {
+  color: #475569;
+  font-size: .8rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+@media (max-width: 980px) {
+  .stocktake-quick-navigation {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .stocktake-next-empty-button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .stocktake-session-progress-v2 {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .stocktake-quick-navigation {
+    grid-template-columns: 1fr;
+  }
+
+  .stocktake-next-empty-button {
+    grid-column: auto;
+  }
+
+  .stocktake-entry-product-head-v2 {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .stocktake-current-product-progress {
+    grid-column: 2;
+    justify-items: start;
+  }
+
+  .stocktake-entry-product-head-v2 .stocktake-product-arrow:last-child {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+
+  .stocktake-work-footer,
+  .stocktake-review-actions,
+  .stocktake-review-head {
+    position: static;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .stocktake-work-footer button,
+  .stocktake-review-actions button,
+  .stocktake-review-head button {
+    width: 100%;
+  }
+}

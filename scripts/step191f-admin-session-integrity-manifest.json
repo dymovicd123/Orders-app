@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "baseline": "191e",
+  "changes": {
+    "Env": {
+      "before": "715d71827d4f5612725fe01f659fe3f2aed19c5fc7245d5d7df0f160dc77558e",
+      "after": "4f956979fdbc81666c27a2919dc1cdc1eb7e80c9a2d7b5197eab48cecb739c08"
+    },
+    "normalizeAccessRole": {
+      "before": "92375f608566d3590401a2805d9f98ca2d2c03f177ea80bcdf8d3ea67a78e7a7",
+      "after": "9426dd9d9e0e86279cc2731ada9ff7a880b3ecc3ece1b06c323c894cf7da7993"
+    },
+    "requireAdminAccess": {
+      "before": "c9d3624db8e4c3ed64e33d82afe2b4d2918d7dbd18e0ed0c64994af5f4e018b0",
+      "after": "6a4659ba7a34175c769e194ea00193dc1bd30848254ac1ea6ea4810280cee395"
+    },
+    "hasSimpleAdminMode": {
+      "before": "2e7c2002077a877a91048356b4ba93dfafdf5bb8e36aa3e9c020d72093bd2160",
+      "after": "562c7c344bc15d34c401b176da3fed8574c0fd5932f7c71c3d4fb722b0309bf2"
+    },
+    "makeSimpleAccessUser": {
+      "before": "75cbf3aafa2c2eefee0a2a82f4364cdad9b49eb93b73bc4d13791c119faa9117",
+      "after": "f32e38959a3989fc799acd97edeedd878900b7796ee7a45509a5e0989a4e4de1"
+    },
+    "handleSimpleAdminStatus": {
+      "before": "c4e070ed6eea58220b0dc64a18312e98eb04c888716b2e0f3b8785e14ff2e519",
+      "after": "36aa0cd72b54d0413a66a1240bd830af78d0952fda2c0904ec02ad0424c96449"
+    },
+    "handleSimpleAdminLogin": {
+      "before": "7a6044450fa2e34f3ed6c055d27c1e40b419a46f869eb9379569d8697f482b88",
+      "after": "f4f98c557c1d2fd1393a4fc3e72ee5d074610c2f9cb8ae0dd0fa9d406a922b9e"
+    },
+    "withAuthenticatedHeaders": {
+      "before": "e86c874e8735bbf64321ad4b04af675eaf093ecb0741faadb436baa93345e07a",
+      "after": "c8f6b39bcb0dcb6af8b68107e7e0610c54af8fd9a50d8ae31baf29cf86c45f30"
+    }
+  },
+  "router": {
+    "before": "dcb6240b6716d19bdc945fb9cbaf980cba040b96ea8e2526c7a80da3e927f380",
+    "after": "f82e226158f02d6ccae636a0b843a72f99afa212033e8accdc19f78552ab51bc"
+  }
+}

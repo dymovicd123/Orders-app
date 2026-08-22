@@ -1,0 +1,448 @@
+/* Manager picker, badges, finance cards and Step 131 UI repair. */
+/* Step 131 — isolated regression repair.
+   Imported after App.css so these agreed UI rules cannot be lost inside an
+   unrelated selector or overridden by an older copied stylesheet. */
+
+/* ---------- Manager identity: shared dot + name ---------- */
+.manager-color-dot {
+  display: inline-block;
+  width: 12px;
+  min-width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgba(15, 23, 42, 0.14);
+}
+
+.manager-color-dot.is-empty {
+  background: #cbd5e1 !important;
+}
+
+.manager-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: 100%;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 999px;
+  background: #fff;
+  color: #0f172a;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-shadow: 0 2px 7px rgba(15, 23, 42, 0.05);
+}
+
+.manager-badge.is-compact {
+  min-height: 27px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+/* ---------- Full-width manager picker ---------- */
+.manager-picker {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+button.manager-picker-trigger {
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 13px;
+  border: 1px solid #d7e1ee;
+  border-radius: 13px;
+  background: #fff;
+  color: #0f172a;
+  text-align: left;
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.3;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+button.manager-picker-trigger:hover:not(:disabled),
+button.manager-picker-trigger.is-open {
+  border-color: #7da7ff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
+}
+
+button.manager-picker-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.manager-picker-trigger > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manager-picker-trigger .muted {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.manager-picker-caret {
+  flex: 0 0 auto;
+  color: #64748b;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+  transition: transform 0.16s ease;
+}
+
+.manager-picker-trigger.is-open .manager-picker-caret {
+  transform: rotate(180deg);
+}
+
+.manager-picker-menu {
+  position: absolute;
+  z-index: 500;
+  top: calc(100% + 7px);
+  left: 0;
+  width: max(100%, 340px);
+  max-width: min(420px, calc(100vw - 48px));
+  padding: 9px;
+  border: 1px solid #d8e2ef;
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.20);
+}
+
+.manager-picker-menu > input {
+  width: 100%;
+  min-height: 42px;
+  margin: 0 0 7px;
+  padding: 9px 11px;
+  border: 1px solid #d7e1ee;
+  border-radius: 11px;
+  background: #fff;
+}
+
+.manager-picker-options {
+  display: grid;
+  gap: 3px;
+  max-height: 290px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+button.manager-picker-option {
+  appearance: none;
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #0f172a;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+button.manager-picker-option:hover,
+button.manager-picker-option.is-selected {
+  background: #edf4ff;
+}
+
+button.manager-picker-option.is-clear {
+  margin-bottom: 3px;
+  border-bottom: 1px solid #edf1f6;
+  border-radius: 10px 10px 4px 4px;
+  color: #475569;
+}
+
+.manager-picker-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.manager-picker-option-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manager-picker-option-copy small {
+  color: #64748b;
+  font-size: 11px;
+}
+
+/* Keep order form and order filters spacious. */
+.orders-filter-grid-clean > label,
+.order-client-grid > label,
+.order-step-grid > label,
+.order-main-grid > label {
+  min-width: 0;
+}
+
+.orders-filter-grid-clean .manager-picker,
+.order-client-grid .manager-picker,
+.order-step-grid .manager-picker,
+.order-main-grid .manager-picker {
+  width: 100%;
+}
+
+/* ---------- Finance: the agreed three separate cards ---------- */
+.finance-meaning-overview {
+  padding: 18px !important;
+}
+
+.finance-meaning-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+  width: 100%;
+  margin-top: 15px !important;
+}
+
+.finance-meaning-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 230px;
+  padding: 17px;
+  border: 1px solid #dbe4ef;
+  border-radius: 17px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.055);
+}
+
+.finance-meaning-card.is-sales {
+  border-top: 4px solid #2563eb;
+}
+
+.finance-meaning-card.is-cash {
+  border-top: 4px solid #059669;
+}
+
+.finance-meaning-card.is-debt {
+  border-top: 4px solid #f59e0b;
+}
+
+.finance-meaning-head {
+  min-height: 62px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.finance-meaning-kicker {
+  display: block;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.finance-meaning-head h4 {
+  margin: 5px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.finance-meaning-values {
+  display: grid;
+  gap: 0;
+  margin-top: auto;
+}
+
+.finance-meaning-values > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 48px;
+  padding: 12px 0 8px;
+  border-top: 1px solid #edf1f6;
+}
+
+.finance-meaning-values span {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.finance-meaning-values strong {
+  color: #0f172a;
+  font-size: 19px;
+  font-weight: 900;
+  line-height: 1.15;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ---------- Team color system ---------- */
+.manager-color-picker {
+  display: grid !important;
+  grid-template-columns: repeat(8, 32px);
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  max-width: 100%;
+  padding: 10px 2px 2px;
+}
+
+button.manager-color-choice {
+  appearance: none;
+  display: block;
+  width: 30px !important;
+  min-width: 30px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  margin: 0;
+  padding: 0 !important;
+  border: 3px solid #fff !important;
+  border-radius: 50% !important;
+  font-size: 0;
+  line-height: 0;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px #b9c6d6;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+button.manager-color-choice:hover {
+  transform: scale(1.10);
+  box-shadow: 0 0 0 2px #64748b;
+}
+
+button.manager-color-choice.is-selected {
+  box-shadow: 0 0 0 3px #2563eb, 0 0 0 5px rgba(37, 99, 235, 0.15);
+}
+
+button.manager-color-choice.is-small {
+  width: 26px !important;
+  min-width: 26px !important;
+  height: 26px !important;
+  min-height: 26px !important;
+  border-width: 2px !important;
+}
+
+.team-inline-color-editor {
+  min-width: 220px;
+}
+
+button.team-color-trigger {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  margin: 0;
+  padding: 7px 11px;
+  border: 1px solid #d7e1ee;
+  border-radius: 11px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+button.team-color-trigger:hover:not(:disabled) {
+  border-color: #8ca9cb;
+  background: #f8fbff;
+}
+
+.team-inline-color-palette {
+  position: static !important;
+  display: grid !important;
+  grid-template-columns: repeat(8, 26px) !important;
+  gap: 9px !important;
+  width: max-content;
+  max-width: 100%;
+  margin-top: 9px !important;
+  padding: 12px !important;
+  border: 1px solid #d7e1ee !important;
+  border-radius: 14px !important;
+  background: #fff !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.11) !important;
+}
+
+.manager-custom-color,
+.team-custom-color-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.team-custom-color-inline {
+  grid-column: 1 / -1;
+  padding-top: 3px;
+}
+
+.manager-custom-color input[type='color'],
+.team-custom-color-inline input[type='color'] {
+  appearance: none;
+  width: 34px;
+  height: 34px;
+  padding: 2px;
+  border: 1px solid #cbd5e1;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+}
+
+.team-roster-table td:nth-child(4),
+.team-roster-table .team-inline-color-editor {
+  overflow: visible;
+}
+
+/* Manager cells should not collapse the dot and name. */
+.order-list-table td:nth-child(2),
+.debt-order-table td:nth-child(2),
+.team-roster-table td:first-child {
+  min-width: 120px;
+}
+
+@media (max-width: 1100px) {
+  .finance-meaning-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .finance-meaning-card {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .manager-picker-menu {
+    width: min(380px, calc(100vw - 40px));
+  }
+
+  .manager-color-picker,
+  .team-inline-color-palette {
+    grid-template-columns: repeat(6, 30px) !important;
+  }
+
+  .team-inline-color-palette {
+    grid-template-columns: repeat(6, 26px) !important;
+  }
+}

@@ -1,0 +1,370 @@
+/* Step 187: single inventory navigation + human-facing warehouse health center. */
+
+.inventory-tabs-step187 {
+  display: grid !important;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px !important;
+  width: 100%;
+  padding: 8px !important;
+  border: 1px solid #dbe5ef;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.inventory-tabs-step187.is-manager {
+  grid-template-columns: minmax(120px, 180px);
+}
+
+.inventory-tabs-step187 > button {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #334155;
+  cursor: pointer;
+}
+
+.inventory-tabs-step187 > button:hover {
+  background: #fff;
+  border-color: #dbe5ef;
+}
+
+.inventory-tabs-step187 > button.is-active {
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, .28);
+  background: #fff;
+  box-shadow: 0 2px 7px rgba(15, 23, 42, .07);
+}
+
+.inventory-health-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.inventory-health-headline {
+  margin-bottom: 0;
+}
+
+.inventory-health-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+  border: 1px solid #dbe5ef;
+  border-radius: 16px;
+  background: #f8fafc;
+}
+
+.inventory-health-hero.is-healthy {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.inventory-health-hero.needs-attention {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.inventory-health-hero-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.inventory-health-kicker,
+.inventory-health-action-label {
+  color: #64748b;
+  font-size: .73rem;
+  font-weight: 850;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+
+.inventory-health-hero-copy > strong {
+  font-size: 1.2rem;
+}
+
+.inventory-health-hero-copy p,
+.inventory-health-action-card p,
+.inventory-health-details-note {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.inventory-health-hero-badge {
+  flex: 0 0 auto;
+  padding: 8px 11px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 850;
+  color: #166534;
+  background: rgba(255,255,255,.72);
+}
+
+.inventory-health-hero.needs-attention .inventory-health-hero-badge {
+  color: #9a3412;
+}
+
+.inventory-health-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.inventory-health-summary-card {
+  display: grid;
+  gap: 5px;
+  min-height: 116px;
+  padding: 14px;
+  border: 1px solid #dbe5ef;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.inventory-health-summary-card > span {
+  color: #64748b;
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.inventory-health-summary-card > strong {
+  font-size: 1.05rem;
+}
+
+.inventory-health-summary-card > small {
+  color: #64748b;
+  line-height: 1.35;
+}
+
+.inventory-health-summary-card.is-ok {
+  border-color: #bbf7d0;
+}
+
+.inventory-health-summary-card.is-warning {
+  border-color: #fed7aa;
+  background: #fffaf3;
+}
+
+.inventory-health-summary-card.is-danger {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.inventory-health-action-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px 18px;
+  padding: 16px 18px;
+  border: 1px solid #dbe5ef;
+  border-radius: 15px;
+  background: #fff;
+}
+
+.inventory-health-action-card > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.inventory-health-action-card.is-warning {
+  border-color: #fed7aa;
+  background: #fffaf3;
+}
+
+.inventory-health-action-card.is-danger {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.inventory-health-action-card.is-ok {
+  border-color: #bbf7d0;
+  background: #f7fff9;
+}
+
+.inventory-health-problem-list {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.inventory-health-problem-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 11px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: rgba(255,255,255,.82);
+}
+
+.inventory-health-problem-row > span {
+  display: grid;
+  gap: 2px;
+}
+
+.inventory-health-problem-row small,
+.inventory-health-more-note {
+  color: #64748b;
+}
+
+.inventory-health-action-card.is-danger .inventory-health-problem-row > strong {
+  color: #dc2626;
+}
+
+.inventory-health-details {
+  border: 1px solid #dbe5ef;
+  border-radius: 14px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.inventory-health-details > summary {
+  padding: 13px 16px;
+  cursor: pointer;
+  font-weight: 850;
+  color: #334155;
+  background: #f8fafc;
+}
+
+.inventory-health-details[open] > summary {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.inventory-health-details-body {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.inventory-health-warning-box {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  background: #fff7ed;
+}
+
+.inventory-health-warning-box span {
+  color: #9a3412;
+}
+
+.inventory-health-advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.inventory-health-advanced-card {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 158px;
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.inventory-health-advanced-card span {
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.inventory-health-advanced-card button {
+  justify-self: start;
+  margin-top: auto;
+}
+
+.inventory-health-audit-summary {
+  margin: 0;
+}
+
+.inventory-health-technical-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.inventory-health-tech-list {
+  display: grid;
+  gap: 7px;
+}
+
+.inventory-health-tech-row {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.inventory-health-tech-row span {
+  color: #64748b;
+}
+
+.inventory-health-tech-row code {
+  color: #475569;
+  font-size: .78rem;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1180px) {
+  .inventory-tabs-step187 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .inventory-health-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .inventory-health-hero,
+  .inventory-health-action-card {
+    display: grid;
+  }
+
+  .inventory-health-hero-badge {
+    justify-self: start;
+  }
+
+  .inventory-health-action-card > button {
+    justify-self: start;
+  }
+
+  .inventory-health-advanced-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .inventory-tabs-step187 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-tabs-step187.is-manager {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-health-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-health-problem-row {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 420px) {
+  .inventory-tabs-step187 {
+    grid-template-columns: 1fr;
+  }
+}

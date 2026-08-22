@@ -1,0 +1,50 @@
+/* Step 188K.1 — inline size/color additions during an active stocktake.
+   Routine combinations use existing canonical references in context; truly new
+   reference values remain behind the controlled "Найденная позиция" flow. */
+.stocktake-color-group-body{min-width:0;display:grid;gap:5px}
+.stocktake-inline-add-trigger,
+.stocktake-inline-color-trigger{min-height:31px!important;border:1px dashed #cbd5e1!important;border-radius:8px!important;background:#fff!important;color:#475569!important;font-size:10px!important;font-weight:750!important;white-space:nowrap;cursor:pointer}
+.stocktake-inline-add-trigger{padding:5px 8px!important;align-self:center}
+.stocktake-inline-add-trigger:hover,
+.stocktake-inline-color-trigger:hover,
+.stocktake-inline-add-trigger.is-active,
+.stocktake-inline-color-trigger.is-active{border-color:#93c5fd!important;background:#eff6ff!important;color:#1d4ed8!important}
+.stocktake-inline-position-footer{display:flex;justify-content:flex-start;padding:5px 0 0 138px}
+.stocktake-inline-color-trigger{padding:4px 9px!important}
+.stocktake-inline-add-panel{display:grid;gap:8px;min-width:0;padding:9px 10px;border:1px solid #bfdbfe;border-radius:10px;background:#f8fbff}
+.stocktake-inline-size-panel{margin:0 0 2px}
+.stocktake-inline-color-panel{margin:6px 0 1px 138px}
+.stocktake-inline-add-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;min-width:0}
+.stocktake-inline-add-head>div{display:grid;gap:2px;min-width:0}
+.stocktake-inline-add-head strong{font-size:11px;color:#0f172a}
+.stocktake-inline-add-head span{font-size:9px;color:#64748b;overflow-wrap:anywhere}
+.stocktake-inline-add-head>button{flex:none;width:26px;height:26px;padding:0!important;font-size:15px!important}
+.stocktake-inline-options{display:flex;flex-wrap:wrap;gap:5px;min-width:0}
+.stocktake-inline-options>button{min-width:34px;min-height:29px;padding:4px 8px;border:1px solid #d6dfeb;border-radius:8px;background:#fff;color:#334155;font:inherit;font-size:10px;font-weight:750;cursor:pointer}
+.stocktake-inline-options>button:hover{border-color:#93c5fd;background:#f8fbff}
+.stocktake-inline-options>button.is-selected{border-color:#2563eb;background:#eff6ff;color:#1d4ed8;box-shadow:0 0 0 1px rgba(37,99,235,.08)}
+.stocktake-inline-empty{padding:6px 8px;border-radius:7px;background:#fff;color:#64748b;font-size:10px;line-height:1.35}
+.stocktake-inline-add-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.stocktake-inline-add-actions button{min-height:29px!important}
+.stocktake-inline-color-select{display:grid;grid-template-columns:70px minmax(0,320px);align-items:center;gap:8px;min-width:0}
+.stocktake-inline-color-select>span,
+.stocktake-inline-size-choice>span{font-size:10px;font-weight:750;color:#475569}
+.stocktake-inline-color-select select{width:100%;min-width:0;min-height:34px}
+.stocktake-inline-size-choice{display:grid;grid-template-columns:70px minmax(0,1fr);align-items:start;gap:8px;min-width:0}
+
+@media(max-width:1180px){
+  .stocktake-inline-position-footer{padding-left:120px}
+  .stocktake-inline-color-panel{margin-left:120px}
+}
+@media(max-width:680px){
+  .stocktake-inline-position-footer{padding-left:0}
+  .stocktake-inline-color-panel{margin-left:0}
+  .stocktake-inline-color-select,
+  .stocktake-inline-size-choice{grid-template-columns:1fr;gap:4px}
+  .stocktake-inline-color-select select{max-width:none}
+}
+@media(max-width:420px){
+  .stocktake-inline-add-trigger{padding-left:6px!important;padding-right:6px!important}
+  .stocktake-inline-add-actions{align-items:stretch;flex-direction:column}
+  .stocktake-inline-add-actions button{width:100%}
+}

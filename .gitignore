@@ -1,0 +1,83 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# wrangler files
+.wrangler
+.codex-home
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
+
+# Local patch/history artifacts
+_step*_backup/
+_step*_patch/
+step*-backups/
+step*-output/
+backup-before-*.sql
+local-orders-backup.sql
+*.zip
+
+# === Orders-app GitHub bootstrap ===
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+.env
+.env.*
+!.env.example
+*.zip
+*.log
+npm-debug.log*
+_step*_source_backups/
+_step*/
+tools/github-bootstrap/
+.DS_Store
+Thumbs.db
+# === end Orders-app GitHub bootstrap ===
+
+# === Orders-app Git hygiene R2 ===
+node_modules/
+dist/
+.wrangler/
+.codex-home/
+.dev.vars
+.env
+.env.*
+!.env.example
+*.zip
+*.log
+npm-debug.log*
+/Context/
+/_*/
+/orders-app/
+/tools/github-bootstrap/
+/tools/github-bootstrap-r2/
+/APPLY_STEP*.cmd
+/CLOUDFLARE_CONTINUATION_CONTEXT_*.md
+/CHECK_ONLY.cmd
+/SETUP_AND_DEPLOY.cmd
+/README.txt
+# === end Orders-app Git hygiene R2 ===

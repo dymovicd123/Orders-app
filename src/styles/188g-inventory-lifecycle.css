@@ -1,0 +1,97 @@
+.inventory-lifecycle-callout {
+  margin-top: 10px;
+}
+
+.inventory-lifecycle-queue {
+  display: grid;
+  gap: 16px;
+}
+
+.inventory-lifecycle-head {
+  align-items: flex-start;
+}
+
+.inventory-lifecycle-task {
+  display: grid;
+  gap: 14px;
+}
+
+.inventory-lifecycle-task-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.inventory-lifecycle-task-head h3 {
+  margin: 6px 0 4px;
+}
+
+.inventory-lifecycle-task-head p {
+  margin: 0;
+}
+
+.inventory-lifecycle-direction {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid var(--border, #d9d9df);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.inventory-lifecycle-destination {
+  min-width: 150px;
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #d9d9df);
+  border-radius: 12px;
+  text-align: right;
+}
+
+.inventory-lifecycle-destination span,
+.inventory-lifecycle-destination small {
+  opacity: .72;
+}
+
+.inventory-lifecycle-safety-note,
+.inventory-lifecycle-exact-note {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #d9d9df);
+  border-radius: 12px;
+  background: var(--surface-muted, rgba(127, 127, 127, .06));
+}
+
+.inventory-lifecycle-safety-note span,
+.inventory-lifecycle-exact-note {
+  line-height: 1.45;
+}
+
+.inventory-lifecycle-form {
+  display: grid;
+  gap: 14px;
+}
+
+.inventory-lifecycle-facts {
+  margin-top: 4px;
+}
+
+.inventory-lifecycle-actions span {
+  max-width: 680px;
+}
+
+@media (max-width: 720px) {
+  .inventory-lifecycle-task-head {
+    display: grid;
+  }
+
+  .inventory-lifecycle-destination {
+    min-width: 0;
+    text-align: left;
+  }
+}

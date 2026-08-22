@@ -1,0 +1,77 @@
+/* Step 145: adaptive horizontal table controls.
+   - Page wheel scrolling is never intercepted.
+   - Top and bottom browser scrollbars exist only for real horizontal overflow.
+   - Mouse grab-to-pan is enabled only for overflowing desktop tables.
+   - Touch keeps native pan behaviour. */
+
+.table-shell {
+  height: auto !important;
+  max-height: none !important;
+  overflow-x: auto !important;
+  overflow-y: visible !important;
+  overscroll-behavior-x: contain !important;
+  overscroll-behavior-y: auto !important;
+  touch-action: auto;
+}
+
+.linked-table-scroll.fits-horizontally > .table-shell {
+  overflow-x: hidden !important;
+  cursor: default !important;
+  scrollbar-width: none;
+}
+
+.linked-table-scroll.fits-horizontally > .table-shell::-webkit-scrollbar {
+  display: none;
+}
+
+.linked-table-scroll.has-horizontal-overflow > .table-shell {
+  overflow-x: auto !important;
+  scrollbar-width: auto;
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+.table-shell[data-horizontal-overflow='false'] {
+  cursor: default !important;
+  touch-action: pan-y pinch-zoom;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .linked-table-scroll.has-horizontal-overflow > .table-shell,
+  .table-shell[data-horizontal-overflow='true'] {
+    cursor: grab !important;
+  }
+
+  .table-shell[data-horizontal-overflow='true'] :is(
+    button,
+    input,
+    textarea,
+    select,
+    option,
+    a,
+    label,
+    summary,
+    [role='button'],
+    [contenteditable='true']
+  ) {
+    cursor: revert;
+  }
+
+  .table-shell[data-horizontal-overflow='true'].is-horizontal-dragging,
+  .table-shell[data-horizontal-overflow='true'].is-horizontal-dragging * {
+    cursor: grabbing !important;
+  }
+}
+
+body.is-horizontal-table-dragging,
+body.is-horizontal-table-dragging * {
+  user-select: none !important;
+}
+
+/* Keep vertical page scrolling chainable even over long finance/report tables. */
+.finance-section .table-shell,
+.report-table-card .table-shell,
+.strict-day-card .table-shell,
+#orders .table-shell,
+.workshop-table-shell {
+  overscroll-behavior-y: auto !important;
+}

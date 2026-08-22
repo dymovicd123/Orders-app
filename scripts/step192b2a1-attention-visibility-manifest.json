@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "step": "192b2a1",
+  "frontend": {
+    "operationalStatementChanges": [
+      {
+        "index": 93,
+        "before": "e5022e42fcb712813f3dda6f102b7fc47f46ffcee36ef64d438ea8362f254fc0",
+        "after": "82f60b4021fd53f72b56f44eeb89bad144d606355167ea18f2dbd4546fb30e4c"
+      },
+      {
+        "index": 94,
+        "before": "e0a0fdc4de48c118122f09db585939215622b5b0ffac9d3f4c4047a26378ab6d",
+        "after": "14c8f1ff16fce698ee3b1722e899a8ef3c63240b0297982293dd6c4fd3062d79"
+      }
+    ]
+  }
+}

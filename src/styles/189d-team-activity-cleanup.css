@@ -1,0 +1,29 @@
+/* Step 189D: compact team/order history improvements without actor-audit complexity. */
+.team-activity-explainer {
+  margin: -4px 0 10px;
+  max-width: 760px;
+}
+.team-activity-load-more {
+  margin-top: 10px;
+  width: 100%;
+}
+.finance-money-history-order .manager-badge {
+  margin-top: 4px;
+  width: max-content;
+  max-width: 100%;
+}
+@media (max-width: 900px) {
+  .sector-team .report-grid.two-columns {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .history-card-main span {
+    white-space: normal;
+  }
+  .finance-money-history-order .manager-badge {
+    display: inline-flex;
+  }
+}
+
+.team-activity-inline-error { margin: 10px 0; }

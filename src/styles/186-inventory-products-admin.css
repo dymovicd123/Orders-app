@@ -1,0 +1,140 @@
+/* Step 186: one inventory workspace + product-owned reference lists. */
+
+.inventory-tabs-step186 {
+  display: grid !important;
+  gap: 8px !important;
+}
+
+.inventory-admin-tabs-step186 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.inventory-admin-tabs-label {
+  color: #64748b;
+  font-size: .72rem;
+  font-weight: 850;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  margin-right: 2px;
+}
+
+.inventory-admin-tabs-step186 > button {
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 11px;
+}
+
+.inventory-admin-tabs-step186 > button.is-active {
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, .34);
+  background: #eff6ff;
+}
+
+.inventory-tools-step186 {
+  margin-left: auto;
+}
+
+.inventory-tools-step186 > summary {
+  min-height: 40px;
+  padding: 0 13px;
+  border-radius: 11px;
+}
+
+.inventory-products-subtabs {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 4px;
+  margin-bottom: 14px;
+  border: 1px solid #dbe5ef;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.inventory-products-subtabs button {
+  min-height: 38px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #475569;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.inventory-products-subtabs button.is-active {
+  background: #fff;
+  color: #1d4ed8;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, .08);
+}
+
+.inventory-reference-manager {
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.inventory-reference-manager-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid #dbe5ef;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.inventory-reference-manager-head h4 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.inventory-reference-manager-head p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.inventory-reference-kind-grid {
+  margin-top: 0;
+}
+
+.inventory-reference-toolbar {
+  margin-top: 0;
+}
+
+.inventory-reference-layout {
+  margin-top: 0;
+}
+
+@media (max-width: 900px) {
+  .inventory-admin-tabs-step186 {
+    align-items: stretch;
+  }
+
+  .inventory-admin-tabs-label {
+    width: 100%;
+  }
+
+  .inventory-tools-step186 {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .inventory-admin-tabs-step186 > button,
+  .inventory-tools-step186,
+  .inventory-tools-step186 > summary {
+    width: 100%;
+  }
+
+  .inventory-reference-manager-head {
+    display: grid;
+  }
+}

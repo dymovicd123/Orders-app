@@ -1,0 +1,215 @@
+/* Step 188K.3 — simple, explicit handling of stock items that leave before workshop completion. */
+.order-stock-handover-trigger {
+  max-width: 170px;
+  white-space: normal;
+  line-height: 1.2;
+}
+
+.order-stock-handover-wait-note {
+  display: block;
+  max-width: 170px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: #7b5a12;
+}
+
+.order-stock-handover-backdrop {
+  padding: 18px;
+  overflow-y: auto;
+}
+
+.order-stock-handover-modal {
+  width: min(760px, calc(100vw - 36px));
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+}
+
+.order-stock-handover-head p {
+  max-width: 650px;
+  margin: 6px 0 0;
+}
+
+.order-stock-handover-loading,
+.order-stock-handover-empty {
+  padding: 20px;
+  border: 1px solid var(--line, #dbe3ee);
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.order-stock-handover-rule {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  margin: 12px 0 14px;
+  padding: 11px 13px;
+  border: 1px solid #d8e0ea;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.order-stock-handover-rule.is-workshop {
+  border-color: #ead7a1;
+  background: #fffaf0;
+}
+
+.order-stock-handover-rule.is-ready {
+  border-color: #bfe0c8;
+  background: #f4fbf6;
+}
+
+.order-stock-handover-rule strong,
+.order-stock-handover-rule span {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.order-stock-handover-list {
+  display: grid;
+  gap: 12px;
+}
+
+.order-stock-handover-item {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #dbe3ee;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.order-stock-handover-item.is-handover_review {
+  border-color: #e8cc8a;
+  background: #fffdf7;
+}
+
+.order-stock-handover-item.is-already_issued {
+  border-color: #bfe0c8;
+  background: #f8fcf9;
+}
+
+.order-stock-handover-item-main {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.order-stock-handover-item-main > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.order-stock-handover-item-main strong {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.order-stock-handover-item-main span,
+.order-stock-handover-item-main small {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.order-stock-handover-question,
+.order-stock-handover-ready-action > div,
+.order-stock-handover-result {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+}
+
+.order-stock-handover-question strong,
+.order-stock-handover-ready-action strong,
+.order-stock-handover-result strong {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.order-stock-handover-question span,
+.order-stock-handover-ready-action span,
+.order-stock-handover-result span {
+  color: #526174;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.order-stock-handover-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.order-stock-handover-choice {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  min-height: 68px;
+  padding: 10px 12px;
+  text-align: left;
+  white-space: normal;
+}
+
+.order-stock-handover-choice strong {
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.order-stock-handover-choice span {
+  font-size: 11px;
+  line-height: 1.3;
+  color: #64748b;
+}
+
+.order-stock-handover-ready-action {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.order-stock-handover-ready-action > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.order-stock-handover-ready-action button {
+  flex: 0 0 auto;
+}
+
+.order-stock-handover-result.is-done strong {
+  color: #176b37;
+}
+
+.order-stock-handover-result.is-attention strong {
+  color: #9a3412;
+}
+
+@media (max-width: 760px) {
+  .order-stock-handover-backdrop {
+    padding: 8px;
+  }
+
+  .order-stock-handover-modal {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+  }
+
+  .order-stock-handover-choice-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .order-stock-handover-ready-action,
+  .order-stock-handover-item-main {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .order-stock-handover-ready-action button {
+    width: 100%;
+  }
+}

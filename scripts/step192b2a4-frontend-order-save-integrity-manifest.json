@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "step": "192b2a4",
+  "frontend": {
+    "workspaceStatementChanges": [
+      {
+        "index": 23,
+        "before": "45c0152d1f4c001c396fa464e2f9d250c92127164c5d1442b9ba8d330f7e64e3",
+        "after": "81fa18704a29341a529ae6392f15d92b22fc06d5350439c7265051a911dd68ae"
+      }
+    ],
+    "apiHookChanges": {
+      "prepareCriticalRequest": {
+        "before": "92684d98ea2b8663efb1e2a2b3807821d0177ab0c3c60116ee36af86880785b9",
+        "after": "24541824cffc351273c96bbdcdf4a1daca4a6e7306c8cd5a72462be058f72b5a"
+      },
+      "completeCriticalRequest": {
+        "before": "a2bef08f6491083e8834b89a5b4895f7c1188b62d8739eb1953e1769aeca9a3f",
+        "after": "a9c6db5f7aef9fd4242ba6d6ab2f1a1339d955cc7b718758a8ae7b1c677e2e6e"
+      },
+      "apiFetch": {
+        "before": "b371b279527db5500905cad14815bfee66c2859c07f56354ffa7848b9f996d7c",
+        "after": "2bd918570ad9dfa20f5272b39334da28c5bcb2b01bd46f044e2ac68a25064c87"
+      }
+    },
+    "apiTopAdded": {
+      "criticalRequestFingerprintTag": "af518b09557b71d8ee400c2b2171528cbb8005c43e09533a25e5b51000f5cf34",
+      "criticalRequestStorageKey": "43d17fdcea61ce8e1daf1ec2ac4969485520e72970d5104a77489484d6f1e6ed"
+    }
+  }
+}

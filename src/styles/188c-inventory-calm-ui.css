@@ -1,0 +1,266 @@
+/* Step 188C — calm human inventory UI. New component classes intentionally avoid the old stock matrix CSS. */
+.inventory-calm-stock { padding: 0; }
+.inventory-calm-head,
+.catalog-calm-review-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px 12px;
+}
+.inventory-calm-head h3,
+.catalog-calm-review-head h3 { margin: 0 0 5px; font-size: 20px; }
+.inventory-calm-head p,
+.catalog-calm-review-head p { margin: 0; color: var(--muted, #64748b); max-width: 760px; line-height: 1.45; }
+.inventory-calm-toolbar {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 0 20px 12px;
+}
+.inventory-calm-search { display: flex; gap: 8px; min-width: 0; }
+.inventory-calm-search > *:first-child { flex: 1; min-width: 0; }
+.inventory-calm-source,
+.inventory-calm-filters,
+.inventory-calm-extra-filter > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.inventory-calm-source,
+.inventory-calm-filters {
+  border-radius: 12px;
+}
+.inventory-calm-source button,
+.inventory-calm-filters > button,
+.inventory-calm-extra-filter summary,
+.inventory-calm-extra-filter button {
+  border: 1px solid #dbe3ef;
+  background: #fff;
+  color: #334155;
+  border-radius: 10px;
+  padding: 8px 11px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.inventory-calm-source button.is-active,
+.inventory-calm-filters > button.is-active,
+.inventory-calm-extra-filter button.is-active {
+  border-color: #9ab7ff;
+  background: #eef4ff;
+  color: #1d4ed8;
+}
+.inventory-calm-summary {
+  margin: 0 20px 12px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, 1fr)) minmax(180px, .8fr);
+  gap: 8px;
+}
+.inventory-calm-summary > div,
+.inventory-calm-summary > details {
+  border: 1px solid #e1e8f2;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 12px 14px;
+  min-width: 0;
+}
+.inventory-calm-summary > div { display: grid; gap: 2px; }
+.inventory-calm-summary > div.is-primary { background: #eef5ff; border-color: #c9dafd; }
+.inventory-calm-summary span { color: #64748b; font-size: 12px; font-weight: 700; }
+.inventory-calm-summary strong { font-size: 22px; line-height: 1.1; color: #0f172a; }
+.inventory-calm-summary small { color: #64748b; font-size: 11px; }
+.inventory-calm-summary details summary { cursor: pointer; font-weight: 700; color: #334155; }
+.inventory-calm-summary details p { margin: 8px 0 0; font-size: 12px; line-height: 1.45; color: #64748b; }
+.inventory-calm-filters { padding: 0 20px 12px; }
+.inventory-calm-extra-filter { position: relative; }
+.inventory-calm-extra-filter summary { list-style: none; }
+.inventory-calm-extra-filter summary::-webkit-details-marker { display: none; }
+.inventory-calm-extra-filter[open] > div {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 220px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+  box-shadow: 0 12px 35px rgba(15, 23, 42, .12);
+}
+.inventory-calm-note { margin: -2px 20px 12px; color: #64748b; font-size: 12px; }
+.inventory-calm-list { display: grid; gap: 8px; padding: 0 12px 16px; }
+.inventory-calm-product {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.inventory-calm-product.needs-attention { border-color: #f1c98a; }
+.inventory-calm-product-main {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.6fr) minmax(120px, .45fr) minmax(180px, .7fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+}
+.inventory-calm-product-name,
+.inventory-calm-variant-name { min-width: 0; display: grid; gap: 3px; }
+.inventory-calm-product-name strong { font-size: 15px; color: #0f172a; }
+.inventory-calm-product-name span,
+.inventory-calm-variant-name span { color: #64748b; font-size: 12px; overflow-wrap: anywhere; }
+.inventory-calm-product-free,
+.inventory-calm-variant-free { display: grid; gap: 1px; }
+.inventory-calm-product-free strong { font-size: 17px; color: #0f172a; }
+.inventory-calm-product-free span,
+.inventory-calm-variant-free span { color: #64748b; font-size: 11px; }
+.inventory-calm-product-secondary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; color: #64748b; font-size: 12px; }
+.inventory-calm-product-secondary b { color: #334155; }
+.inventory-reservation-link {
+  border: 0;
+  background: transparent;
+  padding: 2px 0;
+  color: #2563eb;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: #bfdbfe;
+  text-underline-offset: 3px;
+}
+.inventory-reservation-link:hover { color: #1d4ed8; text-decoration-color: currentColor; }
+.inventory-calm-detail-button { white-space: nowrap; }
+.inventory-calm-variants { border-top: 1px solid #edf1f7; background: #fbfcfe; padding: 4px 12px 10px; }
+.inventory-calm-variant {
+  display: grid;
+  grid-template-columns: minmax(200px, 1.4fr) minmax(90px, .4fr) minmax(110px, .45fr) minmax(115px, .5fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 4px;
+  border-bottom: 1px solid #edf1f7;
+}
+.inventory-calm-variant:last-child { border-bottom: 0; }
+.inventory-calm-variant-free strong { font-size: 14px; }
+.inventory-calm-variant-physical,
+.inventory-calm-no-reserve { color: #64748b; font-size: 12px; }
+.inventory-calm-variant-physical b { color: #334155; }
+.inventory-calm-empty { margin: 4px 8px; }
+.inventory-calm-detail-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(15, 23, 42, .26);
+  display: flex;
+  justify-content: flex-end;
+}
+.inventory-calm-detail {
+  width: min(620px, 94vw);
+  height: 100%;
+  overflow: auto;
+  background: #fff;
+  padding: 20px;
+  box-shadow: -16px 0 40px rgba(15, 23, 42, .18);
+}
+.inventory-calm-detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.inventory-calm-detail-head span { color: #64748b; font-size: 12px; font-weight: 700; }
+.inventory-calm-detail-head h3 { margin: 3px 0; font-size: 21px; }
+.inventory-calm-detail-head p { margin: 0; color: #64748b; line-height: 1.4; }
+.inventory-calm-detail-numbers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 18px 0; }
+.inventory-calm-detail-numbers > div { border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 12px; padding: 12px; display: grid; gap: 3px; }
+.inventory-calm-detail-numbers > div.is-primary { background: #eef5ff; border-color: #c9dafd; }
+.inventory-calm-detail-numbers span { color: #64748b; font-size: 12px; }
+.inventory-calm-detail-numbers strong { font-size: 24px; }
+.inventory-calm-warning,
+.catalog-calm-warning { display: grid; gap: 4px; border-radius: 12px; background: #fff7e8; border: 1px solid #f1d49b; padding: 12px 14px; color: #854d0e; }
+.inventory-calm-warning span,
+.catalog-calm-warning span { font-size: 12px; line-height: 1.45; }
+.inventory-calm-reservations { margin-top: 18px; }
+.inventory-calm-reservations-head { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.inventory-calm-reservations-head span { color: #64748b; font-size: 12px; }
+.inventory-calm-reservation { display: grid; grid-template-columns: minmax(180px, 1fr) auto auto; align-items: center; gap: 10px; border-top: 1px solid #edf1f7; padding: 10px 0; }
+.inventory-calm-reservation-main { display: grid; gap: 2px; }
+.inventory-calm-reservation-main span,
+.inventory-calm-reservation-main small { color: #64748b; font-size: 11px; }
+.inventory-calm-detail-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+
+.catalog-calm-review { padding-bottom: 20px; }
+.catalog-calm-auto-note { margin: 0 20px 12px; padding: 10px 12px; border: 1px solid #bfe0c7; background: #f0faf3; border-radius: 10px; color: #166534; font-size: 12px; }
+.catalog-calm-progress { margin: 0 20px 10px; display: flex; justify-content: space-between; gap: 12px; color: #64748b; font-size: 12px; }
+.catalog-calm-progress strong { color: #334155; }
+.catalog-calm-task { margin: 0 20px; border: 1px solid #dfe7f2; border-radius: 14px; background: #fff; overflow: hidden; }
+.catalog-calm-task-input { padding: 18px 18px 12px; }
+.catalog-calm-task-input > span { color: #64748b; text-transform: uppercase; letter-spacing: .05em; font-size: 11px; font-weight: 800; }
+.catalog-calm-task-input h3 { margin: 5px 0 3px; font-size: 21px; }
+.catalog-calm-task-input p { margin: 0; color: #64748b; line-height: 1.45; }
+.catalog-calm-orders { padding: 0 18px 14px; display: grid; gap: 7px; }
+.catalog-calm-orders > span { color: #64748b; font-size: 12px; }
+.catalog-calm-orders > div { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.catalog-calm-orders button { border: 1px solid #dbe3ef; background: #f8fafc; border-radius: 9px; padding: 6px 9px; color: #334155; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.catalog-calm-warning { margin: 0 18px 14px; }
+.catalog-calm-choice { border-top: 1px solid #edf1f7; padding: 16px 18px; }
+.catalog-calm-choice-head { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; margin-bottom: 9px; }
+.catalog-calm-choice-head span { color: #64748b; font-size: 12px; }
+.catalog-calm-suggestions { display: grid; gap: 7px; }
+.catalog-calm-suggestions button { display: flex; justify-content: space-between; gap: 12px; align-items: center; text-align: left; border: 1px solid #dbe3ef; background: #fff; border-radius: 10px; padding: 10px 12px; font: inherit; cursor: pointer; }
+.catalog-calm-suggestions button:hover,
+.catalog-calm-suggestions button.is-selected { border-color: #9ab7ff; background: #f2f6ff; }
+.catalog-calm-suggestions button span { color: #334155; font-size: 12px; line-height: 1.35; }
+.catalog-calm-suggestions button b { color: #2563eb; white-space: nowrap; font-size: 12px; }
+.catalog-calm-no-suggestion { margin: 0; color: #64748b; font-size: 12px; }
+.catalog-calm-search-toggle { margin-top: 10px; }
+.catalog-calm-search-box { margin-top: 8px; display: grid; gap: 6px; }
+.catalog-calm-search-box input { width: 100%; }
+.catalog-calm-search-box small { color: #64748b; }
+.catalog-calm-search-results { display: grid; gap: 4px; max-height: 260px; overflow: auto; padding: 4px; border: 1px solid #e2e8f0; border-radius: 10px; }
+.catalog-calm-search-results button { text-align: left; border: 0; background: transparent; padding: 8px 9px; border-radius: 7px; color: #334155; font: inherit; font-size: 12px; cursor: pointer; }
+.catalog-calm-search-results button:hover,
+.catalog-calm-search-results button.is-selected { background: #eef4ff; color: #1d4ed8; }
+.catalog-calm-confirm { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: 0 18px 16px; background: #eef5ff; border: 1px solid #cbdcfd; border-radius: 11px; padding: 12px; }
+.catalog-calm-confirm > div { min-width: 0; display: grid; gap: 3px; }
+.catalog-calm-confirm span { color: #64748b; font-size: 11px; }
+.catalog-calm-confirm strong { font-size: 12px; overflow-wrap: anywhere; }
+.catalog-calm-new-product { border-top: 1px solid #edf1f7; background: #fafbfc; padding: 13px 18px; display: flex; justify-content: space-between; align-items: center; gap: 14px; }
+.catalog-calm-new-product > div { display: grid; gap: 3px; }
+.catalog-calm-new-product span { color: #64748b; font-size: 12px; line-height: 1.4; }
+.catalog-calm-navigation { display: flex; justify-content: space-between; gap: 10px; margin: 12px 20px 0; }
+
+@media (max-width: 900px) {
+  .inventory-calm-toolbar { grid-template-columns: 1fr; }
+  .inventory-calm-summary { grid-template-columns: repeat(3, 1fr); }
+  .inventory-calm-summary > details { grid-column: 1 / -1; }
+  .inventory-calm-product-main { grid-template-columns: minmax(180px, 1fr) auto auto; }
+  .inventory-calm-product-secondary { grid-column: 1 / 3; }
+  .inventory-calm-detail-button { grid-column: 3; grid-row: 1 / 3; }
+  .inventory-calm-variant { grid-template-columns: minmax(180px, 1fr) auto auto; }
+  .inventory-calm-variant .inventory-reservation-link,
+  .inventory-calm-variant .inventory-calm-no-reserve { grid-column: 1 / 3; }
+}
+@media (max-width: 640px) {
+  .inventory-calm-head,
+  .catalog-calm-review-head { padding: 14px 12px 10px; }
+  .inventory-calm-toolbar,
+  .inventory-calm-filters { padding-left: 12px; padding-right: 12px; }
+  .inventory-calm-summary { margin-left: 12px; margin-right: 12px; grid-template-columns: 1fr 1fr; }
+  .inventory-calm-summary > div.is-primary { grid-column: 1 / -1; }
+  .inventory-calm-product-main { grid-template-columns: 1fr auto; gap: 8px; }
+  .inventory-calm-product-free { text-align: right; }
+  .inventory-calm-product-secondary { grid-column: 1 / -1; }
+  .inventory-calm-detail-button { grid-column: 1 / -1; grid-row: auto; width: 100%; }
+  .inventory-calm-variant { grid-template-columns: 1fr auto; }
+  .inventory-calm-variant-physical { grid-column: 1; }
+  .inventory-calm-variant .inventory-reservation-link,
+  .inventory-calm-variant .inventory-calm-no-reserve { grid-column: 1; }
+  .inventory-calm-detail { width: 100%; }
+  .inventory-calm-detail-numbers { grid-template-columns: 1fr 1fr; }
+  .inventory-calm-detail-numbers .is-primary { grid-column: 1 / -1; }
+  .inventory-calm-reservation { grid-template-columns: 1fr auto; }
+  .inventory-calm-reservation button { grid-column: 1 / -1; }
+  .catalog-calm-task,
+  .catalog-calm-progress,
+  .catalog-calm-navigation,
+  .catalog-calm-auto-note { margin-left: 12px; margin-right: 12px; }
+  .catalog-calm-confirm,
+  .catalog-calm-new-product { align-items: stretch; flex-direction: column; }
+}

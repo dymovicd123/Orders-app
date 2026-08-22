@@ -1,0 +1,23 @@
+/* Step 188E bridge fix: controlled stocktake discovery + calm review selectors. */
+.stocktake-e-count-control { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
+.stocktake-zero-button, .stocktake-clear-button { white-space: nowrap; min-height: 34px; }
+.stocktake-e-row-save { min-width: 88px; color: var(--muted, #64748b); font-size: 12px; }
+.stocktake-e-found-controlled { display: grid; gap: 14px; }
+.stocktake-found-grid, .catalog-review-controlled-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.stocktake-found-grid label, .stocktake-found-create-grid label, .catalog-review-controlled-grid label { display: grid; gap: 6px; }
+.stocktake-found-grid label > span, .stocktake-found-create-grid label > span, .catalog-review-controlled-grid label > span { color: #52637a; font-size: 12px; font-weight: 700; }
+.stocktake-found-grid select, .stocktake-found-create-grid select, .catalog-review-controlled-grid select { width: 100%; min-height: 40px; border: 1px solid #d7e0ec; border-radius: 10px; background: #fff; padding: 0 10px; }
+.stocktake-found-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.stocktake-found-create { border: 1px solid #d8e5f7; background: #f8fbff; border-radius: 14px; padding: 14px; display: grid; gap: 12px; }
+.stocktake-found-create-head { display: grid; gap: 4px; }
+.stocktake-found-create-head span { color: #60708a; font-size: 13px; line-height: 1.4; }
+.stocktake-found-create-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.catalog-review-controlled { border-top: 1px solid #e5eaf1; border-bottom: 1px solid #e5eaf1; padding: 16px 18px; display: grid; gap: 12px; }
+.catalog-review-controlled-note { border-radius: 10px; background: #fff8e6; color: #7b5810; padding: 10px 12px; font-size: 13px; }
+@media (max-width: 900px) {
+  .stocktake-found-grid, .catalog-review-controlled-grid { grid-template-columns: 1fr; }
+  .stocktake-found-create-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .stocktake-found-create-grid { grid-template-columns: 1fr; }
+}

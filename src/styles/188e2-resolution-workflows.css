@@ -1,0 +1,59 @@
+/* Step 188E.2 — resolution workflows and point stocktake */
+.catalog-resolution-v2 .catalog-calm-review-head { align-items: flex-start; }
+.catalog-resolution-task { overflow: hidden; }
+.catalog-resolution-loading { padding: 18px; border-top: 1px solid #e4ebf5; color: #5f6f86; }
+.catalog-resolution-issue { margin: 0 18px 16px; padding: 14px 16px; border: 1px solid #dbe6f4; border-radius: 14px; background: #f7faff; display: grid; gap: 4px; }
+.catalog-resolution-issue strong { font-size: 15px; }
+.catalog-resolution-issue span { color: #5a6b82; line-height: 1.4; }
+.catalog-resolution-issue.issue-unknown_attribute { border-color: #f0d9a6; background: #fff9ed; }
+.catalog-resolution-issue.issue-exact_existing,
+.catalog-resolution-issue.issue-missing_combination { border-color: #bfe2cb; background: #f2fbf5; }
+.catalog-resolution-form { margin: 0 18px 18px; display: grid; gap: 14px; }
+.catalog-resolution-product { display: grid; gap: 6px; max-width: 720px; }
+.catalog-resolution-form label > span { font-weight: 700; font-size: 12px; color: #42536a; }
+.catalog-resolution-form select,
+.catalog-resolution-form input { width: 100%; min-height: 42px; border: 1px solid #cfd9e8; border-radius: 10px; background: white; padding: 0 12px; }
+.catalog-resolution-new-product { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: #5b6d84; }
+.catalog-resolution-facts-grid { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 12px; }
+.catalog-resolution-facts-grid label { display: grid; gap: 6px; align-content: start; padding: 10px; border: 1px solid #e0e7f0; border-radius: 12px; background: #fbfcfe; }
+.catalog-resolution-facts-grid label.needs-choice { border-color: #f0cf8a; background: #fffaf0; }
+.catalog-resolution-facts-grid label button { justify-self: start; }
+.catalog-resolution-workshop-note { padding: 14px; border-radius: 12px; background: #f4f7fb; color: #4c5c72; }
+.catalog-resolution-actions { margin: 0 18px 18px; padding-top: 14px; border-top: 1px solid #e4eaf2; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.catalog-resolution-actions > span { color: #66768c; font-size: 12px; max-width: 720px; }
+
+.stocktake-found-facts { display: grid; gap: 14px; }
+.stocktake-found-product-line { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+.stocktake-found-product-line > div { min-width: 280px; display: grid; gap: 4px; }
+.stocktake-found-product-line > div span { font-size: 12px; color: #66768c; }
+.stocktake-found-product-line label { min-width: min(460px, 100%); display: grid; gap: 5px; }
+.stocktake-found-product-line select,
+.stocktake-found-facts-grid select,
+.stocktake-found-facts-grid input { min-height: 42px; border: 1px solid #ccd8ea; border-radius: 10px; background: white; padding: 0 11px; }
+.stocktake-found-facts-grid { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 12px; }
+.stocktake-found-facts-grid label { display: grid; gap: 6px; align-content: start; }
+.stocktake-found-facts-grid label > span { font-size: 12px; font-weight: 700; color: #42536a; }
+.stocktake-found-new-value { border-color: #e7bc64 !important; background: #fffaf0 !important; }
+.stocktake-found-actions-human { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.stocktake-found-actions-human span { color: #66768c; font-size: 12px; max-width: 760px; }
+
+.inventory-quick-stocktake { border-top: 1px solid #e5ebf3; padding-top: 14px; display: grid; gap: 10px; }
+.inventory-quick-stocktake-body { padding: 14px; border: 1px solid #d8e4f2; border-radius: 14px; background: #f8fbff; display: grid; grid-template-columns: minmax(260px, 1fr) 150px auto; gap: 12px; align-items: end; }
+.inventory-quick-stocktake-body > div { display: grid; gap: 4px; }
+.inventory-quick-stocktake-body > div span { color: #65758b; font-size: 12px; }
+.inventory-quick-stocktake-body label { display: grid; gap: 5px; }
+.inventory-quick-stocktake-body label span { font-size: 12px; font-weight: 700; }
+.inventory-quick-stocktake-body input { min-height: 42px; border: 1px solid #c9d7e8; border-radius: 10px; padding: 0 10px; }
+.inventory-quick-stocktake-notice { grid-column: 1 / -1; margin: 0; font-size: 12px; color: #4d6078; }
+.inventory-quick-stocktake-hint { color: #66768c; font-size: 12px; }
+
+@media (max-width: 900px) {
+  .catalog-resolution-facts-grid,
+  .stocktake-found-facts-grid { grid-template-columns: repeat(2, minmax(160px, 1fr)); }
+  .inventory-quick-stocktake-body { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  .catalog-resolution-facts-grid,
+  .stocktake-found-facts-grid { grid-template-columns: 1fr; }
+  .catalog-resolution-actions { align-items: stretch; }
+}

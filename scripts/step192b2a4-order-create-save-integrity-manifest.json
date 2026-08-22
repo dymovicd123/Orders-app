@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "step": "192b2a4",
+  "changes": {
+    "normalizeOrderItems": {
+      "before": "cbd82a35dbd80d07f14cdb55d5b9ac67372ca31d6f1342feca92e34c1b802eba",
+      "after": "04caa76bb41947febabf4642b5ad71be560dbb81db8e66be593d90ed3d797b8e"
+    },
+    "assertCreateOrderShortageDecisions": {
+      "before": "0073d454b41bb38de3faadffa173fc957c55a10478b1a73a5267c8ad027a4d1b",
+      "after": "5dfc3d9b74cc9115d1ec84f4b0280c38bee5a2503512d6bb5db945882af08183"
+    },
+    "reserveOrderItemV2": {
+      "before": "94823fc09cd0673397833e1055d7db55d3a95bae130140433071918ba35c84dc",
+      "after": "7e170771def60e3551bb2267d5fa40ac5f98a6e7da07bc2cd203e1364ef02c84"
+    },
+    "reconcileIssuedBeforeCheckpoint": {
+      "before": "98506745a49d6f4160ff3e7025ee53847e2fb367fd6ccfb9ae183178e81225d5",
+      "after": "af2e03225f012159e7c4fdd0e64fd5c1fc54653dcf3ab1ecffe082f040b4db04"
+    },
+    "confirmItemStillHere": {
+      "before": "063248b643855b1f28042eda037fa26ea8358053f072def73b7bd3f0f1f2f9ac",
+      "after": "a0027de80ff0ba8e3ba1042413d327c9340a04131b509739707995ef61471ac3"
+    },
+    "archiveOrders": {
+      "before": "aa6f766145f0f26ff4ca839ec3bf5db57b1306488091bb265d77c17e8ba0fc46",
+      "after": "35e0731619fd59602c3e95e59bc88f6306fdbd40e58b6d680559a6f0ae107050"
+    },
+    "restoreArchivedOrder": {
+      "before": "66867914b5df81d06318b212914f97402e694c81e0e8b94ada60f497bd0a2860",
+      "after": "15be45c8ca5cc5043dcf0130bb686fecc9f161e393be4d21bb726e7ee6d6ba63"
+    },
+    "applyOrderStockWriteOff": {
+      "before": "42c6dcb61a9ece7f43a21c24af418ebd6e98494d655a192c06f0d22f027c1b14",
+      "after": "0865fa29466b125fbc6f17eb49b843809b31c300d8958e6f538b14bbde11690b"
+    },
+    "reverseOrderStockWriteOffsForEdit": {
+      "before": "df1dd79720602c10bf85a81d7c725802234d965c0e5647499c87dc1de8b6e79c",
+      "after": "6a44f266d6a1e5c48b2807296955f1b0585173fb0269eccaa997e7c1e19a8b5f"
+    },
+    "retireOrderItemsForRewrite": {
+      "before": "80a0c9b5150a44e2c41bcb0e4d13db6c3032de784a94addbe3a00eba5a86b541",
+      "after": "a5820342a254bbc90ff093aab4c56953262e6a874b7caf7ce2827ed2260673af"
+    },
+    "createOrder": {
+      "before": "6a1d129b111aefe0a7011be46d7395fc6d838a9aeea009488010c17ad7ee95e4",
+      "after": "265118959cfcfdbf5a66004c8bf5b34d6eabbd747ff8d56906781a5cce23702c"
+    },
+    "updateOrderCritical": {
+      "before": "e02932d7bc921cd1e1db701d036d9848df985e876f29e4c555483fa0ad1286e8",
+      "after": "931045bba9565cb5643d8e8c9a0783f981e17aa61d7c2c4724332dee68c72b2e"
+    },
+    "getOrder": {
+      "before": "5a5323b52b723725f592584104217d8ff6d17afc91b8ec81e18ebb8d714336af",
+      "after": "6d24d8b68f17c4130fcc56431ce6786750f1d016e50bab24b21b56ff8e2c9a58"
+    },
+    "upsertCustomerId": {
+      "before": "42b8fa7341098b937e0168f39b9735c34b40cacd87f2ae8b2d7ead170a9b3ba2",
+      "after": "cde8f86e352b172a5857d77d4674b2fec79004ec94d9fb236d1abf1e77c5129e"
+    },
+    "createReturn": {
+      "before": "3967c2aede5f68d4a00a32005ea0b65378af899d71828dd74e69b13c87aaff00",
+      "after": "a378429a8b486508f1f6ab0895c79199287da4c53fa61d6f8d560f01ec98de1e"
+    },
+    "createExchange": {
+      "before": "b652471f659920b2b341d78e5757b68df5d9ad303041b6bbc627b33034ff0c48",
+      "after": "bfa61470742f16b54180a0106e272e04146171d69107a09ab2ee136cd85f0703"
+    },
+    "cancelReturn": {
+      "before": "ac8569a8e28687008d4ed203d9c803376c22be6d3ec68e636dca90abc6d2e184",
+      "after": "6f74c59b8bc1babed9538ab434f26498448f7324ce9ee40922d1adeb026117b2"
+    },
+    "cancelExchange": {
+      "before": "b7860ee02c55e4342ba930f2edab526916cea8032f2a4e982c678f6ba00cbf9f",
+      "after": "84307674f8f32ee2baa21922ca5e399a5cdffa85cf779647c78abe0c266aed8a"
+    },
+    "assertWorkshopTaskDetailSchema": {
+      "before": "73d8aa8908d6732ed6fc127d562d94ace74f5161beced08babdd8c14557f5867",
+      "after": "94004abdff1689e124ee6dd3ebe9eba58cb1e455329fdf1cc503c9fc2739166f"
+    }
+  },
+  "added": {
+    "createManualOrderPaymentCritical": "4b81f9ddb185f737376b98cc14dc45530948072cade6deba9971f644d62bfae5",
+    "OrderInputValidationError": "73e6f1e89f5e793418cdc2c245f7965af6c4f30593c90c09b33248d5e911fb20",
+    "assertOrderItemInputs": "26f1ba55acf1b17943b68f30d62e16f9b4e2dc5c99edfbcb3462632ee0e513f0",
+    "assertOrderTotalInput": "5c5e3ae3c8f1ca0f8f82feb3ca514c037c1d7cbb7c287d11246cd790de9bc8e3",
+    "assertOrderPaymentInputs": "2479f2252c8b46b4785c070450b31323f00aa776565846d30627be8715e60115",
+    "OrderStockShortage": "09937b3105fb866a28172cfa0e4d7b8651bb17cfb3e90eebce79054932d74084",
+    "OrderStockShortageError": "0f4c800f8bfe0bb992c4ea2b00c5ca77e0914f50c050c2cde4a37df75413a9f9",
+    "markCreateCustomerOrderCount": "fd5f87e0ead07d34278fc5003991dc1ebda8b0ff8a5a953f2f7238b8eb9fc012",
+    "upsertCustomerIdentityForOrderCreate": "7da47e591a9f770fb881d94c9844b2fb8044fe308d15cd933dec65e36cd77d1d"
+  },
+  "removed": {},
+  "router": {
+    "before": "73d123f3a396f1ff8fd42a0d7e5dea6c7785fb782efe4f27807bda4d6751df74",
+    "after": "19d575f0a9d4768fe0d09c4860517a92b49a5ad39cc7c1ec143a156e68930517"
+  }
+}

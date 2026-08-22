@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "step": "192a1",
+  "changes": {
+    "resolveInventoryLifecycleCandidate": {
+      "before": "e569f549d08806dd0861caf6a2a22484a879fd0ba5418e3fde4cb96cc4cda11d",
+      "after": "384d5a67a5a25c04d8a4fb23617485181eb0fc28a0d1deaef725f09f8d9a77e6"
+    },
+    "createReturn": {
+      "before": "dae73877f568cc4b5e8f3dc0fdcf89f77f53b0ac2c96bfc776a8b1f448f6fe1d",
+      "after": "3967c2aede5f68d4a00a32005ea0b65378af899d71828dd74e69b13c87aaff00"
+    },
+    "createExchange": {
+      "before": "69d08923a5ef93a02916fee5472c2f5ca1888e3dd7dcb01048cedc6a56a76f93",
+      "after": "b652471f659920b2b341d78e5757b68df5d9ad303041b6bbc627b33034ff0c48"
+    }
+  },
+  "added": {
+    "resolveWorkshopCatalogExactCandidate": "9da4b7f07f9d7ef34cb720d24675c20892ed007abbbd02e845e0705574043cca",
+    "trustedInventoryFullStocktakeBoundary": "5a7e8ed9d769eaa2f5b72b97d0c07340c29ff921cb097cdc1860d5bd6731a161",
+    "canAutoApplyFreshWorkshopInbound": "cf0d9bca66384f9bcae2d3b0150275188f0aa99b1a647409f509d84934147a50"
+  },
+  "router": {
+    "before": "f82e226158f02d6ccae636a0b843a72f99afa212033e8accdc19f78552ab51bc",
+    "after": "f82e226158f02d6ccae636a0b843a72f99afa212033e8accdc19f78552ab51bc"
+  }
+}

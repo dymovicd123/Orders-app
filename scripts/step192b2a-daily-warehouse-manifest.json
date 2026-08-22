@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "changes": {
+    "OrderInput": {
+      "before": "c8750cc70d5b0abc22a9dfd85be51a51434970fc645cf7242e18cf1692a6d894",
+      "after": "86b4994f2d1d37aab122effc0642383e99669e6df6969bfff94ffce1b2ee57f9"
+    },
+    "normalizeOrderItems": {
+      "before": "e17ff98cb0b9fecdd765dbe66c3e26b6164d1c68edd8dfac1479971b3e0d66fa",
+      "after": "cbd82a35dbd80d07f14cdb55d5b9ac67372ca31d6f1342feca92e34c1b802eba"
+    },
+    "fetchOrderStockHandoverRows": {
+      "before": "81d8208acf66f329089e09e6f106708753baef2f30aabe0d335b923146165f9a",
+      "after": "1bff620df2adfeb19416c3524816ead9ffed904ddadaf9e4c6e2721ebf154d42"
+    },
+    "createOrder": {
+      "before": "4b98808e67d3e138384c908e30de862a4c6b67418a00f539bfb679a80ad92898",
+      "after": "6a1d129b111aefe0a7011be46d7395fc6d838a9aeea009488010c17ad7ee95e4"
+    },
+    "getWarehouseAttentionSummary": {
+      "before": "81b1d81fce36197f9fdd0164f5e573e8656097a641b326704c085a5a522387cd",
+      "after": "d8833609f5769ef146ff084c801330b6f3e70c5f71fdac5b46c300505990a01d"
+    }
+  },
+  "added": {
+    "assertCreateOrderShortageDecisions": "0073d454b41bb38de3faadffa173fc957c55a10478b1a73a5267c8ad027a4d1b",
+    "ATTENTION_DETAIL_LIMIT": "f2b3cc1be3f2363dbd6e31d6c90e5eaf00af8d8ec042049cdc9672eba90c98ca",
+    "clampLimit": "78309f7217d3388bbe566f34c80f9791540f11c4cc4b506837fd0bcedade34c6"
+  },
+  "removed": {},
+  "router": {
+    "before": "4e304adc23edfd39aa9e782db4c9971129dc0c6f4b74fd01380d05d9d455b5c6",
+    "after": "92d2bf766a14be13b3975b4510cfc9f2e8ab208b48ef1ede38b28701d197db6a"
+  },
+  "step": "192b2a",
+  "frontend": {
+    "inventoryHookRewrite": {
+      "index": 113,
+      "before": [
+        "useMemo",
+        "useMemo",
+        "useEffect"
+      ],
+      "after": [
+        "useEffect",
+        "useInventoryAttentionActions"
+      ]
+    },
+    "workspaceStatementChange": {
+      "index": 23,
+      "before": "59a439d1d4f2a2093634f9c96e150fd552b1e7bb1923808746d296f85d5afa01",
+      "after": "45c0152d1f4c001c396fa464e2f9d250c92127164c5d1442b9ba8d330f7e64e3"
+    },
+    "panelReturnChanges": {
+      "renderInventoryOverviewPanel": {
+        "before": "684de67c019dc64ce3c912f2d1f277f1d266c89577fa5884c2ae1e771c1eec2c",
+        "after": "8e1fa7024060917e3e20c632973e9ffffa49cb8f975b6ad42cf245f0f50eee11"
+      }
+    }
+  }
+}

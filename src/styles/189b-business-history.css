@@ -1,0 +1,562 @@
+/* Step 189B: compact, readable business histories. No new workflow semantics. */
+.history-cards-panel {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.history-section-head {
+  align-items: flex-start;
+}
+
+.history-section-head > div {
+  min-width: 0;
+}
+
+.history-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.7fr) minmax(125px, .75fr) minmax(125px, .75fr) minmax(150px, .8fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin: 0 0 12px;
+}
+
+.history-filter-bar label,
+.history-search-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.history-filter-bar label > span,
+.history-search-field > span {
+  color: #64748b;
+  font-size: .76rem;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+
+.history-filter-bar input,
+.history-filter-bar select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.history-filter-submit {
+  min-height: 42px;
+}
+
+.history-summary-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 14px;
+  margin: 0 0 12px;
+  color: #475569;
+  font-size: .86rem;
+}
+
+.history-summary-line > span {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+}
+
+.history-load-state {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px dashed rgba(37, 99, 235, .18);
+  background: rgba(255, 255, 255, .74);
+  color: #475569;
+}
+
+.history-load-state strong {
+  color: #0f172a;
+}
+
+.history-load-state.is-error {
+  border-color: rgba(185, 28, 28, .22);
+  background: #fff7f7;
+}
+
+.history-card-list {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.history-card {
+  min-width: 0;
+  border: 1px solid rgba(15, 23, 42, .10);
+  border-radius: 15px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.history-card[open] {
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .06);
+}
+
+.history-card.is-cancelled {
+  background: #fffafa;
+}
+
+.history-card > summary {
+  list-style: none;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: minmax(100px, .65fr) minmax(190px, 1.7fr) minmax(120px, .8fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 13px;
+  min-width: 0;
+}
+
+.history-card > summary::-webkit-details-marker {
+  display: none;
+}
+
+.history-card > summary:hover {
+  background: #f8fafc;
+}
+
+.history-card-date,
+.history-card-main,
+.history-card-amount {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.history-card-date strong,
+.history-card-main strong,
+.history-card-amount strong {
+  overflow-wrap: anywhere;
+}
+
+.history-card-date span,
+.history-card-main span,
+.history-card-amount span,
+.history-card-open {
+  color: #64748b;
+  font-size: .79rem;
+  line-height: 1.3;
+}
+
+.history-card-main strong {
+  color: #0f172a;
+}
+
+.history-card-open {
+  white-space: nowrap;
+  font-weight: 800;
+}
+
+.history-card-open::after {
+  content: ' ↓';
+}
+
+.history-card[open] .history-card-open::after {
+  content: ' ↑';
+}
+
+.history-card-body {
+  display: grid;
+  gap: 12px;
+  padding: 13px;
+  border-top: 1px solid rgba(15, 23, 42, .08);
+  background: #fbfdff;
+}
+
+.history-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.history-detail-grid > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 11px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, .07);
+}
+
+.history-detail-grid span,
+.history-note span,
+.cash-cycle-card span {
+  color: #64748b;
+  font-size: .75rem;
+}
+
+.history-detail-grid strong,
+.history-note strong {
+  overflow-wrap: anywhere;
+}
+
+.history-product-stack {
+  display: grid;
+  gap: 7px;
+}
+
+.history-product-card {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(180px, 1.45fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 11px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, .07);
+}
+
+.history-product-card span,
+.history-product-card em {
+  color: #64748b;
+  font-size: .8rem;
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+
+.history-note {
+  display: grid;
+  gap: 4px;
+  padding: 10px 11px;
+  border-radius: 11px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, .07);
+}
+
+.history-note.is-danger {
+  border-color: rgba(185, 28, 28, .18);
+  background: #fff7f7;
+}
+
+.history-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.history-load-more {
+  justify-self: center;
+  min-width: 160px;
+}
+
+.history-card-swap {
+  color: #64748b;
+  font-size: .76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
+.history-exchange-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.history-exchange-arrow {
+  align-self: center;
+  color: #64748b;
+  font-size: 1.1rem;
+  font-weight: 900;
+}
+
+.inventory-history-panel {
+  min-width: 0;
+}
+
+.inventory-history-mode-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.inventory-history-mode-switch .secondary.is-active {
+  border-color: rgba(37, 99, 235, .35);
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.inventory-history-filter {
+  display: grid;
+  grid-template-columns: minmax(210px, 1fr) auto;
+  gap: 9px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.inventory-history-filter label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.inventory-history-filter label > span {
+  color: #64748b;
+  font-size: .76rem;
+  font-weight: 800;
+}
+
+.inventory-history-filter input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.inventory-history-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 9px 11px;
+  margin-bottom: 10px;
+  border-radius: 11px;
+  background: #eff6ff;
+  border: 1px solid rgba(37, 99, 235, .12);
+  color: #334155;
+  font-size: .82rem;
+}
+
+.inventory-history-card,
+.inventory-check-card {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 11px 12px;
+  border-radius: 13px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, .09);
+}
+
+.inventory-history-card-head,
+.inventory-check-card-head {
+  display: grid;
+  grid-template-columns: minmax(105px, .8fr) minmax(180px, 1.5fr) minmax(105px, .7fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.inventory-history-card-head > div,
+.inventory-check-card-head > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.inventory-history-card-head span,
+.inventory-check-card-head span {
+  color: #64748b;
+  font-size: .78rem;
+  overflow-wrap: anywhere;
+}
+
+.inventory-history-card.is-transfer {
+  border-color: rgba(37, 99, 235, .16);
+  background: #fbfdff;
+}
+
+.inventory-transfer-items,
+.history-stocktake-detail {
+  display: grid;
+  gap: 7px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(15, 23, 42, .07);
+}
+
+.inventory-transfer-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: #f8fafc;
+  font-size: .82rem;
+}
+
+.cash-cycle-list {
+  display: grid;
+  gap: 8px;
+}
+
+.cash-cycle-card {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.2fr) minmax(110px, .7fr) minmax(110px, .7fr) minmax(150px, .9fr) minmax(170px, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px 11px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, .08);
+}
+
+.cash-cycle-card > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cash-cycle-card strong {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1100px) {
+  .history-filter-bar {
+    grid-template-columns: minmax(220px, 1fr) repeat(2, minmax(120px, .6fr));
+  }
+
+  .history-filter-bar label:nth-of-type(4) {
+    grid-column: span 2;
+  }
+
+  .history-filter-submit {
+    justify-self: start;
+  }
+
+  .history-card > summary {
+    grid-template-columns: minmax(95px, .7fr) minmax(180px, 1.5fr) minmax(110px, .75fr) auto;
+  }
+
+  .history-card-open {
+    grid-column: 2 / -1;
+  }
+
+  .history-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cash-cycle-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cash-cycle-comment {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .history-section-head {
+    display: grid;
+    justify-items: stretch;
+  }
+
+  .history-section-head > button {
+    justify-self: start;
+  }
+
+  .history-filter-bar,
+  .inventory-history-filter {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .history-filter-bar label:nth-of-type(4),
+  .history-filter-submit {
+    grid-column: auto;
+  }
+
+  .history-card > summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 10px;
+  }
+
+  .history-card-date,
+  .history-card-main,
+  .history-card-amount {
+    grid-column: 1;
+  }
+
+  .history-card > summary .status-pill {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .history-card-open {
+    grid-column: 2;
+    grid-row: 2 / span 2;
+    align-self: center;
+  }
+
+  .history-detail-grid,
+  .history-product-card,
+  .history-exchange-pair,
+  .cash-cycle-card,
+  .inventory-history-card-head,
+  .inventory-check-card-head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .history-exchange-arrow {
+    justify-self: start;
+    transform: rotate(90deg);
+  }
+
+  .history-card-actions {
+    justify-content: flex-start;
+  }
+
+  .inventory-history-card-head .status-pill,
+  .inventory-check-card-head .soft-badge {
+    justify-self: start;
+  }
+
+  .inventory-transfer-item {
+    display: grid;
+  }
+
+  .cash-cycle-comment {
+    grid-column: auto;
+  }
+}
+
+/* Actual Step 189B inventory history markup. */
+.history-mode-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.history-mode-switch .secondary.is-active {
+  border-color: rgba(37, 99, 235, .35);
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.inventory-history-filter-bar {
+  grid-template-columns: minmax(220px, 1fr) auto;
+}
+
+.history-check-main {
+  display: grid;
+  grid-template-columns: minmax(115px, .8fr) minmax(190px, 1.5fr) minmax(110px, .7fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.inventory-check-history-card {
+  padding: 11px 12px;
+}
+
+@media (max-width: 760px) {
+  .inventory-history-filter-bar,
+  .history-check-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .history-check-main .soft-badge {
+    justify-self: start;
+  }
+}

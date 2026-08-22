@@ -1,0 +1,272 @@
+/* Step 183: explicit revision lifecycle + manager-safe inventory navigation. */
+.stocktake-start-card-v3 {
+  align-items: stretch;
+  padding: 16px;
+}
+
+.stocktake-start-main-v3 {
+  display: grid;
+  grid-template-columns: auto auto minmax(180px, 1fr);
+  gap: 10px 16px;
+  align-items: center;
+}
+
+.stocktake-start-main-v3 .stocktake-step-kicker {
+  grid-column: 1 / -1;
+}
+
+.stocktake-start-help {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  max-width: 780px;
+  color: #64748b;
+  font-size: .82rem;
+  line-height: 1.45;
+}
+
+.stocktake-start-button-v3 {
+  align-self: center;
+  min-width: 220px;
+}
+
+.stocktake-active-card {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.4fr) minmax(180px, .7fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: 16px;
+  background: #f8fbff;
+}
+
+.stocktake-active-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.stocktake-active-kicker {
+  color: #1d4ed8;
+  font-size: .76rem;
+  font-weight: 900;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.stocktake-active-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 7px 10px;
+}
+
+.stocktake-active-title strong {
+  font-size: 1.05rem;
+}
+
+.stocktake-active-title span {
+  color: #64748b;
+  font-size: .82rem;
+}
+
+.stocktake-save-status {
+  width: fit-content;
+  margin-top: 2px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: .75rem;
+  font-weight: 800;
+}
+
+.stocktake-save-status.is-saved {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.stocktake-save-status.is-saving {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.stocktake-save-status.is-error {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.stocktake-active-progress {
+  display: grid;
+  justify-items: start;
+  gap: 1px;
+  padding-left: 16px;
+  border-left: 1px solid #dbeafe;
+}
+
+.stocktake-active-progress strong {
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.stocktake-active-progress span {
+  color: #64748b;
+  font-size: .76rem;
+}
+
+.stocktake-active-progress .has-difference {
+  color: #b45309;
+  font-weight: 800;
+}
+
+.stocktake-active-source-note {
+  padding: 0 3px;
+  color: #64748b;
+  font-size: .78rem;
+}
+
+@media (max-width: 980px) {
+  .stocktake-active-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .stocktake-active-progress {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 12px;
+    padding: 9px 0 0;
+    border-top: 1px solid #dbeafe;
+    border-left: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .stocktake-start-card-v3,
+  .stocktake-active-card {
+    grid-template-columns: 1fr;
+  }
+
+  .stocktake-start-main-v3 {
+    grid-template-columns: 1fr;
+  }
+
+  .stocktake-start-main-v3 .stocktake-step-kicker,
+  .stocktake-start-help {
+    grid-column: auto;
+  }
+
+  .stocktake-source-switch {
+    width: 100%;
+  }
+
+  .stocktake-source-switch button {
+    flex: 1;
+  }
+
+  .stocktake-start-button-v3 {
+    width: 100%;
+  }
+
+  .stocktake-active-card .stocktake-session-actions {
+    justify-content: flex-start;
+  }
+
+  .stocktake-active-progress {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
+/* Step 183: make adult/child stock variants explicit without bringing back the old filter wall. */
+.simple-stock-toolbar-a2 {
+  grid-template-columns: minmax(280px, 1fr) auto auto auto;
+}
+
+.simple-stock-category-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #dbe4f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  white-space: nowrap;
+}
+
+.simple-stock-category-switch button {
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #475569;
+  font: inherit;
+  font-size: .77rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.simple-stock-category-switch button.is-active {
+  background: #fff;
+  color: #1d4ed8;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, .08);
+}
+
+.simple-stock-hidden-zero-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 25px;
+  padding: 0 3px;
+  color: #64748b;
+  font-size: .76rem;
+}
+
+.simple-stock-hidden-zero-note button {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #2563eb;
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.simple-stock-hidden-zero-note button:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 1120px) {
+  .simple-stock-toolbar-a2 {
+    grid-template-columns: minmax(260px, 1fr) auto auto;
+  }
+
+  .simple-stock-category-switch {
+    grid-column: 1 / -1;
+    width: fit-content;
+  }
+}
+
+@media (max-width: 900px) {
+  .simple-stock-toolbar-a2 {
+    grid-template-columns: 1fr auto;
+  }
+
+  .simple-stock-category-switch,
+  .simple-stock-empty-toggle-a2 {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .simple-stock-category-switch {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    width: 100%;
+  }
+
+  .simple-stock-category-switch button {
+    white-space: normal;
+  }
+}

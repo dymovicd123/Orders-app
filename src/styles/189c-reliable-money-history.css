@@ -1,0 +1,36 @@
+
+/* Step 189C — reliable money history. Keep the finance screen compact and readable. */
+.finance-money-history-block { display: grid; gap: 12px; }
+.finance-money-history-head { align-items: flex-start; gap: 12px; }
+.finance-money-history-summary { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.finance-money-history-summary .money-summary { display: grid; gap: 2px; min-width: 118px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.finance-money-history-summary .money-summary span { font-size: 12px; opacity: .72; }
+.finance-money-history-summary .money-summary strong { font-size: 14px; }
+.finance-money-history-filters { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(170px, 220px); gap: 10px; align-items: end; }
+.finance-money-history-filters label { display: grid; gap: 5px; min-width: 0; }
+.finance-money-history-filters label > span { font-size: 12px; font-weight: 700; opacity: .72; }
+.finance-money-history-filters input,
+.finance-money-history-filters select { width: 100%; min-width: 0; }
+.finance-money-history-list { display: grid; gap: 8px; }
+.finance-money-history-row { display: grid; grid-template-columns: minmax(82px, .55fr) minmax(120px, 1fr) minmax(145px, 1.4fr) minmax(95px, .8fr) minmax(95px, .7fr); gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.finance-money-history-row > div { min-width: 0; }
+.finance-money-history-order { display: grid; gap: 2px; }
+.finance-money-history-order strong { overflow-wrap: anywhere; }
+.finance-money-history-order small,
+.finance-money-history-note { font-size: 12px; opacity: .7; }
+.finance-money-history-operation { display: grid; gap: 3px; }
+.finance-money-history-amount { text-align: right; font-weight: 800; white-space: nowrap; }
+.finance-money-history-amount.is-in { color: var(--success-text, #166534); }
+.finance-money-history-amount.is-out { color: var(--danger-text, #991b1b); }
+.finance-money-history-more { display: flex; justify-content: center; padding-top: 2px; }
+.finance-money-history-state { padding: 16px; border: 1px dashed var(--border); border-radius: 10px; display: grid; gap: 8px; justify-items: start; }
+@media (max-width: 1100px) {
+  .finance-money-history-row { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+  .finance-money-history-row .finance-money-history-operation,
+  .finance-money-history-row .finance-money-history-method { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .finance-money-history-summary { justify-content: stretch; }
+  .finance-money-history-summary .money-summary { flex: 1 1 120px; }
+  .finance-money-history-filters { grid-template-columns: 1fr; }
+}
