@@ -1,0 +1,25 @@
+# Deterministic repository text policy.
+# Source/regression hashes are byte-exact, so clean checkouts must not depend on host OS.
+* text=auto eol=lf
+
+# Windows launcher scripts, when intentionally tracked, keep Windows line endings.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Explicitly keep source/config/test/migration text as LF.
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.json text eol=lf
+*.jsonc text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.sql text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
