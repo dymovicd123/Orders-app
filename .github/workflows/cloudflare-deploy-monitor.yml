@@ -11,6 +11,64 @@ permissions:
   statuses: write
 
 jobs:
+  apply_b2b:
+    name: Verify and finalize Step 192B2B
+    if: github.ref_name == 'branch2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branch2
+          fetch-depth: 0
+
+      - name: Detect bootstrap
+        id: bootstrap
+        shell: bash
+        run: |
+          if [[ -f scripts/prepare-step192b2b-fix.mjs ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.bootstrap.outputs.present == 'true'
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Prepare Step 192B2B source
+        if: steps.bootstrap.outputs.present == 'true'
+        run: node scripts/prepare-step192b2b-fix.mjs
+
+      - name: Install dependencies
+        if: steps.bootstrap.outputs.present == 'true'
+        run: npm ci --no-audit --no-fund
+
+      - name: Full release gate
+        if: steps.bootstrap.outputs.present == 'true'
+        run: npm run release:check
+
+      - name: Commit verified Step 192B2B
+        if: steps.bootstrap.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "dymovicd123"
+          git config user.email "278886646+dymovicd123@users.noreply.github.com"
+          git rm scripts/prepare-step192b2b.mjs scripts/prepare-step192b2b-fix.mjs .github/workflows/apply-step192b2b-once.yml
+          git add src/features/inventory/views/renderInventoryMovementPanel.tsx \
+                  src/features/inventory/movementPickerB2B.ts \
+                  src/styles/192b2b-movement-picker.css \
+                  scripts/test-step192b2b-movement-picker.mjs \
+                  scripts/release-check.mjs
+          git diff --cached --check
+          git commit -m "Step 192B2B movement picker UX"
+          git push origin HEAD:branch2
+
   monitor:
     name: Cloudflare deploy / ${{ github.ref_name }}
     runs-on: ubuntu-latest
