@@ -382,3 +382,5 @@ jobs:
           git diff --cached --check
           git commit -m "Harden stocktake lost-response recovery"
           git push origin HEAD:safe/stocktake-lost-response-20260825
+
+# retrigger existing workflow
