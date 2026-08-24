@@ -75,6 +75,9 @@ function verifySource() {
     'scripts/test-step192a2-catalog-truth-finalizer.mjs',
     'scripts/step192b2a4-order-create-save-integrity-manifest.json',
     'scripts/test-step192b2a4-order-create-save-integrity.mjs',
+    'scripts/test-step192b2b-movement-picker.mjs',
+    'src/features/inventory/movementPickerB2B.ts',
+    'src/styles/192b2b-movement-picker.css',
     'shared/api-contracts.ts',
     'scripts/check-step1906d-bundle-budget.mjs',
     'src/app/lazySections.tsx',
@@ -211,6 +214,7 @@ try {
   run('Step 192B2A2 Attention context / de-dup tests', process.execPath, [path.join(root, 'scripts/test-step192b2a2-attention-context.mjs')])
   run('Step 192B2A3 handover SQL alias safety tests', process.execPath, [path.join(root, 'scripts/test-step192b2a3-handover-sql-alias-safety.mjs')])
   run('Step 192B2A4 order create/save integrity tests', process.execPath, [path.join(root, 'scripts/test-step192b2a4-order-create-save-integrity.mjs')])
+  run('Step 192B2B movement picker UX tests', process.execPath, [path.join(root, 'scripts/test-step192b2b-movement-picker.mjs')])
   run('Current database safety tests', process.execPath, [path.join(root, 'scripts/verify-database-safety.mjs')])
   const tsc = localNodeScript(['node_modules/typescript/bin/tsc'], 'TypeScript')
   const vite = localNodeScript(['node_modules/vite/bin/vite.js'], 'Vite')
