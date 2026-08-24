@@ -1,4 +1,6 @@
 import type { InventoryRenderContext } from './types'
+import { refineMovementPickerContext } from '../movementPickerB2B'
+import '../../../styles/192b2b-movement-picker.css'
 
 type PanelContext = Pick<InventoryRenderContext,
   | 'FriendlyNumberInput'
@@ -50,6 +52,8 @@ type PanelContext = Pick<InventoryRenderContext,
 import type { InventoryDraft } from '../../../app/types'
 
 export function renderInventoryMovementPanel(ctx: PanelContext) {
+  // STEP 192B2B: refine only the read/UX context; the accepted JSX and transfer mutation runtime stay unchanged.
+  const movementCtx = refineMovementPickerContext(ctx)
   const {
     FriendlyNumberInput,
     SmartPickerInput,
@@ -95,7 +99,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
     suggestionValues,
     swapInventoryTransferDirection,
     updateInventoryDirectProductInput
-  } = ctx
+  } = movementCtx
 
   return (
     <div className="inventory-movement-panel inventory-operations-v182" style={inventoryPanelStyle('movement')} data-step182-operations="human-workflow">
