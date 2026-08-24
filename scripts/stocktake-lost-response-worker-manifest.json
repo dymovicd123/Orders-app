@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "revision": "stocktake-lost-response-r1",
+  "reason": "Retry/lost-response safety for stocktake create, count save, quick/cycle checks and completion.",
+  "changes": {
+    "createInventoryStocktakeSession": {
+      "before": "edad0a4f8220e97dd3b797dd2626996f0c222ff122622e0c7ec95ba136b7fe0d",
+      "after": "d88f030efa7297aaff602a41fb6eaf4fd22ff73a2eaa0081f32d1f73a3e01780"
+    },
+    "saveInventoryStocktakeCount": {
+      "before": "3129e902996de8efb1df2b4850f1a9b856377956c7b0ebb40c63c2eec4f51172",
+      "after": "1e9c20ab73da485b37d9edb777817c798c7599a92a682104d8a006183f193817"
+    },
+    "quickInventoryStocktakeBatch": {
+      "before": "69ddd9d795593ca4cbd6286c40cc2a5758cd842f483d9913a3be6bec7847ec2d",
+      "after": "842b6fd92c5367510fb27b978bd3ab1f31591581d5fef64b0ef91132d9c22ba5"
+    },
+    "quickInventoryStocktake": {
+      "before": "383ff5fa419dc6c16b5524d02a27cb42c33f347b4dcccc51cc839af4be1088c3",
+      "after": "ba33c8d2e90f03e7fcfd42d7bc52204299b84f151792a4ffb16e7dee7509b9ae"
+    },
+    "completeInventoryStocktakeSession": {
+      "before": "aa2c1f4887f79901d11545115f1664cf94c1ab0adb79761a8b2b9a8e1361be07",
+      "after": "87e58a7ec40fda083d4ed4ebc8964053668dea90a92424b7b9f5a96e6af2b0d7"
+    }
+  }
+}

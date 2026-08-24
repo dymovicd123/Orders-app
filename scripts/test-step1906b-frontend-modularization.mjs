@@ -10,6 +10,7 @@ const warehouseAttentionPath = path.join(root, 'scripts/step192b1-warehouse-trut
 const dailyWarehousePath = path.join(root, 'scripts/step192b2a-daily-warehouse-manifest.json')
 const attentionVisibilityPath = path.join(root, 'scripts/step192b2a1-attention-visibility-manifest.json')
 const orderSaveIntegrityPath = path.join(root, 'scripts/step192b2a4-frontend-order-save-integrity-manifest.json')
+const stocktakeLostResponseFrontendPath = path.join(root, 'scripts/stocktake-lost-response-frontend-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -91,6 +92,7 @@ try {
   const dailyWarehouse = fs.existsSync(dailyWarehousePath) ? JSON.parse(fs.readFileSync(dailyWarehousePath, 'utf8')) : null
   const attentionVisibility = fs.existsSync(attentionVisibilityPath) ? JSON.parse(fs.readFileSync(attentionVisibilityPath, 'utf8')) : null
   const orderSaveIntegrity = fs.existsSync(orderSaveIntegrityPath) ? JSON.parse(fs.readFileSync(orderSaveIntegrityPath, 'utf8')) : null
+  const stocktakeLostResponseFrontend = fs.existsSync(stocktakeLostResponseFrontendPath) ? JSON.parse(fs.readFileSync(stocktakeLostResponseFrontendPath, 'utf8')) : null
   check(manifest?.version === 1, '1906B preservation manifest invalid')
   check(manifest.baseAppHooks?.length === 352, `Unexpected 1906A App hook baseline: ${manifest.baseAppHooks?.length}`)
   check(manifest.baseInvHooks?.length === 119, `Unexpected 1906A Inventory hook baseline: ${manifest.baseInvHooks?.length}`)
@@ -192,11 +194,17 @@ try {
       const name = key.slice(label.length + 1)
       check(map.has(name), `Preserved declaration missing: ${key}`)
       const allowedApiHookChange = label === 'api-hook' ? orderSaveIntegrity?.frontend?.apiHookChanges?.[name] : null
+      let acceptedApiHookHash = expectedHash
       if (allowedApiHookChange) {
         check(allowedApiHookChange.before === expectedHash, `192B2A4 API hook baseline mismatch: ${name}`)
-        check(sha(map.get(name)) === allowedApiHookChange.after, `192B2A4 API hook changed outside exact allow-list: ${name}`)
+        acceptedApiHookHash = allowedApiHookChange.after
+      }
+      const stocktakeApiHookChange = label === 'api-hook' ? stocktakeLostResponseFrontend?.frontend?.apiHookChanges?.[name] : null
+      if (stocktakeApiHookChange) {
+        check(stocktakeApiHookChange.before === acceptedApiHookHash, `Stocktake lost-response API hook baseline mismatch: ${name}`)
+        check(sha(map.get(name)) === stocktakeApiHookChange.after, `API hook changed beyond exact stocktake lost-response allow-list: ${name}`)
       } else {
-        check(sha(map.get(name)) === expectedHash, `Preserved declaration changed: ${key}`)
+        check(sha(map.get(name)) === acceptedApiHookHash, allowedApiHookChange ? `192B2A4 API hook changed outside exact allow-list: ${name}` : `Preserved declaration changed: ${key}`)
       }
     }
   }
@@ -208,6 +216,17 @@ try {
     for (const [name, expectedHash] of Object.entries(added)) {
       check(apiTop.has(name), `192B2A4 API helper missing: ${name}`)
       check(sha(apiTop.get(name)) === expectedHash, `192B2A4 API helper hash mismatch: ${name}`)
+    }
+  }
+
+
+  if (stocktakeLostResponseFrontend) {
+    check(stocktakeLostResponseFrontend.version === 1 && stocktakeLostResponseFrontend.revision === 'stocktake-lost-response-r1', 'Stocktake lost-response frontend preservation manifest invalid')
+    const modulesAdded = stocktakeLostResponseFrontend.frontend?.modulesAdded || {}
+    check(Object.keys(modulesAdded).length === 1 && Object.hasOwn(modulesAdded, 'src/app/controllers/inventoryWriteRetry.ts'), 'Stocktake lost-response must add exactly the inventoryWriteRetry module')
+    for (const [relative, expectedHash] of Object.entries(modulesAdded)) {
+      const parsed = parse(relative)
+      check(sha(normalize(parsed.text)) === expectedHash, `Stocktake lost-response frontend module hash mismatch: ${relative}`)
     }
   }
 

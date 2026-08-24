@@ -18,6 +18,7 @@ const dailyWarehousePath = path.join(root, 'scripts/step192b2a-daily-warehouse-m
 const attentionContextPath = path.join(root, 'scripts/step192b2a2-attention-context-manifest.json')
 const handoverSqlAliasSafetyPath = path.join(root, 'scripts/step192b2a3-handover-sql-alias-safety-manifest.json')
 const orderCreateSaveIntegrityPath = path.join(root, 'scripts/step192b2a4-order-create-save-integrity-manifest.json')
+const stocktakeLostResponsePath = path.join(root, 'scripts/stocktake-lost-response-worker-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -77,6 +78,8 @@ try {
   const orderCreateSaveIntegrity = fs.existsSync(orderCreateSaveIntegrityPath) ? JSON.parse(fs.readFileSync(orderCreateSaveIntegrityPath, 'utf8')) : null
   const orderCreateSaveIntegrityChanges = orderCreateSaveIntegrity?.version === 1 ? (orderCreateSaveIntegrity.changes || {}) : {}
   const orderCreateSaveIntegrityAdded = orderCreateSaveIntegrity?.version === 1 ? (orderCreateSaveIntegrity.added || {}) : {}
+  const stocktakeLostResponse = fs.existsSync(stocktakeLostResponsePath) ? JSON.parse(fs.readFileSync(stocktakeLostResponsePath, 'utf8')) : null
+  const stocktakeLostResponseChanges = stocktakeLostResponse?.version === 1 ? (stocktakeLostResponse.changes || {}) : {}
 
   const files = walk(workerRoot)
   const indexPath = path.join(workerRoot, 'index.ts')
@@ -192,11 +195,17 @@ try {
       acceptedPostHandoverSqlAliasHash = handoverSqlAliasSafetyChanged.after
     }
     const orderCreateSaveIntegrityChanged = orderCreateSaveIntegrityChanges[name]
+    let acceptedPostOrderCreateSaveHash = acceptedPostHandoverSqlAliasHash
     if (orderCreateSaveIntegrityChanged) {
       check(orderCreateSaveIntegrityChanged.before === acceptedPostHandoverSqlAliasHash, `192B2A4 declaration baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === orderCreateSaveIntegrityChanged.after, `Worker declaration changed beyond exact 192B2A4 order-save allow-list: ${name}`)
+      acceptedPostOrderCreateSaveHash = orderCreateSaveIntegrityChanged.after
+    }
+    const stocktakeLostResponseChanged = stocktakeLostResponseChanges[name]
+    if (stocktakeLostResponseChanged) {
+      check(stocktakeLostResponseChanged.before === acceptedPostOrderCreateSaveHash, `Stocktake lost-response declaration baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === stocktakeLostResponseChanged.after, `Worker declaration changed beyond exact stocktake lost-response allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostHandoverSqlAliasHash, `Worker declaration body changed beyond accepted cleanup/boundary/runtime/security/warehouse/catalog/attention/daily-warehouse/context/sql-alias/order-save deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostOrderCreateSaveHash, `Worker declaration body changed beyond accepted cleanup/boundary/runtime/security/warehouse/catalog/attention/daily-warehouse/context/sql-alias/order-save/stocktake-replay deltas: ${name}`)
     }
   }
 

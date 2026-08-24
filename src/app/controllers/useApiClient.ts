@@ -1,6 +1,7 @@
 import { useCallback, useRef, type Dispatch, type SetStateAction } from 'react'
 import type { AccessRole } from '../types'
 import { ApiResponseError } from '../utils'
+import { prepareManagedInventoryWrite } from './inventoryWriteRetry'
 
 type CachedApiResponse = {
   body: string
@@ -111,9 +112,13 @@ export function useApiClient({ accessRole, setError, setMessage }: ApiClientArgs
 
     const method = String(init.method || (input instanceof Request ? input.method : 'GET')).toUpperCase()
     const safeRead = method === 'GET' || method === 'HEAD'
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+    const managedInventory = prepareManagedInventoryWrite(method, url, init.body, headers, prepareCriticalRequest)
+    const requestBody = managedInventory.body
+    const managedInventoryRequestKey = managedInventory.requestKey
+    const managedInventoryRequestId = managedInventory.requestId
     const idempotentWrite = !safeRead && Boolean(headers.get('X-Idempotency-Key'))
     const retryableRequest = safeRead || idempotentWrite
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
     const cacheKey = `${accessRole}:${method}:${url}`
     const retryDelays = retryableRequest ? [0, 300, 850] : [0]
     let lastError: unknown = null
@@ -121,13 +126,14 @@ export function useApiClient({ accessRole, setError, setMessage }: ApiClientArgs
     for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
       if (retryDelays[attempt] > 0) await waitForApiRetry(retryDelays[attempt])
       try {
-        const response = await fetch(input, { ...init, headers, credentials: 'include' })
+        const response = await fetch(input, { ...init, body: requestBody, headers, credentials: 'include' })
         if (!retryableRequest) return response
 
         const bodyText = await response.clone().text()
         const transientResponse = TRANSIENT_API_STATUSES.has(response.status)
           || responseLooksLikeHtml(response, bodyText)
           || (idempotentWrite && response.ok && !bodyText.replace(/^\uFEFF/, '').trim())
+          || (Boolean(managedInventoryRequestKey) && response.status >= 500)
         if (transientResponse && attempt < retryDelays.length - 1) continue
 
         if (safeRead && response.ok && !transientResponse && bodyText.length <= GET_RESPONSE_CACHE_BODY_LIMIT) {
@@ -147,7 +153,12 @@ export function useApiClient({ accessRole, setError, setMessage }: ApiClientArgs
           }
         }
 
-        if (!transientResponse) return response
+        if (!transientResponse) {
+          if (managedInventoryRequestKey && managedInventoryRequestId) {
+            completeCriticalRequest(managedInventoryRequestKey, managedInventoryRequestId)
+          }
+          return response
+        }
         // Retry only transport/transient statuses. A normal Worker 500 is returned
         // immediately so the screen sees the real application error instead of
         // repeating a deterministic failing mutation/query.

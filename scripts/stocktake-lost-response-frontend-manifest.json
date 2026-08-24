@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "revision": "stocktake-lost-response-r1",
+  "reason": "Managed browser retry/idempotency transport for audited stocktake and physical-check mutations.",
+  "frontend": {
+    "apiHookChanges": {
+      "apiFetch": {
+        "before": "2bd918570ad9dfa20f5272b39334da28c5bcb2b01bd46f044e2ac68a25064c87",
+        "after": "f953ad42bfe63e3697764eee8d83d81abe08c736604ec1baba45d0bf4c5c514c"
+      }
+    },
+    "modulesAdded": {
+      "src/app/controllers/inventoryWriteRetry.ts": "6908a6db6368ec24adefc6cad280919b544f349d3b36690875e97366a09803a9"
+    }
+  }
+}
