@@ -18,6 +18,7 @@ jobs:
     timeout-minutes: 25
     permissions:
       contents: write
+      statuses: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,6 +35,20 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Mark B2B gate pending
+        if: steps.bootstrap.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          curl --fail-with-body -sS \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -d "$(jq -nc '{state:"pending",context:"b2b-release/branch2",description:"Running full release:check"}')" >/dev/null
+
       - uses: actions/setup-node@v4
         if: steps.bootstrap.outputs.present == 'true'
         with:
@@ -49,11 +64,53 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Full release gate
+        id: release
         if: steps.bootstrap.outputs.present == 'true'
-        run: npm run release:check
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          npm run release:check 2>&1 | tee /tmp/b2b-release.log
+          code=${PIPESTATUS[0]}
+          summary="$(grep -E 'FAILED|Error:|AssertionError|ошиб|ERROR' /tmp/b2b-release.log | tail -n 1 | tr '\n\r' ' ' | cut -c1-120)"
+          [[ -n "$summary" ]] || summary="$(tail -n 1 /tmp/b2b-release.log | tr '\n\r' ' ' | cut -c1-120)"
+          echo "summary=$summary" >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      - name: Report failed B2B gate
+        if: steps.bootstrap.outputs.present == 'true' && steps.release.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUMMARY: ${{ steps.release.outputs.summary }}
+        shell: bash
+        run: |
+          description="${SUMMARY:-Full release gate failed}"
+          description="${description:0:130}"
+          curl --fail-with-body -sS \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -d "$(jq -nc --arg d "$description" '{state:"failure",context:"b2b-release/branch2",description:$d}')" >/dev/null
+          exit 1
+
+      - name: Mark B2B gate passed
+        if: steps.bootstrap.outputs.present == 'true' && steps.release.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          curl --fail-with-body -sS \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -d "$(jq -nc '{state:"success",context:"b2b-release/branch2",description:"Full release:check passed"}')" >/dev/null
 
       - name: Commit verified Step 192B2B
-        if: steps.bootstrap.outputs.present == 'true'
+        if: steps.bootstrap.outputs.present == 'true' && steps.release.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
@@ -117,7 +174,6 @@ jobs:
           fi
 
           AUTH=(-H "Authorization: Bearer $CF_API_TOKEN")
-
           workers_json="$(curl --fail-with-body -sS "${AUTH[@]}" "$CF_API/accounts/$CF_ACCOUNT_ID/workers/scripts")"
           worker_tag="$(jq -r --arg name "$WORKER_NAME" '.result[] | select(.id == $name) | .tag // empty' <<<"$workers_json" | head -n1)"
           if [[ -z "$worker_tag" ]]; then
@@ -136,15 +192,12 @@ jobs:
               [.result[]? | select(.build_trigger_metadata.commit_hash == $sha and .build_trigger_metadata.branch == $branch)]
               | sort_by(.created_on) | last // empty
             ' <<<"$builds_json")"
-
             if [[ -n "$match" ]]; then
               build_uuid="$(jq -r '.build_uuid // empty' <<<"$match")"
               status="$(jq -r '.status // empty' <<<"$match")"
               outcome="$(jq -r '.build_outcome // empty' <<<"$match")"
               echo "Cloudflare build $build_uuid: status=$status outcome=${outcome:-pending}"
-              if [[ "$status" == "stopped" ]]; then
-                break
-              fi
+              [[ "$status" == "stopped" ]] && break
             else
               echo "Waiting for Cloudflare build for $GITHUB_SHA (attempt $attempt/48)..."
             fi
@@ -159,19 +212,15 @@ jobs:
             echo "Cloudflare build $build_uuid did not finish within 8 minutes." >&2
             exit 6
           fi
-
           echo "build_uuid=$build_uuid" >> "$GITHUB_OUTPUT"
           echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
-
           if [[ "$outcome" != "success" ]]; then
             echo "Cloudflare build failed with outcome: ${outcome:-unknown}" >&2
             echo "----- Cloudflare build log -----"
             cursor=""
             for page in $(seq 1 20); do
               url="$CF_API/accounts/$CF_ACCOUNT_ID/builds/builds/$build_uuid/logs"
-              if [[ -n "$cursor" ]]; then
-                url="$url?cursor=$(printf '%s' "$cursor" | jq -sRr @uri)"
-              fi
+              [[ -n "$cursor" ]] && url="$url?cursor=$(printf '%s' "$cursor" | jq -sRr @uri)"
               logs_json="$(curl --fail-with-body -sS "${AUTH[@]}" "$url")"
               jq -r '.result.lines[]? | if type == "array" then (map(tostring) | join(" ")) else tostring end' <<<"$logs_json"
               truncated="$(jq -r '.result.truncated // false' <<<"$logs_json")"
