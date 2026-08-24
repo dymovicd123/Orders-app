@@ -127,8 +127,9 @@ try {
 
   // Resolving a Workshop-origin physical return to a product must not surface a false catalog-review
   // task merely because Workshop order_items intentionally retain variant_id = NULL.
-  check(catalogReview.includes('COALESCE(oi.is_workshop, 0) = 1'), 'Workshop catalog-review scope missing')
-  check(catalogReview.includes('oi.product_id IS NULL'), 'Resolved Workshop product may incorrectly remain in operational catalog review')
+  const catalogOperational = functionBody(catalogReview, 'catalogReviewOperationalPredicate')
+  check(catalogOperational.includes('is_workshop'), 'Workshop catalog-review scope missing')
+  check(catalogOperational.includes('product_id IS NULL'), 'Resolved Workshop product may incorrectly remain in operational catalog review')
 
   console.log('STEP 192A1 WAREHOUSE TRUTH / FRESHNESS TESTS PASSED — exact-known workshop return/exchange auto-intake stays freshness-gated and idempotent; Workshop task completion remains production-only; adjacent reservation/shipping/handover/catalog-review boundaries are guarded')
 } catch (error) {
