@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import ts from 'typescript'
 
 const apiPath = 'src/app/controllers/useApiClient.ts'
+const helperPath = 'src/app/controllers/inventoryWriteRetry.ts'
 const outputPath = 'scripts/stocktake-lost-response-frontend-manifest.json'
 const hash = (value) => crypto.createHash('sha256').update(value).digest('hex')
 const normalize = (value) => value
@@ -50,15 +51,12 @@ const beforeText = execFileSync('git', ['show', `HEAD:${apiPath}`], { encoding: 
 const afterText = fs.readFileSync(apiPath, 'utf8')
 const beforeHook = statementMap(beforeText, 'useApiClient')
 const afterHook = statementMap(afterText, 'useApiClient')
-const beforeTop = statementMap(beforeText)
-const afterTop = statementMap(afterText)
 
 if (!beforeHook.has('apiFetch') || !afterHook.has('apiFetch')) throw new Error('apiFetch statement missing')
 const beforeApiFetch = hash(beforeHook.get('apiFetch'))
 const afterApiFetch = hash(afterHook.get('apiFetch'))
 if (beforeApiFetch === afterApiFetch) throw new Error('Expected apiFetch to change')
-if (beforeTop.has('managedInventoryWriteMode')) throw new Error('managedInventoryWriteMode unexpectedly existed before patch')
-if (!afterTop.has('managedInventoryWriteMode')) throw new Error('managedInventoryWriteMode missing after patch')
+if (!fs.existsSync(helperPath)) throw new Error(`${helperPath} missing after modularization`)
 
 fs.writeFileSync(outputPath, JSON.stringify({
   version: 1,
@@ -68,10 +66,10 @@ fs.writeFileSync(outputPath, JSON.stringify({
     apiHookChanges: {
       apiFetch: { before: beforeApiFetch, after: afterApiFetch },
     },
-    apiTopAdded: {
-      managedInventoryWriteMode: hash(afterTop.get('managedInventoryWriteMode')),
+    modulesAdded: {
+      [helperPath]: hash(normalize(fs.readFileSync(helperPath, 'utf8'))),
     },
   },
 }, null, 2) + '\n')
 
-console.log(`Generated ${outputPath} for apiFetch + managedInventoryWriteMode.`)
+console.log(`Generated ${outputPath} for apiFetch + ${helperPath}.`)
