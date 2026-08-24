@@ -25,92 +25,61 @@ jobs:
           ref: branch2
           fetch-depth: 0
 
-      - name: Detect bootstrap
-        id: bootstrap
+      - name: Prepare, install and run full B2B release gate
+        id: gate
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [[ -f scripts/prepare-step192b2b-fix.mjs ]]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
+          set -uo pipefail
+          if [[ ! -f scripts/prepare-step192b2b-fix.mjs ]]; then
             echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "No B2B bootstrap remains; nothing to finalize."
+            exit 0
           fi
+          echo "present=true" >> "$GITHUB_OUTPUT"
 
-      - name: Mark B2B gate pending
-        if: steps.bootstrap.outputs.present == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          curl --fail-with-body -sS \
-            -X POST \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-            -d "$(jq -nc '{state:"pending",context:"b2b-release/branch2",description:"Running full release:check"}')" >/dev/null
+          post_status() {
+            local state="$1"
+            local description="$2"
+            description="${description:0:130}"
+            curl --fail-with-body -sS \
+              -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+              -d "$(jq -nc --arg s "$state" --arg d "$description" '{state:$s,context:"b2b-release/branch2",description:$d}')" >/dev/null
+          }
 
-      - uses: actions/setup-node@v4
-        if: steps.bootstrap.outputs.present == 'true'
-        with:
-          node-version: '24'
-          cache: npm
+          fail_stage() {
+            local stage="$1"
+            local logfile="$2"
+            local summary
+            summary="$(grep -E 'FAILED|Error:|AssertionError|error TS|ошиб|ERROR' "$logfile" 2>/dev/null | tail -n 1 | tr '\n\r' ' ' | cut -c1-104)"
+            [[ -n "$summary" ]] || summary="$(tail -n 1 "$logfile" 2>/dev/null | tr '\n\r' ' ' | cut -c1-104)"
+            [[ -n "$summary" ]] || summary="unknown error"
+            post_status failure "$stage: $summary"
+            echo "B2B gate failed at $stage: $summary" >&2
+            exit 1
+          }
 
-      - name: Prepare Step 192B2B source
-        if: steps.bootstrap.outputs.present == 'true'
-        run: node scripts/prepare-step192b2b-fix.mjs
+          post_status pending "prepare: applying Step 192B2B source"
+          node scripts/prepare-step192b2b-fix.mjs 2>&1 | tee /tmp/b2b-prepare.log
+          [[ ${PIPESTATUS[0]} -eq 0 ]] || fail_stage prepare /tmp/b2b-prepare.log
 
-      - name: Install dependencies
-        if: steps.bootstrap.outputs.present == 'true'
-        run: npm ci --no-audit --no-fund
+          post_status pending "install: npm ci"
+          npm ci --no-audit --no-fund 2>&1 | tee /tmp/b2b-install.log
+          [[ ${PIPESTATUS[0]} -eq 0 ]] || fail_stage install /tmp/b2b-install.log
 
-      - name: Full release gate
-        id: release
-        if: steps.bootstrap.outputs.present == 'true'
-        continue-on-error: true
-        shell: bash
-        run: |
-          set +e
+          post_status pending "release: full release:check"
           npm run release:check 2>&1 | tee /tmp/b2b-release.log
-          code=${PIPESTATUS[0]}
-          summary="$(grep -E 'FAILED|Error:|AssertionError|ошиб|ERROR' /tmp/b2b-release.log | tail -n 1 | tr '\n\r' ' ' | cut -c1-120)"
-          [[ -n "$summary" ]] || summary="$(tail -n 1 /tmp/b2b-release.log | tr '\n\r' ' ' | cut -c1-120)"
-          echo "summary=$summary" >> "$GITHUB_OUTPUT"
-          exit "$code"
+          [[ ${PIPESTATUS[0]} -eq 0 ]] || fail_stage release /tmp/b2b-release.log
 
-      - name: Report failed B2B gate
-        if: steps.bootstrap.outputs.present == 'true' && steps.release.outcome == 'failure'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SUMMARY: ${{ steps.release.outputs.summary }}
-        shell: bash
-        run: |
-          description="${SUMMARY:-Full release gate failed}"
-          description="${description:0:130}"
-          curl --fail-with-body -sS \
-            -X POST \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-            -d "$(jq -nc --arg d "$description" '{state:"failure",context:"b2b-release/branch2",description:$d}')" >/dev/null
-          exit 1
-
-      - name: Mark B2B gate passed
-        if: steps.bootstrap.outputs.present == 'true' && steps.release.outcome == 'success'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          curl --fail-with-body -sS \
-            -X POST \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-            -d "$(jq -nc '{state:"success",context:"b2b-release/branch2",description:"Full release:check passed"}')" >/dev/null
+          post_status success "Full release:check passed"
 
       - name: Commit verified Step 192B2B
-        if: steps.bootstrap.outputs.present == 'true' && steps.release.outcome == 'success'
+        if: steps.gate.outputs.present == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -172,7 +141,6 @@ jobs:
             echo "Cloudflare monitoring secrets are missing." >&2
             exit 3
           fi
-
           AUTH=(-H "Authorization: Bearer $CF_API_TOKEN")
           workers_json="$(curl --fail-with-body -sS "${AUTH[@]}" "$CF_API/accounts/$CF_ACCOUNT_ID/workers/scripts")"
           worker_tag="$(jq -r --arg name "$WORKER_NAME" '.result[] | select(.id == $name) | .tag // empty' <<<"$workers_json" | head -n1)"
