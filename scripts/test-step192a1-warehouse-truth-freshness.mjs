@@ -110,7 +110,8 @@ try {
   // Shipping fulfills reservation rows generically, while ordinary Workshop lines remain excluded
   // from stock blockers/handover. This distinction is critical: a future explicit Workshop intake
   // reservation could be fulfilled, but merely marking a task done must not create one implicitly.
-  const fulfill = functionBody(reservations, 'fulfillOrderReservationsV2')
+  // fulfillOrderReservationsV2 has a default options = {} parameter, so use a section boundary.
+  const fulfill = functionSection(reservations, 'fulfillOrderReservationsV2', 'getOrderShipmentInventoryBlockers')
   check(fulfill.includes("FROM inventory_reservations r"), 'Shipment no longer fulfills from reservation truth')
   check(!fulfill.includes('COALESCE(oi.is_workshop, 0) = 0'), 'Shipment fulfillment unexpectedly filters out explicit Workshop-backed reservations')
   const blockers = functionBody(reservations, 'getOrderShipmentInventoryBlockers')
