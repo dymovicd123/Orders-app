@@ -159,7 +159,14 @@ export async function createInventoryStocktakeSession(
   const existing = await db.prepare(
     `SELECT id FROM inventory_stocktake_sessions WHERE inventory_source = ? AND status = 'active' LIMIT 1`
   ).bind(source).first<{ id: string }>();
-  if (existing?.id) return { ok: false, code: 'active_stocktake_exists', message: 'По этой точке уже идёт незавершённая ревизия. Продолжите или отмените её перед началом новой.', sessionId: existing.id };
+  if (existing?.id) {
+    return {
+      ok: true,
+      resumed: true,
+      sessionId: existing.id,
+      session: await serializeInventoryStocktakeSession(db, existing.id),
+    };
+  }
 
   const now = new Date().toISOString();
   const sessionId = inventoryStocktakeSessionId(source, scope);
@@ -251,7 +258,7 @@ export async function saveInventoryStocktakeCount(
   if (!session?.id) throw new Error('Ревизия не найдена.');
   if (cleanText(session.status) !== 'active') throw new Error('Эта ревизия уже завершена или отменена.');
   const item = await db.prepare(
-    `SELECT id, stock_id, variant_id, baseline_quantity, status FROM inventory_stocktake_items WHERE id = ? AND session_id = ? LIMIT 1`
+    `SELECT id, stock_id, variant_id, baseline_quantity, counted_quantity, counted_at, status, conflict_quantity FROM inventory_stocktake_items WHERE id = ? AND session_id = ? LIMIT 1`
   ).bind(itemId, sessionId).first<InventoryStocktakeSessionRow>();
   if (!item?.id) throw new Error('Позиция ревизии не найдена.');
   if (!Object.prototype.hasOwnProperty.call(input, 'countedQuantity')) {
@@ -265,11 +272,35 @@ export async function saveInventoryStocktakeCount(
   const counted = clearCount ? null : Math.max(0, Number(numericCount));
   const source = normalizeSourceType(session.inventory_source);
   const stock = toInt(item.stock_id, 0)
-    ? await db.prepare(`SELECT id, quantity FROM inventory_stock WHERE id = ? AND inventory_source = ? LIMIT 1`).bind(toInt(item.stock_id, 0), source).first<Record<string, unknown>>()
-    : await db.prepare(`SELECT id, quantity FROM inventory_stock WHERE inventory_source = ? AND variant_id = ? LIMIT 1`).bind(source, toInt(item.variant_id, 0)).first<Record<string, unknown>>();
+    ? await db.prepare(`SELECT id, quantity, reserved_quantity FROM inventory_stock WHERE id = ? AND inventory_source = ? LIMIT 1`).bind(toInt(item.stock_id, 0), source).first<Record<string, unknown>>()
+    : await db.prepare(`SELECT id, quantity, reserved_quantity FROM inventory_stock WHERE inventory_source = ? AND variant_id = ? LIMIT 1`).bind(source, toInt(item.variant_id, 0)).first<Record<string, unknown>>();
   const currentQuantity = toInt(stock?.quantity, 0);
   const now = new Date().toISOString();
   const previousBaseline = toInt(item.baseline_quantity, 0);
+  const persistedCount = item.counted_quantity === null || item.counted_quantity === undefined
+    ? null
+    : Math.max(0, toInt(item.counted_quantity, 0));
+  const persistedStatus = cleanText(item.status);
+  const alreadyPersisted = currentQuantity === previousBaseline && (
+    (clearCount && persistedCount === null && persistedStatus === 'pending')
+    || (!clearCount && persistedCount === counted && persistedStatus === 'counted')
+  );
+  if (alreadyPersisted) {
+    return {
+      ok: true,
+      item: {
+        id: itemId,
+        stockId: toInt(stock?.id, 0) || toInt(item.stock_id, 0) || null,
+        baselineQuantity: previousBaseline,
+        countedQuantity: persistedCount,
+        countedAt: cleanText(item.counted_at) || null,
+        status: persistedStatus,
+        conflictQuantity: item.conflict_quantity === null || item.conflict_quantity === undefined ? null : toInt(item.conflict_quantity, 0),
+        currentQuantity,
+        reservedQuantity: Math.max(0, toInt(stock?.reserved_quantity, 0)),
+      },
+    };
+  }
 
   if (clearCount) {
     await db.batch([
@@ -709,16 +740,10 @@ export async function listInventoryCycleCountSuggestions(db: D1Database, url: UR
 
 export async function quickInventoryStocktakeBatch(
   db: D1Database,
-  input: { source?: unknown; items?: unknown },
+  input: { source?: unknown; items?: unknown; requestId?: unknown },
   options: { actor?: string; checkType?: string; referenceType?: string } = {},
 ): Promise<InventoryCycleCountApplyResponse> {
   const source = normalizeSourceType(input.source);
-  const activeSession = await db.prepare(
-    `SELECT id FROM inventory_stocktake_sessions WHERE inventory_source = ? AND status = 'active' LIMIT 1`
-  ).bind(source).first<{ id: string }>();
-  if (activeSession?.id) {
-    return { ok: false, code: 'stocktake_active', message: 'Сейчас по этой точке идёт ревизия. Завершите или отмените её перед быстрой сверкой.', sessionId: activeSession.id };
-  }
   const rawItems = Array.isArray(input.items) ? input.items : [];
   if (!rawItems.length) throw new Error('Выберите хотя бы одну позицию для сверки.');
   if (rawItems.length > 30) throw new Error('За одну быструю сверку можно проверить не больше 30 позиций.');
@@ -735,6 +760,48 @@ export async function quickInventoryStocktakeBatch(
     if (item.countedQuantity === null || item.countedQuantity === undefined || cleanText(item.countedQuantity) === '' || !Number.isFinite(counted) || counted < 0 || !Number.isInteger(counted)) {
       throw new Error('Для каждой выбранной позиции укажите целое фактическое количество 0 или больше.');
     }
+  }
+
+  const checkType = cleanText(options.checkType) || 'quick_stocktake';
+  const checkReferenceType = cleanText(options.referenceType) || (checkType === 'cycle_count' ? 'cycle_count' : 'quick_stocktake');
+  const requestId = cleanText(input.requestId).replace(/[^A-Za-z0-9._:-]/g, '').slice(0, 96);
+  const requestReferenceId = requestId ? `stock-check:${checkType}:${source}:${requestId}` : '';
+
+  const loadReplay = async (): Promise<InventoryCycleCountApplyResponse | null> => {
+    if (!requestReferenceId) return null;
+    const previous = await db.prepare(
+      `SELECT variant_id, expected_quantity, counted_quantity, difference_quantity, reserved_quantity
+       FROM inventory_stock_checks
+       WHERE inventory_source = ? AND check_type = ? AND reference_type = ? AND reference_id = ?
+       ORDER BY variant_id`
+    ).bind(source, checkType, checkReferenceType, requestReferenceId).all<Record<string, unknown>>();
+    const previousRows = previous.results || [];
+    if (!previousRows.length) return null;
+    const expectedByVariant = new Map(items.map(item => [item.variantId, item]));
+    const replayMismatch = previousRows.length !== items.length || previousRows.some(row => {
+      const expected = expectedByVariant.get(toInt(row.variant_id, 0));
+      return !expected
+        || toInt(row.expected_quantity, 0) !== expected.expectedQuantity
+        || toInt(row.counted_quantity, 0) !== Math.trunc(Number(expected.countedQuantity));
+    });
+    if (replayMismatch) throw new Error('Ключ повтора уже использован для другой сверки. Обновите страницу и повторите действие.');
+    const results = previousRows.map(row => {
+      const previousQuantity = toInt(row.expected_quantity, 0);
+      const physical = Math.max(0, toInt(row.counted_quantity, 0));
+      const reserved = Math.max(0, toInt(row.reserved_quantity, 0));
+      return { variantId: toInt(row.variant_id, 0), previousQuantity, physical, reserved, free: physical - reserved, changed: physical !== previousQuantity };
+    });
+    return { ok: true, changedCount: results.filter(row => row.changed).length, results };
+  };
+
+  const replay = await loadReplay();
+  if (replay) return replay;
+
+  const activeSession = await db.prepare(
+    `SELECT id FROM inventory_stocktake_sessions WHERE inventory_source = ? AND status = 'active' LIMIT 1`
+  ).bind(source).first<{ id: string }>();
+  if (activeSession?.id) {
+    return { ok: false, code: 'stocktake_active', message: 'Сейчас по этой точке идёт ревизия. Завершите или отмените её перед быстрой сверкой.', sessionId: activeSession.id };
   }
 
   const variantIds = items.map(item => item.variantId);
@@ -768,7 +835,7 @@ export async function quickInventoryStocktakeBatch(
   }
 
   const now = new Date().toISOString();
-  const batchId = `quick-stocktake-batch:${source}:${Date.now()}`;
+  const batchId = requestReferenceId || `quick-stocktake-batch:${source}:${Date.now()}`;
   const expectedValuesSql = items.map(() => '(?, ?, ?)').join(',');
   const expectedBindings = items.flatMap(item => [item.variantId, item.expectedQuantity, Math.trunc(Number(item.countedQuantity))]);
 
@@ -830,11 +897,9 @@ export async function quickInventoryStocktakeBatch(
      WHERE e.counted_quantity <> e.expected_quantity`
   ).bind(...expectedBindings, source, batchId, now);
 
-  const checkType = cleanText(options.checkType) || 'quick_stocktake';
-  const checkReferenceType = cleanText(options.referenceType) || (checkType === 'cycle_count' ? 'cycle_count' : 'quick_stocktake');
   const insertChecks = db.prepare(
     `WITH expected(variant_id, expected_quantity, counted_quantity) AS (VALUES ${expectedValuesSql})
-     INSERT OR IGNORE INTO inventory_stock_checks (
+     ${requestReferenceId ? 'INSERT' : 'INSERT OR IGNORE'} INTO inventory_stock_checks (
        check_key, inventory_source, product_id, variant_id, expected_quantity, counted_quantity,
        difference_quantity, reserved_quantity, check_type, reference_type, reference_id, checked_by, checked_at, created_at
      )
@@ -849,6 +914,8 @@ export async function quickInventoryStocktakeBatch(
   try {
     await db.batch([guard, updateExisting, insertMissing, insertMovements, insertChecks]);
   } catch (error) {
+    const replayAfterRace = await loadReplay();
+    if (replayAfterRace) return replayAfterRace;
     const currentStock = await db.prepare(
       `SELECT variant_id, quantity FROM inventory_stock WHERE inventory_source = ? AND variant_id IN (${placeholders})`
     ).bind(source, ...variantIds).all<Record<string, unknown>>();
@@ -874,12 +941,13 @@ export async function quickInventoryStocktakeBatch(
 
 export async function quickInventoryStocktake(
   db: D1Database,
-  input: { source?: unknown; variantId?: unknown; expectedQuantity?: unknown; countedQuantity?: unknown },
+  input: { source?: unknown; variantId?: unknown; expectedQuantity?: unknown; countedQuantity?: unknown; requestId?: unknown },
   options: { actor?: string; checkType?: string; referenceType?: string } = {},
 ): Promise<InventoryCycleCountApplyResponse> {
   const result = await quickInventoryStocktakeBatch(db, {
     source: input.source,
     items: [{ variantId: input.variantId, expectedQuantity: input.expectedQuantity, countedQuantity: input.countedQuantity }],
+    requestId: input.requestId,
   }, options);
   if (!result.ok) return result;
   const row = result.results?.[0];
@@ -941,7 +1009,34 @@ export async function completeInventoryStocktakeSession(db: D1Database, sessionI
     `SELECT id, inventory_source, status FROM inventory_stocktake_sessions WHERE id = ? LIMIT 1`
   ).bind(sessionId).first<InventoryStocktakeSessionRow>();
   if (!session?.id) throw new Error('Ревизия не найдена.');
-  if (cleanText(session.status) !== 'active') throw new Error('Эта ревизия уже завершена или отменена.');
+  const sessionStatus = cleanText(session.status);
+  if (sessionStatus === 'completed') {
+    const completed = await serializeInventoryStocktakeSession(db, sessionId);
+    const changed = completed.items.filter((item: any) => item.appliedQuantity !== null && Number(item.appliedQuantity) !== Number(item.baselineQuantity)).length;
+    const shortages = completed.items
+      .filter((item: any) => item.appliedQuantity !== null && Number(item.appliedQuantity) - Number(item.reservedQuantity || 0) < 0)
+      .map((item: any) => ({
+        itemId: item.id,
+        productId: item.productId,
+        variantId: item.variantId,
+        productName: item.productName,
+        color: item.color,
+        size: item.size,
+        reservedQuantity: item.reservedQuantity,
+        physicalQuantity: item.appliedQuantity,
+        shortageQuantity: Math.abs(Number(item.appliedQuantity) - Number(item.reservedQuantity || 0)),
+      }));
+    return {
+      ok: true,
+      changed,
+      message: shortages.length
+        ? `Ревизия уже завершена. Исправлено ${changed} позиций. По ${shortages.length} позициям товара не хватает для текущих заказов.`
+        : `Ревизия уже завершена. Исправлено ${changed} позиций.`,
+      shortages,
+      session: completed,
+    };
+  }
+  if (sessionStatus !== 'active') throw new Error('Эта ревизия уже завершена или отменена.');
   const source = normalizeSourceType(session.inventory_source);
   const rows = await getInventoryStocktakeItemRows(db, sessionId);
   const unfilled = rows.filter(row => row.counted_quantity === null || row.counted_quantity === undefined);

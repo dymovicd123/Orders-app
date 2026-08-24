@@ -37,6 +37,10 @@ try {
   const orderWrites = read('worker/domains/orders-write.ts')
   const catalogReview = read('worker/domains/catalog-review.ts')
   const lifecycleMigration = read('migrations/0051_v72_inventory_lifecycle_gate.sql')
+  const cycleCountMigration = read('migrations/0053_v72_inventory_cycle_counts.sql')
+  const stocktake = read('worker/domains/inventory-stocktake.ts')
+  const apiClient = read('src/app/controllers/useApiClient.ts')
+  const inventoryWriteRetry = read('src/app/controllers/inventoryWriteRetry.ts')
   const worker = read('worker/index.ts')
 
   check(worker.includes("warehouseTruthFreshness: '192a1'"), '192A1 live marker missing')
@@ -143,6 +147,19 @@ try {
   const catalogOperational = functionBody(catalogReview, 'catalogReviewOperationalPredicate')
   check(catalogOperational.includes('is_workshop'), 'Workshop catalog-review scope missing')
   check(catalogOperational.includes('product_id IS NULL'), 'Resolved Workshop product may incorrectly remain in operational catalog review')
+
+  // Lost-response integrity for stocktake and quick physical checks.
+  check(cycleCountMigration.includes('check_key TEXT UNIQUE'), 'Physical-check replay proof is no longer unique')
+  check(stocktake.includes('resumed: true'), 'Existing active stocktake is no longer resumed safely')
+  check(stocktake.includes('const alreadyPersisted = currentQuantity === previousBaseline'), 'Repeated saved stocktake fact may rewrite evidence time')
+  check(stocktake.includes('const requestReferenceId = requestId ? `stock-check:${checkType}:${source}:${requestId}`'), 'Quick check lost-response key is not durable')
+  check(stocktake.includes('const replayAfterRace = await loadReplay()'), 'Concurrent quick-check replay cannot recover after the transaction race')
+  check(stocktake.includes("${requestReferenceId ? 'INSERT' : 'INSERT OR IGNORE'} INTO inventory_stock_checks"), 'Quick-check duplicate key no longer rolls back a repeated mutation')
+  check(stocktake.includes("if (sessionStatus === 'completed')"), 'Completed stocktake retry can become a false failure')
+  check(inventoryWriteRetry.includes('managedInventoryWriteMode'), 'Stocktake writes are not opted into managed retry transport')
+  check(inventoryWriteRetry.includes('prepareCriticalRequest(requestKey, basePayload)'), 'Stocktake request id is not persisted across reload')
+  check(inventoryWriteRetry.includes("headers.set('X-Idempotency-Key', prepared.requestId)"), 'Stocktake managed writes do not enable safe transport retry')
+  check(apiClient.includes('Boolean(managedInventoryRequestKey) && response.status >= 500'), 'Audited stocktake writes cannot recover from a post-commit 5xx')
 
   console.log('STEP 192A1 WAREHOUSE TRUTH / FRESHNESS TESTS PASSED — exact-known workshop return/exchange auto-intake stays freshness-gated and idempotent; Workshop task completion remains production-only; adjacent reservation/shipping/handover/catalog-review boundaries are guarded')
 } catch (error) {
