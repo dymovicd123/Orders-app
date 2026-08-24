@@ -53,12 +53,11 @@ replace_once(
 insert = """
   if (stocktakeLostResponseFrontend) {
     check(stocktakeLostResponseFrontend.version === 1 && stocktakeLostResponseFrontend.revision === 'stocktake-lost-response-r1', 'Stocktake lost-response frontend preservation manifest invalid')
-    const apiTop = statementMap('src/app/controllers/useApiClient.ts')
-    const added = stocktakeLostResponseFrontend.frontend?.apiTopAdded || {}
-    check(Object.keys(added).length === 1 && Object.hasOwn(added, 'managedInventoryWriteMode'), 'Stocktake lost-response must allow exactly managedInventoryWriteMode as the new API top-level helper')
-    for (const [name, expectedHash] of Object.entries(added)) {
-      check(apiTop.has(name), `Stocktake lost-response API helper missing: ${name}`)
-      check(sha(apiTop.get(name)) === expectedHash, `Stocktake lost-response API helper hash mismatch: ${name}`)
+    const modulesAdded = stocktakeLostResponseFrontend.frontend?.modulesAdded || {}
+    check(Object.keys(modulesAdded).length === 1 && Object.hasOwn(modulesAdded, 'src/app/controllers/inventoryWriteRetry.ts'), 'Stocktake lost-response must add exactly the inventoryWriteRetry module')
+    for (const [relative, expectedHash] of Object.entries(modulesAdded)) {
+      const parsed = parse(relative)
+      check(sha(normalize(parsed.text)) === expectedHash, `Stocktake lost-response frontend module hash mismatch: ${relative}`)
     }
   }
 
@@ -66,7 +65,7 @@ insert = """
 replace_once(
     "\n  // Inventory panels are plain render functions, not React component boundaries: JSX stays token/text equivalent.\n",
     "\n" + insert + "  // Inventory panels are plain render functions, not React component boundaries: JSX stays token/text equivalent.\n",
-    '1906B frontend helper allow-list',
+    '1906B frontend module allow-list',
 )
 
 path.write_text(text, encoding='utf-8', newline='\n')
