@@ -16,6 +16,8 @@ const nestedTemplateReplacements = [
   ["`ЦВЕТ ${index + 1}`", "\\`ЦВЕТ \\${index + 1}\\`"],
   ["`${row.color} · ${row.size}`", "\\`\\${row.color} · \\${row.size}\\`"],
   ["`STEP 192B2B MOVEMENT PICKER UX TESTS FAILED: ${error?.message || error}`", "\\`STEP 192B2B MOVEMENT PICKER UX TESTS FAILED: \\${error?.message || error}\\`"],
+  ["split(/\\s+/).filter(Boolean)", "split(/\\\\s+/).filter(Boolean)"],
+  ["check(!/\\buse(?:State|Effect|Memo|Ref|Callback)\\s*\\(/.test(helperSource)", "check(!/\\\\buse(?:State|Effect|Memo|Ref|Callback)\\\\s*\\\\(/.test(helperSource)"],
 ]
 
 for (const [before, after] of nestedTemplateReplacements) {
@@ -43,4 +45,4 @@ const after = `  let operationVisibleRows = sortedRows
 if (!helper.includes(before)) throw new Error('B2B recovery-limit anchor missing')
 helper = helper.replace(before, after)
 fs.writeFileSync(helperPath, helper, 'utf8')
-console.log('STEP 192B2B generator parsing and recovery-only limit corrected.')
+console.log('STEP 192B2B generator parsing, regex escaping and recovery-only limit corrected.')
