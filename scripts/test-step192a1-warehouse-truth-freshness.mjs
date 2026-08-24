@@ -21,6 +21,14 @@ function functionBody(text, name) {
   fail(`function not closed: ${name}`)
 }
 
+function functionSection(text, name, nextName) {
+  const start = text.indexOf(`function ${name}`)
+  check(start >= 0, `function missing: ${name}`)
+  const end = text.indexOf(`function ${nextName}`, start + `function ${name}`.length)
+  check(end > start, `next function missing after ${name}: ${nextName}`)
+  return text.slice(start, end)
+}
+
 try {
   const lifecycle = read('worker/domains/lifecycle.ts')
   const exchanges = read('worker/domains/returns-exchanges.ts')
@@ -73,7 +81,8 @@ try {
   // Cross-workflow safety audit: Workshop task completion is a production-state transition only.
   // It must never silently become a second inventory intake path. Physical Workshop-origin inbound
   // belongs to return/exchange lifecycle where exact identity + freshness are already guarded.
-  const updateWorkshopTask = functionBody(workshop, 'updateWorkshopTask')
+  // Use section boundaries here because the TypeScript input type itself contains braces.
+  const updateWorkshopTask = functionSection(workshop, 'updateWorkshopTask', 'bulkUpdateWorkshopTasks')
   for (const forbidden of ['inventory_stock', 'inventory_reservations', 'inventory_lifecycle_events', 'applyCanonicalInventoryLifecycleEvent']) {
     check(!updateWorkshopTask.includes(forbidden), `Workshop task status unexpectedly mutates inventory via ${forbidden}`)
   }
@@ -88,7 +97,9 @@ try {
   check(lifecycleMigration.includes("event_type IN ('return_in', 'exchange_old_in', 'exchange_new_out')"), 'Lifecycle event scope changed; re-audit Workshop task semantics before release')
 
   // Normal order creation must keep Workshop outside Warehouse/Boutique availability/reservation.
-  const insertOrderContent = functionBody(orderWrites, 'insertOrderContent')
+  // insertOrderContent has inline object types in its signature, so a brace-count helper would stop
+  // inside the type rather than at the real function body.
+  const insertOrderContent = functionSection(orderWrites, 'insertOrderContent', 'createWorkshopTaskForOrderItem')
   const workshopBranch = insertOrderContent.indexOf('if (item.isWorkshop)')
   const stockBranch = insertOrderContent.indexOf('else if (autoWriteoffEnabled)', workshopBranch)
   check(workshopBranch >= 0 && stockBranch > workshopBranch, 'Order creation no longer separates Workshop from stock reservation/writeoff')
@@ -104,7 +115,8 @@ try {
   check(!fulfill.includes('COALESCE(oi.is_workshop, 0) = 0'), 'Shipment fulfillment unexpectedly filters out explicit Workshop-backed reservations')
   const blockers = functionBody(reservations, 'getOrderShipmentInventoryBlockers')
   check(blockers.includes('COALESCE(oi.is_workshop, 0) = 0'), 'Ordinary Workshop lines unexpectedly became stock shipment blockers')
-  const handoverRows = functionBody(reservations, 'fetchOrderStockHandoverRows')
+  // fetchOrderStockHandoverRows also has an inline object type in the options parameter.
+  const handoverRows = functionSection(reservations, 'fetchOrderStockHandoverRows', 'stockHandoverItemFromRow')
   check(handoverRows.includes('COALESCE(oi.is_workshop, 0) = 0'), 'Early stock handover unexpectedly includes ordinary Workshop lines')
 
   // Applied lifecycle events are one-shot and cancellation is reversible. This is the critical
