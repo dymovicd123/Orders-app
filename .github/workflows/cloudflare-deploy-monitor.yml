@@ -38,6 +38,7 @@ jobs:
             exit 0
           fi
           echo "present=true" >> "$GITHUB_OUTPUT"
+          run_url="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
           post_status() {
             local context="$1"
@@ -50,7 +51,7 @@ jobs:
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
               "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-              -d "$(jq -nc --arg s "$state" --arg c "$context" --arg d "$description" '{state:$s,context:$c,description:$d}')" >/dev/null
+              -d "$(jq -nc --arg s "$state" --arg c "$context" --arg d "$description" --arg u "$run_url" '{state:$s,context:$c,description:$d,target_url:$u}')" >/dev/null
           }
 
           fail_stage() {
@@ -62,24 +63,27 @@ jobs:
             [[ -n "$summary" ]] || summary="$(tail -n 1 "$logfile" 2>/dev/null | tr '\n\r' ' ' | cut -c1-104)"
             [[ -n "$summary" ]] || summary="unknown error or timeout"
             post_status "$context" failure "$stage: $summary"
+            post_status b2b-run/branch2 failure "$stage failed"
             echo "B2B gate failed at $stage: $summary" >&2
             exit 1
           }
 
+          post_status b2b-run/branch2 pending "B2B gate running"
           post_status b2b-prepare/branch2 pending "Applying Step 192B2B source"
-          timeout 60s node scripts/prepare-step192b2b-fix.mjs 2>&1 | tee /tmp/b2b-prepare.log
+          timeout --kill-after=5s 60s node scripts/prepare-step192b2b-fix.mjs 2>&1 | tee /tmp/b2b-prepare.log
           [[ ${PIPESTATUS[0]} -eq 0 ]] || fail_stage b2b-prepare/branch2 prepare /tmp/b2b-prepare.log
           post_status b2b-prepare/branch2 success "Step 192B2B source prepared"
 
           post_status b2b-install/branch2 pending "Installing clean dependencies"
-          timeout 180s npm ci --no-audit --no-fund 2>&1 | tee /tmp/b2b-install.log
+          timeout --kill-after=10s 180s npm ci --no-audit --no-fund 2>&1 | tee /tmp/b2b-install.log
           [[ ${PIPESTATUS[0]} -eq 0 ]] || fail_stage b2b-install/branch2 install /tmp/b2b-install.log
           post_status b2b-install/branch2 success "npm ci passed"
 
           post_status b2b-release/branch2 pending "Running full release:check"
-          timeout 600s npm run release:check 2>&1 | tee /tmp/b2b-release.log
+          timeout --kill-after=10s 600s npm run release:check 2>&1 | tee /tmp/b2b-release.log
           [[ ${PIPESTATUS[0]} -eq 0 ]] || fail_stage b2b-release/branch2 release /tmp/b2b-release.log
           post_status b2b-release/branch2 success "Full release:check passed"
+          post_status b2b-run/branch2 success "B2B gate passed"
 
       - name: Commit verified Step 192B2B
         if: steps.gate.outputs.present == 'true'
