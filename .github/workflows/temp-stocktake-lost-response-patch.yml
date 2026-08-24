@@ -8,7 +8,9 @@ on:
       - .github/workflows/temp-stocktake-lost-response-patch.yml
       - scripts/temp-stocktake-lost-response-patch.py
       - scripts/temp-stocktake-1906a-allowlist.py
+      - scripts/temp-stocktake-1906b-allowlist.py
       - scripts/temp-generate-stocktake-lost-response-manifest.mjs
+      - scripts/temp-generate-stocktake-lost-response-frontend-manifest.mjs
 
 permissions:
   contents: read
@@ -43,12 +45,15 @@ jobs:
         run: |
           python3 scripts/temp-stocktake-lost-response-patch.py
           python3 scripts/temp-stocktake-1906a-allowlist.py
+          python3 scripts/temp-stocktake-1906b-allowlist.py
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Generate exact Worker allow-list hashes
-        run: node scripts/temp-generate-stocktake-lost-response-manifest.mjs
+      - name: Generate exact preservation hashes
+        run: |
+          node scripts/temp-generate-stocktake-lost-response-manifest.mjs
+          node scripts/temp-generate-stocktake-lost-response-frontend-manifest.mjs
 
       - name: Full release gate
         run: npm run release:check
@@ -63,8 +68,10 @@ jobs:
           cp worker/domains/inventory-stocktake.ts artifact/worker/domains/inventory-stocktake.ts
           cp scripts/test-step192a1-warehouse-truth-freshness.mjs artifact/scripts/test-step192a1-warehouse-truth-freshness.mjs
           cp scripts/test-step1906a-worker-modularization.mjs artifact/scripts/test-step1906a-worker-modularization.mjs
+          cp scripts/test-step1906b-frontend-modularization.mjs artifact/scripts/test-step1906b-frontend-modularization.mjs
           cp scripts/stocktake-lost-response-worker-manifest.json artifact/scripts/stocktake-lost-response-worker-manifest.json
-          git diff -- src/app/controllers/useApiClient.ts worker/domains/inventory-stocktake.ts scripts/test-step192a1-warehouse-truth-freshness.mjs scripts/test-step1906a-worker-modularization.mjs scripts/stocktake-lost-response-worker-manifest.json > artifact/stocktake-lost-response.diff
+          cp scripts/stocktake-lost-response-frontend-manifest.json artifact/scripts/stocktake-lost-response-frontend-manifest.json
+          git diff -- src/app/controllers/useApiClient.ts worker/domains/inventory-stocktake.ts scripts/test-step192a1-warehouse-truth-freshness.mjs scripts/test-step1906a-worker-modularization.mjs scripts/test-step1906b-frontend-modularization.mjs scripts/stocktake-lost-response-worker-manifest.json scripts/stocktake-lost-response-frontend-manifest.json > artifact/stocktake-lost-response.diff
 
       - name: Upload verified patch
         uses: actions/upload-artifact@v4
