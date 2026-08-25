@@ -273,6 +273,19 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
   const paymentOperations = financeReport.reports.paymentOperations || []
   const paymentKinds = financeReport.reports.paymentKinds || []
   const paymentDateAnomalies = financeReport.reports.paymentDateAnomalies || []
+  const paymentTraceReview = financeReport.reports.paymentTraceReview || []
+  const paymentTraceInfo = financeReport.reports.paymentTraceInfo || []
+  const crossDatePaymentOperations = financeReport.reports.crossDatePaymentOperations || []
+  const currentMonthStart = (() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+  })()
+  const historicalPeriodSelected = String(financeReport.startDate || '') < currentMonthStart
+  const visiblePaymentTraceInfo = paymentTraceInfo.filter((row) => row.traceCode !== 'legacy_baseline' || historicalPeriodSelected)
+  const visibleTraceInfoIds = new Set(visiblePaymentTraceInfo.map((row) => Number(row.id || 0)))
+  const paymentTraceRows = [...paymentTraceReview, ...visiblePaymentTraceInfo]
+    .sort((a, b) => String(b.paymentDate).localeCompare(String(a.paymentDate)) || Number(b.id || 0) - Number(a.id || 0))
+  const visibleLegacyBaselineCount = visiblePaymentTraceInfo.filter((row) => row.traceCode === 'legacy_baseline').length
   const consistency = financeReport.reports.consistency || {
     ledgerTotal: financeReport.overview.totalReceived || 0,
     methodsTotal: financeReport.overview.totalReceived || 0,
@@ -313,7 +326,8 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
       exchangeRefunds: 0,
       returned: 0,
       net: 0,
-      anomalyCount: 0,
+      reviewCount: 0,
+      infoCount: 0,
     })
     return cashDayMap.get(date)
   }
@@ -329,7 +343,8 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
     else if (row.operationType === 'order_extra') bucket.orderExtras += Number(row.amount || 0)
     else bucket.orderPayments += Number(row.amount || 0)
     bucket.received += Number(row.amount || 0)
-    if (row.dateRelation === 'before_order') bucket.anomalyCount += 1
+    if (row.traceSeverity === 'review') bucket.reviewCount += 1
+    else if (row.traceSeverity === 'info' && visibleTraceInfoIds.has(Number(row.id || 0))) bucket.infoCount += 1
   })
   activeReturns.forEach((row) => {
     const bucket = ensureCashDay(row.return_date)
@@ -405,28 +420,60 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
             <span className={`status-pill ${consistency.ok ? 'status-online' : 'status-offline'}`}>{consistency.ok ? '0 разницы' : `Разница ${formatMoney(consistency.difference)}`}</span>
           </section>
 
-          {paymentDateAnomalies.length ? (
+          {crossDatePaymentOperations.length ? (
             <section className="mini-panel finance-anomaly-panel">
               <div className="mini-panel-head">
                 <div>
-                  <h3>Нужно проверить даты оплат</h3>
-                  <p className="mini-panel-note">Эти оплаты записаны раньше даты самого заказа. Они входят в финансовый итог по дате оплаты, но требуют ручной проверки.</p>
+                  <h3>Почему поступления и продажи периода могут отличаться</h3>
+                  <p className="mini-panel-note">Эти деньги поступили в выбранном периоде, но сами заказы относятся к другой дате. В итог поступлений они входят правильно — по дате денежной операции.</p>
                 </div>
-                <span className="soft-badge warning-soft">{paymentDateAnomalies.length} операций · {formatMoney(paymentDateAnomalies.reduce((sum, row) => sum + Number(row.amount || 0), 0))}</span>
+                <span className="soft-badge">{crossDatePaymentOperations.length} операций · {formatMoney(crossDatePaymentOperations.reduce((sum, row) => sum + Number(row.amount || 0), 0))}</span>
               </div>
               <div className="table-shell">
                 <table className="data-table finance-anomaly-table">
-                  <thead><tr><th>Дата оплаты</th><th>Дата заказа</th><th>Заказ</th><th>Менеджер</th><th>Способ</th><th>Вид</th><th className="num">Сумма</th><th>Проблема</th><th>Действие</th></tr></thead>
-                  <tbody>{paymentDateAnomalies.map((row) => (
-                    <tr key={`finance-anomaly-${row.id}`}>
+                  <thead><tr><th>Дата оплаты</th><th>Дата заказа</th><th>Заказ</th><th>Вид</th><th className="num">Сумма</th><th>Действие</th></tr></thead>
+                  <tbody>{crossDatePaymentOperations.map((row) => (
+                    <tr key={`finance-cross-date-${row.id}`}>
                       <td><strong>{formatDateShort(row.paymentDate)}</strong></td>
                       <td>{formatDateShort(row.orderDate)}</td>
                       <td>{row.externalId}</td>
+                      <td>{row.operationLabel}</td>
+                      <td className="num"><strong>{formatMoney(row.amount)}</strong></td>
+                      <td><button className="secondary compact finance-order-link" type="button" onClick={() => void openOrderFromFinance(row)}>К заказу</button></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {paymentTraceRows.length ? (
+            <section className="mini-panel finance-anomaly-panel">
+              <div className="mini-panel-head">
+                <div>
+                  <h3>Проверка дат и ввода</h3>
+                  <p className="mini-panel-note">Здесь только операции выбранного периода. Красным смыслом отмечается то, что требует проверки; обычные пояснения не считаются ошибками.</p>
+                  {historicalPeriodSelected && visibleLegacyBaselineCount ? <p className="mini-panel-note">Вы выбрали старый период: {visibleLegacyBaselineCount} исторических записей показаны как baseline. Их текущее состояние известно, но первоначальное действие пользователя по ним не всегда можно доказать.</p> : null}
+                </div>
+                <span className={`soft-badge ${paymentTraceReview.length ? 'warning-soft' : ''}`}>{paymentTraceReview.length ? `Проверить: ${paymentTraceReview.length}` : 'Без операций, требующих проверки'}{visiblePaymentTraceInfo.length ? ` · Пояснений: ${visiblePaymentTraceInfo.length}` : ''}</span>
+              </div>
+              <div className="table-shell">
+                <table className="data-table finance-anomaly-table">
+                  <thead><tr><th>Дата оплаты</th><th>Дата заказа</th><th>Заказ</th><th>Заказ введён</th><th>Менеджер</th><th>Вид</th><th className="num">Сумма</th><th>Что означает</th><th>Действие</th></tr></thead>
+                  <tbody>{paymentTraceRows.map((row) => (
+                    <tr key={`finance-trace-${row.id}`}>
+                      <td><strong>{formatDateShort(row.paymentDate)}</strong></td>
+                      <td>{formatDateShort(row.orderDate)}</td>
+                      <td>{row.externalId}</td>
+                      <td>{row.orderCreatedAt ? formatDateShort(String(row.orderCreatedAt).slice(0, 10)) : '—'}</td>
                       <td><ManagerBadge name={row.manager} colorKey={row.managerColor || managerColorFor(row.manager)} compact /></td>
-                      <td>{row.method}</td>
                       <td>{row.operationLabel}</td>
                       <td className="num">{formatMoney(row.amount)}</td>
-                      <td><span className="soft-badge warning-soft">Раньше заказа на {Math.abs(Number(row.dateOffsetDays || 0))} дн.</span></td>
+                      <td>
+                        <strong>{row.traceTitle}</strong>
+                        <div className="mini-panel-note">{row.traceExplanation}</div>
+                        <span className={`soft-badge ${row.traceSeverity === 'review' ? 'warning-soft' : ''}`}>{row.traceSeverity === 'review' ? 'Нужно проверить' : 'Пояснение'}</span>
+                      </td>
                       <td><button className="secondary compact finance-order-link" type="button" onClick={() => void openOrderFromFinance(row)}>К заказу</button></td>
                     </tr>
                   ))}</tbody>
@@ -434,7 +481,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
               </div>
             </section>
           ) : (
-            <section className="finance-no-anomalies"><span className="status-pill status-online">Даты согласованы</span><span>В выбранном периоде нет оплат, записанных раньше даты заказа.</span></section>
+            <section className="finance-no-anomalies"><span className="status-pill">По выбранному периоду без замечаний</span><span>Нет денежных операций, которые требуют проверки или отдельного пояснения.</span></section>
           )}
 
           <section className="mini-panel finance-days-truth-panel">
@@ -459,7 +506,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                     <td className="num"><strong>{formatMoney(row.received)}</strong></td>
                     <td className="num">{formatMoney(row.returned)}</td>
                     <td className="num"><strong>{formatMoney(row.net)}</strong></td>
-                    <td>{row.anomalyCount ? <span className="soft-badge warning-soft">Проверить: {row.anomalyCount}</span> : <span className="soft-badge success-soft">Даты нормальны</span>}</td>
+                    <td>{row.reviewCount ? <span className="soft-badge warning-soft">Проверить: {row.reviewCount}</span> : row.infoCount ? <span className="soft-badge">Пояснение: {row.infoCount}</span> : <span className="soft-badge">Без замечаний</span>}</td>
                   </tr>)}
                   {!cashDays.length ? <tr><td colSpan={11} className="empty-state">За выбранный период нет заказов и денежных операций.</td></tr> : null}
                 </tbody>
