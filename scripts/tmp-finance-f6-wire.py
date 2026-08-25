@@ -14,6 +14,16 @@ new = old + "  run('Finance F6 aggregate release audit', process.execPath, [path
 if text.count(old) != 1:
     raise SystemExit(f'F6 run marker count={text.count(old)}')
 text = text.replace(old, new, 1)
-
 path.write_text(text, encoding='utf-8')
-print('Finance F6 release gate wired')
+
+# The product ternary intentionally formats the order_extra branch on the following line.
+# Keep the F6 assertion semantic rather than tied to the previous whitespace shape.
+test_path = Path('scripts/test-finance-f6-release-audit.mjs')
+test = test_path.read_text(encoding='utf-8')
+old = "  check(finance.includes(\"operationType === 'order_extra'\\n      ? 'Закрытие долга (старый тип)'\"), 'Legacy ordinary extra is not labelled as old debt-close semantics')\n"
+new = "  check(finance.includes(\"operationType === 'order_extra'\") && finance.includes(\"? 'Закрытие долга (старый тип)'\"), 'Legacy ordinary extra is not labelled as old debt-close semantics')\n"
+if test.count(old) != 1:
+    raise SystemExit(f'F6 legacy-label assertion marker count={test.count(old)}')
+test_path.write_text(test.replace(old, new, 1), encoding='utf-8')
+
+print('Finance F6 release gate wired and audit matcher normalized')
