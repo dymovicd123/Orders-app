@@ -378,36 +378,87 @@ export async function listFinancialHistory(db: D1Database, url: URL) {
   const limit = Math.min(100, Math.max(20, toInt(url.searchParams.get('limit'), 50)));
   const offset = Math.max(0, toInt(url.searchParams.get('offset'), 0));
   const query = upperText(url.searchParams.get('q'));
-  const dateFrom = cleanText(url.searchParams.get('dateFrom'));
-  const dateTo = cleanText(url.searchParams.get('dateTo'));
-  const type = cleanText(url.searchParams.get('type')).toLowerCase();
+  const dateFromRaw = cleanText(url.searchParams.get('dateFrom'));
+  const dateToRaw = cleanText(url.searchParams.get('dateTo'));
+  const dateFrom = dateFromRaw ? normalizeDate(dateFromRaw) : '';
+  const dateTo = dateToRaw ? normalizeDate(dateToRaw) : '';
+  const legacyType = cleanText(url.searchParams.get('type')).toLowerCase();
+  const flow = cleanText(url.searchParams.get('flow')).toLowerCase()
+    || (legacyType === 'in' || legacyType === 'out' ? legacyType : 'all');
+  const operation = cleanText(url.searchParams.get('operation')).toLowerCase()
+    || (legacyType === 'refund' || legacyType === 'correction' ? legacyType : 'all');
+  const trace = cleanText(url.searchParams.get('trace')).toLowerCase() || 'all';
+  const currentMonthStart = `${kazakhstanBusinessDate().slice(0, 7)}-01`;
+  const includeLegacy = cleanText(url.searchParams.get('includeLegacy')) === '1'
+    && Boolean(dateFrom)
+    && dateFrom < currentMonthStart;
   const where: string[] = [];
   const bindings: unknown[] = [];
+  const legacySql = `(fe.is_backfill = 1 OR COALESCE(fe.reason, '') = 'baseline')`;
+  const backdatedCreateInfoSql = `(
+    fe.event_type = 'order_payment'
+    AND o.id IS NOT NULL
+    AND fe.event_date > o.order_date
+    AND COALESCE(fe.reason, '') = 'order_create'
+    AND substr(COALESCE(o.created_at, ''), 1, 10) = fe.event_date
+    AND substr(COALESCE(fe.event_at, ''), 1, 10) = fe.event_date
+  )`;
+  const reviewSql = `(
+    NOT ${legacySql}
+    AND fe.event_type = 'order_payment'
+    AND o.id IS NOT NULL
+    AND (
+      fe.event_date < o.order_date
+      OR (fe.event_date > o.order_date AND NOT ${backdatedCreateInfoSql})
+    )
+  )`;
+  const infoSql = `(
+    ${legacySql}
+    OR fe.event_type IN ('payment_reversal', 'refund_reversal')
+    OR (fe.event_type = 'order_payment' AND o.id IS NULL)
+    OR ${backdatedCreateInfoSql}
+  )`;
 
-  if (dateFrom) { where.push('fe.event_date >= ?'); bindings.push(normalizeDate(dateFrom)); }
-  if (dateTo) { where.push('fe.event_date <= ?'); bindings.push(normalizeDate(dateTo)); }
+  if (dateFrom) { where.push('fe.event_date >= ?'); bindings.push(dateFrom); }
+  if (dateTo) { where.push('fe.event_date <= ?'); bindings.push(dateTo); }
+  if (!includeLegacy) where.push(`NOT ${legacySql}`);
   if (query) {
     where.push(`(
       INSTR(UPPER(COALESCE(fe.external_order_id, '')), ?) > 0 OR
       INSTR(UPPER(COALESCE(fe.payment_method, '')), ?) > 0 OR
       INSTR(UPPER(COALESCE(fe.comment, '')), ?) > 0 OR
-      INSTR(UPPER(COALESCE(fe.reason, '')), ?) > 0
+      INSTR(UPPER(COALESCE(fe.reason, '')), ?) > 0 OR
+      INSTR(UPPER(COALESCE(fe.event_type, '')), ?) > 0
     )`);
-    bindings.push(query, query, query, query);
+    bindings.push(query, query, query, query, query);
   }
-  if (type === 'in') where.push('fe.amount_delta > 0');
-  else if (type === 'out') where.push('fe.amount_delta < 0');
-  else if (type === 'refund') where.push("fe.event_type IN ('order_refund', 'exchange_refund')");
-  else if (type === 'correction') where.push("fe.event_type IN ('payment_reversal', 'refund_reversal')");
+  if (flow === 'in') where.push('fe.amount_delta > 0');
+  else if (flow === 'out') where.push('fe.amount_delta < 0');
+
+  if (operation === 'order_payment') where.push("fe.event_type = 'order_payment'");
+  else if (operation === 'debt_close') where.push("fe.event_type = 'debt_close'");
+  else if (operation === 'order_extra') where.push("fe.event_type = 'order_extra'");
+  else if (operation === 'exchange_extra') where.push("fe.event_type = 'exchange_extra'");
+  else if (operation === 'refund') where.push("fe.event_type IN ('order_refund', 'exchange_refund')");
+  else if (operation === 'correction') where.push("fe.event_type IN ('payment_reversal', 'refund_reversal')");
+
+  if (trace === 'review') where.push(reviewSql);
+  else if (trace === 'info') where.push(`(${infoSql} AND NOT ${legacySql})`);
+  else if (trace === 'legacy') where.push(legacySql);
+  else if (trace === 'normal') where.push(`(NOT ${reviewSql} AND NOT ${infoSql})`);
 
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const [rowsResult, summary] = await Promise.all([
     db.prepare(
-      `SELECT fe.id, fe.external_order_id, fe.event_date, fe.event_at, fe.event_type,
+      `SELECT fe.id, fe.order_id, fe.external_order_id, fe.event_date, fe.event_at, fe.event_type,
               COALESCE(fe.related_type, '') AS related_type, fe.amount_delta,
               COALESCE(fe.payment_method, '') AS payment_method,
               COALESCE(fe.reason, '') AS reason, COALESCE(fe.comment, '') AS comment,
-              fe.is_backfill,
+              fe.is_backfill, COALESCE(fe.created_at, '') AS event_recorded_at,
+              COALESCE(fe.source_type, '') AS source_type, fe.source_id,
+              COALESCE(fe.source_ref, '') AS source_ref,
+              COALESCE(o.order_date, '') AS order_date,
+              COALESCE(o.created_at, '') AS order_created_at,
               COALESCE(m.name, o.manager_snapshot_name, '') AS manager_name,
               COALESCE(m.color_key, '#475569') AS manager_color
        FROM financial_events fe
@@ -429,16 +480,91 @@ export async function listFinancialHistory(db: D1Database, url: URL) {
     ).bind(...bindings).first<Record<string, unknown>>(),
   ]);
 
+  const financeDateOffset = (left: string, right: string) => {
+    const leftDate = /^\d{4}-\d{2}-\d{2}$/.test(left) ? Date.parse(`${left}T00:00:00.000Z`) : Number.NaN;
+    const rightDate = /^\d{4}-\d{2}-\d{2}$/.test(right) ? Date.parse(`${right}T00:00:00.000Z`) : Number.NaN;
+    return Number.isFinite(leftDate) && Number.isFinite(rightDate) ? Math.round((leftDate - rightDate) / 86_400_000) : 0;
+  };
   const rawRows = rowsResult.results || [];
   const rows = rawRows.slice(0, limit).map((row) => {
     const eventType = cleanText(row.event_type);
     const relatedType = cleanText(row.related_type);
     const reason = cleanText(row.reason);
+    const eventDate = cleanText(row.event_date);
+    const eventAt = cleanText(row.event_at);
+    const orderDate = cleanText(row.order_date);
+    const orderCreatedAt = cleanText(row.order_created_at);
+    const orderCreatedDate = orderCreatedAt.slice(0, 10);
+    const isBackfill = toInt(row.is_backfill, 0) === 1;
+    const isLegacy = isBackfill || reason === 'baseline';
+    const dateRelation = !orderDate ? 'unknown' : eventDate < orderDate ? 'before_order' : eventDate > orderDate ? 'after_order' : 'same_day';
+    const provenBackdatedCreate = eventType === 'order_payment'
+      && dateRelation === 'after_order'
+      && reason === 'order_create'
+      && orderCreatedDate === eventDate
+      && eventAt.slice(0, 10) === eventDate;
+
+    let traceCode = eventType || 'money_event';
+    let traceSeverity: 'normal' | 'info' | 'review' = 'normal';
+    let traceTitle = moneyHistoryOperationLabel(eventType, relatedType, reason);
+    let traceExplanation = 'Операция имеет явный тип и относится к выбранной дате.';
+    if (isLegacy) {
+      traceCode = 'legacy_baseline';
+      traceSeverity = 'info';
+      traceTitle = 'Историческая базовая запись';
+      traceExplanation = 'Сохранено доказуемое состояние старой операции, но первоначальное действие пользователя по этой истории восстановить нельзя.';
+    } else if (eventType === 'payment_reversal' || eventType === 'refund_reversal') {
+      traceCode = 'correction';
+      traceSeverity = 'info';
+      traceTitle = moneyHistoryOperationLabel(eventType, relatedType, reason);
+      traceExplanation = 'Это отдельная отмена или исправление. Исходная денежная операция не стирается из истории.';
+    } else if (eventType === 'order_payment' && !orderDate) {
+      traceCode = 'order_context_missing';
+      traceSeverity = 'info';
+      traceTitle = 'Заказ уже недоступен в подробной истории';
+      traceExplanation = 'Денежное событие сохранено, но подробная карточка исходного заказа сейчас недоступна.';
+    } else if (eventType === 'order_payment' && dateRelation === 'before_order') {
+      traceCode = 'primary_before_order';
+      traceSeverity = 'review';
+      traceTitle = 'Оплата раньше даты заказа';
+      traceExplanation = 'Первичная оплата датирована раньше бизнес-даты заказа. Это требует проверки.';
+    } else if (eventType === 'order_payment' && provenBackdatedCreate) {
+      traceCode = 'backdated_order_entry';
+      traceSeverity = 'info';
+      traceTitle = 'Заказ введён позже своей бизнес-даты';
+      traceExplanation = 'Заказ был внесён в систему позже указанной даты, а денежная запись появилась при его вводе.';
+    } else if (eventType === 'order_payment' && dateRelation === 'after_order') {
+      traceCode = 'primary_recorded_later';
+      traceSeverity = 'review';
+      traceTitle = 'Первичная оплата имеет более позднюю дату';
+      traceExplanation = 'Строка хранится как первичная оплата, хотя её дата позже даты заказа. Нужно проверить смысл операции.';
+    } else if (eventType === 'debt_close') {
+      traceCode = 'debt_close';
+      traceTitle = 'Закрытие долга';
+      traceExplanation = 'Отдельная оплата долга после создания заказа — нормальная денежная операция.';
+    } else if (eventType === 'order_extra') {
+      traceCode = 'order_extra';
+      traceTitle = 'Доплата по заказу';
+      traceExplanation = 'Отдельная доплата хранится отдельно от первичной оплаты.';
+    } else if (eventType === 'exchange_extra') {
+      traceCode = 'exchange_extra';
+      traceTitle = 'Доплата по обмену';
+      traceExplanation = 'Доплата связана с обменом и учитывается по дате операции.';
+    } else if (eventType === 'order_refund' || eventType === 'exchange_refund') {
+      traceCode = eventType;
+      traceTitle = moneyHistoryOperationLabel(eventType, relatedType, reason);
+      traceExplanation = 'Возврат денег учитывается по дате фактической операции возврата.';
+    }
+
     return {
       id: toInt(row.id, 0),
+      orderId: toInt(row.order_id, 0) || null,
       externalOrderId: cleanText(row.external_order_id),
-      eventDate: cleanText(row.event_date),
-      eventAt: cleanText(row.event_at),
+      orderDate: orderDate || null,
+      orderCreatedAt: orderCreatedAt || null,
+      eventDate,
+      eventAt,
+      eventRecordedAt: cleanText(row.event_recorded_at) || null,
       eventType,
       relatedType: relatedType || null,
       operationLabel: moneyHistoryOperationLabel(eventType, relatedType, reason),
@@ -448,7 +574,16 @@ export async function listFinancialHistory(db: D1Database, url: URL) {
       managerColor: cleanText(row.manager_color) || null,
       reason: reason || null,
       comment: cleanText(row.comment) || null,
-      isBackfill: toInt(row.is_backfill, 0) === 1,
+      isBackfill,
+      sourceType: cleanText(row.source_type) || null,
+      sourceId: row.source_id == null ? null : toInt(row.source_id, 0) || null,
+      sourceRef: cleanText(row.source_ref) || null,
+      dateRelation,
+      dateOffsetDays: orderDate ? financeDateOffset(eventDate, orderDate) : 0,
+      traceCode,
+      traceSeverity,
+      traceTitle,
+      traceExplanation,
     };
   });
 
@@ -458,6 +593,12 @@ export async function listFinancialHistory(db: D1Database, url: URL) {
     offset,
     limit,
     hasMore: rawRows.length > limit,
+    scope: {
+      dateFrom: dateFrom || null,
+      dateTo: dateTo || null,
+      includeLegacy,
+      currentMonthStart,
+    },
     summary: {
       totalIn: Number(summary?.total_in || 0),
       totalOut: Number(summary?.total_out || 0),

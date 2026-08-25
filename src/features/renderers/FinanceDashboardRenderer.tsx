@@ -286,6 +286,22 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
   const paymentTraceRows = [...paymentTraceReview, ...visiblePaymentTraceInfo]
     .sort((a, b) => String(b.paymentDate).localeCompare(String(a.paymentDate)) || Number(b.id || 0) - Number(a.id || 0))
   const visibleLegacyBaselineCount = visiblePaymentTraceInfo.filter((row) => row.traceCode === 'legacy_baseline').length
+  const formatFinanceDateTime = (value: unknown) => {
+    const text = String(value || '').trim()
+    if (!text) return '—'
+    const date = new Date(text)
+    return Number.isNaN(date.getTime()) ? text : date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  }
+  const openMoneyHistoryForOrder = (row: any) => {
+    const externalId = String(row?.externalId || row?.externalOrderId || '').trim()
+    if (!externalId) return
+    setMoneyHistoryQuery(externalId)
+    setMoneyHistoryType({ flow: 'all', operation: 'all', trace: 'all' })
+    setFinanceMode('payments')
+  }
+  const visibleMoneyHistoryTrace = historicalPeriodSelected
+    ? moneyHistoryType.trace
+    : moneyHistoryType.trace === 'legacy' ? 'all' : moneyHistoryType.trace
   const consistency = financeReport.reports.consistency || {
     ledgerTotal: financeReport.overview.totalReceived || 0,
     methodsTotal: financeReport.overview.totalReceived || 0,
@@ -439,7 +455,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                       <td>{row.externalId}</td>
                       <td>{row.operationLabel}</td>
                       <td className="num"><strong>{formatMoney(row.amount)}</strong></td>
-                      <td><button className="secondary compact finance-order-link" type="button" onClick={() => void openOrderFromFinance(row)}>К заказу</button></td>
+                      <td><div className="finance-row-actions"><button className="secondary compact finance-order-link" type="button" onClick={() => void openOrderFromFinance(row)}>К заказу</button><button className="secondary compact finance-money-link" type="button" onClick={() => openMoneyHistoryForOrder(row)}>Денежная история</button></div></td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -474,7 +490,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                         <div className="mini-panel-note">{row.traceExplanation}</div>
                         <span className={`soft-badge ${row.traceSeverity === 'review' ? 'warning-soft' : ''}`}>{row.traceSeverity === 'review' ? 'Нужно проверить' : 'Пояснение'}</span>
                       </td>
-                      <td><button className="secondary compact finance-order-link" type="button" onClick={() => void openOrderFromFinance(row)}>К заказу</button></td>
+                      <td><div className="finance-row-actions"><button className="secondary compact finance-order-link" type="button" onClick={() => void openOrderFromFinance(row)}>К заказу</button><button className="secondary compact finance-money-link" type="button" onClick={() => openMoneyHistoryForOrder(row)}>Денежная история</button></div></td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -548,26 +564,58 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
               </div>
             </div>
 
-            <div className="finance-money-history-filters">
-              <label><span>Найти операцию</span><input value={moneyHistoryQuery} onChange={(event) => setMoneyHistoryQuery(event.target.value)} placeholder="Номер заказа, способ оплаты или комментарий" /></label>
-              <label><span>Показать</span><select value={moneyHistoryType} onChange={(event) => setMoneyHistoryType(event.target.value)}>
-                <option value="all">Все операции</option>
+            <div className="finance-money-history-filters finance-money-history-filters-f4">
+              <label className="finance-money-search"><span>Найти операцию</span><input value={moneyHistoryQuery} onChange={(event) => setMoneyHistoryQuery(event.target.value)} placeholder="Номер заказа, способ оплаты или комментарий" /></label>
+              <label><span>Движение</span><select value={moneyHistoryType.flow} onChange={(event) => setMoneyHistoryType((current) => ({ ...current, flow: event.target.value }))}>
+                <option value="all">Все</option>
                 <option value="in">Поступления</option>
                 <option value="out">Списания и возвраты</option>
-                <option value="refund">Только возвраты</option>
+              </select></label>
+              <label><span>Вид операции</span><select value={moneyHistoryType.operation} onChange={(event) => setMoneyHistoryType((current) => ({ ...current, operation: event.target.value }))}>
+                <option value="all">Все виды</option>
+                <option value="order_payment">Оплата заказа</option>
+                <option value="debt_close">Закрытие долга</option>
+                <option value="order_extra">Доплата по заказу</option>
+                <option value="exchange_extra">Доплата по обмену</option>
+                <option value="refund">Возвраты</option>
                 <option value="correction">Исправления и отмены</option>
               </select></label>
+              <label><span>Проверка</span><select value={visibleMoneyHistoryTrace} onChange={(event) => setMoneyHistoryType((current) => ({ ...current, trace: event.target.value }))}>
+                <option value="all">Все состояния</option>
+                <option value="normal">Обычные операции</option>
+                <option value="info">С пояснением</option>
+                <option value="review">Нужно проверить</option>
+                <option value="legacy" disabled={!historicalPeriodSelected}>Исторический baseline{historicalPeriodSelected ? '' : ' — выберите старый период'}</option>
+              </select></label>
             </div>
+            {historicalPeriodSelected ? <div className="finance-history-scope-note">Выбран старый период. Исторические baseline-записи разрешены и помечаются отдельно; их первоначальный пользовательский ввод может быть недоказуем.</div> : null}
 
             {moneyHistoryBusy && !moneyHistory.length ? <div className="finance-money-history-state"><strong>Загружаю историю денег…</strong></div>
             : moneyHistoryError && !moneyHistory.length ? <div className="finance-money-history-state"><strong>Не удалось загрузить историю денег.</strong><span>{moneyHistoryError}</span><button className="secondary compact" type="button" onClick={() => void loadMoneyHistory()}>Повторить</button></div>
             : moneyHistory.length ? <div className="finance-money-history-list">{moneyHistory.map((row) => (
-              <article className="finance-money-history-row" key={`money-history-${row.id}`}>
-                <div><strong>{formatDateShort(row.eventDate)}</strong></div>
-                <div className="finance-money-history-order"><strong>{row.externalOrderId || 'Без номера заказа'}</strong>{row.manager ? <ManagerBadge name={row.manager} colorKey={row.managerColor || managerColorFor(row.manager)} compact /> : null}</div>
-                <div className="finance-money-history-operation"><strong>{row.operationLabel}</strong>{row.comment ? <span className="finance-money-history-note">{row.comment}</span> : null}</div>
+              <article className={`finance-money-history-row finance-money-history-row-f4 trace-${row.traceSeverity || 'normal'}`} key={`money-history-${row.id}`}>
+                <div className="finance-money-history-date">
+                  <strong>{formatDateShort(row.eventDate)}</strong>
+                  <small>Операция записана: {formatFinanceDateTime(row.eventAt)}</small>
+                </div>
+                <div className="finance-money-history-order">
+                  <strong>{row.externalOrderId || 'Без номера заказа'}</strong>
+                  {row.orderDate ? <small>Дата заказа: {formatDateShort(row.orderDate)}</small> : <small>Подробная карточка заказа недоступна</small>}
+                  {row.orderCreatedAt ? <small>Заказ введён: {formatFinanceDateTime(row.orderCreatedAt)}</small> : null}
+                  {row.manager ? <ManagerBadge name={row.manager} colorKey={row.managerColor || managerColorFor(row.manager)} compact /> : null}
+                </div>
+                <div className="finance-money-history-operation">
+                  <strong>{row.operationLabel}</strong>
+                  <span className={`soft-badge ${row.traceSeverity === 'review' ? 'warning-soft' : ''}`}>{row.traceSeverity === 'review' ? 'Нужно проверить' : row.traceCode === 'legacy_baseline' ? 'Историческая запись' : row.traceSeverity === 'info' ? 'Пояснение' : 'Обычная операция'}</span>
+                  {row.traceTitle ? <span className="finance-money-history-trace-title">{row.traceTitle}</span> : null}
+                  {row.traceExplanation ? <span className="finance-money-history-note">{row.traceExplanation}</span> : null}
+                  {row.comment ? <span className="finance-money-history-note">Комментарий: {row.comment}</span> : null}
+                </div>
                 <div className="finance-money-history-method">{row.paymentMethod || 'Способ не указан'}</div>
                 <div className={`finance-money-history-amount ${row.amountDelta >= 0 ? 'is-in' : 'is-out'}`}>{row.amountDelta >= 0 ? '+ ' : '− '}{formatMoney(Math.abs(row.amountDelta))}</div>
+                <div className="finance-money-history-actions">
+                  {row.orderId || row.externalOrderId ? <button className="secondary compact finance-order-link" type="button" onClick={() => void openOrderFromFinance({ orderId: row.orderId || undefined, externalId: row.externalOrderId, orderDate: row.orderDate || undefined })}>К заказу</button> : null}
+                </div>
               </article>
             ))}</div>
             : <div className="finance-money-history-state"><strong>За выбранный период денежных операций нет.</strong></div>}
