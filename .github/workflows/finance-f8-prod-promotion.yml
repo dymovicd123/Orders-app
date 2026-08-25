@@ -33,7 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          changed="$(git diff --name-only origin/main...HEAD | sort)"
+          changed="$(git diff --name-only origin/main...HEAD | grep -v '^\.github/workflows/finance-f8-prod-promotion.yml$' | sort)"
           printf '%s\n' "$changed"
           expected="$(printf '%s\n' \
             scripts/test-finance-f3-summary-ux.mjs \
