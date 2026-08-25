@@ -135,10 +135,10 @@ export function buildPaymentAndMoneyEventStatements(
 
 export async function removeOrderPaymentsWithMoneyEvents(
   db: D1Database,
-  input: { orderId: number; externalOrderId: string; timestamp: string; reason: 'order_edit' | 'order_delete'; comment: string },
+  input: { orderId: number; externalOrderId: string; timestamp: string; reason: 'order_edit' | 'order_delete'; comment: string; preservePayments?: boolean },
 ) {
   const eventDate = input.timestamp.slice(0, 10);
-  await db.batch([
+  const statements = [
     db.prepare(
       `INSERT OR IGNORE INTO financial_events (
          event_key, order_id, external_order_id, event_date, event_at, event_type, related_type,
@@ -178,8 +178,9 @@ export async function removeOrderPaymentsWithMoneyEvents(
       input.timestamp,
       input.orderId,
     ),
-    db.prepare('DELETE FROM payments WHERE order_id = ?').bind(input.orderId),
-  ]);
+  ];
+  if (!input.preservePayments) statements.push(db.prepare('DELETE FROM payments WHERE order_id = ?').bind(input.orderId));
+  await db.batch(statements);
 }
 
 

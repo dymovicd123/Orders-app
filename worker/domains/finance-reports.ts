@@ -101,6 +101,8 @@ export async function listFinanceReports(db: D1Database, url: URL) {
     () => db.prepare(
       `SELECT COALESCE(NULLIF(o.city, ''), 'Не указан') AS city,
               COUNT(*) AS order_count,
+              COUNT(DISTINCT o.customer_id) AS clients,
+              COUNT(DISTINCT o.manager_id) AS managers,
               COALESCE(SUM(o.total_amount), 0) AS total_sales,
               COALESCE(SUM(o.received_amount), 0) AS total_received,
               COALESCE(SUM(o.debt_amount), 0) AS total_debt,
@@ -959,8 +961,6 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       crossDatePaymentTotal: crossDatePaymentOperations.reduce((sum: number, row: any) => sum + row.amount, 0),
       currentDebt: Number((currentDebtRow as any)?.total_debt || 0),
       currentDebtOrders: Number((currentDebtRow as any)?.order_count || 0),
-      collectionRate: sales > 0 ? received / sales : 0,
-      returnRate: sales > 0 ? periodReturns / sales : 0,
     },
     reports: {
       paymentMethods: paymentRows,
