@@ -47,16 +47,25 @@ jobs:
               exit 1
             fi
           done
+
+          # F2's permanent regression file was created in its preparation history rather than
+          # in the final verified product commit. Bring only that reviewed permanent file,
+          # not any temporary workflow/helper commit.
+          git show origin/branch2:scripts/test-finance-f2-trace.mjs > scripts/test-finance-f2-trace.mjs
+          test "$(git hash-object scripts/test-finance-f2-trace.mjs)" = "e892dde38e38a858c530683ad5e030ffa072123f"
+
           echo '=== Finance dry-promotion diff from main ==='
           git diff --stat origin/main...HEAD
           git diff --name-status origin/main...HEAD
+          echo '=== Uncommitted reviewed permanent file(s) ==='
+          git status --short
       - name: Full release gate on main-based tree
         run: npm run release:check
       - name: Verify no migration or Arrival delta
         shell: bash
         run: |
           set -euo pipefail
-          changed="$(git diff --name-only origin/main...HEAD)"
+          changed="$( { git diff --name-only origin/main...HEAD; git diff --name-only; } | sort -u )"
           echo "$changed"
           if printf '%s\n' "$changed" | grep -Eq '^migrations/'; then
             echo 'ERROR: Finance promotion unexpectedly changes migrations/'
