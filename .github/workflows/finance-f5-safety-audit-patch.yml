@@ -45,13 +45,40 @@ jobs:
           python3 scripts/tmp-finance-f5-safety-patch.py
           python3 - <<'PY'
           from pathlib import Path
-          path = Path('scripts/test-finance-f5-adjacent-regression.mjs')
-          text = path.read_text(encoding='utf-8')
+
+          # Scope the adjacent assertion to the actual PATCH payload, not local draft restoration.
+          test_path = Path('scripts/test-finance-f5-adjacent-regression.mjs')
+          test = test_path.read_text(encoding='utf-8')
           old = "check(!persistBlock.includes('payments:'), 'Order editor PATCH still sends a payment collection and can trigger rewrite-all')"
           new = "check(!persistBlock.includes('payments: nextDraft.payments.map'), 'Order editor PATCH still sends the full payment collection and can trigger rewrite-all')"
-          if old not in text:
+          if old not in test:
               raise SystemExit('adjacent payload assertion marker missing')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          test_path.write_text(test.replace(old, new, 1), encoding='utf-8')
+
+          # Do not add a new App hook solely for payment-row busy state; reuse the established savingOrder flag.
+          app_path = Path('src/App.tsx')
+          app = app_path.read_text(encoding='utf-8')
+          hook = "  const [editorPaymentSavingIndex, setEditorPaymentSavingIndex] = useState<number | null>(null)\n"
+          if hook not in app:
+              raise SystemExit('temporary editorPaymentSavingIndex hook missing')
+          app = app.replace(hook, '', 1)
+          app = app.replace("    if (!editorDraft || !selectedOrder) return\n", "    if (!editorDraft || !selectedOrder || savingOrder) return\n", 1)
+          app = app.replace('    setEditorPaymentSavingIndex(index)\n', '    setSavingOrder(true)\n', 1)
+          app = app.replace('      setEditorPaymentSavingIndex(null)\n', '      setSavingOrder(false)\n', 1)
+          app = app.replace(', editorOpen, editorPaymentSavingIndex, editorReturnSector,', ', editorOpen, editorReturnSector,', 1)
+          app_path.write_text(app, encoding='utf-8')
+
+          editor_path = Path('src/features/sections/OrderEditorSection.tsx')
+          editor = editor_path.read_text(encoding='utf-8')
+          editor = editor.replace('    editorPaymentSavingIndex,\n', '', 1)
+          editor = editor.replace('disabled={editorPaymentSavingIndex !== null}', 'disabled={savingOrder}')
+          editor = editor.replace('disabled={Boolean(payment.id) || editorPaymentSavingIndex === index}', 'disabled={Boolean(payment.id) || savingOrder}')
+          editor = editor.replace('disabled={editorPaymentSavingIndex === index}', 'disabled={savingOrder}')
+          editor = editor.replace('disabled={savingOrder || editorPaymentSavingIndex !== null}', 'disabled={savingOrder}')
+          editor = editor.replace("{editorPaymentSavingIndex === index ? 'Провожу оплату…' : 'Провести оплату'}", "{savingOrder ? 'Провожу оплату…' : 'Провести оплату'}")
+          if 'editorPaymentSavingIndex' in editor:
+              raise SystemExit('editorPaymentSavingIndex remained in extracted editor')
+          editor_path.write_text(editor, encoding='utf-8')
           PY
       - name: Full release gate
         run: npm run release:check
