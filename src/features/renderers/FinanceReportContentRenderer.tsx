@@ -78,7 +78,7 @@ export function FinanceReportContentRenderer(ctx: RendererContext) {
           <div className="strict-section-head"><h3>Итог по способам оплаты</h3><span className="soft-badge">таблица за период</span></div>
           <div className="table-shell"><table className="data-table strict-report-table"><thead><tr><th>Способ оплаты</th><th className="num">Сумма</th><th className="num">Доля</th></tr></thead><tbody>
             {financeReport.reports.paymentMethods.map((row) => <tr key={`payment-report-${row.method}`}><td>{row.method || '—'}</td><td className="num">{formatMoney(row.total)}</td><td className="num">{formatPercent(paymentTotal ? Number(row.total || 0) / paymentTotal : 0)}</td></tr>)}
-            {!financeReport.reports.paymentMethods.length ? <tr><td colSpan={3} className="empty-state">Нет оплат по выбранным заказам.</td></tr> : null}
+            {!financeReport.reports.paymentMethods.length ? <tr><td colSpan={3} className="empty-state">Нет оплат за выбранный период.</td></tr> : null}
             {financeReport.reports.paymentMethods.length ? <tr className="total-row"><td>ИТОГО</td><td className="num">{formatMoney(paymentTotal)}</td><td className="num">100%</td></tr> : null}
           </tbody></table></div>
         </section>
@@ -86,7 +86,7 @@ export function FinanceReportContentRenderer(ctx: RendererContext) {
           <div className="strict-section-head"><h3>Оплаты по дням</h3><span className="soft-badge">фактическая дата оплаты</span></div>
           <div className="table-shell"><table className="data-table strict-report-table"><thead><tr><th>Дата оплаты</th>{paymentMethodNames.map((method) => <th className="num" key={`method-head-${method}`}>{method}</th>)}<th className="num">Итого</th></tr></thead><tbody>
             {paymentMethodsByDay.map((row) => <tr key={`payment-day-${row.date}`}><td>{formatDateShort(row.date)}</td>{paymentMethodNames.map((method) => <td className="num" key={`${row.date}-${method}`}>{formatMoney(row.methods?.[method] || 0)}</td>)}<td className="num"><strong>{formatMoney(row.total)}</strong></td></tr>)}
-            {!paymentMethodsByDay.length ? <tr><td colSpan={paymentMethodNames.length + 2} className="empty-state">Нет оплат по выбранным заказам.</td></tr> : null}
+            {!paymentMethodsByDay.length ? <tr><td colSpan={paymentMethodNames.length + 2} className="empty-state">Нет оплат за выбранный период.</td></tr> : null}
           </tbody></table></div>
         </section>
       </>
@@ -100,7 +100,7 @@ export function FinanceReportContentRenderer(ctx: RendererContext) {
           { label: 'Получено', value: formatMoney(financeReport.overview.totalReceived) },
           { label: 'Заказов', value: financeReport.overview.orderCount },
           { label: 'Долг заказов периода', value: formatMoney(financeReport.overview.periodDebt) },
-          { label: 'Возвраты по заказам', value: formatMoney(activeReturnTotal) },
+          { label: 'Возвраты по дате операции', value: formatMoney(activeReturnTotal) },
         ])}
         <section className="report-table-card"><div className="strict-section-head"><h3>Итог по менеджерам</h3><span className="soft-badge">таблица за период</span></div><div className="table-shell"><table className="data-table strict-report-table"><thead><tr><th>Менеджер</th><th className="num">Заказов</th><th className="num">Продажи</th><th className="num">Поступило</th><th className="num">Возвраты</th><th className="num">Долг</th><th className="num">Средний чек</th></tr></thead><tbody>
           {financeReport.reports.managers.map((row) => <tr key={`manager-total-${row.manager_id || row.manager}`}><td><ManagerBadge name={row.manager} colorKey={row.color_key} compact /></td><td className="num">{row.order_count}</td><td className="num">{formatMoney(row.total_sales)}</td><td className="num">{formatMoney(row.total_received)}</td><td className="num">{formatMoney(row.total_returns)}</td><td className="num">{formatMoney(row.total_debt)}</td><td className="num">{formatMoney(row.avg_check)}</td></tr>)}
@@ -115,13 +115,13 @@ export function FinanceReportContentRenderer(ctx: RendererContext) {
 
     const renderProductReport = () => (
       <>
-        {renderHeader('Товары из заказов, созданных в выбранный период.')}
+        {renderHeader('Товары из заказов с бизнес-датой заказа в выбранном периоде.')}
         {renderStatsTable([
           { label: 'Всего единиц', value: financeReport.reports.products.reduce((sum, row) => sum + Number(row.quantity || 0), 0) },
           { label: 'Товаров', value: financeReport.reports.products.length },
           { label: 'Заказов', value: financeReport.overview.orderCount },
           { label: 'Лидер продаж', value: financeReport.reports.products[0]?.product || '—' },
-          { label: 'Возвраты по заказам', value: formatMoney(activeReturnTotal) },
+          
         ])}
         <section className="report-table-card"><div className="strict-section-head"><h3>Проданные товары</h3><span className="soft-badge">итог за период</span></div><div className="table-shell"><table className="data-table strict-report-table"><thead><tr><th>Товар</th><th className="num">Количество</th><th className="num">Заказов</th></tr></thead><tbody>
           {financeReport.reports.products.map((row) => <tr key={`product-total-${row.product}`}><td>{row.product}</td><td className="num">{row.quantity}</td><td className="num">{row.order_count}</td></tr>)}
@@ -146,7 +146,7 @@ export function FinanceReportContentRenderer(ctx: RendererContext) {
           { label: 'Лидер', value: financeReport.reports.cities[0]?.city || '—' },
         ])}
         <section className="report-table-card"><div className="strict-section-head"><h3>Все города</h3><span className="soft-badge">итог за период</span></div><div className="table-shell"><table className="data-table strict-report-table"><thead><tr><th>Город</th><th className="num">Заказов</th><th className="num">Сумма</th><th className="num">Получено</th><th className="num">Долг</th><th className="num">Клиентов</th><th className="num">Менеджеров</th><th className="num">Средний чек</th></tr></thead><tbody>
-          {financeReport.reports.cities.map((row) => <tr key={`city-total-${row.city}`}><td>{row.city}</td><td className="num">{row.order_count}</td><td className="num">{formatMoney(row.total_sales)}</td><td className="num">{formatMoney(row.total_received)}</td><td className="num">{formatMoney(row.total_debt)}</td><td className="num">—</td><td className="num">—</td><td className="num">{formatMoney(row.order_count ? Number(row.total_sales || 0) / Number(row.order_count || 1) : 0)}</td></tr>)}
+          {financeReport.reports.cities.map((row) => <tr key={`city-total-${row.city}`}><td>{row.city}</td><td className="num">{row.order_count}</td><td className="num">{formatMoney(row.total_sales)}</td><td className="num">{formatMoney(row.total_received)}</td><td className="num">{formatMoney(row.total_debt)}</td><td className="num">{row.clients}</td><td className="num">{row.managers}</td><td className="num">{formatMoney(row.order_count ? Number(row.total_sales || 0) / Number(row.order_count || 1) : 0)}</td></tr>)}
           {!financeReport.reports.cities.length ? <tr><td colSpan={8} className="empty-state">Нет городов за период.</td></tr> : null}
         </tbody></table></div></section>
         <section className="strict-report-section"><div className="strict-section-head"><h3>По дням</h3><span className="soft-badge">продажи по дате заказа · деньги по дате операции</span></div>

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "revision": "finance-f6-delete-money-history-r1",
+  "reason": "Logical order deletion preserves payment rows, appends idempotent payment_reversal events, and prevents stale clients from rewriting payments during deletion.",
+  "changes": {
+    "removeOrderPaymentsWithMoneyEvents": {
+      "before": "188cb6b814646d2b1b236a3458b968d8e63d3d106465b7c7c0366652aa65e7a7",
+      "after": "898923988739be5b5e59cabe04c4a9a01b3895e8a7e5fa6803a2bd9b957a0d0f"
+    },
+    "updateOrderCritical": {
+      "before": "931045bba9565cb5643d8e8c9a0783f981e17aa61d7c2c4724332dee68c72b2e",
+      "after": "b988fca72e8786787276fe66d32b41ffdbc10f42006020723292ba15e015d141"
+    }
+  }
+}

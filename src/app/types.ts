@@ -620,8 +620,6 @@ export type FinanceReportResponse = {
     crossDatePaymentTotal?: number
     currentDebt: number
     currentDebtOrders: number
-    collectionRate: number
-    returnRate: number
   }
   reports: {
     paymentMethods: Array<{ method: string; count: number; total: number }>
@@ -635,7 +633,7 @@ export type FinanceReportResponse = {
     consistency?: FinanceConsistency
     managers: Array<{ manager_id?: number; manager: string; color_key?: string; order_count: number; total_sales: number; total_received: number; total_returns: number; total_debt: number; avg_check: number }>
     products: Array<{ product: string; quantity: number; order_count: number; order_sales: number }>
-    cities: Array<{ city: string; order_count: number; total_sales: number; total_received: number; total_debt: number; total_returns: number }>
+    cities: Array<{ city: string; order_count: number; total_sales: number; total_received: number; total_debt: number; total_returns: number; clients: number; managers: number }>
     days: Array<{ date: string; order_count: number; total_sales: number; total_received: number; total_returns: number; total_debt: number }>
     returns: Array<{ id: number; order_id: number; external_id: string; order_date: string; return_date: string; amount: number; status: string; comment: string; manager: string; manager_color?: string; customer?: string; city?: string; return_type?: 'order_return' | 'exchange_refund' | string }>
     exchanges: Array<{ id: number; order_id: number; external_id: string; order_date: string; exchange_date: string; old_quantity: number; old_return_source: string; new_source_type: string; financial_action: string; financial_amount: number; status: string; comment: string }>
