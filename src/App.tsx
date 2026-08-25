@@ -23,6 +23,7 @@ import './styles/188g-adaptive-sidebar-scroll.css'
 import './styles/188k3-safe-early-handover.css'
 import './styles/189b-business-history.css'
 import './styles/189c-reliable-money-history.css'
+import './styles/finance-f4-money-journal.css'
 import './styles/189d-team-activity-cleanup.css'
 import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, ExchangeDraft, ExchangeHistoryEntry, ExchangeHistoryResponse, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, InventoryHistoryResponse, InventoryCheckHistoryResponse, FinancialHistoryEntry, FinancialHistoryResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryDraftItem, InventoryMatrixDraft, InventoryMovementRecord, InventoryOperationVariantDraft, InventoryPanel, InventoryResponse, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, InventoryStockRecord, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, ReturnDraft, ReturnHistoryEntry, ReturnHistoryResponse, SimpleAdminStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
 import type { CatalogResolutionContext, CatalogResolutionInput, CatalogResolutionResponse, InventoryCycleCountApplyResponse, InventoryCycleCountSuggestionsResponse, InventoryReservationsResponse, InventoryStocktakeMutationResponse, InventoryStocktakeSessionsResponse, WarehouseAttentionSummaryResponse } from '../shared/api-contracts.ts'
@@ -556,7 +557,7 @@ function App() {
   const [moneyHistoryBusy, setMoneyHistoryBusy] = useState(false)
   const [moneyHistoryError, setMoneyHistoryError] = useState('')
   const [moneyHistoryQuery, setMoneyHistoryQuery] = useState('')
-  const [moneyHistoryType, setMoneyHistoryType] = useState<'all' | 'in' | 'out' | 'refund' | 'correction'>('all')
+  const [moneyHistoryType, setMoneyHistoryType] = useState({ flow: 'all' as 'all' | 'in' | 'out', operation: 'all' as 'all' | 'order_payment' | 'debt_close' | 'order_extra' | 'exchange_extra' | 'refund' | 'correction', trace: 'all' as 'all' | 'normal' | 'info' | 'review' | 'legacy' })
   const [moneyHistoryHasMore, setMoneyHistoryHasMore] = useState(false)
   const [moneyHistorySummary, setMoneyHistorySummary] = useState({ count: 0, totalIn: 0, totalOut: 0, net: 0 })
   const moneyHistoryRequestIdRef = useRef(0)
@@ -1351,7 +1352,7 @@ function App() {
       void loadMoneyHistory()
     }, 250)
     return () => window.clearTimeout(timer)
-  }, [activeSector, authReady, financeMode, financeReportFilters.dateFrom, financeReportFilters.dateTo, moneyHistoryQuery, moneyHistoryType])
+  }, [activeSector, authReady, financeMode, financeReportFilters.dateFrom, financeReportFilters.dateTo, moneyHistoryQuery, moneyHistoryType.flow, moneyHistoryType.operation, moneyHistoryType.trace])
 
   async function loadReferencesData(force = false) {
     if (references && !force) return references
@@ -2150,6 +2151,9 @@ function App() {
     if (!financeReportFilters.dateFrom || !financeReportFilters.dateTo) return null
     const requestId = ++moneyHistoryRequestIdRef.current
     const offset = append ? moneyHistory.length : 0
+    const currentMonthStart = `${formatLocalDateInput().slice(0, 7)}-01`
+    const includeLegacy = financeReportFilters.dateFrom < currentMonthStart
+    const effectiveTrace = !includeLegacy && moneyHistoryType.trace === 'legacy' ? 'all' : moneyHistoryType.trace
     setMoneyHistoryBusy(true)
     setMoneyHistoryError('')
     try {
@@ -2157,7 +2161,10 @@ function App() {
         dateFrom: financeReportFilters.dateFrom,
         dateTo: financeReportFilters.dateTo,
         q: moneyHistoryQuery.trim(),
-        type: moneyHistoryType,
+        flow: moneyHistoryType.flow,
+        operation: moneyHistoryType.operation,
+        trace: effectiveTrace,
+        includeLegacy: includeLegacy ? '1' : '0',
         limit: '50',
         offset: String(offset),
       })

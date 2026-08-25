@@ -476,9 +476,13 @@ export type ClosedDebtReportDay = {
 
 export type FinancialHistoryEntry = {
   id: number
+  orderId?: number | null
   externalOrderId: string
+  orderDate?: string | null
+  orderCreatedAt?: string | null
   eventDate: string
   eventAt: string
+  eventRecordedAt?: string | null
   eventType: string
   relatedType: string | null
   operationLabel: string
@@ -489,6 +493,15 @@ export type FinancialHistoryEntry = {
   reason: string | null
   comment: string | null
   isBackfill: boolean
+  sourceType?: string | null
+  sourceId?: number | null
+  sourceRef?: string | null
+  dateRelation?: 'before_order' | 'same_day' | 'after_order' | 'unknown' | string
+  dateOffsetDays?: number
+  traceCode?: string
+  traceSeverity?: 'normal' | 'info' | 'review' | string
+  traceTitle?: string
+  traceExplanation?: string
 }
 
 export type FinancialHistoryResponse = {
