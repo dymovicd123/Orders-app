@@ -620,8 +620,6 @@ export type FinanceReportResponse = {
     crossDatePaymentTotal?: number
     currentDebt: number
     currentDebtOrders: number
-    collectionRate: number
-    returnRate: number
   }
   reports: {
     paymentMethods: Array<{ method: string; count: number; total: number }>

@@ -961,8 +961,6 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       crossDatePaymentTotal: crossDatePaymentOperations.reduce((sum: number, row: any) => sum + row.amount, 0),
       currentDebt: Number((currentDebtRow as any)?.total_debt || 0),
       currentDebtOrders: Number((currentDebtRow as any)?.order_count || 0),
-      collectionRate: sales > 0 ? received / sales : 0,
-      returnRate: sales > 0 ? periodReturns / sales : 0,
     },
     reports: {
       paymentMethods: paymentRows,

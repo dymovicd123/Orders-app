@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "revision": "finance-f6-dead-metrics-r1",
+  "reason": "Remove unused collectionRate and returnRate fields because they divide operation-date money/returns by order-date sales and therefore have no coherent period cohort.",
+  "changes": {
+    "listFinanceReports": {
+      "before": "48d9167a2c2276fd9c2d8369d3146bfa2bf29dcf43a2304295f4795c3e6539a6",
+      "after": "b15dad3d448b13e48bf3d6799f2d20573f5d8f0bd38e8b3603136628af5c945a"
+    }
+  }
+}

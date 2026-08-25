@@ -123,6 +123,8 @@ check(`${money}\n${orderWrite}`.includes("'payment_reversal'"), 'Immutable payme
   check(!reportUi.includes('Нет оплат по выбранным заказам.'), 'Payment report empty state incorrectly claims an order-date cohort')
   check(reportUi.includes('Нет оплат за выбранный период.'), 'Payment report has no operation-period empty wording')
   check(reportUi.includes('<td className="num">{row.clients}</td><td className="num">{row.managers}</td>'), 'City aggregate still renders fake client/manager placeholders')
+  check(!finance.includes('collectionRate:') && !finance.includes('returnRate:'), 'Mixed-cohort dead rate fields returned to Finance API')
+  check(!read('src/app/types.ts').includes('collectionRate:') && !read('src/app/types.ts').includes('returnRate:'), 'Mixed-cohort dead rate fields returned to frontend contract')
 
   // Synthetic cross-layer accounting fixture. It deliberately includes one legacy ordinary extra
   // and one exchange extra encoded with payment_kind=extra, reproducing the exact ambiguity F5 fixed.
