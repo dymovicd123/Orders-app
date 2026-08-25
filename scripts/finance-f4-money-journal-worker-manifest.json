@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "step": "finance-f4-money-journal",
+  "changes": {
+    "listFinancialHistory": {
+      "before": "e468985325bd2b1a56d99940d0b68e60b074819b7a30b687191206aac787fe75",
+      "after": "cef82cf83eeb6a7605b2794ccd4f363e694504e83a5d51dca9f7a2118821c7bf"
+    }
+  }
+}

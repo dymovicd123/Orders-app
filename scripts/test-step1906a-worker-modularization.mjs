@@ -19,6 +19,13 @@ const attentionContextPath = path.join(root, 'scripts/step192b2a2-attention-cont
 const handoverSqlAliasSafetyPath = path.join(root, 'scripts/step192b2a3-handover-sql-alias-safety-manifest.json')
 const orderCreateSaveIntegrityPath = path.join(root, 'scripts/step192b2a4-order-create-save-integrity-manifest.json')
 const stocktakeLostResponsePath = path.join(root, 'scripts/stocktake-lost-response-worker-manifest.json')
+const financeOrderDateSyncPath = path.join(root, 'scripts/finance-order-date-sync-worker-manifest.json')
+const financeF2TracePath = path.join(root, 'scripts/finance-f2-trace-worker-manifest.json')
+const financeF4MoneyJournalPath = path.join(root, 'scripts/finance-f4-money-journal-worker-manifest.json')
+const financeF5BusinessSemanticsPath = path.join(root, 'scripts/finance-f5-business-semantics-worker-manifest.json')
+const financeF6DeleteMoneyHistoryPath = path.join(root, 'scripts/finance-f6-delete-money-history-worker-manifest.json')
+const financeF6ReportSemanticsPath = path.join(root, 'scripts/finance-f6-report-semantics-worker-manifest.json')
+const financeF6DeadMetricsPath = path.join(root, 'scripts/finance-f6-dead-metrics-worker-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -49,6 +56,13 @@ try {
   check(fs.existsSync(manifestPath), '1906A declaration manifest missing')
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
   check(manifest?.version === 1 && manifest?.declarationCount === 577, '1906A declaration manifest invalid')
+  check(fs.existsSync(financeOrderDateSyncPath), 'Finance order-date sync Worker manifest missing')
+  check(fs.existsSync(financeF2TracePath), 'Finance F2 trace Worker manifest missing')
+  check(fs.existsSync(financeF4MoneyJournalPath), 'Finance F4 money journal Worker manifest missing')
+  check(fs.existsSync(financeF5BusinessSemanticsPath), 'Finance F5 business semantics Worker manifest missing')
+  check(fs.existsSync(financeF6DeleteMoneyHistoryPath), 'Finance F6 delete-money-history Worker manifest missing')
+  check(fs.existsSync(financeF6ReportSemanticsPath), 'Finance F6 report semantics Worker manifest missing')
+  check(fs.existsSync(financeF6DeadMetricsPath), 'Finance F6 dead metrics Worker manifest missing')
   const cleanup = fs.existsSync(cleanupPath) ? JSON.parse(fs.readFileSync(cleanupPath, 'utf8')) : null
   const removed = cleanup?.version === 1 ? (cleanup.removedWorkerDeclarations || {}) : {}
   const boundary = fs.existsSync(boundaryPath) ? JSON.parse(fs.readFileSync(boundaryPath, 'utf8')) : null
@@ -80,6 +94,20 @@ try {
   const orderCreateSaveIntegrityAdded = orderCreateSaveIntegrity?.version === 1 ? (orderCreateSaveIntegrity.added || {}) : {}
   const stocktakeLostResponse = fs.existsSync(stocktakeLostResponsePath) ? JSON.parse(fs.readFileSync(stocktakeLostResponsePath, 'utf8')) : null
   const stocktakeLostResponseChanges = stocktakeLostResponse?.version === 1 ? (stocktakeLostResponse.changes || {}) : {}
+  const financeOrderDateSync = fs.existsSync(financeOrderDateSyncPath) ? JSON.parse(fs.readFileSync(financeOrderDateSyncPath, 'utf8')) : null
+  const financeOrderDateSyncChanges = financeOrderDateSync?.version === 1 ? (financeOrderDateSync.changes || {}) : {}
+  const financeF2Trace = fs.existsSync(financeF2TracePath) ? JSON.parse(fs.readFileSync(financeF2TracePath, 'utf8')) : null
+  const financeF2TraceChanges = financeF2Trace?.version === 1 ? (financeF2Trace.changes || {}) : {}
+  const financeF4MoneyJournal = fs.existsSync(financeF4MoneyJournalPath) ? JSON.parse(fs.readFileSync(financeF4MoneyJournalPath, 'utf8')) : null
+  const financeF4MoneyJournalChanges = financeF4MoneyJournal?.version === 1 ? (financeF4MoneyJournal.changes || {}) : {}
+  const financeF5BusinessSemantics = fs.existsSync(financeF5BusinessSemanticsPath) ? JSON.parse(fs.readFileSync(financeF5BusinessSemanticsPath, 'utf8')) : null
+  const financeF5BusinessSemanticsChanges = financeF5BusinessSemantics?.version === 1 ? (financeF5BusinessSemantics.changes || {}) : {}
+  const financeF6DeleteMoneyHistory = fs.existsSync(financeF6DeleteMoneyHistoryPath) ? JSON.parse(fs.readFileSync(financeF6DeleteMoneyHistoryPath, 'utf8')) : null
+  const financeF6DeleteMoneyHistoryChanges = financeF6DeleteMoneyHistory?.version === 1 ? (financeF6DeleteMoneyHistory.changes || {}) : {}
+  const financeF6ReportSemantics = fs.existsSync(financeF6ReportSemanticsPath) ? JSON.parse(fs.readFileSync(financeF6ReportSemanticsPath, 'utf8')) : null
+  const financeF6ReportSemanticsChanges = financeF6ReportSemantics?.version === 1 ? (financeF6ReportSemantics.changes || {}) : {}
+  const financeF6DeadMetrics = fs.existsSync(financeF6DeadMetricsPath) ? JSON.parse(fs.readFileSync(financeF6DeadMetricsPath, 'utf8')) : null
+  const financeF6DeadMetricsChanges = financeF6DeadMetrics?.version === 1 ? (financeF6DeadMetrics.changes || {}) : {}
 
   const files = walk(workerRoot)
   const indexPath = path.join(workerRoot, 'index.ts')
@@ -201,11 +229,53 @@ try {
       acceptedPostOrderCreateSaveHash = orderCreateSaveIntegrityChanged.after
     }
     const stocktakeLostResponseChanged = stocktakeLostResponseChanges[name]
+    let acceptedPostStocktakeLostResponseHash = acceptedPostOrderCreateSaveHash
     if (stocktakeLostResponseChanged) {
       check(stocktakeLostResponseChanged.before === acceptedPostOrderCreateSaveHash, `Stocktake lost-response declaration baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === stocktakeLostResponseChanged.after, `Worker declaration changed beyond exact stocktake lost-response allow-list: ${name}`)
+      acceptedPostStocktakeLostResponseHash = stocktakeLostResponseChanged.after
+    }
+    const financeOrderDateSyncChanged = financeOrderDateSyncChanges[name]
+    let acceptedPostFinanceOrderDateSyncHash = acceptedPostStocktakeLostResponseHash
+    if (financeOrderDateSyncChanged) {
+      check(financeOrderDateSyncChanged.before === acceptedPostStocktakeLostResponseHash, `Finance order-date sync declaration baseline hash mismatch: ${name}`)
+      acceptedPostFinanceOrderDateSyncHash = financeOrderDateSyncChanged.after
+    }
+    const financeF2TraceChanged = financeF2TraceChanges[name]
+    let acceptedPostFinanceF2TraceHash = acceptedPostFinanceOrderDateSyncHash
+    if (financeF2TraceChanged) {
+      check(financeF2TraceChanged.before === acceptedPostFinanceOrderDateSyncHash, `Finance F2 trace declaration baseline hash mismatch: ${name}`)
+      acceptedPostFinanceF2TraceHash = financeF2TraceChanged.after
+    }
+    const financeF4MoneyJournalChanged = financeF4MoneyJournalChanges[name]
+    let acceptedPostFinanceF4MoneyJournalHash = acceptedPostFinanceF2TraceHash
+    if (financeF4MoneyJournalChanged) {
+      check(financeF4MoneyJournalChanged.before === acceptedPostFinanceF2TraceHash, `Finance F4 money journal declaration baseline hash mismatch: ${name}`)
+      acceptedPostFinanceF4MoneyJournalHash = financeF4MoneyJournalChanged.after
+    }
+    const financeF5BusinessSemanticsChanged = financeF5BusinessSemanticsChanges[name]
+    let acceptedPostFinanceF5BusinessSemanticsHash = acceptedPostFinanceF4MoneyJournalHash
+    if (financeF5BusinessSemanticsChanged) {
+      check(financeF5BusinessSemanticsChanged.before === acceptedPostFinanceF4MoneyJournalHash, `Finance F5 business semantics declaration baseline hash mismatch: ${name}`)
+      acceptedPostFinanceF5BusinessSemanticsHash = financeF5BusinessSemanticsChanged.after
+    }
+    const financeF6DeleteMoneyHistoryChanged = financeF6DeleteMoneyHistoryChanges[name]
+    let acceptedPostFinanceF6DeleteMoneyHistoryHash = acceptedPostFinanceF5BusinessSemanticsHash
+    if (financeF6DeleteMoneyHistoryChanged) {
+      check(financeF6DeleteMoneyHistoryChanged.before === acceptedPostFinanceF5BusinessSemanticsHash, `Finance F6 delete-money-history declaration baseline hash mismatch: ${name}`)
+      acceptedPostFinanceF6DeleteMoneyHistoryHash = financeF6DeleteMoneyHistoryChanged.after
+    }
+    const financeF6ReportSemanticsChanged = financeF6ReportSemanticsChanges[name]
+    let acceptedPostFinanceF6ReportSemanticsHash = acceptedPostFinanceF6DeleteMoneyHistoryHash
+    if (financeF6ReportSemanticsChanged) {
+      check(financeF6ReportSemanticsChanged.before === acceptedPostFinanceF6DeleteMoneyHistoryHash, `Finance F6 report-semantics declaration baseline hash mismatch: ${name}`)
+      acceptedPostFinanceF6ReportSemanticsHash = financeF6ReportSemanticsChanged.after
+    }
+    const financeF6DeadMetricsChanged = financeF6DeadMetricsChanges[name]
+    if (financeF6DeadMetricsChanged) {
+      check(financeF6DeadMetricsChanged.before === acceptedPostFinanceF6ReportSemanticsHash, `Finance F6 dead-metrics declaration baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === financeF6DeadMetricsChanged.after, `Worker declaration changed beyond exact Finance F6 dead-metrics allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostOrderCreateSaveHash, `Worker declaration body changed beyond accepted cleanup/boundary/runtime/security/warehouse/catalog/attention/daily-warehouse/context/sql-alias/order-save/stocktake-replay deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostFinanceF6ReportSemanticsHash, `Worker declaration body changed beyond accepted cleanup/boundary/runtime/security/warehouse/catalog/attention/daily-warehouse/context/sql-alias/order-save/stocktake-replay/finance-date-sync/finance-f2-trace/finance-f4-journal/finance-f5-business/finance-f6-delete-money/finance-f6-report-semantics/finance-f6-dead-metrics deltas: ${name}`)
     }
   }
 
@@ -334,7 +404,13 @@ try {
 
   for (const [name, expectedHash] of Object.entries(orderCreateSaveIntegrityAdded)) {
     check(declarations.has(name), `192B2A4 added Worker declaration missing: ${name}`)
-    check(sha(declarations.get(name)) === expectedHash, `192B2A4 added Worker declaration changed: ${name}`)
+    const financeF5BusinessSemanticsChanged = financeF5BusinessSemanticsChanges[name]
+    if (financeF5BusinessSemanticsChanged) {
+      check(financeF5BusinessSemanticsChanged.before === expectedHash, `Finance F5 changed 192B2A4-added declaration baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === financeF5BusinessSemanticsChanged.after, `192B2A4-added declaration changed beyond exact Finance F5 business semantics allow-list: ${name}`)
+    } else {
+      check(sha(declarations.get(name)) === expectedHash, `192B2A4 added Worker declaration changed: ${name}`)
+    }
   }
 
   const graph = new Map(files.map((file) => [file, new Set()]))
@@ -369,7 +445,8 @@ try {
   const attentionContextNote = attentionContext ? `, ${Object.keys(attentionContextChanges).length} changed + ${Object.keys(attentionContextAdded).length} added 192B2A2 attention-context declarations` : ''
   const handoverSqlAliasSafetyNote = handoverSqlAliasSafety ? `, ${Object.keys(handoverSqlAliasSafetyChanges).length} exact 192B2A3 handover-SQL alias delta` : ''
   const orderCreateSaveIntegrityNote = orderCreateSaveIntegrity ? `, ${Object.keys(orderCreateSaveIntegrityChanges).length} changed + ${Object.keys(orderCreateSaveIntegrityAdded).length} added 192B2A4 order-save declarations` : ''
-  console.log(`STEP 190.6A WORKER MODULARIZATION TESTS PASSED — ${files.length} TS files, ${declarations.size} preserved declarations${cleanupNote}${boundaryNote}${transferRuntimeNote}${runtimeHardeningNote}${adminSessionIntegrityNote}${warehouseTruthFreshnessNote}${catalogTruthFinalizerNote}${warehouseAttentionTruthNote}${dailyWarehouseNote}${attentionContextNote}${handoverSqlAliasSafetyNote}${orderCreateSaveIntegrityNote}, 0 import cycles`)
+  const financeF5BusinessSemanticsNote = financeF5BusinessSemantics ? `, ${Object.keys(financeF5BusinessSemanticsChanges).length} exact Finance F5 business-semantics deltas` : ''
+  console.log(`STEP 190.6A WORKER MODULARIZATION TESTS PASSED — ${files.length} TS files, ${declarations.size} preserved declarations${cleanupNote}${boundaryNote}${transferRuntimeNote}${runtimeHardeningNote}${adminSessionIntegrityNote}${warehouseTruthFreshnessNote}${catalogTruthFinalizerNote}${warehouseAttentionTruthNote}${dailyWarehouseNote}${attentionContextNote}${handoverSqlAliasSafetyNote}${orderCreateSaveIntegrityNote}${financeF5BusinessSemanticsNote}, 0 import cycles`)
 } catch (error) {
   console.error(`STEP 190.6A WORKER MODULARIZATION TESTS FAILED: ${error?.message || error}`)
   process.exit(1)

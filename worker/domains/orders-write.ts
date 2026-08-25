@@ -696,7 +696,11 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         assertOrderItemInputs(rawItems);
         assertOrderPaymentInputs(rawPayments);
         const normalizedItems = normalizeOrderItems(rawItems, sourceType);
-        const normalizedPayments = normalizeOrderPayments(rawPayments, orderDate);
+        const normalizedPayments = normalizeOrderPayments(rawPayments, orderDate).map(payment => (
+          payment.paymentKind === 'primary'
+            ? { ...payment, paymentDate: orderDate }
+            : payment
+        ));
         if (!normalizedItems.length) {
           throw new CriticalOperationConflictError('Незавершённый заказ не содержит исходных товарных позиций. Обновите страницу и проверьте уже созданный заказ.');
         }
@@ -792,7 +796,11 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         assertOrderPaymentInputs(payments);
         assertOrderTotalInput(input.orderTotal);
         const normalizedItems = normalizeOrderItems(items, sourceType);
-        const normalizedPayments = normalizeOrderPayments(payments, orderDate);
+        const normalizedPayments = normalizeOrderPayments(payments, orderDate).map(payment => (
+          payment.paymentKind === 'primary'
+            ? { ...payment, paymentDate: orderDate }
+            : payment
+        ));
 
         for (const item of normalizedItems) {
           if (item.observedPhysicalQuantity === null) continue;
@@ -1089,7 +1097,7 @@ export async function updateOrderCritical(
       const existingItemsForEdit = normalizeOrderItems((existingAny.items || []) as OrderInput['items'], nextSource);
       const existingPaymentsForEdit = normalizeOrderPayments((existingAny.payments || []) as OrderInput['payments'], nextOrderDate);
       const rewriteItems = Boolean(requestedItems && !sameNormalizedOrderItemsForEdit(existingItemsForEdit, requestedItems));
-      const rewritePayments = Boolean(requestedPayments && !sameNormalizedOrderPaymentsForEdit(existingPaymentsForEdit, requestedPayments));
+      const rewritePayments = !deletingOrder && Boolean(requestedPayments && !sameNormalizedOrderPaymentsForEdit(existingPaymentsForEdit, requestedPayments));
       const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
       const existingShippingStatus = normalizeShippingStatus(existingAny.shipping_status);
       const deferShippingCommit = humanInventoryModelEnabled && existingShippingStatus !== 'sent' && nextShippingStatus === 'sent';
@@ -1110,7 +1118,7 @@ export async function updateOrderCritical(
         }
       }
       const nextItems = requestedItems || existingItemsForEdit;
-      const nextPayments = requestedPayments || existingPaymentsForEdit;
+      const nextPayments = deletingOrder ? existingPaymentsForEdit : (requestedPayments || existingPaymentsForEdit);
       if (rewriteItems && nextItems.some(item => item.isWorkshop)) await assertWorkshopTaskDetailSchema(db);
       const inventoryObligationLineage = rewriteItems
         ? await inventoryObligationLineageForRewrite(db, id, nextItems)
@@ -1211,11 +1219,20 @@ export async function updateOrderCritical(
         ]);
       }
       if (p.rewriteItems) await retireOrderItemsForRewrite(db, id, p.timestamp);
-      if (p.rewritePayments) {
+      if (p.deletingOrder) {
+        // Deletion is logical for the order and must preserve original payment rows as historical facts.
+        // Append one idempotent reversal per payment; the existing cash order-delete trigger owns physical cash out.
         await removeOrderPaymentsWithMoneyEvents(db, {
           orderId: id, externalOrderId: p.externalId, timestamp: p.timestamp,
-          reason: p.deletingOrder ? 'order_delete' : 'order_edit',
-          comment: p.deletingOrder ? `Оплаты сняты при удалении заказа ${p.externalId}` : `Старые оплаты сняты при исправлении заказа ${p.externalId}`,
+          reason: 'order_delete',
+          comment: `Оплаты сняты при удалении заказа ${p.externalId}`,
+          preservePayments: true,
+        });
+      } else if (p.rewritePayments) {
+        await removeOrderPaymentsWithMoneyEvents(db, {
+          orderId: id, externalOrderId: p.externalId, timestamp: p.timestamp,
+          reason: 'order_edit',
+          comment: `Старые оплаты сняты при исправлении заказа ${p.externalId}`,
         });
       }
       operationContext = { ...operationContext, stockReversals };

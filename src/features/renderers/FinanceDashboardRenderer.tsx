@@ -87,7 +87,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
       ledger_reset: 'Новый цикл учёта',
       payment_primary: 'Оплата заказа',
       payment_debt: 'Закрытие долга',
-      payment_extra: 'Доплата',
+      payment_extra: 'Закрытие долга (старый тип)',
       exchange_extra: 'Доплата по обмену',
       order_refund: 'Возврат клиенту',
       exchange_refund: 'Возврат по обмену',
@@ -273,6 +273,35 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
   const paymentOperations = financeReport.reports.paymentOperations || []
   const paymentKinds = financeReport.reports.paymentKinds || []
   const paymentDateAnomalies = financeReport.reports.paymentDateAnomalies || []
+  const paymentTraceReview = financeReport.reports.paymentTraceReview || []
+  const paymentTraceInfo = financeReport.reports.paymentTraceInfo || []
+  const crossDatePaymentOperations = financeReport.reports.crossDatePaymentOperations || []
+  const currentMonthStart = (() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+  })()
+  const historicalPeriodSelected = String(financeReport.startDate || '') < currentMonthStart
+  const visiblePaymentTraceInfo = paymentTraceInfo.filter((row) => row.traceCode !== 'legacy_baseline' || historicalPeriodSelected)
+  const visibleTraceInfoIds = new Set(visiblePaymentTraceInfo.map((row) => Number(row.id || 0)))
+  const paymentTraceRows = [...paymentTraceReview, ...visiblePaymentTraceInfo]
+    .sort((a, b) => String(b.paymentDate).localeCompare(String(a.paymentDate)) || Number(b.id || 0) - Number(a.id || 0))
+  const visibleLegacyBaselineCount = visiblePaymentTraceInfo.filter((row) => row.traceCode === 'legacy_baseline').length
+  const formatFinanceDateTime = (value: unknown) => {
+    const text = String(value || '').trim()
+    if (!text) return '—'
+    const date = new Date(text)
+    return Number.isNaN(date.getTime()) ? text : date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  }
+  const openMoneyHistoryForOrder = (row: any) => {
+    const externalId = String(row?.externalId || row?.externalOrderId || '').trim()
+    if (!externalId) return
+    setMoneyHistoryQuery(externalId)
+    setMoneyHistoryType({ flow: 'all', operation: 'all', trace: 'all' })
+    setFinanceMode('payments')
+  }
+  const visibleMoneyHistoryTrace = historicalPeriodSelected
+    ? moneyHistoryType.trace
+    : moneyHistoryType.trace === 'legacy' ? 'all' : moneyHistoryType.trace
   const consistency = financeReport.reports.consistency || {
     ledgerTotal: financeReport.overview.totalReceived || 0,
     methodsTotal: financeReport.overview.totalReceived || 0,
@@ -282,7 +311,6 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
   }
   const paymentTotal = Number(financeReport.overview.grossReceived ?? financeReport.overview.totalReceived ?? 0)
   const orderPaymentsTotal = Number(financeReport.overview.orderPaymentsTotal || 0)
-  const orderExtraPaymentsTotal = Number(financeReport.overview.orderExtraPaymentsTotal || 0)
   const debtPaymentsTotal = Number(financeReport.overview.debtPaymentsTotal || closedDebtTotal)
   const exchangeExtraPaymentsTotal = Number(financeReport.overview.exchangeExtraPaymentsTotal || 0)
   const regularReturnsTotal = Number(financeReport.overview.regularReturnsTotal ?? financeReport.overview.totalReturns ?? 0)
@@ -305,7 +333,6 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
       orderCount: 0,
       sales: 0,
       orderPayments: 0,
-      orderExtras: 0,
       debtPayments: 0,
       exchangeExtras: 0,
       received: 0,
@@ -313,7 +340,8 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
       exchangeRefunds: 0,
       returned: 0,
       net: 0,
-      anomalyCount: 0,
+      reviewCount: 0,
+      infoCount: 0,
     })
     return cashDayMap.get(date)
   }
@@ -324,12 +352,12 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
   })
   paymentOperations.forEach((row) => {
     const bucket = ensureCashDay(row.paymentDate)
-    if (row.operationType === 'debt_close') bucket.debtPayments += Number(row.amount || 0)
+    if (row.operationType === 'debt_close' || row.operationType === 'order_extra') bucket.debtPayments += Number(row.amount || 0)
     else if (row.operationType === 'exchange_extra') bucket.exchangeExtras += Number(row.amount || 0)
-    else if (row.operationType === 'order_extra') bucket.orderExtras += Number(row.amount || 0)
     else bucket.orderPayments += Number(row.amount || 0)
     bucket.received += Number(row.amount || 0)
-    if (row.dateRelation === 'before_order') bucket.anomalyCount += 1
+    if (row.traceSeverity === 'review') bucket.reviewCount += 1
+    else if (row.traceSeverity === 'info' && visibleTraceInfoIds.has(Number(row.id || 0))) bucket.infoCount += 1
   })
   activeReturns.forEach((row) => {
     const bucket = ensureCashDay(row.return_date)
@@ -371,7 +399,6 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                 <div className="finance-truth-main">{formatMoney(paymentTotal)}</div>
                 <div className="finance-truth-lines">
                   <div><span>Оплаты заказов</span><strong>{formatMoney(orderPaymentsTotal)}</strong></div>
-                  <div><span>Доплаты по заказам</span><strong>{formatMoney(orderExtraPaymentsTotal)}</strong></div>
                   <div><span>Закрытие долгов</span><strong>{formatMoney(debtPaymentsTotal)}</strong></div>
                   <div><span>Доплаты по обменам</span><strong>{formatMoney(exchangeExtraPaymentsTotal)}</strong></div>
                 </div>
@@ -405,36 +432,68 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
             <span className={`status-pill ${consistency.ok ? 'status-online' : 'status-offline'}`}>{consistency.ok ? '0 разницы' : `Разница ${formatMoney(consistency.difference)}`}</span>
           </section>
 
-          {paymentDateAnomalies.length ? (
+          {crossDatePaymentOperations.length ? (
             <section className="mini-panel finance-anomaly-panel">
               <div className="mini-panel-head">
                 <div>
-                  <h3>Нужно проверить даты оплат</h3>
-                  <p className="mini-panel-note">Эти оплаты записаны раньше даты самого заказа. Они входят в финансовый итог по дате оплаты, но требуют ручной проверки.</p>
+                  <h3>Почему поступления и продажи периода могут отличаться</h3>
+                  <p className="mini-panel-note">Эти деньги поступили в выбранном периоде, но сами заказы относятся к другой дате. В итог поступлений они входят правильно — по дате денежной операции.</p>
                 </div>
-                <span className="soft-badge warning-soft">{paymentDateAnomalies.length} операций · {formatMoney(paymentDateAnomalies.reduce((sum, row) => sum + Number(row.amount || 0), 0))}</span>
+                <span className="soft-badge">{crossDatePaymentOperations.length} операций · {formatMoney(crossDatePaymentOperations.reduce((sum, row) => sum + Number(row.amount || 0), 0))}</span>
               </div>
               <div className="table-shell">
                 <table className="data-table finance-anomaly-table">
-                  <thead><tr><th>Дата оплаты</th><th>Дата заказа</th><th>Заказ</th><th>Менеджер</th><th>Способ</th><th>Вид</th><th className="num">Сумма</th><th>Проблема</th><th>Действие</th></tr></thead>
-                  <tbody>{paymentDateAnomalies.map((row) => (
-                    <tr key={`finance-anomaly-${row.id}`}>
+                  <thead><tr><th>Дата оплаты</th><th>Дата заказа</th><th>Заказ</th><th>Вид</th><th className="num">Сумма</th><th>Действие</th></tr></thead>
+                  <tbody>{crossDatePaymentOperations.map((row) => (
+                    <tr key={`finance-cross-date-${row.id}`}>
                       <td><strong>{formatDateShort(row.paymentDate)}</strong></td>
                       <td>{formatDateShort(row.orderDate)}</td>
                       <td>{row.externalId}</td>
+                      <td>{row.operationLabel}</td>
+                      <td className="num"><strong>{formatMoney(row.amount)}</strong></td>
+                      <td><div className="finance-row-actions"><button className="secondary compact finance-order-link" type="button" onClick={() => void openOrderFromFinance(row)}>К заказу</button><button className="secondary compact finance-money-link" type="button" onClick={() => openMoneyHistoryForOrder(row)}>Денежная история</button></div></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {paymentTraceRows.length ? (
+            <section className="mini-panel finance-anomaly-panel">
+              <div className="mini-panel-head">
+                <div>
+                  <h3>Проверка дат и ввода</h3>
+                  <p className="mini-panel-note">Здесь только операции выбранного периода. Красным смыслом отмечается то, что требует проверки; обычные пояснения не считаются ошибками.</p>
+                  {historicalPeriodSelected && visibleLegacyBaselineCount ? <p className="mini-panel-note">Вы выбрали старый период: {visibleLegacyBaselineCount} исторических записей показаны как baseline. Их текущее состояние известно, но первоначальное действие пользователя по ним не всегда можно доказать.</p> : null}
+                </div>
+                <span className={`soft-badge ${paymentTraceReview.length ? 'warning-soft' : ''}`}>{paymentTraceReview.length ? `Проверить: ${paymentTraceReview.length}` : 'Без операций, требующих проверки'}{visiblePaymentTraceInfo.length ? ` · Пояснений: ${visiblePaymentTraceInfo.length}` : ''}</span>
+              </div>
+              <div className="table-shell">
+                <table className="data-table finance-anomaly-table">
+                  <thead><tr><th>Дата оплаты</th><th>Дата заказа</th><th>Заказ</th><th>Заказ введён</th><th>Менеджер</th><th>Вид</th><th className="num">Сумма</th><th>Что означает</th><th>Действие</th></tr></thead>
+                  <tbody>{paymentTraceRows.map((row) => (
+                    <tr key={`finance-trace-${row.id}`}>
+                      <td><strong>{formatDateShort(row.paymentDate)}</strong></td>
+                      <td>{formatDateShort(row.orderDate)}</td>
+                      <td>{row.externalId}</td>
+                      <td>{row.orderCreatedAt ? formatDateShort(String(row.orderCreatedAt).slice(0, 10)) : '—'}</td>
                       <td><ManagerBadge name={row.manager} colorKey={row.managerColor || managerColorFor(row.manager)} compact /></td>
-                      <td>{row.method}</td>
                       <td>{row.operationLabel}</td>
                       <td className="num">{formatMoney(row.amount)}</td>
-                      <td><span className="soft-badge warning-soft">Раньше заказа на {Math.abs(Number(row.dateOffsetDays || 0))} дн.</span></td>
-                      <td><button className="secondary compact finance-order-link" type="button" onClick={() => void openOrderFromFinance(row)}>К заказу</button></td>
+                      <td>
+                        <strong>{row.traceTitle}</strong>
+                        <div className="mini-panel-note">{row.traceExplanation}</div>
+                        <span className={`soft-badge ${row.traceSeverity === 'review' ? 'warning-soft' : ''}`}>{row.traceSeverity === 'review' ? 'Нужно проверить' : 'Пояснение'}</span>
+                      </td>
+                      <td><div className="finance-row-actions"><button className="secondary compact finance-order-link" type="button" onClick={() => void openOrderFromFinance(row)}>К заказу</button><button className="secondary compact finance-money-link" type="button" onClick={() => openMoneyHistoryForOrder(row)}>Денежная история</button></div></td>
                     </tr>
                   ))}</tbody>
                 </table>
               </div>
             </section>
           ) : (
-            <section className="finance-no-anomalies"><span className="status-pill status-online">Даты согласованы</span><span>В выбранном периоде нет оплат, записанных раньше даты заказа.</span></section>
+            <section className="finance-no-anomalies"><span className="status-pill">По выбранному периоду без замечаний</span><span>Нет денежных операций, которые требуют проверки или отдельного пояснения.</span></section>
           )}
 
           <section className="mini-panel finance-days-truth-panel">
@@ -446,22 +505,21 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
             </div>
             <div className="table-shell">
               <table className="data-table finance-days-truth-table">
-                <thead><tr><th>Дата</th><th className="num">Заказов<br /><small>по дате заказа</small></th><th className="num">Продажи<br /><small>по дате заказа</small></th><th className="num">Оплаты заказов<br /><small>по дате оплаты</small></th><th className="num">Доплаты заказов</th><th className="num">Закрытие долгов</th><th className="num">Доплаты обмена</th><th className="num">Всего поступило</th><th className="num">Возвращено</th><th className="num">Чистыми</th><th>Проверка дат</th></tr></thead>
+                <thead><tr><th>Дата</th><th className="num">Заказов<br /><small>по дате заказа</small></th><th className="num">Продажи<br /><small>по дате заказа</small></th><th className="num">Оплаты заказов<br /><small>по дате оплаты</small></th><th className="num">Закрытие долгов</th><th className="num">Доплаты обмена</th><th className="num">Всего поступило</th><th className="num">Возвращено</th><th className="num">Чистыми</th><th>Проверка дат</th></tr></thead>
                 <tbody>
                   {cashDays.map((row) => <tr key={`finance-cash-day-${row.date}`}>
                     <td><strong>{formatDateShort(row.date)}</strong></td>
                     <td className="num">{row.orderCount}</td>
                     <td className="num">{formatMoney(row.sales)}</td>
                     <td className="num">{formatMoney(row.orderPayments)}</td>
-                    <td className="num">{formatMoney(row.orderExtras)}</td>
                     <td className="num">{formatMoney(row.debtPayments)}</td>
                     <td className="num">{formatMoney(row.exchangeExtras)}</td>
                     <td className="num"><strong>{formatMoney(row.received)}</strong></td>
                     <td className="num">{formatMoney(row.returned)}</td>
                     <td className="num"><strong>{formatMoney(row.net)}</strong></td>
-                    <td>{row.anomalyCount ? <span className="soft-badge warning-soft">Проверить: {row.anomalyCount}</span> : <span className="soft-badge success-soft">Даты нормальны</span>}</td>
+                    <td>{row.reviewCount ? <span className="soft-badge warning-soft">Проверить: {row.reviewCount}</span> : row.infoCount ? <span className="soft-badge">Пояснение: {row.infoCount}</span> : <span className="soft-badge">Без замечаний</span>}</td>
                   </tr>)}
-                  {!cashDays.length ? <tr><td colSpan={11} className="empty-state">За выбранный период нет заказов и денежных операций.</td></tr> : null}
+                  {!cashDays.length ? <tr><td colSpan={10} className="empty-state">За выбранный период нет заказов и денежных операций.</td></tr> : null}
                 </tbody>
               </table>
             </div>
@@ -501,26 +559,57 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
               </div>
             </div>
 
-            <div className="finance-money-history-filters">
-              <label><span>Найти операцию</span><input value={moneyHistoryQuery} onChange={(event) => setMoneyHistoryQuery(event.target.value)} placeholder="Номер заказа, способ оплаты или комментарий" /></label>
-              <label><span>Показать</span><select value={moneyHistoryType} onChange={(event) => setMoneyHistoryType(event.target.value)}>
-                <option value="all">Все операции</option>
+            <div className="finance-money-history-filters finance-money-history-filters-f4">
+              <label className="finance-money-search"><span>Найти операцию</span><input value={moneyHistoryQuery} onChange={(event) => setMoneyHistoryQuery(event.target.value)} placeholder="Номер заказа, способ оплаты или комментарий" /></label>
+              <label><span>Движение</span><select value={moneyHistoryType.flow} onChange={(event) => setMoneyHistoryType((current) => ({ ...current, flow: event.target.value }))}>
+                <option value="all">Все</option>
                 <option value="in">Поступления</option>
                 <option value="out">Списания и возвраты</option>
-                <option value="refund">Только возвраты</option>
+              </select></label>
+              <label><span>Вид операции</span><select value={moneyHistoryType.operation} onChange={(event) => setMoneyHistoryType((current) => ({ ...current, operation: event.target.value }))}>
+                <option value="all">Все виды</option>
+                <option value="order_payment">Оплата заказа</option>
+                <option value="debt_close">Закрытие долга</option>
+                <option value="exchange_extra">Доплата по обмену</option>
+                <option value="refund">Возвраты</option>
                 <option value="correction">Исправления и отмены</option>
               </select></label>
+              <label><span>Проверка</span><select value={visibleMoneyHistoryTrace} onChange={(event) => setMoneyHistoryType((current) => ({ ...current, trace: event.target.value }))}>
+                <option value="all">Все состояния</option>
+                <option value="normal">Обычные операции</option>
+                <option value="info">С пояснением</option>
+                <option value="review">Нужно проверить</option>
+                <option value="legacy" disabled={!historicalPeriodSelected}>Исторический baseline{historicalPeriodSelected ? '' : ' — выберите старый период'}</option>
+              </select></label>
             </div>
+            {historicalPeriodSelected ? <div className="finance-history-scope-note">Выбран старый период. Исторические baseline-записи разрешены и помечаются отдельно; их первоначальный пользовательский ввод может быть недоказуем.</div> : null}
 
             {moneyHistoryBusy && !moneyHistory.length ? <div className="finance-money-history-state"><strong>Загружаю историю денег…</strong></div>
             : moneyHistoryError && !moneyHistory.length ? <div className="finance-money-history-state"><strong>Не удалось загрузить историю денег.</strong><span>{moneyHistoryError}</span><button className="secondary compact" type="button" onClick={() => void loadMoneyHistory()}>Повторить</button></div>
             : moneyHistory.length ? <div className="finance-money-history-list">{moneyHistory.map((row) => (
-              <article className="finance-money-history-row" key={`money-history-${row.id}`}>
-                <div><strong>{formatDateShort(row.eventDate)}</strong></div>
-                <div className="finance-money-history-order"><strong>{row.externalOrderId || 'Без номера заказа'}</strong>{row.manager ? <ManagerBadge name={row.manager} colorKey={row.managerColor || managerColorFor(row.manager)} compact /> : null}</div>
-                <div className="finance-money-history-operation"><strong>{row.operationLabel}</strong>{row.comment ? <span className="finance-money-history-note">{row.comment}</span> : null}</div>
+              <article className={`finance-money-history-row finance-money-history-row-f4 trace-${row.traceSeverity || 'normal'}`} key={`money-history-${row.id}`}>
+                <div className="finance-money-history-date">
+                  <strong>{formatDateShort(row.eventDate)}</strong>
+                  <small>Операция записана: {formatFinanceDateTime(row.eventAt)}</small>
+                </div>
+                <div className="finance-money-history-order">
+                  <strong>{row.externalOrderId || 'Без номера заказа'}</strong>
+                  {row.orderDate ? <small>Дата заказа: {formatDateShort(row.orderDate)}</small> : <small>Подробная карточка заказа недоступна</small>}
+                  {row.orderCreatedAt ? <small>Заказ введён: {formatFinanceDateTime(row.orderCreatedAt)}</small> : null}
+                  {row.manager ? <ManagerBadge name={row.manager} colorKey={row.managerColor || managerColorFor(row.manager)} compact /> : null}
+                </div>
+                <div className="finance-money-history-operation">
+                  <strong>{row.operationLabel}</strong>
+                  <span className={`soft-badge ${row.traceSeverity === 'review' ? 'warning-soft' : ''}`}>{row.traceSeverity === 'review' ? 'Нужно проверить' : row.traceCode === 'legacy_baseline' ? 'Историческая запись' : row.traceSeverity === 'info' ? 'Пояснение' : 'Обычная операция'}</span>
+                  {row.traceTitle ? <span className="finance-money-history-trace-title">{row.traceTitle}</span> : null}
+                  {row.traceExplanation ? <span className="finance-money-history-note">{row.traceExplanation}</span> : null}
+                  {row.comment ? <span className="finance-money-history-note">Комментарий: {row.comment}</span> : null}
+                </div>
                 <div className="finance-money-history-method">{row.paymentMethod || 'Способ не указан'}</div>
                 <div className={`finance-money-history-amount ${row.amountDelta >= 0 ? 'is-in' : 'is-out'}`}>{row.amountDelta >= 0 ? '+ ' : '− '}{formatMoney(Math.abs(row.amountDelta))}</div>
+                <div className="finance-money-history-actions">
+                  {row.orderId || row.externalOrderId ? <button className="secondary compact finance-order-link" type="button" onClick={() => void openOrderFromFinance({ orderId: row.orderId || undefined, externalId: row.externalOrderId, orderDate: row.orderDate || undefined })}>К заказу</button> : null}
+                </div>
               </article>
             ))}</div>
             : <div className="finance-money-history-state"><strong>За выбранный период денежных операций нет.</strong></div>}

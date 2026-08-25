@@ -101,6 +101,8 @@ export async function listFinanceReports(db: D1Database, url: URL) {
     () => db.prepare(
       `SELECT COALESCE(NULLIF(o.city, ''), 'Не указан') AS city,
               COUNT(*) AS order_count,
+              COUNT(DISTINCT o.customer_id) AS clients,
+              COUNT(DISTINCT o.manager_id) AS managers,
               COALESCE(SUM(o.total_amount), 0) AS total_sales,
               COALESCE(SUM(o.received_amount), 0) AS total_received,
               COALESCE(SUM(o.debt_amount), 0) AS total_debt,
@@ -184,7 +186,13 @@ export async function listFinanceReports(db: D1Database, url: URL) {
               COALESCE(p.comment, '') AS comment
        FROM payments p
        JOIN orders o ON o.id = p.order_id
-       WHERE p.payment_kind = 'debt_close'
+       WHERE p.payment_kind IN ('debt_close', 'extra')
+         AND NOT EXISTS (
+           SELECT 1 FROM exchanges e
+           WHERE e.payment_id = p.id
+             AND COALESCE(e.status, 'completed') <> 'cancelled'
+             AND e.financial_action = 'extra_payment'
+         )
          AND p.payment_date BETWEEN ? AND ?
          AND o.order_status <> 'deleted'
        ORDER BY p.payment_date DESC, p.id DESC`
@@ -248,7 +256,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
   ]);
 
 
-  const [paymentByDayRows, paymentOperationRows, managerOrderDayRows, managerPaymentDayRows, managerReturnDayRows, productDayRows, cityDayRows, cityCashDayRows, returnsDetailRows, closedDebtDetailRows] = await runD1Bounded([
+  const [paymentByDayRows, paymentOperationRows, managerOrderDayRows, managerPaymentDayRows, managerReturnDayRows, productDayRows, cityDayRows, cityCashDayRows, returnsDetailRows, closedDebtDetailRows, paymentEventRows] = await runD1Bounded([
     () => db.prepare(
       `SELECT p.payment_date AS date, p.method AS method, COALESCE(SUM(p.amount), 0) AS total
        FROM payments p
@@ -264,6 +272,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
               p.order_id,
               o.external_id,
               o.order_date,
+              COALESCE(o.created_at, '') AS order_created_at,
               p.payment_date,
               p.method,
               p.amount,
@@ -472,10 +481,26 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        JOIN orders o ON o.id = p.order_id
        LEFT JOIN managers m ON m.id = o.manager_id
        LEFT JOIN customers c ON c.id = o.customer_id
-       WHERE p.payment_kind = 'debt_close'
+       WHERE p.payment_kind IN ('debt_close', 'extra')
+         AND NOT EXISTS (
+           SELECT 1 FROM exchanges e
+           WHERE e.payment_id = p.id
+             AND COALESCE(e.status, 'completed') <> 'cancelled'
+             AND e.financial_action = 'extra_payment'
+         )
          AND p.payment_date BETWEEN ? AND ?
          AND o.order_status <> 'deleted'
        ORDER BY p.payment_date DESC, p.id DESC`
+    ).bind(startDate, endDate).all<any>(),
+
+    () => db.prepare(
+      `SELECT id, order_id, external_order_id, event_date, event_at, event_type, related_type,
+              amount_delta, payment_method, source_type, source_id, source_ref, reason, is_backfill, created_at
+       FROM financial_events
+       WHERE event_date BETWEEN ? AND ?
+         AND amount_delta > 0
+         AND event_type IN ('order_payment', 'debt_close', 'order_extra', 'exchange_extra')
+       ORDER BY event_at DESC, id DESC`
     ).bind(startDate, endDate).all<any>(),
   ]);
 
@@ -519,6 +544,42 @@ export async function listFinanceReports(db: D1Database, url: URL) {
   }
   const normalizedCityRows = Array.from(cityMap.values()).sort((a, b) => Number(b.total_received || 0) - Number(a.total_received || 0) || String(a.city).localeCompare(String(b.city), 'ru'));
 
+  const paymentEvents = mapSqlRows(paymentEventRows) as any[];
+  const paymentEventsBySourceId = new Map<number, any[]>();
+  const paymentEventsByFingerprint = new Map<string, any[]>();
+  const financeDateOffset = (left: string, right: string) => {
+    const leftDate = /^\d{4}-\d{2}-\d{2}$/.test(left) ? Date.parse(`${left}T00:00:00.000Z`) : Number.NaN;
+    const rightDate = /^\d{4}-\d{2}-\d{2}$/.test(right) ? Date.parse(`${right}T00:00:00.000Z`) : Number.NaN;
+    return Number.isFinite(leftDate) && Number.isFinite(rightDate) ? Math.round((leftDate - rightDate) / 86_400_000) : 0;
+  };
+  const financeEventFingerprint = (orderId: number, eventDate: string, eventType: string, amount: number, method: string, eventAt: string) => [
+    orderId,
+    eventDate,
+    eventType,
+    Math.trunc(amount),
+    canonicalPaymentMethodName(method),
+    eventAt,
+  ].join('|');
+  for (const event of paymentEvents) {
+    const sourceId = toInt(event.source_id, 0);
+    if (cleanText(event.source_type) === 'payment' && sourceId) {
+      const current = paymentEventsBySourceId.get(sourceId) || [];
+      current.push(event);
+      paymentEventsBySourceId.set(sourceId, current);
+    }
+    const fingerprint = financeEventFingerprint(
+      toInt(event.order_id, 0),
+      cleanText(event.event_date),
+      cleanText(event.event_type),
+      Number(event.amount_delta || 0),
+      cleanText(event.payment_method),
+      cleanText(event.event_at),
+    );
+    const current = paymentEventsByFingerprint.get(fingerprint) || [];
+    current.push(event);
+    paymentEventsByFingerprint.set(fingerprint, current);
+  }
+
   const paymentOperations = mapSqlRows(paymentOperationRows).map((row: any) => {
     const operationType = cleanText(row.operation_type) || 'order_payment';
     const operationLabel = operationType === 'debt_close'
@@ -526,39 +587,159 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       : operationType === 'exchange_extra'
         ? 'Доплата по обмену'
         : operationType === 'order_extra'
-          ? 'Доплата по заказу'
+          ? 'Закрытие долга (старый тип)'
           : 'Оплата заказа';
+    const id = Number(row.id || 0);
+    const orderId = Number(row.order_id || 0);
+    const orderDate = cleanText(row.order_date);
+    const orderCreatedAt = cleanText(row.order_created_at);
+    const orderCreatedDate = orderCreatedAt.slice(0, 10);
+    const paymentDate = cleanText(row.payment_date);
+    const createdAt = cleanText(row.created_at);
+    const recordedDate = createdAt.slice(0, 10);
+    const amount = Number(row.amount || 0);
+    const method = canonicalPaymentMethodName(row.method);
+    const dateRelation = cleanText(row.date_relation) || 'same_day';
+
+    const sourceCandidates = (paymentEventsBySourceId.get(id) || []).filter((event: any) => (
+      cleanText(event.event_type) === operationType
+      && Number(event.amount_delta || 0) === amount
+      && canonicalPaymentMethodName(event.payment_method) === method
+      && cleanText(event.event_date) === paymentDate
+    ));
+    const fingerprintCandidates = paymentEventsByFingerprint.get(financeEventFingerprint(
+      orderId,
+      paymentDate,
+      operationType,
+      amount,
+      method,
+      createdAt,
+    )) || [];
+
+    let lineageEvent: any = null;
+    let eventLineageStatus = 'missing';
+    if (sourceCandidates.length === 1) {
+      lineageEvent = sourceCandidates[0];
+      eventLineageStatus = 'source_id';
+    } else if (sourceCandidates.length > 1) {
+      eventLineageStatus = 'ambiguous';
+    } else if (fingerprintCandidates.length === 1) {
+      lineageEvent = fingerprintCandidates[0];
+      eventLineageStatus = 'exact_fingerprint';
+    } else if (fingerprintCandidates.length > 1) {
+      eventLineageStatus = 'ambiguous';
+    }
+
+    const eventReason = cleanText(lineageEvent?.reason);
+    const eventIsBackfill = toInt(lineageEvent?.is_backfill, 0) === 1;
+    let traceCode = operationType;
+    let traceSeverity: 'normal' | 'info' | 'review' = 'normal';
+    let traceTitle = operationLabel;
+    let traceExplanation = 'Операция относится к выбранному периоду.';
+
+    if (operationType === 'debt_close') {
+      traceCode = 'debt_close';
+      traceTitle = 'Закрытие долга';
+      traceExplanation = 'Отдельная оплата долга после создания заказа — нормальная денежная операция.';
+    } else if (operationType === 'order_extra') {
+      traceCode = 'legacy_order_extra';
+      traceSeverity = 'info';
+      traceTitle = 'Закрытие долга (старый тип)';
+      traceExplanation = 'Старая запись использует прежний технический тип «extra». В текущей модели отдельной доплаты по обычному заказу нет: такая последующая оплата относится к закрытию долга.';
+    } else if (operationType === 'exchange_extra') {
+      traceCode = 'exchange_extra';
+      traceTitle = 'Доплата по обмену';
+      traceExplanation = 'Доплата связана с обменом и учитывается по дате операции обмена.';
+    } else if (eventLineageStatus === 'ambiguous') {
+      traceCode = 'lineage_ambiguous';
+      traceSeverity = 'review';
+      traceTitle = 'Неоднозначное происхождение оплаты';
+      traceExplanation = 'Найдено несколько одинаково подходящих исторических событий. Система не выдаёт догадку за доказанный факт.';
+    } else if (eventLineageStatus === 'missing') {
+      traceCode = 'lineage_missing';
+      traceSeverity = dateRelation === 'same_day' ? 'info' : 'review';
+      traceTitle = 'Нет точной записи происхождения оплаты';
+      traceExplanation = 'Текущая оплата существует, но точное неизменяемое событие её создания не найдено.';
+    } else if (eventIsBackfill || eventReason === 'baseline') {
+      traceCode = 'legacy_baseline';
+      traceSeverity = 'info';
+      traceTitle = 'Историческая базовая запись';
+      traceExplanation = 'Эта запись восстановлена как достоверный снимок существовавшего состояния. Первоначальное действие пользователя по старой истории доказать нельзя.';
+    } else if (dateRelation === 'before_order') {
+      traceCode = 'primary_before_order';
+      traceSeverity = 'review';
+      traceTitle = 'Оплата раньше даты заказа';
+      traceExplanation = 'Первичная оплата датирована раньше бизнес-даты заказа. Это требует проверки.';
+    } else if (dateRelation === 'after_order') {
+      if (eventReason === 'order_create' && orderCreatedDate && recordedDate === paymentDate && orderCreatedDate === paymentDate) {
+        traceCode = 'backdated_order_entry';
+        traceSeverity = 'info';
+        traceTitle = 'Заказ введён позже своей бизнес-даты';
+        traceExplanation = 'Оплата записана в том же создании заказа, но сам заказ был введён в систему позже указанной бизнес-даты.';
+      } else if (eventReason === 'order_create') {
+        traceCode = 'primary_future_dated';
+        traceSeverity = 'review';
+        traceTitle = 'Первичная оплата имеет другую дату';
+        traceExplanation = 'Оплата создана вместе с заказом, но её бизнес-дата позже даты заказа.';
+      } else {
+        traceCode = 'primary_recorded_later';
+        traceSeverity = 'review';
+        traceTitle = 'Первичная оплата записана позже заказа';
+        traceExplanation = 'Строка остаётся первичной оплатой, хотя дата отличается от даты заказа. Нужно проверить смысл операции.';
+      }
+    } else {
+      traceCode = 'primary_same_day';
+      traceTitle = 'Дата оплаты совпадает с датой заказа';
+      traceExplanation = 'Первичная оплата и заказ относятся к одному бизнес-дню.';
+    }
+
     return {
-      id: Number(row.id || 0),
-      orderId: Number(row.order_id || 0),
+      id,
+      orderId,
       externalId: cleanText(row.external_id),
-      orderDate: cleanText(row.order_date),
-      paymentDate: cleanText(row.payment_date),
-      method: canonicalPaymentMethodName(row.method),
-      amount: Number(row.amount || 0),
+      orderDate,
+      orderCreatedAt,
+      paymentDate,
+      method,
+      amount,
       paymentKind: cleanText(row.payment_kind),
       operationType,
       operationLabel,
       comment: cleanText(row.comment),
-      createdAt: cleanText(row.created_at),
+      createdAt,
+      recordedLagDays: financeDateOffset(recordedDate, paymentDate),
+      orderRecordedLagDays: financeDateOffset(orderCreatedDate, orderDate),
       managerId: row.manager_id == null ? null : Number(row.manager_id),
       manager: cleanText(row.manager) || 'Не указан',
       managerColor: normalizeManagerColor(row.manager_color, toInt(row.manager_id, 1) - 1),
       customer: cleanText(row.customer) || '—',
       city: cleanText(row.city),
-      dateRelation: cleanText(row.date_relation) || 'same_day',
+      dateRelation,
       dateOffsetDays: Number(row.date_offset_days || 0),
+      eventLineageStatus,
+      eventId: lineageEvent?.id == null ? null : Number(lineageEvent.id),
+      eventAt: cleanText(lineageEvent?.event_at) || null,
+      eventRecordedAt: cleanText(lineageEvent?.created_at) || null,
+      eventType: cleanText(lineageEvent?.event_type) || null,
+      eventReason: eventReason || null,
+      eventIsBackfill,
+      traceCode,
+      traceSeverity,
+      traceTitle,
+      traceExplanation,
     };
   });
+  const paymentTraceReview = paymentOperations.filter((row: any) => row.traceSeverity === 'review');
+  const paymentTraceInfo = paymentOperations.filter((row: any) => row.traceSeverity === 'info');
+  const crossDatePaymentOperations = paymentOperations.filter((row: any) => row.orderDate < startDate || row.orderDate > endDate);
   const orderPaymentsTotal = paymentOperations.filter((row: any) => row.operationType === 'order_payment').reduce((sum: number, row: any) => sum + row.amount, 0);
   const orderExtraPaymentsTotal = paymentOperations.filter((row: any) => row.operationType === 'order_extra').reduce((sum: number, row: any) => sum + row.amount, 0);
-  const debtPaymentsTotal = paymentOperations.filter((row: any) => row.operationType === 'debt_close').reduce((sum: number, row: any) => sum + row.amount, 0);
+  const debtPaymentsTotal = paymentOperations.filter((row: any) => row.operationType === 'debt_close' || row.operationType === 'order_extra').reduce((sum: number, row: any) => sum + row.amount, 0);
   const exchangeExtraPaymentsTotal = paymentOperations.filter((row: any) => row.operationType === 'exchange_extra').reduce((sum: number, row: any) => sum + row.amount, 0);
   const totalPayments = paymentOperations.reduce((sum: number, row: any) => sum + row.amount, 0);
   const paymentKinds = [
     { operationType: 'order_payment', label: 'Оплаты заказов', count: paymentOperations.filter((row: any) => row.operationType === 'order_payment').length, total: orderPaymentsTotal },
-    { operationType: 'order_extra', label: 'Доплаты по заказам', count: paymentOperations.filter((row: any) => row.operationType === 'order_extra').length, total: orderExtraPaymentsTotal },
-    { operationType: 'debt_close', label: 'Закрытие долгов', count: paymentOperations.filter((row: any) => row.operationType === 'debt_close').length, total: debtPaymentsTotal },
+    { operationType: 'debt_close', label: 'Закрытие долгов', count: paymentOperations.filter((row: any) => row.operationType === 'debt_close' || row.operationType === 'order_extra').length, total: debtPaymentsTotal },
     { operationType: 'exchange_extra', label: 'Доплаты по обменам', count: paymentOperations.filter((row: any) => row.operationType === 'exchange_extra').length, total: exchangeExtraPaymentsTotal },
   ];
   const paymentDateAnomalies = paymentOperations.filter((row: any) => row.dateRelation === 'before_order');
@@ -774,16 +955,22 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       refundExchangeTotal,
       paymentDateAnomalyCount: paymentDateAnomalies.length,
       paymentDateAnomalyTotal: paymentDateAnomalies.reduce((sum: number, row: any) => sum + row.amount, 0),
+      paymentTraceReviewCount: paymentTraceReview.length,
+      paymentTraceInfoCount: paymentTraceInfo.length,
+      crossDatePaymentCount: crossDatePaymentOperations.length,
+      crossDatePaymentTotal: crossDatePaymentOperations.reduce((sum: number, row: any) => sum + row.amount, 0),
       currentDebt: Number((currentDebtRow as any)?.total_debt || 0),
       currentDebtOrders: Number((currentDebtRow as any)?.order_count || 0),
-      collectionRate: sales > 0 ? received / sales : 0,
-      returnRate: sales > 0 ? periodReturns / sales : 0,
     },
     reports: {
       paymentMethods: paymentRows,
       paymentKinds,
       paymentOperations,
       paymentDateAnomalies,
+      paymentTraceReview,
+      paymentTraceInfo,
+      crossDatePaymentOperations,
+      traceScope: { startDate, endDate, selectedPeriodOnly: true },
       consistency: {
         ledgerTotal: totalPayments,
         methodsTotal: paymentRows.reduce((sum, row: any) => sum + Number(row.total || 0), 0),

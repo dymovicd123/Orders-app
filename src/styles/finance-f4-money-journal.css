@@ -1,0 +1,30 @@
+/* Finance F4 — auditable money journal without default legacy noise. */
+.finance-money-history-filters-f4 { grid-template-columns: minmax(260px, 1.5fr) repeat(3, minmax(150px, .7fr)); }
+.finance-history-scope-note { padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font-size: 12px; opacity: .82; }
+.finance-money-history-row-f4 { grid-template-columns: minmax(150px, .9fr) minmax(190px, 1.2fr) minmax(250px, 1.7fr) minmax(105px, .7fr) minmax(110px, .7fr) auto; align-items: start; }
+.finance-money-history-row-f4.trace-review { border-style: solid; }
+.finance-money-history-date { display: grid; gap: 4px; }
+.finance-money-history-date small,
+.finance-money-history-order small { font-size: 11px; opacity: .72; }
+.finance-money-history-trace-title { font-size: 12px; font-weight: 700; }
+.finance-money-history-actions,
+.finance-row-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.finance-money-history-actions { justify-content: flex-end; }
+.finance-money-history-method { overflow-wrap: anywhere; }
+@media (max-width: 1250px) {
+  .finance-money-history-filters-f4 { grid-template-columns: minmax(240px, 1.4fr) repeat(2, minmax(150px, 1fr)); }
+  .finance-money-history-filters-f4 .finance-money-search { grid-column: 1 / -1; }
+  .finance-money-history-row-f4 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+  .finance-money-history-row-f4 .finance-money-history-operation { grid-column: 1 / -1; }
+  .finance-money-history-row-f4 .finance-money-history-method { grid-column: 1; }
+  .finance-money-history-row-f4 .finance-money-history-actions { grid-column: 3; }
+}
+@media (max-width: 760px) {
+  .finance-money-history-filters-f4 { grid-template-columns: 1fr; }
+  .finance-money-history-filters-f4 .finance-money-search { grid-column: auto; }
+  .finance-money-history-row-f4 { grid-template-columns: 1fr auto; }
+  .finance-money-history-row-f4 .finance-money-history-order,
+  .finance-money-history-row-f4 .finance-money-history-operation,
+  .finance-money-history-row-f4 .finance-money-history-method { grid-column: 1 / -1; }
+  .finance-money-history-row-f4 .finance-money-history-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}

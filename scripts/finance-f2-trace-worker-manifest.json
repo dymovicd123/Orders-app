@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "revision": "finance-f2-trace-r1",
+  "reason": "Selected-period-only money lineage and traceability, explicit return/exchange business dates, and immutable first cash activation boundary.",
+  "changes": {
+    "listFinanceReports": {
+      "before": "7e137f0a2eb54a96c944affd3ac52608768a06ea6f6c77cadea075495adb8b36",
+      "after": "aa299c9f98d8e25ced1bda8046ebf444cdae820cdc35825377a858b784523e0c"
+    },
+    "createReturn": {
+      "before": "a378429a8b486508f1f6ab0895c79199287da4c53fa61d6f8d560f01ec98de1e",
+      "after": "5669460501199f0ee9deef0f80882e0192694e85a9479fe5580161f675fca3e1"
+    },
+    "createExchange": {
+      "before": "bfa61470742f16b54180a0106e272e04146171d69107a09ab2ee136cd85f0703",
+      "after": "d9c941529375e5b313a8e2186d2f561e5177740dd53133a1d6363ae2d7243c15"
+    },
+    "setCashAutoTracking": {
+      "before": "e6f85de4b6a47481901fa0ee1b7668ee99c6fa6b7df0e95b8efa7371437903fd",
+      "after": "4883ed760f74c44db9b09261f676885b892abdc8333618bb6208835ee220443e"
+    }
+  }
+}

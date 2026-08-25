@@ -45,7 +45,19 @@ function verifySource() {
     'migrations/0058_v72_reliable_money_history.sql',
     'scripts/test-step189c-money-history.mjs',
     'scripts/test-step189c-money-sql.mjs',
+    'scripts/test-finance-f2-trace.mjs',
+    'scripts/test-finance-f3-summary-ux.mjs',
+    'scripts/test-finance-f4-money-journal.mjs',
+    'scripts/test-finance-f5-entry-semantics.mjs',
+    'scripts/test-finance-f5-adjacent-regression.mjs',
+    'scripts/test-finance-f6-release-audit.mjs',
+    'scripts/finance-f6-delete-money-history-worker-manifest.json',
+    'scripts/finance-f6-report-semantics-worker-manifest.json',
+    'scripts/finance-f6-dead-metrics-worker-manifest.json',
+    'scripts/finance-f4-money-journal-worker-manifest.json',
+    'scripts/finance-f2-trace-worker-manifest.json',
     'src/styles/189c-reliable-money-history.css',
+    'src/styles/finance-f4-money-journal.css',
     'scripts/test-step189d-team-activity.mjs',
     'scripts/test-step189d-team-activity-sql.mjs',
     'scripts/test-step189d1-pre-audit-stability.mjs',
@@ -190,6 +202,12 @@ try {
   run('Step 189B SQL shape tests', process.execPath, [path.join(root, 'scripts/test-step189b-history-sql.mjs')])
   run('Step 189C reliable money history tests', process.execPath, [path.join(root, 'scripts/test-step189c-money-history.mjs')])
   run('Step 189C money SQL tests', process.execPath, [path.join(root, 'scripts/test-step189c-money-sql.mjs')])
+  run('Finance F2 selected-period traceability tests', process.execPath, [path.join(root, 'scripts/test-finance-f2-trace.mjs')])
+  run('Finance F3 summary/day UX tests', process.execPath, [path.join(root, 'scripts/test-finance-f3-summary-ux.mjs')])
+  run('Finance F4 money journal UX tests', process.execPath, [path.join(root, 'scripts/test-finance-f4-money-journal.mjs')])
+  run('Finance F5 entry semantics tests', process.execPath, [path.join(root, 'scripts/test-finance-f5-entry-semantics.mjs')])
+  run('Finance F5 adjacent finance/cash regression', process.execPath, [path.join(root, 'scripts/test-finance-f5-adjacent-regression.mjs')])
+  run('Finance F6 aggregate release audit', process.execPath, [path.join(root, 'scripts/test-finance-f6-release-audit.mjs')])
   run('Step 189D team activity tests', process.execPath, [path.join(root, 'scripts/test-step189d-team-activity.mjs')])
   run('Step 189D team activity SQL tests', process.execPath, [path.join(root, 'scripts/test-step189d-team-activity-sql.mjs')])
   run('Step 189D.1 pre-audit stability tests', process.execPath, [path.join(root, 'scripts/test-step189d1-pre-audit-stability.mjs')])

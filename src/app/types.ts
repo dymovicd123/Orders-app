@@ -28,6 +28,8 @@ export type OrderItem = {
 
 
 export type Payment = {
+  id?: number
+  draftKey?: string
   paymentDate: string
   method: string
   amount: number
@@ -476,9 +478,13 @@ export type ClosedDebtReportDay = {
 
 export type FinancialHistoryEntry = {
   id: number
+  orderId?: number | null
   externalOrderId: string
+  orderDate?: string | null
+  orderCreatedAt?: string | null
   eventDate: string
   eventAt: string
+  eventRecordedAt?: string | null
   eventType: string
   relatedType: string | null
   operationLabel: string
@@ -489,6 +495,15 @@ export type FinancialHistoryEntry = {
   reason: string | null
   comment: string | null
   isBackfill: boolean
+  sourceType?: string | null
+  sourceId?: number | null
+  sourceRef?: string | null
+  dateRelation?: 'before_order' | 'same_day' | 'after_order' | 'unknown' | string
+  dateOffsetDays?: number
+  traceCode?: string
+  traceSeverity?: 'normal' | 'info' | 'review' | string
+  traceTitle?: string
+  traceExplanation?: string
 }
 
 export type FinancialHistoryResponse = {
@@ -525,6 +540,20 @@ export type FinancePaymentOperation = {
   dateRelation: 'before_order' | 'same_day' | 'after_order' | string
   dateOffsetDays: number
   createdAt: string
+  orderCreatedAt: string
+  recordedLagDays: number
+  orderRecordedLagDays: number
+  eventLineageStatus: 'source_id' | 'exact_fingerprint' | 'ambiguous' | 'missing' | string
+  eventId?: number | null
+  eventAt?: string | null
+  eventRecordedAt?: string | null
+  eventType?: string | null
+  eventReason?: string | null
+  eventIsBackfill: boolean
+  traceCode: string
+  traceSeverity: 'normal' | 'info' | 'review'
+  traceTitle: string
+  traceExplanation: string
 }
 
 export type FinancePaymentKindSummary = {
@@ -585,20 +614,26 @@ export type FinanceReportResponse = {
     refundExchangeTotal: number
     paymentDateAnomalyCount: number
     paymentDateAnomalyTotal: number
+    paymentTraceReviewCount?: number
+    paymentTraceInfoCount?: number
+    crossDatePaymentCount?: number
+    crossDatePaymentTotal?: number
     currentDebt: number
     currentDebtOrders: number
-    collectionRate: number
-    returnRate: number
   }
   reports: {
     paymentMethods: Array<{ method: string; count: number; total: number }>
     paymentKinds?: FinancePaymentKindSummary[]
     paymentOperations?: FinancePaymentOperation[]
     paymentDateAnomalies?: FinancePaymentOperation[]
+    paymentTraceReview?: FinancePaymentOperation[]
+    paymentTraceInfo?: FinancePaymentOperation[]
+    crossDatePaymentOperations?: FinancePaymentOperation[]
+    traceScope?: { startDate: string; endDate: string; selectedPeriodOnly: boolean }
     consistency?: FinanceConsistency
     managers: Array<{ manager_id?: number; manager: string; color_key?: string; order_count: number; total_sales: number; total_received: number; total_returns: number; total_debt: number; avg_check: number }>
     products: Array<{ product: string; quantity: number; order_count: number; order_sales: number }>
-    cities: Array<{ city: string; order_count: number; total_sales: number; total_received: number; total_debt: number; total_returns: number }>
+    cities: Array<{ city: string; order_count: number; total_sales: number; total_received: number; total_debt: number; total_returns: number; clients: number; managers: number }>
     days: Array<{ date: string; order_count: number; total_sales: number; total_received: number; total_returns: number; total_debt: number }>
     returns: Array<{ id: number; order_id: number; external_id: string; order_date: string; return_date: string; amount: number; status: string; comment: string; manager: string; manager_color?: string; customer?: string; city?: string; return_type?: 'order_return' | 'exchange_refund' | string }>
     exchanges: Array<{ id: number; order_id: number; external_id: string; order_date: string; exchange_date: string; old_quantity: number; old_return_source: string; new_source_type: string; financial_action: string; financial_amount: number; status: string; comment: string }>
@@ -724,6 +759,7 @@ export type OrderRecord = {
     workshopTaskStatus?: string | null
   }>
   payments: Array<{
+    id?: number
     paymentDate: string
     method: string
     amount: number
