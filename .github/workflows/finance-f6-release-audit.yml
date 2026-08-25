@@ -1,0 +1,38 @@
+name: Finance F6 aggregate release audit
+
+on:
+  push:
+    branches:
+      - finance-f6-release-audit
+
+permissions:
+  contents: write
+
+jobs:
+  audit-and-commit:
+    if: ${{ !contains(github.event.head_commit.message, '[finance-f6-verified]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Wire Finance F6 permanent gate
+        run: python3 scripts/tmp-finance-f6-wire.py
+      - name: Full release gate
+        run: npm run release:check
+      - name: Commit verified Finance F6 gate wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/release-check.mjs
+          git commit -m "Wire Finance F6 aggregate release audit [finance-f6-verified]"
+          git push origin HEAD:finance-f6-release-audit
