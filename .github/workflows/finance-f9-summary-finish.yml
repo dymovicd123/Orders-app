@@ -23,7 +23,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Apply F9 summary patch
-        run: node scripts/tmp-finance-f9-patch.mjs
+        run: |
+          node scripts/tmp-finance-f9-helper.mjs
+          node scripts/tmp-finance-f9-patch.mjs
+          git checkout -- scripts/tmp-finance-f9-patch.mjs
       - name: Full release gate
         run: npm run release:check
       - name: Verify Finance-summary-only delta
