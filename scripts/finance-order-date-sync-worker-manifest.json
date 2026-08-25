@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "revision": "finance-order-date-sync-r1",
+  "reason": "Late-entered new orders keep initial primary payment business dates aligned with the selected order date; existing-order payment history remains untouched.",
+  "changes": {
+    "createOrder": {
+      "before": "265118959cfcfdbf5a66004c8bf5b34d6eabbd747ff8d56906781a5cce23702c",
+      "after": "b94dcee5201a2e40715bf55c10ca505c0399a889c1a8829a9043b39dfa3e9517"
+    }
+  }
+}

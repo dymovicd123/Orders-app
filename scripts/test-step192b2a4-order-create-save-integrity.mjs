@@ -42,6 +42,12 @@ try {
   check(core.includes('amount < 0'), 'Negative payment is not rejected')
   check(!orders.includes("throw new Error('Добавьте хотя бы одну оплату.')"), 'Unpaid orders are still blocked')
 
+  // Late-entered orders must not keep today's default payment date when the business order date is changed.
+  const createDraftUpdate = between(app, 'function updateCreateDraft<', 'function updateCreateItem(')
+  check(createDraftUpdate.includes("key === 'orderDate'"), 'Create form does not react to order-date changes')
+  check(createDraftUpdate.includes("payment.paymentKind === 'primary'"), 'Create form does not limit automatic date sync to primary payments')
+  check(createDraftUpdate.includes('paymentDate: orderDate || payment.paymentDate'), 'Primary create payments do not follow the selected order date')
+
   // Structured stock shortage must point to original form rows and never apply to Workshop lines.
   const shortage = between(reservations, 'export async function assertCreateOrderShortageDecisions(', 'export async function reserveOrderItemV2(')
   check(shortage.includes('if (item.isWorkshop) continue'), 'Workshop item is still subject to Warehouse/Boutique shortage')
@@ -51,6 +57,8 @@ try {
 
   // Create becomes a resumable state machine. Once the validated plan exists, live preflight is not rerun.
   const create = between(orders, 'export async function createOrder(', 'export async function updateOrderCritical(')
+  check((create.match(/payment\.paymentKind === 'primary'/g) || []).length >= 2, 'Create path does not enforce primary-payment order dates in both fresh and legacy-resume planning')
+  check((create.match(/paymentDate: orderDate/g) || []).length >= 2, 'Server can still persist an initial primary payment on the entry-day date')
   for (const marker of [
     'let plan = operationContext.plan',
     "advanceCriticalOperation(db, criticalOperation, 'validated'",
@@ -104,6 +112,8 @@ try {
 
   // Edit uses the same immutable-plan pattern and shortage contract.
   const edit = between(orders, 'export async function updateOrderCritical(', 'export async function getOrder(')
+  check(edit.includes('normalizeOrderPayments('), 'Existing-order editing lost ordinary payment-date preservation')
+  check(!edit.includes('paymentDate: nextOrderDate'), 'Existing-order editing must not rewrite historical primary payment dates to the order date')
   check(edit.includes('let plan = operationContext.plan'), 'Edit resumable plan missing')
   check(edit.includes("advanceCriticalOperation(db, criticalOperation, 'validated'"), 'Edit validated phase missing')
   check(edit.includes('assertCreateOrderShortageDecisions(db, nextItems, rewritePreResolvedCatalog, { excludeOrderId: id })'), 'Edit does not run authoritative shortage with own-reservation exclusion')

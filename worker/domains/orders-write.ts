@@ -696,7 +696,11 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         assertOrderItemInputs(rawItems);
         assertOrderPaymentInputs(rawPayments);
         const normalizedItems = normalizeOrderItems(rawItems, sourceType);
-        const normalizedPayments = normalizeOrderPayments(rawPayments, orderDate);
+        const normalizedPayments = normalizeOrderPayments(rawPayments, orderDate).map(payment => (
+          payment.paymentKind === 'primary'
+            ? { ...payment, paymentDate: orderDate }
+            : payment
+        ));
         if (!normalizedItems.length) {
           throw new CriticalOperationConflictError('Незавершённый заказ не содержит исходных товарных позиций. Обновите страницу и проверьте уже созданный заказ.');
         }
@@ -792,7 +796,11 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         assertOrderPaymentInputs(payments);
         assertOrderTotalInput(input.orderTotal);
         const normalizedItems = normalizeOrderItems(items, sourceType);
-        const normalizedPayments = normalizeOrderPayments(payments, orderDate);
+        const normalizedPayments = normalizeOrderPayments(payments, orderDate).map(payment => (
+          payment.paymentKind === 'primary'
+            ? { ...payment, paymentDate: orderDate }
+            : payment
+        ));
 
         for (const item of normalizedItems) {
           if (item.observedPhysicalQuantity === null) continue;
