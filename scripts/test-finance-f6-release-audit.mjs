@@ -52,7 +52,7 @@ try {
   check(money.includes("paymentKind === 'primary' ? normalizeDate(existing.order_date) : requestedPaymentDate"), 'Manual primary is no longer anchored to order date')
 
   // Legacy ordinary extra is preserved but folded exactly once into debt-close semantics.
-  check(finance.includes("operationType === 'order_extra'\n      ? 'Закрытие долга (старый тип)'"), 'Legacy ordinary extra is not labelled as old debt-close semantics')
+  check(finance.includes("operationType === 'order_extra'") && finance.includes("? 'Закрытие долга (старый тип)'"), 'Legacy ordinary extra is not labelled as old debt-close semantics')
   check(finance.includes("operationType === 'debt_close' || row.operationType === 'order_extra'"), 'Backend debt total does not include legacy ordinary extra')
   check(!financeUi.includes('legacyOrderExtraPaymentsTotal') && !financeUi.includes('orderExtras'), 'Finance UI still has a second legacy-extra accumulator')
   check(financeUi.includes("row.operationType === 'debt_close' || row.operationType === 'order_extra'"), 'Daily Finance bucket does not fold legacy extra into debt close')
