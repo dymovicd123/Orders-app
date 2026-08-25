@@ -184,7 +184,13 @@ export async function listFinanceReports(db: D1Database, url: URL) {
               COALESCE(p.comment, '') AS comment
        FROM payments p
        JOIN orders o ON o.id = p.order_id
-       WHERE p.payment_kind = 'debt_close'
+       WHERE p.payment_kind IN ('debt_close', 'extra')
+         AND NOT EXISTS (
+           SELECT 1 FROM exchanges e
+           WHERE e.payment_id = p.id
+             AND COALESCE(e.status, 'completed') <> 'cancelled'
+             AND e.financial_action = 'extra_payment'
+         )
          AND p.payment_date BETWEEN ? AND ?
          AND o.order_status <> 'deleted'
        ORDER BY p.payment_date DESC, p.id DESC`
@@ -473,7 +479,13 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        JOIN orders o ON o.id = p.order_id
        LEFT JOIN managers m ON m.id = o.manager_id
        LEFT JOIN customers c ON c.id = o.customer_id
-       WHERE p.payment_kind = 'debt_close'
+       WHERE p.payment_kind IN ('debt_close', 'extra')
+         AND NOT EXISTS (
+           SELECT 1 FROM exchanges e
+           WHERE e.payment_id = p.id
+             AND COALESCE(e.status, 'completed') <> 'cancelled'
+             AND e.financial_action = 'extra_payment'
+         )
          AND p.payment_date BETWEEN ? AND ?
          AND o.order_status <> 'deleted'
        ORDER BY p.payment_date DESC, p.id DESC`
@@ -573,7 +585,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       : operationType === 'exchange_extra'
         ? 'Доплата по обмену'
         : operationType === 'order_extra'
-          ? 'Доплата по заказу'
+          ? 'Закрытие долга (старый тип)'
           : 'Оплата заказа';
     const id = Number(row.id || 0);
     const orderId = Number(row.order_id || 0);
@@ -628,9 +640,10 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       traceTitle = 'Закрытие долга';
       traceExplanation = 'Отдельная оплата долга после создания заказа — нормальная денежная операция.';
     } else if (operationType === 'order_extra') {
-      traceCode = 'order_extra';
-      traceTitle = 'Доплата по заказу';
-      traceExplanation = 'Отдельная доплата хранится отдельно от первичной оплаты заказа.';
+      traceCode = 'legacy_order_extra';
+      traceSeverity = 'info';
+      traceTitle = 'Закрытие долга (старый тип)';
+      traceExplanation = 'Старая запись использует прежний технический тип «extra». В текущей модели отдельной доплаты по обычному заказу нет: такая последующая оплата относится к закрытию долга.';
     } else if (operationType === 'exchange_extra') {
       traceCode = 'exchange_extra';
       traceTitle = 'Доплата по обмену';
@@ -719,13 +732,12 @@ export async function listFinanceReports(db: D1Database, url: URL) {
   const crossDatePaymentOperations = paymentOperations.filter((row: any) => row.orderDate < startDate || row.orderDate > endDate);
   const orderPaymentsTotal = paymentOperations.filter((row: any) => row.operationType === 'order_payment').reduce((sum: number, row: any) => sum + row.amount, 0);
   const orderExtraPaymentsTotal = paymentOperations.filter((row: any) => row.operationType === 'order_extra').reduce((sum: number, row: any) => sum + row.amount, 0);
-  const debtPaymentsTotal = paymentOperations.filter((row: any) => row.operationType === 'debt_close').reduce((sum: number, row: any) => sum + row.amount, 0);
+  const debtPaymentsTotal = paymentOperations.filter((row: any) => row.operationType === 'debt_close' || row.operationType === 'order_extra').reduce((sum: number, row: any) => sum + row.amount, 0);
   const exchangeExtraPaymentsTotal = paymentOperations.filter((row: any) => row.operationType === 'exchange_extra').reduce((sum: number, row: any) => sum + row.amount, 0);
   const totalPayments = paymentOperations.reduce((sum: number, row: any) => sum + row.amount, 0);
   const paymentKinds = [
     { operationType: 'order_payment', label: 'Оплаты заказов', count: paymentOperations.filter((row: any) => row.operationType === 'order_payment').length, total: orderPaymentsTotal },
-    { operationType: 'order_extra', label: 'Доплаты по заказам', count: paymentOperations.filter((row: any) => row.operationType === 'order_extra').length, total: orderExtraPaymentsTotal },
-    { operationType: 'debt_close', label: 'Закрытие долгов', count: paymentOperations.filter((row: any) => row.operationType === 'debt_close').length, total: debtPaymentsTotal },
+    { operationType: 'debt_close', label: 'Закрытие долгов', count: paymentOperations.filter((row: any) => row.operationType === 'debt_close' || row.operationType === 'order_extra').length, total: debtPaymentsTotal },
     { operationType: 'exchange_extra', label: 'Доплаты по обменам', count: paymentOperations.filter((row: any) => row.operationType === 'exchange_extra').length, total: exchangeExtraPaymentsTotal },
   ];
   const paymentDateAnomalies = paymentOperations.filter((row: any) => row.dateRelation === 'before_order');

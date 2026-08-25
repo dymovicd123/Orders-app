@@ -389,12 +389,15 @@ export async function createManualOrderPaymentCritical(
   const amount = Number.isFinite(amountNumber) && Number.isInteger(amountNumber) ? amountNumber : 0;
   const method = upperText(input.method);
   const paymentKind = normalizePaymentKind(input.paymentKind) as PaymentKind;
-  const paymentDate = normalizeDate(input.paymentDate);
+  const requestedPaymentDate = normalizeDate(input.paymentDate);
   const comment = cleanText(input.comment);
   if (!orderId) throw new Error('orderId is required');
   if (!method || amount <= 0) throw new Error('method and amount are required');
+  if (paymentKind === 'extra') {
+    throw new CriticalOperationConflictError('Обычной доплаты по заказу нет. Используйте закрытие долга; доплата доступна только внутри обмена.');
+  }
 
-  const payload = { orderId, paymentDate, method, amount, paymentKind, comment };
+  const payload = { orderId, paymentDate: requestedPaymentDate, method, amount, paymentKind, comment };
   const criticalOperation = await beginCriticalOperation(db, 'order_payment_create', input.requestId, payload);
   if (criticalOperation.row.status === 'completed') {
     const cached = criticalOperation.cachedResponse && typeof criticalOperation.cachedResponse === 'object'
@@ -429,7 +432,7 @@ export async function createManualOrderPaymentCritical(
 
     if (!plan) {
       const existing = await db.prepare(
-        `SELECT id, external_id, order_status, archived_at
+        `SELECT id, external_id, order_date, order_status, archived_at
          FROM orders WHERE id = ? LIMIT 1`
       ).bind(orderId).first<Record<string, unknown>>();
       if (!existing?.id) throw new Error('Order not found');
@@ -454,7 +457,7 @@ export async function createManualOrderPaymentCritical(
       plan = {
         orderId,
         externalId: cleanText(existing.external_id),
-        paymentDate,
+        paymentDate: paymentKind === 'primary' ? normalizeDate(existing.order_date) : requestedPaymentDate,
         method,
         amount,
         paymentKind,

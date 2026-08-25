@@ -359,7 +359,7 @@ export async function listCashRegisterCycles(db: D1Database, url: URL) {
 export function moneyHistoryOperationLabel(eventType: string, relatedType: string, reason: string) {
   if (eventType === 'order_payment') return reason === 'order_edit_new' ? 'Исправленная оплата' : 'Оплата заказа';
   if (eventType === 'debt_close') return reason === 'order_edit_new' ? 'Исправленное закрытие долга' : 'Закрытие долга';
-  if (eventType === 'order_extra') return reason === 'order_edit_new' ? 'Исправленная доплата' : 'Доплата по заказу';
+  if (eventType === 'order_extra') return reason === 'order_edit_new' ? 'Исправленное закрытие долга (старый тип)' : 'Закрытие долга (старый тип)';
   if (eventType === 'exchange_extra') return 'Доплата по обмену';
   if (eventType === 'order_refund') return 'Возврат клиенту';
   if (eventType === 'exchange_refund') return 'Возврат по обмену';
@@ -436,8 +436,7 @@ export async function listFinancialHistory(db: D1Database, url: URL) {
   else if (flow === 'out') where.push('fe.amount_delta < 0');
 
   if (operation === 'order_payment') where.push("fe.event_type = 'order_payment'");
-  else if (operation === 'debt_close') where.push("fe.event_type = 'debt_close'");
-  else if (operation === 'order_extra') where.push("fe.event_type = 'order_extra'");
+  else if (operation === 'debt_close' || operation === 'order_extra') where.push("fe.event_type IN ('debt_close', 'order_extra')");
   else if (operation === 'exchange_extra') where.push("fe.event_type = 'exchange_extra'");
   else if (operation === 'refund') where.push("fe.event_type IN ('order_refund', 'exchange_refund')");
   else if (operation === 'correction') where.push("fe.event_type IN ('payment_reversal', 'refund_reversal')");
@@ -543,9 +542,10 @@ export async function listFinancialHistory(db: D1Database, url: URL) {
       traceTitle = 'Закрытие долга';
       traceExplanation = 'Отдельная оплата долга после создания заказа — нормальная денежная операция.';
     } else if (eventType === 'order_extra') {
-      traceCode = 'order_extra';
-      traceTitle = 'Доплата по заказу';
-      traceExplanation = 'Отдельная доплата хранится отдельно от первичной оплаты.';
+      traceCode = 'legacy_order_extra';
+      traceSeverity = 'info';
+      traceTitle = 'Закрытие долга (старый тип)';
+      traceExplanation = 'Это старая техническая классификация. В текущей модели отдельной доплаты по обычному заказу нет; такая последующая оплата относится к закрытию долга.';
     } else if (eventType === 'exchange_extra') {
       traceCode = 'exchange_extra';
       traceTitle = 'Доплата по обмену';
