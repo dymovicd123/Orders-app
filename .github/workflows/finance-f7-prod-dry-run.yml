@@ -1,4 +1,4 @@
-name: Finance F7 main-based dry promotion
+name: Finance F7 persist verified promotion
 
 on:
   push:
@@ -6,10 +6,11 @@ on:
       - finance-f7-prod-promotion
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  dry-promotion:
+  persist-promotion:
+    if: ${{ !contains(github.event.head_commit.message, '[finance-f7-verified]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -42,37 +43,59 @@ jobs:
             if ! git cherry-pick "$sha"; then
               echo "CHERRY_PICK_CONFLICT=$sha"
               git status --short
-              echo "=== unresolved files ==="
               git diff --name-only --diff-filter=U || true
               exit 1
             fi
           done
-
-          # F2's permanent regression file was created in its preparation history rather than
-          # in the final verified product commit. Bring only that reviewed permanent file,
-          # not any temporary workflow/helper commit.
           git show origin/branch2:scripts/test-finance-f2-trace.mjs > scripts/test-finance-f2-trace.mjs
           test "$(git hash-object scripts/test-finance-f2-trace.mjs)" = "e892dde38e38a858c530683ad5e030ffa072123f"
-
-          echo '=== Finance dry-promotion diff from main ==='
-          git diff --stat origin/main...HEAD
-          git diff --name-status origin/main...HEAD
-          echo '=== Uncommitted reviewed permanent file(s) ==='
-          git status --short
-      - name: Full release gate on main-based tree
+      - name: Full release gate on exact main-based tree
         run: npm run release:check
-      - name: Verify no migration or Arrival delta
+      - name: Commit exact allow-listed promotion tree
         shell: bash
         run: |
           set -euo pipefail
-          changed="$( { git diff --name-only origin/main...HEAD; git diff --name-only; } | sort -u )"
-          echo "$changed"
-          if printf '%s\n' "$changed" | grep -Eq '^migrations/'; then
-            echo 'ERROR: Finance promotion unexpectedly changes migrations/'
-            exit 1
-          fi
-          if printf '%s\n' "$changed" | grep -Ei 'arrival|приход'; then
-            echo 'ERROR: Finance promotion unexpectedly changes Arrival surface'
-            exit 1
-          fi
-          echo 'F7 dry promotion has no migration/Arrival delta.'
+          git add scripts/test-finance-f2-trace.mjs
+          git rm .github/workflows/finance-f7-prod-dry-run.yml
+          git commit -m "Assemble verified Finance F7 production promotion [finance-f7-verified]"
+
+          cat > /tmp/expected-finance-files.txt <<'EOF'
+          scripts/finance-f2-trace-worker-manifest.json
+          scripts/finance-f4-money-journal-worker-manifest.json
+          scripts/finance-f5-business-semantics-worker-manifest.json
+          scripts/finance-f6-dead-metrics-worker-manifest.json
+          scripts/finance-f6-delete-money-history-worker-manifest.json
+          scripts/finance-f6-report-semantics-worker-manifest.json
+          scripts/finance-order-date-sync-worker-manifest.json
+          scripts/release-check.mjs
+          scripts/test-finance-f2-trace.mjs
+          scripts/test-finance-f3-summary-ux.mjs
+          scripts/test-finance-f4-money-journal.mjs
+          scripts/test-finance-f5-adjacent-regression.mjs
+          scripts/test-finance-f5-entry-semantics.mjs
+          scripts/test-finance-f6-release-audit.mjs
+          scripts/test-step1906a-worker-modularization.mjs
+          scripts/test-step192b2a4-order-create-save-integrity.mjs
+          src/App.tsx
+          src/app/types.ts
+          src/app/utils.ts
+          src/features/renderers/FinanceDashboardRenderer.tsx
+          src/features/renderers/FinanceReportContentRenderer.tsx
+          src/features/sections/OrderEditorSection.tsx
+          src/styles/finance-f4-money-journal.css
+          worker/domains/cash.ts
+          worker/domains/finance-reports.ts
+          worker/domains/money.ts
+          worker/domains/orders-write.ts
+          worker/domains/returns-exchanges.ts
+          EOF
+          sed -i 's/^          //' /tmp/expected-finance-files.txt
+          sort -u /tmp/expected-finance-files.txt -o /tmp/expected-finance-files.txt
+          git diff --name-only origin/main...HEAD | sort -u > /tmp/actual-finance-files.txt
+          echo '=== Exact final Production candidate diff ==='
+          cat /tmp/actual-finance-files.txt
+          diff -u /tmp/expected-finance-files.txt /tmp/actual-finance-files.txt
+          if grep -Eq '^migrations/' /tmp/actual-finance-files.txt; then exit 1; fi
+          if grep -Ei 'arrival|приход' /tmp/actual-finance-files.txt; then exit 1; fi
+          test -z "$(git status --porcelain)"
+          git push origin HEAD:finance-f7-prod-promotion
