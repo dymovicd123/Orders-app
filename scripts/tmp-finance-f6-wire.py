@@ -45,7 +45,6 @@ orders_path = 'worker/domains/orders-write.ts'
 before_remove = declaration_hash(money_path, 'removeOrderPaymentsWithMoneyEvents')
 before_update = declaration_hash(orders_path, 'updateOrderCritical')
 
-# 1. Logical order deletion needs reversal evidence without deleting historical payment rows.
 replace_once(
     money_path,
     "  input: { orderId: number; externalOrderId: string; timestamp: string; reason: 'order_edit' | 'order_delete'; comment: string },\n",
@@ -66,7 +65,6 @@ if block.count(old_tail) != 1:
 block = block.replace(old_tail, new_tail, 1)
 write(money_path, money[:start] + block + money[end:])
 
-# 2. Deleting an order is not a payment edit, even if a stale client sends a payment array.
 replace_once(
     orders_path,
     "      const rewritePayments = Boolean(requestedPayments && !sameNormalizedOrderPaymentsForEdit(existingPaymentsForEdit, requestedPayments));\n",
@@ -120,7 +118,6 @@ write(manifest_path, json.dumps({
 }, ensure_ascii=False, indent=2) + '\n')
 print(f'F6 manifest: {before_remove[:8]}->{after_remove[:8]}, {before_update[:8]}->{after_update[:8]}')
 
-# 3. Extend Worker declaration hash chain after Finance F5.
 mod_path = 'scripts/test-step1906a-worker-modularization.mjs'
 replace_once(mod_path,
     "const financeF5BusinessSemanticsPath = path.join(root, 'scripts/finance-f5-business-semantics-worker-manifest.json')\n",
@@ -158,14 +155,13 @@ new_chain = """    const financeF5BusinessSemanticsChanged = financeF5BusinessSe
 """
 replace_once(mod_path, old_chain, new_chain, '1906 F6 hash chain')
 
-# 4. Aggregate F6 test: robust reconciliation matcher + deletion/cross-ledger guarantees.
 f6_path = 'scripts/test-finance-f6-release-audit.mjs'
 replace_once(f6_path,
     "  check(report.includes('paymentRows.reduce((sum, row) => sum + Number(row.total || 0), 0)'), 'Payment-method reconciliation total missing')\n  check(report.includes('paymentKinds.reduce((sum, row) => sum + row.total, 0)'), 'Payment-kind reconciliation total missing')\n",
     "  check(report.includes('methodsTotal: paymentRows.reduce') && report.includes('Number(row.total || 0)'), 'Payment-method reconciliation total missing')\n  check(report.includes('kindsTotal: paymentKinds.reduce') && report.includes('Number(row.total || 0)'), 'Payment-kind reconciliation total missing')\n",
     'F6 reconciliation matcher')
 anchor = "  check(orderWrite.includes('removeOrderPaymentsWithMoneyEvents'), 'Explicit legacy/full-rewrite reversal primitive disappeared; review correction history semantics')\n"
-extra = """  const updateOrder = between(orderWrite, 'export async function updateOrderCritical(', '\n\nexport async function getOrder(')
+extra = r"""  const updateOrder = between(orderWrite, 'export async function updateOrderCritical(', '\n\nexport async function getOrder(')
   const removePayments = between(money, 'export async function removeOrderPaymentsWithMoneyEvents(', '\n\nexport async function removeSinglePaymentWithMoneyEvent(')
   check(updateOrder.includes('const rewritePayments = !deletingOrder && Boolean('), 'Deleting an order can still reinterpret a stale-client payment collection as a payment edit')
   check(updateOrder.includes('const nextPayments = deletingOrder ? existingPaymentsForEdit'), 'Delete does not pin totals to the persisted payment facts')
@@ -177,7 +173,6 @@ extra = """  const updateOrder = between(orderWrite, 'export async function upda
 """
 replace_once(f6_path, anchor, anchor + extra, 'F6 delete-money regression')
 
-# 5. Wire F6 test and hash manifest permanently into release:check.
 release_path = 'scripts/release-check.mjs'
 release = read(release_path)
 source_marker = "    'scripts/test-finance-f5-adjacent-regression.mjs',\n"
