@@ -311,8 +311,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
   }
   const paymentTotal = Number(financeReport.overview.grossReceived ?? financeReport.overview.totalReceived ?? 0)
   const orderPaymentsTotal = Number(financeReport.overview.orderPaymentsTotal || 0)
-  const legacyOrderExtraPaymentsTotal = Number(financeReport.overview.orderExtraPaymentsTotal || 0)
-  const debtPaymentsTotal = Number(financeReport.overview.debtPaymentsTotal || closedDebtTotal) + legacyOrderExtraPaymentsTotal
+  const debtPaymentsTotal = Number(financeReport.overview.debtPaymentsTotal || closedDebtTotal)
   const exchangeExtraPaymentsTotal = Number(financeReport.overview.exchangeExtraPaymentsTotal || 0)
   const regularReturnsTotal = Number(financeReport.overview.regularReturnsTotal ?? financeReport.overview.totalReturns ?? 0)
   const exchangeRefundsTotal = Number(financeReport.overview.exchangeRefundsTotal || 0)
@@ -334,7 +333,6 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
       orderCount: 0,
       sales: 0,
       orderPayments: 0,
-      orderExtras: 0,
       debtPayments: 0,
       exchangeExtras: 0,
       received: 0,
@@ -354,9 +352,8 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
   })
   paymentOperations.forEach((row) => {
     const bucket = ensureCashDay(row.paymentDate)
-    if (row.operationType === 'debt_close') bucket.debtPayments += Number(row.amount || 0)
+    if (row.operationType === 'debt_close' || row.operationType === 'order_extra') bucket.debtPayments += Number(row.amount || 0)
     else if (row.operationType === 'exchange_extra') bucket.exchangeExtras += Number(row.amount || 0)
-    else if (row.operationType === 'order_extra') bucket.orderExtras += Number(row.amount || 0)
     else bucket.orderPayments += Number(row.amount || 0)
     bucket.received += Number(row.amount || 0)
     if (row.traceSeverity === 'review') bucket.reviewCount += 1
@@ -508,14 +505,13 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
             </div>
             <div className="table-shell">
               <table className="data-table finance-days-truth-table">
-                <thead><tr><th>Дата</th><th className="num">Заказов<br /><small>по дате заказа</small></th><th className="num">Продажи<br /><small>по дате заказа</small></th><th className="num">Оплаты заказов<br /><small>по дате оплаты</small></th><th className="num">Доплаты заказов</th><th className="num">Закрытие долгов</th><th className="num">Доплаты обмена</th><th className="num">Всего поступило</th><th className="num">Возвращено</th><th className="num">Чистыми</th><th>Проверка дат</th></tr></thead>
+                <thead><tr><th>Дата</th><th className="num">Заказов<br /><small>по дате заказа</small></th><th className="num">Продажи<br /><small>по дате заказа</small></th><th className="num">Оплаты заказов<br /><small>по дате оплаты</small></th><th className="num">Закрытие долгов</th><th className="num">Доплаты обмена</th><th className="num">Всего поступило</th><th className="num">Возвращено</th><th className="num">Чистыми</th><th>Проверка дат</th></tr></thead>
                 <tbody>
                   {cashDays.map((row) => <tr key={`finance-cash-day-${row.date}`}>
                     <td><strong>{formatDateShort(row.date)}</strong></td>
                     <td className="num">{row.orderCount}</td>
                     <td className="num">{formatMoney(row.sales)}</td>
                     <td className="num">{formatMoney(row.orderPayments)}</td>
-                    <td className="num">{formatMoney(row.orderExtras)}</td>
                     <td className="num">{formatMoney(row.debtPayments)}</td>
                     <td className="num">{formatMoney(row.exchangeExtras)}</td>
                     <td className="num"><strong>{formatMoney(row.received)}</strong></td>
@@ -523,7 +519,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                     <td className="num"><strong>{formatMoney(row.net)}</strong></td>
                     <td>{row.reviewCount ? <span className="soft-badge warning-soft">Проверить: {row.reviewCount}</span> : row.infoCount ? <span className="soft-badge">Пояснение: {row.infoCount}</span> : <span className="soft-badge">Без замечаний</span>}</td>
                   </tr>)}
-                  {!cashDays.length ? <tr><td colSpan={11} className="empty-state">За выбранный период нет заказов и денежных операций.</td></tr> : null}
+                  {!cashDays.length ? <tr><td colSpan={10} className="empty-state">За выбранный период нет заказов и денежных операций.</td></tr> : null}
                 </tbody>
               </table>
             </div>
