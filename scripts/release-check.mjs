@@ -53,6 +53,7 @@ function verifySource() {
     'scripts/test-finance-f6-release-audit.mjs',
     'scripts/test-finance-f9-summary-finish.mjs',
     'scripts/finance-f9-summary-worker-manifest.json',
+    'scripts/finance-f9-date-priority-worker-manifest.json',
     'scripts/finance-f6-delete-money-history-worker-manifest.json',
     'scripts/finance-f6-report-semantics-worker-manifest.json',
     'scripts/finance-f6-dead-metrics-worker-manifest.json',

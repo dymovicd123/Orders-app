@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "revision": "finance-f9-date-priority-r1",
+  "reason": "Any money operation dated before the business date of its order must require review, regardless of whether it is primary, debt close, legacy extra or exchange extra.",
+  "changes": {
+    "listFinanceReports": {
+      "before": "714e3a1d9cc6fa5772ac5b689722e2855a56c0f0c34a022bfba9889f867cb811",
+      "after": "645cda8c44644b2d8d4f7e29eeb060a1ad2c4d10f2b8c53fb84268e05c28663a"
+    }
+  }
+}

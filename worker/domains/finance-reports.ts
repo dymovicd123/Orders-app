@@ -677,7 +677,18 @@ export async function listFinanceReports(db: D1Database, url: URL) {
     let traceTitle = operationLabel;
     let traceExplanation = 'Операция относится к выбранному периоду.';
 
-    if (operationType === 'debt_close') {
+    if (dateRelation === 'before_order') {
+      traceCode = operationType === 'order_payment' ? 'primary_before_order' : `${operationType}_before_order`;
+      traceSeverity = 'review';
+      traceTitle = 'Оплата раньше даты заказа';
+      traceExplanation = operationType === 'debt_close'
+        ? 'Закрытие долга датировано раньше бизнес-даты самого заказа. Такая последовательность невозможна без ошибки в датах и требует проверки.'
+        : operationType === 'exchange_extra'
+          ? 'Доплата по обмену датирована раньше бизнес-даты исходного заказа. Дату операции нужно проверить.'
+          : operationType === 'order_extra'
+            ? 'Историческая последующая оплата датирована раньше бизнес-даты заказа. Несмотря на старый тип записи, дату нужно проверить.'
+            : 'Первичная оплата датирована раньше бизнес-даты заказа. Это требует проверки.';
+    } else if (operationType === 'debt_close') {
       traceCode = 'debt_close';
       traceTitle = 'Закрытие долга';
       traceExplanation = 'Отдельная оплата долга после создания заказа — нормальная денежная операция.';
@@ -705,11 +716,6 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       traceSeverity = 'info';
       traceTitle = 'Историческая базовая запись';
       traceExplanation = 'Эта запись восстановлена как достоверный снимок существовавшего состояния. Первоначальное действие пользователя по старой истории доказать нельзя.';
-    } else if (dateRelation === 'before_order') {
-      traceCode = 'primary_before_order';
-      traceSeverity = 'review';
-      traceTitle = 'Оплата раньше даты заказа';
-      traceExplanation = 'Первичная оплата датирована раньше бизнес-даты заказа. Это требует проверки.';
     } else if (dateRelation === 'after_order') {
       if (eventReason === 'order_create' && orderCreatedDate && recordedDate === paymentDate && orderCreatedDate === paymentDate) {
         traceCode = 'backdated_order_entry';
