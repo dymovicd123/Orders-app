@@ -2,7 +2,7 @@
 
 Updated: 2026-08-25
 Repository: `dymovicd123/Orders-app`
-Status: Finance transparency project ACTIVE; Warehouse paused without changes.
+Status: Finance transparency project ACTIVE; Warehouse paused without changes. Late-order primary-payment date guard is VERIFIED and deployed on `branch2`; not yet promoted to `main`/Production.
 Priority rule: this file is the canonical Finance resume point. `FINANCE_FORENSIC_2026-08-25.md` contains detailed 24-Aug evidence.
 
 ## User goal
@@ -33,7 +33,7 @@ Total received 24 Aug = 1,080,300 KZT. Method totals also equal 1,080,300; arith
 
 The two 45,000 rows are NOT debt closures. Both orders were physically entered into the system on 24 Aug, with an earlier business order date, and their payment events were created in the same create request (`eventType=order_payment`, `reason=order_create`).
 
-Create-order UX explains how this can happen unintentionally: both order date and first payment date start as today. Changing only the order date does not change the already-created payment date.
+Root cause before the guard: create-order initialized both order date and first payment date to today. Changing only the order date left the already-created primary payment on the physical entry day. This root cause is now prevented in `branch2`; see the verified guard section below.
 
 ### Production audit 2026-01-01..2026-08-25
 
@@ -70,6 +70,27 @@ Migration 0058 intentionally created `financial_events` as a trustworthy baselin
 
 ### Order create
 Payments are embedded in create. Modern writes create both `payments` and append-only `financial_events`. First draft payment defaults to `primary`.
+
+### VERIFIED root-cause guard — late-entered new orders
+
+User-defined invariant: when a manager enters a new order late/backdated, the initial `primary` payment belongs to the selected business order date, not to the day the form happens to be filled in.
+
+Implemented and verified on `branch2`:
+1. Frontend create form: changing `orderDate` automatically synchronizes every `primary` payment row in the NEW-order draft to the selected order date.
+2. Additional new-order payment rows already start from the current selected `orderDate`.
+3. Server `createOrder` independently enforces the same invariant in both fresh-create planning and the legacy in-flight create-resume bridge: `primary.paymentDate = orderDate`.
+4. Therefore a stale browser/mobile client cannot re-create the old bug merely by sending today's explicit primary payment date with a backdated new order.
+5. Non-primary operations are not rewritten by this rule.
+6. Existing-order editing deliberately remains outside this rule: historical payment dates are preserved and are not normalized back to the order date.
+
+Regression coverage was added to Step 192B2A4 create/save integrity tests, and the exact `createOrder` Worker body delta is pinned through `scripts/finance-order-date-sync-worker-manifest.json` in the Step 190.6A modularization hash chain. No global Worker integrity protection was weakened.
+
+Verification:
+- full `npm run release:check` PASSED on the isolated patch branch;
+- verified source was fast-forwarded to `branch2`;
+- Cloudflare deploy monitor for `branch2` commit `104a9dffee5b8a044df65e8a1c03958d3bd20eef` completed SUCCESS.
+
+Production/main has NOT yet been changed by this guard. Promote only after the planned Branch2/visual acceptance point unless explicitly decided otherwise.
 
 ### Order edit
 If payment rows change, server first writes reversal events, removes old payment rows, then writes corrected rows/events. This is a strong audit foundation: corrections are not silently erased from money history.
@@ -121,7 +142,7 @@ Do NOT treat every different date as an error. Classification must combine opera
 Required trace classes/severity concepts:
 - primary same-day → normal
 - primary before order → review/warning
-- backdated order entered later with primary payment at entry → explain explicitly; review/info
+- historical/backfilled order entered later with primary payment at entry → explain explicitly; review/info
 - future-dated primary chosen/recorded at order entry → explicit info/review
 - primary recorded later → review
 - legacy baseline ambiguous → explain that original mutation lineage is unavailable
@@ -130,6 +151,8 @@ Required trace classes/severity concepts:
 - return/refund → normal by operation date
 - late `recorded-at` lag → visible fact, not automatically corruption
 - reversals/corrections → show their original related operation.
+
+For NEW orders after the verified date-sync guard, an ordinary `order_create` primary payment with a different business date should be treated as especially suspicious/impossible under the supported write path, because the server now normalizes it to `orderDate`.
 
 Every traceable money row must expose:
 - exact ORD and order id
@@ -165,9 +188,9 @@ Every traceable money row must expose:
 Search/filter by ORD, dates, operation kind and trace state. Show all timestamps and direct order/money-history actions.
 
 ### F5 — Entry-time prevention
-- when backdating a new order, sync untouched default first-payment date or explicitly confirm mismatch;
-- admin editor must expose/require correct meaning for new payment rows rather than hidden primary;
-- return/exchange operation dates must not silently fall back to order date.
+- DONE on Branch2: backdating a NEW order synchronizes/enforces primary payment date = selected order date on both frontend and server;
+- remaining: admin editor must expose/require correct meaning for new payment rows rather than hidden primary;
+- remaining: return/exchange operation dates must not silently fall back to order date.
 
 ### F6 — Finance self-check
 - arithmetic reconciliation;
@@ -182,7 +205,7 @@ Regression tests → `branch2` → Cloudflare Branch2 success → visual accepta
 
 ## Exact next action
 
-Begin F2 on a temporary branch based on current `branch2`. First patch is backend/contract only: enrich `FinancePaymentOperation` with order-recorded/event-lineage fields and derive honest trace categories; add a small additive index migration if needed. Run full `release:check` before moving anything into `branch2`. No Production mutation during this step.
+Resume F2 from current `branch2` (which now includes the verified late-order payment-date guard). First F2 patch remains backend/contract traceability: enrich `FinancePaymentOperation` with order-recorded/event-lineage fields and derive honest trace categories; add a small additive index migration if needed. Keep the new create invariant in all F2 classification logic. Run full `release:check` before moving further. No Production mutation during this step.
 
 ## Warehouse resume point
 
