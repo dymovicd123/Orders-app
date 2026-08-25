@@ -1,0 +1,38 @@
+name: Finance F4 money journal patch
+
+on:
+  push:
+    branches:
+      - finance-f4-money-journal
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-check:
+    if: ${{ !contains(github.event.head_commit.message, '[finance-f4-patched]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply Finance F4 patch
+        run: python3 scripts/tmp-finance-f4-patch.py
+      - name: Full release gate
+        run: npm run release:check
+      - name: Commit verified Finance F4
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add worker/domains/cash.ts scripts/finance-f4-money-journal-worker-manifest.json scripts/test-step1906a-worker-modularization.mjs src/app/types.ts src/App.tsx src/features/renderers/FinanceDashboardRenderer.tsx src/styles/finance-f4-money-journal.css scripts/test-finance-f4-money-journal.mjs scripts/release-check.mjs
+          git commit -m "Add auditable Finance money journal [finance-f4-patched]"
+          git push origin HEAD:finance-f4-money-journal
