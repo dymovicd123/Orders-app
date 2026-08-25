@@ -453,7 +453,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                 <div className="mini-panel-head">
                   <div>
                     <h3>Операции по заказам другой даты</h3>
-                    <p className="mini-panel-note">Это не расхождение само по себе: деньги входят в выбранный период по дате операции, а продажа — по дате заказа. Закрытие долга здесь является обычной операцией; необычные случаи отдельно объясняются в проверке дат.</p>
+                    <p className="mini-panel-note">Здесь показаны оплаты, которые поступили в выбранном периоде, но относятся к заказам из другого периода.</p>
                   </div>
                   <span className="soft-badge finance-info-badge">{crossDatePaymentOperations.length} операций · {formatMoney(crossDatePaymentOperations.reduce((sum, row) => sum + Number(row.amount || 0), 0))}</span>
                 </div>
@@ -511,7 +511,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
               <div className="mini-panel-head">
                 <div>
                   <h3>Пояснения по датам</h3>
-                  <p className="mini-panel-note">Это объяснимые различия дат, а не ошибки. Они нужны, чтобы можно было проследить происхождение суммы без тревожного статуса.</p>
+                  <p className="mini-panel-note">Проверьте эти заказы. Если дата оплаты указана неверно, исправьте её, чтобы оплата попала в правильный период.</p>
                   {historicalPeriodSelected && visibleLegacyBaselineCount ? <p className="mini-panel-note">Вы выбрали старый период: {visibleLegacyBaselineCount} исторических записей показаны как baseline. Их текущее состояние известно, но первоначальное действие пользователя по ним не всегда можно доказать.</p> : null}
                 </div>
                 <span className="soft-badge finance-info-badge">Пояснений: {visiblePaymentTraceInfo.length}</span>
