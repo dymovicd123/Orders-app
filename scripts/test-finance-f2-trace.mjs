@@ -33,7 +33,7 @@ try {
   check(historyQuery.includes('WHERE event_date BETWEEN ? AND ?'), 'Immutable money history is loaded outside the selected user period')
   check(historyQuery.includes("event_type IN ('order_payment', 'debt_close', 'order_extra', 'exchange_extra')"), 'Trace query is not limited to relevant incoming-money events')
   check(report.includes('crossDatePaymentOperations = paymentOperations.filter'), 'Selected-period cash contributors from orders outside the period are not exposed')
-  check(report.includes('traceScope: { startDate, endDate, selectedPeriodOnly: true }'), 'API does not state that trace rows are selected-period only')
+  check(report.includes('traceScope: { startDate, endDate, selectedOperationPeriodOnly: true, includesOrderPeriodBeforePayments: true }'), 'API does not distinguish selected operation-period trace from order-period early-payment diagnostics')
   for (const marker of ['legacy_baseline', 'backdated_order_entry', 'primary_before_order', 'primary_future_dated', 'primary_recorded_later', 'lineage_ambiguous', 'lineage_missing']) {
     check(report.includes(marker), `Finance trace class missing: ${marker}`)
   }
@@ -51,11 +51,11 @@ try {
   check(tracking.includes("COALESCE(NULLIF(TRIM(activated_at), ''), '') = ''"), 'Cash resume can still overwrite original activation boundary')
   check(!tracking.includes('CASE WHEN ? = 1 THEN ? ELSE activated_at END'), 'Old cash activation overwrite expression remains')
 
-  for (const marker of ['orderCreatedAt', 'eventLineageStatus', 'eventIsBackfill', 'traceSeverity', 'crossDatePaymentOperations', 'selectedPeriodOnly']) {
+  for (const marker of ['orderCreatedAt', 'eventLineageStatus', 'eventIsBackfill', 'traceSeverity', 'crossDatePaymentOperations', 'selectedOperationPeriodOnly', 'includesOrderPeriodBeforePayments']) {
     check(types.includes(marker), `Finance frontend contract missing: ${marker}`)
   }
 
-  console.log('FINANCE F2 TRACEABILITY TESTS PASSED — selected-period-only lineage, cross-date bridge, explicit return/exchange dates and immutable cash activation are enforced.')
+  console.log('FINANCE F2 TRACEABILITY TESTS PASSED — operation-period lineage stays bounded while order-period early-payment diagnostics, cross-date bridge, explicit return/exchange dates and immutable cash activation are enforced.')
 } catch (error) {
   console.error(`FINANCE F2 TRACEABILITY TESTS FAILED: ${error?.message || error}`)
   process.exit(1)
