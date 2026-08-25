@@ -66,6 +66,48 @@ jobs:
           app = app.replace('    setEditorPaymentSavingIndex(index)\n', '    setSavingOrder(true)\n', 1)
           app = app.replace('      setEditorPaymentSavingIndex(null)\n', '      setSavingOrder(false)\n', 1)
           app = app.replace(', editorOpen, editorPaymentSavingIndex, editorReturnSector,', ', editorOpen, editorReturnSector,', 1)
+
+          # The first safety helper used an overly broad replacement range. Restore the neighboring
+          # item/debt helpers exactly as they exist in branch2 before handleSelectDebtOrder.
+          neighbor_helpers = '''  function addEditorItem() {
+            setEditorDraft((current) => current ? { ...current, items: [...current.items, createEmptyEditorItem()] } : current)
+          }
+
+          function removeEditorItem(index: number) {
+            setEditorDraft((current) => {
+              if (!current) return current
+              const nextItems = current.items.filter((_, itemIndex) => itemIndex !== index)
+              return { ...current, items: nextItems.length ? nextItems : [createEmptyEditorItem()] }
+            })
+          }
+
+          function updateDebtPayment(index: number, field: keyof EditorPayment, value: string | number) {
+            setDebtPayments((current) => current.map((payment, paymentIndex) => (
+              paymentIndex === index ? { ...payment, [field]: value, paymentKind: 'debt_close' } : payment
+            )))
+          }
+
+          function addDebtPayment() {
+            setDebtPayments((current) => [...current, createDebtClosePayment()])
+          }
+
+          function removeDebtPayment(index: number) {
+            setDebtPayments((current) => {
+              const next = current.filter((_, paymentIndex) => paymentIndex !== index)
+              return next.length ? next : [createDebtClosePayment()]
+            })
+          }
+
+          '''
+          # Normalize heredoc indentation introduced by YAML before inserting TS.
+          neighbor_helpers = ''.join(line[10:] if line.startswith('          ') else line for line in neighbor_helpers.splitlines(True))
+          handle_marker = '  function handleSelectDebtOrder(orderId: number) {'
+          if handle_marker not in app:
+              raise SystemExit('handleSelectDebtOrder marker missing')
+          for required in ['function addEditorItem()', 'function removeEditorItem(index: number)', 'function updateDebtPayment(', 'function addDebtPayment()', 'function removeDebtPayment(index: number)']:
+              if required in app:
+                  raise SystemExit(f'neighbor helper unexpectedly survived broad patch: {required}')
+          app = app.replace(handle_marker, neighbor_helpers + handle_marker, 1)
           app_path.write_text(app, encoding='utf-8')
 
           editor_path = Path('src/features/sections/OrderEditorSection.tsx')
@@ -79,6 +121,15 @@ jobs:
           if 'editorPaymentSavingIndex' in editor:
               raise SystemExit('editorPaymentSavingIndex remained in extracted editor')
           editor_path.write_text(editor, encoding='utf-8')
+
+          # OrderRecord.payments is an inline server-read type; expose the id that the API already returns.
+          types_path = Path('src/app/types.ts')
+          types = types_path.read_text(encoding='utf-8')
+          marker = "  payments: Array<{\n    paymentDate: string\n"
+          replacement = "  payments: Array<{\n    id?: number\n    paymentDate: string\n"
+          if types.count(marker) != 1:
+              raise SystemExit(f'OrderRecord payment type marker count: {types.count(marker)}')
+          types_path.write_text(types.replace(marker, replacement, 1), encoding='utf-8')
           PY
       - name: Full release gate
         run: npm run release:check
