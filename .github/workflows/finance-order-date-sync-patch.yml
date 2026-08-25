@@ -31,7 +31,7 @@ jobs:
           set -euo pipefail
 
           declaration_hash() {
-            node --input-type=module - "$1" <<'NODE'
+            node --input-type=module - "$1" "$2" <<'NODE'
           import fs from 'node:fs'
           import crypto from 'node:crypto'
           import ts from 'typescript'
