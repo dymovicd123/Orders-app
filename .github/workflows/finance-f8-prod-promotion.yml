@@ -1,0 +1,51 @@
+name: Finance F8 Production promotion
+
+on:
+  push:
+    branches:
+      - finance-f8-prod-promotion
+
+permissions:
+  contents: write
+
+jobs:
+  promote-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply exact verified F8 squash
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git cherry-pick af9582aaa7f57d040288fb8323bbd89a66b3de6a
+      - name: Verify exact F8 diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only origin/main...HEAD | sort)"
+          printf '%s\n' "$changed"
+          expected="$(printf '%s\n' \
+            scripts/test-finance-f3-summary-ux.mjs \
+            scripts/test-finance-f6-release-audit.mjs \
+            src/features/renderers/FinanceDashboardRenderer.tsx \
+            src/styles/140-finance-truth.css | sort)"
+          test "$changed" = "$expected"
+          if printf '%s\n' "$changed" | grep -Eq '^migrations/|arrival|Arrival|приход|Приход'; then
+            echo 'Unexpected migration/Arrival delta'
+            exit 1
+          fi
+      - name: Full Production release gate
+        run: npm run release:check
+      - name: Push verified F8 candidate
+        run: git push origin HEAD:finance-f8-prod-promotion
