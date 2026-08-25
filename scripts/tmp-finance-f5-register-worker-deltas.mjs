@@ -87,6 +87,25 @@ const newValue = `    const financeF4MoneyJournalChanged = financeF4MoneyJournal
     }
 `
 text = replaceOnce(text, oldValue, newValue, 'F5 declaration chain')
+
+oldValue = `  for (const [name, expectedHash] of Object.entries(orderCreateSaveIntegrityAdded)) {
+    check(declarations.has(name), \`192B2A4 added Worker declaration missing: \${name}\`)
+    check(sha(declarations.get(name)) === expectedHash, \`192B2A4 added Worker declaration changed: \${name}\`)
+  }
+`
+const addedNewValue = `  for (const [name, expectedHash] of Object.entries(orderCreateSaveIntegrityAdded)) {
+    check(declarations.has(name), \`192B2A4 added Worker declaration missing: \${name}\`)
+    const financeF5BusinessSemanticsChanged = financeF5BusinessSemanticsChanges[name]
+    if (financeF5BusinessSemanticsChanged) {
+      check(financeF5BusinessSemanticsChanged.before === expectedHash, \`Finance F5 changed 192B2A4-added declaration baseline hash mismatch: \${name}\`)
+      check(sha(declarations.get(name)) === financeF5BusinessSemanticsChanged.after, \`192B2A4-added declaration changed beyond exact Finance F5 business semantics allow-list: \${name}\`)
+    } else {
+      check(sha(declarations.get(name)) === expectedHash, \`192B2A4 added Worker declaration changed: \${name}\`)
+    }
+  }
+`
+text = replaceOnce(text, oldValue, addedNewValue, 'F5 post-192B2A4 added declaration chain')
+
 oldValue = "  const orderCreateSaveIntegrityNote = orderCreateSaveIntegrity ? `, ${Object.keys(orderCreateSaveIntegrityChanges).length} changed + ${Object.keys(orderCreateSaveIntegrityAdded).length} added 192B2A4 order-save declarations` : ''\n"
 text = replaceOnce(text, oldValue, oldValue + "  const financeF5BusinessSemanticsNote = financeF5BusinessSemantics ? `, ${Object.keys(financeF5BusinessSemanticsChanges).length} exact Finance F5 business-semantics deltas` : ''\n", 'F5 note')
 oldValue = '${orderCreateSaveIntegrityNote}, 0 import cycles`)'
