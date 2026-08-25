@@ -43,6 +43,16 @@ jobs:
           path.write_text(text, encoding='utf-8')
           PY
           python3 scripts/tmp-finance-f5-safety-patch.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/test-finance-f5-adjacent-regression.mjs')
+          text = path.read_text(encoding='utf-8')
+          old = "check(!persistBlock.includes('payments:'), 'Order editor PATCH still sends a payment collection and can trigger rewrite-all')"
+          new = "check(!persistBlock.includes('payments: nextDraft.payments.map'), 'Order editor PATCH still sends the full payment collection and can trigger rewrite-all')"
+          if old not in text:
+              raise SystemExit('adjacent payload assertion marker missing')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Full release gate
         run: npm run release:check
       - name: Commit verified Finance F5 safety
