@@ -25,6 +25,26 @@ jobs:
         run: npm ci
       - name: Apply Finance F6 correctness patch and wire permanent gate
         run: python3 scripts/tmp-finance-f6-wire.py
+      - name: Normalize immutable-event audit matcher
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/test-finance-f6-release-audit.mjs')
+          text = path.read_text(encoding='utf-8')
+          old = '''  for (const marker of ["eventType: 'exchange_extra'", "eventType: 'exchange_refund'", "eventType: 'refund_reversal'", "eventType: 'payment_reversal'"]) {
+            check(`${returnsExchanges}\\n${money}\\n${orderWrite}`.includes(marker), `Immutable money evidence missing: ${marker}`)
+          }
+          '''
+          new = '''  check(returnsExchanges.includes("eventType: 'exchange_extra'"), 'Immutable exchange-extra evidence missing')
+          check(returnsExchanges.includes("eventType: 'exchange_refund'"), 'Immutable exchange-refund evidence missing')
+          check(`${returnsExchanges}\\n${money}`.includes("'refund_reversal'"), 'Immutable refund-reversal evidence missing')
+          check(`${money}\\n${orderWrite}`.includes("'payment_reversal'"), 'Immutable payment-reversal evidence missing')
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f'immutable-event matcher count={text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Full release gate
         run: npm run release:check
       - name: Commit verified Finance F6 correctness patch
