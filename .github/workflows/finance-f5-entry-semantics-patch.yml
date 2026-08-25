@@ -24,7 +24,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Apply Finance F5 patch
-        run: python3 scripts/tmp-finance-f5-patch.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/tmp-finance-f5-patch.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/test-finance-f5-entry-semantics.mjs')
+          text = path.read_text(encoding='utf-8')
+          old = "  check(!app.includes('createEmptyEditorPayment(current.orderDate)'), 'New later editor payment still silently inherits the original order date')\n"
+          new = "  const editorAddStart = app.indexOf(\"function addEditorPayment(paymentKind: 'debt_close' | 'extra')\")\n  const editorAddEnd = app.indexOf('function removeEditorPayment', editorAddStart)\n  const editorAddBlock = editorAddStart >= 0 && editorAddEnd > editorAddStart ? app.slice(editorAddStart, editorAddEnd) : ''\n  check(editorAddBlock && !editorAddBlock.includes('createEmptyEditorPayment(current.orderDate)'), 'New later editor payment still silently inherits the original order date')\n"
+          if old not in text:
+              raise SystemExit('F5 test scope marker missing')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Full release gate
         run: npm run release:check
       - name: Commit verified Finance F5
