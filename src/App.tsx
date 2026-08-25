@@ -4949,18 +4949,33 @@ function App() {
       if (!current) return current
       const nextPayments = current.payments.map((payment, paymentIndex) => {
         if (paymentIndex !== index || payment.id) return payment
+        if (field === 'paymentDate' && payment.paymentKind === 'primary') return payment
+        if (field === 'paymentKind') {
+          const nextKind: EditorPayment['paymentKind'] = value === 'debt_close' ? 'debt_close' : 'primary'
+          return {
+            ...payment,
+            paymentKind: nextKind,
+            paymentDate: nextKind === 'primary' ? (current.orderDate || payment.paymentDate) : (payment.paymentDate || formatLocalDateInput()),
+          }
+        }
         return { ...payment, [field]: value }
       })
       return { ...current, payments: nextPayments }
     })
   }
 
-  function addEditorPayment(paymentKind: EditorPayment['paymentKind']) {
+  function addEditorPayment(paymentKind: 'primary' | 'debt_close') {
     const draftKey = `editor-payment-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-    setEditorDraft((current) => current ? {
-      ...current,
-      payments: [...current.payments, { ...createEmptyEditorPayment(formatLocalDateInput()), paymentKind, draftKey }],
-    } : current)
+    setEditorDraft((current) => {
+      if (!current) return current
+      const paymentDate = paymentKind === 'primary'
+        ? (current.orderDate || formatLocalDateInput())
+        : formatLocalDateInput()
+      return {
+        ...current,
+        payments: [...current.payments, { ...createEmptyEditorPayment(paymentDate), paymentKind, draftKey }],
+      }
+    })
   }
 
   function removeEditorPayment(index: number) {
@@ -4974,6 +4989,13 @@ function App() {
     if (!editorDraft || !selectedOrder || savingOrder) return
     const payment = editorDraft.payments[index]
     if (!payment || payment.id) return
+    const paymentKind = payment.paymentKind === 'primary' || payment.paymentKind === 'debt_close'
+      ? payment.paymentKind
+      : null
+    if (!paymentKind) {
+      setError('Для обычного заказа доступны только первичная оплата и закрытие долга. Доплата оформляется только внутри обмена.')
+      return
+    }
 
     const amount = Number(payment.amount || 0)
     if (!payment.paymentDate) {
@@ -4998,7 +5020,7 @@ function App() {
         paymentDate: payment.paymentDate,
         method: payment.method,
         amount,
-        paymentKind: payment.paymentKind,
+        paymentKind,
         comment: payment.comment || '',
       }
       const criticalKey = `order-editor-payment:${selectedOrder.id}:${payment.draftKey || index}`

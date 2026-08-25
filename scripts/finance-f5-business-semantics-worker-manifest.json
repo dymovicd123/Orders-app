@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "revision": "finance-f5-business-semantics-r1",
+  "reason": "Ordinary orders expose only primary payment and debt close; manual primary is anchored to order date; ordinary extra is blocked while exchange extra remains isolated; legacy ordinary extra is presented under debt-close semantics.",
+  "changes": {
+    "moneyHistoryOperationLabel": {
+      "before": "e635357af2fb9bde315e94921a05f6beab90d841b157d23fd4d6aadb2ae49ccc",
+      "after": "4babe2962465bd80a15566a20b148c1805333efa7536ce1be48a68205f7a7a25"
+    },
+    "listFinancialHistory": {
+      "before": "cef82cf83eeb6a7605b2794ccd4f363e694504e83a5d51dca9f7a2118821c7bf",
+      "after": "8f4a1ccbf7ca1d859a6daeb3abf42b9d87676e9ffff5b72a656d8aff2bb71f44"
+    },
+    "createManualOrderPaymentCritical": {
+      "before": "4b81f9ddb185f737376b98cc14dc45530948072cade6deba9971f644d62bfae5",
+      "after": "bb82115f8403fc9d9fca224199ca43ca738994ca483aed81fcd5400fada40e46"
+    },
+    "listFinanceReports": {
+      "before": "aa299c9f98d8e25ced1bda8046ebf444cdae820cdc35825377a858b784523e0c",
+      "after": "bdf02133879d9212e53dc99898d035800a1d927098f1494a8e2d949d0c41bd12"
+    }
+  }
+}

@@ -356,13 +356,10 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                           <button className="secondary compact" type="button" onClick={() => addEditorPayment('debt_close')} disabled={savingOrder}>
                             + Закрытие долга
                           </button>
-                          <button className="secondary compact" type="button" onClick={() => addEditorPayment('extra')} disabled={savingOrder}>
-                            + Доплата
-                          </button>
                         </div>
                       </div>
                       <p className="mini-panel-note">
-                        Если первичную оплату забыли внести, добавьте её явно. Новая операция получает сегодняшнюю дату — при необходимости укажите фактическую дату получения денег. Уже проведённые оплаты здесь не переписываются: это защищает денежную историю и кассу.
+                        Если первичную оплату забыли внести, добавьте её явно — она всегда относится к дате заказа. Любая обычная оплата позже создания заказа оформляется как «Закрытие долга» и проходит через тот же серверный механизм, что и отдельная кнопка закрытия долга. Доплата существует только в форме обмена. Уже проведённые оплаты здесь не переписываются: это защищает денежную историю и кассу.
                       </p>
                       <div className="stack">
                         {editorDraft.payments.map((payment, index) => (
@@ -383,7 +380,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                                 <input
                                   type="date"
                                   value={payment.paymentDate}
-                                  disabled={Boolean(payment.id) || savingOrder}
+                                  disabled={Boolean(payment.id) || savingOrder || payment.paymentKind === 'primary'}
                                   onChange={(event) => updateEditorPayment(index, 'paymentDate', event.target.value)}
                                 />
                               </label>
@@ -396,7 +393,6 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                                 >
                                   <option value="primary">Первичная оплата</option>
                                   <option value="debt_close">Закрытие долга</option>
-                                  <option value="extra">Доплата по заказу</option>
                                 </select>
                               </label>
                               <label>

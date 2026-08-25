@@ -26,8 +26,25 @@ try {
   check(app.includes('payments: createDraft.payments.map'), 'Order creation accidentally stopped sending its initial payments')
   check(worker.includes("url.pathname === '/api/payments' && request.method === 'POST'"), 'Dedicated payment API route disappeared')
   check(money.includes('financialOperationTypeFromPaymentKind(plan.paymentKind)'), 'Manual payment no longer writes semantic immutable financial events')
-  check(finance.includes("operationType === 'debt_close'") && finance.includes("operationType === 'order_extra'"), 'Finance reports lost payment-kind separation')
+  check(finance.includes("operationType === 'debt_close' || row.operationType === 'order_extra'") && finance.includes('Закрытие долга (старый тип)'), 'Finance reports do not fold legacy ordinary extra into debt-close semantics')
   check(cash.includes('includeLegacy') && cash.includes('traceSeverity'), 'F4 money-history audit controls regressed')
+  const financeUi = read('src/features/renderers/FinanceDashboardRenderer.tsx')
+  const reportUi = read('src/features/renderers/FinanceReportContentRenderer.tsx')
+  const returnsExchanges = read('worker/domains/returns-exchanges.ts')
+  check(!financeUi.includes('Доплаты по заказам') && !financeUi.includes('<option value="order_extra">'), 'Finance page still exposes generic ordinary extra')
+  check(!reportUi.includes('Доплаты заказов'), 'Strict manager report still exposes generic ordinary extra column')
+  check(financeUi.includes('Доплаты по обменам') && returnsExchanges.includes("eventType: 'exchange_extra'"), 'Exchange extra disappeared while ordinary extra was removed')
+  check(cash.includes("operation === 'debt_close' || operation === 'order_extra'") && cash.includes('Закрытие долга (старый тип)'), 'Money history does not keep legacy extra traceable under debt close')
+
+  const editorPaymentStart = app.indexOf('async function saveEditorPayment(index: number)')
+  const editorPaymentEnd = app.indexOf('function addEditorItem()', editorPaymentStart)
+  const editorPaymentBlock = app.slice(editorPaymentStart, editorPaymentEnd)
+  const debtCloseStart = app.indexOf('async function saveDebtClose()')
+  const debtCloseEnd = app.indexOf('async function saveReturn()', debtCloseStart)
+  const debtCloseBlock = app.slice(debtCloseStart, debtCloseEnd)
+  check(editorPaymentBlock.includes("apiFetch('/api/payments'") && debtCloseBlock.includes("apiFetch('/api/payments'"), 'Editor and dedicated debt close do not share /api/payments')
+  check(editorPaymentBlock.includes("payment.paymentKind === 'primary' || payment.paymentKind === 'debt_close'") && debtCloseBlock.includes("paymentKind: 'debt_close' as const"), 'Debt-close semantic kind can diverge between editor and dedicated flow')
+  check(editorPaymentBlock.includes('prepareCriticalRequest') && debtCloseBlock.includes('prepareCriticalRequest'), 'One debt-close entry path lost browser idempotency')
 
   // The old backend rewrite primitive still exists for explicit legacy/full-rewrite callers, but the generic UI must not invoke it.
   check(orderWrite.includes('removeOrderPaymentsWithMoneyEvents'), 'Expected guarded legacy payment-rewrite primitive disappeared unexpectedly')
@@ -84,7 +101,7 @@ try {
   check(cashBalance(db) === 0, 'Cash negative-control changed: review the F5 safety assumption before altering editor payment isolation')
   check(Number(db.prepare("SELECT COUNT(*) AS count FROM cash_register_entries WHERE entry_type = 'payment_reversal'").get()?.count || 0) === 1, 'Cash negative-control did not record the destructive rewrite reversal')
 
-  console.log('FINANCE F5 ADJACENT REGRESSION PASSED — create/debt/report/journal paths remain intact, and the cash rewrite hazard is reproduced while the generic editor is statically isolated from it.')
+  console.log('FINANCE F5 ADJACENT REGRESSION PASSED — both debt-close entry points share the same idempotent backend, ordinary extra is removed, exchange extra remains isolated, and the cash rewrite hazard stays blocked.')
 } catch (error) {
   console.error(`FINANCE F5 ADJACENT REGRESSION FAILED: ${error?.message || error}`)
   process.exit(1)
