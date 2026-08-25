@@ -1,0 +1,23 @@
+name: Temporary Finance F6 dead metric audit
+
+on:
+  push:
+    branches:
+      - finance-f6-release-audit
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Search mixed-cohort finance metrics
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== collectionRate / returnRate references ==='
+          grep -RIn --exclude-dir=.git --exclude='tmp-finance-f6-dead-metric-audit.yml' -E 'collectionRate|returnRate' . || true
+          echo '=== collection / return labels ==='
+          grep -RIn --exclude-dir=.git -E 'Собираем|собираем|Возврат.*%|return.?rate|collection.?rate' src worker scripts || true
