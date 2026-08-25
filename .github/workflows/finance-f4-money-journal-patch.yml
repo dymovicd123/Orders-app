@@ -32,9 +32,15 @@ jobs:
           from pathlib import Path
           path = Path('src/features/renderers/FinanceDashboardRenderer.tsx')
           text = path.read_text(encoding='utf-8')
-          if 'Возвраты / списания' not in text:
-              raise SystemExit('F4 flow label marker missing')
-          path.write_text(text.replace('Возвраты / списания', 'Списания и возвраты', 1), encoding='utf-8')
+          replacements = [
+              ('Возвраты / списания', 'Списания и возвраты'),
+              ('Исправления / отмены', 'Исправления и отмены'),
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f'F4 wording marker missing: {old}')
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
           PY
       - name: Full release gate
         run: npm run release:check
