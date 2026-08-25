@@ -16,9 +16,8 @@ jobs:
       CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CF_API: https://api.cloudflare.com/client/v4
-      D1_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
     steps:
-      - name: Read-only Primary finance forensic
+      - name: Read-only Primary finance forensic through production API
         shell: bash
         run: |
           set -euo pipefail
@@ -27,28 +26,35 @@ jobs:
             exit 2
           fi
 
-          query() {
-            local label="$1"
-            local sql="$2"
-            echo "===== $label ====="
-            if [[ ! "$sql" =~ ^[[:space:]]*SELECT ]]; then
-              echo "Non-SELECT SQL blocked" >&2
-              exit 3
-            fi
-            payload="$(jq -nc --arg sql "$sql" '{sql:$sql}')"
-            curl --fail-with-body -sS \
-              -X POST \
-              -H "Authorization: Bearer $CF_API_TOKEN" \
-              -H "Content-Type: application/json" \
-              "$CF_API/accounts/$CF_ACCOUNT_ID/d1/database/$D1_ID/query" \
-              -d "$payload" \
-              | jq '{success,errors,result:[.result[]? | {results,meta}]}'
-          }
+          subdomain_json="$(curl --fail-with-body -sS -H "Authorization: Bearer $CF_API_TOKEN" "$CF_API/accounts/$CF_ACCOUNT_ID/workers/subdomain")"
+          subdomain="$(jq -r '.result.subdomain // empty' <<<"$subdomain_json")"
+          if [[ -z "$subdomain" ]]; then
+            echo "Could not resolve workers.dev subdomain" >&2
+            echo "$subdomain_json" | jq '{success,errors}'
+            exit 3
+          fi
+          base="https://orders-app.$subdomain.workers.dev"
+          echo "Resolved production Worker URL"
 
-          query "ORDERS_2026_08_24" "SELECT id, external_id, order_date, total_amount, received_amount, debt_amount, return_amount, order_status, manager_id FROM orders WHERE order_date = '2026-08-24' ORDER BY id;"
-          query "ORDER_TOTALS_BY_STATUS_2026_08_24" "SELECT order_status, COUNT(*) AS order_count, COALESCE(SUM(total_amount),0) AS total_sales, COALESCE(SUM(received_amount),0) AS order_received, COALESCE(SUM(debt_amount),0) AS debt FROM orders WHERE order_date = '2026-08-24' GROUP BY order_status ORDER BY order_status;"
-          query "PAYMENTS_MADE_2026_08_24" "SELECT p.id, p.order_id, o.external_id, o.order_date, p.payment_date, p.method, p.amount, p.payment_kind, o.order_status FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.payment_date = '2026-08-24' AND o.order_status <> 'deleted' ORDER BY p.id;"
-          query "PRIMARY_PAYMENTS_BY_ORDER_DATE_2026_08_24" "SELECT o.order_date, COUNT(*) AS payment_rows, COALESCE(SUM(p.amount),0) AS total FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.payment_date = '2026-08-24' AND o.order_status <> 'deleted' AND p.payment_kind NOT IN ('debt_close','extra') AND NOT EXISTS (SELECT 1 FROM exchanges e WHERE e.payment_id = p.id AND COALESCE(e.status,'completed') <> 'cancelled' AND e.financial_action = 'extra_payment') GROUP BY o.order_date ORDER BY o.order_date;"
-          query "NON_24_ORDER_PRIMARY_PAYMENTS" "SELECT p.id, p.order_id, o.external_id, o.order_date, p.amount, p.method, p.payment_kind, o.order_status FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.payment_date = '2026-08-24' AND o.order_status <> 'deleted' AND o.order_date <> '2026-08-24' AND p.payment_kind NOT IN ('debt_close','extra') AND NOT EXISTS (SELECT 1 FROM exchanges e WHERE e.payment_id = p.id AND COALESCE(e.status,'completed') <> 'cancelled' AND e.financial_action = 'extra_payment') ORDER BY p.id;"
-          query "DEBT_CLOSE_2026_08_24" "SELECT p.id, p.order_id, o.external_id, o.order_date, p.amount, p.method, o.order_status FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.payment_date = '2026-08-24' AND p.payment_kind = 'debt_close' AND o.order_status <> 'deleted' ORDER BY p.id;"
-          query "FORTY_THOUSAND_ORDERS_2026_08_24" "SELECT id, external_id, total_amount, received_amount, debt_amount, return_amount, order_status, manager_id FROM orders WHERE order_date = '2026-08-24' AND (total_amount = 40000 OR received_amount = 40000 OR debt_amount = 40000) ORDER BY id;"
+          finance="$(curl --fail-with-body -sS "$base/api/reports/finance?startDate=2026-08-24&endDate=2026-08-24")"
+          active="$(curl --fail-with-body -sS "$base/api/orders?dateFrom=2026-08-24&dateTo=2026-08-24&limit=200&archiveMode=active")"
+          all_orders="$(curl --fail-with-body -sS "$base/api/orders?dateFrom=2026-08-24&dateTo=2026-08-24&limit=200&archiveMode=all")"
+          archived="$(curl --fail-with-body -sS "$base/api/orders?dateFrom=2026-08-24&dateTo=2026-08-24&limit=200&archiveMode=archived")"
+
+          echo "===== FINANCE_OVERVIEW ====="
+          jq '{startDate,endDate,overview,reports:{paymentKinds:.reports.paymentKinds,consistency:.reports.consistency}}' <<<"$finance"
+
+          echo "===== PAYMENT_OPERATIONS ====="
+          jq '[.reports.paymentOperations[] | {id,orderId,externalOrderId,orderDate,paymentDate,method,amount,operationType,dateRelation,dateOffsetDays}]' <<<"$finance"
+
+          echo "===== ACTIVE_ORDERS_24 ====="
+          jq '{count,orders:[.orders[] | {id,external_id,order_date,total_amount,received_amount,debt_amount,return_amount,order_status,shipping_status}]}' <<<"$active"
+
+          echo "===== ALL_NON_DELETED_ORDERS_24 ====="
+          jq '{count,orders:[.orders[] | {id,external_id,order_date,total_amount,received_amount,debt_amount,return_amount,order_status,shipping_status}]}' <<<"$all_orders"
+
+          echo "===== ARCHIVED_ORDERS_24 ====="
+          jq '{count,orders:[.orders[] | {id,external_id,order_date,total_amount,received_amount,debt_amount,return_amount,order_status,shipping_status}]}' <<<"$archived"
+
+          echo "===== SUM_CHECKS ====="
+          jq -n --argjson active "$active" --argjson all "$all_orders" --argjson archived "$archived" '{activeSum:([$active.orders[].total_amount] | add // 0),allNonDeletedSum:([$all.orders[].total_amount] | add // 0),archivedSum:([$archived.orders[].total_amount] | add // 0),activeCount:($active.orders|length),allCount:($all.orders|length),archivedCount:($archived.orders|length)}'
