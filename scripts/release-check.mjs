@@ -48,6 +48,7 @@ function verifySource() {
     'scripts/test-finance-f2-trace.mjs',
     'scripts/test-finance-f3-summary-ux.mjs',
     'scripts/test-finance-f4-money-journal.mjs',
+    'scripts/test-finance-f5-entry-semantics.mjs',
     'scripts/finance-f4-money-journal-worker-manifest.json',
     'scripts/finance-f2-trace-worker-manifest.json',
     'src/styles/189c-reliable-money-history.css',
@@ -199,6 +200,7 @@ try {
   run('Finance F2 selected-period traceability tests', process.execPath, [path.join(root, 'scripts/test-finance-f2-trace.mjs')])
   run('Finance F3 summary/day UX tests', process.execPath, [path.join(root, 'scripts/test-finance-f3-summary-ux.mjs')])
   run('Finance F4 money journal UX tests', process.execPath, [path.join(root, 'scripts/test-finance-f4-money-journal.mjs')])
+  run('Finance F5 entry semantics tests', process.execPath, [path.join(root, 'scripts/test-finance-f5-entry-semantics.mjs')])
   run('Step 189D team activity tests', process.execPath, [path.join(root, 'scripts/test-step189d-team-activity.mjs')])
   run('Step 189D team activity SQL tests', process.execPath, [path.join(root, 'scripts/test-step189d-team-activity-sql.mjs')])
   run('Step 189D.1 pre-audit stability tests', process.execPath, [path.join(root, 'scripts/test-step189d1-pre-audit-stability.mjs')])

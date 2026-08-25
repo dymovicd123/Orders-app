@@ -348,12 +348,17 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                     <section className="mini-panel">
                       <div className="mini-panel-head">
                         <h3>Оплаты</h3>
-                        <button className="secondary compact" type="button" onClick={addEditorPayment}>
-                          + Оплата
-                        </button>
+                        <div className="actions">
+                          <button className="secondary compact" type="button" onClick={() => addEditorPayment('debt_close')}>
+                            + Закрытие долга
+                          </button>
+                          <button className="secondary compact" type="button" onClick={() => addEditorPayment('extra')}>
+                            + Доплата
+                          </button>
+                        </div>
                       </div>
                       <p className="mini-panel-note">
-                        Способы оплаты подхватываются из справочника и из уже открытого заказа, чтобы подсказки не пропадали.
+                        У каждой строки виден смысл операции. «Первичная оплата» — деньги, относящиеся к созданию заказа; более позднюю оплату долга добавляйте как «Закрытие долга», отдельную доплату — как «Доплата». Новая операция получает сегодняшнюю дату, при необходимости её можно изменить вручную.
                       </p>
                       <div className="stack">
                         {editorDraft.payments.map((payment, index) => (
@@ -372,6 +377,17 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                                   value={payment.paymentDate}
                                   onChange={(event) => updateEditorPayment(index, 'paymentDate', event.target.value)}
                                 />
+                              </label>
+                              <label>
+                                <span>Смысл оплаты</span>
+                                <select
+                                  value={payment.paymentKind || 'primary'}
+                                  onChange={(event) => updateEditorPayment(index, 'paymentKind', event.target.value)}
+                                >
+                                  <option value="primary">Первичная оплата</option>
+                                  <option value="debt_close">Закрытие долга</option>
+                                  <option value="extra">Доплата по заказу</option>
+                                </select>
                               </label>
                               <label>
                                 <span>Способ</span>

@@ -4966,8 +4966,11 @@ function App() {
     })
   }
 
-  function addEditorPayment() {
-    setEditorDraft((current) => current ? { ...current, payments: [...current.payments, createEmptyEditorPayment(current.orderDate)] } : current)
+  function addEditorPayment(paymentKind: 'debt_close' | 'extra') {
+    setEditorDraft((current) => current ? {
+      ...current,
+      payments: [...current.payments, { ...createEmptyEditorPayment(formatLocalDateInput()), paymentKind }],
+    } : current)
   }
 
   function removeEditorPayment(index: number) {
