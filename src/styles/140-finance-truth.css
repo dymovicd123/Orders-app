@@ -347,3 +347,22 @@
   .finance-reconciliation-head { flex-direction: column; }
   .finance-reconciliation-badges { justify-content: flex-start; }
 }
+
+
+/* Finance F9: concise reconciliation and separated review/info panels. */
+.finance-reconciliation-primary-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0 4px;
+  border-top: 1px solid #e2e8f0;
+}
+.finance-reconciliation-primary-total > span { color: #475569; font-size: 12px; font-weight: 700; }
+.finance-reconciliation-primary-total > strong { color: #0f172a; font-size: 22px; line-height: 1.1; }
+.finance-reconciliation-diagnostics { border-top-style: dashed; }
+.finance-review-panel.has-review { border-color: #fbbf24; background: linear-gradient(180deg, #fffbeb 0%, #fff 100%); }
+.finance-review-panel.is-info { border-color: #bfdbfe; background: linear-gradient(180deg, #f5f9ff 0%, #fff 100%); }
+@media (max-width: 640px) {
+  .finance-reconciliation-primary-total { align-items: flex-start; flex-direction: column; gap: 4px; }
+}

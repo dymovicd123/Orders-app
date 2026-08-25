@@ -38,7 +38,7 @@ try {
   check(report.includes('WHERE p.payment_date BETWEEN ? AND ?'), 'Selected-period payments are not bounded by payment date')
   check(report.includes('WHERE r.return_date BETWEEN ? AND ?'), 'Selected-period returns are not bounded by return date')
   check(report.includes('crossDatePaymentOperations = paymentOperations.filter'), 'Cross-date payment bridge disappeared')
-  check(report.includes('traceScope: { startDate, endDate, selectedPeriodOnly: true }'), 'Finance contract no longer declares selected-period trace scope')
+  check(report.includes('traceScope: { startDate, endDate, selectedOperationPeriodOnly: true, includesOrderPeriodBeforePayments: true }'), 'Finance contract no longer distinguishes operation-period trace from order-period early-payment review')
   check(app.includes("dateFrom: getPeriodRange('month').dateFrom") && app.includes("dateTo: getPeriodRange('month').dateTo"), 'Finance no longer opens on current month')
   check(financeSection.includes("setFinanceReportFilters(getPeriodRange('year'))"), 'User can no longer explicitly select historical period')
   check(financeUi.includes("row.traceCode !== 'legacy_baseline' || historicalPeriodSelected"), 'Legacy baseline can leak into normal current-period summary')
@@ -65,7 +65,7 @@ try {
   check(report.includes('netCash: received - periodReturns'), 'Net cash formula diverged from received minus completed returns')
   check(report.includes('methodsTotal: paymentRows.reduce') && report.includes('Number(row.total || 0)'), 'Payment-method reconciliation total missing')
   check(report.includes('kindsTotal: paymentKinds.reduce') && report.includes('Number(row.total || 0)'), 'Payment-kind reconciliation total missing')
-  check(financeUi.includes('consistency.difference') && financeUi.includes('Финансовая сверка') && financeUi.includes('Суммы сошлись'), 'Finance UI no longer surfaces arithmetic reconciliation')
+  check(financeUi.includes('consistency.difference') && financeUi.includes('Финансовая сверка') && financeUi.includes('Поступило за период') && financeUi.includes('Внутренняя сверка: без расхождений'), 'Finance UI no longer surfaces concise arithmetic reconciliation')
 
   // Manager/day views must classify the same selected payment exactly once.
   check(report.includes('const actualReceived = Number(paymentInfo.primary_received || 0) + Number(paymentInfo.order_extra_received || 0) + Number(paymentInfo.debt_closed || 0) + Number(paymentInfo.extra_received || 0)'), 'Manager-day received total is not a complete disjoint operation sum')
