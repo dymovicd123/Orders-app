@@ -87,7 +87,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
       ledger_reset: 'Новый цикл учёта',
       payment_primary: 'Оплата заказа',
       payment_debt: 'Закрытие долга',
-      payment_extra: 'Доплата',
+      payment_extra: 'Закрытие долга (старый тип)',
       exchange_extra: 'Доплата по обмену',
       order_refund: 'Возврат клиенту',
       exchange_refund: 'Возврат по обмену',
@@ -311,8 +311,8 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
   }
   const paymentTotal = Number(financeReport.overview.grossReceived ?? financeReport.overview.totalReceived ?? 0)
   const orderPaymentsTotal = Number(financeReport.overview.orderPaymentsTotal || 0)
-  const orderExtraPaymentsTotal = Number(financeReport.overview.orderExtraPaymentsTotal || 0)
-  const debtPaymentsTotal = Number(financeReport.overview.debtPaymentsTotal || closedDebtTotal)
+  const legacyOrderExtraPaymentsTotal = Number(financeReport.overview.orderExtraPaymentsTotal || 0)
+  const debtPaymentsTotal = Number(financeReport.overview.debtPaymentsTotal || closedDebtTotal) + legacyOrderExtraPaymentsTotal
   const exchangeExtraPaymentsTotal = Number(financeReport.overview.exchangeExtraPaymentsTotal || 0)
   const regularReturnsTotal = Number(financeReport.overview.regularReturnsTotal ?? financeReport.overview.totalReturns ?? 0)
   const exchangeRefundsTotal = Number(financeReport.overview.exchangeRefundsTotal || 0)
@@ -402,7 +402,6 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                 <div className="finance-truth-main">{formatMoney(paymentTotal)}</div>
                 <div className="finance-truth-lines">
                   <div><span>Оплаты заказов</span><strong>{formatMoney(orderPaymentsTotal)}</strong></div>
-                  <div><span>Доплаты по заказам</span><strong>{formatMoney(orderExtraPaymentsTotal)}</strong></div>
                   <div><span>Закрытие долгов</span><strong>{formatMoney(debtPaymentsTotal)}</strong></div>
                   <div><span>Доплаты по обменам</span><strong>{formatMoney(exchangeExtraPaymentsTotal)}</strong></div>
                 </div>
@@ -575,7 +574,6 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                 <option value="all">Все виды</option>
                 <option value="order_payment">Оплата заказа</option>
                 <option value="debt_close">Закрытие долга</option>
-                <option value="order_extra">Доплата по заказу</option>
                 <option value="exchange_extra">Доплата по обмену</option>
                 <option value="refund">Возвраты</option>
                 <option value="correction">Исправления и отмены</option>

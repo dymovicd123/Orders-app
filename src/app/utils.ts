@@ -938,13 +938,14 @@ export function createEditorDraft(order: OrderRecord): EditorDraft {
       : [createEmptyEditorItem()],
     payments: order.payments.length
       ? order.payments.map((payment) => ({
+          id: Number(payment.id || 0) || undefined,
           paymentDate: payment.paymentDate,
           method: payment.method,
           amount: payment.amount,
           paymentKind: payment.paymentKind as EditorPayment['paymentKind'],
           comment: payment.comment || '',
         }))
-      : [createEmptyEditorPayment(order.order_date)],
+      : [],
     orderTotal: String(order.total_amount || ''),
   }
 }

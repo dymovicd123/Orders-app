@@ -28,6 +28,8 @@ export type OrderItem = {
 
 
 export type Payment = {
+  id?: number
+  draftKey?: string
   paymentDate: string
   method: string
   amount: number
@@ -759,6 +761,7 @@ export type OrderRecord = {
     workshopTaskStatus?: string | null
   }>
   payments: Array<{
+    id?: number
     paymentDate: string
     method: string
     amount: number

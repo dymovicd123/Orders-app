@@ -22,6 +22,7 @@ const stocktakeLostResponsePath = path.join(root, 'scripts/stocktake-lost-respon
 const financeOrderDateSyncPath = path.join(root, 'scripts/finance-order-date-sync-worker-manifest.json')
 const financeF2TracePath = path.join(root, 'scripts/finance-f2-trace-worker-manifest.json')
 const financeF4MoneyJournalPath = path.join(root, 'scripts/finance-f4-money-journal-worker-manifest.json')
+const financeF5BusinessSemanticsPath = path.join(root, 'scripts/finance-f5-business-semantics-worker-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -55,6 +56,7 @@ try {
   check(fs.existsSync(financeOrderDateSyncPath), 'Finance order-date sync Worker manifest missing')
   check(fs.existsSync(financeF2TracePath), 'Finance F2 trace Worker manifest missing')
   check(fs.existsSync(financeF4MoneyJournalPath), 'Finance F4 money journal Worker manifest missing')
+  check(fs.existsSync(financeF5BusinessSemanticsPath), 'Finance F5 business semantics Worker manifest missing')
   const cleanup = fs.existsSync(cleanupPath) ? JSON.parse(fs.readFileSync(cleanupPath, 'utf8')) : null
   const removed = cleanup?.version === 1 ? (cleanup.removedWorkerDeclarations || {}) : {}
   const boundary = fs.existsSync(boundaryPath) ? JSON.parse(fs.readFileSync(boundaryPath, 'utf8')) : null
@@ -92,6 +94,8 @@ try {
   const financeF2TraceChanges = financeF2Trace?.version === 1 ? (financeF2Trace.changes || {}) : {}
   const financeF4MoneyJournal = fs.existsSync(financeF4MoneyJournalPath) ? JSON.parse(fs.readFileSync(financeF4MoneyJournalPath, 'utf8')) : null
   const financeF4MoneyJournalChanges = financeF4MoneyJournal?.version === 1 ? (financeF4MoneyJournal.changes || {}) : {}
+  const financeF5BusinessSemantics = fs.existsSync(financeF5BusinessSemanticsPath) ? JSON.parse(fs.readFileSync(financeF5BusinessSemanticsPath, 'utf8')) : null
+  const financeF5BusinessSemanticsChanges = financeF5BusinessSemantics?.version === 1 ? (financeF5BusinessSemantics.changes || {}) : {}
 
   const files = walk(workerRoot)
   const indexPath = path.join(workerRoot, 'index.ts')
@@ -231,11 +235,17 @@ try {
       acceptedPostFinanceF2TraceHash = financeF2TraceChanged.after
     }
     const financeF4MoneyJournalChanged = financeF4MoneyJournalChanges[name]
+    let acceptedPostFinanceF4MoneyJournalHash = acceptedPostFinanceF2TraceHash
     if (financeF4MoneyJournalChanged) {
       check(financeF4MoneyJournalChanged.before === acceptedPostFinanceF2TraceHash, `Finance F4 money journal declaration baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === financeF4MoneyJournalChanged.after, `Worker declaration changed beyond exact Finance F4 money journal allow-list: ${name}`)
+      acceptedPostFinanceF4MoneyJournalHash = financeF4MoneyJournalChanged.after
+    }
+    const financeF5BusinessSemanticsChanged = financeF5BusinessSemanticsChanges[name]
+    if (financeF5BusinessSemanticsChanged) {
+      check(financeF5BusinessSemanticsChanged.before === acceptedPostFinanceF4MoneyJournalHash, `Finance F5 business semantics declaration baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === financeF5BusinessSemanticsChanged.after, `Worker declaration changed beyond exact Finance F5 business semantics allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostFinanceF2TraceHash, `Worker declaration body changed beyond accepted cleanup/boundary/runtime/security/warehouse/catalog/attention/daily-warehouse/context/sql-alias/order-save/stocktake-replay/finance-date-sync/finance-f2-trace/finance-f4-journal deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostFinanceF4MoneyJournalHash, `Worker declaration body changed beyond accepted cleanup/boundary/runtime/security/warehouse/catalog/attention/daily-warehouse/context/sql-alias/order-save/stocktake-replay/finance-date-sync/finance-f2-trace/finance-f4-journal/finance-f5-business deltas: ${name}`)
     }
   }
 
@@ -364,7 +374,13 @@ try {
 
   for (const [name, expectedHash] of Object.entries(orderCreateSaveIntegrityAdded)) {
     check(declarations.has(name), `192B2A4 added Worker declaration missing: ${name}`)
-    check(sha(declarations.get(name)) === expectedHash, `192B2A4 added Worker declaration changed: ${name}`)
+    const financeF5BusinessSemanticsChanged = financeF5BusinessSemanticsChanges[name]
+    if (financeF5BusinessSemanticsChanged) {
+      check(financeF5BusinessSemanticsChanged.before === expectedHash, `Finance F5 changed 192B2A4-added declaration baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === financeF5BusinessSemanticsChanged.after, `192B2A4-added declaration changed beyond exact Finance F5 business semantics allow-list: ${name}`)
+    } else {
+      check(sha(declarations.get(name)) === expectedHash, `192B2A4 added Worker declaration changed: ${name}`)
+    }
   }
 
   const graph = new Map(files.map((file) => [file, new Set()]))
@@ -399,7 +415,8 @@ try {
   const attentionContextNote = attentionContext ? `, ${Object.keys(attentionContextChanges).length} changed + ${Object.keys(attentionContextAdded).length} added 192B2A2 attention-context declarations` : ''
   const handoverSqlAliasSafetyNote = handoverSqlAliasSafety ? `, ${Object.keys(handoverSqlAliasSafetyChanges).length} exact 192B2A3 handover-SQL alias delta` : ''
   const orderCreateSaveIntegrityNote = orderCreateSaveIntegrity ? `, ${Object.keys(orderCreateSaveIntegrityChanges).length} changed + ${Object.keys(orderCreateSaveIntegrityAdded).length} added 192B2A4 order-save declarations` : ''
-  console.log(`STEP 190.6A WORKER MODULARIZATION TESTS PASSED — ${files.length} TS files, ${declarations.size} preserved declarations${cleanupNote}${boundaryNote}${transferRuntimeNote}${runtimeHardeningNote}${adminSessionIntegrityNote}${warehouseTruthFreshnessNote}${catalogTruthFinalizerNote}${warehouseAttentionTruthNote}${dailyWarehouseNote}${attentionContextNote}${handoverSqlAliasSafetyNote}${orderCreateSaveIntegrityNote}, 0 import cycles`)
+  const financeF5BusinessSemanticsNote = financeF5BusinessSemantics ? `, ${Object.keys(financeF5BusinessSemanticsChanges).length} exact Finance F5 business-semantics deltas` : ''
+  console.log(`STEP 190.6A WORKER MODULARIZATION TESTS PASSED — ${files.length} TS files, ${declarations.size} preserved declarations${cleanupNote}${boundaryNote}${transferRuntimeNote}${runtimeHardeningNote}${adminSessionIntegrityNote}${warehouseTruthFreshnessNote}${catalogTruthFinalizerNote}${warehouseAttentionTruthNote}${dailyWarehouseNote}${attentionContextNote}${handoverSqlAliasSafetyNote}${orderCreateSaveIntegrityNote}${financeF5BusinessSemanticsNote}, 0 import cycles`)
 } catch (error) {
   console.error(`STEP 190.6A WORKER MODULARIZATION TESTS FAILED: ${error?.message || error}`)
   process.exit(1)

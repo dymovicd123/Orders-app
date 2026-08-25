@@ -27,6 +27,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
     removeEditorPayment,
     renderOrderSizeSelect,
     renderOrderSourceAvailability,
+    saveEditorPayment,
     saveSelectedOrder,
     savingOrder,
     sectorStyle,
@@ -348,21 +349,30 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                     <section className="mini-panel">
                       <div className="mini-panel-head">
                         <h3>Оплаты</h3>
-                        <button className="secondary compact" type="button" onClick={addEditorPayment}>
-                          + Оплата
-                        </button>
+                        <div className="actions">
+                          <button className="secondary compact" type="button" onClick={() => addEditorPayment('primary')} disabled={savingOrder}>
+                            + Первичная оплата
+                          </button>
+                          <button className="secondary compact" type="button" onClick={() => addEditorPayment('debt_close')} disabled={savingOrder}>
+                            + Закрытие долга
+                          </button>
+                        </div>
                       </div>
                       <p className="mini-panel-note">
-                        Способы оплаты подхватываются из справочника и из уже открытого заказа, чтобы подсказки не пропадали.
+                        Если первичную оплату забыли внести, добавьте её явно — она всегда относится к дате заказа. Любая обычная оплата позже создания заказа оформляется как «Закрытие долга» и проходит через тот же серверный механизм, что и отдельная кнопка закрытия долга. Доплата существует только в форме обмена. Уже проведённые оплаты здесь не переписываются: это защищает денежную историю и кассу.
                       </p>
                       <div className="stack">
                         {editorDraft.payments.map((payment, index) => (
-                          <div className="mini-item" key={`edit-payment-${index}`}>
+                          <div className="mini-item" key={`edit-payment-${payment.id || payment.draftKey || index}`}>
                             <div className="mini-item-head">
                               <strong>Оплата {index + 1}</strong>
-                              <button className="ghost danger compact" type="button" onClick={() => removeEditorPayment(index)}>
-                                Удалить
-                              </button>
+                              {payment.id ? (
+                                <span className="soft-badge">Проведена</span>
+                              ) : (
+                                <button className="ghost danger compact" type="button" onClick={() => removeEditorPayment(index)} disabled={savingOrder}>
+                                  Удалить черновик
+                                </button>
+                              )}
                             </div>
                             <div className="subgrid">
                               <label>
@@ -370,17 +380,34 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                                 <input
                                   type="date"
                                   value={payment.paymentDate}
+                                  disabled={Boolean(payment.id) || savingOrder || payment.paymentKind === 'primary'}
                                   onChange={(event) => updateEditorPayment(index, 'paymentDate', event.target.value)}
                                 />
                               </label>
                               <label>
+                                <span>Смысл оплаты</span>
+                                <select
+                                  value={payment.paymentKind || 'primary'}
+                                  disabled={Boolean(payment.id) || savingOrder}
+                                  onChange={(event) => updateEditorPayment(index, 'paymentKind', event.target.value)}
+                                >
+                                  <option value="primary">Первичная оплата</option>
+                                  <option value="debt_close">Закрытие долга</option>
+                                </select>
+                              </label>
+                              <label>
                                 <span>Способ</span>
-                                <SmartPickerInput
-                                  value={payment.method}
-                                  onChange={(value) => updateEditorPayment(index, 'method', value)}
-                                  placeholder="Выберите способ"
-                                  options={suggestionValues.paymentMethods}
-                                />
+                                {payment.id ? (
+                                  <input value={payment.method || ''} disabled readOnly />
+                                ) : (
+                                  <SmartPickerInput
+                                    value={payment.method}
+                                    onChange={(value) => updateEditorPayment(index, 'method', value)}
+                                    placeholder="Выберите способ"
+                                    options={suggestionValues.paymentMethods}
+                                    disabled={savingOrder}
+                                  />
+                                )}
                               </label>
                               <label>
                                 <span>Сумма</span>
@@ -388,6 +415,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                                   type="number"
                                   min="0"
                                   value={payment.amount ?? 0}
+                                  disabled={Boolean(payment.id) || savingOrder}
                                   onChange={(event) => updateEditorPayment(index, 'amount', Number(event.target.value))}
                                 />
                               </label>
@@ -395,12 +423,23 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                                 <span>Комментарий</span>
                                 <input
                                   value={payment.comment || ''}
+                                  disabled={Boolean(payment.id) || savingOrder}
                                   onChange={(event) => updateEditorPayment(index, 'comment', event.target.value)}
                                 />
                               </label>
                             </div>
+                            {payment.id ? (
+                              <p className="mini-panel-note">Эта операция уже проведена. Для исправления исторической оплаты нельзя молча удалять и создавать её заново.</p>
+                            ) : (
+                              <div className="actions">
+                                <button className="primary compact" type="button" onClick={() => void saveEditorPayment(index)} disabled={savingOrder}>
+                                  {savingOrder ? 'Провожу оплату…' : 'Провести оплату'}
+                                </button>
+                              </div>
+                            )}
                           </div>
                         ))}
+                        {!editorDraft.payments.length ? <div className="empty-state">Оплат пока нет. Добавьте нужный вид операции одной из кнопок выше.</div> : null}
                       </div>
                     </section>
                   </div>
