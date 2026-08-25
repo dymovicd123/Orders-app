@@ -2,211 +2,209 @@
 
 Updated: 2026-08-25
 Repository: `dymovicd123/Orders-app`
-Status: Finance transparency project ACTIVE; Warehouse paused without changes. Late-order primary-payment date guard is VERIFIED and deployed on `branch2`; not yet promoted to `main`/Production.
-Priority rule: this file is the canonical Finance resume point. `FINANCE_FORENSIC_2026-08-25.md` contains detailed 24-Aug evidence.
+Status: **FINANCE F1–F7 COMPLETE IN PRODUCTION**. Warehouse may resume from its canonical Phase 1A checkpoint.
 
-## User goal
+Production Finance release commit: `c59021021a02c6609938539aba4ba6d184cb4060`
+Production Cloudflare deploy monitor: `32880477956` — SUCCESS
+Production read-only acceptance: `32880805303` — SUCCESS
+Verified Branch2 F6 product commit: `3404604c744723cb7abe09bd9ebcd529c15e8727`
+Branch2 F6 Cloudflare deploy: `32879336620` — SUCCESS
 
-Finance must be self-explanatory and self-auditing. A normal user must be able to open any headline number or suspicious date and reach the exact ORD/order/money operation that produced it, without contacting the project owner. Do not force totals to look equal: preserve business truth and expose why values differ.
+This file is the canonical Finance resume point and supersedes older Finance roadmap wording where it conflicts.
 
-After every meaningful audit/fix/gate/deploy, update this file.
+## Safety / release facts
 
-## F1 READ-ONLY AUDIT — COMPLETE
+- `Приход` remained frozen and unchanged.
+- No Finance migration was added.
+- No D1 repair, data rewrite or direct Production D1 mutation was used for this release.
+- Production construction used Wrangler `--dry-run` only before merge.
+- Final Production acceptance used **GET-only Worker APIs**; no POST/PATCH/DELETE.
+- Historical money facts were preserved; legacy ambiguity is labelled rather than guessed or rewritten.
+- `main` and `branch2` were substantially diverged, so Production was NOT made by merging Branch2 wholesale.
 
-No Production D1 write, migration, repair, order edit, payment edit, return edit or cash mutation was made during the audit. Production evidence was read through existing APIs from a temporary forensic branch.
+## F1 — 24-Aug forensic + late-order primary-date guard — COMPLETE
 
-### 24-Aug incident — proven
+The original client discrepancy was proven without mutation.
 
-Orders with business `order_date=2026-08-24`:
-- 14 active/non-deleted orders;
-- full sales value 1,007,800 KZT;
-- received on those orders 967,800 KZT;
-- 40,000 KZT unpaid on `ORD-20260824121101-FA3AE6E6` (45,000 total / 5,000 paid).
+For business date `2026-08-24`:
+- 14 orders;
+- sales by order business date: **1,007,800 KZT**;
+- received on those 14 orders: **967,800 KZT**;
+- period debt: **40,000 KZT**, entirely from `ORD-20260824121101-FA3AE6E6` (45,000 total / 5,000 received);
+- actual money received on 24 Aug: **1,080,300 KZT**.
 
-Cash received on 24 Aug:
-- 967,800 KZT on 24-Aug-dated orders;
-- 45,000 KZT on backdated `ORD-20260824110308-E2CE748F` (business order date 22 Aug);
-- 45,000 KZT on backdated `ORD-20260824083328-9B614DAD` (business order date 21 Aug);
-- 22,500 KZT genuine `debt_close` on `ORD-20260816074322-2445`.
+Why cash exceeded received-on-24-Aug-orders:
+- 45,000 payment on a backdated order with business date 22 Aug: `ORD-20260824110308-E2CE748F`;
+- 45,000 payment on a backdated order with business date 21 Aug: `ORD-20260824083328-9B614DAD`;
+- 22,500 genuine debt close for 16-Aug order: `ORD-20260816074322-2445`.
 
-Total received 24 Aug = 1,080,300 KZT. Method totals also equal 1,080,300; arithmetic is correct.
+The two 45,000 rows are primary payments created together with orders that were physically entered on 24 Aug but assigned earlier business order dates. They are not debt closures.
 
-The two 45,000 rows are NOT debt closures. Both orders were physically entered into the system on 24 Aug, with an earlier business order date, and their payment events were created in the same create request (`eventType=order_payment`, `reason=order_create`).
+Root cause fixed: for NEW orders the initial primary payment follows selected business `orderDate`; server independently enforces the same rule. Existing historical payment dates are not rewritten.
 
-Root cause before the guard: create-order initialized both order date and first payment date to today. Changing only the order date left the already-created primary payment on the physical entry day. This root cause is now prevented in `branch2`; see the verified guard section below.
+## F2 — selected-period traceability — COMPLETE
 
-### Production audit 2026-01-01..2026-08-25
+Permanent gate: `scripts/test-finance-f2-trace.mjs`.
+Worker manifest: `scripts/finance-f2-trace-worker-manifest.json`.
 
-- orders: 1,146
-- sales by order date: 67,590,113 KZT
-- gross received: 67,057,613 KZT
-- returns: 1,056,850 KZT
-- net cash: 66,000,763 KZT
-- current debt: 532,500 KZT across 10 orders
-- payment operations: 1,295
-- ledger total = payment-method total = payment-kind total = 67,057,613 KZT; difference 0.
+Finance now exposes:
+- order business date and order recorded-at timestamp;
+- payment operation date and recorded-at timestamp;
+- date relation/offset;
+- immutable-event lineage / backfill status where available;
+- trace code, severity, title and explanation;
+- cross-date bridge for money in the selected operation period whose order belongs to another business date.
 
-Date relations by current operation kind:
-- order_payment: 1,159 same-day, 4 after-order, 2 before-order
-- debt_close: 121 after-order, 2 same-day
-- order_extra: 5 same-day
-- exchange_extra: 2 after-order
+Return/exchange business dates are explicit rather than silently falling back to the order date. The first cash auto-tracking activation boundary is no longer overwritten on pause/resume.
 
-Current backend already computes `before_order / same_day / after_order` and `dateOffsetDays`, but `paymentDateAnomalies` includes ONLY `before_order`. Frontend repeats this and shows green `Даты согласованы` when there are no early payments. Therefore later primary payments/backdated entries are technically known but deliberately hidden from the user's review flow.
+## F3 — Summary/day UX — COMPLETE
 
-Two early rows currently surfaced:
-- `ORD-20260727145030-3762`: order 27 Jul, payment 26 Jul, -1 day, 2,000 KZT.
-- `ORD-20260713120541-5619`: business order date 10 Jul, payment 9 Jul, -1 day, 25,000 KZT.
+Permanent gate: `scripts/test-finance-f3-summary-ux.mjs`.
 
-Four later `order_payment` rows were investigated:
-1. `ORD-20260824110308-E2CE748F`: +2d, 45,000; proven backdated order entered 24 Aug in same create request.
-2. `ORD-20260824083328-9B614DAD`: +3d, 45,000; same lineage.
-3. `ORD-20260815191304-7791`: business order 15 Aug, 108,000 primary dated 16 Aug; payment stored at order-creation timestamp, but immutable event is historical `baseline/isBackfill=true`. Treat as explicit future-dated historical fact, not automatic corruption.
-4. `ORD-20260710-180328-2415`: business order 10 Jul, 22,500 primary 10 Jul plus another 5,000 primary 19 Jul. Both surviving rows were recorded/backfilled later; second has an additional-charge-like comment. Original semantics cannot be proven. Legacy `primary` alone is not reliable semantic proof.
+- current month is the normal opening period;
+- old reconstructed baseline is hidden from normal current-period view and only exposed for explicitly historical ranges;
+- false blanket `Даты согласованы` logic was removed;
+- cross-date operations explain why sales and incoming money can differ without implying corruption.
 
-Migration 0058 intentionally created `financial_events` as a trustworthy baseline of surviving historical state and marked historical reconstructions `reason=baseline`, `is_backfill=1`. New UI must state when original mutation lineage is unavailable.
+## F4 — auditable money journal — COMPLETE
 
-## F1 write-path findings
+Permanent gate: `scripts/test-finance-f4-money-journal.mjs`.
+Worker manifest: `scripts/finance-f4-money-journal-worker-manifest.json`.
 
-### Order create
-Payments are embedded in create. Modern writes create both `payments` and append-only `financial_events`. First draft payment defaults to `primary`.
+`/api/finance/money-history` provides bounded/filterable immutable money history with operation/order timestamps, lineage, trace state, source references and direct drilldown support. Mobile/responsive presentation is covered.
 
-### VERIFIED root-cause guard — late-entered new orders
+## F5 — payment-entry business semantics — COMPLETE
 
-User-defined invariant: when a manager enters a new order late/backdated, the initial `primary` payment belongs to the selected business order date, not to the day the form happens to be filled in.
+Authoritative ordinary-order payment model:
+1. `Первичная оплата`;
+2. `Закрытие долга` — partial or full.
 
-Implemented and verified on `branch2`:
-1. Frontend create form: changing `orderDate` automatically synchronizes every `primary` payment row in the NEW-order draft to the selected order date.
-2. Additional new-order payment rows already start from the current selected `orderDate`.
-3. Server `createOrder` independently enforces the same invariant in both fresh-create planning and the legacy in-flight create-resume bridge: `primary.paymentDate = orderDate`.
-4. Therefore a stale browser/mobile client cannot re-create the old bug merely by sending today's explicit primary payment date with a backdated new order.
-5. Non-primary operations are not rewritten by this rule.
-6. Existing-order editing deliberately remains outside this rule: historical payment dates are preserved and are not normalized back to the order date.
+There is **no current generic ordinary `Доплата`**. `Доплата при обмене` remains a distinct `exchange_extra` operation.
 
-Regression coverage was added to Step 192B2A4 create/save integrity tests, and the exact `createOrder` Worker body delta is pinned through `scripts/finance-order-date-sync-worker-manifest.json` in the Step 190.6A modularization hash chain. No global Worker integrity protection was weakened.
+Permanent gates/manifests:
+- `scripts/test-finance-f5-entry-semantics.mjs`
+- `scripts/test-finance-f5-adjacent-regression.mjs`
+- `scripts/finance-f5-business-semantics-worker-manifest.json`
 
-Verification:
-- full `npm run release:check` PASSED on the isolated patch branch;
-- verified source was fast-forwarded to `branch2`;
-- Cloudflare deploy monitor for `branch2` commit `104a9dffee5b8a044df65e8a1c03958d3bd20eef` completed SUCCESS.
+Important invariants:
+- stale ordinary-extra writes are rejected server-side;
+- editor and dedicated debt-close flows share `/api/payments` and critical-operation idempotency;
+- generic order edits do not rewrite complete persisted payment history;
+- legacy ordinary `order_extra` remains historical evidence but is labelled `Закрытие долга (старый тип)` and counted exactly once under debt-close semantics;
+- exchange extra stays isolated.
 
-Production/main has NOT yet been changed by this guard. Promote only after the planned Branch2/visual acceptance point unless explicitly decided otherwise.
+## F6 — broad self-check / adjacent defect audit — COMPLETE
 
-### Order edit
-If payment rows change, server first writes reversal events, removes old payment rows, then writes corrected rows/events. This is a strong audit foundation: corrections are not silently erased from money history.
+Permanent aggregate gate: `scripts/test-finance-f6-release-audit.mjs`, wired into `scripts/release-check.mjs`.
 
-### CURRENT ambiguity bug in admin editor
-`OrderEditorSection` does not show payment kind. `+ Оплата` calls `createEmptyEditorPayment(current.orderDate)`, which silently creates `paymentKind='primary'`. Therefore an admin can currently add a later payment that semantically might be a debt close or extra, while the stored type becomes another primary. This must be fixed; generic editor must not create hidden operation semantics.
+### Fixed real cross-ledger deletion defect
 
-### Debt closure
-The separate `/api/payments` path supports explicit kind. Current Debt UI explicitly sends `debt_close`, so modern debt closures are correctly typed.
+Before F6, logical order deletion could compensate the cash ledger while immutable `financial_events` lacked an explicit payment reversal.
 
-### Return
-Frontend defaults return date to today. Server currently falls back to the original order date if client date is missing. That hidden fallback can manufacture a historical refund date and must be hardened. Return/refund and cancellation already produce append-only refund/reversal financial events.
+Now:
+- original payment rows remain historical facts;
+- logical delete appends idempotent `payment_reversal` with `reason=order_delete`;
+- stale clients cannot reinterpret delete as full payment-list rewrite;
+- cash keeps its own source-keyed `order-cancel:*` compensation;
+- retry/lost-response cannot duplicate reversal evidence.
 
-### Exchange
-Frontend defaults exchange date to today. Server has the same bad missing-date fallback to order date. Extra payment is explicitly `extra` / `exchange_extra`; refund is explicitly `exchange_refund`; cancellation produces reversal events. Legitimate later exchange/debt events are not date errors.
+Manifest: `scripts/finance-f6-delete-money-history-worker-manifest.json`.
 
-## Cash-register audit
+### Fixed strict-report defects / unfinished fields
 
-Cash is a separate physical ledger with source links:
-- payment: `payment:<payment_id>`
-- return: `return:<return_id>`
-- payment reversal: `payment-reversal:<payment_id>`
-- return reversal: `return-reversal:<return_id>`
-- exchange relabels linked payment/return cash rows.
+- product report wording now says business order date rather than misleading “created in period”;
+- operation-date return total is no longer mixed into an order-date product cohort;
+- city aggregate now calculates and renders real distinct `clients` and `managers` counts rather than `—` placeholders;
+- payment-report empty states refer to the selected operation period, not “selected orders”.
 
-Production current state at audit:
-- initialized=true, autoTrackingEnabled=true
-- `initializedAt=2026-08-11T11:46:57.928Z`
-- current `activatedAt=2026-08-25T09:50:19.481Z`
-- current cycle started `2026-08-12 13:46:11`
-- current-cycle totalIn 158,000 / totalOut 158,000 / balance 0
-- previous closed cycle: totalIn 653,000 / totalOut 653,000 / closing balance 0.
+Manifest: `scripts/finance-f6-report-semantics-worker-manifest.json`.
 
-Important new defect: `setCashAutoTracking(true)` overwrites `activated_at` every time tracking is re-enabled. Production proves the semantic mismatch because current cash ledger contains automatic payment entries dated 15–19 Aug even though current `activatedAt` says 25 Aug. The trigger uses `activated_at` as a backlog boundary. Therefore `activatedAt` cannot currently be presented or used as immutable 'first activation' truth after pause/resume.
+### Removed misleading dead metrics
 
-Design decision for fix: preserve the original activation boundary (do not overwrite it on resume), and treat pause/resume/cycle boundaries separately. Historical Production `activatedAt` has already lost its original value, so no destructive repair should be guessed; audit UI must derive/report what can actually be proven from ledger/cycle data.
+`collectionRate` and `returnRate` were unused and mixed operation-date cash/returns with order-date sales. They had no coherent cohort and could generate misleading percentages. Both were removed from backend/frontend contracts and regression-guarded.
 
-## Reports architecture
+Manifest: `scripts/finance-f6-dead-metrics-worker-manifest.json`.
 
-`Финансы` and `Отчёты` render the same `FinanceReportResponse` through separate components. We will implement ONE richer server truth/trace contract:
-- `Финансы` = interactive drill-down/self-audit;
-- `Отчёты` = strict/export representation of the same facts.
-No duplicate business logic.
+## F7 — exact Production promotion — COMPLETE
 
-## Frozen trace model for implementation
+Production was assembled on a fresh branch from then-current `main` `9384a53d1b2247d11fbf0da7e3b8f11a4166d367`.
 
-Do NOT treat every different date as an error. Classification must combine operation type, business dates, recorded-at timestamps and lineage.
+Reviewed Finance F1–F6 deltas were applied in order. All seven product commits cherry-picked onto the fresh main-based tree **without conflicts**. One permanent F2 regression file was missing from its final feature commit because it had been created during preparation; only that reviewed file was copied from verified Branch2 and its exact Git blob hash `e892dde38e38a858c530683ad5e030ffa072123f` was asserted.
 
-Required trace classes/severity concepts:
-- primary same-day → normal
-- primary before order → review/warning
-- historical/backfilled order entered later with primary payment at entry → explain explicitly; review/info
-- future-dated primary chosen/recorded at order entry → explicit info/review
-- primary recorded later → review
-- legacy baseline ambiguous → explain that original mutation lineage is unavailable
-- debt_close after order → normal, explicit debt closure
-- order_extra / exchange_extra → normal when explicitly linked
-- return/refund → normal by operation date
-- late `recorded-at` lag → visible fact, not automatically corruption
-- reversals/corrections → show their original related operation.
+Dry Production candidate verification run `32880117064` — SUCCESS:
+- F2–F6 Finance gates passed;
+- all retained 189/190/191/192 gates passed;
+- DB safety passed;
+- TypeScript passed;
+- Production Vite build passed;
+- bundle budget passed;
+- stocktake functional acceptance passed;
+- Wrangler `--dry-run` built `orders_app` with `env.DB (orders_db_prod)`;
+- no migration or Arrival delta.
 
-For NEW orders after the verified date-sync guard, an ordinary `order_create` primary payment with a different business date should be treated as especially suspicious/impossible under the supported write path, because the server now normalizes it to `orderDate`.
+Persisted candidate verification run `32880289305` — SUCCESS. A hard allow-list confirmed exactly 28 reviewed Finance/Finance-adjacent files and no temporary workflow in the final candidate.
 
-Every traceable money row must expose:
-- exact ORD and order id
-- order business date
-- order recorded-at timestamp
-- operation business date
-- operation recorded-at timestamp
-- payment/operation kind
-- amount and method
-- manager/customer
-- date relation/offset
-- immutable event reason/backfill status when available
-- trace code/severity/title/explanation
-- direct `Открыть заказ`
-- direct `Денежная история`.
+PR #2 was squash-merged to Production as:
+`c59021021a02c6609938539aba4ba6d184cb4060`.
 
-## Remaining implementation plan
+Matching Production Cloudflare run `32880477956` — SUCCESS.
 
-### F2 — backend/contract traceability (NEXT)
-- enrich payment-operation contract with `orderCreatedAt`, event lineage/backfill and derived trace classification;
-- add cross-date period bridge data so no contributor is invisible;
-- harden return/exchange missing-date fallback;
-- preserve original cash activation boundary on future pause/resume;
-- add only additive indexes/migration if required for cheap lineage lookups.
+## Final live Production acceptance — PASS
 
-### F3 — Summary/day UX
-- replace false-green `Даты согласованы` with honest `Проверка дат и ввода`;
-- show review/info categories and exact operations;
-- headline/day drill-down;
-- sales-vs-cash bridge and debt bridge.
+GET-only acceptance workflow `32880805303` ran against the deployed `orders-app` Worker.
 
-### F4 — Money journal/audit UX
-Search/filter by ORD, dates, operation kind and trace state. Show all timestamps and direct order/money-history actions.
+For 24 Aug the live API still returns the exact forensic truth:
+- order count: **14**;
+- sales: **1,007,800**;
+- period debt: **40,000**;
+- gross received: **1,080,300**;
+- order payments: **1,057,800**;
+- debt closes: **22,500**;
+- cross-date operations: **3 / 112,500**.
 
-### F5 — Entry-time prevention
-- DONE on Branch2: backdating a NEW order synchronizes/enforces primary payment date = selected order date on both frontend and server;
-- remaining: admin editor must expose/require correct meaning for new payment rows rather than hidden primary;
-- remaining: return/exchange operation dates must not silently fall back to order date.
+Independent reconciliation:
+- payment-operation ledger total = **1,080,300**;
+- payment-method total = **1,080,300**;
+- payment-kind total = **1,080,300**;
+- difference = **0**;
+- `consistency.ok = true`.
 
-### F6 — Finance self-check
-- arithmetic reconciliation;
-- date/lineage review;
-- order ledger vs current payments/returns;
-- event/reversal consistency;
-- eligible cash financial events vs cash-register source links, respecting cycle/tracking history;
-- missing/duplicate linkage checks.
+Money journal for 24 Aug:
+- 18 events;
+- total in **1,080,300**;
+- total out 0;
+- net **1,080,300**;
+- trace/event contract present.
 
-### F7 — gates
-Regression tests → `branch2` → Cloudflare Branch2 success → visual acceptance → `main` promotion → Production success.
+Live cross-date rows correctly expose:
+- `ORD-20260816074322-2445` — 22,500 debt close, 8 days after order;
+- `ORD-20260824110308-E2CE748F` — 45,000 primary, business order date 22 Aug, trace `backdated_order_entry`;
+- `ORD-20260824083328-9B614DAD` — 45,000 primary, business order date 21 Aug, trace `backdated_order_entry`.
 
-## Exact next action
+City aggregate live response now contains real `clients` and `managers` fields. `collectionRate`/`returnRate` are absent as intended. Historical `order_extra`, if present, is required to use the old-debt-close label.
 
-Resume F2 from current `branch2` (which now includes the verified late-order payment-date guard). First F2 patch remains backend/contract traceability: enrich `FinancePaymentOperation` with order-recorded/event-lineage fields and derive honest trace categories; add a small additive index migration if needed. Keep the new create invariant in all F2 classification logic. Run full `release:check` before moving further. No Production mutation during this step.
+Cash register GET also passed. Its current balance/today totals are live current-state values and may change with normal business activity; they are not expected to equal the historical 24-Aug report. Likewise `currentDebt` is explicitly current-state and can change independently of a selected historical period.
 
-## Warehouse resume point
+## Current Finance truth model
 
-Finance currently has priority by explicit user request. Warehouse is unchanged. After Finance is complete, resume `docs/continuation/WAREHOUSE_CURRENT_CONTEXT.md` at Phase 1A: read-only Workshop-origin client return/exchange disposition audit.
+Do not treat different dates as automatically erroneous:
+- sales/order/product cohorts use business order date where stated;
+- cash/payment/refund cohorts use actual operation date where stated;
+- primary same-day is normal;
+- primary before order is review;
+- proven backdated order entered later is explainable historical info;
+- debt close after order is normal;
+- legacy ordinary `order_extra` is old debt-close semantics exactly once;
+- `exchange_extra` remains separate;
+- returns/refunds use operation date;
+- corrections/reversals append evidence and do not erase the original operation.
+
+## Finance next action
+
+No planned Finance implementation remains from F1–F7. Do not reopen arithmetic or rewrite historical data merely because sales-by-order-date and cash-by-operation-date differ.
+
+If a new Finance complaint appears, first reproduce it read-only against the exact selected period and trace the headline to `paymentOperations` / money history before changing formulas.
+
+## Project next action
+
+Resume Warehouse from `docs/continuation/WAREHOUSE_CURRENT_CONTEXT.md`, **Phase 1A read-only cross-workflow audit of Workshop-origin client return/exchange disposition**. Finance is no longer the blocker.
