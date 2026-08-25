@@ -63,8 +63,8 @@ try {
   check(report.includes('const totalPayments = paymentOperations.reduce'), 'Gross received is not derived from selected payment operations')
   check(report.includes('const received = totalPayments;'), 'Finance overview does not use canonical selected-period payment total')
   check(report.includes('netCash: received - periodReturns'), 'Net cash formula diverged from received minus completed returns')
-  check(report.includes('paymentRows.reduce((sum, row) => sum + Number(row.total || 0), 0)'), 'Payment-method reconciliation total missing')
-  check(report.includes('paymentKinds.reduce((sum, row) => sum + row.total, 0)'), 'Payment-kind reconciliation total missing')
+  check(report.includes('methodsTotal: paymentRows.reduce') && report.includes('Number(row.total || 0)'), 'Payment-method reconciliation total missing')
+  check(report.includes('kindsTotal: paymentKinds.reduce') && report.includes('Number(row.total || 0)'), 'Payment-kind reconciliation total missing')
   check(financeUi.includes('consistency.difference') && financeUi.includes('0 разницы'), 'Finance UI no longer surfaces arithmetic reconciliation')
 
   // Manager/day views must classify the same selected payment exactly once.
@@ -76,9 +76,10 @@ try {
 
   // Returns/exchanges and reversals retain explicit dates and append-only evidence.
   check(returnsExchanges.includes("throw new Error('Укажите дату возврата.')") && returnsExchanges.includes("throw new Error('Укажите дату обмена.')"), 'Return/exchange can invent a missing business date')
-  for (const marker of ["eventType: 'exchange_extra'", "eventType: 'exchange_refund'", "eventType: 'refund_reversal'", "eventType: 'payment_reversal'"]) {
-    check(`${returnsExchanges}\n${money}\n${orderWrite}`.includes(marker), `Immutable money evidence missing: ${marker}`)
-  }
+  check(returnsExchanges.includes("eventType: 'exchange_extra'"), 'Immutable exchange-extra evidence missing')
+check(returnsExchanges.includes("eventType: 'exchange_refund'"), 'Immutable exchange-refund evidence missing')
+check(`${returnsExchanges}\n${money}`.includes("'refund_reversal'"), 'Immutable refund-reversal evidence missing')
+check(`${money}\n${orderWrite}`.includes("'payment_reversal'"), 'Immutable payment-reversal evidence missing')
   check(report.includes("completedReturns = returns.filter") && report.includes("cleanText(row.status) !== 'cancelled'"), 'Cancelled returns can enter current Finance totals')
 
   // Both debt-close entry points share one append-only/idempotent backend.
@@ -89,6 +90,15 @@ try {
   check(money.includes("beginCriticalOperation(db, 'order_payment_create'"), 'Server payment write lost critical-operation idempotency')
   check(!between(app, 'async function persistOrder(', 'async function saveSelectedOrder()').includes('payments: nextDraft.payments.map'), 'Generic order edit can rewrite complete payment history')
   check(orderWrite.includes('removeOrderPaymentsWithMoneyEvents'), 'Explicit legacy/full-rewrite reversal primitive disappeared; review correction history semantics')
+  const updateOrder = between(orderWrite, 'export async function updateOrderCritical(', '\n\nexport async function getOrder(')
+  const removePayments = between(money, 'export async function removeOrderPaymentsWithMoneyEvents(', '\n\nexport async function removeSinglePaymentWithMoneyEvent(')
+  check(updateOrder.includes('const rewritePayments = !deletingOrder && Boolean('), 'Deleting an order can still reinterpret a stale-client payment collection as a payment edit')
+  check(updateOrder.includes('const nextPayments = deletingOrder ? existingPaymentsForEdit'), 'Delete does not pin totals to the persisted payment facts')
+  check(updateOrder.includes("reason: 'order_delete'") && updateOrder.includes('preservePayments: true'), 'Order delete does not append explicit money reversals while preserving payment history')
+  check(removePayments.includes('preservePayments?: boolean') && removePayments.includes('if (!input.preservePayments) statements.push'), 'Money reversal helper cannot preserve payment rows for logical deletion')
+  check(removePayments.includes("'189c:payment:' || p.id || ':reversal:' || ?"), 'Order-delete reversal key is not stable/idempotent per payment')
+  check(cashMigration.includes("'order-cancel:' || NEW.id || ':payment:' || p.id"), 'Cash delete path lost its separate idempotent order-cancel key')
+  check(cash.includes("if (reason === 'order_delete') return 'Оплата снята при удалении заказа'"), 'Money journal does not explain an order-delete payment reversal')
 
   // Cash ledger is source-keyed and reversal-safe. Current Finance audit must not mutate it.
   for (const marker of ["'payment:' || NEW.id", "'payment-reversal:' || OLD.id", "'return:' || NEW.id", "'return-reversal:' || NEW.id"]) {
