@@ -27,6 +27,19 @@ jobs:
         run: node scripts/tmp-finance-f5-register-worker-deltas.mjs before
       - name: Apply final Finance F5 business semantics
         run: python3 scripts/tmp-finance-f5-business-finalize.py
+      - name: Preserve payment-kind union typing
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/App.tsx')
+          text = path.read_text(encoding='utf-8')
+          old = "          const nextKind = value === 'debt_close' ? 'debt_close' : 'primary'\n"
+          new = "          const nextKind: EditorPayment['paymentKind'] = value === 'debt_close' ? 'debt_close' : 'primary'\n"
+          if text.count(old) != 1:
+              raise SystemExit(f'Finance F5 nextKind marker mismatch: {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Register exact F5 Worker declaration deltas
         run: node scripts/tmp-finance-f5-register-worker-deltas.mjs after
       - name: Full release gate
