@@ -1,0 +1,128 @@
+name: Finance order date sync patch
+
+on:
+  push:
+    branches:
+      - finance-order-date-sync
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-check:
+    if: ${{ contains(github.event.head_commit.message, '[date-sync-patched]') == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply late-order payment date guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new, label):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              if new in text:
+                  print(f'{label}: already patched')
+                  return
+              if old not in text:
+                  raise SystemExit(f'{label}: marker not found')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+              print(f'{label}: patched')
+
+          replace_once(
+              'src/App.tsx',
+              """  function updateCreateDraft<K extends keyof EditorDraft>(key: K, value: EditorDraft[K]) {\n    setCreateDraft((current) => ({ ...current, [key]: value }))\n  }""",
+              """  function updateCreateDraft<K extends keyof EditorDraft>(key: K, value: EditorDraft[K]) {\n    setCreateDraft((current) => {\n      if (key === 'orderDate') {\n        const orderDate = String(value || '').trim()\n        return {\n          ...current,\n          [key]: value,\n          payments: current.payments.map((payment) => (\n            payment.paymentKind === 'primary'\n              ? { ...payment, paymentDate: orderDate || payment.paymentDate }\n              : payment\n          )),\n        }\n      }\n      return { ...current, [key]: value }\n    })\n  }""",
+              'frontend order-date sync',
+          )
+
+          replace_once(
+              'worker/domains/order-core.ts',
+              """    .filter(payment => payment.method && payment.amount > 0);\n}\n\n\nexport function sameOrderItemForEdit(""",
+              """    .filter(payment => payment.method && payment.amount > 0);\n}\n\n\nexport function normalizeCreateOrderPayments(payments: OrderInput['payments'], orderDate: string) {\n  const normalizedOrderDate = normalizeDate(orderDate);\n  return normalizeOrderPayments(payments, normalizedOrderDate).map(payment => (\n    payment.paymentKind === 'primary'\n      ? { ...payment, paymentDate: normalizedOrderDate }\n      : payment\n  ));\n}\n\n\nexport function sameOrderItemForEdit(""",
+              'server create-payment normalizer',
+          )
+
+          p = Path('worker/domains/orders-write.ts')
+          text = p.read_text(encoding='utf-8')
+          import_old = "normalizeOrderItems, normalizeOrderPayments, OrderInputValidationError"
+          import_new = "normalizeCreateOrderPayments, normalizeOrderItems, normalizeOrderPayments, OrderInputValidationError"
+          if import_new not in text:
+              if import_old not in text:
+                  raise SystemExit('orders-write import marker not found')
+              text = text.replace(import_old, import_new, 1)
+          replacements = [
+              (
+                  "const normalizedPayments = normalizeOrderPayments(rawPayments, orderDate);",
+                  "const normalizedPayments = normalizeCreateOrderPayments(rawPayments, orderDate);",
+              ),
+              (
+                  "const normalizedPayments = normalizeOrderPayments(payments, orderDate);",
+                  "const normalizedPayments = normalizeCreateOrderPayments(payments, orderDate);",
+              ),
+          ]
+          for old, new in replacements:
+              if new not in text:
+                  if old not in text:
+                      raise SystemExit(f'orders-write create normalizer marker not found: {old}')
+                  text = text.replace(old, new, 1)
+          p.write_text(text, encoding='utf-8')
+          print('createOrder server guard: patched')
+
+          p = Path('scripts/test-step192b2a4-order-create-save-integrity.mjs')
+          text = p.read_text(encoding='utf-8')
+          marker = """  check(!orders.includes(\"throw new Error('Добавьте хотя бы одну оплату.')\"), 'Unpaid orders are still blocked')\n\n  // Structured stock shortage"""
+          inserted = """  check(!orders.includes(\"throw new Error('Добавьте хотя бы одну оплату.')\"), 'Unpaid orders are still blocked')\n\n  // Late-entered orders must not keep today's default payment date when the business order date is changed.\n  const createDraftUpdate = between(app, 'function updateCreateDraft<', 'function updateCreateItem(')\n  check(createDraftUpdate.includes(\"key === 'orderDate'\"), 'Create form does not react to order-date changes')\n  check(createDraftUpdate.includes(\"payment.paymentKind === 'primary'\"), 'Create form does not limit automatic date sync to primary payments')\n  check(createDraftUpdate.includes('paymentDate: orderDate || payment.paymentDate'), 'Primary create payments do not follow the selected order date')\n  const createPaymentNormalizer = between(core, 'export function normalizeCreateOrderPayments(', 'export function sameOrderItemForEdit(')\n  check(createPaymentNormalizer.includes(\"payment.paymentKind === 'primary'\"), 'Server create-payment guard does not target primary payments')\n  check(createPaymentNormalizer.includes('paymentDate: normalizedOrderDate'), 'Server can still persist a primary create payment on the entry-day date')\n\n  // Structured stock shortage"""
+          if inserted not in text:
+              if marker not in text:
+                  raise SystemExit('192B2A4 test insertion marker not found')
+              text = text.replace(marker, inserted, 1)
+
+          create_marker = """  const create = between(orders, 'export async function createOrder(', 'export async function updateOrderCritical(')\n"""
+          create_insert = """  const create = between(orders, 'export async function createOrder(', 'export async function updateOrderCritical(')\n  check((create.match(/normalizeCreateOrderPayments/g) || []).length >= 2, 'Create path does not enforce order-date primary payments in both fresh and legacy-resume planning')\n"""
+          if create_insert not in text:
+              if create_marker not in text:
+                  raise SystemExit('create block test marker not found')
+              text = text.replace(create_marker, create_insert, 1)
+
+          edit_marker = """  const edit = between(orders, 'export async function updateOrderCritical(', 'export async function getOrder(')\n"""
+          edit_insert = """  const edit = between(orders, 'export async function updateOrderCritical(', 'export async function getOrder(')\n  check(!edit.includes('normalizeCreateOrderPayments('), 'Existing-order editing must not rewrite historical primary payment dates to the order date')\n  check(edit.includes('normalizeOrderPayments('), 'Existing-order editing lost ordinary payment-date preservation')\n"""
+          if edit_insert not in text:
+              if edit_marker not in text:
+                  raise SystemExit('edit block test marker not found')
+              text = text.replace(edit_marker, edit_insert, 1)
+
+          p.write_text(text, encoding='utf-8')
+          print('192B2A4 regression guards: patched')
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Full release gate
+        run: npm run release:check
+
+      - name: Commit verified fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx worker/domains/order-core.ts worker/domains/orders-write.ts scripts/test-step192b2a4-order-create-save-integrity.mjs
+          git commit -m "Fix late-order primary payment date sync [date-sync-patched]"
+          git push origin HEAD:finance-order-date-sync
