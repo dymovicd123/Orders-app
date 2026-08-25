@@ -4947,56 +4947,130 @@ function App() {
   function updateEditorPayment(index: number, field: keyof EditorPayment, value: string | number) {
     setEditorDraft((current) => {
       if (!current) return current
-      const nextPayments = current.payments.map((payment, paymentIndex) => (
-        paymentIndex === index ? { ...payment, [field]: value } : payment
-      ))
+      const nextPayments = current.payments.map((payment, paymentIndex) => {
+        if (paymentIndex !== index || payment.id) return payment
+        return { ...payment, [field]: value }
+      })
       return { ...current, payments: nextPayments }
     })
   }
 
-  function addEditorItem() {
-    setEditorDraft((current) => current ? { ...current, items: [...current.items, createEmptyEditorItem()] } : current)
-  }
-
-  function removeEditorItem(index: number) {
-    setEditorDraft((current) => {
-      if (!current) return current
-      const nextItems = current.items.filter((_, itemIndex) => itemIndex !== index)
-      return { ...current, items: nextItems.length ? nextItems : [createEmptyEditorItem()] }
-    })
-  }
-
-  function addEditorPayment(paymentKind: 'debt_close' | 'extra') {
+  function addEditorPayment(paymentKind: EditorPayment['paymentKind']) {
+    const draftKey = `editor-payment-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
     setEditorDraft((current) => current ? {
       ...current,
-      payments: [...current.payments, { ...createEmptyEditorPayment(formatLocalDateInput()), paymentKind }],
+      payments: [...current.payments, { ...createEmptyEditorPayment(formatLocalDateInput()), paymentKind, draftKey }],
     } : current)
   }
 
   function removeEditorPayment(index: number) {
     setEditorDraft((current) => {
-      if (!current) return current
-      const nextPayments = current.payments.filter((_, paymentIndex) => paymentIndex !== index)
-      return { ...current, payments: nextPayments.length ? nextPayments : [createEmptyEditorPayment(current.orderDate)] }
+      if (!current || current.payments[index]?.id) return current
+      return { ...current, payments: current.payments.filter((_, paymentIndex) => paymentIndex !== index) }
     })
   }
 
-  function updateDebtPayment(index: number, field: keyof EditorPayment, value: string | number) {
-    setDebtPayments((current) => current.map((payment, paymentIndex) => (
-      paymentIndex === index ? { ...payment, [field]: value, paymentKind: 'debt_close' } : payment
-    )))
+  async function saveEditorPayment(index: number) {
+    if (!editorDraft || !selectedOrder || savingOrder) return
+    const payment = editorDraft.payments[index]
+    if (!payment || payment.id) return
+
+    const amount = Number(payment.amount || 0)
+    if (!payment.paymentDate) {
+      setError('Укажите фактическую дату оплаты.')
+      return
+    }
+    if (!String(payment.method || '').trim()) {
+      setError('Выберите способ оплаты.')
+      return
+    }
+    if (!Number.isInteger(amount) || amount <= 0) {
+      setError('Сумма оплаты должна быть целым числом больше нуля.')
+      return
+    }
+
+    setSavingOrder(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const payload = {
+        orderId: selectedOrder.id,
+        paymentDate: payment.paymentDate,
+        method: payment.method,
+        amount,
+        paymentKind: payment.paymentKind,
+        comment: payment.comment || '',
+      }
+      const criticalKey = `order-editor-payment:${selectedOrder.id}:${payment.draftKey || index}`
+      const critical = prepareCriticalRequest(criticalKey, payload)
+      const response = await apiFetch('/api/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
+        body: JSON.stringify(critical.payload),
+      })
+      const result = await readJsonResponse<{
+        ok?: boolean
+        message?: string
+        paymentId?: number | null
+        order?: OrderRecord
+        refreshRequired?: boolean
+      }>(response, 'Добавление оплаты')
+      if (!response.ok || !result.ok) throw new Error(result.message || `Payment save failed: ${response.status}`)
+      const paymentId = Number(result.paymentId || 0)
+      if (!paymentId) {
+        throw new Error('Оплата могла сохраниться, но сервер не вернул её идентификатор. Повторите сохранение этой строки — повтор безопасен.')
+      }
+      completeCriticalRequest(criticalKey, critical.requestId)
+      setEditorDraft((current) => current ? ({
+        ...current,
+        payments: current.payments.map((entry, paymentIndex) => (
+          paymentIndex === index ? { ...entry, id: paymentId, draftKey: undefined } : entry
+        )),
+      }) : current)
+      if (result.order) {
+        upsertOrderInState(result.order)
+        setSelectedOrderId(result.order.id)
+        setEditorOrderOverride(result.order)
+      } else if (result.refreshRequired) {
+        void loadDashboard(false)
+      }
+      invalidateFinanceReadCaches()
+      setMessage(`Оплата по заказу ${selectedOrder.external_id} проведена отдельно и не переписывает предыдущие оплаты.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось сохранить оплату.')
+    } finally {
+      setSavingOrder(false)
+    }
   }
 
-  function addDebtPayment() {
-    setDebtPayments((current) => [...current, createDebtClosePayment()])
-  }
+  function addEditorItem() {
+  setEditorDraft((current) => current ? { ...current, items: [...current.items, createEmptyEditorItem()] } : current)
+}
 
-  function removeDebtPayment(index: number) {
-    setDebtPayments((current) => {
-      const next = current.filter((_, paymentIndex) => paymentIndex !== index)
-      return next.length ? next : [createDebtClosePayment()]
-    })
-  }
+function removeEditorItem(index: number) {
+  setEditorDraft((current) => {
+    if (!current) return current
+    const nextItems = current.items.filter((_, itemIndex) => itemIndex !== index)
+    return { ...current, items: nextItems.length ? nextItems : [createEmptyEditorItem()] }
+  })
+}
+
+function updateDebtPayment(index: number, field: keyof EditorPayment, value: string | number) {
+  setDebtPayments((current) => current.map((payment, paymentIndex) => (
+    paymentIndex === index ? { ...payment, [field]: value, paymentKind: 'debt_close' } : payment
+  )))
+}
+
+function addDebtPayment() {
+  setDebtPayments((current) => [...current, createDebtClosePayment()])
+}
+
+function removeDebtPayment(index: number) {
+  setDebtPayments((current) => {
+    const next = current.filter((_, paymentIndex) => paymentIndex !== index)
+    return next.length ? next : [createDebtClosePayment()]
+  })
+}
 
   function handleSelectDebtOrder(orderId: number) {
     setDebtSelectedOrderId(orderId)
@@ -5210,13 +5284,6 @@ function App() {
           observedPhysicalQuantity: item.sourceType !== 'workshop' && item.stockObservationEnabled ? item.observedPhysicalQuantity : undefined,
           shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
         })),
-        payments: nextDraft.payments.map((payment, index) => ({
-          paymentDate: payment.paymentDate,
-          method: payment.method,
-          amount: payment.amount,
-          paymentKind: resolvePaymentKind(payment, index),
-          comment: payment.comment,
-        })),
       }
 
       const criticalKey = `order-edit:${order.id}`
@@ -5283,6 +5350,7 @@ function App() {
       // browser retry token before readback-driven UI work, including the common result.order path.
       completeCriticalRequest(criticalKey, critical.requestId)
 
+      const pendingEditorPayments = nextDraft.payments.filter((payment) => !payment.id)
       const postSaveShortages = (result.stockWriteOff || []).filter((entry) => Number(entry.shortageAfter || 0) > 0)
       const concurrentShortages = postSaveShortages.filter((entry) => entry.concurrentShortage)
       if (postSaveShortages.length) void loadWarehouseAttention()
@@ -5300,12 +5368,23 @@ function App() {
         void loadWorkshopData()
         setSelectedOrderId(savedOrder.id)
         setEditorOrderOverride(savedOrder)
-        setEditorDraft(createEditorDraft(savedOrder))
-        closeOrderEditor()
+        const savedDraft = createEditorDraft(savedOrder)
+        setEditorDraft(pendingEditorPayments.length ? { ...savedDraft, payments: [...savedDraft.payments, ...pendingEditorPayments] } : savedDraft)
+        if (pendingEditorPayments.length) {
+          setEditorOpen(true)
+          setMessage(`Заказ ${order.external_id} обновлён. Новые оплаты ещё не проведены — сохраните каждую новой кнопкой «Провести оплату».`)
+        } else {
+          closeOrderEditor()
+        }
         if (activeSector === 'orders' && orderPanel === 'list') void loadOrdersFinanceSummary(filters, true)
         return savedOrder
       }
-      closeOrderEditor()
+      if (pendingEditorPayments.length) {
+        setEditorOpen(true)
+        setMessage(`Заказ ${order.external_id} сохранён. Новые оплаты ещё не проведены — сохраните каждую отдельно.`)
+      } else {
+        closeOrderEditor()
+      }
       if (result.refreshRequired || !result.order) {
         void loadDashboard(false)
         void loadWorkshopData()
@@ -6658,7 +6737,7 @@ function App() {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'edit'} label="Редактирование заказа">
-        <OrderEditorSection ctx={{ addEditorItem, addEditorPayment, applyEditorProductPick, ChoicePills, closeOrderEditor, createEditorDraft, editorDraft, editorFormRef, editorOpen, editorReturnSector, formatMoney, formatOrderItemTitle, FriendlyNumberInput, isAdmin, isArchivedOrderRecord, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderPanelStyle, references, removeEditorItem, removeEditorPayment, renderOrderSizeSelect, renderOrderSourceAvailability, saveSelectedOrder, savingOrder, sectorStyle, selectedOrder, setEditorDraft, SmartPickerInput, sourceLabel, statusLabelByState, suggestionValues, updateEditorDraft, updateEditorItem, updateEditorPayment }} />
+        <OrderEditorSection ctx={{ addEditorItem, addEditorPayment, applyEditorProductPick, ChoicePills, closeOrderEditor, createEditorDraft, editorDraft, editorFormRef, editorOpen, editorReturnSector, formatMoney, formatOrderItemTitle, FriendlyNumberInput, isAdmin, isArchivedOrderRecord, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderPanelStyle, references, removeEditorItem, removeEditorPayment, renderOrderSizeSelect, renderOrderSourceAvailability, saveEditorPayment, saveSelectedOrder, savingOrder, sectorStyle, selectedOrder, setEditorDraft, SmartPickerInput, sourceLabel, statusLabelByState, suggestionValues, updateEditorDraft, updateEditorItem, updateEditorPayment }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
