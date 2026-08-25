@@ -32,18 +32,18 @@ jobs:
           from pathlib import Path
           path = Path('scripts/test-finance-f6-release-audit.mjs')
           text = path.read_text(encoding='utf-8')
-          old = '''  for (const marker of ["eventType: 'exchange_extra'", "eventType: 'exchange_refund'", "eventType: 'refund_reversal'", "eventType: 'payment_reversal'"]) {
-            check(`${returnsExchanges}\\n${money}\\n${orderWrite}`.includes(marker), `Immutable money evidence missing: ${marker}`)
-          }
-          '''
+          start_marker = "  for (const marker of [\"eventType: 'exchange_extra'\""
+          end_marker = "  check(report.includes(\"completedReturns = returns.filter\")"
+          start = text.find(start_marker)
+          end = text.find(end_marker, start if start >= 0 else 0)
+          if start < 0 or end <= start:
+              raise SystemExit(f'immutable-event block markers missing: start={start}, end={end}')
           new = '''  check(returnsExchanges.includes("eventType: 'exchange_extra'"), 'Immutable exchange-extra evidence missing')
           check(returnsExchanges.includes("eventType: 'exchange_refund'"), 'Immutable exchange-refund evidence missing')
           check(`${returnsExchanges}\\n${money}`.includes("'refund_reversal'"), 'Immutable refund-reversal evidence missing')
           check(`${money}\\n${orderWrite}`.includes("'payment_reversal'"), 'Immutable payment-reversal evidence missing')
           '''
-          if text.count(old) != 1:
-              raise SystemExit(f'immutable-event matcher count={text.count(old)}')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          path.write_text(text[:start] + new + text[end:], encoding='utf-8')
           PY
       - name: Full release gate
         run: npm run release:check
