@@ -24,6 +24,7 @@ const financeF2TracePath = path.join(root, 'scripts/finance-f2-trace-worker-mani
 const financeF4MoneyJournalPath = path.join(root, 'scripts/finance-f4-money-journal-worker-manifest.json')
 const financeF5BusinessSemanticsPath = path.join(root, 'scripts/finance-f5-business-semantics-worker-manifest.json')
 const financeF6DeleteMoneyHistoryPath = path.join(root, 'scripts/finance-f6-delete-money-history-worker-manifest.json')
+const financeF6ReportSemanticsPath = path.join(root, 'scripts/finance-f6-report-semantics-worker-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -59,6 +60,7 @@ try {
   check(fs.existsSync(financeF4MoneyJournalPath), 'Finance F4 money journal Worker manifest missing')
   check(fs.existsSync(financeF5BusinessSemanticsPath), 'Finance F5 business semantics Worker manifest missing')
   check(fs.existsSync(financeF6DeleteMoneyHistoryPath), 'Finance F6 delete-money-history Worker manifest missing')
+  check(fs.existsSync(financeF6ReportSemanticsPath), 'Finance F6 report semantics Worker manifest missing')
   const cleanup = fs.existsSync(cleanupPath) ? JSON.parse(fs.readFileSync(cleanupPath, 'utf8')) : null
   const removed = cleanup?.version === 1 ? (cleanup.removedWorkerDeclarations || {}) : {}
   const boundary = fs.existsSync(boundaryPath) ? JSON.parse(fs.readFileSync(boundaryPath, 'utf8')) : null
@@ -100,6 +102,8 @@ try {
   const financeF5BusinessSemanticsChanges = financeF5BusinessSemantics?.version === 1 ? (financeF5BusinessSemantics.changes || {}) : {}
   const financeF6DeleteMoneyHistory = fs.existsSync(financeF6DeleteMoneyHistoryPath) ? JSON.parse(fs.readFileSync(financeF6DeleteMoneyHistoryPath, 'utf8')) : null
   const financeF6DeleteMoneyHistoryChanges = financeF6DeleteMoneyHistory?.version === 1 ? (financeF6DeleteMoneyHistory.changes || {}) : {}
+  const financeF6ReportSemantics = fs.existsSync(financeF6ReportSemanticsPath) ? JSON.parse(fs.readFileSync(financeF6ReportSemanticsPath, 'utf8')) : null
+  const financeF6ReportSemanticsChanges = financeF6ReportSemantics?.version === 1 ? (financeF6ReportSemantics.changes || {}) : {}
 
   const files = walk(workerRoot)
   const indexPath = path.join(workerRoot, 'index.ts')
@@ -251,11 +255,17 @@ try {
       acceptedPostFinanceF5BusinessSemanticsHash = financeF5BusinessSemanticsChanged.after
     }
     const financeF6DeleteMoneyHistoryChanged = financeF6DeleteMoneyHistoryChanges[name]
+    let acceptedPostFinanceF6DeleteMoneyHistoryHash = acceptedPostFinanceF5BusinessSemanticsHash
     if (financeF6DeleteMoneyHistoryChanged) {
       check(financeF6DeleteMoneyHistoryChanged.before === acceptedPostFinanceF5BusinessSemanticsHash, `Finance F6 delete-money-history declaration baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === financeF6DeleteMoneyHistoryChanged.after, `Worker declaration changed beyond exact Finance F6 delete-money-history allow-list: ${name}`)
+      acceptedPostFinanceF6DeleteMoneyHistoryHash = financeF6DeleteMoneyHistoryChanged.after
+    }
+    const financeF6ReportSemanticsChanged = financeF6ReportSemanticsChanges[name]
+    if (financeF6ReportSemanticsChanged) {
+      check(financeF6ReportSemanticsChanged.before === acceptedPostFinanceF6DeleteMoneyHistoryHash, `Finance F6 report-semantics declaration baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === financeF6ReportSemanticsChanged.after, `Worker declaration changed beyond exact Finance F6 report-semantics allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostFinanceF5BusinessSemanticsHash, `Worker declaration body changed beyond accepted cleanup/boundary/runtime/security/warehouse/catalog/attention/daily-warehouse/context/sql-alias/order-save/stocktake-replay/finance-date-sync/finance-f2-trace/finance-f4-journal/finance-f5-business/finance-f6-delete-money deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostFinanceF6DeleteMoneyHistoryHash, `Worker declaration body changed beyond accepted cleanup/boundary/runtime/security/warehouse/catalog/attention/daily-warehouse/context/sql-alias/order-save/stocktake-replay/finance-date-sync/finance-f2-trace/finance-f4-journal/finance-f5-business/finance-f6-delete-money/finance-f6-report-semantics deltas: ${name}`)
     }
   }
 

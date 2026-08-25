@@ -112,6 +112,18 @@ check(`${money}\n${orderWrite}`.includes("'payment_reversal'"), 'Immutable payme
   check(financeUi.includes('Операция записана:') && financeUi.includes('Заказ введён:'), 'Audit timestamps are hidden from Finance drilldown')
   check(financeUi.includes('openMoneyHistoryForOrder') && financeUi.includes('openOrderFromFinance'), 'Finance drilldown actions disappeared')
 
+
+  // Adjacent strict-report semantics: do not mix business-order cohorts with operation-date totals
+  // or show placeholder aggregate columns as if they were implemented.
+  check(report.includes('COUNT(DISTINCT o.customer_id) AS clients') && report.includes('COUNT(DISTINCT o.manager_id) AS managers'), 'City aggregate still lacks real distinct client/manager counts')
+  check(reportUi.includes('Товары из заказов с бизнес-датой заказа в выбранном периоде.'), 'Product report confuses business order date with system creation time')
+  const productReportBlock = between(reportUi, 'const renderProductReport = () => (', 'const renderCityReport = () => (')
+  check(!productReportBlock.includes('Возвраты по заказам') && !productReportBlock.includes('activeReturnTotal'), 'Product report mixes operation-date returns into the order-date product cohort')
+  check(reportUi.includes("{ label: 'Возвраты по дате операции', value: formatMoney(activeReturnTotal) }"), 'Manager report does not label return-period semantics honestly')
+  check(!reportUi.includes('Нет оплат по выбранным заказам.'), 'Payment report empty state incorrectly claims an order-date cohort')
+  check(reportUi.includes('Нет оплат за выбранный период.'), 'Payment report has no operation-period empty wording')
+  check(reportUi.includes('<td className="num">{row.clients}</td><td className="num">{row.managers}</td>'), 'City aggregate still renders fake client/manager placeholders')
+
   // Synthetic cross-layer accounting fixture. It deliberately includes one legacy ordinary extra
   // and one exchange extra encoded with payment_kind=extra, reproducing the exact ambiguity F5 fixed.
   const db = new DatabaseSync(':memory:')

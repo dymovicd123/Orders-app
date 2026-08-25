@@ -52,6 +52,7 @@ function verifySource() {
     'scripts/test-finance-f5-adjacent-regression.mjs',
     'scripts/test-finance-f6-release-audit.mjs',
     'scripts/finance-f6-delete-money-history-worker-manifest.json',
+    'scripts/finance-f6-report-semantics-worker-manifest.json',
     'scripts/finance-f4-money-journal-worker-manifest.json',
     'scripts/finance-f2-trace-worker-manifest.json',
     'src/styles/189c-reliable-money-history.css',

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "revision": "finance-f6-report-semantics-r1",
+  "reason": "Strict Finance reports distinguish business order date from recorded-at semantics, avoid cross-cohort return totals in product reports, and provide real aggregate city client/manager counts.",
+  "changes": {
+    "listFinanceReports": {
+      "before": "bdf02133879d9212e53dc99898d035800a1d927098f1494a8e2d949d0c41bd12",
+      "after": "48d9167a2c2276fd9c2d8369d3146bfa2bf29dcf43a2304295f4795c3e6539a6"
+    }
+  }
+}
