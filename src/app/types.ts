@@ -525,6 +525,20 @@ export type FinancePaymentOperation = {
   dateRelation: 'before_order' | 'same_day' | 'after_order' | string
   dateOffsetDays: number
   createdAt: string
+  orderCreatedAt: string
+  recordedLagDays: number
+  orderRecordedLagDays: number
+  eventLineageStatus: 'source_id' | 'exact_fingerprint' | 'ambiguous' | 'missing' | string
+  eventId?: number | null
+  eventAt?: string | null
+  eventRecordedAt?: string | null
+  eventType?: string | null
+  eventReason?: string | null
+  eventIsBackfill: boolean
+  traceCode: string
+  traceSeverity: 'normal' | 'info' | 'review'
+  traceTitle: string
+  traceExplanation: string
 }
 
 export type FinancePaymentKindSummary = {
@@ -585,6 +599,10 @@ export type FinanceReportResponse = {
     refundExchangeTotal: number
     paymentDateAnomalyCount: number
     paymentDateAnomalyTotal: number
+    paymentTraceReviewCount?: number
+    paymentTraceInfoCount?: number
+    crossDatePaymentCount?: number
+    crossDatePaymentTotal?: number
     currentDebt: number
     currentDebtOrders: number
     collectionRate: number
@@ -595,6 +613,10 @@ export type FinanceReportResponse = {
     paymentKinds?: FinancePaymentKindSummary[]
     paymentOperations?: FinancePaymentOperation[]
     paymentDateAnomalies?: FinancePaymentOperation[]
+    paymentTraceReview?: FinancePaymentOperation[]
+    paymentTraceInfo?: FinancePaymentOperation[]
+    crossDatePaymentOperations?: FinancePaymentOperation[]
+    traceScope?: { startDate: string; endDate: string; selectedPeriodOnly: boolean }
     consistency?: FinanceConsistency
     managers: Array<{ manager_id?: number; manager: string; color_key?: string; order_count: number; total_sales: number; total_received: number; total_returns: number; total_debt: number; avg_check: number }>
     products: Array<{ product: string; quantity: number; order_count: number; order_sales: number }>

@@ -155,7 +155,12 @@ export async function setCashAutoTracking(db: D1Database, enabled: boolean, acto
   const timestamp = new Date().toISOString();
   await db.prepare(
     `UPDATE cash_register_settings
-     SET auto_tracking_enabled = ?, activated_at = CASE WHEN ? = 1 THEN ? ELSE activated_at END, updated_at = ?
+     SET auto_tracking_enabled = ?,
+         activated_at = CASE
+           WHEN ? = 1 AND COALESCE(NULLIF(TRIM(activated_at), ''), '') = '' THEN ?
+           ELSE activated_at
+         END,
+         updated_at = ?
      WHERE id = 1`
   ).bind(target, target, timestamp, timestamp).run();
   await writeActivityLog(db, {

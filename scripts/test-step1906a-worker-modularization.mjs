@@ -20,6 +20,7 @@ const handoverSqlAliasSafetyPath = path.join(root, 'scripts/step192b2a3-handover
 const orderCreateSaveIntegrityPath = path.join(root, 'scripts/step192b2a4-order-create-save-integrity-manifest.json')
 const stocktakeLostResponsePath = path.join(root, 'scripts/stocktake-lost-response-worker-manifest.json')
 const financeOrderDateSyncPath = path.join(root, 'scripts/finance-order-date-sync-worker-manifest.json')
+const financeF2TracePath = path.join(root, 'scripts/finance-f2-trace-worker-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -51,6 +52,7 @@ try {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
   check(manifest?.version === 1 && manifest?.declarationCount === 577, '1906A declaration manifest invalid')
   check(fs.existsSync(financeOrderDateSyncPath), 'Finance order-date sync Worker manifest missing')
+  check(fs.existsSync(financeF2TracePath), 'Finance F2 trace Worker manifest missing')
   const cleanup = fs.existsSync(cleanupPath) ? JSON.parse(fs.readFileSync(cleanupPath, 'utf8')) : null
   const removed = cleanup?.version === 1 ? (cleanup.removedWorkerDeclarations || {}) : {}
   const boundary = fs.existsSync(boundaryPath) ? JSON.parse(fs.readFileSync(boundaryPath, 'utf8')) : null
@@ -84,6 +86,8 @@ try {
   const stocktakeLostResponseChanges = stocktakeLostResponse?.version === 1 ? (stocktakeLostResponse.changes || {}) : {}
   const financeOrderDateSync = fs.existsSync(financeOrderDateSyncPath) ? JSON.parse(fs.readFileSync(financeOrderDateSyncPath, 'utf8')) : null
   const financeOrderDateSyncChanges = financeOrderDateSync?.version === 1 ? (financeOrderDateSync.changes || {}) : {}
+  const financeF2Trace = fs.existsSync(financeF2TracePath) ? JSON.parse(fs.readFileSync(financeF2TracePath, 'utf8')) : null
+  const financeF2TraceChanges = financeF2Trace?.version === 1 ? (financeF2Trace.changes || {}) : {}
 
   const files = walk(workerRoot)
   const indexPath = path.join(workerRoot, 'index.ts')
@@ -211,11 +215,17 @@ try {
       acceptedPostStocktakeLostResponseHash = stocktakeLostResponseChanged.after
     }
     const financeOrderDateSyncChanged = financeOrderDateSyncChanges[name]
+    let acceptedPostFinanceOrderDateSyncHash = acceptedPostStocktakeLostResponseHash
     if (financeOrderDateSyncChanged) {
       check(financeOrderDateSyncChanged.before === acceptedPostStocktakeLostResponseHash, `Finance order-date sync declaration baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === financeOrderDateSyncChanged.after, `Worker declaration changed beyond exact Finance order-date sync allow-list: ${name}`)
+      acceptedPostFinanceOrderDateSyncHash = financeOrderDateSyncChanged.after
+    }
+    const financeF2TraceChanged = financeF2TraceChanges[name]
+    if (financeF2TraceChanged) {
+      check(financeF2TraceChanged.before === acceptedPostFinanceOrderDateSyncHash, `Finance F2 trace declaration baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === financeF2TraceChanged.after, `Worker declaration changed beyond exact Finance F2 trace allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostStocktakeLostResponseHash, `Worker declaration body changed beyond accepted cleanup/boundary/runtime/security/warehouse/catalog/attention/daily-warehouse/context/sql-alias/order-save/stocktake-replay/finance-date-sync deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostFinanceOrderDateSyncHash, `Worker declaration body changed beyond accepted cleanup/boundary/runtime/security/warehouse/catalog/attention/daily-warehouse/context/sql-alias/order-save/stocktake-replay/finance-date-sync/finance-f2-trace deltas: ${name}`)
     }
   }
 
