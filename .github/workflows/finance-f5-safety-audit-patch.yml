@@ -1,0 +1,38 @@
+name: Finance F5 safety audit patch
+
+on:
+  push:
+    branches:
+      - finance-f5-entry-semantics
+
+permissions:
+  contents: write
+
+jobs:
+  patch-check-and-commit:
+    if: ${{ !contains(github.event.head_commit.message, '[finance-f5-safe]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply Finance F5 safety patch
+        run: python3 scripts/tmp-finance-f5-safety-patch.py
+      - name: Full release gate
+        run: npm run release:check
+      - name: Commit verified Finance F5 safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx src/app/types.ts src/app/utils.ts src/features/sections/OrderEditorSection.tsx scripts/test-finance-f5-entry-semantics.mjs scripts/test-finance-f5-adjacent-regression.mjs scripts/release-check.mjs
+          git commit -m "Harden editor payment isolation and explicit semantics [finance-f5-safe]"
+          git push origin HEAD:finance-f5-entry-semantics
