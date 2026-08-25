@@ -1,0 +1,57 @@
+name: Finance F9 Production promotion
+
+on:
+  push:
+    branches:
+      - finance-f9-prod-promotion
+
+permissions:
+  contents: write
+
+jobs:
+  promote-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply exact verified F9 squashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git cherry-pick 92a28f6b10616d91d8b70ff4793275e47c1789b2
+          git cherry-pick 2601f7036e27435fbb738e838d3b7de01b0dc97f
+      - name: Verify exact Finance F9 diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only origin/main...HEAD | grep -v '^.github/workflows/finance-f9-prod-promotion.yml$' | sort)"
+          printf '%s\n' "$changed"
+          expected="$(printf '%s\n' \
+            scripts/finance-f9-date-priority-worker-manifest.json \
+            scripts/finance-f9-summary-worker-manifest.json \
+            scripts/release-check.mjs \
+            scripts/test-finance-f2-trace.mjs \
+            scripts/test-finance-f3-summary-ux.mjs \
+            scripts/test-finance-f6-release-audit.mjs \
+            scripts/test-finance-f9-summary-finish.mjs \
+            scripts/test-step1906a-worker-modularization.mjs \
+            src/app/types.ts \
+            src/features/renderers/FinanceDashboardRenderer.tsx \
+            src/styles/140-finance-truth.css \
+            worker/domains/finance-reports.ts | sort)"
+          test "$changed" = "$expected"
+          if printf '%s\n' "$changed" | grep -Eq '^migrations/|arrival|Arrival|приход|Приход|warehouse|Warehouse'; then echo 'Unexpected migration/Arrival/Warehouse delta'; exit 1; fi
+      - name: Full Production release gate
+        run: npm run release:check
+      - name: Push verified F9 candidate
+        run: git push origin HEAD:finance-f9-prod-promotion
