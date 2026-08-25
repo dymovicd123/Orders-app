@@ -1,0 +1,38 @@
+name: Finance F5 entry semantics patch
+
+on:
+  push:
+    branches:
+      - finance-f5-entry-semantics
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-check:
+    if: ${{ !contains(github.event.head_commit.message, '[finance-f5-patched]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply Finance F5 patch
+        run: python3 scripts/tmp-finance-f5-patch.py
+      - name: Full release gate
+        run: npm run release:check
+      - name: Commit verified Finance F5
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx src/features/sections/OrderEditorSection.tsx scripts/test-finance-f5-entry-semantics.mjs scripts/release-check.mjs
+          git commit -m "Make editor payment semantics explicit [finance-f5-patched]"
+          git push origin HEAD:finance-f5-entry-semantics
