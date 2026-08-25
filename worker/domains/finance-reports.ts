@@ -256,7 +256,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
   ]);
 
 
-  const [paymentByDayRows, paymentOperationRows, managerOrderDayRows, managerPaymentDayRows, managerReturnDayRows, productDayRows, cityDayRows, cityCashDayRows, returnsDetailRows, closedDebtDetailRows, paymentEventRows] = await runD1Bounded([
+  const [paymentByDayRows, paymentOperationRows, beforeOrderOutsidePeriodRows, managerOrderDayRows, managerPaymentDayRows, managerReturnDayRows, productDayRows, cityDayRows, cityCashDayRows, returnsDetailRows, closedDebtDetailRows, paymentEventRows] = await runD1Bounded([
     () => db.prepare(
       `SELECT p.payment_date AS date, p.method AS method, COALESCE(SUM(p.amount), 0) AS total
        FROM payments p
@@ -309,6 +309,46 @@ export async function listFinanceReports(db: D1Database, url: URL) {
          AND o.order_status <> 'deleted'
        ORDER BY p.payment_date DESC, p.id DESC`
     ).bind(startDate, endDate).all<any>(),
+
+    () => db.prepare(
+      `SELECT p.id,
+              p.order_id,
+              o.external_id,
+              o.order_date,
+              COALESCE(o.created_at, '') AS order_created_at,
+              p.payment_date,
+              p.method,
+              p.amount,
+              p.payment_kind,
+              COALESCE(p.comment, '') AS comment,
+              COALESCE(p.created_at, '') AS created_at,
+              o.manager_id,
+              COALESCE(m.name, o.manager_snapshot_name, 'Не указан') AS manager,
+              COALESCE(m.color_key, '#475569') AS manager_color,
+              COALESCE(c.display_name, c.phone_normalized, '—') AS customer,
+              COALESCE(o.city, '') AS city,
+              CASE
+                WHEN EXISTS (
+                  SELECT 1 FROM exchanges e
+                  WHERE e.payment_id = p.id
+                    AND COALESCE(e.status, 'completed') <> 'cancelled'
+                    AND e.financial_action = 'extra_payment'
+                ) THEN 'exchange_extra'
+                WHEN p.payment_kind = 'debt_close' THEN 'debt_close'
+                WHEN p.payment_kind = 'extra' THEN 'order_extra'
+                ELSE 'order_payment'
+              END AS operation_type,
+              CAST(julianday(p.payment_date) - julianday(o.order_date) AS INTEGER) AS date_offset_days
+       FROM payments p
+       JOIN orders o ON o.id = p.order_id
+       LEFT JOIN managers m ON m.id = o.manager_id
+       LEFT JOIN customers c ON c.id = o.customer_id
+       WHERE o.order_date BETWEEN ? AND ?
+         AND p.payment_date < o.order_date
+         AND p.payment_date < ?
+         AND o.order_status <> 'deleted'
+       ORDER BY p.payment_date DESC, p.id DESC`
+    ).bind(startDate, endDate, startDate).all<any>(),
 
     () => db.prepare(
       `SELECT o.order_date AS date,
@@ -637,7 +677,18 @@ export async function listFinanceReports(db: D1Database, url: URL) {
     let traceTitle = operationLabel;
     let traceExplanation = 'Операция относится к выбранному периоду.';
 
-    if (operationType === 'debt_close') {
+    if (dateRelation === 'before_order') {
+      traceCode = operationType === 'order_payment' ? 'primary_before_order' : `${operationType}_before_order`;
+      traceSeverity = 'review';
+      traceTitle = 'Оплата раньше даты заказа';
+      traceExplanation = operationType === 'debt_close'
+        ? 'Закрытие долга датировано раньше бизнес-даты самого заказа. Такая последовательность невозможна без ошибки в датах и требует проверки.'
+        : operationType === 'exchange_extra'
+          ? 'Доплата по обмену датирована раньше бизнес-даты исходного заказа. Дату операции нужно проверить.'
+          : operationType === 'order_extra'
+            ? 'Историческая последующая оплата датирована раньше бизнес-даты заказа. Несмотря на старый тип записи, дату нужно проверить.'
+            : 'Первичная оплата датирована раньше бизнес-даты заказа. Это требует проверки.';
+    } else if (operationType === 'debt_close') {
       traceCode = 'debt_close';
       traceTitle = 'Закрытие долга';
       traceExplanation = 'Отдельная оплата долга после создания заказа — нормальная денежная операция.';
@@ -665,11 +716,6 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       traceSeverity = 'info';
       traceTitle = 'Историческая базовая запись';
       traceExplanation = 'Эта запись восстановлена как достоверный снимок существовавшего состояния. Первоначальное действие пользователя по старой истории доказать нельзя.';
-    } else if (dateRelation === 'before_order') {
-      traceCode = 'primary_before_order';
-      traceSeverity = 'review';
-      traceTitle = 'Оплата раньше даты заказа';
-      traceExplanation = 'Первичная оплата датирована раньше бизнес-даты заказа. Это требует проверки.';
     } else if (dateRelation === 'after_order') {
       if (eventReason === 'order_create' && orderCreatedDate && recordedDate === paymentDate && orderCreatedDate === paymentDate) {
         traceCode = 'backdated_order_entry';
@@ -729,7 +775,57 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       traceExplanation,
     };
   });
-  const paymentTraceReview = paymentOperations.filter((row: any) => row.traceSeverity === 'review');
+  const beforeOrderOutsidePeriod = mapSqlRows(beforeOrderOutsidePeriodRows).map((row: any) => {
+    const operationType = cleanText(row.operation_type) || 'order_payment';
+    const operationLabel = operationType === 'debt_close'
+      ? 'Закрытие долга'
+      : operationType === 'exchange_extra'
+        ? 'Доплата по обмену'
+        : operationType === 'order_extra'
+          ? 'Закрытие долга (старый тип)'
+          : 'Оплата заказа';
+    const orderDate = cleanText(row.order_date);
+    const orderCreatedAt = cleanText(row.order_created_at);
+    const paymentDate = cleanText(row.payment_date);
+    const createdAt = cleanText(row.created_at);
+    return {
+      id: Number(row.id || 0),
+      orderId: Number(row.order_id || 0),
+      externalId: cleanText(row.external_id),
+      orderDate,
+      orderCreatedAt,
+      paymentDate,
+      method: canonicalPaymentMethodName(row.method),
+      amount: Number(row.amount || 0),
+      paymentKind: cleanText(row.payment_kind),
+      operationType,
+      operationLabel,
+      comment: cleanText(row.comment),
+      createdAt,
+      recordedLagDays: financeDateOffset(createdAt.slice(0, 10), paymentDate),
+      orderRecordedLagDays: financeDateOffset(orderCreatedAt.slice(0, 10), orderDate),
+      managerId: row.manager_id == null ? null : Number(row.manager_id),
+      manager: cleanText(row.manager) || 'Не указан',
+      managerColor: normalizeManagerColor(row.manager_color, toInt(row.manager_id, 1) - 1),
+      customer: cleanText(row.customer) || '—',
+      city: cleanText(row.city),
+      dateRelation: 'before_order',
+      dateOffsetDays: Number(row.date_offset_days || 0),
+      eventLineageStatus: 'outside_selected_operation_period',
+      eventId: null,
+      eventAt: null,
+      eventRecordedAt: null,
+      eventType: null,
+      eventReason: null,
+      eventIsBackfill: false,
+      traceCode: 'payment_before_order_outside_period',
+      traceSeverity: 'review' as const,
+      traceTitle: 'Оплата раньше даты заказа',
+      traceExplanation: 'Заказ входит в выбранный период по дате заказа, но его оплата датирована ещё раньше и лежит за границей выбранного периода денежных операций. Дату нужно проверить.',
+    };
+  });
+  const paymentTraceReview = [...paymentOperations.filter((row: any) => row.traceSeverity === 'review'), ...beforeOrderOutsidePeriod]
+    .sort((a: any, b: any) => String(b.paymentDate).localeCompare(String(a.paymentDate)) || Number(b.id || 0) - Number(a.id || 0));
   const paymentTraceInfo = paymentOperations.filter((row: any) => row.traceSeverity === 'info');
   const crossDatePaymentOperations = paymentOperations.filter((row: any) => row.orderDate < startDate || row.orderDate > endDate);
   const orderPaymentsTotal = paymentOperations.filter((row: any) => row.operationType === 'order_payment').reduce((sum: number, row: any) => sum + row.amount, 0);
@@ -742,7 +838,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
     { operationType: 'debt_close', label: 'Закрытие долгов', count: paymentOperations.filter((row: any) => row.operationType === 'debt_close' || row.operationType === 'order_extra').length, total: debtPaymentsTotal },
     { operationType: 'exchange_extra', label: 'Доплаты по обменам', count: paymentOperations.filter((row: any) => row.operationType === 'exchange_extra').length, total: exchangeExtraPaymentsTotal },
   ];
-  const paymentDateAnomalies = paymentOperations.filter((row: any) => row.dateRelation === 'before_order');
+  const paymentDateAnomalies = [...paymentOperations.filter((row: any) => row.dateRelation === 'before_order'), ...beforeOrderOutsidePeriod];
   const completedReturns = returns.filter((row: any) => cleanText(row.status) !== 'cancelled');
   const regularReturnsTotal = completedReturns.filter((row: any) => cleanText(row.return_type) !== 'exchange_refund').reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
   const exchangeRefundsTotal = completedReturns.filter((row: any) => cleanText(row.return_type) === 'exchange_refund').reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
@@ -970,7 +1066,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       paymentTraceReview,
       paymentTraceInfo,
       crossDatePaymentOperations,
-      traceScope: { startDate, endDate, selectedPeriodOnly: true },
+      traceScope: { startDate, endDate, selectedOperationPeriodOnly: true, includesOrderPeriodBeforePayments: true },
       consistency: {
         ledgerTotal: totalPayments,
         methodsTotal: paymentRows.reduce((sum, row: any) => sum + Number(row.total || 0), 0),

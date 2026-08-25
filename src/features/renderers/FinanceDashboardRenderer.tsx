@@ -428,19 +428,25 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
             <div className="finance-reconciliation-head">
               <div>
                 <strong>Финансовая сверка</strong>
-                <span>Суммы сверяются независимо по денежному журналу, видам операций и способам оплаты. Даты заказов и денежных операций проверяются здесь же.</span>
+                <span>Поступления считаются по дате денежной операции. Внутренняя сверка проверяет, что один и тот же набор оплат одинаково складывается по видам операций и способам оплаты.</span>
               </div>
               <div className="finance-reconciliation-badges">
-                <span className={`status-pill ${consistency.ok ? 'status-online' : 'status-offline'}`}>{consistency.ok ? 'Суммы сошлись' : `Расхождение ${formatMoney(consistency.difference)}`}</span>
-                {crossDatePaymentOperations.length ? <span className="soft-badge finance-info-badge">По датам: {crossDatePaymentOperations.length} операций · {formatMoney(crossDatePaymentOperations.reduce((sum, row) => sum + Number(row.amount || 0), 0))}</span> : <span className="soft-badge">Междатных операций нет</span>}
-                {paymentTraceReview.length ? <span className="soft-badge warning-soft">Нужно проверить: {paymentTraceReview.length}</span> : visiblePaymentTraceInfo.length ? <span className="soft-badge finance-info-badge">Пояснений: {visiblePaymentTraceInfo.length}</span> : <span className="soft-badge">По датам без замечаний</span>}
+                <span className={`status-pill ${consistency.ok ? 'status-online' : 'status-offline'}`}>{consistency.ok ? 'Внутренняя сверка: без расхождений' : `Внутреннее расхождение: ${formatMoney(consistency.difference)}`}</span>
+                {crossDatePaymentOperations.length ? <span className="soft-badge finance-info-badge">Заказы другой даты: {crossDatePaymentOperations.length} · {formatMoney(crossDatePaymentOperations.reduce((sum, row) => sum + Number(row.amount || 0), 0))}</span> : <span className="soft-badge">Заказов другой даты нет</span>}
+                {paymentTraceReview.length ? <span className="soft-badge warning-soft">Требуют проверки: {paymentTraceReview.length}</span> : <span className="soft-badge">Ошибок дат не найдено</span>}
               </div>
             </div>
-            <div className="finance-reconciliation-values">
-              <span>Денежный журнал: <strong>{formatMoney(consistency.ledgerTotal)}</strong></span>
-              <span>По видам операций: <strong>{formatMoney(consistency.kindsTotal)}</strong></span>
-              <span>По способам оплаты: <strong>{formatMoney(consistency.methodsTotal)}</strong></span>
+            <div className="finance-reconciliation-primary-total">
+              <span>Поступило за период</span>
+              <strong>{formatMoney(consistency.ledgerTotal)}</strong>
             </div>
+            {!consistency.ok ? (
+              <div className="finance-reconciliation-values finance-reconciliation-diagnostics">
+                <span>По операциям: <strong>{formatMoney(consistency.ledgerTotal)}</strong></span>
+                <span>По видам: <strong>{formatMoney(consistency.kindsTotal)}</strong></span>
+                <span>По способам: <strong>{formatMoney(consistency.methodsTotal)}</strong></span>
+              </div>
+            ) : null}
 
             {crossDatePaymentOperations.length ? (
               <div className="finance-reconciliation-cross-date">
@@ -470,21 +476,20 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
             ) : null}
           </section>
 
-          {paymentTraceRows.length ? (
-            <section className={`mini-panel finance-review-panel ${paymentTraceReview.length ? 'has-review' : 'is-info'}`}>
+          {paymentTraceReview.length ? (
+            <section className="mini-panel finance-review-panel has-review">
               <div className="mini-panel-head">
                 <div>
-                  <h3>Проверка дат и ввода</h3>
-                  <p className="mini-panel-note">Здесь только операции выбранного периода. Предупреждение появляется только там, где действительно нужна проверка; обычные пояснения показываются нейтрально.</p>
-                  {historicalPeriodSelected && visibleLegacyBaselineCount ? <p className="mini-panel-note">Вы выбрали старый период: {visibleLegacyBaselineCount} исторических записей показаны как baseline. Их текущее состояние известно, но первоначальное действие пользователя по ним не всегда можно доказать.</p> : null}
+                  <h3>Требуют проверки</h3>
+                  <p className="mini-panel-note">Здесь только реальные несоответствия дат или происхождения оплаты. Для заказов выбранного периода система также ищет оплаты, которые ошибочно датированы ещё раньше и поэтому лежат за границей периода денежных операций.</p>
                 </div>
-                <span className={`soft-badge ${paymentTraceReview.length ? 'warning-soft' : ''}`}>{paymentTraceReview.length ? `Проверить: ${paymentTraceReview.length}` : 'Без операций, требующих проверки'}{visiblePaymentTraceInfo.length ? ` · Пояснений: ${visiblePaymentTraceInfo.length}` : ''}</span>
+                <span className="soft-badge warning-soft">Проверить: {paymentTraceReview.length}</span>
               </div>
               <div className="table-shell">
                 <table className="data-table finance-anomaly-table">
                   <thead><tr><th>Дата оплаты</th><th>Дата заказа</th><th>Заказ</th><th>Заказ введён</th><th>Менеджер</th><th>Вид</th><th className="num">Сумма</th><th>Что означает</th><th>Действие</th></tr></thead>
-                  <tbody>{paymentTraceRows.map((row) => (
-                    <tr key={`finance-trace-${row.id}`}>
+                  <tbody>{paymentTraceReview.map((row) => (
+                    <tr key={`finance-review-${row.id}`}>
                       <td><strong>{formatDateShort(row.paymentDate)}</strong></td>
                       <td>{formatDateShort(row.orderDate)}</td>
                       <td>{row.externalId}</td>
@@ -492,20 +497,49 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                       <td><ManagerBadge name={row.manager} colorKey={row.managerColor || managerColorFor(row.manager)} compact /></td>
                       <td>{row.operationLabel}</td>
                       <td className="num">{formatMoney(row.amount)}</td>
-                      <td>
-                        <strong>{row.traceTitle}</strong>
-                        <div className="mini-panel-note">{row.traceExplanation}</div>
-                        <span className={`soft-badge ${row.traceSeverity === 'review' ? 'warning-soft' : ''}`}>{row.traceSeverity === 'review' ? 'Нужно проверить' : 'Пояснение'}</span>
-                      </td>
+                      <td><strong>{row.traceTitle}</strong><div className="mini-panel-note">{row.traceExplanation}</div></td>
                       <td><div className="finance-row-actions"><button className="secondary compact finance-order-link" type="button" onClick={() => void openOrderFromFinance(row)}>К заказу</button><button className="secondary compact finance-money-link" type="button" onClick={() => openMoneyHistoryForOrder(row)}>Денежная история</button></div></td>
                     </tr>
                   ))}</tbody>
                 </table>
               </div>
             </section>
-          ) : (
-            <section className="finance-no-anomalies"><span className="status-pill">По выбранному периоду без замечаний</span><span>Нет денежных операций, которые требуют проверки или отдельного пояснения.</span></section>
-          )}
+          ) : null}
+
+          {visiblePaymentTraceInfo.length ? (
+            <section className="mini-panel finance-review-panel is-info">
+              <div className="mini-panel-head">
+                <div>
+                  <h3>Пояснения по датам</h3>
+                  <p className="mini-panel-note">Это объяснимые различия дат, а не ошибки. Они нужны, чтобы можно было проследить происхождение суммы без тревожного статуса.</p>
+                  {historicalPeriodSelected && visibleLegacyBaselineCount ? <p className="mini-panel-note">Вы выбрали старый период: {visibleLegacyBaselineCount} исторических записей показаны как baseline. Их текущее состояние известно, но первоначальное действие пользователя по ним не всегда можно доказать.</p> : null}
+                </div>
+                <span className="soft-badge finance-info-badge">Пояснений: {visiblePaymentTraceInfo.length}</span>
+              </div>
+              <div className="table-shell">
+                <table className="data-table finance-anomaly-table">
+                  <thead><tr><th>Дата оплаты</th><th>Дата заказа</th><th>Заказ</th><th>Заказ введён</th><th>Менеджер</th><th>Вид</th><th className="num">Сумма</th><th>Что означает</th><th>Действие</th></tr></thead>
+                  <tbody>{visiblePaymentTraceInfo.map((row) => (
+                    <tr key={`finance-info-${row.id}`}>
+                      <td><strong>{formatDateShort(row.paymentDate)}</strong></td>
+                      <td>{formatDateShort(row.orderDate)}</td>
+                      <td>{row.externalId}</td>
+                      <td>{row.orderCreatedAt ? formatDateShort(String(row.orderCreatedAt).slice(0, 10)) : '—'}</td>
+                      <td><ManagerBadge name={row.manager} colorKey={row.managerColor || managerColorFor(row.manager)} compact /></td>
+                      <td>{row.operationLabel}</td>
+                      <td className="num">{formatMoney(row.amount)}</td>
+                      <td><strong>{row.traceTitle}</strong><div className="mini-panel-note">{row.traceExplanation}</div></td>
+                      <td><div className="finance-row-actions"><button className="secondary compact finance-order-link" type="button" onClick={() => void openOrderFromFinance(row)}>К заказу</button><button className="secondary compact finance-money-link" type="button" onClick={() => openMoneyHistoryForOrder(row)}>Денежная история</button></div></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {!paymentTraceReview.length && !visiblePaymentTraceInfo.length ? (
+            <section className="finance-no-anomalies"><span className="status-pill">По датам без замечаний</span><span>В выбранном периоде не найдено операций, которые требуют проверки или отдельного пояснения.</span></section>
+          ) : null}
 
           <section className="mini-panel finance-days-truth-panel">
             <div className="mini-panel-head">

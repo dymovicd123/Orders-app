@@ -51,6 +51,9 @@ function verifySource() {
     'scripts/test-finance-f5-entry-semantics.mjs',
     'scripts/test-finance-f5-adjacent-regression.mjs',
     'scripts/test-finance-f6-release-audit.mjs',
+    'scripts/test-finance-f9-summary-finish.mjs',
+    'scripts/finance-f9-summary-worker-manifest.json',
+    'scripts/finance-f9-date-priority-worker-manifest.json',
     'scripts/finance-f6-delete-money-history-worker-manifest.json',
     'scripts/finance-f6-report-semantics-worker-manifest.json',
     'scripts/finance-f6-dead-metrics-worker-manifest.json',
@@ -208,6 +211,7 @@ try {
   run('Finance F5 entry semantics tests', process.execPath, [path.join(root, 'scripts/test-finance-f5-entry-semantics.mjs')])
   run('Finance F5 adjacent finance/cash regression', process.execPath, [path.join(root, 'scripts/test-finance-f5-adjacent-regression.mjs')])
   run('Finance F6 aggregate release audit', process.execPath, [path.join(root, 'scripts/test-finance-f6-release-audit.mjs')])
+  run('Finance F9 summary finish tests', process.execPath, [path.join(root, 'scripts/test-finance-f9-summary-finish.mjs')])
   run('Step 189D team activity tests', process.execPath, [path.join(root, 'scripts/test-step189d-team-activity.mjs')])
   run('Step 189D team activity SQL tests', process.execPath, [path.join(root, 'scripts/test-step189d-team-activity-sql.mjs')])
   run('Step 189D.1 pre-audit stability tests', process.execPath, [path.join(root, 'scripts/test-step189d1-pre-audit-stability.mjs')])
