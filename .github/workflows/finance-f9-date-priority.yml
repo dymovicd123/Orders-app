@@ -1,0 +1,47 @@
+name: Finance F9 date priority
+
+on:
+  push:
+    branches:
+      - finance-f9-date-priority
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply F9 date-priority guard
+        run: node scripts/tmp-finance-f9-date-priority.mjs
+      - name: Full release gate
+        run: npm run release:check
+      - name: Verify narrow Finance delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only | sort)"
+          printf '%s\n' "$changed"
+          allowed='^(worker/domains/finance-reports.ts|scripts/test-finance-f9-summary-finish.mjs|scripts/finance-f9-date-priority-worker-manifest.json|scripts/test-step1906a-worker-modularization.mjs|scripts/release-check.mjs)$'
+          extra="$(printf '%s\n' "$changed" | grep -Ev "$allowed" || true)"
+          if [ -n "$extra" ]; then echo "Unexpected F9 date-priority files:"; echo "$extra"; exit 1; fi
+          if printf '%s\n' "$changed" | grep -Eq '^migrations/|arrival|Arrival|приход|Приход|warehouse|Warehouse'; then echo 'Unexpected migration/Arrival/Warehouse delta'; exit 1; fi
+      - name: Commit verified delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add worker/domains/finance-reports.ts scripts/test-finance-f9-summary-finish.mjs scripts/finance-f9-date-priority-worker-manifest.json scripts/test-step1906a-worker-modularization.mjs scripts/release-check.mjs
+          git commit -m 'Finance F9: prioritize impossible payment dates'
+          git push origin HEAD:finance-f9-date-priority
