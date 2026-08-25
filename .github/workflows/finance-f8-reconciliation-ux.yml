@@ -23,7 +23,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Apply F8 UX patch
-        run: node scripts/tmp-finance-f8-patch.mjs
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/tmp-finance-f8-helper-fix.mjs
+          node scripts/tmp-finance-f8-patch.mjs
+          git checkout -- scripts/tmp-finance-f8-patch.mjs
       - name: Full release gate
         run: npm run release:check
       - name: Ensure Finance-only UI delta
