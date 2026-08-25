@@ -1,0 +1,424 @@
+from pathlib import Path
+import json
+import subprocess
+
+
+def replace_once(path, old, new, label):
+    p = Path(path)
+    text = p.read_text(encoding='utf-8')
+    if new in text:
+        print(f'{label}: already patched')
+        return
+    if old not in text:
+        raise SystemExit(f'{label}: marker not found')
+    p.write_text(text.replace(old, new, 1), encoding='utf-8')
+    print(f'{label}: patched')
+
+
+def declaration_hash(file, target):
+    script = r"""
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import ts from 'typescript';
+const file = process.argv[1];
+const target = process.argv[2];
+const text = fs.readFileSync(file, 'utf8');
+const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+for (const statement of source.statements) {
+  if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement) || ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement) || ts.isEnumDeclaration(statement)) && statement.name?.text === target) {
+    const normalized = statement.getText(source).replace(/^export\s+/, '');
+    process.stdout.write(crypto.createHash('sha256').update(normalized).digest('hex'));
+    process.exit(0);
+  }
+}
+throw new Error(`Declaration not found: ${target}`);
+"""
+    return subprocess.check_output(['node', '--input-type=module', '-e', script, file, target], text=True).strip()
+
+
+tracked = {
+    'listFinanceReports': ('worker/domains/finance-reports.ts', 'listFinanceReports'),
+    'createReturn': ('worker/domains/returns-exchanges.ts', 'createReturn'),
+    'createExchange': ('worker/domains/returns-exchanges.ts', 'createExchange'),
+    'setCashAutoTracking': ('worker/domains/cash.ts', 'setCashAutoTracking'),
+}
+before = {name: declaration_hash(*spec) for name, spec in tracked.items()}
+
+# Finance report: immutable-event lineage is loaded ONLY for the user-selected period.
+p = Path('worker/domains/finance-reports.ts')
+text = p.read_text(encoding='utf-8')
+old = "  const [paymentByDayRows, paymentOperationRows, managerOrderDayRows, managerPaymentDayRows, managerReturnDayRows, productDayRows, cityDayRows, cityCashDayRows, returnsDetailRows, closedDebtDetailRows] = await runD1Bounded(["
+new = "  const [paymentByDayRows, paymentOperationRows, managerOrderDayRows, managerPaymentDayRows, managerReturnDayRows, productDayRows, cityDayRows, cityCashDayRows, returnsDetailRows, closedDebtDetailRows, paymentEventRows] = await runD1Bounded(["
+if new not in text:
+    if old not in text:
+        raise SystemExit('finance bounded result marker not found')
+    text = text.replace(old, new, 1)
+
+marker_start = text.index("      `SELECT p.id,\n              p.order_id,\n              o.external_id,\n              o.order_date,")
+marker_end = text.index("    ).bind(startDate, endDate).all<any>(),", marker_start)
+block = text[marker_start:marker_end]
+old = "              o.external_id,\n              o.order_date,\n              p.payment_date,"
+new = "              o.external_id,\n              o.order_date,\n              COALESCE(o.created_at, '') AS order_created_at,\n              p.payment_date,"
+if new not in block:
+    if old not in block:
+        raise SystemExit('payment operation order-created marker not found')
+    block = block.replace(old, new, 1)
+    text = text[:marker_start] + block + text[marker_end:]
+
+old_tail = """       WHERE p.payment_kind = 'debt_close'
+         AND p.payment_date BETWEEN ? AND ?
+         AND o.order_status <> 'deleted'
+       ORDER BY p.payment_date DESC, p.id DESC`
+    ).bind(startDate, endDate).all<any>(),
+  ]);
+
+  const returns = mapSqlRows(returnsRows);"""
+new_tail = """       WHERE p.payment_kind = 'debt_close'
+         AND p.payment_date BETWEEN ? AND ?
+         AND o.order_status <> 'deleted'
+       ORDER BY p.payment_date DESC, p.id DESC`
+    ).bind(startDate, endDate).all<any>(),
+
+    () => db.prepare(
+      `SELECT id, order_id, external_order_id, event_date, event_at, event_type, related_type,
+              amount_delta, payment_method, source_type, source_id, source_ref, reason, is_backfill, created_at
+       FROM financial_events
+       WHERE event_date BETWEEN ? AND ?
+         AND amount_delta > 0
+         AND event_type IN ('order_payment', 'debt_close', 'order_extra', 'exchange_extra')
+       ORDER BY event_at DESC, id DESC`
+    ).bind(startDate, endDate).all<any>(),
+  ]);
+
+  const returns = mapSqlRows(returnsRows);"""
+if new_tail not in text:
+    if old_tail not in text:
+        raise SystemExit('selected-period event query insertion marker not found')
+    text = text.replace(old_tail, new_tail, 1)
+
+start = text.index('  const paymentOperations = mapSqlRows(paymentOperationRows).map((row: any) => {')
+end = text.index('  const orderPaymentsTotal =', start)
+new_mapping = r'''  const paymentEvents = mapSqlRows(paymentEventRows) as any[];
+  const paymentEventsBySourceId = new Map<number, any[]>();
+  const paymentEventsByFingerprint = new Map<string, any[]>();
+  const financeDateOffset = (left: string, right: string) => {
+    const leftDate = /^\d{4}-\d{2}-\d{2}$/.test(left) ? Date.parse(`${left}T00:00:00.000Z`) : Number.NaN;
+    const rightDate = /^\d{4}-\d{2}-\d{2}$/.test(right) ? Date.parse(`${right}T00:00:00.000Z`) : Number.NaN;
+    return Number.isFinite(leftDate) && Number.isFinite(rightDate) ? Math.round((leftDate - rightDate) / 86_400_000) : 0;
+  };
+  const financeEventFingerprint = (orderId: number, eventDate: string, eventType: string, amount: number, method: string, eventAt: string) => [
+    orderId,
+    eventDate,
+    eventType,
+    Math.trunc(amount),
+    canonicalPaymentMethodName(method),
+    eventAt,
+  ].join('|');
+  for (const event of paymentEvents) {
+    const sourceId = toInt(event.source_id, 0);
+    if (cleanText(event.source_type) === 'payment' && sourceId) {
+      const current = paymentEventsBySourceId.get(sourceId) || [];
+      current.push(event);
+      paymentEventsBySourceId.set(sourceId, current);
+    }
+    const fingerprint = financeEventFingerprint(
+      toInt(event.order_id, 0),
+      cleanText(event.event_date),
+      cleanText(event.event_type),
+      Number(event.amount_delta || 0),
+      cleanText(event.payment_method),
+      cleanText(event.event_at),
+    );
+    const current = paymentEventsByFingerprint.get(fingerprint) || [];
+    current.push(event);
+    paymentEventsByFingerprint.set(fingerprint, current);
+  }
+
+  const paymentOperations = mapSqlRows(paymentOperationRows).map((row: any) => {
+    const operationType = cleanText(row.operation_type) || 'order_payment';
+    const operationLabel = operationType === 'debt_close'
+      ? 'Закрытие долга'
+      : operationType === 'exchange_extra'
+        ? 'Доплата по обмену'
+        : operationType === 'order_extra'
+          ? 'Доплата по заказу'
+          : 'Оплата заказа';
+    const id = Number(row.id || 0);
+    const orderId = Number(row.order_id || 0);
+    const orderDate = cleanText(row.order_date);
+    const orderCreatedAt = cleanText(row.order_created_at);
+    const orderCreatedDate = orderCreatedAt.slice(0, 10);
+    const paymentDate = cleanText(row.payment_date);
+    const createdAt = cleanText(row.created_at);
+    const recordedDate = createdAt.slice(0, 10);
+    const amount = Number(row.amount || 0);
+    const method = canonicalPaymentMethodName(row.method);
+    const dateRelation = cleanText(row.date_relation) || 'same_day';
+
+    const sourceCandidates = (paymentEventsBySourceId.get(id) || []).filter((event: any) => (
+      cleanText(event.event_type) === operationType
+      && Number(event.amount_delta || 0) === amount
+      && canonicalPaymentMethodName(event.payment_method) === method
+      && cleanText(event.event_date) === paymentDate
+    ));
+    const fingerprintCandidates = paymentEventsByFingerprint.get(financeEventFingerprint(
+      orderId,
+      paymentDate,
+      operationType,
+      amount,
+      method,
+      createdAt,
+    )) || [];
+
+    let lineageEvent: any = null;
+    let eventLineageStatus = 'missing';
+    if (sourceCandidates.length === 1) {
+      lineageEvent = sourceCandidates[0];
+      eventLineageStatus = 'source_id';
+    } else if (sourceCandidates.length > 1) {
+      eventLineageStatus = 'ambiguous';
+    } else if (fingerprintCandidates.length === 1) {
+      lineageEvent = fingerprintCandidates[0];
+      eventLineageStatus = 'exact_fingerprint';
+    } else if (fingerprintCandidates.length > 1) {
+      eventLineageStatus = 'ambiguous';
+    }
+
+    const eventReason = cleanText(lineageEvent?.reason);
+    const eventIsBackfill = toInt(lineageEvent?.is_backfill, 0) === 1;
+    let traceCode = operationType;
+    let traceSeverity: 'normal' | 'info' | 'review' = 'normal';
+    let traceTitle = operationLabel;
+    let traceExplanation = 'Операция относится к выбранному периоду.';
+
+    if (operationType === 'debt_close') {
+      traceCode = 'debt_close';
+      traceTitle = 'Закрытие долга';
+      traceExplanation = 'Отдельная оплата долга после создания заказа — нормальная денежная операция.';
+    } else if (operationType === 'order_extra') {
+      traceCode = 'order_extra';
+      traceTitle = 'Доплата по заказу';
+      traceExplanation = 'Отдельная доплата хранится отдельно от первичной оплаты заказа.';
+    } else if (operationType === 'exchange_extra') {
+      traceCode = 'exchange_extra';
+      traceTitle = 'Доплата по обмену';
+      traceExplanation = 'Доплата связана с обменом и учитывается по дате операции обмена.';
+    } else if (eventLineageStatus === 'ambiguous') {
+      traceCode = 'lineage_ambiguous';
+      traceSeverity = 'review';
+      traceTitle = 'Неоднозначное происхождение оплаты';
+      traceExplanation = 'Найдено несколько одинаково подходящих исторических событий. Система не выдаёт догадку за доказанный факт.';
+    } else if (eventLineageStatus === 'missing') {
+      traceCode = 'lineage_missing';
+      traceSeverity = dateRelation === 'same_day' ? 'info' : 'review';
+      traceTitle = 'Нет точной записи происхождения оплаты';
+      traceExplanation = 'Текущая оплата существует, но точное неизменяемое событие её создания не найдено.';
+    } else if (eventIsBackfill || eventReason === 'baseline') {
+      traceCode = 'legacy_baseline';
+      traceSeverity = 'info';
+      traceTitle = 'Историческая базовая запись';
+      traceExplanation = 'Эта запись восстановлена как достоверный снимок существовавшего состояния. Первоначальное действие пользователя по старой истории доказать нельзя.';
+    } else if (dateRelation === 'before_order') {
+      traceCode = 'primary_before_order';
+      traceSeverity = 'review';
+      traceTitle = 'Оплата раньше даты заказа';
+      traceExplanation = 'Первичная оплата датирована раньше бизнес-даты заказа. Это требует проверки.';
+    } else if (dateRelation === 'after_order') {
+      if (eventReason === 'order_create' && orderCreatedDate && recordedDate === paymentDate && orderCreatedDate === paymentDate) {
+        traceCode = 'backdated_order_entry';
+        traceSeverity = 'info';
+        traceTitle = 'Заказ введён позже своей бизнес-даты';
+        traceExplanation = 'Оплата записана в том же создании заказа, но сам заказ был введён в систему позже указанной бизнес-даты.';
+      } else if (eventReason === 'order_create') {
+        traceCode = 'primary_future_dated';
+        traceSeverity = 'review';
+        traceTitle = 'Первичная оплата имеет другую дату';
+        traceExplanation = 'Оплата создана вместе с заказом, но её бизнес-дата позже даты заказа.';
+      } else {
+        traceCode = 'primary_recorded_later';
+        traceSeverity = 'review';
+        traceTitle = 'Первичная оплата записана позже заказа';
+        traceExplanation = 'Строка остаётся первичной оплатой, хотя дата отличается от даты заказа. Нужно проверить смысл операции.';
+      }
+    } else {
+      traceCode = 'primary_same_day';
+      traceTitle = 'Дата оплаты совпадает с датой заказа';
+      traceExplanation = 'Первичная оплата и заказ относятся к одному бизнес-дню.';
+    }
+
+    return {
+      id,
+      orderId,
+      externalId: cleanText(row.external_id),
+      orderDate,
+      orderCreatedAt,
+      paymentDate,
+      method,
+      amount,
+      paymentKind: cleanText(row.payment_kind),
+      operationType,
+      operationLabel,
+      comment: cleanText(row.comment),
+      createdAt,
+      recordedLagDays: financeDateOffset(recordedDate, paymentDate),
+      orderRecordedLagDays: financeDateOffset(orderCreatedDate, orderDate),
+      managerId: row.manager_id == null ? null : Number(row.manager_id),
+      manager: cleanText(row.manager) || 'Не указан',
+      managerColor: normalizeManagerColor(row.manager_color, toInt(row.manager_id, 1) - 1),
+      customer: cleanText(row.customer) || '—',
+      city: cleanText(row.city),
+      dateRelation,
+      dateOffsetDays: Number(row.date_offset_days || 0),
+      eventLineageStatus,
+      eventId: lineageEvent?.id == null ? null : Number(lineageEvent.id),
+      eventAt: cleanText(lineageEvent?.event_at) || null,
+      eventRecordedAt: cleanText(lineageEvent?.created_at) || null,
+      eventType: cleanText(lineageEvent?.event_type) || null,
+      eventReason: eventReason || null,
+      eventIsBackfill,
+      traceCode,
+      traceSeverity,
+      traceTitle,
+      traceExplanation,
+    };
+  });
+  const paymentTraceReview = paymentOperations.filter((row: any) => row.traceSeverity === 'review');
+  const paymentTraceInfo = paymentOperations.filter((row: any) => row.traceSeverity === 'info');
+  const crossDatePaymentOperations = paymentOperations.filter((row: any) => row.orderDate < startDate || row.orderDate > endDate);
+'''
+text = text[:start] + new_mapping + text[end:]
+
+old = "      paymentDateAnomalyCount: paymentDateAnomalies.length,\n      paymentDateAnomalyTotal: paymentDateAnomalies.reduce((sum: number, row: any) => sum + row.amount, 0),"
+new = "      paymentDateAnomalyCount: paymentDateAnomalies.length,\n      paymentDateAnomalyTotal: paymentDateAnomalies.reduce((sum: number, row: any) => sum + row.amount, 0),\n      paymentTraceReviewCount: paymentTraceReview.length,\n      paymentTraceInfoCount: paymentTraceInfo.length,\n      crossDatePaymentCount: crossDatePaymentOperations.length,\n      crossDatePaymentTotal: crossDatePaymentOperations.reduce((sum: number, row: any) => sum + row.amount, 0),"
+if new not in text:
+    if old not in text:
+        raise SystemExit('finance overview trace marker not found')
+    text = text.replace(old, new, 1)
+old = "      paymentOperations,\n      paymentDateAnomalies,\n      consistency:"
+new = "      paymentOperations,\n      paymentDateAnomalies,\n      paymentTraceReview,\n      paymentTraceInfo,\n      crossDatePaymentOperations,\n      traceScope: { startDate, endDate, selectedPeriodOnly: true },\n      consistency:"
+if new not in text:
+    if old not in text:
+        raise SystemExit('finance reports trace marker not found')
+    text = text.replace(old, new, 1)
+p.write_text(text, encoding='utf-8')
+print('finance selected-period lineage/trace: patched')
+
+replace_once(
+    'worker/domains/returns-exchanges.ts',
+    "  const returnDate = normalizeDate(input.returnDate || existing.order_date);",
+    "  const rawReturnDate = cleanText(input.returnDate);\n  if (!rawReturnDate) throw new Error('Укажите дату возврата.');\n  const returnDate = normalizeDate(rawReturnDate);",
+    'return explicit operation date',
+)
+replace_once(
+    'worker/domains/returns-exchanges.ts',
+    "  const exchangeDate = normalizeDate(input.exchangeDate || (existing as any).order_date);",
+    "  const rawExchangeDate = cleanText(input.exchangeDate);\n  if (!rawExchangeDate) throw new Error('Укажите дату обмена.');\n  const exchangeDate = normalizeDate(rawExchangeDate);",
+    'exchange explicit operation date',
+)
+replace_once(
+    'worker/domains/cash.ts',
+    "     SET auto_tracking_enabled = ?, activated_at = CASE WHEN ? = 1 THEN ? ELSE activated_at END, updated_at = ?",
+    "     SET auto_tracking_enabled = ?,\n         activated_at = CASE\n           WHEN ? = 1 AND COALESCE(NULLIF(TRIM(activated_at), ''), '') = '' THEN ?\n           ELSE activated_at\n         END,\n         updated_at = ?",
+    'cash immutable first activation',
+)
+
+p = Path('src/app/types.ts')
+text = p.read_text(encoding='utf-8')
+old = "  dateOffsetDays: number\n  createdAt: string\n}"
+new = "  dateOffsetDays: number\n  createdAt: string\n  orderCreatedAt: string\n  recordedLagDays: number\n  orderRecordedLagDays: number\n  eventLineageStatus: 'source_id' | 'exact_fingerprint' | 'ambiguous' | 'missing' | string\n  eventId?: number | null\n  eventAt?: string | null\n  eventRecordedAt?: string | null\n  eventType?: string | null\n  eventReason?: string | null\n  eventIsBackfill: boolean\n  traceCode: string\n  traceSeverity: 'normal' | 'info' | 'review'\n  traceTitle: string\n  traceExplanation: string\n}"
+if new not in text:
+    if old not in text:
+        raise SystemExit('FinancePaymentOperation type marker not found')
+    text = text.replace(old, new, 1)
+old = "    paymentDateAnomalyTotal: number\n    currentDebt: number"
+new = "    paymentDateAnomalyTotal: number\n    paymentTraceReviewCount?: number\n    paymentTraceInfoCount?: number\n    crossDatePaymentCount?: number\n    crossDatePaymentTotal?: number\n    currentDebt: number"
+if new not in text:
+    if old not in text:
+        raise SystemExit('Finance overview type marker not found')
+    text = text.replace(old, new, 1)
+old = "    paymentDateAnomalies?: FinancePaymentOperation[]\n    consistency?: FinanceConsistency"
+new = "    paymentDateAnomalies?: FinancePaymentOperation[]\n    paymentTraceReview?: FinancePaymentOperation[]\n    paymentTraceInfo?: FinancePaymentOperation[]\n    crossDatePaymentOperations?: FinancePaymentOperation[]\n    traceScope?: { startDate: string; endDate: string; selectedPeriodOnly: boolean }\n    consistency?: FinanceConsistency"
+if new not in text:
+    if old not in text:
+        raise SystemExit('Finance reports type marker not found')
+    text = text.replace(old, new, 1)
+p.write_text(text, encoding='utf-8')
+print('finance response types: patched')
+
+# Wire regression test into the full gate.
+p = Path('scripts/release-check.mjs')
+text = p.read_text(encoding='utf-8')
+old = "    'scripts/test-step189c-money-sql.mjs',\n    'src/styles/189c-reliable-money-history.css',"
+new = "    'scripts/test-step189c-money-sql.mjs',\n    'scripts/test-finance-f2-trace.mjs',\n    'scripts/finance-f2-trace-worker-manifest.json',\n    'src/styles/189c-reliable-money-history.css',"
+if new not in text:
+    if old not in text:
+        raise SystemExit('release required-file marker not found')
+    text = text.replace(old, new, 1)
+old = "  run('Step 189C money SQL tests', process.execPath, [path.join(root, 'scripts/test-step189c-money-sql.mjs')])\n"
+new = "  run('Step 189C money SQL tests', process.execPath, [path.join(root, 'scripts/test-step189c-money-sql.mjs')])\n  run('Finance F2 selected-period traceability tests', process.execPath, [path.join(root, 'scripts/test-finance-f2-trace.mjs')])\n"
+if new not in text:
+    if old not in text:
+        raise SystemExit('release run marker not found')
+    text = text.replace(old, new, 1)
+p.write_text(text, encoding='utf-8')
+print('release gate: Finance F2 wired')
+
+# Extend exact Worker hash chain.
+p = Path('scripts/test-step1906a-worker-modularization.mjs')
+text = p.read_text(encoding='utf-8')
+for old, new in [
+    (
+        "const financeOrderDateSyncPath = path.join(root, 'scripts/finance-order-date-sync-worker-manifest.json')\n",
+        "const financeOrderDateSyncPath = path.join(root, 'scripts/finance-order-date-sync-worker-manifest.json')\nconst financeF2TracePath = path.join(root, 'scripts/finance-f2-trace-worker-manifest.json')\n",
+    ),
+    (
+        "  check(fs.existsSync(financeOrderDateSyncPath), 'Finance order-date sync Worker manifest missing')\n",
+        "  check(fs.existsSync(financeOrderDateSyncPath), 'Finance order-date sync Worker manifest missing')\n  check(fs.existsSync(financeF2TracePath), 'Finance F2 trace Worker manifest missing')\n",
+    ),
+    (
+        "  const financeOrderDateSyncChanges = financeOrderDateSync?.version === 1 ? (financeOrderDateSync.changes || {}) : {}\n",
+        "  const financeOrderDateSyncChanges = financeOrderDateSync?.version === 1 ? (financeOrderDateSync.changes || {}) : {}\n  const financeF2Trace = fs.existsSync(financeF2TracePath) ? JSON.parse(fs.readFileSync(financeF2TracePath, 'utf8')) : null\n  const financeF2TraceChanges = financeF2Trace?.version === 1 ? (financeF2Trace.changes || {}) : {}\n",
+    ),
+]:
+    if new not in text:
+        if old not in text:
+            raise SystemExit(f'1906A F2 marker not found: {old[:80]}')
+        text = text.replace(old, new, 1)
+old = r'''    const financeOrderDateSyncChanged = financeOrderDateSyncChanges[name]
+    if (financeOrderDateSyncChanged) {
+      check(financeOrderDateSyncChanged.before === acceptedPostStocktakeLostResponseHash, `Finance order-date sync declaration baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === financeOrderDateSyncChanged.after, `Worker declaration changed beyond exact Finance order-date sync allow-list: ${name}`)
+    } else {
+      check(sha(declarations.get(name)) === acceptedPostStocktakeLostResponseHash, `Worker declaration body changed beyond accepted cleanup/boundary/runtime/security/warehouse/catalog/attention/daily-warehouse/context/sql-alias/order-save/stocktake-replay/finance-date-sync deltas: ${name}`)
+    }
+'''
+new = r'''    const financeOrderDateSyncChanged = financeOrderDateSyncChanges[name]
+    let acceptedPostFinanceOrderDateSyncHash = acceptedPostStocktakeLostResponseHash
+    if (financeOrderDateSyncChanged) {
+      check(financeOrderDateSyncChanged.before === acceptedPostStocktakeLostResponseHash, `Finance order-date sync declaration baseline hash mismatch: ${name}`)
+      acceptedPostFinanceOrderDateSyncHash = financeOrderDateSyncChanged.after
+    }
+    const financeF2TraceChanged = financeF2TraceChanges[name]
+    if (financeF2TraceChanged) {
+      check(financeF2TraceChanged.before === acceptedPostFinanceOrderDateSyncHash, `Finance F2 trace declaration baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === financeF2TraceChanged.after, `Worker declaration changed beyond exact Finance F2 trace allow-list: ${name}`)
+    } else {
+      check(sha(declarations.get(name)) === acceptedPostFinanceOrderDateSyncHash, `Worker declaration body changed beyond accepted cleanup/boundary/runtime/security/warehouse/catalog/attention/daily-warehouse/context/sql-alias/order-save/stocktake-replay/finance-date-sync/finance-f2-trace deltas: ${name}`)
+    }
+'''
+if new not in text:
+    if old not in text:
+        raise SystemExit('1906A finance tail marker not found')
+    text = text.replace(old, new, 1)
+p.write_text(text, encoding='utf-8')
+print('1906A Finance F2 exact hash chain: patched')
+
+after = {name: declaration_hash(*spec) for name, spec in tracked.items()}
+manifest = {
+    'version': 1,
+    'revision': 'finance-f2-trace-r1',
+    'reason': 'Selected-period-only money lineage and traceability, explicit return/exchange business dates, and immutable first cash activation boundary.',
+    'changes': {name: {'before': before[name], 'after': after[name]} for name in tracked},
+}
+Path('scripts/finance-f2-trace-worker-manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+print(json.dumps(manifest, ensure_ascii=False, indent=2))
