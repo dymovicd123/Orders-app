@@ -1,0 +1,42 @@
+name: Finance F2 selected-period trace patch
+
+on:
+  push:
+    branches:
+      - finance-f2-trace
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-check:
+    if: "${{ !contains(github.event.head_commit.message, '[finance-f2-patched]') }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply Finance F2 patch
+        run: python scripts/tmp-finance-f2-patch.py
+      - name: Full release gate
+        run: npm run release:check
+      - name: Commit verified Finance F2
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add worker/domains/finance-reports.ts worker/domains/returns-exchanges.ts worker/domains/cash.ts src/app/types.ts scripts/test-finance-f2-trace.mjs scripts/finance-f2-trace-worker-manifest.json scripts/test-step1906a-worker-modularization.mjs scripts/release-check.mjs
+          if git diff --cached --quiet; then
+            echo "No Finance F2 changes to commit."
+            exit 0
+          fi
+          git commit -m "Add selected-period Finance traceability [finance-f2-patched]"
+          git push origin HEAD:finance-f2-trace
