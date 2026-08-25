@@ -24,7 +24,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Apply Finance F4 patch
-        run: python3 scripts/tmp-finance-f4-patch.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/tmp-finance-f4-patch.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/features/renderers/FinanceDashboardRenderer.tsx')
+          text = path.read_text(encoding='utf-8')
+          if 'Возвраты / списания' not in text:
+              raise SystemExit('F4 flow label marker missing')
+          path.write_text(text.replace('Возвраты / списания', 'Списания и возвраты', 1), encoding='utf-8')
+          PY
       - name: Full release gate
         run: npm run release:check
       - name: Commit verified Finance F4
