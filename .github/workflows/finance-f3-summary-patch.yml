@@ -1,0 +1,42 @@
+name: Finance F3 summary UX patch
+
+on:
+  push:
+    branches:
+      - finance-f3-summary-ux
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-check:
+    if: "${{ !contains(github.event.head_commit.message, '[finance-f3-patched]') }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply Finance F3 patch
+        run: python scripts/tmp-finance-f3-patch.py
+      - name: Full release gate
+        run: npm run release:check
+      - name: Commit verified Finance F3
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/features/renderers/FinanceDashboardRenderer.tsx scripts/test-finance-f3-summary-ux.mjs scripts/release-check.mjs
+          if git diff --cached --quiet; then
+            echo "No Finance F3 changes to commit."
+            exit 0
+          fi
+          git commit -m "Add selected-period Finance review UX [finance-f3-patched]"
+          git push origin HEAD:finance-f3-summary-ux
