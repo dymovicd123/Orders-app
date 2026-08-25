@@ -64,7 +64,9 @@ export async function createReturn(
     throw new Error('По этому заказу уже оформлен возврат. Сначала отмените его, если он был создан ошибочно.');
   }
 
-  const returnDate = normalizeDate(input.returnDate || existing.order_date);
+  const rawReturnDate = cleanText(input.returnDate);
+  if (!rawReturnDate) throw new Error('Укажите дату возврата.');
+  const returnDate = normalizeDate(rawReturnDate);
   const amount = Math.max(0, toInt(input.amount, 0));
   const paymentMethod = upperText(input.paymentMethod);
   const comment = cleanText(input.comment);
@@ -525,7 +527,9 @@ export async function createExchange(
     throw new Error(`Позиция «${cleanText(oldItem.product_name_snapshot)}» по учёту ещё не была физически выдана / отправлена. До выдачи это не обмен физической вещи — измените состав неотправленного заказа вместо обмена, иначе резерв и остаток разойдутся.`);
   }
   const oldReturnSource = normalizeExchangeReturnSource(input.oldReturnSource);
-  const exchangeDate = normalizeDate(input.exchangeDate || (existing as any).order_date);
+  const rawExchangeDate = cleanText(input.exchangeDate);
+  if (!rawExchangeDate) throw new Error('Укажите дату обмена.');
+  const exchangeDate = normalizeDate(rawExchangeDate);
   const comment = cleanText(input.comment);
   const financialAction = normalizeExchangeFinancialAction(input.financialAction);
   const financialAmount = Math.max(0, toInt(input.financialAmount, 0));
