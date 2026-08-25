@@ -629,7 +629,7 @@ export type FinanceReportResponse = {
     paymentTraceReview?: FinancePaymentOperation[]
     paymentTraceInfo?: FinancePaymentOperation[]
     crossDatePaymentOperations?: FinancePaymentOperation[]
-    traceScope?: { startDate: string; endDate: string; selectedPeriodOnly: boolean }
+    traceScope?: { startDate: string; endDate: string; selectedOperationPeriodOnly: boolean; includesOrderPeriodBeforePayments: boolean }
     consistency?: FinanceConsistency
     managers: Array<{ manager_id?: number; manager: string; color_key?: string; order_count: number; total_sales: number; total_received: number; total_returns: number; total_debt: number; avg_check: number }>
     products: Array<{ product: string; quantity: number; order_count: number; order_sales: number }>

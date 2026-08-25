@@ -18,10 +18,10 @@ try {
   check(renderer.includes('visibleLegacyBaselineCount') && renderer.includes('Вы выбрали старый период:'), 'Explicit historical-range baseline explanation missing')
   check(renderer.includes('paymentTraceReview') && renderer.includes('visiblePaymentTraceInfo'), 'Finance summary is not using F2 trace classifications')
   check(renderer.includes('crossDatePaymentOperations') && renderer.includes('Операции по заказам другой даты'), 'Cross-date period bridge is not visible inside reconciliation')
-  check(renderer.includes('Проверка дат и ввода'), 'Honest date/input review heading missing')
-  check(renderer.includes('finance-reconciliation-v2') && renderer.includes('Финансовая сверка') && renderer.includes('Суммы сошлись'), 'Unified reconciliation header/status missing')
+  check(renderer.includes('Требуют проверки') && renderer.includes('Пояснения по датам'), 'Review-required rows and neutral date explanations are not separated')
+  check(renderer.includes('finance-reconciliation-v2') && renderer.includes('Финансовая сверка') && renderer.includes('Поступило за период') && renderer.includes('Внутренняя сверка: без расхождений'), 'Concise reconciliation total/status missing')
   check(!renderer.includes('Почему поступления и продажи периода могут отличаться'), 'Old warning-like cross-date panel returned')
-  check(renderer.includes('finance-review-panel ') && renderer.includes("'has-review' : 'is-info'"), 'Date/input explanations are not visually separated from real review warnings')
+  check(renderer.includes('finance-review-panel has-review') && renderer.includes('finance-review-panel is-info'), 'Date explanations and real review warnings are not rendered as separate panels')
   const financeCss = read('src/styles/140-finance-truth.css')
   check(financeCss.includes('.finance-reconciliation.finance-reconciliation-v2.is-ok') && financeCss.includes('background: #f8fafc'), 'Successful reconciliation still uses a global all-clear green surface')
   check(financeCss.includes('.finance-review-panel.is-info') && financeCss.includes('.finance-review-panel.has-review'), 'Neutral explanation and warning review styles are not separated')
@@ -31,7 +31,7 @@ try {
   check(!renderer.includes("if (row.dateRelation === 'before_order') bucket.anomalyCount += 1"), 'Day review still only detects payments before the order')
   check(renderer.includes("if (row.traceSeverity === 'review') bucket.reviewCount += 1"), 'Day review does not use trace severity')
   check(renderer.includes("row.traceSeverity === 'info' && visibleTraceInfoIds.has"), 'Hidden legacy info can still affect current-period day status')
-  check(renderer.includes('По выбранному периоду без замечаний'), 'No neutral selected-period empty state')
+  check(renderer.includes('По датам без замечаний'), 'No neutral date-review empty state')
 
   console.log('FINANCE F3 SUMMARY UX TESTS PASSED — current month stays clean, legacy baseline requires an explicitly older period, and date/input review is trace-aware.')
 } catch (error) {

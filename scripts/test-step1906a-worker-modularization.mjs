@@ -26,6 +26,7 @@ const financeF5BusinessSemanticsPath = path.join(root, 'scripts/finance-f5-busin
 const financeF6DeleteMoneyHistoryPath = path.join(root, 'scripts/finance-f6-delete-money-history-worker-manifest.json')
 const financeF6ReportSemanticsPath = path.join(root, 'scripts/finance-f6-report-semantics-worker-manifest.json')
 const financeF6DeadMetricsPath = path.join(root, 'scripts/finance-f6-dead-metrics-worker-manifest.json')
+const financeF9SummaryPath = path.join(root, 'scripts/finance-f9-summary-worker-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -63,6 +64,7 @@ try {
   check(fs.existsSync(financeF6DeleteMoneyHistoryPath), 'Finance F6 delete-money-history Worker manifest missing')
   check(fs.existsSync(financeF6ReportSemanticsPath), 'Finance F6 report semantics Worker manifest missing')
   check(fs.existsSync(financeF6DeadMetricsPath), 'Finance F6 dead metrics Worker manifest missing')
+  check(fs.existsSync(financeF9SummaryPath), 'Finance F9 summary Worker manifest missing')
   const cleanup = fs.existsSync(cleanupPath) ? JSON.parse(fs.readFileSync(cleanupPath, 'utf8')) : null
   const removed = cleanup?.version === 1 ? (cleanup.removedWorkerDeclarations || {}) : {}
   const boundary = fs.existsSync(boundaryPath) ? JSON.parse(fs.readFileSync(boundaryPath, 'utf8')) : null
@@ -108,6 +110,8 @@ try {
   const financeF6ReportSemanticsChanges = financeF6ReportSemantics?.version === 1 ? (financeF6ReportSemantics.changes || {}) : {}
   const financeF6DeadMetrics = fs.existsSync(financeF6DeadMetricsPath) ? JSON.parse(fs.readFileSync(financeF6DeadMetricsPath, 'utf8')) : null
   const financeF6DeadMetricsChanges = financeF6DeadMetrics?.version === 1 ? (financeF6DeadMetrics.changes || {}) : {}
+  const financeF9Summary = fs.existsSync(financeF9SummaryPath) ? JSON.parse(fs.readFileSync(financeF9SummaryPath, 'utf8')) : null
+  const financeF9SummaryChanges = financeF9Summary?.version === 1 ? (financeF9Summary.changes || {}) : {}
 
   const files = walk(workerRoot)
   const indexPath = path.join(workerRoot, 'index.ts')
@@ -271,11 +275,17 @@ try {
       acceptedPostFinanceF6ReportSemanticsHash = financeF6ReportSemanticsChanged.after
     }
     const financeF6DeadMetricsChanged = financeF6DeadMetricsChanges[name]
+    let acceptedPostFinanceF6DeadMetricsHash = acceptedPostFinanceF6ReportSemanticsHash
     if (financeF6DeadMetricsChanged) {
       check(financeF6DeadMetricsChanged.before === acceptedPostFinanceF6ReportSemanticsHash, `Finance F6 dead-metrics declaration baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === financeF6DeadMetricsChanged.after, `Worker declaration changed beyond exact Finance F6 dead-metrics allow-list: ${name}`)
+      acceptedPostFinanceF6DeadMetricsHash = financeF6DeadMetricsChanged.after
+    }
+    const financeF9SummaryChanged = financeF9SummaryChanges[name]
+    if (financeF9SummaryChanged) {
+      check(financeF9SummaryChanged.before === acceptedPostFinanceF6DeadMetricsHash, `Finance F9 summary declaration baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === financeF9SummaryChanged.after, `Worker declaration changed beyond exact Finance F9 summary allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostFinanceF6ReportSemanticsHash, `Worker declaration body changed beyond accepted cleanup/boundary/runtime/security/warehouse/catalog/attention/daily-warehouse/context/sql-alias/order-save/stocktake-replay/finance-date-sync/finance-f2-trace/finance-f4-journal/finance-f5-business/finance-f6-delete-money/finance-f6-report-semantics/finance-f6-dead-metrics deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostFinanceF6DeadMetricsHash, `Worker declaration body changed beyond accepted Finance F1-F9 deltas: ${name}`)
     }
   }
 

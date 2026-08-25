@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "revision": "finance-f9-summary-finish-r1",
+  "reason": "Finish Finance summary UX and detect payments dated before selected-period orders even when the payment itself falls before the selected operation range.",
+  "changes": {
+    "listFinanceReports": {
+      "before": "b15dad3d448b13e48bf3d6799f2d20573f5d8f0bd38e8b3603136628af5c945a",
+      "after": "714e3a1d9cc6fa5772ac5b689722e2855a56c0f0c34a022bfba9889f867cb811"
+    }
+  }
+}
