@@ -1,0 +1,69 @@
+name: Finance F7 main-based dry promotion
+
+on:
+  push:
+    branches:
+      - finance-f7-prod-promotion
+
+permissions:
+  contents: read
+
+jobs:
+  dry-promotion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply reviewed Finance commits in order
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          commits=(
+            d79f4b68b0b7248c889956eb5b6bf48564ccb4e9
+            7e3a8e5b355d07c3ad567adcb9ec5074d1cc7fd6
+            5d74258d25104aab39dbdb1d5e0526159418da0d
+            1b5b9168b8ba174778ae2749ed49118f068375ff
+            1c26ecff52168c7b3a86230cd1502d53cd67d456
+            f37137fed1f50f065c4e4e3fc8123153c55678fe
+            3404604c744723cb7abe09bd9ebcd529c15e8727
+          )
+          for sha in "${commits[@]}"; do
+            echo "=== cherry-pick $sha ==="
+            if ! git cherry-pick "$sha"; then
+              echo "CHERRY_PICK_CONFLICT=$sha"
+              git status --short
+              echo "=== unresolved files ==="
+              git diff --name-only --diff-filter=U || true
+              exit 1
+            fi
+          done
+          echo '=== Finance dry-promotion diff from main ==='
+          git diff --stat origin/main...HEAD
+          git diff --name-status origin/main...HEAD
+      - name: Full release gate on main-based tree
+        run: npm run release:check
+      - name: Verify no migration or Arrival delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only origin/main...HEAD)"
+          echo "$changed"
+          if printf '%s\n' "$changed" | grep -Eq '^migrations/'; then
+            echo 'ERROR: Finance promotion unexpectedly changes migrations/'
+            exit 1
+          fi
+          if printf '%s\n' "$changed" | grep -Ei 'arrival|приход'; then
+            echo 'ERROR: Finance promotion unexpectedly changes Arrival surface'
+            exit 1
+          fi
+          echo 'F7 dry promotion has no migration/Arrival delta.'
