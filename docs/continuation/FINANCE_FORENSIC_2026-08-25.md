@@ -68,16 +68,46 @@ This exactly matches the method breakdown shown in the client video:
 - Cash: 40,000
 - Total: 1,080,300 KZT
 
+## Proven lineage of the 45,000 + 45,000 payments
+
+The two payments that initially looked like payments for older orders are not later debt closures.
+
+### Order id 1152
+
+- external id: `ORD-20260824110308-E2CE748F`
+- business order date: 2026-08-22
+- payment: 45,000 KZT, Terminal, `paymentKind = primary`, payment date 2026-08-24
+- financial event time: `2026-08-24T11:03:08.606Z`
+- financial event type: `order_payment`
+- financial event reason: `order_create`
+- there are no other money events for this order in the inspected period
+
+### Order id 1148
+
+- external id: `ORD-20260824083328-9B614DAD`
+- business order date: 2026-08-21
+- payment: 45,000 KZT, Terminal, `paymentKind = primary`, payment date 2026-08-24
+- financial event time: `2026-08-24T08:33:28.627Z`
+- financial event type: `order_payment`
+- financial event reason: `order_create`
+- there are no other money events for this order in the inspected period
+
+The `ORD-YYYYMMDDHHMMSS-...` id is generated from the actual server-side order creation timestamp. Therefore both orders were physically entered into the system on 2026-08-24, while the manager selected earlier business `order_date` values (2026-08-22 and 2026-08-21).
+
+The create form initializes both `orderDate` and the first payment `paymentDate` to today's date. Changing `orderDate` later only changes the order date; it does not automatically change the existing payment date. Therefore a manager entering an older order on 2026-08-24 can set the order date to 21/22 August while leaving the first payment date at its default 24 August without intentionally selecting 24 August in the payment field.
+
+This is the exact lineage for these two records: they were backdated orders entered on 24 August with their 45,000 KZT primary payments included in the same create request. They were not debt-close operations misclassified as primary payments.
+
 ## Root cause of client confusion
 
 No arithmetic corruption was found for this date. The UI places metrics with different time semantics next to one another without enough explanation/drill-down:
 
 - `Продажи` = full values of orders whose `order_date` is in the selected period, including unpaid debt;
-- `Оплаты заказов` / `Поступило` = actual payment operations whose `payment_date` is in the selected period, including payments for orders from earlier dates;
+- `Оплаты заказов` / `Поступило` = actual payment operations whose `payment_date` is in the selected period, including payments attached to backdated orders entered later;
 - `Закрытие долгов` is separately classified but also contributes to money actually received;
 - current debt is a current-state metric, not limited to the selected order-date period.
 
-The key confusing day demonstrates all of these at once: one new order has 40,000 KZT unpaid debt, while 90,000 KZT of ordinary payments and 22,500 KZT of debt closure arrived for older orders.
+The key confusing day demonstrates all of these at once: one new order has 40,000 KZT unpaid debt, two backdated orders were entered on 24 August with 90,000 KZT of primary payments dated 24 August, and 22,500 KZT of a genuine debt closure also arrived on 24 August.
 
 ## Product follow-up
 
@@ -86,9 +116,11 @@ Before changing finance arithmetic, improve transparency/drill-down so every hea
 - `Продажи по заказам даты`: full order value;
 - `Из них оплачено по этим заказам`;
 - `Осталось долгом по этим заказам`;
-- `Оплаты сегодня по заказам прошлых дат`;
+- `Оплаты сегодня по заказам прошлых дат / заказам, внесённым задним числом`;
 - `Закрытие старых долгов`;
 - `Всего денег поступило сегодня`.
+
+Also review create-order date UX: when the operator changes a new order's business date to an earlier date, the payment date remains at today's default. The UI should make this mismatch explicit or ask the operator to confirm it so historical/backfilled orders do not silently produce confusing payment-date totals.
 
 Do not change financial formulas until a separate UX/product decision is made; the 2026-08-24 forensic proves the existing records reconcile exactly.
 
