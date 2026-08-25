@@ -24,7 +24,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Apply Finance F5 safety patch
-        run: python3 scripts/tmp-finance-f5-safety-patch.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/tmp-finance-f5-safety-patch.py')
+          text = path.read_text(encoding='utf-8')
+          insert_after = "def replace_once(path, old, new, label):\n    text = read(path)\n    count = text.count(old)\n    if count != 1:\n        raise SystemExit(f'{label}: expected exactly one match, got {count}')\n    write(path, text.replace(old, new, 1))\n\n"
+          replacement = insert_after + "\ndef replace_last_once(path, old, new, label):\n    text = read(path)\n    index = text.rfind(old)\n    if index < 0:\n        raise SystemExit(f'{label}: last-match marker not found')\n    write(path, text[:index] + new + text[index + len(old):])\n\n"
+          if insert_after not in text:
+              raise SystemExit('replace_once helper marker missing')
+          text = text.replace(insert_after, replacement, 1)
+          marker = "# Preserve unsaved explicit payment rows when the non-money order PATCH succeeds; do not close the editor over them.\nreplace_once("
+          if marker not in text:
+              raise SystemExit('pending-payment patch marker missing')
+          text = text.replace(marker, marker.replace('replace_once(', 'replace_last_once('), 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          python3 scripts/tmp-finance-f5-safety-patch.py
       - name: Full release gate
         run: npm run release:check
       - name: Commit verified Finance F5 safety
