@@ -28,6 +28,7 @@ jobs:
           set -euo pipefail
           node scripts/tmp-finance-f8-helper-fix.mjs
           node scripts/tmp-finance-f8-patch.mjs
+          node scripts/tmp-finance-f8-f6-gate-fix.mjs
           git checkout -- scripts/tmp-finance-f8-patch.mjs
       - name: Full release gate
         run: npm run release:check
@@ -41,7 +42,7 @@ jobs:
             echo 'Unexpected migration/Arrival delta'
             exit 1
           fi
-          allowed='^(src/features/renderers/FinanceDashboardRenderer.tsx|src/styles/140-finance-truth.css|scripts/test-finance-f3-summary-ux.mjs)$'
+          allowed='^(src/features/renderers/FinanceDashboardRenderer.tsx|src/styles/140-finance-truth.css|scripts/test-finance-f3-summary-ux.mjs|scripts/test-finance-f6-release-audit.mjs)$'
           extra="$(printf '%s\n' "$changed" | grep -Ev "$allowed" || true)"
           if [ -n "$extra" ]; then
             echo "Unexpected F8 files:"
@@ -58,6 +59,6 @@ jobs:
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/features/renderers/FinanceDashboardRenderer.tsx src/styles/140-finance-truth.css scripts/test-finance-f3-summary-ux.mjs
+          git add src/features/renderers/FinanceDashboardRenderer.tsx src/styles/140-finance-truth.css scripts/test-finance-f3-summary-ux.mjs scripts/test-finance-f6-release-audit.mjs
           git commit -m 'Finance F8: unify reconciliation and neutral date explanations'
           git push origin HEAD:finance-f8-reconciliation-ux
