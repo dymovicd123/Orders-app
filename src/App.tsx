@@ -3690,7 +3690,21 @@ function App() {
   }
 
   function updateCreateDraft<K extends keyof EditorDraft>(key: K, value: EditorDraft[K]) {
-    setCreateDraft((current) => ({ ...current, [key]: value }))
+    setCreateDraft((current) => {
+      if (key === 'orderDate') {
+        const orderDate = String(value || '').trim()
+        return {
+          ...current,
+          [key]: value,
+          payments: current.payments.map((payment) => (
+            payment.paymentKind === 'primary'
+              ? { ...payment, paymentDate: orderDate || payment.paymentDate }
+              : payment
+          )),
+        }
+      }
+      return { ...current, [key]: value }
+    })
   }
 
   function updateCreateItem(index: number, field: keyof EditorItem, value: string | number | boolean | null) {
