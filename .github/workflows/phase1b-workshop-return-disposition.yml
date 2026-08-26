@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   apply:
-    if: ${{ github.event.head_commit.message == 'Repair one-shot Phase 1B patch workflow' }}
+    if: ${{ github.event.head_commit.message == 'Extend Phase 1B structural manifest workflow' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -34,14 +34,17 @@ jobs:
       - name: Apply exact source patch
         run: python3 scripts/apply-phase1b-workshop-disposition.py
 
-      - name: Refresh accepted Worker declaration hashes
+      - name: Extend structural manifest chain
+        run: python3 scripts/apply-phase1b-manifest-chain.py
+
+      - name: Create Phase 1B Worker manifest
         run: node scripts/refresh-phase1b-worker-manifest.mjs
 
       - name: Inspect patch
         run: |
           git diff --check
           git diff --stat
-          git diff -- worker/domains/returns-exchanges.ts src/App.tsx src/app/types.ts src/app/utils.ts src/features/sections/OrderReturnsSection.tsx src/features/sections/OrderExchangeSection.tsx scripts/test-step192a1-warehouse-truth-freshness.mjs scripts/step192a1-warehouse-truth-freshness-manifest.json
+          git diff -- worker/domains/returns-exchanges.ts src/App.tsx src/app/types.ts src/app/utils.ts src/features/sections/OrderReturnsSection.tsx src/features/sections/OrderExchangeSection.tsx scripts/test-step192a1-warehouse-truth-freshness.mjs scripts/test-step1906a-worker-modularization.mjs scripts/release-check.mjs scripts/phase1b-workshop-return-disposition-worker-manifest.json
 
       - name: Full release gate
         run: npm run release:check
@@ -50,12 +53,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git rm .github/workflows/phase1b-workshop-return-disposition.yml scripts/apply-phase1b-workshop-disposition.py scripts/refresh-phase1b-worker-manifest.mjs
+          git rm .github/workflows/phase1b-workshop-return-disposition.yml \
+            scripts/apply-phase1b-workshop-disposition.py \
+            scripts/apply-phase1b-manifest-chain.py \
+            scripts/refresh-phase1b-worker-manifest.mjs
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add worker/domains/returns-exchanges.ts src/App.tsx src/app/types.ts src/app/utils.ts \
-            src/features/sections/OrderReturnsSection.tsx src/features/sections/OrderExchangeSection.tsx \
-            scripts/test-step192a1-warehouse-truth-freshness.mjs scripts/step192a1-warehouse-truth-freshness-manifest.json
+          git add -A
           git diff --cached --quiet && { echo 'No verified source changes to commit'; exit 1; }
           git commit -m "Fix Workshop return disposition semantics"
           git push origin HEAD:branch2
