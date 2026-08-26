@@ -1,4 +1,5 @@
 name: Phase 1B Workshop return disposition patch
+# Retry after aligning the cumulative declaration chain with Finance F2/F9.
 
 on:
   push:
