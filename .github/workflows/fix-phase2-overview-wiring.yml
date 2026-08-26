@@ -1,0 +1,40 @@
+name: Fix Phase 2 overview wiring
+
+on:
+  push:
+    branches:
+      - branch2
+    paths:
+      - .github/workflows/fix-phase2-overview-wiring.yml
+      - scripts/fix-phase2-overview-wiring.py
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branch2
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Apply wiring fix
+        run: python3 scripts/fix-phase2-overview-wiring.py
+      - run: npm ci
+      - name: Release gate
+        run: npm run release:check
+      - name: Commit verified fix
+        run: |
+          rm -f scripts/fix-phase2-overview-wiring.py .github/workflows/fix-phase2-overview-wiring.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Fix Phase 2 overview action wiring"
+          git push origin HEAD:branch2
