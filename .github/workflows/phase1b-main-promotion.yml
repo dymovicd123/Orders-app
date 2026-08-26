@@ -1,0 +1,132 @@
+name: Promote Phase 1B Workshop disposition to main
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/phase1b-main-promotion.yml
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    if: ${{ github.event.head_commit.message == 'Promote Phase 1B Workshop disposition to main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify exact tested branch2 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin branch2
+          BASE=ab7c5d9d7b4ceaac1420cb039b3ae0926275a8d7
+          FIX=7849d648ced06518d5b255c5a945699e95c04fc5
+          git cat-file -e "$BASE^{commit}"
+          git cat-file -e "$FIX^{commit}"
+          files=(
+            scripts/release-check.mjs
+            scripts/test-step1906a-worker-modularization.mjs
+            scripts/test-step192a1-warehouse-truth-freshness.mjs
+            src/App.tsx
+            src/app/types.ts
+            src/app/utils.ts
+            src/features/sections/OrderExchangeSection.tsx
+            src/features/sections/OrderReturnsSection.tsx
+            worker/domains/returns-exchanges.ts
+          )
+          for file in "${files[@]}"; do
+            current_hash=$(git hash-object "$file")
+            tested_hash=$(git show "$BASE:$file" | git hash-object --stdin)
+            if [[ "$current_hash" != "$tested_hash" ]]; then
+              echo "Baseline mismatch: $file current=$current_hash tested=$tested_hash"
+              exit 1
+            fi
+          done
+          test ! -e scripts/phase1b-workshop-return-disposition-worker-manifest.json
+
+      - name: Apply only tested Phase 1B files
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=ab7c5d9d7b4ceaac1420cb039b3ae0926275a8d7
+          FIX=7849d648ced06518d5b255c5a945699e95c04fc5
+          git diff --binary "$BASE" "$FIX" -- \
+            scripts/phase1b-workshop-return-disposition-worker-manifest.json \
+            scripts/release-check.mjs \
+            scripts/test-step1906a-worker-modularization.mjs \
+            scripts/test-step192a1-warehouse-truth-freshness.mjs \
+            src/App.tsx \
+            src/app/types.ts \
+            src/app/utils.ts \
+            src/features/sections/OrderExchangeSection.tsx \
+            src/features/sections/OrderReturnsSection.tsx \
+            worker/domains/returns-exchanges.ts \
+            > /tmp/phase1b-main.patch
+          test -s /tmp/phase1b-main.patch
+          git apply --check /tmp/phase1b-main.patch
+          git apply --index /tmp/phase1b-main.patch
+          git diff --cached --check
+          expected=$(cat <<'EOF'
+          scripts/phase1b-workshop-return-disposition-worker-manifest.json
+          scripts/release-check.mjs
+          scripts/test-step1906a-worker-modularization.mjs
+          scripts/test-step192a1-warehouse-truth-freshness.mjs
+          src/App.tsx
+          src/app/types.ts
+          src/app/utils.ts
+          src/features/sections/OrderExchangeSection.tsx
+          src/features/sections/OrderReturnsSection.tsx
+          worker/domains/returns-exchanges.ts
+          EOF
+          )
+          actual=$(git diff --cached --name-only | sort)
+          if [[ "$actual" != "$(printf '%s\n' "$expected" | sed 's/^          //' | sort)" ]]; then
+            echo "Unexpected promotion file set"
+            echo "Actual:"
+            printf '%s\n' "$actual"
+            exit 1
+          fi
+
+      - name: Full release gate
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run release:check 2>&1 | tee phase1b-main-release-check.log
+
+      - name: Upload release diagnostics
+        if: always() && hashFiles('phase1b-main-release-check.log') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1b-main-release-diagnostics
+          path: phase1b-main-release-check.log
+          if-no-files-found: ignore
+          retention-days: 1
+
+      - name: Commit verified main source and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/phase1b-main-promotion.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && { echo 'No verified source changes to commit'; exit 1; }
+          git commit -m "Fix Workshop return disposition semantics"
+          git push origin HEAD:main
