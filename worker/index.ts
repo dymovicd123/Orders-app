@@ -582,8 +582,6 @@ export default {
       }
 
       if (url.pathname === '/api/inventory/cycle-counts' && request.method === 'GET') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         return json(await listInventoryCycleCountSuggestions(env.DB, url));
       }
 
