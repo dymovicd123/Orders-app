@@ -1,0 +1,52 @@
+name: Read-only Branch2 stock diagnostic
+
+on:
+  push:
+    branches:
+      - branch2
+    paths:
+      - .github/workflows/diag-branch2-stock-readonly.yml
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branch2
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Read-only D1 stock snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== inventory_stock totals ==='
+          npx wrangler d1 execute orders_db_branch2 --remote --command "SELECT COUNT(*) AS stock_rows, COALESCE(SUM(quantity),0) AS physical_total, COALESCE(SUM(reserved_quantity),0) AS reserved_total FROM inventory_stock;"
+          echo '=== inventory_stock by source ==='
+          npx wrangler d1 execute orders_db_branch2 --remote --command "SELECT inventory_source, COUNT(*) AS stock_rows, COALESCE(SUM(quantity),0) AS physical_total, COALESCE(SUM(reserved_quantity),0) AS reserved_total FROM inventory_stock GROUP BY inventory_source ORDER BY inventory_source;"
+          echo '=== active catalog variants ==='
+          npx wrangler d1 execute orders_db_branch2 --remote --command "SELECT COUNT(*) AS active_variants FROM catalog_variants WHERE is_active = 1;"
+          echo '=== stock rows sample ==='
+          npx wrangler d1 execute orders_db_branch2 --remote --command "SELECT inventory_source, variant_id, product_name_snapshot, quantity, reserved_quantity, updated_at FROM inventory_stock ORDER BY ABS(quantity) DESC, updated_at DESC LIMIT 10;"
+      - name: Remove one-shot diagnostic
+        if: always()
+        shell: bash
+        run: |
+          rm -f .github/workflows/diag-branch2-stock-readonly.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Remove read-only Branch2 stock diagnostic"
+          git push origin HEAD:branch2
