@@ -1,0 +1,42 @@
+name: Update Warehouse Phase 2 context
+
+on:
+  push:
+    branches:
+      - branch2
+    paths:
+      - .github/workflows/update-warehouse-phase2-context.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branch2
+          fetch-depth: 0
+      - name: Append canonical Phase 2 checkpoint
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('docs/continuation/WAREHOUSE_CURRENT_CONTEXT.md')
+          text = path.read_text(encoding='utf-8')
+          marker = '## Current implementation checkpoint — Phase 1 closed / Phase 2 Branch2 deployed'
+          if marker not in text:
+              text += '''\n\n## Current implementation checkpoint — Phase 1 closed / Phase 2 Branch2 deployed\n\nUpdated: 2026-08-26 after final Branch2 Phase 2 deploy gate.\n\n### Phase 1 status\n\n- Phase 1 Workshop return/exchange disposition correctness is **closed technically and deployed** on Branch2 and Production.\n- Phase 1C permanent regression remains wired into `release:check`.\n- Correct invariant: Workshop completion goes directly through order/customer flow; a returned Workshop item enters Warehouse only after an explicit Warehouse disposition; no-stock return creates no inventory/catalog work.\n\n### Phase 2 current status\n\nFinal verified Branch2 product source is `ec4594d` (`Fix Phase 2 overview action wiring`), deployed through direct checkpoint commit `c1598471a44668e45b24ec271c684ece13980f09`. Cloudflare deploy monitor run `32959474983` completed successfully.\n\nImplemented and gated:\n- normal worker may read routine cycle-count recommendations; admin mutations remain closed;\n- routine checks live in `Остатки`;\n- at most five positions are shown; the global backlog count is not shown there;\n- one dominant reason per SKU;\n- one-tap `Совпадает: X`; explicit numeric mismatch path;\n- writes reuse exact quick-stocktake stale/race and retry protections;\n- a confirmed SKU disappears immediately from the current batch;\n- same-day/no-later-movement confirmation is suppressed to prevent immediate nagging;\n- active stocktake remains a hard chronology barrier and is explained in the routine surface;\n- no polling; refresh happens on entering `Остатки`, changing source or explicitly requesting another batch;\n- existing `idx_inventory_movements_variant_manual (inventory_source, variant_id, created_at)` supports the movement-since-check access path, so no new D1 migration/index was added;\n- Arrival / `Приход` unchanged.\n\nA post-gate static review caught one runtime wiring defect before final Branch2 acceptance: `openInventoryPanel` and `setCycleCountValues` were used by the routine Overview helper but were not passed through its renderer context. This was fixed in `ec4594d`; the permanent Phase 2 regression now asserts that both props are wired. The full release gate passed again after the fix.\n\n### What remains before Production promotion of Phase 2\n\n1. Rendered human acceptance on Branch2, especially normal worker mode and mobile 3–5 item flow.\n2. Confirm `Совпадает`, mismatch entry, source switch, empty/no-due state and active-revision blocker are visually calm and readable.\n3. Only after that visual acceptance, promote the reviewed Phase 2 delta to `main` and monitor Production Cloudflare deploy.\n4. Phase 2E age/abandoned-revision refinement remains open; implement only after the current blocker is seen in real UI.\n5. Phase 2D rotation/grouping refinements remain evidence-driven rather than speculative.\n6. System-zero routine sampling remains intentionally deferred; full stocktake/manual discovery is still the broad safety net.\n\n### Exact next action\n\n**Open the deployed Branch2 Warehouse `Остатки` as a normal worker and perform a short rendered/mobile acceptance. Do not promote Phase 2 to `main` until that check is green.**\n'''
+              path.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit context and remove temporary workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/update-warehouse-phase2-context.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Record canonical Phase 2 Branch2 checkpoint"
+          git push origin HEAD:branch2
