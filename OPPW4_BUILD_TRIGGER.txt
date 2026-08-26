@@ -1,6 +1,0 @@
-OPPW4 sharedgpures experimental build trigger.
-
-To start the isolated GitHub Actions build from the GitHub UI, edit this file on branch
-exp/opppw4-sharedgpures-proton, change the last number below, and commit to THIS branch only.
-
-trigger=0
