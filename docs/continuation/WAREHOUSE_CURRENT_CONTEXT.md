@@ -318,3 +318,47 @@ Final invariants:
 **Phase 1A is complete. Next code task: Phase 1B — correct Workshop-origin return/exchange disposition semantics.**
 
 After Phase 1 is safely closed, implement Phase 2 as Smart Daily Stock Truth, beginning with non-admin access + a small `Остатки`-based recommendation batch and one-tap matching confirmation. Do not start Catalog redesign or add new warning infrastructure before those two phases are complete.
+
+
+## Current implementation checkpoint — Phase 1 closed / Phase 2 Branch2 deployed
+
+Updated: 2026-08-26 after final Branch2 Phase 2 deploy gate.
+
+### Phase 1 status
+
+- Phase 1 Workshop return/exchange disposition correctness is **closed technically and deployed** on Branch2 and Production.
+- Phase 1C permanent regression remains wired into `release:check`.
+- Correct invariant: Workshop completion goes directly through order/customer flow; a returned Workshop item enters Warehouse only after an explicit Warehouse disposition; no-stock return creates no inventory/catalog work.
+
+### Phase 2 current status
+
+Final verified Branch2 product source is `ec4594d` (`Fix Phase 2 overview action wiring`), deployed through direct checkpoint commit `c1598471a44668e45b24ec271c684ece13980f09`. Cloudflare deploy monitor run `32959474983` completed successfully.
+
+Implemented and gated:
+- normal worker may read routine cycle-count recommendations; admin mutations remain closed;
+- routine checks live in `Остатки`;
+- at most five positions are shown; the global backlog count is not shown there;
+- one dominant reason per SKU;
+- one-tap `Совпадает: X`; explicit numeric mismatch path;
+- writes reuse exact quick-stocktake stale/race and retry protections;
+- a confirmed SKU disappears immediately from the current batch;
+- same-day/no-later-movement confirmation is suppressed to prevent immediate nagging;
+- active stocktake remains a hard chronology barrier and is explained in the routine surface;
+- no polling; refresh happens on entering `Остатки`, changing source or explicitly requesting another batch;
+- existing `idx_inventory_movements_variant_manual (inventory_source, variant_id, created_at)` supports the movement-since-check access path, so no new D1 migration/index was added;
+- Arrival / `Приход` unchanged.
+
+A post-gate static review caught one runtime wiring defect before final Branch2 acceptance: `openInventoryPanel` and `setCycleCountValues` were used by the routine Overview helper but were not passed through its renderer context. This was fixed in `ec4594d`; the permanent Phase 2 regression now asserts that both props are wired. The full release gate passed again after the fix.
+
+### What remains before Production promotion of Phase 2
+
+1. Rendered human acceptance on Branch2, especially normal worker mode and mobile 3–5 item flow.
+2. Confirm `Совпадает`, mismatch entry, source switch, empty/no-due state and active-revision blocker are visually calm and readable.
+3. Only after that visual acceptance, promote the reviewed Phase 2 delta to `main` and monitor Production Cloudflare deploy.
+4. Phase 2E age/abandoned-revision refinement remains open; implement only after the current blocker is seen in real UI.
+5. Phase 2D rotation/grouping refinements remain evidence-driven rather than speculative.
+6. System-zero routine sampling remains intentionally deferred; full stocktake/manual discovery is still the broad safety net.
+
+### Exact next action
+
+**Open the deployed Branch2 Warehouse `Остатки` as a normal worker and perform a short rendered/mobile acceptance. Do not promote Phase 2 to `main` until that check is green.**
