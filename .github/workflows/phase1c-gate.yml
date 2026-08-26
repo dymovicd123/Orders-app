@@ -1,4 +1,5 @@
 name: Phase 1C release gate
+# Retry after fixing a test-only source-section boundary.
 
 on:
   push:
