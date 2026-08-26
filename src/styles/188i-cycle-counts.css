@@ -41,3 +41,13 @@
 .inventory-routine-cycle-edit input{width:68px!important;min-width:0!important;text-align:center;font-weight:700}
 @media(max-width:820px){.inventory-cycle-count-row.is-routine{grid-template-columns:minmax(0,1fr)}.inventory-cycle-count-row.is-routine .inventory-cycle-count-system{grid-column:1;justify-content:flex-start}.inventory-routine-cycle-actions{justify-content:flex-start}.inventory-routine-cycle-actions>.secondary{flex:1 1 auto}}
 @media(max-width:560px){.inventory-routine-cycle-actions{display:grid;grid-template-columns:1fr}.inventory-routine-cycle-actions>.secondary,.inventory-routine-cycle-other{width:100%}.inventory-routine-cycle-edit{display:grid;grid-template-columns:76px 1fr}.inventory-routine-cycle-edit .primary{width:100%}}
+
+
+/* Phase 2 UX — action clarity for routine count choices. */
+.inventory-routine-cycle-actions{gap:8px}
+.inventory-routine-cycle-confirm{min-width:112px}
+.inventory-routine-cycle-other>summary.inventory-routine-cycle-other-button{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:7px 11px;border:1px solid var(--line,#dbe3ee);border-radius:9px;background:var(--panel,#fff);color:var(--text,#334155);font-size:11px;font-weight:700;line-height:1.2;cursor:pointer;list-style:none;white-space:nowrap}
+.inventory-routine-cycle-other>summary.inventory-routine-cycle-other-button:hover{border-color:color-mix(in srgb,var(--accent,#2563eb) 34%,var(--line,#dbe3ee));background:color-mix(in srgb,var(--accent-soft,#eff6ff) 45%,var(--panel,#fff))}
+.inventory-routine-cycle-other[open]>summary.inventory-routine-cycle-other-button{border-color:color-mix(in srgb,var(--accent,#2563eb) 40%,var(--line,#dbe3ee));background:color-mix(in srgb,var(--accent-soft,#eff6ff) 60%,var(--panel,#fff));color:var(--accent,#2563eb)}
+@media(max-width:820px){.inventory-routine-cycle-confirm,.inventory-routine-cycle-other{flex:1 1 180px}.inventory-routine-cycle-other>summary.inventory-routine-cycle-other-button{width:100%}}
+@media(max-width:560px){.inventory-routine-cycle-confirm,.inventory-routine-cycle-other{width:100%}.inventory-routine-cycle-confirm{min-width:0}.inventory-routine-cycle-other>summary.inventory-routine-cycle-other-button{width:100%}}
