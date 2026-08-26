@@ -6,6 +6,7 @@ on:
       - safe/phase2-main-promotion-v3-20260826
     paths:
       - .github/workflows/verify-phase2-main-promotion-v3.yml
+      - .github/phase2-main-v3.trigger
 
 permissions:
   contents: write
@@ -43,7 +44,7 @@ jobs:
           SOURCE=e84e26827814e6fd02f255e785a29180ba1f9f9f
           files=(package.json scripts/test-phase2-smart-daily-stock.mjs scripts/test-step1906a-worker-modularization.mjs scripts/test-step1906b-frontend-modularization.mjs src/features/inventory/routineCycleCount.ts src/features/inventory/views/renderInventoryOverviewPanel.tsx src/features/sections/InventorySection.tsx src/styles/188i-cycle-counts.css worker/index.ts)
           git checkout "$SOURCE" -- "${files[@]}"
-          changed="$(git diff --name-only)"
+          changed="$(git diff --name-only -- . ':!.github/phase2-main-v3.trigger')"
           printf '%s\n' "$changed"
           expected=$'package.json\nscripts/test-phase2-smart-daily-stock.mjs\nscripts/test-step1906a-worker-modularization.mjs\nscripts/test-step1906b-frontend-modularization.mjs\nsrc/features/inventory/routineCycleCount.ts\nsrc/features/inventory/views/renderInventoryOverviewPanel.tsx\nsrc/features/sections/InventorySection.tsx\nsrc/styles/188i-cycle-counts.css\nworker/index.ts'
           test "$changed" = "$expected"
@@ -58,7 +59,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -f .github/workflows/verify-phase2-main-promotion-v3.yml
+          rm -f .github/workflows/verify-phase2-main-promotion-v3.yml .github/phase2-main-v3.trigger
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
