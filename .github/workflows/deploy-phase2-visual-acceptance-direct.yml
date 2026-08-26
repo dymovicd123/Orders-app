@@ -1,0 +1,46 @@
+name: Direct deploy Phase 2 visual acceptance
+
+on:
+  push:
+    branches:
+      - branch2
+    paths:
+      - .github/workflows/deploy-phase2-visual-acceptance-direct.yml
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branch2
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Verify tested source
+        run: npm run release:check
+      - name: Deploy branch2 directly
+        run: npm run deploy
+      - name: Remove one-shot deploy workflow
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/deploy-phase2-visual-acceptance-direct.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Remove Phase 2 visual acceptance deploy helper"
+          git push origin HEAD:branch2
