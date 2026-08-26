@@ -1,0 +1,44 @@
+name: Apply Phase 2 smart daily stock
+
+on:
+  push:
+    branches:
+      - branch2
+    paths:
+      - .github/workflows/apply-phase2-smart-daily-stock.yml
+      - scripts/apply-phase2-smart-daily-stock.py
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branch2
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Apply Phase 2 patch
+        run: python3 scripts/apply-phase2-smart-daily-stock.py
+      - name: Install dependencies
+        run: npm ci
+      - name: Release gate
+        run: npm run release:check
+      - name: Commit verified Phase 2 source
+        run: |
+          rm -f scripts/apply-phase2-smart-daily-stock.py .github/workflows/apply-phase2-smart-daily-stock.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No Phase 2 changes to commit"
+            exit 0
+          fi
+          git commit -m "Implement Phase 2 smart daily stock truth"
+          git push origin HEAD:branch2
