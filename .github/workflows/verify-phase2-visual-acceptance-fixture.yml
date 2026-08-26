@@ -26,6 +26,19 @@ jobs:
           cache: npm
       - name: Apply acceptance fixture
         run: python3 scripts/apply-phase2-visual-acceptance-fixture.py
+      - name: Narrow simulated quick-check response
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/App.tsx')
+          text = path.read_text(encoding='utf-8')
+          before = "return { ok: true, changed, variantId: input.variantId, previousQuantity: input.expectedQuantity, physical: input.countedQuantity, reserved: 0, free: input.countedQuantity } satisfies InventoryCycleCountApplyResponse"
+          after = "return { ok: true, changed } satisfies InventoryCycleCountApplyResponse"
+          if text.count(before) != 1:
+              raise SystemExit(f'simulated response target count={text.count(before)}')
+          path.write_text(text.replace(before, after, 1), encoding='utf-8')
+          PY
       - name: Verify fixture scope
         shell: bash
         run: |
