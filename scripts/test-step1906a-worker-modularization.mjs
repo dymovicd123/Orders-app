@@ -18,6 +18,7 @@ const dailyWarehousePath = path.join(root, 'scripts/step192b2a-daily-warehouse-m
 const attentionContextPath = path.join(root, 'scripts/step192b2a2-attention-context-manifest.json')
 const handoverSqlAliasSafetyPath = path.join(root, 'scripts/step192b2a3-handover-sql-alias-safety-manifest.json')
 const orderCreateSaveIntegrityPath = path.join(root, 'scripts/step192b2a4-order-create-save-integrity-manifest.json')
+const phase1bWorkshopReturnDispositionPath = path.join(root, 'scripts/phase1b-workshop-return-disposition-worker-manifest.json')
 const stocktakeLostResponsePath = path.join(root, 'scripts/stocktake-lost-response-worker-manifest.json')
 const financeOrderDateSyncPath = path.join(root, 'scripts/finance-order-date-sync-worker-manifest.json')
 const financeF2TracePath = path.join(root, 'scripts/finance-f2-trace-worker-manifest.json')
@@ -96,6 +97,10 @@ try {
   const orderCreateSaveIntegrity = fs.existsSync(orderCreateSaveIntegrityPath) ? JSON.parse(fs.readFileSync(orderCreateSaveIntegrityPath, 'utf8')) : null
   const orderCreateSaveIntegrityChanges = orderCreateSaveIntegrity?.version === 1 ? (orderCreateSaveIntegrity.changes || {}) : {}
   const orderCreateSaveIntegrityAdded = orderCreateSaveIntegrity?.version === 1 ? (orderCreateSaveIntegrity.added || {}) : {}
+  check(fs.existsSync(phase1bWorkshopReturnDispositionPath), 'Phase 1B Workshop return disposition Worker manifest missing')
+  const phase1bWorkshopReturnDisposition = JSON.parse(fs.readFileSync(phase1bWorkshopReturnDispositionPath, 'utf8'))
+  check(phase1bWorkshopReturnDisposition?.version === 1 && phase1bWorkshopReturnDisposition?.revision === 'phase1b-workshop-return-disposition-r1', 'Phase 1B Workshop return disposition Worker manifest invalid')
+  const phase1bWorkshopReturnDispositionChanges = phase1bWorkshopReturnDisposition.changes || {}
   const stocktakeLostResponse = fs.existsSync(stocktakeLostResponsePath) ? JSON.parse(fs.readFileSync(stocktakeLostResponsePath, 'utf8')) : null
   const stocktakeLostResponseChanges = stocktakeLostResponse?.version === 1 ? (stocktakeLostResponse.changes || {}) : {}
   const financeOrderDateSync = fs.existsSync(financeOrderDateSyncPath) ? JSON.parse(fs.readFileSync(financeOrderDateSyncPath, 'utf8')) : null
@@ -288,11 +293,17 @@ try {
     const acceptedPostFinanceF9SummaryHash = financeF9SummaryChanged ? financeF9SummaryChanged.after : acceptedPostFinanceF6DeadMetricsHash
     if (financeF9SummaryChanged) check(financeF9SummaryChanged.before === acceptedPostFinanceF6DeadMetricsHash, `Finance F9 summary declaration baseline hash mismatch: ${name}`)
     const financeF9DatePriorityChanged = financeF9DatePriorityChanges[name]
+    let acceptedPostFinanceF9DatePriorityHash = acceptedPostFinanceF9SummaryHash
     if (financeF9DatePriorityChanged) {
       check(financeF9DatePriorityChanged.before === acceptedPostFinanceF9SummaryHash, `Finance F9 date-priority declaration baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === financeF9DatePriorityChanged.after, `Worker declaration changed beyond exact Finance F9 date-priority allow-list: ${name}`)
+      acceptedPostFinanceF9DatePriorityHash = financeF9DatePriorityChanged.after
+    }
+    const phase1bWorkshopReturnDispositionChanged = phase1bWorkshopReturnDispositionChanges[name]
+    if (phase1bWorkshopReturnDispositionChanged) {
+      check(phase1bWorkshopReturnDispositionChanged.before === acceptedPostFinanceF9DatePriorityHash, `Phase 1B Workshop return disposition baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === phase1bWorkshopReturnDispositionChanged.after, `Worker declaration changed beyond exact Phase 1B Workshop return disposition allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostFinanceF9SummaryHash, `Worker declaration body changed beyond accepted Finance F1-F9 deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostFinanceF9DatePriorityHash, `Worker declaration body changed beyond accepted Finance F1-F9 / Phase 1B deltas: ${name}`)
     }
   }
 

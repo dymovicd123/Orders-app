@@ -78,6 +78,8 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
   const effectiveOldItemId = draftOldItemIsValid
     ? Number(exchangeDraft.oldItemId || 0)
     : Number(exchangeableOldItems[0]?.id || 0)
+  const effectiveOldItem = exchangeableOldItems.find((item: any) => Number(item.id || 0) === effectiveOldItemId) || null
+  const effectiveOldItemIsWorkshop = effectiveOldItem?.sourceType === 'workshop'
 
   const replacementSourceForItem = (item: any) => item?.sourceType === 'workshop'
     ? 'workshop'
@@ -164,6 +166,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                   ...current,
                                   oldItemId,
                                   oldQuantity: 1,
+                                  oldReturnSource: selectedItem?.sourceType === 'workshop' && current.oldReturnSource === 'boutique' ? 'none' : current.oldReturnSource,
                                   newSourceWasManuallyChanged: false,
                                   newItem: resetObservedStock(current.newItem, {
                                     sourceType: replacementSourceForItem(selectedItem),
@@ -196,9 +199,10 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                               onChange={(event) => setExchangeDraft((current) => ({ ...current, oldReturnSource: event.target.value as ExchangeDraft['oldReturnSource'] }))}
                             >
                               <option value="warehouse">Склад</option>
-                              <option value="boutique">Бутик</option>
+                              {!effectiveOldItemIsWorkshop ? <option value="boutique">Бутик</option> : null}
                               <option value="none">Не возвращать в остатки</option>
                             </select>
+                            {effectiveOldItemIsWorkshop ? <small className="field-hint">Вещь из Цеха не попадает в остатки автоматически. Выберите Склад только если возвращённую клиентом вещь действительно решили оставить на Складе.</small> : null}
                           </label>
                           <label>
                             <span>Дата обмена</span>

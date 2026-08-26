@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "revision": "phase1b-workshop-return-disposition-r1",
+  "changes": {
+    "createReturn": {
+      "before": "5669460501199f0ee9deef0f80882e0192694e85a9479fe5580161f675fca3e1",
+      "after": "3dba13bf31bbc70dfdcf01b6dc169d2f021c2b764e1ea612712523b4addc53e4"
+    },
+    "createExchange": {
+      "before": "d9c941529375e5b313a8e2186d2f561e5177740dd53133a1d6363ae2d7243c15",
+      "after": "33a79fa058004ddca202034e0daf9c8544e386d308f2f88294ae09b5a6752655"
+    }
+  }
+}

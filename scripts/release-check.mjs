@@ -89,6 +89,7 @@ function verifySource() {
     'scripts/step192a2-catalog-truth-finalizer-manifest.json',
     'scripts/test-step192a2-catalog-truth-finalizer.mjs',
     'scripts/step192b2a4-order-create-save-integrity-manifest.json',
+    'scripts/phase1b-workshop-return-disposition-worker-manifest.json',
     'scripts/test-step192b2a4-order-create-save-integrity.mjs',
     'scripts/test-step192b2b-movement-picker.mjs',
     'src/features/inventory/movementPickerB2B.ts',

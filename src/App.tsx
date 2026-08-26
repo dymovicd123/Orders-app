@@ -5908,6 +5908,7 @@ function removeDebtPayment(index: number) {
           .map((item) => ({
             orderItemId: item.orderItemId,
             quantity: item.quantity,
+            restock: item.restock,
           })),
       }
       const criticalKey = `return-create:${returnSelectedOrder.id}`
