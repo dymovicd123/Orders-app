@@ -35,13 +35,30 @@ jobs:
       - name: Apply exact source patch
         run: python3 scripts/apply-phase1b-workshop-disposition.py
 
-      - name: Fix Phase 1B regression parser boundary
+      - name: Fix Phase 1B generated narrowing and regression boundaries
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          p = Path('scripts/test-step192a1-warehouse-truth-freshness.mjs')
-          text = p.read_text(encoding='utf-8')
+
+          worker = Path('worker/domains/returns-exchanges.ts')
+          text = worker.read_text(encoding='utf-8')
+          old = "if (current?.restock !== null && explicitRestock !== null && current.restock !== explicitRestock)"
+          new = "if (current && current.restock !== null && explicitRestock !== null && current.restock !== explicitRestock)"
+          if text.count(old) != 1:
+              raise SystemExit(f'Worker restock narrowing anchor mismatch: {text.count(old)}')
+          worker.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          utils = Path('src/app/utils.ts')
+          text = utils.read_text(encoding='utf-8')
+          old = "sourceType: item.sourceType === 'workshop' ? 'workshop' : item.sourceType === 'boutique' ? 'boutique' : 'warehouse',"
+          new = "sourceType: (item.sourceType === 'workshop' ? 'workshop' : item.sourceType === 'boutique' ? 'boutique' : 'warehouse') as 'warehouse' | 'boutique' | 'workshop',"
+          if text.count(old) != 1:
+              raise SystemExit(f'Return draft sourceType anchor mismatch: {text.count(old)}')
+          utils.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          test = Path('scripts/test-step192a1-warehouse-truth-freshness.mjs')
+          text = test.read_text(encoding='utf-8')
           old_return = "const createReturnFlow = functionBody(exchanges, 'createReturn')"
           new_return = "const createReturnFlow = functionSection(exchanges, 'createReturn', 'hasActiveStandaloneReturn')"
           if text.count(old_return) != 1:
@@ -55,7 +72,7 @@ jobs:
           new_exchange_check = "check(exchanges.includes(\"oldItemIsWorkshop && oldReturnSource === 'boutique'\")"
           if text.count(old_exchange_check) != 1:
               raise SystemExit(f'createExchange check anchor mismatch: {text.count(old_exchange_check)}')
-          p.write_text(text.replace(old_exchange_check, new_exchange_check, 1), encoding='utf-8')
+          test.write_text(text.replace(old_exchange_check, new_exchange_check, 1), encoding='utf-8')
           PY
 
       - name: Extend structural manifest chain
