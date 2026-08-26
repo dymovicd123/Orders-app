@@ -43,39 +43,35 @@ replace_once(
 
 replace_once(
     'scripts/test-step1906a-worker-modularization.mjs',
-    """    const orderCreateSaveIntegrityChanged = orderCreateSaveIntegrityChanges[name]
-    let acceptedPostOrderCreateSaveHash = acceptedPostHandoverSqlAliasHash
-    if (orderCreateSaveIntegrityChanged) {
-      check(orderCreateSaveIntegrityChanged.before === acceptedPostHandoverSqlAliasHash, `192B2A4 declaration baseline hash mismatch: ${name}`)
-      acceptedPostOrderCreateSaveHash = orderCreateSaveIntegrityChanged.after
-    }
-    const stocktakeLostResponseChanged = stocktakeLostResponseChanges[name]
-    let acceptedPostStocktakeLostResponseHash = acceptedPostOrderCreateSaveHash
-    if (stocktakeLostResponseChanged) {
-      check(stocktakeLostResponseChanged.before === acceptedPostOrderCreateSaveHash, `Stocktake lost-response declaration baseline hash mismatch: ${name}`)
-      acceptedPostStocktakeLostResponseHash = stocktakeLostResponseChanged.after
+    """    const financeF9SummaryChanged = financeF9SummaryChanges[name]
+    const acceptedPostFinanceF9SummaryHash = financeF9SummaryChanged ? financeF9SummaryChanged.after : acceptedPostFinanceF6DeadMetricsHash
+    if (financeF9SummaryChanged) check(financeF9SummaryChanged.before === acceptedPostFinanceF6DeadMetricsHash, `Finance F9 summary declaration baseline hash mismatch: ${name}`)
+    const financeF9DatePriorityChanged = financeF9DatePriorityChanges[name]
+    if (financeF9DatePriorityChanged) {
+      check(financeF9DatePriorityChanged.before === acceptedPostFinanceF9SummaryHash, `Finance F9 date-priority declaration baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === financeF9DatePriorityChanged.after, `Worker declaration changed beyond exact Finance F9 date-priority allow-list: ${name}`)
+    } else {
+      check(sha(declarations.get(name)) === acceptedPostFinanceF9SummaryHash, `Worker declaration body changed beyond accepted Finance F1-F9 deltas: ${name}`)
     }
 """,
-    """    const orderCreateSaveIntegrityChanged = orderCreateSaveIntegrityChanges[name]
-    let acceptedPostOrderCreateSaveHash = acceptedPostHandoverSqlAliasHash
-    if (orderCreateSaveIntegrityChanged) {
-      check(orderCreateSaveIntegrityChanged.before === acceptedPostHandoverSqlAliasHash, `192B2A4 declaration baseline hash mismatch: ${name}`)
-      acceptedPostOrderCreateSaveHash = orderCreateSaveIntegrityChanged.after
+    """    const financeF9SummaryChanged = financeF9SummaryChanges[name]
+    const acceptedPostFinanceF9SummaryHash = financeF9SummaryChanged ? financeF9SummaryChanged.after : acceptedPostFinanceF6DeadMetricsHash
+    if (financeF9SummaryChanged) check(financeF9SummaryChanged.before === acceptedPostFinanceF6DeadMetricsHash, `Finance F9 summary declaration baseline hash mismatch: ${name}`)
+    const financeF9DatePriorityChanged = financeF9DatePriorityChanges[name]
+    let acceptedPostFinanceF9DatePriorityHash = acceptedPostFinanceF9SummaryHash
+    if (financeF9DatePriorityChanged) {
+      check(financeF9DatePriorityChanged.before === acceptedPostFinanceF9SummaryHash, `Finance F9 date-priority declaration baseline hash mismatch: ${name}`)
+      acceptedPostFinanceF9DatePriorityHash = financeF9DatePriorityChanged.after
     }
     const phase1bWorkshopReturnDispositionChanged = phase1bWorkshopReturnDispositionChanges[name]
-    let acceptedPostPhase1BWorkshopReturnDispositionHash = acceptedPostOrderCreateSaveHash
     if (phase1bWorkshopReturnDispositionChanged) {
-      check(phase1bWorkshopReturnDispositionChanged.before === acceptedPostOrderCreateSaveHash, `Phase 1B Workshop return disposition baseline hash mismatch: ${name}`)
-      acceptedPostPhase1BWorkshopReturnDispositionHash = phase1bWorkshopReturnDispositionChanged.after
-    }
-    const stocktakeLostResponseChanged = stocktakeLostResponseChanges[name]
-    let acceptedPostStocktakeLostResponseHash = acceptedPostPhase1BWorkshopReturnDispositionHash
-    if (stocktakeLostResponseChanged) {
-      check(stocktakeLostResponseChanged.before === acceptedPostPhase1BWorkshopReturnDispositionHash, `Stocktake lost-response declaration baseline hash mismatch: ${name}`)
-      acceptedPostStocktakeLostResponseHash = stocktakeLostResponseChanged.after
+      check(phase1bWorkshopReturnDispositionChanged.before === acceptedPostFinanceF9DatePriorityHash, `Phase 1B Workshop return disposition baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === phase1bWorkshopReturnDispositionChanged.after, `Worker declaration changed beyond exact Phase 1B Workshop return disposition allow-list: ${name}`)
+    } else {
+      check(sha(declarations.get(name)) === acceptedPostFinanceF9DatePriorityHash, `Worker declaration body changed beyond accepted Finance F1-F9 / Phase 1B deltas: ${name}`)
     }
 """,
-    '1906A Phase 1B hash chain',
+    '1906A Phase 1B final hash chain',
 )
 
 replace_once(
