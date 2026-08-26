@@ -1,0 +1,68 @@
+name: Verify Phase 2 main promotion v2
+
+on:
+  push:
+    branches:
+      - safe/phase2-main-promotion-20260826
+    paths:
+      - .github/workflows/verify-phase2-main-promotion-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/phase2-main-promotion-20260826
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Verify main matches Phase 2 baseline on existing files
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=975ccecd965a15cba4325a53d7dddc41a92eae54
+          files=(package.json scripts/test-step1906a-worker-modularization.mjs scripts/test-step1906b-frontend-modularization.mjs src/features/inventory/views/renderInventoryOverviewPanel.tsx src/features/sections/InventorySection.tsx src/styles/188i-cycle-counts.css worker/index.ts)
+          for file in "${files[@]}"; do
+            current="$(git rev-parse "HEAD:$file")"
+            baseline="$(git rev-parse "$BASE:$file")"
+            [[ "$current" == "$baseline" ]] || { echo "Baseline mismatch: $file" >&2; exit 10; }
+          done
+          ! git cat-file -e HEAD:scripts/test-phase2-smart-daily-stock.mjs 2>/dev/null
+          ! git cat-file -e HEAD:src/features/inventory/routineCycleCount.ts 2>/dev/null
+      - name: Remove superseded v1 helper before scope check
+        run: rm -f .github/workflows/verify-phase2-main-promotion.yml
+      - name: Apply exact clean tested Phase 2 files
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE=e84e26827814e6fd02f255e785a29180ba1f9f9f
+          files=(package.json scripts/test-phase2-smart-daily-stock.mjs scripts/test-step1906a-worker-modularization.mjs scripts/test-step1906b-frontend-modularization.mjs src/features/inventory/routineCycleCount.ts src/features/inventory/views/renderInventoryOverviewPanel.tsx src/features/sections/InventorySection.tsx src/styles/188i-cycle-counts.css worker/index.ts)
+          git checkout "$SOURCE" -- "${files[@]}"
+          changed="$(git diff --name-only -- . ':!.github/workflows/verify-phase2-main-promotion.yml' ':!.github/workflows/verify-phase2-main-promotion-v2.yml')"
+          printf '%s\n' "$changed"
+          expected=$'package.json\nscripts/test-phase2-smart-daily-stock.mjs\nscripts/test-step1906a-worker-modularization.mjs\nscripts/test-step1906b-frontend-modularization.mjs\nsrc/features/inventory/routineCycleCount.ts\nsrc/features/inventory/views/renderInventoryOverviewPanel.tsx\nsrc/features/sections/InventorySection.tsx\nsrc/styles/188i-cycle-counts.css\nworker/index.ts'
+          test "$changed" = "$expected"
+          ! grep -R "phase2accept" package.json scripts/test-phase2-smart-daily-stock.mjs src/features/inventory src/features/sections/InventorySection.tsx src/styles/188i-cycle-counts.css worker/index.ts
+          ! grep -R "ТЕСТ ·" src/features/inventory src/features/sections/InventorySection.tsx
+          ! git diff -- "${files[@]}" | grep -E "inventoryArrival|Приход" >/dev/null
+      - name: Install dependencies
+        run: npm ci
+      - name: Full main release gate
+        run: npm run release:check
+      - name: Commit tested promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/verify-phase2-main-promotion-v2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Promote Phase 2 smart daily stock truth"
+          git push origin HEAD:safe/phase2-main-promotion-20260826
