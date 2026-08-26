@@ -181,7 +181,16 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                             <span>Куда вернуть товар</span>
                             <select
                               value={returnDraft.restockSource}
-                              onChange={(event) => setReturnDraft((current) => ({ ...current, restockSource: event.target.value as ReturnDraft['restockSource'] }))}
+                              onChange={(event) => {
+                                const restockSource = event.target.value as ReturnDraft['restockSource']
+                                setReturnDraft((current) => ({
+                                  ...current,
+                                  restockSource,
+                                  items: restockSource === 'boutique'
+                                    ? current.items.map((item) => item.sourceType === 'workshop' ? { ...item, restock: false } : item)
+                                    : current.items,
+                                }))
+                              }}
                             >
                               <option value="none">Не возвращать в остатки</option>
                               <option value="warehouse">Склад</option>
@@ -203,7 +212,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                       <div className="mini-item order-payment-card">
                         <div className="mini-item-head">
                           <strong>Какие товары возвращаются</strong>
-                          <span className="muted-small">Выберите количество. Куда возвращать товар, задаётся общим списком выше: не возвращать / склад / бутик. Цеховая или нераспознанная вещь при выборе Склад/Бутик не меняет остаток сразу — она появится у администратора в «Ожидают движения».</span>
+                          <span className="muted-small">Выберите количество. Для обычной складской/бутиковой позиции возврат в выбранное место включён по умолчанию. Товар из Цеха по умолчанию не попадает в остатки: если клиентскую вещь действительно решили оставить на Складе, включите это прямо у нужной строки. Цех → Бутик не используется.</span>
                         </div>
                         <div className="table-shell">
                           <table className="data-table return-items-table">
@@ -217,7 +226,31 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                             <tbody>
                               {returnDraft.items.length ? returnDraft.items.map((item, index) => (
                                 <tr key={`return-item-${item.orderItemId}`}>
-                                  <td>{item.productName}</td>
+                                  <td>
+                                    <div>{item.productName}</div>
+                                    <label className="muted-small">
+                                      <input
+                                        type="checkbox"
+                                        checked={returnDraft.restockSource !== 'none' && Boolean(item.restock)}
+                                        disabled={returnDraft.restockSource === 'none' || (item.sourceType === 'workshop' && returnDraft.restockSource === 'boutique')}
+                                        onChange={(event) => setReturnDraft((current) => ({
+                                          ...current,
+                                          items: current.items.map((entry, itemIndex) => itemIndex === index
+                                            ? { ...entry, restock: event.target.checked }
+                                            : entry),
+                                        }))}
+                                      />
+                                      <span>
+                                        {returnDraft.restockSource === 'none'
+                                          ? 'Без возврата в остатки'
+                                          : item.sourceType === 'workshop' && returnDraft.restockSource === 'boutique'
+                                            ? 'Цех → Бутик нельзя'
+                                            : item.restock
+                                              ? item.sourceType === 'workshop' ? 'Принять на Склад' : 'Вернуть в остаток'
+                                              : 'Не возвращать в остаток'}
+                                      </span>
+                                    </label>
+                                  </td>
                                   <td>{item.maxQuantity}</td>
                                   <td>
                                     <FriendlyNumberInput

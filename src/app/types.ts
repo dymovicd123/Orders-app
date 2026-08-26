@@ -107,6 +107,7 @@ export type ReturnItemDraft = {
   productName: string
   quantity: number
   maxQuantity: number
+  sourceType: 'warehouse' | 'boutique' | 'workshop'
   restock: boolean
 }
 

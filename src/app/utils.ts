@@ -744,6 +744,7 @@ export function createReturnDraft(order?: OrderRecord | null): ReturnDraft {
       productName: item.productName || 'Позиция',
       quantity: 0,
       maxQuantity: Math.max(1, Number(item.quantity || 1)),
+      sourceType: (item.sourceType === 'workshop' ? 'workshop' : item.sourceType === 'boutique' ? 'boutique' : 'warehouse') as 'warehouse' | 'boutique' | 'workshop',
       restock: item.sourceType !== 'workshop',
     })).filter((item) => item.orderItemId > 0),
   }

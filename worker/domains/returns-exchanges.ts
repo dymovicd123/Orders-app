@@ -89,22 +89,26 @@ export async function createReturn(
   }
 
   const rawItems = Array.isArray(input.items) ? input.items : [];
-  const selectedItemMap = new Map<number, { orderItemId: number; quantity: number; amount: number; restock: boolean }>();
+  const selectedItemMap = new Map<number, { orderItemId: number; quantity: number; amount: number; restock: boolean | null }>();
   for (const rawItem of rawItems) {
     const orderItemId = toInt(rawItem?.orderItemId, 0);
     const quantity = Math.max(0, toInt(rawItem?.quantity, 0));
     if (!orderItemId || quantity <= 0) continue;
+    const explicitRestock = typeof rawItem?.restock === 'boolean' ? rawItem.restock : null;
     const current = selectedItemMap.get(orderItemId);
+    if (current && current.restock !== null && explicitRestock !== null && current.restock !== explicitRestock) {
+      throw new Error(`Для позиции #${orderItemId} переданы противоречивые решения по возврату в остаток.`);
+    }
     selectedItemMap.set(orderItemId, {
       orderItemId,
       quantity: (current?.quantity || 0) + quantity,
       amount: (current?.amount || 0) + Math.max(0, toInt(rawItem?.amount, 0)),
-      restock: true,
+      restock: explicitRestock ?? current?.restock ?? null,
     });
   }
   const selectedItems = Array.from(selectedItemMap.values());
   const validatedSelectedItems: Array<{
-    selected: { orderItemId: number; quantity: number; amount: number; restock: boolean };
+    selected: { orderItemId: number; quantity: number; amount: number; restock: boolean | null };
     orderItem: Record<string, unknown>;
     quantity: number;
     isWorkshop: boolean;
@@ -123,7 +127,15 @@ export async function createReturn(
       throw new Error(`Для ${cleanText(orderItem.product_name_snapshot)} доступно только ${maxQuantity} шт., запрошено ${selected.quantity}.`);
     }
     const isWorkshop = Boolean(toInt(orderItem.is_workshop, 0));
-    const wantsRestock = restockSource !== 'none' && selected.restock;
+    // Workshop production normally goes straight to the client. A returned Workshop item
+    // therefore enters inventory only after an explicit per-line decision. Legacy clients
+    // that omit the flag keep the old default for ordinary Warehouse/Boutique lines, but
+    // omission is deliberately no-stock for Workshop lines.
+    const itemRestockRequested = isWorkshop ? selected.restock === true : selected.restock !== false;
+    if (isWorkshop && itemRestockRequested && restockSource === 'boutique') {
+      throw new Error(`Товар из Цеха «${cleanText(orderItem.product_name_snapshot)}» нельзя возвращать в остаток Бутика. Выберите «Не возвращать в остатки» или «Склад».`);
+    }
+    const wantsRestock = restockSource !== 'none' && itemRestockRequested;
     if (humanInventoryModelEnabled && wantsRestock && !isWorkshop && !orderItemWasPhysicallyIssued(orderItem)) {
       throw new Error(`Позиция «${cleanText(orderItem.product_name_snapshot)}» по учёту ещё не была физически выдана / отправлена. Возвращать её в остаток нельзя — это удвоит товар. Для неотправленного заказа используйте редактирование/удаление заказа либо выберите возврат денег без приёма вещи.`);
     }
@@ -323,7 +335,9 @@ export async function createReturn(
       orderId,
       externalOrderId: cleanText((existing as any).external_id),
       title: `Оформлен возврат по заказу ${cleanText((existing as any).external_id)}`,
-      details: restockSource === 'none' ? (comment || 'Без возврата в остатки') : `Возврат в ${restockSource === 'warehouse' ? 'склад' : 'бутик'}${comment ? `: ${comment}` : ''}`,
+      details: validatedSelectedItems.some((item) => item.wantsRestock)
+        ? `Возврат в ${restockSource === 'warehouse' ? 'склад' : 'бутик'}${comment ? `: ${comment}` : ''}`
+        : (comment || 'Без возврата в остатки'),
       amount,
       createdAt,
     });
@@ -527,6 +541,9 @@ export async function createExchange(
     throw new Error(`Позиция «${cleanText(oldItem.product_name_snapshot)}» по учёту ещё не была физически выдана / отправлена. До выдачи это не обмен физической вещи — измените состав неотправленного заказа вместо обмена, иначе резерв и остаток разойдутся.`);
   }
   const oldReturnSource = normalizeExchangeReturnSource(input.oldReturnSource);
+  if (oldItemIsWorkshop && oldReturnSource === 'boutique') {
+    throw new Error(`Старую вещь из Цеха «${cleanText(oldItem.product_name_snapshot)}» нельзя принимать в остаток Бутика. Для цеховой вещи доступны только «Не возвращать в остатки» или явный приём на Склад.`);
+  }
   const rawExchangeDate = cleanText(input.exchangeDate);
   if (!rawExchangeDate) throw new Error('Укажите дату обмена.');
   const exchangeDate = normalizeDate(rawExchangeDate);

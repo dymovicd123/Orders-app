@@ -42,6 +42,10 @@ try {
   const apiClient = read('src/app/controllers/useApiClient.ts')
   const inventoryWriteRetry = read('src/app/controllers/inventoryWriteRetry.ts')
   const worker = read('worker/index.ts')
+  const app = read('src/App.tsx')
+  const returnUtils = read('src/app/utils.ts')
+  const returnView = read('src/features/sections/OrderReturnsSection.tsx')
+  const exchangeView = read('src/features/sections/OrderExchangeSection.tsx')
 
   check(worker.includes("warehouseTruthFreshness: '192a1'"), '192A1 live marker missing')
   check(!lifecycle.includes('resolveWorkshopCatalogProductOnly'), 'Workshop intake still uses product-only resolver')
@@ -81,6 +85,20 @@ try {
   check(exchanges.includes('variantId: resolvedOld.variantId,'), 'Exchange lifecycle does not persist an exact workshop variant')
   check((exchanges.match(/canAutoApplyFreshWorkshopInbound\(/g) || []).length >= 2, 'Freshness barrier is not wired to both return and exchange workshop intake')
   check((exchanges.match(/applyCanonicalInventoryLifecycleEvent\(/g) || []).length >= 2, 'Canonical atomic lifecycle movement is no longer used by return/exchange intake')
+
+  const createReturnFlow = functionSection(exchanges, 'createReturn', 'hasActiveStandaloneReturn')
+  check(createReturnFlow.includes("const explicitRestock = typeof rawItem?.restock === 'boolean' ? rawItem.restock : null"), 'Return transport no longer preserves explicit per-line restock intent')
+  check(createReturnFlow.includes("const itemRestockRequested = isWorkshop ? selected.restock === true : selected.restock !== false"), 'Workshop return is no longer no-stock unless explicitly opted into inventory')
+  check(createReturnFlow.includes("isWorkshop && itemRestockRequested && restockSource === 'boutique'"), 'Workshop return can again be sent to Boutique inventory')
+  check(createReturnFlow.includes('if (wantsRestock) {'), 'No-stock return can no longer bypass inventory lifecycle resolution')
+  check(!createReturnFlow.includes('restock: true,'), 'Return backend again forces every selected line into stock')
+  check(exchanges.includes("oldItemIsWorkshop && oldReturnSource === 'boutique'"), 'Workshop exchange return can again be sent to Boutique inventory')
+  check(app.includes('restock: item.restock'), 'Return frontend no longer transmits the per-line stock disposition')
+  check(returnUtils.includes("restock: item.sourceType !== 'workshop'"), 'Workshop return draft no longer defaults to no-stock')
+  check(returnView.includes('Принять на Склад'), 'Return UI lost the explicit Workshop-to-Warehouse decision')
+  check(returnView.includes('Цех → Бутик нельзя'), 'Return UI no longer explains the Workshop Boutique restriction')
+  check(exchangeView.includes('effectiveOldItemIsWorkshop'), 'Exchange UI no longer distinguishes Workshop old items')
+  check(exchangeView.includes('Вещь из Цеха не попадает в остатки автоматически'), 'Exchange UI lost explicit Workshop disposition guidance')
 
   // Cross-workflow safety audit: Workshop task completion is a production-state transition only.
   // It must never silently become a second inventory intake path. Physical Workshop-origin inbound
@@ -161,7 +179,7 @@ try {
   check(inventoryWriteRetry.includes("headers.set('X-Idempotency-Key', prepared.requestId)"), 'Stocktake managed writes do not enable safe transport retry')
   check(apiClient.includes('Boolean(managedInventoryRequestKey) && response.status >= 500'), 'Audited stocktake writes cannot recover from a post-commit 5xx')
 
-  console.log('STEP 192A1 WAREHOUSE TRUTH / FRESHNESS TESTS PASSED — exact-known workshop return/exchange auto-intake stays freshness-gated and idempotent; Workshop task completion remains production-only; adjacent reservation/shipping/handover/catalog-review boundaries are guarded')
+  console.log('STEP 192A1 WAREHOUSE TRUTH / FRESHNESS TESTS PASSED — Workshop return/exchange intake requires explicit Warehouse disposition, Boutique is blocked, no-stock avoids lifecycle work, and explicit intake remains freshness-gated/idempotent')
 } catch (error) {
   console.error(`STEP 192A1 WAREHOUSE TRUTH / FRESHNESS TESTS FAILED: ${error?.message || error}`)
   process.exit(1)
