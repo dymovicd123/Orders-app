@@ -18,12 +18,15 @@ for (const name of wanted) {
   if (!hashes[name]) throw new Error(`Declaration not found for manifest refresh: ${name}`)
 }
 
-const baselinePath = 'scripts/step192b2a4-order-create-save-integrity-manifest.json'
+// createReturn/createExchange were changed after 192B2A4 by Finance F2.
+// Phase 1B is applied to the current branch2 source, so its declaration baseline
+// must be the last accepted pre-Phase1B hash in the cumulative chain.
+const baselinePath = 'scripts/finance-f2-trace-worker-manifest.json'
 const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'))
 const changes = {}
 for (const name of wanted) {
   const before = baseline?.changes?.[name]?.after
-  if (!before) throw new Error(`192B2A4 baseline hash missing for ${name}`)
+  if (!before) throw new Error(`Finance F2 baseline hash missing for ${name}`)
   changes[name] = { before, after: hashes[name] }
 }
 
