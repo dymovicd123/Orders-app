@@ -1,0 +1,57 @@
+name: Verify clean Phase 2 production source
+
+on:
+  push:
+    branches:
+      - safe/phase2-clean-production-20260826
+    paths:
+      - .github/workflows/verify-phase2-clean-production.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/phase2-clean-production-20260826
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Remove temporary visual fixture only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout c1598471a44668e45b24ec271c684ece13980f09 -- src/App.tsx
+          rm -f docs/continuation/PHASE2_VISUAL_ACCEPTANCE_TEMP_2026-08-26.md
+          rm -f .github/workflows/cleanup-phase2-visual-acceptance.yml
+          ! grep -q "phase2accept" src/App.tsx
+          ! grep -q "ТЕСТ · ШАПАН ЕҢЛІК" src/App.tsx
+          ! git diff -- src/App.tsx | grep -E "inventoryArrival|Приход" >/dev/null
+      - name: Verify production scope since clean Phase 2 checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only c1598471a44668e45b24ec271c684ece13980f09 -- . ':!.github/workflows/verify-phase2-clean-production.yml')"
+          printf '%s\n' "$changed"
+          allowed=$'docs/continuation/WAREHOUSE_CURRENT_CONTEXT.md\nscripts/test-phase2-smart-daily-stock.mjs\nsrc/features/inventory/views/renderInventoryOverviewPanel.tsx\nsrc/styles/188i-cycle-counts.css'
+          test "$changed" = "$allowed"
+      - name: Install dependencies
+        run: npm ci
+      - name: Full release gate
+        run: npm run release:check
+      - name: Commit clean tested source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/verify-phase2-clean-production.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Prepare clean Phase 2 production source"
+          git push origin HEAD:safe/phase2-clean-production-20260826
