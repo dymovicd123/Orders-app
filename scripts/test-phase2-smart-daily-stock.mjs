@@ -30,6 +30,7 @@ try {
   check(inventory.includes("inventoryPanel === 'overview'"), 'Routine suggestions are not loaded in Остатки')
   check(inventory.includes('refreshCycleCountSuggestions(simpleStockSource, false, 5)'), 'Остатки does not request a five-item attention budget')
   check(inventory.includes('runRoutineCycleCount'), 'Routine exact-confirm action is not wired')
+  check(inventory.includes('openInventoryPanel,') && inventory.includes('setCycleCountValues,'), 'Routine overview is missing required action/setter wiring')
   check(routine.includes('await quickInventoryStocktake({'), 'Routine action does not reuse exact quick check')
   check(routine.includes('items: (current.items || []).filter((item: any) => Number(item.variantId) !== Number(row.variantId))'), 'Confirmed SKU does not disappear immediately')
   check(routine.includes("result?.code === 'changed'"), 'Stale race does not force a refresh/recount')
