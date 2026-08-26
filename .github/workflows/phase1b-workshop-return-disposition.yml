@@ -47,7 +47,19 @@ jobs:
           git diff -- worker/domains/returns-exchanges.ts src/App.tsx src/app/types.ts src/app/utils.ts src/features/sections/OrderReturnsSection.tsx src/features/sections/OrderExchangeSection.tsx scripts/test-step192a1-warehouse-truth-freshness.mjs scripts/test-step1906a-worker-modularization.mjs scripts/release-check.mjs scripts/phase1b-workshop-return-disposition-worker-manifest.json
 
       - name: Full release gate
-        run: npm run release:check
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run release:check 2>&1 | tee phase1b-release-check.log
+
+      - name: Upload release diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1b-release-diagnostics
+          path: phase1b-release-check.log
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Commit verified source and remove one-shot helpers
         shell: bash
