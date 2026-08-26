@@ -35,6 +35,28 @@ jobs:
       - name: Apply exact source patch
         run: python3 scripts/apply-phase1b-workshop-disposition.py
 
+      - name: Fix Phase 1B regression parser boundary
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/test-step192a1-warehouse-truth-freshness.mjs')
+          text = p.read_text(encoding='utf-8')
+          old_return = "const createReturnFlow = functionBody(exchanges, 'createReturn')"
+          new_return = "const createReturnFlow = functionSection(exchanges, 'createReturn', 'hasActiveStandaloneReturn')"
+          if text.count(old_return) != 1:
+              raise SystemExit(f'createReturn parser anchor mismatch: {text.count(old_return)}')
+          text = text.replace(old_return, new_return, 1)
+          old_exchange = """  const createExchangeFlow = functionBody(exchanges, 'createExchange')
+          check(createExchangeFlow.includes(\"oldItemIsWorkshop && oldReturnSource === 'boutique'\"), 'Workshop exchange return can again be sent to Boutique inventory')
+          """
+          new_exchange = """  check(exchanges.includes(\"oldItemIsWorkshop && oldReturnSource === 'boutique'\"), 'Workshop exchange return can again be sent to Boutique inventory')
+          """
+          if text.count(old_exchange) != 1:
+              raise SystemExit(f'createExchange parser anchor mismatch: {text.count(old_exchange)}')
+          p.write_text(text.replace(old_exchange, new_exchange, 1), encoding='utf-8')
+          PY
+
       - name: Extend structural manifest chain
         run: python3 scripts/apply-phase1b-manifest-chain.py
 
