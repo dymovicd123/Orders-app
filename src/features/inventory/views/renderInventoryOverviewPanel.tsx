@@ -3,6 +3,11 @@ import type { InventoryRenderContext } from './types'
 type PanelContext = Pick<InventoryRenderContext,
   | 'SmartPickerInput'
   | 'applyQuickStocktake'
+  | 'cycleCountBusy'
+  | 'cycleCountData'
+  | 'cycleCountLoading'
+  | 'cycleCountNotice'
+  | 'cycleCountValues'
   | 'formatMoney'
   | 'inventoryPanelStyle'
   | 'inventoryPickerOptions'
@@ -16,6 +21,7 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'quickStocktakeNotice'
   | 'quickStocktakeOpen'
   | 'quickStocktakeValues'
+  | 'refreshCycleCountSuggestions'
   | 'refreshInventoryModule'
   | 'setInventoryQuery'
   | 'setQuickStocktakeNotice'
@@ -39,8 +45,39 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'simpleStockSource'
   | 'simpleStockStats'
   | 'sourceLabel'
+  | 'submitRoutineCycleCount'
 >
 
+
+function renderRoutineCycleCountCue(ctx: PanelContext) {
+  const { cycleCountBusy, cycleCountData, cycleCountLoading, cycleCountNotice, cycleCountValues, isAdmin, openInventoryPanel, refreshCycleCountSuggestions, setCycleCountValues, simpleStockSource, submitRoutineCycleCount } = ctx as any
+  const current = cycleCountData?.source === simpleStockSource ? cycleCountData : null
+  if (!current && !cycleCountLoading && !cycleCountNotice) return null
+  if (current?.blockedByStocktake) return (
+    <section className="inventory-cycle-count-card is-calm" data-smart-daily-stock="routine">
+      <div className="inventory-cycle-count-state"><div><strong>Незавершённая ревизия блокирует короткие сверки</strong><span>Пока ревизия этой точки не завершена или не отменена, система не меняет физический факт отдельными проверками.</span></div>{isAdmin ? <button className="secondary compact" type="button" onClick={() => openInventoryPanel('stocktake')}>Открыть ревизию</button> : null}</div>
+    </section>
+  )
+  const rows = (current?.items || []).slice(0, 5)
+  if (!rows.length) return cycleCountNotice ? <div className="inventory-cycle-count-notice" data-smart-daily-stock="routine">{cycleCountNotice}</div> : null
+  return (
+    <section className="inventory-cycle-count-card is-calm" data-smart-daily-stock="routine">
+      <div className="inventory-cycle-count-head"><div><span className="stocktake-step-kicker">Поддержание точности</span><strong>Полезно сверить сейчас</strong><small>Небольшая пачка позиций, которые стоит проверить по пути. Это не обязательная очередь.</small></div><button className="ghost compact" type="button" disabled={cycleCountBusy || cycleCountLoading} onClick={() => void refreshCycleCountSuggestions(simpleStockSource, false, 5)}>{cycleCountLoading ? 'Обновляю…' : 'Другие позиции'}</button></div>
+      <div className="inventory-cycle-count-list">
+        {rows.map((row: any) => {
+          const value = cycleCountValues[String(row.variantId)] ?? ''
+          const attrs = [row.material !== 'СТАНДАРТ' ? row.material : '', row.length !== 'СТАНДАРТ' ? row.length : '', row.gender, row.color, row.size].filter(Boolean).join(' · ')
+          return <div className={`inventory-cycle-count-row is-routine ${Number(row.free || 0) < 0 ? 'needs-attention' : ''}`} key={`routine-cycle-${row.variantId}`}>
+            <div className="inventory-cycle-count-name"><strong>{row.productName}</strong><span>{attrs || 'Стандартная комбинация'}</span><small>{(row.reasons || [])[0] || 'Полезно подтвердить физический остаток'}</small></div>
+            <div className="inventory-cycle-count-system"><span>На месте <strong>{row.physical}</strong></span>{Number(row.reserved || 0) ? <span>В заказах <strong>{row.reserved}</strong></span> : null}</div>
+            <div className="inventory-routine-cycle-actions"><button className="secondary compact" type="button" disabled={cycleCountBusy} onClick={() => void submitRoutineCycleCount(row, Number(row.physical || 0))}>Совпадает: {row.physical}</button><details className="inventory-routine-cycle-other"><summary>Другое количество</summary><div className="inventory-routine-cycle-edit"><input aria-label={`Фактическое количество ${row.productName}`} type="number" min="0" step="1" inputMode="numeric" value={value} onChange={(event) => { const raw = event.target.value; if (raw === '') return setCycleCountValues((state: any) => ({ ...state, [String(row.variantId)]: '' })); const parsed = Number(raw); if (Number.isFinite(parsed)) setCycleCountValues((state: any) => ({ ...state, [String(row.variantId)]: String(Math.max(0, Math.trunc(parsed))) })) }} /><button className="primary compact" type="button" disabled={cycleCountBusy || value === ''} onClick={() => void submitRoutineCycleCount(row, Number(value))}>Сохранить факт</button></div></details></div>
+          </div>
+        })}
+      </div>
+      {cycleCountNotice ? <div className="inventory-cycle-count-notice">{cycleCountNotice}</div> : null}
+    </section>
+  )
+}
 
 export function renderInventoryOverviewPanel(ctx: PanelContext) {
   const {
@@ -124,6 +161,8 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                         <p><b>На месте</b> включает и свободные вещи, и ещё не отправленные заказы. <b>В заказах</b> — уже обещанное клиентам. <b>Свободно</b> = на месте минус в заказах.</p>
                       </details>
                     </div>
+
+                    {renderRoutineCycleCountCue(ctx)}
     
                     <div className="inventory-calm-filters">
                       {[

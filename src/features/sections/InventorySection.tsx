@@ -8,6 +8,7 @@ import { renderInventorySourceToolbar } from '../inventory/views/renderInventory
 import { renderInventoryOverviewPanel } from '../inventory/views/renderInventoryOverviewPanel'
 import { renderInventoryAttentionPanel } from '../inventory/views/renderInventoryAttentionPanel'
 import { useInventoryAttentionActions } from '../inventory/useInventoryAttentionActions'
+import { runRoutineCycleCount } from '../inventory/routineCycleCount'
 import { renderInventoryStocktakePanel } from '../inventory/views/renderInventoryStocktakePanel'
 import { renderInventoryWarehousePanel } from '../inventory/views/renderInventoryWarehousePanel'
 import { renderInventoryBoutiquePanel } from '../inventory/views/renderInventoryBoutiquePanel'
@@ -749,17 +750,20 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const currentStocktakeGroup = stocktakeGroups[stocktakeProductIndex] || null
   const stocktakeActiveForSelectedSource = stocktakeActiveSessions.find((entry: any) => entry.source === stocktakeSource) || null
   const cycleCountFilledCount = Object.values(cycleCountValues).filter((value) => value !== '').length
+  const submitRoutineCycleCount = (row: any, countedQuantity: number) => runRoutineCycleCount({ row, countedQuantity, source: simpleStockSource, busy: cycleCountBusy, quickInventoryStocktake, refreshInventoryModule, refreshSuggestions: refreshCycleCountSuggestions, setBusy: setCycleCountBusy, setNotice: setCycleCountNotice, setData: setCycleCountData, setValues: setCycleCountValues })
 
-  async function refreshCycleCountSuggestions(source: StocktakeSource = stocktakeSource, keepNotice = false) {
-    if (!isAdmin) return
+  async function refreshCycleCountSuggestions(source: StocktakeSource = stocktakeSource, keepNotice = false, limit = 12) {
     const seq = ++cycleCountLoadSeq.current
     setCycleCountLoading(true)
     setCycleCountData((current: any) => current?.source === source ? current : null)
     if (!keepNotice) setCycleCountNotice('')
     try {
-      const data = await loadInventoryCycleCounts(source, 12)
+      const data = await loadInventoryCycleCounts(source, limit <= 5 ? 12 : limit)
       if (seq !== cycleCountLoadSeq.current) return
-      setCycleCountData(data)
+      setCycleCountData(limit <= 5 ? {
+        ...data,
+        items: (data.items || []).filter((row: any) => !(row.lastCheckedAt && row.daysSinceCheck === 0 && row.movementsSinceCheck === 0)).slice(0, limit),
+      } : data)
     } catch (error) {
       if (seq !== cycleCountLoadSeq.current) return
       setCycleCountData(null)
@@ -806,10 +810,15 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   useEffect(() => {
+    if (inventoryPanel === 'overview' && activeSector === 'inventory') {
+      setCycleCountValues({})
+      void refreshCycleCountSuggestions(simpleStockSource, false, 5)
+      return
+    }
     if (inventoryPanel !== 'stocktake' || !isAdmin || stocktakeSession) return
     setCycleCountValues({})
     void refreshCycleCountSuggestions(stocktakeSource)
-  }, [inventoryPanel, isAdmin, stocktakeSource, stocktakeSession?.id])
+  }, [inventoryPanel, activeSector, isAdmin, simpleStockSource, stocktakeSource, stocktakeSession?.id])
 
   useEffect(() => {
     if (!stocktakeSession || !currentStocktakeGroup || stocktakeFoundOtherProduct) return
@@ -2210,6 +2219,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
               {renderInventoryOverviewPanel({
         SmartPickerInput,
         applyQuickStocktake,
+        cycleCountBusy,
+        cycleCountData,
+        cycleCountLoading,
+        cycleCountNotice,
+        cycleCountValues,
         formatMoney,
         inventoryPanelStyle,
         inventoryPickerOptions,
@@ -2223,6 +2237,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         quickStocktakeNotice,
         quickStocktakeOpen,
         quickStocktakeValues,
+        refreshCycleCountSuggestions,
         refreshInventoryModule,
         setInventoryQuery,
         setQuickStocktakeNotice,
@@ -2245,7 +2260,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         simpleStockReserved,
         simpleStockSource,
         simpleStockStats,
-        sourceLabel
+        sourceLabel,
+        submitRoutineCycleCount
       })}
 
               {renderInventoryStocktakePanel({

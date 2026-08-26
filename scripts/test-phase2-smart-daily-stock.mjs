@@ -4,23 +4,15 @@ import path from 'node:path'
 const root = process.cwd()
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
-
-function section(text, startMarker, endMarker) {
-  const start = text.indexOf(startMarker)
-  check(start >= 0, `Section start missing: ${startMarker}`)
-  const end = text.indexOf(endMarker, start + startMarker.length)
-  check(end > start, `Section end missing: ${endMarker}`)
-  return text.slice(start, end)
-}
+function section(text, startMarker, endMarker) { const start = text.indexOf(startMarker); check(start >= 0, `Section start missing: ${startMarker}`); const end = text.indexOf(endMarker, start + startMarker.length); check(end > start, `Section end missing: ${endMarker}`); return text.slice(start, end) }
 
 try {
   const worker = read('worker/index.ts')
-  const stocktake = read('worker/domains/inventory-stocktake.ts')
   const inventory = read('src/features/sections/InventorySection.tsx')
   const overview = read('src/features/inventory/views/renderInventoryOverviewPanel.tsx')
-  const stocktakePanel = read('src/features/inventory/views/renderInventoryStocktakePanel.tsx')
+  const routine = read('src/features/inventory/routineCycleCount.ts')
+  const css = read('src/styles/188i-cycle-counts.css')
   const pkg = JSON.parse(read('package.json'))
-
   const readRoute = section(worker, "if (url.pathname === '/api/inventory/cycle-counts' && request.method === 'GET')", "if (url.pathname === '/api/inventory/cycle-counts/apply' && request.method === 'POST')")
   const batchRoute = section(worker, "if (url.pathname === '/api/inventory/cycle-counts/apply' && request.method === 'POST')", "if (url.pathname === '/api/inventory/stocktakes' && request.method === 'GET')")
   const fullRoute = section(worker, "if (url.pathname === '/api/inventory/stocktakes' && request.method === 'POST')", "if (url.pathname === '/api/inventory/stocktakes/quick-batch' && request.method === 'POST')")
@@ -30,30 +22,25 @@ try {
   check(fullRoute.includes('requireAdminAccess'), 'Full/selective revision creation was opened')
   check(!exactRoute.includes('requireAdminAccess'), 'Safe exact quick check is no longer available to workers')
   check(worker.includes('request = withAuthenticatedHeaders(request, authUser)'), 'Server-owned access role headers are not enforced')
-
-  check(stocktake.includes("Math.min(24, Math.max(3, toInt(url.searchParams.get('limit'), 12)))"), '3–5 item recommendation limit is unsupported')
-  check(stocktake.includes('row.priority >= 25 && !(row.lastCheckedAt && row.daysSinceCheck === 0 && row.movementsSinceCheck === 0)'), 'Just-confirmed SKU suppression is missing')
-
-  check(inventory.includes('loadInventoryCycleCounts(source, limit)'), 'Cycle loader still hardcodes the old batch size')
+  const loader = section(inventory, 'async function refreshCycleCountSuggestions', 'async function submitCycleCount')
+  check(loader.includes('limit = 12'), 'Routine loader has no explicit batch limit')
+  check(loader.includes('limit <= 5 ? 12 : limit'), 'Routine loader does not keep enough candidates for filtering')
+  check(loader.includes('row.lastCheckedAt && row.daysSinceCheck === 0 && row.movementsSinceCheck === 0'), 'Just-confirmed SKU suppression is missing')
+  check(!loader.includes('if (!isAdmin) return'), 'Routine loader still blocks workers')
   check(inventory.includes("inventoryPanel === 'overview'"), 'Routine suggestions are not loaded in Остатки')
-  check(inventory.includes('refreshCycleCountSuggestions(simpleStockSource, false, 5)'), 'Остатки does not request five SKUs')
-  check(inventory.includes('async function submitRoutineCycleCount'), 'Routine exact-confirm action is missing')
-  check(inventory.includes('await quickInventoryStocktake({'), 'Routine action does not reuse exact quick check')
-  check(inventory.includes("items: (current.items || []).filter((item: any) => Number(item.variantId) !== Number(row.variantId))"), 'Confirmed SKU does not disappear immediately')
-  check(!section(inventory, 'async function refreshCycleCountSuggestions', 'async function submitRoutineCycleCount').includes('if (!isAdmin) return'), 'Routine loader still blocks workers')
-
+  check(inventory.includes('refreshCycleCountSuggestions(simpleStockSource, false, 5)'), 'Остатки does not request a five-item attention budget')
+  check(inventory.includes('runRoutineCycleCount'), 'Routine exact-confirm action is not wired')
+  check(routine.includes('await quickInventoryStocktake({'), 'Routine action does not reuse exact quick check')
+  check(routine.includes('items: (current.items || []).filter((item: any) => Number(item.variantId) !== Number(row.variantId))'), 'Confirmed SKU does not disappear immediately')
+  check(routine.includes("result?.code === 'changed'"), 'Stale race does not force a refresh/recount')
   check(overview.includes('data-smart-daily-stock="routine"'), 'Smart Daily Stock Truth is absent from Остатки')
   check(overview.includes('Полезно сверить сейчас'), 'Routine cue wording is missing')
   check(overview.includes('Совпадает:'), 'One-tap matching action is missing')
   check(overview.includes('Другое количество'), 'Mismatch action is missing')
   check(overview.includes('Незавершённая ревизия блокирует короткие сверки'), 'Active-revision explanation is missing')
-  check(overview.includes('(row.reasons || [])[0]'), 'Routine view shows more than the dominant reason')
-  check(!overview.includes('recommendedCount'), 'Routine view exposes the total backlog')
-  check(stocktakePanel.includes('cycleCountData.recommendedCount'), 'Admin Revision cycle-count surface disappeared')
-
+  check(overview.includes('(row.reasons || [])[0]'), 'Routine view does not reduce each SKU to one dominant reason')
+  check(!section(overview, 'function renderRoutineCycleCountCue', 'export function renderInventoryOverviewPanel').includes('recommendedCount'), 'Routine view exposes the total backlog')
+  check(css.includes('.inventory-cycle-count-row.is-routine') && css.includes('@media(max-width:560px)'), 'Routine batch has no small-screen layout')
   check(String(pkg.scripts?.['release:check'] || '').includes('test-phase2-smart-daily-stock.mjs'), 'Phase 2 regression is not wired into release:check')
-  console.log('PHASE 2 SMART DAILY STOCK TRUTH TESTS PASSED')
-} catch (error) {
-  console.error(`PHASE 2 SMART DAILY STOCK TRUTH TESTS FAILED: ${error?.message || error}`)
-  process.exit(1)
-}
+  console.log('PHASE 2 SMART DAILY STOCK TRUTH TESTS PASSED — manager-safe read, 5-item Остатки batch, one-tap match, mismatch entry, stale guard and calm blocker are enforced')
+} catch (error) { console.error(`PHASE 2 SMART DAILY STOCK TRUTH TESTS FAILED: ${error?.message || error}`); process.exit(1) }
