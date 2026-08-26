@@ -1810,29 +1810,6 @@ function App() {
   }
 
   async function loadInventoryCycleCounts(source: InventorySourceKey, limit = 12) {
-    const acceptanceMode = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('phase2accept') : null
-    if (acceptanceMode === '1' || acceptanceMode === 'blocked') {
-      const fixtures = {
-        warehouse: [
-          { productId: -101, variantId: -101, productName: 'ТЕСТ · ШАПАН ЕҢЛІК', category: 'adult' as const, gender: 'ЖЕН', color: 'СВЕТЛО-БЕЖЕВЫЙ', material: 'ЗАМША ВЕЛЮР', length: 'СТАНДАРТ', size: '46', physical: 3, reserved: 1, free: 2, lastCheckedAt: null, daysSinceCheck: null, movementsSinceCheck: 5, lastDifference: 0, lastCheckType: '', reasons: ['После движений полезно подтвердить остаток'], priority: 90 },
-          { productId: -102, variantId: -102, productName: 'ТЕСТ · КАМЗОЛ АРУ', category: 'adult' as const, gender: 'ЖЕН', color: 'БОРДОВЫЙ', material: 'БАРХАТ', length: 'СТАНДАРТ', size: '48', physical: 4, reserved: 4, free: 0, lastCheckedAt: '2026-06-01T09:00:00Z', daysSinceCheck: 86, movementsSinceCheck: 2, lastDifference: 0, lastCheckType: 'quick', reasons: ['Давно не сверялось'], priority: 76 },
-          { productId: -103, variantId: -103, productName: 'ТЕСТ · ЖИЛЕТ НҰР', category: 'adult' as const, gender: 'МУЖ', color: 'ЧЁРНЫЙ', material: 'ВЕЛЮР', length: 'СТАНДАРТ', size: '50', physical: 1, reserved: 0, free: 1, lastCheckedAt: '2026-07-10T12:00:00Z', daysSinceCheck: 47, movementsSinceCheck: 7, lastDifference: 1, lastCheckType: 'quick', reasons: ['Раньше было расхождение'], priority: 72 },
-          { productId: -104, variantId: -104, productName: 'ТЕСТ · САУКЕЛЕ', category: 'adult' as const, gender: 'ЖЕН', color: 'БЕЛЫЙ', material: 'СТАНДАРТ', length: 'СТАНДАРТ', size: 'СТАНДАРТ', physical: 2, reserved: 3, free: -1, lastCheckedAt: '2026-08-01T08:00:00Z', daysSinceCheck: 25, movementsSinceCheck: 4, lastDifference: 0, lastCheckType: 'quick', reasons: ['В заказах больше, чем сейчас на месте'], priority: 130 },
-          { productId: -105, variantId: -105, productName: 'ТЕСТ · КОРСЕТ АЙША', category: 'adult' as const, gender: 'ЖЕН', color: 'ЗЕЛЁНЫЙ', material: 'АТЛАС', length: 'СТАНДАРТ', size: '44', physical: 2, reserved: 0, free: 2, lastCheckedAt: '2026-06-20T10:00:00Z', daysSinceCheck: 67, movementsSinceCheck: 1, lastDifference: 0, lastCheckType: 'quick', reasons: ['Давно не сверялось'], priority: 61 },
-        ],
-        boutique: [
-          { productId: -201, variantId: -201, productName: 'ТЕСТ · ПЛАТЬЕ ДАНА', category: 'adult' as const, gender: 'ЖЕН', color: 'СИНИЙ', material: 'АТЛАС', length: 'ДЛИННЫЙ', size: '46', physical: 2, reserved: 1, free: 1, lastCheckedAt: null, daysSinceCheck: null, movementsSinceCheck: 3, lastDifference: 0, lastCheckType: '', reasons: ['Ещё не было точной сверки'], priority: 85 },
-          { productId: -202, variantId: -202, productName: 'ТЕСТ · ЖАКЕТ МИРА', category: 'adult' as const, gender: 'ЖЕН', color: 'МОЛОЧНЫЙ', material: 'ТВИД', length: 'СТАНДАРТ', size: '48', physical: 1, reserved: 0, free: 1, lastCheckedAt: '2026-06-05T11:00:00Z', daysSinceCheck: 82, movementsSinceCheck: 1, lastDifference: 0, lastCheckType: 'quick', reasons: ['Давно не сверялось'], priority: 69 },
-          { productId: -203, variantId: -203, productName: 'ТЕСТ · КОМПЛЕКТ АСЕЛЬ', category: 'adult' as const, gender: 'ЖЕН', color: 'ЧЁРНЫЙ', material: 'ВЕЛЮР', length: 'СТАНДАРТ', size: '50', physical: 3, reserved: 2, free: 1, lastCheckedAt: '2026-07-15T14:00:00Z', daysSinceCheck: 42, movementsSinceCheck: 6, lastDifference: 1, lastCheckType: 'quick', reasons: ['После движений полезно подтвердить остаток'], priority: 74 },
-        ],
-      }
-      const items = fixtures[source].slice(0, Math.max(1, Math.min(5, limit)))
-      return {
-        ok: true, source, blockedByStocktake: acceptanceMode === 'blocked', activeStocktakeId: acceptanceMode === 'blocked' ? 'phase2-visual-acceptance' : null,
-        totalPositions: items.length, recommendedCount: items.length, items,
-        policy: { dueAfterDays: 30, highDueAfterDays: 60, movementAttention: 3, movementHigh: 8 },
-      } satisfies InventoryCycleCountSuggestionsResponse
-    }
     const params = new URLSearchParams({ source, limit: String(limit) })
     const response = await apiFetch(`/api/inventory/cycle-counts?${params.toString()}`)
     const data = await readJsonResponse<InventoryCycleCountSuggestionsResponse>(response, 'Короткие сверки')
@@ -1859,11 +1836,6 @@ function App() {
   }
 
   async function quickInventoryStocktake(input: { source: InventorySourceKey; variantId: number; expectedQuantity: number; countedQuantity: number }) {
-    const acceptanceMode = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('phase2accept') : null
-    if ((acceptanceMode === '1' || acceptanceMode === 'blocked') && Number(input.variantId) < 0) {
-      const changed = Number(input.countedQuantity) !== Number(input.expectedQuantity)
-      return { ok: true, changed } satisfies InventoryCycleCountApplyResponse
-    }
     const response = await apiFetch('/api/inventory/stocktakes/quick', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
     })
