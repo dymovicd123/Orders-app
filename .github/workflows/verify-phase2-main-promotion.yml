@@ -23,16 +23,13 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - name: Fetch tested Branch2 source
-        run: git fetch origin branch2
-      - name: Verify main matches Phase 2 baseline on promotion files
+      - name: Verify main matches Phase 2 baseline on existing promotion files
         shell: bash
         run: |
           set -euo pipefail
           BASE=975ccecd965a15cba4325a53d7dddc41a92eae54
           files=(
             package.json
-            scripts/test-phase2-smart-daily-stock.mjs
             scripts/test-step1906a-worker-modularization.mjs
             scripts/test-step1906b-frontend-modularization.mjs
             src/features/inventory/views/renderInventoryOverviewPanel.tsx
@@ -48,19 +45,19 @@ jobs:
               exit 10
             fi
           done
-          if git cat-file -e HEAD:src/features/inventory/routineCycleCount.ts 2>/dev/null; then
-            echo "routineCycleCount.ts unexpectedly exists on main baseline" >&2
+          if git cat-file -e HEAD:scripts/test-phase2-smart-daily-stock.mjs 2>/dev/null; then
+            echo "Phase 2 regression unexpectedly already exists on main" >&2
             exit 11
           fi
-          if git cat-file -e "$BASE":src/features/inventory/routineCycleCount.ts 2>/dev/null; then
-            echo "routineCycleCount.ts unexpectedly exists on Branch2 Phase 2 baseline" >&2
+          if git cat-file -e HEAD:src/features/inventory/routineCycleCount.ts 2>/dev/null; then
+            echo "routineCycleCount.ts unexpectedly already exists on main" >&2
             exit 12
           fi
-      - name: Apply exact tested Phase 2 product files
+      - name: Apply exact clean tested Phase 2 product files
         shell: bash
         run: |
           set -euo pipefail
-          SOURCE=a1a2ba0470a5122af9b24c563c1b18fb48c7042b
+          SOURCE=e84e26827814e6fd02f255e785a29180ba1f9f9f
           files=(
             package.json
             scripts/test-phase2-smart-daily-stock.mjs
