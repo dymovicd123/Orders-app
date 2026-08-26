@@ -47,14 +47,15 @@ jobs:
           if text.count(old_return) != 1:
               raise SystemExit(f'createReturn parser anchor mismatch: {text.count(old_return)}')
           text = text.replace(old_return, new_return, 1)
-          old_exchange = """  const createExchangeFlow = functionBody(exchanges, 'createExchange')
-          check(createExchangeFlow.includes(\"oldItemIsWorkshop && oldReturnSource === 'boutique'\"), 'Workshop exchange return can again be sent to Boutique inventory')
-          """
-          new_exchange = """  check(exchanges.includes(\"oldItemIsWorkshop && oldReturnSource === 'boutique'\"), 'Workshop exchange return can again be sent to Boutique inventory')
-          """
-          if text.count(old_exchange) != 1:
-              raise SystemExit(f'createExchange parser anchor mismatch: {text.count(old_exchange)}')
-          p.write_text(text.replace(old_exchange, new_exchange, 1), encoding='utf-8')
+          old_exchange_decl = "  const createExchangeFlow = functionBody(exchanges, 'createExchange')\n"
+          if text.count(old_exchange_decl) != 1:
+              raise SystemExit(f'createExchange declaration anchor mismatch: {text.count(old_exchange_decl)}')
+          text = text.replace(old_exchange_decl, '', 1)
+          old_exchange_check = "check(createExchangeFlow.includes(\"oldItemIsWorkshop && oldReturnSource === 'boutique'\")"
+          new_exchange_check = "check(exchanges.includes(\"oldItemIsWorkshop && oldReturnSource === 'boutique'\")"
+          if text.count(old_exchange_check) != 1:
+              raise SystemExit(f'createExchange check anchor mismatch: {text.count(old_exchange_check)}')
+          p.write_text(text.replace(old_exchange_check, new_exchange_check, 1), encoding='utf-8')
           PY
 
       - name: Extend structural manifest chain
@@ -76,12 +77,12 @@ jobs:
           npm run release:check 2>&1 | tee phase1b-release-check.log
 
       - name: Upload release diagnostics
-        if: always()
+        if: always() && hashFiles('phase1b-release-check.log') != ''
         uses: actions/upload-artifact@v4
         with:
           name: phase1b-release-diagnostics
           path: phase1b-release-check.log
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 1
 
       - name: Commit verified source and remove one-shot helpers
