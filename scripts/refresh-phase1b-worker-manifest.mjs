@@ -18,8 +18,20 @@ for (const name of wanted) {
   if (!hashes[name]) throw new Error(`Declaration not found for manifest refresh: ${name}`)
 }
 
-const manifestPath = 'scripts/step192a1-warehouse-truth-freshness-manifest.json'
-const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
-for (const name of wanted) manifest.changes[name].after = hashes[name]
+const baselinePath = 'scripts/step192b2a4-order-create-save-integrity-manifest.json'
+const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'))
+const changes = {}
+for (const name of wanted) {
+  const before = baseline?.changes?.[name]?.after
+  if (!before) throw new Error(`192B2A4 baseline hash missing for ${name}`)
+  changes[name] = { before, after: hashes[name] }
+}
+
+const manifest = {
+  version: 1,
+  revision: 'phase1b-workshop-return-disposition-r1',
+  changes,
+}
+const manifestPath = 'scripts/phase1b-workshop-return-disposition-worker-manifest.json'
 fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
-console.log('Updated Phase 1B declaration hashes:', hashes)
+console.log('Created Phase 1B declaration manifest:', manifest)
