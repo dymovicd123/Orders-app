@@ -1,18 +1,13 @@
 name: OPPW4 sharedgpures preflight
 
-on:
-  push:
-    branches:
-      - exp/opppw4-sharedgpures-proton
-    paths:
-      - .github/workflows/opppw4-sharedgpures-preflight.yml
-  workflow_dispatch:
+on: push
 
 permissions:
   contents: read
 
 jobs:
   inspect:
+    if: github.ref == 'refs/heads/exp/opppw4-sharedgpures-proton'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
