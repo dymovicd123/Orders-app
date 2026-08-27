@@ -1,0 +1,110 @@
+name: Phase 3A catalog physical materialization R2
+
+on:
+  push:
+    branches:
+      - safe/phase3a-catalog-physical-materialization-20260827
+    paths:
+      - .github/workflows/phase3a-catalog-physical-materialization-r2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  phase3a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/phase3a-catalog-physical-materialization-20260827
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Reuse Phase 3A source transform
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/phase3a-catalog-physical-materialization.yml').read_text()
+          anchor = source.index('      - name: Apply Phase 3A source and regression boundaries\n')
+          marker = '        run: |\n'
+          start = source.index(marker, anchor) + len(marker)
+          end = source.index('      - name: Inspect Phase 3A diff\n', start)
+          lines = source[start:end].splitlines()
+          out = []
+          for line in lines:
+              if line.startswith('          '): out.append(line[10:])
+              elif not line.strip(): out.append('')
+              else: raise SystemExit(f'Unexpected indentation in extracted Phase 3A script: {line!r}')
+          Path('/tmp/apply-phase3a.sh').write_text('\n'.join(out) + '\n')
+          PY
+          bash /tmp/apply-phase3a.sh
+      - name: Align Step 192A2 regression with lookup-only orders
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > scripts/test-step192a2-catalog-truth-finalizer.mjs <<'EOF'
+          import fs from 'node:fs'
+          import path from 'node:path'
+
+          const root = process.cwd()
+          const fail = (message) => { throw new Error(message) }
+          const check = (condition, message) => { if (!condition) fail(message) }
+          const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8')
+
+          try {
+            const worker = read('worker/index.ts')
+            const reservations = read('worker/domains/order-reservations.ts')
+
+            check(worker.includes("catalogTruthFinalizer: '192a2'"), '192A2 health marker missing')
+            for (const marker of [
+              'omittedColorConflictsWithConcreteSibling',
+              "UPPER(TRIM(color)) <> 'БЕЗ ЦВЕТА'",
+              "const rawColor = upperText(item.color)",
+              "if (!rawColor)",
+              "matchStatus: 'unresolved_attribute'",
+            ]) check(reservations.includes(marker), `192A2 reservation guard missing: ${marker}`)
+
+            const functionStart = reservations.indexOf('export async function resolveCatalogProductAndVariantV2(')
+            const functionEnd = reservations.indexOf('\n\nexport async function resolveCatalogProductAndVariant(', functionStart)
+            check(functionStart >= 0 && functionEnd > functionStart, 'Cannot isolate resolveCatalogProductAndVariantV2')
+            const body = reservations.slice(functionStart, functionEnd)
+            const exactIndex = body.indexOf('const existing = await findCatalogCombinationV3')
+            const profileIndex = body.indexOf('omittedColorConflictsWithConcreteSibling')
+            const missingGuardIndex = body.indexOf('if (!rawColor)')
+            check(exactIndex >= 0 && profileIndex > exactIndex, 'Omitted-color profile must be checked only after exact identity lookup')
+            check(missingGuardIndex > profileIndex, 'Blank-color guard must run after exact identity/profile checks and before unresolved demand handling')
+            check(body.includes('if (!omittedColorConflictsWithConcreteSibling)'), 'Exact no-color placeholder may not bypass concrete-color sibling check')
+            check(body.includes('stock_position_id = ? AND is_active = 1'), 'Color profile is not scoped to the exact execution')
+            check(!body.includes('createCatalogCombinationV3(') && !body.includes('ensureCatalogExecutionV3('), 'Order lookup must not synthesize a SKU while enforcing the blank-color guard')
+            check(body.includes("matchStatus: 'unresolved_execution'") && body.includes("matchStatus: 'unresolved_variant'"), 'Missing physical identity must remain unresolved instead of being synthesized')
+            check(!body.includes('rawGender') && !body.includes('explicitNoSize'), '192A2 must not overreach into one-size/unisex semantics')
+
+            console.log('STEP 192A2 CATALOG TRUTH FINALIZER TESTS PASSED — blank manager color cannot select a conflicting БЕЗ ЦВЕТА SKU, and Phase 3A lookup-only order entry cannot synthesize any missing SKU')
+          } catch (error) {
+            console.error(`STEP 192A2 CATALOG TRUTH FINALIZER TESTS FAILED: ${error?.message || error}`)
+            process.exit(1)
+          }
+          EOF
+      - name: Inspect Phase 3A diff
+        run: |
+          git diff --check
+          git diff --stat
+      - name: Full release gate
+        run: npm run release:check
+      - name: Commit verified Phase 3A source and remove helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/phase3a-catalog-physical-materialization.yml .github/workflows/phase3a-catalog-physical-materialization-r2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Phase 3A: separate catalog demand from physical SKU creation"
+          git push origin HEAD:safe/phase3a-catalog-physical-materialization-20260827
