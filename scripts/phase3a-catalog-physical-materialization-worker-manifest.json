@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "revision": "phase3a-catalog-physical-materialization-r1",
+  "source": "branch2 Phase 2 clean source",
+  "changes": {
+    "resolveCatalogProductAndVariantV2": {
+      "before": "ae9d35ef2c4e13807a432f390ee8f17eb0b1fe3c06830eae9f82b57558a5600c",
+      "after": "05502bc0d6b6671dc6b9763c32c40f662eca71783ed39edad3d83d0289ccf2a2"
+    },
+    "resolveCatalogReviewFacts": {
+      "before": "594a3d1a01046e3d57cf42ebdcba410a59e662ffe36165d25e39aa12c40ab65b",
+      "after": "6827da62a0c2fa43d1735e9c210f3e6982cbdbecadef6128218f1690f8280a25"
+    },
+    "resolveInventoryCreatableItemsBulk": {
+      "before": "a874d62fe48bf485936b14d5e339a97e0bf258053e8905b43762e3a5eafeeac5",
+      "after": "ec5d72945128c679e3a9904a4c61845830288c835e7af7d1819511f29086dbe4"
+    },
+    "applyInventoryMovement": {
+      "before": "37232c374c3d14be26e1682f9901d34e1f6f87cb51426e6589492fcd25d63d44",
+      "after": "6dad73b0d5254d5239d91d6422537900ca3cd4441b781763c057db583b49b0a9"
+    }
+  }
+}

@@ -5,7 +5,7 @@ import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, norm
 import type { SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
 import type { CanonicalVariantSnapshot } from './catalog.ts'
-import { catalogReferenceDbValueExists, catalogReferenceValueExists, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
+import { catalogReferenceDbValueExists, catalogReferenceValueExists, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
 import { inventoryPhysicalCheckStatement } from './inventory-primitives.ts'
 import { normalizeOrderItems } from './order-core.ts'
 
@@ -214,10 +214,10 @@ export async function resolveCatalogProductAndVariantV2(
   const color = await resolveCatalogValueAlias(db, 'color', normalizeCatalogCombinationColor(item.color));
   const size = await resolveCatalogValueAlias(db, category === 'child' ? 'child_age' : 'size', normalizeCatalogCombinationSize(item.size));
 
-  // Step 192A2: an omitted manager color must not silently select a legacy БЕЗ ЦВЕТА
-  // placeholder when this exact execution also contains real colors. A truly colorless
-  // product keeps working through its existing no-color identity; creating a new no-color
-  // combination requires the explicit reference value БЕЗ ЦВЕТА instead of an empty field.
+  // Phase 3A: order entry is lookup-only. An order expresses demand; it must not
+  // manufacture a Warehouse/Boutique SKU merely because all typed values are known.
+  // New executions/combinations are materialized by physical stock facts such as
+  // arrival, found-on-stocktake and explicit stock-affecting lifecycle resolution.
   const existingExecution = await findCatalogExecutionV3(db, product.id, material, length);
   if (existingExecution?.id) {
     const existing = await findCatalogCombinationV3(db, existingExecution.id, category, gender, color, size);
@@ -239,15 +239,12 @@ export async function resolveCatalogProductAndVariantV2(
     }
   }
 
-  // Never synthesize a new БЕЗ ЦВЕТА SKU merely because the manager left color empty.
-  // One-size/unisex cases are intentionally not guessed here; their UI semantics are handled
-  // separately so existing legitimate dimensionless variants are not broken by this cleanup.
+  // Blank color is never interpreted as permission to invent a no-color SKU.
   if (!rawColor) {
     return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
   }
 
-  // Validate every manager-entered fact before mutating master data. Unknown input must
-  // never leave behind a newly-created execution/combination as a hidden side effect.
+  // Unknown dictionary values remain ambiguity, not catalog creation.
   const sizeKind = category === 'child' ? 'child_age' : 'size';
   if (
     !await catalogReferenceDbValueExists(db, 'material', material)
@@ -259,15 +256,12 @@ export async function resolveCatalogProductAndVariantV2(
     return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
   }
 
-  // Only now may known facts create a previously unseen execution/combination.
-  const execution = existingExecution?.id
-    ? existingExecution
-    : await ensureCatalogExecutionV3(db, product.id, material, length, new Date().toISOString());
+  if (!existingExecution?.id) {
+    return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_execution', inputKey };
+  }
 
-  // Step 188D completion guard: legacy/manual aliases from the pre-v3 review UI are
-  // accepted only when they point to the exact canonical identity we have independently
-  // derived from the current input. This prevents an old 46 -> 42 or HAKI -> BLACK
-  // mapping from overriding the v3 product/execution/color/size model.
+  // A historical alias is accepted only when it independently points to the exact
+  // already-existing execution and dimensions. It is never allowed to create identity.
   try {
     const alias = await db.prepare(
       `SELECT v.id AS variant_id, v.product_id, v.stock_position_id,
@@ -283,7 +277,7 @@ export async function resolveCatalogProductAndVariantV2(
       category: string; gender: string; color: string; size_label: string;
     }>();
     if (
-      alias?.variant_id && alias?.product_id === product.id && alias.stock_position_id === execution.id
+      alias?.variant_id && alias?.product_id === product.id && alias.stock_position_id === existingExecution.id
       && cleanText(alias.category) === category
       && normalizeCatalogCombinationGender(alias.gender) === gender
       && normalizeCatalogCombinationColor(alias.color) === color
@@ -292,24 +286,11 @@ export async function resolveCatalogProductAndVariantV2(
       return { productId: product.id, variantId: toInt(alias.variant_id, 0) || null, matchStatus: 'alias', inputKey };
     }
   } catch {
-    // Alias table is additive. Identity v3 continues through canonical lookup if unavailable.
+    // Alias table is additive. Canonical lookup remains authoritative if unavailable.
   }
 
-  const timestamp = new Date().toISOString();
-  const created = await createCatalogCombinationV3(db, {
-    productId: product.id,
-    executionId: execution.id,
-    category,
-    gender,
-    color,
-    material: execution.material,
-    length: execution.length,
-    sizeLabel: size,
-    externalId: makeVariantExternalId(product.name, category, gender, color, execution.material, execution.length, size),
-  }, timestamp);
-  return { productId: toInt(product.id, 0) || null, variantId: created.id || null, matchStatus: created.created ? 'created_combination' : 'matched', inputKey };
+  return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_variant', inputKey };
 }
-
 
 export async function resolveCatalogProductAndVariant(
   db: D1Database,

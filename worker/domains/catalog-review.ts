@@ -2,11 +2,9 @@
 // Business behavior is intentionally unchanged.
 import type { CatalogReferenceOptions, CatalogResolutionContext, CatalogResolutionResponse } from '../../shared/api-contracts.ts'
 import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, normalizeOrderStatus, normalizeShippingStatus, normalizeSourceType, toInt, upperText } from '../core/text.ts'
-import type { ReferenceKind } from '../core/types.ts'
-import { assertCatalogProductAliasTargetAvailable, catalogReferenceDbValueExists, createCatalogCombinationV3, createCatalogProduct, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, rememberCatalogProductAlias, rememberCatalogValueAlias, resolveCatalogValueAlias } from './catalog.ts'
+import { assertCatalogProductAliasTargetAvailable, catalogReferenceDbValueExists, createCatalogProduct, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, rememberCatalogProductAlias, rememberCatalogValueAlias, resolveCatalogValueAlias } from './catalog.ts'
 import { normalizeOrderItems } from './order-core.ts'
 import { releaseOrderReservationV2, reserveOrderItemV2, resolveCatalogProductAndVariantV2, resolveWorkshopCatalogProductOnly } from './order-reservations.ts'
-import { upsertReferenceValue } from './references.ts'
 
 export function orderItemWasPhysicallyIssued(row: Record<string, unknown>) {
   const status = cleanText(row.stock_writeoff_status);
@@ -299,18 +297,16 @@ export async function resolveCatalogReviewFacts(db: D1Database, orderItemId: num
     if (duplicate?.id) throw new Error(`Такой базовый товар уже существует: ${cleanText(duplicate.name)}. Выберите его вместо создания дубля.`);
   }
 
-  // Validate the learned raw spelling before creating any product/reference/execution. An alias
-  // conflict must never leave half-created master data behind.
+  // Alias conflicts are checked before any allowed base-product creation.
   await assertCatalogProductAliasTargetAvailable(db, anchor.product_name_snapshot, product?.id || 0);
 
-  const createFields = new Set(Array.isArray(input.createFields) ? (input.createFields as unknown[]).map(cleanText) : []);
   const material = await resolveCatalogValueAlias(db, 'material', canonicalStockPositionValue(input.material ?? anchor.material_snapshot));
   const length = await resolveCatalogValueAlias(db, 'length', canonicalStockPositionValue(input.length ?? anchor.length_snapshot));
   const gender = normalizeCatalogCombinationGender(input.gender ?? anchor.gender_snapshot);
   const color = await resolveCatalogValueAlias(db, 'color', normalizeCatalogCombinationColor(input.color ?? anchor.color_snapshot));
   const size = await resolveCatalogValueAlias(db, category === 'child' ? 'child_age' : 'size', normalizeCatalogCombinationSize(input.size ?? anchor.size_snapshot));
 
-  // Pure workshop tasks intentionally stop at the base product and never validate/create a warehouse SKU.
+  // Pure Workshop resolution intentionally stops at the base product.
   if (!normalRows.length) {
     if (!product?.id) {
       const created = await createCatalogProduct(db, { name: requestedProductName, category });
@@ -333,22 +329,9 @@ export async function resolveCatalogReviewFacts(db: D1Database, orderItemId: num
 
   if (gender && gender !== 'ЖЕН' && gender !== 'МУЖ') throw new Error('Пол должен быть выбран из списка.');
 
-  // Read-only preflight first. A missing checkbox must fail before creating a product,
-  // reference value, execution, alias or touching any order/workshop row.
-  const referencePlan: Array<{ field: string; dbKind: string; apiKind: ReferenceKind; value: string }> = [
-    { field: 'material', dbKind: 'material', apiKind: 'materials', value: material },
-    { field: 'length', dbKind: 'length', apiKind: 'lengths', value: length },
-    { field: 'color', dbKind: 'color', apiKind: 'colors', value: color },
-    { field: 'size', dbKind: category === 'child' ? 'child_age' : 'size', apiKind: category === 'child' ? 'childAges' : 'sizes', value: size },
-  ];
-  const missingReferences: typeof referencePlan = [];
-  for (const entry of referencePlan) {
-    if (!entry.value || ((entry.dbKind === 'material' || entry.dbKind === 'length') && entry.value === 'СТАНДАРТ')) continue;
-    if (!await catalogReferenceDbValueExists(db, entry.dbKind, entry.value)) missingReferences.push(entry);
-  }
-  const unconfirmed = missingReferences.find((entry) => !createFields.has(entry.field));
-  if (unconfirmed) throw new Error(`Значение «${unconfirmed.value}» ещё не существует. Выберите существующее или явно добавьте его как новое.`);
-
+  // Phase 3A: ordinary order review may create/confirm the BASE product, but it may
+  // only link an already-existing physical execution/variation. It must not create
+  // reference values, executions or catalog_variants from demand alone.
   if (!product?.id) {
     const created = await createCatalogProduct(db, { name: requestedProductName, category });
     productId = toInt(created.id, 0);
@@ -356,34 +339,23 @@ export async function resolveCatalogReviewFacts(db: D1Database, orderItemId: num
   }
   if (!product?.id) throw new Error('Не удалось определить базовый товар.');
 
-  for (const entry of missingReferences) {
-    await upsertReferenceValue(db, { kind: entry.apiKind, value: entry.value, isActive: 1, sortOrder: 0 });
+  const execution = await findCatalogExecutionV3(db, product.id, material, length);
+  const combination = execution?.id
+    ? await findCatalogCombinationV3(db, execution.id, category, gender, color, size)
+    : null;
+  if (!combination?.id) {
+    throw new Error('Такой складской вариант ещё не зарегистрирован физической операцией. Разбор заказа не создаёт новые исполнения или вариации: они появятся после прихода, ревизии или другого явного движения товара.');
   }
 
   const timestamp = new Date().toISOString();
-  const execution = await ensureCatalogExecutionV3(db, product.id, material, length, timestamp);
-  const combination = await createCatalogCombinationV3(db, {
-    productId: product.id,
-    executionId: execution.id,
-    category,
-    gender,
-    color,
-    material: execution.material,
-    length: execution.length,
-    sizeLabel: size,
-    externalId: makeVariantExternalId(product.name, category, gender, color, execution.material, execution.length, size),
-  }, timestamp);
   const selected = await db.prepare(
     `SELECT v.id AS variant_id, v.product_id, p.name AS product_name, COALESCE(v.category, p.category, 'adult') AS category,
             v.gender, v.color, v.material, v.length, v.size_label
      FROM catalog_variants v JOIN catalog_products p ON p.id = v.product_id
      WHERE v.id = ? AND v.is_active = 1 AND p.is_active = 1 LIMIT 1`
   ).bind(combination.id).first<CatalogReviewSelectedVariant>();
-  if (!selected?.variant_id) throw new Error('Не удалось получить созданную комбинацию товара.');
+  if (!selected?.variant_id) throw new Error('Не удалось получить существующую комбинацию товара.');
 
-  // Alias is written only after every normal-item fact has passed validation and a canonical
-  // target exists. Mixed workshop rows are handled by resolveCatalogReviewRows afterwards,
-  // so a validation error cannot partially remove them from the review queue.
   await rememberCatalogProductAlias(db, anchor.product_name_snapshot, product.id, timestamp);
   await rememberCatalogValueAlias(db, 'material', anchor.material_snapshot, material, timestamp);
   await rememberCatalogValueAlias(db, 'length', anchor.length_snapshot, length, timestamp);
@@ -394,13 +366,10 @@ export async function resolveCatalogReviewFacts(db: D1Database, orderItemId: num
   return {
     ...result,
     workshopLinked,
-    createdCombination: Boolean(combination.created),
-    message: combination.created
-      ? `Создана точная комбинация и связаны позиции: ${result.linked}.`
-      : `Позиции связаны с существующей комбинацией: ${result.linked}.`,
+    createdCombination: false,
+    message: `Позиции связаны с существующей складской комбинацией: ${result.linked}.`,
   };
 }
-
 
 
 export async function excludeCatalogReviewQueueItem(db: D1Database, orderItemId: number) {

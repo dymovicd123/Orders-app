@@ -46,12 +46,15 @@ export function inventoryManualRequestFingerprint(
 export async function resolveInventoryCreatableItemsBulk(
   db: D1Database,
   rawItems: ReturnType<typeof normalizeInventoryItem>[],
+  options: { allowCatalogMaterialization?: boolean } = {},
 ): Promise<InventoryResolvedItem[]> {
   if (!rawItems.length) return [];
+  const allowCatalogMaterialization = options.allowCatalogMaterialization !== false;
 
   // Old pre-188D environments are not a supported production target of Step 190.2, but keep
   // the legacy resolver as a compatibility fallback instead of inventing a second old-schema path.
   if (!await isCatalogIdentityV3Enabled(db)) {
+    if (!allowCatalogMaterialization) throw new Error('Эта операция требует уже существующую складскую комбинацию. Обновите данные и выберите зарегистрированный вариант.');
     const fallback: InventoryResolvedItem[] = [];
     for (const item of rawItems) fallback.push(await resolveInventoryItem(db, item));
     return fallback;
@@ -124,6 +127,7 @@ export async function resolveInventoryCreatableItemsBulk(
   });
 
   if (missingProducts.size) {
+    if (!allowCatalogMaterialization) throw new Error('Эта операция не может создавать новый товар или складскую комбинацию. Сначала зарегистрируйте физический товар через приход или ревизию.');
     const missingProductsJson = JSON.stringify(Array.from(missingProducts.values()));
     await db.prepare(
       `INSERT OR IGNORE INTO catalog_products (name, category, is_active, created_at, updated_at, external_id)
@@ -167,6 +171,7 @@ export async function resolveInventoryCreatableItemsBulk(
   });
 
   if (missingExecutions.size) {
+    if (!allowCatalogMaterialization) throw new Error('Эта операция не может создавать новое исполнение товара. Используйте уже зарегистрированную складскую комбинацию.');
     const executionJson = JSON.stringify(Array.from(missingExecutions.values()));
     await db.prepare(
       `INSERT OR IGNORE INTO catalog_stock_positions (
@@ -237,6 +242,7 @@ export async function resolveInventoryCreatableItemsBulk(
   });
 
   if (missingVariants.size) {
+    if (!allowCatalogMaterialization) throw new Error('Эта операция не может создавать новую вариацию товара. Она должна сначала появиться из физического прихода, ревизии или другого явного приёма.');
     const variantsJson = JSON.stringify(Array.from(missingVariants.values()));
     await db.prepare(
       `INSERT OR IGNORE INTO catalog_variants (
@@ -410,7 +416,9 @@ export async function applyInventoryMovement(
 
   if (creatableIndexes.length) {
     const creatableRaw = creatableIndexes.map(index => ({ ...items[index], variantId: 0 }));
-    const createdResolved = await resolveInventoryCreatableItemsBulk(db, creatableRaw);
+    const createdResolved = await resolveInventoryCreatableItemsBulk(db, creatableRaw, {
+      allowCatalogMaterialization: ['arrival', 'return', 'revision'].includes(movementType),
+    });
     creatableIndexes.forEach((index, localIndex) => {
       resolvedEntries[index] = { raw: items[index], item: createdResolved[localIndex] };
     });

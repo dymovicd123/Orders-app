@@ -19,6 +19,7 @@ const attentionContextPath = path.join(root, 'scripts/step192b2a2-attention-cont
 const handoverSqlAliasSafetyPath = path.join(root, 'scripts/step192b2a3-handover-sql-alias-safety-manifest.json')
 const orderCreateSaveIntegrityPath = path.join(root, 'scripts/step192b2a4-order-create-save-integrity-manifest.json')
 const phase1bWorkshopReturnDispositionPath = path.join(root, 'scripts/phase1b-workshop-return-disposition-worker-manifest.json')
+const phase3aCatalogMaterializationPath = path.join(root, 'scripts/phase3a-catalog-physical-materialization-worker-manifest.json')
 const stocktakeLostResponsePath = path.join(root, 'scripts/stocktake-lost-response-worker-manifest.json')
 const financeOrderDateSyncPath = path.join(root, 'scripts/finance-order-date-sync-worker-manifest.json')
 const financeF2TracePath = path.join(root, 'scripts/finance-f2-trace-worker-manifest.json')
@@ -101,6 +102,10 @@ try {
   const phase1bWorkshopReturnDisposition = JSON.parse(fs.readFileSync(phase1bWorkshopReturnDispositionPath, 'utf8'))
   check(phase1bWorkshopReturnDisposition?.version === 1 && phase1bWorkshopReturnDisposition?.revision === 'phase1b-workshop-return-disposition-r1', 'Phase 1B Workshop return disposition Worker manifest invalid')
   const phase1bWorkshopReturnDispositionChanges = phase1bWorkshopReturnDisposition.changes || {}
+  check(fs.existsSync(phase3aCatalogMaterializationPath), 'Phase 3A catalog physical-materialization Worker manifest missing')
+  const phase3aCatalogMaterialization = JSON.parse(fs.readFileSync(phase3aCatalogMaterializationPath, 'utf8'))
+  check(phase3aCatalogMaterialization?.version === 1 && phase3aCatalogMaterialization?.revision === 'phase3a-catalog-physical-materialization-r1', 'Phase 3A catalog physical-materialization Worker manifest invalid')
+  const phase3aCatalogMaterializationChanges = phase3aCatalogMaterialization.changes || {}
   const stocktakeLostResponse = fs.existsSync(stocktakeLostResponsePath) ? JSON.parse(fs.readFileSync(stocktakeLostResponsePath, 'utf8')) : null
   const stocktakeLostResponseChanges = stocktakeLostResponse?.version === 1 ? (stocktakeLostResponse.changes || {}) : {}
   const financeOrderDateSync = fs.existsSync(financeOrderDateSyncPath) ? JSON.parse(fs.readFileSync(financeOrderDateSyncPath, 'utf8')) : null
@@ -299,11 +304,17 @@ try {
       acceptedPostFinanceF9DatePriorityHash = financeF9DatePriorityChanged.after
     }
     const phase1bWorkshopReturnDispositionChanged = phase1bWorkshopReturnDispositionChanges[name]
+    let acceptedPostPhase1bWorkshopReturnDispositionHash = acceptedPostFinanceF9DatePriorityHash
     if (phase1bWorkshopReturnDispositionChanged) {
       check(phase1bWorkshopReturnDispositionChanged.before === acceptedPostFinanceF9DatePriorityHash, `Phase 1B Workshop return disposition baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === phase1bWorkshopReturnDispositionChanged.after, `Worker declaration changed beyond exact Phase 1B Workshop return disposition allow-list: ${name}`)
+      acceptedPostPhase1bWorkshopReturnDispositionHash = phase1bWorkshopReturnDispositionChanged.after
+    }
+    const phase3aCatalogMaterializationChanged = phase3aCatalogMaterializationChanges[name]
+    if (phase3aCatalogMaterializationChanged) {
+      check(phase3aCatalogMaterializationChanged.before === acceptedPostPhase1bWorkshopReturnDispositionHash, `Phase 3A catalog physical-materialization baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === phase3aCatalogMaterializationChanged.after, `Worker declaration changed beyond exact Phase 3A catalog physical-materialization allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostFinanceF9DatePriorityHash, `Worker declaration body changed beyond accepted Finance F1-F9 / Phase 1B deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostPhase1bWorkshopReturnDispositionHash, `Worker declaration body changed beyond accepted Finance F1-F9 / Phase 1B / Phase 3A deltas: ${name}`)
     }
   }
 
