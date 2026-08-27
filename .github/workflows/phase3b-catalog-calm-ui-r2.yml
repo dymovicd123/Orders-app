@@ -1,0 +1,319 @@
+name: Phase 3B calm catalog UI R2
+
+on:
+  push:
+    branches:
+      - safe/phase3a-catalog-physical-materialization-20260827
+    paths:
+      - .github/workflows/phase3b-catalog-calm-ui-r2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  phase3b:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/phase3a-catalog-physical-materialization-20260827
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply calm Catalog UI R2
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          inventory = Path('src/features/sections/InventorySection.tsx')
+          text = inventory.read_text()
+          css_anchor = "import '../../styles/192b2a-warehouse-attention-actions.css'\n"
+          if "193-catalog-calm.css" not in text:
+              if css_anchor not in text: raise SystemExit('Inventory CSS anchor missing')
+              text = text.replace(css_anchor, css_anchor + "import '../../styles/193-catalog-calm.css'\n", 1)
+
+          new_copy = """  const catalogReviewIssueCopy: Record<string, { title: string; text: string }> = {
+            unknown_product: { title: 'Неизвестен базовый товар', text: 'Выберите существующий товар. Если его действительно ещё нет, сначала добавьте базовый товар в Каталоге — заказ сам по себе не создаёт складскую вариацию.' },
+            workshop_product: { title: 'Цеховая позиция: нужен только товар', text: 'Для цеховой позиции складскую комбинацию создавать не нужно. Достаточно связать её с существующим базовым товаром.' },
+            unknown_attribute: { title: 'Нужно уточнить характеристику', text: 'Выберите существующее значение из справочника. Новая характеристика из текста заказа сама по себе не создаёт складскую вариацию.' },
+            new_execution: { title: 'Такого исполнения ещё нет в остатках', text: 'Это не ошибка Каталога. Заказ остаётся как потребность; исполнение появится после физического прихода, ревизии или другого подтверждённого движения товара.' },
+            missing_combination: { title: 'Такой вариации ещё нет в остатках', text: 'Все значения понятны, но физически зарегистрированной комбинации пока нет. Она появится из прихода, ревизии или другого подтверждённого движения товара.' },
+            exact_existing: { title: 'Точная вариация уже существует', text: 'Это безопасное совпадение. Можно связать заказ с уже зарегистрированной складской вариацией.' },
+          }
+          const catalogReviewIssue ="""
+          pattern = r"  const catalogReviewIssueCopy: Record<string, \{ title: string; text: string \}> = \{.*?\n  \}\n  const catalogReviewIssue ="
+          text, count = re.subn(pattern, new_copy, text, count=1, flags=re.S)
+          if count != 1: raise SystemExit('Catalog review issue copy boundary missing')
+
+          old_blocking = "const catalogReviewUnconfirmedFields = resolutionEditableFields.filter((field) => reviewValueNeedsCreation(field, String(catalogReviewFacts[field] || '')) && !catalogReviewCreateFields[field])"
+          new_blocking = "const catalogReviewUnconfirmedFields = resolutionEditableFields.filter((field) => reviewValueNeedsCreation(field, String(catalogReviewFacts[field] || '')))"
+          if old_blocking not in text: raise SystemExit('Catalog review blocking marker missing')
+          text = text.replace(old_blocking, new_blocking, 1)
+
+          call_anchor = "        catalogAdminMode,\n        catalogCategoryFilter,\n        catalogData,"
+          if call_anchor not in text: raise SystemExit('Catalog render call anchor missing')
+          text = text.replace(call_anchor, "        catalogAdminMode,\n        catalogCategoryFilter,\n        catalogData,\n        inventoryQuery,", 1)
+          inventory.write_text(text)
+
+          renderer = Path('src/features/inventory/views/renderInventoryCatalogPanel.tsx')
+          text = renderer.read_text()
+          type_anchor = "  | 'inventoryLifecycleTaskIndex'\n  | 'inventoryPanelStyle'"
+          if type_anchor not in text: raise SystemExit('Renderer type anchor missing')
+          text = text.replace(type_anchor, "  | 'inventoryLifecycleTaskIndex'\n  | 'inventoryPanelStyle'\n  | 'inventoryQuery'", 1)
+          destruct_anchor = "    inventoryLifecycleTaskIndex,\n    inventoryPanelStyle,"
+          if destruct_anchor not in text: raise SystemExit('Renderer destructure anchor missing')
+          text = text.replace(destruct_anchor, "    inventoryLifecycleTaskIndex,\n    inventoryPanelStyle,\n    inventoryQuery,", 1)
+
+          start_marker = '                    <div className="inventory-panel-headline">\n'
+          end_marker = "                    </>) : catalogAdminMode === 'review' ? (\n"
+          start = text.find(start_marker)
+          end = text.find(end_marker, start)
+          if start < 0 or end < 0: raise SystemExit('Catalog main-mode replacement boundary missing')
+          replacement = r'''                    <div className="inventory-panel-headline catalog-calm-headline">
+                      <div>
+                        <h3>{catalogAdminMode === 'catalog' ? 'Каталог' : catalogAdminMode === 'review' ? 'Разбор позиций' : catalogAdminMode === 'lifecycle' ? 'Ожидающие движения' : 'Настройки характеристик'}</h3>
+                        <p>{catalogAdminMode === 'catalog' ? 'Здесь создаются и переименовываются только базовые товары. Исполнения, цвета и размеры появляются, когда товар реально приходит, находится при ревизии или участвует в другом подтверждённом физическом движении.' : catalogAdminMode === 'review' ? 'Здесь уточняются неоднозначные данные заказов. Отсутствующая физическая вариация не создаётся из заказа.' : catalogAdminMode === 'lifecycle' ? 'Возвраты и обмены, где физическое движение нельзя применить без точной идентичности.' : 'Редкие настройки допустимых цветов, материалов, длин и размеров.'}</p>
+                      </div>
+                      <div className="catalog-calm-head-actions">
+                        {catalogAdminMode !== 'catalog' ? <button className="secondary compact" type="button" onClick={() => setCatalogAdminMode('catalog')}>← К каталогу</button> : null}
+                        <button className="secondary compact" type="button" onClick={() => {
+                          if (catalogAdminMode === 'review') void loadCatalogReview(true)
+                          else if (catalogAdminMode === 'lifecycle') void loadInventoryLifecycle(true)
+                          else if (catalogAdminMode === 'catalog') void loadCatalogData(true)
+                          else void loadReferenceItems(referenceKind, true)
+                        }}>Обновить</button>
+                      </div>
+                    </div>
+
+                    <div className="catalog-calm-service-bar" aria-label="Дополнительные задачи каталога">
+                      {(catalogReview?.count || 0) > 0 ? <button type="button" className="catalog-calm-service-alert" onClick={() => { setCatalogAdminMode('review'); setCatalogReviewTaskIndex(0); void loadCatalogReview(true) }}>Разобрать позиции · {catalogReview.count}</button> : null}
+                      {(inventoryLifecycle?.count || 0) > 0 ? <button type="button" className="catalog-calm-service-alert" onClick={() => { setCatalogAdminMode('lifecycle'); setInventoryLifecycleTaskIndex(0); void loadInventoryLifecycle(true) }}>Подтвердить движения · {inventoryLifecycle.count}</button> : null}
+                      <button type="button" className={catalogAdminMode === 'attributes' ? 'is-active' : ''} onClick={() => { setCatalogAdminMode('attributes'); const productKinds = ['colors', 'materials', 'lengths', 'sizes', 'childAges']; if (!productKinds.includes(referenceKind)) selectReferenceKind('colors'); else void loadReferenceItems(referenceKind, !referenceItems.length) }}>Настройки характеристик</button>
+                    </div>
+
+                    {catalogAdminMode === 'catalog' ? (<>
+                      <section className="catalog-calm-create">
+                        <div className="catalog-calm-create-copy">
+                          <strong>Добавить товар</strong>
+                          <span>Только базовое название. Цвет, материал, длина и размер появятся из реальной работы с товаром.</span>
+                        </div>
+                        <div className="catalog-calm-create-form">
+                          <label>
+                            <span>Название</span>
+                            <input value={catalogProductDraft.id ? '' : catalogProductDraft.name} onChange={(event) => setCatalogProductDraft((current) => ({ ...current, id: 0, name: event.target.value }))} placeholder="Например: БАЙСАЛ ЖИЛЕТ" />
+                          </label>
+                          <label className="catalog-calm-create-type">
+                            <span>Основной тип</span>
+                            <select value={catalogProductDraft.id ? 'adult' : catalogProductDraft.category} onChange={(event) => setCatalogProductDraft((current) => ({ ...current, id: 0, category: event.target.value === 'child' ? 'child' : 'adult' }))}>
+                              <option value="adult">Взрослый</option>
+                              <option value="child">Детский</option>
+                            </select>
+                          </label>
+                          <button className="primary" type="button" disabled={!String(catalogProductDraft.id ? '' : catalogProductDraft.name).trim()} onClick={() => void saveCatalogProduct()}>Добавить товар</button>
+                        </div>
+                      </section>
+
+                      <div className="catalog-calm-search-row">
+                        <input value={inventoryQuery} onChange={(event) => setInventoryQuery(event.target.value)} placeholder="Найти товар по названию" />
+                        <span>{catalogActiveProducts.filter((product: any) => !normalizeSuggestion(inventoryQuery) || normalizeSuggestion(product.name).includes(normalizeSuggestion(inventoryQuery))).length} найдено</span>
+                      </div>
+
+                      <section className="catalog-calm-product-list">
+                        {catalogActiveProducts.filter((product: any) => !normalizeSuggestion(inventoryQuery) || normalizeSuggestion(product.name).includes(normalizeSuggestion(inventoryQuery))).length ? catalogActiveProducts.filter((product: any) => !normalizeSuggestion(inventoryQuery) || normalizeSuggestion(product.name).includes(normalizeSuggestion(inventoryQuery))).map((product: any) => {
+                          const productKey = String(product.id)
+                          const expanded = Boolean(expandedCatalogProducts[productKey])
+                          const productVariants = [...(catalogVariantsByProductId.get(Number(product.id)) || [])]
+                            .filter((variant: any) => variant.isActive)
+                            .sort((a: any, b: any) => [a.material, a.length, getCatalogVariantCategory(a), a.gender, a.color, a.sizeLabel].join(' ').localeCompare([b.material, b.length, getCatalogVariantCategory(b), b.gender, b.color, b.sizeLabel].join(' '), 'ru', { numeric: true }))
+                          const executionMap = new Map<string, { key: string; material: string; length: string; variants: any[] }>()
+                          for (const variant of productVariants) {
+                            const material = String(variant.material || 'СТАНДАРТ').trim() || 'СТАНДАРТ'
+                            const length = String(variant.length || 'СТАНДАРТ').trim() || 'СТАНДАРТ'
+                            const key = `${normalizeSuggestion(material)}¦${normalizeSuggestion(length)}`
+                            const current = executionMap.get(key) || { key, material, length, variants: [] }
+                            current.variants.push(variant)
+                            executionMap.set(key, current)
+                          }
+                          const executions = Array.from(executionMap.values()).sort((a, b) => `${a.material} ${a.length}`.localeCompare(`${b.material} ${b.length}`, 'ru', { numeric: true }))
+                          const executionSummary = executions.length === 1 ? '1 исполнение' : `${executions.length} исполнений`
+                          const variationSummary = productVariants.length === 1 ? '1 вариация' : `${productVariants.length} вариаций`
+                          const editingProduct = catalogProductDraft.id === Number(product.id)
+                          return (
+                            <article key={product.id} className={`catalog-calm-product ${expanded ? 'is-open' : ''}`}>
+                              <button className="catalog-calm-product-row" type="button" onClick={() => setExpandedCatalogProducts((current) => ({ ...current, [productKey]: !expanded }))}>
+                                <span className="catalog-calm-product-title"><strong>{product.name}</strong><em>{productVariants.length ? `${executionSummary} · ${variationSummary}` : 'Ещё не появлялся в остатках'}</em></span>
+                                <span className="catalog-calm-product-toggle">{expanded ? 'Свернуть' : 'Открыть'}</span>
+                              </button>
+
+                              {expanded ? <div className="catalog-calm-product-body">
+                                <div className="catalog-calm-product-tools">
+                                  <button className="secondary compact" type="button" onClick={() => { setInventoryQuery(product.name); openInventoryPanel('overview') }}>Посмотреть в остатках</button>
+                                  {!editingProduct ? <button className="ghost compact" type="button" onClick={() => setCatalogProductDraft({ id: product.id, name: product.name, category: getCatalogProductEffectiveCategory(product) })}>Изменить товар</button> : null}
+                                </div>
+                                {editingProduct ? <div className="catalog-calm-product-edit">
+                                  <label><span>Название товара</span><input value={catalogProductDraft.name} onChange={(event) => setCatalogProductDraft((current) => ({ ...current, name: event.target.value }))} /></label>
+                                  <label><span>Основной тип</span><select value={catalogProductDraft.category} onChange={(event) => setCatalogProductDraft((current) => ({ ...current, category: event.target.value === 'child' ? 'child' : 'adult' }))}><option value="adult">Взрослый</option><option value="child">Детский</option></select></label>
+                                  <button className="primary compact" type="button" onClick={() => void saveCatalogProduct()}>Сохранить</button>
+                                  <button className="secondary compact" type="button" onClick={() => setCatalogProductDraft({ id: 0, name: '', category: 'adult' })}>Отмена</button>
+                                </div> : null}
+
+                                {executions.length ? <div className="catalog-calm-executions">{executions.map((execution) => {
+                                  const variationMap = new Map<string, { key: string; category: string; gender: string; color: string; sizes: string[] }>()
+                                  for (const variant of execution.variants) {
+                                    const category = getCatalogVariantCategory(variant)
+                                    const gender = String(variant.gender || '').trim()
+                                    const color = String(variant.color || '').trim()
+                                    const key = `${category}¦${normalizeSuggestion(gender)}¦${normalizeSuggestion(color)}`
+                                    const current = variationMap.get(key) || { key, category, gender, color, sizes: [] }
+                                    const size = String(variant.sizeLabel || '').trim()
+                                    if (size && !current.sizes.includes(size)) current.sizes.push(size)
+                                    variationMap.set(key, current)
+                                  }
+                                  const variations = Array.from(variationMap.values()).map((variation) => ({ ...variation, sizes: variation.sizes.sort((a, b) => a.localeCompare(b, 'ru', { numeric: true })) }))
+                                  return <section key={`execution-${product.id}-${execution.key}`} className="catalog-calm-execution">
+                                    <div className="catalog-calm-execution-head"><strong>{execution.material} · {execution.length}</strong><span>{execution.variants.length === 1 ? '1 вариация' : `${execution.variants.length} вариаций`}</span></div>
+                                    <div className="catalog-calm-variation-list">{variations.map((variation) => <div className="catalog-calm-variation" key={`${execution.key}-${variation.key}`}><span>{[productCategoryLabel(variation.category), variation.gender || 'Пол не указан', variation.color || 'Цвет не указан'].join(' · ')}</span><strong>{variation.sizes.length ? variation.sizes.join(' · ') : 'Без размера'}</strong></div>)}</div>
+                                  </section>
+                                })}</div> : <div className="catalog-calm-empty-product"><strong>Пока только базовый товар</strong><span>Исполнения и вариации появятся, когда этот товар физически придёт или будет найден при ревизии.</span></div>}
+                              </div> : null}
+                            </article>
+                          )
+                        }) : <div className="empty-state">По этому поиску товаров нет.</div>}
+                      </section>
+                    </>) : catalogAdminMode === 'review' ? (
+'''
+          text = text[:start] + replacement + text[end + len(end_marker):]
+          renderer.write_text(text)
+
+          pkg = Path('package.json')
+          text = pkg.read_text()
+          old = 'node scripts/test-phase3a-catalog-physical-materialization.mjs && node scripts/test-stocktake-functional-acceptance.mjs'
+          new = 'node scripts/test-phase3a-catalog-physical-materialization.mjs && node scripts/test-phase3b-catalog-calm-ui.mjs && node scripts/test-stocktake-functional-acceptance.mjs'
+          if old not in text: raise SystemExit('Phase 3B package release marker missing')
+          pkg.write_text(text.replace(old, new, 1))
+          PY
+
+          cat > src/styles/193-catalog-calm.css <<'EOF'
+          .catalog-calm-headline { align-items: flex-start; gap: 18px; }
+          .catalog-calm-headline p { max-width: 920px; }
+          .catalog-calm-head-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+          .catalog-calm-service-bar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 16px; }
+          .catalog-calm-service-bar button { border: 1px solid #d9e1ee; background: #fff; color: #40506a; border-radius: 10px; padding: 8px 11px; font-size: 12px; font-weight: 700; cursor: pointer; }
+          .catalog-calm-service-bar button:hover, .catalog-calm-service-bar button.is-active { border-color: #9db7f5; background: #f5f8ff; color: #174fc7; }
+          .catalog-calm-service-bar .catalog-calm-service-alert { border-color: #f0d6a8; background: #fffaf1; color: #7b5415; }
+          .catalog-calm-create { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(480px, 2fr); gap: 18px; align-items: end; padding: 16px; border: 1px solid #dce4ef; border-radius: 14px; background: #fbfcfe; margin-bottom: 14px; }
+          .catalog-calm-create-copy { display: grid; gap: 4px; align-self: center; }
+          .catalog-calm-create-copy strong { font-size: 15px; color: #1d2d45; }
+          .catalog-calm-create-copy span { color: #66758b; font-size: 12px; line-height: 1.45; }
+          .catalog-calm-create-form { display: grid; grid-template-columns: minmax(240px, 1fr) 155px auto; gap: 10px; align-items: end; }
+          .catalog-calm-create-form label, .catalog-calm-product-edit label { display: grid; gap: 5px; min-width: 0; }
+          .catalog-calm-create-form label > span, .catalog-calm-product-edit label > span { color: #5b6b82; font-size: 11px; font-weight: 700; }
+          .catalog-calm-create-form input, .catalog-calm-create-form select, .catalog-calm-product-edit input, .catalog-calm-product-edit select, .catalog-calm-search-row input { width: 100%; min-height: 38px; border: 1px solid #d7dfeb; border-radius: 9px; background: #fff; padding: 8px 10px; color: #17253a; }
+          .catalog-calm-search-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; margin: 2px 0 10px; }
+          .catalog-calm-search-row span { color: #78869a; font-size: 12px; white-space: nowrap; }
+          .catalog-calm-product-list { display: grid; gap: 8px; }
+          .catalog-calm-product { border: 1px solid #dce4ef; border-radius: 12px; background: #fff; overflow: hidden; }
+          .catalog-calm-product.is-open { border-color: #c6d5ef; }
+          .catalog-calm-product-row { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 0; background: #fff; padding: 13px 15px; text-align: left; cursor: pointer; }
+          .catalog-calm-product-row:hover { background: #fafcff; }
+          .catalog-calm-product-title { display: grid; gap: 3px; min-width: 0; }
+          .catalog-calm-product-title strong { color: #17243a; font-size: 14px; }
+          .catalog-calm-product-title em { color: #748198; font-size: 11px; font-style: normal; font-weight: 500; }
+          .catalog-calm-product-toggle { color: #3464c9; font-size: 11px; font-weight: 700; flex: 0 0 auto; }
+          .catalog-calm-product-body { border-top: 1px solid #edf1f6; padding: 12px 15px 15px; background: #fcfdff; }
+          .catalog-calm-product-tools { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+          .catalog-calm-product-edit { display: grid; grid-template-columns: minmax(220px, 1fr) 160px auto auto; gap: 9px; align-items: end; padding: 11px; border: 1px solid #dfe7f2; border-radius: 10px; background: #fff; margin-bottom: 11px; }
+          .catalog-calm-executions { display: grid; gap: 9px; }
+          .catalog-calm-execution { border: 1px solid #e1e7f0; border-radius: 10px; background: #fff; overflow: hidden; }
+          .catalog-calm-execution-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 9px 11px; background: #f7f9fc; border-bottom: 1px solid #edf1f6; }
+          .catalog-calm-execution-head strong { color: #263650; font-size: 12px; }
+          .catalog-calm-execution-head span { color: #7c899a; font-size: 10px; }
+          .catalog-calm-variation-list { display: grid; }
+          .catalog-calm-variation { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(180px, auto); gap: 14px; align-items: center; padding: 9px 11px; border-top: 1px solid #f0f3f7; }
+          .catalog-calm-variation:first-child { border-top: 0; }
+          .catalog-calm-variation span { color: #536279; font-size: 11px; }
+          .catalog-calm-variation strong { color: #1f2f48; font-size: 11px; text-align: right; }
+          .catalog-calm-empty-product { display: grid; gap: 4px; padding: 13px; border: 1px dashed #d6deea; border-radius: 10px; background: #fff; }
+          .catalog-calm-empty-product strong { color: #33445d; font-size: 12px; }
+          .catalog-calm-empty-product span { color: #78859a; font-size: 11px; }
+          @media (max-width: 900px) {
+            .catalog-calm-create { grid-template-columns: 1fr; }
+            .catalog-calm-create-form { grid-template-columns: 1fr 150px; }
+            .catalog-calm-create-form > button { grid-column: 1 / -1; width: 100%; }
+            .catalog-calm-product-edit { grid-template-columns: 1fr 150px; }
+          }
+          @media (max-width: 640px) {
+            .catalog-calm-head-actions, .catalog-calm-service-bar { justify-content: stretch; }
+            .catalog-calm-service-bar button { flex: 1 1 auto; }
+            .catalog-calm-create { padding: 12px; }
+            .catalog-calm-create-form, .catalog-calm-product-edit { grid-template-columns: 1fr; }
+            .catalog-calm-create-form > button { grid-column: auto; }
+            .catalog-calm-search-row { grid-template-columns: 1fr; gap: 5px; }
+            .catalog-calm-product-row { padding: 12px; }
+            .catalog-calm-product-body { padding: 10px 11px 12px; }
+            .catalog-calm-product-tools { justify-content: stretch; }
+            .catalog-calm-product-tools button { flex: 1 1 auto; }
+            .catalog-calm-variation { grid-template-columns: 1fr; gap: 4px; }
+            .catalog-calm-variation strong { text-align: left; }
+          }
+          EOF
+
+          cat > scripts/test-phase3b-catalog-calm-ui.mjs <<'EOF'
+          import fs from 'node:fs'
+          import path from 'node:path'
+          const root = process.cwd()
+          const read = (file) => fs.readFileSync(path.join(root, file), 'utf8')
+          const check = (condition, message) => { if (!condition) throw new Error(message) }
+          const section = (text, start, end) => {
+            const a = text.indexOf(start); check(a >= 0, `Missing start: ${start}`)
+            const b = text.indexOf(end, a + start.length); check(b > a, `Missing end: ${end}`)
+            return text.slice(a, b)
+          }
+          try {
+            const view = read('src/features/inventory/views/renderInventoryCatalogPanel.tsx')
+            const controller = read('src/features/sections/InventorySection.tsx')
+            const css = read('src/styles/193-catalog-calm.css')
+            const pkg = JSON.parse(read('package.json'))
+            const catalog = section(view, "{catalogAdminMode === 'catalog' ? (<>", "</>) : catalogAdminMode === 'review' ? (")
+            check(view.includes('Здесь создаются и переименовываются только базовые товары'), 'Catalog does not explain the base-product-only model')
+            check(catalog.includes('Ещё не появлялся в остатках'), 'Variant-free base products are not presented neutrally')
+            check(catalog.includes('executionMap') && catalog.includes('variationMap'), 'Observed variants are not grouped as execution -> variation')
+            check(catalog.includes('Посмотреть в остатках'), 'Catalog lost the intentional drilldown to stock')
+            for (const noisy of ['+ Вариант', 'Добавить вариант', 'Новый вариант', 'товаров без вариантов — проверить', 'без учёта резервов']) check(!catalog.includes(noisy), `Daily Catalog still exposes noisy control: ${noisy}`)
+            check(!catalog.includes('saveCatalogVariant()'), 'Daily Catalog can still manually create/edit SKU rows')
+            check(view.includes('Настройки характеристик'), 'Reference settings are no longer reachable as a secondary action')
+            check(!view.includes('human-catalog-summary') && !view.includes('catalog-category-switcher'), 'Old catalog dashboard/filter chrome remains')
+            check(controller.includes('Такого исполнения ещё нет в остатках') && controller.includes('Такой вариации ещё нет в остатках'), 'Catalog review copy still frames physical absence as SKU creation work')
+            check(controller.includes("const catalogReviewUnconfirmedFields = resolutionEditableFields.filter((field) => reviewValueNeedsCreation(field, String(catalogReviewFacts[field] || '')))"), 'Unknown order-entered references can still be user-confirmed into existence')
+            check(css.includes('.catalog-calm-product') && css.includes('@media (max-width: 640px)'), 'Calm Catalog desktop/mobile styles missing')
+            check(String(pkg.scripts?.['release:check'] || '').includes('test-phase3b-catalog-calm-ui.mjs'), 'Phase 3B regression is not wired into release:check')
+            console.log('PHASE 3B CALM CATALOG UI TESTS PASSED — daily Catalog is base-product-first, observed variants are grouped read-only, technical SKU creation controls and stock clutter are absent')
+          } catch (error) {
+            console.error(`PHASE 3B CALM CATALOG UI TESTS FAILED: ${error?.message || error}`)
+            process.exit(1)
+          }
+          EOF
+      - name: Inspect Phase 3B diff
+        run: |
+          git diff --check
+          git diff --stat
+      - name: Full release gate
+        run: npm run release:check
+      - name: Commit verified Phase 3B source and remove helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/phase3b-catalog-calm-ui.yml .github/workflows/phase3b-catalog-calm-ui-r2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Phase 3B: simplify Catalog around base products"
+          git push origin HEAD:safe/phase3a-catalog-physical-materialization-20260827
