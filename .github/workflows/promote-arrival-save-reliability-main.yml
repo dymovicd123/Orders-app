@@ -1,0 +1,114 @@
+name: Promote arrival save reliability to main
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/promote-arrival-save-reliability-main.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Verify exact production baseline and copy branch2-tested hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=b5566176b5159fc5b1c24c1930095879c3ea5552
+          BRANCH2_SOURCE=74aba2557d1e80f313fdaf9ea475d7b17ff74f83
+          git fetch origin branch2
+          existing=(
+            package.json
+            scripts/test-step1906a-worker-modularization.mjs
+            src/App.tsx
+            worker/domains/inventory-movement.ts
+          )
+          added=(
+            scripts/arrival-save-reliability-worker-manifest.json
+            scripts/test-arrival-materialization-reliability.mjs
+            scripts/test-arrival-save-reliability.mjs
+          )
+          for path in "${existing[@]}"; do
+            current=$(git rev-parse "HEAD:${path}")
+            expected=$(git rev-parse "${BASE}:${path}")
+            if [ "$current" != "$expected" ]; then
+              echo "Production baseline mismatch: ${path} ${current} != ${expected}"
+              exit 1
+            fi
+          done
+          for path in "${added[@]}"; do
+            if git cat-file -e "HEAD:${path}" 2>/dev/null; then
+              echo "Expected new hotfix file already exists on Production: ${path}"
+              exit 1
+            fi
+          done
+          expected_names=$(printf '%s\n' \
+            package.json \
+            scripts/arrival-save-reliability-worker-manifest.json \
+            scripts/test-arrival-materialization-reliability.mjs \
+            scripts/test-arrival-save-reliability.mjs \
+            scripts/test-step1906a-worker-modularization.mjs \
+            src/App.tsx \
+            worker/domains/inventory-movement.ts | sort)
+          actual_names=$(git diff --name-only "$BASE" "$BRANCH2_SOURCE" -- \
+            package.json \
+            scripts/arrival-save-reliability-worker-manifest.json \
+            scripts/test-arrival-materialization-reliability.mjs \
+            scripts/test-arrival-save-reliability.mjs \
+            scripts/test-step1906a-worker-modularization.mjs \
+            src/App.tsx \
+            worker/domains/inventory-movement.ts | sort)
+          if [ "$actual_names" != "$expected_names" ]; then
+            echo 'Branch2 tested hotfix does not contain the expected exact file set:'
+            printf '%s\n' "$actual_names"
+            exit 1
+          fi
+          git checkout "$BRANCH2_SOURCE" -- \
+            package.json \
+            scripts/arrival-save-reliability-worker-manifest.json \
+            scripts/test-arrival-materialization-reliability.mjs \
+            scripts/test-arrival-save-reliability.mjs \
+            scripts/test-step1906a-worker-modularization.mjs \
+            src/App.tsx \
+            worker/domains/inventory-movement.ts
+      - name: Full release gate
+        run: npm run release:check
+      - name: Commit verified Production hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/promote-arrival-save-reliability-main.yml
+          changed=$(git status --short | sed -E 's/^...//' | sort)
+          expected=$(printf '%s\n' \
+            .github/workflows/promote-arrival-save-reliability-main.yml \
+            package.json \
+            scripts/arrival-save-reliability-worker-manifest.json \
+            scripts/test-arrival-materialization-reliability.mjs \
+            scripts/test-arrival-save-reliability.mjs \
+            scripts/test-step1906a-worker-modularization.mjs \
+            src/App.tsx \
+            worker/domains/inventory-movement.ts | sort)
+          if [ "$changed" != "$expected" ]; then
+            echo 'Unexpected Production promotion working tree:'
+            git status --short
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Fix arrival save reliability'
+          git push origin HEAD:main
