@@ -4814,7 +4814,10 @@ function App() {
           : [
               loadInventoryData(inventoryDraft.source, true, '', false),
             ]
-      await Promise.all(refreshes)
+      // Arrival/manual inventory write is already committed once the POST above returned 2xx.
+      // Follow-up reads are best-effort: a failed refresh must never turn a committed arrival
+      // into a red 'operation failed' state that invites the employee to submit it again.
+      await Promise.allSettled(refreshes)
       const transferShortage = isTransfer ? (result.warnings || []).reduce((sum, row) => sum + Math.max(0, Number(row.shortageAfter || 0)), 0) : 0
       setMessage(isTransfer
         ? `Перемещение ${sourceLabel(inventoryDraft.source)} → ${sourceLabel(inventoryDraft.targetSource)} сохранено${result.externalId ? ` · ${result.externalId}` : ''}.${transferShortage > 0 ? ` В исходной точке после перемещения не хватает ${transferShortage} шт. для активных заказов — резервы сохранены.` : ''}`
