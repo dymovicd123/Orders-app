@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "revision": "arrival-save-reliability-r1",
+  "changes": {
+    "resolveInventoryCreatableItemsBulk": {
+      "before": "a874d62fe48bf485936b14d5e339a97e0bf258053e8905b43762e3a5eafeeac5",
+      "after": "bb6c93ab0897a075f55b5cf0b15edb0c7d7ba334d97215145e171a68818363ec"
+    }
+  }
+}
