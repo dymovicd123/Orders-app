@@ -1,4 +1,4 @@
-name: Hotfix arrival retired identity R2
+name: Hotfix arrival retired identity R3
 
 on:
   push:
@@ -40,7 +40,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -f .github/workflows/hotfix-arrival-retired-identity.yml .github/workflows/hotfix-arrival-retired-identity-r2.yml scripts/apply-arrival-retired-identity-hotfix.py
+          rm -f .github/workflows/hotfix-arrival-retired-identity.yml .github/workflows/hotfix-arrival-retired-identity-r2.yml scripts/apply-arrival-retired-identity-hotfix.py scripts/hash-worker-declaration.mjs
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
