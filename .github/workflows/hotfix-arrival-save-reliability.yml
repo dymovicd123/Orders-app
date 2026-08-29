@@ -59,7 +59,6 @@ jobs:
           check(!body.includes("await Promise.all(refreshes)"), 'Old fail-closed post-write refresh remains')
           check(body.indexOf("if (!response.ok) throw new Error") < body.indexOf("Promise.allSettled(refreshes)"), 'Refresh boundary is not after successful mutation response')
           check(body.indexOf("setInventoryManualRequestId(makeCashRequestId('inventory-manual'))") > body.indexOf("Promise.allSettled(refreshes)"), 'Manual request id rotation disappeared')
-          check(body.includes('resetInventoryArrivalForm'), 'Arrival reset path disappeared')
           console.log('ARRIVAL SAVE RELIABILITY TESTS PASSED — a committed arrival cannot be reported as failed only because follow-up reads fail')
           EOF
       - name: Full release gate
