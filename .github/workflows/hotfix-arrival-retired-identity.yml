@@ -1,0 +1,143 @@
+name: Hotfix arrival retired identity collision
+
+on:
+  push:
+    branches:
+      - safe/arrival-save-reliability-20260829
+    paths:
+      - .github/workflows/hotfix-arrival-retired-identity.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/arrival-save-reliability-20260829
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Apply retired identity collision fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE' > /tmp/before_hash
+          import fs from 'node:fs'; import ts from 'typescript'; import crypto from 'node:crypto';
+          const file='worker/domains/inventory-movement.ts', name='resolveInventoryCreatableItemsBulk';
+          const text=fs.readFileSync(file,'utf8'), source=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
+          const decl=source.statements.find(s=>ts.isFunctionDeclaration(s)&&s.name?.text===name);
+          if(!decl) throw new Error('declaration missing');
+          console.log(crypto.createHash('sha256').update(decl.getText(source).replace(/^export\s+/,'')).digest('hex'));
+          NODE
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('worker/domains/inventory-movement.ts')
+          text=p.read_text()
+          anchor="""  if (missingVariants.size) {
+    const variantsJson = JSON.stringify(Array.from(missingVariants.values()));
+"""
+          insert="""  // Arrival/revision may legitimately materialize a combination that existed only as a
+  // retired historical row. catalog_variants.external_id is globally unique even for inactive
+  // rows, so blindly reusing the deterministic id makes INSERT OR IGNORE silently skip the new
+  // active physical identity. Preserve the retired row and give the new physical incarnation a
+  // fresh external id; do not reactivate client-retired history.
+  if (missingVariants.size) {
+    const candidates = Array.from(missingVariants.values());
+    const candidateIds = candidates.map((row) => cleanText(row.externalId)).filter(Boolean);
+    if (candidateIds.length) {
+      const occupiedRows = mapSqlRows(await db.prepare(
+        `SELECT external_id FROM catalog_variants
+         WHERE external_id IN (SELECT CAST(value AS TEXT) FROM json_each(?))`
+      ).bind(JSON.stringify(candidateIds)).all<{ external_id: string }>()) as Array<{ external_id: string }>;
+      const occupiedIds = new Set(occupiedRows.map((row) => cleanText(row.external_id)).filter(Boolean));
+      let physicalIncarnation = 0;
+      for (const row of candidates) {
+        const deterministicId = cleanText(row.externalId);
+        if (!deterministicId || !occupiedIds.has(deterministicId)) continue;
+        physicalIncarnation += 1;
+        row.externalId = `${deterministicId}-PHYS-${Date.now().toString(36).toUpperCase()}-${physicalIncarnation}`;
+      }
+    }
+  }
+
+"""+anchor
+          if text.count(anchor)!=1: raise SystemExit(f'missingVariants insert anchor count={text.count(anchor)}')
+          p.write_text(text.replace(anchor,insert,1))
+
+          test=Path('scripts/test-step1906a-worker-modularization.mjs')
+          t=test.read_text()
+          path_anchor="const phase1bWorkshopReturnDispositionPath = path.join(root, 'scripts/phase1b-workshop-return-disposition-worker-manifest.json')\n"
+          if path_anchor not in t: raise SystemExit('1906A path anchor missing')
+          t=t.replace(path_anchor,path_anchor+"const arrivalSaveReliabilityPath = path.join(root, 'scripts/arrival-save-reliability-worker-manifest.json')\n",1)
+          load_anchor="  const phase1bWorkshopReturnDispositionChanges = phase1bWorkshopReturnDisposition.changes || {}\n"
+          load_insert=load_anchor+"  check(fs.existsSync(arrivalSaveReliabilityPath), 'Arrival save reliability Worker manifest missing')\n  const arrivalSaveReliability = JSON.parse(fs.readFileSync(arrivalSaveReliabilityPath, 'utf8'))\n  check(arrivalSaveReliability?.version === 1 && arrivalSaveReliability?.revision === 'arrival-save-reliability-r1', 'Arrival save reliability Worker manifest invalid')\n  const arrivalSaveReliabilityChanges = arrivalSaveReliability.changes || {}\n"
+          if load_anchor not in t: raise SystemExit('1906A load anchor missing')
+          t=t.replace(load_anchor,load_insert,1)
+          pattern=re.compile(r"    const phase1bWorkshopReturnDispositionChanged = phase1bWorkshopReturnDispositionChanges\[name\]\n    if \(phase1bWorkshopReturnDispositionChanged\) \{\n      check\(phase1bWorkshopReturnDispositionChanged\.before === acceptedPostFinanceF9DatePriorityHash, `Phase 1B Workshop return disposition baseline hash mismatch: \$\{name\}`\)\n      check\(sha\(declarations\.get\(name\)\) === phase1bWorkshopReturnDispositionChanged\.after, `Worker declaration changed beyond exact Phase 1B Workshop return disposition allow-list: \$\{name\}`\)\n    \} else \{\n      check\(sha\(declarations\.get\(name\)\) === acceptedPostFinanceF9DatePriorityHash, `Worker declaration body changed beyond accepted Finance F1-F9 / Phase 1B deltas: \$\{name\}`\)\n    \}")
+          replacement="""    const phase1bWorkshopReturnDispositionChanged = phase1bWorkshopReturnDispositionChanges[name]
+    let acceptedPostPhase1bHash = acceptedPostFinanceF9DatePriorityHash
+    if (phase1bWorkshopReturnDispositionChanged) {
+      check(phase1bWorkshopReturnDispositionChanged.before === acceptedPostFinanceF9DatePriorityHash, `Phase 1B Workshop return disposition baseline hash mismatch: ${name}`)
+      acceptedPostPhase1bHash = phase1bWorkshopReturnDispositionChanged.after
+    }
+    const arrivalSaveReliabilityChanged = arrivalSaveReliabilityChanges[name]
+    if (arrivalSaveReliabilityChanged) {
+      check(arrivalSaveReliabilityChanged.before === acceptedPostPhase1bHash, `Arrival save reliability baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === arrivalSaveReliabilityChanged.after, `Worker declaration changed beyond exact Arrival save reliability allow-list: ${name}`)
+    } else {
+      check(sha(declarations.get(name)) === acceptedPostPhase1bHash, `Worker declaration body changed beyond accepted Finance F1-F9 / Phase 1B / Arrival reliability deltas: ${name}`)
+    }"""
+          t,count=pattern.subn(replacement,t,count=1)
+          if count!=1: raise SystemExit('1906A final hash-chain block missing')
+          test.write_text(t)
+
+          pkg=Path('package.json'); s=pkg.read_text()
+          old='node scripts/test-arrival-save-reliability.mjs && node scripts/test-stocktake-functional-acceptance.mjs'
+          new='node scripts/test-arrival-save-reliability.mjs && node scripts/test-arrival-materialization-reliability.mjs && node scripts/test-stocktake-functional-acceptance.mjs'
+          if old not in s: raise SystemExit('package arrival test anchor missing')
+          pkg.write_text(s.replace(old,new,1))
+          PY
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'; import ts from 'typescript'; import crypto from 'node:crypto';
+          const file='worker/domains/inventory-movement.ts', name='resolveInventoryCreatableItemsBulk';
+          const text=fs.readFileSync(file,'utf8'), source=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
+          const decl=source.statements.find(s=>ts.isFunctionDeclaration(s)&&s.name?.text===name);
+          if(!decl) throw new Error('declaration missing');
+          const after=crypto.createHash('sha256').update(decl.getText(source).replace(/^export\s+/,'')).digest('hex');
+          const before=fs.readFileSync('/tmp/before_hash','utf8').trim();
+          fs.writeFileSync('scripts/arrival-save-reliability-worker-manifest.json', JSON.stringify({version:1,revision:'arrival-save-reliability-r1',changes:{resolveInventoryCreatableItemsBulk:{before,after}}},null,2)+'\n');
+          NODE
+          cat > scripts/test-arrival-materialization-reliability.mjs <<'EOF'
+          import fs from 'node:fs'
+          const source=fs.readFileSync('worker/domains/inventory-movement.ts','utf8')
+          const start=source.indexOf('export async function resolveInventoryCreatableItemsBulk(')
+          const end=source.indexOf('\n\nexport async function applyInventoryMovement(',start)
+          if(start<0||end<0) throw new Error('Cannot isolate inventory materializer')
+          const body=source.slice(start,end)
+          const check=(v,m)=>{if(!v)throw new Error(m)}
+          check(body.includes('occupiedIds') && body.includes('-PHYS-'), 'Retired external-id collision is still able to block physical materialization')
+          check(body.includes('SELECT external_id FROM catalog_variants'), 'Materializer does not inspect historical external-id occupancy')
+          check(!body.includes('UPDATE catalog_variants SET is_active = 1'), 'Physical arrival must not resurrect a client-retired historical variant')
+          check(body.indexOf('occupiedIds') < body.indexOf('INSERT OR IGNORE INTO catalog_variants'), 'Collision guard must run before variant insert')
+          console.log('ARRIVAL MATERIALIZATION RELIABILITY TESTS PASSED — retired history remains retired while a new physical incarnation can receive a unique external id')
+          EOF
+      - name: Full release gate
+        run: npm run release:check
+      - name: Commit verified backend hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/hotfix-arrival-retired-identity.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Fix arrival materialization over retired catalog identity'
+          git push origin HEAD:safe/arrival-save-reliability-20260829
