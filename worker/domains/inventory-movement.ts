@@ -236,6 +236,29 @@ export async function resolveInventoryCreatableItemsBulk(
     });
   });
 
+  // A physical operation may rediscover a logical combination whose deterministic
+  // external_id belongs to a retired historical row. external_id is globally unique, so an
+  // INSERT OR IGNORE would otherwise silently skip the new active combination. Keep the retired
+  // row retired and give the new physical incarnation a fresh external id.
+  if (missingVariants.size) {
+    const candidates = Array.from(missingVariants.values());
+    const candidateIds = candidates.map((row) => cleanText(row.externalId)).filter(Boolean);
+    if (candidateIds.length) {
+      const occupiedRows = mapSqlRows(await db.prepare(
+        `SELECT external_id FROM catalog_variants
+         WHERE external_id IN (SELECT CAST(value AS TEXT) FROM json_each(?))`
+      ).bind(JSON.stringify(candidateIds)).all<{ external_id: string }>()) as Array<{ external_id: string }>;
+      const occupiedIds = new Set(occupiedRows.map((row) => cleanText(row.external_id)).filter(Boolean));
+      let physicalIncarnation = 0;
+      for (const row of candidates) {
+        const deterministicId = cleanText(row.externalId);
+        if (!deterministicId || !occupiedIds.has(deterministicId)) continue;
+        physicalIncarnation += 1;
+        row.externalId = `${deterministicId}-PHYS-${Date.now().toString(36).toUpperCase()}-${physicalIncarnation}`;
+      }
+    }
+  }
+
   if (missingVariants.size) {
     const variantsJson = JSON.stringify(Array.from(missingVariants.values()));
     await db.prepare(
