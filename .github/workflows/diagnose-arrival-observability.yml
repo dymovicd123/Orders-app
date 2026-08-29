@@ -22,7 +22,7 @@ jobs:
         run: |
           set -euo pipefail
           NOW=$(date +%s%3N)
-          FROM=$((NOW - 45*60*1000))
+          FROM=$((NOW - 60*60*1000))
           cat > /tmp/query.json <<JSON
           {
             "queryId":"arrival-hotfix-diagnostic",
@@ -32,7 +32,7 @@ jobs:
               "datasets":["cloudflare-workers"],
               "filterCombination":"and",
               "filters":[
-                {"key":"$metadata.service","operation":"eq","type":"string","value":"orders-app","kind":"filter"}
+                {"key":"\$metadata.service","operation":"eq","type":"string","value":"orders-app","kind":"filter"}
               ],
               "needle":{"value":"inventory","isRegex":false,"matchCase":false},
               "view":"events"
@@ -47,8 +47,7 @@ jobs:
           echo "HTTP ${STATUS}"
           python3 - <<'PY'
           import json
-          p='/tmp/result.json'
-          data=json.load(open(p))
+          data=json.load(open('/tmp/result.json'))
           if not data.get('success'):
               print(json.dumps({'success':False,'errors':data.get('errors',[]),'messages':data.get('messages',[])}, ensure_ascii=False))
               raise SystemExit(2)
@@ -56,15 +55,9 @@ jobs:
           print('events=', len(events))
           for e in events:
               md=e.get('$metadata') or {}
-              src=e.get('source')
               print(json.dumps({
-                  'ts':e.get('timestamp'),
-                  'level':md.get('level'),
-                  'status':md.get('statusCode'),
-                  'trigger':md.get('trigger'),
-                  'url':md.get('url'),
-                  'message':md.get('message'),
-                  'error':md.get('error'),
-                  'source':src if isinstance(src,str) else src,
+                  'ts':e.get('timestamp'), 'level':md.get('level'), 'status':md.get('statusCode'),
+                  'trigger':md.get('trigger'), 'url':md.get('url'), 'message':md.get('message'),
+                  'error':md.get('error'), 'source':e.get('source')
               }, ensure_ascii=False)[:5000])
           PY
