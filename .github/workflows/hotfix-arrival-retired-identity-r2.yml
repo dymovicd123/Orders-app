@@ -1,0 +1,48 @@
+name: Hotfix arrival retired identity R2
+
+on:
+  push:
+    branches:
+      - safe/arrival-save-reliability-20260829
+    paths:
+      - .github/workflows/hotfix-arrival-retired-identity-r2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/arrival-save-reliability-20260829
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Capture baseline declaration hash
+        run: node scripts/hash-worker-declaration.mjs worker/domains/inventory-movement.ts resolveInventoryCreatableItemsBulk > /tmp/before.txt
+      - name: Apply backend hotfix
+        run: python3 scripts/apply-arrival-retired-identity-hotfix.py
+      - name: Create structural manifest
+        shell: bash
+        run: |
+          AFTER=$(node scripts/hash-worker-declaration.mjs worker/domains/inventory-movement.ts resolveInventoryCreatableItemsBulk)
+          BEFORE=$(cat /tmp/before.txt)
+          printf '{\n  "version": 1,\n  "revision": "arrival-save-reliability-r1",\n  "changes": {\n    "resolveInventoryCreatableItemsBulk": {\n      "before": "%s",\n      "after": "%s"\n    }\n  }\n}\n' "$BEFORE" "$AFTER" > scripts/arrival-save-reliability-worker-manifest.json
+      - name: Full release gate
+        run: npm run release:check
+      - name: Commit verified backend hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/hotfix-arrival-retired-identity.yml .github/workflows/hotfix-arrival-retired-identity-r2.yml scripts/apply-arrival-retired-identity-hotfix.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Fix arrival materialization over retired catalog identity'
+          git push origin HEAD:safe/arrival-save-reliability-20260829
