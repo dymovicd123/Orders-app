@@ -330,6 +330,7 @@ try {
   }
 
   const normalizedRouter = currentRouter
+    .replace(/\n[ \t]*\/\/ PREAUG_MAINTENANCE_BEGIN[\s\S]*?\n[ \t]*\/\/ PREAUG_MAINTENANCE_END\n/, '')
     .replace(
       "if (url.pathname === '/api/inventory/cycle-counts' && request.method === 'GET') {\n        return json(await listInventoryCycleCountSuggestions(env.DB, url));\n      }",
       "if (url.pathname === '/api/inventory/cycle-counts' && request.method === 'GET') {\n        const denied = requireAdminAccess(request);\n        if (denied) return denied;\n        return json(await listInventoryCycleCountSuggestions(env.DB, url));\n      }",

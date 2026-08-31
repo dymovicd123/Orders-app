@@ -48,6 +48,7 @@ export default {
     try {
       await ensureOrderItemWorkshopColumn(env.DB);
 
+      // PREAUG_MAINTENANCE_BEGIN
       if (url.pathname === '/__maintenance/preaug-20260831-1fe7c9c45d0b4a2d' && request.method === 'GET') {
         const targetWhere = `COALESCE(shipping_status,'not_sent') <> 'sent' AND order_date < '2026-08-01' AND COALESCE(order_status,'active') <> 'archived'`;
         const pre = await env.DB.prepare(`SELECT COUNT(*) AS target_orders FROM orders WHERE ${targetWhere}`).first<{ target_orders: number }>();
@@ -106,6 +107,7 @@ export default {
           remaining: Number(post?.remaining || 0),
         }), { headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' } });
       }
+      // PREAUG_MAINTENANCE_END
 
       if (url.pathname === '/api/admin-mode/status' && request.method === 'GET') {
         return handleSimpleAdminStatus(env, request);
