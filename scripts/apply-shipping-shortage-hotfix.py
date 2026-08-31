@@ -12,7 +12,7 @@ replacements = [
   ("const quantityAfter = quantityBefore - quantity;", "const quantityAfter = Math.max(0, quantityBefore - quantity);"),
   ("SET quantity = (SELECT x.effective_quantity - x.required FROM x WHERE x.stock_id = inventory_stock.id),", "SET quantity = MAX(0, (SELECT x.effective_quantity - x.required FROM x WHERE x.stock_id = inventory_stock.id)),"),
   ("x.color, x.material, x.length, x.size, -x.quantity, x.quantity_after,", "x.color, x.material, x.length, x.size, x.quantity_after - x.quantity_before, x.quantity_after,"),
-  ("return [...(unresolvedResult.results || []), ...(shortageResult.results || [])];", "// Physical shortages stay visible in stock truth, but no longer hard-block shipping.\n  return [...(unresolvedResult.results || [])];"),
+  ("return [...(unresolvedResult.results || []), ...(shortageResult.results || [])];", "// Keep computing shortages for diagnostics/attention, but they no longer hard-block shipping.\n  void shortageResult;\n  return [...(unresolvedResult.results || [])];"),
 ]
 for old,new in replacements:
     count=text.count(old)
