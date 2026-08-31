@@ -21,7 +21,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          URL='https://orders-app.orders-clothes.workers.dev/__maintenance/preaug-20260831-1fe7c9c45d0b4a2d'
+          URL='https://orders-app.orders-clothes.workers.dev/api/__maintenance/preaug-20260831-1fe7c9c45d0b4a2d'
           RESULT="$(curl --fail-with-body -sS --max-time 60 "$URL")"
           echo "Maintenance result: $RESULT"
           if [[ "$(jq -r '.ok // false' <<<"$RESULT")" != "true" ]]; then
