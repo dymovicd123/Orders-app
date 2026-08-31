@@ -1,0 +1,128 @@
+name: Backfill pre-August shipping 20260831
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/backfill-preaug-shipping-20260831.yml
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      CF_API: https://api.cloudflare.com/client/v4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Reconcile historical unsent orders before 2026-08-01
+        id: backfill
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${CF_ACCOUNT_ID:-}" || -z "${CF_API_TOKEN:-}" ]]; then
+            echo "Cloudflare credentials missing" >&2
+            exit 2
+          fi
+          d1() {
+            local sql="$1"
+            local body out
+            body="$(jq -nc --arg sql "$sql" '{sql:$sql}')"
+            out="$(curl --fail-with-body -sS -X POST \
+              -H "Authorization: Bearer $CF_API_TOKEN" \
+              -H "Content-Type: application/json" \
+              "$CF_API/accounts/$CF_ACCOUNT_ID/d1/database/$DB_ID/query" \
+              -d "$body")"
+            if [[ "$(jq -r '.success' <<<"$out")" != "true" ]]; then
+              echo "$out" >&2
+              exit 3
+            fi
+            printf '%s' "$out"
+          }
+
+          TARGET="COALESCE(o.shipping_status,'not_sent') <> 'sent' AND o.order_date < '2026-08-01' AND COALESCE(o.order_status,'active') <> 'archived'"
+          PRE="$(d1 "SELECT COUNT(*) AS target_orders FROM orders o WHERE $TARGET")"
+          TARGET_ORDERS="$(jq -r '.result[0].results[0].target_orders // 0' <<<"$PRE")"
+          RES="$(d1 "SELECT COUNT(*) AS reservation_rows, COALESCE(SUM(r.quantity),0) AS reservation_qty FROM inventory_reservations r JOIN orders o ON o.id=r.order_id WHERE r.status IN ('active','unresolved') AND $TARGET")"
+          RES_ROWS="$(jq -r '.result[0].results[0].reservation_rows // 0' <<<"$RES")"
+          RES_QTY="$(jq -r '.result[0].results[0].reservation_qty // 0' <<<"$RES")"
+          ARCH="$(d1 "SELECT COUNT(*) AS archived_unsent FROM orders o WHERE COALESCE(o.shipping_status,'not_sent') <> 'sent' AND o.order_date < '2026-08-01' AND COALESCE(o.order_status,'active') = 'archived'")"
+          ARCHIVED_UNSENT="$(jq -r '.result[0].results[0].archived_unsent // 0' <<<"$ARCH")"
+          echo "Preflight: target_orders=$TARGET_ORDERS reservation_rows=$RES_ROWS reservation_qty=$RES_QTY archived_unsent_excluded=$ARCHIVED_UNSENT"
+
+          d1 "UPDATE inventory_reservations SET status='fulfilled', fulfilled_at=COALESCE(fulfilled_at, datetime('now')), released_at=NULL, updated_at=datetime('now') WHERE status IN ('active','unresolved') AND EXISTS (SELECT 1 FROM orders o WHERE o.id=inventory_reservations.order_id AND COALESCE(o.shipping_status,'not_sent') <> 'sent' AND o.order_date < '2026-08-01' AND COALESCE(o.order_status,'active') <> 'archived')" >/tmp/reservations.json
+
+          d1 "UPDATE order_items SET stock_writeoff_status='fulfilled' WHERE quantity > 0 AND EXISTS (SELECT 1 FROM inventory_reservations r JOIN orders o ON o.id=r.order_id WHERE r.order_item_id=order_items.id AND r.status='fulfilled' AND COALESCE(o.shipping_status,'not_sent') <> 'sent' AND o.order_date < '2026-08-01' AND COALESCE(o.order_status,'active') <> 'archived')" >/tmp/items.json
+
+          d1 "UPDATE inventory_stock SET reserved_quantity=COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.status='active' AND r.inventory_source=inventory_stock.inventory_source AND r.variant_id=inventory_stock.variant_id),0), updated_at=datetime('now') WHERE COALESCE(reserved_quantity,0) <> COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.status='active' AND r.inventory_source=inventory_stock.inventory_source AND r.variant_id=inventory_stock.variant_id),0)" >/tmp/stock.json
+
+          d1 "UPDATE orders SET shipping_status='sent', shipping_date=COALESCE(NULLIF(shipping_date,''), order_date), updated_at=datetime('now') WHERE COALESCE(shipping_status,'not_sent') <> 'sent' AND order_date < '2026-08-01' AND COALESCE(order_status,'active') <> 'archived'" >/tmp/orders.json
+
+          POST="$(d1 "SELECT COUNT(*) AS remaining FROM orders o WHERE $TARGET")"
+          REMAINING="$(jq -r '.result[0].results[0].remaining // 0' <<<"$POST")"
+          if [[ "$REMAINING" != "0" ]]; then
+            echo "Backfill incomplete: remaining=$REMAINING" >&2
+            exit 4
+          fi
+          echo "Postflight: remaining=$REMAINING"
+          echo "target_orders=$TARGET_ORDERS" >> "$GITHUB_OUTPUT"
+          echo "reservation_rows=$RES_ROWS" >> "$GITHUB_OUTPUT"
+          echo "reservation_qty=$RES_QTY" >> "$GITHUB_OUTPUT"
+          echo "archived_unsent=$ARCHIVED_UNSENT" >> "$GITHUB_OUTPUT"
+          echo "remaining=$REMAINING" >> "$GITHUB_OUTPUT"
+
+      - name: Record continuation context and remove one-shot workflow
+        shell: bash
+        env:
+          TARGET_ORDERS: ${{ steps.backfill.outputs.target_orders }}
+          RES_ROWS: ${{ steps.backfill.outputs.reservation_rows }}
+          RES_QTY: ${{ steps.backfill.outputs.reservation_qty }}
+          ARCHIVED_UNSENT: ${{ steps.backfill.outputs.archived_unsent }}
+          REMAINING: ${{ steps.backfill.outputs.remaining }}
+        run: |
+          set -euo pipefail
+          cat > docs/continuation/SHIPPING_SHORTAGE_AND_PREAUG_BACKFILL_20260831.md <<EOF
+          # Shipping shortage hotfix + pre-August backfill — 2026-08-31
+
+          ## Urgent incident
+          Operators were blocked from marking an order sent when system physical stock was below the order requirement, e.g. «САРДАР ШАПАН» showed 0 on hand for a required quantity of 1.
+
+          ## Runtime hotfix
+          Production source commit: \
+          \`7a8ac2630d12f75c9525aee1d4da89f3989efdb2\` — \`Allow shipment despite physical stock discrepancy\`.
+
+          New invariant: a physical stock discrepancy does not hard-block shipment. Catalog/unresolved identity blockers remain blocking. Shipment never drives physical quantity below zero, and the movement records only the physical quantity actually removed.
+
+          Full cumulative \`npm run release:check\` passed before promotion.
+
+          ## Historical backfill requested by user
+          Cutoff: order date strictly before \`2026-08-01\`.
+
+          Scope: non-archived orders that were not already marked sent. Archived orders were intentionally excluded because archive is historical/closed state and may include intentionally non-sent records.
+
+          Preflight target orders: **$TARGET_ORDERS**  
+          Active/unresolved reservation rows reconciled: **$RES_ROWS**  
+          Reservation quantity reconciled: **$RES_QTY**  
+          Archived unsent pre-August orders excluded: **$ARCHIVED_UNSENT**  
+          Remaining qualifying unsent orders after backfill: **$REMAINING**
+
+          Historical backfill did **not** bulk-decrement physical stock. It marked target reservations fulfilled, recalculated \`reserved_quantity\` from still-active reservations, marked matching stock-backed order items fulfilled, and marked target orders sent using the existing shipping date when present or the historical order date otherwise.
+
+          ## Resume point
+          This urgent shipping incident is closed once the Cloudflare Production build containing the runtime source commit is green. Resume the planned catalog Phase 3 work afterward.
+          EOF
+          rm -f .github/workflows/backfill-preaug-shipping-20260831.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/continuation/SHIPPING_SHORTAGE_AND_PREAUG_BACKFILL_20260831.md .github/workflows/backfill-preaug-shipping-20260831.yml
+          git commit -m 'Record shipping hotfix and pre-August backfill'
+          git push origin HEAD:main
