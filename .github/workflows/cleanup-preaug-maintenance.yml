@@ -37,7 +37,11 @@ jobs:
           i=text.index(begin)
           j=text.index(end, i)+len(end)
           text=text[:i]+text[j:]
-          worker.write_text(text)
+          triple="      await ensureOrderItemWorkshopColumn(env.DB);\n\n\n      if (url.pathname === '/api/admin-mode/status' && request.method === 'GET') {"
+          canonical="      await ensureOrderItemWorkshopColumn(env.DB);\n\n      if (url.pathname === '/api/admin-mode/status' && request.method === 'GET') {"
+          if text.count(triple) != 1:
+              raise SystemExit(f'expected transient whitespace seam once, found {text.count(triple)}')
+          worker.write_text(text.replace(triple, canonical, 1))
 
           gate=Path('scripts/test-step1906a-worker-modularization.mjs')
           g=gate.read_text()
