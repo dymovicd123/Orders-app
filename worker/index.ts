@@ -49,7 +49,7 @@ export default {
       await ensureOrderItemWorkshopColumn(env.DB);
 
       // PREAUG_MAINTENANCE_BEGIN
-      if (url.pathname === '/__maintenance/preaug-20260831-1fe7c9c45d0b4a2d' && request.method === 'GET') {
+      if (url.pathname === '/api/__maintenance/preaug-20260831-1fe7c9c45d0b4a2d' && request.method === 'GET') {
         const targetWhere = `COALESCE(shipping_status,'not_sent') <> 'sent' AND order_date < '2026-08-01' AND COALESCE(order_status,'active') <> 'archived'`;
         const pre = await env.DB.prepare(`SELECT COUNT(*) AS target_orders FROM orders WHERE ${targetWhere}`).first<{ target_orders: number }>();
         const reservations = await env.DB.prepare(`
