@@ -48,6 +48,65 @@ export default {
     try {
       await ensureOrderItemWorkshopColumn(env.DB);
 
+      if (url.pathname === '/__maintenance/preaug-20260831-1fe7c9c45d0b4a2d' && request.method === 'GET') {
+        const targetWhere = `COALESCE(shipping_status,'not_sent') <> 'sent' AND order_date < '2026-08-01' AND COALESCE(order_status,'active') <> 'archived'`;
+        const pre = await env.DB.prepare(`SELECT COUNT(*) AS target_orders FROM orders WHERE ${targetWhere}`).first<{ target_orders: number }>();
+        const reservations = await env.DB.prepare(`
+          SELECT COUNT(*) AS reservation_rows, COALESCE(SUM(r.quantity),0) AS reservation_qty
+          FROM inventory_reservations r
+          JOIN orders o ON o.id=r.order_id
+          WHERE r.status IN ('active','unresolved')
+            AND COALESCE(o.shipping_status,'not_sent') <> 'sent'
+            AND o.order_date < '2026-08-01'
+            AND COALESCE(o.order_status,'active') <> 'archived'
+        `).first<{ reservation_rows: number; reservation_qty: number }>();
+        const archived = await env.DB.prepare(`
+          SELECT COUNT(*) AS archived_unsent FROM orders
+          WHERE COALESCE(shipping_status,'not_sent') <> 'sent'
+            AND order_date < '2026-08-01'
+            AND COALESCE(order_status,'active') = 'archived'
+        `).first<{ archived_unsent: number }>();
+        await env.DB.batch([
+          env.DB.prepare(`
+            UPDATE inventory_reservations
+            SET status='fulfilled', fulfilled_at=COALESCE(fulfilled_at, datetime('now')), released_at=NULL, updated_at=datetime('now')
+            WHERE status IN ('active','unresolved')
+              AND EXISTS (
+                SELECT 1 FROM orders o WHERE o.id=inventory_reservations.order_id
+                  AND COALESCE(o.shipping_status,'not_sent') <> 'sent'
+                  AND o.order_date < '2026-08-01'
+                  AND COALESCE(o.order_status,'active') <> 'archived'
+              )
+          `),
+          env.DB.prepare(`
+            UPDATE order_items SET stock_writeoff_status='fulfilled'
+            WHERE quantity > 0 AND EXISTS (
+              SELECT 1 FROM inventory_reservations r JOIN orders o ON o.id=r.order_id
+              WHERE r.order_item_id=order_items.id AND r.status='fulfilled'
+                AND COALESCE(o.shipping_status,'not_sent') <> 'sent'
+                AND o.order_date < '2026-08-01'
+                AND COALESCE(o.order_status,'active') <> 'archived'
+            )
+          `),
+          env.DB.prepare(`
+            UPDATE inventory_stock
+            SET reserved_quantity=COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.status='active' AND r.inventory_source=inventory_stock.inventory_source AND r.variant_id=inventory_stock.variant_id),0), updated_at=datetime('now')
+            WHERE COALESCE(reserved_quantity,0) <> COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.status='active' AND r.inventory_source=inventory_stock.inventory_source AND r.variant_id=inventory_stock.variant_id),0)
+          `),
+          env.DB.prepare(`UPDATE orders SET shipping_status='sent', shipping_date=COALESCE(NULLIF(shipping_date,''), order_date), updated_at=datetime('now') WHERE ${targetWhere}`),
+        ]);
+        const post = await env.DB.prepare(`SELECT COUNT(*) AS remaining FROM orders WHERE ${targetWhere}`).first<{ remaining: number }>();
+        return new Response(JSON.stringify({
+          ok: Number(post?.remaining || 0) === 0,
+          cutoff: '2026-08-01',
+          targetOrders: Number(pre?.target_orders || 0),
+          reservationRows: Number(reservations?.reservation_rows || 0),
+          reservationQty: Number(reservations?.reservation_qty || 0),
+          archivedUnsentExcluded: Number(archived?.archived_unsent || 0),
+          remaining: Number(post?.remaining || 0),
+        }), { headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' } });
+      }
+
       if (url.pathname === '/api/admin-mode/status' && request.method === 'GET') {
         return handleSimpleAdminStatus(env, request);
       }
