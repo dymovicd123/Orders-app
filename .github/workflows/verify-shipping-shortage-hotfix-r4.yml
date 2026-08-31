@@ -1,4 +1,4 @@
-name: Verify shipping shortage hotfix R4
+name: Verify shipping shortage hotfix R5
 
 on:
   push:
