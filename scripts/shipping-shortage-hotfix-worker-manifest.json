@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "revision": "shipping-shortage-nonblocking-r1",
+  "changes": {
+    "fulfillOrderReservationsV2": {
+      "before": "ff8c8e630810ef45470063afc6d15edc6678eaab30a8f7bef3e9cbdc1a55c892",
+      "after": "ae9ab9b704ed7a1c0cd3ad905dce395e06ed254668df319a7f335dfd120883b1"
+    },
+    "getOrderShipmentInventoryBlockers": {
+      "before": "6d3b26ae98607482d91ed1c2c00f8b7a2f5d157833e61fe794567e14131a85b3",
+      "after": "08c3c37a3be5ddf32e236780b46aa4c603591e47b57451b25865a1556bd0a64d"
+    }
+  }
+}

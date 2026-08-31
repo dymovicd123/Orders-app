@@ -1646,9 +1646,8 @@ export async function fulfillOrderReservationsV2(
       throw new Error(`Остаток «${requirement.productName}» изменился после открытия формы: было ${observation.expectedQuantity}, сейчас ${quantity}. Обновите заказ и пересчитайте товар.`);
     }
     const effectiveQuantity = observation ? observation.countedQuantity : quantity;
-    if (effectiveQuantity < requirement.required) {
-      throw new Error(`Нельзя отправить заказ целиком: «${requirement.productName}» — на месте ${effectiveQuantity} шт., для этого заказа требуется ${requirement.required}.`);
-    }
+    // A physical shortage is an inventory discrepancy, not a reason to block customer handover.
+    // Shipping consumes only the stock that is actually present and never drives physical quantity below zero.
     stockByKey.set(key, {
       id: toInt(loaded.stock_id, 0),
       source: requirement.source,
@@ -1708,7 +1707,7 @@ export async function fulfillOrderReservationsV2(
     if (!state) throw new Error('Не удалось подготовить складскую позицию для отправки. Обновите заказ.');
     const quantity = Math.max(1, toInt(reservation.quantity, 1));
     const quantityBefore = remainingByKey.get(key) ?? state.effectiveQuantity;
-    const quantityAfter = quantityBefore - quantity;
+    const quantityAfter = Math.max(0, quantityBefore - quantity);
     remainingByKey.set(key, quantityAfter);
     activeReservationPayloads.push(JSON.stringify({
       reservationId: toInt(reservation.id, 0),
@@ -1814,7 +1813,7 @@ export async function fulfillOrderReservationsV2(
     statements.push(db.prepare(
       `WITH ${cte}
        UPDATE inventory_stock
-       SET quantity = (SELECT x.effective_quantity - x.required FROM x WHERE x.stock_id = inventory_stock.id),
+       SET quantity = MAX(0, (SELECT x.effective_quantity - x.required FROM x WHERE x.stock_id = inventory_stock.id)),
            reserved_quantity = MAX(0, COALESCE(reserved_quantity, 0) - (SELECT x.required FROM x WHERE x.stock_id = inventory_stock.id)),
            last_action = 'Выдано / отправлено', last_source_ref = ?, updated_at = ?
        WHERE EXISTS (SELECT 1 FROM x WHERE x.stock_id = inventory_stock.id)`
@@ -1853,7 +1852,7 @@ export async function fulfillOrderReservationsV2(
            reference_type, reference_id, comment, created_at
          )
          SELECT x.source, 'sale', x.product_id, x.variant_id, x.product_name, x.gender,
-                x.color, x.material, x.length, x.size, -x.quantity, x.quantity_after,
+                x.color, x.material, x.length, x.size, x.quantity_after - x.quantity_before, x.quantity_after,
                 x.reference_type, x.reference_id, ?, ?
          FROM x`
       ).bind(...payloadChunk, `Физическое списание при выдаче / отправке заказа ${externalId}`, timestamp),
@@ -1932,7 +1931,9 @@ export async function getOrderShipmentInventoryBlockers(db: D1Database, orderId:
      LIMIT 20`
   ).bind(orderId).all<Record<string, unknown>>();
 
-  return [...(unresolvedResult.results || []), ...(shortageResult.results || [])];
+  // Keep computing shortages for diagnostics/attention, but they no longer hard-block shipping.
+  void shortageResult;
+  return [...(unresolvedResult.results || [])];
 }
 
 

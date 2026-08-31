@@ -20,6 +20,7 @@ const handoverSqlAliasSafetyPath = path.join(root, 'scripts/step192b2a3-handover
 const orderCreateSaveIntegrityPath = path.join(root, 'scripts/step192b2a4-order-create-save-integrity-manifest.json')
 const phase1bWorkshopReturnDispositionPath = path.join(root, 'scripts/phase1b-workshop-return-disposition-worker-manifest.json')
 const arrivalSaveReliabilityPath = path.join(root, 'scripts/arrival-save-reliability-worker-manifest.json')
+const shippingShortageHotfixPath = path.join(root, 'scripts/shipping-shortage-hotfix-worker-manifest.json')
 const stocktakeLostResponsePath = path.join(root, 'scripts/stocktake-lost-response-worker-manifest.json')
 const financeOrderDateSyncPath = path.join(root, 'scripts/finance-order-date-sync-worker-manifest.json')
 const financeF2TracePath = path.join(root, 'scripts/finance-f2-trace-worker-manifest.json')
@@ -106,6 +107,10 @@ try {
   const arrivalSaveReliability = JSON.parse(fs.readFileSync(arrivalSaveReliabilityPath, 'utf8'))
   check(arrivalSaveReliability?.version === 1 && arrivalSaveReliability?.revision === 'arrival-save-reliability-r1', 'Arrival save reliability Worker manifest invalid')
   const arrivalSaveReliabilityChanges = arrivalSaveReliability.changes || {}
+  check(fs.existsSync(shippingShortageHotfixPath), 'Shipping shortage hotfix Worker manifest missing')
+  const shippingShortageHotfix = JSON.parse(fs.readFileSync(shippingShortageHotfixPath, 'utf8'))
+  check(shippingShortageHotfix?.version === 1 && shippingShortageHotfix?.revision === 'shipping-shortage-nonblocking-r1', 'Shipping shortage hotfix Worker manifest invalid')
+  const shippingShortageHotfixChanges = shippingShortageHotfix.changes || {}
   const stocktakeLostResponse = fs.existsSync(stocktakeLostResponsePath) ? JSON.parse(fs.readFileSync(stocktakeLostResponsePath, 'utf8')) : null
   const stocktakeLostResponseChanges = stocktakeLostResponse?.version === 1 ? (stocktakeLostResponse.changes || {}) : {}
   const financeOrderDateSync = fs.existsSync(financeOrderDateSyncPath) ? JSON.parse(fs.readFileSync(financeOrderDateSyncPath, 'utf8')) : null
@@ -310,11 +315,17 @@ try {
       acceptedPostPhase1bHash = phase1bWorkshopReturnDispositionChanged.after
     }
     const arrivalSaveReliabilityChanged = arrivalSaveReliabilityChanges[name]
+    let acceptedPostArrivalReliabilityHash = acceptedPostPhase1bHash
     if (arrivalSaveReliabilityChanged) {
       check(arrivalSaveReliabilityChanged.before === acceptedPostPhase1bHash, `Arrival save reliability baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === arrivalSaveReliabilityChanged.after, `Worker declaration changed beyond exact Arrival save reliability allow-list: ${name}`)
+      acceptedPostArrivalReliabilityHash = arrivalSaveReliabilityChanged.after
+    }
+    const shippingShortageHotfixChanged = shippingShortageHotfixChanges[name]
+    if (shippingShortageHotfixChanged) {
+      check(shippingShortageHotfixChanged.before === acceptedPostArrivalReliabilityHash, `Shipping shortage hotfix baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === shippingShortageHotfixChanged.after, `Worker declaration changed beyond exact Shipping shortage hotfix allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostPhase1bHash, `Worker declaration body changed beyond accepted Finance F1-F9 / Phase 1B / Arrival reliability deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostArrivalReliabilityHash, `Worker declaration body changed beyond accepted Finance F1-F9 / Phase 1B / Arrival reliability / Shipping shortage deltas: ${name}`)
     }
   }
 
