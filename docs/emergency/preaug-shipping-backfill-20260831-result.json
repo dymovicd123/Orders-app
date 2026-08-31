@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "cutoff": "2026-08-01",
+  "targetOrders": 425,
+  "reservationRows": 539,
+  "reservationQty": 726,
+  "archivedUnsentExcluded": 0,
+  "remaining": 0
+}
