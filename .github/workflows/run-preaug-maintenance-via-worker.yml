@@ -1,0 +1,46 @@
+name: Run pre-August shipping maintenance via Worker
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/run-preaug-maintenance-via-worker.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Execute one-shot production backfill
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://orders-app.orders-clothes.workers.dev/__maintenance/preaug-20260831-1fe7c9c45d0b4a2d'
+          RESULT="$(curl --fail-with-body -sS --max-time 60 "$URL")"
+          echo "Maintenance result: $RESULT"
+          if [[ "$(jq -r '.ok // false' <<<"$RESULT")" != "true" ]]; then
+            echo "Maintenance endpoint did not confirm success" >&2
+            exit 2
+          fi
+          if [[ "$(jq -r '.remaining // -1' <<<"$RESULT")" != "0" ]]; then
+            echo "Pre-August non-archived orders remain unsent" >&2
+            exit 3
+          fi
+          mkdir -p docs/emergency
+          jq . <<<"$RESULT" > docs/emergency/preaug-shipping-backfill-20260831-result.json
+      - name: Persist result and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/run-preaug-maintenance-via-worker.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Record pre-August shipping backfill result'
+          git push origin HEAD:main
