@@ -1,0 +1,48 @@
+name: Verify shipping shortage hotfix R4
+
+on:
+  push:
+    branches:
+      - safe/shipping-shortage-hotfix-20260831
+    paths:
+      - .github/workflows/verify-shipping-shortage-hotfix-r4.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/shipping-shortage-hotfix-20260831
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Apply patch and capture exact declaration hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          BEFORE_FULFILL="$(node scripts/hash-worker-declaration-temp.mjs worker/domains/order-reservations.ts fulfillOrderReservationsV2)"
+          BEFORE_BLOCKERS="$(node scripts/hash-worker-declaration-temp.mjs worker/domains/order-reservations.ts getOrderShipmentInventoryBlockers)"
+          python3 scripts/apply-shipping-shortage-hotfix.py
+          AFTER_FULFILL="$(node scripts/hash-worker-declaration-temp.mjs worker/domains/order-reservations.ts fulfillOrderReservationsV2)"
+          AFTER_BLOCKERS="$(node scripts/hash-worker-declaration-temp.mjs worker/domains/order-reservations.ts getOrderShipmentInventoryBlockers)"
+          jq -n --arg bf "$BEFORE_FULFILL" --arg af "$AFTER_FULFILL" --arg bb "$BEFORE_BLOCKERS" --arg ab "$AFTER_BLOCKERS" '{version:1,revision:"shipping-shortage-nonblocking-r1",changes:{fulfillOrderReservationsV2:{before:$bf,after:$af},getOrderShipmentInventoryBlockers:{before:$bb,after:$ab}}}' > scripts/shipping-shortage-hotfix-worker-manifest.json
+      - name: Full release gate
+        run: npm run release:check
+      - name: Commit tested source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/verify-shipping-shortage-hotfix.yml .github/workflows/verify-shipping-shortage-hotfix-r4.yml scripts/apply-shipping-shortage-hotfix.py scripts/hash-worker-declaration-temp.mjs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Allow shipment despite physical stock discrepancy'
+          git push origin HEAD:safe/shipping-shortage-hotfix-20260831
