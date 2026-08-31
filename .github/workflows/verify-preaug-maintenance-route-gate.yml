@@ -46,7 +46,7 @@ jobs:
           gate=Path('scripts/test-step1906a-worker-modularization.mjs')
           g=gate.read_text()
           anchor="  const normalizedRouter = currentRouter\n    .replace("
-          replacement="  const normalizedRouter = currentRouter\n    .replace(/\\n[ \\t]*\\/\\/ PREAUG_MAINTENANCE_BEGIN[\\s\\S]*?\\n[ \\t]*\\/\\/ PREAUG_MAINTENANCE_END\\n/, '\\n')\n    .replace("
+          replacement="  const normalizedRouter = currentRouter\n    .replace(/\\n[ \\t]*\\/\\/ PREAUG_MAINTENANCE_BEGIN[\\s\\S]*?\\n[ \\t]*\\/\\/ PREAUG_MAINTENANCE_END\\n/, '')\n    .replace("
           if g.count(anchor) != 1:
               raise SystemExit('router normalization anchor changed')
           gate.write_text(g.replace(anchor,replacement,1))
