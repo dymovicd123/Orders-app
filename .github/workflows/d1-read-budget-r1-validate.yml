@@ -26,7 +26,9 @@ jobs:
       - name: Capture Worker baselines
         run: node scripts/register-d1-read-budget-r1.mjs before
       - name: Apply guarded read-budget patch
-        run: python3 scripts/apply-d1-read-budget-r1.py
+        run: |
+          python3 scripts/apply-d1-read-budget-r1.py
+          python3 scripts/apply-d1-read-budget-r1-structural-fix.py
       - name: Register exact Worker delta
         run: node scripts/register-d1-read-budget-r1.mjs after
       - name: Typecheck
@@ -37,7 +39,7 @@ jobs:
         run: |
           git config user.name "dymovicd123"
           git config user.email "dymovicd@gmail.com"
-          git add package.json scripts/test-d1-read-budget-r1.mjs scripts/d1-read-budget-r1-worker-manifest.json scripts/test-step1906a-worker-modularization.mjs worker/domains/orders-relations.ts worker/domains/orders-read.ts
+          git add package.json scripts/test-d1-read-budget-r1.mjs scripts/d1-read-budget-r1-worker-manifest.json scripts/test-step1906a-worker-modularization.mjs scripts/test-step192b1-warehouse-truth-attention.mjs worker/domains/order-reservations.ts worker/domains/orders-relations.ts worker/domains/orders-read.ts
           git diff --cached --check
           git commit -m "Reduce D1 hot-path reads"
           git push origin HEAD:d1-read-budget-r1
