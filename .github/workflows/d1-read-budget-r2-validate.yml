@@ -1,0 +1,43 @@
+name: D1 read-budget R2 validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [d1-read-budget-r2-exec-20260901]
+    paths:
+      - scripts/.d1-read-budget-r2-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d1-read-budget-r2-exec-20260901
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Capture Worker baselines
+        run: node scripts/register-d1-read-budget-r2.mjs before
+      - name: Apply guarded R2 patch
+        run: python3 scripts/apply-d1-read-budget-r2.py
+      - name: Register exact Worker delta
+        run: node scripts/register-d1-read-budget-r2.mjs after
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Full release gates
+        run: npm run release:check
+      - name: Commit validated result
+        run: |
+          git config user.name "dymovicd123"
+          git config user.email "dymovicd@gmail.com"
+          git add package.json scripts/d1-read-budget-r2-worker-manifest.json scripts/test-d1-read-budget-r2.mjs scripts/test-step1906a-worker-modularization.mjs scripts/test-step192b1-warehouse-truth-attention.mjs worker/domains/order-reservations.ts worker/domains/warehouse-attention.ts src/App.tsx
+          git diff --cached --check
+          git commit -m "Reduce Warehouse Attention D1 reads"
+          git push origin HEAD:d1-read-budget-r2-exec-20260901
