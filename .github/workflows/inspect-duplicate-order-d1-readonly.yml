@@ -1,0 +1,37 @@
+name: Inspect duplicate order D1 read-only
+
+on:
+  push:
+    branches: [ops/delete-duplicate-order-20260901]
+    paths: [.github/workflows/inspect-duplicate-order-d1-readonly.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Read exact order lifecycle from Production D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql="SELECT o.id,o.external_id,o.order_status,o.shipping_status,o.shipping_date,o.total_amount,o.received_amount,o.return_amount FROM orders o WHERE o.id=1242 AND o.external_id='ORD-20260829144801-F3A7DDC3'; SELECT r.id,r.order_item_id,r.inventory_source,r.product_id,r.variant_id,r.quantity,r.status,r.created_at,r.fulfilled_at,r.released_at,r.updated_at FROM inventory_reservations r WHERE r.order_id=1242 ORDER BY r.id; SELECT oi.id,oi.product_name_snapshot,oi.gender_snapshot,oi.color_snapshot,oi.material_snapshot,oi.length_snapshot,oi.size_snapshot,oi.quantity,oi.source_type,oi.stock_writeoff_status,oi.product_id,oi.variant_id,oi.stock_quantity_before,oi.stock_quantity_after FROM order_items oi WHERE oi.order_id=1242 ORDER BY oi.id; SELECT id,return_date,amount,payment_method,status,comment,cancelled_at FROM returns WHERE order_id=1242 ORDER BY id; SELECT ri.id,ri.return_id,ri.order_item_id,ri.quantity,ri.inventory_source,ri.restocked,ri.product_name_snapshot FROM return_items ri JOIN returns r ON r.id=ri.return_id WHERE r.order_id=1242 ORDER BY ri.id; SELECT id,inventory_source,movement_type,variant_id,product_name_snapshot,quantity_delta,quantity_after,reference_type,reference_id,comment,created_at FROM inventory_movements WHERE reference_id='ORD-20260829144801-F3A7DDC3' OR reference_id='1242' ORDER BY id;"
+          npx wrangler d1 execute orders_db_prod --remote --command "$sql" --json > /tmp/result.json
+          node - <<'NODE'
+          const fs = require('fs')
+          const data = JSON.parse(fs.readFileSync('/tmp/result.json','utf8'))
+          for (const [index, block] of data.entries()) {
+            console.log(`query_${index + 1}:`, JSON.stringify(block.results || block))
+          }
+          NODE
