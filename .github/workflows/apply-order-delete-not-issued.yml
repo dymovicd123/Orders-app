@@ -1,0 +1,56 @@
+name: Apply false-shipment order delete recovery
+on:
+  push:
+    branches:
+      - safe/order-delete-not-issued-20260901
+    paths:
+      - .github/workflows/apply-order-delete-not-issued.yml
+permissions:
+  contents: write
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Apply prepared patch
+        run: python3 .github/scripts/apply-order-delete-not-issued.py
+      - name: Strengthen physical-truth barriers
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('worker/domains/order-delete.ts')
+          text=p.read_text()
+          old="""      const newerPhysicalTruth = await db.prepare(\n        `SELECT id\n         FROM inventory_stock_checks\n         WHERE inventory_source = ? AND variant_id = ?\n           AND datetime(checked_at) > datetime(?)\n         ORDER BY datetime(checked_at) DESC, id DESC\n         LIMIT 1`\n      ).bind(source, variantId, fulfilledAt).first<{ id: number }>()\n      if (newerPhysicalTruth?.id) {\n        falseShipmentFreshnessProtectedQuantity += quantity\n        continue\n      }\n"""
+          new="""      const activeStocktake = await db.prepare(\n        `SELECT id FROM inventory_stocktake_sessions\n         WHERE inventory_source = ? AND status = 'active'\n         LIMIT 1`\n      ).bind(source).first<{ id: string }>()\n      if (activeStocktake?.id) {\n        throw new CriticalOperationConflictError('Сейчас идёт ревизия этого склада. Ложную выдачу нельзя отменять параллельно с физическим пересчётом. Завершите или отмените ревизию и повторите удаление.')\n      }\n      const newerPhysicalTruth = await db.prepare(\n        `SELECT 1 AS found\n         WHERE EXISTS (\n           SELECT 1 FROM inventory_stock_checks\n           WHERE inventory_source = ? AND variant_id = ?\n             AND datetime(checked_at) > datetime(?)\n         ) OR EXISTS (\n           SELECT 1 FROM inventory_stocktake_sessions\n           WHERE inventory_source = ? AND status = 'completed'\n             AND completed_at IS NOT NULL\n             AND id NOT LIKE 'REV-%-P-%'\n             AND datetime(completed_at) > datetime(?)\n         )\n         LIMIT 1`\n      ).bind(source, variantId, fulfilledAt, source, fulfilledAt).first<{ found: number }>()\n      if (newerPhysicalTruth?.found) {\n        falseShipmentFreshnessProtectedQuantity += quantity\n        continue\n      }\n"""
+          if text.count(old)!=1:
+              raise SystemExit(f'freshness anchor count={text.count(old)}')
+          p.write_text(text.replace(old,new,1))
+          PY
+      - run: npm ci
+      - name: Full cumulative release gate
+        run: npm run release:check
+      - name: Verify scoped source diff
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          changed="$(git diff --name-only origin/main -- src/App.tsx worker/index.ts worker/domains/order-delete.ts scripts/test-order-delete-mobility.mjs)"
+          printf '%s\n' "$changed"
+          test "$changed" = $'scripts/test-order-delete-mobility.mjs\nsrc/App.tsx\nworker/domains/order-delete.ts\nworker/index.ts'
+          if git diff --name-only origin/main -- src | grep -Ei 'arrival|приход'; then
+            echo 'Arrival changed unexpectedly' >&2
+            exit 1
+          fi
+      - name: Commit gated source
+        run: |
+          set -euo pipefail
+          git config user.name 'dymovicd123'
+          git config user.email 'dymovicd@gmail.com'
+          git add src/App.tsx worker/index.ts worker/domains/order-delete.ts scripts/test-order-delete-mobility.mjs
+          git commit -m 'Allow safe deletion of false shipped orders'
+          git push origin HEAD:safe/order-delete-not-issued-20260901
