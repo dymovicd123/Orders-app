@@ -21,7 +21,6 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     formatMoney,
     FriendlyNumberInput,
     getOrderSourceAvailability,
-    isAdmin,
     loadExchangeHistory,
     ManagerBadge,
     managerColorFor,
@@ -411,7 +410,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                           </div>
                           {entry.comment ? <div className="history-note"><span>Комментарий обмена</span><strong>{entry.comment}</strong></div> : null}
                           {entry.cancellationComment ? <div className="history-note is-danger"><span>Причина отмены</span><strong>{entry.cancellationComment}</strong></div> : null}
-                          <div className="history-card-actions">{entry.status !== 'cancelled' && isAdmin ? <button className="ghost danger compact" type="button" onClick={() => void cancelExchangeEntry(entry)} disabled={exchangeBusy}>Отменить обмен</button> : null}</div>
+                          <div className="history-card-actions">{entry.status !== 'cancelled' ? <button className="ghost danger compact" type="button" onClick={() => void cancelExchangeEntry(entry)} disabled={exchangeBusy}>Отменить обмен</button> : null}</div>
                         </div>
                       </details>
                     ))}

@@ -543,6 +543,93 @@ export async function applyCanonicalInventoryLifecycleEvent(
 }
 
 
+
+type InventoryLifecycleCancellationDisposition = {
+  reversePhysical: boolean;
+  reason: 'safe' | 'active_stocktake' | 'later_physical_check' | 'unknown_event_time' | 'insufficient_current_physical';
+  eventAt?: string;
+  activeStocktakeId?: string;
+  laterCheckId?: number;
+  laterCheckAt?: string;
+  currentPhysical?: number;
+};
+
+
+async function inventoryLifecycleCancellationDisposition(
+  db: D1Database,
+  event: InventoryLifecycleEventRow,
+): Promise<InventoryLifecycleCancellationDisposition> {
+  const source = normalizeSourceType(event.inventory_source);
+  const variantId = toInt(event.variant_id, 0);
+  const quantity = Math.max(1, toInt(event.quantity, 1));
+  const eventAt = cleanText(event.applied_at) || cleanText(event.created_at);
+
+  const activeStocktake = await db.prepare(
+    `SELECT id, started_at
+     FROM inventory_stocktake_sessions
+     WHERE inventory_source = ? AND status = 'active'
+     ORDER BY started_at DESC, id DESC
+     LIMIT 1`
+  ).bind(source).first<{ id: string; started_at: string | null }>();
+  if (activeStocktake?.id) {
+    return {
+      reversePhysical: false,
+      reason: 'active_stocktake',
+      eventAt,
+      activeStocktakeId: cleanText(activeStocktake.id),
+    };
+  }
+
+  // Applied lifecycle rows should always have a timestamp. If a historical/corrupt row does not,
+  // cancellation may still finish financially and logically, but must not guess across physical truth.
+  if (!eventAt) {
+    return { reversePhysical: false, reason: 'unknown_event_time' };
+  }
+
+  if (variantId) {
+    const laterCheck = await db.prepare(
+      `SELECT id, checked_at
+       FROM inventory_stock_checks
+       WHERE inventory_source = ? AND variant_id = ?
+         AND datetime(checked_at) > datetime(?)
+       ORDER BY datetime(checked_at) DESC, id DESC
+       LIMIT 1`
+    ).bind(source, variantId, eventAt).first<{ id: number; checked_at: string }>();
+    if (laterCheck?.id) {
+      return {
+        reversePhysical: false,
+        reason: 'later_physical_check',
+        eventAt,
+        laterCheckId: toInt(laterCheck.id, 0),
+        laterCheckAt: cleanText(laterCheck.checked_at),
+      };
+    }
+
+    // Cancelling an inbound lifecycle event means subtracting the quantity that was added earlier.
+    // Never manufacture a negative physical balance just because later operational movements used it.
+    if (cleanText(event.direction) === 'in') {
+      const stock = await db.prepare(
+        `SELECT quantity
+         FROM inventory_stock
+         WHERE inventory_source = ? AND variant_id = ?
+         ORDER BY id ASC LIMIT 1`
+      ).bind(source, variantId).first<{ quantity: number }>();
+      const currentPhysical = Math.max(0, toInt(stock?.quantity, 0));
+      if (currentPhysical < quantity) {
+        return {
+          reversePhysical: false,
+          reason: 'insufficient_current_physical',
+          eventAt,
+          currentPhysical,
+        };
+      }
+    }
+  }
+
+  return { reversePhysical: true, reason: 'safe', eventAt };
+}
+
+
 export async function cancelInventoryLifecycleEvent(
   db: D1Database,
   eventId: number,
@@ -600,6 +687,56 @@ export async function cancelInventoryLifecycleEvent(
   const qty = Math.max(1, toInt(event.quantity, 1));
   const originalDelta = cleanText(event.direction) === 'in' ? qty : -qty;
   const reversalDelta = -originalDelta;
+  const physicalDisposition = await inventoryLifecycleCancellationDisposition(db, event);
+  if (!physicalDisposition.reversePhysical) {
+    const reasonText = physicalDisposition.reason === 'active_stocktake'
+      ? 'Физический остаток не откатывался: на точке идёт ревизия, которая является текущей физической истиной.'
+      : physicalDisposition.reason === 'later_physical_check'
+        ? 'Физический остаток не откатывался: после операции уже была более свежая физическая сверка.'
+        : physicalDisposition.reason === 'insufficient_current_physical'
+          ? 'Физический остаток не откатывался: обратное списание сделало бы остаток отрицательным.'
+          : 'Физический остаток не откатывался: у исторического события нет надёжной временной границы.';
+    const bookkeeping: D1PreparedStatement[] = [];
+    if (isOutgoingExchange && toInt(event.order_item_id, 0)) {
+      bookkeeping.push(db.prepare(
+        `UPDATE inventory_reservations SET status = 'released', released_at = ?, updated_at = ?
+         WHERE order_item_id = ? AND status = 'fulfilled'
+           AND EXISTS (SELECT 1 FROM inventory_lifecycle_events WHERE id = ? AND status = 'applied')`
+      ).bind(timestamp, timestamp, toInt(event.order_item_id, 0), event.id));
+    }
+    if (cleanText(event.event_type) === 'return_in' && toInt(event.operation_item_id, 0)) {
+      bookkeeping.push(db.prepare(
+        `UPDATE return_items SET restocked = 0
+         WHERE id = ? AND EXISTS (SELECT 1 FROM inventory_lifecycle_events WHERE id = ? AND status = 'applied')`
+      ).bind(toInt(event.operation_item_id, 0), event.id));
+    }
+    bookkeeping.push(db.prepare(
+      `UPDATE inventory_lifecycle_events
+       SET status = 'cancelled', cancelled_at = ?, updated_at = ?,
+           resolution_comment = CASE
+             WHEN COALESCE(resolution_comment, '') = '' THEN ?
+             ELSE resolution_comment || ' | ' || ?
+           END
+       WHERE id = ? AND status = 'applied'`
+    ).bind(timestamp, timestamp, reasonText, reasonText, event.id));
+    await db.batch(bookkeeping);
+    event = await db.prepare(`SELECT * FROM inventory_lifecycle_events WHERE id = ? LIMIT 1`).bind(event.id).first<InventoryLifecycleEventRow>();
+    return {
+      cancelled: true,
+      pendingOnly: false,
+      event,
+      source,
+      productName: canonical.productName,
+      quantityDelta: 0,
+      physicalReversalSkipped: true,
+      physicalReversalReason: physicalDisposition.reason,
+      protectedPhysicalTruth: true,
+      activeStocktakeId: physicalDisposition.activeStocktakeId || null,
+      laterCheckId: physicalDisposition.laterCheckId || null,
+      laterCheckAt: physicalDisposition.laterCheckAt || null,
+      currentPhysical: physicalDisposition.currentPhysical ?? null,
+    };
+  }
   const stock = await ensureHumanInventoryStockRow(db, source, canonical, timestamp);
   const reference = inventoryLifecycleMovementReference(event, true);
   const action = inventoryLifecycleActionText(event, true);

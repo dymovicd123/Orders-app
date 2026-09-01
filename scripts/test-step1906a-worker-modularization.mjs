@@ -18,6 +18,7 @@ const dailyWarehousePath = path.join(root, 'scripts/step192b2a-daily-warehouse-m
 const attentionContextPath = path.join(root, 'scripts/step192b2a2-attention-context-manifest.json')
 const handoverSqlAliasSafetyPath = path.join(root, 'scripts/step192b2a3-handover-sql-alias-safety-manifest.json')
 const orderCreateSaveIntegrityPath = path.join(root, 'scripts/step192b2a4-order-create-save-integrity-manifest.json')
+const returnExchangeCancelAutonomyPath = path.join(root, 'scripts/return-exchange-cancel-autonomy-worker-manifest.json')
 const phase1bWorkshopReturnDispositionPath = path.join(root, 'scripts/phase1b-workshop-return-disposition-worker-manifest.json')
 const arrivalSaveReliabilityPath = path.join(root, 'scripts/arrival-save-reliability-worker-manifest.json')
 const shippingShortageHotfixPath = path.join(root, 'scripts/shipping-shortage-hotfix-worker-manifest.json')
@@ -102,6 +103,11 @@ try {
   const orderCreateSaveIntegrity = fs.existsSync(orderCreateSaveIntegrityPath) ? JSON.parse(fs.readFileSync(orderCreateSaveIntegrityPath, 'utf8')) : null
   const orderCreateSaveIntegrityChanges = orderCreateSaveIntegrity?.version === 1 ? (orderCreateSaveIntegrity.changes || {}) : {}
   const orderCreateSaveIntegrityAdded = orderCreateSaveIntegrity?.version === 1 ? (orderCreateSaveIntegrity.added || {}) : {}
+  check(fs.existsSync(returnExchangeCancelAutonomyPath), 'Return/exchange cancel autonomy Worker manifest missing')
+  const returnExchangeCancelAutonomy = JSON.parse(fs.readFileSync(returnExchangeCancelAutonomyPath, 'utf8'))
+  check(returnExchangeCancelAutonomy?.version === 1 && returnExchangeCancelAutonomy?.revision === 'return-exchange-cancel-autonomy-r1', 'Return/exchange cancel autonomy Worker manifest invalid')
+  const returnExchangeCancelAutonomyChanges = returnExchangeCancelAutonomy.changes || {}
+  const returnExchangeCancelAutonomyAdded = returnExchangeCancelAutonomy.added || {}
   check(fs.existsSync(phase1bWorkshopReturnDispositionPath), 'Phase 1B Workshop return disposition Worker manifest missing')
   const phase1bWorkshopReturnDisposition = JSON.parse(fs.readFileSync(phase1bWorkshopReturnDispositionPath, 'utf8'))
   check(phase1bWorkshopReturnDisposition?.version === 1 && phase1bWorkshopReturnDisposition?.revision === 'phase1b-workshop-return-disposition-r1', 'Phase 1B Workshop return disposition Worker manifest invalid')
@@ -188,7 +194,7 @@ try {
   }
 
   const removedNames = Object.keys(removed)
-  const expectedDeclarationCount = manifest.declarationCount - removedNames.length + Object.keys(warehouseTruthFreshnessAdded).length + Object.keys(warehouseAttentionTruthAdded).length + Object.keys(dailyWarehouseAdded).length + Object.keys(attentionContextAdded).length + Object.keys(orderCreateSaveIntegrityAdded).length + Object.keys(orderDeleteMobilityAdded).length
+  const expectedDeclarationCount = manifest.declarationCount - removedNames.length + Object.keys(warehouseTruthFreshnessAdded).length + Object.keys(warehouseAttentionTruthAdded).length + Object.keys(dailyWarehouseAdded).length + Object.keys(attentionContextAdded).length + Object.keys(orderCreateSaveIntegrityAdded).length + Object.keys(orderDeleteMobilityAdded).length + Object.keys(returnExchangeCancelAutonomyAdded).length
   check(declarations.size === expectedDeclarationCount, `Worker declaration count changed outside accepted allow-lists: ${declarations.size}/${expectedDeclarationCount}`)
   for (const [name, expectedHash] of Object.entries(manifest.declarations)) {
     if (Object.hasOwn(removed, name)) {
@@ -348,11 +354,17 @@ try {
       acceptedPostExchangeStaleHandoverHash = exchangeStaleHandoverChanged.after
     }
     const orderEditPaymentMethodChanged = orderEditPaymentMethodChanges[name]
+    let acceptedPostOrderEditPaymentHash = acceptedPostExchangeStaleHandoverHash
     if (orderEditPaymentMethodChanged) {
       check(orderEditPaymentMethodChanged.before === acceptedPostExchangeStaleHandoverHash, `Order edit payment-method baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === orderEditPaymentMethodChanged.after, `Worker declaration changed beyond exact Order edit payment-method allow-list: ${name}`)
+      acceptedPostOrderEditPaymentHash = orderEditPaymentMethodChanged.after
+    }
+    const returnExchangeCancelAutonomyChanged = returnExchangeCancelAutonomyChanges[name]
+    if (returnExchangeCancelAutonomyChanged) {
+      check(returnExchangeCancelAutonomyChanged.before === acceptedPostOrderEditPaymentHash, `Return/exchange cancel autonomy baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === returnExchangeCancelAutonomyChanged.after, `Worker declaration changed beyond exact return/exchange cancel autonomy allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostExchangeStaleHandoverHash, `Worker declaration body changed beyond accepted Finance F1-F9 / Phase 1B / Arrival reliability / Shipping shortage / Exchange stale-handover / payment-method deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostOrderEditPaymentHash, `Worker declaration body changed beyond accepted Finance F1-F9 / Phase 1B / Arrival reliability / Shipping shortage / Exchange stale-handover / payment-method / cancellation-autonomy deltas: ${name}`)
     }
   }
 
@@ -377,6 +389,7 @@ try {
       "if (url.pathname === '/api/inventory/cycle-counts' && request.method === 'GET') {\n        return json(await listInventoryCycleCountSuggestions(env.DB, url));\n      }",
       "if (url.pathname === '/api/inventory/cycle-counts' && request.method === 'GET') {\n        const denied = requireAdminAccess(request);\n        if (denied) return denied;\n        return json(await listInventoryCycleCountSuggestions(env.DB, url));\n      }",
     )
+    .replace(/\n\s*returnExchangeCancelAutonomy:\s*'192b2a5',\s*\n/, '\n')
     .replace(/\n\s*orderCreateSaveIntegrity:\s*'192b2a4',\s*\n/, '\n')
     .replace(/\n\s*warehouseAttentionContextFix:\s*'192b2a2',\s*\n/, '\n')
     .replace(/\n\s*warehouseDailyAttentionUx:\s*'192b2a',\s*\n/, '\n')
@@ -427,12 +440,13 @@ try {
     check(attentionContext.router?.before === acceptedPostDailyRouterHash, '192B2A2 router baseline hash mismatch')
     acceptedPostAttentionContextRouterHash = attentionContext.router.after
   }
+  let acceptedPostOrderCreateRouterHash = acceptedPostAttentionContextRouterHash
   if (orderCreateSaveIntegrity) {
     check(orderCreateSaveIntegrity.router?.before === acceptedPostAttentionContextRouterHash, '192B2A4 router baseline hash mismatch')
-    check(sha(normalizedRouter) === orderCreateSaveIntegrity.router.after, 'Worker router changed beyond exact 192B2A4 order-save delta')
-  } else {
-    check(sha(normalizedRouter) === acceptedPostAttentionContextRouterHash, `Worker router changed beyond accepted structural/cleanup/runtime/security/warehouse/catalog/attention/daily/order-save delta`)
+    acceptedPostOrderCreateRouterHash = orderCreateSaveIntegrity.router.after
   }
+  check(returnExchangeCancelAutonomy.router?.before === acceptedPostOrderCreateRouterHash, 'Return/exchange cancel autonomy router baseline hash mismatch')
+  check(sha(normalizedRouter) === returnExchangeCancelAutonomy.router.after, 'Worker router changed beyond exact return/exchange cancel autonomy delta')
 
   for (const [name, expectedHash] of Object.entries(warehouseTruthFreshnessAdded)) {
     check(declarations.has(name), `192A1 added Worker declaration missing: ${name}`)
@@ -515,6 +529,11 @@ try {
     check(sha(declarations.get(name)) === expectedHash, `Order delete mobility declaration changed beyond exact allow-list: ${name}`)
   }
 
+  for (const [name, expectedHash] of Object.entries(returnExchangeCancelAutonomyAdded)) {
+    check(declarations.has(name), `Return/exchange cancel autonomy added Worker declaration missing: ${name}`)
+    check(sha(declarations.get(name)) === expectedHash, `Return/exchange cancel autonomy declaration changed beyond exact allow-list: ${name}`)
+  }
+
   const graph = new Map(files.map((file) => [file, new Set()]))
   for (const file of files) {
     const text = fs.readFileSync(file, 'utf8')
@@ -547,8 +566,9 @@ try {
   const attentionContextNote = attentionContext ? `, ${Object.keys(attentionContextChanges).length} changed + ${Object.keys(attentionContextAdded).length} added 192B2A2 attention-context declarations` : ''
   const handoverSqlAliasSafetyNote = handoverSqlAliasSafety ? `, ${Object.keys(handoverSqlAliasSafetyChanges).length} exact 192B2A3 handover-SQL alias delta` : ''
   const orderCreateSaveIntegrityNote = orderCreateSaveIntegrity ? `, ${Object.keys(orderCreateSaveIntegrityChanges).length} changed + ${Object.keys(orderCreateSaveIntegrityAdded).length} added 192B2A4 order-save declarations` : ''
+  const returnExchangeCancelAutonomyNote = `, ${Object.keys(returnExchangeCancelAutonomyChanges).length} changed + ${Object.keys(returnExchangeCancelAutonomyAdded).length} added return/exchange cancellation-autonomy declarations`
   const financeF5BusinessSemanticsNote = financeF5BusinessSemantics ? `, ${Object.keys(financeF5BusinessSemanticsChanges).length} exact Finance F5 business-semantics deltas` : ''
-  console.log(`STEP 190.6A WORKER MODULARIZATION TESTS PASSED — ${files.length} TS files, ${declarations.size} preserved declarations${cleanupNote}${boundaryNote}${transferRuntimeNote}${runtimeHardeningNote}${adminSessionIntegrityNote}${warehouseTruthFreshnessNote}${catalogTruthFinalizerNote}${warehouseAttentionTruthNote}${dailyWarehouseNote}${attentionContextNote}${handoverSqlAliasSafetyNote}${orderCreateSaveIntegrityNote}${financeF5BusinessSemanticsNote}, 0 import cycles`)
+  console.log(`STEP 190.6A WORKER MODULARIZATION TESTS PASSED — ${files.length} TS files, ${declarations.size} preserved declarations${cleanupNote}${boundaryNote}${transferRuntimeNote}${runtimeHardeningNote}${adminSessionIntegrityNote}${warehouseTruthFreshnessNote}${catalogTruthFinalizerNote}${warehouseAttentionTruthNote}${dailyWarehouseNote}${attentionContextNote}${handoverSqlAliasSafetyNote}${orderCreateSaveIntegrityNote}${returnExchangeCancelAutonomyNote}${financeF5BusinessSemanticsNote}, 0 import cycles`)
 } catch (error) {
   console.error(`STEP 190.6A WORKER MODULARIZATION TESTS FAILED: ${error?.message || error}`)
   process.exit(1)

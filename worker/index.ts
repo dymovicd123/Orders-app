@@ -180,6 +180,7 @@ export default {
           warehouseDailyAttentionUx: '192b2a',
           warehouseAttentionContextFix: '192b2a2',
           orderCreateSaveIntegrity: '192b2a4',
+          returnExchangeCancelAutonomy: '192b2a5',
           time: new Date().toISOString(),
         });
       }
@@ -1257,8 +1258,6 @@ export default {
 
       const returnCancelMatch = url.pathname.match(/^\/api\/returns\/(\d+)\/cancel$/);
       if (returnCancelMatch && request.method === 'PATCH') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         const input = await readJson<{ requestId?: string; comment?: string }>(request);
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
         try {
@@ -1284,8 +1283,6 @@ export default {
 
       const exchangeCancelMatch = url.pathname.match(/^\/api\/exchanges\/(\d+)\/cancel$/);
       if (exchangeCancelMatch && request.method === 'PATCH') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         const input = await readJson<{ requestId?: string; comment?: string }>(request);
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
         try {

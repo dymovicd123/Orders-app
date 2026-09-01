@@ -6110,11 +6110,7 @@ function removeDebtPayment(index: number) {
   }
 
   async function cancelReturnEntry(entry: ReturnHistoryEntry) {
-    if (!isAdmin) {
-      setError('Отмена возврата доступна только администратору.')
-      return
-    }
-    if (!window.confirm(`Отменить возврат ${entry.externalId || ''} на ${formatMoney(entry.amount)}? Остатки и сумма возврата будут откатаны.`)) return
+    if (!window.confirm(`Отменить возврат ${entry.externalId || ''} на ${formatMoney(entry.amount)}? Система отменит деньги и статус возврата. Более свежие фактические данные склада, если они уже появились, будут сохранены.`)) return
     setReturnBusy(true)
     setError(null)
     setMessage(null)
@@ -6154,12 +6150,8 @@ function removeDebtPayment(index: number) {
   }
 
   async function cancelExchangeEntry(entry: ExchangeHistoryEntry) {
-    if (!isAdmin) {
-      setError('Отмена обмена доступна только администратору.')
-      return
-    }
 
-    if (!window.confirm(`Отменить обмен по заказу ${entry.externalId}? Склад, деньги и новая позиция будут откатаны.`)) return
+    if (!window.confirm(`Отменить обмен по заказу ${entry.externalId}? Система отменит деньги, статус и новую позицию. Более свежие фактические данные склада, если они уже появились, будут сохранены.`)) return
     setExchangeBusy(true)
     setError(null)
     setMessage(null)

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "revision": "return-exchange-cancel-autonomy-r1",
+  "changes": {
+    "cancelInventoryLifecycleEvent": {
+      "before": "f544e86e7dc42898de46f201f99e473f7e541ed833f2bc04a115d7065167b1dc",
+      "after": "76c79b4de5502d709131e256e11227cee8c5ac8771a5d139ca7973759a1d9729"
+    }
+  },
+  "added": {
+    "InventoryLifecycleCancellationDisposition": "1ff625492871ceeba3f35641842e266c8eb341c0934f823bafb137f843e5821e",
+    "inventoryLifecycleCancellationDisposition": "488db52145eb994b124533453a7070f361f5974236489b198f2ef8e7aa9aedd3"
+  },
+  "router": {
+    "before": "19d575f0a9d4768fe0d09c4860517a92b49a5ad39cc7c1ec143a156e68930517",
+    "after": "3a4a6251ec10d0630b478df66febd11ec972d2944fa4c442c68b5b847c170044"
+  }
+}

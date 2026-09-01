@@ -9,7 +9,6 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     createReturnDraft,
     formatMoney,
     FriendlyNumberInput,
-    isAdmin,
     ManagerBadge,
     managerColorFor,
     orderPanelStyle,
@@ -351,7 +350,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                           {entry.comment ? <div className="history-note"><span>Комментарий возврата</span><strong>{entry.comment}</strong></div> : null}
                           {entry.cancellationComment ? <div className="history-note is-danger"><span>Причина отмены</span><strong>{entry.cancellationComment}</strong></div> : null}
                           <div className="history-card-actions">
-                            {entry.status === 'cancelled' ? null : entry.operationType === 'exchange_refund' ? <button className="secondary compact" type="button" onClick={() => setOrderPanel('exchange')}>Открыть обмены</button> : isAdmin ? <button className="ghost danger compact" type="button" onClick={() => void cancelReturnEntry(entry)} disabled={returnBusy}>Отменить возврат</button> : null}
+                            {entry.status === 'cancelled' ? null : entry.operationType === 'exchange_refund' ? <button className="secondary compact" type="button" onClick={() => setOrderPanel('exchange')}>Открыть обмены</button> : <button className="ghost danger compact" type="button" onClick={() => void cancelReturnEntry(entry)} disabled={returnBusy}>Отменить возврат</button>}
                           </div>
                         </div>
                       </details>
