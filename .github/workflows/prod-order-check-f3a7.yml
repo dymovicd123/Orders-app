@@ -17,6 +17,7 @@ jobs:
       CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CF_API: https://api.cloudflare.com/client/v4
       ORDER_EXTERNAL_ID: ORD-20260829144801-F3A7DDC3
+      EXPECTED_RETURN_ID: '33'
     steps:
       - name: Resolve Production Worker URL
         id: target
@@ -27,29 +28,26 @@ jobs:
           subdomain="$(jq -r '.result.subdomain // empty' <<<"$subdomain_json")"
           [[ -n "$subdomain" ]] || { echo 'Could not resolve workers.dev subdomain.' >&2; exit 2; }
           echo "base=https://orders-app.${subdomain}.workers.dev" >> "$GITHUB_OUTPUT"
-      - name: Probe Production business API
+      - name: Read target via non-search histories
         shell: bash
         env:
           BASE: ${{ steps.target.outputs.base }}
         run: |
-          set -u
-          probe() {
-            label="$1"; shift
-            body="/tmp/${label}.body"
-            code="$(curl -sS -o "$body" -w '%{http_code}' "$@")"
-            echo "=== $label HTTP $code ==="
-            cat "$body"
-            echo
-          }
-          probe health "$BASE/api/health"
-          probe activity --get "$BASE/api/activity" --data-urlencode "q=$ORDER_EXTERNAL_ID" --data-urlencode "limit=100"
-          probe returns --get "$BASE/api/returns" --data-urlencode "q=$ORDER_EXTERNAL_ID" --data-urlencode "limit=100"
-          probe exchanges --get "$BASE/api/exchanges" --data-urlencode "q=$ORDER_EXTERNAL_ID" --data-urlencode "limit=100"
-          probe orders --get "$BASE/api/orders" --data-urlencode "q=$ORDER_EXTERNAL_ID" --data-urlencode "archiveMode=all" --data-urlencode "limit=20"
+          set -euo pipefail
+          echo '=== LIGHTWEIGHT DB READ ==='
+          curl --fail-with-body -sS "$BASE/api/reference-data" | jq '{ok, managerCount: (.managers|length), paymentMethodCount: (.paymentMethods|length)}'
 
-          order_id=""
-          if jq -e . /tmp/returns.body >/dev/null 2>&1; then order_id="$(jq -r '.returns[0].orderId // empty' /tmp/returns.body)"; fi
-          if [[ -z "$order_id" ]] && jq -e . /tmp/exchanges.body >/dev/null 2>&1; then order_id="$(jq -r '.exchanges[0].orderId // empty' /tmp/exchanges.body)"; fi
-          if [[ -z "$order_id" ]] && jq -e . /tmp/activity.body >/dev/null 2>&1; then order_id="$(jq -r '.activities[0].orderId // empty' /tmp/activity.body)"; fi
-          echo "=== RESOLVED ORDER ID: ${order_id:-missing} ==="
-          if [[ -n "$order_id" ]]; then probe exact-order "$BASE/api/orders/$order_id"; fi
+          echo '=== CANCELLED RETURNS ==='
+          returns="$(curl --fail-with-body -sS --get "$BASE/api/returns" --data-urlencode 'status=cancelled' --data-urlencode 'limit=100')"
+          jq '{ok,count,summary,returns:[.returns[] | {id,orderId,externalId,status,amount,cancelledAt,cancellationComment}]}' <<<"$returns"
+          order_id="$(jq -r --argjson rid "$EXPECTED_RETURN_ID" '.returns[] | select(.id == $rid) | .orderId' <<<"$returns" | head -n1)"
+          external_id="$(jq -r --argjson rid "$EXPECTED_RETURN_ID" '.returns[] | select(.id == $rid) | .externalId' <<<"$returns" | head -n1)"
+          echo "Resolved return #$EXPECTED_RETURN_ID -> orderId=${order_id:-missing} externalId=${external_id:-missing}"
+          [[ -n "$order_id" ]] || { echo 'Return #33 not found in first 100 cancelled returns.' >&2; exit 3; }
+          [[ "$external_id" == "$ORDER_EXTERNAL_ID" ]] || { echo "Return #33 belongs to unexpected order: $external_id" >&2; exit 4; }
+
+          echo '=== EXACT ORDER ==='
+          curl --fail-with-body -sS "$BASE/api/orders/$order_id" | tee /tmp/order.json | jq .
+
+          echo '=== EXACT DELETE REPLAY PROBE NOT EXECUTED ==='
+          echo 'Read-only verification complete; no write request was sent.'
