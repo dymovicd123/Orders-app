@@ -1,0 +1,393 @@
+name: Verify safe manager order deletion
+
+on:
+  push:
+    branches: [safe/order-delete-mobility-20260901]
+    paths: [.github/workflows/verify-order-delete-mobility.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/order-delete-mobility-20260901
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+
+      - name: Apply safe deletion orchestration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 anchor, found {count}')
+              return text.replace(old, new, 1)
+
+          module = r'''import { cleanText, isArchivedOrder, normalizeOrderStatus, normalizeShippingStatus, toInt } from '../core/text.ts'
+          import type { AuthUser } from '../core/types.ts'
+          import { isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot } from './catalog.ts'
+          import { CriticalOperationConflictError } from './critical.ts'
+          import { restoreArchivedOrder } from './orders-read.ts'
+          import { getOrder, updateOrderCritical } from './orders-write.ts'
+          import { cancelExchange, cancelReturn } from './returns-exchanges.ts'
+
+          export async function deleteOrderSafely(
+            db: D1Database,
+            orderId: number,
+            input: { requestId?: string; comment?: string },
+            actor?: AuthUser | null,
+            checkedBy = '',
+          ) {
+            if (!orderId) throw new CriticalOperationConflictError('Заказ не найден. Обновите список и повторите действие.')
+            const requestId = cleanText(input.requestId) || `order-delete-${orderId}-${crypto.randomUUID()}`
+            let order = await getOrder(db, orderId)
+            if (!order) throw new CriticalOperationConflictError('Заказ не найден. Возможно, он уже был удалён.')
+            if (normalizeOrderStatus((order as any).order_status) === 'deleted') {
+              return { ok: true, alreadyDeleted: true, autoCancelledReturns: 0, autoCancelledExchanges: 0, refreshRequired: true, message: 'Заказ уже удалён.' }
+            }
+
+            const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db)
+            if (humanInventoryModelEnabled) {
+              const fulfilled = await db.prepare(
+                `SELECT COUNT(*) AS count FROM inventory_reservations WHERE order_id = ? AND status = 'fulfilled'`
+              ).bind(orderId).first<{ count: number }>()
+              if (normalizeShippingStatus((order as any).shipping_status) === 'sent' || toInt(fulfilled?.count, 0) > 0) {
+                throw new CriticalOperationConflictError(
+                  'Этот заказ уже физически выдавался клиенту. Система ничего не изменила: такой заказ нельзя просто стереть вместе с движением товара. Если заказ ошибочный, сначала зафиксируйте фактический возврат товара; отдельный сценарий аннулирования после полного возврата будет разбираться без ожидания администратора.'
+                )
+              }
+            }
+
+            const activeExchangeRows = await db.prepare(
+              `SELECT e.id, e.old_order_item_id, e.new_order_item_id, e.old_return_source,
+                      old_item.id AS old_item_exists,
+                      new_item.id AS new_item_exists,
+                      COALESCE(new_item.is_workshop, 0) AS new_is_workshop
+               FROM exchanges e
+               LEFT JOIN order_items old_item ON old_item.id = e.old_order_item_id AND old_item.order_id = e.order_id
+               LEFT JOIN order_items new_item ON new_item.id = e.new_order_item_id AND new_item.order_id = e.order_id
+               WHERE e.order_id = ? AND COALESCE(e.status, 'completed') <> 'cancelled'
+               ORDER BY e.id DESC`
+            ).bind(orderId).all<Record<string, unknown>>()
+            const activeExchanges = activeExchangeRows.results || []
+            for (const exchange of activeExchanges) {
+              const exchangeId = toInt(exchange.id, 0)
+              if (!exchangeId || !toInt(exchange.old_item_exists, 0)) {
+                throw new CriticalOperationConflictError('Удаление остановлено без изменений: у одного из обменов потеряна исходная позиция. Нужна точечная проверка истории, а не угадывание остатка.')
+              }
+              const oldReturnSource = cleanText(exchange.old_return_source)
+              if (oldReturnSource && oldReturnSource !== 'none') {
+                const oldLifecycle = await db.prepare(
+                  `SELECT id FROM inventory_lifecycle_events
+                   WHERE operation_type = 'exchange' AND operation_id = ? AND event_type = 'exchange_old_in'
+                   LIMIT 1`
+                ).bind(exchangeId).first<{ id: number }>()
+                if (!oldLifecycle?.id) {
+                  throw new CriticalOperationConflictError(`Удаление остановлено без изменений: обмен #${exchangeId} содержит старое складское действие без надёжной lifecycle-связи.`)
+                }
+              }
+              if (toInt(exchange.new_item_exists, 0) && !toInt(exchange.new_is_workshop, 0)) {
+                const newLifecycle = await db.prepare(
+                  `SELECT id FROM inventory_lifecycle_events
+                   WHERE operation_type = 'exchange' AND operation_id = ? AND event_type = 'exchange_new_out'
+                   LIMIT 1`
+                ).bind(exchangeId).first<{ id: number }>()
+                if (!newLifecycle?.id) {
+                  throw new CriticalOperationConflictError(`Удаление остановлено без изменений: обмен #${exchangeId} не имеет надёжной связи с физическим списанием новой позиции.`)
+                }
+              }
+            }
+
+            const unsafeReturn = await db.prepare(
+              `SELECT r.id, ri.product_name_snapshot
+               FROM returns r
+               JOIN return_items ri ON ri.return_id = r.id
+               WHERE r.order_id = ?
+                 AND COALESCE(r.status, 'completed') <> 'cancelled'
+                 AND ri.restocked = 1
+                 AND ri.inventory_source IN ('warehouse', 'boutique')
+                 AND NOT EXISTS (
+                   SELECT 1 FROM inventory_lifecycle_events le
+                   WHERE le.operation_type = 'return' AND le.operation_id = r.id AND le.operation_item_id = ri.id
+                 )
+               LIMIT 1`
+            ).bind(orderId).first<Record<string, unknown>>()
+            if (unsafeReturn?.id) {
+              throw new CriticalOperationConflictError(
+                `Удаление остановлено без изменений: возврат #${toInt(unsafeReturn.id, 0)} содержит старое складское движение без надёжной связи с каталогом (${cleanText(unsafeReturn.product_name_snapshot) || 'позиция'}).`
+              )
+            }
+
+            const appliedLifecycle = await db.prepare(
+              `SELECT le.id, le.variant_id, le.event_key
+               FROM inventory_lifecycle_events le
+               WHERE le.status = 'applied'
+                 AND (
+                   (le.operation_type = 'return' AND le.operation_id IN (
+                     SELECT id FROM returns WHERE order_id = ? AND COALESCE(status, 'completed') <> 'cancelled'
+                   ))
+                   OR
+                   (le.operation_type = 'exchange' AND le.operation_id IN (
+                     SELECT id FROM exchanges WHERE order_id = ? AND COALESCE(status, 'completed') <> 'cancelled'
+                   ))
+                 )
+               ORDER BY le.id ASC`
+            ).bind(orderId, orderId).all<Record<string, unknown>>()
+            for (const lifecycle of appliedLifecycle.results || []) {
+              const variantId = toInt(lifecycle.variant_id, 0)
+              if (!variantId) {
+                throw new CriticalOperationConflictError(`Удаление остановлено без изменений: складское событие ${cleanText(lifecycle.event_key) || lifecycle.id} не связано с точной вариацией товара.`)
+              }
+              await loadCanonicalVariantSnapshot(db, variantId)
+            }
+
+            if (isArchivedOrder(order)) {
+              const restored = await restoreArchivedOrder(db, orderId, cleanText(actor?.displayName || actor?.email) || checkedBy || 'employee')
+              if (!(restored as any).ok) throw new CriticalOperationConflictError(cleanText((restored as any).message) || 'Не удалось безопасно вернуть заказ из архива перед удалением.')
+              order = await getOrder(db, orderId)
+              if (!order) throw new CriticalOperationConflictError('Заказ не загрузился после выхода из архива. Повторите удаление — повтор безопасен.')
+            }
+
+            let autoCancelledExchanges = 0
+            for (const exchange of activeExchanges) {
+              const exchangeId = toInt(exchange.id, 0)
+              await cancelExchange(db, exchangeId, {
+                requestId: `${requestId}:exchange:${exchangeId}`,
+                comment: `Автоматически отменено перед удалением ошибочного заказа ${(order as any).external_id}`,
+              })
+              autoCancelledExchanges += 1
+            }
+
+            const activeReturns = await db.prepare(
+              `SELECT id FROM returns
+               WHERE order_id = ? AND COALESCE(status, 'completed') <> 'cancelled'
+               ORDER BY id DESC`
+            ).bind(orderId).all<{ id: number }>()
+            let autoCancelledReturns = 0
+            for (const ret of activeReturns.results || []) {
+              const returnId = toInt(ret.id, 0)
+              await cancelReturn(db, returnId, {
+                requestId: `${requestId}:return:${returnId}`,
+                comment: `Автоматически отменено перед удалением ошибочного заказа ${(order as any).external_id}`,
+              })
+              autoCancelledReturns += 1
+            }
+
+            const externalId = cleanText((order as any).external_id)
+            const result = await updateOrderCritical(
+              db,
+              orderId,
+              {
+                requestId: `${requestId}:order`,
+                orderStatus: 'deleted',
+                comment: cleanText(input.comment) || `Ошибочный заказ ${externalId} удалён сотрудником`,
+              },
+              actor,
+              checkedBy,
+            )
+            return {
+              ...result,
+              autoCancelledReturns,
+              autoCancelledExchanges,
+              message: [
+                `Заказ ${externalId} удалён.`,
+                autoCancelledReturns ? `Ошибочных возвратов автоматически отменено: ${autoCancelledReturns}.` : '',
+                autoCancelledExchanges ? `Обменов автоматически отменено: ${autoCancelledExchanges}.` : '',
+              ].filter(Boolean).join(' '),
+            }
+          }
+          '''
+          # Strip workflow indentation from module literal.
+          module = '\n'.join(line[10:] if line.startswith('          ') else line for line in module.splitlines()).lstrip()
+          Path('worker/domains/order-delete.ts').write_text(module)
+
+          index = Path('worker/index.ts')
+          text = index.read_text()
+          text = once(text,
+              "import { OrderInputValidationError } from './domains/order-core.ts'\n",
+              "import { OrderInputValidationError } from './domains/order-core.ts'\nimport { deleteOrderSafely } from './domains/order-delete.ts'\n",
+              'Worker delete import')
+          route_anchor = "      const orderMatch = url.pathname.match(/^\\/api\\/orders\\/(\\d+)$/);\n"
+          delete_route = r'''      const orderDeleteMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/delete$/);
+          if (orderDeleteMatch && request.method === 'POST') {
+            const id = toInt(orderDeleteMatch[1], 0);
+            const input = await readJson<{ requestId?: string; comment?: string }>(request);
+            input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
+            try {
+              return json(await deleteOrderSafely(
+                env.DB,
+                id,
+                input,
+                authUser,
+                cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
+              ));
+            } catch (error) {
+              const criticalResponse = criticalOperationErrorResponse(error);
+              if (criticalResponse) return criticalResponse;
+              const publicError = publicApiError(error);
+              return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });
+            }
+          }
+
+          '''
+          delete_route = '\n'.join(line[10:] if line.startswith('          ') else line for line in delete_route.splitlines())
+          text = once(text, route_anchor, delete_route + route_anchor, 'Worker delete route')
+          index.write_text(text)
+
+          app = Path('src/App.tsx')
+          text = app.read_text()
+          start = text.find('  async function deleteOrderAsAdmin(order: OrderRecord) {')
+          if start < 0: raise SystemExit('deleteOrderAsAdmin not found')
+          next_match = re.search(r'\n  (?:async )?function [A-Za-z_]', text[start + 10:])
+          if not next_match: raise SystemExit('deleteOrderAsAdmin end not found')
+          end = start + 10 + next_match.start()
+          block = text[start:end]
+          block = once(block,
+              "    if (!isAdmin) {\n      setError('Удаление заказа доступно только администратору.')\n      return\n    }\n",
+              '', 'frontend admin delete blocker')
+          block = block.replace('Удалено администратором', 'Удалено сотрудником как ошибочный заказ')
+          if "apiFetch(`/api/orders/${order.id}`" not in block: raise SystemExit('old order delete endpoint not found')
+          block = block.replace("apiFetch(`/api/orders/${order.id}`", "apiFetch(`/api/orders/${order.id}/delete`", 1)
+          if "method: 'PATCH'" not in block: raise SystemExit('old order delete PATCH not found')
+          block = block.replace("method: 'PATCH'", "method: 'POST'", 1)
+          block = block.replace("orderStatus: 'deleted' as const, ", '', 1)
+          block = block.replace("Удалить заказ ${order.external_id}? Будут отменены связанные списания склада и задания цеха. История операции останется в журнале.", "Удалить ошибочный заказ ${order.external_id}? Если по нему сделали возврат или обмен только потому, что заказ не удалялся, система сначала безопасно отменит эти операции, затем удалит заказ. История действий сохранится.")
+          text = text[:start] + block + text[end:]
+          app.write_text(text)
+
+          table = Path('src/features/sections/OrdersTableSection.tsx')
+          text = table.read_text()
+          text = once(text,
+              '{isAdmin && !retainedOnly && !archived ? (\n                              <button\n                                className="ghost danger compact"',
+              '{!retainedOnly && !archived ? (\n                              <button\n                                className="ghost danger compact"',
+              'manager delete button')
+          table.write_text(text)
+
+          test = r'''import fs from 'node:fs'
+          import path from 'node:path'
+          const root = process.cwd()
+          const read = file => fs.readFileSync(path.join(root, file), 'utf8')
+          const check = (value, message) => { if (!value) throw new Error(message) }
+          try {
+            const app = read('src/App.tsx')
+            const table = read('src/features/sections/OrdersTableSection.tsx')
+            const worker = read('worker/index.ts')
+            const deletion = read('worker/domains/order-delete.ts')
+            check(!app.includes("setError('Удаление заказа доступно только администратору.')"), 'frontend still blocks manager deletion')
+            check(app.includes("apiFetch(`/api/orders/${order.id}/delete`"), 'frontend does not use scoped delete endpoint')
+            check(app.includes("method: 'POST'"), 'delete endpoint is not POST')
+            check(table.includes('{!retainedOnly && !archived ? ('), 'delete action is not visible to ordinary staff')
+            check(worker.includes("url.pathname.match(/^\\/api\\/orders\\/(\\d+)\\/delete$/)"), 'scoped delete route missing')
+            const routeStart = worker.indexOf('const orderDeleteMatch =')
+            const routeEnd = worker.indexOf('const orderMatch =', routeStart)
+            const route = worker.slice(routeStart, routeEnd)
+            check(routeStart >= 0 && routeEnd > routeStart, 'delete route block missing')
+            check(!route.includes('requireAdminAccess') && !route.includes('requireAdminUser'), 'delete route still requires admin')
+            check(deletion.includes("ORDER BY e.id DESC"), 'active exchanges are not cancelled newest-first')
+            check(deletion.includes('await cancelExchange(db, exchangeId'), 'exchange auto-cancel missing')
+            check(deletion.includes('await cancelReturn(db, returnId'), 'return auto-cancel missing')
+            check(deletion.indexOf('const unsafeReturn =') < deletion.indexOf('await cancelExchange(db, exchangeId'), 'return safety preflight happens after mutation')
+            check(deletion.indexOf('const appliedLifecycle =') < deletion.indexOf('await cancelExchange(db, exchangeId'), 'canonical lifecycle preflight happens after mutation')
+            check(deletion.includes("status = 'fulfilled'"), 'physical handover preflight missing')
+            check(deletion.includes("normalizeShippingStatus((order as any).shipping_status) === 'sent'"), 'sent-order physical guard missing')
+            check(deletion.includes('await restoreArchivedOrder'), 'safe archived-order recovery missing')
+            check(deletion.includes('requestId: `${requestId}:exchange:${exchangeId}`'), 'exchange cancellation is not retry-idempotent')
+            check(deletion.includes('requestId: `${requestId}:return:${returnId}`'), 'return cancellation is not retry-idempotent')
+            check(deletion.includes("requestId: `${requestId}:order`"), 'final logical deletion is not retry-idempotent')
+            check(deletion.includes("orderStatus: 'deleted'"), 'existing logical deletion path is not reused')
+            console.log('ORDER DELETE MOBILITY PASSED — ordinary staff get one safe delete action, deterministic return/exchange blockers auto-cancel, physical handover remains a factual safety boundary, retries are idempotent')
+          } catch (error) {
+            console.error(`ORDER DELETE MOBILITY FAILED: ${error?.message || error}`)
+            process.exit(1)
+          }
+          '''
+          test = '\n'.join(line[10:] if line.startswith('          ') else line for line in test.splitlines()).lstrip()
+          Path('scripts/test-order-delete-mobility.mjs').write_text(test)
+
+          package = Path('package.json')
+          text = package.read_text()
+          old = 'node scripts/test-order-edit-payment-method-correction.mjs"'
+          new = 'node scripts/test-order-edit-payment-method-correction.mjs && node scripts/test-order-delete-mobility.mjs"'
+          text = once(text, old, new, 'release check append')
+          package.write_text(text)
+
+          modular = Path('scripts/test-step1906a-worker-modularization.mjs')
+          text = modular.read_text()
+          text = once(text,
+              "const orderEditPaymentMethodPath = path.join(root, 'scripts/order-edit-payment-method-worker-manifest.json')\n",
+              "const orderEditPaymentMethodPath = path.join(root, 'scripts/order-edit-payment-method-worker-manifest.json')\nconst orderDeleteMobilityPath = path.join(root, 'scripts/order-delete-mobility-worker-manifest.json')\n",
+              'modular manifest path')
+          marker = "  const orderEditPaymentMethodChanges = orderEditPaymentMethod?.version === 1 ? (orderEditPaymentMethod.changes || {}) : {}\n"
+          text = once(text, marker,
+              marker + "  const orderDeleteMobility = fs.existsSync(orderDeleteMobilityPath) ? JSON.parse(fs.readFileSync(orderDeleteMobilityPath, 'utf8')) : null\n  const orderDeleteMobilityAdded = orderDeleteMobility?.version === 1 ? (orderDeleteMobility.added || {}) : {}\n",
+              'modular manifest load')
+          text = once(text,
+              "'domains/auth.ts', 'domains/critical.ts', 'domains/catalog.ts', 'domains/money.ts',\n",
+              "'domains/auth.ts', 'domains/critical.ts', 'domains/catalog.ts', 'domains/money.ts', 'domains/order-delete.ts',\n",
+              'modular required module')
+          old_count = ' + Object.keys(orderCreateSaveIntegrityAdded).length\n'
+          text = once(text, old_count, old_count.rstrip('\n') + ' + Object.keys(orderDeleteMobilityAdded).length\n', 'modular declaration count')
+          normalize_anchor = "  const normalizedRouter = currentRouter\n"
+          text = once(text, normalize_anchor,
+              "  const normalizedRouter = currentRouter\n    .replace(/\\n\\s*const orderDeleteMatch = url\\.pathname\\.match\\(\/\\^\\\\\/api\\\\\/orders\\\\\/\\(\\\\d\\+\\)\\\\\/delete\\$\/\\);[\\s\\S]*?(?=\\n\\s*const orderMatch = url\\.pathname\\.match)/, '')\n",
+              'router normalization')
+          graph_anchor = "  const graph = new Map(files.map((file) => [file, new Set()]))\n"
+          added_check = "  for (const [name, expectedHash] of Object.entries(orderDeleteMobilityAdded)) {\n    check(declarations.has(name), `Order delete mobility added Worker declaration missing: ${name}`)\n    check(sha(declarations.get(name)) === expectedHash, `Order delete mobility declaration changed beyond exact allow-list: ${name}`)\n  }\n\n"
+          text = once(text, graph_anchor, added_check + graph_anchor, 'added declaration verifier')
+          modular.write_text(text)
+          PY
+
+      - name: Record exact new Worker declaration
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import crypto from 'node:crypto'
+          import ts from 'typescript'
+          const file = 'worker/domains/order-delete.ts'
+          const text = fs.readFileSync(file, 'utf8')
+          const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+          const statement = source.statements.find(s => (ts.isFunctionDeclaration(s) || ts.isVariableStatement(s)) && (ts.isFunctionDeclaration(s) ? s.name?.text === 'deleteOrderSafely' : false))
+          if (!statement) throw new Error('deleteOrderSafely declaration missing')
+          const normalized = statement.getText(source).replace(/^export\s+/, '')
+          const hash = crypto.createHash('sha256').update(normalized).digest('hex')
+          fs.writeFileSync('scripts/order-delete-mobility-worker-manifest.json', JSON.stringify({ version: 1, revision: 'order-delete-mobility-r1', added: { deleteOrderSafely: hash } }, null, 2) + '\n')
+          console.log({ deleteOrderSafely: hash })
+          NODE
+
+      - name: Verify Arrival remains untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --name-only HEAD | grep -Ei 'arrival|115B'; then
+            echo 'Arrival-related file unexpectedly changed' >&2
+            git diff --name-only HEAD
+            exit 2
+          fi
+
+      - name: Full cumulative release gate
+        run: npm run release:check
+
+      - name: Commit tested fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package.json scripts/test-order-delete-mobility.mjs scripts/order-delete-mobility-worker-manifest.json scripts/test-step1906a-worker-modularization.mjs src/App.tsx src/features/sections/OrdersTableSection.tsx worker/index.ts worker/domains/order-delete.ts
+          git commit -m 'Make erroneous order deletion self-recovering'
+          git push origin HEAD:safe/order-delete-mobility-20260901
