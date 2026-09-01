@@ -27,41 +27,29 @@ jobs:
           subdomain="$(jq -r '.result.subdomain // empty' <<<"$subdomain_json")"
           [[ -n "$subdomain" ]] || { echo 'Could not resolve workers.dev subdomain.' >&2; exit 2; }
           echo "base=https://orders-app.${subdomain}.workers.dev" >> "$GITHUB_OUTPUT"
-      - name: Read Production through business API
+      - name: Probe Production business API
         shell: bash
         env:
           BASE: ${{ steps.target.outputs.base }}
         run: |
-          set -euo pipefail
-          echo '=== HEALTH ==='
-          curl --fail-with-body -sS "$BASE/api/health" | jq .
+          set -u
+          probe() {
+            label="$1"; shift
+            body="/tmp/${label}.body"
+            code="$(curl -sS -o "$body" -w '%{http_code}' "$@")"
+            echo "=== $label HTTP $code ==="
+            cat "$body"
+            echo
+          }
+          probe health "$BASE/api/health"
+          probe activity --get "$BASE/api/activity" --data-urlencode "q=$ORDER_EXTERNAL_ID" --data-urlencode "limit=100"
+          probe returns --get "$BASE/api/returns" --data-urlencode "q=$ORDER_EXTERNAL_ID" --data-urlencode "limit=100"
+          probe exchanges --get "$BASE/api/exchanges" --data-urlencode "q=$ORDER_EXTERNAL_ID" --data-urlencode "limit=100"
+          probe orders --get "$BASE/api/orders" --data-urlencode "q=$ORDER_EXTERNAL_ID" --data-urlencode "archiveMode=all" --data-urlencode "limit=20"
 
-          echo '=== ACTIVITY ==='
-          activity="$(curl --fail-with-body -sS --get "$BASE/api/activity" --data-urlencode "q=$ORDER_EXTERNAL_ID" --data-urlencode "limit=100")"
-          jq . <<<"$activity"
-          order_id="$(jq -r '.activities[0].orderId // empty' <<<"$activity")"
-
-          echo '=== RETURNS ==='
-          returns="$(curl --fail-with-body -sS --get "$BASE/api/returns" --data-urlencode "q=$ORDER_EXTERNAL_ID" --data-urlencode "limit=100")"
-          jq . <<<"$returns"
-          if [[ -z "$order_id" ]]; then order_id="$(jq -r '.returns[0].orderId // empty' <<<"$returns")"; fi
-
-          echo '=== EXCHANGES ==='
-          exchanges="$(curl --fail-with-body -sS --get "$BASE/api/exchanges" --data-urlencode "q=$ORDER_EXTERNAL_ID" --data-urlencode "limit=100")"
-          jq . <<<"$exchanges"
-          if [[ -z "$order_id" ]]; then order_id="$(jq -r '.exchanges[0].orderId // empty' <<<"$exchanges")"; fi
-
-          echo "=== EXACT ORDER id=${order_id:-missing} ==="
-          if [[ -z "$order_id" ]]; then
-            echo 'Could not resolve numeric order id from Production histories.' >&2
-            exit 3
-          fi
-          curl --fail-with-body -sS "$BASE/api/orders/$order_id" | jq .
-
-          echo '=== BROKEN SEARCH PROBE (non-fatal) ==='
-          set +e
-          curl -sS -o /tmp/search-body -w 'HTTP %{http_code}\n' --get "$BASE/api/orders" \
-            --data-urlencode "q=$ORDER_EXTERNAL_ID" --data-urlencode "archiveMode=all" --data-urlencode "limit=20"
-          cat /tmp/search-body
-          echo
-          set -e
+          order_id=""
+          if jq -e . /tmp/returns.body >/dev/null 2>&1; then order_id="$(jq -r '.returns[0].orderId // empty' /tmp/returns.body)"; fi
+          if [[ -z "$order_id" ]] && jq -e . /tmp/exchanges.body >/dev/null 2>&1; then order_id="$(jq -r '.exchanges[0].orderId // empty' /tmp/exchanges.body)"; fi
+          if [[ -z "$order_id" ]] && jq -e . /tmp/activity.body >/dev/null 2>&1; then order_id="$(jq -r '.activities[0].orderId // empty' /tmp/activity.body)"; fi
+          echo "=== RESOLVED ORDER ID: ${order_id:-missing} ==="
+          if [[ -n "$order_id" ]]; then probe exact-order "$BASE/api/orders/$order_id"; fi
