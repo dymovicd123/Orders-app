@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "revision": "exchange-stale-handover-r1",
+  "changes": {
+    "createExchange": {
+      "before": "33a79fa058004ddca202034e0daf9c8544e386d308f2f88294ae09b5a6752655",
+      "after": "d4b9a5acfc91adada2b3f4d0206a2eb9e4109350ad64d6c86092e988f019922a"
+    }
+  }
+}

@@ -11,7 +11,7 @@ import type { InventoryLifecycleEventRow } from './lifecycle.ts'
 import { applyCanonicalInventoryLifecycleEvent, canAutoApplyFreshWorkshopInbound, cancelInventoryLifecycleEvent, getOrderItemForReturnOrExchange, insertInventoryLifecycleEvent, inventoryLifecyclePendingReason, resolveInventoryLifecycleCandidate } from './lifecycle.ts'
 import { buildPaymentAndMoneyEventStatements, readOrderFinancialLedger, refundMoneyEventStatement, refundReversalMoneyEventStatement, removeSinglePaymentWithMoneyEvent, syncOrderFinancialLedger } from './money.ts'
 import { normalizeOrderItems } from './order-core.ts'
-import { resolveCatalogProductAndVariantV2 } from './order-reservations.ts'
+import { fulfillOrderReservationsV2, resolveCatalogProductAndVariantV2 } from './order-reservations.ts'
 import { getOrder, insertOrderContent } from './orders-write.ts'
 import { normalizeWorkshopTaskStatus, refreshOrderWorkshopStatusFromTasks } from './workshop.ts'
 import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'
@@ -521,7 +521,7 @@ export async function createExchange(
 
   const oldItemId = toInt(input.oldItemId, 0);
   if (!oldItemId) throw new Error('oldItemId is required.');
-  const oldItem = await getOrderItemForReturnOrExchange(db, orderId, oldItemId);
+  let oldItem = await getOrderItemForReturnOrExchange(db, orderId, oldItemId);
   if (!oldItem) throw new Error('Old order item not found.');
 
   const availableOldQuantity = operationContext.baselineCaptured
@@ -537,9 +537,11 @@ export async function createExchange(
   const oldQuantity = requestedOldQuantity;
   const oldItemIsWorkshop = Boolean(toInt(oldItem.is_workshop, 0));
   const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
-  if (!operationContext.baselineCaptured && humanInventoryModelEnabled && !oldItemIsWorkshop && !orderItemWasPhysicallyIssued(oldItem)) {
-    throw new Error(`Позиция «${cleanText(oldItem.product_name_snapshot)}» по учёту ещё не была физически выдана / отправлена. До выдачи это не обмен физической вещи — измените состав неотправленного заказа вместо обмена, иначе резерв и остаток разойдутся.`);
-  }
+  const oldItemNeedsHandoverReconciliation = Boolean(
+    !operationContext.baselineCaptured && humanInventoryModelEnabled
+    && !oldItemIsWorkshop
+    && !orderItemWasPhysicallyIssued(oldItem)
+  );
   const oldReturnSource = normalizeExchangeReturnSource(input.oldReturnSource);
   if (oldItemIsWorkshop && oldReturnSource === 'boutique') {
     throw new Error(`Старую вещь из Цеха «${cleanText(oldItem.product_name_snapshot)}» нельзя принимать в остаток Бутика. Для цеховой вещи доступны только «Не возвращать в остатки» или явный приём на Склад.`);
@@ -643,6 +645,25 @@ export async function createExchange(
     }
   }
 
+  // Emergency exchange recovery: earlier shipping failures could leave a physically issued
+  // customer item as an active reservation. Reconcile only this line before accepting it back,
+  // so the old outbound and the exchange return are both recorded without double-counting stock.
+  if (oldItemNeedsHandoverReconciliation) {
+    const handover = await fulfillOrderReservationsV2(
+      db,
+      orderId,
+      cleanText((existing as any).external_id),
+      timestamp,
+      { orderItemIds: [oldItemId], checkedBy: 'exchange_reconciliation' },
+    );
+    oldItem = await getOrderItemForReturnOrExchange(db, orderId, oldItemId);
+    if (!oldItem || !orderItemWasPhysicallyIssued(oldItem)) {
+      const unresolved = Math.max(0, toInt((handover as any)?.unresolved, 0));
+      throw new Error(unresolved
+        ? `Старая позиция обмена «${cleanText(oldItem?.product_name_snapshot)}» ещё не распознана складом. Сначала разберите эту позицию, чтобы обмен не потерял движение товара.`
+        : `Не удалось безопасно восстановить выдачу старой позиции «${cleanText(oldItem?.product_name_snapshot)}». Обмен остановлен без приёма новой вещи.`);
+    }
+  }
   if (!operationContext.baselineCaptured) {
     operationContext = {
       ...operationContext,
