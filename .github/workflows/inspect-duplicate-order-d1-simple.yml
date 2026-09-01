@@ -1,0 +1,39 @@
+name: Inspect duplicate order D1 state simply
+on:
+  push:
+    branches:
+      - safe/order-delete-not-issued-20260901
+    paths:
+      - .github/workflows/inspect-duplicate-order-d1-simple.yml
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Read order reservation state
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo '--- order ---'
+          npx wrangler d1 execute orders_db_prod --remote --command "SELECT id,external_id,order_status,shipping_status,shipping_date,total_amount,received_amount,return_amount FROM orders WHERE id=1242 AND external_id='ORD-20260829144801-F3A7DDC3'"
+          echo '--- reservation ---'
+          npx wrangler d1 execute orders_db_prod --remote --command "SELECT id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,fulfilled_at,released_at,updated_at FROM inventory_reservations WHERE order_id=1242 ORDER BY id"
+          echo '--- item ---'
+          npx wrangler d1 execute orders_db_prod --remote --command "SELECT id,product_name_snapshot,quantity,source_type,stock_writeoff_status,product_id,variant_id,stock_quantity_before,stock_quantity_after FROM order_items WHERE order_id=1242 ORDER BY id"
+          echo '--- return ---'
+          npx wrangler d1 execute orders_db_prod --remote --command "SELECT id,return_date,amount,payment_method,status,comment,cancelled_at FROM returns WHERE order_id=1242 ORDER BY id"
+          echo '--- return items ---'
+          npx wrangler d1 execute orders_db_prod --remote --command "SELECT ri.id,ri.return_id,ri.order_item_id,ri.quantity,ri.inventory_source,ri.restocked,ri.product_name_snapshot FROM return_items ri JOIN returns r ON r.id=ri.return_id WHERE r.order_id=1242 ORDER BY ri.id"
+          echo '--- movements ---'
+          npx wrangler d1 execute orders_db_prod --remote --command "SELECT id,inventory_source,movement_type,variant_id,product_name_snapshot,quantity_delta,quantity_after,reference_type,reference_id,comment,created_at FROM inventory_movements WHERE reference_id='ORD-20260829144801-F3A7DDC3' OR reference_id='1242' ORDER BY id"
+          echo '--- newer checks for order variants ---'
+          npx wrangler d1 execute orders_db_prod --remote --command "SELECT c.id,c.inventory_source,c.variant_id,c.expected_quantity,c.counted_quantity,c.reference_type,c.reference_id,c.checked_at FROM inventory_stock_checks c WHERE c.variant_id IN (SELECT variant_id FROM inventory_reservations WHERE order_id=1242 AND variant_id IS NOT NULL) ORDER BY c.checked_at DESC,c.id DESC LIMIT 30"
+          echo '--- stock ---'
+          npx wrangler d1 execute orders_db_prod --remote --command "SELECT s.id,s.inventory_source,s.product_id,s.variant_id,s.product_name_snapshot,s.quantity,s.reserved_quantity,s.last_action,s.last_source_ref,s.updated_at FROM inventory_stock s WHERE s.variant_id IN (SELECT variant_id FROM inventory_reservations WHERE order_id=1242 AND variant_id IS NOT NULL) ORDER BY s.inventory_source,s.variant_id"
