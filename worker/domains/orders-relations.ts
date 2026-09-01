@@ -2,7 +2,7 @@
 // Business behavior is intentionally unchanged.
 import { cleanText, toInt } from '../core/text.ts'
 import { matchWorkshopTasksToOrderItems } from './workshop-matching.ts'
-import { fetchOrderStockHandoverRows, stockHandoverItemFromRow } from './order-reservations.ts'
+import { fetchOrderStockHandoverRows } from './order-reservations.ts'
 
 export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
   const itemsByOrderId = new Map<number, unknown[]>();
@@ -34,7 +34,7 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
     const chunk = orderIds.slice(index, index + chunkSize);
     const placeholders = chunk.map(() => '?').join(',');
 
-    const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverReviewResult, activeStockHandoverResult] = await Promise.all([
+    const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverStateResult] = await Promise.all([
       db.prepare(
         `SELECT oi.*,
                 p.name AS canonical_product_name,
@@ -59,23 +59,15 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
       db.prepare(
         `SELECT * FROM workshop_tasks WHERE order_id IN (${placeholders}) ORDER BY id ASC`
       ).bind(...chunk).all(),
-      fetchOrderStockHandoverRows(db, chunk),
-      db.prepare(
-        `SELECT order_id, order_item_id
-         FROM inventory_reservations
-         WHERE order_id IN (${placeholders})
-           AND status = 'active'
-           AND variant_id IS NOT NULL
-         ORDER BY id ASC`
-      ).bind(...chunk).all(),
+      fetchOrderStockHandoverRows(db, chunk, { listFlagsOnly: true }),
     ]);
 
     appendRows(itemsByOrderId, itemsResult.results || []);
     appendRows(paymentsByOrderId, paymentsResult.results || []);
     appendRows(returnsByOrderId, returnsResult.results || []);
     appendRows(workshopTasksByOrderId, workshopTasksResult.results || []);
-    appendRows(handoverReviewByOrderId, (handoverReviewResult || []).map((row) => ({ order_id: row.order_id, order_item_id: row.order_item_id, review_needed: stockHandoverItemFromRow(row).reviewNeeded })).filter((row) => row.review_needed));
-    appendRows(activeStockHandoverByOrderId, activeStockHandoverResult.results || []);
+    appendRows(activeStockHandoverByOrderId, handoverStateResult || []);
+    appendRows(handoverReviewByOrderId, (handoverStateResult || []).filter((row) => toInt((row as Record<string, unknown>).review_needed, 0) === 1));
   }
 
   // Step 161: resolve every workshop task to one concrete order item before the

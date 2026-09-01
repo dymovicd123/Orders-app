@@ -42,7 +42,7 @@ try {
   const handoverRows = declarationBody(reservations, 'export async function fetchOrderStockHandoverRows')
   check(handoverRows.includes("COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)"), 'Handover resolver lost stable obligation origin fallback')
   check(handoverRows.includes("COALESCE(NULLIF(reviewed_item.inventory_obligation_key, ''), 'legacy-order-item:' || reviewed_item.id)"), 'Handover review no longer follows stable obligation key')
-  check(handoverRows.includes('options: { allActive?: boolean }') && handoverRows.includes("r.status = 'active'"), 'Attention handover count must reuse canonical resolver without a separate capped SQL implementation')
+  check(handoverRows.includes('options: { allActive?: boolean; listFlagsOnly?: boolean }') && handoverRows.includes("r.status = 'active'"), 'Attention handover count must reuse canonical resolver while list mode stays compact')
   const handoverState = declarationBody(reservations, 'export async function getOrderStockHandoverState')
   check(handoverState.includes('fetchOrderStockHandoverRows') && handoverState.includes('stockHandoverItemFromRow'), 'Detailed handover state must use canonical resolver')
   const handoverCount = declarationBody(reservations, 'export async function countOrderStockHandoverReviewCandidates')
@@ -50,9 +50,10 @@ try {
   check(!handoverCount.includes('LIMIT 1200'), 'Attention handover count must not silently cap active orders')
 
   const relations = read('worker/domains/orders-relations.ts')
-  check(relations.includes("import { fetchOrderStockHandoverRows, stockHandoverItemFromRow } from './order-reservations.ts'"), 'Orders table does not import canonical handover resolver')
-  check(relations.includes('fetchOrderStockHandoverRows(db, chunk)'), 'Orders table does not use canonical handover resolver')
-  check(!relations.includes('inventory_stock_checks c ON c.id ='), 'Duplicated handover checkpoint SQL returned to orders-relations')
+  check(relations.includes("import { fetchOrderStockHandoverRows } from './order-reservations.ts'"), 'Orders table does not import canonical handover resolver')
+  check(relations.includes('fetchOrderStockHandoverRows(db, chunk, { listFlagsOnly: true })'), 'Orders table does not use canonical compact handover resolver')
+  check(handoverRows.includes('listFlagsOnly?: boolean') && handoverRows.includes('WITH active_reservations AS'), 'Canonical handover resolver lost compact list-flags mode')
+  check(!relations.includes('inventory_stock_checks c ON c.id =') && !relations.includes('inventory_stocktake_sessions'), 'Duplicated handover checkpoint SQL returned to orders-relations')
 
   const lifecycle = read('worker/domains/lifecycle.ts')
   const disposition = declarationBody(lifecycle, 'export async function inventoryLifecycleDeferredInboundDisposition')
