@@ -1,0 +1,102 @@
+name: Delete verified duplicate order 1242
+on:
+  push:
+    branches:
+      - ops/delete-duplicate-1242-20260901
+    paths:
+      - .github/workflows/delete-known-duplicate-order-1242.yml
+jobs:
+  delete:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve Production Worker URL
+        id: worker
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_API: https://api.cloudflare.com/client/v4
+        run: |
+          set -euo pipefail
+          response="$(curl --fail-with-body -sS -H "Authorization: Bearer $CF_API_TOKEN" "$CF_API/accounts/$CF_ACCOUNT_ID/workers/subdomain")"
+          subdomain="$(jq -r '.result.subdomain // empty' <<<"$response")"
+          test -n "$subdomain"
+          echo "base=https://orders-app.$subdomain.workers.dev" >> "$GITHUB_OUTPUT"
+      - name: Preflight exact duplicate facts
+        env:
+          BASE: ${{ steps.worker.outputs.base }}
+          EXTERNAL_ID: ORD-20260829144801-F3A7DDC3
+        run: |
+          set -euo pipefail
+          query="$(jq -rn --arg v "$EXTERNAL_ID" '$v|@uri')"
+          list="$(curl --fail-with-body -sS "$BASE/api/orders?limit=20&offset=0&q=$query&status=all&shippingStatus=all&archiveMode=all&manager=&dateFrom=&dateTo=")"
+          exact="$(jq -c --arg id "$EXTERNAL_ID" '[.orders[]? | select(.external_id == $id)]' <<<"$list")"
+          test "$(jq 'length' <<<"$exact")" = "1"
+          jq -e '.[0].id == 1242 and .[0].order_status == "active" and .[0].shipping_status == "sent" and .[0].total_amount == 10500 and .[0].received_amount == 10500 and .[0].return_amount == 10500' <<<"$exact" >/dev/null
+
+          detail="$(curl --fail-with-body -sS "$BASE/api/orders/1242")"
+          jq -e --arg id "$EXTERNAL_ID" '.order.id == 1242 and .order.external_id == $id and .order.order_status == "active" and .order.shipping_status == "sent" and (.order.items|length) == 1 and .order.items[0].productName == "АМИР БОМБЕР" and .order.items[0].quantity == 1 and .order.items[0].sourceType == "warehouse" and .order.items[0].isWorkshop == false and (.order.returns|length) == 1 and .order.returns[0].id == 33 and .order.returns[0].status == "completed" and .order.returns[0].amount == 10500 and .order.returns[0].comment == "ПОВТОРНАЯ РЕГИСТРАЦИЯ"' <<<"$detail" >/dev/null
+
+          history="$(curl --fail-with-body -sS "$BASE/api/returns?limit=20&offset=0&q=$query&status=all")"
+          match="$(jq -c --arg id "$EXTERNAL_ID" '[.returns[]? | select(.externalId == $id)]' <<<"$history")"
+          test "$(jq 'length' <<<"$match")" = "1"
+          jq -e '.[0].id == 33 and .[0].status == "completed" and .[0].amount == 10500 and .[0].paymentMethod == "ТЕРМИНАЛ" and .[0].restockSource == null and (.[0].items|length) == 0' <<<"$match" >/dev/null
+          echo 'Preflight matched the previously-forensically-verified duplicate exactly.'
+      - name: Require explicit false-shipment confirmation boundary
+        id: boundary
+        env:
+          BASE: ${{ steps.worker.outputs.base }}
+        run: |
+          set -euo pipefail
+          body_file="$(mktemp)"
+          status="$(curl -sS -o "$body_file" -w '%{http_code}' -X POST "$BASE/api/orders/1242/delete" \
+            -H 'Content-Type: application/json' \
+            -H 'X-Idempotency-Key: ops-delete-1242-boundary-20260901-v1' \
+            --data '{"comment":"Удаление подтверждённого ошибочного дубля ORD-20260829144801-F3A7DDC3"}')"
+          cat "$body_file"
+          echo
+          test "$status" = "409"
+          jq -e '.ok == false and .code == "order_delete_physical_confirmation_required"' "$body_file" >/dev/null
+          echo 'The deployed Worker correctly stopped at the physical-fact boundary.'
+      - name: Delete duplicate with verified not-issued fact
+        id: delete
+        env:
+          BASE: ${{ steps.worker.outputs.base }}
+        run: |
+          set -euo pipefail
+          body_file="$(mktemp)"
+          status="$(curl -sS -o "$body_file" -w '%{http_code}' -X POST "$BASE/api/orders/1242/delete" \
+            -H 'Content-Type: application/json' \
+            -H 'X-Idempotency-Key: ops-delete-1242-not-issued-20260901-v1' \
+            --data '{"comment":"Удаление подтверждённого ошибочного дубля ORD-20260829144801-F3A7DDC3; фактической выдачи по этому дублю не было","physicalOutcome":"not_issued"}')"
+          cat "$body_file"
+          echo
+          test "$status" = "200"
+          jq -e '.ok == true and .autoCancelledReturns == 1 and .autoCancelledExchanges == 0' "$body_file" >/dev/null
+          restored="$(jq -r '.falseShipmentRestoredQuantity // 0' "$body_file")"
+          protected="$(jq -r '.falseShipmentFreshnessProtectedQuantity // 0' "$body_file")"
+          test $((restored + protected)) -eq 1
+          echo "false_shipment_restored_quantity=$restored" >> "$GITHUB_OUTPUT"
+          echo "false_shipment_freshness_protected_quantity=$protected" >> "$GITHUB_OUTPUT"
+      - name: Verify logical deletion and return reversal
+        env:
+          BASE: ${{ steps.worker.outputs.base }}
+          EXTERNAL_ID: ORD-20260829144801-F3A7DDC3
+        run: |
+          set -euo pipefail
+          detail="$(curl --fail-with-body -sS "$BASE/api/orders/1242")"
+          jq -e --arg id "$EXTERNAL_ID" '.order.id == 1242 and .order.external_id == $id and .order.order_status == "deleted" and .order.shipping_status == "not_sent"' <<<"$detail" >/dev/null
+
+          query="$(jq -rn --arg v "$EXTERNAL_ID" '$v|@uri')"
+          active="$(curl --fail-with-body -sS "$BASE/api/orders?limit=20&offset=0&q=$query&status=all&shippingStatus=all&archiveMode=active&manager=&dateFrom=&dateTo=")"
+          test "$(jq --arg id "$EXTERNAL_ID" '[.orders[]? | select(.external_id == $id and .order_status != "deleted")] | length' <<<"$active")" = "0"
+
+          history="$(curl --fail-with-body -sS "$BASE/api/returns?limit=20&offset=0&q=$query&status=all")"
+          match="$(jq -c --arg id "$EXTERNAL_ID" '[.returns[]? | select(.externalId == $id)]' <<<"$history")"
+          test "$(jq 'length' <<<"$match")" = "1"
+          jq -e '.[0].id == 33 and .[0].status == "cancelled"' <<<"$match" >/dev/null
+          echo 'VERIFIED: duplicate order 1242 is logically deleted, false shipment normalized, and erroneous return 33 cancelled.'
+      - name: Summary
+        run: |
+          echo 'Deleted ORD-20260829144801-F3A7DDC3 through the normal Production Worker lifecycle.'
+          echo 'No raw D1 mutation was used.'
+          echo 'Newer physical truth, if any, remained authoritative by the deployed freshness barrier.'
