@@ -16,23 +16,32 @@ jobs:
       CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CF_API: https://api.cloudflare.com/client/v4
+      TARGET_SHA: 05585d2601e54e13aa2e25d52c177e9105ecffb2
     steps:
-      - name: Probe minimal Production D1 reads
+      - name: Check matching build and one DB read
         shell: bash
         run: |
-          set -u
-          subdomain_json="$(curl --fail-with-body -sS -H "Authorization: Bearer $CF_API_TOKEN" "$CF_API/accounts/$CF_ACCOUNT_ID/workers/subdomain")"
+          set -euo pipefail
+          AUTH=(-H "Authorization: Bearer $CF_API_TOKEN")
+          workers_json="$(curl --fail-with-body -sS "${AUTH[@]}" "$CF_API/accounts/$CF_ACCOUNT_ID/workers/scripts")"
+          worker_tag="$(jq -r '.result[] | select(.id == "orders-app") | .tag // empty' <<<"$workers_json" | head -n1)"
+          [[ -n "$worker_tag" ]] || { echo 'orders-app tag not found' >&2; exit 2; }
+          builds_json="$(curl --fail-with-body -sS "${AUTH[@]}" "$CF_API/accounts/$CF_ACCOUNT_ID/builds/workers/$worker_tag/builds")"
+          match="$(jq -c --arg sha "$TARGET_SHA" '[.result[]? | select(.build_trigger_metadata.commit_hash == $sha and .build_trigger_metadata.branch == "main")] | sort_by(.created_on) | last // empty' <<<"$builds_json")"
+          echo '=== MATCHING BUILD ==='
+          if [[ -z "$match" ]]; then
+            echo 'not-found'
+            exit 0
+          fi
+          jq '{build_uuid,status,build_outcome,created_on,modified_on,commit:.build_trigger_metadata.commit_hash,branch:.build_trigger_metadata.branch}' <<<"$match"
+          status="$(jq -r '.status // empty' <<<"$match")"
+          outcome="$(jq -r '.build_outcome // empty' <<<"$match")"
+          if [[ "$status" != 'stopped' || "$outcome" != 'success' ]]; then exit 0; fi
+
+          subdomain_json="$(curl --fail-with-body -sS "${AUTH[@]}" "$CF_API/accounts/$CF_ACCOUNT_ID/workers/subdomain")"
           subdomain="$(jq -r '.result.subdomain // empty' <<<"$subdomain_json")"
           BASE="https://orders-app.${subdomain}.workers.dev"
-          probe() {
-            label="$1"; shift
-            code="$(curl -sS -o "/tmp/$label" -w '%{http_code}' "$@")"
-            echo "=== $label HTTP $code ==="
-            cat "/tmp/$label"
-            echo
-          }
-          probe managers --get "$BASE/api/reference-values" --data-urlencode 'kind=managers'
-          probe city-counts --get "$BASE/api/reference-values/counts" --data-urlencode 'kinds=cities'
-          probe inventory-settings "$BASE/api/inventory/settings"
-          probe inventory-list --get "$BASE/api/inventory" --data-urlencode 'source=warehouse'
-          probe workshop-counts "$BASE/api/workshop/counts"
+          code="$(curl -sS -o /tmp/body -w '%{http_code}' --get "$BASE/api/reference-values" --data-urlencode 'kind=managers')"
+          echo "=== ONE MINIMAL D1 READ HTTP $code ==="
+          cat /tmp/body
+          echo
