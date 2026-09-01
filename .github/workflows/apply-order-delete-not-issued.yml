@@ -18,6 +18,18 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
+      - name: Scope prepared route patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('.github/scripts/apply-order-delete-not-issued.py')
+          text=p.read_text()
+          old="""text = once(\n    text,\n    \"        const input = await readJson<{ requestId?: string; comment?: string }>(request);\\n\",\n    \"        const input = await readJson<{ requestId?: string; comment?: string; physicalOutcome?: 'not_issued' }>(request);\\n\",\n    'delete route input',\n)\n"""
+          new="""route_start = text.index(\"      const orderDeleteMatch =\")\nroute_end = text.index(\"      const orderMatch =\", route_start)\nroute = text[route_start:route_end]\nroute = once(\n    route,\n    \"        const input = await readJson<{ requestId?: string; comment?: string }>(request);\\n\",\n    \"        const input = await readJson<{ requestId?: string; comment?: string; physicalOutcome?: 'not_issued' }>(request);\\n\",\n    'delete route input',\n)\ntext = text[:route_start] + route + text[route_end:]\n"""
+          if text.count(old)!=1:
+              raise SystemExit(f'apply-script route anchor count={text.count(old)}')
+          p.write_text(text.replace(old,new,1))
+          PY
       - name: Apply prepared patch
         run: python3 .github/scripts/apply-order-delete-not-issued.py
       - name: Strengthen physical-truth barriers
@@ -31,6 +43,14 @@ jobs:
           if text.count(old)!=1:
               raise SystemExit(f'freshness anchor count={text.count(old)}')
           p.write_text(text.replace(old,new,1))
+
+          p=Path('scripts/test-order-delete-mobility.mjs')
+          test=p.read_text()
+          anchor="""  check(deletion.includes('datetime(checked_at) > datetime(?)'), 'newer physical check freshness barrier missing')\n"""
+          replacement=anchor+"""  check(deletion.includes('inventory_stocktake_sessions'), 'stocktake freshness barrier missing')\n  check(deletion.includes(\"status = 'active'\"), 'active stocktake chronology guard missing')\n  check(deletion.includes(\"id NOT LIKE 'REV-%-P-%'\"), 'completed full stocktake barrier missing')\n"""
+          if test.count(anchor)!=1:
+              raise SystemExit(f'test freshness anchor count={test.count(anchor)}')
+          p.write_text(test.replace(anchor,replacement,1))
           PY
       - run: npm ci
       - name: Full cumulative release gate
