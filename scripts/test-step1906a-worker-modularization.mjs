@@ -20,6 +20,7 @@ const handoverSqlAliasSafetyPath = path.join(root, 'scripts/step192b2a3-handover
 const orderCreateSaveIntegrityPath = path.join(root, 'scripts/step192b2a4-order-create-save-integrity-manifest.json')
 const returnExchangeCancelAutonomyPath = path.join(root, 'scripts/return-exchange-cancel-autonomy-worker-manifest.json')
 const orderEditAutonomyPath = path.join(root, 'scripts/order-edit-autonomy-worker-manifest.json')
+const d1CapacityAutonomyPath = path.join(root, 'scripts/d1-capacity-autonomy-worker-manifest.json')
 const phase1bWorkshopReturnDispositionPath = path.join(root, 'scripts/phase1b-workshop-return-disposition-worker-manifest.json')
 const arrivalSaveReliabilityPath = path.join(root, 'scripts/arrival-save-reliability-worker-manifest.json')
 const shippingShortageHotfixPath = path.join(root, 'scripts/shipping-shortage-hotfix-worker-manifest.json')
@@ -113,6 +114,10 @@ try {
   const orderEditAutonomy = JSON.parse(fs.readFileSync(orderEditAutonomyPath, 'utf8'))
   check(orderEditAutonomy?.version === 1 && orderEditAutonomy?.revision === 'order-edit-autonomy-r1', 'Order edit autonomy Worker manifest invalid')
   const orderEditAutonomyChanges = orderEditAutonomy.changes || {}
+  check(fs.existsSync(d1CapacityAutonomyPath), 'D1 capacity autonomy Worker manifest missing')
+  const d1CapacityAutonomy = JSON.parse(fs.readFileSync(d1CapacityAutonomyPath, 'utf8'))
+  check(d1CapacityAutonomy?.version === 1 && d1CapacityAutonomy?.revision === 'd1-capacity-autonomy-r1', 'D1 capacity autonomy Worker manifest invalid')
+  const d1CapacityAutonomyChanges = d1CapacityAutonomy.changes || {}
   check(fs.existsSync(phase1bWorkshopReturnDispositionPath), 'Phase 1B Workshop return disposition Worker manifest missing')
   const phase1bWorkshopReturnDisposition = JSON.parse(fs.readFileSync(phase1bWorkshopReturnDispositionPath, 'utf8'))
   check(phase1bWorkshopReturnDisposition?.version === 1 && phase1bWorkshopReturnDisposition?.revision === 'phase1b-workshop-return-disposition-r1', 'Phase 1B Workshop return disposition Worker manifest invalid')
@@ -371,11 +376,17 @@ try {
       acceptedPostCancellationAutonomyHash = returnExchangeCancelAutonomyChanged.after
     }
     const orderEditAutonomyChanged = orderEditAutonomyChanges[name]
+    let acceptedPostOrderEditAutonomyHash = acceptedPostCancellationAutonomyHash
     if (orderEditAutonomyChanged) {
       check(orderEditAutonomyChanged.before === acceptedPostCancellationAutonomyHash, `Order edit autonomy baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === orderEditAutonomyChanged.after, `Worker declaration changed beyond exact order edit autonomy allow-list: ${name}`)
+      acceptedPostOrderEditAutonomyHash = orderEditAutonomyChanged.after
+    }
+    const d1CapacityAutonomyChanged = d1CapacityAutonomyChanges[name]
+    if (d1CapacityAutonomyChanged) {
+      check(d1CapacityAutonomyChanged.before === acceptedPostOrderEditAutonomyHash, `D1 capacity autonomy baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === d1CapacityAutonomyChanged.after, `Worker declaration changed beyond exact D1 capacity autonomy allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostCancellationAutonomyHash, `Worker declaration body changed beyond accepted Finance F1-F9 / Phase 1B / Arrival reliability / Shipping shortage / Exchange stale-handover / payment-method / cancellation-autonomy / order-edit-autonomy deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostOrderEditAutonomyHash, `Worker declaration body changed beyond accepted Finance F1-F9 / Phase 1B / Arrival reliability / Shipping shortage / Exchange stale-handover / payment-method / cancellation-autonomy / order-edit-autonomy / D1-capacity deltas: ${name}`)
     }
   }
 

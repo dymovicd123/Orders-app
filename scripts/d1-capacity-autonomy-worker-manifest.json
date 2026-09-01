@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "revision": "d1-capacity-autonomy-r1",
+  "changes": {
+    "publicApiError": {
+      "before": "349b0f8951a9f76e616da09d22e5caed98cf2257ec0c483ee954cbe822346db0",
+      "after": "08307aedfc20ab83ee6755529465ea19e37a722c302d8f6b24de1bbb648765df"
+    }
+  }
+}

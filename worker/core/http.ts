@@ -61,6 +61,21 @@ export function publicApiError(error: unknown): PublicApiError {
     return { status: 503, message: 'База временно занята другой операцией. Повторите действие через несколько секунд.' };
   }
 
+  if (lower.includes("exceeded d1's free tier daily row read limit") || lower.includes('free tier daily row read limit')) {
+    return {
+      status: 503,
+      code: 'd1_daily_read_limit',
+      message: 'Cloudflare временно остановил чтение базы из-за дневного лимита. Существующие данные не повреждены; доступ возобновится после сброса лимита.',
+    };
+  }
+  if (lower.includes("exceeded d1's free tier daily row write limit") || lower.includes('free tier daily row write limit')) {
+    return {
+      status: 503,
+      code: 'd1_daily_write_limit',
+      message: 'Cloudflare временно остановил запись в базу из-за дневного лимита. Повторите действие после сброса лимита; незавершённая операция не считается сохранённой.',
+    };
+  }
+
   const technicalDatabaseError = /\b(d1_error|sqlite_|sql logic error|no such table|no such column|too many sql variables|too many variables|too many terms|constraint failed|syntax error|failed to execute|prepare\(|bindings?\b|database error)\b/i.test(raw);
   if (technicalDatabaseError) {
     return { status: 500, message: 'Не удалось выполнить операцию с данными. Обновите страницу и повторите действие. Если ошибка повторится, сообщите администратору.' };
