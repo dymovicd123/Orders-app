@@ -1,0 +1,29 @@
+name: Inspect delete source blocks
+on:
+  push:
+    branches: [safe/order-delete-not-issued-20260901]
+    paths: [.github/workflows/inspect-delete-source-blocks.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print scoped source blocks
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          text=Path('src/App.tsx').read_text()
+          start=text.index('  async function deleteOrderAsAdmin(order: OrderRecord) {')
+          m=re.search(r'\n  (?:async )?function [A-Za-z_]', text[start+10:])
+          end=start+10+m.start()
+          print('---APP DELETE---')
+          print(text[start:end])
+          worker=Path('worker/index.ts').read_text()
+          s=worker.index('      const orderDeleteMatch =')
+          e=worker.index('      const orderMatch =',s)
+          print('---WORKER ROUTE---')
+          print(worker[s:e])
+          PY
