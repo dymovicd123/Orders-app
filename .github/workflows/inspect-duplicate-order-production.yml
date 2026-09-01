@@ -1,0 +1,54 @@
+name: Inspect duplicate order in Production
+
+on:
+  push:
+    branches: [ops/delete-duplicate-order-20260901]
+    paths: [.github/workflows/inspect-duplicate-order-production.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_API: https://api.cloudflare.com/client/v4
+      ORDER_EXTERNAL_ID: ORD-20260829144801-F3A7DDC3
+    steps:
+      - name: Resolve Production Worker URL
+        id: worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --fail-with-body -sS -H "Authorization: Bearer $CF_API_TOKEN" "$CF_API/accounts/$CF_ACCOUNT_ID/workers/subdomain")"
+          subdomain="$(jq -r '.result.subdomain // empty' <<<"$response")"
+          if [[ -z "$subdomain" ]]; then
+            echo 'Could not resolve workers.dev subdomain.' >&2
+            jq -r '.errors[]?.message' <<<"$response" >&2 || true
+            exit 2
+          fi
+          base="https://orders-app.$subdomain.workers.dev"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "Resolved Production Worker endpoint."
+      - name: Read Production health and exact order
+        shell: bash
+        env:
+          BASE: ${{ steps.worker.outputs.base }}
+        run: |
+          set -euo pipefail
+          health="$(curl --fail-with-body -sS "$BASE/api/health")"
+          jq -e '.ok == true and .service == "orders-app"' <<<"$health" >/dev/null
+          query="$(jq -rn --arg v "$ORDER_EXTERNAL_ID" '$v|@uri')"
+          result="$(curl --fail-with-body -sS "$BASE/api/orders?limit=20&offset=0&q=$query&status=all&shippingStatus=all&archiveMode=all&manager=&dateFrom=&dateTo=")"
+          matches="$(jq --arg id "$ORDER_EXTERNAL_ID" '[.orders[]? | select(.external_id == $id)] | length' <<<"$result")"
+          echo "Exact matches: $matches"
+          if [[ "$matches" != "1" ]]; then
+            jq -c --arg id "$ORDER_EXTERNAL_ID" '{count:(.orders|length), exact:[.orders[]? | select(.external_id == $id) | {id,external_id,order_status,shipping_status,return_amount}]}' <<<"$result"
+            exit 3
+          fi
+          order_id="$(jq -r --arg id "$ORDER_EXTERNAL_ID" '.orders[] | select(.external_id == $id) | .id' <<<"$result")"
+          detail="$(curl --fail-with-body -sS "$BASE/api/orders/$order_id")"
+          jq -c '{order:{id:.order.id,external_id:.order.external_id,order_status:.order.order_status,shipping_status:.order.shipping_status,workshop_status:.order.workshop_status,total_amount:.order.total_amount,received_amount:.order.received_amount,debt_amount:.order.debt_amount,return_amount:.order.return_amount,item_count:(.order.items|length),return_count:(.order.returns|length),returns:[.order.returns[]? | {id,status,amount,restock_source,return_date}]}}' <<<"$detail"
