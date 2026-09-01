@@ -12,42 +12,32 @@ def replace_once(path: str, old: str, new: str) -> None:
     target.write_text(text.replace(old, new, 1), encoding='utf-8')
 
 
-# 1) Order-list hot path: stop running the full handover forensic query for every page chunk.
+# 1) Keep all handover checkpoint semantics in the canonical resolver, but give the
+# orders list a compact mode that returns only the two flags it actually needs.
 replace_once(
-    'worker/domains/orders-relations.ts',
-    "import { fetchOrderStockHandoverRows, stockHandoverItemFromRow } from './order-reservations.ts'\n",
-    '',
+    'worker/domains/order-reservations.ts',
+    "  options: { allActive?: boolean } = {},\n) {\n  const allActive = options.allActive === true;\n",
+    "  options: { allActive?: boolean; listFlagsOnly?: boolean } = {},\n) {\n  const allActive = options.allActive === true;\n  const listFlagsOnly = options.listFlagsOnly === true;\n",
 )
 
-replace_once(
-    'worker/domains/orders-relations.ts',
-    "  const chunkSize = 80;\n  for (let index = 0; index < orderIds.length; index += chunkSize) {\n",
-    "  const chunkSize = 80;\n  for (let index = 0; index < orderIds.length; index += chunkSize) {\n",
-)
-
-replace_once(
-    'worker/domains/orders-relations.ts',
-    "    const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverReviewResult, activeStockHandoverResult] = await Promise.all([\n",
-    "    const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverStateResult] = await Promise.all([\n",
-)
-
-old_handover_tasks = """      fetchOrderStockHandoverRows(db, chunk),
-      db.prepare(
-        `SELECT order_id, order_item_id
-         FROM inventory_reservations
-         WHERE order_id IN (${placeholders})
-           AND status = 'active'
-           AND variant_id IS NOT NULL
-         ORDER BY id ASC`
-      ).bind(...chunk).all(),
+full_loop_marker = """  const rows: Record<string, unknown>[] = [];
+  for (const chunk of scopes) {
+    const orderScope = chunk
+      ? `oi.order_id IN (${chunk.map(() => '?').join(',')})`
+      : `r.status = 'active' AND r.variant_id IS NOT NULL
+         AND o.order_status NOT IN ('deleted', 'archived')
+         AND COALESCE(o.shipping_status, 'not_sent') <> 'sent'`;
+    const result = await db.prepare(
 """
-
-new_handover_tasks = """      // Step 193A: the orders table needs only two booleans: whether an active stock
-      // reservation exists and whether a later physical checkpoint needs one human answer.
-      // The old path loaded the full handover forensic payload (stock rows, customer data,
-      // correlated check/session lookups) twice for a 100-order page. Keep the full payload
-      // for the explicit handover dialog; use this set-based projection for list badges/actions.
-      db.prepare(
+compact_loop = """  const rows: Record<string, unknown>[] = [];
+  for (const chunk of scopes) {
+    if (listFlagsOnly) {
+      if (!chunk?.length) throw new Error('Compact handover flags require an explicit order scope.');
+      const placeholders = chunk.map(() => '?').join(',');
+      // Step 193A: the orders table needs only active-reservation + review-needed flags.
+      // Keep the full forensic payload for explicit handover/attention screens, while this
+      // canonical compact path avoids stock/customer hydration and correlated payload reads.
+      const compact = await db.prepare(
         `WITH active_reservations AS (
            SELECT order_id, order_item_id, inventory_source, variant_id
            FROM inventory_reservations
@@ -127,13 +117,9 @@ new_handover_tasks = """      // Step 193A: the orders table needs only two bool
              )
          ),
          checkpoint_candidates AS (
-           SELECT order_item_id, checkpoint_id, checkpoint_at
-           FROM latest_check
-           WHERE rn = 1
+           SELECT order_item_id, checkpoint_id, checkpoint_at FROM latest_check WHERE rn = 1
            UNION ALL
-           SELECT order_item_id, checkpoint_id, checkpoint_at
-           FROM latest_full_stocktake
-           WHERE rn = 1
+           SELECT order_item_id, checkpoint_id, checkpoint_at FROM latest_full_stocktake WHERE rn = 1
          ),
          selected_checkpoint AS (
            SELECT
@@ -175,23 +161,53 @@ new_handover_tasks = """      // Step 193A: the orders table needs only two bool
              )
            THEN 1 ELSE 0 END AS review_needed
          FROM active_reservations ar
-         LEFT JOIN selected_checkpoint cp
-           ON cp.order_item_id = ar.order_item_id AND cp.rn = 1
-         LEFT JOIN latest_review lr
-           ON lr.order_item_id = ar.order_item_id AND lr.rn = 1
+         LEFT JOIN selected_checkpoint cp ON cp.order_item_id = ar.order_item_id AND cp.rn = 1
+         LEFT JOIN latest_review lr ON lr.order_item_id = ar.order_item_id AND lr.rn = 1
          ORDER BY ar.order_id, ar.order_item_id`
-      ).bind(...chunk, ...chunk).all(),
-"""
-replace_once('worker/domains/orders-relations.ts', old_handover_tasks, new_handover_tasks)
+      ).bind(...chunk, ...chunk).all<Record<string, unknown>>();
+      rows.push(...(compact.results || []));
+      continue;
+    }
 
+    const orderScope = chunk
+      ? `oi.order_id IN (${chunk.map(() => '?').join(',')})`
+      : `r.status = 'active' AND r.variant_id IS NOT NULL
+         AND o.order_status NOT IN ('deleted', 'archived')
+         AND COALESCE(o.shipping_status, 'not_sent') <> 'sent'`;
+    const result = await db.prepare(
+"""
+replace_once('worker/domains/order-reservations.ts', full_loop_marker, compact_loop)
+
+# Orders relations now asks the same canonical resolver for compact list flags, rather than
+# duplicating checkpoint SQL or fetching the full handover payload.
+replace_once(
+    'worker/domains/orders-relations.ts',
+    "import { fetchOrderStockHandoverRows, stockHandoverItemFromRow } from './order-reservations.ts'\n",
+    "import { fetchOrderStockHandoverRows } from './order-reservations.ts'\n",
+)
+replace_once(
+    'worker/domains/orders-relations.ts',
+    "    const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverReviewResult, activeStockHandoverResult] = await Promise.all([\n",
+    "    const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverStateResult] = await Promise.all([\n",
+)
+old_handover_tasks = """      fetchOrderStockHandoverRows(db, chunk),
+      db.prepare(
+        `SELECT order_id, order_item_id
+         FROM inventory_reservations
+         WHERE order_id IN (${placeholders})
+           AND status = 'active'
+           AND variant_id IS NOT NULL
+         ORDER BY id ASC`
+      ).bind(...chunk).all(),
+"""
+replace_once('worker/domains/orders-relations.ts', old_handover_tasks, "      fetchOrderStockHandoverRows(db, chunk, { listFlagsOnly: true }),\n")
 replace_once(
     'worker/domains/orders-relations.ts',
     "    appendRows(handoverReviewByOrderId, (handoverReviewResult || []).map((row) => ({ order_id: row.order_id, order_item_id: row.order_item_id, review_needed: stockHandoverItemFromRow(row).reviewNeeded })).filter((row) => row.review_needed));\n    appendRows(activeStockHandoverByOrderId, activeStockHandoverResult.results || []);\n",
-    "    appendRows(activeStockHandoverByOrderId, handoverStateResult.results || []);\n    appendRows(handoverReviewByOrderId, (handoverStateResult.results || []).filter((row) => toInt((row as Record<string, unknown>).review_needed, 0) === 1));\n",
+    "    appendRows(activeStockHandoverByOrderId, handoverStateResult || []);\n    appendRows(handoverReviewByOrderId, (handoverStateResult || []).filter((row) => toInt((row as Record<string, unknown>).review_needed, 0) === 1));\n",
 )
 
-# 2) Exact external order IDs are already indexed. Do not run the generic INSTR/EXISTS
-# search over orders, items and payments when the user entered a complete ORD identifier.
+# 2) Complete external order IDs use the existing UNIQUE external_id index.
 old_q = """  if (q) {
     const searchOrderText = `COALESCE(o.external_id, '') || ' ' || COALESCE(o.order_date, '') || ' ' ||
       COALESCE(m.name, o.manager_snapshot_name, '') || ' ' || COALESCE(c.phone_normalized, '') || ' ' ||
@@ -216,8 +232,6 @@ old_q = """  if (q) {
 new_q = """  if (q) {
     const exactExternalId = /^ORD-\\d{8,14}-[A-Z0-9]{4,16}$/i.test(q) ? q.toUpperCase() : '';
     if (exactExternalId) {
-      // external_id is UNIQUE/indexed. A complete order number must never fall through to the
-      // expensive free-text scan across orders + order_items + payments.
       baseWhereParts.push('o.external_id = ?');
       baseBindings.push(exactExternalId);
     } else {
@@ -244,17 +258,19 @@ new_q = """  if (q) {
 """
 replace_once('worker/domains/orders-read.ts', old_q, new_q)
 
-# 3) Permanent regression gate.
-regression = ROOT / 'scripts/test-d1-read-budget-r1.mjs'
-regression.write_text("""import fs from 'node:fs'\n\nconst relations = fs.readFileSync('worker/domains/orders-relations.ts', 'utf8')\nconst ordersRead = fs.readFileSync('worker/domains/orders-read.ts', 'utf8')\nconst reservations = fs.readFileSync('worker/domains/order-reservations.ts', 'utf8')\nconst fail = (message) => { throw new Error(message) }\nconst check = (condition, message) => { if (!condition) fail(message) }\n\ncheck(!relations.includes('fetchOrderStockHandoverRows(db, chunk)'), 'Orders list must not load the full handover forensic payload per chunk')\ncheck(relations.includes('WITH active_reservations AS'), 'Orders list must use the compact reservation/handover projection')\ncheck(relations.includes('workshop_orders AS'), 'Mixed-order handover semantics must remain explicit')\ncheck(relations.includes('latest_full_stocktake AS'), 'Full-stocktake fallback must remain in the compact projection')\ncheck(relations.includes('latest_review AS'), 'Existing handover answers must still suppress already-reviewed checkpoints')\ncheck(relations.includes('ROW_NUMBER() OVER'), 'Compact handover projection must choose one deterministic latest checkpoint/review')\ncheck(relations.includes('review_needed'), 'Compact handover projection must preserve the list review flag')\ncheck(relations.includes('appendRows(activeStockHandoverByOrderId, handoverStateResult.results || [])'), 'Active reservation flag must come from the same compact query')\ncheck(reservations.includes('export async function fetchOrderStockHandoverRows('), 'Full handover payload must remain available for explicit order/warehouse review')\ncheck(reservations.includes('const rows = await fetchOrderStockHandoverRows(db, [orderId])'), 'Opening one order must still use full handover truth')\n\ncheck(ordersRead.includes('const exactExternalId = /^ORD-\\\\d{8,14}-[A-Z0-9]{4,16}$/i.test(q)'), 'Complete ORD identifiers must have an indexed fast path')\ncheck(ordersRead.includes("baseWhereParts.push('o.external_id = ?')"), 'Exact order search must use external_id equality')\ncheck(ordersRead.includes('const searchOrderText = `COALESCE(o.external_id'), 'General free-text search fallback must remain available')\ncheck(ordersRead.includes('EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id'), 'General item search fallback must remain available')\ncheck(ordersRead.includes('EXISTS (SELECT 1 FROM payments search_payment WHERE search_payment.order_id = o.id'), 'General payment search fallback must remain available')\n\nconsole.log('D1 read-budget R1 regression: OK')\n""", encoding='utf-8')
-
+# 3) Preserve the original 192B1 architectural invariant: one canonical handover resolver.
 replace_once(
-    'package.json',
-    ' && node scripts/test-d1-capacity-autonomy.mjs\"',
-    ' && node scripts/test-d1-capacity-autonomy.mjs && node scripts/test-d1-read-budget-r1.mjs\"',
+    'scripts/test-step192b1-warehouse-truth-attention.mjs',
+    "  check(relations.includes(\"import { fetchOrderStockHandoverRows, stockHandoverItemFromRow } from './order-reservations.ts'\"), 'Orders table does not import canonical handover resolver')\n  check(relations.includes('fetchOrderStockHandoverRows(db, chunk)'), 'Orders table does not use canonical handover resolver')\n  check(!relations.includes('inventory_stock_checks c ON c.id ='), 'Duplicated handover checkpoint SQL returned to orders-relations')\n",
+    "  check(relations.includes(\"import { fetchOrderStockHandoverRows } from './order-reservations.ts'\"), 'Orders table does not import canonical handover resolver')\n  check(relations.includes('fetchOrderStockHandoverRows(db, chunk, { listFlagsOnly: true })'), 'Orders table does not use canonical compact handover resolver')\n  check(handoverRows.includes('listFlagsOnly?: boolean') && handoverRows.includes('WITH active_reservations AS'), 'Canonical handover resolver lost compact list-flags mode')\n  check(!relations.includes('inventory_stock_checks c ON c.id =') && !relations.includes('inventory_stocktake_sessions'), 'Duplicated handover checkpoint SQL returned to orders-relations')\n",
 )
 
-# 4) Register the exact Worker declaration delta with the existing 190.6A preservation chain.
+# 4) Permanent regression gate.
+(ROOT / 'scripts/test-d1-read-budget-r1.mjs').write_text("""import fs from 'node:fs'\n\nconst relations = fs.readFileSync('worker/domains/orders-relations.ts', 'utf8')\nconst ordersRead = fs.readFileSync('worker/domains/orders-read.ts', 'utf8')\nconst reservations = fs.readFileSync('worker/domains/order-reservations.ts', 'utf8')\nconst fail = (message) => { throw new Error(message) }\nconst check = (condition, message) => { if (!condition) fail(message) }\n\ncheck(relations.includes("import { fetchOrderStockHandoverRows } from './order-reservations.ts'"), 'Orders list must keep one canonical handover resolver')\ncheck(relations.includes('fetchOrderStockHandoverRows(db, chunk, { listFlagsOnly: true })'), 'Orders list must request compact handover flags')\ncheck(!relations.includes('inventory_stock_checks') && !relations.includes('inventory_stocktake_sessions'), 'Orders relations must not duplicate checkpoint SQL')\ncheck(reservations.includes('listFlagsOnly?: boolean'), 'Canonical resolver must expose compact list-flags mode')\ncheck(reservations.includes('WITH active_reservations AS'), 'Compact resolver must start from scoped active reservations')\ncheck(reservations.includes('workshop_orders AS'), 'Mixed-order handover semantics must remain explicit')\ncheck(reservations.includes('latest_full_stocktake AS'), 'Full-stocktake fallback must remain in compact resolver')\ncheck(reservations.includes('latest_review AS'), 'Existing handover answers must still suppress reviewed checkpoints')\ncheck(reservations.includes('THEN 1 ELSE 0 END AS review_needed'), 'Compact resolver must preserve review-needed flag')\ncheck(reservations.includes('const rows = await fetchOrderStockHandoverRows(db, [orderId])'), 'Explicit order handover must still use full canonical payload')\ncheck(reservations.includes("fetchOrderStockHandoverRows(db, [], { allActive: true })"), 'Warehouse attention count must still use full canonical resolver')\ncheck(ordersRead.includes('const exactExternalId = /^ORD-') && ordersRead.includes("? q.toUpperCase() : ''"), 'Complete ORD identifiers must have an indexed fast path')\ncheck(ordersRead.includes("baseWhereParts.push('o.external_id = ?')"), 'Exact order search must use external_id equality')\ncheck(ordersRead.includes('const searchOrderText = `COALESCE(o.external_id'), 'General free-text search fallback must remain available')\ncheck(ordersRead.includes('EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id'), 'General item search fallback must remain available')\ncheck(ordersRead.includes('EXISTS (SELECT 1 FROM payments search_payment WHERE search_payment.order_id = o.id'), 'General payment search fallback must remain available')\n\nconsole.log('D1 read-budget R1 regression: OK')\n""", encoding='utf-8')
+
+replace_once('package.json', ' && node scripts/test-d1-capacity-autonomy.mjs\"', ' && node scripts/test-d1-capacity-autonomy.mjs && node scripts/test-d1-read-budget-r1.mjs\"')
+
+# 5) Register exact Worker declaration deltas after D1-capacity autonomy.
 replace_once(
     'scripts/test-step1906a-worker-modularization.mjs',
     "const d1CapacityAutonomyPath = path.join(root, 'scripts/d1-capacity-autonomy-worker-manifest.json')\n",
