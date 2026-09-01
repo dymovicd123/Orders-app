@@ -1,0 +1,46 @@
+name: Diagnose duplicate order deletion safety
+
+on:
+  push:
+    branches: [diag/delete-duplicate-order-20260901]
+    paths: [.github/workflows/diag-order-delete-safety.yml]
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      EXT_ID: ORD-20260829144801-F3A7DDC3
+    steps:
+      - name: Read target order and all deletion-sensitive relations from Production D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          API="https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/d1/database/$DB_ID/query"
+          q() {
+            local label="$1" sql="$2"
+            echo "=== $label ==="
+            curl --fail-with-body -sS -X POST \
+              -H "Authorization: Bearer $CF_API_TOKEN" \
+              -H 'Content-Type: application/json' \
+              "$API" -d "$(jq -nc --arg sql "$sql" '{sql:$sql}')" | jq .
+          }
+          oid_sql="(SELECT id FROM orders WHERE external_id='$EXT_ID' LIMIT 1)"
+          q 'ORDER' "SELECT * FROM orders WHERE external_id='$EXT_ID'"
+          q 'ORDER ITEMS' "SELECT * FROM order_items WHERE order_id=$oid_sql ORDER BY id"
+          q 'PAYMENTS' "SELECT * FROM payments WHERE order_id=$oid_sql ORDER BY id"
+          q 'RETURNS' "SELECT * FROM returns WHERE order_id=$oid_sql ORDER BY id"
+          q 'RETURN ITEMS' "SELECT ri.* FROM return_items ri JOIN returns r ON r.id=ri.return_id WHERE r.order_id=$oid_sql ORDER BY ri.id" || true
+          q 'EXCHANGES' "SELECT * FROM exchanges WHERE order_id=$oid_sql ORDER BY id" || true
+          q 'WORKSHOP TASKS' "SELECT * FROM workshop_tasks WHERE order_id=$oid_sql ORDER BY id" || true
+          q 'INVENTORY RESERVATIONS' "SELECT * FROM inventory_reservations WHERE order_id=$oid_sql ORDER BY id" || true
+          q 'INVENTORY LIFECYCLE' "SELECT * FROM inventory_lifecycle_events WHERE order_id=$oid_sql ORDER BY id" || true
+          q 'FINANCIAL EVENTS' "SELECT * FROM financial_events WHERE order_id=$oid_sql ORDER BY id" || true
+          q 'CASH REGISTER ENTRIES' "SELECT * FROM cash_register_entries WHERE order_id=$oid_sql ORDER BY id" || true
+          q 'INVENTORY MOVEMENTS BY EXTERNAL ID' "SELECT * FROM inventory_movements WHERE reference_id='$EXT_ID' OR comment LIKE '%$EXT_ID%' ORDER BY id" || true
+          q 'ACTIVITY' "SELECT * FROM activity_log WHERE order_id=$oid_sql OR external_order_id='$EXT_ID' ORDER BY id" || true
+          q 'CRITICAL OPS' "SELECT * FROM critical_operations WHERE target_id=$oid_sql OR context_json LIKE '%$EXT_ID%' ORDER BY updated_at" || true
+          q 'FOREIGN KEYS' "PRAGMA foreign_key_list(returns)" || true
+          q 'ORDER STATUS COUNTS' "SELECT order_status, COUNT(*) AS n FROM orders WHERE external_id='$EXT_ID' GROUP BY order_status"
