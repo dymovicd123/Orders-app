@@ -1,0 +1,26 @@
+name: Diagnose current shipping error
+
+on:
+  push:
+    branches: [diag/current-shipping-error-20260901]
+    paths: [.github/workflows/diag-current-shipping-error.yml]
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read current production order state
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://orders-app.orders-clothes.workers.dev'
+          echo '=== HEALTH ==='
+          curl -sS --fail-with-body "$BASE/api/health" | jq .
+          echo '=== ORDERS RESPONSE KEYS ==='
+          ORDERS="$(curl -sS --fail-with-body "$BASE/api/orders?limit=50&offset=0")"
+          jq '{ok,total,hasMore,count:(.orders|length), sample:(.orders[:20] | map({id,externalId,external_id,orderDate,order_date,shippingStatus,shipping_status,orderStatus,order_status,customerName,customer_name}))}' <<<"$ORDERS"
+          echo '=== NOT SENT HANDOVER STATES ==='
+          jq -r '.orders[]? | select((.shippingStatus // .shipping_status // "not_sent") != "sent") | (.id|tostring)' <<<"$ORDERS" | head -20 | while read -r id; do
+            echo "--- order $id ---"
+            curl -sS --fail-with-body "$BASE/api/orders/$id/stock-handover" | jq '{ok,orderId,externalId,orderDate,shippingStatus,workshopPending,items:(.items // [] | map({orderItemId,productName,source,quantity,reservationStatus,physicalQuantity,totalReservedQuantity,reviewNeeded,reviewReason,state}))}'
+          done
