@@ -1,0 +1,65 @@
+name: Verify safe manager order deletion v3
+
+on:
+  push:
+    branches: [safe/order-delete-mobility-v3-20260901]
+    paths: [.github/workflows/verify-order-delete-mobility-v3.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/order-delete-mobility-v3-20260901
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Apply source patch
+        run: |
+          python3 .github/scripts/apply-order-delete-mobility.py
+          python3 .github/scripts/fix-order-delete-actor-null.py
+      - name: Record exact new Worker declaration
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import crypto from 'node:crypto'
+          import ts from 'typescript'
+          const file = 'worker/domains/order-delete.ts'
+          const text = fs.readFileSync(file, 'utf8')
+          const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+          const statement = source.statements.find(s => ts.isFunctionDeclaration(s) && s.name?.text === 'deleteOrderSafely')
+          if (!statement) throw new Error('deleteOrderSafely declaration missing')
+          const normalized = statement.getText(source).replace(/^export\s+/, '')
+          const hash = crypto.createHash('sha256').update(normalized).digest('hex')
+          fs.writeFileSync('scripts/order-delete-mobility-worker-manifest.json', JSON.stringify({ version: 1, revision: 'order-delete-mobility-r1', added: { deleteOrderSafely: hash } }, null, 2) + '\n')
+          console.log({ deleteOrderSafely: hash })
+          NODE
+      - name: Verify Arrival remains untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --name-only HEAD | grep -Ei 'arrival|115B'; then
+            echo 'Arrival-related file unexpectedly changed' >&2
+            git diff --name-only HEAD
+            exit 2
+          fi
+      - name: Full cumulative release gate
+        run: npm run release:check
+      - name: Commit tested fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package.json scripts/test-order-delete-mobility.mjs scripts/order-delete-mobility-worker-manifest.json scripts/test-step1906a-worker-modularization.mjs src/App.tsx src/features/sections/OrdersTableSection.tsx worker/index.ts worker/domains/order-delete.ts
+          git commit -m 'Make erroneous order deletion self-recovering'
+          git push origin HEAD:safe/order-delete-mobility-v3-20260901
