@@ -18,6 +18,7 @@ import { addInventoryStocktakeCombination, addInventoryStocktakeVariant, cancelI
 import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileKnownPendingInventoryInbound, resolveInventoryLifecycleFacts } from './domains/lifecycle.ts'
 import { createManualOrderPaymentCritical } from './domains/money.ts'
 import { OrderInputValidationError } from './domains/order-core.ts'
+import { deleteOrderSafely } from './domains/order-delete.ts'
 import { activeStocktakeSessionForHandover, confirmItemStillHere, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, getOrderStockHandoverState, normalizeShipmentObservations, OrderStockShortageError, orderShipmentInventoryBlockerMessage, orderWorkshopPendingForShipping, reconcileIssuedBeforeCheckpoint } from './domains/order-reservations.ts'
 import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
@@ -1120,6 +1121,27 @@ export default {
           refreshRequired: !updatedOrder,
           inventoryDelivery,
         });
+      }
+
+      const orderDeleteMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/delete$/);
+      if (orderDeleteMatch && request.method === 'POST') {
+        const id = toInt(orderDeleteMatch[1], 0);
+        const input = await readJson<{ requestId?: string; comment?: string }>(request);
+        input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
+        try {
+          return json(await deleteOrderSafely(
+            env.DB,
+            id,
+            input,
+            authUser,
+            cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
+          ));
+        } catch (error) {
+          const criticalResponse = criticalOperationErrorResponse(error);
+          if (criticalResponse) return criticalResponse;
+          const publicError = publicApiError(error);
+          return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });
+        }
       }
 
       const orderMatch = url.pathname.match(/^\/api\/orders\/(\d+)$/);

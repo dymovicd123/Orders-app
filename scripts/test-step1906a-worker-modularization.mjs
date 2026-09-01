@@ -23,6 +23,7 @@ const arrivalSaveReliabilityPath = path.join(root, 'scripts/arrival-save-reliabi
 const shippingShortageHotfixPath = path.join(root, 'scripts/shipping-shortage-hotfix-worker-manifest.json')
 const exchangeStaleHandoverPath = path.join(root, 'scripts/exchange-stale-handover-worker-manifest.json')
 const orderEditPaymentMethodPath = path.join(root, 'scripts/order-edit-payment-method-worker-manifest.json')
+const orderDeleteMobilityPath = path.join(root, 'scripts/order-delete-mobility-worker-manifest.json')
 const stocktakeLostResponsePath = path.join(root, 'scripts/stocktake-lost-response-worker-manifest.json')
 const financeOrderDateSyncPath = path.join(root, 'scripts/finance-order-date-sync-worker-manifest.json')
 const financeF2TracePath = path.join(root, 'scripts/finance-f2-trace-worker-manifest.json')
@@ -121,6 +122,10 @@ try {
   const orderEditPaymentMethod = JSON.parse(fs.readFileSync(orderEditPaymentMethodPath, 'utf8'))
   check(orderEditPaymentMethod?.version === 1 && orderEditPaymentMethod?.revision === 'order-edit-payment-method-r1', 'Order edit payment-method Worker manifest invalid')
   const orderEditPaymentMethodChanges = orderEditPaymentMethod.changes || {}
+  check(fs.existsSync(orderDeleteMobilityPath), 'Order delete mobility Worker manifest missing')
+  const orderDeleteMobility = JSON.parse(fs.readFileSync(orderDeleteMobilityPath, 'utf8'))
+  check(orderDeleteMobility?.version === 1 && orderDeleteMobility?.revision === 'order-delete-mobility-r1', 'Order delete mobility Worker manifest invalid')
+  const orderDeleteMobilityAdded = orderDeleteMobility.added || {}
   const stocktakeLostResponse = fs.existsSync(stocktakeLostResponsePath) ? JSON.parse(fs.readFileSync(stocktakeLostResponsePath, 'utf8')) : null
   const stocktakeLostResponseChanges = stocktakeLostResponse?.version === 1 ? (stocktakeLostResponse.changes || {}) : {}
   const financeOrderDateSync = fs.existsSync(financeOrderDateSyncPath) ? JSON.parse(fs.readFileSync(financeOrderDateSyncPath, 'utf8')) : null
@@ -149,7 +154,7 @@ try {
 
   const required = [
     'core/http.ts', 'core/settings.ts', 'core/sql.ts', 'core/text.ts', 'core/types.ts',
-    'domains/auth.ts', 'domains/critical.ts', 'domains/catalog.ts', 'domains/money.ts',
+    'domains/auth.ts', 'domains/critical.ts', 'domains/catalog.ts', 'domains/money.ts', 'domains/order-delete.ts',
     'domains/activity.ts', 'domains/cash.ts', 'domains/finance-reports.ts', 'domains/order-core.ts',
     'domains/storage.ts', 'domains/references.ts', 'domains/orders-relations.ts', 'domains/clients.ts',
     'domains/workshop-schema.ts', 'domains/inventory-reservations.ts', 'domains/inventory-primitives.ts',
@@ -183,7 +188,7 @@ try {
   }
 
   const removedNames = Object.keys(removed)
-  const expectedDeclarationCount = manifest.declarationCount - removedNames.length + Object.keys(warehouseTruthFreshnessAdded).length + Object.keys(warehouseAttentionTruthAdded).length + Object.keys(dailyWarehouseAdded).length + Object.keys(attentionContextAdded).length + Object.keys(orderCreateSaveIntegrityAdded).length
+  const expectedDeclarationCount = manifest.declarationCount - removedNames.length + Object.keys(warehouseTruthFreshnessAdded).length + Object.keys(warehouseAttentionTruthAdded).length + Object.keys(dailyWarehouseAdded).length + Object.keys(attentionContextAdded).length + Object.keys(orderCreateSaveIntegrityAdded).length + Object.keys(orderDeleteMobilityAdded).length
   check(declarations.size === expectedDeclarationCount, `Worker declaration count changed outside accepted allow-lists: ${declarations.size}/${expectedDeclarationCount}`)
   for (const [name, expectedHash] of Object.entries(manifest.declarations)) {
     if (Object.hasOwn(removed, name)) {
@@ -354,6 +359,7 @@ try {
   // Shipping hotfix 2026-09-01: normalize only this retired final-shipping blocker
   // back to the accepted router baseline. The shipping regression requires it absent live.
   const normalizedRouter = currentRouter
+    .replace(/\n\s*const orderDeleteMatch = url\.pathname\.match\(\/\^\\\/api\\\/orders\\\/\(\\d\+\)\\\/delete\$\/\);[\s\S]*?(?=\n\s*const orderMatch = url\.pathname\.match)/, '')
     .replace(
       "          const blockers = await getOrderShipmentInventoryBlockers(env.DB, id);",
       `          const handoverReviewBlockers = await orderHandoverReviewBlockers(env.DB, id);
@@ -502,6 +508,11 @@ try {
     } else {
       check(sha(declarations.get(name)) === expectedHash, `192B2A4 added Worker declaration changed: ${name}`)
     }
+  }
+
+  for (const [name, expectedHash] of Object.entries(orderDeleteMobilityAdded)) {
+    check(declarations.has(name), `Order delete mobility added Worker declaration missing: ${name}`)
+    check(sha(declarations.get(name)) === expectedHash, `Order delete mobility declaration changed beyond exact allow-list: ${name}`)
   }
 
   const graph = new Map(files.map((file) => [file, new Set()]))

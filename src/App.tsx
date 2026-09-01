@@ -5737,10 +5737,6 @@ function removeDebtPayment(index: number) {
   }
 
   async function deleteOrderAsAdmin(order: OrderRecord) {
-    if (!isAdmin) {
-      setError('Удаление заказа доступно только администратору.')
-      return
-    }
     if (isArchivedOrderRecord(order)) {
       setMessage('Архивный заказ нельзя удалить. Сначала верните его из архива.')
       return
@@ -5751,11 +5747,11 @@ function removeDebtPayment(index: number) {
     setError(null)
     setMessage(null)
     try {
-      const payload = { orderStatus: 'deleted' as const, comment: order.comment || 'Удалено администратором' }
+      const payload = { comment: order.comment || 'Удалено сотрудником как ошибочный заказ' }
       const criticalKey = `order-delete:${order.id}`
       const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch(`/api/orders/${order.id}`, {
-        method: 'PATCH',
+      const response = await apiFetch(`/api/orders/${order.id}/delete`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
         body: JSON.stringify(critical.payload),
       })

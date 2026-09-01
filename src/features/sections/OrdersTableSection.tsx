@@ -348,7 +348,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 Редактировать
                               </button>
                             ) : null}
-                            {isAdmin && !retainedOnly && !archived ? (
+                            {!retainedOnly && !archived ? (
                               <button
                                 className="ghost danger compact"
                                 type="button"
