@@ -1,0 +1,42 @@
+name: Production order check F3A7
+
+on:
+  push:
+    branches: [prod-order-check-f3a7]
+    paths: [scripts/.prod-order-check-f3a7-trigger]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Read production order state
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== ORDER ==='
+          npx wrangler d1 execute orders_db_prod --remote --json --command "SELECT id, external_id, order_status, shipping_status, shipping_date, workshop_status, total_amount, received_amount, debt_amount, return_amount, archived_at, updated_at FROM orders WHERE external_id = 'ORD-20260829144801-F3A7DDC3' LIMIT 1;"
+          echo '=== RETURNS ==='
+          npx wrangler d1 execute orders_db_prod --remote --json --command "SELECT r.* FROM returns r JOIN orders o ON o.id = r.order_id WHERE o.external_id = 'ORD-20260829144801-F3A7DDC3' ORDER BY r.id;"
+          echo '=== EXCHANGES ==='
+          npx wrangler d1 execute orders_db_prod --remote --json --command "SELECT e.* FROM exchanges e JOIN orders o ON o.id = e.order_id WHERE o.external_id = 'ORD-20260829144801-F3A7DDC3' ORDER BY e.id;"
+          echo '=== RESERVATIONS ==='
+          npx wrangler d1 execute orders_db_prod --remote --json --command "SELECT r.id, r.order_item_id, r.inventory_source, r.product_id, r.variant_id, r.quantity, r.status, r.fulfilled_at, r.released_at, r.updated_at FROM inventory_reservations r JOIN orders o ON o.id = r.order_id WHERE o.external_id = 'ORD-20260829144801-F3A7DDC3' ORDER BY r.id;"
+          echo '=== WORKSHOP ==='
+          npx wrangler d1 execute orders_db_prod --remote --json --command "SELECT wt.id, wt.order_item_id, wt.product_name_snapshot, wt.quantity, wt.status, wt.updated_at FROM workshop_tasks wt JOIN orders o ON o.id = wt.order_id WHERE o.external_id = 'ORD-20260829144801-F3A7DDC3' ORDER BY wt.id;"
+          echo '=== LIFECYCLE ==='
+          npx wrangler d1 execute orders_db_prod --remote --json --command "SELECT le.id, le.event_key, le.operation_type, le.operation_id, le.event_type, le.inventory_source, le.variant_id, le.quantity_delta, le.status, le.applied_at, le.cancelled_at, le.pending_reason FROM inventory_lifecycle_events le WHERE (le.operation_type = 'return' AND le.operation_id IN (SELECT r.id FROM returns r JOIN orders o ON o.id=r.order_id WHERE o.external_id='ORD-20260829144801-F3A7DDC3')) OR (le.operation_type = 'exchange' AND le.operation_id IN (SELECT e.id FROM exchanges e JOIN orders o ON o.id=e.order_id WHERE o.external_id='ORD-20260829144801-F3A7DDC3')) ORDER BY le.id;"
+          echo '=== MOVEMENTS ==='
+          npx wrangler d1 execute orders_db_prod --remote --json --command "SELECT id, inventory_source, movement_type, variant_id, quantity_delta, quantity_after, reference_type, reference_id, comment, created_at FROM inventory_movements WHERE reference_id = 'ORD-20260829144801-F3A7DDC3' OR comment LIKE '%ORD-20260829144801-F3A7DDC3%' ORDER BY id;"
