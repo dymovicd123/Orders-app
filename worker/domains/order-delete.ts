@@ -10,7 +10,7 @@ export async function deleteOrderSafely(
   db: D1Database,
   orderId: number,
   input: { requestId?: string; comment?: string },
-  actor?: AuthUser | null,
+  actor: AuthUser | null = null,
   checkedBy = '',
 ) {
   if (!orderId) throw new CriticalOperationConflictError('Заказ не найден. Обновите список и повторите действие.')
