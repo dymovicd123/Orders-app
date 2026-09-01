@@ -7,6 +7,7 @@ const root = process.cwd()
 const beforePath = path.join(root, 'scripts/.d1-read-budget-r1-before.json')
 const manifestPath = path.join(root, 'scripts/d1-read-budget-r1-worker-manifest.json')
 const targets = [
+  ['worker/domains/order-reservations.ts', 'fetchOrderStockHandoverRows'],
   ['worker/domains/orders-relations.ts', 'fetchOrderRelations'],
   ['worker/domains/orders-read.ts', 'listOrders'],
 ]
