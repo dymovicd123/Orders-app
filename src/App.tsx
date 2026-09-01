@@ -5747,26 +5747,42 @@ function removeDebtPayment(index: number) {
     setError(null)
     setMessage(null)
     try {
-      const payload = { comment: order.comment || 'Удалено сотрудником как ошибочный заказ' }
       const criticalKey = `order-delete:${order.id}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch(`/api/orders/${order.id}/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord }>(response, 'Удаление заказа')
-      if (!response.ok) throw new Error(result.message || `Delete failed: ${response.status}`)
-      completeCriticalRequest(criticalKey, critical.requestId)
+      const sendDelete = async (physicalOutcome?: 'not_issued') => {
+        const payload = {
+          comment: order.comment || 'Удалено сотрудником как ошибочный заказ',
+          ...(physicalOutcome ? { physicalOutcome } : {}),
+        }
+        const critical = prepareCriticalRequest(criticalKey, payload)
+        const response = await apiFetch(`/api/orders/${order.id}/delete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
+          body: JSON.stringify(critical.payload),
+        })
+        const result = await readJsonResponse<{ ok?: boolean; code?: string; message?: string; order?: OrderRecord }>(response, 'Удаление заказа')
+        return { response, result, critical }
+      }
+
+      let attempt = await sendDelete()
+      if (!attempt.response.ok && attempt.result.code === 'order_delete_physical_confirmation_required') {
+        const notIssued = window.confirm(
+          `Заказ ${order.external_id} отмечен как выданный или отправленный.\n\nПодтвердите только если товар ФАКТИЧЕСКИ НЕ передавался клиенту и отметка выдачи ошибочная. Тогда система сама отменит ложное складское списание и продолжит удаление.\n\nЕсли товар реально передавался — нажмите «Отмена»: удаление остановится без изменений.`
+        )
+        if (!notIssued) {
+          throw new Error('Удаление остановлено. Заказ с реальной выдачей нужно сначала привести к фактическому состоянию через возврат товара.')
+        }
+        attempt = await sendDelete('not_issued')
+      }
+      if (!attempt.response.ok) throw new Error(attempt.result.message || `Delete failed: ${attempt.response.status}`)
+      completeCriticalRequest(criticalKey, attempt.critical.requestId)
       setOrders((current) => current.filter((entry) => entry.id !== order.id))
       if (selectedOrderId === order.id) {
         setSelectedOrderId(null)
         setEditorOpen(false)
       }
       invalidateFinanceReadCaches()
-      // Deleting an unshipped order releases its reservation in inventory v2.
       invalidateInventoryStockCaches(true)
-      setMessage(`Заказ ${order.external_id} удалён из активной работы.`)
+      setMessage(attempt.result.message || `Заказ ${order.external_id} удалён из активной работы.`)
       void loadDashboard()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')

@@ -2,6 +2,6 @@
   "version": 1,
   "revision": "order-delete-mobility-r1",
   "added": {
-    "deleteOrderSafely": "1fab225a857c60d27ae0c265a98df3d0d44b3209bbbbe5300110409cc5069e8c"
+    "deleteOrderSafely": "9aedd5339ffbed68595b439ae6a30d149be858a6e301fa16d3317041be19a0a6"
   }
 }
