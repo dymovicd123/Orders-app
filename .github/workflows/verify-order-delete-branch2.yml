@@ -1,0 +1,61 @@
+name: Verify safe order deletion on branch2
+
+on:
+  push:
+    branches: [safe/order-delete-branch2-20260901]
+    paths: [.github/workflows/verify-order-delete-branch2.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/order-delete-branch2-20260901
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Apply tested main patch with 3-way safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main safe/order-delete-mobility-v3-20260901
+          git diff origin/main 0d06f894dc7b8bfe686427eb688d4f8badeca6b2 -- \
+            package.json \
+            scripts/test-order-delete-mobility.mjs \
+            scripts/order-delete-mobility-worker-manifest.json \
+            scripts/test-step1906a-worker-modularization.mjs \
+            src/App.tsx \
+            src/features/sections/OrdersTableSection.tsx \
+            worker/index.ts \
+            worker/domains/order-delete.ts > /tmp/order-delete.patch
+          test -s /tmp/order-delete.patch
+          git apply --3way --index /tmp/order-delete.patch
+      - name: Verify Arrival remains untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --cached --name-only | grep -Ei 'arrival|115B'; then
+            echo 'Arrival-related file unexpectedly changed' >&2
+            git diff --cached --name-only
+            exit 2
+          fi
+      - name: Targeted deletion regression
+        run: node scripts/test-order-delete-mobility.mjs
+      - name: Full cumulative release gate
+        run: npm run release:check
+      - name: Commit tested branch2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'Make erroneous order deletion self-recovering on branch2'
+          git push origin HEAD:safe/order-delete-branch2-20260901
