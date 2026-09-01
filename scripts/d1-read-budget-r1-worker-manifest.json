@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "revision": "d1-read-budget-r1",
+  "changes": {
+    "fetchOrderStockHandoverRows": {
+      "before": "adc5186481201556bfc73f3e4beb75cbe6a454fd397b2cdbbfddf0193cdbb609",
+      "after": "d6f086b5384ca0694f320353856d745f497ab885632af20a541ecd253ac5a61c"
+    },
+    "fetchOrderRelations": {
+      "before": "7269bb7c951a5edcf579ba7582416c67ca1c83b43ccafe37d795d3a19823bd9b",
+      "after": "7a66fab9562d1ffeb0d463d541409ecc952cec133d70fbcb4b486f46e11bc34e"
+    },
+    "listOrders": {
+      "before": "7534cc193f70d248662815532f5a471d9773017eaed8a20777a5a5602664fd3d",
+      "after": "b5958710295edb69ccbac5f39fc4879513be63c1553d2088e1099d493a86bc0d"
+    }
+  }
+}
