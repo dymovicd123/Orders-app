@@ -17,7 +17,7 @@ jobs:
       CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CF_API: https://api.cloudflare.com/client/v4
     steps:
-      - name: Probe lightweight Production routes
+      - name: Probe minimal Production D1 reads
         shell: bash
         run: |
           set -u
@@ -31,9 +31,8 @@ jobs:
             cat "/tmp/$label"
             echo
           }
-          probe admin-status "$BASE/api/admin-mode/status"
-          probe orders-default --get "$BASE/api/orders" --data-urlencode 'limit=20'
-          probe returns-cancelled --get "$BASE/api/returns" --data-urlencode 'status=cancelled' --data-urlencode 'limit=100'
-          probe returns-default --get "$BASE/api/returns" --data-urlencode 'limit=20'
-          probe exchanges-default --get "$BASE/api/exchanges" --data-urlencode 'limit=20'
-          probe reference-data "$BASE/api/reference-data"
+          probe managers --get "$BASE/api/reference-values" --data-urlencode 'kind=managers'
+          probe city-counts --get "$BASE/api/reference-values/counts" --data-urlencode 'kinds=cities'
+          probe inventory-settings "$BASE/api/inventory/settings"
+          probe inventory-list --get "$BASE/api/inventory" --data-urlencode 'source=warehouse'
+          probe workshop-counts "$BASE/api/workshop/counts"
