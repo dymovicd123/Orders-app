@@ -157,7 +157,7 @@ export async function deleteOrderSafely(
       orderStatus: 'deleted',
       comment: cleanText(input.comment) || `Ошибочный заказ ${externalId} удалён сотрудником`,
     },
-    actor,
+    actor ?? null,
     checkedBy,
   )
   return {
