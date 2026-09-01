@@ -11,38 +11,29 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CF_API: https://api.cloudflare.com/client/v4
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Capture live Worker exception
+      - name: Probe lightweight Production routes
         shell: bash
         run: |
           set -u
           subdomain_json="$(curl --fail-with-body -sS -H "Authorization: Bearer $CF_API_TOKEN" "$CF_API/accounts/$CF_ACCOUNT_ID/workers/subdomain")"
           subdomain="$(jq -r '.result.subdomain // empty' <<<"$subdomain_json")"
           BASE="https://orders-app.${subdomain}.workers.dev"
-          rm -f /tmp/tail.log
-          timeout 25s npx wrangler tail orders-app --format json > /tmp/tail.log 2>&1 &
-          tail_pid=$!
-          sleep 6
-          echo '=== PROBE REFERENCE DATA ==='
-          curl -sS -D /tmp/headers -o /tmp/body "$BASE/api/reference-data" || true
-          cat /tmp/headers
-          cat /tmp/body
-          echo
-          sleep 6
-          kill "$tail_pid" 2>/dev/null || true
-          wait "$tail_pid" 2>/dev/null || true
-          echo '=== WORKER TAIL ==='
-          cat /tmp/tail.log
+          probe() {
+            label="$1"; shift
+            code="$(curl -sS -o "/tmp/$label" -w '%{http_code}' "$@")"
+            echo "=== $label HTTP $code ==="
+            cat "/tmp/$label"
+            echo
+          }
+          probe admin-status "$BASE/api/admin-mode/status"
+          probe orders-default --get "$BASE/api/orders" --data-urlencode 'limit=20'
+          probe returns-cancelled --get "$BASE/api/returns" --data-urlencode 'status=cancelled' --data-urlencode 'limit=100'
+          probe returns-default --get "$BASE/api/returns" --data-urlencode 'limit=20'
+          probe exchanges-default --get "$BASE/api/exchanges" --data-urlencode 'limit=20'
+          probe reference-data "$BASE/api/reference-data"
