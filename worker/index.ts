@@ -1126,7 +1126,7 @@ export default {
       const orderDeleteMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/delete$/);
       if (orderDeleteMatch && request.method === 'POST') {
         const id = toInt(orderDeleteMatch[1], 0);
-        const input = await readJson<{ requestId?: string; comment?: string }>(request);
+        const input = await readJson<{ requestId?: string; comment?: string; physicalOutcome?: 'not_issued' }>(request);
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
         try {
           return json(await deleteOrderSafely(
