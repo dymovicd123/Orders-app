@@ -1,0 +1,36 @@
+name: Diagnose exchange failure
+
+on:
+  push:
+    branches: [diag/exchange-failure-20260901]
+    paths: [.github/workflows/diag-exchange-failure.yml]
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+    steps:
+      - name: Read exchange diagnostics from Production D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          API="https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/d1/database/$DB_ID/query"
+          q() {
+            local sql="$1"
+            curl --fail-with-body -sS -X POST \
+              -H "Authorization: Bearer $CF_API_TOKEN" \
+              -H 'Content-Type: application/json' \
+              "$API" -d "$(jq -nc --arg sql "$sql" '{sql:$sql}')" | jq .
+          }
+          echo '=== critical_operations schema ==='
+          q "PRAGMA table_info(critical_operations)"
+          echo '=== latest exchange critical operations ==='
+          q "SELECT * FROM critical_operations WHERE operation_type LIKE '%exchange%' OR operation_kind LIKE '%exchange%' ORDER BY updated_at DESC LIMIT 20" || \
+          q "SELECT * FROM critical_operations ORDER BY updated_at DESC LIMIT 30"
+          echo '=== latest exchanges ==='
+          q "SELECT id, order_id, exchange_date, old_order_item_id, old_quantity, old_return_source, new_order_item_id, new_source_type, financial_action, financial_amount, payment_method, status, created_at FROM exchanges ORDER BY id DESC LIMIT 20"
+          echo '=== recent active order items likely eligible for exchange ==='
+          q "SELECT oi.id AS order_item_id, oi.order_id, o.external_id, o.order_date, o.shipping_status, oi.product_name_snapshot, oi.quantity, oi.source_type, oi.inventory_source, oi.is_workshop, oi.stock_writeoff_status FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.quantity>0 AND COALESCE(o.order_status,'active')<>'archived' ORDER BY oi.id DESC LIMIT 40"
