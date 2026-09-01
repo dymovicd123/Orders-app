@@ -63,30 +63,24 @@ jobs:
           gate_anchor = "  const normalizedRouter = currentRouter\n    .replace(\n"
           if g.count(gate_anchor) != 1:
               raise SystemExit('worker router normalizer anchor changed')
-          old_block = (
-              "          const handoverReviewBlockers = await orderHandoverReviewBlockers(env.DB, id);\\n"
-              "          if (handoverReviewBlockers.length) {\\n"
-              "            return json({\\n"
-              "              ok: false,\\n"
-              "              code: 'stock_handover_review_required',\\n"
-              "              message: 'Перед отправкой уточните товары со Склада и Бутика: после даты заказа была физическая ревизия или сверка, поэтому нужно один раз подтвердить, где находился товар в тот момент.',\\n"
-              "              items: handoverReviewBlockers,\\n"
-              "            }, { status: 409 });\\n"
-              "          }\\n"
-              "          const blockers = await getOrderShipmentInventoryBlockers(env.DB, id);"
-          )
-          normalizer = (
-              "  // Shipping hotfix 2026-09-01: final customer handover must not be blocked by a historical\\n"
-              "  // checkpoint-review question. Reinsert the retired block only for canonical router hashing;\\n"
-              "  // the shipping regression test above requires it to stay absent from the live router.\\n"
-              "  const normalizedRouter = currentRouter\\n"
-              "    .replace(\\n"
-              "      \"          const blockers = await getOrderShipmentInventoryBlockers(env.DB, id);\",\\n"
-              f"      \"{old_block}\",\\n"
-              "    )\\n"
-              "    .replace(\\n"
-          )
-          normalizer = normalizer.replace('\\n', '\n')
+          normalizer = '''  // Shipping hotfix 2026-09-01: normalize only this retired final-shipping blocker
+  // back to the accepted router baseline. A dedicated regression test requires it to stay absent live.
+  const normalizedRouter = currentRouter
+    .replace(
+      "          const blockers = await getOrderShipmentInventoryBlockers(env.DB, id);",
+      `          const handoverReviewBlockers = await orderHandoverReviewBlockers(env.DB, id);
+          if (handoverReviewBlockers.length) {
+            return json({
+              ok: false,
+              code: 'stock_handover_review_required',
+              message: 'Перед отправкой уточните товары со Склада и Бутика: после даты заказа была физическая ревизия или сверка, поэтому нужно один раз подтвердить, где находился товар в тот момент.',
+              items: handoverReviewBlockers,
+            }, { status: 409 });
+          }
+          const blockers = await getOrderShipmentInventoryBlockers(env.DB, id);`,
+    )
+    .replace(
+'''
           g = g.replace(gate_anchor, normalizer, 1)
           gate.write_text(g)
           PY
