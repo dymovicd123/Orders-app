@@ -37,7 +37,7 @@ jobs:
         run: |
           git config user.name "dymovicd123"
           git config user.email "dymovicd@gmail.com"
-          git add package.json scripts/test-d1-read-budget-r2.mjs scripts/d1-read-budget-r2-worker-manifest.json scripts/test-step1906a-worker-modularization.mjs worker/domains/order-reservations.ts worker/domains/warehouse-attention.ts worker/domains/orders-read.ts worker/domains/inventory-read.ts worker/domains/team.ts worker/domains/clients.ts src/App.tsx
+          git add package.json scripts/test-d1-read-budget-r1.mjs scripts/test-d1-read-budget-r2.mjs scripts/d1-read-budget-r2-worker-manifest.json scripts/test-step1906a-worker-modularization.mjs worker/domains/order-reservations.ts worker/domains/warehouse-attention.ts worker/domains/orders-read.ts worker/domains/inventory-read.ts worker/domains/team.ts worker/domains/clients.ts src/App.tsx
           git diff --cached --check
           git commit -m "Reduce remaining D1 read amplification"
           git push origin HEAD:d1-read-budget-r2
