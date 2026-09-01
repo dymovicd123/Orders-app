@@ -15,37 +15,29 @@ export async function listInventory(db: D1Database, url: URL) {
   const includeMovements = !['0', 'false', 'no'].includes(cleanText(url.searchParams.get('includeMovements')).toLowerCase());
 
   const searchableSql = `LOWER(
-    COALESCE(product_name_snapshot, '') || ' ' ||
-    COALESCE(gender_snapshot, '') || ' ' ||
-    COALESCE(color_snapshot, '') || ' ' ||
-    COALESCE(material_snapshot, '') || ' ' ||
-    COALESCE(length_snapshot, '') || ' ' ||
-    COALESCE(size_snapshot, '') || ' ' ||
-    COALESCE(last_action, '') || ' ' ||
-    COALESCE(last_source_ref, '')
+    COALESCE(s.product_name_snapshot, '') || ' ' ||
+    COALESCE(s.gender_snapshot, '') || ' ' ||
+    COALESCE(s.color_snapshot, '') || ' ' ||
+    COALESCE(s.material_snapshot, '') || ' ' ||
+    COALESCE(s.length_snapshot, '') || ' ' ||
+    COALESCE(s.size_snapshot, '') || ' ' ||
+    COALESCE(s.last_action, '') || ' ' ||
+    COALESCE(s.last_source_ref, '')
   )`;
   const searchClauses = qTokens.map(() => `(
     INSTR(${searchableSql}, ?) > 0 OR INSTR(${searchableSql}, ?) > 0 OR INSTR(${searchableSql}, ?) > 0
   )`).join(' AND ');
   const stockSql = `SELECT
-      id, inventory_source, product_id, variant_id, product_name_snapshot, gender_snapshot, color_snapshot,
-      material_snapshot, length_snapshot, size_snapshot, quantity, reserved_quantity,
-      last_action, last_source_ref, updated_at, created_at
-     FROM inventory_stock
-     WHERE inventory_source = ?
-       AND (
-         variant_id IS NULL
-         OR EXISTS (
-           SELECT 1
-           FROM catalog_variants active_variant
-           JOIN catalog_products active_product ON active_product.id = active_variant.product_id
-           WHERE active_variant.id = inventory_stock.variant_id
-             AND active_variant.is_active = 1
-             AND active_product.is_active = 1
-         )
-       )${searchClauses ? ` AND ${searchClauses}` : ''}
-     ORDER BY product_name_snapshot, COALESCE(gender_snapshot, ''), COALESCE(color_snapshot, ''),
-       COALESCE(material_snapshot, ''), COALESCE(length_snapshot, ''), COALESCE(size_snapshot, '')
+      s.id, s.inventory_source, s.product_id, s.variant_id, s.product_name_snapshot, s.gender_snapshot, s.color_snapshot,
+      s.material_snapshot, s.length_snapshot, s.size_snapshot, s.quantity, s.reserved_quantity,
+      s.last_action, s.last_source_ref, s.updated_at, s.created_at
+     FROM inventory_stock s
+     LEFT JOIN catalog_variants active_variant ON active_variant.id = s.variant_id
+     LEFT JOIN catalog_products active_product ON active_product.id = active_variant.product_id
+     WHERE s.inventory_source = ?
+       AND (s.variant_id IS NULL OR (active_variant.is_active = 1 AND active_product.is_active = 1))${searchClauses ? ` AND ${searchClauses}` : ''}
+     ORDER BY s.product_name_snapshot, COALESCE(s.gender_snapshot, ''), COALESCE(s.color_snapshot, ''),
+       COALESCE(s.material_snapshot, ''), COALESCE(s.length_snapshot, ''), COALESCE(s.size_snapshot, '')
      LIMIT ?`;
 
   const inventorySearchBindings = qTokens.flatMap(token => [token, token.toUpperCase(), token.toLowerCase()]);

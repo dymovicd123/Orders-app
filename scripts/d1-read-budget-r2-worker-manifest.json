@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "revision": "d1-read-budget-r2",
+  "changes": {
+    "fetchOrderStockHandoverRows": {
+      "before": "d6f086b5384ca0694f320353856d745f497ab885632af20a541ecd253ac5a61c",
+      "after": "d15e854c00f6355edc32747b1b66330457e608d112f1caaefe719fadb53f3c4a",
+      "file": "worker/domains/order-reservations.ts"
+    },
+    "getWarehouseAttentionSummary": {
+      "before": "ef5a92f986a11c2a995d142f4f3cd1d07940846fde7407c728afc9f25dba7f0e",
+      "after": "2cf0e266a712b17cc4d6a8162f3003904137ba5b55a588e7315141f80fd477da",
+      "file": "worker/domains/warehouse-attention.ts"
+    },
+    "listOrders": {
+      "before": "b5958710295edb69ccbac5f39fc4879513be63c1553d2088e1099d493a86bc0d",
+      "after": "ddedce4d0b0b9c013125f5d1a9ebf9371619996c42ebfe1b008b431506d6deb6",
+      "file": "worker/domains/orders-read.ts"
+    },
+    "listInventory": {
+      "before": "cd8c26a32a73deb5618cc22130f13fad0d5a2fdbb8eb9d9857c3edb5b63cca1e",
+      "after": "e7818c8cb23371826805d4cb654e70ef3e035f26665c1392b196b9dcb58a2f52",
+      "file": "worker/domains/inventory-read.ts"
+    },
+    "listTeamEmployees": {
+      "before": "ce9a254e16d759a355db99cb20b204bf595c9dcb08adb4bd5c680a820d31bc6c",
+      "after": "b351c6d45a8b6450eff5f5010c49beaedbeed18e449b13443549e7f41c3dc4d7",
+      "file": "worker/domains/team.ts"
+    },
+    "listClients": {
+      "before": "1811b47da4d6082ca14013cf017cd291e21fcde10c0de39dd39db37d838d288e",
+      "after": "519af7e7b7e9c94c4d05d7778bef6f5ab3b093437e5dadc028e49cba618d9383",
+      "file": "worker/domains/clients.ts"
+    }
+  }
+}

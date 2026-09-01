@@ -128,6 +128,12 @@ type OrderStockHandoverResponse = {
   refreshRequired?: boolean
 }
 
+
+const WAREHOUSE_ATTENTION_SUMMARY_TTL_MS = 20_000
+let warehouseAttentionSummaryCache: { data: WarehouseAttentionSummaryResponse; loadedAt: number } | null = null
+let warehouseAttentionSummaryInFlight: Promise<WarehouseAttentionSummaryResponse | null> | null = null
+let warehouseAttentionRequestToken = 0
+
 function handoverCheckpointDateLabel(value: string | null | undefined) {
   const raw = String(value || '').trim()
   if (!raw) return 'последней сверки'
@@ -1499,12 +1505,35 @@ function App() {
     }
   }
 
-  async function loadWarehouseAttention(details = false) {
-    const response = await apiFetch(`/api/inventory/attention${details ? '?details=1&limit=30' : ''}`)
-    if (!response.ok) return null
-    const data = await readJsonResponse<WarehouseAttentionSummaryResponse>(response, 'Склад')
-    setWarehouseAttention(data)
-    return data
+  async function loadWarehouseAttention(details = false, force = false) {
+    if (!details && !force) {
+      const cached = warehouseAttentionSummaryCache
+      if (cached && Date.now() - cached.loadedAt < WAREHOUSE_ATTENTION_SUMMARY_TTL_MS) {
+        setWarehouseAttention(cached.data)
+        return cached.data
+      }
+      if (warehouseAttentionSummaryInFlight) {
+        const data = await warehouseAttentionSummaryInFlight
+        if (data) setWarehouseAttention(data)
+        return data
+      }
+    }
+    const requestToken = ++warehouseAttentionRequestToken
+    const request = (async () => {
+      const response = await apiFetch(`/api/inventory/attention${details ? '?details=1&limit=30' : ''}`)
+      if (!response.ok) return null
+      return await readJsonResponse<WarehouseAttentionSummaryResponse>(response, 'Склад')
+    })()
+    if (!details) warehouseAttentionSummaryInFlight = request
+    try {
+      const data = await request
+      if (!data || requestToken !== warehouseAttentionRequestToken) return data
+      setWarehouseAttention(data)
+      if (!details) warehouseAttentionSummaryCache = { data, loadedAt: Date.now() }
+      return data
+    } finally {
+      if (!details && warehouseAttentionSummaryInFlight === request) warehouseAttentionSummaryInFlight = null
+    }
   }
 
   async function loadInventoryData(
@@ -1548,7 +1577,8 @@ function App() {
   function invalidateInventoryStockCaches(includeCatalogReview = false) {
     setInventoryData({ warehouse: null, boutique: null })
     if (includeCatalogReview) setCatalogReview(null)
-    void loadWarehouseAttention()
+    warehouseAttentionSummaryCache = null
+    void loadWarehouseAttention(false, true)
   }
 
   async function loadCatalogData(force = false) {
@@ -1626,7 +1656,7 @@ function App() {
         loadInventoryData('warehouse', true, '', false),
         loadInventoryData('boutique', true, '', false),
         createdReference ? loadReferencesData(true) : Promise.resolve(null),
-        loadWarehouseAttention(),
+        loadWarehouseAttention(false, true),
       ])
       setMessage(result?.message || 'Позиция разобрана.')
       return result

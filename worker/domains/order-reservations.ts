@@ -937,25 +937,28 @@ export async function fetchOrderStockHandoverRows(
   const rows: Record<string, unknown>[] = [];
   for (const chunk of scopes) {
     if (listFlagsOnly) {
-      if (!chunk?.length) throw new Error('Compact handover flags require an explicit order scope.');
-      const placeholders = chunk.map(() => '?').join(',');
-      // Step 193A: the orders table needs only active-reservation + review-needed flags.
-      // Keep the full forensic payload for explicit handover/attention screens, while this
-      // canonical compact path avoids stock/customer hydration and correlated payload reads.
+      if (!allActive && !chunk?.length) throw new Error('Compact handover flags require an explicit order scope.');
+      const placeholders = chunk?.map(() => '?').join(',') || '';
+      const reservationScope = allActive
+        ? `r.status = 'active' AND r.variant_id IS NOT NULL
+           AND scoped_order.order_status NOT IN ('deleted', 'archived')
+           AND COALESCE(scoped_order.shipping_status, 'not_sent') <> 'sent'`
+        : `r.order_id IN (${placeholders}) AND r.status = 'active' AND r.variant_id IS NOT NULL`;
+      // D1 read-budget R2: list/attention summaries need lineage flags and stock totals, not the
+      // full customer/catalog payload. The detailed handover screen still uses the full branch below.
       const compact = await db.prepare(
         `WITH active_reservations AS (
-           SELECT order_id, order_item_id, inventory_source, variant_id
-           FROM inventory_reservations
-           WHERE order_id IN (${placeholders})
-             AND status = 'active'
-             AND variant_id IS NOT NULL
+           SELECT r.id AS reservation_id, r.order_id, r.order_item_id, r.inventory_source, r.variant_id,
+                  r.quantity AS reservation_quantity
+           FROM inventory_reservations r
+           JOIN orders scoped_order ON scoped_order.id = r.order_id
+           WHERE ${reservationScope}
          ),
          workshop_orders AS (
            SELECT oi.order_id
            FROM order_items oi
-           WHERE oi.order_id IN (${placeholders})
-             AND COALESCE(oi.is_workshop, 0) = 1
-             AND oi.quantity > 0
+           JOIN (SELECT DISTINCT order_id FROM active_reservations) active_order ON active_order.order_id = oi.order_id
+           WHERE COALESCE(oi.is_workshop, 0) = 1 AND oi.quantity > 0
            GROUP BY oi.order_id
          ),
          scoped_items AS (
@@ -972,45 +975,24 @@ export async function fetchOrderStockHandoverRows(
            JOIN order_items oi ON oi.id = ar.order_item_id
            JOIN orders o ON o.id = oi.order_id
            LEFT JOIN workshop_orders wo ON wo.order_id = oi.order_id
-           WHERE COALESCE(oi.is_workshop, 0) = 0
-             AND oi.quantity > 0
+           WHERE COALESCE(oi.is_workshop, 0) = 0 AND oi.quantity > 0
          ),
          latest_check AS (
-           SELECT
-             si.order_item_id,
-             c.id AS checkpoint_id,
-             c.checked_at AS checkpoint_at,
-             ROW_NUMBER() OVER (
-               PARTITION BY si.order_item_id
-               ORDER BY datetime(c.checked_at) DESC, c.id DESC
-             ) AS rn
+           SELECT si.order_item_id, c.id AS checkpoint_id, c.checked_at AS checkpoint_at,
+                  ROW_NUMBER() OVER (PARTITION BY si.order_item_id ORDER BY datetime(c.checked_at) DESC, c.id DESC) AS rn
            FROM scoped_items si
-           JOIN inventory_stock_checks c
-             ON c.inventory_source = si.inventory_source
-            AND c.variant_id = si.variant_id
+           JOIN inventory_stock_checks c ON c.inventory_source = si.inventory_source AND c.variant_id = si.variant_id
            WHERE (
-             (datetime(c.checked_at) < datetime(si.origin_at)
-               AND date(c.checked_at, '+5 hours') >= date(si.order_date))
-             OR
-             (si.has_workshop = 1
-               AND datetime(c.checked_at) > datetime(si.origin_at))
+             (datetime(c.checked_at) < datetime(si.origin_at) AND date(c.checked_at, '+5 hours') >= date(si.order_date))
+             OR (si.has_workshop = 1 AND datetime(c.checked_at) > datetime(si.origin_at))
            )
          ),
          latest_full_stocktake AS (
-           SELECT
-             si.order_item_id,
-             -s.rowid AS checkpoint_id,
-             s.completed_at AS checkpoint_at,
-             ROW_NUMBER() OVER (
-               PARTITION BY si.order_item_id
-               ORDER BY datetime(s.completed_at) DESC, s.rowid DESC
-             ) AS rn
+           SELECT si.order_item_id, -s.rowid AS checkpoint_id, s.completed_at AS checkpoint_at,
+                  ROW_NUMBER() OVER (PARTITION BY si.order_item_id ORDER BY datetime(s.completed_at) DESC, s.rowid DESC) AS rn
            FROM scoped_items si
-           JOIN inventory_stocktake_sessions s
-             ON s.inventory_source = si.inventory_source
-           WHERE s.status = 'completed'
-             AND s.completed_at IS NOT NULL
-             AND s.id NOT LIKE 'REV-%-P-%'
+           JOIN inventory_stocktake_sessions s ON s.inventory_source = si.inventory_source
+           WHERE s.status = 'completed' AND s.completed_at IS NOT NULL AND s.id NOT LIKE 'REV-%-P-%'
              AND datetime(s.started_at) <= datetime(si.origin_at)
              AND date(s.completed_at, '+5 hours') >= date(si.order_date)
              AND NOT EXISTS (
@@ -1027,49 +1009,42 @@ export async function fetchOrderStockHandoverRows(
            SELECT order_item_id, checkpoint_id, checkpoint_at FROM latest_full_stocktake WHERE rn = 1
          ),
          selected_checkpoint AS (
-           SELECT
-             order_item_id,
-             checkpoint_id,
-             checkpoint_at,
-             ROW_NUMBER() OVER (
-               PARTITION BY order_item_id
-               ORDER BY datetime(checkpoint_at) DESC, checkpoint_id DESC
-             ) AS rn
+           SELECT order_item_id, checkpoint_id, checkpoint_at,
+                  ROW_NUMBER() OVER (PARTITION BY order_item_id ORDER BY datetime(checkpoint_at) DESC, checkpoint_id DESC) AS rn
            FROM checkpoint_candidates
          ),
          latest_review AS (
-           SELECT
-             si.order_item_id,
-             hr.checkpoint_id AS reviewed_checkpoint_id,
-             hr.checkpoint_at AS reviewed_checkpoint_at,
-             ROW_NUMBER() OVER (
-               PARTITION BY si.order_item_id
-               ORDER BY datetime(hr.checkpoint_at) DESC, hr.checkpoint_id DESC, hr.id DESC
-             ) AS rn
+           SELECT si.order_item_id, hr.checkpoint_id AS reviewed_checkpoint_id, hr.checkpoint_at AS reviewed_checkpoint_at,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY si.order_item_id
+                    ORDER BY datetime(hr.checkpoint_at) DESC, hr.checkpoint_id DESC, hr.id DESC
+                  ) AS rn
            FROM scoped_items si
            JOIN inventory_handover_reviews hr ON hr.order_id = si.order_id
            JOIN order_items reviewed_item ON reviewed_item.id = hr.order_item_id
-           WHERE COALESCE(NULLIF(reviewed_item.inventory_obligation_key, ''), 'legacy-order-item:' || reviewed_item.id)
-               = si.obligation_key
+           WHERE COALESCE(NULLIF(reviewed_item.inventory_obligation_key, ''), 'legacy-order-item:' || reviewed_item.id) = si.obligation_key
          )
          SELECT
-           ar.order_id,
-           ar.order_item_id,
+           ar.order_id, ar.order_item_id, ar.reservation_id, ar.inventory_source, ar.variant_id,
+           ar.reservation_quantity,
+           COALESCE(stock.quantity, 0) AS physical_quantity,
+           COALESCE(stock.reserved_quantity, 0) AS total_reserved_quantity,
+           si.order_date, si.origin_at AS item_created_at,
            CASE WHEN
              julianday(cp.checkpoint_at) > 0
              AND (
                COALESCE(julianday(lr.reviewed_checkpoint_at), 0) < julianday(cp.checkpoint_at)
-               OR (
-                 julianday(lr.reviewed_checkpoint_at) = julianday(cp.checkpoint_at)
-                 AND COALESCE(lr.reviewed_checkpoint_id, 0) <> cp.checkpoint_id
-               )
+               OR (julianday(lr.reviewed_checkpoint_at) = julianday(cp.checkpoint_at)
+                   AND COALESCE(lr.reviewed_checkpoint_id, 0) <> cp.checkpoint_id)
              )
            THEN 1 ELSE 0 END AS review_needed
          FROM active_reservations ar
+         JOIN scoped_items si ON si.order_item_id = ar.order_item_id
+         LEFT JOIN inventory_stock stock ON stock.inventory_source = ar.inventory_source AND stock.variant_id = ar.variant_id
          LEFT JOIN selected_checkpoint cp ON cp.order_item_id = ar.order_item_id AND cp.rn = 1
          LEFT JOIN latest_review lr ON lr.order_item_id = ar.order_item_id AND lr.rn = 1
          ORDER BY ar.order_id, ar.order_item_id`
-      ).bind(...chunk, ...chunk).all<Record<string, unknown>>();
+      ).bind(...(chunk || [])).all<Record<string, unknown>>();
       rows.push(...(compact.results || []));
       continue;
     }

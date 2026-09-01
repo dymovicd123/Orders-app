@@ -163,12 +163,12 @@ export async function listClients(db: D1Database, url: URL) {
   const { whereSql, bindings } = buildClientWhere(mode, q);
   const cte = clientStatsCte();
 
-  const [summary, countRow, rows] = await Promise.all([
+  const [summary, rows] = await Promise.all([
     getClientsSummary(db),
-    db.prepare(`${cte} SELECT COUNT(*) AS count FROM stats WHERE ${whereSql}`).bind(...bindings).first<{ count: number }>(),
     db.prepare(`
       ${cte}
       SELECT
+        COUNT(*) OVER() AS filtered_count,
         id,
         phone_normalized,
         display_name,
@@ -192,6 +192,13 @@ export async function listClients(db: D1Database, url: URL) {
   ]);
 
   const clientRows = rows.results || [];
+  // Window count removes the normal second full client-history scan. Only an out-of-range
+  // pagination request needs the old count fallback to preserve an exact total.
+  let filteredCount = clientRows.length ? toInt(clientRows[0].filtered_count, 0) : 0;
+  if (!clientRows.length && offset > 0) {
+    const countRow = await db.prepare(`${cte} SELECT COUNT(*) AS count FROM stats WHERE ${whereSql}`).bind(...bindings).first<{ count: number }>();
+    filteredCount = toInt(countRow?.count, 0);
+  }
   const clientIds = clientRows.map((row) => toInt(row.id, 0)).filter(Boolean);
   const managerProfilesByClient = new Map<number, Array<{ id: number; name: string; colorKey: string }>>();
   if (clientIds.length) {
@@ -238,7 +245,7 @@ export async function listClients(db: D1Database, url: URL) {
     q,
     limit,
     offset,
-    count: toInt(countRow?.count, 0),
+    count: filteredCount,
     summary,
     clients: clientRows.map(row => ({
       id: toInt(row.id, 0),

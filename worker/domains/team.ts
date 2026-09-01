@@ -122,23 +122,44 @@ export async function listTeamEmployees(db: D1Database) {
   // Keep this as a single non-compound SELECT. The previous compound reference_rows CTE
   // occasionally hit D1/SQLite's compound-SELECT term limit on the live database.
   // Team size is small, so scalar COUNT subqueries are both predictable and cheap here.
+  // D1 read-budget R2: aggregate each history table once. The previous eight scalar
+  // subqueries were cheap per employee but multiplied into hundreds of thousands of row reads.
   const result = await db.prepare(
-    `SELECT m.id, m.name, m.is_active, COALESCE(m.role, '') AS role, COALESCE(m.phone, '') AS phone,
+    `WITH order_refs AS (
+       SELECT manager_id, COUNT(*) AS ref_count, MIN(order_date) AS first_order_at
+       FROM orders WHERE manager_id IS NOT NULL GROUP BY manager_id
+     ), return_refs AS (
+       SELECT manager_id, COUNT(*) AS ref_count FROM returns WHERE manager_id IS NOT NULL GROUP BY manager_id
+     ), exchange_refs AS (
+       SELECT manager_id, COUNT(*) AS ref_count FROM exchanges WHERE manager_id IS NOT NULL GROUP BY manager_id
+     ), plan_refs AS (
+       SELECT manager_id, COUNT(*) AS ref_count FROM plans WHERE manager_id IS NOT NULL GROUP BY manager_id
+     ), lead_refs AS (
+       SELECT manager_id, COUNT(*) AS ref_count FROM lead_records WHERE manager_id IS NOT NULL GROUP BY manager_id
+     ), call_refs AS (
+       SELECT manager_id, COUNT(*) AS ref_count FROM call_centre_records WHERE manager_id IS NOT NULL GROUP BY manager_id
+     ), timesheet_refs AS (
+       SELECT manager_id, COUNT(*) AS ref_count FROM team_timesheet WHERE manager_id IS NOT NULL GROUP BY manager_id
+     ), attendance_refs AS (
+       SELECT manager_id, COUNT(*) AS ref_count FROM attendance_days WHERE manager_id IS NOT NULL GROUP BY manager_id
+     )
+     SELECT m.id, m.name, m.is_active, COALESCE(m.role, '') AS role, COALESCE(m.phone, '') AS phone,
             COALESCE(m.comment, '') AS comment, COALESCE(m.color_key, '') AS color_key,
-            COALESCE((SELECT MIN(o.order_date) FROM orders o WHERE o.manager_id = m.id), m.hired_at, substr(m.created_at, 1, 10)) AS hired_at,
+            COALESCE(orx.first_order_at, m.hired_at, substr(m.created_at, 1, 10)) AS hired_at,
             COALESCE(m.dismissed_at, '') AS dismissed_at,
             m.created_at, m.updated_at,
-            (
-              (SELECT COUNT(*) FROM orders o WHERE o.manager_id = m.id)
-              + (SELECT COUNT(*) FROM returns r WHERE r.manager_id = m.id)
-              + (SELECT COUNT(*) FROM exchanges e WHERE e.manager_id = m.id)
-              + (SELECT COUNT(*) FROM plans p WHERE p.manager_id = m.id)
-              + (SELECT COUNT(*) FROM lead_records lr WHERE lr.manager_id = m.id)
-              + (SELECT COUNT(*) FROM call_centre_records cc WHERE cc.manager_id = m.id)
-              + (SELECT COUNT(*) FROM team_timesheet tt WHERE tt.manager_id = m.id)
-              + (SELECT COUNT(*) FROM attendance_days ad WHERE ad.manager_id = m.id)
-            ) AS reference_count
+            COALESCE(orx.ref_count, 0) + COALESCE(rr.ref_count, 0) + COALESCE(er.ref_count, 0)
+              + COALESCE(pr.ref_count, 0) + COALESCE(lr.ref_count, 0) + COALESCE(cr.ref_count, 0)
+              + COALESCE(tr.ref_count, 0) + COALESCE(ar.ref_count, 0) AS reference_count
      FROM managers m
+     LEFT JOIN order_refs orx ON orx.manager_id = m.id
+     LEFT JOIN return_refs rr ON rr.manager_id = m.id
+     LEFT JOIN exchange_refs er ON er.manager_id = m.id
+     LEFT JOIN plan_refs pr ON pr.manager_id = m.id
+     LEFT JOIN lead_refs lr ON lr.manager_id = m.id
+     LEFT JOIN call_refs cr ON cr.manager_id = m.id
+     LEFT JOIN timesheet_refs tr ON tr.manager_id = m.id
+     LEFT JOIN attendance_refs ar ON ar.manager_id = m.id
      ORDER BY m.is_active DESC, hired_at DESC, m.name ASC, m.id DESC`
   ).all<any>();
 

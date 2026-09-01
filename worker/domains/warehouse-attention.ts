@@ -82,20 +82,25 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
           )) AS catalog_count,
          (SELECT COUNT(*) FROM inventory_stocktake_sessions WHERE status = 'active') AS stocktake_count`
     ).first<Record<string, unknown>>(),
-    fetchOrderStockHandoverRows(db, [], { allActive: true }),
+    fetchOrderStockHandoverRows(db, [], { allActive: true, listFlagsOnly: !details }),
   ])
 
-  const handovers = handoverRows
-    .map((row) => ({ row, item: stockHandoverItemFromRow(row) }))
-    .filter((entry) => entry.item.reviewNeeded)
-    .sort((a, b) => {
-      const orderDateDelta = cleanText(b.row.order_date).localeCompare(cleanText(a.row.order_date))
-      if (orderDateDelta) return orderDateDelta
-      return handoverSortMillis(b.item.itemCreatedAt) - handoverSortMillis(a.item.itemCreatedAt)
-    })
+  const handovers = details
+    ? handoverRows
+        .map((row) => ({ row, item: stockHandoverItemFromRow(row) }))
+        .filter((entry) => entry.item.reviewNeeded)
+        .sort((a, b) => {
+          const orderDateDelta = cleanText(b.row.order_date).localeCompare(cleanText(a.row.order_date))
+          if (orderDateDelta) return orderDateDelta
+          return handoverSortMillis(b.item.itemCreatedAt) - handoverSortMillis(a.item.itemCreatedAt)
+        })
+    : []
+  const handoverReviewRows = details
+    ? handovers.map(({ row }) => row)
+    : handoverRows.filter((row) => toInt(row.review_needed, 0) === 1)
 
   const handoverReservations = new Map<string, { reviewReserved: number; totalReserved: number; physical: number }>()
-  for (const { row } of handovers) {
+  for (const row of handoverReviewRows) {
     const key = handoverKey(row)
     if (!key) continue
     const current = handoverReservations.get(key) || { reviewReserved: 0, totalReserved: Math.max(0, toInt(row.total_reserved_quantity, 0)), physical: toInt(row.physical_quantity, 0) }
@@ -119,7 +124,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     intake: intakeCount,
     lifecycle: Math.max(0, lifecycleTotalCount - intakeCount),
     catalog: Math.max(0, toInt(summary?.catalog_count, 0)),
-    handover: handovers.length,
+    handover: handoverReviewRows.length,
     stocktake: Math.max(0, toInt(summary?.stocktake_count, 0)),
   }
   const response: Record<string, unknown> = {

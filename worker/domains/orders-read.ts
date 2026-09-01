@@ -330,10 +330,17 @@ export async function listOrders(db: D1Database, url: URL) {
   }
 
   if (q) {
-    const exactExternalId = /^ORD-\d{8,14}-[A-Z0-9]{4,16}$/i.test(q) ? q.toUpperCase() : '';
+    const normalizedExternalId = q.toUpperCase();
+    const exactExternalId = /^ORD-\d{8,14}-[A-Z0-9]{4,16}$/i.test(q) ? normalizedExternalId : '';
+    const externalIdPrefix = !exactExternalId && /^ORD-[A-Z0-9-]*$/i.test(q) ? normalizedExternalId : '';
     if (exactExternalId) {
       baseWhereParts.push('o.external_id = ?');
       baseBindings.push(exactExternalId);
+    } else if (externalIdPrefix) {
+      // D1 read-budget R2: while the operator is typing/copying an ORD id, stay on the
+      // indexed external_id range instead of scanning customers/items/payments per keystroke.
+      baseWhereParts.push('o.external_id >= ? AND o.external_id < ?');
+      baseBindings.push(externalIdPrefix, `${externalIdPrefix}￿`);
     } else {
       const searchOrderText = `COALESCE(o.external_id, '') || ' ' || COALESCE(o.order_date, '') || ' ' ||
         COALESCE(m.name, o.manager_snapshot_name, '') || ' ' || COALESCE(c.phone_normalized, '') || ' ' ||
@@ -482,20 +489,28 @@ export async function listOrders(db: D1Database, url: URL) {
 
   let paymentStats: Record<string, unknown> | null = null;
   let returnStats: Record<string, unknown> | null = null;
-  if (completeOrderResult && !dateFrom && !dateTo) {
+  if (completeOrderResult) {
     let paymentCount = 0;
     let paymentAmount = 0;
     let returnCount = 0;
     let returnAmount = 0;
+    const statsDateFrom = dateFrom ? normalizeDate(dateFrom) : '';
+    const statsDateTo = dateTo ? normalizeDate(dateTo) : '';
     for (const order of orders) {
       for (const payment of relations.paymentsByOrderId.get(order.id) || []) {
         const record = payment as Record<string, unknown>;
+        const paymentDate = cleanText(record.payment_date);
+        if (statsDateFrom && paymentDate < statsDateFrom) continue;
+        if (statsDateTo && paymentDate > statsDateTo) continue;
         paymentCount += 1;
         paymentAmount += toInt(record.amount, 0);
       }
       for (const returned of relations.returnsByOrderId.get(order.id) || []) {
         const record = returned as Record<string, unknown>;
         if (cleanText(record.status || 'completed').toLowerCase() === 'cancelled') continue;
+        const returnDate = cleanText(record.return_date);
+        if (statsDateFrom && returnDate < statsDateFrom) continue;
+        if (statsDateTo && returnDate > statsDateTo) continue;
         returnCount += 1;
         returnAmount += toInt(record.amount, 0);
       }

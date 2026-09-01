@@ -22,6 +22,7 @@ const returnExchangeCancelAutonomyPath = path.join(root, 'scripts/return-exchang
 const orderEditAutonomyPath = path.join(root, 'scripts/order-edit-autonomy-worker-manifest.json')
 const d1CapacityAutonomyPath = path.join(root, 'scripts/d1-capacity-autonomy-worker-manifest.json')
 const d1ReadBudgetPath = path.join(root, 'scripts/d1-read-budget-r1-worker-manifest.json')
+const d1ReadBudgetR2Path = path.join(root, 'scripts/d1-read-budget-r2-worker-manifest.json')
 const phase1bWorkshopReturnDispositionPath = path.join(root, 'scripts/phase1b-workshop-return-disposition-worker-manifest.json')
 const arrivalSaveReliabilityPath = path.join(root, 'scripts/arrival-save-reliability-worker-manifest.json')
 const shippingShortageHotfixPath = path.join(root, 'scripts/shipping-shortage-hotfix-worker-manifest.json')
@@ -123,6 +124,10 @@ try {
   const d1ReadBudget = JSON.parse(fs.readFileSync(d1ReadBudgetPath, 'utf8'))
   check(d1ReadBudget?.version === 1 && d1ReadBudget?.revision === 'd1-read-budget-r1', 'D1 read-budget R1 Worker manifest invalid')
   const d1ReadBudgetChanges = d1ReadBudget.changes || {}
+  check(fs.existsSync(d1ReadBudgetR2Path), 'D1 read-budget R2 Worker manifest missing')
+  const d1ReadBudgetR2 = JSON.parse(fs.readFileSync(d1ReadBudgetR2Path, 'utf8'))
+  check(d1ReadBudgetR2?.version === 1 && d1ReadBudgetR2?.revision === 'd1-read-budget-r2', 'D1 read-budget R2 Worker manifest invalid')
+  const d1ReadBudgetR2Changes = d1ReadBudgetR2.changes || {}
   check(fs.existsSync(phase1bWorkshopReturnDispositionPath), 'Phase 1B Workshop return disposition Worker manifest missing')
   const phase1bWorkshopReturnDisposition = JSON.parse(fs.readFileSync(phase1bWorkshopReturnDispositionPath, 'utf8'))
   check(phase1bWorkshopReturnDisposition?.version === 1 && phase1bWorkshopReturnDisposition?.revision === 'phase1b-workshop-return-disposition-r1', 'Phase 1B Workshop return disposition Worker manifest invalid')
@@ -393,11 +398,17 @@ try {
       acceptedPostD1CapacityHash = d1CapacityAutonomyChanged.after
     }
     const d1ReadBudgetChanged = d1ReadBudgetChanges[name]
+    let acceptedPostD1ReadBudgetHash = acceptedPostD1CapacityHash
     if (d1ReadBudgetChanged) {
       check(d1ReadBudgetChanged.before === acceptedPostD1CapacityHash, `D1 read-budget R1 baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === d1ReadBudgetChanged.after, `Worker declaration changed beyond exact D1 read-budget R1 allow-list: ${name}`)
+      acceptedPostD1ReadBudgetHash = d1ReadBudgetChanged.after
+    }
+    const d1ReadBudgetR2Changed = d1ReadBudgetR2Changes[name]
+    if (d1ReadBudgetR2Changed) {
+      check(d1ReadBudgetR2Changed.before === acceptedPostD1ReadBudgetHash, `D1 read-budget R2 baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === d1ReadBudgetR2Changed.after, `Worker declaration changed beyond exact D1 read-budget R2 allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostD1CapacityHash, `Worker declaration body changed beyond accepted Finance F1-F9 / Phase 1B / Arrival reliability / Shipping shortage / Exchange stale-handover / payment-method / cancellation-autonomy / order-edit-autonomy / D1-capacity / D1-read-budget deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostD1ReadBudgetHash, `Worker declaration body changed beyond accepted cumulative deltas: ${name}`)
     }
   }
 
@@ -522,11 +533,17 @@ try {
       acceptedPostOrderCreateHash = orderCreateSaveIntegrityChanged.after
     }
     const d1ReadBudgetChanged = d1ReadBudgetChanges[name]
+    let acceptedPostD1ReadBudgetHash = acceptedPostOrderCreateHash
     if (d1ReadBudgetChanged) {
       check(d1ReadBudgetChanged.before === acceptedPostOrderCreateHash, `D1 read-budget R1 changed 192B1-added declaration baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === d1ReadBudgetChanged.after, `192B1-added declaration changed beyond exact D1 read-budget R1 allow-list: ${name}`)
+      acceptedPostD1ReadBudgetHash = d1ReadBudgetChanged.after
+    }
+    const d1ReadBudgetR2Changed = d1ReadBudgetR2Changes[name]
+    if (d1ReadBudgetR2Changed) {
+      check(d1ReadBudgetR2Changed.before === acceptedPostD1ReadBudgetHash, `D1 read-budget R2 changed 192B1-added declaration baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === d1ReadBudgetR2Changed.after, `192B1-added declaration changed beyond exact D1 read-budget R2 allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostOrderCreateHash, `192B1 added Worker declaration changed beyond accepted deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostD1ReadBudgetHash, `192B1 added Worker declaration changed beyond accepted deltas: ${name}`)
     }
   }
 
