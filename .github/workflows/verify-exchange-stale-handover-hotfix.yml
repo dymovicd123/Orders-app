@@ -48,8 +48,7 @@ jobs:
           ])
           new_guard = "\n".join([
               "  const oldItemNeedsHandoverReconciliation = Boolean(",
-              "    !operationContext.baselineCaptured",
-              "    && humanInventoryModelEnabled",
+              "    !operationContext.baselineCaptured && humanInventoryModelEnabled",
               "    && !oldItemIsWorkshop",
               "    && !orderItemWasPhysicallyIssued(oldItem)",
               "  );",
