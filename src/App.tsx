@@ -5229,10 +5229,10 @@ function removeDebtPayment(index: number) {
       setMessage('Архивный заказ открыт только для просмотра.')
       return
     }
-    if (!isAdmin) {
+    if (!isAdmin && (order.order_status !== 'active' || order.shipping_status === 'sent')) {
       setSelectedOrderId(order.id)
       setEditorOpen(false)
-      setMessage('Редактирование заказа доступно только администратору.')
+      setMessage('Для завершённого или уже отправленного заказа используйте его штатные действия: возврат, обмен или административное восстановление.')
       return
     }
     setEditorReturnSector(returnSector)
@@ -5259,12 +5259,12 @@ function removeDebtPayment(index: number) {
   }
 
   async function persistOrder(nextDraft: EditorDraft, targetOrder?: OrderRecord | null) {
-    if (!isAdmin) {
-      setError('Сохранение редактирования заказа доступно только администратору.')
-      return
-    }
     const order = targetOrder || selectedOrder
     if (!order) return
+    if (!isAdmin && (order.order_status !== 'active' || order.shipping_status === 'sent')) {
+      setMessage('Заказ уже вышел из обычного редактирования. Используйте возврат, обмен или другое штатное действие заказа.')
+      return
+    }
     if (isArchivedOrderRecord(order)) {
       setMessage('Архивный заказ нельзя редактировать.')
       return

@@ -9,6 +9,7 @@ export function OrderDetailsSection({ ctx }: { ctx: SectionContext }) {
     handleEditOrder,
     isAdmin,
     isArchivedOrderRecord,
+    isReturnedOrderRecord,
     orderPanelStyle,
     restoreArchivedOrder,
     savingOrder,
@@ -41,7 +42,8 @@ export function OrderDetailsSection({ ctx }: { ctx: SectionContext }) {
                       <span>Долг: {formatMoney(selectedOrder.debt_amount)}</span>
                       <span>Возврат: {formatMoney(selectedOrder.return_amount)}</span>
                       <div className="details-actions">
-                        {isAdmin && !isArchivedOrderRecord(selectedOrder) ? (
+                        {!isArchivedOrderRecord(selectedOrder) && !isReturnedOrderRecord(selectedOrder)
+                          && (isAdmin || (selectedOrder.order_status === 'active' && selectedOrder.shipping_status !== 'sent')) ? (
                           <button
                             className="secondary compact"
                             type="button"

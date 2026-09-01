@@ -181,6 +181,7 @@ export default {
           warehouseAttentionContextFix: '192b2a2',
           orderCreateSaveIntegrity: '192b2a4',
           returnExchangeCancelAutonomy: '192b2a5',
+          orderEditAutonomy: '192b2a6',
           time: new Date().toISOString(),
         });
       }
@@ -1157,8 +1158,6 @@ export default {
         }
 
         if (request.method === 'PATCH') {
-          const denied = requireAdminAccess(request);
-          if (denied) return denied;
           const input = await readJson<OrderInput>(request);
           input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
           try {

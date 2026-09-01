@@ -47,7 +47,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
               className="card wide sector-orders"
               id="editor"
               ref={editorFormRef}
-              style={{ ...sectorStyle('orders'), ...orderPanelStyle('edit'), display: isAdmin && selectedOrder && !isArchivedOrderRecord(selectedOrder) && editorDraft && editorOpen ? undefined : 'none' }}
+              style={{ ...sectorStyle('orders'), ...orderPanelStyle('edit'), display: selectedOrder && !isArchivedOrderRecord(selectedOrder) && editorDraft && editorOpen && (isAdmin || (selectedOrder.order_status === 'active' && selectedOrder.shipping_status !== 'sent')) ? undefined : 'none' }}
             >
               <div className="card-label">Редактирование заказа</div>
               <div className="actions form-top-actions">
@@ -63,7 +63,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
               {selectedOrder && editorDraft ? (
                 <>
                   <div className="card-meta">
-                    Можно быстро править данные выбранного заказа. Оплаты и товары подставляются из базы и сохраняются обратно одним действием.
+                    Можно быстро исправить данные выбранного заказа. Оплаты и товары подставляются из базы и сохраняются безопасно; отправка, удаление и статусы Цеха меняются отдельными штатными действиями.
                   </div>
     
                   <div className="editor-summary">
@@ -166,6 +166,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                       <span>Цех</span>
                       <select
                         value={editorDraft.workshopStatus}
+                        disabled={!isAdmin || savingOrder}
                         onChange={(event) =>
                           updateEditorDraft(
                             'workshopStatus',
@@ -183,6 +184,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                       <span>Статус</span>
                       <select
                         value={editorDraft.orderStatus}
+                        disabled={!isAdmin || savingOrder}
                         onChange={(event) =>
                           updateEditorDraft('orderStatus', event.target.value as EditorDraft['orderStatus'])
                         }

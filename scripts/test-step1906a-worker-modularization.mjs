@@ -19,6 +19,7 @@ const attentionContextPath = path.join(root, 'scripts/step192b2a2-attention-cont
 const handoverSqlAliasSafetyPath = path.join(root, 'scripts/step192b2a3-handover-sql-alias-safety-manifest.json')
 const orderCreateSaveIntegrityPath = path.join(root, 'scripts/step192b2a4-order-create-save-integrity-manifest.json')
 const returnExchangeCancelAutonomyPath = path.join(root, 'scripts/return-exchange-cancel-autonomy-worker-manifest.json')
+const orderEditAutonomyPath = path.join(root, 'scripts/order-edit-autonomy-worker-manifest.json')
 const phase1bWorkshopReturnDispositionPath = path.join(root, 'scripts/phase1b-workshop-return-disposition-worker-manifest.json')
 const arrivalSaveReliabilityPath = path.join(root, 'scripts/arrival-save-reliability-worker-manifest.json')
 const shippingShortageHotfixPath = path.join(root, 'scripts/shipping-shortage-hotfix-worker-manifest.json')
@@ -108,6 +109,10 @@ try {
   check(returnExchangeCancelAutonomy?.version === 1 && returnExchangeCancelAutonomy?.revision === 'return-exchange-cancel-autonomy-r1', 'Return/exchange cancel autonomy Worker manifest invalid')
   const returnExchangeCancelAutonomyChanges = returnExchangeCancelAutonomy.changes || {}
   const returnExchangeCancelAutonomyAdded = returnExchangeCancelAutonomy.added || {}
+  check(fs.existsSync(orderEditAutonomyPath), 'Order edit autonomy Worker manifest missing')
+  const orderEditAutonomy = JSON.parse(fs.readFileSync(orderEditAutonomyPath, 'utf8'))
+  check(orderEditAutonomy?.version === 1 && orderEditAutonomy?.revision === 'order-edit-autonomy-r1', 'Order edit autonomy Worker manifest invalid')
+  const orderEditAutonomyChanges = orderEditAutonomy.changes || {}
   check(fs.existsSync(phase1bWorkshopReturnDispositionPath), 'Phase 1B Workshop return disposition Worker manifest missing')
   const phase1bWorkshopReturnDisposition = JSON.parse(fs.readFileSync(phase1bWorkshopReturnDispositionPath, 'utf8'))
   check(phase1bWorkshopReturnDisposition?.version === 1 && phase1bWorkshopReturnDisposition?.revision === 'phase1b-workshop-return-disposition-r1', 'Phase 1B Workshop return disposition Worker manifest invalid')
@@ -360,11 +365,17 @@ try {
       acceptedPostOrderEditPaymentHash = orderEditPaymentMethodChanged.after
     }
     const returnExchangeCancelAutonomyChanged = returnExchangeCancelAutonomyChanges[name]
+    let acceptedPostCancellationAutonomyHash = acceptedPostOrderEditPaymentHash
     if (returnExchangeCancelAutonomyChanged) {
       check(returnExchangeCancelAutonomyChanged.before === acceptedPostOrderEditPaymentHash, `Return/exchange cancel autonomy baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === returnExchangeCancelAutonomyChanged.after, `Worker declaration changed beyond exact return/exchange cancel autonomy allow-list: ${name}`)
+      acceptedPostCancellationAutonomyHash = returnExchangeCancelAutonomyChanged.after
+    }
+    const orderEditAutonomyChanged = orderEditAutonomyChanges[name]
+    if (orderEditAutonomyChanged) {
+      check(orderEditAutonomyChanged.before === acceptedPostCancellationAutonomyHash, `Order edit autonomy baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === orderEditAutonomyChanged.after, `Worker declaration changed beyond exact order edit autonomy allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostOrderEditPaymentHash, `Worker declaration body changed beyond accepted Finance F1-F9 / Phase 1B / Arrival reliability / Shipping shortage / Exchange stale-handover / payment-method / cancellation-autonomy deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostCancellationAutonomyHash, `Worker declaration body changed beyond accepted Finance F1-F9 / Phase 1B / Arrival reliability / Shipping shortage / Exchange stale-handover / payment-method / cancellation-autonomy / order-edit-autonomy deltas: ${name}`)
     }
   }
 
@@ -389,6 +400,7 @@ try {
       "if (url.pathname === '/api/inventory/cycle-counts' && request.method === 'GET') {\n        return json(await listInventoryCycleCountSuggestions(env.DB, url));\n      }",
       "if (url.pathname === '/api/inventory/cycle-counts' && request.method === 'GET') {\n        const denied = requireAdminAccess(request);\n        if (denied) return denied;\n        return json(await listInventoryCycleCountSuggestions(env.DB, url));\n      }",
     )
+    .replace(/\n\s*orderEditAutonomy:\s*'192b2a6',\s*\n/, '\n')
     .replace(/\n\s*returnExchangeCancelAutonomy:\s*'192b2a5',\s*\n/, '\n')
     .replace(/\n\s*orderCreateSaveIntegrity:\s*'192b2a4',\s*\n/, '\n')
     .replace(/\n\s*warehouseAttentionContextFix:\s*'192b2a2',\s*\n/, '\n')
@@ -446,7 +458,9 @@ try {
     acceptedPostOrderCreateRouterHash = orderCreateSaveIntegrity.router.after
   }
   check(returnExchangeCancelAutonomy.router?.before === acceptedPostOrderCreateRouterHash, 'Return/exchange cancel autonomy router baseline hash mismatch')
-  check(sha(normalizedRouter) === returnExchangeCancelAutonomy.router.after, 'Worker router changed beyond exact return/exchange cancel autonomy delta')
+  const acceptedPostCancellationAutonomyRouterHash = returnExchangeCancelAutonomy.router.after
+  check(orderEditAutonomy.router?.before === acceptedPostCancellationAutonomyRouterHash, 'Order edit autonomy router baseline hash mismatch')
+  check(sha(normalizedRouter) === orderEditAutonomy.router.after, 'Worker router changed beyond exact order edit autonomy delta')
 
   for (const [name, expectedHash] of Object.entries(warehouseTruthFreshnessAdded)) {
     check(declarations.has(name), `192A1 added Worker declaration missing: ${name}`)

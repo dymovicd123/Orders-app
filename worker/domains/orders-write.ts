@@ -1079,12 +1079,25 @@ export async function updateOrderCritical(
       const nextWorkshopStatus = input.workshopStatus ? normalizeWorkshopStatus(input.workshopStatus) : normalizeWorkshopStatus(existingAny.workshop_status);
       const nextOrderStatus = input.orderStatus ? normalizeOrderStatus(input.orderStatus) : normalizeOrderStatus(existingAny.order_status);
       const existingOrderStatus = normalizeOrderStatus(existingAny.order_status);
+      const existingWorkshopStatus = normalizeWorkshopStatus(existingAny.workshop_status);
+      const existingShippingStatus = normalizeShippingStatus(existingAny.shipping_status);
+      const workingModeEdit = actor?.role !== 'admin';
+      if (workingModeEdit && (existingOrderStatus !== 'active' || existingShippingStatus === 'sent')) {
+        throw new CriticalOperationConflictError('Этот заказ уже вышел из обычного активного редактирования. Используйте его штатное действие: возврат, обмен, отправку или административное восстановление.');
+      }
       const deletingOrder = existingOrderStatus !== 'deleted' && nextOrderStatus === 'deleted';
       const finalWorkshopStatus = deletingOrder && nextWorkshopStatus === 'in_workshop' ? 'cancelled' : nextWorkshopStatus;
       const nextComment = input.comment !== undefined ? cleanText(input.comment) : cleanText(existingAny.comment);
       const nextShippingStatus = input.shippingStatus !== undefined
         ? normalizeShippingStatus(input.shippingStatus)
-        : normalizeShippingStatus(existingAny.shipping_status);
+        : existingShippingStatus;
+      if (workingModeEdit && (
+        nextOrderStatus !== existingOrderStatus
+        || nextWorkshopStatus !== existingWorkshopStatus
+        || nextShippingStatus !== existingShippingStatus
+      )) {
+        throw new CriticalOperationConflictError('В рабочем режиме редактор исправляет данные заказа, но не меняет его жизненный цикл. Для статуса Цеха, отправки и удаления используйте отдельные штатные действия.');
+      }
       const nextShippingDate = nextShippingStatus === 'sent'
         ? normalizeDate(input.shippingDate || existingAny.shipping_date || timestamp)
         : null;
@@ -1162,7 +1175,6 @@ export async function updateOrderCritical(
       const rewriteItems = Boolean(requestedItems && !sameNormalizedOrderItemsForEdit(existingItemsForEdit, requestedItems));
       const rewritePayments = !deletingOrder && Boolean(requestedPayments && !sameNormalizedOrderPaymentsForEdit(existingPaymentsForEdit, requestedPayments));
       const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
-      const existingShippingStatus = normalizeShippingStatus(existingAny.shipping_status);
       const deferShippingCommit = humanInventoryModelEnabled && existingShippingStatus !== 'sent' && nextShippingStatus === 'sent';
       const persistedShippingStatus = deferShippingCommit ? existingShippingStatus : nextShippingStatus;
       const persistedShippingDate = deferShippingCommit ? (cleanText(existingAny.shipping_date) || null) : nextShippingDate;
