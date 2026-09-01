@@ -22,6 +22,7 @@ const phase1bWorkshopReturnDispositionPath = path.join(root, 'scripts/phase1b-wo
 const arrivalSaveReliabilityPath = path.join(root, 'scripts/arrival-save-reliability-worker-manifest.json')
 const shippingShortageHotfixPath = path.join(root, 'scripts/shipping-shortage-hotfix-worker-manifest.json')
 const exchangeStaleHandoverPath = path.join(root, 'scripts/exchange-stale-handover-worker-manifest.json')
+const orderEditPaymentMethodPath = path.join(root, 'scripts/order-edit-payment-method-worker-manifest.json')
 const stocktakeLostResponsePath = path.join(root, 'scripts/stocktake-lost-response-worker-manifest.json')
 const financeOrderDateSyncPath = path.join(root, 'scripts/finance-order-date-sync-worker-manifest.json')
 const financeF2TracePath = path.join(root, 'scripts/finance-f2-trace-worker-manifest.json')
@@ -116,6 +117,10 @@ try {
   const exchangeStaleHandover = JSON.parse(fs.readFileSync(exchangeStaleHandoverPath, 'utf8'))
   check(exchangeStaleHandover?.version === 1 && exchangeStaleHandover?.revision === 'exchange-stale-handover-r1', 'Exchange stale-handover Worker manifest invalid')
   const exchangeStaleHandoverChanges = exchangeStaleHandover.changes || {}
+  check(fs.existsSync(orderEditPaymentMethodPath), 'Order edit payment-method Worker manifest missing')
+  const orderEditPaymentMethod = JSON.parse(fs.readFileSync(orderEditPaymentMethodPath, 'utf8'))
+  check(orderEditPaymentMethod?.version === 1 && orderEditPaymentMethod?.revision === 'order-edit-payment-method-r1', 'Order edit payment-method Worker manifest invalid')
+  const orderEditPaymentMethodChanges = orderEditPaymentMethod.changes || {}
   const stocktakeLostResponse = fs.existsSync(stocktakeLostResponsePath) ? JSON.parse(fs.readFileSync(stocktakeLostResponsePath, 'utf8')) : null
   const stocktakeLostResponseChanges = stocktakeLostResponse?.version === 1 ? (stocktakeLostResponse.changes || {}) : {}
   const financeOrderDateSync = fs.existsSync(financeOrderDateSyncPath) ? JSON.parse(fs.readFileSync(financeOrderDateSyncPath, 'utf8')) : null
@@ -332,11 +337,17 @@ try {
       acceptedPostShippingShortageHash = shippingShortageHotfixChanged.after
     }
     const exchangeStaleHandoverChanged = exchangeStaleHandoverChanges[name]
+    let acceptedPostExchangeStaleHandoverHash = acceptedPostShippingShortageHash
     if (exchangeStaleHandoverChanged) {
       check(exchangeStaleHandoverChanged.before === acceptedPostShippingShortageHash, `Exchange stale-handover baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === exchangeStaleHandoverChanged.after, `Worker declaration changed beyond exact Exchange stale-handover allow-list: ${name}`)
+      acceptedPostExchangeStaleHandoverHash = exchangeStaleHandoverChanged.after
+    }
+    const orderEditPaymentMethodChanged = orderEditPaymentMethodChanges[name]
+    if (orderEditPaymentMethodChanged) {
+      check(orderEditPaymentMethodChanged.before === acceptedPostExchangeStaleHandoverHash, `Order edit payment-method baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === orderEditPaymentMethodChanged.after, `Worker declaration changed beyond exact Order edit payment-method allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostShippingShortageHash, `Worker declaration body changed beyond accepted Finance F1-F9 / Phase 1B / Arrival reliability / Shipping shortage / Exchange stale-handover deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostExchangeStaleHandoverHash, `Worker declaration body changed beyond accepted Finance F1-F9 / Phase 1B / Arrival reliability / Shipping shortage / Exchange stale-handover / payment-method deltas: ${name}`)
     }
   }
 

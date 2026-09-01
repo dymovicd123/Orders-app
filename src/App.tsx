@@ -4951,7 +4951,8 @@ function App() {
     setEditorDraft((current) => {
       if (!current) return current
       const nextPayments = current.payments.map((payment, paymentIndex) => {
-        if (paymentIndex !== index || payment.id) return payment
+        if (paymentIndex !== index) return payment
+        if (payment.id && field !== 'method') return payment
         if (field === 'paymentDate' && payment.paymentKind === 'primary') return payment
         if (field === 'paymentKind') {
           const nextKind: EditorPayment['paymentKind'] = value === 'debt_close' ? 'debt_close' : 'primary'
@@ -5309,6 +5310,9 @@ function removeDebtPayment(index: number) {
           observedPhysicalQuantity: item.sourceType !== 'workshop' && item.stockObservationEnabled ? item.observedPhysicalQuantity : undefined,
           shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
         })),
+        paymentMethodCorrections: nextDraft.payments
+          .filter((payment) => Boolean(payment.id))
+          .map((payment) => ({ paymentId: Number(payment.id), method: payment.method })),
       }
 
       const criticalKey = `order-edit:${order.id}`

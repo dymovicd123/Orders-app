@@ -6,7 +6,7 @@ import { resolveActiveManagerId, writeActivityLog } from './activity.ts'
 import { isHumanInventoryModelEnabled } from './catalog.ts'
 import type { CriticalOperationHandle } from './critical.ts'
 import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, criticalOperationEntityId, failCriticalOperation, insertCriticalMappedEntity, parseCriticalContext, updateCriticalOperationTargetFromLastInsert } from './critical.ts'
-import { buildPaymentAndMoneyEventStatements, removeOrderPaymentsWithMoneyEvents } from './money.ts'
+import { buildPaymentAndMoneyEventStatements, financialEventStatement, financialOperationTypeFromPaymentKind, removeOrderPaymentsWithMoneyEvents } from './money.ts'
 import { assertOrderItemInputs, assertOrderPaymentInputs, assertOrderTotalInput, calculateTotals, completedOrderOperationCounts, normalizeOrderItems, normalizeOrderPayments, OrderInputValidationError, sameNormalizedOrderItemsForEdit, sameNormalizedOrderPaymentsForEdit } from './order-core.ts'
 import { assertCreateOrderShortageDecisions, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, OrderStockShortageError, orderShipmentInventoryBlockerMessage, releaseOrderReservationsV2, reserveOrderItemV2, resolveCatalogProductAndVariant, resolveWorkshopCatalogProductOnly } from './order-reservations.ts'
 import { fetchOrderRelations, workshopTaskStatusForOrderItem } from './orders-relations.ts'
@@ -1096,6 +1096,69 @@ export async function updateOrderCritical(
       const requestedPayments = Array.isArray(input.payments) ? normalizeOrderPayments(input.payments, nextOrderDate) : null;
       const existingItemsForEdit = normalizeOrderItems((existingAny.items || []) as OrderInput['items'], nextSource);
       const existingPaymentsForEdit = normalizeOrderPayments((existingAny.payments || []) as OrderInput['payments'], nextOrderDate);
+      const rawPaymentMethodCorrections = Array.isArray((input as any).paymentMethodCorrections)
+        ? (input as any).paymentMethodCorrections as Array<{ paymentId?: unknown; method?: unknown }>
+        : [];
+      const requestedPaymentMethodCorrections = new Map<number, string>();
+      for (const correction of rawPaymentMethodCorrections) {
+        const paymentId = toInt(correction?.paymentId, 0);
+        const method = upperText(correction?.method);
+        if (!paymentId) throw new OrderInputValidationError('Не удалось определить оплату для исправления способа. Обновите заказ и повторите.');
+        if (!method) throw new OrderInputValidationError('Способ оплаты не может быть пустым.');
+        requestedPaymentMethodCorrections.set(paymentId, method);
+      }
+      const paymentMethodCorrections: Array<Record<string, any>> = [];
+      const isCashPaymentMethod = (value: unknown) => {
+        const method = upperText(value);
+        return method === 'CASH' || method.includes('НАЛИЧ');
+      };
+      for (const [paymentId, newMethod] of requestedPaymentMethodCorrections) {
+        const payment = await db.prepare(
+          `SELECT p.id, p.payment_date, p.method, p.amount, COALESCE(p.payment_kind, 'primary') AS payment_kind,
+                  p.comment, o.created_at AS order_created_at,
+                  CASE WHEN EXISTS (
+                    SELECT 1 FROM exchanges e
+                    WHERE e.payment_id = p.id AND e.financial_action = 'extra_payment'
+                      AND COALESCE(e.status, 'completed') <> 'cancelled'
+                  ) THEN 1 ELSE 0 END AS is_exchange_extra,
+                  CASE WHEN EXISTS (
+                    SELECT 1 FROM cash_register_entries c WHERE c.source_key = 'payment:' || p.id
+                  ) THEN 1 ELSE 0 END AS cash_entry_tracked,
+                  CASE WHEN EXISTS (
+                    SELECT 1 FROM cash_register_settings s
+                    WHERE s.id = 1 AND s.auto_tracking_enabled = 1
+                      AND (
+                        COALESCE(p.payment_kind, 'primary') IN ('debt_close', 'extra')
+                        OR COALESCE(o.created_at, '') >= COALESCE(s.activated_at, '')
+                      )
+                  ) THEN 1 ELSE 0 END AS cash_tracking_eligible
+           FROM payments p
+           JOIN orders o ON o.id = p.order_id
+           WHERE p.id = ? AND p.order_id = ?
+           LIMIT 1`
+        ).bind(paymentId, id).first<Record<string, unknown>>();
+        if (!payment?.id) throw new OrderInputValidationError('Одна из оплат заказа уже изменилась. Обновите заказ и повторите исправление способа оплаты.');
+        const oldMethod = upperText(payment.method);
+        if (oldMethod === newMethod) continue;
+        const paymentKind = cleanText(payment.payment_kind);
+        const relatedType = toInt(payment.is_exchange_extra, 0) > 0
+          ? 'exchange_extra'
+          : financialOperationTypeFromPaymentKind(paymentKind);
+        paymentMethodCorrections.push({
+          paymentId,
+          paymentDate: normalizeDate(payment.payment_date || nextOrderDate),
+          amount: Math.max(0, toInt(payment.amount, 0)),
+          paymentKind,
+          relatedType,
+          oldMethod,
+          newMethod,
+          comment: cleanText(payment.comment),
+          oldIsCash: isCashPaymentMethod(oldMethod),
+          newIsCash: isCashPaymentMethod(newMethod),
+          cashEntryTracked: toInt(payment.cash_entry_tracked, 0) > 0,
+          cashTrackingEligible: toInt(payment.cash_tracking_eligible, 0) > 0,
+        });
+      }
       const rewriteItems = Boolean(requestedItems && !sameNormalizedOrderItemsForEdit(existingItemsForEdit, requestedItems));
       const rewritePayments = !deletingOrder && Boolean(requestedPayments && !sameNormalizedOrderPaymentsForEdit(existingPaymentsForEdit, requestedPayments));
       const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
@@ -1196,6 +1259,7 @@ export async function updateOrderCritical(
         finalWorkshopStatus, nextOrderStatus, nextShippingStatus, nextShippingDate,
         persistedShippingStatus, persistedShippingDate, nextComment,
         rewriteItems, rewritePayments, deletingOrder, deferShippingCommit,
+        paymentMethodCorrections,
         nextItems, nextPayments, totals, rewritePreResolvedCatalog: rewritePreResolvedCatalog || null,
         inventoryObligationLineage, humanInventoryModelEnabled,
       };
@@ -1278,6 +1342,79 @@ export async function updateOrderCritical(
       await advanceCriticalOperation(db, criticalOperation, 'shipping_committed', { context: operationContext });
     }
 
+    const paymentMethodCorrectionCount = Array.isArray(p.paymentMethodCorrections) ? p.paymentMethodCorrections.length : 0;
+    if (criticalOperation.row.step === 'shipping_committed' && paymentMethodCorrectionCount) {
+      for (const correction of p.paymentMethodCorrections as Array<Record<string, any>>) {
+        const eventSourceRef = `payments:${correction.paymentId}:method-correction:${criticalOperation.requestId}`;
+        const amount = Math.abs(toInt(correction.amount, 0));
+        const statements: D1PreparedStatement[] = [
+          db.prepare(`UPDATE payments SET method = ? WHERE id = ? AND order_id = ?`)
+            .bind(correction.newMethod, correction.paymentId, id),
+        ];
+        if (amount > 0) {
+          statements.unshift(
+            financialEventStatement(db, {
+              eventKey: `1901:${criticalOperation.requestId}:payment-method:${correction.paymentId}:old`,
+              orderId: id,
+              externalOrderId: p.externalId,
+              eventDate: correction.paymentDate,
+              eventAt: p.timestamp,
+              eventType: 'payment_reversal',
+              relatedType: correction.relatedType,
+              amountDelta: -amount,
+              paymentMethod: correction.oldMethod,
+              sourceType: 'payment',
+              sourceId: correction.paymentId,
+              sourceRef: eventSourceRef,
+              reason: 'payment_method_correction',
+              comment: `Исправлен способ оплаты: ${correction.oldMethod} → ${correction.newMethod}`,
+            }),
+            financialEventStatement(db, {
+              eventKey: `1901:${criticalOperation.requestId}:payment-method:${correction.paymentId}:new`,
+              orderId: id,
+              externalOrderId: p.externalId,
+              eventDate: correction.paymentDate,
+              eventAt: p.timestamp,
+              eventType: correction.relatedType,
+              amountDelta: amount,
+              paymentMethod: correction.newMethod,
+              sourceType: 'payment',
+              sourceId: correction.paymentId,
+              sourceRef: eventSourceRef,
+              reason: 'payment_method_correction',
+              comment: `Исправлен способ оплаты: ${correction.oldMethod} → ${correction.newMethod}`,
+            }),
+          );
+        }
+        const cashDirection = amount > 0 && correction.oldIsCash && !correction.newIsCash && correction.cashEntryTracked
+          ? 'out'
+          : (amount > 0 && !correction.oldIsCash && correction.newIsCash && correction.cashTrackingEligible ? 'in' : '');
+        if (cashDirection) {
+          statements.push(db.prepare(
+            `INSERT OR IGNORE INTO cash_register_entries (
+              occurred_at, business_date, direction, amount, entry_type,
+              source_type, source_id, source_key, order_id, external_order_id,
+              payment_method, comment, created_by, created_at
+            ) VALUES (?, date('now', '+5 hours'), ?, ?, 'payment_method_correction',
+                      'payment_method_correction', ?, ?, ?, ?, ?, ?, ?, ?)`
+          ).bind(
+            p.timestamp,
+            cashDirection,
+            amount,
+            String(correction.paymentId),
+            `payment-method-correction:${criticalOperation.requestId}:${correction.paymentId}:${cashDirection}`,
+            id,
+            p.externalId,
+            correction.newMethod,
+            `Исправлен способ оплаты: ${correction.oldMethod} → ${correction.newMethod}`,
+            cleanText(checkedBy) || 'admin',
+            p.timestamp,
+          ));
+        }
+        await db.batch(statements);
+      }
+    }
+
     const completedResponse = {
       ok: true,
       refreshRequired: true,
@@ -1285,6 +1422,7 @@ export async function updateOrderCritical(
       stockWriteOff: operationContext.insertedContent?.stockResults || insertedContent.stockResults || [],
       workshopCount: operationContext.insertedContent?.workshopCount ?? insertedContent.workshopCount ?? 0,
       inventoryDelivery: operationContext.inventoryDelivery ?? inventoryDelivery,
+      paymentMethodCorrectionCount,
     };
     await completeCriticalOperation(db, criticalOperation, completedResponse);
 
@@ -1318,7 +1456,7 @@ export async function updateOrderCritical(
       await writeActivityLog(db, {
         eventType: 'order_updated', entityType: 'order', entityId: id, orderId: id, externalOrderId: p.externalId,
         title: `Изменён заказ ${p.externalId}`,
-        details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}статус отправки: ${p.nextShippingStatus}`,
+        details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}${paymentMethodCorrectionCount ? `способ оплаты исправлен: ${paymentMethodCorrectionCount}; ` : ''}статус отправки: ${p.nextShippingStatus}`,
         amount: p.totals.totalAmount, createdAt: p.timestamp,
       });
     } catch (error) {
