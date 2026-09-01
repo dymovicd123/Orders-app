@@ -329,7 +329,22 @@ try {
     }
   }
 
+  // Shipping hotfix 2026-09-01: normalize only this retired final-shipping blocker
+  // back to the accepted router baseline. The shipping regression requires it absent live.
   const normalizedRouter = currentRouter
+    .replace(
+      "          const blockers = await getOrderShipmentInventoryBlockers(env.DB, id);",
+      `          const handoverReviewBlockers = await orderHandoverReviewBlockers(env.DB, id);
+          if (handoverReviewBlockers.length) {
+            return json({
+              ok: false,
+              code: 'stock_handover_review_required',
+              message: 'Перед отправкой уточните товары со Склада и Бутика: после даты заказа была физическая ревизия или сверка, поэтому нужно один раз подтвердить, где находился товар в тот момент.',
+              items: handoverReviewBlockers,
+            }, { status: 409 });
+          }
+          const blockers = await getOrderShipmentInventoryBlockers(env.DB, id);`,
+    )
     .replace(
       "if (url.pathname === '/api/inventory/cycle-counts' && request.method === 'GET') {\n        return json(await listInventoryCycleCountSuggestions(env.DB, url));\n      }",
       "if (url.pathname === '/api/inventory/cycle-counts' && request.method === 'GET') {\n        const denied = requireAdminAccess(request);\n        if (denied) return denied;\n        return json(await listInventoryCycleCountSuggestions(env.DB, url));\n      }",

@@ -18,7 +18,7 @@ import { addInventoryStocktakeCombination, addInventoryStocktakeVariant, cancelI
 import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileKnownPendingInventoryInbound, resolveInventoryLifecycleFacts } from './domains/lifecycle.ts'
 import { createManualOrderPaymentCritical } from './domains/money.ts'
 import { OrderInputValidationError } from './domains/order-core.ts'
-import { activeStocktakeSessionForHandover, confirmItemStillHere, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, getOrderStockHandoverState, normalizeShipmentObservations, OrderStockShortageError, orderHandoverReviewBlockers, orderShipmentInventoryBlockerMessage, orderWorkshopPendingForShipping, reconcileIssuedBeforeCheckpoint } from './domains/order-reservations.ts'
+import { activeStocktakeSessionForHandover, confirmItemStillHere, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, getOrderStockHandoverState, normalizeShipmentObservations, OrderStockShortageError, orderShipmentInventoryBlockerMessage, orderWorkshopPendingForShipping, reconcileIssuedBeforeCheckpoint } from './domains/order-reservations.ts'
 import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
@@ -1050,15 +1050,6 @@ export default {
         const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(env.DB);
         const normalizedObservations = humanInventoryModelEnabled ? normalizeShipmentObservations(input.observations) : [];
         if (humanInventoryModelEnabled) {
-          const handoverReviewBlockers = await orderHandoverReviewBlockers(env.DB, id);
-          if (handoverReviewBlockers.length) {
-            return json({
-              ok: false,
-              code: 'stock_handover_review_required',
-              message: 'Перед отправкой уточните товары со Склада и Бутика: после даты заказа была физическая ревизия или сверка, поэтому нужно один раз подтвердить, где находился товар в тот момент.',
-              items: handoverReviewBlockers,
-            }, { status: 409 });
-          }
           const blockers = await getOrderShipmentInventoryBlockers(env.DB, id);
           const unresolvedBlockers = blockers.filter((row) => cleanText(row.blocker_reason) !== 'insufficient_physical');
           if (unresolvedBlockers.length) {

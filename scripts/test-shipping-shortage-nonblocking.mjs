@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 const root=process.cwd()
 const source=fs.readFileSync(path.join(root,'worker/domains/order-reservations.ts'),'utf8')
+const router=fs.readFileSync(path.join(root,'worker/index.ts'),'utf8')
 const check=(value,message)=>{ if(!value) throw new Error(message) }
 const fulfillStart=source.indexOf('export async function fulfillOrderReservationsV2')
 const blockerStart=source.indexOf('export async function getOrderShipmentInventoryBlockers')
@@ -14,4 +15,6 @@ check(fulfill.includes('SET quantity = MAX(0, (SELECT x.effective_quantity - x.r
 check(fulfill.includes('x.quantity_after - x.quantity_before, x.quantity_after'), 'sale movement must record actual physical delta')
 check(blockers.includes('return [...(unresolvedResult.results || [])];'), 'shipment blocker list still includes physical shortage')
 check(!blockers.includes('return [...(unresolvedResult.results || []), ...(shortageResult.results || [])];'), 'old shortage blocker return remains')
-console.log('SHIPPING SHORTAGE NON-BLOCKING TESTS PASSED — physical discrepancy no longer blocks send; stock never drops below zero')
+check(!router.includes("code: 'stock_handover_review_required'"), 'historical handover review still hard-blocks final shipping')
+check(!router.includes('const handoverReviewBlockers = await orderHandoverReviewBlockers'), 'final shipping still calls historical handover blocker')
+console.log('SHIPPING NON-BLOCKING TESTS PASSED — physical discrepancy and historical handover review no longer block final send')
