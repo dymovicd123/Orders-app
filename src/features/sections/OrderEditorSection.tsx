@@ -359,7 +359,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                         </div>
                       </div>
                       <p className="mini-panel-note">
-                        Если первичную оплату забыли внести, добавьте её явно — она всегда относится к дате заказа. Любая обычная оплата позже создания заказа оформляется как «Закрытие долга» и проходит через тот же серверный механизм, что и отдельная кнопка закрытия долга. Доплата существует только в форме обмена. Уже проведённые оплаты здесь не переписываются: это защищает денежную историю и кассу.
+                        Если первичную оплату забыли внести, добавьте её явно — она всегда относится к дате заказа. Любая обычная оплата позже создания заказа оформляется как «Закрытие долга» и проходит через тот же серверный механизм, что и отдельная кнопка закрытия долга. У уже проведённой оплаты можно исправить способ оплаты; сумма, дата и смысл операции останутся прежними, а исправление сохранится в денежной истории.
                       </p>
                       <div className="stack">
                         {editorDraft.payments.map((payment, index) => (
@@ -397,17 +397,13 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                               </label>
                               <label>
                                 <span>Способ</span>
-                                {payment.id ? (
-                                  <input value={payment.method || ''} disabled readOnly />
-                                ) : (
-                                  <SmartPickerInput
-                                    value={payment.method}
-                                    onChange={(value) => updateEditorPayment(index, 'method', value)}
-                                    placeholder="Выберите способ"
-                                    options={suggestionValues.paymentMethods}
-                                    disabled={savingOrder}
-                                  />
-                                )}
+                                <SmartPickerInput
+                                  value={payment.method || ''}
+                                  onChange={(value) => updateEditorPayment(index, 'method', value)}
+                                  placeholder="Выберите способ"
+                                  options={suggestionValues.paymentMethods}
+                                  disabled={savingOrder}
+                                />
                               </label>
                               <label>
                                 <span>Сумма</span>
@@ -429,7 +425,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                               </label>
                             </div>
                             {payment.id ? (
-                              <p className="mini-panel-note">Эта операция уже проведена. Для исправления исторической оплаты нельзя молча удалять и создавать её заново.</p>
+                              <p className="mini-panel-note">Оплата уже проведена. Здесь можно исправить только способ оплаты; сумма, дата и тип операции не меняются.</p>
                             ) : (
                               <div className="actions">
                                 <button className="primary compact" type="button" onClick={() => void saveEditorPayment(index)} disabled={savingOrder}>

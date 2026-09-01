@@ -32,8 +32,8 @@ try {
   check(utils.includes('id: Number(payment.id || 0) || undefined'), 'Persisted payment identity is dropped when the editor draft is created')
   check(utils.includes('      : [],\n    orderTotal:'), 'Unpaid orders still synthesize a blank primary-looking editor row')
   check(editor.includes('payment.id ? (') && editor.includes('Проведена'), 'Persisted payments are not visibly separated from new drafts')
-  check(editor.includes('Уже проведённые оплаты здесь не переписываются'), 'Editor does not explain immutable persisted payments')
-  check(app.includes('if (paymentIndex !== index || payment.id) return payment'), 'Controller can still mutate a persisted payment row')
+  check(editor.includes('У уже проведённой оплаты можно исправить способ оплаты'), 'Editor does not explain method-only persisted payment correction')
+  check(app.includes("if (payment.id && field !== 'method') return payment"), 'Controller does not restrict persisted payment edits to method only')
   check(app.includes('if (!current || current.payments[index]?.id) return current'), 'Controller can still delete a persisted payment row')
 
   const persistStart = app.indexOf('async function persistOrder(')
