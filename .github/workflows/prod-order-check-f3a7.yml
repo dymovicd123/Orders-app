@@ -13,30 +13,48 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_API: https://api.cloudflare.com/client/v4
+      ORDER_EXTERNAL_ID: ORD-20260829144801-F3A7DDC3
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Read production order state
+      - name: Resolve Production Worker URL
+        id: target
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== ORDER ==='
-          npx wrangler d1 execute orders_db_prod --remote --json --command "SELECT id, external_id, order_status, shipping_status, shipping_date, workshop_status, total_amount, received_amount, debt_amount, return_amount, archived_at, updated_at FROM orders WHERE external_id = 'ORD-20260829144801-F3A7DDC3' LIMIT 1;"
+          subdomain_json="$(curl --fail-with-body -sS -H "Authorization: Bearer $CF_API_TOKEN" "$CF_API/accounts/$CF_ACCOUNT_ID/workers/subdomain")"
+          subdomain="$(jq -r '.result.subdomain // empty' <<<"$subdomain_json")"
+          if [[ -z "$subdomain" ]]; then
+            echo 'Could not resolve workers.dev subdomain.' >&2
+            jq -r '.errors[]?.message' <<<"$subdomain_json" >&2 || true
+            exit 2
+          fi
+          base="https://orders-app.${subdomain}.workers.dev"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "Resolved Production Worker."
+      - name: Read Production through business API
+        shell: bash
+        env:
+          BASE: ${{ steps.target.outputs.base }}
+        run: |
+          set -euo pipefail
+          echo '=== HEALTH ==='
+          curl --fail-with-body -sS "$BASE/api/health" | jq .
+          echo '=== ORDERS SEARCH ==='
+          curl --fail-with-body -sS --get "$BASE/api/orders" \
+            --data-urlencode "q=$ORDER_EXTERNAL_ID" \
+            --data-urlencode "archiveMode=all" \
+            --data-urlencode "limit=20" | tee /tmp/orders.json | jq .
+          echo '=== ACTIVITY ==='
+          curl --fail-with-body -sS --get "$BASE/api/activity" \
+            --data-urlencode "q=$ORDER_EXTERNAL_ID" \
+            --data-urlencode "limit=100" | tee /tmp/activity.json | jq .
           echo '=== RETURNS ==='
-          npx wrangler d1 execute orders_db_prod --remote --json --command "SELECT r.* FROM returns r JOIN orders o ON o.id = r.order_id WHERE o.external_id = 'ORD-20260829144801-F3A7DDC3' ORDER BY r.id;"
+          curl --fail-with-body -sS --get "$BASE/api/returns" \
+            --data-urlencode "q=$ORDER_EXTERNAL_ID" \
+            --data-urlencode "limit=100" | tee /tmp/returns.json | jq .
           echo '=== EXCHANGES ==='
-          npx wrangler d1 execute orders_db_prod --remote --json --command "SELECT e.* FROM exchanges e JOIN orders o ON o.id = e.order_id WHERE o.external_id = 'ORD-20260829144801-F3A7DDC3' ORDER BY e.id;"
-          echo '=== RESERVATIONS ==='
-          npx wrangler d1 execute orders_db_prod --remote --json --command "SELECT r.id, r.order_item_id, r.inventory_source, r.product_id, r.variant_id, r.quantity, r.status, r.fulfilled_at, r.released_at, r.updated_at FROM inventory_reservations r JOIN orders o ON o.id = r.order_id WHERE o.external_id = 'ORD-20260829144801-F3A7DDC3' ORDER BY r.id;"
-          echo '=== WORKSHOP ==='
-          npx wrangler d1 execute orders_db_prod --remote --json --command "SELECT wt.id, wt.order_item_id, wt.product_name_snapshot, wt.quantity, wt.status, wt.updated_at FROM workshop_tasks wt JOIN orders o ON o.id = wt.order_id WHERE o.external_id = 'ORD-20260829144801-F3A7DDC3' ORDER BY wt.id;"
-          echo '=== LIFECYCLE ==='
-          npx wrangler d1 execute orders_db_prod --remote --json --command "SELECT le.id, le.event_key, le.operation_type, le.operation_id, le.event_type, le.inventory_source, le.variant_id, le.quantity_delta, le.status, le.applied_at, le.cancelled_at, le.pending_reason FROM inventory_lifecycle_events le WHERE (le.operation_type = 'return' AND le.operation_id IN (SELECT r.id FROM returns r JOIN orders o ON o.id=r.order_id WHERE o.external_id='ORD-20260829144801-F3A7DDC3')) OR (le.operation_type = 'exchange' AND le.operation_id IN (SELECT e.id FROM exchanges e JOIN orders o ON o.id=e.order_id WHERE o.external_id='ORD-20260829144801-F3A7DDC3')) ORDER BY le.id;"
-          echo '=== MOVEMENTS ==='
-          npx wrangler d1 execute orders_db_prod --remote --json --command "SELECT id, inventory_source, movement_type, variant_id, quantity_delta, quantity_after, reference_type, reference_id, comment, created_at FROM inventory_movements WHERE reference_id = 'ORD-20260829144801-F3A7DDC3' OR comment LIKE '%ORD-20260829144801-F3A7DDC3%' ORDER BY id;"
+          curl --fail-with-body -sS --get "$BASE/api/exchanges" \
+            --data-urlencode "q=$ORDER_EXTERNAL_ID" \
+            --data-urlencode "limit=100" | tee /tmp/exchanges.json | jq .
