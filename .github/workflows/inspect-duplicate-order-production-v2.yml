@@ -1,0 +1,46 @@
+name: Inspect duplicate order lifecycle in Production v2
+
+on:
+  push:
+    branches: [ops/delete-duplicate-order-20260901]
+    paths: [.github/workflows/inspect-duplicate-order-production-v2.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_API: https://api.cloudflare.com/client/v4
+      ORDER_EXTERNAL_ID: ORD-20260829144801-F3A7DDC3
+    steps:
+      - name: Inspect exact order lifecycle without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cf="$(curl --fail-with-body -sS -H "Authorization: Bearer $CF_API_TOKEN" "$CF_API/accounts/$CF_ACCOUNT_ID/workers/subdomain")"
+          subdomain="$(jq -r '.result.subdomain // empty' <<<"$cf")"
+          test -n "$subdomain"
+          base="https://orders-app.$subdomain.workers.dev"
+          query="$(jq -rn --arg v "$ORDER_EXTERNAL_ID" '$v|@uri')"
+          list="$(curl --fail-with-body -sS "$base/api/orders?limit=20&offset=0&q=$query&status=all&shippingStatus=all&archiveMode=all&manager=&dateFrom=&dateTo=")"
+          order_id="$(jq -r --arg id "$ORDER_EXTERNAL_ID" '[.orders[]? | select(.external_id == $id)] | if length == 1 then .[0].id else empty end' <<<"$list")"
+          test -n "$order_id"
+          detail="$(curl --fail-with-body -sS "$base/api/orders/$order_id")"
+          echo 'Order core:'
+          jq -c '{id:.order.id,external_id:.order.external_id,order_status:.order.order_status,shipping_status:.order.shipping_status,shipping_date:.order.shipping_date,workshop_status:.order.workshop_status,total_amount:.order.total_amount,received_amount:.order.received_amount,return_amount:.order.return_amount}' <<<"$detail"
+          echo 'Item keys:'
+          jq -c '[.order.items[]? | keys]' <<<"$detail"
+          echo 'Item lifecycle facts:'
+          jq -c '[.order.items[]? | {id,productName,quantity,sourceType,isWorkshop,stockWriteoffStatus,productId,variantId,reservationId,reservationStatus,reservationQuantity,workshopTaskId,workshopTaskStatus,workshopReady,issuedAt,stockHandoverStatus}]' <<<"$detail"
+          echo 'Return keys:'
+          jq -c '[.order.returns[]? | keys]' <<<"$detail"
+          echo 'Return facts:'
+          jq -c '[.order.returns[]? | {id,status,amount,returnDate,paymentMethod,restockSource,comment,cancelledAt,cancellationComment}]' <<<"$detail"
+          history="$(curl --fail-with-body -sS "$base/api/returns?limit=20&offset=0&q=$query&status=all")"
+          echo 'Return history match:'
+          jq -c --arg id "$ORDER_EXTERNAL_ID" '[.returns[]? | select(.externalId == $id) | {id,externalId,status,amount,returnDate,paymentMethod,restockSource,itemCount:(.items|length),items:[.items[]? | {orderItemId,productName,quantity,inventorySource,restocked,lifecycleStatus}]}]' <<<"$history"
