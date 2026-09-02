@@ -1,2 +1,2 @@
-run=2026-09-02-manager-workshop-sent-edit-r2-retry
-purpose=apply exact minimal UI-only guard after whitespace-safe preflight
+run=2026-09-02-manager-workshop-sent-edit-r2-format
+purpose=normalize only formatting of already-applied sent-order action guard
