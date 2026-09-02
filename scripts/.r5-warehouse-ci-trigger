@@ -1,2 +1,2 @@
-run=2026-09-02-r5.1-retry4
-purpose=verify additive Warehouse Attention/handover read-budget indexes and historical migration gates
+run=2026-09-02-r5.1-retry5
+purpose=verify additive Warehouse Attention/handover read-budget indexes and B2A1 historical migration gate
