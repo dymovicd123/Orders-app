@@ -1,0 +1,175 @@
+name: Manager read-only audit R2
+
+on:
+  push:
+    branches: [safe/manager-readonly-audit-r2-20260902]
+    paths:
+      - scripts/.manager-readonly-audit-r2-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Current manager/autonomy regression
+        run: |
+          node scripts/test-manager-routine-access-r1.mjs
+          node scripts/test-operational-autonomy-r2.mjs
+          node scripts/test-order-edit-autonomy.mjs
+          node scripts/test-return-exchange-cancel-autonomy.mjs
+          node scripts/test-shipping-shortage-nonblocking.mjs
+          node scripts/test-stocktake-functional-acceptance.mjs
+      - name: Full release and database safety
+        run: |
+          npm run release:check
+          npm run verify:db-safety
+          npm run typecheck
+          npm run build
+          npx wrangler deploy --dry-run
+      - name: Install browser harness only
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Production manager live smoke — GET/UI only
+        env:
+          APP_URL: https://orders-app.orders-clothes.workers.dev
+        run: |
+          node --input-type=module <<'NODE'
+          import { chromium } from 'playwright';
+
+          const browser = await chromium.launch({ headless: true });
+          const base = process.env.APP_URL;
+          const results = [];
+
+          async function runViewport(label, viewport) {
+            const page = await browser.newPage({ viewport });
+            const pageErrors = [];
+            const consoleErrors = [];
+            const mutations = [];
+            page.on('pageerror', e => pageErrors.push(String(e)));
+            page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()) });
+            page.on('request', req => {
+              if (['POST','PATCH','PUT','DELETE'].includes(req.method())) mutations.push(`${req.method()} ${req.url()}`);
+            });
+
+            await page.goto(`${base}/#orders`, { waitUntil: 'networkidle', timeout: 60000 });
+            await page.waitForTimeout(2000);
+
+            const api = await page.evaluate(async () => {
+              const urls = [
+                '/api/health',
+                '/api/admin-mode/status',
+                '/api/orders?limit=100&archiveMode=active',
+                '/api/workshop/counts',
+                '/api/workshop?limit=100',
+                '/api/inventory?source=warehouse&limit=100&includeMovements=0',
+                '/api/inventory/attention',
+                '/api/clients?limit=50',
+                '/api/team',
+                '/api/reference-data'
+              ];
+              const out = {};
+              for (const url of urls) {
+                const response = await fetch(url, { credentials: 'include' });
+                out[url] = response.status;
+              }
+              const status = await (await fetch('/api/admin-mode/status', { credentials: 'include' })).json();
+              return { statuses: out, isAdmin: Boolean(status?.isAdmin) };
+            });
+
+            const rows = page.locator('tr[data-order-id]');
+            const rowCount = await rows.count();
+            const editButtons = page.getByRole('button', { name: 'Редактировать', exact: true });
+            const editCount = await editButtons.count();
+            const sendCount = await page.getByRole('button', { name: 'Отправить клиенту', exact: true }).count();
+            const handoverCount = await page.getByRole('button', { name: /Уточнить выдачу|Выдать готовые товары/ }).count();
+            const returnCount = await page.getByRole('button', { name: 'Возврат', exact: true }).count();
+            const exchangeCount = await page.getByRole('button', { name: 'Обмен', exact: true }).count();
+
+            let orderEditor = { visible: false, saveVisible: false, saveEnabled: false, editableFieldCount: 0 };
+            if (editCount > 0) {
+              await editButtons.first().click();
+              await page.waitForTimeout(1000);
+              const save = page.getByRole('button', { name: /Сохранить изменения/i }).first();
+              const fields = page.locator('input:not([disabled]):not([readonly]), textarea:not([disabled]):not([readonly]), select:not([disabled])');
+              orderEditor = {
+                visible: await page.getByText(/Редактирование заказа/i).first().isVisible().catch(() => false),
+                saveVisible: await save.isVisible().catch(() => false),
+                saveEnabled: await save.isEnabled().catch(() => false),
+                editableFieldCount: await fields.count()
+              };
+            }
+
+            await page.goto(`${base}/#workshop`, { waitUntil: 'networkidle', timeout: 60000 });
+            await page.waitForTimeout(1500);
+            const workshopEdit = page.getByRole('button', { name: 'Редактировать заказ', exact: true });
+            const workshopEditCount = await workshopEdit.count();
+            const workshopDoneCount = await page.getByRole('button', { name: /Готово|Отметить готовым/ }).count();
+            let workshopEditorUsable = false;
+            if (workshopEditCount > 0) {
+              await workshopEdit.first().click();
+              await page.waitForTimeout(800);
+              const save = page.getByRole('button', { name: /Сохранить изменения/i }).first();
+              workshopEditorUsable = await save.isVisible().catch(() => false) && await save.isEnabled().catch(() => false);
+            }
+
+            await page.goto(`${base}/#inventory`, { waitUntil: 'networkidle', timeout: 60000 });
+            await page.waitForTimeout(1800);
+            const inventoryTabs = {};
+            for (const [key, pattern] of [
+              ['overview', /Остатки|Обзор/],
+              ['attention', /^Внимание/],
+              ['movement', /Движение товара/],
+              ['stocktake', /Ревизия/],
+              ['history', /История/]
+            ]) {
+              const button = page.getByRole('button', { name: pattern }).first();
+              const visible = await button.isVisible().catch(() => false);
+              const enabled = visible ? await button.isEnabled().catch(() => false) : false;
+              inventoryTabs[key] = { visible, enabled };
+              if (visible && enabled) {
+                await button.click();
+                await page.waitForTimeout(250);
+              }
+            }
+            const catalogVisible = await page.getByRole('button', { name: /Каталог/ }).first().isVisible().catch(() => false);
+
+            const result = {
+              label, api, rowCount, editCount, sendCount, handoverCount, returnCount, exchangeCount,
+              orderEditor, workshopEditCount, workshopDoneCount, workshopEditorUsable,
+              inventoryTabs, catalogVisible, pageErrors, consoleErrors, mutations
+            };
+            results.push(result);
+
+            if (api.isAdmin) throw new Error(`${label}: smoke accidentally ran as admin`);
+            for (const [url, status] of Object.entries(api.statuses)) {
+              if (status !== 200) throw new Error(`${label}: GET ${url} returned ${status}`);
+            }
+            if (rowCount === 0 || editCount === 0) throw new Error(`${label}: order list/edit action unavailable`);
+            if (!orderEditor.visible || !orderEditor.saveVisible || !orderEditor.saveEnabled || orderEditor.editableFieldCount === 0) throw new Error(`${label}: order editor is not usable`);
+            if (sendCount === 0 && handoverCount === 0) throw new Error(`${label}: no final-send/handover action on live unshipped orders`);
+            if (returnCount === 0 || exchangeCount === 0) throw new Error(`${label}: return/exchange actions unavailable`);
+            if (workshopEditCount === 0 || !workshopEditorUsable) throw new Error(`${label}: workshop editor unavailable to manager`);
+            for (const key of ['attention','movement','stocktake','history']) {
+              if (!inventoryTabs[key]?.visible || !inventoryTabs[key]?.enabled) throw new Error(`${label}: inventory tab ${key} unavailable`);
+            }
+            if (catalogVisible) throw new Error(`${label}: admin-only Catalog unexpectedly visible to manager`);
+            if (pageErrors.length || consoleErrors.length) throw new Error(`${label}: runtime errors occurred`);
+            if (mutations.length) throw new Error(`${label}: read-only smoke emitted mutation request(s): ${mutations.join(', ')}`);
+            await page.close();
+          }
+
+          await runViewport('desktop', { width: 1440, height: 1000 });
+          await runViewport('mobile', { width: 390, height: 844 });
+          console.log('MANAGER_READONLY_AUDIT=' + JSON.stringify(results, null, 2));
+          await browser.close();
+          NODE
