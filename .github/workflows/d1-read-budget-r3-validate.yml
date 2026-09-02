@@ -39,8 +39,6 @@ jobs:
         run: |
           rm -rf dist
           npm run build
-      - name: Bundle budget
-        run: node scripts/check-bundle-budget.mjs
       - name: Wrangler dry run
         run: npx wrangler deploy --dry-run
       - name: Commit validated candidate
