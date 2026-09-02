@@ -77,4 +77,11 @@ test = test.replace(
     "console.log('ORDER EDIT AUTONOMY PASSED — ordinary staff can correct active or closed unshipped orders while sent/deleted/archived lifecycle and physical handover remain protected')",
 )
 write(test_path, test)
+
+replace_exact(
+    'scripts/test-operational-autonomy-r2.mjs',
+    "check(app.includes(\"if (!isAdmin && (order.order_status !== 'active' || order.shipping_status === 'sent'))\"), 'completed/sent order edit protection must remain')",
+    "check(app.includes(\"if (!isAdmin && (['deleted', 'archived'].includes(order.order_status) || order.shipping_status === 'sent'))\"), 'sent/deleted/archived order edit protection must remain')\ncheck(!app.includes(\"order.order_status !== 'active' || order.shipping_status === 'sent'\"), 'closed unshipped orders must remain editable in working mode')",
+)
+
 print('Applied order edit scope R1')
