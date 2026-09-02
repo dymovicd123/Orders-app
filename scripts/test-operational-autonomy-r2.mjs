@@ -19,7 +19,11 @@ const block = (text, start, end) => {
 for (const [label, start, end] of [
   ['cycle count apply', "if (url.pathname === '/api/inventory/cycle-counts/apply'", "if (url.pathname === '/api/inventory/stocktakes' && request.method === 'GET')"],
   ['stocktake list/start/quick', "if (url.pathname === '/api/inventory/stocktakes' && request.method === 'GET')", "if (url.pathname === '/api/inventory/stocktakes/quick' && request.method === 'POST')"],
-  ['stocktake session workflow', 'const inventoryStocktakeMatch =', "if (url.pathname === '/api/inventory/history' && request.method === 'GET')"],
+  ['stocktake get', 'const inventoryStocktakeMatch =', 'const inventoryStocktakeItemMatch ='],
+  ['stocktake count', 'const inventoryStocktakeItemMatch =', 'const inventoryStocktakeAddCombinationMatch ='],
+  ['stocktake add existing variant', 'const inventoryStocktakeAddItemMatch =', 'const inventoryStocktakeCompleteMatch ='],
+  ['stocktake complete', 'const inventoryStocktakeCompleteMatch =', 'const inventoryStocktakeCancelMatch ='],
+  ['stocktake cancel', 'const inventoryStocktakeCancelMatch =', "if (url.pathname === '/api/inventory/history' && request.method === 'GET')"],
   ['inventory history reads', "if (url.pathname === '/api/inventory/history' && request.method === 'GET')", "if (url.pathname === '/api/inventory/reservations' && request.method === 'GET')"],
   ['inventory transfer', "if (url.pathname === '/api/inventory/transfer' && request.method === 'POST')", "if (url.pathname === '/api/catalog' && request.method === 'GET')"],
 ]) {
@@ -52,10 +56,13 @@ check(section.includes("{ value: 'movement' as const, label: 'Движение �
 check(section.includes("{ value: 'stocktake' as const, label: 'Ревизия'"), 'stocktake tab missing')
 check(section.includes("{ value: 'history' as const, label: 'История'"), 'history tab missing')
 const nav = block(section, '<div className={`inventory-module-tabs', '].map((entry) => (')
-check(nav.indexOf("{ value: 'movement' as const") < nav.indexOf('...(isAdmin ? ['), 'movement must not be inside admin-only tab list')
-check(nav.indexOf("{ value: 'stocktake' as const") < nav.indexOf('...(isAdmin ? ['), 'stocktake must not be inside admin-only tab list')
-check(nav.indexOf("{ value: 'history' as const") > nav.indexOf('] : []),'), 'history must remain outside admin-only catalog list')
-check(nav.includes("{ value: 'catalog' as const") && nav.includes('...(isAdmin ? ['), 'catalog tab must remain admin-only')
+const adminListIndex = nav.indexOf('...(isAdmin ? [')
+const adminListEnd = nav.indexOf('] : []),', adminListIndex)
+check(adminListIndex >= 0 && adminListEnd > adminListIndex, 'admin-only catalog list missing')
+check(nav.indexOf("{ value: 'movement' as const") < adminListIndex, 'movement must not be inside admin-only tab list')
+check(nav.indexOf("{ value: 'stocktake' as const") < adminListIndex, 'stocktake must not be inside admin-only tab list')
+check(nav.indexOf("{ value: 'history' as const") > adminListEnd, 'history must remain outside admin-only catalog list')
+check(nav.slice(adminListIndex, adminListEnd).includes("{ value: 'catalog' as const"), 'catalog tab must remain admin-only')
 
 check(attention.includes('<button className="secondary compact" type="button" onClick={() => openAttentionStocktake(item)}>Продолжить</button>'), 'unfinished stocktake must be resumable in working mode')
 check(!attention.includes('{isAdmin ? <button className="secondary compact" type="button" onClick={() => openAttentionStocktake(item)}>Продолжить</button>'), 'stocktake attention action still admin-gated')
