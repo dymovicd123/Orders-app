@@ -27,6 +27,7 @@ jobs:
         run: |
           python3 scripts/repair-d1-read-budget-r3-patcher.py
           python3 scripts/apply-d1-read-budget-r3.py
+          python3 scripts/repair-d1-read-budget-r3-test.py
           node scripts/register-d1-read-budget-r3-worker.mjs
       - name: Typecheck
         run: npm run typecheck
