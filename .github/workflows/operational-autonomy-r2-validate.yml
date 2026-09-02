@@ -1,0 +1,46 @@
+name: Operational autonomy R2 validation
+
+on:
+  push:
+    branches: [safe/operational-autonomy-r2-20260902]
+    paths:
+      - scripts/.operational-autonomy-r2-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/operational-autonomy-r2-20260902
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Capture frontend preservation baseline
+        run: node scripts/register-operational-autonomy-r2.mjs before
+      - name: Apply guarded autonomy patch
+        run: python3 scripts/apply-operational-autonomy-r2.py
+      - name: Extend exact frontend preservation chain
+        run: python3 scripts/apply-operational-autonomy-r2-preservation.py
+      - name: Register exact frontend delta
+        run: node scripts/register-operational-autonomy-r2.mjs after
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Full release gates
+        run: npm run release:check
+      - name: Diff safety
+        run: git diff --check
+      - name: Commit validated result
+        run: |
+          git config user.name "dymovicd123"
+          git config user.email "dymovicd@gmail.com"
+          git add package.json worker/index.ts src/App.tsx src/features/sections/InventorySection.tsx src/features/inventory/views/renderInventoryAttentionPanel.tsx scripts/test-operational-autonomy-r2.mjs scripts/operational-autonomy-r2-frontend-manifest.json scripts/test-step1906b-frontend-modularization.mjs
+          git diff --cached --check
+          git commit -m "Reduce routine admin blockers"
+          git push origin HEAD:safe/operational-autonomy-r2-20260902
