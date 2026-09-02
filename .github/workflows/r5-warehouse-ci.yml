@@ -1,0 +1,32 @@
+name: R5 warehouse CI
+
+on:
+  push:
+    branches: [safe/d1-read-budget-r5-warehouse-20260902]
+    paths:
+      - scripts/.r5-warehouse-ci-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: R5 targeted regression
+        run: node scripts/test-d1-read-budget-r5.mjs
+      - name: Database safety
+        run: npm run verify:db-safety
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Full release regression
+        run: npm run release:check
+      - name: Build
+        run: npm run build
