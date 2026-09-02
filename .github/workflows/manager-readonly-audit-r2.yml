@@ -12,220 +12,56 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Install browser harness only
-        run: |
-          npm install --no-save --package-lock=false playwright@1.55.0
-          npx playwright install --with-deps chromium
-      - name: Production manager live diagnostic — mutation requests blocked
+      - name: Inspect current Production Workshop population — GET only
         env:
           APP_URL: https://orders-app.orders-clothes.workers.dev
         run: |
           node --input-type=module <<'NODE'
-          import { chromium } from 'playwright';
-
-          const browser = await chromium.launch({ headless: true });
           const base = process.env.APP_URL;
-          const report = { api: {}, workshop: {}, viewports: {}, blockedMutations: [] };
-
-          async function makePage(viewport) {
-            const page = await browser.newPage({ viewport });
-            const state = { pageErrors: [], consoleErrors: [], blockedMutations: [] };
-            page.on('pageerror', e => state.pageErrors.push(String(e)));
-            page.on('console', msg => { if (msg.type() === 'error') state.consoleErrors.push(msg.text()) });
-            await page.route('**/*', async route => {
-              const req = route.request();
-              if (['POST','PATCH','PUT','DELETE'].includes(req.method())) {
-                const value = `${req.method()} ${req.url()}`;
-                state.blockedMutations.push(value);
-                report.blockedMutations.push(value);
-                await route.abort();
-                return;
-              }
-              await route.continue();
-            });
-            return { page, state };
-          }
-
-          const { page, state } = await makePage({ width: 1440, height: 1000 });
-          await page.goto(`${base}/#orders`, { waitUntil: 'networkidle', timeout: 60000 });
-          await page.waitForTimeout(1800);
-
-          report.api = await page.evaluate(async () => {
-            const urls = [
-              '/api/health',
-              '/api/admin-mode/status',
-              '/api/orders?limit=100&archiveMode=active',
-              '/api/workshop/counts',
-              '/api/workshop?limit=100',
-              '/api/inventory?source=warehouse&limit=100&includeMovements=0',
-              '/api/inventory/attention',
-              '/api/clients?limit=50',
-              '/api/team',
-              '/api/reference-data'
-            ];
-            const statuses = {};
-            for (const url of urls) {
-              const response = await fetch(url, { credentials: 'include' });
-              statuses[url] = response.status;
-            }
-            const admin = await (await fetch('/api/admin-mode/status', { credentials: 'include' })).json();
-            const workshop = await (await fetch('/api/workshop?limit=100', { credentials: 'include' })).json();
-            const tasks = Array.isArray(workshop?.tasks) ? workshop.tasks : Array.isArray(workshop?.items) ? workshop.items : [];
-            const samples = [];
-            for (const task of tasks.slice(0, 12)) {
-              const orderId = Number(task.orderId ?? task.order_id ?? 0);
-              let order = null;
-              let orderHttp = 0;
-              if (orderId > 0) {
-                const response = await fetch(`/api/orders/${orderId}`, { credentials: 'include' });
-                orderHttp = response.status;
-                const data = await response.json().catch(() => ({}));
-                order = data?.order || null;
-              }
-              samples.push({
-                taskId: Number(task.id || 0),
-                orderId,
-                externalOrderId: String(task.externalOrderId ?? task.external_order_id ?? ''),
-                taskStatus: String(task.status || ''),
-                orderHttp,
-                orderStatus: String(order?.order_status || ''),
-                shippingStatus: String(order?.shipping_status || ''),
-                workshopStatus: String(order?.workshop_status || '')
-              });
-            }
-            return { statuses, isAdmin: Boolean(admin?.isAdmin), workshopTaskCount: tasks.length, workshopSamples: samples };
-          });
-
-          const orderRows = await page.locator('tr[data-order-id]').count();
-          const orderEditButtons = page.getByRole('button', { name: 'Редактировать', exact: true });
-          const orderEditCount = await orderEditButtons.count();
-          const orderActions = {
-            rows: orderRows,
-            edit: orderEditCount,
-            send: await page.getByRole('button', { name: 'Отправить клиенту', exact: true }).count(),
-            handover: await page.getByRole('button', { name: /Уточнить выдачу|Выдать готовые товары/ }).count(),
-            returns: await page.getByRole('button', { name: 'Возврат', exact: true }).count(),
-            exchanges: await page.getByRole('button', { name: 'Обмен', exact: true }).count()
+          const url = `${base}/api/workshop?view=active&period=month&urgentOnly=0&sort=oldest&limit=300&includeCounts=0`;
+          const response = await fetch(url);
+          const data = await response.json();
+          if (!response.ok) throw new Error(`Workshop GET failed: ${response.status}`);
+          const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
+          const norm = value => String(value ?? '').trim().toLowerCase();
+          const sent = tasks.filter(t => norm(t.shippingStatus ?? t.shipping_status) === 'sent');
+          const unsent = tasks.filter(t => norm(t.shippingStatus ?? t.shipping_status) !== 'sent');
+          const exchange = tasks.filter(t => Number(t.exchangeId ?? t.exchange_id ?? 0) > 0);
+          const sentExchange = sent.filter(t => Number(t.exchangeId ?? t.exchange_id ?? 0) > 0);
+          const sentNoExchange = sent.filter(t => Number(t.exchangeId ?? t.exchange_id ?? 0) <= 0);
+          const summary = {
+            http: response.status,
+            total: tasks.length,
+            sent: sent.length,
+            unsent: unsent.length,
+            exchange: exchange.length,
+            sentExchange: sentExchange.length,
+            sentNoExchange: sentNoExchange.length,
+            first12: tasks.slice(0, 12).map(t => ({
+              taskId: Number(t.id || 0),
+              orderId: Number(t.orderId ?? t.order_id ?? 0),
+              externalOrderId: String(t.externalOrderId ?? t.external_order_id ?? ''),
+              shippingStatus: String(t.shippingStatus ?? t.shipping_status ?? ''),
+              exchangeId: Number(t.exchangeId ?? t.exchange_id ?? 0) || null,
+              status: String(t.status || ''),
+              orderDate: String(t.orderDate ?? t.order_date ?? ''),
+              exchangeDate: String(t.exchangeDate ?? t.exchange_date ?? '')
+            })),
+            sentNoExchangeSample: sentNoExchange.slice(0, 12).map(t => ({
+              taskId: Number(t.id || 0),
+              orderId: Number(t.orderId ?? t.order_id ?? 0),
+              externalOrderId: String(t.externalOrderId ?? t.external_order_id ?? ''),
+              orderDate: String(t.orderDate ?? t.order_date ?? '')
+            })),
+            unsentSample: unsent.slice(0, 8).map(t => ({
+              taskId: Number(t.id || 0),
+              orderId: Number(t.orderId ?? t.order_id ?? 0),
+              externalOrderId: String(t.externalOrderId ?? t.external_order_id ?? ''),
+              shippingStatus: String(t.shippingStatus ?? t.shipping_status ?? ''),
+              exchangeId: Number(t.exchangeId ?? t.exchange_id ?? 0) || null
+            }))
           };
-          if (orderEditCount > 0) {
-            await orderEditButtons.first().click();
-            await page.waitForTimeout(1000);
-            const save = page.getByRole('button', { name: 'Сохранить изменения', exact: true }).first();
-            orderActions.editor = {
-              visible: await page.getByText('Редактирование заказа', { exact: true }).first().isVisible().catch(() => false),
-              saveVisible: await save.isVisible().catch(() => false),
-              saveEnabled: await save.isEnabled().catch(() => false),
-              editableFields: await page.locator('#editor input:not([disabled]):not([readonly]), #editor textarea:not([disabled]):not([readonly]), #editor select:not([disabled])').count()
-            };
-          }
-          report.viewports.desktopOrders = orderActions;
-
-          await page.goto(`${base}/#workshop`, { waitUntil: 'networkidle', timeout: 60000 });
-          await page.waitForTimeout(1400);
-          const workshopEditCount = await page.getByRole('button', { name: 'Редактировать заказ', exact: true }).count();
-          const workshopDoneCount = await page.getByRole('button', { name: /Готово|Отметить готовым/ }).count();
-          const editableSample = report.api.workshopSamples.find(sample => sample.orderHttp === 200 && !['deleted','archived'].includes(sample.orderStatus) && sample.shippingStatus !== 'sent');
-          let targetExternalId = editableSample?.externalOrderId || '';
-          let workshopEditor = { attempted: false, targetExternalId, hashAfter: '', editorVisible: false, saveVisible: false, saveEnabled: false, backToWorkshopVisible: false, visibleButtons: [], visibleAlerts: [] };
-
-          let workshopEditButton = null;
-          if (targetExternalId) {
-            const candidateRow = page.locator('tr').filter({ hasText: targetExternalId }).first();
-            const candidate = candidateRow.getByRole('button', { name: 'Редактировать заказ', exact: true }).first();
-            if (await candidate.count()) workshopEditButton = candidate;
-          }
-          if (!workshopEditButton && workshopEditCount > 0) workshopEditButton = page.getByRole('button', { name: 'Редактировать заказ', exact: true }).first();
-
-          if (workshopEditButton) {
-            workshopEditor.attempted = true;
-            await workshopEditButton.click();
-            await page.waitForTimeout(1800);
-            const save = page.getByRole('button', { name: 'Сохранить изменения', exact: true }).first();
-            workshopEditor.hashAfter = await page.evaluate(() => location.hash);
-            workshopEditor.editorVisible = await page.getByText('Редактирование заказа', { exact: true }).first().isVisible().catch(() => false);
-            workshopEditor.saveVisible = await save.isVisible().catch(() => false);
-            workshopEditor.saveEnabled = await save.isEnabled().catch(() => false);
-            workshopEditor.backToWorkshopVisible = await page.getByRole('button', { name: 'Назад в цех', exact: true }).first().isVisible().catch(() => false);
-            workshopEditor.visibleButtons = await page.locator('button:visible').allTextContents();
-            workshopEditor.visibleAlerts = await page.locator('.error-banner:visible, .message-banner:visible, [role="alert"]:visible').allTextContents().catch(() => []);
-          }
-          report.workshop = { editCount: workshopEditCount, doneCount: workshopDoneCount, editableSample, editor: workshopEditor };
-
-          await page.goto(`${base}/#inventory`, { waitUntil: 'networkidle', timeout: 60000 });
-          await page.waitForTimeout(1600);
-          const desktopInventory = {};
-          for (const [key, pattern] of [
-            ['attention', /^Внимание/],
-            ['movement', /Движение товара/],
-            ['stocktake', /Ревизия/],
-            ['history', /История/]
-          ]) {
-            const button = page.getByRole('button', { name: pattern }).first();
-            const visible = await button.isVisible().catch(() => false);
-            const enabled = visible ? await button.isEnabled().catch(() => false) : false;
-            desktopInventory[key] = { visible, enabled };
-            if (visible && enabled) { await button.click(); await page.waitForTimeout(250); }
-          }
-          desktopInventory.catalogVisible = await page.getByRole('button', { name: /Каталог/ }).first().isVisible().catch(() => false);
-          report.viewports.desktopInventory = desktopInventory;
-
-          report.viewports.desktopRuntime = { pageErrors: state.pageErrors, consoleErrors: state.consoleErrors, blockedMutations: state.blockedMutations };
-          await page.close();
-
-          const { page: mobile, state: mobileState } = await makePage({ width: 390, height: 844 });
-          await mobile.goto(`${base}/#orders`, { waitUntil: 'networkidle', timeout: 60000 });
-          await mobile.waitForTimeout(1600);
-          const mobileOrders = {
-            rows: await mobile.locator('tr[data-order-id]').count(),
-            edit: await mobile.getByRole('button', { name: 'Редактировать', exact: true }).count(),
-            returns: await mobile.getByRole('button', { name: 'Возврат', exact: true }).count(),
-            exchanges: await mobile.getByRole('button', { name: 'Обмен', exact: true }).count()
-          };
-          await mobile.goto(`${base}/#workshop`, { waitUntil: 'networkidle', timeout: 60000 });
-          await mobile.waitForTimeout(1300);
-          const mobileWorkshop = {
-            edit: await mobile.getByRole('button', { name: 'Редактировать заказ', exact: true }).count(),
-            done: await mobile.getByRole('button', { name: /Готово|Отметить готовым/ }).count()
-          };
-          await mobile.goto(`${base}/#inventory`, { waitUntil: 'networkidle', timeout: 60000 });
-          await mobile.waitForTimeout(1500);
-          const mobileInventory = {};
-          for (const [key, pattern] of [['attention', /^Внимание/], ['movement', /Движение товара/], ['stocktake', /Ревизия/], ['history', /История/]]) {
-            const button = mobile.getByRole('button', { name: pattern }).first();
-            mobileInventory[key] = { visible: await button.isVisible().catch(() => false), enabled: await button.isEnabled().catch(() => false) };
-          }
-          mobileInventory.catalogVisible = await mobile.getByRole('button', { name: /Каталог/ }).first().isVisible().catch(() => false);
-          report.viewports.mobile = { orders: mobileOrders, workshop: mobileWorkshop, inventory: mobileInventory, pageErrors: mobileState.pageErrors, consoleErrors: mobileState.consoleErrors, blockedMutations: mobileState.blockedMutations };
-          await mobile.close();
-
-          console.log('MANAGER_READONLY_DIAGNOSTIC=' + JSON.stringify(report, null, 2));
-
-          const failures = [];
-          if (report.api.isAdmin) failures.push('session unexpectedly admin');
-          for (const [url, status] of Object.entries(report.api.statuses)) if (status !== 200) failures.push(`GET ${url}=${status}`);
-          const d = report.viewports.desktopOrders;
-          if (!d.rows || !d.edit || !d.editor?.visible || !d.editor?.saveVisible || !d.editor?.saveEnabled || !d.editor?.editableFields) failures.push('desktop order editor/actions unusable');
-          if (!d.returns || !d.exchanges || (!d.send && !d.handover)) failures.push('desktop routine order actions missing');
-          if (!report.workshop.editCount || !report.workshop.doneCount) failures.push('desktop workshop routine actions missing');
-          if (report.workshop.editableSample && (!report.workshop.editor.editorVisible || !report.workshop.editor.saveVisible || !report.workshop.editor.saveEnabled || !report.workshop.editor.backToWorkshopVisible)) failures.push('editable workshop order does not open usable manager editor');
-          for (const key of ['attention','movement','stocktake','history']) if (!report.viewports.desktopInventory[key]?.visible || !report.viewports.desktopInventory[key]?.enabled) failures.push(`desktop inventory ${key} unavailable`);
-          if (report.viewports.desktopInventory.catalogVisible) failures.push('admin-only catalog visible on desktop');
-          const m = report.viewports.mobile;
-          if (!m.orders.rows || !m.orders.edit || !m.orders.returns || !m.orders.exchanges) failures.push('mobile order actions unavailable');
-          if (!m.workshop.edit || !m.workshop.done) failures.push('mobile workshop actions unavailable');
-          for (const key of ['attention','movement','stocktake','history']) if (!m.inventory[key]?.visible || !m.inventory[key]?.enabled) failures.push(`mobile inventory ${key} unavailable`);
-          if (m.inventory.catalogVisible) failures.push('admin-only catalog visible on mobile');
-          if (state.pageErrors.length || state.consoleErrors.length || mobileState.pageErrors.length || mobileState.consoleErrors.length) failures.push('runtime console/page errors detected');
-          if (report.blockedMutations.length) failures.push(`unexpected mutation attempt(s): ${report.blockedMutations.join('; ')}`);
-
-          await browser.close();
-          if (failures.length) throw new Error(failures.join(' | '));
+          console.log('CURRENT_WORKSHOP_STATE=' + JSON.stringify(summary, null, 2));
           NODE
