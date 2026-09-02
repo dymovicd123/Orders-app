@@ -1,0 +1,46 @@
+name: Branch2 Editor White Screen R1 Validate
+
+on:
+  push:
+    branches: [safe/branch2-editor-white-screen-r1-20260902]
+    paths:
+      - scripts/.branch2-editor-white-screen-r1-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/branch2-editor-white-screen-r1-20260902
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: python3 scripts/apply-branch2-editor-white-screen-r1.py
+      - run: node scripts/test-order-edit-autonomy.mjs
+      - run: node scripts/test-branch2-environment.mjs
+      - run: npm run typecheck
+      - run: npm run release:check
+      - run: npm run verify:db-safety
+      - run: |
+          rm -rf dist
+          npm run build
+      - name: Branch2 dry-run binding guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --dry-run 2>&1 | tee /tmp/branch2-editor-dry-run.txt
+          grep -F 'orders_db_branch2' /tmp/branch2-editor-dry-run.txt
+          if grep -F 'orders_db_prod' /tmp/branch2-editor-dry-run.txt; then exit 1; fi
+      - name: Commit validated Branch2 candidate
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx scripts/test-order-edit-autonomy.mjs
+          git commit -m 'Fix Branch2 order editor white-screen crash'
+          git push origin HEAD:safe/branch2-editor-white-screen-r1-20260902
