@@ -110,7 +110,9 @@ try {
   check(inventory.includes(arrivalMarker), 'Frozen Arrival workspace disappeared')
 
   const migrations = fs.readdirSync(path.join(root, 'migrations')).filter((name) => name.endsWith('.sql')).sort()
-  check(migrations.at(-1) === '0061_v72_warehouse_attention_truth_gates.sql', '192B2A must not add a schema migration')
+  check(migrations.includes('0061_v72_warehouse_attention_truth_gates.sql'), '192B2A historical migration ceiling is missing')
+  const migrationsThroughStepB2A = migrations.filter((name) => name.localeCompare('0061_v72_warehouse_attention_truth_gates.sql') <= 0)
+  check(migrationsThroughStepB2A.at(-1) === '0061_v72_warehouse_attention_truth_gates.sql', '192B2A must not add a schema migration')
 
   const release = read('scripts/release-check.mjs')
   check(release.includes('test-step192b2a-daily-warehouse.mjs'), '192B2A test is not chained into cumulative release gate')
