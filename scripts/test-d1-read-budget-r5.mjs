@@ -5,6 +5,7 @@ const check = (condition, message) => { if (!condition) throw new Error(message)
 
 const migration = read('migrations/0062_v72_d1_read_budget_r5_warehouse_indexes.sql')
 const attention = read('worker/domains/warehouse-attention.ts')
+const catalogReview = read('worker/domains/catalog-review.ts')
 const reservations = read('worker/domains/order-reservations.ts')
 
 // R5.1 is deliberately query-plan-only: no warehouse truth or workflow state may be rewritten.
@@ -19,7 +20,7 @@ check(migration.includes('idx_inventory_stocktake_completed_source_time') && mig
 check(attention.includes("{ allActive: true, listFlagsOnly: !details }"), 'Warehouse Attention must keep compact handover mode')
 check(attention.includes('fullyExplainedShortageKeys') && attention.includes('rawShortageCount - fullyExplainedShortageKeys.size'), 'handover-explained shortage protection changed')
 check(attention.includes("e.status = 'pending' AND e.direction = 'in'"), 'pending intake classification changed')
-check(attention.includes("COALESCE(r.status, 'completed') <> 'cancelled'"), 'returned-quantity truth gate changed')
+check(catalogReview.includes("COALESCE(r.status, 'completed') <> 'cancelled'"), 'returned-quantity truth gate changed')
 check(attention.includes("e.status = 'pending' AND e.order_item_id = oi.id"), 'catalog/lifecycle exclusion changed')
 
 check(reservations.includes("scoped_order.order_status NOT IN ('deleted', 'archived')"), 'compact handover active-order scope changed')
