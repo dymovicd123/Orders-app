@@ -190,6 +190,8 @@ export async function verifySimpleAdminPassword(db: D1Database, env: Env, passwo
     if (passwordHashNeedsEdgeReset(storedHash)) return false;
     return verifyPassword(password, storedHash);
   }
+  const storedPasswordRequired = (await getAppSetting(db, 'require_stored_admin_password', '0')) === '1';
+  if (storedPasswordRequired) return false;
   return password === getAdminModePassword(env);
 }
 

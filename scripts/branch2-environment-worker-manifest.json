@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "revision": "branch2-environment-r1",
+  "changes": {
+    "verifySimpleAdminPassword": {
+      "before": "428a8a90ec9ec242766f0ac14d5dc361b2ea10036bc9b7affe3c8c9ef3211e49",
+      "after": "f1ca85157d2515a9378233d3db5da63a40d847f8168426a797fe5be3b6e5b1f1",
+      "file": "worker/domains/auth.ts"
+    }
+  }
+}

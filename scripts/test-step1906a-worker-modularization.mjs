@@ -24,6 +24,7 @@ const d1CapacityAutonomyPath = path.join(root, 'scripts/d1-capacity-autonomy-wor
 const d1ReadBudgetPath = path.join(root, 'scripts/d1-read-budget-r1-worker-manifest.json')
 const d1ReadBudgetR2Path = path.join(root, 'scripts/d1-read-budget-r2-worker-manifest.json')
 const d1ReadBudgetR3Path = path.join(root, 'scripts/d1-read-budget-r3-worker-manifest.json')
+const branch2EnvironmentPath = path.join(root, 'scripts/branch2-environment-worker-manifest.json')
 const operationalAutonomyR2WorkerPath = path.join(root, 'scripts/operational-autonomy-r2-worker-manifest.json')
 const phase1bWorkshopReturnDispositionPath = path.join(root, 'scripts/phase1b-workshop-return-disposition-worker-manifest.json')
 const arrivalSaveReliabilityPath = path.join(root, 'scripts/arrival-save-reliability-worker-manifest.json')
@@ -134,6 +135,10 @@ try {
   const d1ReadBudgetR3 = JSON.parse(fs.readFileSync(d1ReadBudgetR3Path, 'utf8'))
   check(d1ReadBudgetR3?.version === 1 && d1ReadBudgetR3?.revision === 'd1-read-budget-r3', 'D1 read-budget R3 Worker manifest invalid')
   const d1ReadBudgetR3Changes = d1ReadBudgetR3.changes || {}
+  check(fs.existsSync(branch2EnvironmentPath), 'Branch2 environment Worker manifest missing')
+  const branch2Environment = JSON.parse(fs.readFileSync(branch2EnvironmentPath, 'utf8'))
+  check(branch2Environment?.version === 1 && branch2Environment?.revision === 'branch2-environment-r1', 'Branch2 environment Worker manifest invalid')
+  const branch2EnvironmentChanges = branch2Environment.changes || {}
   check(fs.existsSync(operationalAutonomyR2WorkerPath), 'Operational autonomy R2 Worker manifest missing')
   const operationalAutonomyR2Worker = JSON.parse(fs.readFileSync(operationalAutonomyR2WorkerPath, 'utf8'))
   check(operationalAutonomyR2Worker?.version === 1 && operationalAutonomyR2Worker?.revision === 'operational-autonomy-r2', 'Operational autonomy R2 Worker manifest invalid')
@@ -419,11 +424,17 @@ try {
       acceptedPostD1ReadBudgetR2Hash = d1ReadBudgetR2Changed.after
     }
     const d1ReadBudgetR3Changed = d1ReadBudgetR3Changes[name]
+    let acceptedPostD1ReadBudgetR3Hash = acceptedPostD1ReadBudgetR2Hash
     if (d1ReadBudgetR3Changed) {
       check(d1ReadBudgetR3Changed.before === acceptedPostD1ReadBudgetR2Hash, `D1 read-budget R3 baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === d1ReadBudgetR3Changed.after, `Worker declaration changed beyond exact D1 read-budget R3 allow-list: ${name}`)
+      acceptedPostD1ReadBudgetR3Hash = d1ReadBudgetR3Changed.after
+    }
+    const branch2EnvironmentChanged = branch2EnvironmentChanges[name]
+    if (branch2EnvironmentChanged) {
+      check(branch2EnvironmentChanged.before === acceptedPostD1ReadBudgetR3Hash, `Branch2 environment baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === branch2EnvironmentChanged.after, `Worker declaration changed beyond exact Branch2 environment allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostD1ReadBudgetR2Hash, `Worker declaration body changed beyond accepted cumulative deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostD1ReadBudgetR3Hash, `Worker declaration body changed beyond accepted cumulative deltas: ${name}`)
     }
   }
 
