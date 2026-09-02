@@ -1,0 +1,86 @@
+name: R5.2 post-apply summary control
+
+on:
+  push:
+    branches: [safe/r5-2-warehouse-summary-20260902]
+    paths:
+      - scripts/.r5-2-post-summary-control-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Exact Warehouse Attention summary SQL after R5.2 — read only
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process'
+          const sql = `SELECT
+            (SELECT COUNT(*) FROM (
+              SELECT s.inventory_source, s.variant_id
+              FROM inventory_stock s
+              WHERE s.quantity < 0
+              UNION
+              SELECT r.inventory_source, r.variant_id
+              FROM inventory_reservations r
+              LEFT JOIN inventory_stock s ON s.inventory_source = r.inventory_source AND s.variant_id = r.variant_id
+              WHERE r.status = 'active' AND r.variant_id IS NOT NULL
+              GROUP BY r.inventory_source, r.variant_id
+              HAVING SUM(r.quantity) > COALESCE(MAX(s.quantity), 0)
+            )) AS shortage_count,
+            (SELECT COUNT(*) FROM inventory_lifecycle_events WHERE status = 'pending') AS lifecycle_total_count,
+            (SELECT COUNT(*) FROM inventory_lifecycle_events e
+              WHERE e.status = 'pending' AND e.direction = 'in' AND COALESCE(
+                (SELECT v0.id FROM catalog_variants v0 WHERE v0.id = e.variant_id AND v0.is_active = 1 LIMIT 1),
+                (SELECT v.id FROM catalog_variants v
+                  WHERE v.is_active = 1
+                    AND v.product_id = e.product_id
+                    AND LOWER(TRIM(COALESCE(v.category, 'adult'))) = CASE WHEN UPPER(TRIM(COALESCE(e.audience_type, ''))) LIKE '%ДЕТ%' OR LOWER(TRIM(COALESCE(e.audience_type, ''))) = 'child' THEN 'child' ELSE 'adult' END
+                    AND UPPER(TRIM(COALESCE(v.gender, ''))) = UPPER(TRIM(COALESCE(e.gender_snapshot, '')))
+                    AND UPPER(TRIM(COALESCE(v.color, ''))) = UPPER(TRIM(COALESCE(e.color_snapshot, '')))
+                    AND UPPER(TRIM(COALESCE(NULLIF(v.material, ''), 'СТАНДАРТ'))) = UPPER(TRIM(COALESCE(NULLIF(e.material_snapshot, ''), 'СТАНДАРТ')))
+                    AND UPPER(TRIM(COALESCE(NULLIF(v.length, ''), 'СТАНДАРТ'))) = UPPER(TRIM(COALESCE(NULLIF(e.length_snapshot, ''), 'СТАНДАРТ')))
+                    AND UPPER(TRIM(COALESCE(v.size_label, ''))) = UPPER(TRIM(COALESCE(e.size_snapshot, '')))
+                  ORDER BY v.id LIMIT 1)
+              ) IS NOT NULL) AS intake_count,
+            (SELECT COUNT(*) FROM (
+              SELECT 1
+              FROM order_items oi
+              JOIN orders o ON o.id = oi.order_id
+              WHERE oi.quantity > 0
+                AND (oi.product_id IS NULL OR oi.variant_id IS NULL)
+                AND COALESCE(oi.stock_writeoff_status, '') NOT IN ('catalog_excluded', 'catalog_excluded_history', 'workshop_no_catalog')
+                AND COALESCE(o.order_status, 'active') NOT IN ('deleted', 'archived')
+                AND COALESCE(o.archived_at, '') = ''
+                AND COALESCE((SELECT SUM(ri.quantity) FROM return_items ri JOIN returns r ON r.id = ri.return_id WHERE ri.order_item_id = oi.id AND COALESCE(r.status, 'completed') <> 'cancelled'), 0) < oi.quantity
+                AND datetime(COALESCE(NULLIF(oi.created_at, ''), NULLIF(o.created_at, ''), o.order_date || 'T00:00:00Z')) >= datetime('now', '-30 days')
+                AND ((COALESCE(oi.is_workshop, 0) = 1 AND oi.product_id IS NULL AND EXISTS (SELECT 1 FROM workshop_tasks wt WHERE wt.order_item_id = oi.id AND wt.quantity > 0 AND wt.status IN ('active', 'ready')))
+                  OR (COALESCE(oi.is_workshop, 0) = 0 AND COALESCE(o.shipping_status, 'not_sent') <> 'sent'))
+                AND NOT EXISTS (SELECT 1 FROM inventory_lifecycle_events e WHERE e.status = 'pending' AND e.order_item_id = oi.id)
+              GROUP BY
+                UPPER(TRIM(COALESCE(oi.product_name_snapshot, ''))),
+                CASE WHEN UPPER(TRIM(COALESCE(oi.audience_type, ''))) LIKE '%ДЕТ%' OR LOWER(TRIM(COALESCE(oi.audience_type, ''))) = 'child' THEN 'child' ELSE 'adult' END,
+                UPPER(TRIM(COALESCE(oi.gender_snapshot, ''))),
+                UPPER(TRIM(COALESCE(oi.color_snapshot, ''))),
+                CASE WHEN TRIM(COALESCE(oi.material_snapshot, '')) = '' THEN 'СТАНДАРТ' ELSE UPPER(TRIM(oi.material_snapshot)) END,
+                CASE WHEN TRIM(COALESCE(oi.length_snapshot, '')) = '' THEN 'СТАНДАРТ' ELSE UPPER(TRIM(oi.length_snapshot)) END,
+                UPPER(TRIM(COALESCE(oi.size_snapshot, '')))
+            )) AS catalog_count,
+            (SELECT COUNT(*) FROM inventory_stocktake_sessions WHERE status = 'active') AS stocktake_count`
+          const out = execFileSync('npx',['wrangler','d1','execute','orders_db_prod','--remote','--command',sql,'--json'],{encoding:'utf8',maxBuffer:20*1024*1024})
+          const p=JSON.parse(out); const r=Array.isArray(p)?p[0]:p
+          if(!r?.success) throw new Error('summary query failed')
+          console.log(`R5_2_SUMMARY_POST rows_read=${r.meta?.rows_read ?? 'na'} duration=${r.meta?.duration ?? 'na'} results=${JSON.stringify(r.results||[])}`)
+          NODE
