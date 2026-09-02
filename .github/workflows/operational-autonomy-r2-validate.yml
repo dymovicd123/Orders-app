@@ -44,7 +44,7 @@ jobs:
         run: |
           git config user.name "dymovicd123"
           git config user.email "dymovicd@gmail.com"
-          git add package.json worker/index.ts src/App.tsx src/app/controllers/useOperationalViewModel.ts src/features/sections/InventorySection.tsx src/features/inventory/views/renderInventoryAttentionPanel.tsx scripts/test-operational-autonomy-r2.mjs scripts/operational-autonomy-r2-frontend-manifest.json scripts/operational-autonomy-r2-worker-manifest.json scripts/test-step1906a-worker-modularization.mjs scripts/test-step1906b-frontend-modularization.mjs scripts/test-step192b2a-daily-warehouse.mjs scripts/test-step192b2a1-attention-visibility.mjs
+          git add package.json worker/index.ts src/App.tsx src/app/controllers/useOperationalViewModel.ts src/features/sections/InventorySection.tsx src/features/inventory/views/renderInventoryAttentionPanel.tsx scripts/test-operational-autonomy-r2.mjs scripts/operational-autonomy-r2-frontend-manifest.json scripts/operational-autonomy-r2-worker-manifest.json scripts/test-step1906a-worker-modularization.mjs scripts/test-step1906b-frontend-modularization.mjs scripts/test-step192b2a-daily-warehouse.mjs scripts/test-step192b2a1-attention-visibility.mjs scripts/test-phase2-smart-daily-stock.mjs
           git diff --cached --check
           git commit -m "Reduce routine admin blockers"
           git push origin HEAD:safe/operational-autonomy-r2-20260902
