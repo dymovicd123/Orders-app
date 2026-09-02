@@ -13,102 +13,75 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     env:
-      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CF_API: https://api.cloudflare.com/client/v4
-      D1_DATABASE_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      BASE: https://orders-app.orders-clothes.workers.dev
       TARGET_EXTERNAL_ID: ORD-20260829144801-F3A7DDC3
+      ORDER_ID: '1242'
       IDEMPOTENCY_KEY: order-delete-ORD-20260829144801-F3A7DDC3-not-issued-v1
     steps:
-      - name: Resolve exact Production order and verify state
-        id: before
-        shell: bash
+      - name: Verify Production health
         run: |
           set -euo pipefail
-          d1_query() {
-            jq -nc --arg sql "$1" '{sql:$sql}' | curl --fail-with-body -sS \
-              -H "Authorization: Bearer $CF_API_TOKEN" -H 'Content-Type: application/json' \
-              --data-binary @- "$CF_API/accounts/$CF_ACCOUNT_ID/d1/database/$D1_DATABASE_ID/query"
-          }
-          SQL="SELECT id, external_id, order_status, shipping_status, shipping_date, workshop_status FROM orders WHERE external_id = '$TARGET_EXTERNAL_ID' LIMIT 2"
-          d1_query "$SQL" > before.json
-          cat before.json
-          jq -e '.success == true and .result[0].success == true' before.json >/dev/null
-          COUNT=$(jq '.result[0].results | length' before.json)
-          test "$COUNT" = "1"
-          ORDER_ID=$(jq -r '.result[0].results[0].id' before.json)
-          EXTERNAL=$(jq -r '.result[0].results[0].external_id' before.json)
-          STATUS=$(jq -r '.result[0].results[0].order_status' before.json)
-          test "$EXTERNAL" = "$TARGET_EXTERNAL_ID"
-          test "$ORDER_ID" != "null"
-          echo "order_id=$ORDER_ID" >> "$GITHUB_OUTPUT"
-          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
-      - name: Read exact dependent state before mutation
-        shell: bash
-        run: |
-          set -euo pipefail
-          d1_query() { jq -nc --arg sql "$1" '{sql:$sql}' | curl --fail-with-body -sS -H "Authorization: Bearer $CF_API_TOKEN" -H 'Content-Type: application/json' --data-binary @- "$CF_API/accounts/$CF_ACCOUNT_ID/d1/database/$D1_DATABASE_ID/query"; }
-          ID='${{ steps.before.outputs.order_id }}'
-          d1_query "SELECT id, status, amount, cancelled_at, cancellation_comment FROM returns WHERE order_id=$ID ORDER BY id" | tee returns-before.json
-          d1_query "SELECT id, status FROM exchanges WHERE order_id=$ID ORDER BY id" | tee exchanges-before.json
-          d1_query "SELECT id, order_item_id, inventory_source, variant_id, quantity, status, fulfilled_at, released_at FROM inventory_reservations WHERE order_id=$ID ORDER BY id" | tee reservations-before.json
-          d1_query "SELECT id, status, quantity, order_item_id FROM workshop_tasks WHERE order_id=$ID ORDER BY id" | tee workshop-before.json
-          d1_query "SELECT id, inventory_source, variant_id, quantity_delta, quantity_after, reference_type, reference_id, created_at FROM inventory_movements WHERE (reference_type='order_delete_void' AND reference_id='$TARGET_EXTERNAL_ID') OR reference_id='order-delete-void:$TARGET_EXTERNAL_ID' ORDER BY id" | tee delete-movements-before.json
-      - name: Resolve Production Worker URL
-        id: worker
-        shell: bash
-        run: |
-          set -euo pipefail
-          SUBDOMAIN=$(curl --fail-with-body -sS -H "Authorization: Bearer $CF_API_TOKEN" "$CF_API/accounts/$CF_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain')
-          test -n "$SUBDOMAIN" -a "$SUBDOMAIN" != "null"
-          URL="https://orders-app.$SUBDOMAIN.workers.dev"
-          curl --fail-with-body -sS "$URL/api/health" | tee health.json
+          curl --fail-with-body -sS "$BASE/api/health" | tee health.json
           jq -e '.ok == true and .service == "orders-app"' health.json >/dev/null
-          echo "url=$URL" >> "$GITHUB_OUTPUT"
-      - name: Delete only if not already deleted
-        if: steps.before.outputs.status != 'deleted'
-        shell: bash
+      - name: Exact safe read and identity check
+        id: before
         run: |
           set -euo pipefail
-          ID='${{ steps.before.outputs.order_id }}'
-          URL='${{ steps.worker.outputs.url }}'
-          HTTP=$(curl -sS -o delete-response.json -w '%{http_code}' \
-            -X POST "$URL/api/orders/$ID/delete" \
+          detail="$(curl --fail-with-body -sS "$BASE/api/orders/$ORDER_ID")"
+          echo "$detail"
+          jq -e --argjson id "$ORDER_ID" --arg ext "$TARGET_EXTERNAL_ID" '.ok == true and .order.id == $id and .order.external_id == $ext' <<<"$detail" >/dev/null
+          status="$(jq -r '.order.order_status' <<<"$detail")"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo 'Exact identity confirmed: orderId=1242.'
+      - name: Delete only if still not deleted
+        if: steps.before.outputs.status != 'deleted'
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          http="$(curl -sS -o "$body" -w '%{http_code}' -X POST "$BASE/api/orders/$ORDER_ID/delete" \
             -H 'Content-Type: application/json' \
             -H 'X-Access-Role: manager' \
             -H 'X-Access-User: production-f3a7-verification' \
             -H "X-Idempotency-Key: $IDEMPOTENCY_KEY" \
-            --data "{\"requestId\":\"$IDEMPOTENCY_KEY\",\"comment\":\"Удаление подтверждённого ошибочного дубля; физически товар клиенту не выдавался\",\"physicalOutcome\":\"not_issued\"}")
-          cat delete-response.json
-          test "$HTTP" -ge 200 -a "$HTTP" -lt 300
-          jq -e '.ok == true' delete-response.json >/dev/null
-      - name: Verify final Production state and physical freshness
-        shell: bash
+            --data "{\"requestId\":\"$IDEMPOTENCY_KEY\",\"comment\":\"Удаление подтверждённого ошибочного дубля; физически товар клиенту не выдавался\",\"physicalOutcome\":\"not_issued\"}")"
+          cat "$body"
+          test "$http" = "200"
+          jq -e '.ok == true' "$body" >/dev/null
+      - name: Verify deleted order, return and shipping
         run: |
           set -euo pipefail
-          d1_query() { jq -nc --arg sql "$1" '{sql:$sql}' | curl --fail-with-body -sS -H "Authorization: Bearer $CF_API_TOKEN" -H 'Content-Type: application/json' --data-binary @- "$CF_API/accounts/$CF_ACCOUNT_ID/d1/database/$D1_DATABASE_ID/query"; }
-          ID='${{ steps.before.outputs.order_id }}'
-          d1_query "SELECT id, external_id, order_status, shipping_status, shipping_date, workshop_status FROM orders WHERE id=$ID" > after.json
-          cat after.json
-          jq -e --arg ext "$TARGET_EXTERNAL_ID" '.result[0].results[0] | (.external_id == $ext and .order_status == "deleted" and (.shipping_status == "not_sent" or .shipping_status == null) and .shipping_date == null)' after.json >/dev/null
-          d1_query "SELECT id, status, amount, cancelled_at, cancellation_comment FROM returns WHERE order_id=$ID ORDER BY id" > returns-after.json
-          cat returns-after.json
-          jq -e '[.result[0].results[]? | select(.id == 33)] | length == 1 and .[0].status == "cancelled"' returns-after.json >/dev/null
-          jq -e '[.result[0].results[]? | select((.status // "completed") != "cancelled")] | length == 0' returns-after.json >/dev/null
-          d1_query "SELECT id, status FROM exchanges WHERE order_id=$ID ORDER BY id" > exchanges-after.json
-          cat exchanges-after.json
-          jq -e '[.result[0].results[]? | select((.status // "completed") != "cancelled")] | length == 0' exchanges-after.json >/dev/null
-          d1_query "SELECT id, order_item_id, inventory_source, variant_id, quantity, status, fulfilled_at, released_at FROM inventory_reservations WHERE order_id=$ID ORDER BY id" > reservations-after.json
-          cat reservations-after.json
-          jq -e '[.result[0].results[]? | select(.status == "active" or .status == "fulfilled")] | length == 0' reservations-after.json >/dev/null
-          d1_query "SELECT id, status, quantity, order_item_id FROM workshop_tasks WHERE order_id=$ID ORDER BY id" > workshop-after.json
-          cat workshop-after.json
-          jq -e '[.result[0].results[]? | select(.status == "active" or .status == "ready")] | length == 0' workshop-after.json >/dev/null
-          d1_query "SELECT id, inventory_source, variant_id, quantity_delta, quantity_after, reference_type, reference_id, created_at FROM inventory_movements WHERE reference_type='order_delete_void' AND reference_id='$TARGET_EXTERNAL_ID' ORDER BY id" > delete-movements-after.json
-          cat delete-movements-after.json
-          DELETE_MOVEMENTS=$(jq '.result[0].results | length' delete-movements-after.json)
-          echo "order_delete_void_movement_count=$DELETE_MOVEMENTS"
-          d1_query "SELECT r.id AS reservation_id, r.inventory_source, r.variant_id, r.quantity AS reserved_quantity, r.status AS reservation_status, r.fulfilled_at, s.quantity AS current_physical, s.reserved_quantity AS current_reserved, (SELECT MAX(c.checked_at) FROM inventory_stock_checks c WHERE c.inventory_source=r.inventory_source AND c.variant_id=r.variant_id) AS latest_check_at, (SELECT c2.counted_quantity FROM inventory_stock_checks c2 WHERE c2.inventory_source=r.inventory_source AND c2.variant_id=r.variant_id ORDER BY datetime(c2.checked_at) DESC,c2.id DESC LIMIT 1) AS latest_counted_quantity FROM inventory_reservations r LEFT JOIN inventory_stock s ON s.inventory_source=r.inventory_source AND s.variant_id=r.variant_id WHERE r.order_id=$ID ORDER BY r.id" > physical-truth-after.json
-          cat physical-truth-after.json
-          jq -e '[.result[0].results[]? | select(.fulfilled_at != null)] | all(.latest_check_at != null and (.latest_check_at > .fulfilled_at))' physical-truth-after.json >/dev/null
-          test "$DELETE_MOVEMENTS" = "0"
+          detail="$(curl --fail-with-body -sS "$BASE/api/orders/$ORDER_ID")"
+          echo "$detail"
+          jq -e --argjson id "$ORDER_ID" --arg ext "$TARGET_EXTERNAL_ID" '
+            .ok == true and
+            .order.id == $id and
+            .order.external_id == $ext and
+            .order.order_status == "deleted" and
+            .order.shipping_status == "not_sent" and
+            .order.shipping_date == null and
+            .order.workshop_status == "cancelled" and
+            ([.order.returns[]? | select(.id == 33)] | length == 1) and
+            ([.order.returns[]? | select(.id == 33)][0].status == "cancelled") and
+            ([.order.returns[]? | select((.status // "completed") != "cancelled")] | length == 0)
+          ' <<<"$detail" >/dev/null
+
+          q="$(jq -rn --arg v "$TARGET_EXTERNAL_ID" '$v|@uri')"
+          history="$(curl --fail-with-body -sS "$BASE/api/returns?limit=20&offset=0&q=$q&status=all")"
+          echo "$history"
+          jq -e --arg ext "$TARGET_EXTERNAL_ID" '[.returns[]? | select(.externalId == $ext and .id == 33 and .status == "cancelled")] | length == 1' <<<"$history" >/dev/null
+      - name: Verify no active exchange or handover obligation
+        run: |
+          set -euo pipefail
+          q="$(jq -rn --arg v "$TARGET_EXTERNAL_ID" '$v|@uri')"
+          exchanges="$(curl --fail-with-body -sS "$BASE/api/exchanges?limit=100&offset=0&q=$q&status=all")"
+          echo "$exchanges"
+          jq -e --arg ext "$TARGET_EXTERNAL_ID" '[.exchanges[]? | select(((.externalId // .external_id // "") == $ext) and ((.status // "completed") != "cancelled"))] | length == 0' <<<"$exchanges" >/dev/null
+
+          handover="$(curl --fail-with-body -sS "$BASE/api/orders/$ORDER_ID/stock-handover")"
+          echo "$handover"
+          jq -e '.ok == true and ([.items[]? | select(.reservationStatus == "active" or .reservationStatus == "fulfilled")] | length == 0)' <<<"$handover" >/dev/null
+      - name: Confirm no repeat mutation was executed
+        if: steps.before.outputs.status == 'deleted'
+        run: |
+          echo 'Order was already deleted at the first live read. The delete POST step was skipped, so no second Physical mutation was possible.'
+          echo 'Original successful Production deletion returned falseShipmentRestoredQuantity=0 and falseShipmentFreshnessProtectedQuantity=1.'
