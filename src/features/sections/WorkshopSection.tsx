@@ -12,7 +12,6 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
     formatDateShort,
     getPeriodRange,
     getWorkshopInvoiceImportanceLabel,
-    isAdmin,
     markWorkshopTaskDone,
     openWorkshopExchange,
     openWorkshopOrderEditor,
@@ -287,15 +286,13 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
                         </td>
                         <td>
                           <div className="workshop-actions table-actions-vertical">
-                            {isAdmin ? (
-                              <button
-                                className="secondary compact"
-                                type="button"
-                                onClick={() => void openWorkshopOrderEditor(task)}
-                              >
-                                Редактировать заказ
-                              </button>
-                            ) : null}
+                            <button
+                              className="secondary compact"
+                              type="button"
+                              onClick={() => void openWorkshopOrderEditor(task)}
+                            >
+                              Редактировать заказ
+                            </button>
                             <button
                               className="secondary compact"
                               type="button"

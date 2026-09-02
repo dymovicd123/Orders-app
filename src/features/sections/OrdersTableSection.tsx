@@ -282,7 +282,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 {order.stock_handover_review_needed ? 'Уточнить выдачу' : 'Выдать готовые товары'}
                               </button>
                             ) : null}
-                            {!retainedOnly && !archived && !isReturnedOrderRecord(order) && order.shipping_status !== 'sent' && !workshopPending && !order.stock_handover_review_needed ? (
+                            {!retainedOnly && !archived && !isReturnedOrderRecord(order) && order.shipping_status !== 'sent' && !workshopPending ? (
                               <button
                                 className="secondary compact"
                                 type="button"
