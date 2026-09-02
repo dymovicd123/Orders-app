@@ -19,20 +19,33 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Extend migration preservation allow-list for R5.1
+      - name: Extend historical migration gates for R5.1
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
+
+          # Step 190.6C freezes historical migration preservation. R5.1 is a new, additive,
+          # index-only migration and must be accepted without weakening the preservation check.
           path = Path('scripts/test-step1906c-dead-code-cleanup.mjs')
           text = path.read_text()
           old = "const acceptedAdditiveMigrations = ['0061_v72_warehouse_attention_truth_gates.sql']"
           new = "const acceptedAdditiveMigrations = ['0061_v72_warehouse_attention_truth_gates.sql', '0062_v72_d1_read_budget_r5_warehouse_indexes.sql']"
-          if old not in text:
-              if new in text:
-                  raise SystemExit(0)
+          if old in text:
+              path.write_text(text.replace(old, new, 1))
+          elif new not in text:
               raise SystemExit('1906C additive migration allow-list anchor not found')
-          path.write_text(text.replace(old, new, 1))
+
+          # 192B2A itself intentionally added no schema migration. Preserve that invariant by
+          # checking its historical ceiling explicitly while allowing later additive migrations.
+          path = Path('scripts/test-step192b2a-daily-warehouse.mjs')
+          text = path.read_text()
+          old = "  const migrations = fs.readdirSync(path.join(root, 'migrations')).filter((name) => name.endsWith('.sql')).sort()\n  check(migrations.at(-1) === '0061_v72_warehouse_attention_truth_gates.sql', '192B2A must not add a schema migration')"
+          new = "  const migrations = fs.readdirSync(path.join(root, 'migrations')).filter((name) => name.endsWith('.sql')).sort()\n  check(migrations.includes('0061_v72_warehouse_attention_truth_gates.sql'), '192B2A historical migration ceiling is missing')\n  const migrationsThrough192B2A = migrations.filter((name) => name.localeCompare('0061_v72_warehouse_attention_truth_gates.sql') <= 0)\n  check(migrationsThrough192B2A.at(-1) === '0061_v72_warehouse_attention_truth_gates.sql', '192B2A must not add a schema migration')"
+          if old in text:
+              path.write_text(text.replace(old, new, 1))
+          elif new not in text:
+              raise SystemExit('192B2A migration ceiling anchor not found')
           PY
       - run: npm ci
       - name: R5 targeted regression
@@ -45,14 +58,14 @@ jobs:
         run: npm run release:check
       - name: Build
         run: npm run build
-      - name: Commit preservation-gate update
+      - name: Commit preservation-gate updates
         shell: bash
         run: |
-          if git diff --quiet -- scripts/test-step1906c-dead-code-cleanup.mjs; then
+          if git diff --quiet -- scripts/test-step1906c-dead-code-cleanup.mjs scripts/test-step192b2a-daily-warehouse.mjs; then
             exit 0
           fi
           git config user.name "orders-r5-ci"
           git config user.email "orders-r5-ci@users.noreply.github.com"
-          git add scripts/test-step1906c-dead-code-cleanup.mjs
+          git add scripts/test-step1906c-dead-code-cleanup.mjs scripts/test-step192b2a-daily-warehouse.mjs
           git commit -m "Accept additive R5.1 warehouse index migration"
           git push origin HEAD:safe/d1-read-budget-r5-warehouse-20260902
