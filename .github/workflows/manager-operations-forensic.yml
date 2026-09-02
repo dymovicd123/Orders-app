@@ -1,0 +1,219 @@
+name: Manager operations forensic
+
+on:
+  push:
+    branches: [safe/manager-operations-forensic-20260902]
+
+permissions:
+  contents: read
+
+jobs:
+  forensic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Static manager access audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/test-order-edit-autonomy.mjs
+          node scripts/test-return-exchange-cancel-autonomy.mjs
+          node scripts/test-shipping-shortage-nonblocking.mjs
+          node scripts/test-operational-autonomy-r2.mjs
+          node <<'NODE'
+          const fs = require('fs')
+          const worker = fs.readFileSync('worker/index.ts', 'utf8')
+          const app = fs.readFileSync('src/App.tsx', 'utf8')
+          const table = fs.readFileSync('src/features/sections/OrdersTableSection.tsx', 'utf8')
+          const fail = (m) => { throw new Error(m) }
+          const check = (v, m) => { if (!v) fail(m) }
+
+          function routeBlock(marker) {
+            const start = worker.indexOf(marker)
+            check(start >= 0, `Missing route marker: ${marker}`)
+            const tailStart = start + marker.length
+            const tail = worker.slice(tailStart)
+            const m = tail.match(/\n      (?=(?:const \w+Match = url\.pathname\.match|if \(url\.pathname === ))/)
+            return worker.slice(start, m ? tailStart + m.index : worker.length)
+          }
+
+          const shipping = routeBlock('const orderShippingMatch =')
+          check(!shipping.includes('requireAdminAccess(request)'), 'ORDER SHIPPING is admin-gated')
+          check(!shipping.includes('requireAdminUser('), 'ORDER SHIPPING is admin-user-gated')
+
+          const orderRouteStart = worker.indexOf('const orderMatch =')
+          const orderRouteEnd = worker.indexOf('const returnCancelMatch', orderRouteStart)
+          check(orderRouteStart >= 0 && orderRouteEnd > orderRouteStart, 'Order route block missing')
+          const orderRoute = worker.slice(orderRouteStart, orderRouteEnd)
+          const patchStart = orderRoute.indexOf("if (request.method === 'PATCH')")
+          const deleteStart = orderRoute.indexOf("if (request.method === 'DELETE')", patchStart)
+          check(patchStart >= 0 && deleteStart > patchStart, 'Order PATCH block missing')
+          const patchBlock = orderRoute.slice(patchStart, deleteStart)
+          check(!patchBlock.includes('requireAdminAccess(request)'), 'ORDER EDIT PATCH is admin-gated')
+          check(!patchBlock.includes('requireAdminUser('), 'ORDER EDIT PATCH is admin-user-gated')
+
+          check(table.includes("isAdmin || (!['deleted', 'archived'].includes(order.order_status) && order.shipping_status !== 'sent')"), 'Edit button manager visibility rule missing')
+          check(table.includes('void markOrderSentToClient(order)'), 'Send-to-client action missing from orders table')
+          check(!table.includes('isAdmin && order.shipping_status'), 'Send-to-client appears directly admin-gated in table')
+          check(app.includes("apiFetch(`/api/orders/${order.id}/shipping`"), 'Shipping frontend PATCH call missing')
+
+          const lines = worker.split('\n')
+          console.log('\n=== requireAdminAccess route contexts ===')
+          for (let i = 0; i < lines.length; i++) {
+            if (!lines[i].includes('requireAdminAccess(request)')) continue
+            let route = ''
+            for (let j = i; j >= Math.max(0, i - 35); j--) {
+              if (/url\.pathname|Match = url\.pathname/.test(lines[j])) { route = lines[j].trim(); break }
+            }
+            console.log(`${i + 1}: ${route || '(route not found nearby)'} :: ${lines[i].trim()}`)
+          }
+          console.log('STATIC MANAGER ACCESS AUDIT PASSED')
+          NODE
+
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Live manager workflow forensic without writes
+        env:
+          TARGET_URL: https://orders-app.orders-clothes.workers.dev/#orders
+        run: |
+          node <<'NODE'
+          const { chromium } = require('playwright')
+          ;(async () => {
+            const browser = await chromium.launch({ headless: true })
+            const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } })
+            const pageErrors = []
+            const consoleErrors = []
+            const unexpectedMutations = []
+            page.on('pageerror', e => pageErrors.push(String(e?.stack || e)))
+            page.on('console', m => { if (m.type() === 'error') consoleErrors.push(m.text()) })
+            page.on('request', r => {
+              if (['POST','PATCH','PUT','DELETE'].includes(r.method()) && !r.url().includes('/shipping')) unexpectedMutations.push(`${r.method()} ${r.url()}`)
+            })
+
+            async function openOrdersYear() {
+              await page.goto(process.env.TARGET_URL, { waitUntil: 'networkidle', timeout: 90000 })
+              await page.waitForTimeout(800)
+              const year = page.getByRole('button', { name: 'Год', exact: true })
+              if (await year.count()) {
+                await year.click()
+                await page.waitForTimeout(900)
+              }
+            }
+
+            await openOrdersYear()
+            const auth = await page.evaluate(async () => {
+              const [status, me] = await Promise.all([
+                fetch('/api/admin-mode/status', { credentials: 'include' }).then(r => r.json()),
+                fetch('/api/auth/me', { credentials: 'include' }).then(r => r.json()),
+              ])
+              return { status, me }
+            })
+            console.log('AUTH', JSON.stringify(auth))
+            if (auth?.status?.isAdmin) throw new Error('Forensic unexpectedly entered admin mode')
+            const role = auth?.me?.user?.role || auth?.status?.user?.role || 'manager'
+            if (String(role).toLowerCase() !== 'manager') throw new Error(`Expected manager role, got ${role}`)
+
+            const apiData = await page.evaluate(async () => {
+              const u = new URL('/api/orders', location.origin)
+              Object.entries({ limit:'200', offset:'0', q:'', status:'all', shippingStatus:'all', archiveMode:'active', manager:'', managerId:'0', source:'all', dateFrom:`${new Date().getFullYear()}-01-01`, dateTo:`${new Date().getFullYear()}-12-31` }).forEach(([k,v]) => u.searchParams.set(k,v))
+              const r = await fetch(u, { credentials:'include' })
+              return { status:r.status, body:await r.json() }
+            })
+            const apiOrders = apiData.body?.orders || apiData.body?.items || []
+            console.log('API_ORDERS_STATUS', apiData.status, 'COUNT', apiOrders.length)
+
+            const classify = (o) => {
+              const items = Array.isArray(o.items) ? o.items : []
+              const hasWorkshop = items.some(i => Boolean(i?.isWorkshop ?? i?.is_workshop))
+              const workshopPending = hasWorkshop && (
+                String(o.workshop_status || '').toLowerCase() === 'in_workshop' ||
+                items.some(i => Boolean(i?.isWorkshop ?? i?.is_workshop) && String(i?.workshopTaskStatus ?? i?.workshop_task_status ?? '').toLowerCase() === 'active')
+              )
+              const returned = Number(o.return_amount || 0) > 0
+              const archived = String(o.order_status || '').toLowerCase() === 'archived' || Boolean(o.retained_only)
+              const unsent = String(o.shipping_status || 'not_sent').toLowerCase() !== 'sent'
+              return {
+                id:o.id, external:o.external_id, status:o.order_status, shipping:o.shipping_status,
+                returned, archived, workshopPending, handover:Boolean(o.stock_handover_review_needed),
+                editExpected: !archived && !returned && unsent && !['deleted','archived'].includes(String(o.order_status || '').toLowerCase()),
+                sendExpected: !archived && !returned && unsent && !workshopPending && !Boolean(o.stock_handover_review_needed),
+              }
+            }
+            const classified = apiOrders.map(classify)
+            console.log('EDIT_EXPECTED', classified.filter(x => x.editExpected).length)
+            console.log('SEND_EXPECTED', classified.filter(x => x.sendExpected).length)
+            console.log('UNSENT_SAMPLE', JSON.stringify(classified.filter(x => x.shipping !== 'sent').slice(0, 12), null, 2))
+
+            const rows = page.locator('.order-list-table tbody tr')
+            console.log('VISIBLE_ROWS', await rows.count())
+            console.log('VISIBLE_EDIT_BUTTONS', await page.getByRole('button', { name:'Редактировать', exact:true }).count())
+            console.log('VISIBLE_SEND_BUTTONS', await page.getByRole('button', { name:'Отправить клиенту', exact:true }).count())
+            console.log('VISIBLE_RETURN_BUTTONS', await page.getByRole('button', { name:'Возврат', exact:true }).count())
+            console.log('VISIBLE_EXCHANGE_BUTTONS', await page.getByRole('button', { name:'Обмен', exact:true }).count())
+            console.log('VISIBLE_DEBT_BUTTONS', await page.getByRole('button', { name:'Закрыть долг', exact:true }).count())
+
+            // Edit: actual live click, local field change and revert, no save.
+            const edit = page.getByRole('button', { name:'Редактировать', exact:true }).first()
+            if (!(await edit.count()) || !(await edit.isVisible())) throw new Error('No live manager edit button available despite active yearly orders')
+            await edit.click()
+            await page.waitForTimeout(1200)
+            const editor = page.locator('#editor')
+            const save = page.getByRole('button', { name:'Сохранить изменения', exact:true })
+            if (!(await editor.isVisible().catch(() => false))) throw new Error('Editor did not open for manager')
+            if (!(await save.isVisible().catch(() => false)) || !(await save.isEnabled().catch(() => false))) throw new Error('Editor save action unavailable for manager')
+            const comment = page.locator('#editor label.wide-field').filter({hasText:/^Комментарий$/}).locator('input').first()
+            if (!(await comment.count())) throw new Error('Editor comment field missing')
+            const original = await comment.inputValue()
+            await comment.fill('__MANAGER_FORENSIC_LOCAL_ONLY__')
+            if ((await comment.inputValue()) !== '__MANAGER_FORENSIC_LOCAL_ONLY__') throw new Error('Editor field cannot be changed locally')
+            await comment.fill(original)
+            console.log('EDITOR_LIVE_OK true')
+
+            // Shipping: use a real live button but abort PATCH before it reaches Worker/D1.
+            await openOrdersYear()
+            let shippingAttempt = null
+            await page.route(/\/api\/orders\/\d+\/shipping(?:\?.*)?$/, async route => {
+              shippingAttempt = { method:route.request().method(), url:route.request().url(), body:route.request().postData() }
+              await route.abort('aborted')
+            })
+            page.on('dialog', async d => { console.log('DIALOG', d.message()); await d.accept() })
+            const send = page.getByRole('button', { name:'Отправить клиенту', exact:true }).first()
+            const sendCount = await page.getByRole('button', { name:'Отправить клиенту', exact:true }).count()
+            if (sendCount > 0 && await send.isVisible()) {
+              if (!(await send.isEnabled())) throw new Error('Live send button is disabled for manager')
+              await send.click()
+              await page.waitForTimeout(1000)
+              console.log('SHIPPING_ATTEMPT', JSON.stringify(shippingAttempt))
+              if (!shippingAttempt || shippingAttempt.method !== 'PATCH') throw new Error('Send button did not reach shipping PATCH handler')
+            } else {
+              const expected = classified.find(x => x.sendExpected)
+              if (expected) throw new Error(`No send button visible although API has eligible order ${expected.external}`)
+              console.log('NO_SEND_BUTTON_REASON all active orders are lifecycle/workshop/handover/return constrained by current data')
+            }
+
+            // Ordinary adjacent manager flows must at least be exposed on eligible orders.
+            await openOrdersYear()
+            const returnCount = await page.getByRole('button', { name:'Возврат', exact:true }).count()
+            const exchangeCount = await page.getByRole('button', { name:'Обмен', exact:true }).count()
+            if (!returnCount) throw new Error('No return action exposed to manager')
+            if (!exchangeCount) throw new Error('No exchange action exposed to manager')
+
+            console.log('UNEXPECTED_MUTATIONS', JSON.stringify(unexpectedMutations))
+            console.log('PAGE_ERRORS', JSON.stringify(pageErrors))
+            console.log('CONSOLE_ERRORS', JSON.stringify(consoleErrors))
+            if (unexpectedMutations.length) throw new Error(`Unexpected production mutation: ${unexpectedMutations.join(' | ')}`)
+            if (pageErrors.length) throw new Error(`Runtime errors: ${pageErrors.join(' | ')}`)
+            if (consoleErrors.some(x => /TypeError|ReferenceError|ChunkLoadError|Failed to fetch dynamically imported module/i.test(x))) throw new Error(`Runtime console errors: ${consoleErrors.join(' | ')}`)
+            await browser.close()
+          })().catch(e => { console.error(e); process.exit(1) })
+          NODE
