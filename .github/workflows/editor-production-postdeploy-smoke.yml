@@ -66,7 +66,7 @@ jobs:
             if (!page.url().endsWith('/#editor')) throw new Error(`Unexpected editor URL: ${page.url()}`)
             if (!shell) throw new Error('ERP shell disappeared after editor click')
             if (!editorVisible) throw new Error('Editor is not visible after click')
-            if (!editorText.includes('Редактирование заказа')) throw new Error('Editor heading missing')
+            if (!editorText.toLowerCase().includes('редактирование заказа')) throw new Error('Editor heading missing')
             if (!editorText.includes('Назад к таблице')) throw new Error('Editor back action missing')
             if (pageErrors.length) throw new Error(`Runtime page errors: ${pageErrors.join(' | ')}`)
             if (consoleErrors.some(line => /TypeError|ReferenceError|Failed to fetch dynamically imported module|ChunkLoadError/i.test(line))) throw new Error(`Runtime console errors: ${consoleErrors.join(' | ')}`)
