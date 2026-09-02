@@ -1,0 +1,272 @@
+name: R5.1 control smoke
+
+on:
+  push:
+    branches: [safe/r5-1-control-smoke-20260902]
+    paths:
+      - scripts/.r5-1-control-smoke-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  manager-postdeploy-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install browser harness only
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Production manager post-deploy smoke — mutation requests blocked
+        env:
+          APP_URL: https://orders-app.orders-clothes.workers.dev
+        run: |
+          node --input-type=module <<'NODE'
+          import { chromium } from 'playwright'
+
+          const base = process.env.APP_URL
+          const browser = await chromium.launch({ headless: true })
+          const report = { desktop: {}, mobile: {}, api: {}, blockedMutations: [], pageErrors: [], consoleErrors: [] }
+
+          async function makePage(viewport) {
+            const context = await browser.newContext({ viewport })
+            const page = await context.newPage()
+            const state = { blocked: [], pageErrors: [], consoleErrors: [] }
+            page.on('pageerror', error => { state.pageErrors.push(String(error)); report.pageErrors.push(String(error)) })
+            page.on('console', msg => { if (msg.type() === 'error') { state.consoleErrors.push(msg.text()); report.consoleErrors.push(msg.text()) } })
+            await page.route('**/*', async route => {
+              const req = route.request()
+              if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method())) {
+                const entry = `${req.method()} ${req.url()}`
+                state.blocked.push(entry)
+                report.blockedMutations.push(entry)
+                await route.abort()
+                return
+              }
+              await route.continue()
+            })
+            return { context, page, state }
+          }
+
+          const { context, page, state } = await makePage({ width: 1440, height: 1000 })
+
+          await page.goto(`${base}/#orders`, { waitUntil: 'networkidle', timeout: 60000 })
+          await page.waitForTimeout(1200)
+          report.api = await page.evaluate(async () => {
+            const urls = [
+              '/api/health',
+              '/api/admin-mode/status',
+              '/api/orders?limit=100&archiveMode=active',
+              '/api/workshop/counts',
+              '/api/workshop?view=active&period=month&urgentOnly=0&sort=oldest&limit=300&includeCounts=0',
+              '/api/inventory?source=warehouse&limit=100&includeMovements=0',
+              '/api/inventory/attention',
+              '/api/clients?limit=50',
+              '/api/team',
+              '/api/reference-data'
+            ]
+            const statuses = {}
+            for (const url of urls) statuses[url] = (await fetch(url, { credentials: 'include' })).status
+            const admin = await (await fetch('/api/admin-mode/status', { credentials: 'include' })).json()
+            const workshop = await (await fetch('/api/workshop?view=active&period=month&urgentOnly=0&sort=oldest&limit=300&includeCounts=0', { credentials: 'include' })).json()
+            const tasks = Array.isArray(workshop?.tasks) ? workshop.tasks : []
+            const normalized = tasks.map(t => ({
+              taskId: Number(t.id || 0),
+              orderId: Number(t.orderId ?? t.order_id ?? 0),
+              externalOrderId: String(t.externalOrderId ?? t.external_order_id ?? ''),
+              shippingStatus: String(t.shippingStatus ?? t.shipping_status ?? ''),
+              exchangeId: Number(t.exchangeId ?? t.exchange_id ?? 0) || null,
+              status: String(t.status || '')
+            }))
+            return {
+              statuses,
+              isAdmin: Boolean(admin?.isAdmin),
+              tasks: normalized,
+              sent: normalized.filter(t => t.shippingStatus === 'sent'),
+              unsent: normalized.filter(t => t.shippingStatus !== 'sent')
+            }
+          })
+
+          report.desktop.orders = {
+            rows: await page.locator('tr[data-order-id]').count(),
+            edit: await page.getByRole('button', { name: 'Редактировать', exact: true }).count(),
+            returns: await page.getByRole('button', { name: 'Возврат', exact: true }).count(),
+            exchanges: await page.getByRole('button', { name: 'Обмен', exact: true }).count(),
+            sendOrHandover: await page.getByRole('button', { name: /Отправить клиенту|Уточнить выдачу|Выдать готовые товары/ }).count()
+          }
+
+          await page.goto(`${base}/#inventory`, { waitUntil: 'networkidle', timeout: 60000 })
+          await page.waitForTimeout(1000)
+          report.desktop.inventory = {}
+          for (const [key, pattern] of [['attention', /^Внимание/], ['movement', /Движение товара/], ['stocktake', /Ревизия/], ['history', /История/]]) {
+            const button = page.getByRole('button', { name: pattern }).first()
+            report.desktop.inventory[key] = {
+              visible: await button.isVisible().catch(() => false),
+              enabled: await button.isEnabled().catch(() => false)
+            }
+          }
+          report.desktop.inventory.catalogVisible = await page.getByRole('button', { name: /Каталог/ }).first().isVisible().catch(() => false)
+
+          await page.goto(`${base}/#workshop`, { waitUntil: 'networkidle', timeout: 60000 })
+          await page.waitForTimeout(1000)
+          const activeTab = page.getByRole('button', { name: 'Активные', exact: true }).first()
+          if (await activeTab.isVisible().catch(() => false)) await activeTab.click()
+          const monthTab = page.getByRole('button', { name: 'Месяц', exact: true }).first()
+          if (await monthTab.isVisible().catch(() => false)) await monthTab.click()
+          await page.waitForTimeout(900)
+
+          const workshopRows = page.locator('.workshop-grid-table tbody tr')
+          const desktopSentChecks = []
+          for (const task of report.api.sent) {
+            const row = task.exchangeId
+              ? page.locator('.workshop-grid-table tbody tr').filter({ hasText: `Обмен #${task.exchangeId}` }).first()
+              : page.locator('.workshop-grid-table tbody tr').filter({ hasText: task.externalOrderId }).first()
+            desktopSentChecks.push({
+              taskId: task.taskId,
+              exchangeId: task.exchangeId,
+              rowVisible: await row.isVisible().catch(() => false),
+              editButtons: await row.getByRole('button', { name: 'Редактировать заказ', exact: true }).count(),
+              exchangeButtons: await row.getByRole('button', { name: 'Обмен', exact: true }).count(),
+              doneButtons: await row.getByRole('button', { name: 'Готово', exact: true }).count()
+            })
+          }
+          report.desktop.workshop = {
+            rows: await workshopRows.count(),
+            editButtons: await page.getByRole('button', { name: 'Редактировать заказ', exact: true }).count(),
+            doneButtons: await page.getByRole('button', { name: 'Готово', exact: true }).count(),
+            sentChecks: desktopSentChecks,
+            editor: null
+          }
+
+          const unsentSample = report.api.unsent.find(t => t.orderId > 0 && t.externalOrderId)
+          if (unsentSample) {
+            const row = page.locator('.workshop-grid-table tbody tr').filter({ hasText: unsentSample.externalOrderId }).first()
+            const edit = row.getByRole('button', { name: 'Редактировать заказ', exact: true }).first()
+            const visible = await edit.isVisible().catch(() => false)
+            if (visible) {
+              await edit.click()
+              await page.waitForTimeout(1400)
+              const save = page.getByRole('button', { name: 'Сохранить изменения', exact: true }).first()
+              report.desktop.workshop.editor = {
+                target: unsentSample.externalOrderId,
+                hash: await page.evaluate(() => location.hash),
+                visible: await page.getByText('Редактирование заказа', { exact: true }).first().isVisible().catch(() => false),
+                saveVisible: await save.isVisible().catch(() => false),
+                saveEnabled: await save.isEnabled().catch(() => false),
+                backToWorkshop: await page.getByRole('button', { name: 'Назад в цех', exact: true }).first().isVisible().catch(() => false)
+              }
+            }
+          }
+          report.desktop.runtime = state
+          await context.close()
+
+          const { context: mobileContext, page: mobile, state: mobileState } = await makePage({ width: 390, height: 844 })
+          await mobile.goto(`${base}/#workshop`, { waitUntil: 'networkidle', timeout: 60000 })
+          await mobile.waitForTimeout(900)
+          const mobileActive = mobile.getByRole('button', { name: 'Активные', exact: true }).first()
+          if (await mobileActive.isVisible().catch(() => false)) await mobileActive.click()
+          const mobileMonth = mobile.getByRole('button', { name: 'Месяц', exact: true }).first()
+          if (await mobileMonth.isVisible().catch(() => false)) await mobileMonth.click()
+          await mobile.waitForTimeout(700)
+          const mobileSentChecks = []
+          for (const task of report.api.sent) {
+            const row = task.exchangeId
+              ? mobile.locator('.workshop-grid-table tbody tr').filter({ hasText: `Обмен #${task.exchangeId}` }).first()
+              : mobile.locator('.workshop-grid-table tbody tr').filter({ hasText: task.externalOrderId }).first()
+            mobileSentChecks.push({
+              taskId: task.taskId,
+              exchangeId: task.exchangeId,
+              rowVisible: await row.isVisible().catch(() => false),
+              editButtons: await row.getByRole('button', { name: 'Редактировать заказ', exact: true }).count(),
+              exchangeButtons: await row.getByRole('button', { name: 'Обмен', exact: true }).count(),
+              doneButtons: await row.getByRole('button', { name: 'Готово', exact: true }).count()
+            })
+          }
+          report.mobile.workshop = {
+            rows: await mobile.locator('.workshop-grid-table tbody tr').count(),
+            editButtons: await mobile.getByRole('button', { name: 'Редактировать заказ', exact: true }).count(),
+            sentChecks: mobileSentChecks
+          }
+          await mobile.goto(`${base}/#orders`, { waitUntil: 'networkidle', timeout: 60000 })
+          await mobile.waitForTimeout(800)
+          report.mobile.orders = {
+            rows: await mobile.locator('tr[data-order-id]').count(),
+            edit: await mobile.getByRole('button', { name: 'Редактировать', exact: true }).count(),
+            returns: await mobile.getByRole('button', { name: 'Возврат', exact: true }).count(),
+            exchanges: await mobile.getByRole('button', { name: 'Обмен', exact: true }).count()
+          }
+          report.mobile.runtime = mobileState
+          await mobileContext.close()
+
+          console.log('R5_1_MANAGER_POSTDEPLOY=' + JSON.stringify(report, null, 2))
+
+          const failures = []
+          if (report.api.isAdmin) failures.push('session unexpectedly admin')
+          for (const [url, status] of Object.entries(report.api.statuses)) if (status !== 200) failures.push(`GET ${url}=${status}`)
+          if (!report.desktop.orders.rows || !report.desktop.orders.edit || !report.desktop.orders.returns || !report.desktop.orders.exchanges || !report.desktop.orders.sendOrHandover) failures.push('desktop order workflow actions missing')
+          for (const key of ['attention', 'movement', 'stocktake', 'history']) if (!report.desktop.inventory[key]?.visible || !report.desktop.inventory[key]?.enabled) failures.push(`desktop inventory ${key} unavailable`)
+          if (report.desktop.inventory.catalogVisible) failures.push('admin-only catalog visible to manager')
+          if (report.desktop.workshop.rows !== report.api.tasks.length) failures.push(`desktop Workshop row mismatch ui=${report.desktop.workshop.rows} api=${report.api.tasks.length}`)
+          if (report.desktop.workshop.editButtons !== report.api.unsent.length) failures.push(`desktop Workshop Edit mismatch ui=${report.desktop.workshop.editButtons} unsent=${report.api.unsent.length}`)
+          for (const check of report.desktop.workshop.sentChecks) {
+            if (!check.rowVisible || check.editButtons !== 0 || check.exchangeButtons < 1 || check.doneButtons < 1) failures.push(`sent Workshop row action guard failed task=${check.taskId}`)
+          }
+          if (report.api.unsent.length && (!report.desktop.workshop.editor?.visible || !report.desktop.workshop.editor?.saveVisible || !report.desktop.workshop.editor?.saveEnabled || !report.desktop.workshop.editor?.backToWorkshop)) failures.push('unsent Workshop order editor unusable')
+          if (report.mobile.workshop.rows !== report.api.tasks.length) failures.push(`mobile Workshop row mismatch ui=${report.mobile.workshop.rows} api=${report.api.tasks.length}`)
+          if (report.mobile.workshop.editButtons !== report.api.unsent.length) failures.push(`mobile Workshop Edit mismatch ui=${report.mobile.workshop.editButtons} unsent=${report.api.unsent.length}`)
+          for (const check of report.mobile.workshop.sentChecks) if (!check.rowVisible || check.editButtons !== 0 || check.exchangeButtons < 1 || check.doneButtons < 1) failures.push(`mobile sent Workshop row action guard failed task=${check.taskId}`)
+          if (!report.mobile.orders.rows || !report.mobile.orders.edit || !report.mobile.orders.returns || !report.mobile.orders.exchanges) failures.push('mobile order workflow actions missing')
+          if (report.pageErrors.length || report.consoleErrors.length) failures.push('runtime errors detected')
+          if (report.blockedMutations.length) failures.push(`unexpected mutation attempts: ${report.blockedMutations.join('; ')}`)
+
+          await browser.close()
+          if (failures.length) throw new Error(failures.join(' | '))
+          NODE
+
+  r5-1-d1-control:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Confirm R5.1 indexes exist in Production D1 — read only
+        run: |
+          npx wrangler d1 execute orders_db_prod --remote --command "SELECT name FROM sqlite_master WHERE type='index' AND name IN ('idx_inventory_stock_source_variant','idx_return_items_order_item_return','idx_inventory_lifecycle_order_item_status','idx_inventory_stocktake_completed_source_time') ORDER BY name" --json
+      - name: Confirm index-backed lookup plans — read only
+        run: |
+          echo '--- inventory_stock source+variant ---'
+          npx wrangler d1 execute orders_db_prod --remote --command "EXPLAIN QUERY PLAN SELECT variant_id FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=1" --json
+          echo '--- return_items order_item ---'
+          npx wrangler d1 execute orders_db_prod --remote --command "EXPLAIN QUERY PLAN SELECT return_id FROM return_items WHERE order_item_id=1" --json
+          echo '--- lifecycle order_item+status ---'
+          npx wrangler d1 execute orders_db_prod --remote --command "EXPLAIN QUERY PLAN SELECT id FROM inventory_lifecycle_events WHERE order_item_id=1 AND status='pending'" --json
+          echo '--- latest completed stocktake ---'
+          npx wrangler d1 execute orders_db_prod --remote --command "EXPLAIN QUERY PLAN SELECT id FROM inventory_stocktake_sessions WHERE inventory_source='warehouse' AND status='completed' AND completed_at IS NOT NULL ORDER BY completed_at DESC LIMIT 1" --json
+      - name: Warehouse Attention current read latency — one GET only
+        run: |
+          curl -sS -o /tmp/attention.json -w 'WAREHOUSE_ATTENTION_HTTP=%{http_code} total_seconds=%{time_total} size=%{size_download}\n' 'https://orders-app.orders-clothes.workers.dev/api/inventory/attention'
+          node -e "const d=require('/tmp/attention.json'); console.log('WAREHOUSE_ATTENTION_SHAPE='+JSON.stringify({ok:d.ok, details:d.details, counts:d.counts||null, count:d.count||null}))"
+      - name: D1 top reads last hour
+        run: |
+          echo '=== D1_INSIGHTS_1H_START ==='
+          npx wrangler d1 insights orders_db_prod --sort-type=sum --sort-by=reads --sort-direction=DESC --limit=50 --timePeriod=1h --json
+          echo '=== D1_INSIGHTS_1H_END ==='
+      - name: D1 top reads last six hours
+        run: |
+          echo '=== D1_INSIGHTS_6H_START ==='
+          npx wrangler d1 insights orders_db_prod --sort-type=sum --sort-by=reads --sort-direction=DESC --limit=50 --timePeriod=6h --json
+          echo '=== D1_INSIGHTS_6H_END ==='
