@@ -1,0 +1,47 @@
+name: Branch2 sync audit
+
+on:
+  push:
+    branches: [safe/branch2-sync-audit-20260902]
+    paths:
+      - .github/workflows/branch2-sync-audit.yml
+      - scripts/.branch2-sync-audit-trigger
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      BRANCH2_DB_ID: 40065052-854e-44b8-bcd5-251bdd488301
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repository migration inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "repo_migration_count=$(find migrations -maxdepth 1 -type f -name '*.sql' | wc -l)"
+          find migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort | tail -n 15
+      - name: Branch2 D1 schema and migration history — READ ONLY
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CF_ACCOUNT_ID" && test -n "$CF_API_TOKEN"
+          api="https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/d1/database/$BRANCH2_DB_ID/query"
+          auth=(-H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json")
+          echo '=== tables ==='
+          curl --fail-with-body -sS "${auth[@]}" -X POST "$api" \
+            --data "$(jq -nc --arg sql "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name" '{sql:$sql}')" \
+            | jq '{success,errors,result:[.result[]? | {results,meta:{rows_read:.meta.rows_read,rows_written:.meta.rows_written}}]}'
+          echo '=== d1_migrations ==='
+          curl --fail-with-body -sS "${auth[@]}" -X POST "$api" \
+            --data "$(jq -nc --arg sql "SELECT id, name, applied_at FROM d1_migrations ORDER BY id" '{sql:$sql}')" \
+            | jq '{success,errors,result:[.result[]? | {results,meta:{rows_read:.meta.rows_read,rows_written:.meta.rows_written}}]}'
+          echo '=== Branch2 safety setting ==='
+          curl --fail-with-body -sS "${auth[@]}" -X POST "$api" \
+            --data "$(jq -nc --arg sql "SELECT key, value FROM app_settings WHERE key='require_stored_admin_password'" '{sql:$sql}')" \
+            | jq '{success,errors,result:[.result[]? | {results,meta:{rows_read:.meta.rows_read,rows_written:.meta.rows_written}}]}' || true
