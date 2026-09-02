@@ -76,6 +76,15 @@ app = replace_once(app,
     'known arrival boundary')
 app_path.write_text(app, encoding='utf-8')
 
+# --- Operational visibility: routine Warehouse panels become usable, catalog/master-data stays admin-only.
+operational_path = ROOT / 'src/app/controllers/useOperationalViewModel.ts'
+operational = operational_path.read_text(encoding='utf-8')
+operational = replace_once(operational,
+    "const inventoryManagerPanels: InventoryPanel[] = ['overview', 'attention']",
+    "const inventoryManagerPanels: InventoryPanel[] = ['overview', 'attention', 'movement', 'stocktake', 'history']",
+    'manager inventory panel allow-list')
+operational_path.write_text(operational, encoding='utf-8')
+
 # --- Inventory navigation: routine tabs for working mode; catalog remains admin-only.
 section_path = ROOT / 'src/features/sections/InventorySection.tsx'
 section = section_path.read_text(encoding='utf-8')
@@ -92,6 +101,35 @@ attention = replace_once(attention,
     "<button className=\"secondary compact\" type=\"button\" onClick={() => openAttentionStocktake(item)}>Продолжить</button>",
     'attention stocktake manager action')
 attention_path.write_text(attention, encoding='utf-8')
+
+# --- Update old cumulative tests to the intentional new least-privilege policy.
+daily_test_path = ROOT / 'scripts/test-step192b2a-daily-warehouse.mjs'
+daily_test = daily_test_path.read_text(encoding='utf-8')
+daily_test = replace_once(daily_test,
+    "check(operational.includes(\"const inventoryManagerPanels: InventoryPanel[] = ['overview', 'attention']\"), 'Attention tab can be selected by a manager but the panel visibility allow-list hides it')",
+    "check(operational.includes(\"const inventoryManagerPanels: InventoryPanel[] = ['overview', 'attention', 'movement', 'stocktake', 'history']\"), 'Routine Warehouse panels are not available to a manager')",
+    '192B2A manager panel expectation')
+daily_test = replace_once(daily_test,
+    "check(app.includes(\"nextPanel !== 'overview' && nextPanel !== 'attention'\") && app.includes(\"inventoryPanel !== 'overview' && inventoryPanel !== 'attention'\"), 'Managers are not allowed to open Attention safely')",
+    "check(app.includes(\"if (!isAdmin && inventoryPanel === 'catalog')\") && app.includes(\"if (activeSector === 'inventory' && inventoryPanel === 'catalog')\"), 'Working mode must block only the master-data catalog panel')",
+    '192B2A app visibility expectation')
+daily_test = replace_once(daily_test,
+    "check(batchRoute.includes('requireAdminAccess'), 'Batch stocktake must remain admin-only')",
+    "check(!batchRoute.includes('requireAdminAccess'), 'CAS-protected batch stocktake is still admin-only')",
+    '192B2A batch stocktake expectation')
+daily_test = replace_once(daily_test,
+    "check(cycleRoute.includes('requireAdminAccess'), 'Cycle-count administration must remain admin-only in 192B2A')",
+    "check(!cycleRoute.includes('requireAdminAccess'), 'Routine cycle-count apply is still admin-only')",
+    '192B2A cycle count expectation')
+daily_test_path.write_text(daily_test, encoding='utf-8')
+
+visibility_test_path = ROOT / 'scripts/test-step192b2a1-attention-visibility.mjs'
+visibility_test = visibility_test_path.read_text(encoding='utf-8')
+visibility_test = replace_once(visibility_test,
+    "check(operational.includes(\"const inventoryManagerPanels: InventoryPanel[] = ['overview', 'attention']\"), 'Manager visibility allow-list still hides Attention')",
+    "check(operational.includes(\"const inventoryManagerPanels: InventoryPanel[] = ['overview', 'attention', 'movement', 'stocktake', 'history']\"), 'Manager visibility allow-list does not include routine Warehouse panels')",
+    '192B2A1 manager panel expectation')
+visibility_test_path.write_text(visibility_test, encoding='utf-8')
 
 # --- Permanent regression entry.
 package_path = ROOT / 'package.json'
