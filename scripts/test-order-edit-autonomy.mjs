@@ -33,6 +33,8 @@ check(!app.includes("order.order_status !== 'active' || order.shipping_status ==
 check(table.includes("isAdmin || (!['deleted', 'archived'].includes(order.order_status) && order.shipping_status !== 'sent')"), 'table does not expose closed/unshipped ordinary edit')
 check(details.includes("isAdmin || (!['deleted', 'archived'].includes(selectedOrder.order_status) && selectedOrder.shipping_status !== 'sent')"), 'details do not expose closed/unshipped ordinary edit')
 check(editor.includes("isAdmin || (!['deleted', 'archived'].includes(selectedOrder.order_status) && selectedOrder.shipping_status !== 'sent')"), 'editor closed/unshipped working-mode visibility missing')
+const orderDetailsContext = app.match(/<OrderDetailsSection ctx=\{\{([\s\S]*?)\}\} \/>/)?.[1] || ''
+check(/\bisReturnedOrderRecord\b/.test(orderDetailsContext), 'OrderDetailsSection runtime context is missing isReturnedOrderRecord and can crash the React root when edit selects an order')
 check((editor.match(/disabled=\{!isAdmin \|\| savingOrder\}/g) || []).length >= 2, 'lifecycle selects are not locked in working mode')
 
 console.log('ORDER EDIT AUTONOMY PASSED — ordinary staff can correct active or closed unshipped orders while sent/deleted/archived lifecycle and physical handover remain protected')

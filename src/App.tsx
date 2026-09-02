@@ -6814,7 +6814,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Детали заказа">
-        <OrderDetailsSection ctx={{ formatDateShort, formatMoney, formatOrderItemTitle, handleEditOrder, isAdmin, isArchivedOrderRecord, orderPanelStyle, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrder, setSelectedWorkshopStatus, sourceLabel }} />
+        <OrderDetailsSection ctx={{ formatDateShort, formatMoney, formatOrderItemTitle, handleEditOrder, isAdmin, isArchivedOrderRecord, isReturnedOrderRecord, orderPanelStyle, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrder, setSelectedWorkshopStatus, sourceLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'debt'} label="Закрытие долга">
