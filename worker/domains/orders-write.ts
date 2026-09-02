@@ -1082,8 +1082,8 @@ export async function updateOrderCritical(
       const existingWorkshopStatus = normalizeWorkshopStatus(existingAny.workshop_status);
       const existingShippingStatus = normalizeShippingStatus(existingAny.shipping_status);
       const workingModeEdit = actor?.role !== 'admin';
-      if (workingModeEdit && (existingOrderStatus !== 'active' || existingShippingStatus === 'sent')) {
-        throw new CriticalOperationConflictError('Этот заказ уже вышел из обычного активного редактирования. Используйте его штатное действие: возврат, обмен, отправку или административное восстановление.');
+      if (workingModeEdit && (['deleted', 'archived'].includes(existingOrderStatus) || existingShippingStatus === 'sent')) {
+        throw new CriticalOperationConflictError('Отправленный, удалённый или архивный заказ нельзя переписывать в рабочем режиме. Используйте отдельное штатное действие заказа.');
       }
       const deletingOrder = existingOrderStatus !== 'deleted' && nextOrderStatus === 'deleted';
       const finalWorkshopStatus = deletingOrder && nextWorkshopStatus === 'in_workshop' ? 'cancelled' : nextWorkshopStatus;

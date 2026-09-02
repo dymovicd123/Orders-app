@@ -50,7 +50,8 @@ check(!app.includes("Ручные операции склада доступны
 check(app.includes("if (!isAdmin && inventoryPanel === 'catalog') setInventoryPanel('overview')"), 'working-mode inventory navigation must block only master-data catalog')
 check(app.includes("if (!isAdmin && inventoryDraft.movementType === 'arrival' && cleanItems.some((item) => !item.variantId))"), 'known-only Arrival boundary missing in frontend')
 check(app.includes("Новый товар или новая характеристика требуют админ-режима"), 'ordinary user needs a clear master-data boundary message')
-check(app.includes("if (!isAdmin && (order.order_status !== 'active' || order.shipping_status === 'sent'))"), 'completed/sent order edit protection must remain')
+check(app.includes("if (!isAdmin && (['deleted', 'archived'].includes(order.order_status) || order.shipping_status === 'sent'))"), 'sent/deleted/archived order edit protection must remain')
+check(!app.includes("order.order_status !== 'active' || order.shipping_status === 'sent'"), 'closed unshipped orders must remain editable in working mode')
 
 check(section.includes("{ value: 'movement' as const, label: 'Движение товара'"), 'movement tab missing')
 check(section.includes("{ value: 'stocktake' as const, label: 'Ревизия'"), 'stocktake tab missing')

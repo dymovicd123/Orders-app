@@ -337,7 +337,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                               <span className="return-locked-note">Возвращён</span>
                             ) : null}
                             {!retainedOnly && !archived && !isReturnedOrderRecord(order)
-                              && (isAdmin || (order.order_status === 'active' && order.shipping_status !== 'sent')) ? (
+                              && (isAdmin || (!['deleted', 'archived'].includes(order.order_status) && order.shipping_status !== 'sent')) ? (
                               <button
                                 className="primary compact"
                                 type="button"

@@ -24,6 +24,7 @@ const d1CapacityAutonomyPath = path.join(root, 'scripts/d1-capacity-autonomy-wor
 const d1ReadBudgetPath = path.join(root, 'scripts/d1-read-budget-r1-worker-manifest.json')
 const d1ReadBudgetR2Path = path.join(root, 'scripts/d1-read-budget-r2-worker-manifest.json')
 const d1ReadBudgetR3Path = path.join(root, 'scripts/d1-read-budget-r3-worker-manifest.json')
+const orderEditScopeR1Path = path.join(root, 'scripts/order-edit-scope-r1-worker-manifest.json')
 const branch2EnvironmentPath = path.join(root, 'scripts/branch2-environment-worker-manifest.json')
 const operationalAutonomyR2WorkerPath = path.join(root, 'scripts/operational-autonomy-r2-worker-manifest.json')
 const phase1bWorkshopReturnDispositionPath = path.join(root, 'scripts/phase1b-workshop-return-disposition-worker-manifest.json')
@@ -135,6 +136,10 @@ try {
   const d1ReadBudgetR3 = JSON.parse(fs.readFileSync(d1ReadBudgetR3Path, 'utf8'))
   check(d1ReadBudgetR3?.version === 1 && d1ReadBudgetR3?.revision === 'd1-read-budget-r3', 'D1 read-budget R3 Worker manifest invalid')
   const d1ReadBudgetR3Changes = d1ReadBudgetR3.changes || {}
+  check(fs.existsSync(orderEditScopeR1Path), 'Order edit scope R1 Worker manifest missing')
+  const orderEditScopeR1 = JSON.parse(fs.readFileSync(orderEditScopeR1Path, 'utf8'))
+  check(orderEditScopeR1?.version === 1 && orderEditScopeR1?.revision === 'order-edit-scope-r1', 'Order edit scope R1 Worker manifest invalid')
+  const orderEditScopeR1Changes = orderEditScopeR1.changes || {}
   check(fs.existsSync(branch2EnvironmentPath), 'Branch2 environment Worker manifest missing')
   const branch2Environment = JSON.parse(fs.readFileSync(branch2EnvironmentPath, 'utf8'))
   check(branch2Environment?.version === 1 && branch2Environment?.revision === 'branch2-environment-r1', 'Branch2 environment Worker manifest invalid')
@@ -429,12 +434,18 @@ try {
       check(d1ReadBudgetR3Changed.before === acceptedPostD1ReadBudgetR2Hash, `D1 read-budget R3 baseline hash mismatch: ${name}`)
       acceptedPostD1ReadBudgetR3Hash = d1ReadBudgetR3Changed.after
     }
+    const orderEditScopeR1Changed = orderEditScopeR1Changes[name]
+    let acceptedPostOrderEditScopeR1Hash = acceptedPostD1ReadBudgetR3Hash
+    if (orderEditScopeR1Changed) {
+      check(orderEditScopeR1Changed.before === acceptedPostD1ReadBudgetR3Hash, `Order edit scope R1 baseline hash mismatch: ${name}`)
+      acceptedPostOrderEditScopeR1Hash = orderEditScopeR1Changed.after
+    }
     const branch2EnvironmentChanged = branch2EnvironmentChanges[name]
     if (branch2EnvironmentChanged) {
-      check(branch2EnvironmentChanged.before === acceptedPostD1ReadBudgetR3Hash, `Branch2 environment baseline hash mismatch: ${name}`)
+      check(branch2EnvironmentChanged.before === acceptedPostOrderEditScopeR1Hash, `Branch2 environment baseline hash mismatch: ${name}`)
       check(sha(declarations.get(name)) === branch2EnvironmentChanged.after, `Worker declaration changed beyond exact Branch2 environment allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostD1ReadBudgetR3Hash, `Worker declaration body changed beyond accepted cumulative deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostOrderEditScopeR1Hash, `Worker declaration body changed beyond accepted cumulative deltas: ${name}`)
     }
   }
 

@@ -47,7 +47,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
               className="card wide sector-orders"
               id="editor"
               ref={editorFormRef}
-              style={{ ...sectorStyle('orders'), ...orderPanelStyle('edit'), display: selectedOrder && !isArchivedOrderRecord(selectedOrder) && editorDraft && editorOpen && (isAdmin || (selectedOrder.order_status === 'active' && selectedOrder.shipping_status !== 'sent')) ? undefined : 'none' }}
+              style={{ ...sectorStyle('orders'), ...orderPanelStyle('edit'), display: selectedOrder && !isArchivedOrderRecord(selectedOrder) && editorDraft && editorOpen && (isAdmin || (!['deleted', 'archived'].includes(selectedOrder.order_status) && selectedOrder.shipping_status !== 'sent')) ? undefined : 'none' }}
             >
               <div className="card-label">Редактирование заказа</div>
               <div className="actions form-top-actions">
