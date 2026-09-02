@@ -1264,7 +1264,9 @@ function App() {
       // Весь склад живёт в одном разделе. Журнал движений по-прежнему не грузится без явного открытия истории.
       void loadInventoryData('warehouse')
       void loadInventoryData('boutique')
-      void loadCatalogData()
+      // Full catalog variants are unnecessary for ordinary Остатки/Внимание/История reads.
+      // Movement keeps them because the frozen Arrival workspace depends on catalog variants.
+      if (inventoryPanel === 'movement' || inventoryPanel === 'stocktake' || inventoryPanel === 'catalog') void loadCatalogData()
       // Inventory admin forms must always use the canonical reference dictionaries.
       // Do not rely on another screen having loaded them earlier in the session.
       void loadReferencesData()
@@ -1279,7 +1281,7 @@ function App() {
       void loadInventoryData('boutique', true, '', false)
       void loadCatalogData()
     }
-  }, [activeSector, authReady, orderPanel, isAdmin])
+  }, [activeSector, authReady, orderPanel, isAdmin, inventoryPanel])
 
   useEffect(() => {
     if (!authReady || isAdmin) return
