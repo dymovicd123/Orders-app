@@ -26,29 +26,31 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+
           path = Path('src/features/sections/WorkshopSection.tsx')
           text = path.read_text()
-          old = '''                            <button
-                              className="secondary compact"
-                              type="button"
-                              onClick={() => void openWorkshopOrderEditor(task)}
-                            >
-                              Редактировать заказ
-                            </button>'''
-          new = '''                            {task.shippingStatus !== 'sent' ? (
-                              <button
-                                className="secondary compact"
-                                type="button"
-                                onClick={() => void openWorkshopOrderEditor(task)}
-                              >
-                                Редактировать заказ
-                              </button>
-                            ) : null}'''
-          if old not in text:
-              raise SystemExit('Expected Workshop edit button block not found; refusing broad patch')
-          if text.count(old) != 1:
-              raise SystemExit(f'Expected exactly one Workshop edit button block, found {text.count(old)}')
-          path.write_text(text.replace(old, new, 1))
+          marker = 'onClick={() => void openWorkshopOrderEditor(task)}'
+          if text.count(marker) != 1:
+              raise SystemExit(f'Expected exactly one Workshop edit action, found {text.count(marker)}; refusing broad patch')
+          marker_at = text.index(marker)
+          start = text.rfind('<button', 0, marker_at)
+          end_tag = text.find('</button>', marker_at)
+          if start < 0 or end_tag < 0:
+              raise SystemExit('Could not bound Workshop edit button; refusing broad patch')
+          end = end_tag + len('</button>')
+          block = text[start:end]
+          if len(block) > 500 or 'Редактировать заказ' not in block or 'secondary compact' not in block:
+              raise SystemExit('Workshop edit button shape changed; refusing broad patch')
+          line_start = text.rfind('\n', 0, start) + 1
+          indent = text[line_start:start]
+          if indent.strip():
+              raise SystemExit('Unexpected content before Workshop edit button; refusing patch')
+          inner = block.replace('\n', '\n' + '  ')
+          replacement = f"{{task.shippingStatus !== 'sent' ? (\n  {inner}\n) : null}}"
+          patched = text[:start] + replacement + text[end:]
+          if patched.count(marker) != 1 or patched.count("task.shippingStatus !== 'sent' ? (") != 1:
+              raise SystemExit('Workshop sent-order guard invariant failed')
+          path.write_text(patched)
           PY
 
           cat > scripts/test-manager-workshop-sent-order-actions-r2.mjs <<'EOF'
@@ -86,6 +88,7 @@ jobs:
           fs.writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
           NODE
 
+          node scripts/test-manager-workshop-sent-order-actions-r2.mjs
           git diff --check
           git diff -- src/features/sections/WorkshopSection.tsx scripts/test-manager-workshop-sent-order-actions-r2.mjs package.json
           git config user.name "dymovicd123"
