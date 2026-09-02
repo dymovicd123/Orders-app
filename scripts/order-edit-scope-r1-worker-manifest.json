@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "revision": "order-edit-scope-r1",
+  "changes": {
+    "updateOrderCritical": {
+      "before": "6ef6058fabcb9a6fa26ed7ff788bf9f2e3a759595dfeda68ddea69f904daed0e",
+      "after": "bd8d6da3bb80cab95d0972f5d0a7208ba045347af1646f4dac7b7f0375d4c78a",
+      "file": "worker/domains/orders-write.ts"
+    }
+  }
+}

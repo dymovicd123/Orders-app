@@ -17,7 +17,8 @@ check(!orderPatch.match(/if \(request\.method === 'PATCH'\) \{\s*const denied = 
 check(worker.includes("orderEditAutonomy: '192b2a6'"), 'order edit autonomy health marker missing')
 
 check(orders.includes("const workingModeEdit = actor?.role !== 'admin'"), 'server working-mode boundary missing')
-check(orders.includes("existingOrderStatus !== 'active' || existingShippingStatus === 'sent'"), 'active/not-sent server gate missing')
+check(orders.includes("['deleted', 'archived'].includes(existingOrderStatus) || existingShippingStatus === 'sent'"), 'destructive/sent server gate missing')
+check(!orders.includes("existingOrderStatus !== 'active' || existingShippingStatus === 'sent'"), 'closed orders are still blocked by the old active-only server gate')
 check(orders.includes('nextOrderStatus !== existingOrderStatus'), 'order-status transition boundary missing')
 check(orders.includes('nextWorkshopStatus !== existingWorkshopStatus'), 'workshop-status transition boundary missing')
 check(orders.includes('nextShippingStatus !== existingShippingStatus'), 'shipping-status transition boundary missing')
@@ -27,10 +28,11 @@ check(orders.includes('assertCreateOrderShortageDecisions'), 'inventory shortage
 
 check(!app.includes('Редактирование заказа доступно только администратору.'), 'frontend still blocks ordinary edit at open')
 check(!app.includes('Сохранение редактирования заказа доступно только администратору.'), 'frontend still blocks ordinary edit at save')
-check(app.includes("!isAdmin && (order.order_status !== 'active' || order.shipping_status === 'sent')"), 'controller safe-scope fallback missing')
-check(table.includes("isAdmin || (order.order_status === 'active' && order.shipping_status !== 'sent')"), 'table does not expose safe ordinary edit')
-check(details.includes("isAdmin || (selectedOrder.order_status === 'active' && selectedOrder.shipping_status !== 'sent')"), 'details do not expose safe ordinary edit')
-check(editor.includes("isAdmin || (selectedOrder.order_status === 'active' && selectedOrder.shipping_status !== 'sent')"), 'editor working-mode visibility missing')
+check((app.match(/!isAdmin && \(\['deleted', 'archived'\]\.includes\(order\.order_status\) \|\| order\.shipping_status === 'sent'\)/g) || []).length === 2, 'controller safe-scope guard missing at open/save')
+check(!app.includes("order.order_status !== 'active' || order.shipping_status === 'sent'"), 'controller still blocks closed unshipped orders')
+check(table.includes("isAdmin || (!['deleted', 'archived'].includes(order.order_status) && order.shipping_status !== 'sent')"), 'table does not expose closed/unshipped ordinary edit')
+check(details.includes("isAdmin || (!['deleted', 'archived'].includes(selectedOrder.order_status) && selectedOrder.shipping_status !== 'sent')"), 'details do not expose closed/unshipped ordinary edit')
+check(editor.includes("isAdmin || (!['deleted', 'archived'].includes(selectedOrder.order_status) && selectedOrder.shipping_status !== 'sent')"), 'editor closed/unshipped working-mode visibility missing')
 check((editor.match(/disabled=\{!isAdmin \|\| savingOrder\}/g) || []).length >= 2, 'lifecycle selects are not locked in working mode')
 
-console.log('ORDER EDIT AUTONOMY PASSED — ordinary staff can correct active unshipped orders while lifecycle transitions and physical handover remain server-protected')
+console.log('ORDER EDIT AUTONOMY PASSED — ordinary staff can correct active or closed unshipped orders while sent/deleted/archived lifecycle and physical handover remain protected')

@@ -43,7 +43,7 @@ export function OrderDetailsSection({ ctx }: { ctx: SectionContext }) {
                       <span>Возврат: {formatMoney(selectedOrder.return_amount)}</span>
                       <div className="details-actions">
                         {!isArchivedOrderRecord(selectedOrder) && !isReturnedOrderRecord(selectedOrder)
-                          && (isAdmin || (selectedOrder.order_status === 'active' && selectedOrder.shipping_status !== 'sent')) ? (
+                          && (isAdmin || (!['deleted', 'archived'].includes(selectedOrder.order_status) && selectedOrder.shipping_status !== 'sent')) ? (
                           <button
                             className="secondary compact"
                             type="button"

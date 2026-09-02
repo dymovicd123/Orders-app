@@ -5264,10 +5264,10 @@ function removeDebtPayment(index: number) {
       setMessage('Архивный заказ открыт только для просмотра.')
       return
     }
-    if (!isAdmin && (order.order_status !== 'active' || order.shipping_status === 'sent')) {
+    if (!isAdmin && (['deleted', 'archived'].includes(order.order_status) || order.shipping_status === 'sent')) {
       setSelectedOrderId(order.id)
       setEditorOpen(false)
-      setMessage('Для завершённого или уже отправленного заказа используйте его штатные действия: возврат, обмен или административное восстановление.')
+      setMessage('Отправленный, удалённый или архивный заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие.')
       return
     }
     setEditorReturnSector(returnSector)
@@ -5296,8 +5296,8 @@ function removeDebtPayment(index: number) {
   async function persistOrder(nextDraft: EditorDraft, targetOrder?: OrderRecord | null) {
     const order = targetOrder || selectedOrder
     if (!order) return
-    if (!isAdmin && (order.order_status !== 'active' || order.shipping_status === 'sent')) {
-      setMessage('Заказ уже вышел из обычного редактирования. Используйте возврат, обмен или другое штатное действие заказа.')
+    if (!isAdmin && (['deleted', 'archived'].includes(order.order_status) || order.shipping_status === 'sent')) {
+      setMessage('Отправленный, удалённый или архивный заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие.')
       return
     }
     if (isArchivedOrderRecord(order)) {
