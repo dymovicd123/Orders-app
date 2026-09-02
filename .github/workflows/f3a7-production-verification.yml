@@ -15,30 +15,30 @@ jobs:
     env:
       CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_API: https://api.cloudflare.com/client/v4
+      D1_DATABASE_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
       TARGET_EXTERNAL_ID: ORD-20260829144801-F3A7DDC3
       IDEMPOTENCY_KEY: order-delete-ORD-20260829144801-F3A7DDC3-not-issued-v1
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
       - name: Resolve exact Production order and verify state
         id: before
         shell: bash
         run: |
           set -euo pipefail
-          export CLOUDFLARE_ACCOUNT_ID="$CF_ACCOUNT_ID"
-          export CLOUDFLARE_API_TOKEN="$CF_API_TOKEN"
+          d1_query() {
+            jq -nc --arg sql "$1" '{sql:$sql}' | curl --fail-with-body -sS \
+              -H "Authorization: Bearer $CF_API_TOKEN" -H 'Content-Type: application/json' \
+              --data-binary @- "$CF_API/accounts/$CF_ACCOUNT_ID/d1/database/$D1_DATABASE_ID/query"
+          }
           SQL="SELECT id, external_id, order_status, shipping_status, shipping_date, workshop_status FROM orders WHERE external_id = '$TARGET_EXTERNAL_ID' LIMIT 2"
-          npx wrangler d1 execute orders_db_prod --remote --command "$SQL" --json > before.json
+          d1_query "$SQL" > before.json
           cat before.json
-          COUNT=$(jq '[.[].results[]?] | length' before.json)
+          jq -e '.success == true and .result[0].success == true' before.json >/dev/null
+          COUNT=$(jq '.result[0].results | length' before.json)
           test "$COUNT" = "1"
-          ORDER_ID=$(jq -r '.[].results[0].id' before.json)
-          EXTERNAL=$(jq -r '.[].results[0].external_id' before.json)
-          STATUS=$(jq -r '.[].results[0].order_status' before.json)
+          ORDER_ID=$(jq -r '.result[0].results[0].id' before.json)
+          EXTERNAL=$(jq -r '.result[0].results[0].external_id' before.json)
+          STATUS=$(jq -r '.result[0].results[0].order_status' before.json)
           test "$EXTERNAL" = "$TARGET_EXTERNAL_ID"
           test "$ORDER_ID" != "null"
           echo "order_id=$ORDER_ID" >> "$GITHUB_OUTPUT"
@@ -47,28 +47,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export CLOUDFLARE_ACCOUNT_ID="$CF_ACCOUNT_ID"
-          export CLOUDFLARE_API_TOKEN="$CF_API_TOKEN"
+          d1_query() { jq -nc --arg sql "$1" '{sql:$sql}' | curl --fail-with-body -sS -H "Authorization: Bearer $CF_API_TOKEN" -H 'Content-Type: application/json' --data-binary @- "$CF_API/accounts/$CF_ACCOUNT_ID/d1/database/$D1_DATABASE_ID/query"; }
           ID='${{ steps.before.outputs.order_id }}'
-          SQL="SELECT 'returns' AS section, id, status, amount, cancelled_at, cancellation_comment FROM returns WHERE order_id=$ID UNION ALL SELECT 'exchanges', id, status, 0, cancelled_at, cancellation_comment FROM exchanges WHERE order_id=$ID ORDER BY section,id"
-          npx wrangler d1 execute orders_db_prod --remote --command "$SQL" --json > deps-before.json
-          cat deps-before.json
-          SQL2="SELECT id, order_item_id, inventory_source, variant_id, quantity, status, fulfilled_at, released_at FROM inventory_reservations WHERE order_id=$ID ORDER BY id"
-          npx wrangler d1 execute orders_db_prod --remote --command "$SQL2" --json > reservations-before.json
-          cat reservations-before.json
-          SQL3="SELECT id, status, quantity, order_item_id FROM workshop_tasks WHERE order_id=$ID ORDER BY id"
-          npx wrangler d1 execute orders_db_prod --remote --command "$SQL3" --json > workshop-before.json
-          cat workshop-before.json
-          SQL4="SELECT id, inventory_source, variant_id, quantity_delta, quantity_after, reference_type, reference_id, created_at FROM inventory_movements WHERE reference_id='$TARGET_EXTERNAL_ID' OR reference_id='order-delete-void:$TARGET_EXTERNAL_ID' ORDER BY id"
-          npx wrangler d1 execute orders_db_prod --remote --command "$SQL4" --json > movements-before.json
-          cat movements-before.json
+          d1_query "SELECT id, status, amount, cancelled_at, cancellation_comment FROM returns WHERE order_id=$ID ORDER BY id" | tee returns-before.json
+          d1_query "SELECT id, status FROM exchanges WHERE order_id=$ID ORDER BY id" | tee exchanges-before.json
+          d1_query "SELECT id, order_item_id, inventory_source, variant_id, quantity, status, fulfilled_at, released_at FROM inventory_reservations WHERE order_id=$ID ORDER BY id" | tee reservations-before.json
+          d1_query "SELECT id, status, quantity, order_item_id FROM workshop_tasks WHERE order_id=$ID ORDER BY id" | tee workshop-before.json
+          d1_query "SELECT id, inventory_source, variant_id, quantity_delta, quantity_after, reference_type, reference_id, created_at FROM inventory_movements WHERE (reference_type='order_delete_void' AND reference_id='$TARGET_EXTERNAL_ID') OR reference_id='order-delete-void:$TARGET_EXTERNAL_ID' ORDER BY id" | tee delete-movements-before.json
       - name: Resolve Production Worker URL
         id: worker
         shell: bash
         run: |
           set -euo pipefail
-          SUBDOMAIN=$(curl --fail-with-body -sS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain')
-          test -n "$SUBDOMAIN"
+          SUBDOMAIN=$(curl --fail-with-body -sS -H "Authorization: Bearer $CF_API_TOKEN" "$CF_API/accounts/$CF_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain')
+          test -n "$SUBDOMAIN" -a "$SUBDOMAIN" != "null"
           URL="https://orders-app.$SUBDOMAIN.workers.dev"
           curl --fail-with-body -sS "$URL/api/health" | tee health.json
           jq -e '.ok == true and .service == "orders-app"' health.json >/dev/null
@@ -90,39 +82,33 @@ jobs:
           cat delete-response.json
           test "$HTTP" -ge 200 -a "$HTTP" -lt 300
           jq -e '.ok == true' delete-response.json >/dev/null
-      - name: Verify final Production state
+      - name: Verify final Production state and physical freshness
         shell: bash
         run: |
           set -euo pipefail
-          export CLOUDFLARE_ACCOUNT_ID="$CF_ACCOUNT_ID"
-          export CLOUDFLARE_API_TOKEN="$CF_API_TOKEN"
+          d1_query() { jq -nc --arg sql "$1" '{sql:$sql}' | curl --fail-with-body -sS -H "Authorization: Bearer $CF_API_TOKEN" -H 'Content-Type: application/json' --data-binary @- "$CF_API/accounts/$CF_ACCOUNT_ID/d1/database/$D1_DATABASE_ID/query"; }
           ID='${{ steps.before.outputs.order_id }}'
-          SQL="SELECT id, external_id, order_status, shipping_status, shipping_date, workshop_status FROM orders WHERE id=$ID"
-          npx wrangler d1 execute orders_db_prod --remote --command "$SQL" --json > after.json
+          d1_query "SELECT id, external_id, order_status, shipping_status, shipping_date, workshop_status FROM orders WHERE id=$ID" > after.json
           cat after.json
-          jq -e --arg ext "$TARGET_EXTERNAL_ID" '.[].results[0] | (.external_id == $ext and .order_status == "deleted" and (.shipping_status == "not_sent" or .shipping_status == null) and .shipping_date == null)' after.json >/dev/null
-          SQL2="SELECT id, status, amount, cancelled_at, cancellation_comment FROM returns WHERE order_id=$ID ORDER BY id"
-          npx wrangler d1 execute orders_db_prod --remote --command "$SQL2" --json > returns-after.json
+          jq -e --arg ext "$TARGET_EXTERNAL_ID" '.result[0].results[0] | (.external_id == $ext and .order_status == "deleted" and (.shipping_status == "not_sent" or .shipping_status == null) and .shipping_date == null)' after.json >/dev/null
+          d1_query "SELECT id, status, amount, cancelled_at, cancellation_comment FROM returns WHERE order_id=$ID ORDER BY id" > returns-after.json
           cat returns-after.json
-          jq -e '[.[].results[]? | select(.id == 33)] | length == 1 and .[0].status == "cancelled"' returns-after.json >/dev/null
-          jq -e '[.[].results[]? | select((.status // "completed") != "cancelled")] | length == 0' returns-after.json >/dev/null
-          SQL3="SELECT id, status, cancelled_at, cancellation_comment FROM exchanges WHERE order_id=$ID ORDER BY id"
-          npx wrangler d1 execute orders_db_prod --remote --command "$SQL3" --json > exchanges-after.json
+          jq -e '[.result[0].results[]? | select(.id == 33)] | length == 1 and .[0].status == "cancelled"' returns-after.json >/dev/null
+          jq -e '[.result[0].results[]? | select((.status // "completed") != "cancelled")] | length == 0' returns-after.json >/dev/null
+          d1_query "SELECT id, status FROM exchanges WHERE order_id=$ID ORDER BY id" > exchanges-after.json
           cat exchanges-after.json
-          jq -e '[.[].results[]? | select((.status // "completed") != "cancelled")] | length == 0' exchanges-after.json >/dev/null
-          SQL4="SELECT id, order_item_id, inventory_source, variant_id, quantity, status, fulfilled_at, released_at FROM inventory_reservations WHERE order_id=$ID ORDER BY id"
-          npx wrangler d1 execute orders_db_prod --remote --command "$SQL4" --json > reservations-after.json
+          jq -e '[.result[0].results[]? | select((.status // "completed") != "cancelled")] | length == 0' exchanges-after.json >/dev/null
+          d1_query "SELECT id, order_item_id, inventory_source, variant_id, quantity, status, fulfilled_at, released_at FROM inventory_reservations WHERE order_id=$ID ORDER BY id" > reservations-after.json
           cat reservations-after.json
-          jq -e '[.[].results[]? | select(.status == "active" or .status == "fulfilled")] | length == 0' reservations-after.json >/dev/null
-          SQL5="SELECT id, status, quantity, order_item_id FROM workshop_tasks WHERE order_id=$ID ORDER BY id"
-          npx wrangler d1 execute orders_db_prod --remote --command "$SQL5" --json > workshop-after.json
+          jq -e '[.result[0].results[]? | select(.status == "active" or .status == "fulfilled")] | length == 0' reservations-after.json >/dev/null
+          d1_query "SELECT id, status, quantity, order_item_id FROM workshop_tasks WHERE order_id=$ID ORDER BY id" > workshop-after.json
           cat workshop-after.json
-          jq -e '[.[].results[]? | select(.status == "active" or .status == "ready")] | length == 0' workshop-after.json >/dev/null
-          SQL6="SELECT id, inventory_source, variant_id, quantity_delta, quantity_after, reference_type, reference_id, created_at FROM inventory_movements WHERE reference_type='order_delete_void' AND reference_id='$TARGET_EXTERNAL_ID' ORDER BY id"
-          npx wrangler d1 execute orders_db_prod --remote --command "$SQL6" --json > delete-movements-after.json
+          jq -e '[.result[0].results[]? | select(.status == "active" or .status == "ready")] | length == 0' workshop-after.json >/dev/null
+          d1_query "SELECT id, inventory_source, variant_id, quantity_delta, quantity_after, reference_type, reference_id, created_at FROM inventory_movements WHERE reference_type='order_delete_void' AND reference_id='$TARGET_EXTERNAL_ID' ORDER BY id" > delete-movements-after.json
           cat delete-movements-after.json
-          COUNT=$(jq '[.[].results[]?] | length' delete-movements-after.json)
-          echo "order_delete_void_movement_count=$COUNT"
-          SQL7="SELECT id, event_type, entity_type, entity_id, external_order_id, title, details, created_at FROM activity_log WHERE order_id=$ID OR external_order_id='$TARGET_EXTERNAL_ID' ORDER BY id DESC LIMIT 20"
-          npx wrangler d1 execute orders_db_prod --remote --command "$SQL7" --json > activity-after.json
-          cat activity-after.json
+          DELETE_MOVEMENTS=$(jq '.result[0].results | length' delete-movements-after.json)
+          echo "order_delete_void_movement_count=$DELETE_MOVEMENTS"
+          d1_query "SELECT r.id AS reservation_id, r.inventory_source, r.variant_id, r.quantity AS reserved_quantity, r.status AS reservation_status, r.fulfilled_at, s.quantity AS current_physical, s.reserved_quantity AS current_reserved, (SELECT MAX(c.checked_at) FROM inventory_stock_checks c WHERE c.inventory_source=r.inventory_source AND c.variant_id=r.variant_id) AS latest_check_at, (SELECT c2.counted_quantity FROM inventory_stock_checks c2 WHERE c2.inventory_source=r.inventory_source AND c2.variant_id=r.variant_id ORDER BY datetime(c2.checked_at) DESC,c2.id DESC LIMIT 1) AS latest_counted_quantity FROM inventory_reservations r LEFT JOIN inventory_stock s ON s.inventory_source=r.inventory_source AND s.variant_id=r.variant_id WHERE r.order_id=$ID ORDER BY r.id" > physical-truth-after.json
+          cat physical-truth-after.json
+          jq -e '[.result[0].results[]? | select(.fulfilled_at != null)] | all(.latest_check_at != null and (.latest_check_at > .fulfilled_at))' physical-truth-after.json >/dev/null
+          test "$DELETE_MOVEMENTS" = "0"
