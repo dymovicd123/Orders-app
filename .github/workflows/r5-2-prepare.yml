@@ -1,0 +1,55 @@
+name: R5.2 validate catalog attention index
+
+on:
+  push:
+    branches: [safe/r5-2-warehouse-summary-20260902]
+    paths:
+      - scripts/.r5-2-prepare-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Preserve 190.6C historical migration baseline while accepting additive R5.2
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/test-step1906c-dead-code-cleanup.mjs')
+          s = p.read_text(encoding='utf-8')
+          old = "const acceptedAdditiveMigrations = ['0061_v72_warehouse_attention_truth_gates.sql', '0062_v72_d1_read_budget_r5_warehouse_indexes.sql']"
+          new = "const acceptedAdditiveMigrations = ['0061_v72_warehouse_attention_truth_gates.sql', '0062_v72_d1_read_budget_r5_warehouse_indexes.sql', '0063_v72_d1_read_budget_r5_catalog_attention_index.sql']"
+          if old not in s:
+              raise SystemExit('expected R5.1 additive migration gate not found')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: R5.2 targeted safety test
+        run: node scripts/test-d1-read-budget-r5-2.mjs
+      - name: Database safety
+        run: npm run verify:db-safety
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Full release gate
+        run: npm run release:check
+      - name: Production build
+        run: npm run build
+      - name: Commit preservation-gate compatibility
+        run: |
+          git config user.name 'dymovicd123'
+          git config user.email 'dymovicd@gmail.com'
+          git add scripts/test-step1906c-dead-code-cleanup.mjs
+          if git diff --cached --quiet; then
+            echo 'No preservation-gate change required.'
+          else
+            git commit -m 'Accept additive R5.2 catalog attention migration'
+            git push origin HEAD:safe/r5-2-warehouse-summary-20260902
+          fi
