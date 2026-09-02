@@ -1,0 +1,25 @@
+import fs from 'node:fs'
+
+const read = (p) => fs.readFileSync(p, 'utf8')
+const check = (condition, message) => { if (!condition) throw new Error(message) }
+const app = read('src/App.tsx')
+const dashboard = read('src/features/sections/DashboardSection.tsx')
+const financeHook = read('src/features/finance/useFinanceReportReads.ts')
+const financeWorker = read('worker/domains/finance-reports.ts')
+const attention = read('worker/domains/warehouse-attention.ts')
+
+check(app.includes("void loadOverviewDashboard()"), 'Overview still routes through the full orders dashboard loader')
+check(app.includes("const response = await apiFetch('/api/dashboard')"), 'Overview lightweight dashboard read is missing')
+check(dashboard.includes('loadOverviewDashboard') && !dashboard.includes('onClick={() => void loadDashboard()}'), 'Dashboard refresh still triggers orders/catalog overfetch')
+check(financeHook.includes("options: { force?: boolean; scope?: 'full' | 'finance' }"), 'Finance scoped read option missing')
+check(financeHook.includes("const key = `${scope}::${range.dateFrom}::${range.dateTo}`"), 'Finance full/workspace caches are not isolated')
+check(financeHook.includes("if (scope !== 'full') params.set('scope', scope)"), 'Finance scope is not sent to Worker')
+check(financeWorker.includes("const financeWorkspaceOnly = cleanText(url.searchParams.get('scope')).toLowerCase() === 'finance'"), 'Finance Worker scope gate missing')
+check(financeWorker.includes("() => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(\n      `SELECT oi.product_name_snapshot AS product"), 'Finance workspace still computes product report')
+check(financeWorker.includes("() => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(\n      `SELECT o.order_date AS date,\n              TRIM(oi.product_name_snapshot"), 'Finance workspace still computes daily product report')
+check(financeWorker.includes('const [leadReport, callCentreReport, planReport, teamReport] = financeWorkspaceOnly'), 'Finance workspace still loads leads/call-centre/plans/team')
+check(attention.includes('details ? Promise.resolve(null) : db.prepare('), 'Attention details still executes the full summary query first')
+check(attention.includes('COUNT(*) OVER() AS catalog_count'), 'Attention detail query does not carry exact grouped catalog total')
+check(attention.includes('const [shortageResult, lifecycleResult, catalogResult, stocktakeResult, coreSummary]'), 'Attention lightweight detail summary missing')
+check(attention.includes("(SELECT COUNT(*) FROM inventory_stocktake_sessions WHERE status = 'active') AS stocktake_count"), 'Attention core summary lost stocktake semantics')
+console.log('D1 READ BUDGET R3 PASSED — overview overfetch removed, Finance skips report-only datasets, and Attention details no longer scans unresolved catalog twice')

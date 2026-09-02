@@ -71,9 +71,10 @@ export function useFinanceReportReads({ apiFetch, reportReadFailure }: Options) 
     }
   }, [apiFetch, ordersFinanceReport, reportReadFailure])
 
-  const loadFinanceReports = useCallback(async (range: DateRange, options: { force?: boolean } = {}) => {
+  const loadFinanceReports = useCallback(async (range: DateRange, options: { force?: boolean; scope?: 'full' | 'finance' } = {}) => {
     if (!range.dateFrom || !range.dateTo) return null
-    const key = `${range.dateFrom}::${range.dateTo}`
+    const scope = options.scope || 'full'
+    const key = `${scope}::${range.dateFrom}::${range.dateTo}`
     const requestId = ++financeRequestId.current
     const cached = financeCache.current.get(key)
     if (!options.force && cached && Date.now() - cached.savedAt <= FULL_REPORT_TTL_MS) {
@@ -87,6 +88,7 @@ export function useFinanceReportReads({ apiFetch, reportReadFailure }: Options) 
     if (!request) {
       request = (async () => {
         const params = new URLSearchParams({ startDate: range.dateFrom, endDate: range.dateTo })
+        if (scope !== 'full') params.set('scope', scope)
         const response = await apiFetch(`/api/reports/finance?${params.toString()}`)
         const data = await readJsonResponse<FinanceReportResponse>(response, 'Финансовые отчёты')
         if (!response.ok) throw new Error('Не удалось загрузить финансовые отчёты.')

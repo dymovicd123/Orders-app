@@ -11,7 +11,7 @@ export function DashboardSection({ ctx }: { ctx: SectionContext }) {
     formatMoney,
     formatPercent,
     isAdmin,
-    loadDashboard,
+    loadOverviewDashboard,
     openDashboardStockItem,
     openDashboardWorkshopItem,
     openInventoryPanel,
@@ -32,7 +32,7 @@ export function DashboardSection({ ctx }: { ctx: SectionContext }) {
                 </div>
                 <div className="dashboard-hero-actions">
                   <span className="soft-badge">Этот месяц</span>
-                  <button className="secondary compact" type="button" onClick={() => void loadDashboard()} disabled={busy}>
+                  <button className="secondary compact" type="button" onClick={() => void loadOverviewDashboard()} disabled={busy}>
                     {busy ? 'Обновляю...' : 'Обновить'}
                   </button>
                 </div>

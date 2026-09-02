@@ -44,7 +44,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
   )`
 
   const [summary, handoverRows] = await Promise.all([
-    db.prepare(
+    details ? Promise.resolve(null) : db.prepare(
       `SELECT
          (SELECT COUNT(*) FROM (
             SELECT s.inventory_source, s.variant_id
@@ -116,26 +116,27 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     if (value.physical >= 0 && value.totalReserved > value.physical && ordinaryReserved <= value.physical) fullyExplainedShortageKeys.add(key)
   }
 
-  const rawShortageCount = Math.max(0, toInt(summary?.shortage_count, 0))
-  const intakeCount = Math.max(0, toInt(summary?.intake_count, 0))
-  const lifecycleTotalCount = Math.max(0, toInt(summary?.lifecycle_total_count, 0))
-  const counts = {
-    shortage: Math.max(0, rawShortageCount - fullyExplainedShortageKeys.size),
-    intake: intakeCount,
-    lifecycle: Math.max(0, lifecycleTotalCount - intakeCount),
-    catalog: Math.max(0, toInt(summary?.catalog_count, 0)),
-    handover: handoverReviewRows.length,
-    stocktake: Math.max(0, toInt(summary?.stocktake_count, 0)),
+  if (!details) {
+    const rawShortageCount = Math.max(0, toInt(summary?.shortage_count, 0))
+    const intakeCount = Math.max(0, toInt(summary?.intake_count, 0))
+    const lifecycleTotalCount = Math.max(0, toInt(summary?.lifecycle_total_count, 0))
+    const counts = {
+      shortage: Math.max(0, rawShortageCount - fullyExplainedShortageKeys.size),
+      intake: intakeCount,
+      lifecycle: Math.max(0, lifecycleTotalCount - intakeCount),
+      catalog: Math.max(0, toInt(summary?.catalog_count, 0)),
+      handover: handoverReviewRows.length,
+      stocktake: Math.max(0, toInt(summary?.stocktake_count, 0)),
+    }
+    return {
+      ok: true,
+      total: counts.shortage + counts.intake + counts.lifecycle + counts.catalog + counts.handover + counts.stocktake,
+      counts,
+    }
   }
-  const response: Record<string, unknown> = {
-    ok: true,
-    total: counts.shortage + counts.intake + counts.lifecycle + counts.catalog + counts.handover + counts.stocktake,
-    counts,
-  }
-  if (!details) return response
 
   const shortageFetchLimit = Math.min(100, limit + fullyExplainedShortageKeys.size + handoverReservations.size)
-  const [shortageResult, lifecycleResult, catalogResult, stocktakeResult] = await Promise.all([
+  const [shortageResult, lifecycleResult, catalogResult, stocktakeResult, coreSummary] = await Promise.all([
     db.prepare(
       `WITH reservation_totals AS (
          SELECT inventory_source, variant_id, SUM(quantity) AS reserved
@@ -184,7 +185,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     ).bind(limit).all<Record<string, unknown>>(),
     db.prepare(
       `SELECT MIN(oi.id) AS order_item_id, MIN(oi.order_id) AS order_id, MIN(o.external_id) AS external_id,
-              MIN(o.order_date) AS order_date, COUNT(*) AS affected_count,
+              MIN(o.order_date) AS order_date, COUNT(*) AS affected_count, COUNT(*) OVER() AS catalog_count,
               oi.product_name_snapshot, oi.audience_type, oi.gender_snapshot, oi.color_snapshot,
               oi.material_snapshot, oi.length_snapshot, oi.size_snapshot, oi.source_type, oi.is_workshop
        FROM order_items oi
@@ -216,7 +217,44 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
        ORDER BY started_at ASC
        LIMIT 4`
     ).all<Record<string, unknown>>(),
+    db.prepare(
+      `SELECT
+         (SELECT COUNT(*) FROM (
+            SELECT s.inventory_source, s.variant_id
+            FROM inventory_stock s
+            WHERE s.quantity < 0
+            UNION
+            SELECT r.inventory_source, r.variant_id
+            FROM inventory_reservations r
+            LEFT JOIN inventory_stock s ON s.inventory_source = r.inventory_source AND s.variant_id = r.variant_id
+            WHERE r.status = 'active' AND r.variant_id IS NOT NULL
+            GROUP BY r.inventory_source, r.variant_id
+            HAVING SUM(r.quantity) > COALESCE(MAX(s.quantity), 0)
+          )) AS shortage_count,
+         (SELECT COUNT(*) FROM inventory_lifecycle_events WHERE status = 'pending') AS lifecycle_total_count,
+         (SELECT COUNT(*) FROM inventory_lifecycle_events e
+          WHERE e.status = 'pending' AND e.direction = 'in' AND ${exactLifecycleVariantSql} IS NOT NULL) AS intake_count,
+         (SELECT COUNT(*) FROM inventory_stocktake_sessions WHERE status = 'active') AS stocktake_count`
+    ).first<Record<string, unknown>>(),
   ])
+
+  const rawShortageCount = Math.max(0, toInt(coreSummary?.shortage_count, 0))
+  const intakeCount = Math.max(0, toInt(coreSummary?.intake_count, 0))
+  const lifecycleTotalCount = Math.max(0, toInt(coreSummary?.lifecycle_total_count, 0))
+  const catalogCount = Math.max(0, toInt((catalogResult.results || [])[0]?.catalog_count, 0))
+  const counts = {
+    shortage: Math.max(0, rawShortageCount - fullyExplainedShortageKeys.size),
+    intake: intakeCount,
+    lifecycle: Math.max(0, lifecycleTotalCount - intakeCount),
+    catalog: catalogCount,
+    handover: handoverReviewRows.length,
+    stocktake: Math.max(0, toInt(coreSummary?.stocktake_count, 0)),
+  }
+  const response: Record<string, unknown> = {
+    ok: true,
+    total: counts.shortage + counts.intake + counts.lifecycle + counts.catalog + counts.handover + counts.stocktake,
+    counts,
+  }
 
   const shortageItems = (shortageResult.results || []).map((row) => {
     const source = normalizeSourceType(row.inventory_source)

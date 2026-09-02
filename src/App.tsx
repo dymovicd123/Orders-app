@@ -783,7 +783,7 @@ function App() {
 
   useEffect(() => {
     if (!authReady || activeSector !== 'overview') return
-    void loadDashboard(false)
+    void loadOverviewDashboard()
   }, [activeSector, authReady])
 
   useEffect(() => {
@@ -1319,9 +1319,7 @@ function App() {
     }
     if (activeSector === 'finance') {
       void loadFinancePaymentMethods()
-      // Финансовая сводка должна появляться сразу при входе в раздел.
-      // Отдельный effect ниже по-прежнему обновляет её при смене периода.
-      if (financeMode !== 'cash') void loadFinanceReports(financeReportFilters, { force: true })
+      // Сводка ниже загружается отдельным effect и использует scoped cache.
     }
     if (activeSector === 'reports') {
       void loadFinanceReports()
@@ -2172,8 +2170,9 @@ function App() {
     return loadOrdersFinanceSummaryForRange(nextFilters, force)
   }
 
-  function loadFinanceReports(nextFilters = financeReportFilters, options: { force?: boolean } = {}) {
-    return loadFinanceReportsForRange(nextFilters, options)
+  function loadFinanceReports(nextFilters = financeReportFilters, options: { force?: boolean; scope?: 'full' | 'finance' } = {}) {
+    const scope = options.scope || (activeSector === 'finance' ? 'finance' : 'full')
+    return loadFinanceReportsForRange(nextFilters, { ...options, scope })
   }
 
   async function loadMoneyHistory(options: { append?: boolean } = {}) {
@@ -2226,13 +2225,13 @@ function App() {
     invalidateFinanceReadCaches()
     if (activeSector === 'finance' || activeSector === 'reports') {
       if (activeSector === 'finance' && financeMode === 'payments') void loadMoneyHistory()
-      return loadFinanceReportsForRange(financeReportFilters, { force: true })
+      return loadFinanceReportsForRange(financeReportFilters, { force: true, scope: activeSector === 'finance' ? 'finance' : 'full' })
     }
     return Promise.resolve(null)
   }
 
   function reloadFinanceReports() {
-    return loadFinanceReportsForRange(financeReportFilters, { force: true })
+    return loadFinanceReportsForRange(financeReportFilters, { force: true, scope: activeSector === 'finance' ? 'finance' : 'full' })
   }
 
   function makeCashRequestId(prefix: string) {
@@ -3575,6 +3574,23 @@ function App() {
       return null
     } finally {
       setDebtLoadBusy(false)
+    }
+  }
+
+  async function loadOverviewDashboard() {
+    setBusy(true)
+    setError(null)
+    try {
+      const response = await apiFetch('/api/dashboard')
+      const data = await readJsonResponse<DashboardInsightsResponse>(response, 'Инфопанель')
+      if (!response.ok) throw new Error(`Dashboard load failed: ${response.status}`)
+      setDashboardInsights(data)
+      return data
+    } catch (err) {
+      reportReadFailure(err, 'Инфопанель', Boolean(dashboardInsights))
+      return null
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -6726,7 +6742,7 @@ function removeDebtPayment(index: number) {
         </header>
 
         <DeferredSection active={activeSector === 'overview'} label="Инфопанель">
-        <DashboardSection ctx={{ busy, dashboardInsights, dashboardLowStock, dashboardSummary, dashboardWorkshopWarnings, formatMoney, formatPercent, isAdmin, loadDashboard, openDashboardStockItem, openDashboardWorkshopItem, openInventoryPanel, sectorStyle, setInventoryDraft, setOrderPanel, summary, workshopData }} />
+        <DashboardSection ctx={{ busy, dashboardInsights, dashboardLowStock, dashboardSummary, dashboardWorkshopWarnings, formatMoney, formatPercent, isAdmin, loadOverviewDashboard, openDashboardStockItem, openDashboardWorkshopItem, openInventoryPanel, sectorStyle, setInventoryDraft, setOrderPanel, summary, workshopData }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'clients'} label="Клиенты">

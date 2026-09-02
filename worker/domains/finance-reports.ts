@@ -14,6 +14,9 @@ export async function listFinanceReports(db: D1Database, url: URL) {
     return results;
   };
 
+  const financeWorkspaceOnly = cleanText(url.searchParams.get('scope')).toLowerCase() === 'finance';
+  const emptyRowsResult = () => Promise.resolve({ results: [] } as any);
+
   const { startDate, endDate } = parseReportDateRange(url);
   const startAt = `${startDate}T00:00:00.000Z`;
   const endAt = `${endDate}T23:59:59.999Z`;
@@ -44,7 +47,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        ORDER BY total DESC, count DESC, method ASC`
     ).bind(startDate, endDate).all<any>(),
 
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT o.manager_id,
               COALESCE(m.name, o.manager_snapshot_name, 'Не указан') AS manager,
               COALESCE(m.color_key, '#475569') AS color_key,
@@ -62,7 +65,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        ORDER BY total_sales DESC, order_count DESC, manager ASC, o.manager_id ASC`
     ).bind(startDate, endDate).all<any>(),
 
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT x.manager_id,
               COALESCE(m.name, 'Не указан') AS manager,
               COALESCE(m.color_key, '#475569') AS color_key,
@@ -84,7 +87,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        ORDER BY total_received DESC, manager ASC, x.manager_id ASC`
     ).bind(startDate, endDate, startDate, endDate).all<any>(),
 
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT oi.product_name_snapshot AS product,
               COALESCE(SUM(oi.quantity), 0) AS quantity,
               COUNT(DISTINCT oi.order_id) AS order_count,
@@ -98,7 +101,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        LIMIT 250`
     ).bind(startDate, endDate).all<any>(),
 
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT COALESCE(NULLIF(o.city, ''), 'Не указан') AS city,
               COUNT(*) AS order_count,
               COUNT(DISTINCT o.customer_id) AS clients,
@@ -114,7 +117,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        ORDER BY order_count DESC, total_sales DESC, city ASC`
     ).bind(startDate, endDate).all<any>(),
 
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT x.city AS city,
               COALESCE(SUM(x.total_received), 0) AS total_received,
               COALESCE(SUM(x.total_returns), 0) AS total_returns
@@ -218,7 +221,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        LIMIT 30`
     ).all<any>(),
 
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT movement_type, inventory_source,
               COUNT(*) AS count,
               COALESCE(SUM(quantity_delta), 0) AS quantity_delta
@@ -228,7 +231,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        ORDER BY movement_type ASC, inventory_source ASC`
     ).bind(startAt, endAt).all<any>(),
 
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT COALESCE(c.phone_normalized, '') AS client_key,
               COALESCE(c.display_name, c.phone_normalized, 'Не указан') AS client,
               COUNT(o.id) AS period_orders,
@@ -246,7 +249,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        LIMIT 100`
     ).bind(startDate, endDate).all<any>(),
 
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT event_type, COUNT(*) AS count
        FROM activity_log
        WHERE created_at BETWEEN ? AND ?
@@ -350,7 +353,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        ORDER BY p.payment_date DESC, p.id DESC`
     ).bind(startDate, endDate, startDate).all<any>(),
 
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT o.order_date AS date,
               o.manager_id,
               COALESCE(m.name, o.manager_snapshot_name, 'Не указан') AS manager,
@@ -369,7 +372,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        ORDER BY o.order_date ASC, total_sales DESC, manager ASC, o.manager_id ASC`
     ).bind(startDate, endDate).all<any>(),
 
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT p.payment_date AS date,
               o.manager_id,
               COALESCE(m.name, o.manager_snapshot_name, 'Не указан') AS manager,
@@ -408,7 +411,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        ORDER BY p.payment_date ASC, manager ASC, o.manager_id ASC`
     ).bind(startDate, endDate).all<any>(),
 
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT r.return_date AS date,
               COALESCE(r.manager_id, o.manager_id) AS manager_id,
               COALESCE(m.name, o.manager_snapshot_name, 'Не указан') AS manager,
@@ -424,7 +427,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        ORDER BY r.return_date ASC, manager ASC, manager_id ASC`
     ).bind(startDate, endDate).all<any>(),
 
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT o.order_date AS date,
               TRIM(oi.product_name_snapshot || ' ' || COALESCE(oi.material_snapshot, '') || ' ' || COALESCE(oi.gender_snapshot, '')) AS product,
               COALESCE(SUM(oi.quantity), 0) AS quantity,
@@ -437,7 +440,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        ORDER BY o.order_date ASC, quantity DESC, order_count DESC, product ASC`
     ).bind(startDate, endDate).all<any>(),
 
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT o.order_date AS date,
               COALESCE(NULLIF(o.city, ''), 'Не указан') AS city,
               COUNT(o.id) AS order_count,
@@ -454,7 +457,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        ORDER BY o.order_date ASC, order_count DESC, total_sales DESC, city ASC`
     ).bind(startDate, endDate).all<any>(),
 
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT x.date AS date, x.city AS city,
               COALESCE(SUM(x.total_received), 0) AS total_received,
               COALESCE(SUM(x.total_returns), 0) AS total_returns
@@ -473,7 +476,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        ORDER BY x.date ASC, x.city ASC`
     ).bind(startDate, endDate, startDate, endDate).all<any>(),
 
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT r.id,
               r.order_id,
               o.external_id,
@@ -504,7 +507,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        ORDER BY r.return_date DESC, r.id DESC`
     ).bind(startDate, endDate).all<any>(),
 
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT p.id,
               p.order_id,
               o.external_id,
@@ -1017,12 +1020,19 @@ export async function listFinanceReports(db: D1Database, url: URL) {
     bucket.rows.push(debtRow);
   }
 
-  const [leadReport, callCentreReport, planReport, teamReport] = await Promise.all([
-    listLeadRecords(db, url),
-    listCallCentreRecords(db, url),
-    listPlans(db, url),
-    listTeamEmployees(db),
-  ]);
+  const [leadReport, callCentreReport, planReport, teamReport] = financeWorkspaceOnly
+    ? [
+        { rows: [], totals: {} },
+        { rows: [], totals: {} },
+        { managerPlans: [], departmentPlans: [] },
+        { employees: [] },
+      ] as any
+    : await Promise.all([
+        listLeadRecords(db, url),
+        listCallCentreRecords(db, url),
+        listPlans(db, url),
+        listTeamEmployees(db),
+      ]);
 
   return {
     ok: true,

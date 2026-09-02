@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "revision": "d1-read-budget-r3",
+  "changes": {
+    "listFinanceReports": {
+      "before": "645cda8c44644b2d8d4f7e29eeb060a1ad2c4d10f2b8c53fb84268e05c28663a",
+      "after": "65b778f6f3e0c482b974f98671afcef0a65151745b5273abe4332d735006c976",
+      "file": "worker/domains/finance-reports.ts"
+    },
+    "getWarehouseAttentionSummary": {
+      "before": "2cf0e266a712b17cc4d6a8162f3003904137ba5b55a588e7315141f80fd477da",
+      "after": "847cb68c8c8f390ece2819ef5eaa4ac13eb758e699a98bb88ce4ca4e5f0ab5fc",
+      "file": "worker/domains/warehouse-attention.ts"
+    }
+  }
+}
