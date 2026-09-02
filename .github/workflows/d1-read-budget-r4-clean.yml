@@ -1,0 +1,38 @@
+name: D1 R4 cleanup
+
+on:
+  push:
+    branches: [safe/d1-read-budget-r4-20260902]
+    paths:
+      - scripts/.d1-read-budget-r4-clean-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Remove temporary R4 tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "orders-r4-cleanup"
+          git config user.email "orders-r4-cleanup@users.noreply.github.com"
+          git rm \
+            .github/workflows/d1-read-budget-r4-profile.yml \
+            .github/workflows/d1-read-budget-r4-validate.yml \
+            .github/workflows/d1-read-budget-r4-clean.yml \
+            scripts/.d1-read-budget-r4-profile-trigger \
+            scripts/.d1-read-budget-r4-validate-trigger \
+            scripts/.d1-read-budget-r4-clean-trigger \
+            scripts/apply-d1-read-budget-r4.py \
+            scripts/apply-d1-read-budget-r4-v2.py \
+            scripts/apply-d1-read-budget-r4-v3.py \
+            scripts/register-d1-read-budget-r4.mjs
+          git diff --cached --check
+          git commit -m "Remove temporary D1 R4 tooling"
+          git push origin HEAD:safe/d1-read-budget-r4-20260902
