@@ -1,0 +1,69 @@
+name: Branch2 manager routine access R1 validate
+
+on:
+  push:
+    branches: [safe/branch2-manager-routine-access-r1-20260902]
+    paths:
+      - scripts/.branch2-manager-routine-access-r1-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply exact validated main delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=100
+          git diff 3214a73a1480b85b6857ee57042f83b8e63c7cc6 812f93bf19bf743e6fae65c557bf3e550e6747e2 -- \
+            package.json \
+            scripts/test-manager-routine-access-r1.mjs \
+            src/features/sections/OrdersTableSection.tsx \
+            src/features/sections/WorkshopSection.tsx > /tmp/manager-r1.patch
+          git apply --check /tmp/manager-r1.patch
+          git apply /tmp/manager-r1.patch
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Focused regression
+        run: |
+          node scripts/test-manager-routine-access-r1.mjs
+          node scripts/test-order-edit-autonomy.mjs
+          node scripts/test-shipping-shortage-nonblocking.mjs
+          node scripts/test-return-exchange-cancel-autonomy.mjs
+          node scripts/test-branch2-environment.mjs
+      - name: Full Branch2 release gate
+        run: npm run release:check
+      - name: Database safety
+        run: npm run verify:db-safety
+      - name: Clean build
+        run: npm run build
+      - name: Branch2 Wrangler dry run
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --dry-run | tee /tmp/wrangler-dry.txt
+          grep -q 'orders_db_branch2' /tmp/wrangler-dry.txt
+          ! grep -q 'orders_db_prod' /tmp/wrangler-dry.txt
+      - name: Commit validated Branch2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "branch2-manager-routine-access-r1"
+          git config user.email "branch2-manager-routine-access-r1@users.noreply.github.com"
+          git add package.json scripts/test-manager-routine-access-r1.mjs \
+            src/features/sections/OrdersTableSection.tsx src/features/sections/WorkshopSection.tsx
+          git diff --cached --check
+          git commit -m "Sync manager routine order actions to Branch2"
+          git push origin HEAD:safe/branch2-manager-routine-access-r1-20260902
