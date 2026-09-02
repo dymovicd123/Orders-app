@@ -4,7 +4,7 @@ import path from 'node:path'
 const root = process.cwd()
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
-function section(text, startMarker, endMarker) { const start = text.indexOf(startMarker); check(start >= 0, `Section start missing: ${startMarker}`); const end = text.indexOf(endMarker, start + startMarker.length); check(end > start, `Section end missing: ${endMarker}`); return text.slice(start, end) }
+function section(text, startMarker, endMarker) { const start = text.indexOf(startMarker); check(start >= 0, `Section start missing: ${startMarker}`); const end = text.indexOf(endMarker, start + startMarker.length); check(end > start, `Section end missing after: ${startMarker}`); return text.slice(start, end) }
 
 try {
   const worker = read('worker/index.ts')
@@ -18,9 +18,12 @@ try {
   const fullRoute = section(worker, "if (url.pathname === '/api/inventory/stocktakes' && request.method === 'POST')", "if (url.pathname === '/api/inventory/stocktakes/quick-batch' && request.method === 'POST')")
   const exactRoute = section(worker, "if (url.pathname === '/api/inventory/stocktakes/quick' && request.method === 'POST')", 'const inventoryStocktakeMatch')
   check(!readRoute.includes('requireAdminAccess'), 'Routine recommendations remain admin-only')
-  check(batchRoute.includes('requireAdminAccess'), 'Admin cycle batch mutation was opened')
-  check(fullRoute.includes('requireAdminAccess'), 'Full/selective revision creation was opened')
+  check(!batchRoute.includes('requireAdminAccess'), 'CAS-protected cycle batch is still admin-only')
+  check(batchRoute.includes('quickInventoryStocktakeBatch(env.DB') && batchRoute.includes("checkType: 'cycle_count'"), 'Cycle batch no longer uses the guarded stocktake batch path')
+  check(!fullRoute.includes('requireAdminAccess'), 'Starting/resuming a revision is still admin-only')
+  check(fullRoute.includes('createInventoryStocktakeSession(env.DB'), 'Revision creation no longer uses the stocktake session model')
   check(!exactRoute.includes('requireAdminAccess'), 'Safe exact quick check is no longer available to workers')
+  check(exactRoute.includes('quickInventoryStocktake(env.DB'), 'Exact quick check no longer uses CAS-protected stocktake logic')
   check(worker.includes('request = withAuthenticatedHeaders(request, authUser)'), 'Server-owned access role headers are not enforced')
   const loader = section(inventory, 'async function refreshCycleCountSuggestions', 'async function submitCycleCount')
   check(loader.includes('limit = 12'), 'Routine loader has no explicit batch limit')
@@ -49,5 +52,5 @@ try {
   check(overview.includes('reasonNeedsAttention') && overview.includes("className={reasonNeedsAttention ? 'is-warning' : undefined}"), 'Routine reasons are not visually separated into neutral vs attention states')
   check(css.includes('.inventory-cycle-count-name small.is-warning') && css.includes('.inventory-routine-cycle-refresh'), 'Routine hierarchy styles are missing')
   check(String(pkg.scripts?.['release:check'] || '').includes('test-phase2-smart-daily-stock.mjs'), 'Phase 2 regression is not wired into release:check')
-  console.log('PHASE 2 SMART DAILY STOCK TRUTH TESTS PASSED — manager-safe read, 5-item Остатки batch, one-tap match, mismatch entry, stale guard and calm blocker are enforced')
+  console.log('PHASE 2 SMART DAILY STOCK TRUTH TESTS PASSED — routine count/revision paths are manager-safe while CAS/session freshness guards remain enforced')
 } catch (error) { console.error(`PHASE 2 SMART DAILY STOCK TRUTH TESTS FAILED: ${error?.message || error}`); process.exit(1) }
