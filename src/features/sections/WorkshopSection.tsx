@@ -287,14 +287,14 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
                         <td>
                           <div className="workshop-actions table-actions-vertical">
                             {task.shippingStatus !== 'sent' ? (
-  <button
+                              <button
                                 className="secondary compact"
                                 type="button"
                                 onClick={() => void openWorkshopOrderEditor(task)}
                               >
                                 Редактировать заказ
                               </button>
-) : null}
+                            ) : null}
                             <button
                               className="secondary compact"
                               type="button"
