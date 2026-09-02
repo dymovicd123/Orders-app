@@ -1,0 +1,31 @@
+name: Order Edit Scope R1 Final Validate
+
+on:
+  push:
+    branches: [safe/order-edit-scope-r1-20260902]
+    paths:
+      - scripts/.order-edit-scope-r1-final-trigger
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/test-order-edit-autonomy.mjs
+      - run: node scripts/test-operational-autonomy-r2.mjs
+      - run: npm run typecheck
+      - run: npm run release:check
+      - run: npm run verify:db-safety
+      - run: |
+          rm -rf dist
+          npm run build
+      - run: npx wrangler deploy --dry-run
