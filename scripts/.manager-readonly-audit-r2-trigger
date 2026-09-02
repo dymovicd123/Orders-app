@@ -1,0 +1,2 @@
+run=2026-09-02-manager-readonly-audit-r2
+purpose=verify manager production work paths after R5.1 without business mutations
