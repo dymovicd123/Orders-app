@@ -285,6 +285,8 @@ export async function listOrders(db: D1Database, url: URL) {
   const archiveMode = status === 'archived' ? 'archived' : normalizeArchiveMode(url.searchParams.get('archiveMode'));
   const dateFrom = cleanText(url.searchParams.get('dateFrom'));
   const dateTo = cleanText(url.searchParams.get('dateTo'));
+  let aggregateNeedsManagerJoin = false;
+  let aggregateNeedsCustomerJoin = false;
 
   // The visible list uses order_date. Cash cards use actual payment/return dates.
   const baseWhereParts: string[] = [];
@@ -307,6 +309,7 @@ export async function listOrders(db: D1Database, url: URL) {
     baseWhereParts.push('o.manager_id = ?');
     baseBindings.push(managerId);
   } else if (manager) {
+    aggregateNeedsManagerJoin = true;
     baseWhereParts.push("UPPER(COALESCE(m.name, o.manager_snapshot_name, '')) = ?");
     baseBindings.push(manager);
 
@@ -342,6 +345,8 @@ export async function listOrders(db: D1Database, url: URL) {
       baseWhereParts.push('o.external_id >= ? AND o.external_id < ?');
       baseBindings.push(externalIdPrefix, `${externalIdPrefix}￿`);
     } else {
+      aggregateNeedsManagerJoin = true;
+      aggregateNeedsCustomerJoin = true;
       const searchOrderText = `COALESCE(o.external_id, '') || ' ' || COALESCE(o.order_date, '') || ' ' ||
         COALESCE(m.name, o.manager_snapshot_name, '') || ' ' || COALESCE(c.phone_normalized, '') || ' ' ||
         COALESCE(c.display_name, '') || ' ' || COALESCE(o.city, '') || ' ' || COALESCE(o.delivery_type, '') || ' ' || COALESCE(o.comment, '')`;
@@ -401,6 +406,10 @@ export async function listOrders(db: D1Database, url: URL) {
     FROM orders o
     LEFT JOIN managers m ON m.id = o.manager_id
     LEFT JOIN customers c ON c.id = o.customer_id`;
+  const aggregateJoins = `
+    FROM orders o
+    ${aggregateNeedsManagerJoin ? 'LEFT JOIN managers m ON m.id = o.manager_id' : ''}
+    ${aggregateNeedsCustomerJoin ? 'LEFT JOIN customers c ON c.id = o.customer_id' : ''}`;
 
   const rows = await db.prepare(`
     SELECT
@@ -476,7 +485,7 @@ export async function listOrders(db: D1Database, url: URL) {
         COALESCE(SUM(o.total_amount), 0) AS total_amount,
         COALESCE(SUM(o.debt_amount), 0) AS debt_amount,
         COALESCE(SUM(COALESCE(workshop_items.workshop_units, 0)), 0) AS workshop_units
-      ${joins}
+      ${aggregateJoins}
       LEFT JOIN (
         SELECT order_id, COALESCE(SUM(quantity), 0) AS workshop_units
         FROM order_items
@@ -523,16 +532,16 @@ export async function listOrders(db: D1Database, url: URL) {
         SELECT COUNT(p.id) AS payment_count, COALESCE(SUM(p.amount), 0) AS payment_amount
         FROM payments p
         JOIN orders o ON o.id = p.order_id
-        LEFT JOIN managers m ON m.id = o.manager_id
-        LEFT JOIN customers c ON c.id = o.customer_id
+        ${aggregateNeedsManagerJoin ? 'LEFT JOIN managers m ON m.id = o.manager_id' : ''}
+        ${aggregateNeedsCustomerJoin ? 'LEFT JOIN customers c ON c.id = o.customer_id' : ''}
         ${paymentWhereParts.length ? `WHERE ${paymentWhereParts.join(' AND ')}` : ''}`
       ).bind(...paymentBindings).first<Record<string, unknown>>(),
       db.prepare(`
         SELECT COUNT(r.id) AS return_count, COALESCE(SUM(r.amount), 0) AS return_amount
         FROM returns r
         JOIN orders o ON o.id = r.order_id
-        LEFT JOIN managers m ON m.id = o.manager_id
-        LEFT JOIN customers c ON c.id = o.customer_id
+        ${aggregateNeedsManagerJoin ? 'LEFT JOIN managers m ON m.id = o.manager_id' : ''}
+        ${aggregateNeedsCustomerJoin ? 'LEFT JOIN customers c ON c.id = o.customer_id' : ''}
         ${returnWhereParts.length ? `WHERE ${returnWhereParts.join(' AND ')}` : ''}`
       ).bind(...returnBindings).first<Record<string, unknown>>(),
     ]);
