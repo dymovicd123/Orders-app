@@ -1,0 +1,54 @@
+name: Manager routine access R1 validate
+
+on:
+  push:
+    branches: [safe/manager-routine-access-r1-20260902]
+    paths:
+      - scripts/.manager-routine-access-r1-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply exact manager access patch
+        run: python3 scripts/apply-manager-routine-access-r1.py
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Focused regression
+        run: |
+          node scripts/test-manager-routine-access-r1.mjs
+          node scripts/test-order-edit-autonomy.mjs
+          node scripts/test-shipping-shortage-nonblocking.mjs
+          node scripts/test-return-exchange-cancel-autonomy.mjs
+      - name: Full release gate
+        run: npm run release:check
+      - name: Database safety
+        run: npm run verify:db-safety
+      - name: Clean production build
+        run: npm run build
+      - name: Wrangler dry run
+        run: npx wrangler deploy --dry-run
+      - name: Commit validated source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "manager-routine-access-r1"
+          git config user.email "manager-routine-access-r1@users.noreply.github.com"
+          git add src/features/sections/WorkshopSection.tsx \
+                  src/features/sections/OrdersTableSection.tsx \
+                  scripts/test-manager-routine-access-r1.mjs package.json
+          git diff --cached --check
+          git commit -m "Fix manager routine order actions"
+          git push origin HEAD:safe/manager-routine-access-r1-20260902
