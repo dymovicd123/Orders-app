@@ -1,2 +1,2 @@
-run=2026-09-02-manager-readonly-audit-r2-refined
-purpose=diagnose Workshop editor and complete desktop/mobile manager smoke without business mutations
+run=2026-09-02-manager-readonly-audit-r2-workshop-state
+purpose=read-only classify current month active Workshop tasks by shipping/exchange state
