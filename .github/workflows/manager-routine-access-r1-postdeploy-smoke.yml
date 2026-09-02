@@ -1,0 +1,99 @@
+name: Manager routine access R1 postdeploy smoke
+
+on:
+  push:
+    branches: [safe/manager-routine-access-r1-postdeploy-smoke-20260902]
+    paths:
+      - scripts/.manager-routine-access-r1-postdeploy-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: |
+          npm install --no-save --package-lock=false playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Live manager smoke without writes
+        env:
+          TARGET: https://orders-app.orders-clothes.workers.dev
+        run: |
+          node <<'NODE'
+          const { chromium } = require('playwright')
+          ;(async () => {
+            const browser = await chromium.launch({ headless: true })
+            const errors = []
+            const makePage = async (hash) => {
+              const context = await browser.newContext({ viewport: { width: 1600, height: 1100 } })
+              const page = await context.newPage()
+              page.on('pageerror', e => errors.push(String(e)))
+              page.on('console', m => { if (m.type() === 'error' && /TypeError|ReferenceError|ChunkLoadError|Failed to fetch dynamically imported module/i.test(m.text())) errors.push(m.text()) })
+              await page.goto(`${process.env.TARGET}/${hash}`, { waitUntil: 'networkidle', timeout: 90000 })
+              await page.waitForTimeout(700)
+              return { context, page }
+            }
+
+            // Orders editor: real manager click, local edit/revert, no save.
+            {
+              const { context, page } = await makePage('#orders')
+              const year = page.getByRole('button', { name: 'Год', exact: true }); if (await year.count()) { await year.click(); await page.waitForTimeout(900) }
+              const status = await page.evaluate(() => fetch('/api/admin-mode/status', { credentials:'include' }).then(r => r.json()))
+              if (status.isAdmin) throw new Error('Smoke unexpectedly entered admin mode')
+              const edit = page.getByRole('button', { name:'Редактировать', exact:true }).first()
+              const count = await page.getByRole('button', { name:'Редактировать', exact:true }).count()
+              if (!count || !(await edit.isVisible())) throw new Error('Orders edit unavailable to manager')
+              await edit.click(); await page.waitForTimeout(1000)
+              const save = page.getByRole('button', { name:'Сохранить изменения', exact:true })
+              if (!(await page.locator('#editor').isVisible()) || !(await save.isVisible()) || !(await save.isEnabled())) throw new Error('Orders editor/save unavailable to manager')
+              const comment = page.locator('#editor label.wide-field').filter({hasText:/^Комментарий$/}).locator('input').first()
+              const before = await comment.inputValue(); await comment.fill('__LOCAL_ONLY__'); await comment.fill(before)
+              console.log('ORDERS_EDIT_OK', count)
+              await context.close()
+            }
+
+            // Send: click a real button but abort PATCH before it reaches Worker/D1.
+            {
+              const { context, page } = await makePage('#orders')
+              const year = page.getByRole('button', { name: 'Год', exact: true }); if (await year.count()) { await year.click(); await page.waitForTimeout(900) }
+              let attempt = null
+              await page.route(/\/api\/orders\/\d+\/shipping(?:\?.*)?$/, async route => { attempt = { method:route.request().method(), body:route.request().postData() }; await route.abort('aborted') })
+              page.on('dialog', async d => d.accept())
+              const buttons = page.getByRole('button', { name:'Отправить клиенту', exact:true })
+              const count = await buttons.count()
+              if (!count) throw new Error('No live Send action available to manager')
+              const send = buttons.first(); if (!(await send.isVisible()) || !(await send.isEnabled())) throw new Error('Send action disabled for manager')
+              await send.click(); await page.waitForTimeout(800)
+              if (!attempt || attempt.method !== 'PATCH') throw new Error('Send action did not issue shipping PATCH')
+              console.log('SEND_OK', count, JSON.stringify(attempt))
+              await context.close()
+            }
+
+            // Workshop editor: real manager button and editor open, no save.
+            {
+              const { context, page } = await makePage('#workshop')
+              await page.waitForTimeout(1200)
+              const buttons = page.getByRole('button', { name:'Редактировать заказ', exact:true })
+              const count = await buttons.count()
+              if (!count) throw new Error('Workshop order edit unavailable to manager')
+              const button = buttons.first(); if (!(await button.isVisible()) || !(await button.isEnabled())) throw new Error('Workshop edit button disabled')
+              await button.click(); await page.waitForTimeout(1200)
+              const save = page.getByRole('button', { name:'Сохранить изменения', exact:true })
+              if (!(await page.locator('#editor').isVisible()) || !(await save.isVisible()) || !(await save.isEnabled())) throw new Error('Workshop did not open manager order editor')
+              console.log('WORKSHOP_EDIT_OK', count)
+              await context.close()
+            }
+
+            if (errors.length) throw new Error(`Runtime errors: ${errors.join(' | ')}`)
+            console.log('MANAGER_ROUTINE_ACCESS_POSTDEPLOY_SMOKE PASSED')
+            await browser.close()
+          })().catch(e => { console.error(e); process.exit(1) })
+          NODE
