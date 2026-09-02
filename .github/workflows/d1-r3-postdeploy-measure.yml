@@ -1,0 +1,29 @@
+name: D1 R3 post-deploy measure
+
+on:
+  push:
+    branches: [safe/d1-r3-postdeploy-measure-20260902]
+    paths:
+      - scripts/.d1-r3-measure-trigger
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Top D1 reads last hour
+        run: npx wrangler d1 insights orders_db_prod --sort-type=sum --sort-by=reads --sort-direction=DESC --limit=40 --timePeriod=1h --json
+      - name: Top D1 reads rolling day
+        run: npx wrangler d1 insights orders_db_prod --sort-type=sum --sort-by=reads --sort-direction=DESC --limit=40 --timePeriod=1d --json
