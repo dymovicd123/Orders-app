@@ -1,2 +1,2 @@
-run=2026-09-02-manager-workshop-sent-edit-r2
-purpose=apply minimal UI-only guard for sent Workshop exchange rows and add regression coverage
+run=2026-09-02-manager-workshop-sent-edit-r2-retry
+purpose=apply exact minimal UI-only guard after whitespace-safe preflight
