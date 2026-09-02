@@ -23,7 +23,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Apply R4 candidate
-        run: python3 scripts/apply-d1-read-budget-r4.py
+        run: python3 scripts/apply-d1-read-budget-r4-v2.py
       - name: TypeScript
         run: npm run typecheck
       - name: Full cumulative release gate
