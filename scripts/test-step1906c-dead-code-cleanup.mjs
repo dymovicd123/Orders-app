@@ -134,7 +134,7 @@ try {
 
   const migrationDir = path.join(root, 'migrations')
   const migrationFiles = fs.readdirSync(migrationDir).filter((name) => name.endsWith('.sql')).sort()
-  const acceptedAdditiveMigrations = ['0061_v72_warehouse_attention_truth_gates.sql']
+  const acceptedAdditiveMigrations = ['0061_v72_warehouse_attention_truth_gates.sql', '0062_v72_d1_read_budget_r5_warehouse_indexes.sql']
   const historicalMigrationFiles = migrationFiles.filter((name) => !acceptedAdditiveMigrations.includes(name))
   const aggregate = historicalMigrationFiles.map((name) => `${sha(fs.readFileSync(path.join(migrationDir, name)))}  migrations/${name}\n`).join('')
   check(historicalMigrationFiles.length === manifest.migrationCount, `Historical migration count changed: ${historicalMigrationFiles.length}/${manifest.migrationCount}`)

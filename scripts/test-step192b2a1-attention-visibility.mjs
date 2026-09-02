@@ -25,7 +25,9 @@ try {
 
   // This hotfix is frontend-only. It must not add schema/data work or modify frozen Arrival.
   const migrations = fs.readdirSync(path.join(root, 'migrations')).filter((name) => name.endsWith('.sql')).sort()
-  check(migrations.at(-1) === '0061_v72_warehouse_attention_truth_gates.sql', '192B2A1 must not add a migration')
+  check(migrations.includes('0061_v72_warehouse_attention_truth_gates.sql'), '192B2A1 historical migration ceiling is missing')
+  const migrationsThroughStepB2A1 = migrations.filter((name) => name.localeCompare('0061_v72_warehouse_attention_truth_gates.sql') <= 0)
+  check(migrationsThroughStepB2A1.at(-1) === '0061_v72_warehouse_attention_truth_gates.sql', '192B2A1 must not add a migration')
   check(inventory.includes('<div className="inventory-arrival-legacy-workspace">'), 'Frozen Arrival workspace disappeared')
   check(release.includes('test-step192b2a1-attention-visibility.mjs'), '192B2A1 visibility test is not chained into cumulative release gate')
 
