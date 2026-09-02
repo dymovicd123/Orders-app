@@ -1,0 +1,83 @@
+name: Editor Production Forensic
+
+on:
+  push:
+    branches: [safe/editor-white-screen-forensic-20260902]
+    paths:
+      - scripts/.editor-production-forensic-trigger
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  forensic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Click live Production editor and capture runtime failures
+        env:
+          TARGET_URL: https://orders-app.orders-clothes.workers.dev/#orders
+        run: |
+          node <<'NODE'
+          const { chromium } = require('playwright')
+          ;(async () => {
+            const browser = await chromium.launch({ headless: true })
+            const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+            const consoleErrors = []
+            const pageErrors = []
+            const failedRequests = []
+            page.on('console', msg => {
+              if (msg.type() === 'error') consoleErrors.push(msg.text())
+            })
+            page.on('pageerror', error => pageErrors.push(String(error?.stack || error)))
+            page.on('requestfailed', request => failedRequests.push(`${request.method()} ${request.url()} :: ${request.failure()?.errorText || 'failed'}`))
+
+            await page.goto(process.env.TARGET_URL, { waitUntil: 'networkidle', timeout: 90000 })
+            await page.waitForTimeout(1500)
+            console.log('BEFORE_URL', page.url())
+            console.log('BEFORE_TITLE', await page.title())
+            console.log('BEFORE_BODY_TEXT', (await page.locator('body').innerText()).slice(0, 1000).replace(/\s+/g, ' '))
+
+            const editButtons = page.getByRole('button', { name: 'Редактировать', exact: true })
+            const count = await editButtons.count()
+            console.log('EDIT_BUTTON_COUNT', count)
+            if (!count) throw new Error('No visible edit button found on Production orders list')
+
+            let chosen = null
+            for (let i = 0; i < count; i++) {
+              const candidate = editButtons.nth(i)
+              if (await candidate.isVisible()) { chosen = candidate; break }
+            }
+            if (!chosen) throw new Error('Edit buttons exist but none is visible')
+
+            await chosen.click()
+            await page.waitForTimeout(2500)
+            console.log('AFTER_URL', page.url())
+            console.log('ROOT_COUNT', await page.locator('#root').count())
+            console.log('ROOT_CHILDREN', await page.locator('#root').locator(':scope > *').count().catch(() => -1))
+            console.log('SHELL_COUNT', await page.locator('.erp-shell').count())
+            console.log('EDITOR_COUNT', await page.locator('#editor').count())
+            console.log('EDITOR_VISIBLE', await page.locator('#editor').isVisible().catch(() => false))
+            console.log('EDITOR_TEXT', (await page.locator('#editor').innerText().catch(() => '')).slice(0, 1000).replace(/\s+/g, ' '))
+            console.log('BODY_TEXT_AFTER', (await page.locator('body').innerText()).slice(0, 1200).replace(/\s+/g, ' '))
+            console.log('CONSOLE_ERRORS', JSON.stringify(consoleErrors, null, 2))
+            console.log('PAGE_ERRORS', JSON.stringify(pageErrors, null, 2))
+            console.log('FAILED_REQUESTS', JSON.stringify(failedRequests, null, 2))
+            await page.screenshot({ path: 'editor-production-after.png', fullPage: false })
+
+            if (pageErrors.length || consoleErrors.some(line => /Failed to fetch dynamically imported module|ChunkLoadError|dynamically imported/i.test(line))) {
+              throw new Error(`Runtime errors after editor click: ${pageErrors.join(' | ')} ${consoleErrors.join(' | ')}`)
+            }
+            if (!(await page.locator('.erp-shell').count())) throw new Error('ERP shell disappeared after editor click')
+            if (!(await page.locator('#editor').isVisible().catch(() => false))) throw new Error('Editor is not visible after click')
+            await browser.close()
+          })().catch(error => { console.error(error); process.exit(1) })
+          NODE
