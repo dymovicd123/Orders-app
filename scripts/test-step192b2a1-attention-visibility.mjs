@@ -16,7 +16,7 @@ try {
   const attentionPanel = read('src/features/inventory/views/renderInventoryAttentionPanel.tsx')
   const release = read('scripts/release-check.mjs')
 
-  check(operational.includes("const inventoryManagerPanels: InventoryPanel[] = ['overview', 'attention']"), 'Manager visibility allow-list still hides Attention')
+  check(operational.includes("const inventoryManagerPanels: InventoryPanel[] = ['overview', 'attention', 'movement', 'stocktake', 'history']"), 'Manager visibility allow-list does not include routine Warehouse panels')
   check(operational.includes("const inventoryAdminPanels: InventoryPanel[] = ['overview', 'attention', 'stocktake', 'movement', 'catalog', 'history', 'settings', 'warehouse', 'boutique', 'exact']"), 'Admin visibility allow-list still hides Attention')
   check(operational.includes("&& inventoryPanel === panel ? undefined : 'none'"), 'Inventory panel visibility function changed unexpectedly')
   check(inventory.includes("value: 'attention' as const"), 'Attention tab missing from Warehouse navigation')

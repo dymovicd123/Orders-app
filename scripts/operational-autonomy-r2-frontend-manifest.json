@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "revision": "operational-autonomy-r2",
+  "frontend": {
+    "panelReturnChanges": {
+      "renderInventoryAttentionPanel": {
+        "before": "50c0940605148188a3b571b5e376fefe201d40ab35ecb8500bd861cb94c49739",
+        "after": "42af4090e64ac5d6d27bc781fac83b2e4be8abf16397a061aebdc3263625a6b4"
+      }
+    },
+    "operationalStatementChanges": [
+      {
+        "index": 93,
+        "before": "82f60b4021fd53f72b56f44eeb89bad144d606355167ea18f2dbd4546fb30e4c",
+        "after": "591b38c82c89961992d42af430ca3d749a84bef1209d230f22545e42ccc7fb5e"
+      }
+    ]
+  }
+}

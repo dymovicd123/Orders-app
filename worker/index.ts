@@ -589,8 +589,6 @@ export default {
       }
 
       if (url.pathname === '/api/inventory/cycle-counts/apply' && request.method === 'POST') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         const input = await request.json<Record<string, unknown>>();
         const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const result = await quickInventoryStocktakeBatch(env.DB, input, { actor, checkType: 'cycle_count', referenceType: 'cycle_count' });
@@ -601,14 +599,10 @@ export default {
       }
 
       if (url.pathname === '/api/inventory/stocktakes' && request.method === 'GET') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         return json(await listInventoryStocktakeSessions(env.DB, url));
       }
 
       if (url.pathname === '/api/inventory/stocktakes' && request.method === 'POST') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         const input = await readJson<{ source?: unknown }>(request);
         const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const result = await createInventoryStocktakeSession(env.DB, input, actor);
@@ -624,8 +618,6 @@ export default {
       }
 
       if (url.pathname === '/api/inventory/stocktakes/quick-batch' && request.method === 'POST') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         const input = await request.json<Record<string, unknown>>();
         const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const result = await quickInventoryStocktakeBatch(env.DB, input, { actor });
@@ -647,39 +639,37 @@ export default {
 
       const inventoryStocktakeMatch = url.pathname.match(/^\/api\/inventory\/stocktakes\/([^/]+)$/);
       if (inventoryStocktakeMatch && request.method === 'GET') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         return json({ ok: true, session: await serializeInventoryStocktakeSession(env.DB, decodeURIComponent(inventoryStocktakeMatch[1])) });
       }
 
       const inventoryStocktakeItemMatch = url.pathname.match(/^\/api\/inventory\/stocktakes\/([^/]+)\/items\/(\d+)$/);
       if (inventoryStocktakeItemMatch && request.method === 'PATCH') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         const input = await readJson<{ countedQuantity?: unknown }>(request);
         return json(await saveInventoryStocktakeCount(env.DB, decodeURIComponent(inventoryStocktakeItemMatch[1]), toInt(inventoryStocktakeItemMatch[2], 0), input));
       }
 
       const inventoryStocktakeAddCombinationMatch = url.pathname.match(/^\/api\/inventory\/stocktakes\/([^/]+)\/items\/combination$/);
       if (inventoryStocktakeAddCombinationMatch && request.method === 'POST') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         const input = await readJson<{ productId?: unknown; material?: unknown; length?: unknown; category?: unknown; gender?: unknown; color?: unknown; size?: unknown; createReferenceFields?: unknown }>(request);
+        const createReferenceFields = input.createReferenceFields && typeof input.createReferenceFields === 'object'
+          ? input.createReferenceFields as Record<string, unknown>
+          : {};
+        const wantsNewReferenceValue = Object.values(createReferenceFields).some((value) => value === true);
+        if (wantsNewReferenceValue) {
+          const denied = requireAdminAccess(request);
+          if (denied) return denied;
+        }
         return json(await addInventoryStocktakeCombination(env.DB, decodeURIComponent(inventoryStocktakeAddCombinationMatch[1]), input), { status: 201 });
       }
 
       const inventoryStocktakeAddItemMatch = url.pathname.match(/^\/api\/inventory\/stocktakes\/([^/]+)\/items$/);
       if (inventoryStocktakeAddItemMatch && request.method === 'POST') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         const input = await readJson<{ variantId?: unknown }>(request);
         return json(await addInventoryStocktakeVariant(env.DB, decodeURIComponent(inventoryStocktakeAddItemMatch[1]), input), { status: 201 });
       }
 
       const inventoryStocktakeCompleteMatch = url.pathname.match(/^\/api\/inventory\/stocktakes\/([^/]+)\/complete$/);
       if (inventoryStocktakeCompleteMatch && request.method === 'POST') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         const result = await completeInventoryStocktakeSession(env.DB, decodeURIComponent(inventoryStocktakeCompleteMatch[1]));
         if (result.ok) {
           await writeActivityLog(env.DB, {
@@ -692,8 +682,6 @@ export default {
 
       const inventoryStocktakeCancelMatch = url.pathname.match(/^\/api\/inventory\/stocktakes\/([^/]+)\/cancel$/);
       if (inventoryStocktakeCancelMatch && request.method === 'POST') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         const sessionId = decodeURIComponent(inventoryStocktakeCancelMatch[1]);
         const result = await cancelInventoryStocktakeSession(env.DB, sessionId);
         await writeActivityLog(env.DB, {
@@ -703,14 +691,10 @@ export default {
       }
 
       if (url.pathname === '/api/inventory/history' && request.method === 'GET') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         return json(await listInventoryHistory(env.DB, url));
       }
 
       if (url.pathname === '/api/inventory/check-history' && request.method === 'GET') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         return json(await listInventoryCheckHistory(env.DB, url));
       }
 
@@ -723,9 +707,17 @@ export default {
       }
 
       if (url.pathname === '/api/inventory/movements' && request.method === 'POST') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         const input = await readJson<{ requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[] }>(request);
+        const movementType = cleanText(input.movementType).toLowerCase();
+        const routineExistingStockOperation = movementType === 'manual_set' || movementType === 'writeoff';
+        const knownArrival = movementType === 'arrival'
+          && Array.isArray(input.items)
+          && input.items.length > 0
+          && input.items.every((item) => toInt(item?.variantId, 0) > 0);
+        if (!routineExistingStockOperation && !knownArrival) {
+          const denied = requireAdminAccess(request);
+          if (denied) return denied;
+        }
         const returnInventory = url.searchParams.get('returnInventory') !== '0';
         const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const result = await applyInventoryMovement(env.DB, input, returnInventory, actor);
@@ -739,8 +731,6 @@ export default {
       }
 
       if (url.pathname === '/api/inventory/transfer' && request.method === 'POST') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         const input = await readJson<{ requestId?: unknown; fromSource?: unknown; toSource?: unknown; comment?: unknown; items?: InventoryItemInput[] }>(request);
         const returnInventory = url.searchParams.get('returnInventory') !== '0';
         const result = await applyInventoryTransfer(env.DB, input, authUser?.displayName || '', returnInventory);

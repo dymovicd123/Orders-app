@@ -11,6 +11,7 @@ const dailyWarehousePath = path.join(root, 'scripts/step192b2a-daily-warehouse-m
 const attentionVisibilityPath = path.join(root, 'scripts/step192b2a1-attention-visibility-manifest.json')
 const orderSaveIntegrityPath = path.join(root, 'scripts/step192b2a4-frontend-order-save-integrity-manifest.json')
 const stocktakeLostResponseFrontendPath = path.join(root, 'scripts/stocktake-lost-response-frontend-manifest.json')
+const operationalAutonomyR2Path = path.join(root, 'scripts/operational-autonomy-r2-frontend-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -93,6 +94,8 @@ try {
   const attentionVisibility = fs.existsSync(attentionVisibilityPath) ? JSON.parse(fs.readFileSync(attentionVisibilityPath, 'utf8')) : null
   const orderSaveIntegrity = fs.existsSync(orderSaveIntegrityPath) ? JSON.parse(fs.readFileSync(orderSaveIntegrityPath, 'utf8')) : null
   const stocktakeLostResponseFrontend = fs.existsSync(stocktakeLostResponseFrontendPath) ? JSON.parse(fs.readFileSync(stocktakeLostResponseFrontendPath, 'utf8')) : null
+  const operationalAutonomyR2 = fs.existsSync(operationalAutonomyR2Path) ? JSON.parse(fs.readFileSync(operationalAutonomyR2Path, 'utf8')) : null
+  if (operationalAutonomyR2) check(operationalAutonomyR2.version === 1 && operationalAutonomyR2.revision === 'operational-autonomy-r2', 'Operational autonomy R2 frontend manifest invalid')
   check(manifest?.version === 1, '1906B preservation manifest invalid')
   check(manifest.baseAppHooks?.length === 352, `Unexpected 1906A App hook baseline: ${manifest.baseAppHooks?.length}`)
   check(manifest.baseInvHooks?.length === 119, `Unexpected 1906A Inventory hook baseline: ${manifest.baseInvHooks?.length}`)
@@ -159,7 +162,17 @@ try {
       expectedOperationalHashes[index] = change.after
     }
   }
-  check(JSON.stringify(operationalHashes) === JSON.stringify(expectedOperationalHashes), attentionVisibility ? 'Operational view-model changed outside exact 192B2A1 Attention visibility allow-list' : 'Operational view-model statements changed during extraction')
+  if (operationalAutonomyR2) {
+    const changes = Array.isArray(operationalAutonomyR2.frontend?.operationalStatementChanges) ? operationalAutonomyR2.frontend.operationalStatementChanges : []
+    check(changes.length === 1, 'Operational autonomy R2 must allow exactly one operational view-model statement change')
+    for (const change of changes) {
+      const index = Number(change?.index)
+      check(Number.isInteger(index) && index >= 0 && index < expectedOperationalHashes.length, 'Operational autonomy R2 operational statement index invalid')
+      check(expectedOperationalHashes[index] === change.before, `Operational autonomy R2 operational statement baseline mismatch at ${index}`)
+      expectedOperationalHashes[index] = change.after
+    }
+  }
+  check(JSON.stringify(operationalHashes) === JSON.stringify(expectedOperationalHashes), operationalAutonomyR2 ? 'Operational view-model changed outside exact operational-autonomy R2 allow-list' : (attentionVisibility ? 'Operational view-model changed outside exact 192B2A1 Attention visibility allow-list' : 'Operational view-model statements changed during extraction'))
   let expectedWorkspaceHashes = [...(cleanup?.postCleanupWorkspaceHashes || manifest.workspace.hashes)]
   if (dailyWarehouse?.frontend?.workspaceStatementChange) {
     const change = dailyWarehouse.frontend.workspaceStatementChange
@@ -253,9 +266,14 @@ try {
       text = text.replace('{arrivalWorkspace}', controllerText.slice(arrivalStart, arrivalCloseEnd))
     }
     const dailyPanelChange = dailyWarehouse?.frontend?.panelReturnChanges?.[panel.func]
-    const expectedPanelHash = dailyPanelChange?.after || panel.hash
+    let expectedPanelHash = dailyPanelChange?.after || panel.hash
     if (dailyPanelChange) check(dailyPanelChange.before === panel.hash, `${panel.func}: 192B2A panel baseline hash mismatch`)
-    check(sha(normalize(text)) === expectedPanelHash, `${panel.func}: rendered JSX changed outside accepted baseline/B2A delta`)
+    const autonomyPanelChange = operationalAutonomyR2?.frontend?.panelReturnChanges?.[panel.func]
+    if (autonomyPanelChange) {
+      check(autonomyPanelChange.before === expectedPanelHash, `${panel.func}: operational-autonomy R2 panel baseline hash mismatch`)
+      expectedPanelHash = autonomyPanelChange.after
+    }
+    check(sha(normalize(text)) === expectedPanelHash, `${panel.func}: rendered JSX changed outside accepted baseline/B2A/autonomy delta`)
     check(hookTokens(relative, panel.func).length === 0, `${panel.func}: renderer unexpectedly owns React hooks/lifecycle`)
     check(inventoryController.includes(`{${panel.func}({`), `${panel.func}: InventorySection no longer calls renderer directly`)
   }
@@ -285,7 +303,7 @@ try {
   const worker = parse('worker/index.ts').text
   check(worker.includes("frontendControllerModularization: '1906b'"), '1906B live health marker missing')
 
-  console.log(`STEP 190.6B FRONTEND MODULARIZATION TESTS PASSED — App ${lineCount('src/App.tsx')} lines, Inventory ${lineCount('src/features/sections/InventorySection.tsx')} lines, ${manifest.panels.length} preserved panels, hook order preserved${dailyWarehouse ? ', exact 192B2A daily-warehouse frontend deltas accepted' : ''}${attentionVisibility ? ', exact 192B2A1 Attention visibility delta accepted' : ''}${orderSaveIntegrity ? ', exact 192B2A4 order-save frontend deltas accepted' : ''}`)
+  console.log(`STEP 190.6B FRONTEND MODULARIZATION TESTS PASSED — App ${lineCount('src/App.tsx')} lines, Inventory ${lineCount('src/features/sections/InventorySection.tsx')} lines, ${manifest.panels.length} preserved panels, hook order preserved${dailyWarehouse ? ', exact 192B2A daily-warehouse frontend deltas accepted' : ''}${attentionVisibility ? ', exact 192B2A1 Attention visibility delta accepted' : ''}${orderSaveIntegrity ? ', exact 192B2A4 order-save frontend deltas accepted' : ''}${operationalAutonomyR2 ? ', exact operational-autonomy R2 frontend deltas accepted' : ''}`)
 } catch (error) {
   console.error(`STEP 190.6B FRONTEND MODULARIZATION TESTS FAILED: ${error?.message || error}`)
   process.exit(1)

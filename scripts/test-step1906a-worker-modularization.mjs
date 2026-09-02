@@ -23,6 +23,7 @@ const orderEditAutonomyPath = path.join(root, 'scripts/order-edit-autonomy-worke
 const d1CapacityAutonomyPath = path.join(root, 'scripts/d1-capacity-autonomy-worker-manifest.json')
 const d1ReadBudgetPath = path.join(root, 'scripts/d1-read-budget-r1-worker-manifest.json')
 const d1ReadBudgetR2Path = path.join(root, 'scripts/d1-read-budget-r2-worker-manifest.json')
+const operationalAutonomyR2WorkerPath = path.join(root, 'scripts/operational-autonomy-r2-worker-manifest.json')
 const phase1bWorkshopReturnDispositionPath = path.join(root, 'scripts/phase1b-workshop-return-disposition-worker-manifest.json')
 const arrivalSaveReliabilityPath = path.join(root, 'scripts/arrival-save-reliability-worker-manifest.json')
 const shippingShortageHotfixPath = path.join(root, 'scripts/shipping-shortage-hotfix-worker-manifest.json')
@@ -128,6 +129,9 @@ try {
   const d1ReadBudgetR2 = JSON.parse(fs.readFileSync(d1ReadBudgetR2Path, 'utf8'))
   check(d1ReadBudgetR2?.version === 1 && d1ReadBudgetR2?.revision === 'd1-read-budget-r2', 'D1 read-budget R2 Worker manifest invalid')
   const d1ReadBudgetR2Changes = d1ReadBudgetR2.changes || {}
+  check(fs.existsSync(operationalAutonomyR2WorkerPath), 'Operational autonomy R2 Worker manifest missing')
+  const operationalAutonomyR2Worker = JSON.parse(fs.readFileSync(operationalAutonomyR2WorkerPath, 'utf8'))
+  check(operationalAutonomyR2Worker?.version === 1 && operationalAutonomyR2Worker?.revision === 'operational-autonomy-r2', 'Operational autonomy R2 Worker manifest invalid')
   check(fs.existsSync(phase1bWorkshopReturnDispositionPath), 'Phase 1B Workshop return disposition Worker manifest missing')
   const phase1bWorkshopReturnDisposition = JSON.parse(fs.readFileSync(phase1bWorkshopReturnDispositionPath, 'utf8'))
   check(phase1bWorkshopReturnDisposition?.version === 1 && phase1bWorkshopReturnDisposition?.revision === 'phase1b-workshop-return-disposition-r1', 'Phase 1B Workshop return disposition Worker manifest invalid')
@@ -493,7 +497,9 @@ try {
   check(returnExchangeCancelAutonomy.router?.before === acceptedPostOrderCreateRouterHash, 'Return/exchange cancel autonomy router baseline hash mismatch')
   const acceptedPostCancellationAutonomyRouterHash = returnExchangeCancelAutonomy.router.after
   check(orderEditAutonomy.router?.before === acceptedPostCancellationAutonomyRouterHash, 'Order edit autonomy router baseline hash mismatch')
-  check(sha(normalizedRouter) === orderEditAutonomy.router.after, 'Worker router changed beyond exact order edit autonomy delta')
+  const acceptedPostOrderEditAutonomyRouterHash = orderEditAutonomy.router.after
+  check(operationalAutonomyR2Worker.router?.before === acceptedPostOrderEditAutonomyRouterHash, 'Operational autonomy R2 router baseline hash mismatch')
+  check(sha(normalizedRouter) === operationalAutonomyR2Worker.router.after, 'Worker router changed beyond exact operational autonomy R2 delta')
 
   for (const [name, expectedHash] of Object.entries(warehouseTruthFreshnessAdded)) {
     check(declarations.has(name), `192A1 added Worker declaration missing: ${name}`)

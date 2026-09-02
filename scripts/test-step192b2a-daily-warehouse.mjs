@@ -34,19 +34,19 @@ try {
 
   check(worker.includes("warehouseDailyAttentionUx: '192b2a'"), '192B2A health marker missing')
   check(appTypes.includes("| 'attention'"), 'InventoryPanel does not expose Attention')
-  check(operational.includes("const inventoryManagerPanels: InventoryPanel[] = ['overview', 'attention']"), 'Attention tab can be selected by a manager but the panel visibility allow-list hides it')
+  check(operational.includes("const inventoryManagerPanels: InventoryPanel[] = ['overview', 'attention', 'movement', 'stocktake', 'history']"), 'Routine Warehouse panels are not available to a manager')
   check(operational.includes("const inventoryAdminPanels: InventoryPanel[] = ['overview', 'attention', 'stocktake'"), 'Attention tab can be selected by an admin but the panel visibility allow-list hides it')
   check(operational.includes("inventoryPanel === panel ? undefined : 'none'"), 'Inventory panel visibility guard changed unexpectedly')
   check(app.includes("panel === 'overview' &&") === false, 'Legacy manager-only overview gate unexpectedly hard-coded')
-  check(app.includes("nextPanel !== 'overview' && nextPanel !== 'attention'") && app.includes("inventoryPanel !== 'overview' && inventoryPanel !== 'attention'"), 'Managers are not allowed to open Attention safely')
+  check(app.includes("if (!isAdmin && inventoryPanel === 'catalog')") && app.includes("if (activeSector === 'inventory' && inventoryPanel === 'catalog')"), 'Working mode must block only the master-data catalog panel')
 
   const quickRoute = between(worker, "if (url.pathname === '/api/inventory/stocktakes/quick'", "const inventoryStocktakeMatch")
   check(!quickRoute.includes('requireAdminAccess'), 'Exact single-SKU physical count is still admin-only')
   check(quickRoute.includes('quickInventoryStocktake(env.DB'), 'Exact count route no longer uses CAS-protected quickInventoryStocktake')
   const batchRoute = between(worker, "if (url.pathname === '/api/inventory/stocktakes/quick-batch'", "if (url.pathname === '/api/inventory/stocktakes/quick'")
-  check(batchRoute.includes('requireAdminAccess'), 'Batch stocktake must remain admin-only')
+  check(!batchRoute.includes('requireAdminAccess'), 'CAS-protected batch stocktake is still admin-only')
   const cycleRoute = between(worker, "if (url.pathname === '/api/inventory/cycle-counts'", "if (url.pathname === '/api/inventory/stocktakes'")
-  check(cycleRoute.includes('requireAdminAccess'), 'Cycle-count administration must remain admin-only in 192B2A')
+  check(!cycleRoute.includes('requireAdminAccess'), 'Routine cycle-count apply is still admin-only')
 
   const shortagePreflight = between(reservations, 'export async function assertCreateOrderShortageDecisions(', 'export async function reserveOrderItemV2(')
   check(shortagePreflight.includes('requestedQuantity') && shortagePreflight.includes('hasObservation') && shortagePreflight.includes('acknowledged'), 'Server shortage preflight does not group one decision per exact SKU/source')

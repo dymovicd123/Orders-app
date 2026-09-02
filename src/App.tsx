@@ -1269,7 +1269,7 @@ function App() {
       // Do not rely on another screen having loaded them earlier in the session.
       void loadReferencesData()
       void loadInventoryControlSettings()
-      if (!isAdmin && inventoryPanel !== 'overview' && inventoryPanel !== 'attention') setInventoryPanel('overview')
+      if (!isAdmin && inventoryPanel === 'catalog') setInventoryPanel('overview')
       if (isAdmin && !inventoryAdminPanels.includes(inventoryPanel)) setInventoryPanel('overview')
     }
     if (activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'edit')) {
@@ -1283,7 +1283,7 @@ function App() {
 
   useEffect(() => {
     if (!authReady || isAdmin) return
-    if (activeSector === 'inventory' && inventoryPanel !== 'overview' && inventoryPanel !== 'attention') setInventoryPanel('overview')
+    if (activeSector === 'inventory' && inventoryPanel === 'catalog') setInventoryPanel('overview')
   }, [activeSector, authReady, inventoryPanel, isAdmin])
 
   useEffect(() => {
@@ -4381,11 +4381,6 @@ function App() {
   }
 
   async function openWorkshopOrderEditor(task: WorkshopTaskRecord) {
-    if (!isAdmin) {
-      setMessage('Редактирование заказа доступно только в админ-режиме.')
-      return
-    }
-
     setError(null)
     setMessage(null)
     setEditorOpen(false)
@@ -4634,7 +4629,7 @@ function App() {
   }
 
   function startInventoryTransferFromStockRow(source: InventorySourceKey, row: InventoryStockRecord) {
-    if (!isAdmin || !row.variantId || Number(row.quantity || 0) <= 0) return
+    if (!row.variantId || Number(row.quantity || 0) <= 0) return
     const targetSource: InventorySourceKey = source === 'warehouse' ? 'boutique' : 'warehouse'
     setInventoryTransferRequestId(makeCashRequestId('inventory-transfer'))
     setInventoryDraft({
@@ -4674,12 +4669,6 @@ function App() {
     items: InventoryStocktakeApplyItem[],
     sessionId: string,
   ): Promise<InventoryStocktakeApplyResult> {
-    if (!isAdmin) {
-      const message = 'Применить результаты ревизии можно только в админ-режиме.'
-      setError(message)
-      return { ok: false, appliedKeys: [], message }
-    }
-
     const cleanItems = items.filter((item) => item.key && Number.isFinite(item.quantity) && Number.isFinite(item.expectedQuantity))
     if (!cleanItems.length) {
       return { ok: true, appliedKeys: [], message: 'Расхождений для применения нет.' }
@@ -4731,10 +4720,6 @@ function App() {
 
 
   async function saveInventoryMovement() {
-    if (!isAdmin) {
-      setError('Ручные операции склада доступны только администратору.')
-      return
-    }
     if (inventoryMovementBusy) return
     setInventoryMovementBusy(true)
     setError(null)
@@ -4762,6 +4747,10 @@ function App() {
 
       if (!cleanItems.length) {
         throw new Error('Выберите хотя бы один товар/вариант.')
+      }
+
+      if (!isAdmin && inventoryDraft.movementType === 'arrival' && cleanItems.some((item) => !item.variantId)) {
+        throw new Error('Новый товар или новая характеристика требуют админ-режима. В рабочем режиме выберите готовый существующий вариант.')
       }
 
       if ((inventoryDraft.movementType === 'writeoff' || inventoryDraft.movementType === 'manual_set') && !inventoryDraft.comment.trim()) {

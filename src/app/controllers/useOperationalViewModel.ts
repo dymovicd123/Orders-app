@@ -1166,7 +1166,7 @@ const summary = useMemo(() => {
     },
   }[inventoryDraft.movementType]
 
-  const inventoryManagerPanels: InventoryPanel[] = ['overview', 'attention']
+  const inventoryManagerPanels: InventoryPanel[] = ['overview', 'attention', 'movement', 'stocktake', 'history']
   const inventoryAdminPanels: InventoryPanel[] = ['overview', 'attention', 'stocktake', 'movement', 'catalog', 'history', 'settings', 'warehouse', 'boutique', 'exact']
   const inventoryPanelStyle = (panel: InventoryPanel) => ({
     display: activeSector === 'inventory'

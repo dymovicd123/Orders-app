@@ -188,7 +188,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
             {items.stocktakes.map((item: any) => (
               <article key={`attention-stocktake-${item.id}`}>
                 <div className="inventory-attention-main"><strong>{sourceLabel(item.source)}</strong><span>Посчитано {item.countedItems} из {item.totalItems}{item.recountItems ? ` · повторно проверить: ${item.recountItems}` : ''}</span><small>Начата {formatDateShort(item.startedAt)}</small></div>
-                {isAdmin ? <button className="secondary compact" type="button" onClick={() => openAttentionStocktake(item)}>Продолжить</button> : <span className="inventory-attention-admin-note">Нужен администратор</span>}
+                <button className="secondary compact" type="button" onClick={() => openAttentionStocktake(item)}>Продолжить</button>
               </article>
             ))}
           </div> : <div className="empty-state">Незавершённых ревизий сейчас нет.</div>}

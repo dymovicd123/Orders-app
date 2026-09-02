@@ -2098,12 +2098,12 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                 {[
                   { value: 'overview' as const, label: 'Остатки', hint: 'Просмотр текущих остатков' },
                   { value: 'attention' as const, label: `Внимание${Number(warehouseAttention?.total || 0) ? ` · ${warehouseAttention?.total}` : ''}`, hint: 'То, что сейчас требует конкретного действия' },
+                  { value: 'movement' as const, label: 'Движение товара', hint: 'Приход, списание, перемещение и корректировка' },
+                  { value: 'stocktake' as const, label: 'Ревизия', hint: 'Пересчёт того, что реально находится на месте' },
                   ...(isAdmin ? [
-                    { value: 'movement' as const, label: 'Движение товара', hint: 'Приход, списание, перемещение и корректировка' },
-                    { value: 'stocktake' as const, label: 'Ревизия', hint: 'Пересчёт того, что реально находится на месте' },
                     { value: 'catalog' as const, label: 'Товары', hint: 'Какие товары и варианты существуют' },
-                    { value: 'history' as const, label: 'История', hint: 'Хронология изменений склада и бутика' },
                   ] : []),
+                  { value: 'history' as const, label: 'История', hint: 'Хронология изменений склада и бутика' },
                 ].map((entry) => (
                   <button key={entry.value} type="button" className={inventoryPanel === entry.value ? 'is-active' : ''} onClick={() => openInventoryPanel(entry.value)} title={entry.hint}>
                     <strong>{entry.label}</strong>
