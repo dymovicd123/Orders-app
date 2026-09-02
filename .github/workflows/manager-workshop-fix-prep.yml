@@ -17,82 +17,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Apply minimal source and regression patch
+      - name: Normalize the already-applied minimal guard
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('src/features/sections/WorkshopSection.tsx')
           text = path.read_text()
-          marker = 'onClick={() => void openWorkshopOrderEditor(task)}'
-          if text.count(marker) != 1:
-              raise SystemExit(f'Expected exactly one Workshop edit action, found {text.count(marker)}; refusing broad patch')
-          marker_at = text.index(marker)
-          start = text.rfind('<button', 0, marker_at)
-          end_tag = text.find('</button>', marker_at)
-          if start < 0 or end_tag < 0:
-              raise SystemExit('Could not bound Workshop edit button; refusing broad patch')
-          end = end_tag + len('</button>')
-          block = text[start:end]
-          if len(block) > 500 or 'Редактировать заказ' not in block or 'secondary compact' not in block:
-              raise SystemExit('Workshop edit button shape changed; refusing broad patch')
-          line_start = text.rfind('\n', 0, start) + 1
-          indent = text[line_start:start]
-          if indent.strip():
-              raise SystemExit('Unexpected content before Workshop edit button; refusing patch')
-          inner = block.replace('\n', '\n' + '  ')
-          replacement = f"{{task.shippingStatus !== 'sent' ? (\n  {inner}\n) : null}}"
-          patched = text[:start] + replacement + text[end:]
-          if patched.count(marker) != 1 or patched.count("task.shippingStatus !== 'sent' ? (") != 1:
-              raise SystemExit('Workshop sent-order guard invariant failed')
-          path.write_text(patched)
+          old = """                            {task.shippingStatus !== 'sent' ? (\n  <button\n                                className=\"secondary compact\"\n                                type=\"button\"\n                                onClick={() => void openWorkshopOrderEditor(task)}\n                              >\n                                Редактировать заказ\n                              </button>\n) : null}"""
+          new = """                            {task.shippingStatus !== 'sent' ? (\n                              <button\n                                className=\"secondary compact\"\n                                type=\"button\"\n                                onClick={() => void openWorkshopOrderEditor(task)}\n                              >\n                                Редактировать заказ\n                              </button>\n                            ) : null}"""
+          if text.count(old) != 1:
+              raise SystemExit(f'Expected exactly one already-guarded Workshop edit block, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
           PY
-
-          cat > scripts/test-manager-workshop-sent-order-actions-r2.mjs <<'EOF'
-          import fs from 'node:fs'
-
-          const read = (path) => fs.readFileSync(path, 'utf8')
-          const check = (condition, message) => { if (!condition) throw new Error(message) }
-
-          const workshop = read('src/features/sections/WorkshopSection.tsx')
-          const editor = read('src/features/sections/OrderEditorSection.tsx')
-
-          check(workshop.includes("task.shippingStatus !== 'sent' ? ("), 'Workshop must not offer the normal order editor for an already-sent order')
-          check(workshop.includes('onClick={() => void openWorkshopOrderEditor(task)}'), 'Normal unsent Workshop rows lost the order editor action')
-          check(workshop.includes('onClick={() => void openWorkshopExchange(task)}'), 'Workshop exchange action disappeared')
-          check(workshop.includes("task.status === 'active'"), 'Workshop ready/done action flow changed unexpectedly')
-          check(editor.includes("selectedOrder.shipping_status !== 'sent'"), 'Sent-order manager edit protection was weakened')
-          check(editor.includes("editorReturnSector === 'workshop' ? 'Назад в цех'"), 'Workshop editor return path changed unexpectedly')
-
-          const editGuard = workshop.indexOf("task.shippingStatus !== 'sent' ? (")
-          const editAction = workshop.indexOf('openWorkshopOrderEditor(task)', editGuard)
-          const exchangeAction = workshop.indexOf('openWorkshopExchange(task)', editAction)
-          check(editGuard >= 0 && editAction > editGuard && exchangeAction > editAction, 'Workshop action order/guard is malformed')
-
-          console.log('MANAGER WORKSHOP SENT-ORDER ACTIONS R2 PASSED — sent exchange rows keep Exchange/Done without a dead normal-order Edit action; unsent rows keep Edit')
-          EOF
-
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs';
-          const path = 'package.json';
-          const data = JSON.parse(fs.readFileSync(path, 'utf8'));
-          const marker = 'node scripts/test-manager-workshop-sent-order-actions-r2.mjs';
-          if (!String(data.scripts['release:check'] || '').includes(marker)) {
-            data.scripts['release:check'] = `${data.scripts['release:check']} && ${marker}`;
-          }
-          fs.writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
-          NODE
-
           node scripts/test-manager-workshop-sent-order-actions-r2.mjs
           git diff --check
-          git diff -- src/features/sections/WorkshopSection.tsx scripts/test-manager-workshop-sent-order-actions-r2.mjs package.json
           git config user.name "dymovicd123"
           git config user.email "dymovicd@gmail.com"
-          git add src/features/sections/WorkshopSection.tsx scripts/test-manager-workshop-sent-order-actions-r2.mjs package.json
-          git commit -m "Hide dead Workshop edit action for sent orders"
+          git add src/features/sections/WorkshopSection.tsx
+          git commit -m "Normalize Workshop sent-order action guard"
           git push origin HEAD:safe/manager-workshop-sent-edit-r2-20260902
