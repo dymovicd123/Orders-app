@@ -1,0 +1,47 @@
+name: Editor White Screen R1 Validate
+
+on:
+  push:
+    branches: [safe/editor-white-screen-forensic-20260902]
+    paths:
+      - scripts/.editor-white-screen-r1-trigger
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/editor-white-screen-forensic-20260902
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply exact runtime wiring fix
+        run: python3 scripts/apply-editor-white-screen-r1.py
+      - name: Targeted order edit regression
+        run: node scripts/test-order-edit-autonomy.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Full cumulative release gate
+        run: npm run release:check
+      - name: Database safety gate
+        run: npm run verify:db-safety
+      - name: Clean production build
+        run: |
+          rm -rf dist
+          npm run build
+      - name: Wrangler dry-run
+        run: npx wrangler deploy --dry-run
+      - name: Commit validated candidate
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx scripts/test-order-edit-autonomy.mjs
+          git commit -m 'Fix order editor white-screen runtime crash'
+          git push origin HEAD:safe/editor-white-screen-forensic-20260902
