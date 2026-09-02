@@ -1,146 +1,177 @@
 # Система заказов — continuation context
 
-Updated: 2026-09-01 (Asia/Almaty)
+Updated: 2026-09-02 (Asia/Almaty)
 
-## Current production baseline
+## Current execution point
 
-- Main branch after D1 optimization pass: `5efc75d69b6ad75d5a8deec472e33938d855c7f3`.
-- Cloudflare deploy monitor was started for this exact commit after promotion.
-- Arrival UI (`Приход`) remains frozen: do not change it unless the user explicitly reverses that decision.
+- Production/main baseline before the current promotion: `39fcdaa6d2e72d772206e8e6dfe057aad0fa576f` (Operational Autonomy R2).
+- D1 Read Budget R3 was fully validated on safe branch. Exact validated source commit before cleanup: `abfb5ff289932c194e5d2122ab4dc5498bc904c0`.
+- Full cumulative `npm run release:check`, database safety, clean production build and Wrangler `--dry-run` all passed. Permanent R3 regression also passed.
+- Temporary R3 workflow/patcher/registrar/trigger files were removed after validation. Promote only the clean descendant of the validated source.
+- Arrival UI (`Приход`) remains frozen: no visual/layout/form redesign.
 
-## Why D1 optimization became urgent
+## D1 Read Budget R3 — validated
 
-On 2026-09-01 Production stopped serving every D1-backed read because the account hit Cloudflare D1 Free daily row-read limit. Live response after the classifier patch was HTTP 503 with code `d1_daily_read_limit`. Data was not reported damaged. The Free-tier daily limit resets at 00:00 UTC (05:00 Asia/Almaty).
+Fresh D1 Insights on 2026-09-02 showed the remaining read budget was being spent mainly by Warehouse Attention and broad finance/report calculations.
 
-The immediate priority became reducing row-read amplification before returning to feature work.
+R3 permanent behavior:
 
-## D1 optimization R1 — deployed before R2
+1. **Overview read isolation**
+   - the overview screen now has a lightweight `/api/dashboard` loader;
+   - it no longer needs the old full dashboard loader that also pulled orders/catalog/reference data just to render the overview.
 
-R1 main commit: `414320141ae84e54ac8ddffcf87c67f39a858b59`.
+2. **Finance workspace scope**
+   - finance reads now distinguish `scope=finance` from the full Reports payload;
+   - Finance skips report-only manager/product/city/day/lead/call-centre/plan/team datasets that its own UI does not use;
+   - full Reports behavior remains available and unchanged for the Reports section;
+   - full-report and finance-workspace caches are isolated by scope;
+   - normal Finance navigation no longer forces an extra full report refresh and can reuse the scoped cache;
+   - explicit refresh/mutation invalidation still forces a fresh read.
 
-Key changes:
+3. **Warehouse Attention detail de-duplication**
+   - `details=1` no longer runs the full expensive summary catalog scan and then repeats the same unresolved-catalog work for detail rows;
+   - the detail catalog query carries the exact grouped total via `COUNT(*) OVER()`;
+   - shortage/lifecycle/stocktake counts remain exact through a smaller core summary query;
+   - problem classification/business semantics are unchanged.
 
-- The ordinary orders list no longer runs the full stock handover forensic payload just to compute two flags.
-- `fetchOrderStockHandoverRows` gained a compact list-flags path while the full resolver remains the canonical source for explicit handover flows.
-- Exact `ORD-...` lookup uses direct indexed `external_id` equality instead of the broad free-text `INSTR`/items/payments scan.
-- Relation/stat reuse was improved so complete small filtered result pages do not immediately rescan the same relations for summaries.
-- Permanent regression: `scripts/test-d1-read-budget-r1.mjs`.
+Permanent R3 files include:
 
-R1 was confirmed deployed by Cloudflare deploy monitor.
+- `scripts/test-d1-read-budget-r3.mjs`
+- `scripts/d1-read-budget-r3-worker-manifest.json`
+- the exact Step 190.6A cumulative preservation-chain extension for `listFinanceReports` and the historically 192B1-added `getWarehouseAttentionSummary` declaration.
 
-## D1 optimization R2 — current main
+No migration or D1 write is part of R3.
 
-Validated candidate passed:
+## D1 optimization history
 
-- `npm run typecheck`
-- full `npm run release:check`
-- all warehouse/order/finance regression gates
-- Vite production build
-- post-build bundle budget
-- Wrangler deploy `--dry-run`
+### R1
 
-Permanent R2 files/code were promoted to main; temporary workflow/patcher/registrar/trigger were removed before promotion.
+Main commit: `414320141ae84e54ac8ddffcf87c67f39a858b59`.
 
-R2 changed six Worker read declarations (tracked by `scripts/d1-read-budget-r2-worker-manifest.json`):
+- compact order handover list flags;
+- indexed exact `ORD-...` lookup;
+- safer small-result relation/stat reuse;
+- permanent regression `scripts/test-d1-read-budget-r1.mjs`.
 
-1. `fetchOrderStockHandoverRows`
-   - compact all-active mode for background Warehouse Attention summary;
-   - full handover payload remains for explicit detail/handover screens.
+### R2
 
-2. `getWarehouseAttentionSummary`
-   - summary requests compact handover rows;
-   - explicit `details=1` remains full fidelity.
+R2 introduced:
 
-3. `listOrders`
-   - `ORD-...` prefix search uses an indexed external-id range instead of falling immediately into the broad search path;
-   - complete-page relation/stat reuse also works with selected date ranges where safe.
-
-4. `listInventory`
-   - active catalog variant is joined once instead of using a correlated per-row active-variant existence lookup.
-
-5. `listTeamEmployees`
-   - order/attendance/reference counters are preaggregated and joined instead of correlated subqueries per manager.
-
-6. `listClients`
-   - filtered total is carried by the page query (`COUNT(*) OVER()`) rather than issuing another filtered count query.
-
-Frontend R2:
-
-- Warehouse Attention summary has a short TTL/in-flight coalescing path to avoid duplicate simultaneous/recent reads.
-- Inventory writes explicitly force Attention refresh, so caching does not leave write aftermath stale.
+- compact all-active handover reads;
+- compact Warehouse Attention summary handover path;
+- indexed `ORD-...` prefix range;
+- active catalog variant join instead of correlated lookup;
+- preaggregated Team counters;
+- clients `COUNT(*) OVER()` total;
+- short Warehouse Attention frontend TTL/in-flight coalescing with forced invalidation after writes.
 
 Permanent regression: `scripts/test-d1-read-budget-r2.mjs`.
 
-## What is intentionally NOT done yet
+### R3 measurement rule
 
-No D1 index migration was applied while the daily read quota was exhausted. Do not blindly create indexes without live `EXPLAIN`/rows-read evidence after reset.
+After exact Production deployment, re-run fresh one-hour D1 Insights. Do not use the polluted rolling 24h profile to judge R3 immediately. Rank the next optimization only from post-deploy fresh traffic.
 
-Do not claim that code optimization alone can bypass an already exhausted Cloudflare daily quota. Until reset/plan upgrade, D1 itself can reject reads.
+Do not blindly add indexes. First collect live query-plan / rows-read evidence for whatever remains at the top after R3.
 
-## Tomorrow / next execution order
+## Branch2 — urgent sync state
 
-### 1. Post-reset production acceptance and real cost measurement
+User explicitly requested Branch2 be brought current; it has materially drifted.
 
-After 05:00 Asia/Almaty (00:00 UTC):
+Current old Branch2 HEAD before sync:
 
-- verify D1 reads recovered;
-- verify the exact deployed main commit;
-- exercise representative read paths without artificial high-volume polling;
-- collect D1 `rows_read` / Insights for R1+R2;
-- compare top consumers with the pre-fix profile;
-- only then decide which indexes are justified.
+- `539195eec4796d75115e8add722fa9bb4b009405`
+- date: 2026-08-29
+- checkpoint: Arrival save reliability.
 
-### 2. Return to orders autonomy and restrictions
+Comparison against pre-R3 main showed the histories diverged at `21c4f68a819441269978f9c674960601805453d9`: main had roughly 167 newer commits while Branch2 retained its own historical promotion/checkpoint commits. Do not simply force Branch2 to main without restoring environment-specific invariants.
 
-User explicitly wants deterministic routine operations to work without constant admin intervention.
+### Confirmed Branch2 environment invariants
 
-Priorities:
+Branch2 is a separate Worker / D1 environment. Its old config says:
 
-- finish the duplicate/error order `ORD-20260829144801-F3A7DDC3` check/removal safely after D1 recovery;
-- user-confirmed physical fact: the item was NOT actually handed to the customer (`physicalOutcome = not_issued`);
-- safe-delete only through business endpoint; never direct SQL delete/update;
-- if already deleted, verify return #33 is cancelled and newer physical truth was preserved;
-- if not deleted, use idempotent safe-delete and verify reservations/workshop/returns/exchanges/physical stock did not double-mutate;
-- continue reducing admin-only restrictions where the outcome is deterministic and safe;
-- admin remains for genuine ambiguity/policy/high-risk decisions, not routine business work.
+- Worker: `orders-app-branch2`
+- D1 logical name: `orders_db_branch2`
+- historical configured UUID: `40065052-854e-44b8-bcd5-251bdd488301`
+- title marker: `Система заказов 2`
 
-### 3. Finish Warehouse
+The historical UUID must NOT be trusted blindly: a direct read-only Cloudflare D1 API check against that UUID returned Cloudflare `7403`. A follow-up audit is resolving the live database by **name** through Wrangler before any schema action.
 
-Keep the established warehouse principles:
+Branch2 also intentionally added an auth fallback guard in `verifySimpleAdminPassword`:
 
-- Physical / Reserved / Available are separate truths;
-- no partial shipments (all-or-nothing);
-- newer physical check/stocktake beats older inverse arithmetic;
-- known deterministic situations should self-resolve;
-- unknown SKU/attribute/policy ambiguity may require admin;
-- keep UI simple, small-screen friendly, fewer clicks;
-- do not reintroduce developer jargon into user-facing screens;
-- `Приход` remains frozen.
+- when no stored hash exists but `app_settings.require_stored_admin_password = '1'`, do not fall back to the environment/default admin password.
 
-### 4. Second full system optimization/audit
+Preserve that Branch2-specific safeguard unless a later explicit design decision replaces it.
 
-User believes the current findings may be only a small part of the problem. After autonomy + Warehouse are stable, perform another cross-system audit, not just SQL review.
+The old two-line `worker/index.ts` delta was investigated: it merely removed the admin gate from GET `/api/inventory/cycle-counts`. Current main already contains that behavior, so it is not an extra Branch2-only delta that needs to be reapplied.
 
-Audit the full chain:
+### Safe Branch2 sync procedure
 
-- UI render/effects -> API request fan-out;
+1. Finish R3 main promotion and confirm the exact matching Production Cloudflare build.
+2. Resolve the actual live `orders_db_branch2` identity by Cloudflare/Wrangler name, not the stale hard-coded UUID.
+3. Read-only compare Branch2 `d1_migrations` / schema with the repository's 64 migration files.
+4. Build Branch2 sync candidate from the new exact main SHA.
+5. Restore only proven environment deltas:
+   - Branch2 Worker/D1 config using the live resolved Branch2 database;
+   - `Система заказов 2` title marker;
+   - stored-admin-password-required fallback safeguard and its exact preservation registration.
+6. Run full cumulative release gate, database safety, clean build and Wrangler dry-run against Branch2 config.
+7. Apply only genuinely missing normal migrations if the read-only audit proves they are absent and applicable. Never copy Primary data and never create historical optional/audit tables merely to make environments look identical.
+8. Preserve the old Branch2 head in a backup ref before rebasing/repointing the environment branch if history replacement is needed.
+9. Push the exact validated Branch2 source and require `cloudflare-deploy/branch2` to confirm the matching SHA before calling Branch2 current.
+
+## Operational Autonomy R2 — already Production baseline before R3
+
+Routine deterministic operations are manager-safe; genuine master-data creation, ambiguity and destructive reversals remain admin-only.
+
+Manager-safe includes routine stocktake/cycle-count paths, existing-SKU transfer/correction/writeoff, known existing-variant Arrival, unfinished stocktake continuation and active/unshipped Workshop order editing. Hidden Warehouse panel visibility blocker was fixed end-to-end.
+
+Arrival visual workspace remained untouched.
+
+## Order / warehouse reliability already established
+
+- Order create/save separates critical writes from secondary readback/audit so a committed order cannot be falsely reported as unsaved because a follow-up diagnostic read failed.
+- Structured stock-shortage handling, Workshop exclusion from warehouse shortage, unpaid-order support, payment validation and idempotency remain protected.
+- No partial shipments; all-or-nothing model.
+- Physical / Reserved / Available remain separate truths.
+- Newer physical check/stocktake beats older inverse arithmetic.
+- Known deterministic situations should self-resolve; unknown SKU/attribute/policy ambiguity may require admin.
+- `СТАНДАРТ`/empty is valid, not automatically unknown.
+
+## Exact erroneous duplicate F3A7
+
+`ORD-20260829144801-F3A7DDC3`, order id `1242`, was already safely deleted. A post-Operational-Autonomy Production API read reconfirmed:
+
+- `order_status=deleted`
+- `shipping_status=not_sent`
+- `workshop_status=cancelled`
+- return #33 cancelled
+
+Do not mutate this order again merely to verify it.
+
+## Next optimization/audit after R3 + Branch2 sync
+
+User expects a broader second system audit because the currently discovered D1 issues are likely only part of the problem. Audit the full chain:
+
+- UI effects/render -> API fan-out;
 - duplicate/in-flight/retry reads;
-- endpoint payload overfetch;
+- endpoints loaded while their section is unopened;
+- payload overfetch;
 - Worker query fan-out;
-- correlated subqueries / full scans / repeated aggregates;
-- D1 indexes and query plans;
-- `rows_read` and `rows_written` per major workflow;
-- dashboard, orders, clients, team, workshop, finance, reports, warehouse, catalog, references;
-- caches and invalidation correctness;
-- background/summary endpoints that are loaded even when the user did not open that section;
-- expensive exports/reports;
-- Cloudflare Worker/D1 limits and storage/bundle costs.
+- correlated subqueries/full scans/repeated aggregates;
+- D1 indexes/query plans;
+- real `rows_read`/`rows_written` by workflow;
+- dashboard, orders, clients, team, workshop, finance, reports, warehouse, catalog/references;
+- cache/invalidation correctness;
+- exports;
+- Cloudflare Worker/D1/storage/bundle cost.
 
-The goal of this second audit is to find structural cost problems that the first D1 emergency pass could not expose while Production was quota-blocked.
+A likely next candidate is the Reports section: it still obtains a broad full finance/report payload even though the user selects one report type. Measure after R3 before changing it.
 
 ## Project invariants / workflow
 
 - Before every Warehouse patch, audit adjacent workflows and data-entry paths, not only one screen.
 - After each meaningful step, update this continuation context.
-- When the user is local, patches should still be deliverable as one Windows root command `.APPLY_STEP...cmd` if needed.
-- Production safety and idempotency take precedence over cosmetic convenience.
+- When local delivery is needed, user historically wants one Windows root command such as `.APPLY_STEP...cmd`.
+- Production safety, exact environment isolation and idempotency take precedence over cosmetic convenience.
+- Never mix Primary and Branch2 D1 bindings/data.
+- Do not claim a deployment until the exact matching Cloudflare monitor succeeds.
