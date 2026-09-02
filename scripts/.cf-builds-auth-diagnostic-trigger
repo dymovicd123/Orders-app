@@ -1,0 +1,2 @@
+run=2026-09-02-cf-builds-auth-diagnostic
+purpose=read-only verify user token, Workers Scripts and Workers Builds API permissions
