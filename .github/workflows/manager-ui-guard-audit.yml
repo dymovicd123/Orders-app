@@ -1,0 +1,28 @@
+name: Manager UI guard audit
+
+on:
+  push:
+    branches: [safe/manager-operations-forensic-20260902]
+    paths:
+      - .github/workflows/manager-ui-guard-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Frontend isAdmin contexts
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== SECTION isAdmin contexts ==='
+          grep -R -n -B 3 -A 5 --include='*.tsx' 'isAdmin' src/features/sections || true
+          echo '=== APP access-denial texts ==='
+          grep -n -B 3 -A 4 -E 'только админ|только администра|админ-режим|require.*Admin|!isAdmin' src/App.tsx || true
+          echo '=== WORKSHOP edit exact context ==='
+          grep -n -B 8 -A 12 'openWorkshopOrderEditor' src/features/sections/WorkshopSection.tsx || true
+          echo '=== SHIPPING exact context ==='
+          grep -n -B 8 -A 20 'Отправить клиенту' src/features/sections/OrdersTableSection.tsx || true
