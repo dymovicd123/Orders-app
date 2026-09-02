@@ -24,7 +24,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Apply exact R3 candidate
-        run: python3 scripts/apply-d1-read-budget-r3.py
+        run: |
+          python3 scripts/repair-d1-read-budget-r3-patcher.py
+          python3 scripts/apply-d1-read-budget-r3.py
       - name: Typecheck
         run: npm run typecheck
       - name: Full cumulative release gate
