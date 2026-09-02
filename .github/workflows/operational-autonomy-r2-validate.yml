@@ -22,14 +22,18 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Capture frontend preservation baseline
-        run: node scripts/register-operational-autonomy-r2.mjs before
+      - name: Capture preservation baselines
+        run: |
+          node scripts/register-operational-autonomy-r2.mjs before
+          node scripts/register-operational-autonomy-r2-worker.mjs before
       - name: Apply guarded autonomy patch
         run: python3 scripts/apply-operational-autonomy-r2.py
-      - name: Extend exact frontend preservation chain
+      - name: Extend exact preservation chains
         run: python3 scripts/apply-operational-autonomy-r2-preservation.py
-      - name: Register exact frontend delta
-        run: node scripts/register-operational-autonomy-r2.mjs after
+      - name: Register exact deltas
+        run: |
+          node scripts/register-operational-autonomy-r2.mjs after
+          node scripts/register-operational-autonomy-r2-worker.mjs after
       - name: Typecheck
         run: npm run typecheck
       - name: Full release gates
@@ -40,7 +44,7 @@ jobs:
         run: |
           git config user.name "dymovicd123"
           git config user.email "dymovicd@gmail.com"
-          git add package.json worker/index.ts src/App.tsx src/features/sections/InventorySection.tsx src/features/inventory/views/renderInventoryAttentionPanel.tsx scripts/test-operational-autonomy-r2.mjs scripts/operational-autonomy-r2-frontend-manifest.json scripts/test-step1906b-frontend-modularization.mjs
+          git add package.json worker/index.ts src/App.tsx src/features/sections/InventorySection.tsx src/features/inventory/views/renderInventoryAttentionPanel.tsx scripts/test-operational-autonomy-r2.mjs scripts/operational-autonomy-r2-frontend-manifest.json scripts/operational-autonomy-r2-worker-manifest.json scripts/test-step1906a-worker-modularization.mjs scripts/test-step1906b-frontend-modularization.mjs
           git diff --cached --check
           git commit -m "Reduce routine admin blockers"
           git push origin HEAD:safe/operational-autonomy-r2-20260902
