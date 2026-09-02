@@ -1,0 +1,92 @@
+name: R5.2 Production apply and control
+
+on:
+  push:
+    branches: [safe/r5-2-warehouse-summary-20260902]
+    paths:
+      - scripts/.r5-2-prod-apply-control-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  apply-control:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Production safety precondition — read only
+        run: |
+          npx wrangler d1 execute orders_db_prod --remote --command "SELECT COUNT(*) AS r5_1_index_count FROM sqlite_master WHERE type='index' AND name IN ('idx_inventory_stock_source_variant','idx_return_items_order_item_return','idx_inventory_lifecycle_order_item_status','idx_inventory_stocktake_completed_source_time')" --json | tee /tmp/r51.json
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          const p = JSON.parse(fs.readFileSync('/tmp/r51.json','utf8'))
+          const r = Array.isArray(p) ? p[0] : p
+          const count = Number(r?.results?.[0]?.r5_1_index_count || 0)
+          if (count !== 4) throw new Error(`Production identity/precondition failed: expected 4 R5.1 indexes, found ${count}`)
+          NODE
+          npx wrangler d1 execute orders_db_prod --remote --command "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_order_items_catalog_attention_order'" --json
+      - name: Apply ONLY the audited R5.2 partial index to Production
+        run: |
+          npx wrangler d1 execute orders_db_prod --remote --command "CREATE INDEX IF NOT EXISTS idx_order_items_catalog_attention_order ON order_items(order_id, id) WHERE quantity > 0 AND (product_id IS NULL OR variant_id IS NULL) AND COALESCE(stock_writeoff_status, '') NOT IN ('catalog_excluded','catalog_excluded_history','workshop_no_catalog'); PRAGMA optimize;" --json
+      - name: Confirm exact Production index definition — read only
+        run: |
+          npx wrangler d1 execute orders_db_prod --remote --command "SELECT name, sql FROM sqlite_master WHERE type='index' AND name='idx_order_items_catalog_attention_order'" --json | tee /tmp/index.json
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          const p = JSON.parse(fs.readFileSync('/tmp/index.json','utf8'))
+          const r = Array.isArray(p) ? p[0] : p
+          const row = r?.results?.[0]
+          if (row?.name !== 'idx_order_items_catalog_attention_order') throw new Error('R5.2 Production index missing after apply')
+          const sql = String(row?.sql || '')
+          for (const marker of ['order_items(order_id, id)', 'quantity > 0', 'product_id IS NULL OR variant_id IS NULL', 'catalog_excluded', 'catalog_excluded_history', 'workshop_no_catalog']) {
+            if (!sql.includes(marker)) throw new Error(`R5.2 Production index definition missing ${marker}`)
+          }
+          NODE
+      - name: Measure exact catalog-attention hotspot after R5.2 — read only
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process'
+          const where = `oi.quantity > 0
+            AND (oi.product_id IS NULL OR oi.variant_id IS NULL)
+            AND COALESCE(oi.stock_writeoff_status, '') NOT IN ('catalog_excluded', 'catalog_excluded_history', 'workshop_no_catalog')
+            AND COALESCE(o.order_status, 'active') NOT IN ('deleted', 'archived')
+            AND COALESCE(o.archived_at, '') = ''
+            AND COALESCE((SELECT SUM(ri.quantity) FROM return_items ri JOIN returns r ON r.id=ri.return_id WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed') <> 'cancelled'),0) < oi.quantity
+            AND datetime(COALESCE(NULLIF(oi.created_at, ''), NULLIF(o.created_at, ''), o.order_date || 'T00:00:00Z')) >= datetime('now','-30 days')
+            AND ((COALESCE(oi.is_workshop,0)=1 AND oi.product_id IS NULL AND EXISTS (SELECT 1 FROM workshop_tasks wt WHERE wt.order_item_id=oi.id AND wt.quantity>0 AND wt.status IN ('active','ready')))
+              OR (COALESCE(oi.is_workshop,0)=0 AND COALESCE(o.shipping_status,'not_sent') <> 'sent'))
+            AND NOT EXISTS (SELECT 1 FROM inventory_lifecycle_events e WHERE e.status='pending' AND e.order_item_id=oi.id)`
+          const group = `UPPER(TRIM(COALESCE(oi.product_name_snapshot, ''))),
+            CASE WHEN UPPER(TRIM(COALESCE(oi.audience_type, ''))) LIKE '%ДЕТ%' OR LOWER(TRIM(COALESCE(oi.audience_type, '')))='child' THEN 'child' ELSE 'adult' END,
+            UPPER(TRIM(COALESCE(oi.gender_snapshot, ''))), UPPER(TRIM(COALESCE(oi.color_snapshot, ''))),
+            CASE WHEN TRIM(COALESCE(oi.material_snapshot, ''))='' THEN 'СТАНДАРТ' ELSE UPPER(TRIM(oi.material_snapshot)) END,
+            CASE WHEN TRIM(COALESCE(oi.length_snapshot, ''))='' THEN 'СТАНДАРТ' ELSE UPPER(TRIM(oi.length_snapshot)) END,
+            UPPER(TRIM(COALESCE(oi.size_snapshot, '')))`
+          const base = `SELECT COUNT(*) AS catalog_count FROM (SELECT 1 FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE ${where} GROUP BY ${group})`
+          function run(label, sql) {
+            const out = execFileSync('npx',['wrangler','d1','execute','orders_db_prod','--remote','--command',sql,'--json'],{encoding:'utf8',maxBuffer:20*1024*1024})
+            const p = JSON.parse(out); const r = Array.isArray(p) ? p[0] : p
+            if (!r?.success) throw new Error(`${label} failed`)
+            console.log(`R5_2_POST ${label} rows_read=${r.meta?.rows_read ?? 'na'} duration=${r.meta?.duration ?? 'na'} results=${JSON.stringify(r.results || [])}`)
+            return r
+          }
+          const plan = run('plan', `EXPLAIN QUERY PLAN ${base}`)
+          const metric = run('catalog_count', base)
+          const count = Number(metric?.results?.[0]?.catalog_count ?? -1)
+          if (count < 0) throw new Error('catalog_count missing')
+          const planText = JSON.stringify(plan.results || [])
+          if (!planText.includes('idx_order_items_catalog_attention_order')) throw new Error(`planner did not choose R5.2 index: ${planText}`)
+          NODE
+      - name: One live Warehouse Attention GET — no mutation
+        run: |
+          curl -sS -o /tmp/attention.json -w 'R5_2_ATTENTION_HTTP=%{http_code} total_seconds=%{time_total} size=%{size_download}\n' 'https://orders-app.orders-clothes.workers.dev/api/inventory/attention'
+          node -e "const d=require('/tmp/attention.json'); console.log('R5_2_ATTENTION_KEYS=' + Object.keys(d||{}).sort().join(','))"
