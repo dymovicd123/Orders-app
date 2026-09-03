@@ -7,9 +7,15 @@ check(app.includes("if (inventoryPanel === 'movement' || inventoryPanel === 'sto
 check(app.includes("}, [activeSector, authReady, orderPanel, isAdmin, inventoryPanel])"), 'Warehouse catalog gate does not react to panel changes')
 check(app.includes("if (activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'edit'))"), 'Order create/editor catalog path missing')
 check(orders.includes('let aggregateNeedsManagerJoin = false;') && orders.includes('let aggregateNeedsCustomerJoin = false;'), 'Aggregate dependency flags missing')
-check(orders.includes('aggregateNeedsManagerJoin = true;\n      aggregateNeedsCustomerJoin = true;\n      const searchOrderText'), 'Generic search dimension dependencies missing')
+check(
+  orders.includes("if (genericSearchClause) {")
+    && orders.includes('LEFT JOIN managers m ON m.id = o.manager_id')
+    && orders.includes('LEFT JOIN customers c ON c.id = o.customer_id')
+    && orders.includes('genericSearchBindings = [...qVariants, ...qVariants, ...qVariants]'),
+  'Generic search materialized dimension dependencies missing',
+)
 check(orders.includes('aggregateNeedsManagerJoin = true;\n    baseWhereParts.push("UPPER(COALESCE(m.name'), 'Manager filter dependency missing')
 check(orders.includes("${aggregateNeedsManagerJoin ? 'LEFT JOIN managers m ON m.id = o.manager_id' : ''}"), 'Conditional manager join missing')
 check(orders.includes("${aggregateNeedsCustomerJoin ? 'LEFT JOIN customers c ON c.id = o.customer_id' : ''}"), 'Conditional customer join missing')
 check(orders.includes('${aggregateJoins}\n      LEFT JOIN ('), 'Order stats fallback still uses display joins')
-console.log('D1 READ BUDGET R4 PASSED — ordinary Warehouse views avoid full catalog scans and aggregate fallbacks skip unused dimension joins')
+console.log('D1 READ BUDGET R4 PASSED — ordinary Warehouse views avoid full catalog scans and aggregate fallbacks skip unused dimension joins; R5.3 may materialize generic search dimensions once')
