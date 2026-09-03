@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "revision": "d1-read-budget-r5-4",
+  "changes": {
+    "fetchOrderStockHandoverRows": {
+      "before": "d15e854c00f6355edc32747b1b66330457e608d112f1caaefe719fadb53f3c4a",
+      "after": "774f13063870ab3b413c0d543655ad2d66137d997fe77ef2314e4df6a88e3ba8",
+      "file": "worker/domains/order-reservations.ts"
+    }
+  }
+}
