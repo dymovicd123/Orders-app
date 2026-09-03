@@ -1,0 +1,249 @@
+name: D1 read budget R5.5 local index benchmark
+
+on:
+  push:
+    branches: [safe/d1-read-budget-r5-5-profile-20260903]
+    paths:
+      - scripts/.d1-read-budget-r5-5-local-index-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PROD_DB_UUID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      PROD_DB_NAME: orders_db_prod
+    steps:
+      - uses: actions/checkout@v4
+      - name: Snapshot only required Production rows, benchmark candidate indexes locally
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, sqlite3, time, urllib.request
+
+          account = os.environ['CLOUDFLARE_ACCOUNT_ID']
+          token = os.environ['CLOUDFLARE_API_TOKEN']
+          uuid = os.environ['PROD_DB_UUID']
+          expected_name = os.environ['PROD_DB_NAME']
+          base = f'https://api.cloudflare.com/client/v4/accounts/{account}/d1/database/{uuid}'
+          headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+
+          def api(url, body=None):
+              data = None if body is None else json.dumps(body).encode()
+              req = urllib.request.Request(url, data=data, headers=headers, method='GET' if body is None else 'POST')
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  return json.load(r)
+
+          identity = api(base)
+          result = identity.get('result') or {}
+          actual_name = str(result.get('name') or '')
+          actual_uuid = str(result.get('uuid') or result.get('id') or uuid)
+          if actual_name != expected_name or actual_uuid != uuid:
+              raise RuntimeError(f'Production identity mismatch: {actual_name}/{actual_uuid}')
+          print(f'PRODUCTION_IDENTITY_OK name={actual_name} uuid={actual_uuid}')
+
+          forbidden = ('insert ', 'update ', 'delete ', 'replace ', 'create ', 'drop ', 'alter ', 'vacuum', 'reindex', 'analyze')
+          def prod_query(sql):
+              normalized = ' '.join(sql.strip().lower().split())
+              if not (normalized.startswith('select ') or normalized.startswith('with ')):
+                  raise RuntimeError('Production snapshot guard only permits SELECT/WITH')
+              if any(token in normalized for token in forbidden):
+                  raise RuntimeError('Mutation-capable SQL rejected by Production snapshot guard')
+              payload = api(base + '/query', {'sql': sql, 'params': []})
+              if not payload.get('success'):
+                  raise RuntimeError(payload.get('errors'))
+              r = (payload.get('result') or [{}])[0]
+              meta = r.get('meta') or {}
+              written = int(meta.get('rows_written', meta.get('rowsWritten', 0)) or 0)
+              if written != 0:
+                  raise RuntimeError(f'Production snapshot unexpectedly wrote {written} rows')
+              print(f'PROD_READ rows={len(r.get("results") or [])} rows_read={meta.get("rows_read", meta.get("rowsRead", 0))}')
+              return r.get('results') or []
+
+          index_rows = prod_query("SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name='catalog_variants' AND sql IS NOT NULL ORDER BY name")
+          for row in index_rows:
+              print('PRODUCTION_INDEX_DDL', row['name'], row['sql'])
+
+          variants = prod_query('''
+            SELECT id, product_id, gender, color, material, length, size_label, is_active, sort_order, category
+            FROM catalog_variants
+          ''')
+          items = prod_query('''
+            WITH workshop_orders AS (
+              SELECT DISTINCT wt.order_id
+              FROM workshop_tasks wt
+              JOIN orders o ON o.id = wt.order_id
+              WHERE o.order_status NOT IN ('deleted', 'archived')
+            )
+            SELECT oi.id, oi.order_id, oi.product_id, oi.variant_id, oi.product_name_snapshot,
+                   oi.gender_snapshot, oi.color_snapshot, oi.material_snapshot, oi.length_snapshot,
+                   oi.size_snapshot, oi.audience_type, oi.quantity, oi.is_workshop, oi.source_type,
+                   oi.stock_writeoff_status
+            FROM order_items oi
+            JOIN workshop_orders wo ON wo.order_id = oi.order_id
+            WHERE COALESCE(oi.quantity, 0) > 0
+            ORDER BY oi.id DESC
+          ''')
+          task_links = prod_query('''
+            SELECT DISTINCT wt.order_item_id AS item_id, wt.order_id
+            FROM workshop_tasks wt
+            JOIN orders o ON o.id = wt.order_id
+            WHERE wt.order_item_id IS NOT NULL
+              AND o.order_status NOT IN ('deleted', 'archived')
+            ORDER BY wt.order_item_id DESC
+          ''')
+          print(f'SNAPSHOT variants={len(variants)} workshop_order_items={len(items)} linked_tasks={len(task_links)}')
+
+          def make_db(extra_index_sql=None):
+              db = sqlite3.connect(':memory:')
+              db.execute('''CREATE TABLE catalog_variants (
+                id INTEGER PRIMARY KEY,
+                product_id INTEGER,
+                gender TEXT, color TEXT, material TEXT, length TEXT, size_label TEXT,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                category TEXT
+              )''')
+              db.execute('''CREATE TABLE order_items (
+                id INTEGER PRIMARY KEY,
+                order_id INTEGER, product_id INTEGER, variant_id INTEGER,
+                product_name_snapshot TEXT, gender_snapshot TEXT, color_snapshot TEXT,
+                material_snapshot TEXT, length_snapshot TEXT, size_snapshot TEXT,
+                audience_type TEXT, quantity INTEGER, is_workshop INTEGER,
+                source_type TEXT, stock_writeoff_status TEXT
+              )''')
+              db.executemany('''INSERT INTO catalog_variants
+                (id,product_id,gender,color,material,length,size_label,is_active,sort_order,category)
+                VALUES (?,?,?,?,?,?,?,?,?,?)''', [tuple(v.get(k) for k in ('id','product_id','gender','color','material','length','size_label','is_active','sort_order','category')) for v in variants])
+              db.executemany('''INSERT INTO order_items
+                (id,order_id,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,audience_type,quantity,is_workshop,source_type,stock_writeoff_status)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', [tuple(v.get(k) for k in ('id','order_id','product_id','variant_id','product_name_snapshot','gender_snapshot','color_snapshot','material_snapshot','length_snapshot','size_snapshot','audience_type','quantity','is_workshop','source_type','stock_writeoff_status')) for v in items])
+              for row in index_rows:
+                  sql = row.get('sql')
+                  if sql:
+                      db.execute(sql)
+              if extra_index_sql:
+                  db.execute(extra_index_sql)
+              db.commit()
+              return db
+
+          projection = '''
+             oi.id,
+             oi.order_id,
+             oi.product_id,
+             COALESCE(oi.variant_id, cv_fallback.id) AS resolved_variant_id,
+             oi.product_name_snapshot,
+             COALESCE(NULLIF(oi.gender_snapshot, ''), NULLIF(cv_direct.gender, ''), NULLIF(cv_fallback.gender, '')) AS resolved_gender,
+             COALESCE(NULLIF(oi.color_snapshot, ''), NULLIF(cv_direct.color, ''), NULLIF(cv_fallback.color, '')) AS resolved_color,
+             COALESCE(NULLIF(oi.material_snapshot, ''), NULLIF(cv_direct.material, ''), NULLIF(cv_fallback.material, '')) AS resolved_material,
+             COALESCE(NULLIF(oi.length_snapshot, ''), NULLIF(cv_direct.length, ''), NULLIF(cv_fallback.length, '')) AS resolved_length,
+             COALESCE(NULLIF(oi.size_snapshot, ''), NULLIF(cv_direct.size_label, ''), NULLIF(cv_fallback.size_label, '')) AS resolved_size,
+             CASE
+               WHEN LOWER(COALESCE(NULLIF(oi.audience_type, ''), NULLIF(cv_direct.category, ''), NULLIF(cv_fallback.category, ''))) = 'child'
+                 OR UPPER(COALESCE(NULLIF(oi.audience_type, ''), '')) LIKE '%ДЕТ%'
+               THEN 'ДЕТСКИЙ' ELSE 'ВЗРОСЛЫЙ'
+             END AS resolved_audience_type,
+             oi.quantity, oi.is_workshop, oi.source_type, oi.stock_writeoff_status
+          '''
+          fallback_join = '''
+            LEFT JOIN catalog_variants cv_direct ON cv_direct.id = oi.variant_id
+            LEFT JOIN catalog_variants cv_fallback ON cv_fallback.id = (
+              SELECT cv2.id
+              FROM catalog_variants cv2
+              WHERE oi.variant_id IS NULL
+                AND cv2.product_id = oi.product_id
+                AND (NULLIF(TRIM(COALESCE(oi.color_snapshot, '')), '') IS NULL
+                     OR UPPER(TRIM(COALESCE(cv2.color, ''))) = UPPER(TRIM(COALESCE(oi.color_snapshot, ''))))
+                AND (NULLIF(TRIM(COALESCE(oi.size_snapshot, '')), '') IS NULL
+                     OR UPPER(TRIM(COALESCE(cv2.size_label, ''))) = UPPER(TRIM(COALESCE(oi.size_snapshot, ''))))
+              ORDER BY cv2.is_active DESC, cv2.sort_order ASC, cv2.id ASC
+              LIMIT 1
+            )
+          '''
+
+          linked_ids = []
+          seen = set()
+          for row in task_links:
+              x = int(row['item_id'])
+              if x not in seen:
+                  seen.add(x); linked_ids.append(x)
+          linked_ids = [x for x in linked_ids if any(int(i['id']) == x for i in items)]
+          order_ids = []
+          seen_orders = set()
+          for row in task_links:
+              x = int(row['order_id'])
+              if x not in seen_orders:
+                  seen_orders.add(x); order_ids.append(x)
+
+          def direct_sql(ids):
+              return f'''SELECT {projection} FROM order_items oi {fallback_join}
+                         WHERE oi.id IN ({','.join('?' for _ in ids)}) AND COALESCE(oi.quantity, 0) > 0''', ids
+          def order_sql(ids):
+              return f'''SELECT {projection} FROM order_items oi {fallback_join}
+                         WHERE oi.order_id IN ({','.join('?' for _ in ids)}) AND COALESCE(oi.quantity, 0) > 0
+                         ORDER BY oi.order_id ASC, oi.id ASC''', ids
+
+          candidates = {
+              'BASELINE': None,
+              'MIXED_3': 'CREATE INDEX idx_r55_local_mixed3 ON catalog_variants(product_id, is_active DESC, sort_order ASC)',
+              'MIXED_4': 'CREATE INDEX idx_r55_local_mixed4 ON catalog_variants(product_id, is_active DESC, sort_order ASC, id ASC)',
+          }
+
+          dbs = {name: make_db(sql) for name, sql in candidates.items()}
+
+          def canonical(rows):
+              return [tuple(r) for r in rows]
+
+          def execute_counted(db, sql, params):
+              steps = 0
+              def progress():
+                  nonlocal steps
+                  steps += 1
+                  return 0
+              db.set_progress_handler(progress, 1)
+              t0 = time.perf_counter_ns()
+              rows = db.execute(sql, params).fetchall()
+              elapsed_us = (time.perf_counter_ns() - t0) / 1000.0
+              db.set_progress_handler(None, 0)
+              return rows, steps, elapsed_us
+
+          def compare_case(label, builder, universe, sizes):
+              for size in sizes:
+                  if size > len(universe):
+                      continue
+                  params = universe[:size]
+                  sql, binds = builder(params)
+                  baseline_rows, baseline_steps, baseline_us = execute_counted(dbs['BASELINE'], sql, binds)
+                  print(f'{label} SIZE={size} BASELINE rows={len(baseline_rows)} vm_steps={baseline_steps} elapsed_us={baseline_us:.1f}')
+                  for name in ('MIXED_3','MIXED_4'):
+                      rows, steps, elapsed_us = execute_counted(dbs[name], sql, binds)
+                      if canonical(rows) != canonical(baseline_rows):
+                          raise RuntimeError(f'{label} {name} changed resolver truth at size={size}')
+                      ratio = steps / baseline_steps if baseline_steps else 1.0
+                      print(f'{label} SIZE={size} {name} EQUIVALENT vm_steps={steps} step_ratio={ratio:.4f} elapsed_us={elapsed_us:.1f}')
+
+              plan_params = universe[:min(30, len(universe))]
+              if not plan_params:
+                  return
+              sql, binds = builder(plan_params)
+              for name in ('BASELINE','MIXED_3','MIXED_4'):
+                  plan = dbs[name].execute('EXPLAIN QUERY PLAN ' + sql, binds).fetchall()
+                  print(f'{label}_{name}_PLAN_BEGIN')
+                  for row in plan:
+                      print(row[3])
+                  print(f'{label}_{name}_PLAN_END')
+
+          if not linked_ids:
+              raise RuntimeError('No linked Workshop item IDs in snapshot')
+          compare_case('DIRECT', direct_sql, linked_ids, sorted(set([1,10,30,60,min(80,len(linked_ids))])))
+          if order_ids:
+              compare_case('ORDER_SCOPE', order_sql, order_ids, sorted(set([1,5,10,20,min(40,len(order_ids))])))
+
+          print('R5_5_LOCAL_INDEX_BENCHMARK_COMPLETE production_writes=0 branch2_touched=false')
+          PY
