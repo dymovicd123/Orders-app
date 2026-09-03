@@ -1,0 +1,68 @@
+name: R5.5 postdeploy read-only control
+
+on:
+  push:
+    branches:
+      - safe/r5-5-postdeploy-control-20260903
+
+permissions:
+  contents: read
+
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      EXPECTED_ACCOUNT_ID: 9d068f53a06eebc4c056ba050d582133
+      EXPECTED_DB_NAME: orders_db_prod
+      EXPECTED_DB_UUID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      CF_API: https://api.cloudflare.com/client/v4
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Live Production health GET only
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(curl --fail-with-body -sS https://orders-app.orders-clothes.workers.dev/api/health)"
+          echo "$body"
+          grep -E '"ok"[[:space:]]*:[[:space:]]*true' <<<"$body" >/dev/null
+
+      - name: Verify exact Production D1 identity — read only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          [[ "$CLOUDFLARE_ACCOUNT_ID" == "$EXPECTED_ACCOUNT_ID" ]]
+          databases="$(curl --fail-with-body -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database?per_page=100")"
+          uuid="$(jq -r --arg name "$EXPECTED_DB_NAME" '.result[]? | select(.name == $name) | .uuid // empty' <<<"$databases" | head -n1)"
+          [[ "$uuid" == "$EXPECTED_DB_UUID" ]]
+          echo "Verified Production D1: $EXPECTED_DB_NAME / $EXPECTED_DB_UUID"
+
+      - name: Verify R5.5 index and planner — read only
+        shell: bash
+        run: |
+          set -euo pipefail
+          definition="$(npx wrangler d1 execute "$EXPECTED_DB_NAME" --remote --json --command "SELECT name, sql FROM sqlite_master WHERE type='index' AND name='idx_catalog_variants_product_active_desc_sort';")"
+          echo "$definition"
+          grep -F 'idx_catalog_variants_product_active_desc_sort' <<<"$definition" >/dev/null
+          grep -F 'catalog_variants(product_id, is_active DESC, sort_order ASC)' <<<"$definition" >/dev/null
+          plan="$(npx wrangler d1 execute "$EXPECTED_DB_NAME" --remote --json --command "EXPLAIN QUERY PLAN SELECT id FROM catalog_variants WHERE product_id=1 ORDER BY is_active DESC, sort_order ASC, id ASC LIMIT 1;")"
+          echo "$plan"
+          grep -F 'idx_catalog_variants_product_active_desc_sort' <<<"$plan" >/dev/null
+          if grep -F 'USE TEMP B-TREE' <<<"$plan" >/dev/null; then
+            echo "Unexpected temp sort in Production planner." >&2
+            exit 4
+          fi
+          echo "R5.5 POSTDEPLOY READ-ONLY CONTROL PASSED"
