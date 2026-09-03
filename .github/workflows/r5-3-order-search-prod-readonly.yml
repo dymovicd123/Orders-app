@@ -1,0 +1,250 @@
+name: R5.3 Production order search read-only control
+
+on:
+  push:
+    branches:
+      - safe/d1-read-budget-r5-3-order-search-20260903
+    paths:
+      - scripts/.r5-3-prod-readonly-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_ACCOUNT_ID: 9d068f53a06eebc4c056ba050d582133
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PROD_DB_UUID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      PROD_DB_NAME: orders_db_prod
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/d1-read-budget-r5-3-order-search-20260903
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Compare legacy and R5.3 search semantics and rows read
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
+          const token = process.env.CLOUDFLARE_API_TOKEN
+          const dbUuid = process.env.PROD_DB_UUID
+          const expectedName = process.env.PROD_DB_NAME
+          if (!accountId || !token || !dbUuid || !expectedName) throw new Error('Missing Production control configuration')
+
+          const apiBase = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${dbUuid}`
+          const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+
+          const infoResponse = await fetch(apiBase, { headers })
+          const infoPayload = await infoResponse.json()
+          if (!infoResponse.ok || !infoPayload?.success) throw new Error(`Production D1 identity read failed: HTTP ${infoResponse.status}`)
+          const actualName = String(infoPayload?.result?.name || '')
+          const actualUuid = String(infoPayload?.result?.uuid || infoPayload?.result?.id || dbUuid)
+          if (actualName !== expectedName || actualUuid !== dbUuid) {
+            throw new Error(`Production D1 identity mismatch: ${actualName} / ${actualUuid}`)
+          }
+          console.log(`Target confirmed: ${expectedName} / ${dbUuid}`)
+
+          async function query(sql, params = []) {
+            const response = await fetch(`${apiBase}/query`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ sql, params }),
+            })
+            const payload = await response.json()
+            if (!response.ok || !payload?.success) {
+              const msg = payload?.errors?.map((e) => e?.message).filter(Boolean).join('; ') || `HTTP ${response.status}`
+              throw new Error(`Read-only D1 query failed: ${msg}`)
+            }
+            const result = Array.isArray(payload.result) ? payload.result[0] : payload.result
+            return {
+              rows: Array.isArray(result?.results) ? result.results : [],
+              rowsRead: Number(result?.meta?.rows_read ?? result?.meta?.rowsRead ?? 0),
+              rowsWritten: Number(result?.meta?.rows_written ?? result?.meta?.rowsWritten ?? 0),
+            }
+          }
+
+          const sample = await query(`
+            SELECT oi.product_name_snapshot AS term
+            FROM order_items oi
+            JOIN orders o ON o.id = oi.order_id
+            WHERE o.order_status NOT IN ('deleted', 'archived')
+              AND oi.quantity > 0
+              AND TRIM(COALESCE(oi.product_name_snapshot, '')) <> ''
+            ORDER BY oi.id DESC
+            LIMIT 1
+          `)
+          const term = String(sample.rows?.[0]?.term || '').trim()
+          if (!term) throw new Error('Could not resolve a non-sensitive representative product search term')
+          console.log(`Representative search term selected from a recent product snapshot (length=${term.length}; value intentionally not logged).`)
+
+          const now = new Date()
+          const year = now.getUTCFullYear()
+          const month = String(now.getUTCMonth() + 1).padStart(2, '0')
+          const lastDay = new Date(Date.UTC(year, now.getUTCMonth() + 1, 0)).getUTCDate()
+          const dateFrom = `${year}-${month}-01`
+          const dateTo = `${year}-${month}-${String(lastDay).padStart(2, '0')}`
+          const variants = [term, term.toUpperCase(), term.toLowerCase()]
+          const searchParams = [...variants, ...variants, ...variants]
+
+          const searchOrderText = `COALESCE(o.external_id, '') || ' ' || COALESCE(o.order_date, '') || ' ' ||
+            COALESCE(m.name, o.manager_snapshot_name, '') || ' ' || COALESCE(c.phone_normalized, '') || ' ' ||
+            COALESCE(c.display_name, '') || ' ' || COALESCE(o.city, '') || ' ' || COALESCE(o.delivery_type, '') || ' ' || COALESCE(o.comment, '')`
+          const searchItemText = `COALESCE(oi.product_name_snapshot, '') || ' ' || COALESCE(oi.gender_snapshot, '') || ' ' ||
+            COALESCE(oi.color_snapshot, '') || ' ' || COALESCE(oi.material_snapshot, '') || ' ' ||
+            COALESCE(oi.length_snapshot, '') || ' ' || COALESCE(oi.size_snapshot, '')`
+          const searchPaymentText = `COALESCE(search_payment.method, '') || ' ' || COALESCE(search_payment.comment, '')`
+          const searchClause = `(
+            INSTR(${searchOrderText}, ?) > 0 OR INSTR(${searchOrderText}, ?) > 0 OR INSTR(${searchOrderText}, ?) > 0
+            OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND (
+              INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0
+            ))
+            OR EXISTS (SELECT 1 FROM payments search_payment WHERE search_payment.order_id = o.id AND (
+              INSTR(${searchPaymentText}, ?) > 0 OR INSTR(${searchPaymentText}, ?) > 0 OR INSTR(${searchPaymentText}, ?) > 0
+            ))
+          )`
+          const activeClause = `o.order_status NOT IN ('deleted', 'archived')`
+
+          const legacyList = await query(`
+            SELECT o.id
+            FROM orders o
+            LEFT JOIN managers m ON m.id = o.manager_id
+            LEFT JOIN customers c ON c.id = o.customer_id
+            WHERE ${activeClause} AND ${searchClause}
+              AND o.order_date >= ? AND o.order_date <= ?
+            ORDER BY o.order_date DESC, o.id DESC
+            LIMIT 100 OFFSET 0
+          `, [...searchParams, dateFrom, dateTo])
+
+          const matching = await query(`
+            SELECT o.id
+            FROM orders o
+            LEFT JOIN managers m ON m.id = o.manager_id
+            LEFT JOIN customers c ON c.id = o.customer_id
+            WHERE ${activeClause} AND ${searchClause}
+            ORDER BY o.id
+          `, searchParams)
+          const matchingIds = matching.rows.map((row) => Number(row.id)).filter(Boolean)
+          const idsJson = JSON.stringify(matchingIds)
+
+          const newList = await query(`
+            SELECT o.id
+            FROM orders o
+            WHERE ${activeClause}
+              AND o.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+              AND o.order_date >= ? AND o.order_date <= ?
+            ORDER BY o.order_date DESC, o.id DESC
+            LIMIT 100 OFFSET 0
+          `, [idsJson, dateFrom, dateTo])
+
+          const workshopAggregate = `LEFT JOIN (
+            SELECT order_id, COALESCE(SUM(quantity), 0) AS workshop_units
+            FROM order_items
+            WHERE COALESCE(is_workshop, 0) = 1
+            GROUP BY order_id
+          ) workshop_items ON workshop_items.order_id = o.id`
+
+          const legacyOrderStats = await query(`
+            SELECT COUNT(o.id) AS order_count,
+                   COALESCE(SUM(o.total_amount), 0) AS total_amount,
+                   COALESCE(SUM(o.debt_amount), 0) AS debt_amount,
+                   COALESCE(SUM(COALESCE(workshop_items.workshop_units, 0)), 0) AS workshop_units
+            FROM orders o
+            LEFT JOIN managers m ON m.id = o.manager_id
+            LEFT JOIN customers c ON c.id = o.customer_id
+            ${workshopAggregate}
+            WHERE ${activeClause} AND ${searchClause}
+              AND o.order_date >= ? AND o.order_date <= ?
+          `, [...searchParams, dateFrom, dateTo])
+
+          const newOrderStats = await query(`
+            SELECT COUNT(o.id) AS order_count,
+                   COALESCE(SUM(o.total_amount), 0) AS total_amount,
+                   COALESCE(SUM(o.debt_amount), 0) AS debt_amount,
+                   COALESCE(SUM(COALESCE(workshop_items.workshop_units, 0)), 0) AS workshop_units
+            FROM orders o
+            ${workshopAggregate}
+            WHERE ${activeClause}
+              AND o.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+              AND o.order_date >= ? AND o.order_date <= ?
+          `, [idsJson, dateFrom, dateTo])
+
+          const legacyPaymentStats = await query(`
+            SELECT COUNT(p.id) AS payment_count, COALESCE(SUM(p.amount), 0) AS payment_amount
+            FROM payments p
+            JOIN orders o ON o.id = p.order_id
+            LEFT JOIN managers m ON m.id = o.manager_id
+            LEFT JOIN customers c ON c.id = o.customer_id
+            WHERE ${activeClause} AND ${searchClause}
+              AND p.payment_date >= ? AND p.payment_date <= ?
+          `, [...searchParams, dateFrom, dateTo])
+
+          const newPaymentStats = await query(`
+            SELECT COUNT(p.id) AS payment_count, COALESCE(SUM(p.amount), 0) AS payment_amount
+            FROM payments p
+            JOIN orders o ON o.id = p.order_id
+            WHERE ${activeClause}
+              AND o.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+              AND p.payment_date >= ? AND p.payment_date <= ?
+          `, [idsJson, dateFrom, dateTo])
+
+          const legacyReturnStats = await query(`
+            SELECT COUNT(r.id) AS return_count, COALESCE(SUM(r.amount), 0) AS return_amount
+            FROM returns r
+            JOIN orders o ON o.id = r.order_id
+            LEFT JOIN managers m ON m.id = o.manager_id
+            LEFT JOIN customers c ON c.id = o.customer_id
+            WHERE ${activeClause} AND ${searchClause}
+              AND COALESCE(r.status, 'completed') <> 'cancelled'
+              AND r.return_date >= ? AND r.return_date <= ?
+          `, [...searchParams, dateFrom, dateTo])
+
+          const newReturnStats = await query(`
+            SELECT COUNT(r.id) AS return_count, COALESCE(SUM(r.amount), 0) AS return_amount
+            FROM returns r
+            JOIN orders o ON o.id = r.order_id
+            WHERE ${activeClause}
+              AND o.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+              AND COALESCE(r.status, 'completed') <> 'cancelled'
+              AND r.return_date >= ? AND r.return_date <= ?
+          `, [idsJson, dateFrom, dateTo])
+
+          const listIds = (result) => result.rows.map((row) => Number(row.id))
+          const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+          if (!sameJson(listIds(legacyList), listIds(newList))) throw new Error('R5.3 list result mismatch')
+          if (!sameJson(legacyOrderStats.rows, newOrderStats.rows)) throw new Error('R5.3 order aggregate mismatch')
+          if (!sameJson(legacyPaymentStats.rows, newPaymentStats.rows)) throw new Error('R5.3 payment aggregate mismatch')
+          if (!sameJson(legacyReturnStats.rows, newReturnStats.rows)) throw new Error('R5.3 return aggregate mismatch')
+
+          const reads = {
+            legacyList: legacyList.rowsRead,
+            matchingOnce: matching.rowsRead,
+            newList: newList.rowsRead,
+            legacyOrderStats: legacyOrderStats.rowsRead,
+            newOrderStats: newOrderStats.rowsRead,
+            legacyPaymentStats: legacyPaymentStats.rowsRead,
+            newPaymentStats: newPaymentStats.rowsRead,
+            legacyReturnStats: legacyReturnStats.rowsRead,
+            newReturnStats: newReturnStats.rowsRead,
+          }
+          const oldTotal = reads.legacyList + reads.legacyOrderStats + reads.legacyPaymentStats + reads.legacyReturnStats
+          const newTotal = reads.matchingOnce + reads.newList + reads.newOrderStats + reads.newPaymentStats + reads.newReturnStats
+          const saved = oldTotal - newTotal
+          const pct = oldTotal > 0 ? (saved / oldTotal) * 100 : 0
+
+          if ([legacyList, matching, newList, legacyOrderStats, newOrderStats, legacyPaymentStats, newPaymentStats, legacyReturnStats, newReturnStats].some((x) => x.rowsWritten !== 0)) {
+            throw new Error('Read-only control unexpectedly reports written rows')
+          }
+
+          console.log(`Period: ${dateFrom}..${dateTo}`)
+          console.log(`Matching active order ids: ${matchingIds.length}; visible first page: ${legacyList.rows.length}`)
+          console.log('Rows read:', JSON.stringify(reads))
+          console.log(`Legacy family total rows read: ${oldTotal}`)
+          console.log(`R5.3 family total rows read: ${newTotal}`)
+          console.log(`Measured saving: ${saved} rows (${pct.toFixed(1)}%)`)
+          console.log('SEMANTIC_EQUIVALENCE=PASS')
+          console.log('READ_ONLY=PASS')
+          NODE
