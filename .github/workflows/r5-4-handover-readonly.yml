@@ -1,0 +1,279 @@
+name: R5.4 handover read-only benchmark
+
+on:
+  push:
+    branches:
+      - safe/d1-read-budget-r5-4-handover-20260903
+    paths:
+      - scripts/.r5-4-handover-readonly-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: 9d068f53a06eebc4c056ba050d582133
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PROD_DB_UUID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      PROD_DB_NAME: orders_db_prod
+      BRANCH_DB_UUID: 40065052-854e-44b8-bcd5-251bdd488301
+      BRANCH_DB_NAME: orders_db_branch2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare current and candidate compact lineage query on Production and Branch2 — read only
+        run: |
+          node --input-type=module <<'NODE'
+          const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
+          const token = process.env.CLOUDFLARE_API_TOKEN
+          if (!accountId || !token) throw new Error('Missing Cloudflare credentials')
+          const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+
+          async function dbInfo(uuid) {
+            const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${uuid}`, { headers })
+            const payload = await response.json()
+            if (!response.ok || !payload?.success) throw new Error(`D1 identity read failed: HTTP ${response.status}`)
+            return payload.result
+          }
+          async function query(uuid, sql) {
+            const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${uuid}/query`, {
+              method: 'POST', headers, body: JSON.stringify({ sql, params: [] }),
+            })
+            const payload = await response.json()
+            if (!response.ok || !payload?.success) {
+              const message = payload?.errors?.map(e => e?.message).filter(Boolean).join('; ') || `HTTP ${response.status}`
+              throw new Error(message)
+            }
+            const result = Array.isArray(payload.result) ? payload.result[0] : payload.result
+            return {
+              rows: Array.isArray(result?.results) ? result.results : [],
+              rowsRead: Number(result?.meta?.rows_read ?? result?.meta?.rowsRead ?? 0),
+              rowsWritten: Number(result?.meta?.rows_written ?? result?.meta?.rowsWritten ?? 0),
+              duration: Number(result?.meta?.duration ?? 0),
+            }
+          }
+
+          const baseline = `WITH active_reservations AS (
+            SELECT r.id AS reservation_id, r.order_id, r.order_item_id, r.inventory_source, r.variant_id,
+                   r.quantity AS reservation_quantity
+            FROM inventory_reservations r
+            JOIN orders scoped_order ON scoped_order.id = r.order_id
+            WHERE r.status = 'active' AND r.variant_id IS NOT NULL
+              AND scoped_order.order_status NOT IN ('deleted', 'archived')
+              AND COALESCE(scoped_order.shipping_status, 'not_sent') <> 'sent'
+          ),
+          workshop_orders AS (
+            SELECT oi.order_id
+            FROM order_items oi
+            JOIN (SELECT DISTINCT order_id FROM active_reservations) active_order ON active_order.order_id = oi.order_id
+            WHERE COALESCE(oi.is_workshop, 0) = 1 AND oi.quantity > 0
+            GROUP BY oi.order_id
+          ),
+          scoped_items AS (
+            SELECT oi.order_id, oi.id AS order_item_id,
+              COALESCE(NULLIF(oi.inventory_obligation_key, ''), 'legacy-order-item:' || oi.id) AS obligation_key,
+              COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at) AS origin_at,
+              o.order_date, ar.inventory_source, ar.variant_id,
+              CASE WHEN wo.order_id IS NULL THEN 0 ELSE 1 END AS has_workshop
+            FROM active_reservations ar
+            JOIN order_items oi ON oi.id = ar.order_item_id
+            JOIN orders o ON o.id = oi.order_id
+            LEFT JOIN workshop_orders wo ON wo.order_id = oi.order_id
+            WHERE COALESCE(oi.is_workshop, 0) = 0 AND oi.quantity > 0
+          ),
+          latest_check AS (
+            SELECT si.order_item_id, c.id AS checkpoint_id, c.checked_at AS checkpoint_at,
+              ROW_NUMBER() OVER (PARTITION BY si.order_item_id ORDER BY datetime(c.checked_at) DESC, c.id DESC) AS rn
+            FROM scoped_items si
+            JOIN inventory_stock_checks c ON c.inventory_source = si.inventory_source AND c.variant_id = si.variant_id
+            WHERE ((datetime(c.checked_at) < datetime(si.origin_at) AND date(c.checked_at, '+5 hours') >= date(si.order_date))
+              OR (si.has_workshop = 1 AND datetime(c.checked_at) > datetime(si.origin_at)))
+          ),
+          latest_full_stocktake AS (
+            SELECT si.order_item_id, -s.rowid AS checkpoint_id, s.completed_at AS checkpoint_at,
+              ROW_NUMBER() OVER (PARTITION BY si.order_item_id ORDER BY datetime(s.completed_at) DESC, s.rowid DESC) AS rn
+            FROM scoped_items si
+            JOIN inventory_stocktake_sessions s ON s.inventory_source = si.inventory_source
+            WHERE s.status = 'completed' AND s.completed_at IS NOT NULL AND s.id NOT LIKE 'REV-%-P-%'
+              AND datetime(s.started_at) <= datetime(si.origin_at)
+              AND date(s.completed_at, '+5 hours') >= date(si.order_date)
+              AND NOT EXISTS (
+                SELECT 1 FROM inventory_stock_checks exact_sku
+                WHERE exact_sku.inventory_source = si.inventory_source
+                  AND exact_sku.variant_id = si.variant_id
+                  AND exact_sku.reference_type = 'stocktake'
+                  AND exact_sku.reference_id = s.id
+              )
+          ),
+          checkpoint_candidates AS (
+            SELECT order_item_id, checkpoint_id, checkpoint_at FROM latest_check WHERE rn = 1
+            UNION ALL
+            SELECT order_item_id, checkpoint_id, checkpoint_at FROM latest_full_stocktake WHERE rn = 1
+          ),
+          selected_checkpoint AS (
+            SELECT order_item_id, checkpoint_id, checkpoint_at,
+              ROW_NUMBER() OVER (PARTITION BY order_item_id ORDER BY datetime(checkpoint_at) DESC, checkpoint_id DESC) AS rn
+            FROM checkpoint_candidates
+          ),
+          latest_review AS (
+            SELECT si.order_item_id, hr.checkpoint_id AS reviewed_checkpoint_id, hr.checkpoint_at AS reviewed_checkpoint_at,
+              ROW_NUMBER() OVER (PARTITION BY si.order_item_id ORDER BY datetime(hr.checkpoint_at) DESC, hr.checkpoint_id DESC, hr.id DESC) AS rn
+            FROM scoped_items si
+            JOIN inventory_handover_reviews hr ON hr.order_id = si.order_id
+            JOIN order_items reviewed_item ON reviewed_item.id = hr.order_item_id
+            WHERE COALESCE(NULLIF(reviewed_item.inventory_obligation_key, ''), 'legacy-order-item:' || reviewed_item.id) = si.obligation_key
+          )
+          SELECT ar.order_id, ar.order_item_id, ar.reservation_id, ar.inventory_source, ar.variant_id,
+            ar.reservation_quantity, COALESCE(stock.quantity, 0) AS physical_quantity,
+            COALESCE(stock.reserved_quantity, 0) AS total_reserved_quantity,
+            si.order_date, si.origin_at AS item_created_at,
+            CASE WHEN julianday(cp.checkpoint_at) > 0 AND (
+              COALESCE(julianday(lr.reviewed_checkpoint_at), 0) < julianday(cp.checkpoint_at)
+              OR (julianday(lr.reviewed_checkpoint_at) = julianday(cp.checkpoint_at)
+                  AND COALESCE(lr.reviewed_checkpoint_id, 0) <> cp.checkpoint_id)
+            ) THEN 1 ELSE 0 END AS review_needed
+          FROM active_reservations ar
+          JOIN scoped_items si ON si.order_item_id = ar.order_item_id
+          LEFT JOIN inventory_stock stock ON stock.inventory_source = ar.inventory_source AND stock.variant_id = ar.variant_id
+          LEFT JOIN selected_checkpoint cp ON cp.order_item_id = ar.order_item_id AND cp.rn = 1
+          LEFT JOIN latest_review lr ON lr.order_item_id = ar.order_item_id AND lr.rn = 1
+          ORDER BY ar.order_id, ar.order_item_id`;
+
+          const candidate = `WITH active_reservations AS (
+            SELECT r.id AS reservation_id, r.order_id, r.order_item_id, r.inventory_source, r.variant_id,
+                   r.quantity AS reservation_quantity
+            FROM inventory_reservations r
+            JOIN orders scoped_order ON scoped_order.id = r.order_id
+            WHERE r.status = 'active' AND r.variant_id IS NOT NULL
+              AND scoped_order.order_status NOT IN ('deleted', 'archived')
+              AND COALESCE(scoped_order.shipping_status, 'not_sent') <> 'sent'
+          ),
+          workshop_orders AS (
+            SELECT oi.order_id
+            FROM order_items oi
+            JOIN (SELECT DISTINCT order_id FROM active_reservations) active_order ON active_order.order_id = oi.order_id
+            WHERE COALESCE(oi.is_workshop, 0) = 1 AND oi.quantity > 0
+            GROUP BY oi.order_id
+          ),
+          scoped_items AS (
+            SELECT oi.order_id, oi.id AS order_item_id,
+              COALESCE(NULLIF(oi.inventory_obligation_key, ''), 'legacy-order-item:' || oi.id) AS obligation_key,
+              COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at) AS origin_at,
+              o.order_date, ar.inventory_source, ar.variant_id,
+              CASE WHEN wo.order_id IS NULL THEN 0 ELSE 1 END AS has_workshop
+            FROM active_reservations ar
+            JOIN order_items oi ON oi.id = ar.order_item_id
+            JOIN orders o ON o.id = oi.order_id
+            LEFT JOIN workshop_orders wo ON wo.order_id = oi.order_id
+            WHERE COALESCE(oi.is_workshop, 0) = 0 AND oi.quantity > 0
+          ),
+          lineage AS MATERIALIZED (
+            SELECT si.*,
+              (SELECT json_array(c.id, c.checked_at)
+               FROM inventory_stock_checks c
+               WHERE c.inventory_source = si.inventory_source AND c.variant_id = si.variant_id
+                 AND ((datetime(c.checked_at) < datetime(si.origin_at) AND date(c.checked_at, '+5 hours') >= date(si.order_date))
+                   OR (si.has_workshop = 1 AND datetime(c.checked_at) > datetime(si.origin_at)))
+               ORDER BY datetime(c.checked_at) DESC, c.id DESC LIMIT 1) AS check_point,
+              (SELECT json_array(-s.rowid, s.completed_at)
+               FROM inventory_stocktake_sessions s
+               WHERE s.inventory_source = si.inventory_source
+                 AND s.status = 'completed' AND s.completed_at IS NOT NULL AND s.id NOT LIKE 'REV-%-P-%'
+                 AND datetime(s.started_at) <= datetime(si.origin_at)
+                 AND date(s.completed_at, '+5 hours') >= date(si.order_date)
+                 AND NOT EXISTS (
+                   SELECT 1 FROM inventory_stock_checks exact_sku
+                   WHERE exact_sku.inventory_source = si.inventory_source
+                     AND exact_sku.variant_id = si.variant_id
+                     AND exact_sku.reference_type = 'stocktake'
+                     AND exact_sku.reference_id = s.id
+                 )
+               ORDER BY datetime(s.completed_at) DESC, s.rowid DESC LIMIT 1) AS full_point,
+              (SELECT json_array(hr.checkpoint_id, hr.checkpoint_at)
+               FROM inventory_handover_reviews hr
+               JOIN order_items reviewed_item ON reviewed_item.id = hr.order_item_id
+               WHERE hr.order_id = si.order_id
+                 AND COALESCE(NULLIF(reviewed_item.inventory_obligation_key, ''), 'legacy-order-item:' || reviewed_item.id) = si.obligation_key
+               ORDER BY datetime(hr.checkpoint_at) DESC, hr.checkpoint_id DESC, hr.id DESC LIMIT 1) AS review_point
+            FROM scoped_items si
+          ),
+          resolved AS MATERIALIZED (
+            SELECT l.*,
+              CASE
+                WHEN l.check_point IS NULL THEN CAST(json_extract(l.full_point, '$[0]') AS INTEGER)
+                WHEN l.full_point IS NULL THEN CAST(json_extract(l.check_point, '$[0]') AS INTEGER)
+                WHEN datetime(json_extract(l.full_point, '$[1]')) > datetime(json_extract(l.check_point, '$[1]')) THEN CAST(json_extract(l.full_point, '$[0]') AS INTEGER)
+                WHEN datetime(json_extract(l.full_point, '$[1]')) = datetime(json_extract(l.check_point, '$[1]'))
+                  AND CAST(json_extract(l.full_point, '$[0]') AS INTEGER) > CAST(json_extract(l.check_point, '$[0]') AS INTEGER)
+                  THEN CAST(json_extract(l.full_point, '$[0]') AS INTEGER)
+                ELSE CAST(json_extract(l.check_point, '$[0]') AS INTEGER)
+              END AS checkpoint_id,
+              CASE
+                WHEN l.check_point IS NULL THEN json_extract(l.full_point, '$[1]')
+                WHEN l.full_point IS NULL THEN json_extract(l.check_point, '$[1]')
+                WHEN datetime(json_extract(l.full_point, '$[1]')) > datetime(json_extract(l.check_point, '$[1]')) THEN json_extract(l.full_point, '$[1]')
+                WHEN datetime(json_extract(l.full_point, '$[1]')) = datetime(json_extract(l.check_point, '$[1]'))
+                  AND CAST(json_extract(l.full_point, '$[0]') AS INTEGER) > CAST(json_extract(l.check_point, '$[0]') AS INTEGER)
+                  THEN json_extract(l.full_point, '$[1]')
+                ELSE json_extract(l.check_point, '$[1]')
+              END AS checkpoint_at,
+              CAST(json_extract(l.review_point, '$[0]') AS INTEGER) AS reviewed_checkpoint_id,
+              json_extract(l.review_point, '$[1]') AS reviewed_checkpoint_at
+            FROM lineage l
+          )
+          SELECT ar.order_id, ar.order_item_id, ar.reservation_id, ar.inventory_source, ar.variant_id,
+            ar.reservation_quantity, COALESCE(stock.quantity, 0) AS physical_quantity,
+            COALESCE(stock.reserved_quantity, 0) AS total_reserved_quantity,
+            r.order_date, r.origin_at AS item_created_at,
+            CASE WHEN julianday(r.checkpoint_at) > 0 AND (
+              COALESCE(julianday(r.reviewed_checkpoint_at), 0) < julianday(r.checkpoint_at)
+              OR (julianday(r.reviewed_checkpoint_at) = julianday(r.checkpoint_at)
+                  AND COALESCE(r.reviewed_checkpoint_id, 0) <> r.checkpoint_id)
+            ) THEN 1 ELSE 0 END AS review_needed
+          FROM active_reservations ar
+          JOIN resolved r ON r.order_item_id = ar.order_item_id
+          LEFT JOIN inventory_stock stock ON stock.inventory_source = ar.inventory_source AND stock.variant_id = ar.variant_id
+          ORDER BY ar.order_id, ar.order_item_id`;
+
+          const canonical = rows => rows.map(row => ({
+            order_id: Number(row.order_id), order_item_id: Number(row.order_item_id), reservation_id: Number(row.reservation_id),
+            inventory_source: String(row.inventory_source || ''), variant_id: Number(row.variant_id), reservation_quantity: Number(row.reservation_quantity),
+            physical_quantity: Number(row.physical_quantity), total_reserved_quantity: Number(row.total_reserved_quantity),
+            order_date: String(row.order_date || ''), item_created_at: String(row.item_created_at || ''), review_needed: Number(row.review_needed),
+          }))
+          const same = (a, b) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b))
+
+          async function runTarget(label, uuid, expectedName) {
+            const info = await dbInfo(uuid)
+            if (String(info?.name || '') !== expectedName || String(info?.uuid || info?.id || uuid) !== uuid) {
+              throw new Error(`${label} identity mismatch`)
+            }
+            const current = await query(uuid, baseline)
+            const next = await query(uuid, candidate)
+            if (current.rowsWritten !== 0 || next.rowsWritten !== 0) throw new Error(`${label} benchmark unexpectedly wrote rows`)
+            if (!same(current.rows, next.rows)) {
+              console.error(`${label} baseline sample`, JSON.stringify(canonical(current.rows).slice(0, 10)))
+              console.error(`${label} candidate sample`, JSON.stringify(canonical(next.rows).slice(0, 10)))
+              throw new Error(`${label} candidate changed compact handover truth`)
+            }
+            const currentReviews = current.rows.filter(r => Number(r.review_needed) === 1).length
+            const nextReviews = next.rows.filter(r => Number(r.review_needed) === 1).length
+            console.log(`${label}_HANDOVER_EQUIVALENT rows=${current.rows.length} reviews=${currentReviews}/${nextReviews}`)
+            console.log(`${label}_BASELINE rows_read=${current.rowsRead} duration_ms=${current.duration}`)
+            console.log(`${label}_CANDIDATE rows_read=${next.rowsRead} duration_ms=${next.duration}`)
+            if (label === 'PRODUCTION' && current.rows.length > 0) {
+              const ratio = current.rowsRead > 0 ? next.rowsRead / current.rowsRead : 1
+              console.log(`${label}_READ_RATIO=${ratio.toFixed(4)}`)
+            }
+            const plan = await query(uuid, `EXPLAIN QUERY PLAN ${candidate}`)
+            if (plan.rowsWritten !== 0) throw new Error(`${label} EXPLAIN unexpectedly wrote rows`)
+            console.log(`${label}_CANDIDATE_PLAN_BEGIN`)
+            for (const row of plan.rows) console.log(String(row.detail || JSON.stringify(row)))
+            console.log(`${label}_CANDIDATE_PLAN_END`)
+          }
+
+          await runTarget('PRODUCTION', process.env.PROD_DB_UUID, process.env.PROD_DB_NAME)
+          await runTarget('BRANCH2', process.env.BRANCH_DB_UUID, process.env.BRANCH_DB_NAME)
+          NODE
