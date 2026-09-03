@@ -1,0 +1,50 @@
+name: Orders load Worker tail
+
+on:
+  push:
+    branches:
+      - safe/orders-load-tail-20260903
+
+permissions:
+  contents: read
+
+jobs:
+  tail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      TARGET: https://orders-app.orders-clothes.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Tail Worker while issuing GET-only probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > tail.log
+          timeout 30s npx wrangler tail orders-app --format json >tail.log 2>&1 &
+          TAIL_PID=$!
+          sleep 6
+          echo '--- health ---'
+          curl -sS -o /tmp/health -w 'HTTP %{http_code}\n' "$TARGET/api/health" || true
+          head -c 1000 /tmp/health || true
+          echo
+          echo '--- orders ---'
+          curl -sS -o /tmp/orders -w 'HTTP %{http_code}\n' "$TARGET/api/orders?limit=100&offset=0&q=&status=all&shippingStatus=all&archiveMode=active&manager=&managerId=0&dateFrom=2026-09-01&dateTo=2026-09-03" || true
+          head -c 1200 /tmp/orders || true
+          echo
+          echo '--- attention ---'
+          curl -sS -o /tmp/attention -w 'HTTP %{http_code}\n' "$TARGET/api/inventory/attention" || true
+          head -c 1200 /tmp/attention || true
+          echo
+          sleep 10
+          kill "$TAIL_PID" 2>/dev/null || true
+          wait "$TAIL_PID" 2>/dev/null || true
+          echo '--- WORKER TAIL ---'
+          cat tail.log
