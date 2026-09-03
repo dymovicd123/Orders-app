@@ -26,8 +26,16 @@ check(attention.includes("e.status = 'pending' AND e.order_item_id = oi.id"), 'c
 check(reservations.includes("scoped_order.order_status NOT IN ('deleted', 'archived')"), 'compact handover active-order scope changed')
 check(reservations.includes("COALESCE(scoped_order.shipping_status, 'not_sent') <> 'sent'"), 'compact handover shipping scope changed')
 check(reservations.includes("date(c.checked_at, '+5 hours') >= date(si.order_date)"), 'handover checkpoint date truth gate changed')
-check(reservations.includes("s.status = 'completed' AND s.completed_at IS NOT NULL AND s.id NOT LIKE 'REV-%-P-%'"), 'full-stocktake checkpoint scope changed')
+check(
+  reservations.includes("s.status = 'completed'")
+    && reservations.includes('s.completed_at IS NOT NULL')
+    && reservations.includes("s.id NOT LIKE 'REV-%-P-%'")
+    && reservations.includes('datetime(s.started_at) <= datetime(si.origin_at)')
+    && reservations.includes("date(s.completed_at, '+5 hours') >= date(si.order_date)"),
+  'full-stocktake checkpoint scope changed',
+)
 check(reservations.includes("exact_sku.reference_type = 'stocktake'"), 'exact-SKU stocktake exclusion changed')
+check(reservations.includes('exact_sku.reference_id = s.id'), 'exact-SKU stocktake reference identity changed')
 check(reservations.includes('COALESCE(stock.reserved_quantity, 0) AS total_reserved_quantity'), 'compact handover stock truth payload changed')
 
 console.log('D1 READ BUDGET R5.1 PASSED — warehouse hot joins are indexed without changing handover, shortage, return, lifecycle, or stocktake truth rules')
