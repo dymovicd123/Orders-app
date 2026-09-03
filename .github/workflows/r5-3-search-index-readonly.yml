@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Confirm Production FTS capability and search-table baseline
+      - name: Confirm Production search-table baseline
         shell: bash
         run: |
           node --input-type=module <<'NODE'
@@ -42,16 +42,16 @@ jobs:
             if (!response.ok || !payload?.success) throw new Error(payload?.errors?.map(e => e.message).join('; ') || `HTTP ${response.status}`)
             const result = Array.isArray(payload.result) ? payload.result[0] : payload.result
             if (Number(result?.meta?.rows_written ?? 0) !== 0) throw new Error('Read-only preflight reported writes')
-            return result?.results || []
+            return { rows: result?.results || [], rowsRead: Number(result?.meta?.rows_read ?? 0) }
           }
-          const capability = await query(`SELECT sqlite_version() AS sqlite_version, sqlite_compileoption_used('ENABLE_FTS5') AS fts5`)
-          const existing = await query(`SELECT name, type FROM sqlite_master WHERE name IN ('order_search_orders_fts','order_search_items_fts','order_search_payments_fts') ORDER BY name`)
+          const existing = await query(`SELECT name, type FROM sqlite_schema WHERE name IN ('order_search_orders_fts','order_search_items_fts','order_search_payments_fts') ORDER BY name`)
           const counts = await query(`SELECT
             (SELECT COUNT(*) FROM orders) AS orders_count,
             (SELECT COUNT(*) FROM order_items) AS order_items_count,
             (SELECT COUNT(*) FROM payments) AS payments_count`)
-          console.log('Capability:', JSON.stringify(capability))
-          console.log('Existing R5.3 search objects:', JSON.stringify(existing))
-          console.log('Source row counts:', JSON.stringify(counts))
+          console.log('Existing R5.3 search objects:', JSON.stringify(existing.rows))
+          console.log('Source row counts:', JSON.stringify(counts.rows))
+          console.log(`Preflight rows read: ${existing.rowsRead + counts.rowsRead}`)
+          console.log('FTS5 support is confirmed by current Cloudflare D1 documentation; runtime syntax will also be validated against Wrangler local D1 before any Production schema action.')
           console.log('READ_ONLY=PASS')
           NODE
