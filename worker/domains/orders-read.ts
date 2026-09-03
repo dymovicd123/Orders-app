@@ -287,6 +287,8 @@ export async function listOrders(db: D1Database, url: URL) {
   const dateTo = cleanText(url.searchParams.get('dateTo'));
   let aggregateNeedsManagerJoin = false;
   let aggregateNeedsCustomerJoin = false;
+  let genericSearchClause = '';
+  let genericSearchBindings: string[] = [];
 
   // The visible list uses order_date. Cash cards use actual payment/return dates.
   const baseWhereParts: string[] = [];
@@ -345,8 +347,6 @@ export async function listOrders(db: D1Database, url: URL) {
       baseWhereParts.push('o.external_id >= ? AND o.external_id < ?');
       baseBindings.push(externalIdPrefix, `${externalIdPrefix}￿`);
     } else {
-      aggregateNeedsManagerJoin = true;
-      aggregateNeedsCustomerJoin = true;
       const searchOrderText = `COALESCE(o.external_id, '') || ' ' || COALESCE(o.order_date, '') || ' ' ||
         COALESCE(m.name, o.manager_snapshot_name, '') || ' ' || COALESCE(c.phone_normalized, '') || ' ' ||
         COALESCE(c.display_name, '') || ' ' || COALESCE(o.city, '') || ' ' || COALESCE(o.delivery_type, '') || ' ' || COALESCE(o.comment, '')`;
@@ -355,7 +355,7 @@ export async function listOrders(db: D1Database, url: URL) {
         COALESCE(oi.length_snapshot, '') || ' ' || COALESCE(oi.size_snapshot, '')`;
       const searchPaymentText = `COALESCE(search_payment.method, '') || ' ' || COALESCE(search_payment.comment, '')`;
       const qVariants = [q, q.toUpperCase(), q.toLowerCase()];
-      baseWhereParts.push(`(
+      genericSearchClause = `(
         INSTR(${searchOrderText}, ?) > 0 OR INSTR(${searchOrderText}, ?) > 0 OR INSTR(${searchOrderText}, ?) > 0
         OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND (
           INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0
@@ -363,9 +363,28 @@ export async function listOrders(db: D1Database, url: URL) {
         OR EXISTS (SELECT 1 FROM payments search_payment WHERE search_payment.order_id = o.id AND (
           INSTR(${searchPaymentText}, ?) > 0 OR INSTR(${searchPaymentText}, ?) > 0 OR INSTR(${searchPaymentText}, ?) > 0
         ))
-      )`);
-      baseBindings.push(...qVariants, ...qVariants, ...qVariants);
+      )`;
+      genericSearchBindings = [...qVariants, ...qVariants, ...qVariants];
     }
+  }
+
+  // R5.3: generic text search used to be repeated independently by the visible list and by
+  // order/payment/return aggregates. Resolve the exact matching order ids once, before applying
+  // each dataset's date semantics, then let every downstream query use the same compact id set.
+  // This preserves the existing search fields/case variants and the distinction between order_date,
+  // payment_date and return_date while avoiding three additional full correlated scans.
+  if (genericSearchClause) {
+    const matchingRows = await db.prepare(`
+      SELECT o.id
+      FROM orders o
+      LEFT JOIN managers m ON m.id = o.manager_id
+      LEFT JOIN customers c ON c.id = o.customer_id
+      ${baseWhereParts.length ? `WHERE ${baseWhereParts.join(' AND ')} AND ${genericSearchClause}` : `WHERE ${genericSearchClause}`}
+      ORDER BY o.id
+    `).bind(...baseBindings, ...genericSearchBindings).all<{ id: number }>();
+    const matchingIds = (matchingRows.results || []).map(row => toInt(row.id, 0)).filter(Boolean);
+    baseWhereParts.push('o.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))');
+    baseBindings.push(JSON.stringify(matchingIds));
   }
 
   const orderWhereParts = [...baseWhereParts];
