@@ -1,0 +1,69 @@
+name: D1 read budget R5.5 validation
+
+on:
+  push:
+    branches: [safe/d1-read-budget-r5-5-validation-20260903]
+    paths:
+      - scripts/.d1-read-budget-r5-5-validation-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: R5.5 focused regression
+        run: node scripts/test-d1-read-budget-r5-5.mjs
+      - name: R5.5 migration execution and planner shape — local only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib, sqlite3
+          migration = pathlib.Path('migrations/0065_v72_d1_read_budget_r5_workshop_variant_order_index.sql').read_text()
+          db = sqlite3.connect(':memory:')
+          db.executescript('''
+            CREATE TABLE catalog_variants (
+              id INTEGER PRIMARY KEY,
+              product_id INTEGER,
+              is_active INTEGER NOT NULL DEFAULT 1,
+              sort_order INTEGER NOT NULL DEFAULT 0,
+              color TEXT,
+              size_label TEXT
+            );
+            INSERT INTO catalog_variants(id, product_id, is_active, sort_order, color, size_label) VALUES
+              (1, 7, 0, 0, 'A', 'M'),
+              (2, 7, 1, 5, 'A', 'M'),
+              (3, 7, 1, 1, 'A', 'M'),
+              (4, 7, 1, 1, 'A', 'M');
+          ''')
+          db.executescript(migration)
+          rows = db.execute("PRAGMA index_xinfo('idx_catalog_variants_product_active_desc_sort')").fetchall()
+          keys = [(r[2], r[3]) for r in rows if r[5] == 1]
+          assert keys[:3] == [('product_id', 0), ('is_active', 1), ('sort_order', 0)], keys
+          result = db.execute('''SELECT id FROM catalog_variants WHERE product_id=? ORDER BY is_active DESC, sort_order ASC, id ASC LIMIT 1''', (7,)).fetchone()
+          assert result == (3,), result
+          plan = [r[3] for r in db.execute('''EXPLAIN QUERY PLAN SELECT id FROM catalog_variants WHERE product_id=? ORDER BY is_active DESC, sort_order ASC, id ASC LIMIT 1''', (7,))]
+          print('\n'.join(plan))
+          assert any('idx_catalog_variants_product_active_desc_sort' in p for p in plan), plan
+          assert not any('TEMP B-TREE' in p.upper() for p in plan), plan
+          print('R5.5 LOCAL MIGRATION/PLANNER PASSED')
+          PY
+      - name: Database safety
+        run: npm run verify:db-safety
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Full release check
+        run: npm run release:check
+      - name: Production build
+        run: npm run build
+      - name: Wrangler deploy dry run
+        run: npx wrangler deploy --dry-run
