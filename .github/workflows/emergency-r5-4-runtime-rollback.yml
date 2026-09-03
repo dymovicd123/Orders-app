@@ -25,8 +25,23 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Build known-good R5.3 assets
+        run: npm run build
       - name: Deploy known-good R5.3 runtime only
-        run: npx wrangler deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          p=Path('wrangler.jsonc')
+          s=p.read_text()
+          needle='"assets": {\n\t\t"not_found_handling"'
+          repl='"assets": {\n\t\t"directory": "./dist",\n\t\t"not_found_handling"'
+          if needle not in s:
+              raise SystemExit('Could not inject temporary assets.directory into rollback checkout')
+          p.write_text(s.replace(needle,repl,1))
+          PY
+          npx wrangler deploy
       - name: Read-only Production acceptance
         shell: bash
         run: |
