@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "revision": "runtime-sql-syntax-r1",
+  "changes": {
+    "fetchOrderStockHandoverRows": {
+      "before": "774f13063870ab3b413c0d543655ad2d66137d997fe77ef2314e4df6a88e3ba8",
+      "after": "aab80c31cb8ff3a69d0739ccf7a6ae3a2420a54725cb5b57d2a3d087939e62bb",
+      "file": "worker/domains/order-reservations.ts"
+    }
+  }
+}

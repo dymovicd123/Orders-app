@@ -1040,7 +1040,7 @@ export async function fetchOrderStockHandoverRows(
                   CAST(json_extract(l.review_point, '$[0]') AS INTEGER) AS reviewed_checkpoint_id,
                   json_extract(l.review_point, '$[1]') AS reviewed_checkpoint_at
            FROM lineage l
-         ),
+         )
          SELECT
            ar.order_id, ar.order_item_id, ar.reservation_id, ar.inventory_source, ar.variant_id,
            ar.reservation_quantity,
