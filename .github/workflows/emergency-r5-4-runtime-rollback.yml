@@ -1,0 +1,45 @@
+name: Emergency R5.4 runtime rollback
+
+on:
+  push:
+    branches:
+      - safe/emergency-r5-4-runtime-rollback-20260903
+    paths:
+      - scripts/.emergency-r5-4-runtime-rollback-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      TARGET: https://orders-app.orders-clothes.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Deploy known-good R5.3 runtime only
+        run: npx wrangler deploy
+      - name: Read-only Production acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          for url in \
+            "$TARGET/api/health" \
+            "$TARGET/api/orders?limit=100&offset=0&q=&status=all&shippingStatus=all&archiveMode=active&manager=&managerId=0&dateFrom=2026-09-01&dateTo=2026-09-03" \
+            "$TARGET/api/inventory/attention"
+          do
+            code="$(curl -sS -o /tmp/body -w '%{http_code}' "$url")"
+            echo "$code $url"
+            head -c 1000 /tmp/body || true
+            echo
+            [[ "$code" == "200" ]]
+          done
+          echo 'EMERGENCY_R5_4_RUNTIME_ROLLBACK_ACCEPTANCE_PASSED'
