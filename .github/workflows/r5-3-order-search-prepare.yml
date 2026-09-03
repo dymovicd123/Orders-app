@@ -1,0 +1,74 @@
+name: R5.3 order search prepare
+
+on:
+  push:
+    branches:
+      - safe/d1-read-budget-r5-3-order-search-20260903
+    paths:
+      - scripts/.r5-3-prepare-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/d1-read-budget-r5-3-order-search-20260903
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Patch generic order search to materialize matching ids once
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('worker/domains/orders-read.ts')
+          text = path.read_text(encoding='utf-8')
+
+          old_decl = """  let aggregateNeedsManagerJoin = false;\n  let aggregateNeedsCustomerJoin = false;\n"""
+          new_decl = """  let aggregateNeedsManagerJoin = false;\n  let aggregateNeedsCustomerJoin = false;\n  let genericSearchClause = '';\n  let genericSearchBindings: string[] = [];\n"""
+          if old_decl not in text:
+              raise SystemExit('R5.3 declaration anchor not found')
+          text = text.replace(old_decl, new_decl, 1)
+
+          old_generic = """    } else {\n      aggregateNeedsManagerJoin = true;\n      aggregateNeedsCustomerJoin = true;\n      const searchOrderText = `COALESCE(o.external_id, '') || ' ' || COALESCE(o.order_date, '') || ' ' ||\n        COALESCE(m.name, o.manager_snapshot_name, '') || ' ' || COALESCE(c.phone_normalized, '') || ' ' ||\n        COALESCE(c.display_name, '') || ' ' || COALESCE(o.city, '') || ' ' || COALESCE(o.delivery_type, '') || ' ' || COALESCE(o.comment, '')`;\n      const searchItemText = `COALESCE(oi.product_name_snapshot, '') || ' ' || COALESCE(oi.gender_snapshot, '') || ' ' ||\n        COALESCE(oi.color_snapshot, '') || ' ' || COALESCE(oi.material_snapshot, '') || ' ' ||\n        COALESCE(oi.length_snapshot, '') || ' ' || COALESCE(oi.size_snapshot, '')`;\n      const searchPaymentText = `COALESCE(search_payment.method, '') || ' ' || COALESCE(search_payment.comment, '')`;\n      const qVariants = [q, q.toUpperCase(), q.toLowerCase()];\n      baseWhereParts.push(`(\n        INSTR(${searchOrderText}, ?) > 0 OR INSTR(${searchOrderText}, ?) > 0 OR INSTR(${searchOrderText}, ?) > 0\n        OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND (\n          INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0\n        ))\n        OR EXISTS (SELECT 1 FROM payments search_payment WHERE search_payment.order_id = o.id AND (\n          INSTR(${searchPaymentText}, ?) > 0 OR INSTR(${searchPaymentText}, ?) > 0 OR INSTR(${searchPaymentText}, ?) > 0\n        ))\n      )`);\n      baseBindings.push(...qVariants, ...qVariants, ...qVariants);\n    }\n  }\n\n  const orderWhereParts = [...baseWhereParts];\n"""
+          new_generic = """    } else {\n      const searchOrderText = `COALESCE(o.external_id, '') || ' ' || COALESCE(o.order_date, '') || ' ' ||\n        COALESCE(m.name, o.manager_snapshot_name, '') || ' ' || COALESCE(c.phone_normalized, '') || ' ' ||\n        COALESCE(c.display_name, '') || ' ' || COALESCE(o.city, '') || ' ' || COALESCE(o.delivery_type, '') || ' ' || COALESCE(o.comment, '')`;\n      const searchItemText = `COALESCE(oi.product_name_snapshot, '') || ' ' || COALESCE(oi.gender_snapshot, '') || ' ' ||\n        COALESCE(oi.color_snapshot, '') || ' ' || COALESCE(oi.material_snapshot, '') || ' ' ||\n        COALESCE(oi.length_snapshot, '') || ' ' || COALESCE(oi.size_snapshot, '')`;\n      const searchPaymentText = `COALESCE(search_payment.method, '') || ' ' || COALESCE(search_payment.comment, '')`;\n      const qVariants = [q, q.toUpperCase(), q.toLowerCase()];\n      genericSearchClause = `(\n        INSTR(${searchOrderText}, ?) > 0 OR INSTR(${searchOrderText}, ?) > 0 OR INSTR(${searchOrderText}, ?) > 0\n        OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND (\n          INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0\n        ))\n        OR EXISTS (SELECT 1 FROM payments search_payment WHERE search_payment.order_id = o.id AND (\n          INSTR(${searchPaymentText}, ?) > 0 OR INSTR(${searchPaymentText}, ?) > 0 OR INSTR(${searchPaymentText}, ?) > 0\n        ))\n      )`;\n      genericSearchBindings = [...qVariants, ...qVariants, ...qVariants];\n    }\n  }\n\n  // R5.3: generic text search used to be repeated independently by the visible list and by\n  // order/payment/return aggregates. Resolve the exact matching order ids once, before applying\n  // each dataset's date semantics, then let every downstream query use the same compact id set.\n  // This preserves the existing search fields/case variants and the distinction between order_date,\n  // payment_date and return_date while avoiding three additional full correlated scans.\n  if (genericSearchClause) {\n    const matchingRows = await db.prepare(`\n      SELECT o.id\n      FROM orders o\n      LEFT JOIN managers m ON m.id = o.manager_id\n      LEFT JOIN customers c ON c.id = o.customer_id\n      ${baseWhereParts.length ? `WHERE ${baseWhereParts.join(' AND ')} AND ${genericSearchClause}` : `WHERE ${genericSearchClause}`}\n      ORDER BY o.id\n    `).bind(...baseBindings, ...genericSearchBindings).all<{ id: number }>();\n    const matchingIds = (matchingRows.results || []).map(row => toInt(row.id, 0)).filter(Boolean);\n    baseWhereParts.push('o.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))');\n    baseBindings.push(JSON.stringify(matchingIds));\n  }\n\n  const orderWhereParts = [...baseWhereParts];\n"""
+          if old_generic not in text:
+              raise SystemExit('R5.3 generic search anchor not found')
+          text = text.replace(old_generic, new_generic, 1)
+          path.write_text(text, encoding='utf-8')
+
+          test = Path('scripts/test-d1-read-budget-r5-3.mjs')
+          test.write_text("""import fs from 'node:fs'\n\nconst source = fs.readFileSync('worker/domains/orders-read.ts', 'utf8')\nconst check = (condition, message) => { if (!condition) throw new Error(message) }\n\ncheck(source.includes(\"let genericSearchClause = '';\"), 'generic search materialization gate missing')\ncheck(source.includes('genericSearchBindings = [...qVariants, ...qVariants, ...qVariants]'), 'legacy raw/upper/lower search variants changed')\ncheck(source.includes('const matchingRows = await db.prepare(`'), 'generic search ids are not resolved once')\ncheck(source.includes(\"baseWhereParts.push('o.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))')\"), 'downstream queries do not use compact matching ids')\ncheck(source.includes('baseBindings.push(JSON.stringify(matchingIds))'), 'matching id payload is not bound safely')\ncheck(source.indexOf('if (genericSearchClause) {') < source.indexOf('const orderWhereParts = [...baseWhereParts]'), 'generic ids must be materialized before per-dataset date filters')\ncheck(source.includes(\"orderWhereParts.push('o.order_date >= ?')\"), 'order_date semantics changed')\ncheck(source.includes(\"paymentWhereParts.push('p.payment_date >= ?')\"), 'payment_date semantics changed')\ncheck(source.includes(\"returnWhereParts.push('r.return_date >= ?')\"), 'return_date semantics changed')\ncheck(source.includes(\"baseWhereParts.push('o.external_id >= ? AND o.external_id < ?')\"), 'indexed ORD prefix fast path lost')\ncheck(!source.includes('aggregateNeedsCustomerJoin = true;\\n      const searchOrderText'), 'generic search still forces repeated customer joins into aggregates')\n\nconsole.log('D1 READ BUDGET R5.3 PASSED — generic order search is materialized once and reused without changing date semantics')\n""", encoding='utf-8')
+
+          package = Path('package.json')
+          package_text = package.read_text(encoding='utf-8')
+          old_script = 'node scripts/test-d1-read-budget-r5-2.mjs && node scripts/test-manager-routine-access-r1.mjs'
+          new_script = 'node scripts/test-d1-read-budget-r5-2.mjs && node scripts/test-d1-read-budget-r5-3.mjs && node scripts/test-manager-routine-access-r1.mjs'
+          if old_script not in package_text:
+              raise SystemExit('R5.3 package anchor not found')
+          package.write_text(package_text.replace(old_script, new_script, 1), encoding='utf-8')
+      - name: Install dependencies
+        run: npm ci
+      - name: Targeted R5.3 regression
+        run: node scripts/test-d1-read-budget-r5-3.mjs
+      - name: Database safety
+        run: npm run verify:db-safety
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Full release check
+        run: npm run release:check
+      - name: Production build
+        run: npm run build
+      - name: Commit prepared R5.3
+        run: |
+          git config user.name "dymovicd123"
+          git config user.email "dymovicd@gmail.com"
+          git add worker/domains/orders-read.ts scripts/test-d1-read-budget-r5-3.mjs package.json
+          git commit -m "Optimize generic order search read budget"
+          git push origin HEAD:safe/d1-read-budget-r5-3-order-search-20260903
