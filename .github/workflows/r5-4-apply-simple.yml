@@ -22,6 +22,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: python scripts/.r5-4-apply-temp.py
+      - run: node scripts/.r5-4-finalize-gate-temp.mjs
       - run: node scripts/test-d1-read-budget-r5-4.mjs
       - run: npm run verify:db-safety
       - run: npm run typecheck
@@ -31,7 +32,7 @@ jobs:
         run: |
           git config user.name dymovicd123
           git config user.email dymovicd@gmail.com
-          git add worker/domains/order-reservations.ts
+          git add worker/domains/order-reservations.ts scripts/d1-read-budget-r5-4-worker-manifest.json scripts/test-step1906a-worker-modularization.mjs
           git diff --cached --check
           git commit -m "Optimize compact handover lineage reads"
           git push origin HEAD:safe/d1-read-budget-r5-4-handover-20260903
