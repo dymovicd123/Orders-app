@@ -1,0 +1,37 @@
+name: R5.4 apply simple
+on:
+  push:
+    branches:
+      - safe/d1-read-budget-r5-4-handover-20260903
+    paths:
+      - scripts/.r5-4-simple-trigger
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/d1-read-budget-r5-4-handover-20260903
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: python scripts/.r5-4-apply-temp.py
+      - run: node scripts/test-d1-read-budget-r5-4.mjs
+      - run: npm run verify:db-safety
+      - run: npm run typecheck
+      - run: npm run release:check
+      - run: npm run build
+      - name: Commit verified implementation
+        run: |
+          git config user.name dymovicd123
+          git config user.email dymovicd@gmail.com
+          git add worker/domains/order-reservations.ts
+          git diff --cached --check
+          git commit -m "Optimize compact handover lineage reads"
+          git push origin HEAD:safe/d1-read-budget-r5-4-handover-20260903
