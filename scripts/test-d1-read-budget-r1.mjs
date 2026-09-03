@@ -12,8 +12,27 @@ check(!relations.includes('inventory_stock_checks') && !relations.includes('inve
 check(reservations.includes('listFlagsOnly?: boolean'), 'Canonical resolver must expose compact list-flags mode')
 check(reservations.includes('WITH active_reservations AS'), 'Compact resolver must start from scoped active reservations')
 check(reservations.includes('workshop_orders AS'), 'Mixed-order handover semantics must remain explicit')
-check(reservations.includes('latest_full_stocktake AS'), 'Full-stocktake fallback must remain in compact resolver')
-check(reservations.includes('latest_review AS'), 'Existing handover answers must still suppress reviewed checkpoints')
+check(
+  reservations.includes('latest_full_stocktake AS')
+    || (
+      reservations.includes('AS full_point')
+      && reservations.includes("s.status = 'completed'")
+      && reservations.includes("s.id NOT LIKE 'REV-%-P-%'")
+      && reservations.includes('datetime(s.started_at) <= datetime(si.origin_at)')
+      && reservations.includes("exact_sku.reference_type = 'stocktake'")
+    ),
+  'Full-stocktake fallback must remain in compact resolver',
+)
+check(
+  reservations.includes('latest_review AS')
+    || (
+      reservations.includes('AS review_point')
+      && reservations.includes('ORDER BY datetime(hr.checkpoint_at) DESC, hr.checkpoint_id DESC, hr.id DESC')
+      && reservations.includes('reviewed_checkpoint_id')
+      && reservations.includes('reviewed_checkpoint_at')
+    ),
+  'Existing handover answers must still suppress reviewed checkpoints',
+)
 check(reservations.includes('THEN 1 ELSE 0 END AS review_needed'), 'Compact resolver must preserve review-needed flag')
 check(reservations.includes('const rows = await fetchOrderStockHandoverRows(db, [orderId])'), 'Explicit order handover must still use full canonical payload')
 check(reservations.includes("fetchOrderStockHandoverRows(db, [], { allActive: true })"), 'Warehouse attention count must still use full canonical resolver')
