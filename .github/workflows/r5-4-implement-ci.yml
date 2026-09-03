@@ -1,0 +1,224 @@
+name: R5.4 handover implementation CI
+
+on:
+  push:
+    branches:
+      - safe/d1-read-budget-r5-4-handover-20260903
+    paths:
+      - scripts/.r5-4-implement-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  implement-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/d1-read-budget-r5-4-handover-20260903
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply exact R5.4 compact handover rewrite
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('worker/domains/order-reservations.ts')
+          text = path.read_text(encoding='utf-8')
+          compact_start = text.index('    if (listFlagsOnly) {')
+          compact_end = text.index('    const orderScope = chunk', compact_start)
+          compact = text[compact_start:compact_end]
+
+          start = compact.index('         latest_check AS (')
+          end = compact.index('         SELECT\n           ar.order_id', start)
+          replacement = '''         lineage AS MATERIALIZED (
+           SELECT si.*,
+                  (SELECT json_array(c.id, c.checked_at)
+                   FROM inventory_stock_checks c
+                   WHERE c.inventory_source = si.inventory_source
+                     AND c.variant_id = si.variant_id
+                     AND (
+                       (datetime(c.checked_at) < datetime(si.origin_at) AND date(c.checked_at, '+5 hours') >= date(si.order_date))
+                       OR (si.has_workshop = 1 AND datetime(c.checked_at) > datetime(si.origin_at))
+                     )
+                   ORDER BY datetime(c.checked_at) DESC, c.id DESC
+                   LIMIT 1) AS check_point,
+                  (SELECT json_array(-s.rowid, s.completed_at)
+                   FROM inventory_stocktake_sessions s
+                   WHERE s.inventory_source = si.inventory_source
+                     AND s.status = 'completed'
+                     AND s.completed_at IS NOT NULL
+                     AND s.id NOT LIKE 'REV-%-P-%'
+                     AND datetime(s.started_at) <= datetime(si.origin_at)
+                     AND date(s.completed_at, '+5 hours') >= date(si.order_date)
+                     AND NOT EXISTS (
+                       SELECT 1 FROM inventory_stock_checks exact_sku
+                       WHERE exact_sku.inventory_source = si.inventory_source
+                         AND exact_sku.variant_id = si.variant_id
+                         AND exact_sku.reference_type = 'stocktake'
+                         AND exact_sku.reference_id = s.id
+                     )
+                   ORDER BY datetime(s.completed_at) DESC, s.rowid DESC
+                   LIMIT 1) AS full_point,
+                  (SELECT json_array(hr.checkpoint_id, hr.checkpoint_at)
+                   FROM inventory_handover_reviews hr
+                   JOIN order_items reviewed_item ON reviewed_item.id = hr.order_item_id
+                   WHERE hr.order_id = si.order_id
+                     AND COALESCE(NULLIF(reviewed_item.inventory_obligation_key, ''), 'legacy-order-item:' || reviewed_item.id) = si.obligation_key
+                   ORDER BY datetime(hr.checkpoint_at) DESC, hr.checkpoint_id DESC, hr.id DESC
+                   LIMIT 1) AS review_point
+           FROM scoped_items si
+         ),
+         resolved AS MATERIALIZED (
+           SELECT l.*,
+                  CASE
+                    WHEN l.check_point IS NULL THEN CAST(json_extract(l.full_point, '$[0]') AS INTEGER)
+                    WHEN l.full_point IS NULL THEN CAST(json_extract(l.check_point, '$[0]') AS INTEGER)
+                    WHEN datetime(json_extract(l.full_point, '$[1]')) > datetime(json_extract(l.check_point, '$[1]'))
+                      THEN CAST(json_extract(l.full_point, '$[0]') AS INTEGER)
+                    WHEN datetime(json_extract(l.full_point, '$[1]')) = datetime(json_extract(l.check_point, '$[1]'))
+                      AND CAST(json_extract(l.full_point, '$[0]') AS INTEGER) > CAST(json_extract(l.check_point, '$[0]') AS INTEGER)
+                      THEN CAST(json_extract(l.full_point, '$[0]') AS INTEGER)
+                    ELSE CAST(json_extract(l.check_point, '$[0]') AS INTEGER)
+                  END AS checkpoint_id,
+                  CASE
+                    WHEN l.check_point IS NULL THEN json_extract(l.full_point, '$[1]')
+                    WHEN l.full_point IS NULL THEN json_extract(l.check_point, '$[1]')
+                    WHEN datetime(json_extract(l.full_point, '$[1]')) > datetime(json_extract(l.check_point, '$[1]'))
+                      THEN json_extract(l.full_point, '$[1]')
+                    WHEN datetime(json_extract(l.full_point, '$[1]')) = datetime(json_extract(l.check_point, '$[1]'))
+                      AND CAST(json_extract(l.full_point, '$[0]') AS INTEGER) > CAST(json_extract(l.check_point, '$[0]') AS INTEGER)
+                      THEN json_extract(l.full_point, '$[1]')
+                    ELSE json_extract(l.check_point, '$[1]')
+                  END AS checkpoint_at,
+                  CAST(json_extract(l.review_point, '$[0]') AS INTEGER) AS reviewed_checkpoint_id,
+                  json_extract(l.review_point, '$[1]') AS reviewed_checkpoint_at
+           FROM lineage l
+         ),
+'''
+          compact = compact[:start] + replacement + compact[end:]
+
+          replacements = {
+            '           si.order_date, si.origin_at AS item_created_at,': '           lineage_row.order_date, lineage_row.origin_at AS item_created_at,',
+            '             julianday(cp.checkpoint_at) > 0': '             julianday(lineage_row.checkpoint_at) > 0',
+            '               COALESCE(julianday(lr.reviewed_checkpoint_at), 0) < julianday(cp.checkpoint_at)': '               COALESCE(julianday(lineage_row.reviewed_checkpoint_at), 0) < julianday(lineage_row.checkpoint_at)',
+            '               OR (julianday(lr.reviewed_checkpoint_at) = julianday(cp.checkpoint_at)': '               OR (julianday(lineage_row.reviewed_checkpoint_at) = julianday(lineage_row.checkpoint_at)',
+            '                   AND COALESCE(lr.reviewed_checkpoint_id, 0) <> cp.checkpoint_id)': '                   AND COALESCE(lineage_row.reviewed_checkpoint_id, 0) <> lineage_row.checkpoint_id)',
+            '         JOIN scoped_items si ON si.order_item_id = ar.order_item_id\n': '         JOIN resolved lineage_row ON lineage_row.order_item_id = ar.order_item_id\n',
+            '         LEFT JOIN selected_checkpoint cp ON cp.order_item_id = ar.order_item_id AND cp.rn = 1\n': '',
+            '         LEFT JOIN latest_review lr ON lr.order_item_id = ar.order_item_id AND lr.rn = 1\n': '',
+          }
+          for old, new in replacements.items():
+              if compact.count(old) != 1:
+                  raise SystemExit(f'Expected exactly one compact replacement target: {old!r}; found {compact.count(old)}')
+              compact = compact.replace(old, new, 1)
+
+          if any(marker in compact for marker in ['latest_check AS (', 'latest_full_stocktake AS (', 'selected_checkpoint AS (', 'latest_review AS (']):
+              raise SystemExit('Legacy compact window CTE survived R5.4 rewrite')
+          if 'lineage AS MATERIALIZED (' not in compact or 'resolved AS MATERIALIZED (' not in compact:
+              raise SystemExit('R5.4 materialized lineage CTEs missing')
+
+          text = text[:compact_start] + compact + text[compact_end:]
+          path.write_text(text, encoding='utf-8')
+
+      - name: Add targeted R5.4 regression
+        run: |
+          cat > scripts/test-d1-read-budget-r5-4.mjs <<'EOF'
+          import fs from 'node:fs'
+
+          const source = fs.readFileSync('worker/domains/order-reservations.ts', 'utf8')
+          const start = source.indexOf('    if (listFlagsOnly) {')
+          const end = source.indexOf('    const orderScope = chunk', start)
+          if (start < 0 || end < 0) throw new Error('Could not isolate compact handover branch')
+          const compact = source.slice(start, end)
+          const detailed = source.slice(end)
+          const requireText = (haystack, needle, message) => {
+            if (!haystack.includes(needle)) throw new Error(message || `Missing: ${needle}`)
+          }
+          const rejectText = (haystack, needle, message) => {
+            if (haystack.includes(needle)) throw new Error(message || `Unexpected: ${needle}`)
+          }
+
+          requireText(compact, 'lineage AS MATERIALIZED (', 'R5.4 compact lineage must be materialized once per scoped item')
+          requireText(compact, 'resolved AS MATERIALIZED (', 'R5.4 selected checkpoint must be resolved once per scoped item')
+          for (const legacy of ['latest_check AS (', 'latest_full_stocktake AS (', 'selected_checkpoint AS (', 'latest_review AS (']) {
+            rejectText(compact, legacy, `Legacy windowed compact lineage survived: ${legacy}`)
+          }
+
+          for (const truth of [
+            "c.inventory_source = si.inventory_source",
+            "c.variant_id = si.variant_id",
+            "datetime(c.checked_at) < datetime(si.origin_at)",
+            "date(c.checked_at, '+5 hours') >= date(si.order_date)",
+            "si.has_workshop = 1 AND datetime(c.checked_at) > datetime(si.origin_at)",
+            "s.status = 'completed'",
+            "s.id NOT LIKE 'REV-%-P-%'",
+            "datetime(s.started_at) <= datetime(si.origin_at)",
+            "date(s.completed_at, '+5 hours') >= date(si.order_date)",
+            "exact_sku.reference_type = 'stocktake'",
+            "exact_sku.reference_id = s.id",
+            "COALESCE(NULLIF(reviewed_item.inventory_obligation_key, ''), 'legacy-order-item:' || reviewed_item.id) = si.obligation_key",
+            "ORDER BY datetime(hr.checkpoint_at) DESC, hr.checkpoint_id DESC, hr.id DESC",
+            "COALESCE(julianday(lineage_row.reviewed_checkpoint_at), 0) < julianday(lineage_row.checkpoint_at)",
+            "COALESCE(lineage_row.reviewed_checkpoint_id, 0) <> lineage_row.checkpoint_id",
+            "LEFT JOIN inventory_stock stock ON stock.inventory_source = ar.inventory_source AND stock.variant_id = ar.variant_id",
+          ]) requireText(compact, truth, `R5.4 compact truth guard missing: ${truth}`)
+
+          // The detailed handover path is intentionally outside R5.4. Keep its richer payload and
+          // physical-history/CAS-compatible checkpoint semantics untouched.
+          for (const detailGuard of [
+            'customer.display_name AS customer_name',
+            'review.decision AS review_decision',
+            'c.check_type AS checkpoint_type',
+            'fs.id AS full_stocktake_session_id',
+            "SELECT hr.id\n         FROM inventory_handover_reviews hr",
+            "SELECT c2.id\n         FROM inventory_stock_checks c2",
+            "SELECT s2.rowid\n         FROM inventory_stocktake_sessions s2",
+          ]) requireText(detailed, detailGuard, `Detailed handover path drifted/missing: ${detailGuard}`)
+
+          if (/CREATE\s+(?:UNIQUE\s+)?INDEX|CREATE\s+TABLE|ALTER\s+TABLE/i.test(compact)) {
+            throw new Error('R5.4 compact runtime rewrite must not smuggle DDL into the read path')
+          }
+
+          console.log('D1 READ BUDGET R5.4 PASSED — compact all-active handover lineage uses bounded indexed lookups while preserving physical-history and review truth')
+          EOF
+
+      - name: Register R5.4 in release check
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          const path = 'package.json'
+          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'))
+          const marker = 'node scripts/test-d1-read-budget-r5-3.mjs'
+          const next = 'node scripts/test-d1-read-budget-r5-4.mjs'
+          if (!pkg.scripts?.['release:check']?.includes(marker)) throw new Error('R5.3 release marker missing')
+          if (!pkg.scripts['release:check'].includes(next)) {
+            pkg.scripts['release:check'] = pkg.scripts['release:check'].replace(marker, `${marker} && ${next}`)
+          }
+          fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n')
+          NODE
+
+      - name: Targeted R5.4 regression
+        run: node scripts/test-d1-read-budget-r5-4.mjs
+      - name: Database safety
+        run: npm run verify:db-safety
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Full release check
+        run: npm run release:check
+      - name: Build
+        run: npm run build
+      - name: Commit verified R5.4 implementation to safe branch
+        run: |
+          git config user.name 'dymovicd123'
+          git config user.email 'dymovicd@gmail.com'
+          git add worker/domains/order-reservations.ts scripts/test-d1-read-budget-r5-4.mjs package.json
+          git diff --cached --check
+          git diff --cached --quiet && { echo 'No R5.4 implementation changes to commit'; exit 0; }
+          git commit -m 'Optimize compact handover lineage reads'
+          git push origin HEAD:safe/d1-read-budget-r5-4-handover-20260903
