@@ -344,7 +344,26 @@ export async function listOrders(db: D1Database, url: URL) {
       // indexed external_id range instead of scanning customers/items/payments per keystroke.
       baseWhereParts.push('o.external_id >= ? AND o.external_id < ?');
       baseBindings.push(externalIdPrefix, `${externalIdPrefix}￿`);
+    } else if (Array.from(q).length >= 3) {
+      // D1 read-budget R5.3: arbitrary substring search is the remaining order-list scan hotspot.
+      // A case-sensitive trigram FTS index queried with the exact legacy raw/upper/lower variants
+      // preserves the old INSTR semantics while avoiding correlated scans of items/payments.
+      const qVariants = Array.from(new Set([q, q.toUpperCase(), q.toLowerCase()]));
+      const ftsQuery = qVariants.map((value) => `\"${value.replaceAll('\"', '\"\"')}\"`).join(' OR ');
+      baseWhereParts.push(`(
+        o.id IN (SELECT rowid FROM order_search_orders_fts WHERE order_search_orders_fts MATCH ?)
+        OR o.id IN (SELECT CAST(order_id AS INTEGER) FROM order_search_items_fts WHERE order_search_items_fts MATCH ?)
+        OR o.id IN (SELECT CAST(order_id AS INTEGER) FROM order_search_payments_fts WHERE order_search_payments_fts MATCH ?)
+        OR ((o.manager_id IS NULL OR NOT EXISTS (SELECT 1 FROM managers search_manager WHERE search_manager.id = o.manager_id)) AND (
+          INSTR(COALESCE(o.manager_snapshot_name, ''), ?) > 0
+          OR INSTR(COALESCE(o.manager_snapshot_name, ''), ?) > 0
+          OR INSTR(COALESCE(o.manager_snapshot_name, ''), ?) > 0
+        ))
+      )`);
+      baseBindings.push(ftsQuery, ftsQuery, ftsQuery, q, q.toUpperCase(), q.toLowerCase());
     } else {
+      // FTS5 trigram cannot match fewer than three Unicode characters. Keep the exact legacy
+      // fallback for those intentionally broad short searches.
       aggregateNeedsManagerJoin = true;
       aggregateNeedsCustomerJoin = true;
       const searchOrderText = `COALESCE(o.external_id, '') || ' ' || COALESCE(o.order_date, '') || ' ' ||
