@@ -28,6 +28,7 @@ const orderEditScopeR1Path = path.join(root, 'scripts/order-edit-scope-r1-worker
 const d1ReadBudgetR4Path = path.join(root, 'scripts/d1-read-budget-r4-worker-manifest.json')
 const d1ReadBudgetR53Path = path.join(root, 'scripts/d1-read-budget-r5-3-worker-manifest.json')
 const d1ReadBudgetR54Path = path.join(root, 'scripts/d1-read-budget-r5-4-worker-manifest.json')
+const runtimeSqlSyntaxR1Path = path.join(root, 'scripts/runtime-sql-syntax-r1-worker-manifest.json')
 const operationalAutonomyR2WorkerPath = path.join(root, 'scripts/operational-autonomy-r2-worker-manifest.json')
 const phase1bWorkshopReturnDispositionPath = path.join(root, 'scripts/phase1b-workshop-return-disposition-worker-manifest.json')
 const arrivalSaveReliabilityPath = path.join(root, 'scripts/arrival-save-reliability-worker-manifest.json')
@@ -154,6 +155,10 @@ try {
   const d1ReadBudgetR54 = JSON.parse(fs.readFileSync(d1ReadBudgetR54Path, 'utf8'))
   check(d1ReadBudgetR54?.version === 1 && d1ReadBudgetR54?.revision === 'd1-read-budget-r5-4', 'D1 read-budget R5.4 Worker manifest invalid')
   const d1ReadBudgetR54Changes = d1ReadBudgetR54.changes || {}
+  check(fs.existsSync(runtimeSqlSyntaxR1Path), 'Runtime SQL syntax R1 Worker manifest missing')
+  const runtimeSqlSyntaxR1 = JSON.parse(fs.readFileSync(runtimeSqlSyntaxR1Path, 'utf8'))
+  check(runtimeSqlSyntaxR1?.version === 1 && runtimeSqlSyntaxR1?.revision === 'runtime-sql-syntax-r1', 'Runtime SQL syntax R1 Worker manifest invalid')
+  const runtimeSqlSyntaxR1Changes = runtimeSqlSyntaxR1.changes || {}
   check(fs.existsSync(operationalAutonomyR2WorkerPath), 'Operational autonomy R2 Worker manifest missing')
   const operationalAutonomyR2Worker = JSON.parse(fs.readFileSync(operationalAutonomyR2WorkerPath, 'utf8'))
   check(operationalAutonomyR2Worker?.version === 1 && operationalAutonomyR2Worker?.revision === 'operational-autonomy-r2', 'Operational autonomy R2 Worker manifest invalid')
@@ -606,11 +611,17 @@ try {
       acceptedPostD1ReadBudgetR3Hash = d1ReadBudgetR3Changed.after
     }
     const d1ReadBudgetR54Changed = d1ReadBudgetR54Changes[name]
+    let acceptedPostD1ReadBudgetR54Hash = acceptedPostD1ReadBudgetR3Hash
     if (d1ReadBudgetR54Changed) {
       check(d1ReadBudgetR54Changed.before === acceptedPostD1ReadBudgetR3Hash, `D1 read-budget R5.4 changed 192B1-added declaration baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === d1ReadBudgetR54Changed.after, `192B1-added declaration changed beyond exact D1 read-budget R5.4 allow-list: ${name}`)
+      acceptedPostD1ReadBudgetR54Hash = d1ReadBudgetR54Changed.after
+    }
+    const runtimeSqlSyntaxR1Changed = runtimeSqlSyntaxR1Changes[name]
+    if (runtimeSqlSyntaxR1Changed) {
+      check(runtimeSqlSyntaxR1Changed.before === acceptedPostD1ReadBudgetR54Hash, `Runtime SQL syntax R1 baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === runtimeSqlSyntaxR1Changed.after, `192B1-added declaration changed beyond exact Runtime SQL syntax R1 allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostD1ReadBudgetR3Hash, `192B1 added Worker declaration changed beyond accepted deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostD1ReadBudgetR54Hash, `192B1 added Worker declaration changed beyond accepted deltas: ${name}`)
     }
   }
 
