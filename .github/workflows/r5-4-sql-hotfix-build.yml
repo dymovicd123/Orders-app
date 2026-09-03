@@ -39,8 +39,7 @@ jobs:
           count = text.count(bad)
           if count != 1:
               raise SystemExit(f'Expected exactly one known broken compact CTE boundary, found {count}')
-          text = text.replace(bad, good)
-          path.write_text(text)
+          path.write_text(text.replace(bad, good))
 
           test = r'''import fs from 'node:fs'
           import path from 'node:path'
@@ -72,7 +71,6 @@ jobs:
           let dynamicCount = 0
           let staticCount = 0
           const sqlite = new DatabaseSync(':memory:')
-
           const syntaxFailure = message => /syntax error|incomplete input|unrecognized token|unterminated/i.test(String(message))
 
           for (const file of files) {
@@ -114,31 +112,32 @@ jobs:
             visit(sf)
           }
 
-          // Compile both dynamic handover SQL templates after substituting only their runtime predicate snippets.
+          // Compile the exact two dynamic handover templates after substituting only their predicate snippets.
           const handoverFile = 'worker/domains/order-reservations.ts'
           const handover = fs.readFileSync(handoverFile, 'utf8')
+          const compactCandidates = [...handover.matchAll(/const compact = await db\.prepare\(\s*`([\s\S]*?)`\s*\)/g)]
+          const detailedCandidates = [...handover.matchAll(/const result = await db\.prepare\(\s*`([\s\S]*?)`\s*\)/g)]
           const dynamicCases = [
             {
               name: 'compact handover flags',
-              re: /const compact = await db\.prepare\(\s*`([\s\S]*?)`\s*\)\.bind/,
+              match: compactCandidates.find(row => row[1].includes('${reservationScope}')),
               replacements: [['${reservationScope}', "r.status = 'active' AND r.variant_id IS NOT NULL"]],
             },
             {
               name: 'detailed handover',
-              re: /const result = await db\.prepare\(\s*`([\s\S]*?)`\s*\)\.bind\(\.\.\.\(chunk \|\| \[\]\)\)/,
+              match: detailedCandidates.find(row => row[1].includes('${orderScope}')),
               replacements: [['${orderScope}', 'oi.order_id IN (?)']],
             },
           ]
           for (const testCase of dynamicCases) {
-            const match = handover.match(testCase.re)
-            if (!match) throw new Error(`Could not locate runtime SQL template: ${testCase.name}`)
-            let sql = match[1]
+            if (!testCase.match) throw new Error(`Could not locate runtime SQL template: ${testCase.name}`)
+            let sql = testCase.match[1]
             for (const [from, to] of testCase.replacements) sql = sql.split(from).join(to)
             if (/\$\{/.test(sql)) throw new Error(`Unsubstituted SQL interpolation remains in ${testCase.name}`)
             try { sqlite.prepare(sql) }
             catch (error) {
               if (syntaxFailure(error?.message || error)) throw new Error(`${testCase.name} SQL syntax failed: ${error.message}`)
-              // Semantic errors such as missing tables/columns prove SQLite parsed the statement far enough.
+              // Missing tables/columns are semantic here; the release schema tests cover them separately.
             }
           }
 
@@ -149,7 +148,6 @@ jobs:
           }
           console.log(`RUNTIME_SQL_SYNTAX_R1 PASSED: prepare=${prepareCount}, static=${staticCount}, dynamic=${dynamicCount}, files=${files.length}`)
           '''
-          # remove workflow heredoc indentation from the generated JS
           lines = test.splitlines()
           cleaned = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
           Path('scripts/test-runtime-sql-syntax-r1.mjs').write_text(cleaned)
