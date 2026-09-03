@@ -20,7 +20,7 @@ jobs:
       PROD_DB_NAME: orders_db_prod
     steps:
       - uses: actions/checkout@v4
-      - name: Snapshot only required Production rows, benchmark candidate indexes locally
+      - name: Snapshot Production rows read-only and benchmark candidate indexes locally
         shell: bash
         run: |
           set -euo pipefail
@@ -53,7 +53,7 @@ jobs:
               normalized = ' '.join(sql.strip().lower().split())
               if not (normalized.startswith('select ') or normalized.startswith('with ')):
                   raise RuntimeError('Production snapshot guard only permits SELECT/WITH')
-              if any(token in normalized for token in forbidden):
+              if any(word in normalized for word in forbidden):
                   raise RuntimeError('Mutation-capable SQL rejected by Production snapshot guard')
               payload = api(base + '/query', {'sql': sql, 'params': []})
               if not payload.get('success'):
@@ -71,7 +71,8 @@ jobs:
               print('PRODUCTION_INDEX_DDL', row['name'], row['sql'])
 
           variants = prod_query('''
-            SELECT id, product_id, gender, color, material, length, size_label, is_active, sort_order, category
+            SELECT id, product_id, stock_position_id, external_id, gender, color, material, length,
+                   size_label, is_active, sort_order, category
             FROM catalog_variants
           ''')
           items = prod_query('''
@@ -100,11 +101,16 @@ jobs:
           ''')
           print(f'SNAPSHOT variants={len(variants)} workshop_order_items={len(items)} linked_tasks={len(task_links)}')
 
+          variant_cols = ('id','product_id','stock_position_id','external_id','gender','color','material','length','size_label','is_active','sort_order','category')
+          item_cols = ('id','order_id','product_id','variant_id','product_name_snapshot','gender_snapshot','color_snapshot','material_snapshot','length_snapshot','size_snapshot','audience_type','quantity','is_workshop','source_type','stock_writeoff_status')
+
           def make_db(extra_index_sql=None):
               db = sqlite3.connect(':memory:')
               db.execute('''CREATE TABLE catalog_variants (
                 id INTEGER PRIMARY KEY,
                 product_id INTEGER,
+                stock_position_id INTEGER,
+                external_id TEXT,
                 gender TEXT, color TEXT, material TEXT, length TEXT, size_label TEXT,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 sort_order INTEGER NOT NULL DEFAULT 0,
@@ -119,24 +125,21 @@ jobs:
                 source_type TEXT, stock_writeoff_status TEXT
               )''')
               db.executemany('''INSERT INTO catalog_variants
-                (id,product_id,gender,color,material,length,size_label,is_active,sort_order,category)
-                VALUES (?,?,?,?,?,?,?,?,?,?)''', [tuple(v.get(k) for k in ('id','product_id','gender','color','material','length','size_label','is_active','sort_order','category')) for v in variants])
+                (id,product_id,stock_position_id,external_id,gender,color,material,length,size_label,is_active,sort_order,category)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)''', [tuple(v.get(k) for k in variant_cols) for v in variants])
               db.executemany('''INSERT INTO order_items
                 (id,order_id,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,audience_type,quantity,is_workshop,source_type,stock_writeoff_status)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', [tuple(v.get(k) for k in ('id','order_id','product_id','variant_id','product_name_snapshot','gender_snapshot','color_snapshot','material_snapshot','length_snapshot','size_snapshot','audience_type','quantity','is_workshop','source_type','stock_writeoff_status')) for v in items])
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', [tuple(v.get(k) for k in item_cols) for v in items])
               for row in index_rows:
-                  sql = row.get('sql')
-                  if sql:
-                      db.execute(sql)
+                  if row.get('sql'):
+                      db.execute(row['sql'])
               if extra_index_sql:
                   db.execute(extra_index_sql)
               db.commit()
               return db
 
           projection = '''
-             oi.id,
-             oi.order_id,
-             oi.product_id,
+             oi.id, oi.order_id, oi.product_id,
              COALESCE(oi.variant_id, cv_fallback.id) AS resolved_variant_id,
              oi.product_name_snapshot,
              COALESCE(NULLIF(oi.gender_snapshot, ''), NULLIF(cv_direct.gender, ''), NULLIF(cv_fallback.gender, '')) AS resolved_gender,
@@ -167,15 +170,13 @@ jobs:
             )
           '''
 
-          linked_ids = []
-          seen = set()
+          item_ids = {int(i['id']) for i in items}
+          linked_ids, seen = [], set()
           for row in task_links:
               x = int(row['item_id'])
-              if x not in seen:
+              if x in item_ids and x not in seen:
                   seen.add(x); linked_ids.append(x)
-          linked_ids = [x for x in linked_ids if any(int(i['id']) == x for i in items)]
-          order_ids = []
-          seen_orders = set()
+          order_ids, seen_orders = [], set()
           for row in task_links:
               x = int(row['order_id'])
               if x not in seen_orders:
@@ -194,11 +195,7 @@ jobs:
               'MIXED_3': 'CREATE INDEX idx_r55_local_mixed3 ON catalog_variants(product_id, is_active DESC, sort_order ASC)',
               'MIXED_4': 'CREATE INDEX idx_r55_local_mixed4 ON catalog_variants(product_id, is_active DESC, sort_order ASC, id ASC)',
           }
-
           dbs = {name: make_db(sql) for name, sql in candidates.items()}
-
-          def canonical(rows):
-              return [tuple(r) for r in rows]
 
           def execute_counted(db, sql, params):
               steps = 0
@@ -211,23 +208,21 @@ jobs:
               rows = db.execute(sql, params).fetchall()
               elapsed_us = (time.perf_counter_ns() - t0) / 1000.0
               db.set_progress_handler(None, 0)
-              return rows, steps, elapsed_us
+              return [tuple(r) for r in rows], steps, elapsed_us
 
           def compare_case(label, builder, universe, sizes):
               for size in sizes:
-                  if size > len(universe):
+                  if size < 1 or size > len(universe):
                       continue
-                  params = universe[:size]
-                  sql, binds = builder(params)
+                  sql, binds = builder(universe[:size])
                   baseline_rows, baseline_steps, baseline_us = execute_counted(dbs['BASELINE'], sql, binds)
                   print(f'{label} SIZE={size} BASELINE rows={len(baseline_rows)} vm_steps={baseline_steps} elapsed_us={baseline_us:.1f}')
                   for name in ('MIXED_3','MIXED_4'):
                       rows, steps, elapsed_us = execute_counted(dbs[name], sql, binds)
-                      if canonical(rows) != canonical(baseline_rows):
+                      if rows != baseline_rows:
                           raise RuntimeError(f'{label} {name} changed resolver truth at size={size}')
                       ratio = steps / baseline_steps if baseline_steps else 1.0
                       print(f'{label} SIZE={size} {name} EQUIVALENT vm_steps={steps} step_ratio={ratio:.4f} elapsed_us={elapsed_us:.1f}')
-
               plan_params = universe[:min(30, len(universe))]
               if not plan_params:
                   return
