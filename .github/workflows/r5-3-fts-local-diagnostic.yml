@@ -1,0 +1,32 @@
+name: R5.3 FTS local diagnostic
+
+on:
+  push:
+    branches:
+      - safe/d1-read-budget-r5-3-fts-20260903
+    paths:
+      - scripts/.r5-3-fts-local-diagnostic-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Probe Wrangler local FTS5 JSON output
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .wrangler-r5-3-diagnostic
+          npx wrangler d1 execute orders_db_prod --local --persist-to .wrangler-r5-3-diagnostic --command "CREATE VIRTUAL TABLE tri USING fts5(a, tokenize='trigram case_sensitive 1'); INSERT INTO tri(a) VALUES ('ШАПАН');" --json > /tmp/setup.json
+          npx wrangler d1 execute orders_db_prod --local --persist-to .wrangler-r5-3-diagnostic --command "SELECT 'item_initial' AS probe, COUNT(*) AS count FROM tri WHERE tri MATCH '\"ШАП\"';" --json > /tmp/probe.json
+          echo 'PROBE_JSON_START'
+          cat /tmp/probe.json
+          echo 'PROBE_JSON_END'
