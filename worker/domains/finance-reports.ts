@@ -37,7 +37,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
          AND order_status <> 'deleted'`
     ).bind(startDate, endDate).first<any>(),
 
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT p.method AS method, COUNT(*) AS count, COALESCE(SUM(p.amount), 0) AS total
        FROM payments p
        JOIN orders o ON o.id = p.order_id
@@ -260,7 +260,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
 
 
   const [paymentByDayRows, paymentOperationRows, beforeOrderOutsidePeriodRows, managerOrderDayRows, managerPaymentDayRows, managerReturnDayRows, productDayRows, cityDayRows, cityCashDayRows, returnsDetailRows, closedDebtDetailRows, paymentEventRows] = await runD1Bounded([
-    () => db.prepare(
+    () => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(
       `SELECT p.payment_date AS date, p.method AS method, COALESCE(SUM(p.amount), 0) AS total
        FROM payments p
        JOIN orders o ON o.id = p.order_id
@@ -547,16 +547,27 @@ export async function listFinanceReports(db: D1Database, url: URL) {
     ).bind(startDate, endDate).all<any>(),
   ]);
 
+  const rawPaymentOperationRows = mapSqlRows(paymentOperationRows) as any[];
   const returns = mapSqlRows(returnsRows);
   const exchanges = mapSqlRows(exchangeRows);
   const closedDebts = mapSqlRows(closedDebtRows);
   const paymentMethodMap = new Map<string, { method: string; count: number; total: number }>();
-  for (const row of mapSqlRows(paymentMethods) as any[]) {
-    const method = canonicalPaymentMethodName(row.method);
-    const current = paymentMethodMap.get(method) || { method, count: 0, total: 0 };
-    current.count += Number(row.count || 0);
-    current.total += Number(row.total || 0);
-    paymentMethodMap.set(method, current);
+  if (financeWorkspaceOnly) {
+    for (const row of rawPaymentOperationRows) {
+      const method = canonicalPaymentMethodName(row.method);
+      const current = paymentMethodMap.get(method) || { method, count: 0, total: 0 };
+      current.count += 1;
+      current.total += Number(row.amount || 0);
+      paymentMethodMap.set(method, current);
+    }
+  } else {
+    for (const row of mapSqlRows(paymentMethods) as any[]) {
+      const method = canonicalPaymentMethodName(row.method);
+      const current = paymentMethodMap.get(method) || { method, count: 0, total: 0 };
+      current.count += Number(row.count || 0);
+      current.total += Number(row.total || 0);
+      paymentMethodMap.set(method, current);
+    }
   }
   const paymentRows = Array.from(paymentMethodMap.values()).sort((a, b) => b.total - a.total || a.method.localeCompare(b.method, 'ru'));
 
@@ -623,7 +634,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
     paymentEventsByFingerprint.set(fingerprint, current);
   }
 
-  const paymentOperations = mapSqlRows(paymentOperationRows).map((row: any) => {
+  const paymentOperations = rawPaymentOperationRows.map((row: any) => {
     const operationType = cleanText(row.operation_type) || 'order_payment';
     const operationLabel = operationType === 'debt_close'
       ? 'Закрытие долга'
@@ -858,7 +869,10 @@ export async function listFinanceReports(db: D1Database, url: URL) {
 
 
   const paymentMethodsByDayMap = new Map<string, { date: string; total: number; methods: Record<string, number> }>();
-  for (const row of mapSqlRows(paymentByDayRows) as any[]) {
+  const paymentMethodsByDaySource = financeWorkspaceOnly
+    ? rawPaymentOperationRows.map((row: any) => ({ date: row.payment_date, method: row.method, total: row.amount }))
+    : mapSqlRows(paymentByDayRows) as any[];
+  for (const row of paymentMethodsByDaySource) {
     const date = cleanText(row.date);
     const method = canonicalPaymentMethodName(row.method);
     const total = Number(row.total || 0);
@@ -1099,7 +1113,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       inventoryMovements: mapSqlRows(inventoryRows),
       repeatClients: mapSqlRows(repeatClientRows),
       activityByType: mapSqlRows(activityRows),
-      paymentMethodsByDay: Array.from(paymentMethodsByDayMap.values()),
+      paymentMethodsByDay: Array.from(paymentMethodsByDayMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
       managerDays: Array.from(managerDaysMap.values()),
       productDays: Array.from(productDaysMap.values()),
       cityDays: Array.from(cityDaysMap.values()),
