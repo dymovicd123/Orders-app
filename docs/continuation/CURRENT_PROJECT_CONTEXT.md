@@ -78,6 +78,90 @@ Branch2 was not changed by R5.6 and remained at:
 
 `adec6098777bebe4709615e1256cc5dd468b444d`
 
+## Exact read-only Production baseline after R5.6
+
+Run `33877951817` measured the current Production database directly through Wrangler using SELECT-only statements. The measurement branch differed from the exact R5.6 release only by the one-shot measurement workflow. No D1 mutation, migration, Worker deploy, or Branch2 change occurred.
+
+### Finance workspace — current month 2026-09-01..2026-09-04
+
+Exact rows_read by SQL path:
+
+- `finance_overview`: 32
+- `finance_payment_methods`: 110
+- `finance_day_rows`: 32
+- `finance_returns`: 2
+- `finance_exchanges`: 13
+- `finance_closed_debt`: 48
+- `finance_current_debt`: 12
+- `finance_current_debt_top`: 48
+- `finance_payment_by_day`: 118
+- `finance_payment_operations`: 316
+- `finance_early_payment_bridge`: 97
+- `finance_payment_events`: 73
+
+Total for these exact Finance `scope=finance` SQL paths: **901 rows_read**.
+
+Largest current-month contributors:
+
+1. payment operations: 316
+2. payment-by-day: 118
+3. payment-method summary: 110
+4. early-payment bridge: 97
+5. financial events: 73
+
+At current-month scale there is no urgent single catastrophic Finance scan left.
+
+### Finance workspace — 2026-08-01..2026-09-04 (35-day comparison window)
+
+Exact rows_read by SQL path:
+
+- `finance_overview`: 478
+- `finance_payment_methods`: 1595
+- `finance_day_rows`: 478
+- `finance_returns`: 42
+- `finance_exchanges`: 67
+- `finance_closed_debt`: 833
+- `finance_current_debt`: 12
+- `finance_current_debt_top`: 48
+- `finance_payment_by_day`: 1712
+- `finance_payment_operations`: 4686
+- `finance_early_payment_bridge`: 1456
+- `finance_payment_events`: 1114
+
+Total for these exact Finance `scope=finance` SQL paths: **12,521 rows_read**.
+
+Largest 35-day contributors:
+
+1. `finance_payment_operations`: **4,686**
+2. `finance_payment_by_day`: **1,712**
+3. `finance_payment_methods`: **1,595**
+4. `finance_early_payment_bridge`: **1,456**
+5. `finance_payment_events`: **1,114**
+6. `finance_closed_debt`: **833**
+
+This shows the remaining Finance read budget scales mainly with payment history / payment-operation traceability, not current debt anymore.
+
+### Orders Summary active fallback SQL shapes
+
+Exact current Production rows_read:
+
+- active `orders_stats` including Workshop aggregate: **5,212**
+- active `payment_stats`: **4,267**
+- active `return_stats`: **63**
+
+Combined fallback-stat total: **9,542 rows_read**.
+
+This is the strongest measured R5.7 candidate. The active Orders Summary fallback is materially heavier than the current-month Finance workspace and is still dominated by the all-active order/payment aggregates.
+
+Important runtime nuance: `listOrders` avoids these aggregate fallback queries when the first page is provably the complete filtered result (`offset=0` and returned rows < limit). The 9,542 measurement is therefore the exact cost of the fallback SQL shapes when pagination/truncation requires them, not a claim that every ordinary order-list request always pays this full amount.
+
+### R5.6 current verification during the same baseline
+
+- pending writeoff: **2 rows_read**
+- full Workshop grouped aggregate: **1,736 rows_read**
+
+These match the post-R5.6 state; no regression was observed.
+
 ## Safety state at R5.6 release
 
 Immediately before the successful Production D1 apply:
@@ -91,7 +175,7 @@ Immediately before the successful Production D1 apply:
 - Production target identity was verified before D1 commands;
 - the first one-shot D1 workflow attempt failed only in diagnostic `jq` formatting before any migration statement ran; the corrected second run performed and verified the mutation successfully.
 
-The temporary ops branch was reset back to the clean R5.6 release commit after the successful D1 run, so the one-shot mutation workflow is not left at the current branch tip.
+The temporary R5.6 ops branch was reset back to the clean R5.6 release commit after the successful D1 run, so the one-shot mutation workflow is not left at the current branch tip.
 
 ## Order / Warehouse reliability state inherited into current release
 
@@ -113,14 +197,25 @@ Current release already contains the prior safety work, including:
 
 ## Next point
 
-R5.6 itself is complete. Do not reopen it without new evidence.
+R5.6 is complete and should not be reopened without new evidence.
 
-Next read-budget work should start from fresh, read-only Production measurements. The next candidate label is R5.7, but only if a new forensic identifies a real high-read path with a measured optimization opportunity.
+The exact post-release baseline now exists. The strongest R5.7 investigation target is **Orders Summary fallback**, especially:
+
+- active `orders_stats` at 5,212 rows_read;
+- active `payment_stats` at 4,267 rows_read.
+
+Secondary R5.7 Finance targets, if needed after Orders Summary, are the wide-period payment-history paths:
+
+- payment operations 4,686;
+- payment-by-day 1,712;
+- payment-method summary 1,595;
+- early-payment bridge 1,456;
+- financial events 1,114.
 
 Preferred next action:
 
-1. run a read-only Production baseline for remaining Finance and Orders Summary SQL paths;
-2. record exact `rows_read` by query and period;
-3. identify the largest remaining contributors;
-4. change nothing until an index/query rewrite is demonstrated against the measured Production shape;
-5. preserve business truth and all current release invariants.
+1. investigate query plans and cardinality for the two Orders Summary fallback aggregates;
+2. prove any candidate index/query rewrite against a read-only Production snapshot or exact Production EXPLAIN/measurement;
+3. preserve `completeOrderResult` semantics and all summary values exactly;
+4. change nothing until a measurable reduction is demonstrated;
+5. only then prepare R5.7 as a narrow release.
