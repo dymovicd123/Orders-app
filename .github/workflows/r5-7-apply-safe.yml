@@ -21,12 +21,11 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
-      - name: Apply measured source patch
+      - name: Apply measured source transform
         run: |
           set -euo pipefail
           git merge-base --is-ancestor fd0f509912a2939c8e9f0b84a7093b82a1d47c60 HEAD
-          git apply --check scripts/r5-7-orders-summary.patch
-          git apply scripts/r5-7-orders-summary.patch
+          python scripts/r5-7-apply-safe.py
       - name: Focused validation
         run: |
           set -euo pipefail
@@ -38,6 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           rm scripts/r5-7-orders-summary.patch
+          rm scripts/r5-7-apply-safe.py
           rm .github/workflows/r5-7-apply-safe.yml
           git config user.name dymovicd123
           git config user.email dymovicd@gmail.com
