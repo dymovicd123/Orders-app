@@ -1,0 +1,45 @@
+name: D1 live profile 2026-09-04
+
+on:
+  push:
+    branches: [safe/d1-live-profile-20260904]
+    paths:
+      - scripts/.d1-live-profile-20260904-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify Production D1 target
+        run: npx wrangler d1 info orders_db_prod
+      - name: D1 insights 1h
+        shell: bash
+        run: |
+          set -o pipefail
+          echo '=== INSIGHTS_1H ==='
+          npx wrangler d1 insights orders_db_prod --sort-type=sum --sort-by=reads --sort-direction=DESC --limit=100 --timePeriod=1h --json
+      - name: D1 insights 6h
+        shell: bash
+        run: |
+          set -o pipefail
+          echo '=== INSIGHTS_6H ==='
+          npx wrangler d1 insights orders_db_prod --sort-type=sum --sort-by=reads --sort-direction=DESC --limit=100 --timePeriod=6h --json
+      - name: D1 insights 24h
+        shell: bash
+        run: |
+          set -o pipefail
+          echo '=== INSIGHTS_24H ==='
+          npx wrangler d1 insights orders_db_prod --sort-type=sum --sort-by=reads --sort-direction=DESC --limit=100 --timePeriod=24h --json
