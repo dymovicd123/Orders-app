@@ -870,7 +870,25 @@ export async function listFinanceReports(db: D1Database, url: URL) {
 
   const paymentMethodsByDayMap = new Map<string, { date: string; total: number; methods: Record<string, number> }>();
   const paymentMethodsByDaySource = financeWorkspaceOnly
-    ? rawPaymentOperationRows.map((row: any) => ({ date: row.payment_date, method: row.method, total: row.amount }))
+    ? Array.from(rawPaymentOperationRows.reduce((groups: Map<string, any>, row: any) => {
+        const date = cleanText(row.payment_date);
+        const rawMethod = row.method == null ? null : String(row.method);
+        const key = JSON.stringify([date, rawMethod]);
+        const current = groups.get(key) || { date, method: rawMethod, total: 0 };
+        current.total += Number(row.amount || 0);
+        groups.set(key, current);
+        return groups;
+      }, new Map<string, any>()).values()).sort((a: any, b: any) => {
+        const dateOrder = String(a.date).localeCompare(String(b.date));
+        if (dateOrder) return dateOrder;
+        const totalOrder = Number(b.total || 0) - Number(a.total || 0);
+        if (totalOrder) return totalOrder;
+        if (a.method == null && b.method != null) return -1;
+        if (a.method != null && b.method == null) return 1;
+        const left = String(a.method ?? '');
+        const right = String(b.method ?? '');
+        return left < right ? -1 : left > right ? 1 : 0;
+      })
     : mapSqlRows(paymentByDayRows) as any[];
   for (const row of paymentMethodsByDaySource) {
     const date = cleanText(row.date);
