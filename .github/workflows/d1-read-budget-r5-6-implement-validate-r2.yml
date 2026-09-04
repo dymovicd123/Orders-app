@@ -1,0 +1,119 @@
+name: D1 read budget R5.6 implement validate R2
+
+on:
+  push:
+    branches: [safe/d1-read-budget-r5-6-finance-summary-20260904]
+    paths:
+      - scripts/.d1-read-budget-r5-6-implement-r2-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  implement-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/d1-read-budget-r5-6-finance-summary-20260904
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply measured R5.6 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          def one(path, old, new):
+              p=Path(path); s=p.read_text()
+              if s.count(old) != 1: raise RuntimeError(f'{path}: exact patch anchor count={s.count(old)}')
+              p.write_text(s.replace(old,new))
+
+          one('worker/domains/references.ts',
+              "AND COALESCE(oi.stock_writeoff_status, '') IN ('writeoff_disabled', 'pending_manual_writeoff')",
+              "AND oi.stock_writeoff_status IN ('writeoff_disabled', 'pending_manual_writeoff')")
+          one('worker/domains/orders-read.ts',
+              'WHERE COALESCE(is_workshop, 0) = 1\n        GROUP BY order_id',
+              'WHERE is_workshop = 1\n        GROUP BY order_id')
+
+          Path('migrations/0066_v72_d1_read_budget_r5_finance_summary_indexes.sql').write_text("""-- R5.6 — measured Finance / Orders Summary D1 read-budget indexes.
+-- Additive only: no business-row mutation and no truth-model change.
+CREATE INDEX IF NOT EXISTS idx_payments_payment_date_order_amount
+  ON payments(payment_date, order_id, amount);
+CREATE INDEX IF NOT EXISTS idx_orders_current_debt_partial
+  ON orders(debt_amount)
+  WHERE debt_amount > 0 AND order_status <> 'deleted';
+CREATE INDEX IF NOT EXISTS idx_order_items_pending_writeoff_status_order
+  ON order_items(stock_writeoff_status, order_id)
+  WHERE is_workshop = 0 AND quantity > 0;
+CREATE INDEX IF NOT EXISTS idx_order_items_workshop_order_quantity
+  ON order_items(order_id, quantity)
+  WHERE is_workshop = 1;
+PRAGMA optimize;
+""")
+
+          Path('scripts/test-d1-read-budget-r5-6.mjs').write_text(r"""import fs from 'node:fs'
+const migration = fs.readFileSync('migrations/0066_v72_d1_read_budget_r5_finance_summary_indexes.sql', 'utf8')
+const references = fs.readFileSync('worker/domains/references.ts', 'utf8')
+const ordersRead = fs.readFileSync('worker/domains/orders-read.ts', 'utf8')
+const check = (ok, message) => { if (!ok) throw new Error(message) }
+try {
+  check(!/\b(?:INSERT|UPDATE|DELETE|REPLACE|DROP|ALTER)\b/i.test(migration), 'R5.6 migration must be additive only')
+  for (const marker of ['idx_payments_payment_date_order_amount','idx_orders_current_debt_partial','idx_order_items_pending_writeoff_status_order','idx_order_items_workshop_order_quantity']) check(migration.includes(marker), `Missing ${marker}`)
+  check(migration.includes('ON payments(payment_date, order_id, amount)'), 'Payment covering index shape changed')
+  check(migration.includes("WHERE debt_amount > 0 AND order_status <> 'deleted'"), 'Debt partial predicate changed')
+  check(migration.includes('WHERE is_workshop = 0 AND quantity > 0'), 'Writeoff partial scope changed')
+  check(migration.includes('WHERE is_workshop = 1;'), 'Workshop partial scope changed')
+  check(references.includes("AND oi.stock_writeoff_status IN ('writeoff_disabled', 'pending_manual_writeoff')"), 'Writeoff predicate not indexable')
+  check(!references.includes("COALESCE(oi.stock_writeoff_status, '') IN ('writeoff_disabled', 'pending_manual_writeoff')"), 'Old writeoff COALESCE predicate returned')
+  check(ordersRead.includes('WHERE is_workshop = 1'), 'Workshop summary predicate not indexable')
+  check(!ordersRead.includes('WHERE COALESCE(is_workshop, 0) = 1'), 'Old workshop COALESCE predicate returned')
+  console.log('D1 READ BUDGET R5.6 TESTS PASSED')
+} catch (e) { console.error(`D1 READ BUDGET R5.6 TESTS FAILED: ${e?.message || e}`); process.exit(1) }
+""")
+
+          p=Path('package.json'); pkg=json.loads(p.read_text())
+          old='node scripts/test-d1-read-budget-r5-5.mjs && node scripts/test-manager-routine-access-r1.mjs'
+          new='node scripts/test-d1-read-budget-r5-5.mjs && node scripts/test-d1-read-budget-r5-6.mjs && node scripts/test-manager-routine-access-r1.mjs'
+          if pkg['scripts']['release:check'].count(old)!=1: raise RuntimeError('release:check anchor changed')
+          pkg['scripts']['release:check']=pkg['scripts']['release:check'].replace(old,new)
+          p.write_text(json.dumps(pkg,ensure_ascii=False,indent=2)+'\n')
+
+          p=Path('scripts/test-step1906c-dead-code-cleanup.mjs'); s=p.read_text()
+          old="'0065_v72_d1_read_budget_r5_workshop_variant_order_index.sql']"
+          new="'0065_v72_d1_read_budget_r5_workshop_variant_order_index.sql', '0066_v72_d1_read_budget_r5_finance_summary_indexes.sql']"
+          if s.count(old)!=1: raise RuntimeError('migration allow-list anchor changed')
+          p.write_text(s.replace(old,new))
+          PY
+          git diff --check
+          git status --short
+      - name: Install
+        run: npm ci --prefer-offline --no-audit
+      - name: R5.6 regression
+        run: node scripts/test-d1-read-budget-r5-6.mjs
+      - name: DB safety
+        run: npm run verify:db-safety
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Full release gate
+        run: npm run release:check
+      - name: Build
+        run: npm run build
+      - name: Worker dry-run
+        run: npx wrangler deploy --dry-run
+      - name: Commit only after all validation passes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add worker/domains/references.ts worker/domains/orders-read.ts migrations/0066_v72_d1_read_budget_r5_finance_summary_indexes.sql scripts/test-d1-read-budget-r5-6.mjs scripts/test-step1906c-dead-code-cleanup.mjs package.json
+          git diff --cached --check
+          git commit -m 'R5.6: reduce finance and orders summary D1 reads'
+          git push origin HEAD:safe/d1-read-budget-r5-6-finance-summary-20260904
