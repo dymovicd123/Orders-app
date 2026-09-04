@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "revision": "d1-read-budget-r5-8",
+  "changes": {
+    "listFinanceReports": {
+      "before": "65b778f6f3e0c482b974f98671afcef0a65151745b5273abe4332d735006c976",
+      "after": "8930c9659c15a61e333394404fa6db196bbe1e5cb427af4bede2c21034e7e9ab"
+    }
+  }
+}
