@@ -1,0 +1,64 @@
+name: D1 read budget R5.6 workshop safe benchmark
+
+on:
+  push:
+    branches: [safe/d1-read-budget-r5-6-finance-summary-20260904]
+    paths:
+      - scripts/.d1-read-budget-r5-6-workshop-safe-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PROD_DB_UUID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      PROD_DB_NAME: orders_db_prod
+    steps:
+      - name: Read-only Production snapshot; local truth-preserving benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime as dt, json, os, sqlite3, urllib.request
+          account=os.environ['CLOUDFLARE_ACCOUNT_ID']; token=os.environ['CLOUDFLARE_API_TOKEN']; uuid=os.environ['PROD_DB_UUID']
+          base=f'https://api.cloudflare.com/client/v4/accounts/{account}/d1/database/{uuid}'
+          headers={'Authorization':f'Bearer {token}','Content-Type':'application/json'}
+          def api(url, body=None):
+              req=urllib.request.Request(url,data=None if body is None else json.dumps(body).encode(),headers=headers,method='GET' if body is None else 'POST')
+              with urllib.request.urlopen(req,timeout=30) as r: return json.load(r)
+          ident=api(base).get('result') or {}
+          if ident.get('name')!=os.environ['PROD_DB_NAME'] or str(ident.get('uuid') or ident.get('id'))!=uuid: raise RuntimeError('Production identity mismatch')
+          def q(sql):
+              n=' '.join(sql.lower().split())
+              if not n.startswith('select ') or any(x in n for x in ('insert ','update ','delete ','create ','drop ','alter ','pragma ')): raise RuntimeError('read-only guard')
+              r=(api(base+'/query',{'sql':sql,'params':[]}).get('result') or [{}])[0]; m=r.get('meta') or {}
+              if int(m.get('rows_written',0) or 0): raise RuntimeError('unexpected Production write')
+              return r.get('results') or []
+          orders=q("SELECT id, order_date, order_status, manager_id, total_amount, debt_amount FROM orders")
+          items=q("SELECT id, order_id, is_workshop, quantity FROM order_items")
+          now=dt.datetime.now(dt.timezone.utc).date(); start=now.replace(day=1).isoformat(); end=now.isoformat()
+          def db(index=False):
+              d=sqlite3.connect(':memory:'); d.executescript('CREATE TABLE orders(id INTEGER PRIMARY KEY,order_date TEXT,order_status TEXT,manager_id INTEGER,total_amount INTEGER,debt_amount INTEGER); CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,is_workshop INTEGER,quantity INTEGER); CREATE INDEX idx_orders_order_date ON orders(order_date); CREATE INDEX idx_order_items_order_id ON order_items(order_id);')
+              d.executemany('INSERT INTO orders VALUES(?,?,?,?,?,?)',[(r['id'],r['order_date'],r['order_status'],r['manager_id'],r['total_amount'],r['debt_amount']) for r in orders]); d.executemany('INSERT INTO order_items VALUES(?,?,?,?)',[(r['id'],r['order_id'],r['is_workshop'],r['quantity']) for r in items])
+              if index: d.execute('CREATE INDEX idx_r56_workshop_order_qty_safe ON order_items(order_id, quantity) WHERE is_workshop = 1')
+              return d
+          b=db(False); c=db(True)
+          old='''SELECT COUNT(o.id),COALESCE(SUM(o.total_amount),0),COALESCE(SUM(o.debt_amount),0),COALESCE(SUM(COALESCE(w.workshop_units,0)),0) FROM orders o LEFT JOIN (SELECT order_id,COALESCE(SUM(quantity),0) workshop_units FROM order_items WHERE COALESCE(is_workshop,0)=1 GROUP BY order_id) w ON w.order_id=o.id WHERE o.order_status NOT IN ('deleted','archived') AND o.order_date BETWEEN ? AND ?'''
+          new='''SELECT COUNT(o.id),COALESCE(SUM(o.total_amount),0),COALESCE(SUM(o.debt_amount),0),COALESCE(SUM(COALESCE(w.workshop_units,0)),0) FROM orders o LEFT JOIN (SELECT order_id,COALESCE(SUM(quantity),0) workshop_units FROM order_items WHERE is_workshop=1 GROUP BY order_id) w ON w.order_id=o.id WHERE o.order_status NOT IN ('deleted','archived') AND o.order_date BETWEEN ? AND ?'''
+          if b.execute(old,(start,end)).fetchall()!=b.execute(new,(start,end)).fetchall(): raise RuntimeError('rewrite changed truth')
+          def steps(d,sql,p):
+              n=0
+              def cb():
+                  nonlocal n; n+=1; return 0
+              d.set_progress_handler(cb,1); rows=d.execute(sql,p).fetchall(); d.set_progress_handler(None,0); return rows,n
+          rb,sb=steps(b,new,(start,end)); rc,sc=steps(c,new,(start,end))
+          if rb!=rc: raise RuntimeError('index changed truth')
+          print(f'SAFE_WORKSHOP_REWRITE_EQUIVALENT baseline_steps={sb} indexed_steps={sc} saved_pct={(1-sc/sb)*100:.1f}')
+          for r in c.execute('EXPLAIN QUERY PLAN '+new,(start,end)): print('PLAN',r[3])
+          print('R5_6_WORKSHOP_SAFE_COMPLETE production_writes=0 branch2_touched=false')
+          PY
