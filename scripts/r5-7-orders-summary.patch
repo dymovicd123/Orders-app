@@ -1,0 +1,134 @@
+diff --git a/worker/domains/orders-read.ts b/worker/domains/orders-read.ts
+--- a/worker/domains/orders-read.ts
++++ b/worker/domains/orders-read.ts
+@@ -282,6 +282,10 @@ export async function listOrders(db: D1Database, url: URL) {
+   const archiveMode = status === 'archived' ? 'archived' : normalizeArchiveMode(url.searchParams.get('archiveMode'));
+   const dateFrom = cleanText(url.searchParams.get('dateFrom'));
+   const dateTo = cleanText(url.searchParams.get('dateTo'));
++  // R5.7: paymentCount is not rendered by the Orders UI. Legacy callers still get it by default.
++  // The UI may explicitly opt out so an active/no-date summary can reuse the canonical per-order
++  // received_amount instead of scanning every payment again.
++  const includePaymentCount = cleanText(url.searchParams.get('includePaymentCount')) !== '0';
+   let aggregateNeedsManagerJoin = false;
+   let aggregateNeedsCustomerJoin = false;
+ 
+@@ -499,20 +503,23 @@ export async function listOrders(db: D1Database, url: URL) {
+     orderStats = { order_count: orders.length, total_amount: totalAmount, debt_amount: debtAmount, workshop_units: workshopUnits };
+   } else {
++    // R5.7 Production forensic: the old materialized Workshop aggregate cost 5,212 rows_read.
++    // The correlated lookup below uses idx_order_items_workshop_order_quantity and returned the
++    // exact same totals at 3,739 rows_read. received_amount is folded into this same orders scan.
+     orderStats = await db.prepare(`
+       SELECT
+         COUNT(o.id) AS order_count,
+         COALESCE(SUM(o.total_amount), 0) AS total_amount,
++        COALESCE(SUM(o.received_amount), 0) AS payment_amount,
+         COALESCE(SUM(o.debt_amount), 0) AS debt_amount,
+-        COALESCE(SUM(COALESCE(workshop_items.workshop_units, 0)), 0) AS workshop_units
++        COALESCE(SUM((
++          SELECT COALESCE(SUM(oi.quantity), 0)
++          FROM order_items oi
++          WHERE oi.order_id = o.id AND oi.is_workshop = 1
++        )), 0) AS workshop_units
+       ${aggregateJoins}
+-      LEFT JOIN (
+-        SELECT order_id, COALESCE(SUM(quantity), 0) AS workshop_units
+-        FROM order_items
+-        WHERE is_workshop = 1
+-        GROUP BY order_id
+-      ) workshop_items ON workshop_items.order_id = o.id
+       ${orderWhereParts.length ? `WHERE ${orderWhereParts.join(' AND ')}` : ''}`
+     ).bind(...orderBindings).first<Record<string, unknown>>();
+   }
+@@ -545,25 +552,45 @@ export async function listOrders(db: D1Database, url: URL) {
+     paymentStats = { payment_count: paymentCount, payment_amount: paymentAmount };
+     returnStats = { return_count: returnCount, return_amount: returnAmount };
+   } else {
+-    [paymentStats, returnStats] = await Promise.all([
+-      db.prepare(`
+-        SELECT COUNT(p.id) AS payment_count, COALESCE(SUM(p.amount), 0) AS payment_amount
+-        FROM payments p
+-        JOIN orders o ON o.id = p.order_id
+-        ${aggregateNeedsManagerJoin ? 'LEFT JOIN managers m ON m.id = o.manager_id' : ''}
+-        ${aggregateNeedsCustomerJoin ? 'LEFT JOIN customers c ON c.id = o.customer_id' : ''}
+-        ${paymentWhereParts.length ? `WHERE ${paymentWhereParts.join(' AND ')}` : ''}`
+-      ).bind(...paymentBindings).first<Record<string, unknown>>(),
+-      db.prepare(`
+-        SELECT COUNT(r.id) AS return_count, COALESCE(SUM(r.amount), 0) AS return_amount
+-        FROM returns r
+-        JOIN orders o ON o.id = r.order_id
+-        ${aggregateNeedsManagerJoin ? 'LEFT JOIN managers m ON m.id = o.manager_id' : ''}
+-        ${aggregateNeedsCustomerJoin ? 'LEFT JOIN customers c ON c.id = o.customer_id' : ''}
+-        ${returnWhereParts.length ? `WHERE ${returnWhereParts.join(' AND ')}` : ''}`
+-      ).bind(...returnBindings).first<Record<string, unknown>>(),
+-    ]);
++    const returnStatsPromise = db.prepare(`
++      SELECT COUNT(r.id) AS return_count, COALESCE(SUM(r.amount), 0) AS return_amount
++      FROM returns r
++      JOIN orders o ON o.id = r.order_id
++      ${aggregateNeedsManagerJoin ? 'LEFT JOIN managers m ON m.id = o.manager_id' : ''}
++      ${aggregateNeedsCustomerJoin ? 'LEFT JOIN customers c ON c.id = o.customer_id' : ''}
++      ${returnWhereParts.length ? `WHERE ${returnWhereParts.join(' AND ')}` : ''}`
++    ).bind(...returnBindings).first<Record<string, unknown>>();
++
++    // Before R5.7, Production verified zero received_amount/payment-sum mismatches across all
++    // 1,295 active orders. Therefore any subset of those active orders has the same payment total.
++    // Payment-date windows and non-active/archive modes keep the legacy exact payments query.
++    const canUseOrderReceivedPaymentAmount = !includePaymentCount
++      && archiveMode === 'active'
++      && (status === 'all' || status === 'active')
++      && !dateFrom
++      && !dateTo;
++
++    if (canUseOrderReceivedPaymentAmount) {
++      paymentStats = { payment_count: null, payment_amount: toInt(orderStats?.payment_amount, 0) };
++      returnStats = await returnStatsPromise;
++    } else {
++      [paymentStats, returnStats] = await Promise.all([
++        db.prepare(`
++          SELECT COUNT(p.id) AS payment_count, COALESCE(SUM(p.amount), 0) AS payment_amount
++          FROM payments p
++          JOIN orders o ON o.id = p.order_id
++          ${aggregateNeedsManagerJoin ? 'LEFT JOIN managers m ON m.id = o.manager_id' : ''}
++          ${aggregateNeedsCustomerJoin ? 'LEFT JOIN customers c ON c.id = o.customer_id' : ''}
++          ${paymentWhereParts.length ? `WHERE ${paymentWhereParts.join(' AND ')}` : ''}`
++        ).bind(...paymentBindings).first<Record<string, unknown>>(),
++        returnStatsPromise,
++      ]);
++    }
+   }
+ 
+   const totalCount = toInt(orderStats?.order_count, 0);
+@@ -579,7 +606,7 @@ export async function listOrders(db: D1Database, url: URL) {
+     periodStats: {
+       orderCount: toInt(orderStats?.order_count, 0),
+       totalAmount: toInt(orderStats?.total_amount, 0),
+-      paymentCount: toInt(paymentStats?.payment_count, 0),
++      paymentCount: paymentStats?.payment_count == null ? null : toInt(paymentStats.payment_count, 0),
+       paymentAmount: toInt(paymentStats?.payment_amount, 0),
+       debtAmount: toInt(orderStats?.debt_amount, 0),
+       returnCount: toInt(returnStats?.return_count, 0),
+diff --git a/src/App.tsx b/src/App.tsx
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -3613,6 +3613,9 @@ async function loadDashboard(forceReferences = false, overrideFilters: typeof fi
+         managerId: String(activeFilters.managerId || 0),
+         dateFrom: activeFilters.dateFrom,
+         dateTo: activeFilters.dateTo,
++        // R5.7: paymentCount is not rendered by the Orders UI. Opt out only where the Worker has
++        // a proven received_amount/payment-sum equivalence and no payment-date window.
++        includePaymentCount: activeFilters.archiveMode === 'active' && !activeFilters.dateFrom && !activeFilters.dateTo ? '0' : '1',
+       })
+ 
+       const ordersResponse = await apiFetch(`/api/orders?${params.toString()}`)
+diff --git a/src/app/types.ts b/src/app/types.ts
+--- a/src/app/types.ts
++++ b/src/app/types.ts
+@@ -785,7 +785,7 @@ export type OrderPeriodStats = {
+   orderCount: number
+   totalAmount: number
+-  paymentCount: number
++  paymentCount: number | null
+   paymentAmount: number
+   debtAmount: number
+   returnCount: number
