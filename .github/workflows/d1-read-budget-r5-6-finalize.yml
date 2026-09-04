@@ -1,0 +1,82 @@
+name: D1 read budget R5.6 finalize
+
+on:
+  push:
+    branches:
+      - safe/d1-read-budget-r5-6-release-20260904
+    paths:
+      - scripts/.r5-6-finalize-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/d1-read-budget-r5-6-release-20260904
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply exact truth-preserving runtime predicates and migration allow-list
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_exact(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f'{path}: expected one exact patch anchor, found {count}')
+              p.write_text(text.replace(old, new))
+
+          replace_exact(
+              'worker/domains/references.ts',
+              "AND COALESCE(oi.stock_writeoff_status, '') IN ('writeoff_disabled', 'pending_manual_writeoff')",
+              "AND oi.stock_writeoff_status IN ('writeoff_disabled', 'pending_manual_writeoff')",
+          )
+          replace_exact(
+              'worker/domains/orders-read.ts',
+              'WHERE COALESCE(is_workshop, 0) = 1\n        GROUP BY order_id',
+              'WHERE is_workshop = 1\n        GROUP BY order_id',
+          )
+          replace_exact(
+              'scripts/test-step1906c-dead-code-cleanup.mjs',
+              "'0065_v72_d1_read_budget_r5_workshop_variant_order_index.sql']",
+              "'0065_v72_d1_read_budget_r5_workshop_variant_order_index.sql', '0066_v72_d1_read_budget_r5_finance_summary_indexes.sql']",
+          )
+          PY
+          git diff --check
+          git status --short
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit
+      - name: Focused R5.6 regression
+        run: node scripts/test-d1-read-budget-r5-6.mjs
+      - name: Database safety
+        run: npm run verify:db-safety
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Full release gate
+        run: npm run release:check
+      - name: Production build
+        run: npm run build
+      - name: Worker dry-run
+        run: npx wrangler deploy --dry-run
+      - name: Commit validated runtime changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add worker/domains/references.ts worker/domains/orders-read.ts scripts/test-step1906c-dead-code-cleanup.mjs
+          git diff --cached --check
+          git commit -m 'R5.6: reduce finance and orders summary D1 reads'
+          git push origin HEAD:safe/d1-read-budget-r5-6-release-20260904
