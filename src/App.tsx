@@ -3596,12 +3596,7 @@ function App() {
     }
   }
 
-  async function loadDashboard(
-    forceReferences = false,
-    overrideFilters: typeof filters = filters,
-    overrideOffset = orderPageOffset,
-    pageReadOptions: { afterOrderDate?: string; afterOrderId?: number; reusePeriodStats?: boolean } | null = null,
-  ) {
+  async function loadDashboard(forceReferences = false, overrideFilters: typeof filters = filters, overrideOffset = orderPageOffset, pageReadOptions: { afterOrderDate?: string; afterOrderId?: number; reusePeriodStats?: boolean } | null = null) {
     setBusy(true)
     setError(null)
     setMessage(null)
@@ -3735,11 +3730,7 @@ function App() {
       : Math.max(0, orderPageInfo.offset - step)
     if (nextOffset === orderPageInfo.offset) return
     const lastOrder = direction === 'next' && orders.length ? orders[orders.length - 1] : null
-    await loadDashboard(false, filters, nextOffset, {
-      afterOrderDate: lastOrder?.order_date || '',
-      afterOrderId: Number(lastOrder?.id || 0),
-      reusePeriodStats: true,
-    })
+    await loadDashboard(false, filters, nextOffset, { afterOrderDate: lastOrder?.order_date || '', afterOrderId: Number(lastOrder?.id || 0), reusePeriodStats: true })
     window.setTimeout(() => document.getElementById('orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
   }
 
