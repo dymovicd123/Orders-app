@@ -1,0 +1,247 @@
+name: D1 read budget R5.6 benchmark
+
+on:
+  push:
+    branches: [safe/d1-read-budget-r5-6-finance-summary-20260904]
+    paths:
+      - scripts/.d1-read-budget-r5-6-benchmark-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PROD_DB_UUID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      PROD_DB_NAME: orders_db_prod
+    steps:
+      - uses: actions/checkout@v4
+      - name: Snapshot Production read-only and benchmark R5.6 candidates locally
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime as dt
+          import json, os, sqlite3, time, urllib.request
+
+          account = os.environ['CLOUDFLARE_ACCOUNT_ID']
+          token = os.environ['CLOUDFLARE_API_TOKEN']
+          uuid = os.environ['PROD_DB_UUID']
+          expected_name = os.environ['PROD_DB_NAME']
+          base = f'https://api.cloudflare.com/client/v4/accounts/{account}/d1/database/{uuid}'
+          headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+
+          def api(url, body=None):
+              data = None if body is None else json.dumps(body).encode()
+              req = urllib.request.Request(url, data=data, headers=headers, method='GET' if body is None else 'POST')
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  return json.load(r)
+
+          identity = api(base)
+          result = identity.get('result') or {}
+          actual_name = str(result.get('name') or '')
+          actual_uuid = str(result.get('uuid') or result.get('id') or uuid)
+          if actual_name != expected_name or actual_uuid != uuid:
+              raise RuntimeError(f'Production identity mismatch: {actual_name}/{actual_uuid}')
+          print(f'PRODUCTION_IDENTITY_OK name={actual_name} uuid={actual_uuid}')
+
+          forbidden = ('insert ', 'update ', 'delete ', 'replace ', 'create ', 'drop ', 'alter ', 'vacuum', 'reindex', 'analyze', 'pragma ')
+          def prod_query(sql):
+              normalized = ' '.join(sql.strip().lower().split())
+              if not (normalized.startswith('select ') or normalized.startswith('with ')):
+                  raise RuntimeError('Production snapshot guard only permits SELECT/WITH')
+              if any(word in normalized for word in forbidden):
+                  raise RuntimeError(f'Mutation-capable SQL rejected by Production snapshot guard: {normalized[:100]}')
+              payload = api(base + '/query', {'sql': sql, 'params': []})
+              if not payload.get('success'):
+                  raise RuntimeError(payload.get('errors'))
+              r = (payload.get('result') or [{}])[0]
+              meta = r.get('meta') or {}
+              written = int(meta.get('rows_written', meta.get('rowsWritten', 0)) or 0)
+              if written != 0:
+                  raise RuntimeError(f'Production snapshot unexpectedly wrote {written} rows')
+              print(f'PROD_READ rows={len(r.get("results") or [])} rows_read={meta.get("rows_read", meta.get("rowsRead", 0))}')
+              return r.get('results') or []
+
+          table_names = ('orders','payments','returns','order_items')
+          names_sql = ','.join("'%s'" % x for x in table_names)
+          table_ddls = prod_query(f"SELECT name, sql FROM sqlite_master WHERE type='table' AND name IN ({names_sql}) ORDER BY name")
+          index_ddls = prod_query(f"SELECT name, tbl_name, sql FROM sqlite_master WHERE type='index' AND tbl_name IN ({names_sql}) AND sql IS NOT NULL ORDER BY tbl_name, name")
+
+          orders = prod_query('''SELECT id, external_id, order_date, manager_id, customer_id, source_type,
+                                        order_status, shipping_status, total_amount, received_amount, debt_amount,
+                                        return_amount, comment, manager_snapshot_name
+                                 FROM orders''')
+          payments = prod_query('''SELECT id, order_id, payment_date, method, amount, payment_kind, comment, created_at
+                                   FROM payments''')
+          returns = prod_query('''SELECT id, order_id, manager_id, return_date, amount, status, comment, created_at
+                                  FROM returns''')
+          items = prod_query('''SELECT id, order_id, product_id, variant_id, quantity, is_workshop,
+                                       stock_writeoff_status, product_name_snapshot
+                                FROM order_items''')
+          print(f'SNAPSHOT orders={len(orders)} payments={len(payments)} returns={len(returns)} order_items={len(items)} indexes={len(index_ddls)}')
+
+          def insert_dicts(db, table, rows):
+              if not rows: return
+              cols = list(rows[0].keys())
+              sql = f"INSERT INTO {table} ({','.join(cols)}) VALUES ({','.join('?' for _ in cols)})"
+              db.executemany(sql, [tuple(r.get(c) for c in cols) for r in rows])
+
+          candidate_sql = {
+              'PAYMENT_DATE_2': ['CREATE INDEX idx_r56_payment_date_order ON payments(payment_date, order_id)'],
+              'PAYMENT_DATE_3': ['CREATE INDEX idx_r56_payment_date_order_amount ON payments(payment_date, order_id, amount)'],
+              'RETURNS_DATE_4': ['CREATE INDEX idx_r56_returns_date_order_status_amount ON returns(return_date, order_id, status, amount)'],
+              'ORDER_PERIOD_3': ['CREATE INDEX idx_r56_orders_date_status_total ON orders(order_date, order_status, total_amount)'],
+              'ORDER_PERIOD_5': ['CREATE INDEX idx_r56_orders_date_status_manager_total_debt ON orders(order_date, order_status, manager_id, total_amount, debt_amount)'],
+              'MANAGER_PERIOD_5': ['CREATE INDEX idx_r56_orders_manager_date_status_total_debt ON orders(manager_id, order_date, order_status, total_amount, debt_amount)'],
+              'CURRENT_DEBT_PARTIAL': ["CREATE INDEX idx_r56_orders_current_debt ON orders(debt_amount) WHERE debt_amount > 0 AND order_status <> 'deleted'"],
+              'WORKSHOP_PARTIAL': ['CREATE INDEX idx_r56_workshop_order_qty ON order_items(order_id, quantity) WHERE is_workshop = 1 AND quantity > 0'],
+              'WRITEOFF_PARTIAL': ["CREATE INDEX idx_r56_pending_writeoff ON order_items(stock_writeoff_status, order_id) WHERE is_workshop = 0 AND quantity > 0"],
+          }
+          candidate_sql['BUNDLE_LEAN'] = [
+              'CREATE INDEX idx_r56_payment_date_order_amount ON payments(payment_date, order_id, amount)',
+              'CREATE INDEX idx_r56_returns_date_order_status_amount ON returns(return_date, order_id, status, amount)',
+              "CREATE INDEX idx_r56_orders_current_debt ON orders(debt_amount) WHERE debt_amount > 0 AND order_status <> 'deleted'",
+              'CREATE INDEX idx_r56_orders_manager_date_status_total_debt ON orders(manager_id, order_date, order_status, total_amount, debt_amount)',
+              'CREATE INDEX idx_r56_workshop_order_qty ON order_items(order_id, quantity) WHERE is_workshop = 1 AND quantity > 0',
+              "CREATE INDEX idx_r56_pending_writeoff ON order_items(stock_writeoff_status, order_id) WHERE is_workshop = 0 AND quantity > 0",
+          ]
+
+          def make_db(extra=None):
+              db = sqlite3.connect(':memory:')
+              for row in table_ddls:
+                  if row.get('sql'): db.execute(row['sql'])
+              insert_dicts(db, 'orders', orders)
+              insert_dicts(db, 'payments', payments)
+              insert_dicts(db, 'returns', returns)
+              insert_dicts(db, 'order_items', items)
+              for row in index_ddls:
+                  sql = row.get('sql')
+                  if sql:
+                      try: db.execute(sql)
+                      except sqlite3.OperationalError as e:
+                          print('SKIP_EXISTING_INDEX', row.get('name'), e)
+              for sql in extra or []: db.execute(sql)
+              db.commit()
+              return db
+
+          dbs = {'BASELINE': make_db()}
+          for name, sqls in candidate_sql.items():
+              dbs[name] = make_db(sqls)
+
+          now = dt.datetime.now(dt.timezone.utc).date()
+          month_start = now.replace(day=1).isoformat()
+          today = now.isoformat()
+          print(f'BENCH_RANGE month_start={month_start} today={today}')
+
+          base = dbs['BASELINE']
+          live_month_count = base.execute("SELECT COUNT(*) FROM orders WHERE order_status NOT IN ('deleted','archived') AND order_date BETWEEN ? AND ?", (month_start,today)).fetchone()[0]
+          live_all_count = base.execute("SELECT COUNT(*) FROM orders WHERE order_status NOT IN ('deleted','archived')").fetchone()[0]
+          print(f'ORDER_SCOPE_COUNTS live_month={live_month_count} live_all={live_all_count} page100_complete={live_month_count < 100} page200_complete={live_month_count < 200}')
+          manager_row = base.execute("SELECT manager_id, COUNT(*) c FROM orders WHERE manager_id IS NOT NULL AND order_status NOT IN ('deleted','archived') AND order_date BETWEEN ? AND ? GROUP BY manager_id ORDER BY c DESC, manager_id LIMIT 1", (month_start,today)).fetchone()
+          manager_id = int(manager_row[0]) if manager_row else 0
+          manager_month_count = int(manager_row[1]) if manager_row else 0
+          print(f'BUSIEST_MANAGER_MONTH manager_id={manager_id} orders={manager_month_count}')
+
+          queries = {
+              'ORDERS_PERIOD': ('''SELECT COUNT(*) AS order_count, COALESCE(SUM(total_amount),0), COALESCE(AVG(NULLIF(total_amount,0)),0)
+                                   FROM orders WHERE order_date BETWEEN ? AND ? AND order_status <> 'deleted' ''', (month_start,today)),
+              'GROSS_RECEIVED': ('''SELECT COALESCE(SUM(p.amount),0) FROM payments p JOIN orders o ON o.id=p.order_id
+                                    WHERE p.payment_date BETWEEN ? AND ? AND o.order_status <> 'deleted' ''', (month_start,today)),
+              'RETURNS_PERIOD': ('''SELECT COALESCE(SUM(r.amount),0) FROM returns r JOIN orders o ON o.id=r.order_id
+                                    WHERE r.return_date BETWEEN ? AND ? AND COALESCE(r.status,'completed') <> 'cancelled' AND o.order_status <> 'deleted' ''', (month_start,today)),
+              'CURRENT_DEBT': ('''SELECT COUNT(*), COALESCE(SUM(debt_amount),0) FROM orders
+                                  WHERE debt_amount > 0 AND order_status <> 'deleted' ''', ()),
+              'PENDING_WRITEOFF_OLD': ('''SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id=oi.order_id
+                                           WHERE oi.is_workshop=0 AND COALESCE(oi.stock_writeoff_status,'') IN ('writeoff_disabled','pending_manual_writeoff')
+                                             AND oi.quantity > 0 AND COALESCE(o.order_status,'') <> 'deleted' ''', ()),
+              'PENDING_WRITEOFF_REWRITE': ('''SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id=oi.order_id
+                                               WHERE oi.is_workshop=0 AND oi.stock_writeoff_status IN ('writeoff_disabled','pending_manual_writeoff')
+                                                 AND oi.quantity > 0 AND COALESCE(o.order_status,'') <> 'deleted' ''', ()),
+              'ORDER_SUMMARY_MONTH_OLD': ('''SELECT COUNT(o.id), COALESCE(SUM(o.total_amount),0), COALESCE(SUM(o.debt_amount),0),
+                                                     COALESCE(SUM(COALESCE(w.workshop_units,0)),0)
+                                              FROM orders o
+                                              LEFT JOIN (SELECT order_id, COALESCE(SUM(quantity),0) workshop_units FROM order_items
+                                                         WHERE COALESCE(is_workshop,0)=1 GROUP BY order_id) w ON w.order_id=o.id
+                                              WHERE o.order_status NOT IN ('deleted','archived') AND o.order_date BETWEEN ? AND ?''', (month_start,today)),
+              'ORDER_SUMMARY_MONTH_REWRITE': ('''SELECT COUNT(o.id), COALESCE(SUM(o.total_amount),0), COALESCE(SUM(o.debt_amount),0),
+                                                         COALESCE(SUM(COALESCE(w.workshop_units,0)),0)
+                                                  FROM orders o
+                                                  LEFT JOIN (SELECT order_id, COALESCE(SUM(quantity),0) workshop_units FROM order_items
+                                                             WHERE is_workshop=1 AND quantity > 0 GROUP BY order_id) w ON w.order_id=o.id
+                                                  WHERE o.order_status NOT IN ('deleted','archived') AND o.order_date BETWEEN ? AND ?''', (month_start,today)),
+          }
+          if manager_id:
+              queries['ORDER_SUMMARY_MANAGER_OLD'] = ('''SELECT COUNT(o.id), COALESCE(SUM(o.total_amount),0), COALESCE(SUM(o.debt_amount),0),
+                                                                  COALESCE(SUM(COALESCE(w.workshop_units,0)),0)
+                                                           FROM orders o
+                                                           LEFT JOIN (SELECT order_id, COALESCE(SUM(quantity),0) workshop_units FROM order_items
+                                                                      WHERE COALESCE(is_workshop,0)=1 GROUP BY order_id) w ON w.order_id=o.id
+                                                           WHERE o.order_status NOT IN ('deleted','archived') AND o.manager_id=? AND o.order_date BETWEEN ? AND ?''', (manager_id,month_start,today))
+              queries['ORDER_SUMMARY_MANAGER_REWRITE'] = ('''SELECT COUNT(o.id), COALESCE(SUM(o.total_amount),0), COALESCE(SUM(o.debt_amount),0),
+                                                                      COALESCE(SUM(COALESCE(w.workshop_units,0)),0)
+                                                               FROM orders o
+                                                               LEFT JOIN (SELECT order_id, COALESCE(SUM(quantity),0) workshop_units FROM order_items
+                                                                          WHERE is_workshop=1 AND quantity > 0 GROUP BY order_id) w ON w.order_id=o.id
+                                                               WHERE o.order_status NOT IN ('deleted','archived') AND o.manager_id=? AND o.order_date BETWEEN ? AND ?''', (manager_id,month_start,today))
+              queries['PAYMENTS_MANAGER'] = ('''SELECT COUNT(p.id), COALESCE(SUM(p.amount),0) FROM payments p JOIN orders o ON o.id=p.order_id
+                                                WHERE o.order_status NOT IN ('deleted','archived') AND o.manager_id=? AND p.payment_date BETWEEN ? AND ?''', (manager_id,month_start,today))
+
+          def counted(db, sql, params):
+              steps = 0
+              def progress():
+                  nonlocal steps
+                  steps += 1
+                  return 0
+              db.set_progress_handler(progress, 1)
+              t0 = time.perf_counter_ns()
+              rows = db.execute(sql, params).fetchall()
+              us = (time.perf_counter_ns()-t0)/1000.0
+              db.set_progress_handler(None,0)
+              return [tuple(r) for r in rows], steps, us
+
+          old, _, _ = counted(base, *queries['PENDING_WRITEOFF_OLD'])
+          rewritten, _, _ = counted(base, *queries['PENDING_WRITEOFF_REWRITE'])
+          if old != rewritten: raise RuntimeError('Pending writeoff rewrite changed truth')
+          old, _, _ = counted(base, *queries['ORDER_SUMMARY_MONTH_OLD'])
+          rewritten, _, _ = counted(base, *queries['ORDER_SUMMARY_MONTH_REWRITE'])
+          if old != rewritten: raise RuntimeError('Workshop summary rewrite changed month truth')
+          if manager_id:
+              old, _, _ = counted(base, *queries['ORDER_SUMMARY_MANAGER_OLD'])
+              rewritten, _, _ = counted(base, *queries['ORDER_SUMMARY_MANAGER_REWRITE'])
+              if old != rewritten: raise RuntimeError('Workshop summary rewrite changed manager truth')
+          print('TRUTH_EQUIVALENCE_OK pending_writeoff=true workshop_summary=true')
+
+          relevant = {
+              'ORDERS_PERIOD': ['BASELINE','ORDER_PERIOD_3','ORDER_PERIOD_5','BUNDLE_LEAN'],
+              'GROSS_RECEIVED': ['BASELINE','PAYMENT_DATE_2','PAYMENT_DATE_3','BUNDLE_LEAN'],
+              'RETURNS_PERIOD': ['BASELINE','RETURNS_DATE_4','BUNDLE_LEAN'],
+              'CURRENT_DEBT': ['BASELINE','CURRENT_DEBT_PARTIAL','BUNDLE_LEAN'],
+              'PENDING_WRITEOFF_REWRITE': ['BASELINE','WRITEOFF_PARTIAL','BUNDLE_LEAN'],
+              'ORDER_SUMMARY_MONTH_REWRITE': ['BASELINE','ORDER_PERIOD_5','WORKSHOP_PARTIAL','BUNDLE_LEAN'],
+          }
+          if manager_id:
+              relevant['ORDER_SUMMARY_MANAGER_REWRITE'] = ['BASELINE','MANAGER_PERIOD_5','WORKSHOP_PARTIAL','BUNDLE_LEAN']
+              relevant['PAYMENTS_MANAGER'] = ['BASELINE','PAYMENT_DATE_3','MANAGER_PERIOD_5','BUNDLE_LEAN']
+
+          for qname, dbnames in relevant.items():
+              sql, params = queries[qname]
+              baseline_rows, baseline_steps, baseline_us = counted(base, sql, params)
+              print(f'CASE {qname} BASELINE rows={baseline_rows} vm_steps={baseline_steps} elapsed_us={baseline_us:.1f}')
+              for dbname in dbnames:
+                  if dbname == 'BASELINE': continue
+                  rows, steps, us = counted(dbs[dbname], sql, params)
+                  if rows != baseline_rows: raise RuntimeError(f'{qname} {dbname} changed truth')
+                  ratio = steps / baseline_steps if baseline_steps else 1.0
+                  print(f'CASE {qname} {dbname} EQUIVALENT vm_steps={steps} ratio={ratio:.4f} saved_pct={(1-ratio)*100:.1f} elapsed_us={us:.1f}')
+              plan_db = dbs[dbnames[-1]]
+              print(f'PLAN {qname} {dbnames[-1]} BEGIN')
+              for row in plan_db.execute('EXPLAIN QUERY PLAN ' + sql, params): print(row[3])
+              print(f'PLAN {qname} {dbnames[-1]} END')
+
+          print('R5_6_BENCHMARK_COMPLETE production_writes=0 branch2_touched=false')
+          PY
