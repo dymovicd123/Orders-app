@@ -12,7 +12,7 @@ export async function getPendingInventoryWriteoffCount(db: D1Database) {
      FROM order_items oi
      JOIN orders o ON o.id = oi.order_id
      WHERE oi.is_workshop = 0
-       AND COALESCE(oi.stock_writeoff_status, '') IN ('writeoff_disabled', 'pending_manual_writeoff')
+       AND oi.stock_writeoff_status IN ('writeoff_disabled', 'pending_manual_writeoff')
        AND oi.quantity > 0
        AND COALESCE(o.order_status, '') <> 'deleted'`
   ).first<{ count: number }>();
