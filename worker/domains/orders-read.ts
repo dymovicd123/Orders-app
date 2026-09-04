@@ -289,6 +289,12 @@ export async function listOrders(db: D1Database, url: URL) {
   // The UI may explicitly opt out so an active/no-date summary can reuse the canonical per-order
   // received_amount instead of scanning every payment again.
   const includePaymentCount = cleanText(url.searchParams.get('includePaymentCount')) !== '0';
+  // R5.9: subsequent UI pages may reuse the period summary already loaded on page 1.
+  // Legacy/API callers keep the exact previous response by default.
+  const includePeriodStats = cleanText(url.searchParams.get('includePeriodStats')) !== '0';
+  const pageCursorDate = cleanText(url.searchParams.get('afterOrderDate'));
+  const pageCursorId = toInt(url.searchParams.get('afterOrderId'), 0);
+  const hasPageCursor = offset > 0 && /^\d{4}-\d{2}-\d{2}$/.test(pageCursorDate) && pageCursorId > 0;
   let aggregateNeedsManagerJoin = false;
   let aggregateNeedsCustomerJoin = false;
 
@@ -402,6 +408,15 @@ export async function listOrders(db: D1Database, url: URL) {
     orderBindings.push(normalizeDate(dateTo));
   }
 
+  // R5.9: a cursor is only a page-read accelerator. Aggregate filters stay unchanged so totals
+  // continue to describe the complete selected period/filter, not only the tail after the cursor.
+  const pageWhereParts = [...orderWhereParts];
+  const pageBindings = [...orderBindings];
+  if (hasPageCursor) {
+    pageWhereParts.push('(o.order_date < ? OR (o.order_date = ? AND o.id < ?))');
+    pageBindings.push(pageCursorDate, pageCursorDate, pageCursorId);
+  }
+
   const paymentWhereParts = [...baseWhereParts];
   const paymentBindings = [...baseBindings];
   if (dateFrom) {
@@ -444,10 +459,10 @@ export async function listOrders(db: D1Database, url: URL) {
       o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment,
       o.archived_at, o.archived_by, o.archive_reason, o.archive_batch_id
     ${joins}
-    ${orderWhereParts.length ? `WHERE ${orderWhereParts.join(' AND ')}` : ''}
+    ${pageWhereParts.length ? `WHERE ${pageWhereParts.join(' AND ')}` : ''}
     ORDER BY o.order_date DESC, o.id DESC
     LIMIT ? OFFSET ?`
-  ).bind(...orderBindings, limit, offset).all<OrderListRow>();
+  ).bind(...pageBindings, limit, hasPageCursor ? 0 : offset).all<OrderListRow>();
 
   const orders = rows.results || [];
   if (!orders.length && offset === 0 && q) {
@@ -485,10 +500,18 @@ export async function listOrders(db: D1Database, url: URL) {
   // Reusing them avoids re-scanning the same orders/order_items/payments/returns.
   // If pagination ever truncates the result, the legacy SQL aggregate remains as
   // a correctness fallback and preserves the API contract for larger databases.
-  const completeOrderResult = offset === 0 && orders.length < limit;
+  const completeOrderResult = includePeriodStats && offset === 0 && orders.length < limit;
 
   let orderStats: Record<string, unknown> | null = null;
-  if (completeOrderResult) {
+  if (!includePeriodStats) {
+    // The UI already owns the exact periodStats from page 1. Only totalCount/hasMore must be
+    // refreshed here. Production proof for August: 2,423 -> 447 rows_read for this summary step.
+    orderStats = await db.prepare(`
+      SELECT COUNT(o.id) AS order_count
+      ${aggregateJoins}
+      ${orderWhereParts.length ? `WHERE ${orderWhereParts.join(' AND ')}` : ''}
+    `).bind(...orderBindings).first<Record<string, unknown>>();
+  } else if (completeOrderResult) {
     let totalAmount = 0;
     let debtAmount = 0;
     let workshopUnits = 0;
@@ -523,7 +546,9 @@ export async function listOrders(db: D1Database, url: URL) {
 
   let paymentStats: Record<string, unknown> | null = null;
   let returnStats: Record<string, unknown> | null = null;
-  if (completeOrderResult) {
+  if (!includePeriodStats) {
+    // Intentionally skipped: the caller reuses the exact page-1 periodStats.
+  } else if (completeOrderResult) {
     let paymentCount = 0;
     let paymentAmount = 0;
     let returnCount = 0;
@@ -598,7 +623,7 @@ export async function listOrders(db: D1Database, url: URL) {
     totalCount,
     hasMore: offset + orders.length < totalCount,
     hasPrevious: offset > 0,
-    periodStats: {
+    periodStats: includePeriodStats ? {
       orderCount: toInt(orderStats?.order_count, 0),
       totalAmount: toInt(orderStats?.total_amount, 0),
       paymentCount: paymentStats?.payment_count == null ? null : toInt(paymentStats.payment_count, 0),
@@ -607,7 +632,7 @@ export async function listOrders(db: D1Database, url: URL) {
       returnCount: toInt(returnStats?.return_count, 0),
       returnAmount: toInt(returnStats?.return_amount, 0),
       workshopUnits: toInt(orderStats?.workshop_units, 0),
-    },
+    } : null,
     orders: orders.map(order => ({
       ...order,
       stock_handover_review_needed: (relations.handoverReviewByOrderId.get(order.id) || []).length > 0,

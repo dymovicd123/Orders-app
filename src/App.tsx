@@ -3596,7 +3596,12 @@ function App() {
     }
   }
 
-  async function loadDashboard(forceReferences = false, overrideFilters: typeof filters = filters, overrideOffset = orderPageOffset) {
+  async function loadDashboard(
+    forceReferences = false,
+    overrideFilters: typeof filters = filters,
+    overrideOffset = orderPageOffset,
+    pageReadOptions: { afterOrderDate?: string; afterOrderId?: number; reusePeriodStats?: boolean } | null = null,
+  ) {
     setBusy(true)
     setError(null)
     setMessage(null)
@@ -3618,6 +3623,15 @@ function App() {
         // a proven received_amount/payment-sum equivalence and no payment-date window.
         includePaymentCount: activeFilters.archiveMode === 'active' && !activeFilters.dateFrom && !activeFilters.dateTo ? '0' : '1',
       })
+      // R5.9: the visible pagination remains offset/page based, but sequential Next may provide
+      // the last loaded row as an internal seek cursor. The Worker keeps offset as the logical page.
+      if (overrideOffset > 0 && pageReadOptions?.afterOrderDate && Number(pageReadOptions.afterOrderId || 0) > 0) {
+        params.set('afterOrderDate', pageReadOptions.afterOrderDate)
+        params.set('afterOrderId', String(pageReadOptions.afterOrderId))
+      }
+      // The period summary is invariant while only the page changes. Reuse the exact page-1 value
+      // and ask the Worker for count-only pagination metadata instead of repeating three aggregates.
+      if (pageReadOptions?.reusePeriodStats && orderPeriodStats) params.set('includePeriodStats', '0')
 
       const ordersResponse = await apiFetch(`/api/orders?${params.toString()}`)
       const ordersData = await readJsonResponse<OrderListResponse>(ordersResponse, 'Заказы')
@@ -3625,7 +3639,11 @@ function App() {
 
       const nextOrders = Array.isArray(ordersData.orders) ? ordersData.orders : []
       setOrders(nextOrders)
-      setOrderPeriodStats(ordersData.periodStats || null)
+      if (ordersData.periodStats) {
+        setOrderPeriodStats(ordersData.periodStats)
+      } else if (!pageReadOptions?.reusePeriodStats) {
+        setOrderPeriodStats(null)
+      }
       const nextOffset = Number(ordersData.offset || 0)
       const nextLimit = Number(ordersData.limit || activeFilters.pageSize || 100)
       const totalCount = Number(ordersData.totalCount ?? ordersData.count ?? nextOrders.length)
@@ -3716,7 +3734,12 @@ function App() {
       ? orderPageInfo.offset + step
       : Math.max(0, orderPageInfo.offset - step)
     if (nextOffset === orderPageInfo.offset) return
-    await loadDashboard(false, filters, nextOffset)
+    const lastOrder = direction === 'next' && orders.length ? orders[orders.length - 1] : null
+    await loadDashboard(false, filters, nextOffset, {
+      afterOrderDate: lastOrder?.order_date || '',
+      afterOrderId: Number(lastOrder?.id || 0),
+      reusePeriodStats: true,
+    })
     window.setTimeout(() => document.getElementById('orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
   }
 
