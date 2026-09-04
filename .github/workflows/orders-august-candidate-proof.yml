@@ -1,0 +1,176 @@
+name: Orders August candidate proof
+
+on:
+  push:
+    branches:
+      - ops/orders-august-candidate-proof-20260904
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      DB_NAME: orders_db_prod
+      EXPECTED_MAIN_SHA: 6256d003f2c3c15cb1b8e675f0c225a6732cdc68
+      OPS_WORKFLOW: .github/workflows/orders-august-candidate-proof.yml
+      DATE_FROM: 2026-08-01
+      DATE_TO: 2026-08-31
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Guard exact R5.8 source and Production database
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$EXPECTED_MAIN_SHA" HEAD
+          unexpected="$(git diff --name-only "$EXPECTED_MAIN_SHA"..HEAD | grep -vFx "$OPS_WORKFLOW" || true)"
+          test -z "$unexpected"
+          npx --no-install wrangler whoami >/tmp/whoami.txt
+          npx --no-install wrangler d1 execute "$DB_NAME" --remote --json --command "SELECT name FROM sqlite_master WHERE type='table' AND name='orders'" >/tmp/marker.json
+          jq -e '.[0].meta.rows_written == 0 and (.[0].meta.changed_db == false) and (.[0].results|length) == 1' /tmp/marker.json >/dev/null
+      - name: Compare pagination candidates and decompose handover lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          measure() {
+            key="$1"; sql="$2"; out="/tmp/${key}.json"
+            npx --no-install wrangler d1 execute "$DB_NAME" --remote --json --command "$sql" > "$out"
+            jq -e '.[0].meta.rows_written == 0 and (.[0].meta.changed_db == false)' "$out" >/dev/null
+            echo "R59_PROOF|$key|rows_read=$(jq -r '.[0].meta.rows_read // 0' "$out")|result_rows=$(jq -r '.[0].results | length' "$out")|duration_ms=$(jq -r '.[0].meta.duration // 0' "$out")"
+          }
+
+          fields="o.id, o.external_id, o.order_date, o.manager_id,
+            CASE WHEN m.id IS NOT NULL THEN m.name WHEN NULLIF(TRIM(COALESCE(o.manager_snapshot_name, '')), '') IS NOT NULL THEN o.manager_snapshot_name || ' · исторический менеджер' ELSE 'Менеджер требует уточнения' END AS manager_name,
+            o.manager_snapshot_name, COALESCE(m.color_key, '#64748B') AS manager_color,
+            c.phone_normalized AS customer_phone, c.display_name AS customer_name,
+            o.city, o.delivery_type, o.source_type, o.workshop_status, o.order_status,
+            o.shipping_status, o.shipping_date, o.total_amount, o.received_amount,
+            o.debt_amount, o.return_amount, o.comment,
+            o.archived_at, o.archived_by, o.archive_reason, o.archive_batch_id"
+
+          baseline_sql() {
+            offset="$1"
+            cat <<SQL
+          SELECT $fields
+          FROM orders o
+          LEFT JOIN managers m ON m.id = o.manager_id
+          LEFT JOIN customers c ON c.id = o.customer_id
+          WHERE o.order_status NOT IN ('deleted','archived')
+            AND o.order_date >= '$DATE_FROM' AND o.order_date <= '$DATE_TO'
+          ORDER BY o.order_date DESC, o.id DESC
+          LIMIT 100 OFFSET $offset
+          SQL
+          }
+
+          deferred_sql() {
+            offset="$1"
+            cat <<SQL
+          WITH page_ids AS MATERIALIZED (
+            SELECT id, order_date
+            FROM orders
+            WHERE order_status NOT IN ('deleted','archived')
+              AND order_date >= '$DATE_FROM' AND order_date <= '$DATE_TO'
+            ORDER BY order_date DESC, id DESC
+            LIMIT 100 OFFSET $offset
+          )
+          SELECT $fields
+          FROM page_ids pg
+          JOIN orders o ON o.id = pg.id
+          LEFT JOIN managers m ON m.id = o.manager_id
+          LEFT JOIN customers c ON c.id = o.customer_id
+          ORDER BY o.order_date DESC, o.id DESC
+          SQL
+          }
+
+          measure index_inventory "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name IN ('orders','inventory_reservations','inventory_stock_checks','inventory_stocktake_sessions','inventory_handover_reviews','order_items') ORDER BY tbl_name, name"
+
+          for offset in 0 100 200 300 400; do
+            page=$((offset/100+1))
+            measure "base_p${page}" "$(baseline_sql "$offset")"
+            measure "deferred_p${page}" "$(deferred_sql "$offset")"
+            base_ids="$(jq -c '.[0].results | map(.external_id)' /tmp/base_p${page}.json)"
+            deferred_ids="$(jq -c '.[0].results | map(.external_id)' /tmp/deferred_p${page}.json)"
+            test "$base_ids" = "$deferred_ids"
+            echo "R59_DEFERRED_EXACT|page=$page|exact=true"
+          done
+
+          for page in 2 3 4 5; do
+            prev=$((page-1))
+            cursor_date="$(jq -r '.[0].results[-1].order_date' /tmp/base_p${prev}.json)"
+            cursor_id="$(jq -r '.[0].results[-1].id' /tmp/base_p${prev}.json)"
+            sql="SELECT $fields FROM orders o LEFT JOIN managers m ON m.id=o.manager_id LEFT JOIN customers c ON c.id=o.customer_id WHERE o.order_status NOT IN ('deleted','archived') AND o.order_date >= '$DATE_FROM' AND o.order_date <= '$DATE_TO' AND (o.order_date < '$cursor_date' OR (o.order_date = '$cursor_date' AND o.id < $cursor_id)) ORDER BY o.order_date DESC,o.id DESC LIMIT 100"
+            measure "keyset_p${page}" "$sql"
+            base_ids="$(jq -c '.[0].results | map(.external_id)' /tmp/base_p${page}.json)"
+            keyset_ids="$(jq -c '.[0].results | map(.external_id)' /tmp/keyset_p${page}.json)"
+            test "$base_ids" = "$keyset_ids"
+            echo "R59_KEYSET_EXACT|page=$page|exact=true|cursor_date=$cursor_date|cursor_id=$cursor_id"
+          done
+
+          ids="$(jq -r '.[0].results[0:80] | map(.id|tostring) | join(",")' /tmp/base_p1.json)"
+          test -n "$ids"
+
+          measure handover_active_base "SELECT r.id AS reservation_id,r.order_id,r.order_item_id,r.inventory_source,r.variant_id,r.quantity AS reservation_quantity FROM inventory_reservations r JOIN orders scoped_order ON scoped_order.id=r.order_id WHERE r.order_id IN ($ids) AND r.status='active' AND r.variant_id IS NOT NULL ORDER BY r.order_id,r.order_item_id"
+
+          scoped_prefix="WITH active_reservations AS (
+            SELECT r.id AS reservation_id,r.order_id,r.order_item_id,r.inventory_source,r.variant_id,r.quantity AS reservation_quantity
+            FROM inventory_reservations r JOIN orders scoped_order ON scoped_order.id=r.order_id
+            WHERE r.order_id IN ($ids) AND r.status='active' AND r.variant_id IS NOT NULL
+          ), workshop_orders AS (
+            SELECT oi.order_id FROM order_items oi
+            JOIN (SELECT DISTINCT order_id FROM active_reservations) ao ON ao.order_id=oi.order_id
+            WHERE COALESCE(oi.is_workshop,0)=1 AND oi.quantity>0 GROUP BY oi.order_id
+          ), scoped_items AS (
+            SELECT oi.order_id,oi.id AS order_item_id,
+                   COALESCE(NULLIF(oi.inventory_obligation_key,''),'legacy-order-item:'||oi.id) AS obligation_key,
+                   COALESCE(NULLIF(oi.inventory_obligation_origin_at,''),oi.created_at) AS origin_at,
+                   o.order_date,ar.inventory_source,ar.variant_id,
+                   CASE WHEN wo.order_id IS NULL THEN 0 ELSE 1 END AS has_workshop
+            FROM active_reservations ar
+            JOIN order_items oi ON oi.id=ar.order_item_id
+            JOIN orders o ON o.id=oi.order_id
+            LEFT JOIN workshop_orders wo ON wo.order_id=oi.order_id
+            WHERE COALESCE(oi.is_workshop,0)=0 AND oi.quantity>0
+          )"
+
+          measure handover_scoped "$scoped_prefix SELECT * FROM scoped_items ORDER BY order_id,order_item_id"
+
+          measure handover_check_only "$scoped_prefix SELECT si.*,(SELECT json_array(c.id,c.checked_at) FROM inventory_stock_checks c WHERE c.inventory_source=si.inventory_source AND c.variant_id=si.variant_id AND ((datetime(c.checked_at)<datetime(si.origin_at) AND date(c.checked_at,'+5 hours')>=date(si.order_date)) OR (si.has_workshop=1 AND datetime(c.checked_at)>datetime(si.origin_at))) ORDER BY datetime(c.checked_at) DESC,c.id DESC LIMIT 1) AS check_point FROM scoped_items si ORDER BY si.order_id,si.order_item_id"
+
+          measure handover_full_only "$scoped_prefix SELECT si.*,(SELECT json_array(-s.rowid,s.completed_at) FROM inventory_stocktake_sessions s WHERE s.inventory_source=si.inventory_source AND s.status='completed' AND s.completed_at IS NOT NULL AND s.id NOT LIKE 'REV-%-P-%' AND datetime(s.started_at)<=datetime(si.origin_at) AND date(s.completed_at,'+5 hours')>=date(si.order_date) AND NOT EXISTS (SELECT 1 FROM inventory_stock_checks exact_sku WHERE exact_sku.inventory_source=si.inventory_source AND exact_sku.variant_id=si.variant_id AND exact_sku.reference_type='stocktake' AND exact_sku.reference_id=s.id) ORDER BY datetime(s.completed_at) DESC,s.rowid DESC LIMIT 1) AS full_point FROM scoped_items si ORDER BY si.order_id,si.order_item_id"
+
+          measure handover_review_only "$scoped_prefix SELECT si.*,(SELECT json_array(hr.checkpoint_id,hr.checkpoint_at) FROM inventory_handover_reviews hr JOIN order_items reviewed_item ON reviewed_item.id=hr.order_item_id WHERE hr.order_id=si.order_id AND COALESCE(NULLIF(reviewed_item.inventory_obligation_key,''),'legacy-order-item:'||reviewed_item.id)=si.obligation_key ORDER BY datetime(hr.checkpoint_at) DESC,hr.checkpoint_id DESC,hr.id DESC LIMIT 1) AS review_point FROM scoped_items si ORDER BY si.order_id,si.order_item_id"
+
+          measure handover_stock_only "$scoped_prefix SELECT ar.order_id,ar.order_item_id,ar.reservation_id,ar.inventory_source,ar.variant_id,ar.reservation_quantity,COALESCE(stock.quantity,0) AS physical_quantity,COALESCE(stock.reserved_quantity,0) AS total_reserved_quantity FROM active_reservations ar LEFT JOIN inventory_stock stock ON stock.inventory_source=ar.inventory_source AND stock.variant_id=ar.variant_id ORDER BY ar.order_id,ar.order_item_id"
+
+          measure explain_page5 "EXPLAIN QUERY PLAN $(baseline_sql 400)"
+          measure explain_deferred5 "EXPLAIN QUERY PLAN $(deferred_sql 400)"
+          measure explain_handover_check "$scoped_prefix EXPLAIN QUERY PLAN SELECT si.*,(SELECT c.id FROM inventory_stock_checks c WHERE c.inventory_source=si.inventory_source AND c.variant_id=si.variant_id AND ((datetime(c.checked_at)<datetime(si.origin_at) AND date(c.checked_at,'+5 hours')>=date(si.order_date)) OR (si.has_workshop=1 AND datetime(c.checked_at)>datetime(si.origin_at))) ORDER BY datetime(c.checked_at) DESC,c.id DESC LIMIT 1) AS check_id FROM scoped_items si"
+
+          python - <<'PY'
+          import json
+          def rr(name):
+              with open('/tmp/'+name+'.json',encoding='utf-8') as f:
+                  return int(json.load(f)[0]['meta'].get('rows_read') or 0)
+          for p in range(1,6):
+              b=rr(f'base_p{p}'); d=rr(f'deferred_p{p}')
+              print(f'R59_PAGE_CANDIDATE|page={p}|baseline={b}|deferred={d}|saved={b-d}|pct={(b-d)*100/b:.1f}')
+          for p in range(2,6):
+              b=rr(f'base_p{p}'); k=rr(f'keyset_p{p}')
+              print(f'R59_KEYSET_CANDIDATE|page={p}|baseline={b}|keyset={k}|saved={b-k}|pct={(b-k)*100/b:.1f}')
+          for n in ['handover_active_base','handover_scoped','handover_stock_only','handover_check_only','handover_full_only','handover_review_only']:
+              print(f'R59_HANDOVER_COMPONENT|name={n}|rows_read={rr(n)}')
+          PY
+
+          echo R59_CANDIDATE_PROOF_OK
