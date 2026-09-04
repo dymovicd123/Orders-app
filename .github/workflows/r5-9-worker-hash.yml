@@ -1,0 +1,43 @@
+name: R5.9 Worker declaration hash
+
+on:
+  push:
+    branches:
+      - ops/r5-9-worker-hash-20260904
+
+permissions:
+  contents: read
+
+jobs:
+  hash:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Compute exact Step 190.6A declaration hash
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import crypto from 'node:crypto'
+          import ts from 'typescript'
+          const file='worker/domains/orders-read.ts'
+          const text=fs.readFileSync(file,'utf8')
+          const source=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS)
+          let declaration=''
+          for (const statement of source.statements) {
+            if (ts.isFunctionDeclaration(statement) && statement.name?.text === 'listOrders') {
+              declaration=statement.getText(source).replace(/^export\s+/,'')
+              break
+            }
+          }
+          if (!declaration) throw new Error('listOrders declaration not found')
+          const hash=crypto.createHash('sha256').update(declaration).digest('hex')
+          console.log(`R59_LISTORDERS_HASH|${hash}`)
+          console.log(`R59_LISTORDERS_LENGTH|${declaration.length}`)
+          NODE
