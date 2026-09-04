@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "revision": "d1-read-budget-r5-6",
+  "changes": {
+    "getPendingInventoryWriteoffCount": {
+      "before": "717f8c3cac6c591c03186d8ff72917bb55a35859154f29eb9934ea02ed205a91",
+      "after": "d958bba5abd00b38359d29f18c7848aac487c2e5b6e0575d5819f6518b29a87b"
+    },
+    "listOrders": {
+      "before": "3416d24e95c72357067175a9de7c5ecaa973503401ce11716e976a3169071065",
+      "after": "3df89dc002e886117d9b8c0ef3e60ffc289f978bf0e71388b45b6122492a6549"
+    }
+  }
+}
