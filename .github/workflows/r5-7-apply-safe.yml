@@ -1,0 +1,47 @@
+name: R5.7 safe apply
+
+on:
+  push:
+    branches:
+      - safe/d1-read-budget-r5-7-orders-summary-20260904
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Apply measured source patch
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor fd0f509912a2939c8e9f0b84a7093b82a1d47c60 HEAD
+          git apply --check scripts/r5-7-orders-summary.patch
+          git apply scripts/r5-7-orders-summary.patch
+      - name: Focused validation
+        run: |
+          set -euo pipefail
+          node scripts/test-d1-read-budget-r5-6.mjs
+          node scripts/test-d1-read-budget-r5-7.mjs
+          npm run typecheck
+          npm run verify:db-safety
+      - name: Commit safe R5.7 implementation
+        run: |
+          set -euo pipefail
+          rm scripts/r5-7-orders-summary.patch
+          rm .github/workflows/r5-7-apply-safe.yml
+          git config user.name dymovicd123
+          git config user.email dymovicd@gmail.com
+          git add -A
+          git diff --cached --check
+          git commit -m "R5.7: apply measured Orders Summary optimization"
+          git push origin HEAD:safe/d1-read-budget-r5-7-orders-summary-20260904
