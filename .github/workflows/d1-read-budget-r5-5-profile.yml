@@ -17,17 +17,11 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
       - name: Production D1 top reads — clean recent windows
         shell: bash
         run: |
           set -euo pipefail
           echo '=== PRODUCTION D1 INSIGHTS 1H ==='
-          npx wrangler d1 insights orders_db_prod --sort-type=sum --sort-by=reads --sort-direction=DESC --limit=50 --timePeriod=1h --json
+          npx --yes wrangler@4.117.0 d1 insights orders_db_prod --sort-type=sum --sort-by=reads --sort-direction=DESC --limit=50 --timePeriod=1h --json
           echo '=== PRODUCTION D1 INSIGHTS 6H ==='
-          npx wrangler d1 insights orders_db_prod --sort-type=sum --sort-by=reads --sort-direction=DESC --limit=50 --timePeriod=6h --json
+          npx --yes wrangler@4.117.0 d1 insights orders_db_prod --sort-type=sum --sort-by=reads --sort-direction=DESC --limit=50 --timePeriod=6h --json
