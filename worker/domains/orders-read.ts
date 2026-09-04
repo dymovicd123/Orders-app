@@ -508,7 +508,7 @@ export async function listOrders(db: D1Database, url: URL) {
       LEFT JOIN (
         SELECT order_id, COALESCE(SUM(quantity), 0) AS workshop_units
         FROM order_items
-        WHERE COALESCE(is_workshop, 0) = 1
+        WHERE is_workshop = 1
         GROUP BY order_id
       ) workshop_items ON workshop_items.order_id = o.id
       ${orderWhereParts.length ? `WHERE ${orderWhereParts.join(' AND ')}` : ''}`
