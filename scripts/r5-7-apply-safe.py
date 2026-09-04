@@ -109,8 +109,16 @@ replace_once(
 
 replace_once(
     'src/app/types.ts',
-    '  paymentCount: number\n',
-    '  paymentCount: number | null\n',
+    """export type OrderPeriodStats = {
+  orderCount: number
+  totalAmount: number
+  paymentCount: number
+  paymentAmount: number""",
+    """export type OrderPeriodStats = {
+  orderCount: number
+  totalAmount: number
+  paymentCount: number | null
+  paymentAmount: number""",
     'OrderPeriodStats paymentCount nullable',
 )
 
