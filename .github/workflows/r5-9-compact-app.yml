@@ -28,36 +28,21 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
+          import re
           p=Path('src/App.tsx')
           text=p.read_text(encoding='utf-8')
-          def once(old,new,label):
-              global text
-              n=text.count(old)
-              if n != 1:
-                  raise SystemExit(f'{label}: expected 1 anchor, found {n}')
-              text=text.replace(old,new,1)
-          once(
-          """  async function loadDashboard(
-            forceReferences = false,
-            overrideFilters: typeof filters = filters,
-            overrideOffset = orderPageOffset,
-            pageReadOptions: { afterOrderDate?: string; afterOrderId?: number; reusePeriodStats?: boolean } | null = null,
-          ) {""",
-          """  async function loadDashboard(forceReferences = false, overrideFilters: typeof filters = filters, overrideOffset = orderPageOffset, pageReadOptions: { afterOrderDate?: string; afterOrderId?: number; reusePeriodStats?: boolean } | null = null) {""",
-          'loadDashboard signature')
-          once(
-          """    await loadDashboard(false, filters, nextOffset, {
-              afterOrderDate: lastOrder?.order_date || '',
-              afterOrderId: Number(lastOrder?.id || 0),
-              reusePeriodStats: true,
-            })""",
-          """    await loadDashboard(false, filters, nextOffset, { afterOrderDate: lastOrder?.order_date || '', afterOrderId: Number(lastOrder?.id || 0), reusePeriodStats: true })""",
-          'page navigation call')
+          pattern=r"  async function loadDashboard\(\n\s+forceReferences = false,\n\s+overrideFilters: typeof filters = filters,\n\s+overrideOffset = orderPageOffset,\n\s+pageReadOptions: \{ afterOrderDate\?: string; afterOrderId\?: number; reusePeriodStats\?: boolean \} \| null = null,\n\s+\) \{"
+          replacement="  async function loadDashboard(forceReferences = false, overrideFilters: typeof filters = filters, overrideOffset = orderPageOffset, pageReadOptions: { afterOrderDate?: string; afterOrderId?: number; reusePeriodStats?: boolean } | null = null) {"
+          text,n=re.subn(pattern,replacement,text,count=1)
+          if n != 1: raise SystemExit(f'loadDashboard signature: expected 1 anchor, found {n}')
+          pattern=r"    await loadDashboard\(false, filters, nextOffset, \{\n\s+afterOrderDate: lastOrder\?\.order_date \|\| '',\n\s+afterOrderId: Number\(lastOrder\?\.id \|\| 0\),\n\s+reusePeriodStats: true,\n\s+\}\)"
+          replacement="    await loadDashboard(false, filters, nextOffset, { afterOrderDate: lastOrder?.order_date || '', afterOrderId: Number(lastOrder?.id || 0), reusePeriodStats: true })"
+          text,n=re.subn(pattern,replacement,text,count=1)
+          if n != 1: raise SystemExit(f'page navigation call: expected 1 anchor, found {n}')
           p.write_text(text, encoding='utf-8')
           lines=len(text.splitlines())+1
           print(f'R5.9 App lines after compact: {lines}')
-          if lines > 7000:
-              raise SystemExit(f'App line budget still exceeded: {lines}')
+          if lines > 7000: raise SystemExit(f'App line budget still exceeded: {lines}')
           PY
       - name: Focused gates
         run: |
