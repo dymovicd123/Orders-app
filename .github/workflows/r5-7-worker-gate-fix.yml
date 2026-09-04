@@ -1,0 +1,40 @@
+name: R5.7 Worker gate fix
+
+on:
+  push:
+    branches:
+      - ops/r5-7-worker-gate-fix-20260904
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Patch cumulative Worker gate
+        run: python scripts/r5-7-patch-worker-gate.py
+      - name: Validate exact Worker gate
+        run: |
+          node scripts/test-step1906a-worker-modularization.mjs
+          node scripts/test-d1-read-budget-r5-6.mjs
+          node scripts/test-d1-read-budget-r5-7.mjs
+      - name: Commit gate fix to safe branch
+        run: |
+          rm scripts/r5-7-patch-worker-gate.py
+          rm .github/workflows/r5-7-worker-gate-fix.yml
+          git config user.name dymovicd123
+          git config user.email dymovicd@gmail.com
+          git add -A
+          git diff --cached --check
+          git commit -m "R5.7: preserve exact Worker declaration gate"
+          git push origin HEAD:safe/d1-read-budget-r5-7-orders-summary-20260904
