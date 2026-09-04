@@ -31,8 +31,12 @@ try {
   check(writeoffFunction.includes("AND oi.stock_writeoff_status IN ('writeoff_disabled', 'pending_manual_writeoff')"), 'Pending writeoff query is not indexable')
   check(!writeoffFunction.includes("COALESCE(oi.stock_writeoff_status, '') IN ('writeoff_disabled', 'pending_manual_writeoff')"), 'Pending writeoff COALESCE scan predicate returned')
 
-  check(ordersRead.includes('FROM order_items\n        WHERE is_workshop = 1\n        GROUP BY order_id'), 'Orders summary workshop predicate is not indexable')
-  check(!ordersRead.includes('FROM order_items\n        WHERE COALESCE(is_workshop, 0) = 1\n        GROUP BY order_id'), 'Orders summary workshop COALESCE scan predicate returned')
+  check(
+    ordersRead.includes('WHERE oi.order_id = o.id AND oi.is_workshop = 1')
+      || ordersRead.includes('FROM order_items\n        WHERE is_workshop = 1\n        GROUP BY order_id'),
+    'Orders summary workshop predicate is not indexable',
+  )
+  check(!ordersRead.includes('COALESCE(is_workshop, 0) = 1'), 'Orders summary workshop COALESCE scan predicate returned')
 
   console.log('D1 READ BUDGET R5.6 TESTS PASSED — additive indexes and truth-equivalent predicates preserved')
 } catch (error) {

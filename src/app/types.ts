@@ -785,7 +785,7 @@ export type ApiState = {
 export type OrderPeriodStats = {
   orderCount: number
   totalAmount: number
-  paymentCount: number
+  paymentCount: number | null
   paymentAmount: number
   debtAmount: number
   returnCount: number

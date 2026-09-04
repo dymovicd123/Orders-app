@@ -3614,6 +3614,9 @@ function App() {
         managerId: String(activeFilters.managerId || 0),
         dateFrom: activeFilters.dateFrom,
         dateTo: activeFilters.dateTo,
+        // R5.7: paymentCount is not rendered by the Orders UI. Opt out only where the Worker has
+        // a proven received_amount/payment-sum equivalence and no payment-date window.
+        includePaymentCount: activeFilters.archiveMode === 'active' && !activeFilters.dateFrom && !activeFilters.dateTo ? '0' : '1',
       })
 
       const ordersResponse = await apiFetch(`/api/orders?${params.toString()}`)
