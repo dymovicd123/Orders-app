@@ -14,141 +14,110 @@ This file is the canonical continuation point for ChatGPT work on the project. I
 - Prefer measured, narrow, reversible changes, especially for D1 read-budget work.
 - For small D1 release/repair SQL, prefer bounded `wrangler d1 execute --command` statements rather than `--file`; this project previously hit `D1_RESET_DO` through the import endpoint.
 - Branch2 must remain untouched unless it is explicitly targeted.
+- Evening 2026-09-04: Production D1 daily read budget is near exhaustion. Do **not** run Production D1 SELECT/profile/insights until the next reset unless the user explicitly authorizes it. GitHub/source/static checks are allowed.
 
-## Current Production release
+## Current Production code
 
-Current Production/main is **R5.9**:
+R5.9 release tree was introduced by PR #12 at:
 
 `6985093f7ee377b7d52b8716184b26f4fd6a1ac6`
 
-PR #12 (`R5.9: reduce Orders pagination D1 reads`) was squash-merged to main. The Cloudflare deploy monitor matched this exact main commit and completed successfully:
+R5.9 Cloudflare deploy monitor run `33894745462` completed successfully.
 
-- GitHub Actions deploy monitor run: `33894745462`
-- job: `101094641164`
-- result: success
-- Worker target: `orders-app`
+During the later code-only audit, an accidental temporary root file `noop` was created on `main` and immediately removed. This produced two no-op history commits:
 
-R5.9 has **no D1 migration**. The final proof and release did not mutate Production D1. Branch2 was not changed and remains:
+- `6c6bdfffd5f2217f75cc56aa43508476a9d1c1c9` — temporary file added;
+- `d9b17803fb63244722def8020741be1d961c4a81` — temporary file removed.
+
+Current GitHub `main` HEAD is therefore `d9b17803...`, but compare `6985093... -> d9b17803...` has **zero changed files**. The current code tree is exactly the R5.9 release tree. Cloudflare deploy monitor runs for the two no-op commits also completed successfully (`33896074560`, `33896101257`). They did not run D1 queries.
+
+Do not rewrite/reset main merely to remove these history commits; that would create unnecessary deploy churn.
+
+Branch2 remains:
 
 `adec6098777bebe4709615e1256cc5dd468b444d`
 
-## R5.9 — Orders pagination / repeated summary
+R5.8/R5.9 have no D1 migrations.
 
-R5.9 addresses the cost of wide-period Orders pagination and repeated period-summary rescans without changing order/business semantics.
+## R5.9 performance result
 
-### Final implementation semantics
+For active August orders `2026-08-01..2026-08-31`, final pre-release SELECT-only proof showed:
 
-- sequential **Next** navigation may send an internal `afterOrderDate` + `afterOrderId` seek cursor;
-- visible offset/page semantics remain unchanged;
-- cursor affects only page row selection, never aggregate filters;
-- order sequence remains `order_date DESC, id DESC`;
-- `includePeriodStats` defaults to true, so legacy/direct API callers keep the previous full response contract;
-- when the UI already owns the exact period summary from page 1, later page-only navigation sends `includePeriodStats=0`;
-- Worker then refreshes exact `totalCount/hasMore` using count-only metadata and skips repeated order/payment/return/workshop totals;
-- frontend preserves the previously loaded exact `periodStats` when the Worker intentionally omits them;
-- Previous-page navigation does not use a seek cursor, but may still reuse periodStats;
-- filter changes/full reloads still request the full summary;
-- no financial arithmetic, archive/status/date/search semantics, relation loading, Warehouse/handover logic, Arrival UI, or shipping behavior was intentionally changed.
+- page 2: **600 -> 313 rows_read** (−47.8%)
+- page 3: **893 -> 297** (−66.7%)
+- page 4: **1,192 -> 312** (−73.8%)
+- page 5: **1,288 -> 106** (−91.8%)
+- repeated period summary: **2,423 -> 447 rows_read** (−81.6%)
+- exact order count: 432
+- keyset page `external_id` sequences exactly matched OFFSET baseline.
 
-### Release files relative to R5.8
+R5.9 uses an internal `(order_date,id)` seek cursor only for sequential Next navigation, while keeping visible offset/page semantics. Later page-only navigation can reuse exact page-1 periodStats and request count-only metadata. Legacy/direct API callers retain full periodStats by default.
 
-Exact R5.8 -> R5.9 diff contained only these six files:
+## R5.8 / R5.7 inherited optimizations
 
-- `worker/domains/orders-read.ts`
-- `src/App.tsx`
-- `scripts/test-d1-read-budget-r5-9.mjs`
-- `scripts/d1-read-budget-r5-9-worker-manifest.json`
-- `scripts/test-step1906a-worker-modularization.mjs`
-- `package.json`
+R5.8 Finance default workspace `2026-09-01..2026-09-04` was reduced **901 -> 673 rows_read** by deriving payment-method and payment-by-day aggregates from already-loaded payment operation rows. Static review confirms the derived source uses the same payment-date and non-deleted-order population as the removed standalone aggregates.
 
-No temporary workflows or helper scripts were present in the release diff.
+R5.7 Orders Summary reuses `orders.received_amount` only inside its proven active/no-date boundary. Date-filtered, archive/non-active and legacy callers retain the exact payments query.
 
-The clean pre-merge candidate tree was:
+## Code-only post-R5.9 audit — 2026-09-04 evening
 
-`ef610ab83055dc1326b0f8336da0957f9b72504d`
+Because D1 limits are near exhaustion, this audit deliberately made **no Production D1/Cloudflare database calls**.
 
-Exact `listOrders` declaration hash registered for R5.9:
+Temporary code-audit branch:
+`ops/r5-9-code-audit-20260904`
 
-`7ae4832900502fadfb3448e328a9caf1e8781802545b8dcca7dfa3f969f801ef`
+Audit run:
+- GitHub Actions run `33896192244`
+- job `101099283468`
+- result: **success**
 
-### Full release validation
-
-Final full validation run:
-
-- run: `33894195668`
-- job: `101092839993`
-- result: success
-
-Passed gates:
-
-- `npm run release:check`
-- `npm run verify:db-safety`
+Passed without D1 access:
 - `npm run typecheck`
 - `npm run build`
-- `npx wrangler deploy --dry-run`
+- `npm run lint`
+- R5.7 focused regression
+- R5.8 focused regression
+- R5.9 focused regression
+- Step 190.6A Worker declaration gate
+- Step 190.6B frontend modularization gate
+- Step 190.6E type/API boundary gate
+- runtime SQL syntax static test
+- `npm run verify:db-safety`
 
-Step 190.6A cumulative Worker declaration gate passed with the explicit R5.9 `listOrders` manifest. Step 190.6B also passed after the R5.9-only App additions were compacted back under the established 7,000-line controller budget; this was formatting/structure only, not a semantic change.
+Therefore no compile/build/lint/static-regression failure is currently present from R5.7–R5.9.
 
-### Final exact Production read-only proof
+### Confirmed low-severity contract defect
 
-Final proof used exact clean candidate `ef610ab...` plus one temporary SELECT-only workflow.
+`worker/domains/orders-read.ts` intentionally returns:
 
-- proof run: `33894451727`
-- job: `101093683359`
-- result: success
-- Production database: `orders_db_prod`
-- period: active orders `2026-08-01..2026-08-31`
-- all statements verified `rows_written=0` and `changed_db=false`
+`periodStats: null`
 
-Exact baseline OFFSET page reads versus R5.9 seek candidate:
+when R5.9 `includePeriodStats=0` is used. But `src/app/types.ts` currently declares:
 
-- page 2: **600 -> 313 rows_read** (−287 / **47.8%**)
-- page 3: **893 -> 297** (−596 / **66.7%**)
-- page 4: **1,192 -> 312** (−880 / **73.8%**)
-- page 5: **1,288 -> 106** (−1,182 / **91.8%**)
+`periodStats?: OrderPeriodStats`
 
-For pages 2–5, the candidate returned the exact same `external_id` sequence as the baseline page.
+instead of `periodStats?: OrderPeriodStats | null`.
 
-Repeated August summary components were:
+The current UI is runtime-safe because it checks `if (ordersData.periodStats)` before using the object and preserves previous stats during page reuse. This is **not currently a crash or data-corruption bug**, but the TypeScript API contract is inaccurate and should be corrected in the next narrow code patch.
 
-- order summary: 1,405 rows_read
-- payment summary: 1,001
-- return summary: 17
-- full repeated summary total: **2,423 rows_read**
-- count-only page metadata: **447 rows_read**
-- exact order count on both paths: **432**
-- repeated-summary reduction: **1,976 rows_read / 81.6%**
+### R5.9 filter/pagination race risk
 
-Final proof marker: `R59_FINAL_OK`.
+Orders filter changes are debounce-loaded after roughly 120 ms (380 ms for text search). During that debounce interval the old page rows/stats remain displayed and `busy` is still false. A very fast click on **Next** can therefore derive an R5.9 cursor from the old rows while passing the newly edited filters and can also request `includePeriodStats=0` using the old summary.
 
-The temporary proof and validation branches were reset back to the clean candidate after their successful runs so their one-shot workflow files are not left at branch tips.
+The scheduled page-1 filter reload normally corrects the view shortly afterward, so this is expected to be transient and does not mutate data. Still, it is a real UI consistency race introduced/worsened by cursor+summary reuse. Preferred fix: tie cursor/periodStats reuse to an exact applied-filter fingerprint (or invalidate page reuse immediately when filters change), rather than relying on debounce timing.
 
-## Prior R5.8 / R5.7 / R5.6 read-budget facts
+### Concurrent-write pagination consistency risk
 
-R5.8 reduced the exact default Finance workspace for `2026-09-01..2026-09-04` from **901 -> 673 rows_read** (−228 / ~25.3%) by deriving payment-method and payment-by-day aggregates from already-loaded payment operation rows. No D1 migration.
+R5.9 keyset page rows are anchored to the prior page cursor, but later-page `totalCount/hasMore` are freshly counted. If another user inserts/deletes matching orders between page loads, page contents and fresh total metadata can temporarily describe different snapshots. Reused page-1 periodStats can likewise become stale during the paging session.
 
-R5.7 reduced the Orders Summary fallback and established `received_amount` reuse only where exact Production equivalence had been proved.
+No runtime reproduction was attempted tonight because it would consume D1 reads. Treat this as a multi-user consistency risk, not a confirmed Production failure. A future fix should avoid adding a new database read merely to version the snapshot; prefer frontend/session snapshot metadata if practical.
 
-R5.6 Production improvements included:
+## Next action after D1 reset
 
-- current debt: **1,321 -> 12 rows_read**
-- pending stock writeoff: **5,208 -> 2**
-- workshop grouped aggregate: **3,317 -> 1,736**
-- payment-method summary selected its new index but remained **1,595 -> 1,595**, so do not overclaim that index.
-
-## Current next action
-
-R5.9 is released and closed. Do not change it retroactively without new evidence.
-
-Next technical stage should begin with a fresh Production SELECT-only profile after R5.9, then choose R5.10 from measured remaining hotspots. Prior wide-window Finance candidates worth rechecking include:
-
-- payment operations: ~4,686 rows_read over 35 days
-- payment-by-day: ~1,712
-- payment methods: ~1,595
-- early-payment bridge: ~1,456
-- payment events: ~1,114
-
-Do not assume these remain the highest practical cost after R5.9; remeasure first and prioritize actual frequently used paths. Avoid materialized/cached summary write-path complexity unless simpler read/query improvements fail.
+1. First fix/audit the small R5.9 contract and filter-pagination race in a code-only narrow patch, with no business-model changes.
+2. After the daily D1 reset, run a fresh Production read-only profile/insights only if the user confirms the budget is available.
+3. Re-measure remaining hotspots before choosing R5.10; do not use stale pre-R5.9 costs as final priority evidence.
+4. Do not change Warehouse/handover logic merely for performance without a separate end-to-end warehouse audit.
 
 ## Inherited safety / business invariants
 
