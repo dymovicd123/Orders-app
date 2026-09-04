@@ -7,7 +7,11 @@ const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 
 try {
-  check(!/\b(?:INSERT|UPDATE|DELETE|REPLACE|DROP|ALTER)\b/i.test(migration), 'R5.6 migration must be additive only')
+  const executableSql = migration
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n')
+  check(!/\b(?:INSERT|UPDATE|DELETE|REPLACE|DROP|ALTER)\b/i.test(executableSql), 'R5.6 migration must be additive only')
   for (const marker of [
     'idx_payments_payment_date_order_amount',
     'idx_orders_current_debt_partial',
