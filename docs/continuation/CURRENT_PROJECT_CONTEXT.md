@@ -3,219 +3,256 @@
 Updated: 2026-09-04
 Branch for continuation context only: `context/project-continuation`
 
-This file is the canonical continuation point for ChatGPT work on the project. It is intentionally kept off `main` so context updates do not trigger a Production Worker deploy.
+This file is the canonical continuation point for ChatGPT work on the project. It is intentionally kept off `main` so context-only updates do not trigger a Production Worker deploy.
 
 ## User workflow requirements
 
-- For each practical patch, provide one ready-to-run Windows CMD command/file from the project root when local execution is needed.
-- Keep continuation context updated in GitHub; do not send standalone context files to the user unless explicitly requested.
-- Before Warehouse patches, audit related flows end-to-end rather than fixing only one screen.
+- Keep continuation context updated here in GitHub; do not send standalone context files to the user unless explicitly requested.
+- When local execution is genuinely needed, provide one ready-to-run Windows CMD entry point from the project root.
+- Before Warehouse patches, audit related flows end-to-end rather than fixing one isolated screen.
 - Arrival UI is frozen and must not be changed.
-- Prefer measured, minimal, reversible changes; especially for D1 read-budget work.
-- Avoid `wrangler d1 execute --file` for small release/repair SQL in this project. Use bounded `--command` statements when practical because the D1 import endpoint previously produced `D1_RESET_DO` behavior.
+- Prefer measured, narrow, reversible changes, especially for D1 read-budget work.
+- For small D1 release/repair SQL, prefer bounded `wrangler d1 execute --command` statements rather than `--file`; this project previously hit `D1_RESET_DO` through the import endpoint.
+- Branch2 must remain untouched unless it is explicitly targeted.
 
-## Current release state
+## Current Production release
 
 ### main / Production Worker
 
-Current validated R5.6 release commit:
+Current Production release is **R5.8**:
+
+`6256d003f2c3c15cb1b8e675f0c225a6732cdc68`
+
+PR #11 (`R5.8: reduce Finance duplicate D1 reads`) was squash-merged into `main`.
+
+GitHub -> Cloudflare deploy monitor run `33887966913` completed successfully for this exact main commit.
+
+R5.8 has **no D1 migration**. It changes only the Finance read path plus its exact Worker modularization allow-list/regression coverage.
+
+### Branch2
+
+Branch2 remains unchanged at:
+
+`adec6098777bebe4709615e1256cc5dd468b444d`
+
+## R5.8 — Finance duplicate-read removal
+
+### Problem measured before the patch
+
+For the default Finance workspace (`scope=finance`) and period `2026-09-01..2026-09-04`, Production executed 12 D1 SQL paths totaling **901 rows_read**:
+
+- overview: 32
+- payment methods: 110
+- order days: 32
+- returns: 2
+- exchanges: 13
+- closed debts: 48
+- current debt: 12
+- current debt top: 48
+- payment by day: 118
+- payment operations: 316
+- before-order/outside-period bridge: 97
+- financial events: 73
+
+The Finance response already loaded every payment operation with payment date, raw method and amount, yet separately queried:
+
+1. payment-method totals/counts — 110 rows_read;
+2. payment-method-by-day totals — 118 rows_read.
+
+Those two aggregates were therefore duplicate reads of information already present in `paymentOperationRows`.
+
+### Exact semantic proof before release
+
+Production read-only proof established:
+
+- 35 payments in the selected period;
+- payment total: 1,559,941;
+- 5 canonical payment methods;
+- 13 date × method buckets.
+
+Deriving `paymentMethods` and `paymentMethodsByDay` from the already-loaded payment rows produced the same values as the existing SQL aggregates.
+
+A first strict JSON-shape proof caught a subtle compatibility issue: values were equal but object insertion/order inside day-method buckets could differ because old SQL ordered raw methods before canonical merging. The candidate was corrected to preserve the old SQL ordering semantics exactly: date ASC, aggregate total DESC, raw payment method ASC with SQLite NULL-first behavior, then canonical merge.
+
+Final Production SELECT-only shape proof run `33887225887` reported:
+
+- `methods_exact=true`
+- `days_exact=true`
+- `R58_FINANCE_EXACT_SHAPE_OK`
+
+This ordering fix is important; do not simplify it back to merely iterating raw payment rows unless an equivalent exact-order proof is repeated.
+
+### Released implementation
+
+In `worker/domains/finance-reports.ts`:
+
+- standalone payment-method aggregate is skipped only when `financeWorkspaceOnly` is true;
+- standalone payment-by-day aggregate is skipped only when `financeWorkspaceOnly` is true;
+- Finance derives both structures from `rawPaymentOperationRows`;
+- non-Finance/admin report behavior retains the previous SQL aggregate paths;
+- payment operations themselves still use the same rows and financial lineage logic;
+- no financial arithmetic, debt, return, exchange or event semantics changed.
+
+Regression coverage:
+
+- `scripts/test-d1-read-budget-r5-8.mjs`
+- `scripts/d1-read-budget-r5-8-worker-manifest.json`
+- Step 190.6A cumulative Worker hash gate was extended through R5.8.
+
+R5.8 `listFinanceReports` exact Worker declaration hash transition:
+
+- before: `65b778f6f3e0c482b974f98671afcef0a65151745b5273abe4332d735006c976`
+- after: `8930c9659c15a61e333394404fa6db196bbe1e5cb427af4bede2c21034e7e9ab`
+
+### Full release validation
+
+After registering the R5.8 Worker declaration delta, full candidate validation run `33887801540` passed:
+
+- `release:check`
+- `verify:db-safety`
+- typecheck
+- build
+- Wrangler deploy dry-run
+
+The earlier failed validation was only the Step 190.6A manifest gate correctly noticing the new `listFinanceReports` declaration before the R5.8 hash delta had been registered; it was not a runtime/business failure.
+
+### Exact Production postdeploy measurement
+
+After successful Cloudflare deploy, SELECT-only Production verification run `33888269466` measured the ten D1 calls that remain in `scope=finance` for `2026-09-01..2026-09-04`:
+
+- overview: 32
+- order days: 32
+- returns: 2
+- exchanges: 13
+- closed debts: 48
+- current debt: 12
+- current debt top: 48
+- payment operations: 316
+- before-order/outside-period bridge: 97
+- financial events: 73
+
+Total: **673 rows_read**.
+
+So the measured default Finance path moved exactly:
+
+**901 -> 673 rows_read**
+
+Reduction: **228 rows_read / about 25.3%**.
+
+The two removed duplicate SQL paths were exactly the previous 110 + 118 rows_read. No D1 mutation occurred during this verification.
+
+Important financial invariant confirmed while investigating R5.8: for `2026-09-01..2026-09-04`, `SUM(orders.received_amount)` for orders dated in the period was 1,494,941 while actual payments dated in the period totaled 1,559,941 — a 65,000 difference. Therefore payment-date reports must continue to be based on payment rows; do not replace them with order-level `received_amount` aggregates.
+
+Temporary R5.8 diagnostic/validation branches were force-reset to the clean Production main commit after use so one-shot workflows are not left at their tips.
+
+## R5.7 — Orders Summary fallback optimization
+
+Previous Production release R5.7 was:
+
+`0ad57910d95a8b3fa8411faf01008b5b62990014`
+
+R5.7 reduced the measured active Orders Summary fallback SQL total from:
+
+**9,542 -> 3,802 rows_read**
+
+with exact summary values preserved and no D1 migration.
+
+Before R5.7 the fallback components were:
+
+- active `orders_stats`: 5,212
+- active `payment_stats`: 4,267
+- active `return_stats`: 63
+
+Important runtime nuance remains: the fallback aggregates are not paid on every order-list request. `listOrders` uses `completeOrderResult = offset === 0 && orders.length < limit`; when the first page proves the filtered result is complete, it derives summary values from already-loaded page/relation data instead of running fallback summary scans.
+
+### September Orders-page measurement limitation
+
+A post-R5.7 investigation initially profiled the default `2026-09-01..2026-09-04` Orders page. It contained only **32 active orders**, below the default 100-row page limit, so it did **not** exercise realistic pagination/fallback behavior.
+
+For those 32 orders, the reproduced read path was roughly 1,360 rows_read and a tested micro-rewrite on the handover/stock-check query saved only 5 rows (`566 -> 561`), which is not worth a release.
+
+The user explicitly pointed out that the Orders page should instead be profiled with **August orders** so pagination/fallback and a larger relation set are actually exercised. This is now the next planned investigation after Finance R5.8.
+
+## R5.6 — Production D1 indexes still in force
+
+R5.6 commit:
 
 `fd0f509912a2939c8e9f0b84a7093b82a1d47c60`
 
-Release contents:
-- migration `0066_v72_d1_read_budget_r5_finance_summary_indexes.sql`;
-- four additive indexes;
-- two truth-equivalent runtime predicate rewrites where NULL had already been semantically excluded;
-- focused R5.6 regression coverage;
-- exact cumulative Worker declaration allow-list update;
-- migration safety allow-list update.
-
-PR #9 was squash-merged into `main`.
-
-GitHub -> Cloudflare Production deploy monitor run `33875914433` completed successfully.
-
-### Production D1
-
-Production database: `orders_db_prod`
-
-R5.6 migration 0066 was applied successfully using one statement per `wrangler d1 execute --command` call. Branch2 was not targeted.
-
-Confirmed Production indexes:
+Migration `0066_v72_d1_read_budget_r5_finance_summary_indexes.sql` added:
 
 - `idx_payments_payment_date_order_amount`
 - `idx_orders_current_debt_partial`
 - `idx_order_items_pending_writeoff_status_order`
 - `idx_order_items_workshop_order_quantity`
 
-Successful Production D1 apply/verify workflow run: `33876464739`.
+Representative Production before -> after R5.6 measurements for `2026-08-01..2026-09-04`:
 
-Representative measured Production rows_read for 2026-08-01..2026-09-04, immediately before vs immediately after migration 0066:
-
-- payment-method summary: `1595 -> 1595`
+- payment-method summary: `1595 -> 1595` (index selected but no measured rows_read reduction; never overclaim this)
 - current debt: `1321 -> 12`
 - pending stock writeoff: `5208 -> 2`
 - Workshop grouped aggregate: `3317 -> 1736`
 
-Corresponding reductions:
+R5.8 did not change these indexes.
 
-- payment summary: no measured rows_read reduction on this range;
-- current debt: about 99.1%;
-- pending writeoff: about 99.96%;
-- Workshop aggregate: about 47.7%.
+## Wide-period Finance reference baseline
 
-`EXPLAIN QUERY PLAN` confirmed the intended indexes were selected:
+Before R5.8, exact `scope=finance` measurement for `2026-08-01..2026-09-04` totaled **12,521 rows_read**:
 
-- payments: `SEARCH p USING INDEX idx_payments_payment_date_order_amount`
-- current debt: `SEARCH orders USING INDEX idx_orders_current_debt_partial`
-- pending writeoff: `SEARCH oi USING INDEX idx_order_items_pending_writeoff_status_order`
-- Workshop aggregate: `SCAN order_items USING COVERING INDEX idx_order_items_workshop_order_quantity`
+- overview 478
+- payment methods 1,595
+- order days 478
+- returns 42
+- exchanges 67
+- closed debt 833
+- current debt 12
+- current debt top 48
+- payment by day 1,712
+- payment operations 4,686
+- early-payment bridge 1,456
+- financial events 1,114
 
-Important: do not claim the payment index reduced rows_read based on this measurement. It was selected by the planner but measured `1595 -> 1595`.
+Because R5.8 removes the two duplicate aggregate queries only in Finance scope, the comparable theoretical total on an unchanged snapshot would be 12,521 - 1,595 - 1,712 = **9,214 rows_read**. Do not call that an exact postdeploy 35-day measurement unless it is measured again; only the current-period 901 -> 673 result was remeasured postdeploy.
 
-### Branch2
+Remaining wide-range Finance cost is dominated by payment operation history / traceability, especially payment operations, early-payment bridge and financial events. Further Finance work should be measured before changing anything.
 
-Branch2 was not changed by R5.6 and remained at:
+## Inherited business / reliability invariants
 
-`adec6098777bebe4709615e1256cc5dd468b444d`
-
-## Exact read-only Production baseline after R5.6
-
-Run `33877951817` measured the current Production database directly through Wrangler using SELECT-only statements. The measurement branch differed from the exact R5.6 release only by the one-shot measurement workflow. No D1 mutation, migration, Worker deploy, or Branch2 change occurred.
-
-### Finance workspace — current month 2026-09-01..2026-09-04
-
-Exact rows_read by SQL path:
-
-- `finance_overview`: 32
-- `finance_payment_methods`: 110
-- `finance_day_rows`: 32
-- `finance_returns`: 2
-- `finance_exchanges`: 13
-- `finance_closed_debt`: 48
-- `finance_current_debt`: 12
-- `finance_current_debt_top`: 48
-- `finance_payment_by_day`: 118
-- `finance_payment_operations`: 316
-- `finance_early_payment_bridge`: 97
-- `finance_payment_events`: 73
-
-Total for these exact Finance `scope=finance` SQL paths: **901 rows_read**.
-
-Largest current-month contributors:
-
-1. payment operations: 316
-2. payment-by-day: 118
-3. payment-method summary: 110
-4. early-payment bridge: 97
-5. financial events: 73
-
-At current-month scale there is no urgent single catastrophic Finance scan left.
-
-### Finance workspace — 2026-08-01..2026-09-04 (35-day comparison window)
-
-Exact rows_read by SQL path:
-
-- `finance_overview`: 478
-- `finance_payment_methods`: 1595
-- `finance_day_rows`: 478
-- `finance_returns`: 42
-- `finance_exchanges`: 67
-- `finance_closed_debt`: 833
-- `finance_current_debt`: 12
-- `finance_current_debt_top`: 48
-- `finance_payment_by_day`: 1712
-- `finance_payment_operations`: 4686
-- `finance_early_payment_bridge`: 1456
-- `finance_payment_events`: 1114
-
-Total for these exact Finance `scope=finance` SQL paths: **12,521 rows_read**.
-
-Largest 35-day contributors:
-
-1. `finance_payment_operations`: **4,686**
-2. `finance_payment_by_day`: **1,712**
-3. `finance_payment_methods`: **1,595**
-4. `finance_early_payment_bridge`: **1,456**
-5. `finance_payment_events`: **1,114**
-6. `finance_closed_debt`: **833**
-
-This shows the remaining Finance read budget scales mainly with payment history / payment-operation traceability, not current debt anymore.
-
-### Orders Summary active fallback SQL shapes
-
-Exact current Production rows_read:
-
-- active `orders_stats` including Workshop aggregate: **5,212**
-- active `payment_stats`: **4,267**
-- active `return_stats`: **63**
-
-Combined fallback-stat total: **9,542 rows_read**.
-
-This is the strongest measured R5.7 candidate. The active Orders Summary fallback is materially heavier than the current-month Finance workspace and is still dominated by the all-active order/payment aggregates.
-
-Important runtime nuance: `listOrders` avoids these aggregate fallback queries when the first page is provably the complete filtered result (`offset=0` and returned rows < limit). The 9,542 measurement is therefore the exact cost of the fallback SQL shapes when pagination/truncation requires them, not a claim that every ordinary order-list request always pays this full amount.
-
-### R5.6 current verification during the same baseline
-
-- pending writeoff: **2 rows_read**
-- full Workshop grouped aggregate: **1,736 rows_read**
-
-These match the post-R5.6 state; no regression was observed.
-
-## Safety state at R5.6 release
-
-Immediately before the successful Production D1 apply:
-
-- full `release:check` passed;
-- `verify:db-safety` passed;
-- focused R5.6 regression passed;
-- TypeScript/build/dry-run gates passed as part of release check;
-- migration 0066 was additive only;
-- Arrival UI was unchanged;
-- Production target identity was verified before D1 commands;
-- the first one-shot D1 workflow attempt failed only in diagnostic `jq` formatting before any migration statement ran; the corrected second run performed and verified the mutation successfully.
-
-The temporary R5.6 ops branch was reset back to the clean R5.6 release commit after the successful D1 run, so the one-shot mutation workflow is not left at the current branch tip.
-
-## Order / Warehouse reliability state inherited into current release
-
-Current release already contains the prior safety work, including:
+Current main still includes prior safety work, including:
 
 - resumable order create/edit and browser idempotency;
 - retry-safe order counters/reservations;
 - controlled shortage/input failures;
 - Workshop preflight;
-- secondary read isolation;
+- secondary read isolation so auxiliary reads do not turn committed saves into false failures;
 - non-blocking shipping discrepancy behavior;
-- order delete mobility with physical-truth freshness protection;
+- order-delete mobility with physical-truth freshness protection;
 - return/exchange cancellation autonomy;
 - manager-safe routine Warehouse operations;
-- signed 12h admin session and server-owned actor headers;
+- signed 12-hour admin session and server-owned actor headers;
 - bounded D1 fan-out/mutation rowsets from Step 191E;
 - daily Warehouse attention/context work from 192B2A*;
 - movement picker UX from 192B2B.
 
+Critical order-save principle: order + items + reserves + Workshop tasks are critical; audit/history/re-read/extras must not make an already committed successful save appear failed.
+
+Workshop items remain outside normal Warehouse shortage checks. Partial shipping is not used; operational model is all-or-nothing.
+
 ## Next point
 
-R5.6 is complete and should not be reopened without new evidence.
+**R5.8 Finance is complete and deployed. Do not reopen it without new evidence.**
 
-The exact post-release baseline now exists. The strongest R5.7 investigation target is **Orders Summary fallback**, especially:
+Next task requested by the user: perform an exact **August Orders-page / Orders Summary read-only Production forensic**, rather than relying on the small September page.
 
-- active `orders_stats` at 5,212 rows_read;
-- active `payment_stats` at 4,267 rows_read.
+Recommended next investigation:
 
-Secondary R5.7 Finance targets, if needed after Orders Summary, are the wide-period payment-history paths:
+1. reproduce the actual Orders list filter for August (preferably `2026-08-01..2026-08-31`) with default page limit 100;
+2. count matching active orders and confirm whether pagination/fallback is genuinely triggered;
+3. measure the page query and each relation/handover query for the first page;
+4. measure the R5.7 fallback summary SQL in the same August filter, including orders/payment/return components;
+5. profile page 2 or another realistic offset if August exceeds 100 rows;
+6. inspect EXPLAIN/query plans only after identifying the largest remaining contributors;
+7. preserve `completeOrderResult`, archive/status/date/search semantics and summary values exactly;
+8. do not prepare R5.9 until a candidate shows a meaningful Production read reduction.
 
-- payment operations 4,686;
-- payment-by-day 1,712;
-- payment-method summary 1,595;
-- early-payment bridge 1,456;
-- financial events 1,114.
-
-Preferred next action:
-
-1. investigate query plans and cardinality for the two Orders Summary fallback aggregates;
-2. prove any candidate index/query rewrite against a read-only Production snapshot or exact Production EXPLAIN/measurement;
-3. preserve `completeOrderResult` semantics and all summary values exactly;
-4. change nothing until a measurable reduction is demonstrated;
-5. only then prepare R5.7 as a narrow release.
+Branch2 remains out of scope unless the user explicitly asks otherwise.
