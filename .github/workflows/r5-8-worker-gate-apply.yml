@@ -1,0 +1,38 @@
+name: R5.8 Worker gate apply
+
+on:
+  push:
+    branches:
+      - safe/d1-read-budget-r5-8-finance-20260904
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Apply and verify Worker declaration gate
+        run: |
+          set -euo pipefail
+          python3 scripts/apply-r5-8-worker-gate.py
+          node scripts/test-step1906a-worker-modularization.mjs
+          npm run test:d1-read-budget-r5-8
+      - name: Commit gate and clean one-shot helpers
+        run: |
+          set -euo pipefail
+          rm .github/workflows/r5-8-worker-gate-apply.yml
+          rm scripts/apply-r5-8-worker-gate.py
+          git config user.name "dymovicd123"
+          git config user.email "dymovicd@gmail.com"
+          git add scripts/test-step1906a-worker-modularization.mjs scripts/d1-read-budget-r5-8-worker-manifest.json scripts/apply-r5-8-worker-gate.py .github/workflows/r5-8-worker-gate-apply.yml
+          git commit -m "R5.8: register Finance Worker delta"
+          git push origin HEAD:safe/d1-read-budget-r5-8-finance-20260904
