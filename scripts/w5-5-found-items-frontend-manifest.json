@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "revision": "w5-5-found-items",
+  "frontend": {
+    "panelReturnChanges": {
+      "renderInventoryStocktakePanel": {
+        "before": "be9c93a78acf0dc5e57d3cd3b1f9a1b0c9e3711e1b5d1a560fc6f5ff64523c01",
+        "after": "450e51291301082d755f126cbb10032e27426759f4ec9185027c4f11d211aab2"
+      },
+      "renderInventoryAttentionPanel": {
+        "before": "2a35984eb0d1ad805c1fd4dad8caa273bce70182938496759fd05fe706680a46",
+        "after": "8a7293da162cffe8b053c0df358d4384e0eef2715a8b4cc85b8e7521b910478d"
+      }
+    }
+  }
+}

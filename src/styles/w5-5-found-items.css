@@ -1,0 +1,30 @@
+/* W5.5 — found physical item clarification */
+.w5-found-clarification-note {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid rgba(180, 120, 0, .28);
+  border-radius: 12px;
+  background: rgba(255, 191, 0, .08);
+}
+.w5-found-clarification-note strong { font-size: 14px; }
+.w5-found-clarification-note span { line-height: 1.45; }
+.w5-found-attention-card {
+  border-width: 2px !important;
+  border-color: rgba(207, 126, 0, .38) !important;
+}
+.w5-found-attention-warning {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 191, 0, .10);
+}
+.w5-found-attention-warning strong { font-size: 13px; }
+.w5-found-attention-warning span { font-size: 12px; line-height: 1.45; }
+@media (max-width: 600px) {
+  .w5-found-attention-card { align-items: stretch !important; }
+  .w5-found-attention-card > button { width: 100%; min-height: 44px; }
+  .w5-found-clarification-note { padding: 11px 12px; }
+}

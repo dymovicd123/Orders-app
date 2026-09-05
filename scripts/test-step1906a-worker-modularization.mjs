@@ -52,6 +52,7 @@ const financeF6DeadMetricsPath = path.join(root, 'scripts/finance-f6-dead-metric
 const financeF9SummaryPath = path.join(root, 'scripts/finance-f9-summary-worker-manifest.json')
 const financeF9DatePriorityPath = path.join(root, 'scripts/finance-f9-date-priority-worker-manifest.json')
 const w3NaturalRecoveryWorkerPath = path.join(root, 'scripts/w3-2-natural-recovery-worker-manifest.json')
+const w5FoundItemsWorkerPath = path.join(root, 'scripts/w5-5-found-items-worker-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -235,6 +236,10 @@ try {
   const w3NaturalRecoveryWorker = fs.existsSync(w3NaturalRecoveryWorkerPath) ? JSON.parse(fs.readFileSync(w3NaturalRecoveryWorkerPath, 'utf8')) : null
   if (w3NaturalRecoveryWorker) check(w3NaturalRecoveryWorker.version === 1 && w3NaturalRecoveryWorker.revision === 'w3-2-natural-recovery', 'W3.2 natural recovery Worker manifest invalid')
   const w3NaturalRecoveryWorkerChanges = w3NaturalRecoveryWorker?.changes || {}
+  const w5FoundItemsWorker = fs.existsSync(w5FoundItemsWorkerPath) ? JSON.parse(fs.readFileSync(w5FoundItemsWorkerPath, 'utf8')) : null
+  if (w5FoundItemsWorker) check(w5FoundItemsWorker.version === 1 && w5FoundItemsWorker.revision === 'w5-5-found-items', 'W5.5 found-items Worker manifest invalid')
+  const w5FoundItemsChanges = w5FoundItemsWorker?.changes || {}
+  const w5FoundItemsAdded = w5FoundItemsWorker?.added || {}
 
   const files = walk(workerRoot)
   const indexPath = path.join(workerRoot, 'index.ts')
@@ -277,7 +282,7 @@ try {
   }
 
   const removedNames = Object.keys(removed)
-  const expectedDeclarationCount = manifest.declarationCount - removedNames.length + Object.keys(warehouseTruthFreshnessAdded).length + Object.keys(warehouseAttentionTruthAdded).length + Object.keys(dailyWarehouseAdded).length + Object.keys(attentionContextAdded).length + Object.keys(orderCreateSaveIntegrityAdded).length + Object.keys(orderDeleteMobilityAdded).length + Object.keys(returnExchangeCancelAutonomyAdded).length
+  const expectedDeclarationCount = manifest.declarationCount - removedNames.length + Object.keys(warehouseTruthFreshnessAdded).length + Object.keys(warehouseAttentionTruthAdded).length + Object.keys(dailyWarehouseAdded).length + Object.keys(attentionContextAdded).length + Object.keys(orderCreateSaveIntegrityAdded).length + Object.keys(orderDeleteMobilityAdded).length + Object.keys(returnExchangeCancelAutonomyAdded).length + Object.keys(w5FoundItemsAdded).length
   check(declarations.size === expectedDeclarationCount, `Worker declaration count changed outside accepted allow-lists: ${declarations.size}/${expectedDeclarationCount}`)
   for (const [name, expectedHash] of Object.entries(manifest.declarations)) {
     if (Object.hasOwn(removed, name)) {
@@ -532,17 +537,49 @@ try {
       check(w3NaturalRecoveryWorkerChanged.before === acceptedPostD1ReadBudgetR510Hash, `W3.2 natural recovery Worker baseline hash mismatch: ${name}`)
       acceptedPostW3NaturalRecoveryHash = w3NaturalRecoveryWorkerChanged.after
     }
+    const w5FoundItemsChanged = w5FoundItemsChanges[name]
+    let acceptedPostW5FoundItemsHash = acceptedPostW3NaturalRecoveryHash
+    if (w5FoundItemsChanged) {
+      check(w5FoundItemsChanged.before === acceptedPostW3NaturalRecoveryHash, `W5.5 found-items declaration baseline hash mismatch: ${name}`)
+      acceptedPostW5FoundItemsHash = w5FoundItemsChanged.after
+    }
     check(
-      sha(declarations.get(name)) === acceptedPostW3NaturalRecoveryHash,
-      w3NaturalRecoveryWorkerChanged
-        ? `Worker declaration changed beyond exact W3.2 natural recovery allow-list: ${name}`
+      sha(declarations.get(name)) === acceptedPostW5FoundItemsHash,
+      w5FoundItemsChanged
+        ? `Worker declaration changed beyond exact W5.5 found-items allow-list: ${name}`
         : `Worker declaration body changed beyond accepted cumulative deltas: ${name}`,
     )
   }
 
+  for (const [name, expectedHash] of Object.entries(w5FoundItemsAdded)) {
+    check(declarations.has(name), `W5.5 added Worker declaration missing: ${name}`)
+    check(sha(declarations.get(name)) === expectedHash, `W5.5 added Worker declaration changed: ${name}`)
+  }
+
   // Shipping hotfix 2026-09-01: normalize only this retired final-shipping blocker
   // back to the accepted router baseline. The shipping regression requires it absent live.
-  const normalizedRouter = currentRouter
+  const w5RevertedRouter = w5FoundItemsWorker ? currentRouter
+    .replace(
+      "const input = await readJson<{ productId?: unknown; material?: unknown; length?: unknown; category?: unknown; gender?: unknown; color?: unknown; size?: unknown; sizes?: unknown; createReferenceFields?: unknown; deferUnknown?: unknown }>(request);",
+      "const input = await readJson<{ productId?: unknown; material?: unknown; length?: unknown; category?: unknown; gender?: unknown; color?: unknown; size?: unknown; createReferenceFields?: unknown }>(request);",
+    )
+    .replace(
+      `        const createReferenceFields = input.createReferenceFields;
+        const wantsNewReferenceValue = Array.isArray(createReferenceFields)
+          ? createReferenceFields.length > 0
+          : Boolean(createReferenceFields && typeof createReferenceFields === 'object' && Object.values(createReferenceFields as Record<string, unknown>).some((value) => value === true));`,
+      `        const createReferenceFields = input.createReferenceFields && typeof input.createReferenceFields === 'object'
+          ? input.createReferenceFields as Record<string, unknown>
+          : {};
+        const wantsNewReferenceValue = Object.values(createReferenceFields).some((value) => value === true);`,
+    )
+    .replace(/\n\s*const inventoryFoundStockReconcileMatch = url\.pathname\.match\(\/\^\\\/api\\\/inventory\\\/found-stock\\\/\(\\d\+\)\\\/reconcile\$\/\);[\s\S]*?(?=\n\s*const inventoryStocktakeAddItemMatch)/, '')
+    : currentRouter
+  if (w5FoundItemsWorker) {
+    check(sha(currentRouter) === w5FoundItemsWorker.router.after, 'W5.5 Worker router changed beyond exact found-items delta')
+    check(sha(w5RevertedRouter) === w5FoundItemsWorker.router.before, 'W5.5 Worker router reverse baseline mismatch')
+  }
+  const normalizedRouter = w5RevertedRouter
     .replace(/\n\s*const orderDeleteMatch = url\.pathname\.match\(\/\^\\\/api\\\/orders\\\/\(\\d\+\)\\\/delete\$\/\);[\s\S]*?(?=\n\s*const orderMatch = url\.pathname\.match)/, '')
     .replace(
       "          const blockers = await getOrderShipmentInventoryBlockers(env.DB, id);",
@@ -709,10 +746,16 @@ try {
       check(w3NaturalRecoveryWorkerChanged.before === acceptedPostRuntimeSqlSyntaxHash, `W3.2 natural recovery changed 192B1-added declaration baseline hash mismatch: ${name}`)
       acceptedPostW3NaturalRecoveryHash = w3NaturalRecoveryWorkerChanged.after
     }
+    const w5FoundItemsChanged = w5FoundItemsChanges[name]
+    let acceptedPostW5FoundItemsHash = acceptedPostW3NaturalRecoveryHash
+    if (w5FoundItemsChanged) {
+      check(w5FoundItemsChanged.before === acceptedPostW3NaturalRecoveryHash, `W5.5 changed 192B1-added declaration baseline hash mismatch: ${name}`)
+      acceptedPostW5FoundItemsHash = w5FoundItemsChanged.after
+    }
     check(
-      sha(declarations.get(name)) === acceptedPostW3NaturalRecoveryHash,
-      w3NaturalRecoveryWorkerChanged
-        ? `192B1-added declaration changed beyond exact W3.2 allow-list: ${name}`
+      sha(declarations.get(name)) === acceptedPostW5FoundItemsHash,
+      w5FoundItemsChanged
+        ? `192B1-added declaration changed beyond exact W5.5 found-items allow-list: ${name}`
         : `192B1 added Worker declaration changed beyond accepted deltas: ${name}`,
     )
   }

@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "revision": "w5-5-found-items",
+  "changes": {
+    "addInventoryStocktakeCombination": {
+      "before": "109f80ead5bacfa5f1a5958f7ce65cd9308322047434063b79249456a10bb2ef",
+      "after": "b783a98770ffa3ce9c2827c4a486e1a1a445fa8ab07540ebdca6ff4cb92becae"
+    },
+    "completeInventoryStocktakeSession": {
+      "before": "7c420ed79cb6bad3b727e03d53b9057e47d355e457fcebda4ae0d1331ccb10a2",
+      "after": "81dee08a572b4cb80f9d30fdae82343cab4c1f3d5b33b7c4f9832c6cba7243aa"
+    },
+    "cancelInventoryStocktakeSession": {
+      "before": "544eaad0bb291e05ae1b955032008001e7719421e291778afe733e69ce2812b6",
+      "after": "95d9fed4303da71caa8db3a81159dce06a3ada57bf152f79886ea75cb7d95b3b"
+    },
+    "getWarehouseAttentionSummary": {
+      "before": "847cb68c8c8f390ece2819ef5eaa4ac13eb758e699a98bb88ce4ca4e5f0ab5fc",
+      "after": "30121a8098e99e3fa78fce919c11ab0ca4249349c72627f52e61b16d9f3ad89f"
+    }
+  },
+  "added": {
+    "reconcileFoundInventoryStock": "69bd5cd0362df34394c3b10cd5ca4d441d0e32c2e10404bfa1ed85be7fa39e77"
+  },
+  "router": {
+    "before": "f5858c71943db7316f1c4a1ee15b296a2143640f9066934374a303ef0fff1954",
+    "after": "9700ffcf609f2fcda79b3c10f332771d97e8c1606de7e8bf045b64743703bdeb"
+  }
+}

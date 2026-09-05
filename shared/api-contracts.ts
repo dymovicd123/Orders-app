@@ -99,6 +99,24 @@ export type WarehouseAttentionHandoverItem = {
   itemCreatedAt?: string | null
 }
 
+export type WarehouseAttentionFoundItem = {
+  stockId: number
+  source: InventorySource
+  productId: number
+  productName: string
+  category: AudienceCategory
+  gender: string
+  color: string
+  material: string
+  length: string
+  size: string
+  physical: number
+  createdAt: string
+  updatedAt: string
+  exactVariantId?: number | null
+  exactKnown?: boolean
+}
+
 export type WarehouseAttentionStocktakeItem = {
   id: string
   source: InventorySource
@@ -118,6 +136,7 @@ export type WarehouseAttentionSummaryResponse = ApiOkResponse & {
     catalog: number
     handover: number
     stocktake: number
+    found?: number
   }
   items?: {
     shortages: WarehouseAttentionShortageItem[]
@@ -126,6 +145,7 @@ export type WarehouseAttentionSummaryResponse = ApiOkResponse & {
     catalog: WarehouseAttentionCatalogItem[]
     handover: WarehouseAttentionHandoverItem[]
     stocktakes: WarehouseAttentionStocktakeItem[]
+    found?: WarehouseAttentionFoundItem[]
   }
 }
 
@@ -302,6 +322,8 @@ export type InventoryStocktakeMutationResponse = ApiOkResponse & {
   createdCount?: number
   addedCount?: number
   alreadyPresentCount?: number
+  deferredUnknownCount?: number
+  unresolvedFoundCount?: number
   item?: InventoryStocktakeCountItem
 }
 

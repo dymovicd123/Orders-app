@@ -39,6 +39,7 @@ import '../../styles/188k1-stocktake-inline-add.css'
 import '../../styles/w5-checking-ux.css'
 import '../../styles/w5-2-short-check.css'
 import '../../styles/w5-3-selective-queue.css'
+import '../../styles/w5-5-found-items.css'
 import '../../styles/192b2a-warehouse-attention-actions.css'
 
 type SimpleStockDetail = {
@@ -180,6 +181,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     loadInventoryLifecycleContext,
     resolveInventoryLifecycleFacts,
     reconcileKnownInventoryLifecycle,
+    reconcileFoundInventoryStock,
     loadWarehouseAttention,
     loadInventoryAudit,
     loadInventoryData,
@@ -1272,11 +1274,17 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         setStocktakeNotice(result?.message || 'Ревизию пока нельзя завершить.')
         return
       }
+      const unresolvedFoundCount = Math.max(0, Number(result?.unresolvedFoundCount || 0))
       setStocktakeNotice(result.message || 'Ревизия завершена.')
       setStocktakeSession(null)
       setStocktakeFacts({})
       setStocktakeReviewMode(false)
-      await Promise.all([refreshInventoryModule(true), refreshActiveStocktakes()])
+      await Promise.allSettled([refreshInventoryModule(true), refreshActiveStocktakes()])
+      if (unresolvedFoundCount > 0) {
+        setAttentionCategory('identify')
+        openInventoryPanel('attention')
+        void loadWarehouseAttention(true)
+      }
     } catch (error) {
       setStocktakeNotice(error instanceof Error ? error.message : 'Не удалось завершить ревизию.')
     } finally {
@@ -1349,15 +1357,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     const createReferenceFields = ([
       ['material', materialFact.create], ['length', lengthFact.create], ['color', colorFact.create], ['size', createSize],
     ] as const).filter(([, create]) => create).map(([field]) => field)
-    if (createReferenceFields.length) {
-      const newValues = [
-        materialFact.create ? `материал «${material}»` : '',
-        lengthFact.create ? `длину «${length}»` : '',
-        colorFact.create ? `цвет «${color}»` : '',
-        createSize ? `${stocktakeFoundDraft.category === 'child' ? 'возраст' : 'размер'} «${String(stocktakeFoundCustom.size || '').trim()}»` : '',
-      ].filter(Boolean).join(', ')
-      if (!window.confirm(`Добавить в канонические справочники: ${newValues}? Эти значения станут доступны во всей системе.`)) return
-    }
+    const deferUnknown = createReferenceFields.length > 0
 
     setStocktakeAddingVariantId(-1)
     try {
@@ -1370,7 +1370,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         gender: stocktakeFoundDraft.gender,
         color,
         sizes,
-        createReferenceFields,
+        createReferenceFields: deferUnknown ? [] : createReferenceFields,
+        deferUnknown,
       })
       if (result?.session) {
         adoptStocktakeSession(result.session)
@@ -1381,20 +1382,36 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
           if (groupIndex >= 0) setStocktakeProductIndex(groupIndex)
         }
       }
-      await Promise.all([loadCatalogData(true), createReferenceFields.length ? loadReferencesData(true) : Promise.resolve(null)])
+      await Promise.all([loadCatalogData(true), !deferUnknown && createReferenceFields.length ? loadReferencesData(true) : Promise.resolve(null)])
       setStocktakeFoundDraft({ material: '', length: '', category: stocktakeFoundDraft.category, gender: '', color: '', size: '' })
       setStocktakeFoundSizes([])
       setStocktakeFoundCustom({ material: '', length: '', color: '', size: '' })
       setStocktakeFoundNewFields({})
       const added = Number(result?.addedCount || 0)
       const existing = Number(result?.alreadyPresentCount || 0)
-      setStocktakeNotice(`${added ? `Добавлено в ревизию: ${added}. ` : ''}${existing ? `Уже были в ревизии: ${existing}. ` : ''}Теперь укажите фактическое количество по найденным размерам.`)
+      const deferred = Number(result?.deferredUnknownCount || 0)
+      setStocktakeNotice(deferred ? `Найдено позиций для уточнения: ${deferred}. Они сохранены в этой проверке — укажите фактическое количество. После завершения система отдельно покажет, что нужно определить.` : `${added ? `Добавлено в ревизию: ${added}. ` : ''}${existing ? `Уже были в ревизии: ${existing}. ` : ''}Теперь укажите фактическое количество по найденным размерам.`)
       setStocktakeFoundOpen(false)
     } catch (error) {
       setStocktakeNotice(error instanceof Error ? error.message : 'Не удалось добавить позиции в ревизию.')
     } finally {
       setStocktakeAddingVariantId(0)
     }
+  }
+
+  async function resolveFoundInventoryStock(item: any) {
+    if (!item?.stockId) return
+    try {
+      await reconcileFoundInventoryStock(Number(item.stockId))
+      await Promise.allSettled([loadInventoryData(item.source === 'boutique' ? 'boutique' : 'warehouse', true, '', false), loadWarehouseAttention(true)])
+    } catch (error) {
+      setStocktakeNotice(error instanceof Error ? error.message : 'Не удалось определить найденную позицию.')
+    }
+  }
+  function openFoundInventoryCatalog(item: any) {
+    setCatalogAdminMode('catalog')
+    if (item?.category === 'child' || item?.category === 'adult') setCatalogCategoryFilter(item.category)
+    openInventoryPanel('catalog')
   }
 
   async function openStocktakeOrders(row: any) {
@@ -1672,6 +1689,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const warehouseClarificationCount = Number(warehouseAttention?.counts?.handover || 0)
     + Number(warehouseAttention?.counts?.lifecycle || 0)
     + Number(warehouseAttention?.counts?.catalog || 0)
+    + Number(warehouseAttention?.counts?.found || 0)
 
   useEffect(() => {
     if (activeSector !== 'inventory' || inventoryPanel !== 'movement' || inventoryDraft.movementType === 'arrival') return
@@ -2130,6 +2148,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         openAttentionHandover,
         openAttentionIntake,
         openAttentionLifecycle,
+        openAttentionFoundCatalog: openFoundInventoryCatalog,
+        reconcileFoundInventoryStock: resolveFoundInventoryStock,
         refreshWarehouseAttention,
         setAttentionCategory,
         sourceLabel,
