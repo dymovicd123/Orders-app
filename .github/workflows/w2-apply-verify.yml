@@ -1,0 +1,74 @@
+name: W2 apply and verify
+
+on:
+  push:
+    branches:
+      - safe/w2-validate-20260905
+
+permissions:
+  contents: write
+
+jobs:
+  apply-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Rebuild and apply W2 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .w2tmp/part00
+          test -f .w2tmp/part01
+          cat .w2tmp/part* | base64 --decode | gzip --decompress > /tmp/w2-human-warehouse.patch
+          echo "Patch bytes: $(wc -c < /tmp/w2-human-warehouse.patch)"
+          echo "Patch sha256: $(sha256sum /tmp/w2-human-warehouse.patch | awk '{print $1}')"
+          git apply --check /tmp/w2-human-warehouse.patch
+          git apply /tmp/w2-human-warehouse.patch
+          git diff --check
+          git diff --stat
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: W1 adjacent warehouse regression
+        run: node scripts/test-w1-warehouse-reliability.mjs
+
+      - name: Cumulative release gate
+        run: npm run release:check
+
+      - name: Database safety
+        run: npm run verify:db-safety
+
+      - name: Production build
+        run: npm run build
+
+      - name: Wrangler dry run
+        run: npx wrangler deploy --dry-run
+
+      - name: Commit validated W2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .w2tmp
+          rm -f .github/workflows/w2-current-snapshot.yml
+          rm -f .github/workflows/w2-apply-verify.yml
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --stat
+          test -n "$(git status --porcelain)"
+          git commit -m "Complete W2 human warehouse step"
+          git push origin HEAD:safe/w2-validate-20260905
