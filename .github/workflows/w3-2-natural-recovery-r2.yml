@@ -77,6 +77,7 @@ jobs:
           python3 scripts/apply-w3-2-worker-preservation-r2.py
           python3 scripts/apply-w3-2-daily-test-contract.py
           python3 scripts/apply-w3-2-attention-context-test-contract.py
+          python3 scripts/apply-w3-2-typescript-cleanup.py
 
       - name: Generate exact W3.2 preservation manifests
         run: |
