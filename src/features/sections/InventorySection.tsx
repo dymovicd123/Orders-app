@@ -37,6 +37,7 @@ import '../../styles/188h-physical-transfers.css'
 import '../../styles/188i-cycle-counts.css'
 import '../../styles/188k1-stocktake-inline-add.css'
 import '../../styles/w5-checking-ux.css'
+import '../../styles/w5-2-short-check.css'
 import '../../styles/192b2a-warehouse-attention-actions.css'
 
 type SimpleStockDetail = {

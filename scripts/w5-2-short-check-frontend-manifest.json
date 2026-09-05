@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "revision": "w5-2-short-check",
+  "frontend": {
+    "panelReturnChanges": {
+      "renderInventoryStocktakePanel": {
+        "before": "981aafe065cf8bfa016037884a0e88a57b65e0f707fecd930a85ee2942fdf2d3",
+        "after": "b075028910c70c8a79adf59d8bcdffd832bcb15a009fd757751872b432f6da6c"
+      }
+    }
+  }
+}
