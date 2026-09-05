@@ -36,6 +36,7 @@ import '../../styles/188g-inventory-lifecycle.css'
 import '../../styles/188h-physical-transfers.css'
 import '../../styles/188i-cycle-counts.css'
 import '../../styles/188k1-stocktake-inline-add.css'
+import '../../styles/w5-checking-ux.css'
 import '../../styles/192b2a-warehouse-attention-actions.css'
 
 type SimpleStockDetail = {
@@ -1023,7 +1024,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     const existing = stocktakeActiveSessions.find((entry: any) => entry.source === stocktakeSource)
     if (existing) return void resumeStocktake(existing)
     if (stocktakeStartMode === 'selective' && !stocktakeSelectedProductIds.length) {
-      setStocktakeNotice('Для выборочной ревизии отметьте хотя бы один товар.')
+      setStocktakeNotice('Для проверки нескольких товаров выберите хотя бы один товар.')
       return
     }
     if (stocktakeStartMode === 'full' && stocktakeSourceStats[stocktakeSource] > 150 && !window.confirm(`Полная ревизия содержит ${stocktakeSourceStats[stocktakeSource]} позиций. Её можно закрыть и продолжить позже. Начать?`)) return
@@ -1189,14 +1190,14 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
 
   async function discardStocktake() {
     if (!stocktakeSession?.id || stocktakeBusy) return
-    if (!window.confirm('Отменить текущую ревизию? Уже введённые числа останутся только в истории отменённой сессии и не изменят остатки.')) return
+    if (!window.confirm('Отменить текущую проверку? Введённые числа останутся только в истории отменённой проверки и не изменят остатки. Если хотите продолжить позже, отменять не нужно.')) return
     setStocktakeBusy(true)
     try {
       await cancelInventoryStocktakeSession(stocktakeSession.id)
       setStocktakeSession(null)
       setStocktakeFacts({})
       setStocktakeReviewMode(false)
-      setStocktakeNotice('Ревизия отменена. Остатки не изменялись.')
+      setStocktakeNotice('Проверка отменена. Остатки не изменялись.')
       await refreshActiveStocktakes()
     } catch (error) {
       setStocktakeNotice(error instanceof Error ? error.message : 'Не удалось отменить ревизию.')

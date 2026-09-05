@@ -208,8 +208,8 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                         <section className="stocktake-e-start stocktake-e-start-v5">
                           <div className="stocktake-start-intro">
                             <span className="stocktake-step-kicker">{stocktakeActiveForSelectedSource ? 'Проверка уже идёт' : 'Новая проверка'}</span>
-                            <h4>{stocktakeActiveForSelectedSource ? `Продолжить пересчёт · ${stocktakeSourceTitle(stocktakeSource)}` : 'Выберите точку и масштаб пересчёта'}</h4>
-                            <p>{stocktakeActiveForSelectedSource ? 'Новая проверка этой точки недоступна, пока текущая не завершена или не отменена.' : 'Для нескольких товаров выберите выборочную проверку. Полную используйте, только когда нужно пересчитать всю точку.'}</p>
+                            <h4>{stocktakeActiveForSelectedSource ? `Продолжить пересчёт · ${stocktakeSourceTitle(stocktakeSource)}` : 'Что хотите проверить?'}</h4>
+                            <p>{stocktakeActiveForSelectedSource ? 'Новая проверка этой точки недоступна, пока текущая не завершена или не отменена.' : 'Для обычной сверки выберите только нужные товары. Полную проверку запускайте, когда действительно пересчитываете всю точку.'}</p>
                           </div>
     
                           <div className="stocktake-source-switch stocktake-source-switch-v5" role="tablist" aria-label="Точка проверки">
@@ -243,10 +243,11 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                                       {(cycleCountData.items || []).map((row: any) => {
                                         const value = cycleCountValues[String(row.variantId)] ?? ''
                                         const attrs = [row.material !== 'СТАНДАРТ' ? row.material : '', row.length !== 'СТАНДАРТ' ? row.length : '', row.gender, row.color, row.size].filter(Boolean).join(' · ')
-                                        return <div className={`inventory-cycle-count-row ${value !== '' ? 'is-filled' : ''} ${Number(row.free || 0) < 0 ? 'needs-attention' : ''}`} key={`cycle-count-${row.variantId}`}>
+                                        const needsIndependentCount = Number(row.free || 0) < 0 || Number(row.lastDifference || 0) !== 0
+                                        return <div className={`inventory-cycle-count-row ${value !== '' ? 'is-filled' : ''} ${needsIndependentCount ? 'needs-attention' : ''}`} key={`cycle-count-${row.variantId}`}>
                                           <div className="inventory-cycle-count-name"><strong>{row.productName}</strong><span>{attrs || 'Стандартная комбинация'}</span><small>{(row.reasons || []).slice(0, 2).join(' · ')}</small></div>
-                                          <div className="inventory-cycle-count-system"><span>На месте <strong>{row.physical}</strong></span>{Number(row.reserved || 0) ? <span>В заказах <strong>{row.reserved}</strong></span> : null}</div>
-                                          <label><span>Факт</span><input type="number" min="0" step="1" inputMode="numeric" value={value} placeholder="—" onChange={(event) => { const raw = event.target.value; if (raw === '') { setCycleCountValues((current) => ({ ...current, [String(row.variantId)]: '' })); return } const parsed = Number(raw); if (!Number.isFinite(parsed)) return; setCycleCountValues((current) => ({ ...current, [String(row.variantId)]: String(Math.max(0, Math.trunc(parsed))) })) }} /></label>
+                                          <div className={`inventory-cycle-count-system ${needsIndependentCount ? 'is-blind' : ''}`}>{needsIndependentCount ? <span><strong>Сначала посчитайте физически</strong></span> : <span>По системе: <strong>{row.physical}</strong> на месте</span>}{Number(row.reserved || 0) ? <span>В заказах <strong>{row.reserved}</strong></span> : null}</div>
+                                          <label><span>{needsIndependentCount ? 'Введите факт' : 'Факт'}</span><input aria-label={`Фактическое количество ${row.productName}`} type="number" min="0" step="1" inputMode="numeric" value={value} placeholder={needsIndependentCount ? 'Посчитайте' : '—'} onChange={(event) => { const raw = event.target.value; if (raw === '') { setCycleCountValues((current) => ({ ...current, [String(row.variantId)]: '' })); return } const parsed = Number(raw); if (!Number.isFinite(parsed)) return; setCycleCountValues((current) => ({ ...current, [String(row.variantId)]: String(Math.max(0, Math.trunc(parsed))) })) }} /></label>
                                         </div>
                                       })}
                                     </div>
@@ -258,11 +259,11 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     
                               <div className="stocktake-start-modes stocktake-start-modes-v5">
                                 <button type="button" className={`stocktake-start-mode ${stocktakeStartMode === 'selective' ? 'is-active' : ''}`} onClick={() => setStocktakeStartMode('selective')}>
-                                  <strong>Выборочная</strong>
-                                  <span>Один или несколько товаров</span>
+                                  <strong>Проверить несколько товаров</strong>
+                                  <span>Выберите только то, что хотите пересчитать сейчас</span>
                                 </button>
                                 <button type="button" className={`stocktake-start-mode ${stocktakeStartMode === 'full' ? 'is-active' : ''}`} onClick={() => setStocktakeStartMode('full')}>
-                                  <strong>Полная</strong>
+                                  <strong>Полная проверка точки</strong>
                                   <span>{stocktakeSourceStats[stocktakeSource]} позиций</span>
                                 </button>
                               </div>
@@ -286,7 +287,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     
                               <div className="stocktake-start-submit">
                                 <div>{stocktakeStartMode === 'selective' ? (stocktakeSelectedProductIds.length ? `${stocktakeSelectedProductIds.length} товаров · ${selectedStocktakePositionCount} позиций` : 'Выберите хотя бы один товар') : `Полная проверка · ${stocktakeSourceStats[stocktakeSource]} позиций`}</div>
-                                <button className="primary stocktake-e-start-button" type="button" disabled={stocktakeBusy || (stocktakeStartMode === 'selective' && !stocktakeSelectedProductIds.length)} onClick={() => void startStocktake()}>{stocktakeBusy ? 'Подготавливаю…' : 'Начать проверку'}</button>
+                                <button className="primary stocktake-e-start-button" type="button" disabled={stocktakeBusy || (stocktakeStartMode === 'selective' && !stocktakeSelectedProductIds.length)} onClick={() => void startStocktake()}>{stocktakeBusy ? 'Подготавливаю…' : stocktakeStartMode === 'selective' ? 'Начать проверку выбранных товаров' : 'Начать полную проверку'}</button>
                               </div>
                             </>
                           )}
@@ -302,12 +303,15 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                             <p>Начата {formatStocktakeMoment(stocktakeSession.startedAt)} · {stocktakeSession.id}</p>
                           </div>
                           <div className="stocktake-e-save-state">
-                            <strong>{stocktakeSavingIds.length ? 'Сохраняю…' : stocktakeUnsavedCount ? `Не сохранено: ${stocktakeUnsavedCount}` : 'Сохранено в системе ✓'}</strong>
-                            <span>{stocktakeSavingIds.length || stocktakeUnsavedCount ? 'Не закрывайте страницу, пока изменения не сохранятся.' : 'Можно закрыть страницу и продолжить позже.'}</span>
+                            <strong>{stocktakeSavingIds.length ? 'Сохраняю…' : stocktakeUnsavedCount ? `Не сохранено: ${stocktakeUnsavedCount}` : 'Сохранено автоматически ✓'}</strong>
+                            <span>{stocktakeSavingIds.length || stocktakeUnsavedCount ? 'Не закрывайте страницу, пока изменения не сохранятся.' : 'Можно перейти в другой раздел и продолжить эту проверку позже.'}</span>
                           </div>
-                          <div className="stocktake-e-head-actions">
-                            <button className="secondary compact" type="button" onClick={printInventoryStocktakePdf}>Печатный лист</button>
-                            <button className="ghost compact danger" type="button" disabled={stocktakeBusy} onClick={() => void discardStocktake()}>Отменить</button>
+                          <div className="stocktake-e-head-actions-wrap">
+                            <div className="stocktake-e-head-actions">
+                              <button className="secondary compact" type="button" onClick={printInventoryStocktakePdf}>Печатный лист</button>
+                              <button className="secondary compact danger stocktake-cancel-button" type="button" disabled={stocktakeBusy} onClick={() => void discardStocktake()}>Отменить проверку</button>
+                            </div>
+                            <small>Чтобы продолжить позже, отменять не нужно — просто выйдите из раздела.</small>
                           </div>
                         </section>
     
@@ -316,7 +320,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                         {!stocktakeReviewMode ? <div className={`stocktake-sticky-progress ${stocktakeReadyForReview ? 'is-ready' : ''}`}>
                           <div className="stocktake-sticky-progress-main"><strong>{stocktakeProgress.filled} из {stocktakeProgress.total} проверено</strong><span>{stocktakeProgress.recount ? `Нужно повторно пересчитать ${stocktakeProgress.recount}` : stocktakeProgress.unfilled ? `Завершение станет доступно после проверки ещё ${stocktakeProgress.unfilled}` : 'Все позиции заполнены — можно проверить результат.'}</span></div>
                           <div className="stocktake-sticky-progress-bar"><i style={{ width: `${stocktakeProgress.total ? Math.round((stocktakeProgress.filled / stocktakeProgress.total) * 100) : 0}%` }} /></div>
-                          <button className="primary compact" type="button" disabled={!stocktakeReadyForReview || stocktakeBusy || stocktakeSavingIds.length > 0 || stocktakeUnsavedCount > 0} title={!stocktakeReadyForReview ? 'Сначала заполните все позиции и повторно пересчитайте конфликтные строки.' : ''} onClick={() => void openStocktakeReview()}>Проверить результат</button>
+                          <button className="primary compact stocktake-review-button" type="button" disabled={!stocktakeReadyForReview || stocktakeBusy || stocktakeSavingIds.length > 0 || stocktakeUnsavedCount > 0} title={!stocktakeReadyForReview ? 'Сначала заполните все позиции и повторно пересчитайте конфликтные строки.' : ''} onClick={() => void openStocktakeReview()}>Проверить результат</button>
                         </div> : null}
     
                         {!stocktakeReviewMode ? (
@@ -525,7 +529,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                           <section className="stocktake-e-review">
                             <div className="stocktake-e-review-head">
                               <div><span className="stocktake-step-kicker">Проверка перед применением</span><h4>{stocktakeReviewRows.length ? `${stocktakeReviewRows.length} позиций требуют внимания` : 'Расхождений нет'}</h4><p>Система показывает учётное количество только после завершения слепого пересчёта.</p></div>
-                              <button className="secondary compact" type="button" onClick={() => setStocktakeReviewMode(false)}>← Вернуться к подсчёту</button>
+                              <button className="secondary compact stocktake-review-back" type="button" onClick={() => setStocktakeReviewMode(false)}>← Вернуться к подсчёту</button>
                             </div>
     
                             {stocktakeReviewRows.length ? (
@@ -551,7 +555,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     
                             <div className="stocktake-e-review-actions">
                               <div><strong>{stocktakeSourceTitle(stocktakeSession.source)} · проверено {stocktakeProgress.total} позиций</strong><span>Перед применением система ещё раз проверит, не изменился ли физический остаток после вашего подсчёта. Ничего не будет применено частично.</span></div>
-                              <button className="primary" type="button" disabled={stocktakeBusy || stocktakeSavingIds.length > 0 || stocktakeUnsavedCount > 0} onClick={() => void applyStocktake()}>{stocktakeBusy ? 'Проверяю и сохраняю…' : stocktakeProgress.differences ? `Применить ${stocktakeProgress.differences} изменений` : 'Завершить ревизию'}</button>
+                              <button className="primary stocktake-finish-button" type="button" disabled={stocktakeBusy || stocktakeSavingIds.length > 0 || stocktakeUnsavedCount > 0} onClick={() => void applyStocktake()}>{stocktakeBusy ? 'Проверяю и сохраняю…' : stocktakeProgress.differences ? `Применить ${stocktakeProgress.differences} изменений` : 'Завершить проверку'}</button>
                             </div>
                           </section>
                         )}
