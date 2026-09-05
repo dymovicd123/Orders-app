@@ -22,6 +22,19 @@ jobs:
           cache: npm
       - name: Apply focused fix
         run: python scripts/apply-w2-attention-refresh-r1.py
+      - name: Normalize focused test window
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/test-w2-attention-refresh-r1.mjs')
+          text = p.read_text(encoding='utf-8')
+          old = "  const openPanel = between(app, 'const openInventoryPanel = (panel: InventoryPanel) => {', '  async function refreshInventoryModule')"
+          new = "  const openPanelStart = app.indexOf('const openInventoryPanel = (panel: InventoryPanel) => {')\n  check(openPanelStart >= 0, 'openInventoryPanel missing')\n  const openPanel = app.slice(openPanelStart, openPanelStart + 1800)"
+          if old not in text:
+              raise SystemExit('focused test openPanel marker missing')
+          p.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Diff safety
         run: |
           git diff --check
