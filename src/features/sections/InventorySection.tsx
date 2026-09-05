@@ -817,10 +817,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       setCycleCountData(null)
       setCycleCountValues({})
     }
-    if (inventoryPanel !== 'stocktake' || !isAdmin || stocktakeSession) return
+    if (inventoryPanel !== 'stocktake' || stocktakeSession || stocktakeStartMode !== 'selective') return
+    if (cycleCountLoading || cycleCountData?.source === stocktakeSource || (!cycleCountData && cycleCountNotice)) return
     setCycleCountValues({})
     void refreshCycleCountSuggestions(stocktakeSource)
-  }, [inventoryPanel, activeSector, isAdmin, simpleStockSource, stocktakeSource, stocktakeSession?.id, cycleCountData?.source])
+  }, [inventoryPanel, activeSector, simpleStockSource, stocktakeSource, stocktakeStartMode, stocktakeSession?.id, cycleCountData?.source, cycleCountLoading, cycleCountNotice])
 
   useEffect(() => {
     if (!stocktakeSession || !currentStocktakeGroup || stocktakeFoundOtherProduct) return

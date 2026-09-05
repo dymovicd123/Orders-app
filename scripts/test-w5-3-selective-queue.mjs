@@ -13,7 +13,7 @@ for (const marker of [
   'const selectedStocktakeProducts = (stocktakeSelectableProducts || []).filter',
   'const visibleStocktakeSelectableProducts = [...(filteredStocktakeSelectableProducts || [])].sort',
   'const selectiveQueueIsLarge = selectedStocktakePositionCount > 20',
-  'Соберите короткую проверку',
+  'Соберите проверку',
   'Вы будете проверять',
   'Очистить',
   'Убрать из проверки',

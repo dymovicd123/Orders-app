@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "revision": "w5-3r-unified-check",
+  "frontend": {
+    "panelReturnChanges": {
+      "renderInventoryStocktakePanel": {
+        "before": "2570125887b13fb529005a96bf87da4f1a511609d2664ba25e142ede50adde98",
+        "after": "285958391713329e5a492fc2df180c504191a12900a1050cdc1b161b99ff5dfe"
+      }
+    }
+  }
+}
