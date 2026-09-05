@@ -46,4 +46,17 @@ s = one(
 )
 
 p.write_text(s, encoding='utf-8')
-print('W5.5 InventorySection kept within existing 1906B controller budget')
+
+# Preserve the typed API boundary: this call only consumes ok/message and returns the
+# narrow response object to the caller; W5.5 must not reintroduce readJsonResponse<any>.
+p = Path('src/App.tsx')
+s = p.read_text(encoding='utf-8')
+s = one(
+    s,
+    "const data = await readJsonResponse<any>(response, 'Уточнение найденной позиции')",
+    "const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'Уточнение найденной позиции')",
+    'typed found reconciliation response',
+)
+p.write_text(s, encoding='utf-8')
+
+print('W5.5 controller budgets and typed API boundary preserved')
