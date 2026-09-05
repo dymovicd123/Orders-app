@@ -132,6 +132,7 @@ export function useInventoryAttentionActions(input: InventoryAttentionActionsInp
     setAttentionError('')
     try {
       const data = await loadWarehouseAttention(true)
+      if (!data?.items) throw new Error('Не удалось загрузить список вопросов склада. Нажмите «Обновить» и попробуйте ещё раз.')
       setAttentionCategory((current) => attentionCategoryCount(data, current) > 0 ? current : firstAttentionCategory(data))
     } catch (error) {
       setAttentionError(error instanceof Error ? error.message : 'Не удалось обновить вопросы склада.')
@@ -210,7 +211,7 @@ export function useInventoryAttentionActions(input: InventoryAttentionActionsInp
       const result = await reconcileKnownInventoryLifecycle(Number(item.id))
       if (!result?.ok) setAttentionError(result?.message || 'Не удалось завершить приёмку.')
       else {
-        const data = await loadWarehouseAttention(true)
+        const data = result?.warehouseAttention || await loadWarehouseAttention(true)
         setAttentionCategory((current) => attentionCategoryCount(data, current) > 0 ? current : firstAttentionCategory(data))
       }
     } catch (error) {
