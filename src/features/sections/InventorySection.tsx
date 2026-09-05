@@ -1638,8 +1638,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     openAttentionHandover,
     openAttentionIntake,
     openAttentionLifecycle,
-    openAttentionShortage,
-    openAttentionStocktake,
     refreshWarehouseAttention,
     setAttentionCategory,
   } = useInventoryAttentionActions({
@@ -1653,24 +1651,23 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     setQuickStocktakeNotice,
     setQuickStocktakeOpen,
     setSimpleStockDetail,
-    setSimpleStockSource,
-    setSimpleStockReservations,
-    setSimpleStockReservationsBusy,
     setCatalogAdminMode,
     setCatalogReviewTaskIndex,
     setInventoryLifecycleTaskIndex,
-    setStocktakeSource,
     loadWarehouseAttention,
     loadInventoryLifecycle,
     loadCatalogReview,
     reconcileKnownInventoryLifecycle,
     quickInventoryStocktake,
     loadInventoryData,
-    loadInventoryReservations,
     openInventoryPanel,
     openOrderStockHandoverById,
   })
 
+  const warehousePendingIntakeCount = Number(warehouseAttention?.counts?.intake || 0)
+  const warehouseClarificationCount = Number(warehouseAttention?.counts?.handover || 0)
+    + Number(warehouseAttention?.counts?.lifecycle || 0)
+    + Number(warehouseAttention?.counts?.catalog || 0)
 
   useEffect(() => {
     if (activeSector !== 'inventory' || inventoryPanel !== 'movement' || inventoryDraft.movementType === 'arrival') return
@@ -2107,8 +2104,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                   ))}
                 </div>
                 <div className="warehouse-w2-secondary">
-                  <button type="button" className={`warehouse-w2-recovery ${inventoryPanel === 'attention' ? 'is-active' : ''}`} onClick={() => openInventoryPanel('attention')} title="Вопросы, которые нельзя безопасно решить автоматически">
-                    <span>Нужно уточнить</span>{Number(warehouseAttention?.total || 0) > 0 ? <b>{warehouseAttention?.total}</b> : null}
+                  {warehousePendingIntakeCount > 0 ? <button type="button" className={`warehouse-w2-recovery warehouse-w3-intake ${inventoryPanel === 'attention' && attentionCategory === 'intake' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory('intake'); openInventoryPanel('attention') }} title="Известные вещи, которые ещё не приняты в физический остаток">
+                    <span>Ожидают приёма</span><b>{warehousePendingIntakeCount}</b>
+                  </button> : null}
+                  <button type="button" className={`warehouse-w2-recovery ${inventoryPanel === 'attention' && attentionCategory !== 'intake' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory(Number(warehouseAttention?.counts?.handover || 0) > 0 ? 'handover' : 'identify'); openInventoryPanel('attention') }} title="Только вопросы, где системе действительно не хватает факта">
+                    <span>Нужно уточнить</span>{warehouseClarificationCount > 0 ? <b>{warehouseClarificationCount}</b> : null}
                   </button>
                   {isAdmin ? <button type="button" className={inventoryPanel === 'catalog' ? 'is-active' : ''} onClick={() => openInventoryPanel('catalog')} title="Товары и характеристики">Товары</button> : null}
                 </div>
@@ -2126,8 +2126,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         openAttentionHandover,
         openAttentionIntake,
         openAttentionLifecycle,
-        openAttentionShortage,
-        openAttentionStocktake,
         refreshWarehouseAttention,
         setAttentionCategory,
         sourceLabel,

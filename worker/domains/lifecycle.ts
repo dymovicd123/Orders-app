@@ -153,9 +153,26 @@ export async function inventoryLifecycleDeferredInboundDisposition(
   db: D1Database,
   event: InventoryLifecycleEventRow,
   exactVariantId = 0,
+  checkLaterPhysical = true,
 ): Promise<InventoryLifecycleDeferredInboundDisposition> {
   if (cleanText(event.direction) !== 'in') return { action: 'apply', reason: 'not_inbound' };
   if (cleanText(event.status) !== 'pending') return { action: 'hold', reason: 'not_pending' };
+  const createdAt = cleanText(event.created_at);
+
+  // A newer exact physical count is already a stronger fact than an older pending
+  // inbound. Check it before requiring a historical full-stocktake boundary so a
+  // normal quick/selective check can retire stale uncertainty by itself.
+  if (checkLaterPhysical && exactVariantId > 0 && createdAt) {
+    const laterPhysicalCheck = await db.prepare(
+      `SELECT id FROM inventory_stock_checks
+       WHERE inventory_source = ? AND variant_id = ? AND checked_at >= ?
+       ORDER BY checked_at DESC, id DESC LIMIT 1`
+    ).bind(normalizeSourceType(event.inventory_source), exactVariantId, createdAt).first<{ id: number }>();
+    if (laterPhysicalCheck?.id) {
+      return { action: 'supersede', reason: 'later_physical_check', laterCheckId: toInt(laterPhysicalCheck.id, 0) };
+    }
+  }
+
   const boundary = await trustedInventoryFullStocktakeBoundary(db, event.inventory_source);
   if (!boundary.trusted) {
     return {
@@ -165,7 +182,6 @@ export async function inventoryLifecycleDeferredInboundDisposition(
       boundaryCompletedAt: boundary.completedAt,
     };
   }
-  const createdAt = cleanText(event.created_at);
   if (!createdAt || !boundary.startedAt || !boundary.completedAt) {
     return { action: 'hold', reason: 'no_trusted_baseline', boundarySessionId: boundary.sessionId, boundaryCompletedAt: boundary.completedAt };
   }
@@ -174,19 +190,6 @@ export async function inventoryLifecycleDeferredInboundDisposition(
   }
   if (createdAt <= boundary.completedAt) {
     return { action: 'hold', reason: 'overlaps_full_stocktake', boundarySessionId: boundary.sessionId, boundaryCompletedAt: boundary.completedAt };
-  }
-  if (exactVariantId > 0) {
-    const laterPhysicalCheck = await db.prepare(
-      `SELECT id FROM inventory_stock_checks
-       WHERE inventory_source = ? AND variant_id = ? AND checked_at >= ?
-       ORDER BY checked_at DESC, id DESC LIMIT 1`
-    ).bind(normalizeSourceType(event.inventory_source), exactVariantId, createdAt).first<{ id: number }>();
-    if (laterPhysicalCheck?.id) {
-      return {
-        action: 'supersede', reason: 'later_physical_check', boundarySessionId: boundary.sessionId,
-        boundaryCompletedAt: boundary.completedAt, laterCheckId: toInt(laterPhysicalCheck.id, 0),
-      };
-    }
   }
   return { action: 'apply', reason: 'fresh', boundarySessionId: boundary.sessionId, boundaryCompletedAt: boundary.completedAt };
 }
@@ -218,7 +221,7 @@ export async function canAutoApplyFreshWorkshopInbound(
   exactVariantId: number,
 ) {
   if (!toInt(event.is_workshop, 0) || cleanText(event.direction) !== 'in' || !exactVariantId) return false;
-  const disposition = await inventoryLifecycleDeferredInboundDisposition(db, event, exactVariantId);
+  const disposition = await inventoryLifecycleDeferredInboundDisposition(db, event, exactVariantId, false);
   return disposition.action === 'apply';
 }
 

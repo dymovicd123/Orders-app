@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "revision": "w3-2-natural-recovery",
+  "changes": {
+    "inventoryLifecycleDeferredInboundDisposition": {
+      "before": "1e8f7250b8be80345879d2dc398bb55b3c945f7b1e5695ed58a83fc0353f96e3",
+      "after": "78363303eda0e7949cc022b9a2d0440941842a0d18a5b30b6dcf38988145e741"
+    },
+    "canAutoApplyFreshWorkshopInbound": {
+      "before": "4d5d8f49710ae0e63ba13ecb8f127fe0c206e9b5fa720faa26a1da99cbf39604",
+      "after": "9ea2168555b5131ff083d6df4f12e4697cdccd2c88781f1f7ce0a5bb45bb6a45"
+    },
+    "quickInventoryStocktakeBatch": {
+      "before": "842b6fd92c5367510fb27b978bd3ab1f31591581d5fef64b0ef91132d9c22ba5",
+      "after": "8f1fbd84905624ec8e96b1bdcf544352fce535f7aaba28a33dc4356f4e1a94f0"
+    },
+    "completeInventoryStocktakeSession": {
+      "before": "87e58a7ec40fda083d4ed4ebc8964053668dea90a92424b7b9f5a96e6af2b0d7",
+      "after": "7c420ed79cb6bad3b727e03d53b9057e47d355e457fcebda4ae0d1331ccb10a2"
+    }
+  }
+}

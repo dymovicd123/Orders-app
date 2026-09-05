@@ -16,6 +16,7 @@ const w1WarehouseReliabilityPath = path.join(root, 'scripts/w1-warehouse-reliabi
 const w2HumanWarehousePath = path.join(root, 'scripts/w2-human-warehouse-frontend-manifest.json')
 const w3WarehouseReliabilityPath = path.join(root, 'scripts/w3-1a-warehouse-reliability-frontend-manifest.json')
 const w3StockMicroCheckPath = path.join(root, 'scripts/w3-1b-stock-micro-check-frontend-manifest.json')
+const w3NaturalRecoveryPath = path.join(root, 'scripts/w3-2-natural-recovery-frontend-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -103,11 +104,13 @@ try {
   const w2HumanWarehouse = fs.existsSync(w2HumanWarehousePath) ? JSON.parse(fs.readFileSync(w2HumanWarehousePath, 'utf8')) : null
   const w3WarehouseReliability = fs.existsSync(w3WarehouseReliabilityPath) ? JSON.parse(fs.readFileSync(w3WarehouseReliabilityPath, 'utf8')) : null
   const w3StockMicroCheck = fs.existsSync(w3StockMicroCheckPath) ? JSON.parse(fs.readFileSync(w3StockMicroCheckPath, 'utf8')) : null
+  const w3NaturalRecovery = fs.existsSync(w3NaturalRecoveryPath) ? JSON.parse(fs.readFileSync(w3NaturalRecoveryPath, 'utf8')) : null
   if (operationalAutonomyR2) check(operationalAutonomyR2.version === 1 && operationalAutonomyR2.revision === 'operational-autonomy-r2', 'Operational autonomy R2 frontend manifest invalid')
   if (w1WarehouseReliability) check(w1WarehouseReliability.version === 1 && w1WarehouseReliability.revision === 'w1-warehouse-reliability', 'W1 Warehouse reliability frontend manifest invalid')
   if (w2HumanWarehouse) check(w2HumanWarehouse.version === 1 && w2HumanWarehouse.revision === 'w2-human-warehouse', 'W2 human Warehouse frontend manifest invalid')
   if (w3WarehouseReliability) check(w3WarehouseReliability.version === 1 && w3WarehouseReliability.revision === 'w3-1a-warehouse-reliability', 'W3.1A Warehouse reliability frontend manifest invalid')
   if (w3StockMicroCheck) check(w3StockMicroCheck.version === 1 && w3StockMicroCheck.revision === 'w3-1b-stock-micro-check', 'W3.1B stock micro-check frontend manifest invalid')
+  if (w3NaturalRecovery) check(w3NaturalRecovery.version === 1 && w3NaturalRecovery.revision === 'w3-2-natural-recovery', 'W3.2 natural recovery frontend manifest invalid')
   check(manifest?.version === 1, '1906B preservation manifest invalid')
   check(manifest.baseAppHooks?.length === 352, `Unexpected 1906A App hook baseline: ${manifest.baseAppHooks?.length}`)
   check(manifest.baseInvHooks?.length === 119, `Unexpected 1906A Inventory hook baseline: ${manifest.baseInvHooks?.length}`)
@@ -320,7 +323,13 @@ try {
     check(returnStatement?.expression, 'renderInventoryAttentionPanel: return expression missing')
     let expression = returnStatement.expression
     while (ts.isParenthesizedExpression(expression)) expression = expression.expression
-    check(sha(normalize(expression.getText(parsed.source))) === change.after, 'renderInventoryAttentionPanel: rendered JSX changed outside exact W2 delta')
+    let expectedAttentionHash = change.after
+    const naturalRecoveryAttention = w3NaturalRecovery?.frontend?.attentionReturnChange
+    if (naturalRecoveryAttention) {
+      check(naturalRecoveryAttention.before === expectedAttentionHash, 'W3.2 Attention baseline must match accepted W2 Attention delta')
+      expectedAttentionHash = naturalRecoveryAttention.after
+    }
+    check(sha(normalize(expression.getText(parsed.source))) === expectedAttentionHash, w3NaturalRecovery ? 'renderInventoryAttentionPanel: rendered JSX changed outside exact W2/W3.2 deltas' : 'renderInventoryAttentionPanel: rendered JSX changed outside exact W2 delta')
   }
 
   // Keep the controller split meaningful and prevent a silent return to the old monoliths.
@@ -348,7 +357,7 @@ try {
   const worker = parse('worker/index.ts').text
   check(worker.includes("frontendControllerModularization: '1906b'"), '1906B live health marker missing')
 
-  console.log(`STEP 190.6B FRONTEND MODULARIZATION TESTS PASSED — App ${lineCount('src/App.tsx')} lines, Inventory ${lineCount('src/features/sections/InventorySection.tsx')} lines, ${manifest.panels.length} preserved panels, hook order preserved${dailyWarehouse ? ', exact 192B2A daily-warehouse frontend deltas accepted' : ''}${attentionVisibility ? ', exact 192B2A1 Attention visibility delta accepted' : ''}${orderSaveIntegrity ? ', exact 192B2A4 order-save frontend deltas accepted' : ''}${operationalAutonomyR2 ? ', exact operational-autonomy R2 frontend deltas accepted' : ''}${w1WarehouseReliability ? ', exact W1 Warehouse reliability frontend delta accepted' : ''}${w2HumanWarehouse ? ', exact W2 human Warehouse frontend deltas accepted' : ''}${w3WarehouseReliability ? ', exact W3.1A Warehouse reliability frontend delta accepted' : ''}${w3StockMicroCheck ? ', exact W3.1B stock micro-check frontend delta accepted' : ''}`)
+  console.log(`STEP 190.6B FRONTEND MODULARIZATION TESTS PASSED — App ${lineCount('src/App.tsx')} lines, Inventory ${lineCount('src/features/sections/InventorySection.tsx')} lines, ${manifest.panels.length} preserved panels, hook order preserved${dailyWarehouse ? ', exact 192B2A daily-warehouse frontend deltas accepted' : ''}${attentionVisibility ? ', exact 192B2A1 Attention visibility delta accepted' : ''}${orderSaveIntegrity ? ', exact 192B2A4 order-save frontend deltas accepted' : ''}${operationalAutonomyR2 ? ', exact operational-autonomy R2 frontend deltas accepted' : ''}${w1WarehouseReliability ? ', exact W1 Warehouse reliability frontend delta accepted' : ''}${w2HumanWarehouse ? ', exact W2 human Warehouse frontend deltas accepted' : ''}${w3WarehouseReliability ? ', exact W3.1A Warehouse reliability frontend delta accepted' : ''}${w3StockMicroCheck ? ', exact W3.1B stock micro-check frontend delta accepted' : ''}${w3NaturalRecovery ? ', exact W3.2 natural-recovery Attention delta accepted' : ''}`)
 } catch (error) {
   console.error(`STEP 190.6B FRONTEND MODULARIZATION TESTS FAILED: ${error?.message || error}`)
   process.exit(1)

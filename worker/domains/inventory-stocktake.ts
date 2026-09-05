@@ -911,8 +911,21 @@ export async function quickInventoryStocktakeBatch(
      JOIN catalog_variants v ON v.id = e.variant_id`
   ).bind(...expectedBindings, batchId, source, source, checkType, checkReferenceType, batchId, cleanText(options.actor) || null, now, now);
 
+  const physicalFactResolution = 'Не добавлено повторно: более свежая физическая сверка уже зафиксировала текущий остаток.';
+  const supersedeKnownWorkshopInbound = db.prepare(
+    `UPDATE inventory_lifecycle_events
+     SET status = 'cancelled', pending_reason = NULL, cancelled_at = ?, updated_at = ?,
+         resolution_comment = CASE
+           WHEN COALESCE(resolution_comment, '') = '' THEN ?
+           ELSE resolution_comment || ' | ' || ?
+         END
+     WHERE status = 'pending' AND direction = 'in' AND is_workshop = 1
+       AND inventory_source = ? AND variant_id IN (${placeholders})
+       AND datetime(created_at) <= datetime(?)`
+  ).bind(now, now, physicalFactResolution, physicalFactResolution, source, ...variantIds, now);
+
   try {
-    await db.batch([guard, updateExisting, insertMissing, insertMovements, insertChecks]);
+    await db.batch([guard, updateExisting, insertMissing, insertMovements, insertChecks, supersedeKnownWorkshopInbound]);
   } catch (error) {
     const replayAfterRace = await loadReplay();
     if (replayAfterRace) return replayAfterRace;
@@ -1198,6 +1211,30 @@ export async function completeInventoryStocktakeSession(db: D1Database, sessionI
        WHERE session_id = ?
          AND ${hasCompletionLock}`
     ).bind(now, sessionId, sessionId, completionLock),
+    db.prepare(
+      `UPDATE inventory_lifecycle_events
+       SET status = 'cancelled', pending_reason = NULL, cancelled_at = ?, updated_at = ?,
+           resolution_comment = CASE
+             WHEN COALESCE(resolution_comment, '') = '' THEN ?
+             ELSE resolution_comment || ' | ' || ?
+           END
+       WHERE status = 'pending' AND direction = 'in' AND is_workshop = 1 AND inventory_source = ?
+         AND EXISTS (
+           SELECT 1 FROM inventory_stocktake_items i
+           WHERE i.session_id = ?
+             AND i.variant_id = inventory_lifecycle_events.variant_id
+             AND i.variant_id IS NOT NULL
+             AND i.counted_quantity IS NOT NULL
+             AND i.counted_at IS NOT NULL
+             AND datetime(i.counted_at) >= datetime(inventory_lifecycle_events.created_at)
+         )
+         AND ${hasCompletionLock}`
+    ).bind(
+      now, now,
+      'Не добавлено повторно: завершённая физическая проверка уже зафиксировала текущий остаток.',
+      'Не добавлено повторно: завершённая физическая проверка уже зафиксировала текущий остаток.',
+      source, sessionId, sessionId, completionLock,
+    ),
     db.prepare(
       `UPDATE inventory_stocktake_sessions
        SET status = 'completed', completed_at = ?, updated_at = ?

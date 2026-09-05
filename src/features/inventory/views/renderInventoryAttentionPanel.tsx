@@ -1,6 +1,6 @@
 import type { InventoryRenderContext } from './types'
 
-type AttentionCategory = 'count' | 'handover' | 'intake' | 'identify' | 'revision'
+type AttentionCategory = 'handover' | 'intake' | 'identify'
 
 type PanelContext = Pick<InventoryRenderContext,
   | 'attentionCategory'
@@ -14,8 +14,6 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'openAttentionHandover'
   | 'openAttentionIntake'
   | 'openAttentionLifecycle'
-  | 'openAttentionShortage'
-  | 'openAttentionStocktake'
   | 'refreshWarehouseAttention'
   | 'setAttentionCategory'
   | 'sourceLabel'
@@ -48,50 +46,47 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
     openAttentionHandover,
     openAttentionIntake,
     openAttentionLifecycle,
-    openAttentionShortage,
-    openAttentionStocktake,
     refreshWarehouseAttention,
     setAttentionCategory,
     sourceLabel,
     warehouseAttention,
   } = ctx
   const items = warehouseAttention?.items
-  const total = Number(warehouseAttention?.total || 0)
   const counts = warehouseAttention?.counts
   const categoryCounts: Record<AttentionCategory, number> = {
-    count: Number(counts?.shortage || 0),
     handover: Number(counts?.handover || 0),
     intake: Number(counts?.intake || 0),
     identify: Number(counts?.lifecycle || 0) + Number(counts?.catalog || 0),
-    revision: Number(counts?.stocktake || 0),
   }
-  const tabs: Array<{ value: AttentionCategory; label: string }> = [
-    { value: 'count', label: 'Количество' },
+  const clarificationTotal = categoryCounts.handover + categoryCounts.identify
+  const isIntake = attentionCategory === 'intake'
+  const tabs: Array<{ value: Exclude<AttentionCategory, 'intake'>; label: string }> = [
     { value: 'handover', label: 'Выдача' },
-    { value: 'intake', label: 'Приёмка' },
     { value: 'identify', label: 'Товар' },
-    { value: 'revision', label: 'Проверка' },
   ]
 
   return (
     <div className="inventory-attention-panel" style={inventoryPanelStyle('attention')}>
       <div className="inventory-attention-head">
         <div>
-          <h3>Нужно уточнить</h3>
-          <p>Сюда попадает только то, что система не должна решать за сотрудника. Выберите тип вопроса и закончите его.</p>
+          <h3>{isIntake ? 'Ожидают приёма' : 'Нужно уточнить'}</h3>
+          <p>{isIntake
+            ? 'Товар уже известен. Если вещь действительно уже у вас, можно завершить приёмку; если вы сейчас не рядом со складом или не уверены — просто оставьте её как есть.'
+            : 'Здесь остаются только вопросы, где системе действительно не хватает факта: что именно выдали или какой это товар. Нехватка и ревизии решаются в своих обычных разделах.'}</p>
         </div>
         <button className="secondary compact" type="button" onClick={refreshWarehouseAttention} disabled={attentionLoading}>{attentionLoading ? 'Обновляю…' : 'Обновить'}</button>
       </div>
 
       {attentionError ? <div className="inventory-attention-error">{attentionError}</div> : null}
-      {!warehouseAttention && attentionLoading ? <div className="empty-state">Загружаю складские вопросы…</div> : null}
-      {warehouseAttention && total === 0 ? <div className="inventory-attention-clear"><strong>Уточнять ничего не нужно</strong><span>Можно продолжать обычную работу.</span></div> : null}
+      {attentionLoading && !items ? <div className="empty-state">Загружаю складские вопросы…</div> : null}
+      {warehouseAttention && !isIntake && clarificationTotal === 0 ? <div className="inventory-attention-clear"><strong>Уточнять ничего не нужно</strong><span>Можно продолжать обычную работу.</span></div> : null}
+      {warehouseAttention && isIntake && categoryCounts.intake === 0 ? <div className="inventory-attention-clear"><strong>Сейчас ничего не ждёт приёмки</strong><span>Если такая вещь появится, она будет показана здесь отдельно от вопросов по данным.</span></div> : null}
 
-      {warehouseAttention && total > 0 ? (
+      {warehouseAttention && !isIntake && clarificationTotal > 0 ? (
         <>
           <div className="inventory-attention-summary">
-            <strong>Нужно уточнить: {total}</strong>
-            <span>Вопросы разделены по причине — один список не смешивает разные действия.</span>
+            <strong>Нужно уточнить: {clarificationTotal}</strong>
+            <span>Только вопросы, которые нельзя надёжно закрыть по уже известным данным или свежему физическому факту.</span>
           </div>
           <div className="inventory-attention-tabs" role="tablist" aria-label="Что нужно уточнить">
             {tabs.map((tab) => (
@@ -110,26 +105,9 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
         </>
       ) : null}
 
-      {items && attentionCategory === 'count' ? (
-        <section className="inventory-attention-group is-count">
-          <div className="inventory-attention-group-head"><div><strong>Пересчитать количество</strong><span>Здесь только нехватка, которая остаётся даже без заказов, отдельно ожидающих уточнения выдачи.</span></div><b>{categoryCounts.count}</b></div>
-          {items.shortages.length ? <div className="inventory-attention-list">
-            {items.shortages.map((item: any) => {
-              const relevantReserved = Number(item.countRelevantReserved ?? item.reserved ?? 0)
-              const handoverReserved = Number(item.handoverReserved || 0)
-              return <article key={`attention-shortage-${item.source}-${item.variantId}`}>
-                <div className="inventory-attention-main"><strong>{item.productName}</strong><span>{detailLine(item) || 'Стандартный вариант'} · {sourceLabel(item.source)}</span>{handoverReserved > 0 ? <small>Ещё {handoverReserved} шт. разбираются отдельно во вкладке «Выдача».</small> : null}</div>
-                <div className="inventory-attention-numbers"><span>На месте <b>{item.physical}</b></span><span>В остальных заказах <b>{relevantReserved}</b></span><strong>Не хватает {Math.max(0, relevantReserved - Number(item.physical || 0))}</strong></div>
-                <button className="primary compact" type="button" onClick={() => openAttentionShortage(item)}>Пересчитать</button>
-              </article>
-            })}
-          </div> : <div className="empty-state">Нехваток, требующих отдельного пересчёта, сейчас нет.</div>}
-        </section>
-      ) : null}
-
       {items && attentionCategory === 'handover' ? (
         <section className="inventory-attention-group is-handover">
-          <div className="inventory-attention-group-head"><div><strong>Уточнить выдачу</strong><span>Это исторический вопрос по конкретному заказу. Дата заказа и момент внесения позиции показаны здесь специально.</span></div><b>{categoryCounts.handover}</b></div>
+          <div className="inventory-attention-group-head"><div><strong>Уточнить выдачу</strong><span>Исторический вопрос по конкретному заказу. Если сейчас нет возможности проверить его — заказ можно оставить и вернуться позже.</span></div><b>{categoryCounts.handover}</b></div>
           {items.handover.length ? <div className="inventory-attention-list">
             {items.handover.map((item: any) => (
               <article key={`attention-handover-${item.orderId}-${item.orderItemId}`}>
@@ -140,7 +118,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
                   <small>{item.itemCreatedAt ? `Позиция в учёте с ${formatDateTime(item.itemCreatedAt)} · ` : ''}{item.checkpointAt ? `${item.checkpointKind === 'revision' ? 'ревизия' : 'сверка'} ${formatDateShort(item.checkpointAt)}` : ''}</small>
                   <small>{item.reviewReason === 'late_entry' ? 'Причина: позиция была внесена после физической проверки.' : 'Причина: смешанный заказ, после резерва была физическая проверка.'}</small>
                 </div>
-                <button className="secondary compact" type="button" onClick={() => openAttentionHandover(item)}>Открыть и уточнить</button>
+                <button className="secondary compact" type="button" onClick={() => openAttentionHandover(item)}>Открыть заказ</button>
               </article>
             ))}
           </div> : <div className="empty-state">Уточнений выдачи сейчас нет.</div>}
@@ -149,15 +127,15 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
 
       {items && attentionCategory === 'intake' ? (
         <section className="inventory-attention-group is-intake">
-          <div className="inventory-attention-group-head"><div><strong>Завершить приёмку</strong><span>Точный существующий товар уже распознан. Перед изменением остатка сервер ещё раз проверит ревизию и более свежие сверки.</span></div><b>{categoryCounts.intake}</b></div>
+          <div className="inventory-attention-group-head"><div><strong>Вещь уже можно определить точно</strong><span>Принимайте только если вещь действительно находится у вас. Ничего подтверждать заранее или удалённо не требуется.</span></div><b>{categoryCounts.intake}</b></div>
           {items.intake?.length ? <div className="inventory-attention-list">
             {items.intake.map((item: any) => (
               <article key={`attention-intake-${item.id}`}>
                 <div className="inventory-attention-main"><strong>{item.productName || 'Товар'}</strong><span>{detailLine(item) || 'Стандартный вариант'} · {sourceLabel(item.source)}</span><small>{item.externalId ? `Заказ ${item.externalId} · от ${formatDateShort(item.orderDate)}` : ''}{item.createdAt ? ` · событие ${formatDateTime(item.createdAt)}` : ''}</small></div>
-                <button className="primary compact" type="button" disabled={attentionIntakeBusyId !== null} onClick={() => void openAttentionIntake(item)}>{attentionIntakeBusyId === item.id ? 'Проверяю…' : 'Завершить приёмку'}</button>
+                <button className="primary compact" type="button" disabled={attentionIntakeBusyId !== null} onClick={() => void openAttentionIntake(item)}>{attentionIntakeBusyId === item.id ? 'Проверяю…' : 'Принять в остаток'}</button>
               </article>
             ))}
-          </div> : <div className="empty-state">Известных позиций, ожидающих завершения приёмки, сейчас нет.</div>}
+          </div> : <div className="empty-state">Известных позиций, ожидающих приёмки, сейчас нет.</div>}
         </section>
       ) : null}
 
@@ -178,20 +156,6 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
               </article>
             ))}
           </div> : <div className="empty-state">Неопределённых товаров сейчас нет.</div>}
-        </section>
-      ) : null}
-
-      {items && attentionCategory === 'revision' ? (
-        <section className="inventory-attention-group is-stocktake">
-          <div className="inventory-attention-group-head"><div><strong>Незавершённая ревизия</strong><span>Здесь только ревизии, которые нужно продолжить.</span></div><b>{categoryCounts.revision}</b></div>
-          {items.stocktakes.length ? <div className="inventory-attention-list">
-            {items.stocktakes.map((item: any) => (
-              <article key={`attention-stocktake-${item.id}`}>
-                <div className="inventory-attention-main"><strong>{sourceLabel(item.source)}</strong><span>Посчитано {item.countedItems} из {item.totalItems}{item.recountItems ? ` · повторно проверить: ${item.recountItems}` : ''}</span><small>Начата {formatDateShort(item.startedAt)}</small></div>
-                <button className="secondary compact" type="button" onClick={() => openAttentionStocktake(item)}>Продолжить проверку</button>
-              </article>
-            ))}
-          </div> : <div className="empty-state">Незавершённых ревизий сейчас нет.</div>}
         </section>
       ) : null}
     </div>

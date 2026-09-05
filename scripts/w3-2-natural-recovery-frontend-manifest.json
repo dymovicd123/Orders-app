@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "revision": "w3-2-natural-recovery",
+  "frontend": {
+    "attentionReturnChange": {
+      "before": "ac3ad378b7fcfdc4d6ec943129d2bc4c3dee8d4484cfb15cbf5746c682bffd52",
+      "after": "2a35984eb0d1ad805c1fd4dad8caa273bce70182938496759fd05fe706680a46"
+    }
+  }
+}

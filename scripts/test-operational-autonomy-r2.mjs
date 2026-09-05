@@ -60,8 +60,8 @@ const nav = block(section, '<div className="warehouse-w2-navigation"', '{renderI
 check(nav.includes("{ value: 'movement' as const") && nav.includes("{ value: 'stocktake' as const") && nav.includes("{ value: 'history' as const"), 'routine Warehouse tabs left the shared working navigation')
 check(nav.includes("{isAdmin ? <button type=\"button\" className={inventoryPanel === 'catalog' ? 'is-active' : ''}"), 'catalog must remain an explicit admin-only secondary action')
 
-check(attention.includes('<button className="secondary compact" type="button" onClick={() => openAttentionStocktake(item)}>Продолжить проверку</button>'), 'unfinished stocktake must be resumable in working mode')
-check(!attention.includes('{isAdmin ? <button className="secondary compact" type="button" onClick={() => openAttentionStocktake(item)}>'), 'stocktake attention action still admin-gated')
+check(!attention.includes('openAttentionStocktake(item)'), 'routine stocktake leaked back into secondary clarification')
+check(!attention.includes('Продолжить проверку'), 'unfinished stocktake must stay in the normal Проверка workflow, not clarification')
 check(attention.includes('openAttentionLifecycle(item)') && attention.includes('inventory-attention-admin-note">Требуется администратор'), 'unknown identity attention must remain admin-gated')
 check(history.includes('entry.row.canReverse && isAdmin'), 'destructive history reversal must remain admin-only')
 

@@ -18,3 +18,7 @@
 .warehouse-w2-quick-check{margin-top:14px}.inventory-cycle-count-system.is-blind{justify-content:center}.inventory-cycle-count-system.is-blind>span:first-child{font-weight:750}.inventory-routine-cycle-edit.is-independent{display:flex;gap:8px;align-items:center}.inventory-routine-cycle-edit.is-independent input{width:110px;min-height:38px}
 @media(max-width:900px){.warehouse-w2-navigation{align-items:stretch;flex-direction:column}.warehouse-w2-primary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}.warehouse-w2-primary>button{min-width:0}.warehouse-w2-secondary{margin-left:0;padding:8px 0 0;border-left:0;border-top:1px solid var(--border-color,#dfe5ec);justify-content:flex-end}}
 @media(max-width:600px){.warehouse-w2-navigation{padding:6px;border-radius:13px}.warehouse-w2-primary{grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.warehouse-w2-primary>button,.warehouse-w2-secondary>button{min-height:44px;padding:9px 10px}.warehouse-w2-secondary{justify-content:stretch}.warehouse-w2-secondary>button{flex:1}.inventory-routine-cycle-edit.is-independent{align-items:stretch;flex-direction:column}.inventory-routine-cycle-edit.is-independent input{width:100%}}
+
+/* W3.2 — known physical intake is separate from clarification. */
+.warehouse-w3-intake b{background:rgba(34,139,83,.13);color:#166534}
+.warehouse-w3-intake.is-active b{background:rgba(34,139,83,.18)}
