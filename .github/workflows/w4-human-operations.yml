@@ -1,0 +1,146 @@
+name: W4 Human Operations
+
+on:
+  push:
+    branches:
+      - safe/w4-human-operations-20260905
+
+permissions:
+  contents: write
+
+jobs:
+  patch-validate-commit:
+    if: "${{ github.event.head_commit.message == 'chore: run W4 validation' }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout safe branch
+        uses: actions/checkout@v4
+        with:
+          ref: safe/w4-human-operations-20260905
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Capture accepted movement renderer baseline
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import crypto from 'node:crypto'
+          import ts from 'typescript'
+          const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
+          const normalize = (value) => value.replace(/\r\n/g, '\n').split('\n').map((line) => line.trim()).filter(Boolean).join('\n').replace(/^export\s+/, '')
+          const relative = 'src/features/inventory/views/renderInventoryMovementPanel.tsx'
+          const text = fs.readFileSync(relative, 'utf8')
+          const source = ts.createSourceFile(relative, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+          let fn = null
+          const visit = (node) => { if (ts.isFunctionDeclaration(node) && node.name?.text === 'renderInventoryMovementPanel') fn = node; ts.forEachChild(node, visit) }
+          source.forEachChild(visit)
+          const ret = [...fn.body.statements].find((statement) => ts.isReturnStatement(statement))
+          let expression = ret.expression
+          while (ts.isParenthesizedExpression(expression)) expression = expression.expression
+          let rendered = expression.getText(source)
+          const controller = fs.readFileSync('src/features/sections/InventorySection.tsx', 'utf8')
+          const arrivalStart = controller.indexOf('<div className="inventory-arrival-legacy-workspace">')
+          const arrivalButton = '<button className="inventory-arrival-add-position" type="button" onClick={addInventoryArrivalPosition}>+ Добавить позицию</button>'
+          const arrivalButtonEnd = controller.indexOf(arrivalButton, arrivalStart) + arrivalButton.length
+          const arrivalCloseEnd = controller.indexOf('</div>', arrivalButtonEnd) + '</div>'.length
+          if (arrivalStart < 0 || arrivalButtonEnd < arrivalButton.length || arrivalCloseEnd < '</div>'.length) throw new Error('Frozen Arrival reconstruction failed')
+          rendered = rendered.replace('{arrivalWorkspace}', controller.slice(arrivalStart, arrivalCloseEnd))
+          const before = sha(normalize(rendered))
+          const w3 = JSON.parse(fs.readFileSync('scripts/w3-1a-warehouse-reliability-frontend-manifest.json', 'utf8'))
+          const expected = w3.frontend.panelReturnChanges.renderInventoryMovementPanel.after
+          if (before !== expected) throw new Error(`Unexpected W4 movement baseline ${before}; expected ${expected}`)
+          fs.writeFileSync('/tmp/w4-movement-before', before)
+          console.log(`W4 movement baseline: ${before}`)
+          NODE
+
+      - name: Apply W4 patch
+        run: |
+          python3 scripts/apply-w4-human-operations.py
+          python3 scripts/apply-w4-typescript-cleanup.py
+
+      - name: Generate exact W4 frontend preservation manifest
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import crypto from 'node:crypto'
+          import ts from 'typescript'
+          const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
+          const normalize = (value) => value.replace(/\r\n/g, '\n').split('\n').map((line) => line.trim()).filter(Boolean).join('\n').replace(/^export\s+/, '')
+          const relative = 'src/features/inventory/views/renderInventoryMovementPanel.tsx'
+          const text = fs.readFileSync(relative, 'utf8')
+          const source = ts.createSourceFile(relative, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+          let fn = null
+          const visit = (node) => { if (ts.isFunctionDeclaration(node) && node.name?.text === 'renderInventoryMovementPanel') fn = node; ts.forEachChild(node, visit) }
+          source.forEachChild(visit)
+          const ret = [...fn.body.statements].find((statement) => ts.isReturnStatement(statement))
+          let expression = ret.expression
+          while (ts.isParenthesizedExpression(expression)) expression = expression.expression
+          let rendered = expression.getText(source)
+          const controller = fs.readFileSync('src/features/sections/InventorySection.tsx', 'utf8')
+          const arrivalStart = controller.indexOf('<div className="inventory-arrival-legacy-workspace">')
+          const arrivalButton = '<button className="inventory-arrival-add-position" type="button" onClick={addInventoryArrivalPosition}>+ Добавить позицию</button>'
+          const arrivalButtonEnd = controller.indexOf(arrivalButton, arrivalStart) + arrivalButton.length
+          const arrivalCloseEnd = controller.indexOf('</div>', arrivalButtonEnd) + '</div>'.length
+          if (arrivalStart < 0 || arrivalButtonEnd < arrivalButton.length || arrivalCloseEnd < '</div>'.length) throw new Error('Frozen Arrival reconstruction failed')
+          rendered = rendered.replace('{arrivalWorkspace}', controller.slice(arrivalStart, arrivalCloseEnd))
+          const before = fs.readFileSync('/tmp/w4-movement-before', 'utf8').trim()
+          const after = sha(normalize(rendered))
+          fs.writeFileSync('scripts/w4-human-operations-frontend-manifest.json', JSON.stringify({
+            version: 1,
+            revision: 'w4-human-operations',
+            frontend: { panelReturnChanges: { renderInventoryMovementPanel: { before, after } } },
+          }, null, 2) + '\n')
+          console.log(`W4 movement preservation: ${before} -> ${after}`)
+          NODE
+
+      - name: Diff safety
+        run: git diff --check
+
+      - name: Focused W4 regression
+        run: node scripts/test-w4-human-operations.mjs
+
+      - name: Full cumulative release check
+        run: npm run release:check
+
+      - name: Database safety verification
+        run: npm run verify:db-safety
+
+      - name: Build
+        run: npm run build
+
+      - name: Cloudflare dry run only
+        run: npx wrangler deploy --dry-run
+
+      - name: Confirm no migration change
+        run: |
+          if git diff --name-only | grep -E '(^|/)(migrations?|schema)(/|\.|$)' ; then
+            echo 'Unexpected migration/schema change in W4'
+            exit 1
+          fi
+
+      - name: Commit validated W4
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            src/App.tsx \
+            src/features/inventory/movementPickerB2B.ts \
+            src/features/inventory/views/renderInventoryMovementPanel.tsx \
+            src/styles/w4-human-operations.css \
+            scripts/test-step1906b-frontend-modularization.mjs \
+            scripts/test-w4-human-operations.mjs \
+            scripts/w4-human-operations-frontend-manifest.json \
+            package.json \
+            docs/continuation/W4_HUMAN_OPERATIONS_20260905.md
+          git diff --cached --check
+          git commit -m 'W4: simplify Warehouse Operations for people'
+          git push origin HEAD:safe/w4-human-operations-20260905
