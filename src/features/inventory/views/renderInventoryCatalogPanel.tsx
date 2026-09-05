@@ -202,7 +202,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                     <div className="inventory-products-subtabs human-catalog-subtabs" role="tablist" aria-label="Управление товарами">
                       <button type="button" className={catalogAdminMode === 'catalog' ? 'is-active' : ''} onClick={() => setCatalogAdminMode('catalog')}>Каталог товаров</button>
                       <button type="button" className={`${catalogAdminMode === 'review' ? 'is-active' : ''} ${(catalogReview?.count || 0) > 0 ? 'has-attention' : ''}`} onClick={() => { setCatalogAdminMode('review'); setCatalogReviewTaskIndex(0); void loadCatalogReview(true) }}>
-                        Требуют разбора{catalogReview && (catalogReview.count || 0) > 0 ? ` (${catalogReview.count})` : ''}
+                        Уточнить товары{catalogReview && (catalogReview.count || 0) > 0 ? ` (${catalogReview.count})` : ''}
                       </button>
                       <button type="button" className={`${catalogAdminMode === 'lifecycle' ? 'is-active' : ''} ${(inventoryLifecycle?.count || 0) > 0 ? 'has-attention' : ''}`} onClick={() => { setCatalogAdminMode('lifecycle'); setInventoryLifecycleTaskIndex(0); void loadInventoryLifecycle(true) }}>
                         Ожидают движения{inventoryLifecycle && (inventoryLifecycle.count || 0) > 0 ? ` (${inventoryLifecycle.count})` : ''}
@@ -500,9 +500,9 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                       <div className="catalog-calm-review catalog-resolution-v2">
                         <div className="catalog-calm-review-head">
                           <div>
-                            <span className="catalog-review-eyebrow">Только то, что нужно решить сейчас</span>
-                            <h3>{catalogReview?.mode === 'order' ? `Разбор заказа ${catalogReview.items?.[0]?.externalId || ''}`.trim() : catalogReview?.count ? `Нужно разобрать: ${catalogReview.count}` : 'Разбор товаров'}</h3>
-                            <p>{catalogReview?.mode === 'order' ? 'Показаны только неразобранные товары этого заказа. После решения можно вернуться к текущей очереди.' : 'Здесь только недавние позиции, которые действительно требуют решения для текущей работы.'}</p>
+                            <span className="catalog-review-eyebrow">Нужно уточнить, какой это товар</span>
+                            <h3>{catalogReview?.mode === 'order' ? `Уточнить товар в заказе ${catalogReview.items?.[0]?.externalId || ''}`.trim() : catalogReview?.count ? `Нужно уточнить: ${catalogReview.count}` : 'Товары определены'}</h3>
+                            <p>{catalogReview?.mode === 'order' ? 'Система не смогла безопасно связать эти позиции заказа с точным товаром или вариантом. Подтвердите недостающий факт — это не общая ошибка каталога.' : 'Здесь только недавние позиции заказов, где система не смогла безопасно определить точный товар или вариант. Подтвердите недостающий факт; старый неактуальный мусор сюда не должен попадать.'}</p>
                           </div>
                           <div className="catalog-review-head-actions">
                             {catalogReview?.mode !== 'order' && (catalogReview?.count || 0) > 0 ? <button className="secondary compact" type="button" disabled={catalogReviewBusy} onClick={() => { setCatalogReviewTaskIndex(0); void reconcileCatalogReview(20) }}>{catalogReviewBusy ? 'Проверяю…' : 'Убрать очевидные автоматически'}</button> : null}
