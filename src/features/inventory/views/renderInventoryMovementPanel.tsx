@@ -1,6 +1,7 @@
 import type { InventoryRenderContext } from './types'
-import { refineMovementPickerContext } from '../movementPickerB2B'
+import { partitionTransferVariantRows, refineMovementPickerContext } from '../movementPickerB2B'
 import '../../../styles/192b2b-movement-picker.css'
+import '../../../styles/w4-human-operations.css'
 
 type PanelContext = Pick<InventoryRenderContext,
   | 'FriendlyNumberInput'
@@ -48,7 +49,6 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'updateInventoryDirectProductInput'
 >
 
-import type { InventoryDraft } from '../../../app/types'
 
 export function renderInventoryMovementPanel(ctx: PanelContext) {
   // STEP 192B2B: refine only the read/UX context; the accepted JSX and transfer mutation runtime stay unchanged.
@@ -99,32 +99,55 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
     updateInventoryDirectProductInput
   } = movementCtx
 
+  const transferPartition = partitionTransferVariantRows(
+    inventoryDraft.movementType === 'transfer' ? operationVisibleRows : [],
+    selectedOperationDraftItems.map(({ item }: any) => item?.variantId).filter(Boolean),
+    Boolean(String(inventoryExistingVariantSearch || '').trim()),
+  )
+  const renderedOperationRows = inventoryDraft.movementType === 'transfer' ? transferPartition.primary : operationVisibleRows
+
   return (
     <div className="inventory-movement-panel inventory-operations-v182" style={inventoryPanelStyle('movement')} data-step182-operations="human-workflow">
                     <div className="inventory-panel-headline inventory-operations-headline">
                       <div>
                         <h3>Операции</h3>
-                        <p>Сначала выберите действие. Дальше останутся только поля, которые нужны именно для него.</p>
+                        <p>Обычная работа здесь — переместить реальный товар между складом и бутиком. Редкие действия убраны ниже.</p>
                       </div>
                     </div>
     
-                    <div className="inventory-operation-mode-tabs" role="tablist" aria-label="Тип складской операции">
-                      {([
-                        ['arrival', 'Приход'],
-                        ['writeoff', 'Списание'],
-                        ['transfer', 'Перемещение'],
-                        ['manual_set', 'Корректировка'],
-                      ] as Array<[InventoryDraft['movementType'], string]>).map(([mode, title]) => (
-                        <button
-                          key={mode}
-                          type="button"
-                          className={inventoryDraft.movementType === mode ? 'is-active' : ''}
-                          disabled={inventoryMovementBusy}
-                          onClick={() => selectInventoryOperationMode(mode)}
-                        >
-                          {title}
-                        </button>
-                      ))}
+                    <div className="inventory-operation-entry-actions">
+                      <button
+                        type="button"
+                        className={`inventory-operation-main-action ${inventoryDraft.movementType === 'transfer' ? 'is-active' : ''}`}
+                        disabled={inventoryMovementBusy}
+                        onClick={() => selectInventoryOperationMode('transfer')}
+                      >
+                        <span>
+                          <strong>Переместить товар</strong>
+                          <small>Склад ↔ Бутик · основной сценарий</small>
+                        </span>
+                        <b>Открыть</b>
+                      </button>
+                      <details className="inventory-operation-more-actions">
+                        <summary>Другие действия</summary>
+                        <div className="inventory-operation-secondary-actions" role="group" aria-label="Другие складские действия">
+                          {[
+                            ['arrival', 'Приход'],
+                            ['writeoff', 'Списание'],
+                            ['manual_set', 'Исправить количество'],
+                          ].map(([mode, title]) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              className={inventoryDraft.movementType === mode ? 'is-active' : ''}
+                              disabled={inventoryMovementBusy}
+                              onClick={() => selectInventoryOperationMode(mode)}
+                            >
+                              {title}
+                            </button>
+                          ))}
+                        </div>
+                      </details>
                     </div>
     
                     <div className={`mini-panel inventory-operation-card inventory-operation-card-${inventoryDraft.movementType}`}>
@@ -173,7 +196,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                   <button type="button" className="inventory-transfer-swap" disabled={inventoryMovementBusy} onClick={swapInventoryTransferDirection} aria-label="Поменять направление перемещения">⇄</button>
                                   <strong>{sourceLabel(inventoryDraft.targetSource)}</strong>
                                 </div>
-                                <small className="inventory-transfer-direction-hint">Фиксируется фактическое перемещение. Резервы заказов остаются в своей точке.</small>
+                                <small className="inventory-transfer-direction-hint">Выберите, откуда и куда вы реально перенесли товар. Заказы система не перепишет.</small>
                               </div>
                             ) : (
                               <div className="inventory-operation-source-control">
@@ -240,9 +263,9 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                   <strong>{selectedInventoryOperationGroup.totalQuantity} на месте</strong>
                                 </div>
     
-                                {selectedInventoryOperationGroup.rows.length > 10 ? (
+                                {selectedInventoryOperationGroup.rows.length > 6 ? (
                                   <label className="inventory-operation-variant-filter">
-                                    <span>Быстро найти вариант</span>
+                                    <span>Цвет, размер или материал</span>
                                     <input
                                       value={inventoryExistingVariantSearch}
                                       onChange={(event) => setInventoryExistingVariantSearch(event.target.value)}
@@ -256,11 +279,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                       <tr>
                                         <th>Вариант</th>
                                         {inventoryDraft.movementType === 'transfer' ? (
-                                          <>
-                                            <th>На месте</th>
-                                            <th>Свободно</th>
-                                            <th>{sourceLabel(inventoryDraft.targetSource)}</th>
-                                          </>
+                                          <th>По системе</th>
                                         ) : (
                                           <>
                                             <th>{inventoryDraft.movementType === 'manual_set' ? 'По системе' : 'На месте'}</th>
@@ -272,7 +291,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {operationVisibleRows.map((row: any) => {
+                                      {renderedOperationRows.map((row: any) => {
                                         const draftItem = operationDraftItem(row.variantId)
                                         const entered = inventoryDraft.movementType === 'manual_set'
                                           ? (draftItem?.touched ? String(draftItem.quantity) : '')
@@ -297,7 +316,6 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                             ? physicalBeforeOperation - operationQuantity
                                             : currentQuantity - operationQuantity
                                         const shortageAfter = Math.max(0, reservedQuantity - afterPhysical)
-                                        const transferFreeAfter = afterPhysical - reservedQuantity
                                         return (
                                           <tr data-transfer-variant={inventoryDraft.movementType === 'transfer' ? row.variantId : undefined} key={`operation-v182-${inventoryDraft.movementType}-${row.variantId}`} className={`${draftItem?.touched || operationQuantity > 0 ? 'is-edited' : ''}${needsPhysicalObservation && !physicalObservationValid ? ' needs-transfer-observation' : ''}`}>
                                             <td>
@@ -305,11 +323,12 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                               <span>{inventoryOperationRowSecondary(row)}</span>
                                             </td>
                                             {inventoryDraft.movementType === 'transfer' ? (
-                                              <>
-                                                <td><strong>{currentQuantity}</strong><small>{reservedQuantity ? `${reservedQuantity} в заказах` : ''}</small></td>
-                                                <td><strong className={freeQuantity < 0 ? 'text-danger' : ''}>{freeQuantity}</strong></td>
-                                                <td><strong>{destinationQuantity}</strong></td>
-                                              </>
+                                              <td>
+                                                <span className={`inventory-transfer-system-state ${currentQuantity < 0 ? 'is-negative' : currentQuantity === 0 ? 'is-zero' : ''}`}>
+                                                  <strong>{currentQuantity}</strong>
+                                                  {reservedQuantity ? <small>{reservedQuantity} в заказах · доступно {freeQuantity}</small> : <small>в этой точке</small>}
+                                                </span>
+                                              </td>
                                             ) : (
                                               <>
                                                 <td><strong className={currentQuantity < 0 ? 'text-danger' : ''}>{currentQuantity}</strong></td>
@@ -329,9 +348,9 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                               />
                                               {needsPhysicalObservation ? (
                                                 <div className={`inventory-transfer-observation ${physicalObservationValid ? 'is-valid' : ''}`}>
-                                                  <span>По учёту на месте {currentQuantity}. Если физически есть больше:</span>
+                                                  <span>По системе здесь {currentQuantity}. Чтобы провести это перемещение без путаницы, посчитайте только этот вариант в этой точке. Полную ревизию делать не нужно.</span>
                                                   <label>
-                                                    <em>Фактически на месте</em>
+                                                    <em>Сколько здесь сейчас</em>
                                                     <FriendlyNumberInput
                                                       type="number"
                                                       min="0"
@@ -349,8 +368,8 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                                 correctionDelta === null ? <span>—</span> : <span className={shortageAfter > 0 ? 'inventory-operation-shortage' : ''}><strong className={correctionDelta === 0 ? '' : correctionDelta < 0 ? 'text-danger' : 'text-success'}>{correctionDelta > 0 ? '+' : ''}{correctionDelta}</strong>{shortageAfter > 0 ? <small>После сверки не хватит {shortageAfter} шт. для заказов</small> : null}</span>
                                               ) : inventoryDraft.movementType === 'transfer' ? (
                                                 <span className={shortageAfter > 0 ? 'inventory-transfer-after has-shortage' : 'inventory-transfer-after'}>
-                                                  <b>{transferFreeAfter}</b> свободно · <b>{destinationQuantity + operationQuantity}</b> на месте назначения
-                                                  {shortageAfter > 0 ? <small>После перемещения не хватит {shortageAfter} шт. для заказов. Перемещение не блокируется, резервы сохраняются.</small> : null}
+                                                  <b>{afterPhysical}</b> останется здесь · <b>{destinationQuantity + operationQuantity}</b> будет в «{sourceLabel(inventoryDraft.targetSource)}»
+                                                  {shortageAfter > 0 ? <small>После перемещения для заказов не хватит {shortageAfter} шт. Само физическое перемещение не блокируется.</small> : null}
                                                 </span>
                                               ) : (
                                                 <span className={shortageAfter > 0 ? 'inventory-operation-shortage' : ''}><strong>{Math.max(0, afterPhysical)}</strong>{shortageAfter > 0 ? <small>Не хватит {shortageAfter} шт. для заказов</small> : null}</span>
@@ -360,16 +379,46 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                         )
                                       })}
                                       {!operationVisibleRows.length ? (
-                                        <tr><td colSpan={inventoryDraft.movementType === 'transfer' ? 6 : inventoryDraft.movementType === 'writeoff' ? 5 : 4} className="empty-state">Подходящих вариантов нет.</td></tr>
+                                        <tr><td colSpan={inventoryDraft.movementType === 'transfer' ? 4 : inventoryDraft.movementType === 'writeoff' ? 5 : 4} className="empty-state">Подходящих вариантов нет.</td></tr>
                                       ) : null}
                                     </tbody>
                                   </table>
                                 </div>
+                                {inventoryDraft.movementType === 'transfer' && transferPartition.extra.length ? (
+                                  <details className="inventory-transfer-extra-variants">
+                                    <summary>
+                                      <strong>Ещё {transferPartition.extra.length} вариантов</strong>
+                                      <small>Не пропали — просто убраны из первого экрана</small>
+                                    </summary>
+                                    <div className="inventory-transfer-extra-list">
+                                      {transferPartition.extra.map((row: any) => {
+                                        const signature = [row.gender, row.color, row.size, row.material, row.length].filter(Boolean).join(' ')
+                                        const unusual = transferPartition.unusualIds.has(String(row.variantId || ''))
+                                        const quantity = Number(row.quantity || 0)
+                                        return (
+                                          <button
+                                            key={`transfer-extra-${row.variantId}`}
+                                            type="button"
+                                            className={`inventory-transfer-extra-row ${unusual ? 'is-unusual' : ''}`}
+                                            onClick={() => setInventoryExistingVariantSearch(signature || String(row.variantId || ''))}
+                                          >
+                                            <span>
+                                              <strong>{inventoryOperationRowPrimary(row)}</strong>
+                                              <small>{inventoryOperationRowSecondary(row) || 'Обычный вариант'}</small>
+                                            </span>
+                                            <span className="inventory-transfer-extra-stock">{quantity > 0 ? `На месте ${quantity}` : `По системе ${quantity}`}</span>
+                                            {unusual ? <span className="inventory-transfer-extra-note">похожее или старое значение</span> : null}
+                                          </button>
+                                        )
+                                      })}
+                                    </div>
+                                  </details>
+                                ) : null}
                               </>
                             ) : (
                               <div className="inventory-operation-empty-product">
                                 <strong>Выберите товар из списка</strong>
-                                <span>После выбора сразу появятся все существующие варианты этой точки. Характеристики вручную собирать не нужно.</span>
+                                <span>Сначала покажем несколько самых вероятных вариантов. Нулевые, отрицательные и старые варианты остаются доступны через поиск и «Ещё варианты».</span>
                               </div>
                             )}
                           </section>

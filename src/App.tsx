@@ -459,7 +459,7 @@ function App() {
   const [inventoryDraft, setInventoryDraft] = useState<InventoryDraft>({
     source: 'warehouse',
     targetSource: 'boutique',
-    movementType: 'arrival',
+    movementType: 'transfer',
     comment: '',
     items: [createEmptyInventoryItem()],
   })
