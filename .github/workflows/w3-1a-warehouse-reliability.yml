@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch-validate-commit:
-    if: "${{ github.event.head_commit.message == 'chore: fix W3.1A runner' }}"
+    if: "${{ github.event.head_commit.message == 'chore: rerun W3.1A on Node 24' }}"
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -23,7 +23,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Apply W3.1A patch
