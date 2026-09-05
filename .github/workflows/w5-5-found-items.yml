@@ -24,6 +24,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Capture baselines
         run: node scripts/w5-5-manifest-helper.mjs before
+      - name: Fix temporary patcher
+        run: python3 scripts/w5-5-patcher-fix.py
       - name: Apply W5.5
         run: python3 scripts/w5-5-patcher.py
       - name: Build preservation manifests
@@ -51,7 +53,7 @@ jobs:
       - name: Commit validated candidate
         run: |
           rm .github/workflows/w5-5-found-items.yml
-          rm scripts/w5-5-patcher.py scripts/w5-5-manifest-helper.mjs scripts/w5-5-gate-patcher.py
+          rm scripts/w5-5-patcher.py scripts/w5-5-patcher-fix.py scripts/w5-5-manifest-helper.mjs scripts/w5-5-gate-patcher.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
