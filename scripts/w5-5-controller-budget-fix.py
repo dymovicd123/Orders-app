@@ -33,5 +33,17 @@ s = one(
     'compact found reconciliation refresh',
 )
 
+s = one(
+    s,
+    """  }
+
+  function openFoundInventoryCatalog(item: any) {
+""",
+    """  }
+  function openFoundInventoryCatalog(item: any) {
+""",
+    'compact found helper spacing',
+)
+
 p.write_text(s, encoding='utf-8')
 print('W5.5 InventorySection kept within existing 1906B controller budget')
