@@ -132,6 +132,25 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
     sourceLabel
   } = ctx
 
+  const openConcreteStockCheck = (row: any, label: string) => {
+    const physical = simpleStockPhysical(row)
+    const reserved = simpleStockReserved(row)
+    setSimpleStockDetail({
+      source: simpleStockSource, productId: Number(row.productId || 0), variantId: Number(row.variantId || 0), productName: row.productName || 'Товар',
+      category: row.category || 'adult', gender: row.gender || '', material: row.material || 'СТАНДАРТ', length: row.length || 'СТАНДАРТ', size: row.size || '', color: row.color || '',
+      physical, reserved, free: simpleStockQuantity(row), aggregate: false, label, hasDataIssue: false, microCheck: true,
+    })
+    setQuickStocktakeOpen(true)
+    setQuickStocktakeValues({})
+    setQuickStocktakeNotice('')
+  }
+
+  const microCheckDetailRow = (detail: any) => ({
+    productId: detail.productId, variantId: detail.variantId, productName: detail.productName, category: detail.category, gender: detail.gender, material: detail.material, length: detail.length, size: detail.size, color: detail.color,
+    warehouseQuantity: detail.source === 'warehouse' ? detail.physical : 0, warehouseReserved: detail.source === 'warehouse' ? detail.reserved : 0, warehouseAvailable: detail.source === 'warehouse' ? detail.free : 0,
+    boutiqueQuantity: detail.source === 'boutique' ? detail.physical : 0, boutiqueReserved: detail.source === 'boutique' ? detail.reserved : 0, boutiqueAvailable: detail.source === 'boutique' ? detail.free : 0,
+  })
+
   return (
     <div className="inventory-overview-panel inventory-calm-stock" style={inventoryPanelStyle('overview')}>
                     <div className="inventory-calm-head">
@@ -229,7 +248,7 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                                 ) : <span>В заказах <b>0</b></span>}
                               </div>
                               {single ? (
-                                <button className="secondary compact inventory-calm-detail-button" type="button" onClick={() => void openSimpleStockRowsDetail(rows, { label: singlePrimary })}>Подробнее</button>
+                                <button className="secondary compact inventory-calm-detail-button warehouse-w3-micro-check-open" type="button" onClick={() => openConcreteStockCheck(singleRow, singlePrimary)}>Проверить</button>
                               ) : (
                                 <button className="secondary compact inventory-calm-detail-button" type="button" aria-expanded={isOpen} onClick={() => setSimpleStockOpenProductKey((current) => current === group.key ? '' : group.key)}>{isOpen ? 'Скрыть варианты' : `Показать варианты (${rows.length})`}</button>
                               )}
@@ -249,7 +268,7 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                                       <div className="inventory-calm-variant-free">{rowPhysical < 0 ? <><strong>Нужна сверка</strong><span>учёт ниже нуля</span></> : rowFree < 0 ? <><strong>−{formatMoney(Math.abs(rowFree))}</strong><span>не хватает</span></> : <><strong>{formatMoney(rowFree)}</strong><span>свободно</span></>}</div>
                                       <span className="inventory-calm-variant-physical">На месте <b>{formatMoney(rowPhysical)}</b></span>
                                       {rowReserved > 0 ? <button type="button" className="inventory-reservation-link" onClick={() => void openSimpleStockRowsDetail([row], { label: primary })}>{formatMoney(rowReserved)} в заказах →</button> : <span className="inventory-calm-no-reserve">Нет резервов</span>}
-                                      <button className="ghost compact" type="button" onClick={() => void openSimpleStockRowsDetail([row], { label: primary })}>Подробнее</button>
+                                      <button className="ghost compact warehouse-w3-micro-check-open" type="button" onClick={() => openConcreteStockCheck(row, primary)}>Проверить</button>
                                     </div>
                                   )
                                 })}
@@ -274,49 +293,66 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                             <div><span>На месте</span><strong>{simpleStockDetail.physical}</strong></div>
                             <div><span>В заказах</span><strong>{simpleStockDetail.reserved}</strong></div>
                           </div>
-                          {simpleStockDetail.physical < 0 ? <div className="inventory-calm-warning"><strong>Учёт ниже нуля — нужна сверка</strong><span>Отрицательное число не доказывает, что забыли приход. Проверьте фактическое количество и источник товара; система исправит учёт по реальному факту.</span></div> : simpleStockDetail.free < 0 ? <div className="inventory-calm-warning"><strong>Товара не хватает для текущих заказов</strong><span>Нужно ещё {Math.abs(simpleStockDetail.free)} шт. либо требуется сверка фактического количества.</span></div> : null}
-                          <section className="inventory-calm-reservations">
-                            <div className="inventory-calm-reservations-head"><strong>{simpleStockDetail.reserved > 0 ? 'Товар отложен для этих заказов' : 'Товар сейчас не зарезервирован'}</strong>{simpleStockDetail.reserved > 0 ? <span>Всего: {simpleStockDetail.reserved} шт.</span> : null}</div>
-                            {simpleStockReservationsBusy ? <div className="empty-state compact-empty">Загружаю заказы…</div> : simpleStockDetail.reserved > 0 && !simpleStockReservations.length ? <div className="empty-state compact-empty">Не удалось получить список заказов. Обновите остатки и попробуйте ещё раз.</div> : simpleStockReservations.map((reservation: any) => (
-                              <div className="inventory-calm-reservation" key={`reservation-${reservation.id}`}>
-                                <div className="inventory-calm-reservation-main">
-                                  <strong>Заказ {reservation.externalOrderId || reservation.orderId}</strong>
-                                  {simpleStockDetail.aggregate ? <span>{[reservation.color, reservation.size, reservation.material && reservation.material !== 'СТАНДАРТ' ? reservation.material : '', reservation.length && reservation.length !== 'СТАНДАРТ' ? reservation.length : ''].filter(Boolean).join(' · ')}</span> : null}
-                                  <small>{[reservation.customerName || reservation.customerPhone, reservation.managerName, reservation.orderDate].filter(Boolean).join(' · ')}</small>
+                          {simpleStockDetail.microCheck ? (
+                            <section className="inventory-exact-count warehouse-w3-micro-check" data-w3-micro-check="true">
+                              <div><strong>Быстрая проверка</strong><div className="inventory-exact-count-note">Это добровольная сверка этой конкретной позиции. Открытие ничего не меняет — сохранится только подтверждённый вами факт.</div></div>
+                              {simpleStockDetail.physical >= 0 ? (
+                                <div className="inventory-routine-cycle-actions">
+                                  <button className="primary compact inventory-routine-cycle-confirm" type="button" disabled={quickStocktakeBusy} onClick={() => void applyQuickStocktake(Number(simpleStockDetail.physical || 0))}>{quickStocktakeBusy ? 'Сохраняю…' : `Да, на месте ${simpleStockDetail.physical}`}</button>
+                                  <details className="inventory-routine-cycle-other"><summary className="inventory-routine-cycle-other-button">Нет, другое количество</summary><div className="inventory-routine-cycle-edit"><input aria-label={`Фактическое количество ${simpleStockDetail.productName}`} type="number" min="0" step="1" inputMode="numeric" value={quickStocktakeValues[String(simpleStockDetail.variantId)] ?? ''} onChange={(event) => setQuickStocktakeValues({ [String(simpleStockDetail.variantId)]: event.target.value === '' ? '' : String(Math.max(0, Math.trunc(Number(event.target.value || 0)))) })} /><button className="primary compact" type="button" disabled={quickStocktakeBusy || (quickStocktakeValues[String(simpleStockDetail.variantId)] ?? '') === ''} onClick={() => void applyQuickStocktake()}>{quickStocktakeBusy ? 'Сохраняю…' : 'Сохранить факт'}</button></div></details>
                                 </div>
-                                <b>{reservation.quantity} шт.</b>
-                                <button className="secondary compact" type="button" onClick={() => { setSimpleStockDetail(null); void openOrderFromFinance({ orderId: reservation.orderId, externalId: reservation.externalOrderId, orderDate: reservation.orderDate }) }}>Открыть заказ</button>
-                              </div>
-                            ))}
-                          </section>
-                          {!simpleStockDetail.aggregate ? (
-                            <section className="inventory-exact-count">
-                              <div>
-                                <strong>Сверить количество</strong>
-                                <div className="inventory-exact-count-note">Введите, сколько таких вещей физически находится здесь сейчас. Считайте и свободные, и уже отложенные под заказы.</div>
-                              </div>
-                              {quickStocktakeOpen ? (
-                                <div className="inventory-exact-count-row">
-                                  <label>
-                                    <span>На месте сейчас</span>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      step="1"
-                                      inputMode="numeric"
-                                      value={quickStocktakeValues[String(simpleStockDetail.variantId)] ?? ''}
-                                      onChange={(event) => setQuickStocktakeValues({ [String(simpleStockDetail.variantId)]: event.target.value === '' ? '' : String(Math.max(0, Math.trunc(Number(event.target.value || 0)))) })}
-                                      placeholder={String(simpleStockDetail.physical)}
-                                    />
-                                  </label>
-                                  <button className="primary" type="button" disabled={quickStocktakeBusy || (quickStocktakeValues[String(simpleStockDetail.variantId)] ?? '') === ''} onClick={() => void applyQuickStocktake()}>{quickStocktakeBusy ? 'Сохраняю…' : 'Сохранить факт'}</button>
-                                  <button className="ghost" type="button" disabled={quickStocktakeBusy} onClick={() => { setQuickStocktakeOpen(false); setQuickStocktakeValues({}); setQuickStocktakeNotice('') }}>Отмена</button>
-                                </div>
-                              ) : <button className="secondary" type="button" onClick={() => { setQuickStocktakeOpen(true); setQuickStocktakeValues({}); setQuickStocktakeNotice('') }}>Сверить количество</button>}
+                              ) : (
+                                <div className="inventory-routine-cycle-edit is-independent"><input aria-label={`Фактическое количество ${simpleStockDetail.productName}`} type="number" min="0" step="1" inputMode="numeric" placeholder="Факт" value={quickStocktakeValues[String(simpleStockDetail.variantId)] ?? ''} onChange={(event) => setQuickStocktakeValues({ [String(simpleStockDetail.variantId)]: event.target.value === '' ? '' : String(Math.max(0, Math.trunc(Number(event.target.value || 0)))) })} /><button className="primary compact" type="button" disabled={quickStocktakeBusy || (quickStocktakeValues[String(simpleStockDetail.variantId)] ?? '') === ''} onClick={() => void applyQuickStocktake()}>{quickStocktakeBusy ? 'Сохраняю…' : 'Сохранить факт'}</button></div>
+                              )}
+                              {simpleStockDetail.physical < 0 ? <div className="inventory-exact-count-note">Системное количество ниже нуля, поэтому подтвердить его одним нажатием нельзя — укажите реальный факт.</div> : null}
                               {quickStocktakeNotice ? <p className="inventory-quick-stocktake-notice">{quickStocktakeNotice}</p> : null}
+                              <div className="inventory-calm-detail-actions"><button className="secondary" type="button" onClick={() => void openSimpleStockRowsDetail([microCheckDetailRow(simpleStockDetail)], { source: simpleStockDetail.source, label: simpleStockDetail.label })}>Подробнее о позиции</button></div>
                             </section>
-                          ) : null}
-                          {isAdmin ? <div className="inventory-calm-detail-actions">{simpleStockDetail.aggregate ? <span className="inventory-quick-stocktake-hint">Для сверки откройте конкретный вариант товара.</span> : null}{!simpleStockDetail.aggregate ? <button className="secondary" type="button" onClick={() => openSimpleStockHistory(simpleStockDetail)}>История позиции</button> : null}</div> : null}
+                          ) : (<>
+                            {simpleStockDetail.physical < 0 ? <div className="inventory-calm-warning"><strong>Учёт ниже нуля — нужна сверка</strong><span>Отрицательное число не доказывает, что забыли приход. Проверьте фактическое количество и источник товара; система исправит учёт по реальному факту.</span></div> : simpleStockDetail.free < 0 ? <div className="inventory-calm-warning"><strong>Товара не хватает для текущих заказов</strong><span>Нужно ещё {Math.abs(simpleStockDetail.free)} шт. либо требуется сверка фактического количества.</span></div> : null}
+                            <section className="inventory-calm-reservations">
+                              <div className="inventory-calm-reservations-head"><strong>{simpleStockDetail.reserved > 0 ? 'Товар отложен для этих заказов' : 'Товар сейчас не зарезервирован'}</strong>{simpleStockDetail.reserved > 0 ? <span>Всего: {simpleStockDetail.reserved} шт.</span> : null}</div>
+                              {simpleStockReservationsBusy ? <div className="empty-state compact-empty">Загружаю заказы…</div> : simpleStockDetail.reserved > 0 && !simpleStockReservations.length ? <div className="empty-state compact-empty">Не удалось получить список заказов. Обновите остатки и попробуйте ещё раз.</div> : simpleStockReservations.map((reservation: any) => (
+                                <div className="inventory-calm-reservation" key={`reservation-${reservation.id}`}>
+                                  <div className="inventory-calm-reservation-main">
+                                    <strong>Заказ {reservation.externalOrderId || reservation.orderId}</strong>
+                                    {simpleStockDetail.aggregate ? <span>{[reservation.color, reservation.size, reservation.material && reservation.material !== 'СТАНДАРТ' ? reservation.material : '', reservation.length && reservation.length !== 'СТАНДАРТ' ? reservation.length : ''].filter(Boolean).join(' · ')}</span> : null}
+                                    <small>{[reservation.customerName || reservation.customerPhone, reservation.managerName, reservation.orderDate].filter(Boolean).join(' · ')}</small>
+                                  </div>
+                                  <b>{reservation.quantity} шт.</b>
+                                  <button className="secondary compact" type="button" onClick={() => { setSimpleStockDetail(null); void openOrderFromFinance({ orderId: reservation.orderId, externalId: reservation.externalOrderId, orderDate: reservation.orderDate }) }}>Открыть заказ</button>
+                                </div>
+                              ))}
+                            </section>
+                            {!simpleStockDetail.aggregate ? (
+                              <section className="inventory-exact-count">
+                                <div>
+                                  <strong>Сверить количество</strong>
+                                  <div className="inventory-exact-count-note">Введите, сколько таких вещей физически находится здесь сейчас. Считайте и свободные, и уже отложенные под заказы.</div>
+                                </div>
+                                {quickStocktakeOpen ? (
+                                  <div className="inventory-exact-count-row">
+                                    <label>
+                                      <span>На месте сейчас</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        inputMode="numeric"
+                                        value={quickStocktakeValues[String(simpleStockDetail.variantId)] ?? ''}
+                                        onChange={(event) => setQuickStocktakeValues({ [String(simpleStockDetail.variantId)]: event.target.value === '' ? '' : String(Math.max(0, Math.trunc(Number(event.target.value || 0)))) })}
+                                        placeholder={String(simpleStockDetail.physical)}
+                                      />
+                                    </label>
+                                    <button className="primary" type="button" disabled={quickStocktakeBusy || (quickStocktakeValues[String(simpleStockDetail.variantId)] ?? '') === ''} onClick={() => void applyQuickStocktake()}>{quickStocktakeBusy ? 'Сохраняю…' : 'Сохранить факт'}</button>
+                                    <button className="ghost" type="button" disabled={quickStocktakeBusy} onClick={() => { setQuickStocktakeOpen(false); setQuickStocktakeValues({}); setQuickStocktakeNotice('') }}>Отмена</button>
+                                  </div>
+                                ) : <button className="secondary" type="button" onClick={() => { setQuickStocktakeOpen(true); setQuickStocktakeValues({}); setQuickStocktakeNotice('') }}>Сверить количество</button>}
+                                {quickStocktakeNotice ? <p className="inventory-quick-stocktake-notice">{quickStocktakeNotice}</p> : null}
+                              </section>
+                            ) : null}
+                            {isAdmin ? <div className="inventory-calm-detail-actions">{simpleStockDetail.aggregate ? <span className="inventory-quick-stocktake-hint">Для сверки откройте конкретный вариант товара.</span> : null}{!simpleStockDetail.aggregate ? <button className="secondary" type="button" onClick={() => openSimpleStockHistory(simpleStockDetail)}>История позиции</button> : null}</div> : null}
+                          </>)}
                         </aside>
                       </div>
                     ) : null}
