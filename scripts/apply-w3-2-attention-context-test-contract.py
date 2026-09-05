@@ -42,5 +42,11 @@ if text.count(old2) != 1:
     raise SystemExit(f'192B2A2 shortage UI contract: expected 1 match, found {text.count(old2)}')
 text = text.replace(old2, new2, 1)
 
+old3 = "  check(panel.includes('Завершить приёмку') && panel.includes('Точный существующий товар уже распознан'), 'Known intake still looks like catalog identification')"
+new3 = "  check(panel.includes('Завершить приёмку') && panel.includes('Товар уже известен.'), 'Known intake no longer communicates known identity plus physical confirmation')"
+if text.count(old3) != 1:
+    raise SystemExit(f'192B2A2 known-intake copy contract: expected 1 match, found {text.count(old3)}')
+text = text.replace(old3, new3, 1)
+
 path.write_text(text, encoding='utf-8')
 print('Step192B2A2 cumulative contract updated for W3.2 natural recovery')
