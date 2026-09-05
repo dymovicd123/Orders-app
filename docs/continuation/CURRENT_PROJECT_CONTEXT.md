@@ -14,182 +14,171 @@ This file is the canonical continuation point for ChatGPT work on the project. I
 - Prefer measured, narrow, reversible changes, especially for D1 read-budget work.
 - For small D1 release/repair SQL, prefer bounded `wrangler d1 execute --command` statements rather than `--file`; this project previously hit `D1_RESET_DO` through the import endpoint.
 - Branch2 must remain untouched unless it is explicitly targeted.
-- D1 reads were near the daily limit on 2026-09-04. Avoid broad Production forensics unless needed; exact PK/indexed checks are acceptable for an operational incident when they materially improve safety.
 
-## Current Production code
+## Current Production release — R5.10
 
-Current `main` / Production code is:
+Current `main` / Production code:
 
-`a008abf1d875fa19d0b60e0091b7c364a2536529`
+`7da7e555d306d5e7f47f1afecf5a8927d5bfb136`
 
-This is PR #13, `Fix Workshop backlog visibility and restore flow`, squash-merged after the Asem Workshop incident.
+Release: PR #14, `R5.10: reduce Workshop variant enrichment reads`, squash-merged 2026-09-05.
 
-Cloudflare deploy monitor:
-- run `33950107977`
-- job `101263149804`
+Cloudflare Production deploy:
+- monitor run `33952346035`
+- job `101269367145`
 - result `success`
 - Worker `orders-app`
 - immutable Worker tag `66404f6fa2ad454998068e7dd7600edb`
-- Cloudflare build UUID `b815ab12-b7b4-4453-ba36-a8cad762d5bb`
-- exact build status `stopped`, outcome `success`
+- Cloudflare build UUID `8791b8a9-2699-4251-8c9c-3abd0b27d69a`
+- exact release SHA `7da7e555d306d5e7f47f1afecf5a8927d5bfb136`
+- build `status=stopped`, `outcome=success`
 
-PR #13 has no D1 migration and no Worker declaration/body change. Exact main diff from the prior tree is five files only:
+R5.10 has no D1 migration. Arrival UI was not touched. Stock, reserves, payment, return, issuing and Workshop status business semantics were not changed.
+
+Exact release diff from the preceding main tree is five files:
 - `package.json`
-- `scripts/test-workshop-backlog-visibility-r1.mjs`
-- `src/App.tsx`
-- `src/app/types.ts`
-- `src/features/sections/WorkshopSection.tsx`
+- `scripts/d1-read-budget-r5-10-worker-manifest.json`
+- `scripts/test-d1-read-budget-r5-10.mjs`
+- `scripts/test-step1906a-worker-modularization.mjs`
+- `worker/domains/workshop.ts`
 
-Arrival UI was not touched. Branch2 remains:
+Temporary build/proof helper files were removed from the release branch before PR. Temporary R5.10 ops branches were reset to the clean release SHA after verification.
 
-`adec6098777bebe4709615e1256cc5dd468b444d`
+Branch2 remains out of scope and was not intentionally changed by R5.10. Last known exact Branch2 SHA remains `adec6098777bebe4709615e1256cc5dd468b444d` unless separately reverified.
 
-Historical note: R5.9 release tree was introduced by PR #12 at `6985093f7ee377b7d52b8716184b26f4fd6a1ac6`. Later, an accidental temporary root file `noop` produced two no-op main history commits (`6c6bdffd...`, `d9b17803...`) with zero net changed files. Do not rewrite main merely to remove those history commits.
+## R5.10 — Workshop read optimization
 
-## 2026-09-05 Workshop incident — Asem / Saida / 31.08
+### Problem
 
-User reported a Workshop item accidentally marked `Готово`, then staff could not find it to return it to active. Identifying data supplied by user: manager Саида, customer Асем, phone +7 777 696 0065, order date 31.08.
+`enrichWorkshopTaskRowsFromOrderItems` used a correlated `catalog_variants` fallback per linked Workshop item. This is correct but expensive on large Workshop reads, especially now that the full historical backlog is intentionally visible.
 
-A deliberately narrow Production forensic used one SELECT-only workflow:
-- run `33949512112`
-- job `101261502354`
-- 54 rows_read total
-- rows_written=0, changed_db=false
+### Implementation
 
-Exact Production object found:
-- order id `1269`
-- external id `ORD-20260831114645-9B02389A`
-- order date `2026-08-31`
-- manager `САИДА`
-- phone_normalized `87776960065`
-- order status `active`
-- shipping status `not_sent`
-- before repair workshop_status `ready`
+For `directItemIds.length >= 20`, large Workshop enrichment now resolves historical variant-less rows set-wise:
+- load `order_items` with direct variant metadata;
+- collect product IDs only for rows whose `variant_id` is null;
+- load candidate `catalog_variants` once for those products;
+- preserve the legacy fallback priority `is_active DESC, sort_order ASC, id ASC` and the same color/size matching semantics in memory.
 
-Exact order item:
-- item id `3165`
-- product `БАЯН СҰЛУ ШАПАН`
-- gender `ЖЕН`
-- color `СВЕТЛО-БЕЖЕВЫЙ`
-- material `КАШЕМИР`
-- length `СТАНДАРТ`
-- size `46`
-- quantity `1`
-- `source_type='warehouse'`
-- `is_workshop=1`
-- `stock_writeoff_status='workshop'`
+For small flows below the threshold, the exact legacy correlated SQL remains. This deliberately protects one-item status/relink/mutation flows from catalog fan-out. The later ambiguous legacy task matcher is unchanged.
 
-Exact Workshop task:
-- task id `1800`
-- order_item_id `3165`
-- status before repair `done`
-- urgent `1`
-- due date `2026-09-03`
-- comment `оюы тұмар болу керек`
-- mistaken ready action recorded at `2026-09-05T05:22:52Z`
+### Production proof
 
-### Root cause
+Exact SELECT-only proof on 80 live Workshop items:
+- legacy correlated fallback: `2967 rows_read`
+- set-based resolver: `1035 rows_read`
+- saving: `1932 rows_read`
+- reduction: about `65.1%`
+- missing-variant products: `15`
+- candidate variants: `846`
+- raw item read: `160`
+- candidate variant read: `875`
+- complete result equivalence passed
+- all D1 proof calls enforced `rows_written=0`, `changed_db=false`
 
-The user suspected `Готово`/`Вернуть` had changed the item source from Workshop to Warehouse. Current data and code show that did **not** happen in this incident.
+Initial proof run: `33951270314`, job `101266442409`, success.
 
-The schema has a legacy dual representation:
-- `order_items.source_type` is constrained to only `warehouse|boutique` by the original schema;
-- Workshop identity is canonicalized by `is_workshop=1` plus Workshop task/stock status;
-- `orders-write.ts` intentionally stores `source_type='warehouse'` for Workshop order items because the column cannot store `workshop`;
-- API/UI maps an item with `is_workshop=1` back to Workshop semantics;
-- current `updateWorkshopTask` changes task status and can repair `is_workshop/stock_writeoff_status`, but does not write `source_type`.
+### Exact Worker gate
 
-Therefore `source_type='warehouse'` on item 3165 is not evidence of conversion. A new regression now explicitly forbids Workshop ready/restore logic from rewriting `source_type`.
+R5.10 is accepted by the cumulative Step 190.6A declaration gate through an exact SHA-256 delta for `enrichWorkshopTaskRowsFromOrderItems`:
+- before: `1851daa7279ff837011e507fe41fdd9a2615ad42ecd6a3a3c7a8fb021b302e2a`
+- after: `3bd7cf0851a6125c21812d65b45c37fd7fcb6ceb52c773eedb87fc5ed7c09638`
 
-The actual bug was visibility across the month boundary:
-- Workshop UI defaulted to current month (September);
-- the order belongs to 31 August;
-- the same date range was applied to Active and Done queues;
-- after task 1800 was marked done, it disappeared from September Done;
-- simply restoring it to active would also have left an August task invisible in September Active.
+The gate was not bypassed or weakened. Earlier candidate runs failed safely until the exact cumulative R5.10 allow-list was added.
 
-### Production repair of the exact task
+### Final validation
 
-Task 1800 was restored through the normal Worker business API, not direct D1 mutation:
-
-`PATCH /api/workshop/1800`
-
-with `status=active` and exact `orderItemId=3165`.
-
-Repair workflow:
-- run `33950242034`
-- job `101263515811`
+Validation branch run:
+- run `33952261760`
+- job `101269138538`
 - result `success`
 
-Safety guard before mutation was an exact indexed read costing **2 rows_read** and confirmed task 1800 was still `done`, linked to order 1269 / item 3165.
+Passed:
+- focused R5.10 regression
+- full cumulative `npm run release:check`
+- DB safety
+- TypeScript typecheck
+- production build
+- lint with warnings only, 0 errors
+- Wrangler deploy dry-run
+- fresh Production read-only equivalence/budget proof
 
-Business API returned:
-- `ok=true`
-- `changed=true`
-- task 1800 status `active`
-- `previousStatus='done'`
-- preservedOrderItemId `3165`
+Step 190.6A passed with 35 Worker TS files, 509 preserved declarations and 0 import cycles. DB safety preserved 69 migration files and found no D1 mutation command in package scripts.
 
-Post-repair exact verification cost **3 rows_read** and confirmed:
-- task 1800 `active`
-- order 1269 `workshop_status='in_workshop'`
-- item 3165 `is_workshop=1`
-- item 3165 `stock_writeoff_status='workshop'`
-- legacy `source_type='warehouse'` unchanged, as intended by schema
+### Post-deploy verification
 
-The temporary repair and forensic branches were reset to clean main after use so one-shot workflow files are not left at their tips.
-
-### PR #13 behavior
-
-Workshop operational queue now defaults to all dates rather than current month. UI adds explicit `Все` period option. Switching Active/Urgent/Done no longer silently forces an empty/all-date range back to current month. `Готовые` switches to newest-first so an accidental `Готово` is easy to find and undo. Active/Urgent remain oldest-first to preserve backlog priority. Invoice is the only view that converts all/empty dates to a bounded current-month range, preventing oversized invoice loads.
-
-Validation before merge:
-- run `33949904503`
-- job `101262579416`
+Post-deploy run:
+- run `33952451906`
+- job `101269652295`
 - result `success`
-- focused Workshop regression passed
-- `npm run release:check` passed
-- `npm run verify:db-safety` passed
-- `npm run typecheck` passed
-- `npm run build` passed
-- `npm run lint` passed
 
-Two earlier candidate validation attempts failed safely before commit and revealed guard issues, not runtime bugs: one attempted Worker-body change violated Step1906A hash gate, so Worker change was removed; one exceeded the App controller line budget by two lines, so the frontend change was compacted. Final candidate passed all gates.
+Verified exact Production identity:
+- Worker tag `66404f6fa2ad454998068e7dd7600edb`
+- build UUID `8791b8a9-2699-4251-8c9c-3abd0b27d69a`
+- release SHA `7da7e555d306d5e7f47f1afecf5a8927d5bfb136`
 
-## R5.9 performance result
+Fresh post-deploy SELECT-only control:
+- legacy baseline `2967 rows_read`
+- set-based total `1035 rows_read`
+- `R510_POSTDEPLOY_READONLY_OK`
 
-For active August orders `2026-08-01..2026-08-31`, final pre-release SELECT-only proof showed:
-- page 2: 600 -> 313 rows_read (-47.8%)
-- page 3: 893 -> 297 (-66.7%)
-- page 4: 1,192 -> 312 (-73.8%)
-- page 5: 1,288 -> 106 (-91.8%)
-- repeated period summary: 2,423 -> 447 rows_read (-81.6%)
+Therefore the measured reduction survived the real Production deployment.
+
+## 2026-09-05 Workshop backlog incident — inherited context
+
+PR #13, main predecessor `a008abf1d875fa19d0b60e0091b7c364a2536529`, fixed an operational visibility bug where old Workshop tasks could disappear when the UI defaulted to the current month. `Готовые` now opens newest-first, active backlog remains discoverable across dates, and invoice stays bounded.
+
+The exact Asem/Saida task was restored through normal Worker business API, not direct D1 mutation. The incident also established that legacy `order_items.source_type='warehouse'` is not evidence of conversion out of Workshop: Workshop identity is represented by `is_workshop=1` plus Workshop task/stock status because the old schema constrains `source_type` to warehouse/boutique.
+
+Do not reintroduce month-boundary hiding or rewrite Workshop `source_type` during ready/restore operations.
+
+## R5.9 — Orders pagination
+
+R5.9 introduced internal `(order_date,id)` seek pagination for sequential Next navigation while preserving visible page/offset semantics and legacy API defaults. Later page-only navigation can reuse exact page-1 periodStats and request count-only metadata.
+
+Measured active-August proof:
+- page 2: `600 -> 313 rows_read` (-47.8%)
+- page 3: `893 -> 297` (-66.7%)
+- page 4: `1192 -> 312` (-73.8%)
+- page 5: `1288 -> 106` (-91.8%)
+- repeated period summary: `2423 -> 447 rows_read` (-81.6%)
 - exact order count: 432
-- keyset page external_id sequences exactly matched OFFSET baseline.
+- keyset page external_id sequences exactly matched OFFSET baseline
 
-R5.9 uses an internal `(order_date,id)` seek cursor only for sequential Next navigation while keeping visible offset/page semantics. Later page-only navigation can reuse exact page-1 periodStats and request count-only metadata. Legacy/direct API callers retain full periodStats by default.
+Remaining low-severity R5.9 cleanup candidates:
+1. Worker may return `periodStats: null` for `includePeriodStats=0` while the shared TypeScript contract is less explicit about null.
+2. Very fast Next during the filter debounce window can temporarily combine an old cursor/summary with newly edited filters until page-1 reload; preferred fix is an applied-filter fingerprint or immediate reuse invalidation.
+3. Concurrent writes can make page rows and freshly counted metadata describe slightly different snapshots; treat as multi-user consistency risk, not confirmed Production failure.
 
-## R5.8 / R5.7 inherited optimizations
+## R5.8 / R5.7 inherited performance work
 
-R5.8 Finance default workspace `2026-09-01..2026-09-04` was reduced 901 -> 673 rows_read by deriving payment-method and payment-by-day aggregates from already-loaded payment operation rows.
+R5.8 reduced the default Finance workspace for 2026-09-01..2026-09-04 from `901 -> 673 rows_read` by deriving payment-method and payment-by-day aggregates from already-loaded payment operation rows. Current-month Finance queries were rechecked during R5.10 profiling and were no longer the leading read hotspot.
 
-R5.7 Orders Summary reuses `orders.received_amount` only inside its proven active/no-date boundary. Date-filtered, archive/non-active and legacy callers retain the exact payments query.
+R5.7 reduced ordinary active/no-date Orders Summary fallback from `9542 -> 3802 rows_read` (~60.15%). It reuses `orders.received_amount` only inside its proven active/no-date boundary. Date-filtered, archive/non-active and legacy callers retain exact payment aggregation semantics.
 
-## Code-only post-R5.9 audit — 2026-09-04
+## Interpreting current Cloudflare rows-read totals
 
-Audit run `33896192244` / job `101099283468` succeeded with no Production D1 access. Typecheck, build, lint, R5.7/R5.8/R5.9 regressions, Worker declaration gate, frontend modularization, type/API boundary, runtime SQL syntax and DB-safety all passed.
+The unusually low 2026-09-05 total is a combination of real optimizations and lower/partial-day usage. Do not attribute the entire low daily number to optimization.
 
-### Remaining low-severity R5.9 issues for later
+Prior observed daily totals around this period were roughly:
+- Sep 1: 12.6M
+- Sep 2: 5.0M
+- Sep 3: 3.46M
+- Sep 4: 5.04M
+- Sep 5 was still a partial day during the conversation
 
-1. `worker/domains/orders-read.ts` can intentionally return `periodStats: null` for `includePeriodStats=0`, while `src/app/types.ts` still declares `periodStats?: OrderPeriodStats` rather than `OrderPeriodStats | null`. Current runtime is safe but the type contract is inaccurate.
-2. A very fast Next click inside the filter debounce window can combine an old page cursor/summary with newly edited filters until the scheduled page-1 reload corrects it. Preferred future fix: bind page reuse to an applied-filter fingerprint or invalidate reuse immediately on filter change.
-3. Concurrent writes between keyset page loads can make page rows and freshly counted total metadata describe slightly different snapshots. Treat as a multi-user consistency risk, not a confirmed Production failure.
+The average rows per read request on Sep 5 was still broadly similar to some previous days, so usage volume matters. Use identical-query before/after measurements to prove optimization effects rather than aggregate dashboard totals alone.
 
-## Next action
+## Next optimization point — R5.11 candidate
 
-The Asem Workshop incident is repaired and PR #13 is live. Do not run more broad Production profiling just for this incident.
+R5.10 is complete and live. The next preferred target is **fresh read-only Production profiling of order search**, especially 1–2 character searches. Generic searches of length >=3 already use the R5.3 trigram/FTS path, while short queries intentionally retain legacy semantics and may still be expensive.
 
-Next normal technical work can return to the narrow R5.9 contract/filter-pagination cleanup, then after D1 budget is comfortable run a fresh measured profile before choosing any R5.10 optimization target.
+Before changing code:
+- measure representative short searches and their actual rows_read;
+- inspect current query planner/index usage;
+- preserve `ORD`/external-id search behavior and short-search compatibility;
+- prove any alternative SQL returns the same order IDs before implementation;
+- do not touch Warehouse Attention merely because it is potentially expensive; its physical-truth logic is higher risk and needs its own precise measured audit.
 
 ## Inherited safety / business invariants
 
@@ -199,5 +188,6 @@ Next normal technical work can return to the narrow R5.9 contract/filter-paginat
 - Partial shipping is not used; operational model is all-or-nothing.
 - Preserve payment-date vs order-date financial semantics.
 - Keep D1 read fan-out bounded and mutations bounded.
+- Preserve <=6 parallel read calls and <=100 bind/query parameters where applicable.
 - Small Production D1 SQL should use `wrangler d1 execute --command`, not file-import.
 - Branch2 is out of scope unless explicitly requested.
