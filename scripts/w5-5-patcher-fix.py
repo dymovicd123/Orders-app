@@ -1,6 +1,7 @@
 from pathlib import Path
 p = Path('scripts/w5-5-patcher.py')
 s = p.read_text(encoding='utf-8')
+
 old = '''needle = "return {\\n      ok: true,\\n      changed,\\n"
 count = s.count(needle)
 if count != 2:
@@ -18,5 +19,13 @@ s = s.replace(needle_final, "  return {\\n    ok: true,\\n    changed,\\n    unr
 '''
 if old not in s:
     raise SystemExit('old completion patch block not found')
-p.write_text(s.replace(old, new, 1), encoding='utf-8')
-print('W5.5 patcher completion fix applied')
+s = s.replace(old, new, 1)
+
+old = '''s = one(s,\n"         (SELECT COUNT(*) FROM inventory_stocktake_sessions WHERE status = 'active') AS stocktake_count`\\n",\n"         (SELECT COUNT(*) FROM inventory_stocktake_sessions WHERE status = 'active') AS stocktake_count,\\n         (SELECT COUNT(*) FROM inventory_stock s WHERE s.variant_id IS NULL AND s.quantity > 0 AND s.last_source_ref LIKE 'stocktake-unresolved:%') AS found_count`\\n",\n'found summary count')\n'''
+new = '''old_found_count_sql = "         (SELECT COUNT(*) FROM inventory_stocktake_sessions WHERE status = 'active') AS stocktake_count`\\n"\nnew_found_count_sql = "         (SELECT COUNT(*) FROM inventory_stocktake_sessions WHERE status = 'active') AS stocktake_count,\\n         (SELECT COUNT(*) FROM inventory_stock s WHERE s.variant_id IS NULL AND s.quantity > 0 AND s.last_source_ref LIKE 'stocktake-unresolved:%') AS found_count`\\n"\nif s.count(old_found_count_sql) < 1:\n    raise SystemExit('found summary stocktake_count SQL anchor missing')\ns = s.replace(old_found_count_sql, new_found_count_sql, 1)\n'''
+if old not in s:
+    raise SystemExit('old found summary SQL patch block not found')
+s = s.replace(old, new, 1)
+
+p.write_text(s, encoding='utf-8')
+print('W5.5 temporary patcher fixes applied')
