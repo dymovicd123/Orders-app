@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "revision": "w5-checking-ux",
+  "frontend": {
+    "panelReturnChanges": {
+      "renderInventoryStocktakePanel": {
+        "before": "b5e2c26a2459eb39d99ef322b6f12421ac2d6c739f3d67373db7d725e0c04f18",
+        "after": "981aafe065cf8bfa016037884a0e88a57b65e0f707fecd930a85ee2942fdf2d3"
+      }
+    }
+  }
+}
