@@ -1,4 +1,5 @@
 name: R5.10 Workshop enrichment build
+# retry: declaration-neutral implementation
 
 on:
   push:
