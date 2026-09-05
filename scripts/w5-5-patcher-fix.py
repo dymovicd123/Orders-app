@@ -27,5 +27,11 @@ if old not in s:
     raise SystemExit('old found summary SQL patch block not found')
 s = s.replace(old, new, 1)
 
+old = '''pattern = re.compile(r"(  async function addInventoryStocktakeCombination\\([\\s\\S]*?\\n  }\\n)(\\n\\n  async function loadInventoryCycleCounts)")'''
+new = '''pattern = re.compile(r"(  async function addInventoryStocktakeCombination\\([\\s\\S]*?\\n  }\\n)(\\n  async function loadInventoryCycleCounts)")'''
+if old not in s:
+    raise SystemExit('old App insertion regex not found')
+s = s.replace(old, new, 1)
+
 p.write_text(s, encoding='utf-8')
 print('W5.5 temporary patcher fixes applied')
