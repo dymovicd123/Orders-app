@@ -75,6 +75,7 @@ jobs:
           python3 scripts/apply-w3-2-natural-recovery.py
           python3 scripts/apply-w3-2-worker-preservation.py
           python3 scripts/apply-w3-2-worker-preservation-r2.py
+          python3 scripts/apply-w3-2-daily-test-contract.py
 
       - name: Generate exact W3.2 preservation manifests
         run: |
@@ -162,6 +163,7 @@ jobs:
             scripts/test-w2-attention-refresh-r1.mjs \
             scripts/test-step1906a-worker-modularization.mjs \
             scripts/test-step1906b-frontend-modularization.mjs \
+            scripts/test-step192b2a-daily-warehouse.mjs \
             scripts/test-w3-2-natural-recovery.mjs \
             scripts/w3-2-natural-recovery-frontend-manifest.json \
             scripts/w3-2-natural-recovery-worker-manifest.json \
