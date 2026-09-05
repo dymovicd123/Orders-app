@@ -35,11 +35,11 @@ try {
 
   const refresh = between(actions, '  async function refreshWarehouseAttention() {', '  useEffect(() => {')
   check(refresh.includes('if (!data?.items) throw new Error'), 'Failed detail load is still silently rendered as an empty problem list')
-  const effect = between(actions, "  useEffect(() => {\n    if (activeSector !== 'inventory' || inventoryPanel !== 'attention') return", '  async function openAttentionShortage')
+  const effect = between(actions, "  useEffect(() => {\n    if (activeSector !== 'inventory' || inventoryPanel !== 'attention') return", '  async function openAttentionLifecycle')
   check(effect.includes('void refreshWarehouseAttention()'), 'Attention no longer loads details on panel entry')
 
   const intake = between(actions, '  async function openAttentionIntake(item: any) {', '  function openAttentionHandover')
-  check(intake.includes('result?.warehouseAttention || await loadWarehouseAttention(true)'), 'Intake still unconditionally performs a second detailed Attention read')
+  check(intake.includes('else if (!result?.warehouseAttention) await loadWarehouseAttention(true)'), 'Intake still performs a second detailed Attention read when reconciliation already returned refreshed data')
   const reconcileStart = app.indexOf('  async function reconcileKnownInventoryLifecycle(eventId: number) {')
   check(reconcileStart >= 0, 'reconcileKnownInventoryLifecycle missing')
   const reconcile = app.slice(reconcileStart, reconcileStart + 2400)

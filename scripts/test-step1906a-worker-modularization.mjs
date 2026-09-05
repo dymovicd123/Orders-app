@@ -51,6 +51,7 @@ const financeF6ReportSemanticsPath = path.join(root, 'scripts/finance-f6-report-
 const financeF6DeadMetricsPath = path.join(root, 'scripts/finance-f6-dead-metrics-worker-manifest.json')
 const financeF9SummaryPath = path.join(root, 'scripts/finance-f9-summary-worker-manifest.json')
 const financeF9DatePriorityPath = path.join(root, 'scripts/finance-f9-date-priority-worker-manifest.json')
+const w3NaturalRecoveryWorkerPath = path.join(root, 'scripts/w3-2-natural-recovery-worker-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -231,6 +232,9 @@ try {
   const financeF9SummaryChanges = financeF9Summary?.version === 1 ? (financeF9Summary.changes || {}) : {}
   const financeF9DatePriority = fs.existsSync(financeF9DatePriorityPath) ? JSON.parse(fs.readFileSync(financeF9DatePriorityPath, 'utf8')) : null
   const financeF9DatePriorityChanges = financeF9DatePriority?.version === 1 ? (financeF9DatePriority.changes || {}) : {}
+  const w3NaturalRecoveryWorker = fs.existsSync(w3NaturalRecoveryWorkerPath) ? JSON.parse(fs.readFileSync(w3NaturalRecoveryWorkerPath, 'utf8')) : null
+  if (w3NaturalRecoveryWorker) check(w3NaturalRecoveryWorker.version === 1 && w3NaturalRecoveryWorker.revision === 'w3-2-natural-recovery', 'W3.2 natural recovery Worker manifest invalid')
+  const w3NaturalRecoveryWorkerChanges = w3NaturalRecoveryWorker?.changes || {}
 
   const files = walk(workerRoot)
   const indexPath = path.join(workerRoot, 'index.ts')
@@ -517,12 +521,23 @@ try {
       acceptedPostD1ReadBudgetR59Hash = d1ReadBudgetR59Changed.after
     }
     const d1ReadBudgetR510Changed = d1ReadBudgetR510Changes[name]
+    let acceptedPostD1ReadBudgetR510Hash = acceptedPostD1ReadBudgetR59Hash
     if (d1ReadBudgetR510Changed) {
       check(d1ReadBudgetR510Changed.before === acceptedPostD1ReadBudgetR59Hash, `D1 read-budget R5.10 baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === d1ReadBudgetR510Changed.after, `Worker declaration changed beyond exact D1 read-budget R5.10 allow-list: ${name}`)
-    } else {
-      check(sha(declarations.get(name)) === acceptedPostD1ReadBudgetR59Hash, `Worker declaration body changed beyond accepted cumulative deltas: ${name}`)
+      acceptedPostD1ReadBudgetR510Hash = d1ReadBudgetR510Changed.after
     }
+    const w3NaturalRecoveryWorkerChanged = w3NaturalRecoveryWorkerChanges[name]
+    let acceptedPostW3NaturalRecoveryHash = acceptedPostD1ReadBudgetR510Hash
+    if (w3NaturalRecoveryWorkerChanged) {
+      check(w3NaturalRecoveryWorkerChanged.before === acceptedPostD1ReadBudgetR510Hash, `W3.2 natural recovery Worker baseline hash mismatch: ${name}`)
+      acceptedPostW3NaturalRecoveryHash = w3NaturalRecoveryWorkerChanged.after
+    }
+    check(
+      sha(declarations.get(name)) === acceptedPostW3NaturalRecoveryHash,
+      w3NaturalRecoveryWorkerChanged
+        ? `Worker declaration changed beyond exact W3.2 natural recovery allow-list: ${name}`
+        : `Worker declaration body changed beyond accepted cumulative deltas: ${name}`,
+    )
   }
 
   // Shipping hotfix 2026-09-01: normalize only this retired final-shipping blocker
@@ -622,12 +637,23 @@ try {
     const acceptedPostAttentionContextHash = attentionContextChanged ? attentionContextChanged.after : acceptedPostDailyHash
     if (attentionContextChanged) check(attentionContextChanged.before === acceptedPostDailyHash, `192B2A2 changed 192A1-added declaration baseline hash mismatch: ${name}`)
     const orderCreateSaveIntegrityChanged = orderCreateSaveIntegrityChanges[name]
+    let acceptedPostOrderCreateHash = acceptedPostAttentionContextHash
     if (orderCreateSaveIntegrityChanged) {
       check(orderCreateSaveIntegrityChanged.before === acceptedPostAttentionContextHash, `192B2A4 changed 192A1-added declaration baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === orderCreateSaveIntegrityChanged.after, `192A1-added declaration changed beyond exact 192B2A4 allow-list: ${name}`)
-    } else {
-      check(sha(declarations.get(name)) === acceptedPostAttentionContextHash, `192A1 added Worker declaration changed beyond accepted deltas: ${name}`)
+      acceptedPostOrderCreateHash = orderCreateSaveIntegrityChanged.after
     }
+    const w3NaturalRecoveryWorkerChanged = w3NaturalRecoveryWorkerChanges[name]
+    let acceptedPostW3NaturalRecoveryHash = acceptedPostOrderCreateHash
+    if (w3NaturalRecoveryWorkerChanged) {
+      check(w3NaturalRecoveryWorkerChanged.before === acceptedPostOrderCreateHash, `W3.2 natural recovery changed 192A1-added declaration baseline hash mismatch: ${name}`)
+      acceptedPostW3NaturalRecoveryHash = w3NaturalRecoveryWorkerChanged.after
+    }
+    check(
+      sha(declarations.get(name)) === acceptedPostW3NaturalRecoveryHash,
+      w3NaturalRecoveryWorkerChanged
+        ? `192A1-added declaration changed beyond exact W3.2 allow-list: ${name}`
+        : `192A1 added Worker declaration changed beyond accepted deltas: ${name}`,
+    )
   }
 
   for (const [name, expectedHash] of Object.entries(warehouseAttentionTruthAdded)) {
@@ -672,12 +698,23 @@ try {
       acceptedPostD1ReadBudgetR54Hash = d1ReadBudgetR54Changed.after
     }
     const runtimeSqlSyntaxR1Changed = runtimeSqlSyntaxR1Changes[name]
+    let acceptedPostRuntimeSqlSyntaxHash = acceptedPostD1ReadBudgetR54Hash
     if (runtimeSqlSyntaxR1Changed) {
       check(runtimeSqlSyntaxR1Changed.before === acceptedPostD1ReadBudgetR54Hash, `Runtime SQL syntax R1 baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === runtimeSqlSyntaxR1Changed.after, `192B1-added declaration changed beyond exact Runtime SQL syntax R1 allow-list: ${name}`)
-    } else {
-      check(sha(declarations.get(name)) === acceptedPostD1ReadBudgetR54Hash, `192B1 added Worker declaration changed beyond accepted deltas: ${name}`)
+      acceptedPostRuntimeSqlSyntaxHash = runtimeSqlSyntaxR1Changed.after
     }
+    const w3NaturalRecoveryWorkerChanged = w3NaturalRecoveryWorkerChanges[name]
+    let acceptedPostW3NaturalRecoveryHash = acceptedPostRuntimeSqlSyntaxHash
+    if (w3NaturalRecoveryWorkerChanged) {
+      check(w3NaturalRecoveryWorkerChanged.before === acceptedPostRuntimeSqlSyntaxHash, `W3.2 natural recovery changed 192B1-added declaration baseline hash mismatch: ${name}`)
+      acceptedPostW3NaturalRecoveryHash = w3NaturalRecoveryWorkerChanged.after
+    }
+    check(
+      sha(declarations.get(name)) === acceptedPostW3NaturalRecoveryHash,
+      w3NaturalRecoveryWorkerChanged
+        ? `192B1-added declaration changed beyond exact W3.2 allow-list: ${name}`
+        : `192B1 added Worker declaration changed beyond accepted deltas: ${name}`,
+    )
   }
 
   for (const [name, expectedHash] of Object.entries(dailyWarehouseAdded)) {

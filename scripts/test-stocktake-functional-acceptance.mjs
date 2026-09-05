@@ -115,6 +115,20 @@ function installSchema(db) {
       is_active INTEGER NOT NULL DEFAULT 1
     );
 
+    CREATE TABLE inventory_lifecycle_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      direction TEXT NOT NULL,
+      inventory_source TEXT NOT NULL,
+      variant_id INTEGER REFERENCES catalog_variants(id),
+      is_workshop INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
+      pending_reason TEXT,
+      resolution_comment TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT,
+      cancelled_at TEXT
+    );
+
     CREATE TABLE inventory_stock (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       inventory_source TEXT NOT NULL CHECK (inventory_source IN ('warehouse', 'boutique')),

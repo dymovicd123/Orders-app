@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-type AttentionCategory = 'count' | 'handover' | 'intake' | 'identify' | 'revision'
+type AttentionCategory = 'handover' | 'intake' | 'identify'
 
 type InventoryAttentionActionsInput = {
   activeSector: string
@@ -13,38 +13,17 @@ type InventoryAttentionActionsInput = {
   setQuickStocktakeNotice: (value: string) => void
   setQuickStocktakeOpen: (value: boolean) => void
   setSimpleStockDetail: (value: any) => void
-  setSimpleStockSource: (value: 'warehouse' | 'boutique') => void
-  setSimpleStockReservations: (value: any[]) => void
-  setSimpleStockReservationsBusy: (value: boolean) => void
   setCatalogAdminMode: (value: 'lifecycle' | 'review') => void
   setCatalogReviewTaskIndex: (value: number) => void
   setInventoryLifecycleTaskIndex: (value: number) => void
-  setStocktakeSource: (value: 'warehouse' | 'boutique') => void
   loadWarehouseAttention: (details?: boolean) => Promise<any>
   loadInventoryLifecycle: (force?: boolean) => Promise<any>
   loadCatalogReview: (force?: boolean) => Promise<any>
   reconcileKnownInventoryLifecycle: (eventId: number) => Promise<any>
   quickInventoryStocktake: (input: any) => Promise<any>
   loadInventoryData: (...args: any[]) => Promise<any>
-  loadInventoryReservations: (...args: any[]) => Promise<any>
   openInventoryPanel: (panel: any) => void
   openOrderStockHandoverById: (orderId: number, externalId?: string) => any
-}
-
-function attentionCategoryCount(data: any, category: AttentionCategory) {
-  if (!data?.counts) return 0
-  if (category === 'count') return Number(data.counts.shortage || 0)
-  if (category === 'handover') return Number(data.counts.handover || 0)
-  if (category === 'intake') return Number(data.counts.intake || 0)
-  if (category === 'identify') return Number(data.counts.lifecycle || 0) + Number(data.counts.catalog || 0)
-  return Number(data.counts.stocktake || 0)
-}
-
-function firstAttentionCategory(data: any): AttentionCategory {
-  for (const category of ['count', 'handover', 'intake', 'identify', 'revision'] as AttentionCategory[]) {
-    if (attentionCategoryCount(data, category) > 0) return category
-  }
-  return 'count'
 }
 
 export function useInventoryAttentionActions(input: InventoryAttentionActionsInput) {
@@ -57,28 +36,22 @@ export function useInventoryAttentionActions(input: InventoryAttentionActionsInp
     setQuickStocktakeBusy,
     setQuickStocktakeValues,
     setQuickStocktakeNotice,
-    setQuickStocktakeOpen,
     setSimpleStockDetail,
-    setSimpleStockSource,
-    setSimpleStockReservations,
-    setSimpleStockReservationsBusy,
     setCatalogAdminMode,
     setCatalogReviewTaskIndex,
     setInventoryLifecycleTaskIndex,
-    setStocktakeSource,
     loadWarehouseAttention,
     loadInventoryLifecycle,
     loadCatalogReview,
     reconcileKnownInventoryLifecycle,
     quickInventoryStocktake,
     loadInventoryData,
-    loadInventoryReservations,
     openInventoryPanel,
     openOrderStockHandoverById,
   } = input
   const [attentionLoading, setAttentionLoading] = useState(false)
   const [attentionError, setAttentionError] = useState('')
-  const [attentionCategory, setAttentionCategory] = useState<AttentionCategory>('count')
+  const [attentionCategory, setAttentionCategory] = useState<AttentionCategory>('handover')
   const [attentionIntakeBusyId, setAttentionIntakeBusyId] = useState<number | null>(null)
 
   async function applyQuickStocktake(countedOverride?: number) {
@@ -112,13 +85,15 @@ export function useInventoryAttentionActions(input: InventoryAttentionActionsInp
       }
       const physical = Number(result.physical || 0)
       const reserved = Number(result.reserved || 0)
+      const successNotice = result.changed ? `Сохранено: ${result.previousQuantity} → ${physical}.` : `Проверено: на месте ${physical}. Всё совпало.`
       setSimpleStockDetail((detail: any) => detail ? { ...detail, physical, reserved, free: physical - reserved } : detail)
-      setQuickStocktakeNotice(result.changed ? `Сохранено: ${result.previousQuantity} → ${physical}.` : `Проверено: на месте ${physical}. Всё совпало.`)
+      setQuickStocktakeNotice(successNotice)
       setQuickStocktakeValues({})
-      await Promise.all([
-        loadInventoryData(simpleStockDetail.source, true, '', false),
-        loadWarehouseAttention(true),
-      ])
+      try {
+        await loadInventoryData(simpleStockDetail.source, true, '', false)
+      } catch {
+        setQuickStocktakeNotice(`${successNotice} Остаток сохранён; список обновится при следующем обновлении.`)
+      }
     } catch (error) {
       setQuickStocktakeNotice(error instanceof Error ? error.message : 'Не удалось сохранить сверку.')
     } finally {
@@ -133,7 +108,6 @@ export function useInventoryAttentionActions(input: InventoryAttentionActionsInp
     try {
       const data = await loadWarehouseAttention(true)
       if (!data?.items) throw new Error('Не удалось загрузить список вопросов склада. Нажмите «Обновить» и попробуйте ещё раз.')
-      setAttentionCategory((current) => attentionCategoryCount(data, current) > 0 ? current : firstAttentionCategory(data))
     } catch (error) {
       setAttentionError(error instanceof Error ? error.message : 'Не удалось обновить вопросы склада.')
     } finally {
@@ -145,46 +119,6 @@ export function useInventoryAttentionActions(input: InventoryAttentionActionsInp
     if (activeSector !== 'inventory' || inventoryPanel !== 'attention') return
     void refreshWarehouseAttention()
   }, [activeSector, inventoryPanel])
-
-  async function openAttentionShortage(item: any) {
-    const physical = Number(item.physical || 0)
-    const reserved = Number(item.reserved || 0)
-    setSimpleStockSource(item.source)
-    setSimpleStockDetail({
-      source: item.source,
-      productId: Number(item.productId || 0),
-      variantId: Number(item.variantId || 0),
-      productName: item.productName || 'Товар',
-      category: item.category || 'adult',
-      gender: item.gender || '',
-      material: item.material || 'СТАНДАРТ',
-      length: item.length || 'СТАНДАРТ',
-      size: item.size || '',
-      color: item.color || '',
-      physical,
-      reserved,
-      free: Number(item.free ?? (physical - reserved)),
-      aggregate: false,
-      label: [item.color, item.size].filter(Boolean).join(' · '),
-      hasDataIssue: false,
-    })
-    setQuickStocktakeOpen(true)
-    setQuickStocktakeValues({})
-    setQuickStocktakeNotice('')
-    setSimpleStockReservations([])
-    openInventoryPanel('overview')
-    if (reserved > 0) {
-      setSimpleStockReservationsBusy(true)
-      try {
-        const data = await loadInventoryReservations(item.source, Number(item.variantId || 0), 0)
-        setSimpleStockReservations(Array.isArray(data?.reservations) ? data.reservations : [])
-      } catch {
-        setSimpleStockReservations([])
-      } finally {
-        setSimpleStockReservationsBusy(false)
-      }
-    }
-  }
 
   async function openAttentionLifecycle(item: any) {
     setCatalogAdminMode('lifecycle')
@@ -210,10 +144,7 @@ export function useInventoryAttentionActions(input: InventoryAttentionActionsInp
     try {
       const result = await reconcileKnownInventoryLifecycle(Number(item.id))
       if (!result?.ok) setAttentionError(result?.message || 'Не удалось завершить приёмку.')
-      else {
-        const data = result?.warehouseAttention || await loadWarehouseAttention(true)
-        setAttentionCategory((current) => attentionCategoryCount(data, current) > 0 ? current : firstAttentionCategory(data))
-      }
+      else if (!result?.warehouseAttention) await loadWarehouseAttention(true)
     } catch (error) {
       setAttentionError(error instanceof Error ? error.message : 'Не удалось завершить приёмку.')
     } finally {
@@ -223,10 +154,6 @@ export function useInventoryAttentionActions(input: InventoryAttentionActionsInp
 
   function openAttentionHandover(item: any) {
     void openOrderStockHandoverById(Number(item.orderId || 0), String(item.externalId || ''))
-  }
-  function openAttentionStocktake(item: any) {
-    setStocktakeSource(item.source === 'boutique' ? 'boutique' : 'warehouse')
-    openInventoryPanel('stocktake')
   }
 
   return {
@@ -239,8 +166,6 @@ export function useInventoryAttentionActions(input: InventoryAttentionActionsInp
     openAttentionHandover,
     openAttentionIntake,
     openAttentionLifecycle,
-    openAttentionShortage,
-    openAttentionStocktake,
     refreshWarehouseAttention,
     setAttentionCategory,
   }

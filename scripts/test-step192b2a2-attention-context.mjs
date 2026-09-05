@@ -28,21 +28,18 @@ try {
 
   check(worker.includes("warehouseAttentionContextFix: '192b2a2'"), '192B2A2 health marker missing')
 
-  // One screen, separate question types: never one giant vertical list again.
+  // Natural recovery keeps clarification secondary: only true ambiguity remains there.
   for (const marker of [
-    "type AttentionCategory = 'count' | 'handover' | 'intake' | 'identify' | 'revision'",
-    "{ value: 'count', label: 'Количество' }",
+    "type AttentionCategory = 'handover' | 'intake' | 'identify'",
     "{ value: 'handover', label: 'Выдача' }",
-    "{ value: 'intake', label: 'Приёмка' }",
     "{ value: 'identify', label: 'Товар' }",
-    "{ value: 'revision', label: 'Проверка' }",
-    "attentionCategory === 'count'",
     "attentionCategory === 'handover'",
     "attentionCategory === 'intake'",
     "attentionCategory === 'identify'",
-    "attentionCategory === 'revision'",
   ]) check(attentionHook.includes(marker) || panel.includes(marker), `Attention category UI missing: ${marker}`)
-  check(panel.includes('inventory-attention-tabs') && css.includes('.inventory-attention-tabs'), 'Attention category tabs are not styled/mounted')
+  check(!panel.includes("{ value: 'count', label: 'Количество' }") && !panel.includes("{ value: 'revision', label: 'Проверка' }"), 'Routine shortage/revision returned to clarification tabs')
+  check(panel.includes('inventory-attention-tabs') && css.includes('.inventory-attention-tabs'), 'Clarification tabs are not styled/mounted')
+  check(panel.includes('Нехватка и ревизии решаются в своих обычных разделах.'), 'Natural-recovery routing is not explained in clarification')
 
   // Handover context must identify the actual order before a historical decision is made.
   for (const marker of ['customerName', 'orderDate', 'orderCreatedAt', 'itemCreatedAt', 'reviewReason']) {
@@ -61,12 +58,12 @@ try {
   check(attention.includes('reviewReserved') && attention.includes('ordinaryReserved') && attention.includes('countRelevantReserved'), 'Quantity-aware handover/shortage split is missing')
   check(attention.includes('reserved - reviewReserved'), 'Ordinary reservation quantity is not separated from handover reservation quantity')
   check(attention.includes('row.physical < 0 || row.countRelevantReserved > row.physical'), 'A mixed SKU can be hidden even when ordinary reservations still exceed physical stock')
-  check(panel.includes('В остальных заказах') && panel.includes('разбираются отдельно во вкладке «Выдача»'), 'UI does not explain the quantity split between count and handover')
+  check(!panel.includes('В остальных заказах') && !panel.includes('разбираются отдельно во вкладке «Выдача»'), 'Shortage/count explanation leaked back into secondary clarification')
 
   // Known exact inbound is intake, unknown identity stays identify. No six-field form for an exact known SKU.
   check(attention.includes('exactKnown: Boolean') && attention.includes("cleanText(row.direction) === 'in'"), 'Exact known inbound classification missing')
   check(attention.includes('intake: lifecycleItems.filter((row) => row.exactKnown)') && attention.includes('lifecycle: lifecycleItems.filter((row) => !row.exactKnown)'), 'Known intake and unknown identity are not separated')
-  check(panel.includes('Завершить приёмку') && panel.includes('Точный существующий товар уже распознан'), 'Known intake still looks like catalog identification')
+  check(panel.includes('Принять в остаток') && panel.includes('Товар уже известен.') && panel.includes('Принимайте только если вещь действительно находится у вас.'), 'Known intake no longer communicates known identity plus physical confirmation')
   check(panel.includes('Здесь только позиции, которым действительно не хватает точной идентичности.'), 'Identify tab still mixes known intake')
 
   const reconcile = between(lifecycle, 'export async function reconcileKnownPendingInventoryInbound(', 'export async function insertInventoryLifecycleEvent(')
