@@ -44,13 +44,12 @@ if old not in s:
 s = s.replace(old, new, 1)
 p.write_text(s, encoding='utf-8')
 
-# Repair the temporary preservation-gate patcher before it is executed.
+# Patch the temporary preservation-gate generator before it runs.
 g = Path('scripts/w5-5-gate-patcher.py')
 gs = g.read_text(encoding='utf-8')
 
 # The first router normalizer stopped before the found-route closing brace because its
-# generic lookahead accepted any closing brace. Replace only that normalizer fragment,
-# using stable start/end markers rather than trying to reproduce all escape levels.
+# generic lookahead accepted any closing brace. Consume through the original next route.
 start_marker = r"    .replace(/\n\s*const inventoryFoundStockReconcileMatch"
 start = gs.find(start_marker)
 if start < 0:
@@ -62,9 +61,16 @@ end += len(", '')")
 replacement = r"    .replace(/\n\s*const inventoryFoundStockReconcileMatch = url\.pathname\.match\(\/\^\\\/api\\\/inventory\\\/found-stock\\\/\(\\d\+\)\\\/reconcile\$\/\);[\s\S]*?(?=\n\s*const inventoryStocktakeAddItemMatch)/, '')"
 gs = gs[:start] + replacement + gs[end:]
 
-# The 1906B gate has a second, dedicated hash check for the Attention renderer.
-# Register the exact W5.5 manifest delta there as well; otherwise the generic panel
-# allow-list passes but this older W2/W3.2-only check rejects the intentional UI change.
+# getWarehouseAttentionSummary was introduced by 192B1, so it is validated in the
+# dedicated 192B1-added loop rather than the original-declaration loop. Chain W5.5 there too.
+insert_before = "p.write_text(s, encoding='utf-8')\n\n# Frontend preservation gate"
+if insert_before not in gs:
+    raise SystemExit('Worker gate write anchor not found')
+extra = '''s = one(s,\n"    check(\\n      sha(declarations.get(name)) === acceptedPostW3NaturalRecoveryHash,\\n      w3NaturalRecoveryWorkerChanged\\n        ? `192B1-added declaration changed beyond exact W3.2 allow-list: ${name}`\\n        : `192B1 added Worker declaration changed beyond accepted deltas: ${name}`,\\n    )\\n",\n"    const w5FoundItemsChanged = w5FoundItemsChanges[name]\\n    let acceptedPostW5FoundItemsHash = acceptedPostW3NaturalRecoveryHash\\n    if (w5FoundItemsChanged) {\\n      check(w5FoundItemsChanged.before === acceptedPostW3NaturalRecoveryHash, `W5.5 changed 192B1-added declaration baseline hash mismatch: ${name}`)\\n      acceptedPostW5FoundItemsHash = w5FoundItemsChanged.after\\n    }\\n    check(\\n      sha(declarations.get(name)) === acceptedPostW5FoundItemsHash,\\n      w5FoundItemsChanged\\n        ? `192B1-added declaration changed beyond exact W5.5 found-items allow-list: ${name}`\\n        : `192B1 added Worker declaration changed beyond accepted deltas: ${name}`,\\n    )\\n",\n'1906a W5.5 192B1-added chain')\n'''
+gs = gs.replace(insert_before, extra + insert_before, 1)
+
+# The 1906B gate also has a dedicated Attention renderer hash check that predates W5.5.
+# Register the exact W5.5 manifest delta there in addition to the generic panel chain.
 anchor = "'1906b W5.5 panel chain')\n"
 if gs.count(anchor) != 1:
     raise SystemExit(f'W5.5 panel-chain insertion anchor: expected 1, got {gs.count(anchor)}')
