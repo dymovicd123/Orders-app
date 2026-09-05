@@ -156,6 +156,7 @@ function handoverSourceLabel(source: InventorySourceKey | string) {
   return source === 'boutique' ? 'Бутик' : 'Склад'
 }
 
+async function settleCatalogReviewRefreshes(tasks: Promise<unknown>[]) { return (await Promise.allSettled(tasks)).some((entry) => entry.status === 'rejected') }
 function App() {
   const [health, setHealth] = useState<ApiState | null>(null)
   const [dbState, setDbState] = useState<ApiState | null>(null)
@@ -967,7 +968,7 @@ function App() {
   })
   const openInventoryPanel = (panel: InventoryPanel) => {
     const nextPanel: InventoryPanel = panel === 'audit' ? 'settings' : panel
-    if (!isAdmin && nextPanel !== 'overview' && nextPanel !== 'attention') {
+    if (!isAdmin && (nextPanel === 'catalog' || nextPanel === 'settings')) {
       setInventoryPanel('overview')
       return
     }
@@ -1619,11 +1620,11 @@ function App() {
       const response = await apiFetch(`/api/catalog/review/reconcile?limit=${Math.max(1, Math.min(20, limit))}`, { method: 'POST' })
       const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Безопасное распознавание каталога')
       if (!response.ok) throw new Error(result?.message || 'Не удалось разобрать очевидные позиции.')
-      const next = await loadCatalogReview(true)
-      if (Number(result?.resolvedGroups || 0) > 0) {
-        await Promise.all([loadInventoryData('warehouse', true, '', false), loadInventoryData('boutique', true, '', false), loadCatalogData(true)])
-      }
-      setMessage(Number(result?.resolvedGroups || 0) > 0 ? `Автоматически разобрано: ${result.resolvedGroups}.` : 'Очевидных безопасных совпадений больше нет.')
+      const nextRefresh = loadCatalogReview(true)
+      const refreshIncomplete = await settleCatalogReviewRefreshes([nextRefresh, ...(Number(result?.resolvedGroups || 0) > 0 ? [loadInventoryData('warehouse', true, '', false), loadInventoryData('boutique', true, '', false), loadCatalogData(true)] : [])])
+      const next = await nextRefresh.catch(() => catalogReview)
+      const successMessage = Number(result?.resolvedGroups || 0) > 0 ? `Автоматически разобрано: ${result.resolvedGroups}.` : 'Очевидных безопасных совпадений больше нет.'
+      setMessage(refreshIncomplete ? `${successMessage} Изменение сохранено, но часть экрана не обновилась. Нажмите «Обновить».` : successMessage)
       return { ...result, review: next }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось разобрать очевидные позиции.')
@@ -1651,14 +1652,12 @@ function App() {
       const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Разбор позиции')
       if (!response.ok || result?.ok === false) throw new Error(result?.message || 'Не удалось разобрать позицию.')
       const createdReference = Array.isArray(input.createFields) && input.createFields.length > 0
-      await Promise.all([
+      const refreshIncomplete = await settleCatalogReviewRefreshes([
         loadCatalogReview(true, catalogReview?.mode === 'order' ? Number(catalogReview.orderId || 0) : 0),
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
-        createdReference ? loadReferencesData(true) : Promise.resolve(null),
-        loadWarehouseAttention(false, true),
+        loadInventoryData('warehouse', true, '', false), loadInventoryData('boutique', true, '', false),
+        createdReference ? loadReferencesData(true) : Promise.resolve(null), loadWarehouseAttention(false, true),
       ])
-      setMessage(result?.message || 'Позиция разобрана.')
+      setMessage(refreshIncomplete ? `${result?.message || 'Позиция разобрана.'} Изменение сохранено, но часть экрана не обновилась. Нажмите «Обновить».` : (result?.message || 'Позиция разобрана.'))
       return result
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось разобрать позицию.')
@@ -1676,12 +1675,11 @@ function App() {
       const response = await apiFetch(`/api/catalog/review/${orderItemId}/exclude`, { method: 'POST' })
       const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Разбор позиции')
       if (!response.ok || result?.ok === false) throw new Error(result?.message || 'Не удалось оставить позицию вне каталога.')
-      await Promise.all([
+      const refreshIncomplete = await settleCatalogReviewRefreshes([
         loadCatalogReview(true, catalogReview?.mode === 'order' ? Number(catalogReview.orderId || 0) : 0),
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
+        loadInventoryData('warehouse', true, '', false), loadInventoryData('boutique', true, '', false),
       ])
-      setMessage(result?.message || 'Позиция оставлена только в заказе.')
+      setMessage(refreshIncomplete ? `${result?.message || 'Позиция оставлена только в заказе.'} Изменение сохранено, но часть экрана не обновилась. Нажмите «Обновить».` : (result?.message || 'Позиция оставлена только в заказе.'))
       return result
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось оставить позицию вне каталога.')
@@ -1902,12 +1900,11 @@ function App() {
       })
       const result = await readJsonResponse<{ ok?: boolean; message?: string; linked?: number; reserved?: number; fulfilled?: number }>(response, 'Привязка товара')
       if (!response.ok || result.ok === false) throw new Error(result.message || 'Не удалось связать позицию с каталогом.')
-      await Promise.all([
-        loadCatalogReview(true),
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
+      const refreshIncomplete = await settleCatalogReviewRefreshes([
+        loadCatalogReview(true), loadInventoryData('warehouse', true, '', false), loadInventoryData('boutique', true, '', false),
       ])
-      setMessage(result.message || `Позиция связана с каталогом${Number(result.linked || 0) > 1 ? `; одинаковых записей обработано: ${result.linked}` : ''}.`)
+      const successMessage = result.message || `Позиция связана с каталогом${Number(result.linked || 0) > 1 ? `; одинаковых записей обработано: ${result.linked}` : ''}.`
+      setMessage(refreshIncomplete ? `${successMessage} Изменение сохранено, но часть экрана не обновилась. Нажмите «Обновить».` : successMessage)
       return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось связать позицию с каталогом.')

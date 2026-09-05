@@ -12,7 +12,7 @@
 }
 
 .inventory-tabs-step187.is-manager {
-  grid-template-columns: minmax(120px, 180px);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .inventory-tabs-step187 > button {
@@ -321,6 +321,10 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .inventory-tabs-step187.is-manager {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .inventory-health-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -351,7 +355,7 @@
   }
 
   .inventory-tabs-step187.is-manager {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .inventory-health-summary-grid {
@@ -364,7 +368,8 @@
 }
 
 @media (max-width: 420px) {
-  .inventory-tabs-step187 {
+  .inventory-tabs-step187,
+  .inventory-tabs-step187.is-manager {
     grid-template-columns: 1fr;
   }
 }
