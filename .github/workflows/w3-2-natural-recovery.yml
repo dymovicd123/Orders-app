@@ -1,3 +1,4 @@
+# Validation runner for the temporary W3.2 safe branch.
 name: W3.2 Natural recovery
 
 on:
