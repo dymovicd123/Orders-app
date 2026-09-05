@@ -973,7 +973,6 @@ function App() {
       return
     }
     setInventoryPanel(nextPanel)
-    if (nextPanel === 'attention') void loadWarehouseAttention(true)
     if (nextPanel === 'warehouse' || nextPanel === 'boutique') {
       setInventoryDraft((current) => ({ ...current, source: nextPanel }))
     }
@@ -1507,33 +1506,32 @@ function App() {
   }
 
   async function loadWarehouseAttention(details = false, force = false) {
-    if (!details && !force) {
+    const shouldLoadDetails = details || (activeSector === 'inventory' && inventoryPanel === 'attention')
+    if (!shouldLoadDetails && !force) {
       const cached = warehouseAttentionSummaryCache
       if (cached && Date.now() - cached.loadedAt < WAREHOUSE_ATTENTION_SUMMARY_TTL_MS) {
-        setWarehouseAttention(cached.data)
+        setWarehouseAttention((current) => current?.items ? current : cached.data)
         return cached.data
       }
       if (warehouseAttentionSummaryInFlight) {
-        const data = await warehouseAttentionSummaryInFlight
-        if (data) setWarehouseAttention(data)
-        return data
+        return await warehouseAttentionSummaryInFlight
       }
     }
     const requestToken = ++warehouseAttentionRequestToken
     const request = (async () => {
-      const response = await apiFetch(`/api/inventory/attention${details ? '?details=1&limit=30' : ''}`)
+      const response = await apiFetch(`/api/inventory/attention${shouldLoadDetails ? '?details=1&limit=30' : ''}`)
       if (!response.ok) return null
       return await readJsonResponse<WarehouseAttentionSummaryResponse>(response, 'Склад')
     })()
-    if (!details) warehouseAttentionSummaryInFlight = request
+    if (!shouldLoadDetails) warehouseAttentionSummaryInFlight = request
     try {
       const data = await request
       if (!data || requestToken !== warehouseAttentionRequestToken) return data
       setWarehouseAttention(data)
-      if (!details) warehouseAttentionSummaryCache = { data, loadedAt: Date.now() }
+      if (!shouldLoadDetails) warehouseAttentionSummaryCache = { data, loadedAt: Date.now() }
       return data
     } finally {
-      if (!details && warehouseAttentionSummaryInFlight === request) warehouseAttentionSummaryInFlight = null
+      if (!shouldLoadDetails && warehouseAttentionSummaryInFlight === request) warehouseAttentionSummaryInFlight = null
     }
   }
 
@@ -1749,14 +1747,14 @@ function App() {
       const response = await apiFetch(`/api/inventory/lifecycle/${eventId}/reconcile-known`, { method: 'POST' })
       const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Приёмка известной позиции')
       if (!response.ok || result?.ok === false) throw new Error(result?.message || 'Не удалось завершить приёмку.')
-      await Promise.all([
+      const [attentionData] = await Promise.all([
         loadWarehouseAttention(true),
         isAdmin ? loadInventoryLifecycle(true) : Promise.resolve(null),
         loadInventoryData('warehouse', true, '', false),
         loadInventoryData('boutique', true, '', false),
       ])
       setMessage(result?.message || 'Приёмка завершена.')
-      return result
+      return { ...result, warehouseAttention: attentionData }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось завершить приёмку.')
       return null
