@@ -1,0 +1,38 @@
+/* W5.3 — selective check as a short, visible queue instead of a mini full revision. */
+.stocktake-selective-picker-w5{display:grid;gap:12px}
+.stocktake-selective-count{min-width:0}
+.stocktake-selective-queue{display:grid;gap:9px;padding:11px 12px;border:1px solid #dbeafe;border-radius:12px;background:#f8fbff}
+.stocktake-selective-queue.is-large{border-color:#fed7aa;background:#fffaf5}
+.stocktake-selective-queue-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
+.stocktake-selective-queue-head>div{display:grid;gap:2px;min-width:0}
+.stocktake-selective-queue-head strong{font-size:13px;color:#0f172a}
+.stocktake-selective-queue-head span{font-size:11px;color:#64748b}
+.stocktake-selective-chips{display:flex;flex-wrap:wrap;gap:7px;min-width:0}
+.stocktake-selective-chip{display:flex;align-items:center;gap:6px;max-width:100%;min-height:36px;padding:7px 9px;border:1px solid #bfdbfe;border-radius:999px;background:#fff;color:#1e3a8a;cursor:pointer}
+.stocktake-selective-chip span{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:750;font-size:12px}
+.stocktake-selective-chip small{font-size:10px;color:#64748b;white-space:nowrap}
+.stocktake-selective-chip b{font-size:17px;line-height:1;color:#64748b;font-weight:500}
+.stocktake-selective-chip:hover{border-color:#93c5fd;background:#eff6ff}
+.stocktake-selective-size-note{font-size:11px;line-height:1.4;color:#9a3412}
+.stocktake-selective-size-note.is-calm{color:#64748b}
+.stocktake-selective-list-v5 .stocktake-selective-product.is-selected{order:-1}
+.stocktake-selective-product small{line-height:1.25}
+
+@media(max-width:680px){
+  .stocktake-selective-head{grid-template-columns:1fr!important;gap:9px!important}
+  .stocktake-selective-head label,.stocktake-selective-head input{width:100%}
+  .stocktake-selective-head input{min-height:46px}
+  .stocktake-selective-queue{padding:10px}
+  .stocktake-selective-queue-head{align-items:flex-start}
+  .stocktake-selective-queue-head button{min-height:40px}
+  .stocktake-selective-chips{display:grid;grid-template-columns:1fr;gap:6px}
+  .stocktake-selective-chip{width:100%;justify-content:flex-start;border-radius:10px;min-height:44px;text-align:left}
+  .stocktake-selective-chip span{max-width:none;min-width:0;flex:1;white-space:normal;overflow-wrap:anywhere}
+  .stocktake-selective-product{min-height:48px}
+}
+
+@media(max-width:420px){
+  .stocktake-selective-queue-head{display:grid;grid-template-columns:1fr;gap:7px}
+  .stocktake-selective-queue-head button{width:100%}
+  .stocktake-selective-chip small{white-space:normal}
+}

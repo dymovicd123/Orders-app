@@ -20,6 +20,7 @@ const w3NaturalRecoveryPath = path.join(root, 'scripts/w3-2-natural-recovery-fro
 const w4HumanOperationsPath = path.join(root, 'scripts/w4-human-operations-frontend-manifest.json')
 const w5CheckingUxPath = path.join(root, 'scripts/w5-checking-ux-frontend-manifest.json')
 const w5ShortCheckPath = path.join(root, 'scripts/w5-2-short-check-frontend-manifest.json')
+const w5SelectiveQueuePath = path.join(root, 'scripts/w5-3-selective-queue-frontend-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -111,6 +112,7 @@ try {
   const w4HumanOperations = fs.existsSync(w4HumanOperationsPath) ? JSON.parse(fs.readFileSync(w4HumanOperationsPath, 'utf8')) : null
   const w5CheckingUx = fs.existsSync(w5CheckingUxPath) ? JSON.parse(fs.readFileSync(w5CheckingUxPath, 'utf8')) : null
   const w5ShortCheck = fs.existsSync(w5ShortCheckPath) ? JSON.parse(fs.readFileSync(w5ShortCheckPath, 'utf8')) : null
+  const w5SelectiveQueue = fs.existsSync(w5SelectiveQueuePath) ? JSON.parse(fs.readFileSync(w5SelectiveQueuePath, 'utf8')) : null
   if (operationalAutonomyR2) check(operationalAutonomyR2.version === 1 && operationalAutonomyR2.revision === 'operational-autonomy-r2', 'Operational autonomy R2 frontend manifest invalid')
   if (w1WarehouseReliability) check(w1WarehouseReliability.version === 1 && w1WarehouseReliability.revision === 'w1-warehouse-reliability', 'W1 Warehouse reliability frontend manifest invalid')
   if (w2HumanWarehouse) check(w2HumanWarehouse.version === 1 && w2HumanWarehouse.revision === 'w2-human-warehouse', 'W2 human Warehouse frontend manifest invalid')
@@ -120,6 +122,7 @@ try {
   if (w4HumanOperations) check(w4HumanOperations.version === 1 && w4HumanOperations.revision === 'w4-human-operations', 'W4 human operations frontend manifest invalid')
   if (w5CheckingUx) check(w5CheckingUx.version === 1 && w5CheckingUx.revision === 'w5-checking-ux', 'W5 checking UX frontend manifest invalid')
   if (w5ShortCheck) check(w5ShortCheck.version === 1 && w5ShortCheck.revision === 'w5-2-short-check', 'W5.2 short-check frontend manifest invalid')
+  if (w5SelectiveQueue) check(w5SelectiveQueue.version === 1 && w5SelectiveQueue.revision === 'w5-3-selective-queue', 'W5.3 selective queue frontend manifest invalid')
   check(manifest?.version === 1, '1906B preservation manifest invalid')
   check(manifest.baseAppHooks?.length === 352, `Unexpected 1906A App hook baseline: ${manifest.baseAppHooks?.length}`)
   check(manifest.baseInvHooks?.length === 119, `Unexpected 1906A Inventory hook baseline: ${manifest.baseInvHooks?.length}`)
@@ -332,7 +335,12 @@ try {
       check(w5ShortCheckChange.before === expectedPanelHash, `${panel.func}: W5.2 short-check panel baseline hash mismatch`)
       expectedPanelHash = w5ShortCheckChange.after
     }
-    check(sha(normalize(text)) === expectedPanelHash, `${panel.func}: rendered JSX changed outside accepted baseline/B2A/autonomy/W1/W2/W3.1A/W3.1B/W4/W5/W5.2 delta`)
+    const w5SelectiveQueueChange = w5SelectiveQueue?.frontend?.panelReturnChanges?.[panel.func]
+    if (w5SelectiveQueueChange) {
+      check(w5SelectiveQueueChange.before === expectedPanelHash, `${panel.func}: W5.3 selective queue panel baseline hash mismatch`)
+      expectedPanelHash = w5SelectiveQueueChange.after
+    }
+    check(sha(normalize(text)) === expectedPanelHash, `${panel.func}: rendered JSX changed outside accepted baseline/B2A/autonomy/W1/W2/W3.1A/W3.1B/W4/W5/W5.2/W5.3 delta`)
     check(hookTokens(relative, panel.func).length === 0, `${panel.func}: renderer unexpectedly owns React hooks/lifecycle`)
     check(inventoryController.includes(`{${panel.func}({`), `${panel.func}: InventorySection no longer calls renderer directly`)
   }

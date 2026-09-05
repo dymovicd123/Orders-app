@@ -83,6 +83,7 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'stocktakeReviewRows'
   | 'stocktakeSavingIds'
   | 'stocktakeSelectedProductIds'
+  | 'stocktakeSelectableProducts'
   | 'stocktakeSession'
   | 'stocktakeSource'
   | 'stocktakeSourceStats'
@@ -181,6 +182,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     stocktakeReviewRows,
     stocktakeSavingIds,
     stocktakeSelectedProductIds,
+    stocktakeSelectableProducts,
     stocktakeSession,
     stocktakeSource,
     stocktakeSourceStats,
@@ -193,6 +195,17 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     suggestionValues,
     toggleStocktakeInlineSize
   } = ctx
+
+  const selectedStocktakeProducts = (stocktakeSelectableProducts || []).filter((product: any) =>
+    stocktakeSelectedProductIds.includes(Number(product.productId))
+  )
+  const visibleStocktakeSelectableProducts = [...(filteredStocktakeSelectableProducts || [])].sort((a: any, b: any) => {
+    const aSelected = stocktakeSelectedProductIds.includes(Number(a.productId)) ? 1 : 0
+    const bSelected = stocktakeSelectedProductIds.includes(Number(b.productId)) ? 1 : 0
+    if (aSelected !== bSelected) return bSelected - aSelected
+    return String(a.productName || '').localeCompare(String(b.productName || ''), 'ru')
+  })
+  const selectiveQueueIsLarge = selectedStocktakePositionCount > 20
 
   return (
     <div className="inventory-stocktake-panel stocktake-human-panel stocktake-session-v188e" data-step188e-stocktake="server-session" style={inventoryPanelStyle('stocktake')}>
@@ -270,16 +283,21 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                               </div>
     
                               {stocktakeStartMode === 'selective' ? (
-                                <div className="stocktake-selective-picker stocktake-selective-picker-v5">
+                                <div className="stocktake-selective-picker stocktake-selective-picker-v5 stocktake-selective-picker-w5">
                                   <div className="stocktake-selective-head">
-                                    <label><span>Выберите товары</span><input value={stocktakeStartSearch} onChange={(event) => setStocktakeStartSearch(event.target.value)} placeholder="Найти товар…" /></label>
-                                    <div><strong>{stocktakeSelectedProductIds.length ? `Выбрано товаров: ${stocktakeSelectedProductIds.length}` : 'Ничего не выбрано'}</strong><span>{stocktakeSelectedProductIds.length ? `${selectedStocktakePositionCount} позиций` : 'Отметьте нужные товары в списке'}</span></div>
+                                    <label><span>Найдите товар</span><input value={stocktakeStartSearch} onChange={(event) => setStocktakeStartSearch(event.target.value)} placeholder="Название товара…" /></label>
+                                    <div className="stocktake-selective-count"><strong>{stocktakeSelectedProductIds.length ? `${stocktakeSelectedProductIds.length} товаров выбрано` : 'Соберите короткую проверку'}</strong><span>{stocktakeSelectedProductIds.length ? `${selectedStocktakePositionCount} позиций нужно будет пересчитать` : 'Можно выбрать один или несколько товаров'}</span></div>
                                   </div>
+                                  {selectedStocktakeProducts.length ? <div className={`stocktake-selective-queue ${selectiveQueueIsLarge ? 'is-large' : ''}`}>
+                                    <div className="stocktake-selective-queue-head"><div><strong>Вы будете проверять</strong><span>{selectedStocktakeProducts.length} товаров · {selectedStocktakePositionCount} позиций</span></div><button className="ghost compact" type="button" onClick={() => setStocktakeSelectedProductIds([])}>Очистить</button></div>
+                                    <div className="stocktake-selective-chips">{selectedStocktakeProducts.map((product: any) => <button type="button" className="stocktake-selective-chip" key={`stocktake-picked-${product.productId}`} onClick={() => setStocktakeSelectedProductIds((current) => current.filter((id) => id !== Number(product.productId)))} title="Убрать из проверки"><span>{product.productName}</span><small>{product.positionCount} поз.</small><b aria-hidden="true">×</b></button>)}</div>
+                                    {selectiveQueueIsLarge ? <div className="stocktake-selective-size-note">Получилась довольно большая проверка. Можно начать как есть или убрать часть товаров и проверить их позже.</div> : <div className="stocktake-selective-size-note is-calm">Короткую проверку можно закончить быстрее, а остальные товары добавить в следующий раз.</div>}
+                                  </div> : null}
                                   <div className="stocktake-selective-list stocktake-selective-list-v5">
-                                    {filteredStocktakeSelectableProducts.length ? filteredStocktakeSelectableProducts.map((product: any) => {
+                                    {visibleStocktakeSelectableProducts.length ? visibleStocktakeSelectableProducts.map((product: any) => {
                                       const checked = stocktakeSelectedProductIds.includes(Number(product.productId))
-                                      return <label className={`stocktake-selective-product ${checked ? 'is-selected' : ''}`} key={`stocktake-select-${product.productId}`}><input type="checkbox" checked={checked} onChange={() => setStocktakeSelectedProductIds((current) => checked ? current.filter((id) => id !== Number(product.productId)) : [...current, Number(product.productId)])} /><span><strong>{product.productName}</strong><small>{product.positionCount} поз.</small></span></label>
-                                    }) : <div className="stocktake-product-list-empty">По фильтру товаров нет.</div>}
+                                      return <label className={`stocktake-selective-product ${checked ? 'is-selected' : ''}`} key={`stocktake-select-${product.productId}`}><input type="checkbox" checked={checked} onChange={() => setStocktakeSelectedProductIds((current) => checked ? current.filter((id) => id !== Number(product.productId)) : [...current, Number(product.productId)])} /><span><strong>{product.productName}</strong><small>{product.positionCount} поз. {checked ? '· выбрано' : ''}</small></span></label>
+                                    }) : <div className="stocktake-product-list-empty">По поиску ничего не найдено. Уже выбранные товары остаются в очереди выше.</div>}
                                   </div>
                                 </div>
                               ) : (
@@ -287,7 +305,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                               )}
     
                               <div className="stocktake-start-submit">
-                                <div>{stocktakeStartMode === 'selective' ? (stocktakeSelectedProductIds.length ? `${stocktakeSelectedProductIds.length} товаров · ${selectedStocktakePositionCount} позиций` : 'Выберите хотя бы один товар') : `Полная проверка · ${stocktakeSourceStats[stocktakeSource]} позиций`}</div>
+                                <div>{stocktakeStartMode === 'selective' ? (stocktakeSelectedProductIds.length ? `Готово к проверке · ${stocktakeSelectedProductIds.length} товаров · ${selectedStocktakePositionCount} позиций` : 'Выберите хотя бы один товар') : `Полная проверка · ${stocktakeSourceStats[stocktakeSource]} позиций`}</div>
                                 <button className="primary stocktake-e-start-button" type="button" disabled={stocktakeBusy || (stocktakeStartMode === 'selective' && !stocktakeSelectedProductIds.length)} onClick={() => void startStocktake()}>{stocktakeBusy ? 'Подготавливаю…' : stocktakeStartMode === 'selective' ? 'Начать проверку выбранных товаров' : 'Начать полную проверку'}</button>
                               </div>
                             </>

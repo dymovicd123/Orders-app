@@ -38,6 +38,7 @@ import '../../styles/188i-cycle-counts.css'
 import '../../styles/188k1-stocktake-inline-add.css'
 import '../../styles/w5-checking-ux.css'
 import '../../styles/w5-2-short-check.css'
+import '../../styles/w5-3-selective-queue.css'
 import '../../styles/192b2a-warehouse-attention-actions.css'
 
 type SimpleStockDetail = {
@@ -2352,6 +2353,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         stocktakeReviewRows,
         stocktakeSavingIds,
         stocktakeSelectedProductIds,
+        stocktakeSelectableProducts,
         stocktakeSession,
         stocktakeSource,
         stocktakeSourceStats,
