@@ -12,3 +12,12 @@ if text.count(old) != 1:
     raise SystemExit(f'operational autonomy W3.2 contract: expected 1 match, found {text.count(old)}')
 path.write_text(text.replace(old, new, 1), encoding='utf-8')
 print('Operational autonomy contract updated for W3.2 natural recovery')
+
+refresh_path = Path('scripts/test-w2-attention-refresh-r1.mjs')
+refresh = refresh_path.read_text(encoding='utf-8')
+old_refresh = "  check(intake.includes('result?.warehouseAttention || await loadWarehouseAttention(true)'), 'Intake still unconditionally performs a second detailed Attention read')"
+new_refresh = "  check(intake.includes('else if (!result?.warehouseAttention) await loadWarehouseAttention(true)'), 'Intake still performs a second detailed Attention read when reconciliation already returned refreshed data')"
+if refresh.count(old_refresh) != 1:
+    raise SystemExit(f'W2 Attention refresh W3.2 contract: expected 1 match, found {refresh.count(old_refresh)}')
+refresh_path.write_text(refresh.replace(old_refresh, new_refresh, 1), encoding='utf-8')
+print('W2 Attention refresh contract updated for W3.2 returned-payload reuse')
