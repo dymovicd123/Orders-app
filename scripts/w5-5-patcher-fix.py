@@ -45,14 +45,20 @@ s = s.replace(old, new, 1)
 p.write_text(s, encoding='utf-8')
 
 # The first router normalizer stopped before the found-route closing brace because its
-# generic lookahead accepted any closing brace. Make it consume the entire inserted route
-# and stop only at the original next stocktake route, which restores the exact baseline.
+# generic lookahead accepted any closing brace. Replace only that normalizer fragment,
+# using stable start/end markers rather than trying to reproduce all escape levels.
 g = Path('scripts/w5-5-gate-patcher.py')
 gs = g.read_text(encoding='utf-8')
-old_regex = r"    .replace(/\\n\\s*const inventoryFoundStockReconcileMatch = url\\.pathname\\.match\\(\\/\\^\\\\\\/api\\\\\\/inventory\\\\\\/found-stock\\\\\\/\\(\\\\d\\+\\)\\\\\\/reconcile\\$\\/\\);[\\s\\S]*?(?=\\n\\s*const |\\n\\s*if \\(url\\.pathname|\\n\\s*return json|\\n\\s*}\\n)/, '')"
-new_regex = r"    .replace(/\\n\\s*const inventoryFoundStockReconcileMatch = url\\.pathname\\.match\\(\\/\\^\\\\\\/api\\\\\\/inventory\\\\\\/found-stock\\\\\\/\\(\\\\d\\+\\)\\\\\\/reconcile\\$\\/\\);[\\s\\S]*?(?=\\n\\s*const inventoryStocktakeAddItemMatch)/, '')"
-if old_regex not in gs:
-    raise SystemExit('old W5.5 router normalization regex not found')
-g.write_text(gs.replace(old_regex, new_regex, 1), encoding='utf-8')
+start_marker = r"    .replace(/\n\s*const inventoryFoundStockReconcileMatch"
+start = gs.find(start_marker)
+if start < 0:
+    raise SystemExit('W5.5 router normalizer start not found')
+end = gs.find(", '')", start)
+if end < 0:
+    raise SystemExit('W5.5 router normalizer end not found')
+end += len(", '')")
+replacement = r"    .replace(/\n\s*const inventoryFoundStockReconcileMatch = url\.pathname\.match\(\/\^\\\/api\\\/inventory\\\/found-stock\\\/\(\\d\+\)\\\/reconcile\$\/\);[\s\S]*?(?=\n\s*const inventoryStocktakeAddItemMatch)/, '')"
+gs = gs[:start] + replacement + gs[end:]
+g.write_text(gs, encoding='utf-8')
 
 print('W5.5 temporary patcher fixes applied')
