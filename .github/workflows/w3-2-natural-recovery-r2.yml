@@ -1,4 +1,4 @@
-name: W3.2 Natural recovery R2
+name: W3.2 Natural recovery R3
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch-validate-commit:
-    if: "${{ github.event.head_commit.message == 'chore: run W3.2 validation r2' }}"
+    if: "${{ github.event.head_commit.message == 'chore: run W3.2 validation r3' }}"
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -74,6 +74,7 @@ jobs:
         run: |
           python3 scripts/apply-w3-2-natural-recovery.py
           python3 scripts/apply-w3-2-worker-preservation.py
+          python3 scripts/apply-w3-2-worker-preservation-r2.py
 
       - name: Generate exact W3.2 preservation manifests
         run: |
