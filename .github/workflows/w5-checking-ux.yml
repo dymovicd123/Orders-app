@@ -1,0 +1,128 @@
+name: W5 Checking UX
+
+on:
+  push:
+    branches:
+      - safe/w5-checking-ux-20260905
+
+permissions:
+  contents: write
+
+jobs:
+  patch-validate-commit:
+    if: "${{ github.event.head_commit.message == 'chore: run W5 validation' }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout safe branch
+        uses: actions/checkout@v4
+        with:
+          ref: safe/w5-checking-ux-20260905
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Capture accepted stocktake renderer baseline
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import crypto from 'node:crypto'
+          import ts from 'typescript'
+          const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
+          const normalize = (value) => value.replace(/\r\n/g, '\n').split('\n').map((line) => line.trim()).filter(Boolean).join('\n').replace(/^export\s+/, '')
+          const relative = 'src/features/inventory/views/renderInventoryStocktakePanel.tsx'
+          const text = fs.readFileSync(relative, 'utf8')
+          const source = ts.createSourceFile(relative, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+          let fn = null
+          const visit = (node) => { if (ts.isFunctionDeclaration(node) && node.name?.text === 'renderInventoryStocktakePanel') fn = node; ts.forEachChild(node, visit) }
+          source.forEachChild(visit)
+          if (!fn?.body) throw new Error('renderInventoryStocktakePanel not found')
+          const ret = [...fn.body.statements].find((statement) => ts.isReturnStatement(statement))
+          if (!ret?.expression) throw new Error('stocktake return missing')
+          let expression = ret.expression
+          while (ts.isParenthesizedExpression(expression)) expression = expression.expression
+          const before = sha(normalize(expression.getText(source)))
+          fs.writeFileSync('/tmp/w5-stocktake-before', before)
+          console.log(`W5 stocktake baseline: ${before}`)
+          NODE
+
+      - name: Apply W5 patch
+        run: python3 scripts/apply-w5-checking-ux.py
+
+      - name: Generate exact W5 frontend preservation manifest
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import crypto from 'node:crypto'
+          import ts from 'typescript'
+          const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
+          const normalize = (value) => value.replace(/\r\n/g, '\n').split('\n').map((line) => line.trim()).filter(Boolean).join('\n').replace(/^export\s+/, '')
+          const relative = 'src/features/inventory/views/renderInventoryStocktakePanel.tsx'
+          const text = fs.readFileSync(relative, 'utf8')
+          const source = ts.createSourceFile(relative, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+          let fn = null
+          const visit = (node) => { if (ts.isFunctionDeclaration(node) && node.name?.text === 'renderInventoryStocktakePanel') fn = node; ts.forEachChild(node, visit) }
+          source.forEachChild(visit)
+          if (!fn?.body) throw new Error('renderInventoryStocktakePanel not found')
+          const ret = [...fn.body.statements].find((statement) => ts.isReturnStatement(statement))
+          if (!ret?.expression) throw new Error('stocktake return missing')
+          let expression = ret.expression
+          while (ts.isParenthesizedExpression(expression)) expression = expression.expression
+          const before = fs.readFileSync('/tmp/w5-stocktake-before', 'utf8').trim()
+          const after = sha(normalize(expression.getText(source)))
+          fs.writeFileSync('scripts/w5-checking-ux-frontend-manifest.json', JSON.stringify({
+            version: 1,
+            revision: 'w5-checking-ux',
+            frontend: { panelReturnChanges: { renderInventoryStocktakePanel: { before, after } } },
+          }, null, 2) + '\n')
+          console.log(`W5 stocktake preservation: ${before} -> ${after}`)
+          NODE
+
+      - name: Diff safety
+        run: git diff --check
+
+      - name: Focused W5 regression
+        run: node scripts/test-w5-checking-ux.mjs
+
+      - name: Full cumulative release check
+        run: npm run release:check
+
+      - name: Database safety verification
+        run: npm run verify:db-safety
+
+      - name: Build
+        run: npm run build
+
+      - name: Cloudflare dry run only
+        run: npx wrangler deploy --dry-run
+
+      - name: Confirm no migration change
+        run: |
+          if git diff --name-only | grep -E '(^|/)(migrations?|schema)(/|\.|$)' ; then
+            echo 'Unexpected migration/schema change in W5'
+            exit 1
+          fi
+
+      - name: Commit validated W5
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            src/features/inventory/views/renderInventoryStocktakePanel.tsx \
+            src/features/sections/InventorySection.tsx \
+            src/styles/w5-checking-ux.css \
+            scripts/test-step1906b-frontend-modularization.mjs \
+            scripts/test-w5-checking-ux.mjs \
+            scripts/w5-checking-ux-frontend-manifest.json \
+            package.json \
+            docs/continuation/W5_0_W5_1_CHECKING_UX_20260905.md
+          git diff --cached --check
+          git commit -m 'W5.1: clarify Warehouse checking flow'
+          git push origin HEAD:safe/w5-checking-ux-20260905
