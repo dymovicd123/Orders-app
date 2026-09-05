@@ -1,5 +1,5 @@
 name: R5.10 Workshop enrichment build
-# retry: declaration-neutral implementation
+# retry: capture exact declaration hashes
 
 on:
   push:
@@ -24,8 +24,32 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Capture pre-R5.10 declaration hash
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'; import crypto from 'node:crypto'; import ts from 'typescript';
+          const file='worker/domains/workshop.ts', text=fs.readFileSync(file,'utf8');
+          const src=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
+          const stmt=src.statements.find(s => (ts.isFunctionDeclaration(s)||ts.isClassDeclaration(s)||ts.isInterfaceDeclaration(s)||ts.isTypeAliasDeclaration(s)||ts.isEnumDeclaration(s)) && s.name?.text==='enrichWorkshopTaskRowsFromOrderItems');
+          if(!stmt) throw new Error('declaration not found');
+          const body=stmt.getText(src).replace(/^export\s+/, '');
+          console.log('R510_BEFORE_HASH='+crypto.createHash('sha256').update(body).digest('hex'));
+          NODE
       - name: Apply measured Workshop read optimization
         run: python scripts/apply-r5-10-workshop-enrichment.py
+      - name: Capture post-R5.10 declaration hash
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'; import crypto from 'node:crypto'; import ts from 'typescript';
+          const file='worker/domains/workshop.ts', text=fs.readFileSync(file,'utf8');
+          const src=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
+          const stmt=src.statements.find(s => (ts.isFunctionDeclaration(s)||ts.isClassDeclaration(s)||ts.isInterfaceDeclaration(s)||ts.isTypeAliasDeclaration(s)||ts.isEnumDeclaration(s)) && s.name?.text==='enrichWorkshopTaskRowsFromOrderItems');
+          if(!stmt) throw new Error('declaration not found');
+          const body=stmt.getText(src).replace(/^export\s+/, '');
+          console.log('R510_AFTER_HASH='+crypto.createHash('sha256').update(body).digest('hex'));
+          NODE
       - name: Focused R5.10 regression
         run: node scripts/test-d1-read-budget-r5-10.mjs
       - name: Full release validation
