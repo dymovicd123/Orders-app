@@ -1,5 +1,34 @@
 from pathlib import Path
 
+# Compatibility cleanup applied after the main W3.2 patch: keep the lifecycle
+# helper's signature parseable by the cumulative 192A1 static guard and preserve
+# its established checked_at SQL shape while still moving the newer fact first.
+lifecycle_path = Path('worker/domains/lifecycle.ts')
+lifecycle = lifecycle_path.read_text(encoding='utf-8')
+for old, new in [
+    ('  options: { checkLaterPhysical?: boolean } = {},', '  checkLaterPhysical = true,'),
+    ('  if (options.checkLaterPhysical !== false && exactVariantId > 0 && createdAt) {', '  if (checkLaterPhysical && exactVariantId > 0 && createdAt) {'),
+    ('WHERE inventory_source = ? AND variant_id = ? AND datetime(checked_at) >= datetime(?)\n       ORDER BY datetime(checked_at) DESC, id DESC LIMIT 1', 'WHERE inventory_source = ? AND variant_id = ? AND checked_at >= ?\n       ORDER BY checked_at DESC, id DESC LIMIT 1'),
+    ("inventoryLifecycleDeferredInboundDisposition(db, event, exactVariantId, { checkLaterPhysical: false })", 'inventoryLifecycleDeferredInboundDisposition(db, event, exactVariantId, false)'),
+]:
+    count = lifecycle.count(old)
+    if count != 1:
+        raise SystemExit(f'lifecycle compatibility: expected 1 match, found {count}: {old!r}')
+    lifecycle = lifecycle.replace(old, new, 1)
+lifecycle_path.write_text(lifecycle, encoding='utf-8')
+
+test_path = Path('scripts/test-w3-2-natural-recovery.mjs')
+test = test_path.read_text(encoding='utf-8')
+for old, new in [
+    ("check(disposition.includes('options.checkLaterPhysical !== false'), 'fresh-event read optimization missing')", "check(disposition.includes('if (checkLaterPhysical && exactVariantId > 0 && createdAt)'), 'fresh-event read optimization missing')"),
+    ("check(lifecycle.includes(\"inventoryLifecycleDeferredInboundDisposition(db, event, exactVariantId, { checkLaterPhysical: false })\"), 'fresh Workshop intake pays an unnecessary historical-check read')", "check(lifecycle.includes(\"inventoryLifecycleDeferredInboundDisposition(db, event, exactVariantId, false)\"), 'fresh Workshop intake pays an unnecessary historical-check read')"),
+]:
+    count = test.count(old)
+    if count != 1:
+        raise SystemExit(f'W3.2 test compatibility: expected 1 match, found {count}: {old!r}')
+    test = test.replace(old, new, 1)
+test_path.write_text(test, encoding='utf-8')
+
 path = Path('scripts/test-step1906a-worker-modularization.mjs')
 text = path.read_text(encoding='utf-8')
 
@@ -81,4 +110,4 @@ replace_once(
 )
 
 path.write_text(text, encoding='utf-8')
-print('W3.2 added-declaration Worker preservation chains patched')
+print('W3.2 lifecycle compatibility + added-declaration Worker preservation chains patched')
