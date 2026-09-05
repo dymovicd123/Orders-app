@@ -1,0 +1,24 @@
+/* W5.2 — quick physical check: one obvious safe confirmation for normal rows,
+   blind-first for risky rows, and large mobile tap targets. */
+.inventory-cycle-count-open-button{min-height:42px;font-weight:800;white-space:normal}
+.inventory-cycle-count-quick-confirm{min-height:40px;justify-self:stretch;font-weight:750;white-space:normal;line-height:1.2}
+.inventory-cycle-count-quick-confirm.is-confirmed{border-color:#86efac!important;background:#f0fdf4!important;color:#166534!important}
+.inventory-cycle-count-actions-w5{align-items:flex-start!important}
+.inventory-cycle-count-save-button{min-height:46px;font-weight:800;white-space:normal;line-height:1.2}
+.inventory-cycle-count-actions-w5>span{max-width:560px;line-height:1.4}
+
+@media(max-width:680px){
+  .inventory-cycle-count-summary{align-items:stretch!important}
+  .inventory-cycle-count-summary button{width:100%;min-height:46px}
+  .inventory-cycle-count-row{grid-template-columns:1fr!important;gap:10px!important}
+  .inventory-cycle-count-quick-confirm{width:100%;min-height:46px}
+  .inventory-cycle-count-row>label{width:100%}
+  .inventory-cycle-count-row>label input{width:100%!important;min-height:46px}
+  .inventory-cycle-count-actions-w5{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
+  .inventory-cycle-count-save-button{width:100%;min-height:50px}
+}
+
+@media(max-width:420px){
+  .inventory-cycle-count-summary{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
+  .inventory-cycle-count-system{flex-wrap:wrap}
+}
