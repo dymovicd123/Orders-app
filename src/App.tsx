@@ -1274,7 +1274,7 @@ function App() {
       if (!isAdmin && inventoryPanel === 'catalog') setInventoryPanel('overview')
       if (isAdmin && !inventoryAdminPanels.includes(inventoryPanel)) setInventoryPanel('overview')
     }
-    if (activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'edit')) {
+    if (activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'edit' || orderPanel === 'exchange')) {
       // Форма заказа всегда получает свежие остатки обеих точек, но журнал движений ей не нужен.
       // Каталог остаётся полным: список товаров и все варианты по-прежнему доступны при создании/редактировании.
       void loadInventoryData('warehouse', true, '', false)
@@ -3670,7 +3670,9 @@ function App() {
               return data
             })
           : Promise.resolve(null),
-        Promise.all([loadReferencesData(forceReferences), loadCatalogData(forceReferences)]),
+        // R5.11: ordinary list/overview refreshes do not consume the 1,226-row variant catalog.
+        // Product-aware forms load the catalog explicitly when their panel becomes active.
+        loadReferencesData(forceReferences),
       ])
 
       const healthResult = optionalResults[0] as PromiseSettledResult<ApiState>
