@@ -1442,7 +1442,7 @@ export type WorkshopInvoiceRow = {
 export type WorkshopView = 'active' | 'urgent' | 'invoice' | 'done'
 
 
-export type WorkshopPeriodPreset = 'today' | 'yesterday' | 'month' | 'custom'
+export type WorkshopPeriodPreset = 'all' | 'today' | 'yesterday' | 'month' | 'custom'
 
 
 

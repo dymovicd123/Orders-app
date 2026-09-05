@@ -36,7 +36,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
     <article className="card wide sector-workshop" id="workshop" style={sectorStyle('workshop')}>
               <div className="card-label">Цех</div>
               <div className="card-meta">
-                Цех разделён на активные, срочные и готовые позиции. Накладную можно собрать по выбранному периоду или только по срочным позициям.
+                Активные и готовые позиции по умолчанию не ограничены текущим месяцем, поэтому старые незавершённые заказы не исчезают из очереди. Накладная по-прежнему открывается за выбранный период.
               </div>
     
               <div className="workshop-toolbar">
@@ -53,14 +53,17 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
                       type="button"
                       onClick={() => {
                         const fallback = getPeriodRange('month')
+                        const needsInvoiceRange = entry.value === 'invoice' && (workshopFilters.period === 'all' || !workshopFilters.dateFrom || !workshopFilters.dateTo)
                         const next = {
                           ...workshopFilters,
                           view: entry.value,
-                          period: (!workshopFilters.dateFrom || !workshopFilters.dateTo) ? 'month' as WorkshopPeriodPreset : workshopFilters.period,
-                          dateFrom: workshopFilters.dateFrom || fallback.dateFrom,
-                          dateTo: workshopFilters.dateTo || fallback.dateTo,
+                          period: needsInvoiceRange ? 'month' as WorkshopPeriodPreset : workshopFilters.period,
+                          dateFrom: needsInvoiceRange ? fallback.dateFrom : workshopFilters.dateFrom,
+                          dateTo: needsInvoiceRange ? fallback.dateTo : workshopFilters.dateTo,
                           urgentOnly: entry.value === 'urgent',
                         }
+                        if (entry.value === 'done') setWorkshopSortDirection('newest')
+                        if (entry.value === 'active' || entry.value === 'urgent') setWorkshopSortDirection('oldest')
                         setWorkshopFilters(next)
                       }}
                     >
@@ -71,6 +74,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
     
                 <div className="order-panel-tabs compact-tabs">
                   {[
+                    { value: 'all' as const, label: 'Все' },
                     { value: 'today' as const, label: 'Сегодня' },
                     { value: 'yesterday' as const, label: 'Вчера' },
                     { value: 'month' as const, label: 'Месяц' },
