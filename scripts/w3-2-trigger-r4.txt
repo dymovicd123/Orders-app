@@ -1,1 +1,1 @@
-Trigger W3.2 validation after stocktake fixture alignment.
+Trigger W3.2 validation after operational autonomy contract alignment.
