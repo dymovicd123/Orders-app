@@ -1,1 +1,1 @@
-Trigger W3.2 validation after TypeScript cleanup.
+Trigger W3.2 validation after stocktake fixture alignment.
