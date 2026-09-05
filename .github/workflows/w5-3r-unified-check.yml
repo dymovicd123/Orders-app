@@ -56,7 +56,9 @@ jobs:
           NODE
 
       - name: Apply W5.3R patch
-        run: python3 scripts/apply-w5-3r-unified-check.py
+        run: |
+          python3 scripts/apply-w5-3r-unified-check.py
+          python3 scripts/apply-w5-3r-legacy-test-fix.py
 
       - name: Generate exact W5.3R frontend preservation manifest
         run: |
@@ -121,6 +123,7 @@ jobs:
             src/features/sections/InventorySection.tsx \
             src/styles/w5-3-selective-queue.css \
             scripts/test-step1906b-frontend-modularization.mjs \
+            scripts/test-w5-checking-ux.mjs \
             scripts/test-w5-2-short-check.mjs \
             scripts/test-w5-3-selective-queue.mjs \
             scripts/test-w5-3r-unified-check.mjs \
