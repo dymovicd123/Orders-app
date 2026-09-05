@@ -23,6 +23,7 @@ const w5ShortCheckPath = path.join(root, 'scripts/w5-2-short-check-frontend-mani
 const w5SelectiveQueuePath = path.join(root, 'scripts/w5-3-selective-queue-frontend-manifest.json')
 const w5UnifiedCheckPath = path.join(root, 'scripts/w5-3r-unified-check-frontend-manifest.json')
 const w5ManagerWarehouseAccessPath = path.join(root, 'scripts/w5-manager-warehouse-access-frontend-manifest.json')
+const w5FullStocktakePath = path.join(root, 'scripts/w5-4-full-stocktake-frontend-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -117,6 +118,7 @@ try {
   const w5SelectiveQueue = fs.existsSync(w5SelectiveQueuePath) ? JSON.parse(fs.readFileSync(w5SelectiveQueuePath, 'utf8')) : null
   const w5UnifiedCheck = fs.existsSync(w5UnifiedCheckPath) ? JSON.parse(fs.readFileSync(w5UnifiedCheckPath, 'utf8')) : null
   const w5ManagerWarehouseAccess = fs.existsSync(w5ManagerWarehouseAccessPath) ? JSON.parse(fs.readFileSync(w5ManagerWarehouseAccessPath, 'utf8')) : null
+  const w5FullStocktake = fs.existsSync(w5FullStocktakePath) ? JSON.parse(fs.readFileSync(w5FullStocktakePath, 'utf8')) : null
   if (operationalAutonomyR2) check(operationalAutonomyR2.version === 1 && operationalAutonomyR2.revision === 'operational-autonomy-r2', 'Operational autonomy R2 frontend manifest invalid')
   if (w1WarehouseReliability) check(w1WarehouseReliability.version === 1 && w1WarehouseReliability.revision === 'w1-warehouse-reliability', 'W1 Warehouse reliability frontend manifest invalid')
   if (w2HumanWarehouse) check(w2HumanWarehouse.version === 1 && w2HumanWarehouse.revision === 'w2-human-warehouse', 'W2 human Warehouse frontend manifest invalid')
@@ -129,6 +131,7 @@ try {
   if (w5SelectiveQueue) check(w5SelectiveQueue.version === 1 && w5SelectiveQueue.revision === 'w5-3-selective-queue', 'W5.3 selective queue frontend manifest invalid')
   if (w5UnifiedCheck) check(w5UnifiedCheck.version === 1 && w5UnifiedCheck.revision === 'w5-3r-unified-check', 'W5.3R unified check frontend manifest invalid')
   if (w5ManagerWarehouseAccess) check(w5ManagerWarehouseAccess.version === 1 && w5ManagerWarehouseAccess.revision === 'w5-manager-warehouse-access', 'W5 manager Warehouse access frontend manifest invalid')
+  if (w5FullStocktake) check(w5FullStocktake.version === 1 && w5FullStocktake.revision === 'w5-4-full-stocktake', 'W5.4 full stocktake frontend manifest invalid')
   check(manifest?.version === 1, '1906B preservation manifest invalid')
   check(manifest.baseAppHooks?.length === 352, `Unexpected 1906A App hook baseline: ${manifest.baseAppHooks?.length}`)
   check(manifest.baseInvHooks?.length === 119, `Unexpected 1906A Inventory hook baseline: ${manifest.baseInvHooks?.length}`)
@@ -356,7 +359,12 @@ try {
       check(w5ManagerAccessChange.before === expectedPanelHash, `${panel.func}: W5 manager Warehouse access panel baseline hash mismatch`)
       expectedPanelHash = w5ManagerAccessChange.after
     }
-    check(sha(normalize(text)) === expectedPanelHash, `${panel.func}: rendered JSX changed outside accepted baseline/B2A/autonomy/W1/W2/W3.1A/W3.1B/W4/W5/W5.2/W5.3/W5.3R/manager-access delta`)
+    const w5FullStocktakeChange = w5FullStocktake?.frontend?.panelReturnChanges?.[panel.func]
+    if (w5FullStocktakeChange) {
+      check(w5FullStocktakeChange.before === expectedPanelHash, `${panel.func}: W5.4 full stocktake panel baseline hash mismatch`)
+      expectedPanelHash = w5FullStocktakeChange.after
+    }
+    check(sha(normalize(text)) === expectedPanelHash, `${panel.func}: rendered JSX changed outside accepted baseline/B2A/autonomy/W1/W2/W3.1A/W3.1B/W4/W5/W5.2/W5.3/W5.3R/manager-access/W5.4 delta`)
     check(hookTokens(relative, panel.func).length === 0, `${panel.func}: renderer unexpectedly owns React hooks/lifecycle`)
     check(inventoryController.includes(`{${panel.func}({`), `${panel.func}: InventorySection no longer calls renderer directly`)
   }
