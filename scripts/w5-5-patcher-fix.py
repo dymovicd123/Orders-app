@@ -33,5 +33,15 @@ if old not in s:
     raise SystemExit('old App insertion regex not found')
 s = s.replace(old, new, 1)
 
+old = """             AND last_source_ref LIKE ?
+           ORDER BY id ASC LIMIT 1`
+        ).bind(source, productId, gender || null, color || null, material, length, size || null, `stocktake-unresolved:${category}:%`).first<Record<string, unknown>>();"""
+new = """             AND INSTR(last_source_ref, ?) = 1
+           ORDER BY id ASC LIMIT 1`
+        ).bind(source, productId, gender || null, color || null, material, length, size || null, `stocktake-unresolved:${category}:`).first<Record<string, unknown>>();"""
+if old not in s:
+    raise SystemExit('parameterized unresolved marker LIKE not found')
+s = s.replace(old, new, 1)
+
 p.write_text(s, encoding='utf-8')
 print('W5.5 temporary patcher fixes applied')
