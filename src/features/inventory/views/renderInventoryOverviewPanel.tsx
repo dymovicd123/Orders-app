@@ -52,7 +52,7 @@ type PanelContext = Pick<InventoryRenderContext,
 
 
 function renderRoutineCycleCountCue(ctx: PanelContext) {
-  const { cycleCountBusy, cycleCountData, cycleCountLoading, cycleCountNotice, cycleCountValues, isAdmin, openInventoryPanel, refreshCycleCountSuggestions, setCycleCountValues, simpleStockSource, submitRoutineCycleCount } = ctx as any
+  const { cycleCountBusy, cycleCountData, cycleCountLoading, cycleCountNotice, cycleCountValues, openInventoryPanel, refreshCycleCountSuggestions, setCycleCountValues, simpleStockSource, submitRoutineCycleCount } = ctx as any
   const current = cycleCountData?.source === simpleStockSource ? cycleCountData : null
   if (!current && !cycleCountLoading && !cycleCountNotice) return (
     <section className="inventory-cycle-count-card is-calm warehouse-w2-quick-check" data-smart-daily-stock="routine">
@@ -64,7 +64,7 @@ function renderRoutineCycleCountCue(ctx: PanelContext) {
   )
   if (current?.blockedByStocktake) return (
     <section className="inventory-cycle-count-card is-calm" data-smart-daily-stock="routine">
-      <div className="inventory-cycle-count-state"><div><strong>Здесь уже идёт полная проверка</strong><span>Сначала продолжите или отмените её — отдельная короткая проверка не должна менять остаток параллельно.</span></div>{isAdmin ? <button className="secondary compact" type="button" onClick={() => openInventoryPanel('stocktake')}>Открыть проверку</button> : null}</div>
+      <div className="inventory-cycle-count-state"><div><strong>Здесь уже идёт полная проверка</strong><span>Сначала продолжите или отмените её — отдельная короткая проверка не должна менять остаток параллельно.</span></div><button className="secondary compact" type="button" onClick={() => openInventoryPanel('stocktake')}>Открыть проверку</button></div>
     </section>
   )
   const rows = (current?.items || []).slice(0, 5)
@@ -98,7 +98,6 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
     inventoryPanelStyle,
     inventoryPickerOptions,
     inventoryQuery,
-    isAdmin,
     openOrderFromFinance,
     openSimpleStockHistory,
     openSimpleStockRowsDetail,
@@ -351,7 +350,7 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                                 {quickStocktakeNotice ? <p className="inventory-quick-stocktake-notice">{quickStocktakeNotice}</p> : null}
                               </section>
                             ) : null}
-                            {isAdmin ? <div className="inventory-calm-detail-actions">{simpleStockDetail.aggregate ? <span className="inventory-quick-stocktake-hint">Для сверки откройте конкретный вариант товара.</span> : null}{!simpleStockDetail.aggregate ? <button className="secondary" type="button" onClick={() => openSimpleStockHistory(simpleStockDetail)}>История позиции</button> : null}</div> : null}
+                            <div className="inventory-calm-detail-actions">{simpleStockDetail.aggregate ? <span className="inventory-quick-stocktake-hint">Для сверки откройте конкретный вариант товара.</span> : null}{!simpleStockDetail.aggregate ? <button className="secondary" type="button" onClick={() => openSimpleStockHistory(simpleStockDetail)}>История позиции</button> : null}</div>
                           </>)}
                         </aside>
                       </div>

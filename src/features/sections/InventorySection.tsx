@@ -635,7 +635,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   async function refreshActiveStocktakes() {
-    if (!isAdmin) return
     try {
       const data = await loadInventoryStocktakeSessions('')
       setStocktakeActiveSessions(Array.isArray(data?.sessions) ? data.sessions : [])
@@ -645,12 +644,13 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   useEffect(() => {
-    if (inventoryPanel !== 'stocktake' || !isAdmin) return
+    if (inventoryPanel !== 'stocktake') return
     void refreshActiveStocktakes()
-  }, [inventoryPanel, isAdmin])
+  }, [inventoryPanel])
 
   useEffect(() => {
-    if (!isAdmin || activeSector !== 'inventory') return
+    if (activeSector !== 'inventory') return
+    if (inventoryPanel === 'catalog' && !isAdmin) return
     if (inventoryPanel !== 'stocktake' && inventoryPanel !== 'catalog') return
     if (!references) void loadReferencesData()
   }, [activeSector, inventoryPanel, isAdmin, references])
@@ -1023,7 +1023,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   async function startStocktake() {
-    if (!isAdmin || stocktakeBusy) return
+    if (stocktakeBusy) return
     const existing = stocktakeActiveSessions.find((entry: any) => entry.source === stocktakeSource)
     if (existing) return void resumeStocktake(existing)
     if (stocktakeStartMode === 'selective' && !stocktakeSelectedProductIds.length) {
@@ -1550,7 +1550,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   async function loadHistoryMovements(reset = true) {
-    if (!isAdmin || historyBusy) return
+    if (historyBusy) return
     setHistoryBusy(true)
     setHistoryError('')
     try {
@@ -1573,7 +1573,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   async function loadHistoryChecks() {
-    if (!isAdmin || historyBusy) return
+    if (historyBusy) return
     setHistoryBusy(true)
     setHistoryError('')
     setHistoryStocktakeDetail(null)
@@ -1619,7 +1619,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }, [historyRows])
 
   useEffect(() => {
-    if (!isAdmin || inventoryPanel !== 'history') return
+    if (inventoryPanel !== 'history') return
     if (historyMode === 'movements') void loadHistoryMovements(true)
     else void loadHistoryChecks()
   }, [inventoryPanel, historyMode, historyVariantFilter?.variantId, historyVariantFilter?.source])
