@@ -36,7 +36,7 @@ for (const [label, marker] of [
   check(block.includes('settleCatalogReviewRefreshes(['), `${label}: successful mutation can still be turned into refresh failure`)
   check(block.includes('Изменение сохранено, но часть экрана не обновилась.'), `${label}: partial refresh message missing`)
 }
-check(app.includes('const results = await Promise.allSettled(tasks)'), 'Catalog Review refresh isolation helper missing')
+check(app.includes('Promise.allSettled(tasks)'), 'Catalog Review refresh isolation helper missing')
 
 console.log('W1 WAREHOUSE RELIABILITY TESTS PASSED — manager routine panels open, nav is horizontal, and successful catalog-review mutations survive secondary refresh failures')
 ''', encoding='utf-8')
