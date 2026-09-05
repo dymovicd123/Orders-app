@@ -44,12 +44,13 @@ if old not in s:
 s = s.replace(old, new, 1)
 p.write_text(s, encoding='utf-8')
 
-# Patch the temporary preservation-gate generator before it runs.
+# Repair the temporary preservation-gate patcher before it is executed.
 g = Path('scripts/w5-5-gate-patcher.py')
 gs = g.read_text(encoding='utf-8')
 
 # The first router normalizer stopped before the found-route closing brace because its
-# generic lookahead accepted any closing brace. Consume through the original next route.
+# generic lookahead accepted any closing brace. Replace only that normalizer fragment,
+# using stable start/end markers rather than trying to reproduce all escape levels.
 start_marker = r"    .replace(/\n\s*const inventoryFoundStockReconcileMatch"
 start = gs.find(start_marker)
 if start < 0:
@@ -61,13 +62,18 @@ end += len(", '')")
 replacement = r"    .replace(/\n\s*const inventoryFoundStockReconcileMatch = url\.pathname\.match\(\/\^\\\/api\\\/inventory\\\/found-stock\\\/\(\\d\+\)\\\/reconcile\$\/\);[\s\S]*?(?=\n\s*const inventoryStocktakeAddItemMatch)/, '')"
 gs = gs[:start] + replacement + gs[end:]
 
-# getWarehouseAttentionSummary was introduced by 192B1, so it is validated in the
-# dedicated 192B1-added loop rather than the original-declaration loop. Chain W5.5 there too.
-insert_before = "p.write_text(s, encoding='utf-8')\n\n# Frontend preservation gate"
-if insert_before not in gs:
-    raise SystemExit('Worker gate write anchor not found')
-extra = '''s = one(s,\n"    check(\\n      sha(declarations.get(name)) === acceptedPostW3NaturalRecoveryHash,\\n      w3NaturalRecoveryWorkerChanged\\n        ? `192B1-added declaration changed beyond exact W3.2 allow-list: ${name}`\\n        : `192B1 added Worker declaration changed beyond accepted deltas: ${name}`,\\n    )\\n",\n"    const w5FoundItemsChanged = w5FoundItemsChanges[name]\\n    let acceptedPostW5FoundItemsHash = acceptedPostW3NaturalRecoveryHash\\n    if (w5FoundItemsChanged) {\\n      check(w5FoundItemsChanged.before === acceptedPostW3NaturalRecoveryHash, `W5.5 changed 192B1-added declaration baseline hash mismatch: ${name}`)\\n      acceptedPostW5FoundItemsHash = w5FoundItemsChanged.after\\n    }\\n    check(\\n      sha(declarations.get(name)) === acceptedPostW5FoundItemsHash,\\n      w5FoundItemsChanged\\n        ? `192B1-added declaration changed beyond exact W5.5 found-items allow-list: ${name}`\\n        : `192B1 added Worker declaration changed beyond accepted deltas: ${name}`,\\n    )\\n",\n'1906a W5.5 192B1-added chain')\n'''
-gs = gs.replace(insert_before, extra + insert_before, 1)
+# The 1906B gate has a second, dedicated hash check for the Attention renderer.
+# Register the exact W5.5 manifest delta there as well; otherwise the generic panel
+# allow-list passes but this older W2/W3.2-only check rejects the intentional UI change.
+anchor = "'1906b W5.5 panel chain')\n"
+if gs.count(anchor) != 1:
+    raise SystemExit(f'W5.5 panel-chain insertion anchor: expected 1, got {gs.count(anchor)}')
+attention_patch = r'''s = one(s,
+"    check(sha(normalize(expression.getText(parsed.source))) === expectedAttentionHash, w3NaturalRecovery ? 'renderInventoryAttentionPanel: rendered JSX changed outside exact W2/W3.2 deltas' : 'renderInventoryAttentionPanel: rendered JSX changed outside exact W2 delta')\n",
+"    const w5FoundItemsAttention = w5FoundItems?.frontend?.panelReturnChanges?.renderInventoryAttentionPanel\n    if (w5FoundItemsAttention) {\n      check(w5FoundItemsAttention.before === expectedAttentionHash, 'W5.5 Attention baseline must match accepted W3.2 Attention delta')\n      expectedAttentionHash = w5FoundItemsAttention.after\n    }\n    check(sha(normalize(expression.getText(parsed.source))) === expectedAttentionHash, w5FoundItems ? 'renderInventoryAttentionPanel: rendered JSX changed outside exact W2/W3.2/W5.5 deltas' : (w3NaturalRecovery ? 'renderInventoryAttentionPanel: rendered JSX changed outside exact W2/W3.2 deltas' : 'renderInventoryAttentionPanel: rendered JSX changed outside exact W2 delta'))\n",
+'1906b W5.5 dedicated Attention chain')
+'''
+gs = gs.replace(anchor, anchor + attention_patch, 1)
 g.write_text(gs, encoding='utf-8')
 
 print('W5.5 temporary patcher fixes applied')
