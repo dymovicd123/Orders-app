@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# Temporary validation helper. Removed before Production promotion.
 path = Path('src/features/sections/InventorySection.tsx')
 text = path.read_text(encoding='utf-8')
 old = "        inventoryPanelStyle,\n        isAdmin,\n        movementSourceLoadError,"
