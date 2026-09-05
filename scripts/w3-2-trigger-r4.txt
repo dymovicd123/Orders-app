@@ -1,1 +1,1 @@
-Trigger W3.2 validation after exact known-intake copy contract alignment.
+Trigger W3.2 validation after TypeScript cleanup.
