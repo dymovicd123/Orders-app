@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch-validate-commit:
-    if: "${{ github.event.head_commit.message == 'chore: run W5 validation' }}"
+    if: "${{ github.event.head_commit.message == 'chore: rerun W5 validation' }}"
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -54,7 +54,9 @@ jobs:
           NODE
 
       - name: Apply W5 patch
-        run: python3 scripts/apply-w5-checking-ux.py
+        run: |
+          python3 scripts/apply-w5-checking-ux.py
+          python3 scripts/apply-w5-release-marker-fix.py
 
       - name: Generate exact W5 frontend preservation manifest
         run: |
