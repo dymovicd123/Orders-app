@@ -21,5 +21,6 @@ check(team.includes('WITH order_refs AS') && team.includes('LEFT JOIN attendance
 check(!team.includes('(SELECT COUNT(*) FROM orders o WHERE o.manager_id = m.id)'), 'per-manager correlated order count returned')
 check(clients.includes('COUNT(*) OVER() AS filtered_count'), 'client list must carry filtered count in the page query')
 check(app.includes('WAREHOUSE_ATTENTION_SUMMARY_TTL_MS') && app.includes('warehouseAttentionSummaryInFlight'), 'attention summary cache/coalescing missing')
-check(app.includes('void loadWarehouseAttention(false, true)'), 'inventory writes must force attention refresh')
+check(app.includes('warehouseAttentionSummaryCache = null'), 'inventory writes must invalidate attention cache')
+check(!app.includes('void loadWarehouseAttention(false, true)'), 'inventory writes must not force an Attention read when the recovery surface is unused')
 console.log('D1 read-budget R2 regression: OK')
