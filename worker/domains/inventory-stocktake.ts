@@ -456,6 +456,7 @@ export async function addInventoryStocktakeCombination(
     size?: unknown;
     sizes?: unknown;
     createReferenceFields?: unknown;
+    deferUnknown?: unknown;
   },
 ) {
   if (!await isCatalogIdentityV3Enabled(db)) throw new Error('Сначала завершите обновление идентичности каталога Step 188D.');
@@ -473,6 +474,7 @@ export async function addInventoryStocktakeCombination(
   if (cleanText(session.status) !== 'active') throw new Error('Эта ревизия уже завершена или отменена.');
 
   const createFields = new Set(Array.isArray(input.createReferenceFields) ? (input.createReferenceFields as unknown[]).map(cleanText) : []);
+  const deferUnknown = input.deferUnknown === true || cleanText(input.deferUnknown).toLowerCase() === 'true';
   const material = canonicalStockPositionValue(input.material);
   const length = canonicalStockPositionValue(input.length);
   const rawSizes = Array.isArray(input.sizes) ? input.sizes : [input.size];
@@ -512,6 +514,67 @@ export async function addInventoryStocktakeCombination(
          ON rv.kind = w.kind AND rv.is_active = 1 AND UPPER(TRIM(rv.value)) = w.value`
     ).bind(referenceJson).all<Record<string, unknown>>();
     const missing = (referenceState.results || []).filter(row => toInt(row.exists_flag, 0) === 0);
+    if (missing.length && deferUnknown) {
+      const source = normalizeSourceType(session.inventory_source);
+      const unresolvedRef = `stocktake-unresolved:${category}:${sessionId}`;
+      let addedCount = 0;
+      let alreadyPresentCount = 0;
+      for (const size of normalizedSizes) {
+        const findUnresolved = async () => await db.prepare(
+          `SELECT id, quantity, reserved_quantity FROM inventory_stock
+           WHERE inventory_source = ? AND variant_id IS NULL AND product_id = ?
+             AND COALESCE(gender_snapshot, '') = COALESCE(?, '')
+             AND COALESCE(color_snapshot, '') = COALESCE(?, '')
+             AND UPPER(TRIM(COALESCE(NULLIF(material_snapshot, ''), 'СТАНДАРТ'))) = UPPER(TRIM(?))
+             AND UPPER(TRIM(COALESCE(NULLIF(length_snapshot, ''), 'СТАНДАРТ'))) = UPPER(TRIM(?))
+             AND COALESCE(size_snapshot, '') = COALESCE(?, '')
+             AND INSTR(last_source_ref, ?) = 1
+           ORDER BY id ASC LIMIT 1`
+        ).bind(source, productId, gender || null, color || null, material, length, size || null, `stocktake-unresolved:${category}:`).first<Record<string, unknown>>();
+        let stock = await findUnresolved();
+        if (!stock?.id) {
+          await db.prepare(
+            `INSERT INTO inventory_stock (
+               inventory_source, product_id, variant_id, product_name_snapshot, gender_snapshot, color_snapshot,
+               material_snapshot, length_snapshot, size_snapshot, quantity, reserved_quantity,
+               last_action, last_source_ref, created_at, updated_at
+             ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, 0, 0, 'Найдено при проверке', ?, ?, ?)`
+          ).bind(source, productId, product.name, gender || null, color || null, material, length, size || null, unresolvedRef, timestamp, timestamp).run();
+          stock = await findUnresolved();
+        }
+        const stockId = toInt(stock?.id, 0);
+        if (!stockId) throw new Error('Не удалось сохранить найденную позицию для уточнения.');
+        const existingItem = await db.prepare(
+          `SELECT id FROM inventory_stocktake_items WHERE session_id = ? AND stock_id = ? LIMIT 1`
+        ).bind(sessionId, stockId).first<{ id: number }>();
+        if (existingItem?.id) {
+          alreadyPresentCount += 1;
+          continue;
+        }
+        const opening = toInt(stock?.quantity, 0);
+        const openingReserved = Math.max(0, toInt(stock?.reserved_quantity, 0));
+        await db.prepare(
+          `INSERT INTO inventory_stocktake_items (
+             session_id, inventory_source, stock_id, product_id, variant_id,
+             product_name_snapshot, category_snapshot, gender_snapshot, color_snapshot,
+             material_snapshot, length_snapshot, size_snapshot,
+             opening_quantity, opening_reserved_quantity, baseline_quantity,
+             status, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`
+        ).bind(
+          sessionId, source, stockId, productId, product.name, category, gender || null, color || null,
+          material, length, size || null, opening, openingReserved, opening, timestamp, timestamp,
+        ).run();
+        addedCount += 1;
+      }
+      return {
+        ok: true,
+        deferredUnknownCount: addedCount,
+        addedCount,
+        alreadyPresentCount,
+        session: await serializeInventoryStocktakeSession(db, sessionId),
+      };
+    }
     for (const row of missing) {
       const field = cleanText(row.field);
       const value = cleanText(row.value);
@@ -968,6 +1031,112 @@ export async function quickInventoryStocktake(
 }
 
 
+export async function reconcileFoundInventoryStock(db: D1Database, stockId: number) {
+  const row = await db.prepare(
+    `SELECT s.id, s.inventory_source, s.product_id, s.variant_id, s.product_name_snapshot,
+            s.gender_snapshot, s.color_snapshot, s.material_snapshot, s.length_snapshot, s.size_snapshot,
+            s.quantity, s.reserved_quantity, s.last_source_ref, s.updated_at,
+            COALESCE((SELECT i.category_snapshot FROM inventory_stocktake_items i WHERE i.stock_id = s.id ORDER BY i.id DESC LIMIT 1), 'adult') AS category_snapshot
+     FROM inventory_stock s WHERE s.id = ? LIMIT 1`
+  ).bind(stockId).first<Record<string, unknown>>();
+  if (!row?.id) throw new Error('Найденная позиция больше не существует.');
+  if (toInt(row.variant_id, 0) > 0) {
+    return { ok: true, already: true, stockId, variantId: toInt(row.variant_id, 0), quantity: Math.max(0, toInt(row.quantity, 0)), message: 'Эта найденная позиция уже связана с вариантом.' };
+  }
+  const quantity = Math.max(0, toInt(row.quantity, 0));
+  if (quantity <= 0 || !cleanText(row.last_source_ref).startsWith('stocktake-unresolved:')) {
+    return { ok: true, already: true, stockId, variantId: null, quantity, message: 'Эта найденная позиция уже не требует уточнения.' };
+  }
+  const source = normalizeSourceType(row.inventory_source);
+  const category = normalizeAudienceCategory(row.category_snapshot, row.size_snapshot);
+  const productId = Math.max(0, toInt(row.product_id, 0));
+  const variant = await db.prepare(
+    `SELECT v.id, v.product_id, v.category, v.gender, v.color, v.material, v.length, v.size_label, p.name AS product_name
+     FROM catalog_variants v
+     JOIN catalog_products p ON p.id = v.product_id
+     WHERE v.is_active = 1 AND p.is_active = 1 AND v.product_id = ?
+       AND COALESCE(v.category, 'adult') = ?
+       AND UPPER(TRIM(COALESCE(v.gender, ''))) = UPPER(TRIM(COALESCE(?, '')))
+       AND UPPER(TRIM(COALESCE(v.color, ''))) = UPPER(TRIM(COALESCE(?, '')))
+       AND UPPER(TRIM(COALESCE(NULLIF(v.material, ''), 'СТАНДАРТ'))) = UPPER(TRIM(?))
+       AND UPPER(TRIM(COALESCE(NULLIF(v.length, ''), 'СТАНДАРТ'))) = UPPER(TRIM(?))
+       AND UPPER(TRIM(COALESCE(v.size_label, ''))) = UPPER(TRIM(COALESCE(?, '')))
+     ORDER BY v.id ASC LIMIT 1`
+  ).bind(
+    productId, category, cleanText(row.gender_snapshot), cleanText(row.color_snapshot),
+    canonicalStockPositionValue(row.material_snapshot), canonicalStockPositionValue(row.length_snapshot), cleanText(row.size_snapshot),
+  ).first<Record<string, unknown>>();
+  const variantId = toInt(variant?.id, 0);
+  if (!variantId) {
+    return { ok: false, code: 'identity_unresolved', stockId, quantity, message: 'Точного варианта пока нет. Создайте или исправьте его в «Товары», затем вернитесь к этому уточнению.' };
+  }
+  const target = await db.prepare(
+    `SELECT id, quantity FROM inventory_stock WHERE inventory_source = ? AND variant_id = ? ORDER BY id ASC LIMIT 1`
+  ).bind(source, variantId).first<Record<string, unknown>>();
+  const now = new Date().toISOString();
+  const resolutionRef = `found-stock:${stockId}:${variantId}`;
+  if (!target?.id) {
+    await db.prepare(
+      `UPDATE inventory_stock
+       SET product_id = ?, variant_id = ?, product_name_snapshot = ?, gender_snapshot = ?, color_snapshot = ?,
+           material_snapshot = ?, length_snapshot = ?, size_snapshot = ?,
+           last_action = 'Определён найденный товар', last_source_ref = ?, updated_at = ?
+       WHERE id = ? AND variant_id IS NULL AND quantity = ? AND last_source_ref LIKE 'stocktake-unresolved:%'`
+    ).bind(
+      toInt(variant?.product_id, productId), variantId, cleanText(variant?.product_name) || cleanText(row.product_name_snapshot),
+      cleanText(variant?.gender) || null, cleanText(variant?.color) || null,
+      canonicalStockPositionValue(variant?.material), canonicalStockPositionValue(variant?.length), cleanText(variant?.size_label) || null,
+      `stocktake-resolved:${resolutionRef}`, now, stockId, quantity,
+    ).run();
+    return { ok: true, already: false, merged: false, stockId, variantId, quantity, message: 'Найденная вещь связана с вариантом и теперь отображается в обычных остатках.' };
+  }
+
+  const targetId = toInt(target.id, 0);
+  const productName = cleanText(variant?.product_name) || cleanText(row.product_name_snapshot);
+  await db.batch([
+    db.prepare(
+      `UPDATE inventory_stock
+       SET quantity = quantity + ?, last_action = 'Определён найденный товар', last_source_ref = ?, updated_at = ?
+       WHERE id = ?
+         AND EXISTS (SELECT 1 FROM inventory_stock u WHERE u.id = ? AND u.variant_id IS NULL AND u.quantity = ? AND u.last_source_ref LIKE 'stocktake-unresolved:%')`
+    ).bind(quantity, resolutionRef, now, targetId, stockId, quantity),
+    db.prepare(
+      `INSERT INTO inventory_movements (
+         inventory_source, movement_type, product_id, variant_id, product_name_snapshot, gender_snapshot,
+         color_snapshot, material_snapshot, length_snapshot, size_snapshot, quantity_delta, quantity_after,
+         reference_type, reference_id, comment, created_at
+       )
+       SELECT ?, 'manual_set', ?, ?, ?, ?, ?, ?, ?, ?, ?,
+              (SELECT quantity FROM inventory_stock WHERE id = ?),
+              'identity_resolution', ?, 'Найденная при проверке вещь связана с существующим вариантом', ?
+       WHERE EXISTS (SELECT 1 FROM inventory_stock u WHERE u.id = ? AND u.variant_id IS NULL AND u.quantity = ? AND u.last_source_ref LIKE 'stocktake-unresolved:%')`
+    ).bind(
+      source, toInt(variant?.product_id, productId), variantId, productName, cleanText(variant?.gender) || null,
+      cleanText(variant?.color) || null, canonicalStockPositionValue(variant?.material), canonicalStockPositionValue(variant?.length), cleanText(variant?.size_label) || null,
+      quantity, targetId, resolutionRef, now, stockId, quantity,
+    ),
+    db.prepare(
+      `INSERT INTO inventory_movements (
+         inventory_source, movement_type, product_id, variant_id, product_name_snapshot, gender_snapshot,
+         color_snapshot, material_snapshot, length_snapshot, size_snapshot, quantity_delta, quantity_after,
+         reference_type, reference_id, comment, created_at
+       )
+       SELECT inventory_source, 'manual_set', product_id, NULL, product_name_snapshot, gender_snapshot,
+              color_snapshot, material_snapshot, length_snapshot, size_snapshot, ?, 0,
+              'identity_resolution', ?, 'Найденная вещь перенесена в определённый вариант без изменения общего физического количества', ?
+       FROM inventory_stock
+       WHERE id = ? AND variant_id IS NULL AND quantity = ? AND last_source_ref LIKE 'stocktake-unresolved:%'`
+    ).bind(-quantity, resolutionRef, now, stockId, quantity),
+    db.prepare(
+      `UPDATE inventory_stock
+       SET quantity = 0, last_action = 'Найденный товар определён', last_source_ref = ?, updated_at = ?
+       WHERE id = ? AND variant_id IS NULL AND quantity = ? AND last_source_ref LIKE 'stocktake-unresolved:%'`
+    ).bind(`stocktake-resolved:${resolutionRef}`, now, stockId, quantity),
+  ]);
+  return { ok: true, already: false, merged: true, stockId, variantId, quantity, message: 'Найденная вещь связана с вариантом и добавлена к его обычному остатку без повторного прихода.' };
+}
+
+
 export async function markInventoryStocktakeConflicts(db: D1Database, sessionId: string) {
   const now = new Date().toISOString();
   await db.batch([
@@ -1023,6 +1192,13 @@ export async function completeInventoryStocktakeSession(db: D1Database, sessionI
   ).bind(sessionId).first<InventoryStocktakeSessionRow>();
   if (!session?.id) throw new Error('Ревизия не найдена.');
   const sessionStatus = cleanText(session.status);
+  const countUnresolvedFound = async () => Math.max(0, toInt((await db.prepare(
+    `SELECT COUNT(DISTINCT s.id) AS qty
+     FROM inventory_stock s
+     JOIN inventory_stocktake_items i ON i.stock_id = s.id
+     WHERE i.session_id = ? AND s.variant_id IS NULL AND s.quantity > 0
+       AND s.last_source_ref LIKE 'stocktake-unresolved:%'`
+  ).bind(sessionId).first<Record<string, unknown>>())?.qty, 0));
   if (sessionStatus === 'completed') {
     const completed = await serializeInventoryStocktakeSession(db, sessionId);
     const changed = completed.items.filter((item: any) => item.appliedQuantity !== null && Number(item.appliedQuantity) !== Number(item.baselineQuantity)).length;
@@ -1042,6 +1218,7 @@ export async function completeInventoryStocktakeSession(db: D1Database, sessionI
     return {
       ok: true,
       changed,
+      unresolvedFoundCount: await countUnresolvedFound(),
       message: shortages.length
         ? `Ревизия уже завершена. Исправлено ${changed} позиций. По ${shortages.length} позициям товара не хватает для текущих заказов.`
         : `Ревизия уже завершена. Исправлено ${changed} позиций.`,
@@ -1141,8 +1318,8 @@ export async function completeInventoryStocktakeSession(db: D1Database, sessionI
                )
              LIMIT 1
            ),
-           last_action = 'Ревизия',
-           last_source_ref = ?,
+           last_action = CASE WHEN variant_id IS NULL AND last_source_ref LIKE 'stocktake-unresolved:%' THEN 'Найдено при проверке' ELSE 'Ревизия' END,
+           last_source_ref = CASE WHEN variant_id IS NULL AND last_source_ref LIKE 'stocktake-unresolved:%' THEN last_source_ref ELSE ? END,
            updated_at = ?
        WHERE inventory_source = ?
          AND EXISTS (
@@ -1281,6 +1458,7 @@ export async function completeInventoryStocktakeSession(db: D1Database, sessionI
   return {
     ok: true,
     changed,
+    unresolvedFoundCount: await countUnresolvedFound(),
     message: shortages.length
       ? `Ревизия завершена. Исправлено ${changed} позиций. По ${shortages.length} позициям товара не хватает для текущих заказов.`
       : `Ревизия завершена. Исправлено ${changed} позиций.`,
@@ -1297,9 +1475,18 @@ export async function cancelInventoryStocktakeSession(db: D1Database, sessionId:
   if (!session?.id) throw new Error('Ревизия не найдена.');
   if (cleanText(session.status) !== 'active') return { ok: true, session: await serializeInventoryStocktakeSession(db, sessionId) };
   const now = new Date().toISOString();
-  await db.prepare(
-    `UPDATE inventory_stocktake_sessions SET status = 'cancelled', cancelled_at = ?, updated_at = ? WHERE id = ?`
-  ).bind(now, now, sessionId).run();
+  await db.batch([
+    db.prepare(
+      `UPDATE inventory_stocktake_sessions SET status = 'cancelled', cancelled_at = ?, updated_at = ? WHERE id = ?`
+    ).bind(now, now, sessionId),
+    db.prepare(
+      `UPDATE inventory_stock
+       SET last_action = 'Найденная позиция отменена вместе с проверкой', last_source_ref = ?, updated_at = ?
+       WHERE variant_id IS NULL AND quantity = 0 AND reserved_quantity = 0
+         AND last_source_ref LIKE 'stocktake-unresolved:%'
+         AND id IN (SELECT stock_id FROM inventory_stocktake_items WHERE session_id = ? AND stock_id IS NOT NULL)`
+    ).bind(`stocktake-cancelled:${sessionId}`, now, sessionId),
+  ]);
   return { ok: true, session: await serializeInventoryStocktakeSession(db, sessionId) };
 }
 

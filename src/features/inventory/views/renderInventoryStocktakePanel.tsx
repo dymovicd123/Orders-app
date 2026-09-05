@@ -475,7 +475,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                                   <div><strong>+ Найденная позиция</strong><span>{currentStocktakeGroup?.productName || 'Текущий товар'}</span></div>
                                   <button className="ghost compact" type="button" aria-label="Закрыть" onClick={() => setStocktakeFoundOpen(false)}>×</button>
                                 </div>
-                                <div className="stocktake-found-modal-note">Выберите факты о найденной вещи. Это не приход: количество изменится только после пересчёта.</div>
+                                <div className="stocktake-found-modal-note w5-found-clarification-note"><strong>Выберите то, что видите на вещи.</strong><span>Если нужного значения нет в списке, мы не будем создавать вариант автоматически. Физический факт сохранится отдельно, а после проверки система попросит определить товар.</span></div>
     
                               <div className="stocktake-found-product-line">
                                 {!stocktakeFoundOtherProduct ? (
@@ -520,14 +520,14 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                                     <div className="stocktake-size-multi-head"><span>{stocktakeFoundDraft.category === 'child' ? 'Какие возраста нашли?' : 'Какие размеры нашли?'}</span><strong>{stocktakeFoundSizes.length ? `Выбрано: ${stocktakeFoundSizes.length}` : 'Выберите один или несколько'}</strong></div>
                                     <div className="stocktake-size-pills">{(stocktakeFoundDraft.category === 'child' ? suggestionValues.childAges : suggestionValues.sizes || []).map((value: string) => { const selected = stocktakeFoundSizes.includes(value); return <button key={`stocktake-found-size-${value}`} type="button" className={selected ? 'is-selected' : ''} onClick={() => setStocktakeFoundSizes((current) => selected ? current.filter((item) => item !== value) : [...current, value])}>{value}</button> })}</div>
                                     <button className="ghost compact stocktake-new-reference-toggle" type="button" onClick={() => { setStocktakeFoundNewFields((current) => ({ ...current, size: !current.size })); setStocktakeFoundCustom((current) => ({ ...current, size: '' })) }}>{stocktakeFoundNewFields.size ? 'Убрать новое значение' : stocktakeFoundDraft.category === 'child' ? 'Нет нужного возраста' : 'Нет нужного размера'}</button>
-                                    {stocktakeFoundNewFields.size ? <label className="stocktake-new-reference-field"><span>{stocktakeFoundDraft.category === 'child' ? 'Новый возраст' : 'Новый размер'}</span><input value={stocktakeFoundCustom.size} onChange={(event) => setStocktakeFoundCustom((current) => ({ ...current, size: event.target.value }))} placeholder={stocktakeFoundDraft.category === 'child' ? 'Например: 9' : 'Например: 58'} /><small>Новое значение будет добавлено только после отдельного подтверждения.</small></label> : null}
+                                    {stocktakeFoundNewFields.size ? <label className="stocktake-new-reference-field"><span>{stocktakeFoundDraft.category === 'child' ? 'Новый возраст' : 'Новый размер'}</span><input value={stocktakeFoundCustom.size} onChange={(event) => setStocktakeFoundCustom((current) => ({ ...current, size: event.target.value }))} placeholder={stocktakeFoundDraft.category === 'child' ? 'Например: 9' : 'Например: 58'} /><small>Если такого значения ещё нет, вещь сохранится отдельно и после проверки появится в «Нужно уточнить».</small></label> : null}
                                   </div>
                                 </div>
                               )}
     
                               <div className="stocktake-found-actions stocktake-found-actions-human">
                                 <button className="primary" type="button" disabled={!stocktakeFoundProductId || !stocktakeReferenceReady || stocktakeAddingVariantId !== 0} onClick={() => void addStocktakeNewCombination()}>{stocktakeAddingVariantId === -1 ? 'Добавляю…' : `Добавить ${stocktakeFoundSizes.length + (stocktakeFoundNewFields.size && stocktakeFoundCustom.size.trim() ? 1 : 0) || ''} ${stocktakeFoundSizes.length + (stocktakeFoundNewFields.size && stocktakeFoundCustom.size.trim() ? 1 : 0) === 1 ? 'позицию' : 'позиций'} в ревизию`}</button>
-                                <span>Это не «Приход» и не ручное изменение остатка. Позиция лишь появляется в текущем листе, после чего вы вводите фактическое количество.</span>
+                                <span>Сначала позиция появится в текущем листе. Обычный вариант товара будет создан или связан только если его характеристики уже однозначно известны.</span>
                               </div>
                               </section>
                             </div> : null}

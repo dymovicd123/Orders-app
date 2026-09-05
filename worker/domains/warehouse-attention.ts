@@ -43,6 +43,23 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
      LIMIT 1)
   )`
 
+
+  const exactFoundVariantSql = `(SELECT v.id
+     FROM catalog_variants v
+     JOIN catalog_products p ON p.id = v.product_id
+     WHERE v.is_active = 1 AND p.is_active = 1
+       AND v.product_id = s.product_id
+       AND LOWER(TRIM(COALESCE(v.category, 'adult'))) = COALESCE((
+         SELECT CASE WHEN LOWER(TRIM(COALESCE(i.category_snapshot, 'adult'))) = 'child' THEN 'child' ELSE 'adult' END
+         FROM inventory_stocktake_items i WHERE i.stock_id = s.id ORDER BY i.id DESC LIMIT 1
+       ), 'adult')
+       AND UPPER(TRIM(COALESCE(v.gender, ''))) = UPPER(TRIM(COALESCE(s.gender_snapshot, '')))
+       AND UPPER(TRIM(COALESCE(v.color, ''))) = UPPER(TRIM(COALESCE(s.color_snapshot, '')))
+       AND UPPER(TRIM(COALESCE(NULLIF(v.material, ''), 'СТАНДАРТ'))) = UPPER(TRIM(COALESCE(NULLIF(s.material_snapshot, ''), 'СТАНДАРТ')))
+       AND UPPER(TRIM(COALESCE(NULLIF(v.length, ''), 'СТАНДАРТ'))) = UPPER(TRIM(COALESCE(NULLIF(s.length_snapshot, ''), 'СТАНДАРТ')))
+       AND UPPER(TRIM(COALESCE(v.size_label, ''))) = UPPER(TRIM(COALESCE(s.size_snapshot, '')))
+     ORDER BY v.id ASC LIMIT 1)`
+
   const [summary, handoverRows] = await Promise.all([
     details ? Promise.resolve(null) : db.prepare(
       `SELECT
@@ -80,7 +97,8 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
               CASE WHEN TRIM(COALESCE(oi.length_snapshot, '')) = '' THEN 'СТАНДАРТ' ELSE UPPER(TRIM(oi.length_snapshot)) END,
               UPPER(TRIM(COALESCE(oi.size_snapshot, '')))
           )) AS catalog_count,
-         (SELECT COUNT(*) FROM inventory_stocktake_sessions WHERE status = 'active') AS stocktake_count`
+         (SELECT COUNT(*) FROM inventory_stocktake_sessions WHERE status = 'active') AS stocktake_count,
+         (SELECT COUNT(*) FROM inventory_stock s WHERE s.variant_id IS NULL AND s.quantity > 0 AND s.last_source_ref LIKE 'stocktake-unresolved:%') AS found_count`
     ).first<Record<string, unknown>>(),
     fetchOrderStockHandoverRows(db, [], { allActive: true, listFlagsOnly: !details }),
   ])
@@ -127,10 +145,11 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
       catalog: Math.max(0, toInt(summary?.catalog_count, 0)),
       handover: handoverReviewRows.length,
       stocktake: Math.max(0, toInt(summary?.stocktake_count, 0)),
+      found: Math.max(0, toInt(summary?.found_count, 0)),
     }
     return {
       ok: true,
-      total: counts.shortage + counts.intake + counts.lifecycle + counts.catalog + counts.handover + counts.stocktake,
+      total: counts.shortage + counts.intake + counts.lifecycle + counts.catalog + counts.handover + counts.stocktake + counts.found,
       counts,
     }
   }
@@ -238,10 +257,24 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     ).first<Record<string, unknown>>(),
   ])
 
+  const foundResult = await db.prepare(
+    `SELECT s.id AS stock_id, s.inventory_source, s.product_id, s.product_name_snapshot,
+            s.gender_snapshot, s.color_snapshot, s.material_snapshot, s.length_snapshot, s.size_snapshot,
+            s.quantity, s.created_at, s.updated_at,
+            COALESCE((SELECT i.category_snapshot FROM inventory_stocktake_items i WHERE i.stock_id = s.id ORDER BY i.id DESC LIMIT 1), 'adult') AS category_snapshot,
+            ${exactFoundVariantSql} AS exact_variant_id,
+            COUNT(*) OVER() AS found_count
+     FROM inventory_stock s
+     WHERE s.variant_id IS NULL AND s.quantity > 0 AND s.last_source_ref LIKE 'stocktake-unresolved:%'
+     ORDER BY s.updated_at DESC, s.id DESC
+     LIMIT ?`
+  ).bind(limit).all<Record<string, unknown>>()
+
   const rawShortageCount = Math.max(0, toInt(coreSummary?.shortage_count, 0))
   const intakeCount = Math.max(0, toInt(coreSummary?.intake_count, 0))
   const lifecycleTotalCount = Math.max(0, toInt(coreSummary?.lifecycle_total_count, 0))
   const catalogCount = Math.max(0, toInt((catalogResult.results || [])[0]?.catalog_count, 0))
+  const foundCount = Math.max(0, toInt((foundResult.results || [])[0]?.found_count, 0))
   const counts = {
     shortage: Math.max(0, rawShortageCount - fullyExplainedShortageKeys.size),
     intake: intakeCount,
@@ -249,10 +282,11 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     catalog: catalogCount,
     handover: handoverReviewRows.length,
     stocktake: Math.max(0, toInt(coreSummary?.stocktake_count, 0)),
+    found: foundCount,
   }
   const response: Record<string, unknown> = {
     ok: true,
-    total: counts.shortage + counts.intake + counts.lifecycle + counts.catalog + counts.handover + counts.stocktake,
+    total: counts.shortage + counts.intake + counts.lifecycle + counts.catalog + counts.handover + counts.stocktake + counts.found,
     counts,
   }
 
@@ -334,6 +368,23 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
       orderCreatedAt: cleanText(row.order_created_at),
       customerName: cleanText(row.customer_name),
       ...item,
+    })),
+    found: (foundResult.results || []).map((row) => ({
+      stockId: toInt(row.stock_id, 0),
+      source: normalizeSourceType(row.inventory_source),
+      productId: toInt(row.product_id, 0),
+      productName: cleanText(row.product_name_snapshot),
+      category: normalizeAudienceCategory(row.category_snapshot, row.size_snapshot),
+      gender: cleanText(row.gender_snapshot),
+      color: cleanText(row.color_snapshot),
+      material: canonicalStockPositionValue(row.material_snapshot) || 'СТАНДАРТ',
+      length: canonicalStockPositionValue(row.length_snapshot) || 'СТАНДАРТ',
+      size: cleanText(row.size_snapshot),
+      physical: Math.max(0, toInt(row.quantity, 0)),
+      createdAt: cleanText(row.created_at),
+      updatedAt: cleanText(row.updated_at),
+      exactVariantId: toInt(row.exact_variant_id, 0) || null,
+      exactKnown: Boolean(toInt(row.exact_variant_id, 0)),
     })),
     stocktakes: (stocktakeResult.results || []).map((row) => ({
       id: cleanText(row.id),

@@ -14,7 +14,7 @@ import { listFinanceReports } from './domains/finance-reports.ts'
 import { applyInventoryMovement, applyInventoryTransfer, applyPendingInventoryWriteoffs, getInventoryControlSettings, reverseInventoryMovementOperation, updateInventoryControlSettings } from './domains/inventory-movement.ts'
 import { getDashboardInsights, getInventoryHardAudit, listInventory, setInventoryAuditResolution } from './domains/inventory-read.ts'
 import { listInventoryReservations } from './domains/inventory-reservations.ts'
-import { addInventoryStocktakeCombination, addInventoryStocktakeVariant, cancelInventoryStocktakeSession, completeInventoryStocktakeSession, createInventoryStocktakeSession, listInventoryCheckHistory, listInventoryCycleCountSuggestions, listInventoryHistory, listInventoryStocktakeSessions, quickInventoryStocktake, quickInventoryStocktakeBatch, saveInventoryStocktakeCount, serializeInventoryStocktakeSession } from './domains/inventory-stocktake.ts'
+import { addInventoryStocktakeCombination, addInventoryStocktakeVariant, cancelInventoryStocktakeSession, completeInventoryStocktakeSession, createInventoryStocktakeSession, listInventoryCheckHistory, listInventoryCycleCountSuggestions, listInventoryHistory, listInventoryStocktakeSessions, quickInventoryStocktake, quickInventoryStocktakeBatch, reconcileFoundInventoryStock, saveInventoryStocktakeCount, serializeInventoryStocktakeSession } from './domains/inventory-stocktake.ts'
 import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileKnownPendingInventoryInbound, resolveInventoryLifecycleFacts } from './domains/lifecycle.ts'
 import { createManualOrderPaymentCritical } from './domains/money.ts'
 import { OrderInputValidationError } from './domains/order-core.ts'
@@ -650,16 +650,22 @@ export default {
 
       const inventoryStocktakeAddCombinationMatch = url.pathname.match(/^\/api\/inventory\/stocktakes\/([^/]+)\/items\/combination$/);
       if (inventoryStocktakeAddCombinationMatch && request.method === 'POST') {
-        const input = await readJson<{ productId?: unknown; material?: unknown; length?: unknown; category?: unknown; gender?: unknown; color?: unknown; size?: unknown; createReferenceFields?: unknown }>(request);
-        const createReferenceFields = input.createReferenceFields && typeof input.createReferenceFields === 'object'
-          ? input.createReferenceFields as Record<string, unknown>
-          : {};
-        const wantsNewReferenceValue = Object.values(createReferenceFields).some((value) => value === true);
+        const input = await readJson<{ productId?: unknown; material?: unknown; length?: unknown; category?: unknown; gender?: unknown; color?: unknown; size?: unknown; sizes?: unknown; createReferenceFields?: unknown; deferUnknown?: unknown }>(request);
+        const createReferenceFields = input.createReferenceFields;
+        const wantsNewReferenceValue = Array.isArray(createReferenceFields)
+          ? createReferenceFields.length > 0
+          : Boolean(createReferenceFields && typeof createReferenceFields === 'object' && Object.values(createReferenceFields as Record<string, unknown>).some((value) => value === true));
         if (wantsNewReferenceValue) {
           const denied = requireAdminAccess(request);
           if (denied) return denied;
         }
         return json(await addInventoryStocktakeCombination(env.DB, decodeURIComponent(inventoryStocktakeAddCombinationMatch[1]), input), { status: 201 });
+      }
+
+
+      const inventoryFoundStockReconcileMatch = url.pathname.match(/^\/api\/inventory\/found-stock\/(\d+)\/reconcile$/);
+      if (inventoryFoundStockReconcileMatch && request.method === 'POST') {
+        return json(await reconcileFoundInventoryStock(env.DB, toInt(inventoryFoundStockReconcileMatch[1], 0)));
       }
 
       const inventoryStocktakeAddItemMatch = url.pathname.match(/^\/api\/inventory\/stocktakes\/([^/]+)\/items$/);

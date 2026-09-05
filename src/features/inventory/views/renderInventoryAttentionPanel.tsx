@@ -14,6 +14,8 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'openAttentionHandover'
   | 'openAttentionIntake'
   | 'openAttentionLifecycle'
+  | 'openAttentionFoundCatalog'
+  | 'reconcileFoundInventoryStock'
   | 'refreshWarehouseAttention'
   | 'setAttentionCategory'
   | 'sourceLabel'
@@ -46,6 +48,8 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
     openAttentionHandover,
     openAttentionIntake,
     openAttentionLifecycle,
+    openAttentionFoundCatalog,
+    reconcileFoundInventoryStock,
     refreshWarehouseAttention,
     setAttentionCategory,
     sourceLabel,
@@ -56,7 +60,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
   const categoryCounts: Record<AttentionCategory, number> = {
     handover: Number(counts?.handover || 0),
     intake: Number(counts?.intake || 0),
-    identify: Number(counts?.lifecycle || 0) + Number(counts?.catalog || 0),
+    identify: Number(counts?.lifecycle || 0) + Number(counts?.catalog || 0) + Number(counts?.found || 0),
   }
   const clarificationTotal = categoryCounts.handover + categoryCounts.identify
   const isIntake = attentionCategory === 'intake'
@@ -142,7 +146,22 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
       {items && attentionCategory === 'identify' ? (
         <section className="inventory-attention-group is-identify">
           <div className="inventory-attention-group-head"><div><strong>Определить товар</strong><span>Здесь только позиции, которым действительно не хватает точной идентичности.</span></div><b>{categoryCounts.identify}</b></div>
-          {(items.lifecycle.length || items.catalog.length) ? <div className="inventory-attention-list">
+          {((items.found?.length || 0) || items.lifecycle.length || items.catalog.length) ? <div className="inventory-attention-list">
+            {(items.found || []).map((item: any) => (
+              <article className="w5-found-attention-card" key={`attention-found-${item.stockId}`}>
+                <div className="inventory-attention-main">
+                  <strong>{item.productName || 'Найденная вещь'}</strong>
+                  <span>{detailLine(item) || 'Характеристики требуют уточнения'} · {sourceLabel(item.source)}</span>
+                  <small>Физически учтено: {item.physical}</small>
+                  <div className="w5-found-attention-warning"><strong>Вариант товара ещё не определён</strong><span>Физически вещь учтена, но пока не появилась среди обычных вариантов этого товара. Определите её, чтобы она стала доступна в остатках, перемещениях и заказах.</span></div>
+                </div>
+                {item.exactKnown
+                  ? <button className="primary compact" type="button" onClick={() => void reconcileFoundInventoryStock(item)}>Связать с вариантом</button>
+                  : isAdmin
+                    ? <button className="secondary compact" type="button" onClick={() => openAttentionFoundCatalog(item)}>Разобрать</button>
+                    : <span className="inventory-attention-admin-note">Требуется администратор</span>}
+              </article>
+            ))}
             {(items.lifecycle || []).map((item: any) => (
               <article key={`attention-lifecycle-${item.id}`}>
                 <div className="inventory-attention-main"><strong>{item.productName || 'Неизвестный товар'}</strong><span>{detailLine(item) || 'Характеристики не определены'} · {sourceLabel(item.source)}</span><small>{item.externalId ? `Заказ ${item.externalId} · от ${formatDateShort(item.orderDate)}` : ''}</small></div>
