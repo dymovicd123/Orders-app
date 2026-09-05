@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "revision": "w3-1b-stock-micro-check",
+  "frontend": {
+    "panelReturnChanges": {
+      "renderInventoryOverviewPanel": {
+        "before": "8e1fa7024060917e3e20c632973e9ffffa49cb8f975b6ad42cf245f0f50eee11",
+        "after": "71f273646cc7a7a10160ebd69475cb8ea7c5e6e9bba4b27d81aa77ad38791ee0"
+      }
+    }
+  }
+}

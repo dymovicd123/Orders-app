@@ -81,9 +81,9 @@ export function useInventoryAttentionActions(input: InventoryAttentionActionsInp
   const [attentionCategory, setAttentionCategory] = useState<AttentionCategory>('count')
   const [attentionIntakeBusyId, setAttentionIntakeBusyId] = useState<number | null>(null)
 
-  async function applyQuickStocktake() {
+  async function applyQuickStocktake(countedOverride?: number) {
     if (!simpleStockDetail?.variantId || simpleStockDetail.aggregate || quickStocktakeBusy) return
-    const raw = quickStocktakeValues[String(simpleStockDetail.variantId)] ?? ''
+    const raw = countedOverride === undefined ? (quickStocktakeValues[String(simpleStockDetail.variantId)] ?? '') : String(countedOverride)
     if (raw === '') {
       setQuickStocktakeNotice('Введите фактическое количество этой позиции.')
       return
