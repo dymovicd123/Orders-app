@@ -1576,8 +1576,10 @@ function App() {
   function invalidateInventoryStockCaches(includeCatalogReview = false) {
     setInventoryData({ warehouse: null, boutique: null })
     if (includeCatalogReview) setCatalogReview(null)
+    // W3.1A: mutations invalidate Warehouse Attention truth, but do not spend a D1 read
+    // unless the user actually opens/refreshes the recovery surface. Its own effect/action
+    // remains the single owner of detailed refreshes (W2.1 race invariant).
     warehouseAttentionSummaryCache = null
-    void loadWarehouseAttention(false, true)
   }
 
   async function loadCatalogData(force = false) {
@@ -3973,7 +3975,6 @@ function App() {
 
       const postSaveShortages = (result.stockWriteOff || []).filter((entry) => Number(entry.shortageAfter || 0) > 0)
       const concurrentShortages = postSaveShortages.filter((entry) => entry.concurrentShortage)
-      if (postSaveShortages.length) void loadWarehouseAttention()
       const createdOrderId = Number(result.orderId || 0)
       const createdExternalId = String(result.externalId || '').trim()
       if (!Number.isInteger(createdOrderId) || createdOrderId <= 0 || !createdExternalId) {
@@ -5431,7 +5432,6 @@ function removeDebtPayment(index: number) {
       const pendingEditorPayments = nextDraft.payments.filter((payment) => !payment.id)
       const postSaveShortages = (result.stockWriteOff || []).filter((entry) => Number(entry.shortageAfter || 0) > 0)
       const concurrentShortages = postSaveShortages.filter((entry) => entry.concurrentShortage)
-      if (postSaveShortages.length) void loadWarehouseAttention()
       invalidateFinanceReadCaches()
       // Unsent edits can release/recreate reservations; a sent transition can also fulfill them.
       invalidateInventoryStockCaches(true)

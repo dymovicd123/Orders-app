@@ -2496,7 +2496,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         inventoryOperationRowSecondary,
         inventoryOperationSearch,
         inventoryPanelStyle,
-        isAdmin,
         movementSourceLoadError,
         movementSourceLoading,
         operationDraftItem,
