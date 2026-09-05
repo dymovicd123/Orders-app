@@ -104,53 +104,133 @@ export async function enrichWorkshopTaskRowsFromOrderItems(
       )
     : [];
 
-  const directItemRows = directItemIds.length
-    ? await bindInChunks<Record<string, unknown>>(
-        db,
-        `SELECT
-           oi.id,
-           oi.order_id,
-           oi.product_id,
-           COALESCE(oi.variant_id, cv_fallback.id) AS resolved_variant_id,
-           oi.product_name_snapshot,
-           COALESCE(NULLIF(oi.gender_snapshot, ''), NULLIF(cv_direct.gender, ''), NULLIF(cv_fallback.gender, '')) AS resolved_gender,
-           COALESCE(NULLIF(oi.color_snapshot, ''), NULLIF(cv_direct.color, ''), NULLIF(cv_fallback.color, '')) AS resolved_color,
-           COALESCE(NULLIF(oi.material_snapshot, ''), NULLIF(cv_direct.material, ''), NULLIF(cv_fallback.material, '')) AS resolved_material,
-           COALESCE(NULLIF(oi.length_snapshot, ''), NULLIF(cv_direct.length, ''), NULLIF(cv_fallback.length, '')) AS resolved_length,
-           COALESCE(NULLIF(oi.size_snapshot, ''), NULLIF(cv_direct.size_label, ''), NULLIF(cv_fallback.size_label, '')) AS resolved_size,
-           CASE
-             WHEN LOWER(COALESCE(NULLIF(oi.audience_type, ''), NULLIF(cv_direct.category, ''), NULLIF(cv_fallback.category, ''))) = 'child'
-               OR UPPER(COALESCE(NULLIF(oi.audience_type, ''), '')) LIKE '%ДЕТ%'
-             THEN 'ДЕТСКИЙ'
-             ELSE 'ВЗРОСЛЫЙ'
-           END AS resolved_audience_type,
-           oi.quantity,
-           oi.is_workshop,
-           oi.source_type,
-           oi.stock_writeoff_status
-         FROM order_items oi
-         LEFT JOIN catalog_variants cv_direct ON cv_direct.id = oi.variant_id
-         LEFT JOIN catalog_variants cv_fallback ON cv_fallback.id = (
-           SELECT cv2.id
-           FROM catalog_variants cv2
-           WHERE oi.variant_id IS NULL
-             AND cv2.product_id = oi.product_id
-             AND (
-               NULLIF(TRIM(COALESCE(oi.color_snapshot, '')), '') IS NULL
-               OR UPPER(TRIM(COALESCE(cv2.color, ''))) = UPPER(TRIM(COALESCE(oi.color_snapshot, '')))
-             )
-             AND (
-               NULLIF(TRIM(COALESCE(oi.size_snapshot, '')), '') IS NULL
-               OR UPPER(TRIM(COALESCE(cv2.size_label, ''))) = UPPER(TRIM(COALESCE(oi.size_snapshot, '')))
-             )
-           ORDER BY cv2.is_active DESC, cv2.sort_order ASC, cv2.id ASC
-           LIMIT 1
-         )
-         WHERE oi.id IN (`,
-        directItemIds,
-        ') AND COALESCE(oi.quantity, 0) > 0',
-      )
-    : [];
+  // R5.10: only large read-side enrichments use the set resolver. Small status/relink
+  // operations deliberately retain the exact legacy correlated query below.
+  let directItemRows: Record<string, unknown>[] = [];
+  if (directItemIds.length >= 20) {
+    const rawRows = await bindInChunks<Record<string, unknown>>(
+      db,
+      `SELECT
+         oi.id, oi.order_id, oi.product_id, oi.variant_id,
+         oi.product_name_snapshot, oi.audience_type, oi.gender_snapshot, oi.color_snapshot,
+         oi.material_snapshot, oi.length_snapshot, oi.size_snapshot,
+         oi.quantity, oi.is_workshop, oi.source_type, oi.stock_writeoff_status,
+         cv_direct.category AS direct_category, cv_direct.gender AS direct_gender,
+         cv_direct.color AS direct_color, cv_direct.material AS direct_material,
+         cv_direct.length AS direct_length, cv_direct.size_label AS direct_size
+       FROM order_items oi
+       LEFT JOIN catalog_variants cv_direct ON cv_direct.id = oi.variant_id
+       WHERE oi.id IN (`,
+      directItemIds,
+      ') AND COALESCE(oi.quantity, 0) > 0',
+    );
+    const missingProductIds = Array.from(new Set(
+      rawRows
+        .filter(row => row.variant_id === null || row.variant_id === undefined)
+        .map(row => toInt(row.product_id, 0))
+        .filter(Boolean),
+    ));
+    const fallbackVariants = missingProductIds.length
+      ? await bindInChunks<Record<string, unknown>>(
+          db,
+          `SELECT id, product_id, category, gender, color, material, length, size_label, is_active, sort_order
+           FROM catalog_variants
+           WHERE product_id IN (`,
+          missingProductIds,
+          ') ORDER BY product_id ASC, is_active DESC, sort_order ASC, id ASC',
+        )
+      : [];
+    const variantsByProduct = new Map<number, Record<string, unknown>[]>();
+    for (const variant of fallbackVariants) {
+      const productId = toInt(variant.product_id, 0);
+      if (!variantsByProduct.has(productId)) variantsByProduct.set(productId, []);
+      variantsByProduct.get(productId)!.push(variant);
+    }
+    const trimSpaces = (value: unknown) => String(value ?? '').replace(/^ +| +$/g, '');
+    const asciiUpper = (value: unknown) => trimSpaces(value).replace(/[a-z]/g, char => char.toUpperCase());
+    const asciiLower = (value: unknown) => String(value ?? '').replace(/[A-Z]/g, char => char.toLowerCase());
+    const firstNonEmpty = (...values: unknown[]) => {
+      for (const value of values) {
+        if (value !== null && value !== undefined && String(value) !== '') return value;
+      }
+      return null;
+    };
+    directItemRows = rawRows.map(row => {
+      const variantIsNull = row.variant_id === null || row.variant_id === undefined;
+      const rawColor = trimSpaces(row.color_snapshot);
+      const rawSize = trimSpaces(row.size_snapshot);
+      const fallbackVariant = variantIsNull
+        ? (variantsByProduct.get(toInt(row.product_id, 0)) || []).find(variant =>
+            (!rawColor || asciiUpper(variant.color) === asciiUpper(row.color_snapshot))
+            && (!rawSize || asciiUpper(variant.size_label) === asciiUpper(row.size_snapshot)))
+        : undefined;
+      const category = firstNonEmpty(row.audience_type, row.direct_category, fallbackVariant?.category);
+      const child = asciiLower(category) === 'child' || asciiUpper(row.audience_type).includes('ДЕТ');
+      return {
+        id: row.id,
+        order_id: row.order_id,
+        product_id: row.product_id,
+        resolved_variant_id: variantIsNull ? (fallbackVariant?.id ?? null) : row.variant_id,
+        product_name_snapshot: row.product_name_snapshot,
+        resolved_gender: firstNonEmpty(row.gender_snapshot, row.direct_gender, fallbackVariant?.gender),
+        resolved_color: firstNonEmpty(row.color_snapshot, row.direct_color, fallbackVariant?.color),
+        resolved_material: firstNonEmpty(row.material_snapshot, row.direct_material, fallbackVariant?.material),
+        resolved_length: firstNonEmpty(row.length_snapshot, row.direct_length, fallbackVariant?.length),
+        resolved_size: firstNonEmpty(row.size_snapshot, row.direct_size, fallbackVariant?.size_label),
+        resolved_audience_type: child ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',
+        quantity: row.quantity,
+        is_workshop: row.is_workshop,
+        source_type: row.source_type,
+        stock_writeoff_status: row.stock_writeoff_status,
+      };
+    });
+  } else if (directItemIds.length) {
+    directItemRows = await bindInChunks<Record<string, unknown>>(
+      db,
+      `SELECT
+         oi.id,
+         oi.order_id,
+         oi.product_id,
+         COALESCE(oi.variant_id, cv_fallback.id) AS resolved_variant_id,
+         oi.product_name_snapshot,
+         COALESCE(NULLIF(oi.gender_snapshot, ''), NULLIF(cv_direct.gender, ''), NULLIF(cv_fallback.gender, '')) AS resolved_gender,
+         COALESCE(NULLIF(oi.color_snapshot, ''), NULLIF(cv_direct.color, ''), NULLIF(cv_fallback.color, '')) AS resolved_color,
+         COALESCE(NULLIF(oi.material_snapshot, ''), NULLIF(cv_direct.material, ''), NULLIF(cv_fallback.material, '')) AS resolved_material,
+         COALESCE(NULLIF(oi.length_snapshot, ''), NULLIF(cv_direct.length, ''), NULLIF(cv_fallback.length, '')) AS resolved_length,
+         COALESCE(NULLIF(oi.size_snapshot, ''), NULLIF(cv_direct.size_label, ''), NULLIF(cv_fallback.size_label, '')) AS resolved_size,
+         CASE
+           WHEN LOWER(COALESCE(NULLIF(oi.audience_type, ''), NULLIF(cv_direct.category, ''), NULLIF(cv_fallback.category, ''))) = 'child'
+             OR UPPER(COALESCE(NULLIF(oi.audience_type, ''), '')) LIKE '%ДЕТ%'
+           THEN 'ДЕТСКИЙ'
+           ELSE 'ВЗРОСЛЫЙ'
+         END AS resolved_audience_type,
+         oi.quantity,
+         oi.is_workshop,
+         oi.source_type,
+         oi.stock_writeoff_status
+       FROM order_items oi
+       LEFT JOIN catalog_variants cv_direct ON cv_direct.id = oi.variant_id
+       LEFT JOIN catalog_variants cv_fallback ON cv_fallback.id = (
+         SELECT cv2.id
+         FROM catalog_variants cv2
+         WHERE oi.variant_id IS NULL
+           AND cv2.product_id = oi.product_id
+           AND (
+             NULLIF(TRIM(COALESCE(oi.color_snapshot, '')), '') IS NULL
+             OR UPPER(TRIM(COALESCE(cv2.color, ''))) = UPPER(TRIM(COALESCE(oi.color_snapshot, '')))
+           )
+           AND (
+             NULLIF(TRIM(COALESCE(oi.size_snapshot, '')), '') IS NULL
+             OR UPPER(TRIM(COALESCE(cv2.size_label, ''))) = UPPER(TRIM(COALESCE(oi.size_snapshot, '')))
+           )
+         ORDER BY cv2.is_active DESC, cv2.sort_order ASC, cv2.id ASC
+         LIMIT 1
+       )
+       WHERE oi.id IN (`,
+      directItemIds,
+      ') AND COALESCE(oi.quantity, 0) > 0',
+    );
+  }
 
   const directLinkCountByKey = new Map(
     directLinkRows.map(row => [`${toInt(row.order_id, 0)}:${toInt(row.order_item_id, 0)}`, toInt(row.link_count, 0)]),
