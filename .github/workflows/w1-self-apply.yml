@@ -26,6 +26,8 @@ jobs:
           python scripts/fix-w1-generated-test.py
       - name: Install dependencies
         run: npm ci
+      - name: Measure exact renderer hash
+        run: node scripts/measure-w1-panel-hash.mjs
       - name: Validate W1
         run: |
           node scripts/test-w1-warehouse-reliability.mjs
