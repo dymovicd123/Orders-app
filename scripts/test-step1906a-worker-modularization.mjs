@@ -32,6 +32,7 @@ const d1ReadBudgetR56Path = path.join(root, 'scripts/d1-read-budget-r5-6-worker-
 const d1ReadBudgetR57Path = path.join(root, 'scripts/d1-read-budget-r5-7-worker-manifest.json')
 const d1ReadBudgetR58Path = path.join(root, 'scripts/d1-read-budget-r5-8-worker-manifest.json')
 const d1ReadBudgetR59Path = path.join(root, 'scripts/d1-read-budget-r5-9-worker-manifest.json')
+const d1ReadBudgetR510Path = path.join(root, 'scripts/d1-read-budget-r5-10-worker-manifest.json')
 const runtimeSqlSyntaxR1Path = path.join(root, 'scripts/runtime-sql-syntax-r1-worker-manifest.json')
 const operationalAutonomyR2WorkerPath = path.join(root, 'scripts/operational-autonomy-r2-worker-manifest.json')
 const phase1bWorkshopReturnDispositionPath = path.join(root, 'scripts/phase1b-workshop-return-disposition-worker-manifest.json')
@@ -175,6 +176,10 @@ try {
   const d1ReadBudgetR59 = JSON.parse(fs.readFileSync(d1ReadBudgetR59Path, 'utf8'))
   check(d1ReadBudgetR59?.version === 1 && d1ReadBudgetR59?.revision === 'd1-read-budget-r5-9', 'D1 read-budget R5.9 Worker manifest invalid')
   const d1ReadBudgetR59Changes = d1ReadBudgetR59.changes || {}
+  check(fs.existsSync(d1ReadBudgetR510Path), 'D1 read-budget R5.10 Worker manifest missing')
+  const d1ReadBudgetR510 = JSON.parse(fs.readFileSync(d1ReadBudgetR510Path, 'utf8'))
+  check(d1ReadBudgetR510?.version === 1 && d1ReadBudgetR510?.revision === 'd1-read-budget-r5-10', 'D1 read-budget R5.10 Worker manifest invalid')
+  const d1ReadBudgetR510Changes = d1ReadBudgetR510.changes || {}
   check(fs.existsSync(runtimeSqlSyntaxR1Path), 'Runtime SQL syntax R1 Worker manifest missing')
   const runtimeSqlSyntaxR1 = JSON.parse(fs.readFileSync(runtimeSqlSyntaxR1Path, 'utf8'))
   check(runtimeSqlSyntaxR1?.version === 1 && runtimeSqlSyntaxR1?.revision === 'runtime-sql-syntax-r1', 'Runtime SQL syntax R1 Worker manifest invalid')
@@ -506,11 +511,17 @@ try {
       acceptedPostD1ReadBudgetR58Hash = d1ReadBudgetR58Changed.after
     }
     const d1ReadBudgetR59Changed = d1ReadBudgetR59Changes[name]
+    let acceptedPostD1ReadBudgetR59Hash = acceptedPostD1ReadBudgetR58Hash
     if (d1ReadBudgetR59Changed) {
       check(d1ReadBudgetR59Changed.before === acceptedPostD1ReadBudgetR58Hash, `D1 read-budget R5.9 baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === d1ReadBudgetR59Changed.after, `Worker declaration changed beyond exact D1 read-budget R5.9 allow-list: ${name}`)
+      acceptedPostD1ReadBudgetR59Hash = d1ReadBudgetR59Changed.after
+    }
+    const d1ReadBudgetR510Changed = d1ReadBudgetR510Changes[name]
+    if (d1ReadBudgetR510Changed) {
+      check(d1ReadBudgetR510Changed.before === acceptedPostD1ReadBudgetR59Hash, `D1 read-budget R5.10 baseline hash mismatch: ${name}`)
+      check(sha(declarations.get(name)) === d1ReadBudgetR510Changed.after, `Worker declaration changed beyond exact D1 read-budget R5.10 allow-list: ${name}`)
     } else {
-      check(sha(declarations.get(name)) === acceptedPostD1ReadBudgetR58Hash, `Worker declaration body changed beyond accepted cumulative deltas: ${name}`)
+      check(sha(declarations.get(name)) === acceptedPostD1ReadBudgetR59Hash, `Worker declaration body changed beyond accepted cumulative deltas: ${name}`)
     }
   }
 
