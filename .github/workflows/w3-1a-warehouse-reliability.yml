@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch-validate-commit:
-    if: "${{ github.event.head_commit.message == 'chore: rerun W3.1A preservation' }}"
+    if: "${{ github.event.head_commit.message == 'chore: validate W3.1A final' }}"
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
