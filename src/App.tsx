@@ -1260,8 +1260,8 @@ function App() {
 
   useEffect(() => {
     if (!authReady) return
-    if (activeSector === 'inventory' || warehouseAttention === null) void loadWarehouseAttention()
     if (activeSector === 'inventory') {
+      void loadWarehouseAttention()
       // Весь склад живёт в одном разделе. Журнал движений по-прежнему не грузится без явного открытия истории.
       void loadInventoryData('warehouse')
       void loadInventoryData('boutique')
@@ -6479,9 +6479,6 @@ function removeDebtPayment(index: number) {
             >
               <span className="erp-nav-icon">{module.icon}</span>
               <span>{module.label}</span>
-              {module.id === 'inventory' && Number(warehouseAttention?.total || 0) > 0 ? (
-                <span className="warehouse-attention-nav-badge" aria-label={`Требует внимания: ${warehouseAttention?.total || 0}`}>{warehouseAttention?.total}</span>
-              ) : null}
             </a>
           ))}
         </nav>

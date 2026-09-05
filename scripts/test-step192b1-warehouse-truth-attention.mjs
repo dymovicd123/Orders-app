@@ -83,18 +83,18 @@ try {
   const contracts = read('shared/api-contracts.ts')
   check(contracts.includes('WarehouseAttentionSummaryResponse'), 'Warehouse attention API contract missing')
   const app = read('src/App.tsx')
+  const inventory = read('src/features/sections/InventorySection.tsx')
   check(app.includes('/api/inventory/attention'), 'Frontend does not load warehouse attention')
   check(app.includes('void loadWarehouseAttention()') && app.includes('function invalidateInventoryStockCaches'), 'Warehouse attention must refresh after stock/reservation cache invalidation')
-  check(app.includes("activeSector === 'inventory' || warehouseAttention === null"), 'Warehouse attention should not re-query on every unrelated order-panel change')
-  check(app.includes("module.id === 'inventory'") && app.includes('warehouse-attention-nav-badge'), 'Warehouse sidebar attention badge missing')
+  check(app.includes("if (activeSector === 'inventory') {") && !app.includes("activeSector === 'inventory' || warehouseAttention === null"), 'Warehouse Attention must stay lazy and must not read D1 just to decorate unrelated screens')
+  check(inventory.includes('warehouse-w2-recovery') && inventory.includes('Нужно уточнить'), 'Derived Attention recovery inbox is no longer reachable from Warehouse')
   const css = read('src/styles/192b1-warehouse-attention.css')
-  check(css.includes('.warehouse-attention-nav-badge'), 'Warehouse attention badge CSS missing')
   check(!/Step 192B1|D1|migration|variant_id|forensic|canonical/i.test(css), 'Developer terminology leaked into visible 192B1 CSS content')
 
   const release = read('scripts/release-check.mjs')
   check(release.includes('test-step192b1-warehouse-truth-attention.mjs'), '192B1 test is not chained into cumulative release gate')
 
-  console.log('STEP 192B1 WAREHOUSE TRUTH GATES / ATTENTION TESTS PASSED — stable handover lineage, one canonical resolver, manual+auto inbound freshness gate, derived read-only attention badge')
+  console.log('STEP 192B1 WAREHOUSE TRUTH GATES / ATTENTION TESTS PASSED — stable handover lineage, one canonical resolver, manual+auto inbound freshness gate, derived read-only recovery inbox')
 } catch (error) {
   console.error(`STEP 192B1 WAREHOUSE TRUTH GATES / ATTENTION TESTS FAILED: ${error?.message || error}`)
   process.exit(1)

@@ -19,7 +19,7 @@ try {
   check(operational.includes("const inventoryManagerPanels: InventoryPanel[] = ['overview', 'attention', 'movement', 'stocktake', 'history']"), 'Manager visibility allow-list does not include routine Warehouse panels')
   check(operational.includes("const inventoryAdminPanels: InventoryPanel[] = ['overview', 'attention', 'stocktake', 'movement', 'catalog', 'history', 'settings', 'warehouse', 'boutique', 'exact']"), 'Admin visibility allow-list still hides Attention')
   check(operational.includes("&& inventoryPanel === panel ? undefined : 'none'"), 'Inventory panel visibility function changed unexpectedly')
-  check(inventory.includes("value: 'attention' as const"), 'Attention tab missing from Warehouse navigation')
+  check(inventory.includes('warehouse-w2-recovery') && inventory.includes("openInventoryPanel('attention')") && inventory.includes('Нужно уточнить'), 'Attention recovery inbox missing from Warehouse navigation')
   check(inventory.includes('renderInventoryAttentionPanel({'), 'Attention renderer is not mounted')
   check(attentionPanel.includes("style={inventoryPanelStyle('attention')}"), 'Attention renderer no longer uses the common panel visibility guard')
 
@@ -31,7 +31,7 @@ try {
   check(inventory.includes('<div className="inventory-arrival-legacy-workspace">'), 'Frozen Arrival workspace disappeared')
   check(release.includes('test-step192b2a1-attention-visibility.mjs'), '192B2A1 visibility test is not chained into cumulative release gate')
 
-  console.log('STEP 192B2A1 ATTENTION VISIBILITY TESTS PASSED — Attention is reachable and visible for manager/admin panel allow-lists; frontend-only hotfix, Arrival unchanged')
+  console.log('STEP 192B2A1 ATTENTION VISIBILITY TESTS PASSED — Attention remains reachable through the W2 recovery inbox for manager/admin panel allow-lists; frontend-only hotfix, Arrival unchanged')
 } catch (error) {
   console.error(`STEP 192B2A1 ATTENTION VISIBILITY TESTS FAILED: ${error?.message || error}`)
   process.exit(1)

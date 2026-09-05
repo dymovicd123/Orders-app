@@ -69,31 +69,31 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
     { value: 'count', label: 'Количество' },
     { value: 'handover', label: 'Выдача' },
     { value: 'intake', label: 'Приёмка' },
-    { value: 'identify', label: 'Определить товар' },
-    { value: 'revision', label: 'Ревизия' },
+    { value: 'identify', label: 'Товар' },
+    { value: 'revision', label: 'Проверка' },
   ]
 
   return (
     <div className="inventory-attention-panel" style={inventoryPanelStyle('attention')}>
       <div className="inventory-attention-head">
         <div>
-          <h3>Внимание</h3>
-          <p>Каждый раздел — отдельный тип вопроса. Откройте нужный и выполните одно понятное действие.</p>
+          <h3>Нужно уточнить</h3>
+          <p>Сюда попадает только то, что система не должна решать за сотрудника. Выберите тип вопроса и закончите его.</p>
         </div>
         <button className="secondary compact" type="button" onClick={refreshWarehouseAttention} disabled={attentionLoading}>{attentionLoading ? 'Обновляю…' : 'Обновить'}</button>
       </div>
 
       {attentionError ? <div className="inventory-attention-error">{attentionError}</div> : null}
       {!warehouseAttention && attentionLoading ? <div className="empty-state">Загружаю складские вопросы…</div> : null}
-      {warehouseAttention && total === 0 ? <div className="inventory-attention-clear"><strong>Срочных вопросов нет</strong><span>Можно продолжать обычную работу.</span></div> : null}
+      {warehouseAttention && total === 0 ? <div className="inventory-attention-clear"><strong>Уточнять ничего не нужно</strong><span>Можно продолжать обычную работу.</span></div> : null}
 
       {warehouseAttention && total > 0 ? (
         <>
           <div className="inventory-attention-summary">
-            <strong>Требует внимания: {total}</strong>
-            <span>Разные причины больше не смешаны в один длинный список.</span>
+            <strong>Нужно уточнить: {total}</strong>
+            <span>Вопросы разделены по причине — один список не смешивает разные действия.</span>
           </div>
-          <div className="inventory-attention-tabs" role="tablist" aria-label="Тип складского вопроса">
+          <div className="inventory-attention-tabs" role="tablist" aria-label="Что нужно уточнить">
             {tabs.map((tab) => (
               <button
                 key={tab.value}
@@ -168,13 +168,13 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
             {(items.lifecycle || []).map((item: any) => (
               <article key={`attention-lifecycle-${item.id}`}>
                 <div className="inventory-attention-main"><strong>{item.productName || 'Неизвестный товар'}</strong><span>{detailLine(item) || 'Характеристики не определены'} · {sourceLabel(item.source)}</span><small>{item.externalId ? `Заказ ${item.externalId} · от ${formatDateShort(item.orderDate)}` : ''}</small></div>
-                {isAdmin ? <button className="secondary compact" type="button" onClick={() => void openAttentionLifecycle(item)}>Разобрать</button> : <span className="inventory-attention-admin-note">Нужен администратор</span>}
+                {isAdmin ? <button className="secondary compact" type="button" onClick={() => void openAttentionLifecycle(item)}>Разобрать</button> : <span className="inventory-attention-admin-note">Требуется администратор</span>}
               </article>
             ))}
             {(items.catalog || []).map((item: any) => (
               <article key={`attention-catalog-${item.orderItemId}`}>
                 <div className="inventory-attention-main"><strong>{item.productName || 'Неизвестный товар'}</strong><span>{detailLine(item) || 'Характеристики не определены'}</span><small>{item.externalId ? `Заказ ${item.externalId} · от ${formatDateShort(item.orderDate)}` : ''}{item.affectedCount > 1 ? ` · похожих позиций: ${item.affectedCount}` : ''}</small></div>
-                {isAdmin ? <button className="secondary compact" type="button" onClick={() => void openAttentionCatalog(item)}>Разобрать</button> : <span className="inventory-attention-admin-note">Нужен администратор</span>}
+                {isAdmin ? <button className="secondary compact" type="button" onClick={() => void openAttentionCatalog(item)}>Разобрать</button> : <span className="inventory-attention-admin-note">Требуется администратор</span>}
               </article>
             ))}
           </div> : <div className="empty-state">Неопределённых товаров сейчас нет.</div>}
@@ -188,7 +188,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
             {items.stocktakes.map((item: any) => (
               <article key={`attention-stocktake-${item.id}`}>
                 <div className="inventory-attention-main"><strong>{sourceLabel(item.source)}</strong><span>Посчитано {item.countedItems} из {item.totalItems}{item.recountItems ? ` · повторно проверить: ${item.recountItems}` : ''}</span><small>Начата {formatDateShort(item.startedAt)}</small></div>
-                <button className="secondary compact" type="button" onClick={() => openAttentionStocktake(item)}>Продолжить</button>
+                <button className="secondary compact" type="button" onClick={() => openAttentionStocktake(item)}>Продолжить проверку</button>
               </article>
             ))}
           </div> : <div className="empty-state">Незавершённых ревизий сейчас нет.</div>}

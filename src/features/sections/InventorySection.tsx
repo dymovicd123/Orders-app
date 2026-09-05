@@ -810,15 +810,14 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   useEffect(() => {
-    if (inventoryPanel === 'overview' && activeSector === 'inventory') {
+    if (inventoryPanel === 'overview' && cycleCountData && cycleCountData.source !== simpleStockSource) {
+      setCycleCountData(null)
       setCycleCountValues({})
-      void refreshCycleCountSuggestions(simpleStockSource, false, 5)
-      return
     }
     if (inventoryPanel !== 'stocktake' || !isAdmin || stocktakeSession) return
     setCycleCountValues({})
     void refreshCycleCountSuggestions(stocktakeSource)
-  }, [inventoryPanel, activeSector, isAdmin, simpleStockSource, stocktakeSource, stocktakeSession?.id])
+  }, [inventoryPanel, activeSector, isAdmin, simpleStockSource, stocktakeSource, stocktakeSession?.id, cycleCountData?.source])
 
   useEffect(() => {
     if (!stocktakeSession || !currentStocktakeGroup || stocktakeFoundOtherProduct) return
@@ -2094,21 +2093,25 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                 </div>
               </div>
 
-              <div className={`inventory-module-tabs inventory-module-tabs-v177 inventory-primary-only-tabs inventory-tabs-step187 ${isAdmin ? 'is-admin' : 'is-manager'}`} data-step187-inventory-nav="single-row">
-                {[
-                  { value: 'overview' as const, label: 'Остатки', hint: 'Просмотр текущих остатков' },
-                  { value: 'attention' as const, label: `Внимание${Number(warehouseAttention?.total || 0) ? ` · ${warehouseAttention?.total}` : ''}`, hint: 'То, что сейчас требует конкретного действия' },
-                  { value: 'movement' as const, label: 'Движение товара', hint: 'Приход, списание, перемещение и корректировка' },
-                  { value: 'stocktake' as const, label: 'Ревизия', hint: 'Пересчёт того, что реально находится на месте' },
-                  ...(isAdmin ? [
-                    { value: 'catalog' as const, label: 'Товары', hint: 'Какие товары и варианты существуют' },
-                  ] : []),
-                  { value: 'history' as const, label: 'История', hint: 'Хронология изменений склада и бутика' },
-                ].map((entry) => (
-                  <button key={entry.value} type="button" className={inventoryPanel === entry.value ? 'is-active' : ''} onClick={() => openInventoryPanel(entry.value)} title={entry.hint}>
-                    <strong>{entry.label}</strong>
+              <div className="warehouse-w2-navigation" data-w2-human-warehouse="task-navigation">
+                <div className="warehouse-w2-primary" aria-label="Основные действия склада">
+                  {[
+                    { value: 'overview' as const, label: 'Остатки', hint: 'Что сейчас есть на складе и в бутике' },
+                    { value: 'movement' as const, label: 'Операции', hint: 'Приход, списание, перемещение и точечная корректировка' },
+                    { value: 'stocktake' as const, label: 'Проверка', hint: 'Физически пересчитать товар' },
+                    { value: 'history' as const, label: 'История', hint: 'Что менялось на складе и в бутике' },
+                  ].map((entry) => (
+                    <button key={entry.value} type="button" className={inventoryPanel === entry.value ? 'is-active' : ''} onClick={() => openInventoryPanel(entry.value)} title={entry.hint}>
+                      <strong>{entry.label}</strong>
+                    </button>
+                  ))}
+                </div>
+                <div className="warehouse-w2-secondary">
+                  <button type="button" className={`warehouse-w2-recovery ${inventoryPanel === 'attention' ? 'is-active' : ''}`} onClick={() => openInventoryPanel('attention')} title="Вопросы, которые нельзя безопасно решить автоматически">
+                    <span>Нужно уточнить</span>{Number(warehouseAttention?.total || 0) > 0 ? <b>{warehouseAttention?.total}</b> : null}
                   </button>
-                ))}
+                  {isAdmin ? <button type="button" className={inventoryPanel === 'catalog' ? 'is-active' : ''} onClick={() => openInventoryPanel('catalog')} title="Товары и характеристики">Товары</button> : null}
+                </div>
               </div>
 
               {renderInventoryAttentionPanel({

@@ -84,7 +84,7 @@ try {
   check(!/\b(?:INSERT\s+INTO|UPDATE\s+[A-Za-z_]|DELETE\s+FROM|REPLACE\s+INTO)\b/i.test(attention), 'Attention resolver must stay read-only')
   for (const marker of ['shortages', 'intake', 'lifecycle', 'catalog', 'handover', 'stocktakes']) check(contracts.includes(marker) || attention.includes(marker), `Attention detail category missing: ${marker}`)
 
-  check(inventory.includes("label: `Внимание${Number(warehouseAttention?.total || 0)"), 'Warehouse Attention tab/count missing')
+  check(inventory.includes('warehouse-w2-recovery') && inventory.includes('Нужно уточнить') && inventory.includes('warehouseAttention?.total'), 'Warehouse recovery inbox/count missing')
   check(inventory.includes('renderInventoryAttentionPanel'), 'Actionable Attention panel is not mounted')
   check(inventory.includes('useInventoryAttentionActions'), 'B2A daily actions were not kept out of the Inventory controller monolith')
   check(attentionHook.includes('quickInventoryStocktake({') && attentionHook.includes('expectedQuantity: simpleStockDetail.physical'), 'Attention/overview count does not use expected physical CAS')

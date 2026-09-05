@@ -198,8 +198,8 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     <div className="inventory-stocktake-panel stocktake-human-panel stocktake-session-v188e" data-step188e-stocktake="server-session" style={inventoryPanelStyle('stocktake')}>
                     <div className="stocktake-e-head">
                       <div>
-                        <h3>Ревизия</h3>
-                        <p>Считайте то, что реально находится в выбранной точке. Ревизия сохраняется в системе — её можно закрыть и продолжить позже. Печатный лист остаётся дополнительным способом пересчёта.</p>
+                        <h3>Проверка</h3>
+                        <p>Пересчитайте то, что реально находится в выбранной точке. Начатую проверку можно закрыть и продолжить позже.</p>
                       </div>
                     </div>
     
@@ -207,14 +207,14 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                       <>
                         <section className="stocktake-e-start stocktake-e-start-v5">
                           <div className="stocktake-start-intro">
-                            <span className="stocktake-step-kicker">{stocktakeActiveForSelectedSource ? 'Ревизия уже идёт' : 'Новая ревизия'}</span>
+                            <span className="stocktake-step-kicker">{stocktakeActiveForSelectedSource ? 'Проверка уже идёт' : 'Новая проверка'}</span>
                             <h4>{stocktakeActiveForSelectedSource ? `Продолжить пересчёт · ${stocktakeSourceTitle(stocktakeSource)}` : 'Выберите точку и масштаб пересчёта'}</h4>
-                            <p>{stocktakeActiveForSelectedSource ? 'Новая ревизия этой точки недоступна, пока текущая не завершена или не отменена.' : 'Для обычной проверки достаточно выборочной ревизии. Полную используйте, когда действительно нужно пересчитать всю точку.'}</p>
+                            <p>{stocktakeActiveForSelectedSource ? 'Новая проверка этой точки недоступна, пока текущая не завершена или не отменена.' : 'Для нескольких товаров выберите выборочную проверку. Полную используйте, только когда нужно пересчитать всю точку.'}</p>
                           </div>
     
-                          <div className="stocktake-source-switch stocktake-source-switch-v5" role="tablist" aria-label="Точка ревизии">
-                            <button type="button" role="tab" aria-selected={stocktakeSource === 'warehouse'} className={stocktakeSource === 'warehouse' ? 'is-active' : ''} onClick={() => { setStocktakeSource('warehouse'); setStocktakeSelectedProductIds([]); setCycleCountData(null); setCycleCountValues({}); setCycleCountOpen(false); setCycleCountNotice('') }}>Склад <small>{stocktakeSourceStats.warehouse}</small>{stocktakeActiveSessions.some((entry: any) => entry.source === 'warehouse') ? <i title="Есть незавершённая ревизия">●</i> : null}</button>
-                            <button type="button" role="tab" aria-selected={stocktakeSource === 'boutique'} className={stocktakeSource === 'boutique' ? 'is-active' : ''} onClick={() => { setStocktakeSource('boutique'); setStocktakeSelectedProductIds([]); setCycleCountData(null); setCycleCountValues({}); setCycleCountOpen(false); setCycleCountNotice('') }}>Бутик <small>{stocktakeSourceStats.boutique}</small>{stocktakeActiveSessions.some((entry: any) => entry.source === 'boutique') ? <i title="Есть незавершённая ревизия">●</i> : null}</button>
+                          <div className="stocktake-source-switch stocktake-source-switch-v5" role="tablist" aria-label="Точка проверки">
+                            <button type="button" role="tab" aria-selected={stocktakeSource === 'warehouse'} className={stocktakeSource === 'warehouse' ? 'is-active' : ''} onClick={() => { setStocktakeSource('warehouse'); setStocktakeSelectedProductIds([]); setCycleCountData(null); setCycleCountValues({}); setCycleCountOpen(false); setCycleCountNotice('') }}>Склад <small>{stocktakeSourceStats.warehouse}</small>{stocktakeActiveSessions.some((entry: any) => entry.source === 'warehouse') ? <i title="Есть незавершённая проверка">●</i> : null}</button>
+                            <button type="button" role="tab" aria-selected={stocktakeSource === 'boutique'} className={stocktakeSource === 'boutique' ? 'is-active' : ''} onClick={() => { setStocktakeSource('boutique'); setStocktakeSelectedProductIds([]); setCycleCountData(null); setCycleCountValues({}); setCycleCountOpen(false); setCycleCountNotice('') }}>Бутик <small>{stocktakeSourceStats.boutique}</small>{stocktakeActiveSessions.some((entry: any) => entry.source === 'boutique') ? <i title="Есть незавершённая проверка">●</i> : null}</button>
                           </div>
     
                           {stocktakeActiveForSelectedSource ? (
@@ -224,7 +224,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                                 <div className="stocktake-resume-progress-bar"><i style={{ width: `${stocktakeActiveForSelectedSource.totalItems ? Math.round((Number(stocktakeActiveForSelectedSource.countedCount || 0) / Number(stocktakeActiveForSelectedSource.totalItems || 1)) * 100) : 0}%` }} /></div>
                                 {stocktakeActiveForSelectedSource.recountCount ? <span className="stocktake-resume-attention">Нужно повторно пересчитать: {stocktakeActiveForSelectedSource.recountCount}</span> : null}
                               </div>
-                              <button className="primary" type="button" disabled={stocktakeBusy} onClick={() => void resumeStocktake(stocktakeActiveForSelectedSource)}>{stocktakeBusy ? 'Открываю…' : 'Продолжить ревизию'}</button>
+                              <button className="primary" type="button" disabled={stocktakeBusy} onClick={() => void resumeStocktake(stocktakeActiveForSelectedSource)}>{stocktakeBusy ? 'Открываю…' : 'Продолжить проверку'}</button>
                             </div>
                           ) : (
                             <>
@@ -285,8 +285,8 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                               )}
     
                               <div className="stocktake-start-submit">
-                                <div>{stocktakeStartMode === 'selective' ? (stocktakeSelectedProductIds.length ? `${stocktakeSelectedProductIds.length} товаров · ${selectedStocktakePositionCount} позиций` : 'Выберите хотя бы один товар') : `Полная ревизия · ${stocktakeSourceStats[stocktakeSource]} позиций`}</div>
-                                <button className="primary stocktake-e-start-button" type="button" disabled={stocktakeBusy || (stocktakeStartMode === 'selective' && !stocktakeSelectedProductIds.length)} onClick={() => void startStocktake()}>{stocktakeBusy ? 'Подготавливаю…' : 'Начать ревизию'}</button>
+                                <div>{stocktakeStartMode === 'selective' ? (stocktakeSelectedProductIds.length ? `${stocktakeSelectedProductIds.length} товаров · ${selectedStocktakePositionCount} позиций` : 'Выберите хотя бы один товар') : `Полная проверка · ${stocktakeSourceStats[stocktakeSource]} позиций`}</div>
+                                <button className="primary stocktake-e-start-button" type="button" disabled={stocktakeBusy || (stocktakeStartMode === 'selective' && !stocktakeSelectedProductIds.length)} onClick={() => void startStocktake()}>{stocktakeBusy ? 'Подготавливаю…' : 'Начать проверку'}</button>
                               </div>
                             </>
                           )}
@@ -297,8 +297,8 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                       <>
                         <section className="stocktake-e-active-head">
                           <div>
-                            <span className="stocktake-step-kicker">Ревизия в процессе</span>
-                            <h4>{stocktakeSession.scope === 'selective' ? 'Выборочная ревизия' : 'Полная ревизия'} · {stocktakeSourceTitle(stocktakeSession.source)}</h4>
+                            <span className="stocktake-step-kicker">Проверка в процессе</span>
+                            <h4>{stocktakeSession.scope === 'selective' ? 'Выборочная проверка' : 'Полная проверка'} · {stocktakeSourceTitle(stocktakeSession.source)}</h4>
                             <p>Начата {formatStocktakeMoment(stocktakeSession.startedAt)} · {stocktakeSession.id}</p>
                           </div>
                           <div className="stocktake-e-save-state">

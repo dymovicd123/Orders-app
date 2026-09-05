@@ -105,8 +105,8 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
     <div className="inventory-movement-panel inventory-operations-v182" style={inventoryPanelStyle('movement')} data-step182-operations="human-workflow">
                     <div className="inventory-panel-headline inventory-operations-headline">
                       <div>
-                        <h3>Движение товара</h3>
-                        <p>Выберите, что произошло с товаром в реальности. Система сама покажет, сколько можно переместить и повлияет ли действие на уже принятые заказы.</p>
+                        <h3>Операции</h3>
+                        <p>Сначала выберите действие. Дальше останутся только поля, которые нужны именно для него.</p>
                       </div>
                     </div>
     
@@ -134,7 +134,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                         <div>
                           <h3>{inventoryMovementText.title}</h3>
                           {inventoryDraft.movementType === 'manual_set' ? (
-                            <p className="mini-panel-note">Для массовой сверки используйте «Ревизию». Здесь удобно исправить несколько конкретных позиций.</p>
+                            <p className="mini-panel-note">Для большого пересчёта используйте «Проверку». Здесь удобно исправить несколько конкретных позиций.</p>
                           ) : null}
                         </div>
                         <div className="inventory-operation-counter">
