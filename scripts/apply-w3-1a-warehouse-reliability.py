@@ -38,6 +38,33 @@ replace_count(
     2,
 )
 
+# Extend the cumulative frontend preservation chain instead of rewriting historical W2 hashes.
+replace_once(
+    'scripts/test-step1906b-frontend-modularization.mjs',
+    "const w2HumanWarehousePath = path.join(root, 'scripts/w2-human-warehouse-frontend-manifest.json')\nconst fail = (message) => { throw new Error(message) }",
+    "const w2HumanWarehousePath = path.join(root, 'scripts/w2-human-warehouse-frontend-manifest.json')\nconst w3WarehouseReliabilityPath = path.join(root, 'scripts/w3-1a-warehouse-reliability-frontend-manifest.json')\nconst fail = (message) => { throw new Error(message) }",
+)
+replace_once(
+    'scripts/test-step1906b-frontend-modularization.mjs',
+    "  const w2HumanWarehouse = fs.existsSync(w2HumanWarehousePath) ? JSON.parse(fs.readFileSync(w2HumanWarehousePath, 'utf8')) : null\n  if (operationalAutonomyR2) check(operationalAutonomyR2.version === 1 && operationalAutonomyR2.revision === 'operational-autonomy-r2', 'Operational autonomy R2 frontend manifest invalid')",
+    "  const w2HumanWarehouse = fs.existsSync(w2HumanWarehousePath) ? JSON.parse(fs.readFileSync(w2HumanWarehousePath, 'utf8')) : null\n  const w3WarehouseReliability = fs.existsSync(w3WarehouseReliabilityPath) ? JSON.parse(fs.readFileSync(w3WarehouseReliabilityPath, 'utf8')) : null\n  if (operationalAutonomyR2) check(operationalAutonomyR2.version === 1 && operationalAutonomyR2.revision === 'operational-autonomy-r2', 'Operational autonomy R2 frontend manifest invalid')",
+)
+replace_once(
+    'scripts/test-step1906b-frontend-modularization.mjs',
+    "  if (w2HumanWarehouse) check(w2HumanWarehouse.version === 1 && w2HumanWarehouse.revision === 'w2-human-warehouse', 'W2 human Warehouse frontend manifest invalid')\n  check(manifest?.version === 1, '1906B preservation manifest invalid')",
+    "  if (w2HumanWarehouse) check(w2HumanWarehouse.version === 1 && w2HumanWarehouse.revision === 'w2-human-warehouse', 'W2 human Warehouse frontend manifest invalid')\n  if (w3WarehouseReliability) check(w3WarehouseReliability.version === 1 && w3WarehouseReliability.revision === 'w3-1a-warehouse-reliability', 'W3.1A Warehouse reliability frontend manifest invalid')\n  check(manifest?.version === 1, '1906B preservation manifest invalid')",
+)
+replace_once(
+    'scripts/test-step1906b-frontend-modularization.mjs',
+    """    const w2PanelChange = w2HumanWarehouse?.frontend?.panelReturnChanges?.[panel.func]\n    if (w2PanelChange) {\n      check(w2PanelChange.before === expectedPanelHash, `${panel.func}: W2 human Warehouse panel baseline hash mismatch`)\n      expectedPanelHash = w2PanelChange.after\n    }\n    check(sha(normalize(text)) === expectedPanelHash, `${panel.func}: rendered JSX changed outside accepted baseline/B2A/autonomy/W1/W2 delta`)""",
+    """    const w2PanelChange = w2HumanWarehouse?.frontend?.panelReturnChanges?.[panel.func]\n    if (w2PanelChange) {\n      check(w2PanelChange.before === expectedPanelHash, `${panel.func}: W2 human Warehouse panel baseline hash mismatch`)\n      expectedPanelHash = w2PanelChange.after\n    }\n    const w3PanelChange = w3WarehouseReliability?.frontend?.panelReturnChanges?.[panel.func]\n    if (w3PanelChange) {\n      check(w3PanelChange.before === expectedPanelHash, `${panel.func}: W3.1A Warehouse reliability panel baseline hash mismatch`)\n      expectedPanelHash = w3PanelChange.after\n    }\n    check(sha(normalize(text)) === expectedPanelHash, `${panel.func}: rendered JSX changed outside accepted baseline/B2A/autonomy/W1/W2/W3.1A delta`)""",
+)
+replace_once(
+    'scripts/test-step1906b-frontend-modularization.mjs',
+    "${w2HumanWarehouse ? ', exact W2 human Warehouse frontend deltas accepted' : ''}`)",
+    "${w2HumanWarehouse ? ', exact W2 human Warehouse frontend deltas accepted' : ''}${w3WarehouseReliability ? ', exact W3.1A Warehouse reliability frontend delta accepted' : ''}`)",
+)
+
 package = Path('package.json')
 package_text = package.read_text(encoding='utf-8')
 old_tail = "node scripts/test-w2-human-warehouse.mjs && node scripts/test-w2-attention-refresh-r1.mjs\""
@@ -54,6 +81,9 @@ const app = read('src/App.tsx')
 const movement = read('src/features/inventory/views/renderInventoryMovementPanel.tsx')
 const worker = read('worker/index.ts')
 const inventorySection = read('src/features/sections/InventorySection.tsx')
+const frontendPreservation = read('scripts/test-step1906b-frontend-modularization.mjs')
+const w2Manifest = JSON.parse(read('scripts/w2-human-warehouse-frontend-manifest.json'))
+const w3Manifest = JSON.parse(read('scripts/w3-1a-warehouse-reliability-frontend-manifest.json'))
 
 const block = (text, start, end) => {
   const from = text.indexOf(start)
@@ -90,6 +120,11 @@ check(!app.includes('if (postSaveShortages.length) void loadWarehouseAttention()
 check(app.includes("const shouldLoadDetails = details || (activeSector === 'inventory' && inventoryPanel === 'attention')"), 'W2.1 detail ownership guard missing')
 check(app.includes('setWarehouseAttention((current) => current?.items ? current : cached.data)'), 'W2.1 cached-summary detail preservation missing')
 
+// Preserve the modularization guard as an explicit delta chained after W2, not a rewritten history hash.
+check(w3Manifest.version === 1 && w3Manifest.revision === 'w3-1a-warehouse-reliability', 'W3.1A frontend preservation manifest invalid')
+check(w3Manifest.frontend?.panelReturnChanges?.renderInventoryMovementPanel?.before === w2Manifest.frontend?.panelReturnChanges?.renderInventoryMovementPanel?.after, 'W3.1A preservation baseline must chain from exact W2 movement hash')
+check(frontendPreservation.includes('w3WarehouseReliabilityPath') && frontendPreservation.includes('W3.1A Warehouse reliability panel baseline hash mismatch'), '1906B preservation test is not aware of the W3.1A delta')
+
 // Frozen Arrival interface must remain byte-for-byte recognizable.
 check(inventorySection.includes('<div className="inventory-arrival-legacy-workspace">'), 'frozen Arrival workspace changed')
 check(inventorySection.includes('<button className="inventory-arrival-add-position" type="button" onClick={addInventoryArrivalPosition}>+ Добавить позицию</button>'), 'frozen Arrival add-position action changed')
@@ -122,6 +157,10 @@ Remove two reliability regressions found by W3.0 before adding any new recovery 
   - it no longer starts a forced Warehouse Attention request;
   - order create/edit shortage paths no longer issue an unsolicited Attention refresh after save;
   - W2.1 detailed Attention refresh ownership remains with the Attention surface/effect/actions.
+
+- `scripts/w3-1a-warehouse-reliability-frontend-manifest.json` + `scripts/test-step1906b-frontend-modularization.mjs`
+  - records the exact one-line Operations renderer delta after the accepted W2 hash;
+  - keeps the 190.6B preservation gate strict instead of weakening or rewriting historical baselines.
 
 - `scripts/test-w3-1a-warehouse-reliability.mjs`
   - protects the manager-safe Operations submit path;
