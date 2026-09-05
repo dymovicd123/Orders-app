@@ -198,9 +198,9 @@ function App() {
   const [dashboardInsights, setDashboardInsights] = useState<DashboardInsightsResponse | null>(null)
   const [workshopFilters, setWorkshopFilters] = useState({
     view: 'active' as WorkshopView,
-    period: 'month' as WorkshopPeriodPreset,
-    dateFrom: getPeriodRange('month').dateFrom,
-    dateTo: getPeriodRange('month').dateTo,
+    period: 'all' as WorkshopPeriodPreset,
+    dateFrom: '',
+    dateTo: '',
     urgentOnly: false,
     q: '',
   })
@@ -3210,14 +3210,12 @@ function App() {
   }
 
   function applyWorkshopPeriodPreset(preset: WorkshopPeriodPreset) {
-    const range = getPeriodRange(preset === 'custom' ? 'custom' : preset)
-    const nextFilters = {
-      ...workshopFilters,
-      period: preset,
-      dateFrom: preset === 'custom' ? workshopFilters.dateFrom : range.dateFrom,
-      dateTo: preset === 'custom' ? workshopFilters.dateTo : range.dateTo,
-    }
-    setWorkshopFilters(nextFilters)
+    const range = preset === 'all' ? { dateFrom: '', dateTo: '' } : getPeriodRange(preset)
+    setWorkshopFilters((current) => ({
+      ...current, period: preset,
+      dateFrom: preset === 'custom' ? current.dateFrom : range.dateFrom,
+      dateTo: preset === 'custom' ? current.dateTo : range.dateTo,
+    }))
   }
 
 
