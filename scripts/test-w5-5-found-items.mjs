@@ -23,7 +23,7 @@ check(attention.includes('exactFoundVariantSql'), 'Warehouse attention does not 
 check(attention.includes('found: (foundResult.results || []).map'), 'Warehouse attention does not return found item details')
 check(contracts.includes('export type WarehouseAttentionFoundItem'), 'Found attention API contract missing')
 
-check(router.includes("/api/inventory/found-stock\\/(\\d+)\\/reconcile"), 'Found-item reconcile route missing')
+check(router.includes('inventoryFoundStockReconcileMatch') && router.includes('reconcileFoundInventoryStock(env.DB'), 'Found-item reconcile route missing')
 check(router.includes('Array.isArray(createReferenceFields)'), 'Stocktake reference creation admin gate still misreads array payloads')
 check(router.includes('createReferenceFields.length > 0'), 'New reference values are not admin-gated')
 check(!router.includes("Object.values(createReferenceFields).some((value) => value === true);"), 'Old broken reference-field admin gate remains')
