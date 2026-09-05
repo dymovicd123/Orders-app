@@ -42,6 +42,14 @@ new = """             AND INSTR(last_source_ref, ?) = 1
 if old not in s:
     raise SystemExit('parameterized unresolved marker LIKE not found')
 s = s.replace(old, new, 1)
+
+# Keep App.tsx within the existing 1906B controller budget without weakening the gate.
+old_spacing = 'reconcile_client = m.group(1) + """\n\n  async function reconcileFoundInventoryStock(stockId: number) {'
+new_spacing = 'reconcile_client = m.group(1) + """\n  async function reconcileFoundInventoryStock(stockId: number) {'
+if old_spacing not in s:
+    raise SystemExit('W5.5 App reconcile spacing anchor not found')
+s = s.replace(old_spacing, new_spacing, 1)
+
 p.write_text(s, encoding='utf-8')
 
 # Patch the temporary preservation-gate generator before it runs.
