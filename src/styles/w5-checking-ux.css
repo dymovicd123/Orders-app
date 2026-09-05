@@ -50,3 +50,24 @@
   .stocktake-e-active-head p{overflow-wrap:anywhere}
   .stocktake-sticky-progress-main strong{font-size:12px}
 }
+
+
+/* W5.4 — full revision: clearer progress, safer zero shortcut, strong finish path. */
+.stocktake-current-product-status{display:block;margin-top:3px;color:#64748b;font-size:10px;line-height:1.3;font-weight:700}
+.stocktake-current-product-actions-v5{flex-wrap:wrap}
+.stocktake-current-product-actions-v5>span{flex:1 1 260px;min-width:220px}
+.stocktake-sticky-progress.is-ready .stocktake-review-button{min-height:46px;box-shadow:0 0 0 3px rgba(22,163,74,.10)}
+.stocktake-e-review-actions .stocktake-finish-button{min-height:48px}
+
+@media(max-width:680px){
+  .stocktake-current-product-actions-v5{display:grid!important;grid-template-columns:1fr 1fr;gap:8px!important}
+  .stocktake-current-product-actions-v5>button{width:100%;min-height:44px}
+  .stocktake-current-product-actions-v5>span{grid-column:1/-1;min-width:0}
+  .stocktake-e-footer-v4{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
+  .stocktake-e-footer-v4>button{width:100%;min-height:46px}
+}
+
+@media(max-width:420px){
+  .stocktake-current-product-actions-v5{grid-template-columns:1fr}
+  .stocktake-current-product-actions-v5>span{grid-column:auto}
+}

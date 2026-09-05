@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "revision": "w5-4-full-stocktake",
+  "frontend": {
+    "panelReturnChanges": {
+      "renderInventoryStocktakePanel": {
+        "before": "285958391713329e5a492fc2df180c504191a12900a1050cdc1b161b99ff5dfe",
+        "after": "be9c93a78acf0dc5e57d3cd3b1f9a1b0c9e3711e1b5d1a560fc6f5ff64523c01"
+      }
+    }
+  }
+}

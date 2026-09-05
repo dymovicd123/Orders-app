@@ -1,0 +1,40 @@
+import fs from 'node:fs'
+const check = (condition, message) => { if (!condition) throw new Error(message) }
+const panel = fs.readFileSync('src/features/inventory/views/renderInventoryStocktakePanel.tsx', 'utf8')
+const css = fs.readFileSync('src/styles/w5-checking-ux.css', 'utf8')
+const section = fs.readFileSync('src/features/sections/InventorySection.tsx', 'utf8')
+const worker = fs.readFileSync('worker/domains/inventory-stocktake.ts', 'utf8')
+
+check(panel.includes('Системные числа появятся только после подсчёта.'), 'Full stocktake must explain blind-first counting')
+check(panel.includes('Пустое поле означает «ещё не посчитано», а не ноль.'), 'Empty count semantics are not explicit')
+check(panel.includes('Проверено {stocktakeProgress.filled} из {stocktakeProgress.total} · {stocktakeProgressPercent}%'), 'Persistent progress is not explicit enough')
+check(panel.includes("'Все позиции посчитаны. Следующий шаг — проверить результат.'"), 'Ready-state next action is unclear')
+check(panel.includes('Остальных нет</button>'), 'Safe zero shortcut was not renamed for humans')
+check(!panel.includes('Остальные = 0</button>'), 'Old technical zero shortcut remains visible')
+check(panel.includes('«Остальных нет» заполнит пустые позиции этого товара нулём.'), 'Zero shortcut consequence is not explained')
+check(panel.includes('Проверка результата</span>'), 'Review step still uses application/internal wording')
+check(panel.includes('Системный остаток показан только сейчас — после физического пересчёта.'), 'Review does not explain why system quantity appears now')
+check(panel.includes('Сохранить изменения и завершить · ${stocktakeProgress.differences}'), 'Final change action is not explicit')
+check(panel.includes('частичного применения не будет.'), 'All-or-nothing consequence copy disappeared')
+check(panel.includes('Отмена закроет эту проверку без изменения остатков.'), 'Cancel consequence is not visible')
+check(!panel.includes('Начата {formatStocktakeMoment(stocktakeSession.startedAt)} · {stocktakeSession.id}'), 'Technical session id is still exposed in active UI')
+check(panel.includes('Сессия {stocktakeSession.id} · начата'), 'Session id must remain on the printable audit sheet')
+check(panel.includes("stocktakeProgress.recount ? 'К товару для пересчёта' : 'К следующему незаполненному товару'"), 'Next-attention action is not state-specific')
+check(panel.includes("done ? 'готово'"), 'Desktop product status does not use a human completion label')
+check(panel.includes("attention ? 'пересчитать' : total > 0 && counted === total ? 'готово'"), 'Mobile product status does not expose recount/done state')
+
+check(css.includes('.stocktake-current-product-status'), 'Current-product progress styling missing')
+check(css.includes('@media(max-width:680px)'), 'Small-screen contract missing')
+check(css.includes('.stocktake-current-product-actions-v5{display:grid!important;grid-template-columns:1fr 1fr'), 'Current-product actions do not adapt on small screens')
+check(css.includes('.stocktake-e-footer-v4>button{width:100%;min-height:46px}'), 'Next action is not a comfortable mobile target')
+check(css.includes('.stocktake-e-review-actions .stocktake-finish-button{min-height:48px}'), 'Final action is not prominent enough')
+
+check(worker.includes("SET status = 'recount_required',"), 'Full stocktake conflict protection missing')
+check(worker.includes('Пересчитайте только их — ничего из ревизии не было применено частично.'), 'Full stocktake all-or-nothing conflict contract missing')
+check(section.includes("async function startStocktake() {\n    if (stocktakeBusy) return"), 'Manager stocktake access regressed')
+check(!section.includes("async function startStocktake() {\n    if (!isAdmin"), 'Manager stocktake start silently blocked again')
+
+const arrivalStart = section.indexOf('<div className="inventory-arrival-legacy-workspace">')
+const arrivalButton = '<button className="inventory-arrival-add-position" type="button" onClick={addInventoryArrivalPosition}>+ Добавить позицию</button>'
+check(arrivalStart >= 0 && section.indexOf(arrivalButton, arrivalStart) >= 0, 'Frozen Arrival workspace changed')
+console.log('W5.4 FULL STOCKTAKE PASSED — blind counting, progress, cancel/continue, review, finish, manager access and small-screen actions remain clear and safe')

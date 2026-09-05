@@ -152,7 +152,7 @@ function verifySource() {
   const inventoryController = read('src/features/sections/InventorySection.tsx')
   const inventory = readInventorySource()
   if (inventory.includes('Старые записи скрыты:')) fail('Интерфейс снова показывает технический счётчик скрытой истории.')
-  for (const marker of ['Не добавлять в каталог', 'Здесь только недавние позиции', 'Не сохранено:', 'openStocktakeInlineSize']) {
+  for (const marker of ['Не добавлять в каталог', 'Здесь только недавние позиции', 'Ждут сохранения:', 'openStocktakeInlineSize']) {
     if (!inventory.includes(marker)) fail(`Inventory marker отсутствует: ${marker}`)
   }
   const arrivalStart = inventory.indexOf(ARRIVAL_START)
