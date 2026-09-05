@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "revision": "w5-manager-warehouse-access",
+  "frontend": {
+    "panelReturnChanges": {
+      "renderInventoryOverviewPanel": {
+        "before": "71f273646cc7a7a10160ebd69475cb8ea7c5e6e9bba4b27d81aa77ad38791ee0",
+        "after": "7e2aa487afb458480aef0dfef20ef0e32ec54fe3029c3981b9a2cc096dfd27a8"
+      }
+    }
+  }
+}
