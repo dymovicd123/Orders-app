@@ -17,14 +17,35 @@ type MovementPickerContext = {
   inventoryOperationRowSecondary?: (row: any) => string
 }
 
-export const TRANSFER_DEFAULT_ROW_LIMIT = 12
-export const TRANSFER_RECOVERY_ROW_LIMIT = 8
+export const TRANSFER_PRIMARY_ROW_LIMIT = 6
+export const TRANSFER_SEARCH_ROW_LIMIT = 14
 
 const numberValue = (value: unknown) => Number(value || 0)
 const variantKey = (value: unknown) => String(value ?? '')
 const normalize = (value: unknown) => String(value || '').trim().toLocaleUpperCase('ru-RU')
 const isStandard = (value: unknown) => !normalize(value) || normalize(value) === 'СТАНДАРТ'
 const isSourceRecoveryRow = (row: any) => numberValue(row?.quantity) <= 0 && numberValue(row?.id) === 0
+
+function compactNormalize(value: unknown) {
+  return normalize(value)
+    .replaceAll('Ё', 'Е')
+    .replace(/[.,;:]+$/g, '')
+    .replace(/\s+/g, ' ')
+}
+
+function variantSimilarityKey(row: any) {
+  return [row?.gender, row?.color, row?.size, row?.material, row?.length]
+    .map(compactNormalize)
+    .join('|')
+}
+
+function hasMessyFormatting(row: any) {
+  return [row?.gender, row?.color, row?.size, row?.material, row?.length].some((value) => {
+    const raw = String(value || '')
+    if (!raw) return false
+    return raw !== raw.trim() || /\s{2,}/.test(raw) || /[.,;:]$/.test(raw.trim())
+  })
+}
 
 function rowSortText(row: any) {
   return [row?.material, row?.length, row?.color, row?.size, row?.gender]
@@ -49,6 +70,63 @@ function uniqueRows(rows: any[]) {
     seen.add(key)
     return true
   })
+}
+
+export function partitionTransferVariantRows(
+  rows: any[],
+  selectedVariantIds: Iterable<string | number> = [],
+  searchActive = false,
+) {
+  const selected = new Set(Array.from(selectedVariantIds, variantKey).filter(Boolean))
+  const unique = uniqueRows(rows)
+  const similarity = new Map<string, any[]>()
+  for (const row of unique) {
+    const key = variantSimilarityKey(row)
+    const list = similarity.get(key) || []
+    list.push(row)
+    similarity.set(key, list)
+  }
+
+  const unusualIds = new Set<string>()
+  for (const candidates of similarity.values()) {
+    if (candidates.length <= 1) continue
+    const canonical = [...candidates].sort((left, right) => {
+      const leftSelected = selected.has(variantKey(left?.variantId)) ? 1 : 0
+      const rightSelected = selected.has(variantKey(right?.variantId)) ? 1 : 0
+      if (leftSelected !== rightSelected) return rightSelected - leftSelected
+      const quantityDelta = numberValue(right?.quantity) - numberValue(left?.quantity)
+      if (quantityDelta) return quantityDelta
+      return numberValue(left?.variantId) - numberValue(right?.variantId)
+    })[0]
+    for (const row of candidates) {
+      if (variantKey(row?.variantId) !== variantKey(canonical?.variantId)) unusualIds.add(variantKey(row?.variantId))
+    }
+  }
+  for (const row of unique) {
+    if (hasMessyFormatting(row)) unusualIds.add(variantKey(row?.variantId))
+  }
+
+  const ranked = [...unique].sort((left, right) => {
+    const leftSelected = selected.has(variantKey(left?.variantId)) ? 1 : 0
+    const rightSelected = selected.has(variantKey(right?.variantId)) ? 1 : 0
+    if (leftSelected !== rightSelected) return rightSelected - leftSelected
+    const leftUnusual = unusualIds.has(variantKey(left?.variantId)) ? 1 : 0
+    const rightUnusual = unusualIds.has(variantKey(right?.variantId)) ? 1 : 0
+    if (leftUnusual !== rightUnusual) return leftUnusual - rightUnusual
+    const leftPhysical = numberValue(left?.quantity) > 0 ? 1 : 0
+    const rightPhysical = numberValue(right?.quantity) > 0 ? 1 : 0
+    if (leftPhysical !== rightPhysical) return rightPhysical - leftPhysical
+    const leftRecovery = isSourceRecoveryRow(left) ? 1 : 0
+    const rightRecovery = isSourceRecoveryRow(right) ? 1 : 0
+    if (leftRecovery !== rightRecovery) return leftRecovery - rightRecovery
+    return rowSortText(left).localeCompare(rowSortText(right), 'ru', { numeric: true })
+  })
+
+  const limit = searchActive ? TRANSFER_SEARCH_ROW_LIMIT : TRANSFER_PRIMARY_ROW_LIMIT
+  const primary = ranked.slice(0, Math.max(limit, selected.size))
+  const primaryIds = new Set(primary.map((row) => variantKey(row?.variantId)))
+  const extra = ranked.filter((row) => !primaryIds.has(variantKey(row?.variantId)))
+  return { primary, extra, unusualIds }
 }
 
 export function refineMovementPickerContext<T extends MovementPickerContext>(ctx: T): T {
@@ -81,9 +159,8 @@ export function refineMovementPickerContext<T extends MovementPickerContext>(ctx
       .map((entry) => variantKey(entry?.item?.variantId))
       .filter(Boolean),
   )
-  const searchActive = Boolean(String(ctx.inventoryExistingVariantSearch || '').trim())
   const rawVisibleRows = Array.isArray(ctx.operationVisibleRows) ? ctx.operationVisibleRows : []
-  const sortedRows = [...rawVisibleRows].sort((left, right) => {
+  const operationVisibleRows = [...rawVisibleRows].sort((left, right) => {
     const leftSelected = selectedVariantIds.has(variantKey(left?.variantId)) ? 1 : 0
     const rightSelected = selectedVariantIds.has(variantKey(right?.variantId)) ? 1 : 0
     if (leftSelected !== rightSelected) return rightSelected - leftSelected
@@ -96,25 +173,6 @@ export function refineMovementPickerContext<T extends MovementPickerContext>(ctx
     return rowSortText(left).localeCompare(rowSortText(right), 'ru', { numeric: true })
   })
 
-  let operationVisibleRows = sortedRows
-  const defaultRowLimit = sortedRows.some((row) => numberValue(row?.quantity) > 0)
-    ? TRANSFER_DEFAULT_ROW_LIMIT
-    : TRANSFER_RECOVERY_ROW_LIMIT
-  if (!searchActive && sortedRows.length > defaultRowLimit) {
-    const selectedRows = sortedRows.filter((row) => selectedVariantIds.has(variantKey(row?.variantId)))
-    const physicalRows = sortedRows.filter((row) => !selectedVariantIds.has(variantKey(row?.variantId)) && numberValue(row?.quantity) > 0)
-    const sourceZeroRows = sortedRows.filter((row) => !selectedVariantIds.has(variantKey(row?.variantId)) && numberValue(row?.quantity) <= 0 && !isSourceRecoveryRow(row))
-    const recoveryRows = sortedRows.filter((row) => !selectedVariantIds.has(variantKey(row?.variantId)) && isSourceRecoveryRow(row))
-
-    if (physicalRows.length) {
-      const limit = Math.max(TRANSFER_DEFAULT_ROW_LIMIT, selectedRows.length)
-      operationVisibleRows = uniqueRows([...selectedRows, ...physicalRows, ...sourceZeroRows]).slice(0, limit)
-    } else {
-      const limit = Math.max(TRANSFER_RECOVERY_ROW_LIMIT, selectedRows.length)
-      operationVisibleRows = uniqueRows([...selectedRows, ...sourceZeroRows, ...recoveryRows]).slice(0, limit)
-    }
-  }
-
   const rawPrimary = ctx.inventoryOperationRowPrimary || ((row: any) => String(row?.productName || ''))
   const rawSecondary = ctx.inventoryOperationRowSecondary || (() => '')
   const inventoryOperationRowPrimary = (row: any) => rawPrimary(row)
@@ -123,15 +181,13 @@ export function refineMovementPickerContext<T extends MovementPickerContext>(ctx
       !isStandard(row?.material) ? String(row.material).trim() : '',
       !isStandard(row?.length) ? String(row.length).trim() : '',
     ].filter(Boolean)
-    const executionLabel = executionParts.length
-      ? `Исполнение: ${executionParts.join(' · ')}`
-      : 'Исполнение: стандартное'
+    const executionLabel = executionParts.length ? executionParts.join(' · ') : ''
     const originalParts = String(rawSecondary(row) || '')
       .split(' · ')
       .map((part) => part.trim())
       .filter(Boolean)
       .filter((part) => part !== 'Стандартный вариант' && !executionParts.some((execution) => normalize(execution) === normalize(part)))
-    const recoveryLabel = isSourceRecoveryRow(row) ? 'Нет в учёте этой точки — можно подтвердить фактическое наличие' : ''
+    const recoveryLabel = isSourceRecoveryRow(row) ? 'Нет в учёте этой точки' : ''
     return [executionLabel, ...originalParts, recoveryLabel].filter(Boolean).join(' · ')
   }
 

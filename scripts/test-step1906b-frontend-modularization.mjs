@@ -17,6 +17,7 @@ const w2HumanWarehousePath = path.join(root, 'scripts/w2-human-warehouse-fronten
 const w3WarehouseReliabilityPath = path.join(root, 'scripts/w3-1a-warehouse-reliability-frontend-manifest.json')
 const w3StockMicroCheckPath = path.join(root, 'scripts/w3-1b-stock-micro-check-frontend-manifest.json')
 const w3NaturalRecoveryPath = path.join(root, 'scripts/w3-2-natural-recovery-frontend-manifest.json')
+const w4HumanOperationsPath = path.join(root, 'scripts/w4-human-operations-frontend-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -105,12 +106,14 @@ try {
   const w3WarehouseReliability = fs.existsSync(w3WarehouseReliabilityPath) ? JSON.parse(fs.readFileSync(w3WarehouseReliabilityPath, 'utf8')) : null
   const w3StockMicroCheck = fs.existsSync(w3StockMicroCheckPath) ? JSON.parse(fs.readFileSync(w3StockMicroCheckPath, 'utf8')) : null
   const w3NaturalRecovery = fs.existsSync(w3NaturalRecoveryPath) ? JSON.parse(fs.readFileSync(w3NaturalRecoveryPath, 'utf8')) : null
+  const w4HumanOperations = fs.existsSync(w4HumanOperationsPath) ? JSON.parse(fs.readFileSync(w4HumanOperationsPath, 'utf8')) : null
   if (operationalAutonomyR2) check(operationalAutonomyR2.version === 1 && operationalAutonomyR2.revision === 'operational-autonomy-r2', 'Operational autonomy R2 frontend manifest invalid')
   if (w1WarehouseReliability) check(w1WarehouseReliability.version === 1 && w1WarehouseReliability.revision === 'w1-warehouse-reliability', 'W1 Warehouse reliability frontend manifest invalid')
   if (w2HumanWarehouse) check(w2HumanWarehouse.version === 1 && w2HumanWarehouse.revision === 'w2-human-warehouse', 'W2 human Warehouse frontend manifest invalid')
   if (w3WarehouseReliability) check(w3WarehouseReliability.version === 1 && w3WarehouseReliability.revision === 'w3-1a-warehouse-reliability', 'W3.1A Warehouse reliability frontend manifest invalid')
   if (w3StockMicroCheck) check(w3StockMicroCheck.version === 1 && w3StockMicroCheck.revision === 'w3-1b-stock-micro-check', 'W3.1B stock micro-check frontend manifest invalid')
   if (w3NaturalRecovery) check(w3NaturalRecovery.version === 1 && w3NaturalRecovery.revision === 'w3-2-natural-recovery', 'W3.2 natural recovery frontend manifest invalid')
+  if (w4HumanOperations) check(w4HumanOperations.version === 1 && w4HumanOperations.revision === 'w4-human-operations', 'W4 human operations frontend manifest invalid')
   check(manifest?.version === 1, '1906B preservation manifest invalid')
   check(manifest.baseAppHooks?.length === 352, `Unexpected 1906A App hook baseline: ${manifest.baseAppHooks?.length}`)
   check(manifest.baseInvHooks?.length === 119, `Unexpected 1906A Inventory hook baseline: ${manifest.baseInvHooks?.length}`)
@@ -308,7 +311,12 @@ try {
       check(w3MicroPanelChange.before === expectedPanelHash, `${panel.func}: W3.1B stock micro-check panel baseline hash mismatch`)
       expectedPanelHash = w3MicroPanelChange.after
     }
-    check(sha(normalize(text)) === expectedPanelHash, `${panel.func}: rendered JSX changed outside accepted baseline/B2A/autonomy/W1/W2/W3.1A/W3.1B delta`)
+    const w4PanelChange = w4HumanOperations?.frontend?.panelReturnChanges?.[panel.func]
+    if (w4PanelChange) {
+      check(w4PanelChange.before === expectedPanelHash, `${panel.func}: W4 human operations panel baseline hash mismatch`)
+      expectedPanelHash = w4PanelChange.after
+    }
+    check(sha(normalize(text)) === expectedPanelHash, `${panel.func}: rendered JSX changed outside accepted baseline/B2A/autonomy/W1/W2/W3.1A/W3.1B/W4 delta`)
     check(hookTokens(relative, panel.func).length === 0, `${panel.func}: renderer unexpectedly owns React hooks/lifecycle`)
     check(inventoryController.includes(`{${panel.func}({`), `${panel.func}: InventorySection no longer calls renderer directly`)
   }
@@ -357,7 +365,7 @@ try {
   const worker = parse('worker/index.ts').text
   check(worker.includes("frontendControllerModularization: '1906b'"), '1906B live health marker missing')
 
-  console.log(`STEP 190.6B FRONTEND MODULARIZATION TESTS PASSED — App ${lineCount('src/App.tsx')} lines, Inventory ${lineCount('src/features/sections/InventorySection.tsx')} lines, ${manifest.panels.length} preserved panels, hook order preserved${dailyWarehouse ? ', exact 192B2A daily-warehouse frontend deltas accepted' : ''}${attentionVisibility ? ', exact 192B2A1 Attention visibility delta accepted' : ''}${orderSaveIntegrity ? ', exact 192B2A4 order-save frontend deltas accepted' : ''}${operationalAutonomyR2 ? ', exact operational-autonomy R2 frontend deltas accepted' : ''}${w1WarehouseReliability ? ', exact W1 Warehouse reliability frontend delta accepted' : ''}${w2HumanWarehouse ? ', exact W2 human Warehouse frontend deltas accepted' : ''}${w3WarehouseReliability ? ', exact W3.1A Warehouse reliability frontend delta accepted' : ''}${w3StockMicroCheck ? ', exact W3.1B stock micro-check frontend delta accepted' : ''}${w3NaturalRecovery ? ', exact W3.2 natural-recovery Attention delta accepted' : ''}`)
+  console.log(`STEP 190.6B FRONTEND MODULARIZATION TESTS PASSED — App ${lineCount('src/App.tsx')} lines, Inventory ${lineCount('src/features/sections/InventorySection.tsx')} lines, ${manifest.panels.length} preserved panels, hook order preserved${dailyWarehouse ? ', exact 192B2A daily-warehouse frontend deltas accepted' : ''}${attentionVisibility ? ', exact 192B2A1 Attention visibility delta accepted' : ''}${orderSaveIntegrity ? ', exact 192B2A4 order-save frontend deltas accepted' : ''}${operationalAutonomyR2 ? ', exact operational-autonomy R2 frontend deltas accepted' : ''}${w1WarehouseReliability ? ', exact W1 Warehouse reliability frontend delta accepted' : ''}${w2HumanWarehouse ? ', exact W2 human Warehouse frontend deltas accepted' : ''}${w3WarehouseReliability ? ', exact W3.1A Warehouse reliability frontend delta accepted' : ''}${w3StockMicroCheck ? ', exact W3.1B stock micro-check frontend delta accepted' : ''}${w3NaturalRecovery ? ', exact W3.2 natural-recovery Attention delta accepted' : ''}${w4HumanOperations ? ', exact W4 human Operations movement delta accepted' : ''}`)
 } catch (error) {
   console.error(`STEP 190.6B FRONTEND MODULARIZATION TESTS FAILED: ${error?.message || error}`)
   process.exit(1)

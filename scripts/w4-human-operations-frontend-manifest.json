@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "revision": "w4-human-operations",
+  "frontend": {
+    "panelReturnChanges": {
+      "renderInventoryMovementPanel": {
+        "before": "d7bde0ca5cf29bb59167caee797bb9a0ce7d734b0c262e101d76e3d9952c32d1",
+        "after": "59e2b8e6a9932dd1e49516da87540c85f80a8cd2c076dc32ccc451c3855c1c58"
+      }
+    }
+  }
+}
