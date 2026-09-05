@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch-validate-commit:
-    if: "${{ github.event.head_commit.message == 'chore: rerun W3.1A on Node 24' }}"
+    if: "${{ github.event.head_commit.message == 'chore: rerun W3.1A preservation' }}"
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -34,6 +34,72 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+
+      - name: Generate exact W3.1A frontend preservation manifest
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import crypto from 'node:crypto'
+          import ts from 'typescript'
+
+          const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
+          const normalize = (value) => value
+            .replace(/\r\n/g, '\n')
+            .split('\n')
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .join('\n')
+            .replace(/^export\s+/, '')
+
+          const parse = (relative) => {
+            const text = fs.readFileSync(relative, 'utf8')
+            const kind = relative.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+            return { text, source: ts.createSourceFile(relative, text, ts.ScriptTarget.Latest, true, kind) }
+          }
+          const findFunction = (source, name) => {
+            let found = null
+            const visit = (node) => {
+              if ((ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node)) && node.name?.text === name) found = node
+              ts.forEachChild(node, visit)
+            }
+            source.forEachChild(visit)
+            if (!found?.body || !ts.isBlock(found.body)) throw new Error(`Function ${name} not found`)
+            return found
+          }
+
+          const parsed = parse('src/features/inventory/views/renderInventoryMovementPanel.tsx')
+          const fn = findFunction(parsed.source, 'renderInventoryMovementPanel')
+          const returnStatement = [...fn.body.statements].find((statement) => ts.isReturnStatement(statement))
+          if (!returnStatement?.expression) throw new Error('renderInventoryMovementPanel return expression missing')
+          let expression = returnStatement.expression
+          while (ts.isParenthesizedExpression(expression)) expression = expression.expression
+          let text = expression.getText(parsed.source)
+
+          const controllerText = fs.readFileSync('src/features/sections/InventorySection.tsx', 'utf8')
+          const arrivalStart = controllerText.indexOf('<div className="inventory-arrival-legacy-workspace">')
+          const arrivalButton = '<button className="inventory-arrival-add-position" type="button" onClick={addInventoryArrivalPosition}>+ Добавить позицию</button>'
+          const arrivalButtonEnd = controllerText.indexOf(arrivalButton, arrivalStart) + arrivalButton.length
+          const arrivalCloseEnd = controllerText.indexOf('</div>', arrivalButtonEnd) + '</div>'.length
+          if (arrivalStart < 0 || arrivalButtonEnd < arrivalButton.length || arrivalCloseEnd < '</div>'.length) throw new Error('Frozen Arrival reconstruction failed')
+          text = text.replace('{arrivalWorkspace}', controllerText.slice(arrivalStart, arrivalCloseEnd))
+
+          const oldGate = "disabled={inventoryMovementBusy || !isAdmin || (inventoryDraft.movementType === 'arrival' ? inventoryArrivalSummary.rows === 0 : inventoryDraftSummary.rows === 0)}"
+          const newGate = "disabled={inventoryMovementBusy || (inventoryDraft.movementType === 'arrival' ? inventoryArrivalSummary.rows === 0 : inventoryDraftSummary.rows === 0)}"
+          if (!text.includes(newGate)) throw new Error('W3.1A Operations gate not found in reconstructed renderer')
+
+          const w2 = JSON.parse(fs.readFileSync('scripts/w2-human-warehouse-frontend-manifest.json', 'utf8'))
+          const before = w2.frontend.panelReturnChanges.renderInventoryMovementPanel.after
+          const reconstructedBefore = sha(normalize(text.replace(newGate, oldGate)))
+          if (reconstructedBefore !== before) throw new Error(`W3.1A baseline mismatch: ${reconstructedBefore} != ${before}`)
+          const after = sha(normalize(text))
+          const manifest = {
+            version: 1,
+            revision: 'w3-1a-warehouse-reliability',
+            frontend: { panelReturnChanges: { renderInventoryMovementPanel: { before, after } } },
+          }
+          fs.writeFileSync('scripts/w3-1a-warehouse-reliability-frontend-manifest.json', JSON.stringify(manifest, null, 2) + '\n')
+          console.log(`W3.1A frontend preservation: ${before} -> ${after}`)
+          NODE
 
       - name: Focused W3.1A regression
         run: node scripts/test-w3-1a-warehouse-reliability.mjs
@@ -61,7 +127,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/App.tsx src/features/inventory/views/renderInventoryMovementPanel.tsx package.json scripts/test-w3-1a-warehouse-reliability.mjs docs/continuation/W3_1A_WAREHOUSE_RELIABILITY_20260905.md
+          git add src/App.tsx src/features/inventory/views/renderInventoryMovementPanel.tsx package.json scripts/test-step1906b-frontend-modularization.mjs scripts/w3-1a-warehouse-reliability-frontend-manifest.json scripts/test-w3-1a-warehouse-reliability.mjs docs/continuation/W3_1A_WAREHOUSE_RELIABILITY_20260905.md
           git diff --cached --check
           git commit -m 'W3.1A: restore Warehouse operational reliability'
           git push origin HEAD:safe/w3-1a-warehouse-reliability-20260905
