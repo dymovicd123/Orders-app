@@ -1,0 +1,335 @@
+name: W5.4 full stocktake UX
+
+on:
+  push:
+    branches:
+      - safe/w5-4-use-this
+
+permissions:
+  contents: write
+
+jobs:
+  patch-validate-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: safe/w5-4-use-this
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+
+      - name: Capture stocktake panel baseline
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import crypto from 'node:crypto'
+          import ts from 'typescript'
+          const relative = 'src/features/inventory/views/renderInventoryStocktakePanel.tsx'
+          const text = fs.readFileSync(relative, 'utf8')
+          const source = ts.createSourceFile(relative, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+          let fn = null
+          const visit = (node) => { if (ts.isFunctionDeclaration(node) && node.name?.text === 'renderInventoryStocktakePanel') fn = node; ts.forEachChild(node, visit) }
+          source.forEachChild(visit)
+          if (!fn?.body) throw new Error('renderInventoryStocktakePanel not found')
+          const ret = [...fn.body.statements].find((statement) => ts.isReturnStatement(statement))
+          if (!ret?.expression) throw new Error('stocktake return missing')
+          let expression = ret.expression
+          while (ts.isParenthesizedExpression(expression)) expression = expression.expression
+          const normalize = (value) => value.replace(/\r\n/g, '\n').split('\n').map((line) => line.trim()).filter(Boolean).join('\n').replace(/^export\s+/, '')
+          const hash = crypto.createHash('sha256').update(normalize(expression.getText(source))).digest('hex')
+          const w53r = JSON.parse(fs.readFileSync('scripts/w5-3r-unified-check-frontend-manifest.json', 'utf8'))
+          const expected = w53r.frontend?.panelReturnChanges?.renderInventoryStocktakePanel?.after
+          if (hash !== expected) throw new Error(`W5.4 baseline mismatch: ${hash} != ${expected}`)
+          fs.writeFileSync('/tmp/w5-4-stocktake-before', hash)
+          console.log(`Stocktake baseline: ${hash}`)
+          NODE
+
+      - name: Apply W5.4 full revision UX patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly 1 match, got {count}')
+              return text.replace(old, new, 1)
+
+          p = Path('src/features/inventory/views/renderInventoryStocktakePanel.tsx')
+          s = p.read_text(encoding='utf-8')
+
+          s = replace_once(s,
+              "  const unselectedRecommendedProducts = recommendedStocktakeProducts.filter((product: any) => !stocktakeSelectedProductIds.includes(Number(product.productId)))\n\n  return (",
+              "  const unselectedRecommendedProducts = recommendedStocktakeProducts.filter((product: any) => !stocktakeSelectedProductIds.includes(Number(product.productId)))\n  const stocktakeProgressPercent = stocktakeProgress.total ? Math.round((stocktakeProgress.filled / stocktakeProgress.total) * 100) : 0\n  const currentStocktakeRows = currentStocktakeGroup?.rows || []\n  const currentStocktakeFilled = currentStocktakeRows.filter((row: any) => (stocktakeFacts[String(row.id)] ?? '') !== '').length\n  const currentStocktakeRecount = currentStocktakeRows.filter((row: any) => row.status === 'recount_required').length\n  const currentStocktakeStatus = currentStocktakeGroup\n    ? `${currentStocktakeFilled} из ${currentStocktakeRows.length} позиций посчитано${currentStocktakeRecount ? ` · пересчитать ${currentStocktakeRecount}` : ''}`\n    : ''\n\n  return (",
+              'stocktake progress helpers')
+
+          s = replace_once(s,
+              "<div className=\"stocktake-full-warning stocktake-full-warning-v5\"><strong>{stocktakeSourceTitle(stocktakeSource)} · {stocktakeSourceStats[stocktakeSource]} позиций</strong><span>Нулевые позиции каталога не добавляются автоматически. Найденную во время пересчёта позицию можно добавить прямо из текущего товара.</span></div>",
+              "<div className=\"stocktake-full-warning stocktake-full-warning-v5\"><strong>{stocktakeSourceTitle(stocktakeSource)} · {stocktakeSourceStats[stocktakeSource]} позиций</strong><span>В проверку попадут позиции, которые сейчас учитываются в этой точке. Если во время пересчёта найдёте ещё одну вещь, её можно добавить прямо в текущую проверку.</span></div>",
+              'full stocktake start copy')
+
+          s = replace_once(s,
+              "<p>Начата {formatStocktakeMoment(stocktakeSession.startedAt)} · {stocktakeSession.id}</p>",
+              "<p>Начата {formatStocktakeMoment(stocktakeSession.startedAt)}</p>",
+              'remove technical session id')
+
+          s = replace_once(s,
+              "<strong>{stocktakeSavingIds.length ? 'Сохраняю…' : stocktakeUnsavedCount ? `Не сохранено: ${stocktakeUnsavedCount}` : 'Сохранено автоматически ✓'}</strong>\n                            <span>{stocktakeSavingIds.length || stocktakeUnsavedCount ? 'Не закрывайте страницу, пока изменения не сохранятся.' : 'Можно перейти в другой раздел и продолжить эту проверку позже.'}</span>",
+              "<strong>{stocktakeSavingIds.length ? 'Сохраняю изменения…' : stocktakeUnsavedCount ? `Ждут сохранения: ${stocktakeUnsavedCount}` : 'Всё сохранено ✓'}</strong>\n                            <span>{stocktakeSavingIds.length || stocktakeUnsavedCount ? 'Дождитесь сохранения перед проверкой результата или выходом.' : 'Можно выйти и вернуться позже — прогресс не потеряется.'}</span>",
+              'autosave copy')
+
+          s = replace_once(s,
+              "<small>Чтобы продолжить позже, отменять не нужно — просто выйдите из раздела.</small>",
+              "<small>Отмена закроет эту проверку без изменения остатков. Чтобы продолжить позже, просто выйдите из раздела.</small>",
+              'cancel explanation')
+
+          s = replace_once(s,
+              "<div className=\"stocktake-sticky-progress-main\"><strong>{stocktakeProgress.filled} из {stocktakeProgress.total} проверено</strong><span>{stocktakeProgress.recount ? `Нужно повторно пересчитать ${stocktakeProgress.recount}` : stocktakeProgress.unfilled ? `Завершение станет доступно после проверки ещё ${stocktakeProgress.unfilled}` : 'Все позиции заполнены — можно проверить результат.'}</span></div>",
+              "<div className=\"stocktake-sticky-progress-main\"><strong>Проверено {stocktakeProgress.filled} из {stocktakeProgress.total} · {stocktakeProgressPercent}%</strong><span>{stocktakeSavingIds.length || stocktakeUnsavedCount ? 'Сначала дождитесь автосохранения введённых чисел.' : stocktakeProgress.recount ? `Нужно повторно пересчитать ${stocktakeProgress.recount}` : stocktakeProgress.unfilled ? `Осталось посчитать ${stocktakeProgress.unfilled}` : 'Все позиции посчитаны. Следующий шаг — проверить результат.'}</span></div>",
+              'sticky progress copy')
+
+          s = replace_once(s,
+              "<div className=\"stocktake-counting-rule\">Считайте всё, что физически находится здесь, включая уже отложенные заказы. Пустое поле означает, что позиция ещё не посчитана.</div>",
+              "<div className=\"stocktake-counting-rule\">Считайте всё, что физически находится здесь, включая уже отложенные заказы. Системные числа появятся только после подсчёта. Пустое поле означает «ещё не посчитано», а не ноль.</div>",
+              'blind count explanation')
+
+          s = replace_once(s,
+              "const status = attention ? 'пересчитать' : done ? '✓' : counted ? `${remaining} осталось` : `${total}`",
+              "const status = attention ? 'пересчитать' : done ? 'готово' : counted ? `${remaining} осталось` : `${total} поз.`",
+              'desktop product status')
+
+          s = replace_once(s,
+              "const counted = (group.rows || []).filter((row: any) => (stocktakeFacts[String(row.id)] ?? '') !== '').length\n                                      const total = (group.rows || []).length\n                                      return <option value={index} key={`stocktake-mobile-product-${group.key}`}>{group.productName} · {counted}/{total}</option>",
+              "const counted = (group.rows || []).filter((row: any) => (stocktakeFacts[String(row.id)] ?? '') !== '').length\n                                      const total = (group.rows || []).length\n                                      const attention = (group.rows || []).some((row: any) => row.status === 'recount_required')\n                                      const status = attention ? 'пересчитать' : total > 0 && counted === total ? 'готово' : `${Math.max(0, total - counted)} осталось`\n                                      return <option value={index} key={`stocktake-mobile-product-${group.key}`}>{group.productName} · {status}</option>",
+              'mobile product status')
+
+          s = replace_once(s,
+              "<div><span>Товар {stocktakeProductIndex + 1} из {stocktakeGroups.length}</span><h4>{currentStocktakeGroup.productName}</h4></div>",
+              "<div><span>Товар {stocktakeProductIndex + 1} из {stocktakeGroups.length}</span><h4>{currentStocktakeGroup.productName}</h4><small className=\"stocktake-current-product-status\">{currentStocktakeStatus}</small></div>",
+              'current product progress')
+
+          s = replace_once(s,
+              "<div className=\"stocktake-current-product-actions stocktake-current-product-actions-v5\">\n                                      <button className=\"secondary compact\" type=\"button\" title=\"Используйте только если весь текущий товар уже физически проверен\" disabled={stocktakeBusy || !(currentStocktakeGroup.rows || []).some((row: any) => (stocktakeFacts[String(row.id)] ?? '') === '')} onClick={() => void markCurrentStocktakeProductRemainingZero()}>Остальные = 0</button>\n                                      <button className=\"primary compact\" type=\"button\" onClick={() => setStocktakeFoundOpen(true)}>+ Найденная позиция</button>\n                                    </div>",
+              "<div className=\"stocktake-current-product-actions stocktake-current-product-actions-v5\">\n                                      <button className=\"secondary compact\" type=\"button\" title=\"Только если весь текущий товар уже физически пересчитан\" disabled={stocktakeBusy || !(currentStocktakeGroup.rows || []).some((row: any) => (stocktakeFacts[String(row.id)] ?? '') === '')} onClick={() => void markCurrentStocktakeProductRemainingZero()}>Остальных нет</button>\n                                      <button className=\"primary compact\" type=\"button\" onClick={() => setStocktakeFoundOpen(true)}>+ Найденная позиция</button>\n                                      <span>«Остальных нет» заполнит пустые позиции этого товара нулём. Используйте только после полного физического пересчёта товара.</span>\n                                    </div>",
+              'remaining zero action')
+
+          s = replace_once(s,
+              "<div><strong>{stocktakeReadyForReview ? 'Все позиции заполнены' : stocktakeProgress.recount ? `Повторно проверить: ${stocktakeProgress.recount}` : `Осталось: ${stocktakeProgress.unfilled}`}</strong><span>Статус и кнопка завершения всегда видны в верхней панели.</span></div>\n                              {!stocktakeReadyForReview ? <button className=\"secondary\" type=\"button\" onClick={goToNextUnfilledStocktakeProduct}>К следующей требующей внимания</button> : null}",
+              "<div><strong>{stocktakeReadyForReview ? 'Все позиции посчитаны' : stocktakeProgress.recount ? `Повторно пересчитать: ${stocktakeProgress.recount}` : `Осталось посчитать: ${stocktakeProgress.unfilled}`}</strong><span>{stocktakeReadyForReview ? 'Проверьте результат перед завершением.' : 'Пустые поля не считаются нулём.'}</span></div>\n                              {!stocktakeReadyForReview ? <button className=\"secondary\" type=\"button\" onClick={goToNextUnfilledStocktakeProduct}>{stocktakeProgress.recount ? 'К товару для пересчёта' : 'К следующему незаполненному товару'}</button> : null}",
+              'full stocktake footer')
+
+          s = replace_once(s,
+              "<div><span className=\"stocktake-step-kicker\">Проверка перед применением</span><h4>{stocktakeReviewRows.length ? `${stocktakeReviewRows.length} позиций требуют внимания` : 'Расхождений нет'}</h4><p>Система показывает учётное количество только после завершения слепого пересчёта.</p></div>",
+              "<div><span className=\"stocktake-step-kicker\">Проверка результата</span><h4>{stocktakeReviewRows.length ? `${stocktakeReviewRows.length} позиций требуют внимания` : 'Расхождений нет'}</h4><p>Системный остаток показан только сейчас — после физического пересчёта.</p></div>",
+              'review heading')
+
+          s = replace_once(s,
+              "<div><strong>{stocktakeSourceTitle(stocktakeSession.source)} · проверено {stocktakeProgress.total} позиций</strong><span>Перед применением система ещё раз проверит, не изменился ли физический остаток после вашего подсчёта. Ничего не будет применено частично.</span></div>\n                              <button className=\"primary stocktake-finish-button\" type=\"button\" disabled={stocktakeBusy || stocktakeSavingIds.length > 0 || stocktakeUnsavedCount > 0} onClick={() => void applyStocktake()}>{stocktakeBusy ? 'Проверяю и сохраняю…' : stocktakeProgress.differences ? `Применить ${stocktakeProgress.differences} изменений` : 'Завершить проверку'}</button>",
+              "<div><strong>{stocktakeSourceTitle(stocktakeSession.source)} · проверено {stocktakeProgress.total} позиций</strong><span>Перед завершением система ещё раз сверит, не изменился ли остаток после вашего подсчёта. Если изменился, нужно будет пересчитать только затронутые позиции; частичного применения не будет.</span></div>\n                              <button className=\"primary stocktake-finish-button\" type=\"button\" disabled={stocktakeBusy || stocktakeSavingIds.length > 0 || stocktakeUnsavedCount > 0} onClick={() => void applyStocktake()}>{stocktakeBusy ? 'Проверяю и сохраняю…' : stocktakeProgress.differences ? `Сохранить изменения и завершить · ${stocktakeProgress.differences}` : 'Завершить проверку'}</button>",
+              'final action copy')
+
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('src/styles/w5-checking-ux.css')
+          css = p.read_text(encoding='utf-8')
+          addition = r'''
+
+/* W5.4 — full revision: clearer progress, safer zero shortcut, strong finish path. */
+.stocktake-current-product-status{display:block;margin-top:3px;color:#64748b;font-size:10px;line-height:1.3;font-weight:700}
+.stocktake-current-product-actions-v5{flex-wrap:wrap}
+.stocktake-current-product-actions-v5>span{flex:1 1 260px;min-width:220px}
+.stocktake-sticky-progress.is-ready .stocktake-review-button{min-height:46px;box-shadow:0 0 0 3px rgba(22,163,74,.10)}
+.stocktake-e-review-actions .stocktake-finish-button{min-height:48px}
+
+@media(max-width:680px){
+  .stocktake-current-product-actions-v5{display:grid!important;grid-template-columns:1fr 1fr;gap:8px!important}
+  .stocktake-current-product-actions-v5>button{width:100%;min-height:44px}
+  .stocktake-current-product-actions-v5>span{grid-column:1/-1;min-width:0}
+  .stocktake-e-footer-v4{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
+  .stocktake-e-footer-v4>button{width:100%;min-height:46px}
+}
+
+@media(max-width:420px){
+  .stocktake-current-product-actions-v5{grid-template-columns:1fr}
+  .stocktake-current-product-actions-v5>span{grid-column:auto}
+}
+'''
+          if '/* W5.4 — full revision:' in css:
+              raise SystemExit('W5.4 CSS already present')
+          p.write_text(css.rstrip() + addition + '\n', encoding='utf-8')
+          print('W5.4 source patch applied')
+          PY
+
+      - name: Write W5.4 preservation manifest and update release gate
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import crypto from 'node:crypto'
+          import ts from 'typescript'
+          const relative = 'src/features/inventory/views/renderInventoryStocktakePanel.tsx'
+          const text = fs.readFileSync(relative, 'utf8')
+          const source = ts.createSourceFile(relative, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+          let fn = null
+          const visit = (node) => { if (ts.isFunctionDeclaration(node) && node.name?.text === 'renderInventoryStocktakePanel') fn = node; ts.forEachChild(node, visit) }
+          source.forEachChild(visit)
+          if (!fn?.body) throw new Error('renderInventoryStocktakePanel not found')
+          const ret = [...fn.body.statements].find((statement) => ts.isReturnStatement(statement))
+          if (!ret?.expression) throw new Error('stocktake return missing')
+          let expression = ret.expression
+          while (ts.isParenthesizedExpression(expression)) expression = expression.expression
+          const normalize = (value) => value.replace(/\r\n/g, '\n').split('\n').map((line) => line.trim()).filter(Boolean).join('\n').replace(/^export\s+/, '')
+          const after = crypto.createHash('sha256').update(normalize(expression.getText(source))).digest('hex')
+          const before = fs.readFileSync('/tmp/w5-4-stocktake-before', 'utf8').trim()
+          fs.writeFileSync('scripts/w5-4-full-stocktake-frontend-manifest.json', JSON.stringify({
+            version: 1,
+            revision: 'w5-4-full-stocktake',
+            frontend: { panelReturnChanges: { renderInventoryStocktakePanel: { before, after } } },
+          }, null, 2) + '\n')
+          console.log(`W5.4 stocktake preservation: ${before} -> ${after}`)
+          NODE
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly 1 match, got {count}')
+              return text.replace(old, new, 1)
+
+          p = Path('scripts/test-step1906b-frontend-modularization.mjs')
+          s = p.read_text(encoding='utf-8')
+          s = replace_once(s,
+              "const w5ManagerWarehouseAccessPath = path.join(root, 'scripts/w5-manager-warehouse-access-frontend-manifest.json')\n",
+              "const w5ManagerWarehouseAccessPath = path.join(root, 'scripts/w5-manager-warehouse-access-frontend-manifest.json')\nconst w5FullStocktakePath = path.join(root, 'scripts/w5-4-full-stocktake-frontend-manifest.json')\n",
+              '1906b W5.4 path')
+          s = replace_once(s,
+              "  const w5ManagerWarehouseAccess = fs.existsSync(w5ManagerWarehouseAccessPath) ? JSON.parse(fs.readFileSync(w5ManagerWarehouseAccessPath, 'utf8')) : null\n",
+              "  const w5ManagerWarehouseAccess = fs.existsSync(w5ManagerWarehouseAccessPath) ? JSON.parse(fs.readFileSync(w5ManagerWarehouseAccessPath, 'utf8')) : null\n  const w5FullStocktake = fs.existsSync(w5FullStocktakePath) ? JSON.parse(fs.readFileSync(w5FullStocktakePath, 'utf8')) : null\n",
+              '1906b W5.4 load')
+          s = replace_once(s,
+              "  if (w5ManagerWarehouseAccess) check(w5ManagerWarehouseAccess.version === 1 && w5ManagerWarehouseAccess.revision === 'w5-manager-warehouse-access', 'W5 manager Warehouse access frontend manifest invalid')\n",
+              "  if (w5ManagerWarehouseAccess) check(w5ManagerWarehouseAccess.version === 1 && w5ManagerWarehouseAccess.revision === 'w5-manager-warehouse-access', 'W5 manager Warehouse access frontend manifest invalid')\n  if (w5FullStocktake) check(w5FullStocktake.version === 1 && w5FullStocktake.revision === 'w5-4-full-stocktake', 'W5.4 full stocktake frontend manifest invalid')\n",
+              '1906b W5.4 validate')
+
+          old = "    const w5ManagerAccessChange = w5ManagerWarehouseAccess?.frontend?.panelReturnChanges?.[panel.func]\n    if (w5ManagerAccessChange) {\n      check(w5ManagerAccessChange.before === expectedPanelHash, `${panel.func}: W5 manager Warehouse access panel baseline hash mismatch`)\n      expectedPanelHash = w5ManagerAccessChange.after\n    }\n    check(sha(normalize(text)) === expectedPanelHash, `${panel.func}: rendered JSX changed outside accepted baseline/B2A/autonomy/W1/W2/W3.1A/W3.1B/W4/W5/W5.2/W5.3/W5.3R/manager-access delta`)"
+          new = "    const w5ManagerAccessChange = w5ManagerWarehouseAccess?.frontend?.panelReturnChanges?.[panel.func]\n    if (w5ManagerAccessChange) {\n      check(w5ManagerAccessChange.before === expectedPanelHash, `${panel.func}: W5 manager Warehouse access panel baseline hash mismatch`)\n      expectedPanelHash = w5ManagerAccessChange.after\n    }\n    const w5FullStocktakeChange = w5FullStocktake?.frontend?.panelReturnChanges?.[panel.func]\n    if (w5FullStocktakeChange) {\n      check(w5FullStocktakeChange.before === expectedPanelHash, `${panel.func}: W5.4 full stocktake panel baseline hash mismatch`)\n      expectedPanelHash = w5FullStocktakeChange.after\n    }\n    check(sha(normalize(text)) === expectedPanelHash, `${panel.func}: rendered JSX changed outside accepted baseline/B2A/autonomy/W1/W2/W3.1A/W3.1B/W4/W5/W5.2/W5.3/W5.3R/manager-access/W5.4 delta`)"
+          s = replace_once(s, old, new, '1906b W5.4 panel chain')
+          p.write_text(s, encoding='utf-8')
+
+          pkg_path = Path('package.json')
+          pkg = json.loads(pkg_path.read_text(encoding='utf-8'))
+          marker = ' && node scripts/test-w5-4-full-stocktake.mjs'
+          if marker not in pkg['scripts']['release:check']:
+              pkg['scripts']['release:check'] += marker
+          pkg_path.write_text(json.dumps(pkg, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
+
+      - name: Add focused W5.4 regression and continuation note
+        run: |
+          cat > scripts/test-w5-4-full-stocktake.mjs <<'NODE'
+          import fs from 'node:fs'
+          const check = (condition, message) => { if (!condition) throw new Error(message) }
+          const panel = fs.readFileSync('src/features/inventory/views/renderInventoryStocktakePanel.tsx', 'utf8')
+          const css = fs.readFileSync('src/styles/w5-checking-ux.css', 'utf8')
+          const section = fs.readFileSync('src/features/sections/InventorySection.tsx', 'utf8')
+          const worker = fs.readFileSync('worker/domains/inventory-stocktake.ts', 'utf8')
+
+          check(panel.includes('Системные числа появятся только после подсчёта.'), 'Full stocktake must explain blind-first counting')
+          check(panel.includes('Пустое поле означает «ещё не посчитано», а не ноль.'), 'Empty count semantics are not explicit')
+          check(panel.includes('Проверено {stocktakeProgress.filled} из {stocktakeProgress.total} · {stocktakeProgressPercent}%'), 'Persistent progress is not explicit enough')
+          check(panel.includes("'Все позиции посчитаны. Следующий шаг — проверить результат.'"), 'Ready-state next action is unclear')
+          check(panel.includes('Остальных нет</button>'), 'Safe zero shortcut was not renamed for humans')
+          check(!panel.includes('Остальные = 0</button>'), 'Old technical zero shortcut remains visible')
+          check(panel.includes('«Остальных нет» заполнит пустые позиции этого товара нулём.'), 'Zero shortcut consequence is not explained')
+          check(panel.includes('Проверка результата</span>'), 'Review step still uses application/internal wording')
+          check(panel.includes('Системный остаток показан только сейчас — после физического пересчёта.'), 'Review does not explain why system quantity appears now')
+          check(panel.includes('Сохранить изменения и завершить · ${stocktakeProgress.differences}'), 'Final change action is not explicit')
+          check(panel.includes('частичного применения не будет.'), 'All-or-nothing consequence copy disappeared')
+          check(panel.includes('Отмена закроет эту проверку без изменения остатков.'), 'Cancel consequence is not visible')
+          check(!panel.includes('Начата {formatStocktakeMoment(stocktakeSession.startedAt)} · {stocktakeSession.id}'), 'Technical session id is still exposed in active UI')
+          check(panel.includes('Сессия {stocktakeSession.id} · начата'), 'Session id must remain on the printable audit sheet')
+          check(panel.includes("stocktakeProgress.recount ? 'К товару для пересчёта' : 'К следующему незаполненному товару'"), 'Next-attention action is not state-specific')
+          check(panel.includes("done ? 'готово'"), 'Desktop product status does not use a human completion label')
+          check(panel.includes("attention ? 'пересчитать' : total > 0 && counted === total ? 'готово'"), 'Mobile product status does not expose recount/done state')
+
+          check(css.includes('.stocktake-current-product-status'), 'Current-product progress styling missing')
+          check(css.includes('@media(max-width:680px)'), 'Small-screen contract missing')
+          check(css.includes('.stocktake-current-product-actions-v5{display:grid!important;grid-template-columns:1fr 1fr'), 'Current-product actions do not adapt on small screens')
+          check(css.includes('.stocktake-e-footer-v4>button{width:100%;min-height:46px}'), 'Next action is not a comfortable mobile target')
+          check(css.includes('.stocktake-e-review-actions .stocktake-finish-button{min-height:48px}'), 'Final action is not prominent enough')
+
+          check(worker.includes("SET status = 'recount_required',"), 'Full stocktake conflict protection missing')
+          check(worker.includes('пересчитайте только их — ничего из ревизии не было применено частично.'), 'Full stocktake all-or-nothing conflict contract missing')
+          check(section.includes("async function startStocktake() {\n    if (stocktakeBusy) return"), 'Manager stocktake access regressed')
+          check(!section.includes("async function startStocktake() {\n    if (!isAdmin"), 'Manager stocktake start silently blocked again')
+
+          const arrivalStart = section.indexOf('<div className="inventory-arrival-legacy-workspace">')
+          const arrivalButton = '<button className="inventory-arrival-add-position" type="button" onClick={addInventoryArrivalPosition}>+ Добавить позицию</button>'
+          check(arrivalStart >= 0 && section.indexOf(arrivalButton, arrivalStart) >= 0, 'Frozen Arrival workspace changed')
+
+          console.log('W5.4 FULL STOCKTAKE PASSED — blind counting, progress, cancel/continue, review, finish, manager access and small-screen actions remain clear and safe')
+          NODE
+
+          cat > docs/continuation/W5_4_FULL_STOCKTAKE_20260905.md <<'DOC'
+          # W5.4 — Full stocktake comprehension and completion UX
+
+          Date: 2026-09-05
+          Base Production: `a4a9ee8968523bac9d72bdce39cdfcd4d3d45477` (`W5: restore manager Warehouse checks and history`)
+
+          ## Goal
+          Keep the proven resumable stocktake engine and layout, but remove the remaining points where an employee can hesitate during a full physical count: what an empty field means, why system numbers are hidden, what is saved, what cancel does, where to go next, and what the final button will do.
+
+          ## Changes
+          - Active header no longer exposes the technical session id; the id remains on the printable audit sheet.
+          - Autosave state now says whether values are saved and explicitly tells the employee to wait before leaving/reviewing when writes are still pending.
+          - Persistent progress includes percentage and a concrete next-action message.
+          - Full-count rule explicitly states blind-first behavior and distinguishes an empty field from physical zero.
+          - Product browser and mobile selector use `готово`, `осталось`, and `пересчитать` states instead of terse counters/checkmarks.
+          - Current product shows its own counted/recount state.
+          - High-risk `Остальные = 0` becomes `Остальных нет`, with a visible consequence: it fills remaining blank positions with zero and should only be used after the product was physically counted.
+          - Footer gives a real next action instead of describing where UI controls are located.
+          - Review is named `Проверка результата`; system quantities are explained as intentionally appearing only after the physical count.
+          - Final action says `Сохранить изменения и завершить` when differences exist and explains the existing all-or-nothing conflict behavior.
+          - Cancel explanation states that cancellation closes the check without changing stock; leaving the section remains the safe way to continue later.
+          - Small-screen rules keep current-product actions, next action, review and finish controls large and stack them when needed.
+
+          ## Deliberate non-changes
+          - No migration, D1 probe or Production data write.
+          - No stocktake server algorithm change: autosave, retry/idempotency, CAS/conflict marking and all-or-nothing completion remain unchanged.
+          - No change to `Найденная позиция`; that belongs to W5.5.
+          - No change to W5.6 completion consequences/recovery summary yet.
+          - Arrival UI frozen; Branch2 untouched.
+
+          ## Next
+          W5.5: make found/unclear physical items during a check resolve naturally without turning the employee into a catalog administrator.
+          DOC
+
+      - name: Validate W5.4
+        run: |
+          git diff --check
+          node scripts/test-w5-4-full-stocktake.mjs
+          npm run release:check
+          npm run verify:db-safety
+          npm run build
+          npx wrangler deploy --dry-run
+          if git diff --name-only | grep -E '(^|/)(migrations?|schema)(/|\.|$)' ; then
+            echo 'Unexpected migration/schema change in W5.4'
+            exit 1
+          fi
+
+      - name: Commit validated tree
+        run: |
+          rm .github/workflows/w5-4-full-stocktake.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'W5.4: clarify full stocktake flow'
+          git push origin HEAD:safe/w5-4-use-this
