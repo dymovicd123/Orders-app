@@ -21,7 +21,6 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'inventoryOperationRowSecondary'
   | 'inventoryOperationSearch'
   | 'inventoryPanelStyle'
-  | 'isAdmin'
   | 'movementSourceLoadError'
   | 'movementSourceLoading'
   | 'operationDraftItem'
@@ -73,7 +72,6 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
     inventoryOperationRowSecondary,
     inventoryOperationSearch,
     inventoryPanelStyle,
-    isAdmin,
     movementSourceLoadError,
     movementSourceLoading,
     operationDraftItem,
@@ -451,7 +449,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                           <button
                             className="primary"
                             type="button"
-                            disabled={inventoryMovementBusy || !isAdmin || (inventoryDraft.movementType === 'arrival' ? inventoryArrivalSummary.rows === 0 : inventoryDraftSummary.rows === 0)}
+                            disabled={inventoryMovementBusy || (inventoryDraft.movementType === 'arrival' ? inventoryArrivalSummary.rows === 0 : inventoryDraftSummary.rows === 0)}
                             onClick={() => void saveInventoryMovement()}
                           >
                             {inventoryMovementBusy ? 'Сохраняю…' : inventoryMovementText.button}
