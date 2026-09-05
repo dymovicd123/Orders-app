@@ -1,6 +1,6 @@
 # Orders-app — current project continuation context
 
-Updated: 2026-09-04
+Updated: 2026-09-05
 Branch for continuation context only: `context/project-continuation`
 
 This file is the canonical continuation point for ChatGPT work on the project. It is intentionally kept off `main` so context-only updates do not trigger a Production Worker deploy.
@@ -14,110 +14,182 @@ This file is the canonical continuation point for ChatGPT work on the project. I
 - Prefer measured, narrow, reversible changes, especially for D1 read-budget work.
 - For small D1 release/repair SQL, prefer bounded `wrangler d1 execute --command` statements rather than `--file`; this project previously hit `D1_RESET_DO` through the import endpoint.
 - Branch2 must remain untouched unless it is explicitly targeted.
-- Evening 2026-09-04: Production D1 daily read budget is near exhaustion. Do **not** run Production D1 SELECT/profile/insights until the next reset unless the user explicitly authorizes it. GitHub/source/static checks are allowed.
+- D1 reads were near the daily limit on 2026-09-04. Avoid broad Production forensics unless needed; exact PK/indexed checks are acceptable for an operational incident when they materially improve safety.
 
 ## Current Production code
 
-R5.9 release tree was introduced by PR #12 at:
+Current `main` / Production code is:
 
-`6985093f7ee377b7d52b8716184b26f4fd6a1ac6`
+`a008abf1d875fa19d0b60e0091b7c364a2536529`
 
-R5.9 Cloudflare deploy monitor run `33894745462` completed successfully.
+This is PR #13, `Fix Workshop backlog visibility and restore flow`, squash-merged after the Asem Workshop incident.
 
-During the later code-only audit, an accidental temporary root file `noop` was created on `main` and immediately removed. This produced two no-op history commits:
+Cloudflare deploy monitor:
+- run `33950107977`
+- job `101263149804`
+- result `success`
+- Worker `orders-app`
+- immutable Worker tag `66404f6fa2ad454998068e7dd7600edb`
+- Cloudflare build UUID `b815ab12-b7b4-4453-ba36-a8cad762d5bb`
+- exact build status `stopped`, outcome `success`
 
-- `6c6bdfffd5f2217f75cc56aa43508476a9d1c1c9` — temporary file added;
-- `d9b17803fb63244722def8020741be1d961c4a81` — temporary file removed.
+PR #13 has no D1 migration and no Worker declaration/body change. Exact main diff from the prior tree is five files only:
+- `package.json`
+- `scripts/test-workshop-backlog-visibility-r1.mjs`
+- `src/App.tsx`
+- `src/app/types.ts`
+- `src/features/sections/WorkshopSection.tsx`
 
-Current GitHub `main` HEAD is therefore `d9b17803...`, but compare `6985093... -> d9b17803...` has **zero changed files**. The current code tree is exactly the R5.9 release tree. Cloudflare deploy monitor runs for the two no-op commits also completed successfully (`33896074560`, `33896101257`). They did not run D1 queries.
-
-Do not rewrite/reset main merely to remove these history commits; that would create unnecessary deploy churn.
-
-Branch2 remains:
+Arrival UI was not touched. Branch2 remains:
 
 `adec6098777bebe4709615e1256cc5dd468b444d`
 
-R5.8/R5.9 have no D1 migrations.
+Historical note: R5.9 release tree was introduced by PR #12 at `6985093f7ee377b7d52b8716184b26f4fd6a1ac6`. Later, an accidental temporary root file `noop` produced two no-op main history commits (`6c6bdffd...`, `d9b17803...`) with zero net changed files. Do not rewrite main merely to remove those history commits.
+
+## 2026-09-05 Workshop incident — Asem / Saida / 31.08
+
+User reported a Workshop item accidentally marked `Готово`, then staff could not find it to return it to active. Identifying data supplied by user: manager Саида, customer Асем, phone +7 777 696 0065, order date 31.08.
+
+A deliberately narrow Production forensic used one SELECT-only workflow:
+- run `33949512112`
+- job `101261502354`
+- 54 rows_read total
+- rows_written=0, changed_db=false
+
+Exact Production object found:
+- order id `1269`
+- external id `ORD-20260831114645-9B02389A`
+- order date `2026-08-31`
+- manager `САИДА`
+- phone_normalized `87776960065`
+- order status `active`
+- shipping status `not_sent`
+- before repair workshop_status `ready`
+
+Exact order item:
+- item id `3165`
+- product `БАЯН СҰЛУ ШАПАН`
+- gender `ЖЕН`
+- color `СВЕТЛО-БЕЖЕВЫЙ`
+- material `КАШЕМИР`
+- length `СТАНДАРТ`
+- size `46`
+- quantity `1`
+- `source_type='warehouse'`
+- `is_workshop=1`
+- `stock_writeoff_status='workshop'`
+
+Exact Workshop task:
+- task id `1800`
+- order_item_id `3165`
+- status before repair `done`
+- urgent `1`
+- due date `2026-09-03`
+- comment `оюы тұмар болу керек`
+- mistaken ready action recorded at `2026-09-05T05:22:52Z`
+
+### Root cause
+
+The user suspected `Готово`/`Вернуть` had changed the item source from Workshop to Warehouse. Current data and code show that did **not** happen in this incident.
+
+The schema has a legacy dual representation:
+- `order_items.source_type` is constrained to only `warehouse|boutique` by the original schema;
+- Workshop identity is canonicalized by `is_workshop=1` plus Workshop task/stock status;
+- `orders-write.ts` intentionally stores `source_type='warehouse'` for Workshop order items because the column cannot store `workshop`;
+- API/UI maps an item with `is_workshop=1` back to Workshop semantics;
+- current `updateWorkshopTask` changes task status and can repair `is_workshop/stock_writeoff_status`, but does not write `source_type`.
+
+Therefore `source_type='warehouse'` on item 3165 is not evidence of conversion. A new regression now explicitly forbids Workshop ready/restore logic from rewriting `source_type`.
+
+The actual bug was visibility across the month boundary:
+- Workshop UI defaulted to current month (September);
+- the order belongs to 31 August;
+- the same date range was applied to Active and Done queues;
+- after task 1800 was marked done, it disappeared from September Done;
+- simply restoring it to active would also have left an August task invisible in September Active.
+
+### Production repair of the exact task
+
+Task 1800 was restored through the normal Worker business API, not direct D1 mutation:
+
+`PATCH /api/workshop/1800`
+
+with `status=active` and exact `orderItemId=3165`.
+
+Repair workflow:
+- run `33950242034`
+- job `101263515811`
+- result `success`
+
+Safety guard before mutation was an exact indexed read costing **2 rows_read** and confirmed task 1800 was still `done`, linked to order 1269 / item 3165.
+
+Business API returned:
+- `ok=true`
+- `changed=true`
+- task 1800 status `active`
+- `previousStatus='done'`
+- preservedOrderItemId `3165`
+
+Post-repair exact verification cost **3 rows_read** and confirmed:
+- task 1800 `active`
+- order 1269 `workshop_status='in_workshop'`
+- item 3165 `is_workshop=1`
+- item 3165 `stock_writeoff_status='workshop'`
+- legacy `source_type='warehouse'` unchanged, as intended by schema
+
+The temporary repair and forensic branches were reset to clean main after use so one-shot workflow files are not left at their tips.
+
+### PR #13 behavior
+
+Workshop operational queue now defaults to all dates rather than current month. UI adds explicit `Все` period option. Switching Active/Urgent/Done no longer silently forces an empty/all-date range back to current month. `Готовые` switches to newest-first so an accidental `Готово` is easy to find and undo. Active/Urgent remain oldest-first to preserve backlog priority. Invoice is the only view that converts all/empty dates to a bounded current-month range, preventing oversized invoice loads.
+
+Validation before merge:
+- run `33949904503`
+- job `101262579416`
+- result `success`
+- focused Workshop regression passed
+- `npm run release:check` passed
+- `npm run verify:db-safety` passed
+- `npm run typecheck` passed
+- `npm run build` passed
+- `npm run lint` passed
+
+Two earlier candidate validation attempts failed safely before commit and revealed guard issues, not runtime bugs: one attempted Worker-body change violated Step1906A hash gate, so Worker change was removed; one exceeded the App controller line budget by two lines, so the frontend change was compacted. Final candidate passed all gates.
 
 ## R5.9 performance result
 
 For active August orders `2026-08-01..2026-08-31`, final pre-release SELECT-only proof showed:
-
-- page 2: **600 -> 313 rows_read** (−47.8%)
-- page 3: **893 -> 297** (−66.7%)
-- page 4: **1,192 -> 312** (−73.8%)
-- page 5: **1,288 -> 106** (−91.8%)
-- repeated period summary: **2,423 -> 447 rows_read** (−81.6%)
+- page 2: 600 -> 313 rows_read (-47.8%)
+- page 3: 893 -> 297 (-66.7%)
+- page 4: 1,192 -> 312 (-73.8%)
+- page 5: 1,288 -> 106 (-91.8%)
+- repeated period summary: 2,423 -> 447 rows_read (-81.6%)
 - exact order count: 432
-- keyset page `external_id` sequences exactly matched OFFSET baseline.
+- keyset page external_id sequences exactly matched OFFSET baseline.
 
-R5.9 uses an internal `(order_date,id)` seek cursor only for sequential Next navigation, while keeping visible offset/page semantics. Later page-only navigation can reuse exact page-1 periodStats and request count-only metadata. Legacy/direct API callers retain full periodStats by default.
+R5.9 uses an internal `(order_date,id)` seek cursor only for sequential Next navigation while keeping visible offset/page semantics. Later page-only navigation can reuse exact page-1 periodStats and request count-only metadata. Legacy/direct API callers retain full periodStats by default.
 
 ## R5.8 / R5.7 inherited optimizations
 
-R5.8 Finance default workspace `2026-09-01..2026-09-04` was reduced **901 -> 673 rows_read** by deriving payment-method and payment-by-day aggregates from already-loaded payment operation rows. Static review confirms the derived source uses the same payment-date and non-deleted-order population as the removed standalone aggregates.
+R5.8 Finance default workspace `2026-09-01..2026-09-04` was reduced 901 -> 673 rows_read by deriving payment-method and payment-by-day aggregates from already-loaded payment operation rows.
 
 R5.7 Orders Summary reuses `orders.received_amount` only inside its proven active/no-date boundary. Date-filtered, archive/non-active and legacy callers retain the exact payments query.
 
-## Code-only post-R5.9 audit — 2026-09-04 evening
+## Code-only post-R5.9 audit — 2026-09-04
 
-Because D1 limits are near exhaustion, this audit deliberately made **no Production D1/Cloudflare database calls**.
+Audit run `33896192244` / job `101099283468` succeeded with no Production D1 access. Typecheck, build, lint, R5.7/R5.8/R5.9 regressions, Worker declaration gate, frontend modularization, type/API boundary, runtime SQL syntax and DB-safety all passed.
 
-Temporary code-audit branch:
-`ops/r5-9-code-audit-20260904`
+### Remaining low-severity R5.9 issues for later
 
-Audit run:
-- GitHub Actions run `33896192244`
-- job `101099283468`
-- result: **success**
+1. `worker/domains/orders-read.ts` can intentionally return `periodStats: null` for `includePeriodStats=0`, while `src/app/types.ts` still declares `periodStats?: OrderPeriodStats` rather than `OrderPeriodStats | null`. Current runtime is safe but the type contract is inaccurate.
+2. A very fast Next click inside the filter debounce window can combine an old page cursor/summary with newly edited filters until the scheduled page-1 reload corrects it. Preferred future fix: bind page reuse to an applied-filter fingerprint or invalidate reuse immediately on filter change.
+3. Concurrent writes between keyset page loads can make page rows and freshly counted total metadata describe slightly different snapshots. Treat as a multi-user consistency risk, not a confirmed Production failure.
 
-Passed without D1 access:
-- `npm run typecheck`
-- `npm run build`
-- `npm run lint`
-- R5.7 focused regression
-- R5.8 focused regression
-- R5.9 focused regression
-- Step 190.6A Worker declaration gate
-- Step 190.6B frontend modularization gate
-- Step 190.6E type/API boundary gate
-- runtime SQL syntax static test
-- `npm run verify:db-safety`
+## Next action
 
-Therefore no compile/build/lint/static-regression failure is currently present from R5.7–R5.9.
+The Asem Workshop incident is repaired and PR #13 is live. Do not run more broad Production profiling just for this incident.
 
-### Confirmed low-severity contract defect
-
-`worker/domains/orders-read.ts` intentionally returns:
-
-`periodStats: null`
-
-when R5.9 `includePeriodStats=0` is used. But `src/app/types.ts` currently declares:
-
-`periodStats?: OrderPeriodStats`
-
-instead of `periodStats?: OrderPeriodStats | null`.
-
-The current UI is runtime-safe because it checks `if (ordersData.periodStats)` before using the object and preserves previous stats during page reuse. This is **not currently a crash or data-corruption bug**, but the TypeScript API contract is inaccurate and should be corrected in the next narrow code patch.
-
-### R5.9 filter/pagination race risk
-
-Orders filter changes are debounce-loaded after roughly 120 ms (380 ms for text search). During that debounce interval the old page rows/stats remain displayed and `busy` is still false. A very fast click on **Next** can therefore derive an R5.9 cursor from the old rows while passing the newly edited filters and can also request `includePeriodStats=0` using the old summary.
-
-The scheduled page-1 filter reload normally corrects the view shortly afterward, so this is expected to be transient and does not mutate data. Still, it is a real UI consistency race introduced/worsened by cursor+summary reuse. Preferred fix: tie cursor/periodStats reuse to an exact applied-filter fingerprint (or invalidate page reuse immediately when filters change), rather than relying on debounce timing.
-
-### Concurrent-write pagination consistency risk
-
-R5.9 keyset page rows are anchored to the prior page cursor, but later-page `totalCount/hasMore` are freshly counted. If another user inserts/deletes matching orders between page loads, page contents and fresh total metadata can temporarily describe different snapshots. Reused page-1 periodStats can likewise become stale during the paging session.
-
-No runtime reproduction was attempted tonight because it would consume D1 reads. Treat this as a multi-user consistency risk, not a confirmed Production failure. A future fix should avoid adding a new database read merely to version the snapshot; prefer frontend/session snapshot metadata if practical.
-
-## Next action after D1 reset
-
-1. First fix/audit the small R5.9 contract and filter-pagination race in a code-only narrow patch, with no business-model changes.
-2. After the daily D1 reset, run a fresh Production read-only profile/insights only if the user confirms the budget is available.
-3. Re-measure remaining hotspots before choosing R5.10; do not use stale pre-R5.9 costs as final priority evidence.
-4. Do not change Warehouse/handover logic merely for performance without a separate end-to-end warehouse audit.
+Next normal technical work can return to the narrow R5.9 contract/filter-pagination cleanup, then after D1 budget is comfortable run a fresh measured profile before choosing any R5.10 optimization target.
 
 ## Inherited safety / business invariants
 
