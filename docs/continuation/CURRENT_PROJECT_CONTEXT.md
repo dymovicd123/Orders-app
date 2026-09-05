@@ -14,11 +14,144 @@ This file is the canonical continuation point for ChatGPT work on the project. I
 - Prefer measured, narrow, reversible changes, especially for D1 read-budget work.
 - For small D1 release/repair SQL, prefer bounded `wrangler d1 execute --command` statements rather than `--file`; this project previously hit `D1_RESET_DO` through the import endpoint.
 - Branch2 must remain untouched unless it is explicitly targeted.
+- The user considers the current performance pass complete after R5.11 unless a future concrete performance problem appears. Do not drift into endless optimization; next work is Warehouse redesign after the user supplies the things they dislike about it.
 
-## Current Production release — R5.10
+## Current Production release — R5.11
 
 Current `main` / Production code:
 
+`cdb46e63ed856a7f8e441bbea084b0553f1483d5`
+
+Parent: R5.10 `7da7e555d306d5e7f47f1afecf5a8927d5bfb136`.
+
+Release: PR #15, `R5.11: avoid unused full catalog load on ordinary dashboard refresh`, squash-merged 2026-09-05.
+
+Cloudflare Production deploy:
+- monitor run `33954258033`
+- job `101274570362`
+- result `success`
+- Worker `orders-app`
+- immutable Worker tag `66404f6fa2ad454998068e7dd7600edb`
+- Cloudflare build UUID `a5db592c-2962-478d-99e9-727632a4539f`
+- exact release SHA `cdb46e63ed856a7f8e441bbea084b0553f1483d5`
+- build `status=stopped`, `outcome=success`
+
+Post-deploy verification:
+- run `33954333990`
+- job `101274773698`
+- result `success`
+- checked exact `main` release SHA
+- checked exact Cloudflare build UUID, branch `main`, release SHA, stopped/success outcome
+- focused R5.11 regression passed
+- DB safety passed
+- TypeScript passed
+
+R5.11 has no Worker/D1 SQL change and no migration. Arrival UI was not touched. Stock, reserves, payment, return, exchange, shipping, issuing and Workshop business semantics were not changed.
+
+Exact release diff from R5.10 is four files:
+- `src/App.tsx`
+- `package.json`
+- `scripts/test-d1-read-budget-r5-11.mjs`
+- `scripts/test-d1-read-budget-r4.mjs`
+
+Temporary R5.11 ops branches were reset to the clean release SHA after verification:
+- `ops/r5-11-full-validation-20260905`
+- `ops/r5-11-short-search-profile-20260905`
+- `ops/r5-11-postdeploy-verify-20260905`
+
+The validated pre-squash safe branch may remain for audit history: `safe/d1-read-budget-r5-11-lazy-catalog-20260905`.
+
+Branch2 remains out of scope and was not intentionally changed by R5.11. Last known exact Branch2 SHA remains `adec6098777bebe4709615e1256cc5dd468b444d` unless separately reverified.
+
+## R5.11 — final clean read-budget win
+
+### Problem
+
+`loadDashboard()` unconditionally refreshed both reference dictionaries and the full catalog, so a fresh ordinary Orders list/overview session paid for all catalog variants even when that screen did not need product picking.
+
+Production SELECT-only measurement of one full catalog fetch:
+- products: `70 rows_read` / 68 rows
+- variants: `1226 rows_read` / 1226 rows
+- product aliases: `14 rows_read` / 6 rows
+- value aliases: `8 rows_read` / 4 rows
+- total: **`1318 rows_read`**
+
+### Implementation
+
+The generic dashboard/list refresh now keeps `loadReferencesData(...)` but does not call `loadCatalogData(...)`.
+
+Full catalog loading remains explicit for product-aware screens:
+- Orders: create, edit, exchange
+- Warehouse: movement, stocktake, catalog
+
+Exchange was explicitly added to the Orders catalog-loading gate because `applyExchangeProductPick()` is catalog-backed. This prevents a performance optimization from silently degrading the exchange picker.
+
+The saving is primarily a cold/fresh-session and forced-refresh saving; frontend caching means it should not be described as 1318 rows saved on every filter click.
+
+### Validation
+
+First validation run `33954061589`, job `101274036490`, failed safely only because the old R4 static regression expected the exact historical create/edit-only condition. The app behavior itself was intentional. The R4 gate was updated cumulatively to require the new exact product-aware create/edit/exchange condition; no old invariant was removed.
+
+Final validation:
+- run `33954130678`
+- job `101274225375`
+- result `success`
+
+Passed:
+- focused R5.11 regression
+- full cumulative `npm run release:check`
+- DB safety
+- TypeScript
+- production build
+- lint
+- Wrangler deploy dry-run
+
+Known unrelated CI warnings remain: npm reports 6 dependency vulnerabilities (4 moderate, 2 high), and GitHub Actions reports Node action deprecation warnings.
+
+## R5.11 candidates deliberately rejected
+
+The final optimization pass also tested several plausible changes against live Production data and rejected them when they were worse or too small to justify semantic risk.
+
+### Short order search rewrites — rejected
+
+SELECT-only run `33952785829`, job `101270544376`, success. Exact result equivalence passed, but the set-based candidate was substantially worse for representative 1–2 character searches:
+- `А`: current full `3893`, candidate `14014`; current page `301`, candidate `14014`
+- `СА`: `7360 -> 11609`; page `619 -> 11609`
+- `46`: `9549 -> 10007`; page `2631 -> 10007`
+- `77`: `7842 -> 11176`; page `1340 -> 11176`
+- `O` / `OR`: `3878 -> 14014`; page `301 -> 14014`
+
+A page+summary window candidate was also worse for most probes; only `46` improved (`13226 -> 11535`, ~12.8%), not enough for a mode-specific rewrite.
+
+Decision: preserve the current short-search path.
+
+### Warehouse Attention rewrites — rejected for now
+
+Measured ordinary Attention components:
+- summary: `2645 rows_read`
+- compact handover flags: `1235 rows_read`
+- combined ordinary full Attention load: about `3880 rows_read`
+
+Summary split:
+- catalog: `1492`
+- shortage/reserve: `954`
+- intake: `197`
+- lifecycle total: `2`
+- stocktake: `0`
+
+Cached `inventory_stock.reserved_quantity` shortage candidate returned the exact same 8 problem keys and current Production had 0 cache-vs-active-reservation mismatches, but cost only improved `954 -> 897` (57 rows). Rejected because the saving is not worth changing the source used by Warehouse truth logic.
+
+Catalog-attention alternatives were exact but worse or neutral:
+- operational-first rewrite `1492 -> 2067`
+- recency rewrite `1492 -> 1492`
+
+Handover raw timestamp ordering was proven safe on current ISO-Z Production timestamps and exact-equivalent for 16 rows / 15 review-needed, but only improved `1235 -> 1178` (57 rows, ~4.6%). Rejected as a micro-optimization in high-risk physical-truth logic.
+
+This is an intentional stopping point: do not keep chipping at Warehouse Attention merely for small D1 savings. Future changes there should be driven by the Warehouse functional redesign and then measured as part of that work.
+
+## Previous Production release — R5.10
+
+R5.10 release SHA:
 `7da7e555d306d5e7f47f1afecf5a8927d5bfb136`
 
 Release: PR #14, `R5.10: reduce Workshop variant enrichment reads`, squash-merged 2026-09-05.
@@ -30,99 +163,32 @@ Cloudflare Production deploy:
 - Worker `orders-app`
 - immutable Worker tag `66404f6fa2ad454998068e7dd7600edb`
 - Cloudflare build UUID `8791b8a9-2699-4251-8c9c-3abd0b27d69a`
-- exact release SHA `7da7e555d306d5e7f47f1afecf5a8927d5bfb136`
-- build `status=stopped`, `outcome=success`
 
 R5.10 has no D1 migration. Arrival UI was not touched. Stock, reserves, payment, return, issuing and Workshop status business semantics were not changed.
 
-Exact release diff from the preceding main tree is five files:
-- `package.json`
-- `scripts/d1-read-budget-r5-10-worker-manifest.json`
-- `scripts/test-d1-read-budget-r5-10.mjs`
-- `scripts/test-step1906a-worker-modularization.mjs`
-- `worker/domains/workshop.ts`
-
-Temporary build/proof helper files were removed from the release branch before PR. Temporary R5.10 ops branches were reset to the clean release SHA after verification.
-
-Branch2 remains out of scope and was not intentionally changed by R5.10. Last known exact Branch2 SHA remains `adec6098777bebe4709615e1256cc5dd468b444d` unless separately reverified.
-
 ## R5.10 — Workshop read optimization
 
-### Problem
-
-`enrichWorkshopTaskRowsFromOrderItems` used a correlated `catalog_variants` fallback per linked Workshop item. This is correct but expensive on large Workshop reads, especially now that the full historical backlog is intentionally visible.
-
-### Implementation
-
-For `directItemIds.length >= 20`, large Workshop enrichment now resolves historical variant-less rows set-wise:
-- load `order_items` with direct variant metadata;
-- collect product IDs only for rows whose `variant_id` is null;
-- load candidate `catalog_variants` once for those products;
-- preserve the legacy fallback priority `is_active DESC, sort_order ASC, id ASC` and the same color/size matching semantics in memory.
-
-For small flows below the threshold, the exact legacy correlated SQL remains. This deliberately protects one-item status/relink/mutation flows from catalog fan-out. The later ambiguous legacy task matcher is unchanged.
-
-### Production proof
+`enrichWorkshopTaskRowsFromOrderItems` used a correlated `catalog_variants` fallback per linked Workshop item. For `directItemIds.length >= 20`, large Workshop enrichment now resolves historical variant-less rows set-wise while preserving the legacy fallback priority `is_active DESC, sort_order ASC, id ASC` and color/size matching semantics. Small flows retain the exact legacy correlated SQL.
 
 Exact SELECT-only proof on 80 live Workshop items:
 - legacy correlated fallback: `2967 rows_read`
 - set-based resolver: `1035 rows_read`
 - saving: `1932 rows_read`
 - reduction: about `65.1%`
-- missing-variant products: `15`
-- candidate variants: `846`
-- raw item read: `160`
-- candidate variant read: `875`
 - complete result equivalence passed
-- all D1 proof calls enforced `rows_written=0`, `changed_db=false`
 
 Initial proof run: `33951270314`, job `101266442409`, success.
 
-### Exact Worker gate
-
-R5.10 is accepted by the cumulative Step 190.6A declaration gate through an exact SHA-256 delta for `enrichWorkshopTaskRowsFromOrderItems`:
-- before: `1851daa7279ff837011e507fe41fdd9a2615ad42ecd6a3a3c7a8fb021b302e2a`
-- after: `3bd7cf0851a6125c21812d65b45c37fd7fcb6ceb52c773eedb87fc5ed7c09638`
-
-The gate was not bypassed or weakened. Earlier candidate runs failed safely until the exact cumulative R5.10 allow-list was added.
-
-### Final validation
-
-Validation branch run:
+Final validation:
 - run `33952261760`
 - job `101269138538`
 - result `success`
 
-Passed:
-- focused R5.10 regression
-- full cumulative `npm run release:check`
-- DB safety
-- TypeScript typecheck
-- production build
-- lint with warnings only, 0 errors
-- Wrangler deploy dry-run
-- fresh Production read-only equivalence/budget proof
-
-Step 190.6A passed with 35 Worker TS files, 509 preserved declarations and 0 import cycles. DB safety preserved 69 migration files and found no D1 mutation command in package scripts.
-
-### Post-deploy verification
-
-Post-deploy run:
+Post-deploy verification:
 - run `33952451906`
 - job `101269652295`
 - result `success`
-
-Verified exact Production identity:
-- Worker tag `66404f6fa2ad454998068e7dd7600edb`
-- build UUID `8791b8a9-2699-4251-8c9c-3abd0b27d69a`
-- release SHA `7da7e555d306d5e7f47f1afecf5a8927d5bfb136`
-
-Fresh post-deploy SELECT-only control:
-- legacy baseline `2967 rows_read`
-- set-based total `1035 rows_read`
-- `R510_POSTDEPLOY_READONLY_OK`
-
-Therefore the measured reduction survived the real Production deployment.
+- fresh post-deploy control remained `2967 -> 1035 rows_read`
 
 ## 2026-09-05 Workshop backlog incident — inherited context
 
@@ -150,6 +216,8 @@ Remaining low-severity R5.9 cleanup candidates:
 2. Very fast Next during the filter debounce window can temporarily combine an old cursor/summary with newly edited filters until page-1 reload; preferred fix is an applied-filter fingerprint or immediate reuse invalidation.
 3. Concurrent writes can make page rows and freshly counted metadata describe slightly different snapshots; treat as multi-user consistency risk, not confirmed Production failure.
 
+Do not reopen these merely to continue optimization; handle them only if they become relevant to a concrete functional bug or future work.
+
 ## R5.8 / R5.7 inherited performance work
 
 R5.8 reduced the default Finance workspace for 2026-09-01..2026-09-04 from `901 -> 673 rows_read` by deriving payment-method and payment-by-day aggregates from already-loaded payment operation rows. Current-month Finance queries were rechecked during R5.10 profiling and were no longer the leading read hotspot.
@@ -167,18 +235,31 @@ Prior observed daily totals around this period were roughly:
 - Sep 4: 5.04M
 - Sep 5 was still a partial day during the conversation
 
-The average rows per read request on Sep 5 was still broadly similar to some previous days, so usage volume matters. Use identical-query before/after measurements to prove optimization effects rather than aggregate dashboard totals alone.
+Use identical-query before/after measurements to prove optimization effects rather than aggregate dashboard totals alone.
 
-## Next optimization point — R5.11 candidate
+## Next functional point — Warehouse redesign
 
-R5.10 is complete and live. The next preferred target is **fresh read-only Production profiling of order search**, especially 1–2 character searches. Generic searches of length >=3 already use the R5.3 trigram/FTS path, while short queries intentionally retain legacy semantics and may still be expensive.
+The performance pass is deliberately closed with R5.11. Do **not** invent R5.12 optimization work simply because more SQL can theoretically be tuned.
 
-Before changing code:
-- measure representative short searches and their actual rows_read;
-- inspect current query planner/index usage;
-- preserve `ORD`/external-id search behavior and short-search compatibility;
-- prove any alternative SQL returns the same order IDs before implementation;
-- do not touch Warehouse Attention merely because it is potentially expensive; its physical-truth logic is higher risk and needs its own precise measured audit.
+The user plans to send a detailed list of what currently bothers them about Warehouse. Once received:
+- first capture all complaints/requirements without prematurely patching one screen;
+- audit the related Warehouse flows end-to-end: overview, Attention, movement, stocktake/revision, catalog, reservations, handover/issuing, returns from Workshop, order save/shortage interaction, manager/admin permissions, small-screen UX and D1 cost;
+- separate usability problems from physical-truth/business-rule problems;
+- preserve the existing physical/reservation truth unless there is a clearly justified redesign;
+- produce a coherent change plan, then implement in bounded steps;
+- Arrival remains frozen.
+
+Known Warehouse direction from prior work that still matters:
+- managers should be able to operate Warehouse without permanent admin intervention;
+- interface should be simple and task-oriented, not a technical state dump;
+- unknown product/attribute cases require controlled review, while known valid return/intake cases should be as automatic as safely possible;
+- stale pre-revision facts must not silently overwrite fresher physical truth;
+- different problem classes in Attention should remain visually separated;
+- distinguish “in orders but not in stock” from unresolved catalog/intake questions;
+- show useful order context for affected items;
+- movement/variant selection has historically been overloaded and hard to search;
+- catalog presentation still has cleanup/UX debt;
+- do not overcomplicate the model merely to reconstruct where an item might have been historically.
 
 ## Inherited safety / business invariants
 
