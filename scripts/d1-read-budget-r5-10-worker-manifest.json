@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "revision": "d1-read-budget-r5-10",
+  "changes": {
+    "enrichWorkshopTaskRowsFromOrderItems": {
+      "before": "1851daa7279ff837011e507fe41fdd9a2615ad42ecd6a3a3c7a8fb021b302e2a",
+      "after": "3bd7cf0851a6125c21812d65b45c37fd7fcb6ceb52c773eedb87fc5ed7c09638"
+    }
+  }
+}
