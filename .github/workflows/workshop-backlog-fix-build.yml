@@ -42,8 +42,6 @@ jobs:
 
           replace_exact('src/app/types.ts', "export type WorkshopPeriodPreset = 'today' | 'yesterday' | 'month' | 'custom'", "export type WorkshopPeriodPreset = 'all' | 'today' | 'yesterday' | 'month' | 'custom'")
 
-          replace_exact('worker/domains/workshop.ts', """  if (period === 'today' || period === 'сегодня') {\n    return { dateFrom: today, dateTo: today };\n  }\n""", """  if (period === 'all' || period === 'все') {\n    return { dateFrom: '', dateTo: '' };\n  }\n\n  if (period === 'today' || period === 'сегодня') {\n    return { dateFrom: today, dateTo: today };\n  }\n""")
-
           section = Path('src/features/sections/WorkshopSection.tsx')
           text = section.read_text(encoding='utf-8')
           old = """                        const fallback = getPeriodRange('month')\n                        const next = {\n                          ...workshopFilters,\n                          view: entry.value,\n                          period: (!workshopFilters.dateFrom || !workshopFilters.dateTo) ? 'month' as WorkshopPeriodPreset : workshopFilters.period,\n                          dateFrom: workshopFilters.dateFrom || fallback.dateFrom,\n                          dateTo: workshopFilters.dateTo || fallback.dateTo,\n                          urgentOnly: entry.value === 'urgent',\n                        }\n                        setWorkshopFilters(next)\n"""
@@ -60,8 +58,7 @@ jobs:
           new_meta = 'Активные и готовые позиции по умолчанию не ограничены текущим месяцем, поэтому старые незавершённые заказы не исчезают из очереди. Накладная по-прежнему открывается за выбранный период.'
           if text.count(old_meta) != 1:
               raise SystemExit('WorkshopSection meta text mismatch')
-          text = text.replace(old_meta, new_meta, 1)
-          section.write_text(text, encoding='utf-8')
+          section.write_text(text.replace(old_meta, new_meta, 1), encoding='utf-8')
 
           test = r'''import fs from 'node:fs'
 
@@ -77,11 +74,11 @@ jobs:
             check(types.includes("WorkshopPeriodPreset = 'all' | 'today' | 'yesterday' | 'month' | 'custom'"), 'Workshop all-period type is missing')
             check(app.includes("period: 'all' as WorkshopPeriodPreset,\n    dateFrom: '',\n    dateTo: ''"), 'Workshop must start as an all-date operational queue')
             check(app.includes("if (preset === 'all') {\n      setWorkshopFilters((current) => ({ ...current, period: 'all', dateFrom: '', dateTo: '' }))"), 'All-period preset must clear date bounds')
-            check(workshop.includes("if (period === 'all' || period === 'все') {\n    return { dateFrom: '', dateTo: '' };"), 'Worker all-period semantics missing')
             check(workshopUi.includes("{ value: 'all' as const, label: 'Все' }"), 'Workshop UI must expose all dates')
             check(workshopUi.includes("const needsInvoiceRange = entry.value === 'invoice' && (workshopFilters.period === 'all' || !workshopFilters.dateFrom || !workshopFilters.dateTo)"), 'Only Invoice may force a bounded month from the all-date queue')
             check(workshopUi.includes("if (entry.value === 'done') setWorkshopSortDirection('newest')"), 'Done queue must show newest completions first so accidental ready clicks remain recoverable')
             check(workshopUi.includes("if (entry.value === 'active' || entry.value === 'urgent') setWorkshopSortDirection('oldest')"), 'Active backlog must keep oldest work first')
+            check(workshop.includes("return {\n    dateFrom: cleanText(url.searchParams.get('dateFrom')),\n    dateTo: cleanText(url.searchParams.get('dateTo')),\n  };"), 'Worker fallback must preserve blank all-date bounds without a Worker declaration change')
             check(ordersWrite.includes("item.isWorkshop ? 'warehouse' : item.inventorySource"), 'Workshop storage fallback convention unexpectedly changed')
             const repairStart = workshop.indexOf('if (itemNeedsRepair) {')
             const repairEnd = workshop.indexOf('if (statements.length) await db.batch(statements);', repairStart)
@@ -120,7 +117,7 @@ jobs:
           set -euo pipefail
           git config user.name "dymovicd123"
           git config user.email "dymovicd@gmail.com"
-          git add src/App.tsx src/app/types.ts src/features/sections/WorkshopSection.tsx worker/domains/workshop.ts scripts/test-workshop-backlog-visibility-r1.mjs package.json
+          git add src/App.tsx src/app/types.ts src/features/sections/WorkshopSection.tsx scripts/test-workshop-backlog-visibility-r1.mjs package.json
           git diff --cached --check
           git commit -m "Fix Workshop backlog visibility and restore flow"
           git push origin HEAD:fix/workshop-backlog-visibility-20260905
