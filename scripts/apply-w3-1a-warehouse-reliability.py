@@ -24,6 +24,16 @@ replace_once(
     "disabled={inventoryMovementBusy || !isAdmin || (inventoryDraft.movementType === 'arrival' ? inventoryArrivalSummary.rows === 0 : inventoryDraftSummary.rows === 0)}",
     "disabled={inventoryMovementBusy || (inventoryDraft.movementType === 'arrival' ? inventoryArrivalSummary.rows === 0 : inventoryDraftSummary.rows === 0)}",
 )
+replace_once(
+    'src/features/inventory/views/renderInventoryMovementPanel.tsx',
+    "  | 'isAdmin'\n",
+    "",
+)
+replace_once(
+    'src/features/inventory/views/renderInventoryMovementPanel.tsx',
+    "    isAdmin,\n",
+    "",
+)
 
 replace_once(
     'src/App.tsx',
@@ -96,6 +106,8 @@ const block = (text, start, end) => {
 // The shared Operations submit button must not reintroduce a blanket admin-only UI gate.
 check(!movement.includes("disabled={inventoryMovementBusy || !isAdmin ||"), 'Operations submit is still blanket admin-only')
 check(movement.includes("disabled={inventoryMovementBusy || (inventoryDraft.movementType === 'arrival' ? inventoryArrivalSummary.rows === 0 : inventoryDraftSummary.rows === 0)}"), 'Operations submit does not use the manager-safe gate')
+check(!movement.includes("| 'isAdmin'"), 'Movement renderer still requests an unused admin flag')
+check(!movement.includes('    isAdmin,'), 'Movement renderer still destructures an unused admin flag')
 
 // The existing frontend boundary remains responsible for unknown Arrival/master-data rows.
 check(app.includes("if (!isAdmin && inventoryDraft.movementType === 'arrival' && cleanItems.some((item) => !item.variantId))"), 'known-only Arrival manager boundary disappeared')
@@ -148,6 +160,7 @@ Remove two reliability regressions found by W3.0 before adding any new recovery 
 
 - `src/features/inventory/views/renderInventoryMovementPanel.tsx`
   - removed the blanket `!isAdmin` disable from the shared Operations submit button;
+  - removed the now-unused renderer `isAdmin` dependency;
   - backend/frontend operation-specific guards remain authoritative;
   - manager can again submit existing-SKU transfer, writeoff, correction and known-variant Arrival;
   - unknown/new Arrival remains rejected by the existing frontend boundary with the explicit admin explanation, and independently by the backend.
