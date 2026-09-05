@@ -27,6 +27,7 @@ jobs:
       - run: node scripts/w5-4-manifest-helper.mjs after
       - run: python3 scripts/w5-4-gate-patcher.py
       - run: python3 scripts/w5-4-release-marker-fix.py
+      - run: python3 scripts/w5-4-legacy-test-fix.py
       - run: git diff --check
       - run: node scripts/test-w5-4-full-stocktake.mjs
       - run: npm run release:check
@@ -42,7 +43,7 @@ jobs:
       - name: Commit validated candidate
         run: |
           rm .github/workflows/w5-4-full-stocktake.yml
-          rm scripts/w5-4-patcher.py scripts/w5-4-manifest-helper.mjs scripts/w5-4-gate-patcher.py scripts/w5-4-test-fix.py scripts/w5-4-release-marker-fix.py
+          rm scripts/w5-4-patcher.py scripts/w5-4-manifest-helper.mjs scripts/w5-4-gate-patcher.py scripts/w5-4-test-fix.py scripts/w5-4-release-marker-fix.py scripts/w5-4-legacy-test-fix.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
