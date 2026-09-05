@@ -59,6 +59,7 @@ export interface InventoryRenderContext {
   simpleStockGroups: any[]
   stocktakeFoundSizes: any[]
   stocktakeSelectedProductIds: any[]
+  stocktakeSelectableProducts: any[]
   stocktakeInlineAdd: { mode: 'size' | 'color'; positionKey: string; color: string; sizes: string[] } | null
   stocktakeReviewRows: any[]
 

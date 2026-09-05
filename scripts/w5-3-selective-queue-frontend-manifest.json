@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "revision": "w5-3-selective-queue",
+  "frontend": {
+    "panelReturnChanges": {
+      "renderInventoryStocktakePanel": {
+        "before": "b075028910c70c8a79adf59d8bcdffd832bcb15a009fd757751872b432f6da6c",
+        "after": "2570125887b13fb529005a96bf87da4f1a511609d2664ba25e142ede50adde98"
+      }
+    }
+  }
+}

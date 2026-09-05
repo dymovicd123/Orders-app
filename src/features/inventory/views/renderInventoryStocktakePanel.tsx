@@ -83,6 +83,7 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'stocktakeReviewRows'
   | 'stocktakeSavingIds'
   | 'stocktakeSelectedProductIds'
+  | 'stocktakeSelectableProducts'
   | 'stocktakeSession'
   | 'stocktakeSource'
   | 'stocktakeSourceStats'
@@ -104,13 +105,9 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     catalogActiveProducts,
     currentStocktakeGroup,
     currentStocktakePositions,
-    cycleCountBusy,
     cycleCountData,
-    cycleCountFilledCount,
     cycleCountLoading,
     cycleCountNotice,
-    cycleCountOpen,
-    cycleCountValues,
     discardStocktake,
     filteredStocktakeProductGroups,
     filteredStocktakeSelectableProducts,
@@ -181,6 +178,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     stocktakeReviewRows,
     stocktakeSavingIds,
     stocktakeSelectedProductIds,
+    stocktakeSelectableProducts,
     stocktakeSession,
     stocktakeSource,
     stocktakeSourceStats,
@@ -188,11 +186,25 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     stocktakeStartMode,
     stocktakeStartSearch,
     stocktakeUnsavedCount,
-    submitCycleCount,
     submitStocktakeInlineAdd,
     suggestionValues,
     toggleStocktakeInlineSize
   } = ctx
+
+  const selectedStocktakeProducts = (stocktakeSelectableProducts || []).filter((product: any) =>
+    stocktakeSelectedProductIds.includes(Number(product.productId))
+  )
+  const visibleStocktakeSelectableProducts = [...(filteredStocktakeSelectableProducts || [])].sort((a: any, b: any) => {
+    const aSelected = stocktakeSelectedProductIds.includes(Number(a.productId)) ? 1 : 0
+    const bSelected = stocktakeSelectedProductIds.includes(Number(b.productId)) ? 1 : 0
+    if (aSelected !== bSelected) return bSelected - aSelected
+    return String(a.productName || '').localeCompare(String(b.productName || ''), 'ru')
+  })
+  const selectiveQueueIsLarge = selectedStocktakePositionCount > 20
+  const recommendationData = cycleCountData?.source === stocktakeSource ? cycleCountData : null
+  const recommendedProductIds = new Set((recommendationData?.items || []).map((row: any) => Number(row.productId || 0)).filter(Boolean))
+  const recommendedStocktakeProducts = (stocktakeSelectableProducts || []).filter((product: any) => recommendedProductIds.has(Number(product.productId))).slice(0, 6)
+  const unselectedRecommendedProducts = recommendedStocktakeProducts.filter((product: any) => !stocktakeSelectedProductIds.includes(Number(product.productId)))
 
   return (
     <div className="inventory-stocktake-panel stocktake-human-panel stocktake-session-v188e" data-step188e-stocktake="server-session" style={inventoryPanelStyle('stocktake')}>
@@ -209,7 +221,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                           <div className="stocktake-start-intro">
                             <span className="stocktake-step-kicker">{stocktakeActiveForSelectedSource ? 'Проверка уже идёт' : 'Новая проверка'}</span>
                             <h4>{stocktakeActiveForSelectedSource ? `Продолжить пересчёт · ${stocktakeSourceTitle(stocktakeSource)}` : 'Что хотите проверить?'}</h4>
-                            <p>{stocktakeActiveForSelectedSource ? 'Новая проверка этой точки недоступна, пока текущая не завершена или не отменена.' : 'Для обычной сверки выберите только нужные товары. Полную проверку запускайте, когда действительно пересчитываете всю точку.'}</p>
+                            <p>{stocktakeActiveForSelectedSource ? 'Новая проверка этой точки недоступна, пока текущая не завершена или не отменена.' : 'Выберите несколько товаров или запустите полную проверку точки.'}</p>
                           </div>
     
                           <div className="stocktake-source-switch stocktake-source-switch-v5" role="tablist" aria-label="Точка проверки">
@@ -228,36 +240,6 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                             </div>
                           ) : (
                             <>
-                              <section className={`inventory-cycle-count-card ${Number(cycleCountData?.recommendedCount || 0) > 0 ? 'has-recommendations' : 'is-calm'}`}>
-                                <div className="inventory-cycle-count-head">
-                                  <div><span className="stocktake-step-kicker">Поддержание точности</span><strong>Короткая проверка</strong><small>Система предлагает только позиции, которым сейчас полезна физическая сверка. Это подсказка, а не блокировка работы.</small></div>
-                                  <button className="ghost compact" type="button" disabled={cycleCountLoading || cycleCountBusy} onClick={() => void refreshCycleCountSuggestions(stocktakeSource)}>{cycleCountLoading ? 'Обновляю…' : 'Обновить'}</button>
-                                </div>
-                                {cycleCountLoading && !cycleCountData ? <div className="inventory-cycle-count-state">Подбираю позиции…</div> : null}
-                                {!cycleCountLoading && cycleCountData && Number(cycleCountData.recommendedCount || 0) === 0 ? <div className="inventory-cycle-count-state is-good"><strong>Сейчас срочных сверок нет</strong><span>После большой ревизии этот список будет наполняться постепенно: по давности, движениям и реальным расхождениям.</span></div> : null}
-                                {cycleCountData && Number(cycleCountData.recommendedCount || 0) > 0 ? <>
-                                  <div className="inventory-cycle-count-summary"><span><strong>{cycleCountData.recommendedCount}</strong> {Number(cycleCountData.recommendedCount) === 1 ? 'позиция просит внимания' : 'позиций просят внимания'}</span><button className={cycleCountOpen ? 'secondary compact' : 'primary compact inventory-cycle-count-open-button'} type="button" disabled={cycleCountLoading || cycleCountBusy || cycleCountData?.source !== stocktakeSource} onClick={() => { setCycleCountOpen((current) => !current); setCycleCountValues({}); setCycleCountNotice('') }}>{cycleCountOpen ? 'Свернуть' : 'Проверить сейчас'}</button></div>
-                                  {cycleCountOpen ? <div className="inventory-cycle-count-body">
-                                    <div className="inventory-cycle-count-rule">Считайте только то, что реально проверили. Пустые строки не меняются. В «факт» входит весь товар на месте, в том числе отложенный под заказы.{Number(cycleCountData.recommendedCount || 0) > Number((cycleCountData.items || []).length) ? ` Сначала показаны ${cycleCountData.items.length} самых полезных позиций.` : ''}</div>
-                                    <div className="inventory-cycle-count-list">
-                                      {(cycleCountData.items || []).map((row: any) => {
-                                        const value = cycleCountValues[String(row.variantId)] ?? ''
-                                        const attrs = [row.material !== 'СТАНДАРТ' ? row.material : '', row.length !== 'СТАНДАРТ' ? row.length : '', row.gender, row.color, row.size].filter(Boolean).join(' · ')
-                                        const needsIndependentCount = Number(row.free || 0) < 0 || Number(row.lastDifference || 0) !== 0
-                                        return <div className={`inventory-cycle-count-row ${value !== '' ? 'is-filled' : ''} ${needsIndependentCount ? 'needs-attention' : ''}`} key={`cycle-count-${row.variantId}`}>
-                                          <div className="inventory-cycle-count-name"><strong>{row.productName}</strong><span>{attrs || 'Стандартная комбинация'}</span><small>{(row.reasons || []).slice(0, 2).join(' · ')}</small></div>
-                                          <div className={`inventory-cycle-count-system ${needsIndependentCount ? 'is-blind' : ''}`}>{needsIndependentCount ? <span><strong>Сначала посчитайте физически</strong></span> : <span>По системе: <strong>{row.physical}</strong> на месте</span>}{Number(row.reserved || 0) ? <span>В заказах <strong>{row.reserved}</strong></span> : null}</div>
-                                          {!needsIndependentCount ? <button className={`secondary compact inventory-cycle-count-quick-confirm ${value === String(Math.max(0, Math.trunc(Number(row.physical || 0)))) ? 'is-confirmed' : ''}`} type="button" disabled={cycleCountBusy} onClick={() => setCycleCountValues((current) => ({ ...current, [String(row.variantId)]: String(Math.max(0, Math.trunc(Number(row.physical || 0)))) }))}>{value === String(Math.max(0, Math.trunc(Number(row.physical || 0)))) ? '✓ Подтверждено' : `Да, на месте ${Math.max(0, Math.trunc(Number(row.physical || 0)))}`}</button> : null}
-                                          <label><span>{needsIndependentCount ? 'Введите факт' : 'Другое количество'}</span><input aria-label={`Фактическое количество ${row.productName}`} type="number" min="0" step="1" inputMode="numeric" value={value} placeholder={needsIndependentCount ? 'Посчитайте' : 'Если отличается'} onChange={(event) => { const raw = event.target.value; if (raw === '') { setCycleCountValues((current) => ({ ...current, [String(row.variantId)]: '' })); return } const parsed = Number(raw); if (!Number.isFinite(parsed)) return; setCycleCountValues((current) => ({ ...current, [String(row.variantId)]: String(Math.max(0, Math.trunc(parsed))) })) }} /></label>
-                                        </div>
-                                      })}
-                                    </div>
-                                    <div className="inventory-cycle-count-actions inventory-cycle-count-actions-w5"><button className="primary inventory-cycle-count-save-button" type="button" disabled={!cycleCountFilledCount || cycleCountBusy} onClick={() => void submitCycleCount()}>{cycleCountBusy ? 'Сохраняю…' : `Сохранить проверенные позиции${cycleCountFilledCount ? ` · ${cycleCountFilledCount}` : ''}`}</button><span>Сохранятся только строки, где вы подтвердили или ввели фактическое количество. Совпадения тоже запоминаются как свежая проверка.</span></div>
-                                  </div> : null}
-                                </> : null}
-                                {cycleCountNotice ? <div className="inventory-cycle-count-notice">{cycleCountNotice}</div> : null}
-                              </section>
-    
                               <div className="stocktake-start-modes stocktake-start-modes-v5">
                                 <button type="button" className={`stocktake-start-mode ${stocktakeStartMode === 'selective' ? 'is-active' : ''}`} onClick={() => setStocktakeStartMode('selective')}>
                                   <strong>Проверить несколько товаров</strong>
@@ -270,16 +252,35 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                               </div>
     
                               {stocktakeStartMode === 'selective' ? (
-                                <div className="stocktake-selective-picker stocktake-selective-picker-v5">
-                                  <div className="stocktake-selective-head">
-                                    <label><span>Выберите товары</span><input value={stocktakeStartSearch} onChange={(event) => setStocktakeStartSearch(event.target.value)} placeholder="Найти товар…" /></label>
-                                    <div><strong>{stocktakeSelectedProductIds.length ? `Выбрано товаров: ${stocktakeSelectedProductIds.length}` : 'Ничего не выбрано'}</strong><span>{stocktakeSelectedProductIds.length ? `${selectedStocktakePositionCount} позиций` : 'Отметьте нужные товары в списке'}</span></div>
+                                <div className="stocktake-selective-picker stocktake-selective-picker-v5 stocktake-selective-picker-w5">
+                                  <div className={`stocktake-selective-recommendations ${recommendedStocktakeProducts.length ? 'has-items' : 'is-calm'}`}>
+                                    <div className="stocktake-selective-recommendations-head">
+                                      <div>
+                                        <span className="stocktake-step-kicker">Рекомендуем проверить</span>
+                                        <strong>{cycleCountLoading && !recommendationData ? 'Подбираю товары…' : recommendedStocktakeProducts.length ? `${recommendedStocktakeProducts.length} ${recommendedStocktakeProducts.length === 1 ? 'товар' : recommendedStocktakeProducts.length < 5 ? 'товара' : 'товаров'}` : recommendationData ? 'Сейчас отдельных рекомендаций нет' : cycleCountNotice ? 'Не удалось подобрать рекомендации' : 'Подбираю товары…'}</strong>
+                                        <small>{recommendedStocktakeProducts.length ? 'Подобраны по давности проверки, движениям и прошлым расхождениям.' : recommendationData ? 'Выберите нужные товары ниже.' : cycleCountNotice ? 'Товары ниже можно выбрать вручную.' : 'Список появится автоматически.'}</small>
+                                      </div>
+                                      {unselectedRecommendedProducts.length ? <button className="secondary compact stocktake-recommended-add-all" type="button" onClick={() => setStocktakeSelectedProductIds((current) => Array.from(new Set([...current, ...unselectedRecommendedProducts.map((product: any) => Number(product.productId))])))}>Добавить все</button> : (!recommendationData && cycleCountNotice ? <button className="secondary compact" type="button" disabled={cycleCountLoading} onClick={() => void refreshCycleCountSuggestions(stocktakeSource)}>{cycleCountLoading ? 'Загружаю…' : 'Повторить'}</button> : null)}
+                                    </div>
+                                    {recommendedStocktakeProducts.length ? <div className="stocktake-recommended-products">{recommendedStocktakeProducts.map((product: any) => {
+                                      const selected = stocktakeSelectedProductIds.includes(Number(product.productId))
+                                      return <button type="button" className={`stocktake-recommended-product ${selected ? 'is-selected' : ''}`} key={`stocktake-recommended-${product.productId}`} onClick={() => setStocktakeSelectedProductIds((current) => selected ? current.filter((id) => id !== Number(product.productId)) : [...current, Number(product.productId)])}><span><strong>{product.productName}</strong><small>{product.positionCount} поз.</small></span><b>{selected ? '✓ Выбрано' : 'Добавить'}</b></button>
+                                    })}</div> : null}
                                   </div>
+                                  <div className="stocktake-selective-head">
+                                    <label><span>Найдите товар</span><input value={stocktakeStartSearch} onChange={(event) => setStocktakeStartSearch(event.target.value)} placeholder="Название товара…" /></label>
+                                    <div className="stocktake-selective-count"><strong>{stocktakeSelectedProductIds.length ? `${stocktakeSelectedProductIds.length} товаров выбрано` : 'Соберите проверку'}</strong><span>{stocktakeSelectedProductIds.length ? `${selectedStocktakePositionCount} позиций нужно будет пересчитать` : 'Можно выбрать один или несколько товаров'}</span></div>
+                                  </div>
+                                  {selectedStocktakeProducts.length ? <div className={`stocktake-selective-queue ${selectiveQueueIsLarge ? 'is-large' : ''}`}>
+                                    <div className="stocktake-selective-queue-head"><div><strong>Вы будете проверять</strong><span>{selectedStocktakeProducts.length} товаров · {selectedStocktakePositionCount} позиций</span></div><button className="ghost compact" type="button" onClick={() => setStocktakeSelectedProductIds([])}>Очистить</button></div>
+                                    <div className="stocktake-selective-chips">{selectedStocktakeProducts.map((product: any) => <button type="button" className="stocktake-selective-chip" key={`stocktake-picked-${product.productId}`} onClick={() => setStocktakeSelectedProductIds((current) => current.filter((id) => id !== Number(product.productId)))} title="Убрать из проверки"><span>{product.productName}</span><small>{product.positionCount} поз.</small><b aria-hidden="true">×</b></button>)}</div>
+                                    {selectiveQueueIsLarge ? <div className="stocktake-selective-size-note">Получилась довольно большая проверка. Можно начать как есть или убрать часть товаров и проверить их позже.</div> : null}
+                                  </div> : null}
                                   <div className="stocktake-selective-list stocktake-selective-list-v5">
-                                    {filteredStocktakeSelectableProducts.length ? filteredStocktakeSelectableProducts.map((product: any) => {
+                                    {visibleStocktakeSelectableProducts.length ? visibleStocktakeSelectableProducts.map((product: any) => {
                                       const checked = stocktakeSelectedProductIds.includes(Number(product.productId))
-                                      return <label className={`stocktake-selective-product ${checked ? 'is-selected' : ''}`} key={`stocktake-select-${product.productId}`}><input type="checkbox" checked={checked} onChange={() => setStocktakeSelectedProductIds((current) => checked ? current.filter((id) => id !== Number(product.productId)) : [...current, Number(product.productId)])} /><span><strong>{product.productName}</strong><small>{product.positionCount} поз.</small></span></label>
-                                    }) : <div className="stocktake-product-list-empty">По фильтру товаров нет.</div>}
+                                      return <label className={`stocktake-selective-product ${checked ? 'is-selected' : ''}`} key={`stocktake-select-${product.productId}`}><input type="checkbox" checked={checked} onChange={() => setStocktakeSelectedProductIds((current) => checked ? current.filter((id) => id !== Number(product.productId)) : [...current, Number(product.productId)])} /><span><strong>{product.productName}</strong><small>{product.positionCount} поз. {checked ? '· выбрано' : ''}</small></span></label>
+                                    }) : <div className="stocktake-product-list-empty">По поиску ничего не найдено. Уже выбранные товары остаются в очереди выше.</div>}
                                   </div>
                                 </div>
                               ) : (
@@ -287,7 +288,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                               )}
     
                               <div className="stocktake-start-submit">
-                                <div>{stocktakeStartMode === 'selective' ? (stocktakeSelectedProductIds.length ? `${stocktakeSelectedProductIds.length} товаров · ${selectedStocktakePositionCount} позиций` : 'Выберите хотя бы один товар') : `Полная проверка · ${stocktakeSourceStats[stocktakeSource]} позиций`}</div>
+                                <div>{stocktakeStartMode === 'selective' ? (stocktakeSelectedProductIds.length ? `Готово к проверке · ${stocktakeSelectedProductIds.length} товаров · ${selectedStocktakePositionCount} позиций` : 'Выберите хотя бы один товар') : `Полная проверка · ${stocktakeSourceStats[stocktakeSource]} позиций`}</div>
                                 <button className="primary stocktake-e-start-button" type="button" disabled={stocktakeBusy || (stocktakeStartMode === 'selective' && !stocktakeSelectedProductIds.length)} onClick={() => void startStocktake()}>{stocktakeBusy ? 'Подготавливаю…' : stocktakeStartMode === 'selective' ? 'Начать проверку выбранных товаров' : 'Начать полную проверку'}</button>
                               </div>
                             </>
