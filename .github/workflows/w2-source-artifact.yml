@@ -1,0 +1,22 @@
+name: W2 source snapshot
+
+on:
+  push:
+    branches:
+      - safe/w2-human-warehouse-20260905
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload current source
+        uses: actions/upload-artifact@v4
+        with:
+          name: w2-source
+          path: .
+          include-hidden-files: true
+          retention-days: 1
