@@ -5,7 +5,7 @@
   "files": {
     "src/features/inventory/views/renderInventoryCatalogPanel.tsx": {
       "beforeGitBlob": "fd93ba4b409cbf16057d681a6735f0a505a4e604",
-      "afterGitBlob": "1f1c17602126cfa8709c1f0c4a1f74ee41bf3550"
+      "afterGitBlob": "ba1ed93608a8077544d141bb74d2d05a9fcc9548"
     },
     "src/features/inventory/views/catalogPolishExecutionGroups.tsx": {
       "afterGitBlob": "5c7f43011c4822733e68f9e1a8cc52110ad30a2a"
