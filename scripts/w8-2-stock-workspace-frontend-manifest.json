@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "revision": "w8-2-stock-workspace-finish",
+  "files": {
+    "src/features/inventory/views/renderInventoryOverviewPanel.tsx": {
+      "beforeGitBlob": "9011620ec91976f01b27e071f88ac4beb1e1ada8",
+      "afterGitBlob": "13c82694d9d6a58fa02697da409ed069dd6b3a52"
+    },
+    "src/features/sections/InventorySection.tsx": {
+      "beforeGitBlob": "aca16b5c66f43e98c8b23c5def608fc175723dd9",
+      "afterGitBlob": "83eb63cd1cd5a0d4f17919d343b603954735b1bd"
+    }
+  }
+}

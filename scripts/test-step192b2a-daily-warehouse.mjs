@@ -96,7 +96,7 @@ try {
   check(quickCountAction.includes('loadInventoryData('), 'Successful physical count no longer refreshes normal inventory data best-effort')
   check(!attentionPanel.includes('items.shortages') && !attentionPanel.includes('items.stocktakes'), 'Shortage/revision leaked back into secondary clarification')
   check(attentionPanel.includes('Ожидают приёма'), 'Known physical intake surface missing')
-  check(overview.includes('Сверить количество') && overview.includes('На месте сейчас') && overview.includes('Сохранить факт'), 'Universal exact-SKU count UI missing from stock detail')
+  check(overview.includes('Сверить количество') && overview.includes('warehouse-w3-micro-check-start') && overview.includes('Да, на месте ${simpleStockDetail.physical}') && overview.includes('Нет, другое количество'), 'Universal exact-SKU count UI missing from stock detail')
   check(!overview.includes('quickStocktakeCandidates'), 'Old multi-variant quick-count UI still leaks into normal stock detail')
 
   check(ordersTable.includes('Уточнить выдачу'), 'Orders table still uses unclear handover wording')

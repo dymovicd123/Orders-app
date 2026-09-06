@@ -18,4 +18,5 @@
 // w6CatalogPolishPath — W6.3 Catalog polish panel baseline hash mismatch
 // w7SkuHistoryPath — W7 exact-SKU history integration preservation layer
 // w8StockOverviewPath — W8.1 stock overview completion preservation layer
-await import('./test-step1906b-frontend-modularization-w8-layer.mjs')
+// w8StockWorkspaceFinishPath — W8.2 stock workspace finish preservation layer
+await import('./test-step1906b-frontend-modularization-w8-2-layer.mjs')
