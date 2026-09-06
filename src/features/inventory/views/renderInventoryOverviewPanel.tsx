@@ -355,7 +355,7 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                                                 <div><strong>{colorGroup.label}</strong><span>{colorGroup.rows.length} {w8Plural(colorGroup.rows.length, 'позиция', 'позиции', 'позиций')}</span></div>
                                                 <div className={colorFree < 0 || colorPhysical < 0 ? 'needs-attention' : ''}>
                                                   <strong>{colorPhysical < 0 ? 'Сверить' : colorFree < 0 ? `−${formatMoney(Math.abs(colorFree))}` : formatMoney(colorFree)}</strong>
-                                                  <span>свободно</span>
+                                                  <span>свободно · на месте {formatMoney(colorPhysical)}{colorReserved > 0 ? ` · в заказах ${formatMoney(colorReserved)}` : ''}</span>
                                                 </div>
                                               </div>
                                               <div className="inventory-stock-subgroups">
