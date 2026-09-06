@@ -19,9 +19,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Apply exact W6.2 preservation and boundary deltas
+      - name: Apply W6.2 boundary deltas
         run: |
-          node scripts/apply-w6-2-preservation-delta.mjs
           node scripts/apply-w6-2-boundary-fix.mjs
           node scripts/apply-w6-2-panel-context-fix.mjs
           if ! git diff --quiet; then
