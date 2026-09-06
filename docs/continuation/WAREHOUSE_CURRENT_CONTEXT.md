@@ -5,6 +5,14 @@ Repository: `dymovicd123/Orders-app`
 
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
+## Checkpoint 2026-09-06 — W8.3 remaining daily Warehouse surfaces polish
+
+W8.3 is a narrow interface pass after W8.2, not the W9 full Warehouse audit. `История` keeps the selected exact SKU visible and exact physical-check rows now name the product/variant. `Нужно уточнить -> Товар` keeps the same derived data/actions but separates found-on-shelf, lifecycle intake identity and order-position identity into distinct visual groups. `Операции` and `Проверка` were reviewed and left unchanged because their accepted W4/W5 workflows already have clear primary actions and safety wording; Arrival remains frozen.
+
+No Worker/API/D1/migration/business-truth change is part of W8.3. Next W8 pass is final cross-screen visual/mobile acceptance and only concrete defects found there. W9 remains reserved for the full Warehouse audit/discussion.
+
+---
+
 ## Checkpoint 2026-09-06 — W8.2 `Остатки` workspace finish
 
 W8.2 continues W8.1 instead of declaring `Остатки` complete prematurely. Explicit search now reveals all matching SKU rows regardless of the normal availability filter; product-level totals stay truthful when the filter hides some variants; exact SKU opening is neutral and the physical check is a separate explicit action; routine short checks no longer precede the main stock list; large products collapse color groups and keep better context; reservation-detail loading is latest-request-wins. Business truth and D1 mutation paths remain unchanged.
