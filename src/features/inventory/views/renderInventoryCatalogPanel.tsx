@@ -47,7 +47,6 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'inventoryPanelStyle'
   | 'inventoryProductReferenceGroups'
   | 'inventoryQuery'
-  | 'isAdmin'
   | 'lifecycleFactsMatchExactVariant'
   | 'lifecycleOptionsWithCurrent'
   | 'lifecycleValueNeedsCreation'
@@ -93,7 +92,7 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'submitInventoryLifecycleFacts'
   | 'suggestionValues'
   | 'visibleCatalogProducts'
->
+> & { isAdmin?: boolean }
 
 
 const W6_NEW_PRODUCT = '__w6_new_product'
@@ -149,7 +148,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
     getStockQuantityForVariant,
     inventoryLifecycle,
     inventoryPanelStyle,
-    isAdmin,
+    isAdmin = true,
     loadCatalogData,
     loadCatalogReview,
     loadInventoryLifecycle,
