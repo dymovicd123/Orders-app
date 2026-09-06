@@ -62,7 +62,7 @@ The future business rule — product base price, execution price, exact-SKU over
 - Arrival remains frozen;
 - Branch2 is untouched.
 
-W7 adds a focused regression gate and a new 1906B preservation layer so the W6.4 catalog baseline continues to be checked exactly rather than weakening old guards.
+W7 adds a focused regression gate and a new 1906B preservation layer so the W6.4 catalog baseline continues to be checked exactly rather than weakening old guards. The preservation chain now also freezes the exact pre-W7 `InventorySection` baseline and accepts only the explicit W7 history wiring plus latest-request race hardening before delegating back to the W6/legacy structural gates.
 
 ## Next action
 
