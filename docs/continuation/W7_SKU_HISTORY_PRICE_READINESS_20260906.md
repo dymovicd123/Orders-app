@@ -29,6 +29,12 @@ Both pass the exact `variant_id` and explicit inventory source into the already 
 
 The history screen keeps its existing two modes, so the same exact SKU can be inspected for movements and for physical checks/revisions.
 
+## Adjacent history race hardening
+
+The W7 integration exposed an existing concurrency weakness in the shared History controller: while one history request was in flight, switching source/SKU or switching between `Движения` and `Ревизии и сверки` could be ignored by the old global busy guard, after which the stale response could populate the new context.
+
+W7 fixes this with one shared latest-request token for movement/check history. A newer source/SKU/mode request supersedes the older response; stale success/error/finally paths cannot overwrite the current history or clear its busy state. This also hardens the pre-existing `Остатки → История` entry point, not only the new Catalog buttons.
+
 ## Price-readiness contract (no prices yet)
 
 W7 deliberately adds no `price` column, no pricing API, no migration and no price UI.
