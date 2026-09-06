@@ -1,0 +1,46 @@
+import fs from 'node:fs'
+
+const read = (path) => fs.readFileSync(path, 'utf8')
+const check = (condition, message) => { if (!condition) throw new Error(message) }
+
+const catalog = read('src/features/inventory/views/renderInventoryCatalogPanel.tsx')
+const sku = read('src/features/inventory/views/catalogPolishExecutionGroups.tsx')
+const backend = read('worker/domains/catalog.ts')
+const css = read('src/styles/w6-4-catalog-sku-card.css')
+const loader = read('src/styles/192b2a-warehouse-attention-actions.css')
+const inventory = read('src/features/sections/InventorySection.tsx')
+
+check(loader.includes("@import './w6-4-catalog-sku-card.css';"), 'W6.4 SKU card CSS is not loaded')
+check(sku.includes('catalog-sku-card') && sku.includes('Карточка точной позиции'), 'exact SKU card is missing')
+check(sku.includes('title="Открыть карточку этой точной позиции"') && sku.includes('onClick={() => openVariantCard(variant, group, colorGroup, subgroup)}'), 'size tile still behaves as a generic editor')
+check(!sku.includes('onClick={() => openVariantEditor(selectedProduct, variant)}'), 'ordinary size-tile edit path returned')
+check(sku.includes('openVariantEditor(selectedProduct, { ...cardVariant, id: 0 })') && sku.includes('Создать похожий'), 'safe create-similar path is missing')
+check(sku.includes('openVariantEditor(selectedProduct, cardVariant)') && sku.includes('Исправить ошибку'), 'explicit correction path is missing')
+check(catalog.includes('Исправление новой позиции') && catalog.includes('Сохранить исправление'), 'correction editor still looks like normal SKU editing')
+check(catalog.includes('сервер не позволит её переписать') && backend.includes('catalogVariantHasOperationalUsage'), 'historical identity protection is not explained/preserved')
+check(sku.includes("body: JSON.stringify({ isActive: false })") && sku.includes("credentials: 'include'"), 'soft-retirement request is missing or unauthenticated')
+check(sku.includes('retireConfirmVariantId') && sku.includes('Подтвердить вывод'), 'retirement confirmation is missing')
+check(sku.includes('cardTotalQty !== 0') && sku.includes('физический остаток'), 'visible physical stock is not blocking retirement in the UI')
+check(sku.includes('Нажмите «Обновить»; повторять вывод не нужно.') && sku.includes('Не удалось подтвердить результат операции.'), 'post-write/ambiguous transport safety copy is missing')
+check(sku.indexOf("setActionMessage('Позиция выведена из активного каталога") < sku.indexOf('const refreshed = await loadCatalogData(true)'), 'authoritative retirement success is still downstream of refresh')
+check(sku.includes('if (!refreshed)') && sku.includes('loadCatalogData(true)'), 'silent refresh failure after retirement is not handled')
+check(sku.includes('Изменения каталога доступны только в админ-режиме') && catalog.includes('isAdmin={isAdmin}'), 'manager/admin SKU action boundary is missing')
+check(sku.includes('catalog-variant-commercial-anchor') && sku.includes('data-variant-id={variant.id}'), 'future pricing/exact variant anchor was lost')
+
+check(backend.includes('export async function assertCatalogVariantMayDeactivate'), 'authoritative retirement blocker is missing')
+check(backend.includes('SUM(COALESCE(quantity, 0)) FROM inventory_stock') && backend.includes('reserved_quantity'), 'physical/reserved stock retirement blockers missing')
+check(backend.includes("inventory_reservations WHERE variant_id = ? AND status = 'active'"), 'active reservation retirement blocker missing')
+check(backend.includes("COALESCE(o.order_status, 'active') = 'active'") && backend.includes("COALESCE(o.shipping_status, 'not_sent') <> 'sent'"), 'active unsent order retirement blocker missing')
+check(backend.includes("workshop_tasks") && backend.includes("status IN ('active', 'ready')"), 'Workshop retirement blocker missing')
+check(backend.includes("inventory_lifecycle_events") && backend.includes("status = 'pending'"), 'pending lifecycle retirement blocker missing')
+check(backend.includes('inventory_stocktake_sessions s') && backend.includes("s.status = 'active'"), 'active stocktake retirement blocker missing')
+check(backend.includes('if (deactivating && identityChanged)') && backend.includes('Нельзя одновременно исправлять идентичность и выводить позицию'), 'mixed identity/deactivation mutation is not blocked')
+check(backend.includes('if (identityChanged && await catalogVariantHasOperationalUsage(db, id))'), 'used SKU identity rewrite guard was lost')
+check(backend.includes('if (deactivating) await assertCatalogVariantMayDeactivate(db, id)'), 'runtime retirement does not use authoritative blocker')
+
+check(css.includes('.catalog-sku-card') && css.includes('.catalog-sku-retire-confirm'), 'SKU card/retirement styles missing')
+check(css.includes('@media(max-width:460px)') && css.includes('.catalog-sku-identity,.catalog-sku-stock{grid-template-columns:1fr}'), 'mobile SKU card layout missing')
+check(inventory.includes('<div className="inventory-arrival-legacy-workspace">'), 'frozen Arrival workspace changed')
+check(sku.includes('catalog-color-group') && sku.includes('catalog-size-grid'), 'W6.3 execution/color/size hierarchy regressed')
+
+console.log('W6.4 SAFE SKU CARD PASSED — exact SKU card, create-similar/correction split, guarded soft retirement, post-write reliability, role boundary, mobile layout and frozen Arrival are protected')
