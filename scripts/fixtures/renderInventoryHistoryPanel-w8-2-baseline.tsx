@@ -1,5 +1,4 @@
 import type { InventoryRenderContext } from './types'
-import '../../../styles/w8-3-daily-surfaces.css'
 
 type PanelContext = Pick<InventoryRenderContext,
   | 'formatHistoryMoment'
@@ -60,9 +59,6 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
     setHistoryVariantFilter,
     sourceLabel
   } = ctx
-  const historyVariantIdentity = historyVariantFilter
-    ? [historyVariantFilter.productName, historyVariantFilter.color, historyVariantFilter.size].filter(Boolean).join(' · ')
-    : ''
 
   return (
     <div className="inventory-history-panel inventory-history-human history-cards-panel" style={inventoryPanelStyle('history')}>
@@ -72,7 +68,7 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
                         <p>Движения товара и физические проверки разделены. Для конкретной позиции показывается вся сохранённая история, а не только последние операции.</p>
                       </div>
                       <div className="inventory-history-actions">
-                        {historyVariantFilter ? <button className="human-history-filter inventory-history-focus" type="button" onClick={() => setHistoryVariantFilter(null)}><span>Позиция</span><strong>{historyVariantIdentity || 'Выбрана'}</strong><em>Сбросить ×</em></button> : null}
+                        {historyVariantFilter ? <button className="human-history-filter" type="button" onClick={() => setHistoryVariantFilter(null)}>Одна позиция · Сбросить ×</button> : null}
                         <button className="secondary compact" type="button" onClick={() => historyMode === 'movements' ? void loadHistoryMovements(true) : void loadHistoryChecks()} disabled={historyBusy}>Обновить</button>
                         {isAdmin ? <button className="link-button inventory-service-link" type="button" onClick={() => openInventoryPanel('settings')}>Сервис и диагностика</button> : null}
                       </div>
@@ -132,11 +128,11 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
                         <article className="history-card inventory-check-history-card" key={`check-${row.kind}-${row.id}`}>
                           <div className="history-check-main">
                             <div className="history-card-date"><strong>{formatHistoryMoment(row.checkedAt)}</strong><span>{sourceLabel(row.source)}</span></div>
-                            <div className="history-card-main"><strong>{historyCheckLabel(row)}</strong>{row.productName ? <span className="history-check-product">{[row.productName, row.color, row.size, row.material && row.material !== 'СТАНДАРТ' ? row.material : '', row.length && row.length !== 'СТАНДАРТ' ? row.length : '', row.gender].filter(Boolean).join(' · ')}</span> : null}<span>{row.expectedQuantity !== undefined ? `По системе ${row.expectedQuantity} → фактически ${row.countedQuantity}` : `${row.itemCount} позиций · расхождений ${row.differenceCount}`}</span></div>
+                            <div className="history-card-main"><strong>{historyCheckLabel(row)}</strong><span>{row.expectedQuantity !== undefined ? `По системе ${row.expectedQuantity} → фактически ${row.countedQuantity}` : `${row.itemCount} позиций · расхождений ${row.differenceCount}`}</span></div>
                             <div className="history-card-amount"><strong>{row.netDelta > 0 ? '+' : ''}{row.netDelta}</strong><span>{row.expectedQuantity !== undefined ? 'разница' : 'изменение количества'}</span></div>
                             {row.checkedBy ? <span className="soft-badge">{row.checkedBy}</span> : null}
                           </div>
-                          {row.kind === 'stocktake' ? <button className="secondary compact" type="button" disabled={historyStocktakeDetailBusy} onClick={() => void openHistoryStocktake(row.referenceId)}>{historyStocktakeDetail?.id === row.referenceId ? 'Скрыть детали' : 'Расхождения'}</button> : null}
+                          {row.kind === 'stocktake' ? <button className="secondary compact" type="button" disabled={historyStocktakeDetailBusy} onClick={() => void openHistoryStocktake(row.referenceId)}>{historyStocktakeDetail?.id === row.referenceId ? 'Детали открыты' : 'Расхождения'}</button> : null}
                           {historyStocktakeDetail?.id === row.referenceId ? <div className="history-stocktake-detail"><div className="history-summary-line"><span>Проверено: <strong>{historyStocktakeDetail.totalItems}</strong></span><span>Расхождений: <strong>{historyStocktakeDetail.items.filter((item: any) => item.countedQuantity !== null && Number(item.countedQuantity) !== Number(item.baselineQuantity)).length}</strong></span></div><div className="history-product-stack">{historyStocktakeDetail.items.filter((item: any) => item.countedQuantity !== null && Number(item.countedQuantity) !== Number(item.baselineQuantity)).slice(0, 80).map((item: any) => <div className="history-product-card" key={`stocktake-detail-${item.id}`}><strong>{item.productName}</strong><span>{[item.color, item.size, item.material, item.length, item.gender].filter(Boolean).join(' · ')}</span><em>{item.baselineQuantity} → {item.countedQuantity}</em></div>)}</div>{!historyStocktakeDetail.items.some((item: any) => item.countedQuantity !== null && Number(item.countedQuantity) !== Number(item.baselineQuantity)) ? <div className="empty-state compact-empty">Все позиции совпали с учётом.</div> : null}</div> : null}
                         </article>
                       ))}</div> : <div className="history-load-state"><strong>Завершённых ревизий и сверок пока нет.</strong></div>

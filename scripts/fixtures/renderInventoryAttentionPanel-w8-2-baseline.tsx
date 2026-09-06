@@ -1,5 +1,4 @@
 import type { InventoryRenderContext } from './types'
-import '../../../styles/w8-3-daily-surfaces.css'
 
 type AttentionCategory = 'handover' | 'intake' | 'identify'
 
@@ -148,9 +147,6 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
         <section className="inventory-attention-group is-identify">
           <div className="inventory-attention-group-head"><div><strong>Определить товар</strong><span>Здесь только позиции, которым действительно не хватает точной идентичности.</span></div><b>{categoryCounts.identify}</b></div>
           {((items.found?.length || 0) || items.lifecycle.length || items.catalog.length) ? <div className="inventory-attention-list">
-            {items.found?.length ? <section className="inventory-attention-subgroup">
-              <div className="inventory-attention-subgroup-head"><div><strong>Найдено при проверке</strong><span>Физический факт уже сохранён. Осталось связать вещь с точным вариантом товара.</span></div><b>{items.found.length}</b></div>
-              <div className="inventory-attention-sublist">
             {(items.found || []).map((item: any) => (
               <article className="w5-found-attention-card" key={`attention-found-${item.stockId}`}>
                 <div className="inventory-attention-main">
@@ -166,30 +162,18 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
                     : <span className="inventory-attention-admin-note">Требуется администратор</span>}
               </article>
             ))}
-              </div>
-            </section> : null}
-            {items.lifecycle.length ? <section className="inventory-attention-subgroup">
-              <div className="inventory-attention-subgroup-head"><div><strong>Приёмка требует определения</strong><span>Есть физически значимое событие, но точный вариант товара пока неизвестен.</span></div><b>{items.lifecycle.length}</b></div>
-              <div className="inventory-attention-sublist">
             {(items.lifecycle || []).map((item: any) => (
               <article key={`attention-lifecycle-${item.id}`}>
                 <div className="inventory-attention-main"><strong>{item.productName || 'Неизвестный товар'}</strong><span>{detailLine(item) || 'Характеристики не определены'} · {sourceLabel(item.source)}</span><small>{item.externalId ? `Заказ ${item.externalId} · от ${formatDateShort(item.orderDate)}` : ''}</small></div>
                 {isAdmin ? <button className="secondary compact" type="button" onClick={() => void openAttentionLifecycle(item)}>Разобрать</button> : <span className="inventory-attention-admin-note">Требуется администратор</span>}
               </article>
             ))}
-              </div>
-            </section> : null}
-            {items.catalog.length ? <section className="inventory-attention-subgroup">
-              <div className="inventory-attention-subgroup-head"><div><strong>Позиция заказа не определена</strong><span>Нужно уточнить характеристики позиции заказа, не меняя уже известный физический остаток.</span></div><b>{items.catalog.length}</b></div>
-              <div className="inventory-attention-sublist">
             {(items.catalog || []).map((item: any) => (
               <article key={`attention-catalog-${item.orderItemId}`}>
                 <div className="inventory-attention-main"><strong>{item.productName || 'Неизвестный товар'}</strong><span>{detailLine(item) || 'Характеристики не определены'}</span><small>{item.externalId ? `Заказ ${item.externalId} · от ${formatDateShort(item.orderDate)}` : ''}{item.affectedCount > 1 ? ` · похожих позиций: ${item.affectedCount}` : ''}</small></div>
                 {isAdmin ? <button className="secondary compact" type="button" onClick={() => void openAttentionCatalog(item)}>Разобрать</button> : <span className="inventory-attention-admin-note">Требуется администратор</span>}
               </article>
             ))}
-              </div>
-            </section> : null}
           </div> : <div className="empty-state">Неопределённых товаров сейчас нет.</div>}
         </section>
       ) : null}

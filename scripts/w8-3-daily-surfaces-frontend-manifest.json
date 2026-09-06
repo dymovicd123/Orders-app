@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "revision": "w8-3-daily-surfaces-polish",
+  "files": {
+    "src/features/inventory/views/renderInventoryHistoryPanel.tsx": {
+      "beforeGitBlob": "b9711955d52019430a0d5ab8fbc497d6fcca5025",
+      "afterGitBlob": "2e46f853cf365b938cfc4ff5102301c1201ef869"
+    },
+    "src/features/inventory/views/renderInventoryAttentionPanel.tsx": {
+      "beforeGitBlob": "a62acd0f5050e6aa5b69bf9cc298db63e8edce2e",
+      "afterGitBlob": "d841e06f05a5b250db26dbcef2d780f28039edf5"
+    }
+  }
+}
