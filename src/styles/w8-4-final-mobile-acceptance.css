@@ -95,6 +95,11 @@
   .inventory-operation-card-writeoff .inventory-operation-variants-table td:nth-child(4)::before { content: 'Списать'; }
   .inventory-operation-card-writeoff .inventory-operation-variants-table td:nth-child(5)::before { content: 'После'; }
 
+  .inventory-operation-card-writeoff .inventory-operation-variants-table td.empty-state::before,
+  .inventory-operation-card-manual_set .inventory-operation-variants-table td.empty-state::before {
+    content: none;
+  }
+
   .inventory-operation-card-writeoff .inventory-operation-quantity-cell,
   .inventory-operation-card-manual_set .inventory-operation-quantity-cell {
     width: auto;
