@@ -1,0 +1,41 @@
+name: W8.4 final validation
+
+on:
+  push:
+    branches:
+      - w8-4-final-mobile-acceptance
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cumulative Warehouse regression
+        run: npm run release:check
+
+      - name: Database safety verifier
+        run: npm run verify:db-safety
+
+      - name: TypeScript and production build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Cloudflare dry run
+        run: npx wrangler deploy --dry-run
