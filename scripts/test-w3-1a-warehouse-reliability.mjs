@@ -6,10 +6,7 @@ const app = read('src/App.tsx')
 const movement = read('src/features/inventory/views/renderInventoryMovementPanel.tsx')
 const worker = read('worker/index.ts')
 const inventorySection = read('src/features/sections/InventorySection.tsx')
-const frontendPreservation = [
-  read('scripts/test-step1906b-frontend-modularization.mjs'),
-  fs.existsSync('scripts/test-step1906b-frontend-modularization-legacy.mjs') ? read('scripts/test-step1906b-frontend-modularization-legacy.mjs') : '',
-].join('\n')
+const frontendPreservation = read('scripts/test-step1906b-frontend-modularization.mjs')
 const w2Manifest = JSON.parse(read('scripts/w2-human-warehouse-frontend-manifest.json'))
 const w3Manifest = JSON.parse(read('scripts/w3-1a-warehouse-reliability-frontend-manifest.json'))
 
