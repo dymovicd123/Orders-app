@@ -1,5 +1,4 @@
 /* Step 186: one inventory workspace + product-owned reference lists. */
-@import './w6-catalog-browse.css';
 
 .inventory-tabs-step186 {
   display: grid !important;
