@@ -1,0 +1,211 @@
+/* W8.4 — final Warehouse mobile acceptance. Presentation only; Arrival is intentionally untouched. */
+
+@media (max-width: 760px) {
+  /* Rare direct operations must not fall back to a 660px-wide desktop table on phones. */
+  .inventory-operation-card-writeoff .inventory-operation-variants-table-shell,
+  .inventory-operation-card-manual_set .inventory-operation-variants-table-shell {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  .inventory-operation-card-writeoff .inventory-operation-variants-table,
+  .inventory-operation-card-manual_set .inventory-operation-variants-table {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .inventory-operation-card-writeoff .inventory-operation-variants-table thead,
+  .inventory-operation-card-manual_set .inventory-operation-variants-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .inventory-operation-card-writeoff .inventory-operation-variants-table tbody,
+  .inventory-operation-card-manual_set .inventory-operation-variants-table tbody {
+    display: grid;
+    gap: 9px;
+  }
+
+  .inventory-operation-card-writeoff .inventory-operation-variants-table tr,
+  .inventory-operation-card-manual_set .inventory-operation-variants-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px 12px;
+    width: 100%;
+    margin: 0;
+    padding: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 13px;
+    background: #fff;
+  }
+
+  .inventory-operation-card-writeoff .inventory-operation-variants-table tr.is-edited,
+  .inventory-operation-card-manual_set .inventory-operation-variants-table tr.is-edited {
+    border-color: #bfdbfe;
+    background: #f8fbff;
+  }
+
+  .inventory-operation-card-writeoff .inventory-operation-variants-table td,
+  .inventory-operation-card-manual_set .inventory-operation-variants-table td {
+    display: grid;
+    align-content: start;
+    gap: 4px;
+    width: auto !important;
+    min-width: 0 !important;
+    padding: 0;
+    border: 0;
+    white-space: normal;
+  }
+
+  .inventory-operation-card-writeoff .inventory-operation-variants-table td:first-child,
+  .inventory-operation-card-manual_set .inventory-operation-variants-table td:first-child {
+    grid-column: 1 / -1;
+    padding-bottom: 9px;
+    border-bottom: 1px solid #edf2f7;
+  }
+
+  .inventory-operation-card-writeoff .inventory-operation-variants-table td::before,
+  .inventory-operation-card-manual_set .inventory-operation-variants-table td::before {
+    color: #64748b;
+    font-size: .69rem;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+
+  .inventory-operation-card-writeoff .inventory-operation-variants-table td:first-child::before,
+  .inventory-operation-card-manual_set .inventory-operation-variants-table td:first-child::before {
+    content: 'Позиция';
+  }
+
+  .inventory-operation-card-manual_set .inventory-operation-variants-table td:nth-child(2)::before { content: 'По системе'; }
+  .inventory-operation-card-manual_set .inventory-operation-variants-table td:nth-child(3)::before { content: 'Фактически'; }
+  .inventory-operation-card-manual_set .inventory-operation-variants-table td:nth-child(4)::before { content: 'Разница'; }
+
+  .inventory-operation-card-writeoff .inventory-operation-variants-table td:nth-child(2)::before { content: 'На месте'; }
+  .inventory-operation-card-writeoff .inventory-operation-variants-table td:nth-child(3)::before { content: 'В заказах'; }
+  .inventory-operation-card-writeoff .inventory-operation-variants-table td:nth-child(4)::before { content: 'Списать'; }
+  .inventory-operation-card-writeoff .inventory-operation-variants-table td:nth-child(5)::before { content: 'После'; }
+
+  .inventory-operation-card-writeoff .inventory-operation-variants-table td.empty-state::before,
+  .inventory-operation-card-manual_set .inventory-operation-variants-table td.empty-state::before {
+    content: none;
+  }
+
+  .inventory-operation-card-writeoff .inventory-operation-quantity-cell,
+  .inventory-operation-card-manual_set .inventory-operation-quantity-cell {
+    width: auto;
+    max-width: none;
+  }
+
+  .inventory-operation-card-writeoff .inventory-operation-quantity-cell input,
+  .inventory-operation-card-manual_set .inventory-operation-quantity-cell input {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .inventory-operation-card-writeoff .inventory-operation-after-cell,
+  .inventory-operation-card-manual_set .inventory-operation-after-cell {
+    white-space: normal;
+  }
+
+  .inventory-operation-card-writeoff .inventory-operation-after-cell small,
+  .inventory-operation-card-manual_set .inventory-operation-after-cell small {
+    display: block;
+    margin-top: 3px;
+    line-height: 1.3;
+  }
+
+  .inventory-operation-card-writeoff .inventory-transfer-observation,
+  .inventory-operation-card-manual_set .inventory-transfer-observation {
+    grid-column: 1 / -1;
+  }
+
+  .inventory-operation-card-writeoff .inventory-submit-bar-v182,
+  .inventory-operation-card-manual_set .inventory-submit-bar-v182 {
+    align-items: stretch;
+  }
+
+  .inventory-operation-card-writeoff .inventory-submit-bar-v182 .actions,
+  .inventory-operation-card-manual_set .inventory-submit-bar-v182 .actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    width: 100%;
+  }
+
+  .inventory-operation-card-writeoff .inventory-submit-bar-v182 .actions button,
+  .inventory-operation-card-manual_set .inventory-submit-bar-v182 .actions button {
+    min-height: 44px;
+  }
+
+  /* Keep W8.3 history/recovery context readable and touch-safe on the same phone widths. */
+  .inventory-history-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .inventory-history-actions > button {
+    min-height: 44px;
+  }
+
+  .inventory-history-focus {
+    min-height: 48px;
+  }
+
+  .history-mode-switch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .history-mode-switch button,
+  .inventory-attention-tabs button {
+    min-height: 44px;
+  }
+
+  .inventory-attention-tabs {
+    padding-bottom: 5px;
+  }
+
+  .inventory-attention-subgroup-head {
+    align-items: center;
+  }
+
+  .inventory-attention-sublist > article > button,
+  .inventory-attention-sublist > article > .inventory-attention-admin-note {
+    width: 100%;
+  }
+}
+
+@media (max-width: 460px) {
+  .inventory-operation-card-writeoff .inventory-operation-variants-table tr,
+  .inventory-operation-card-manual_set .inventory-operation-variants-table tr {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-operation-card-writeoff .inventory-operation-variants-table td:first-child,
+  .inventory-operation-card-manual_set .inventory-operation-variants-table td:first-child {
+    grid-column: auto;
+  }
+
+  .inventory-operation-card-writeoff .inventory-submit-bar-v182 .actions,
+  .inventory-operation-card-manual_set .inventory-submit-bar-v182 .actions,
+  .history-mode-switch {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-operation-card-writeoff .inventory-submit-bar-v182 .actions button,
+  .inventory-operation-card-manual_set .inventory-submit-bar-v182 .actions button {
+    width: 100%;
+  }
+}

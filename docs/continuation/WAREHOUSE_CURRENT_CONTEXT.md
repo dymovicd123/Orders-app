@@ -5,6 +5,16 @@ Repository: `dymovicd123/Orders-app`
 
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
+## Checkpoint 2026-09-06 — W8.4 final mobile acceptance / W8 closure
+
+W8.4 closes the W8 interface work unless a concrete Production defect appears. The final mobile gap was in `Операции`: transfer already used phone cards, while `Списание` and `Исправить количество` still inherited a 660px desktop table. W8.4 makes those two rare modes readable/touch-safe on <=760px without changing their mutation logic, and keeps Arrival outside the new selectors.
+
+The final audit also found one integration defect from W8.3: `w8-3-daily-surfaces.css` existed but was not imported by the Warehouse bundle. W8.4 fixes that import chain and adds a regression check so W8.3 History/Attention styling cannot silently become dead CSS again.
+
+No Worker/API/D1/migration/stock-math/Arrival/Branch2 change is part of W8.4. Dedicated validation passed cumulative release checks, database safety, production build, lint and Wrangler dry-run. After merge/deploy, the next Warehouse phase is **W9 — full read-only Warehouse audit and discussion before another broad implementation wave**.
+
+---
+
 ## Checkpoint 2026-09-06 — W8.3 remaining daily Warehouse surfaces polish
 
 W8.3 is a narrow interface pass after W8.2, not the W9 full Warehouse audit. `История` keeps the selected exact SKU visible and exact physical-check rows now name the product/variant. `Нужно уточнить -> Товар` keeps the same derived data/actions but separates found-on-shelf, lifecycle intake identity and order-position identity into distinct visual groups. `Операции` and `Проверка` were reviewed and left unchanged because their accepted W4/W5 workflows already have clear primary actions and safety wording; Arrival remains frozen.
