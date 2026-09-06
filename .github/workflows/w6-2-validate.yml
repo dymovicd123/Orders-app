@@ -24,11 +24,12 @@ jobs:
           node scripts/apply-w6-2-boundary-fix.mjs
           node scripts/apply-w6-2-panel-context-fix.mjs
           node scripts/apply-w6-2-full-context-fix.mjs
+          node scripts/apply-w6-2-controller-call-fix.mjs
           if ! git diff --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add -A
-            git commit -m "W6.2: align Catalog call boundary with preserved admin modes"
+            git commit -m "W6.2: pass Catalog search through typed render boundary"
             git push origin HEAD:w6-2-catalog-master-detail
           fi
       - name: Focused W6.2 regression
