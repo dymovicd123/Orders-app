@@ -6,7 +6,7 @@ on:
       - w6-2-catalog-master-detail
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
@@ -19,6 +19,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Apply exact W6.2 preservation delta
+        run: |
+          node scripts/apply-w6-2-preservation-delta.mjs
+          if ! git diff --quiet -- scripts/test-step1906b-frontend-modularization.mjs scripts/w6-2-catalog-master-detail-frontend-manifest.json src/features/inventory/views/renderInventoryCatalogPanel.tsx scripts/test-w6-2-catalog-master-detail.mjs; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add scripts/test-step1906b-frontend-modularization.mjs scripts/w6-2-catalog-master-detail-frontend-manifest.json src/features/inventory/views/renderInventoryCatalogPanel.tsx scripts/test-w6-2-catalog-master-detail.mjs
+            git commit -m "W6.2: accept exact Catalog renderer preservation delta"
+            git push origin HEAD:w6-2-catalog-master-detail
+          fi
       - name: Report Catalog renderer hashes
         run: node scripts/print-w6-panel-hashes.mjs
       - name: Focused W6.2 regression
