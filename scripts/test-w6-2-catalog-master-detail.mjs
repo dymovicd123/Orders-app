@@ -4,6 +4,7 @@ const read = (path) => fs.readFileSync(path, 'utf8')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 
 const catalog = read('src/features/inventory/views/renderInventoryCatalogPanel.tsx')
+const polish = read('src/features/inventory/views/catalogPolishExecutionGroups.tsx')
 const legacy = read('src/features/inventory/views/catalogLegacyAdminModes.tsx')
 const css = read('src/styles/w6-2-catalog-master-detail.css')
 const loader = read('src/styles/192b2a-warehouse-attention-actions.css')
@@ -15,7 +16,7 @@ check(legacy.includes('Уточнить товары') && legacy.includes('Ож�
 
 check(catalog.includes('catalog-master-detail') && catalog.includes('catalog-master-pane') && catalog.includes('catalog-detail-pane'), 'Catalog must use a two-pane master/detail structure')
 check(catalog.includes("return 'Основное исполнение'"), 'STANDARD + STANDARD must be humanized as Основное исполнение')
-check(catalog.includes('executionGroups') && catalog.includes('catalog-execution-card') && (catalog.includes('catalog-variation-row') || catalog.includes('catalog-color-group')), 'Product -> Execution -> Variations hierarchy missing')
+check(catalog.includes('executionGroups') && (catalog.includes('CatalogPolishExecutionGroups') || catalog.includes('catalog-variation-row')) && (polish.includes('catalog-execution-card') || catalog.includes('catalog-execution-card')), 'Product -> Execution -> Variations hierarchy missing')
 check(catalog.includes('variant.gender') && catalog.includes('variant.color') && catalog.includes('variant.material') && catalog.includes('variant.length') && catalog.includes('variant.sizeLabel'), 'Catalog search must include meaningful variant characteristics')
 check(catalog.includes('placeholder="Название, цвет, материал, размер…"'), 'human Catalog search affordance missing')
 check(catalog.includes('+ Новый товар') && catalog.includes('openNewProduct'), 'new product must be an explicit top-level action')

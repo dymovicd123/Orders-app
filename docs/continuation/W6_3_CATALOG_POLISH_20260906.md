@@ -61,3 +61,7 @@ Validate especially on:
 - search by color/material/size;
 - desktop ~1690×900 and 1366×768;
 - mobile 390–430 px.
+
+## Modularization note
+
+The color/size presentation is isolated in `catalogPolishExecutionGroups.tsx`, keeping the main Catalog controller/view below the existing 190.6B renderer-size boundary. The helper owns no React hooks and receives the exact variant/edit callbacks explicitly.
