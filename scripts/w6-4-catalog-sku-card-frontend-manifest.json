@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "revision": "w6-4-catalog-sku-card",
+  "baselineReturnHash": "5ddec9492e28ddc236de16e59b804dc00cab5d2565b7d536a98df8ff0e79c7e1",
+  "files": {
+    "src/features/inventory/views/renderInventoryCatalogPanel.tsx": {
+      "beforeGitBlob": "fd93ba4b409cbf16057d681a6735f0a505a4e604",
+      "afterGitBlob": "ba1ed93608a8077544d141bb74d2d05a9fcc9548"
+    },
+    "src/features/inventory/views/catalogPolishExecutionGroups.tsx": {
+      "afterGitBlob": "5c7f43011c4822733e68f9e1a8cc52110ad30a2a"
+    },
+    "src/styles/w6-4-catalog-sku-card.css": {
+      "afterGitBlob": "0cc2332c49b9cae4f93564ff12ae04145d31848e"
+    }
+  }
+}

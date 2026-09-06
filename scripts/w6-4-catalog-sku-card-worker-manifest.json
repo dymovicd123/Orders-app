@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "revision": "w6-4-catalog-sku-card",
+  "changes": {
+    "updateCatalogVariant": {
+      "before": "3e7cbe1d4faabc8db632f219c834579172a2f789ebde41242c5e2c23606c92f2",
+      "after": "5ade7b883f6f067eef000ca24a6e08e8a10878a4c803be9225b2031a3d71db3a"
+    }
+  },
+  "added": {
+    "assertCatalogVariantMayDeactivate": "4708ab06788ce078d8ce928dd28cf933274dea2860b27e52fe739f4778216008"
+  }
+}

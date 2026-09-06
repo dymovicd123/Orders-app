@@ -351,6 +351,59 @@ export async function catalogVariantHasOperationalUsage(db: D1Database, variantI
 }
 
 
+export async function assertCatalogVariantMayDeactivate(db: D1Database, variantId: number) {
+  const row = await db.prepare(
+    `SELECT
+       COALESCE((SELECT SUM(COALESCE(quantity, 0)) FROM inventory_stock WHERE variant_id = ?), 0) AS physical_quantity,
+       COALESCE((SELECT SUM(COALESCE(reserved_quantity, 0)) FROM inventory_stock WHERE variant_id = ?), 0) AS stock_reserved_quantity,
+       COALESCE((SELECT SUM(COALESCE(quantity, 0)) FROM inventory_reservations WHERE variant_id = ? AND status = 'active'), 0) AS active_reservation_quantity,
+       EXISTS(
+         SELECT 1 FROM order_items oi
+         JOIN orders o ON o.id = oi.order_id
+         WHERE oi.variant_id = ?
+           AND COALESCE(o.order_status, 'active') = 'active'
+           AND COALESCE(o.shipping_status, 'not_sent') <> 'sent'
+         LIMIT 1
+       ) AS open_order,
+       EXISTS(
+         SELECT 1 FROM workshop_tasks
+         WHERE variant_id = ? AND status IN ('active', 'ready')
+         LIMIT 1
+       ) AS open_workshop,
+       EXISTS(
+         SELECT 1 FROM inventory_lifecycle_events
+         WHERE variant_id = ? AND status = 'pending'
+         LIMIT 1
+       ) AS pending_lifecycle,
+       EXISTS(
+         SELECT 1
+         FROM inventory_stocktake_items i
+         JOIN inventory_stocktake_sessions s ON s.id = i.session_id
+         WHERE i.variant_id = ? AND s.status = 'active'
+         LIMIT 1
+       ) AS active_stocktake`
+  ).bind(variantId, variantId, variantId, variantId, variantId, variantId, variantId).first<Record<string, unknown>>();
+
+  const physicalQuantity = toInt(row?.physical_quantity, 0);
+  const stockReservedQuantity = toInt(row?.stock_reserved_quantity, 0);
+  const activeReservationQuantity = toInt(row?.active_reservation_quantity, 0);
+  const blockers: string[] = [];
+  if (physicalQuantity !== 0) blockers.push(`физический остаток ${physicalQuantity} шт.`);
+  if (stockReservedQuantity !== 0 || activeReservationQuantity !== 0) {
+    const reserved = Math.max(Math.abs(stockReservedQuantity), Math.abs(activeReservationQuantity));
+    blockers.push(`действующий резерв ${reserved} шт.`);
+  }
+  if (toInt(row?.open_order, 0)) blockers.push('есть активный неотправленный заказ');
+  if (toInt(row?.open_workshop, 0)) blockers.push('есть незавершённая задача Цеха');
+  if (toInt(row?.pending_lifecycle, 0)) blockers.push('есть незавершённая приёмка или возврат');
+  if (toInt(row?.active_stocktake, 0)) blockers.push('позиция участвует в текущей ревизии');
+
+  if (blockers.length) {
+    throw new Error(`Нельзя вывести позицию из активного каталога: ${blockers.join('; ')}. Сначала завершите связанные операции или разберите остаток.`);
+  }
+}
+
+
 export function makeVariantExternalId(productName: string, category: string, gender: string, color: string, material: string, length: string, size: string) {
   const raw = [productName, category, gender, color, material, length, size]
     .map(part => cleanText(part).toUpperCase())
@@ -658,9 +711,14 @@ export async function updateCatalogVariant(db: D1Database, id: number, input: { 
       || gender !== normalizeCatalogCombinationGender(existing.gender)
       || color !== normalizeCatalogCombinationColor(existing.color)
       || sizeLabel !== normalizeCatalogCombinationSize(existing.size_label);
+    const deactivating = toInt(existing.is_active, 1) === 1 && isActive === 0;
+    if (deactivating && identityChanged) {
+      throw new Error('Нельзя одновременно исправлять идентичность и выводить позицию из каталога. Сохраните только одно действие.');
+    }
     if (identityChanged && await catalogVariantHasOperationalUsage(db, id)) {
       throw new Error('Эта комбинация уже использовалась в заказах или движениях склада. Нельзя переписать её историю. Создайте правильную комбинацию отдельно; старую затем можно отключить.');
     }
+    if (deactivating) await assertCatalogVariantMayDeactivate(db, id);
     const duplicate = await findCatalogCombinationV3(db, execution.id, category, gender, color, sizeLabel, id);
     if (duplicate?.id && isActive) throw new Error('Такая комбинация уже существует. Не создавайте второй дубль.');
     await db.prepare(
@@ -672,6 +730,8 @@ export async function updateCatalogVariant(db: D1Database, id: number, input: { 
     return { ok: true };
   }
 
+  const deactivating = toInt(existing.is_active, 1) === 1 && isActive === 0;
+  if (deactivating) await assertCatalogVariantMayDeactivate(db, id);
   await db.prepare(
     `UPDATE catalog_variants
      SET product_id = ?, category = ?, gender = ?, color = ?, material = ?, length = ?, size_label = ?, is_active = ?, sort_order = ?, updated_at = ?
