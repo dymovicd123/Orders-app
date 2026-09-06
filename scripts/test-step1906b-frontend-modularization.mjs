@@ -27,6 +27,7 @@ const w5FullStocktakePath = path.join(root, 'scripts/w5-4-full-stocktake-fronten
 const w5FoundItemsPath = path.join(root, 'scripts/w5-5-found-items-frontend-manifest.json')
 const w5StocktakeOutcomePath = path.join(root, 'scripts/w5-6-stocktake-outcome-frontend-manifest.json')
 const w6CatalogMasterDetailPath = path.join(root, 'scripts/w6-2-catalog-master-detail-frontend-manifest.json')
+const w6CatalogPolishPath = path.join(root, 'scripts/w6-3-catalog-polish-frontend-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -125,6 +126,7 @@ try {
   const w5FoundItems = fs.existsSync(w5FoundItemsPath) ? JSON.parse(fs.readFileSync(w5FoundItemsPath, 'utf8')) : null
   const w5StocktakeOutcome = fs.existsSync(w5StocktakeOutcomePath) ? JSON.parse(fs.readFileSync(w5StocktakeOutcomePath, 'utf8')) : null
   const w6CatalogMasterDetail = fs.existsSync(w6CatalogMasterDetailPath) ? JSON.parse(fs.readFileSync(w6CatalogMasterDetailPath, 'utf8')) : null
+  const w6CatalogPolish = fs.existsSync(w6CatalogPolishPath) ? JSON.parse(fs.readFileSync(w6CatalogPolishPath, 'utf8')) : null
   if (operationalAutonomyR2) check(operationalAutonomyR2.version === 1 && operationalAutonomyR2.revision === 'operational-autonomy-r2', 'Operational autonomy R2 frontend manifest invalid')
   if (w1WarehouseReliability) check(w1WarehouseReliability.version === 1 && w1WarehouseReliability.revision === 'w1-warehouse-reliability', 'W1 Warehouse reliability frontend manifest invalid')
   if (w2HumanWarehouse) check(w2HumanWarehouse.version === 1 && w2HumanWarehouse.revision === 'w2-human-warehouse', 'W2 human Warehouse frontend manifest invalid')
@@ -141,6 +143,7 @@ try {
   if (w5FoundItems) check(w5FoundItems.version === 1 && w5FoundItems.revision === 'w5-5-found-items', 'W5.5 found-items frontend manifest invalid')
   if (w5StocktakeOutcome) check(w5StocktakeOutcome.version === 1 && w5StocktakeOutcome.revision === 'w5-6-stocktake-outcome', 'W5.6 stocktake outcome frontend manifest invalid')
   if (w6CatalogMasterDetail) check(w6CatalogMasterDetail.version === 1 && w6CatalogMasterDetail.revision === 'w6-2-catalog-master-detail', 'W6.2 Catalog master-detail frontend manifest invalid')
+  if (w6CatalogPolish) check(w6CatalogPolish.version === 1 && w6CatalogPolish.revision === 'w6-3-catalog-polish', 'W6.3 Catalog polish frontend manifest invalid')
   check(manifest?.version === 1, '1906B preservation manifest invalid')
   check(manifest.baseAppHooks?.length === 352, `Unexpected 1906A App hook baseline: ${manifest.baseAppHooks?.length}`)
   check(manifest.baseInvHooks?.length === 119, `Unexpected 1906A Inventory hook baseline: ${manifest.baseInvHooks?.length}`)
@@ -388,7 +391,12 @@ try {
       check(w6CatalogMasterDetailChange.before === expectedPanelHash, `${panel.func}: W6.2 Catalog master-detail panel baseline hash mismatch`)
       expectedPanelHash = w6CatalogMasterDetailChange.after
     }
-    check(sha(normalize(text)) === expectedPanelHash, `${panel.func}: rendered JSX changed outside accepted baseline/B2A/autonomy/W1/W2/W3.1A/W3.1B/W4/W5/W5.2/W5.3/W5.3R/manager-access/W5.4/W5.5/W5.6/W6.2 delta`)
+    const w6CatalogPolishChange = w6CatalogPolish?.frontend?.panelReturnChanges?.[panel.func]
+    if (w6CatalogPolishChange) {
+      check(w6CatalogPolishChange.before === expectedPanelHash, `${panel.func}: W6.3 Catalog polish panel baseline hash mismatch`)
+      expectedPanelHash = w6CatalogPolishChange.after
+    }
+    check(sha(normalize(text)) === expectedPanelHash, `${panel.func}: rendered JSX changed outside accepted baseline/B2A/autonomy/W1/W2/W3.1A/W3.1B/W4/W5/W5.2/W5.3/W5.3R/manager-access/W5.4/W5.5/W5.6/W6.2/W6.3 delta`)
     check(hookTokens(relative, panel.func).length === 0, `${panel.func}: renderer unexpectedly owns React hooks/lifecycle`)
     check(inventoryController.includes(`{${panel.func}({`), `${panel.func}: InventorySection no longer calls renderer directly`)
   }
