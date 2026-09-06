@@ -5,6 +5,16 @@ Repository: `dymovicd123/Orders-app`
 
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
+## Checkpoint 2026-09-06 — W8.1 `Остатки` interface completion
+
+Baseline entering W8.1: `main` `ed889662e9d6dc0fc5fdfdd95943bb5641a8db5b` (W7). Work branch: `w8-1-stock-overview-completion`.
+
+W8.1 is a presentation-only completion of the daily `Остатки` workflow. Multi-variant products keep exact SKU identity but browse as Execution -> Color -> category/gender subgroup -> large Size/Age tiles. Each tile shows source-specific Available/Physical/Reserved truth and reuses the existing exact quick-check drawer. A current-result count now explicitly separates search/filter scope from the global source summary. No Worker/API/D1/migration, stock mathematics, Catalog, Arrival, Branch2 or pricing change is in scope.
+
+Next after green W8.1 acceptance: audit the remaining daily Warehouse surfaces (`Операции`, `Проверка`, `История`, recovery inbox) for concrete usability gaps only; do not reopen closed business semantics without evidence.
+
+---
+
 ## Checkpoint 2026-09-06 — W7 exact-SKU history / price readiness
 
 Baseline entering W7: `main` `246dfea9fb999fd10b68ad2b4a6d716f2d3792a8` (W6.4A). Work branch: `w7-sku-history-price-readiness-audit`.

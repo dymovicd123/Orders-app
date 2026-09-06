@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "revision": "w8-1-stock-overview-completion",
+  "files": {
+    "src/features/inventory/views/renderInventoryOverviewPanel.tsx": {
+      "beforeGitBlob": "893d6fe46136616382e09c4797c51a2babc05920",
+      "afterGitBlob": "9011620ec91976f01b27e071f88ac4beb1e1ada8"
+    }
+  }
+}

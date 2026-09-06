@@ -23,7 +23,10 @@ check(opener.includes('microCheck: true'), 'micro-check detail mode marker missi
 for (const forbidden of ['loadInventory', 'loadWarehouseAttention', 'loadInventoryReservations', 'refreshCycleCountSuggestions', 'fetch(', '/api/']) {
   check(!opener.includes(forbidden), `opening a micro-check must not perform a read: ${forbidden}`)
 }
-check((overview.match(/>Проверить<\/button>/g) || []).length >= 2, 'concrete stock rows must expose the voluntary Проверить action')
+const visibleCheckButtons = (overview.match(/>Проверить<\/button>/g) || []).length
+const exactSkuTileCheck = overview.includes('inventory-stock-size-tile warehouse-w3-micro-check-open')
+  && overview.includes('onClick={() => openConcreteStockCheck(row, primary)}')
+check(visibleCheckButtons >= 1 && exactSkuTileCheck, 'concrete stock rows must expose the voluntary exact-SKU check action')
 check(overview.includes('data-w3-micro-check="true"'), 'micro-check surface missing')
 check(overview.includes('Это добровольная сверка этой конкретной позиции. Открытие ничего не меняет'), 'voluntary/non-mutating copy missing')
 check(overview.includes('Да, на месте ${simpleStockDetail.physical}'), 'one-click same-quantity confirmation missing')

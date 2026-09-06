@@ -1,5 +1,4 @@
 import type { InventoryRenderContext } from './types'
-import '../../../styles/w8-1-stock-overview.css'
 
 type PanelContext = Pick<InventoryRenderContext,
   | 'SmartPickerInput'
@@ -51,55 +50,6 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'submitRoutineCycleCount'
 >
 
-const w8Text = (value: unknown) => String(value || '').trim()
-const w8Key = (value: unknown) => w8Text(value).toLocaleUpperCase('ru-RU') || 'СТАНДАРТ'
-const w8Plural = (value: number, one: string, few: string, many: string) => {
-  const absolute = Math.abs(value)
-  const lastTwo = absolute % 100
-  const last = absolute % 10
-  if (lastTwo >= 11 && lastTwo <= 19) return many
-  if (last === 1) return one
-  if (last >= 2 && last <= 4) return few
-  return many
-}
-
-function buildStockBrowseHierarchy(rows: any[], getCategory: (row: any) => string) {
-  const executions = new Map<string, any>()
-  for (const row of rows) {
-    const material = w8Text(row.material) || 'СТАНДАРТ'
-    const length = w8Text(row.length) || 'СТАНДАРТ'
-    const executionKey = `${w8Key(material)}¦${w8Key(length)}`
-    const executionLabel = w8Key(material) === 'СТАНДАРТ' && w8Key(length) === 'СТАНДАРТ'
-      ? 'Основное исполнение'
-      : [material !== 'СТАНДАРТ' ? material : '', length !== 'СТАНДАРТ' ? length : ''].filter(Boolean).join(' · ') || 'Основное исполнение'
-    if (!executions.has(executionKey)) executions.set(executionKey, { key: executionKey, label: executionLabel, rows: [], colors: new Map<string, any>() })
-    const execution = executions.get(executionKey)!
-    execution.rows.push(row)
-
-    const color = w8Text(row.color) || 'Цвет не указан'
-    const colorKey = w8Key(color)
-    if (!execution.colors.has(colorKey)) execution.colors.set(colorKey, { key: colorKey, label: color, rows: [], subgroups: new Map<string, any>() })
-    const colorGroup = execution.colors.get(colorKey)!
-    colorGroup.rows.push(row)
-
-    const category = getCategory(row) || 'adult'
-    const gender = w8Text(row.gender) || 'Пол не указан'
-    const subgroupKey = `${category}¦${w8Key(gender)}`
-    if (!colorGroup.subgroups.has(subgroupKey)) colorGroup.subgroups.set(subgroupKey, { key: subgroupKey, category, gender, rows: [] })
-    colorGroup.subgroups.get(subgroupKey)!.rows.push(row)
-  }
-
-  return Array.from(executions.values()).map((execution: any) => ({
-    ...execution,
-    colors: Array.from(execution.colors.values()).map((color: any) => ({
-      ...color,
-      subgroups: Array.from(color.subgroups.values()).map((subgroup: any) => ({
-        ...subgroup,
-        rows: [...subgroup.rows].sort((a: any, b: any) => w8Text(a.size).localeCompare(w8Text(b.size), 'ru', { numeric: true })),
-      })).sort((a: any, b: any) => a.category.localeCompare(b.category) || a.gender.localeCompare(b.gender, 'ru')),
-    })).sort((a: any, b: any) => a.label.localeCompare(b.label, 'ru', { numeric: true })),
-  })).sort((a: any, b: any) => (a.label === 'Основное исполнение' ? -1 : b.label === 'Основное исполнение' ? 1 : a.label.localeCompare(b.label, 'ru', { numeric: true })))
-}
 
 function renderRoutineCycleCountCue(ctx: PanelContext) {
   const { cycleCountBusy, cycleCountData, cycleCountLoading, cycleCountNotice, cycleCountValues, openInventoryPanel, refreshCycleCountSuggestions, setCycleCountValues, simpleStockSource, submitRoutineCycleCount } = ctx as any
@@ -200,17 +150,6 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
     boutiqueQuantity: detail.source === 'boutique' ? detail.physical : 0, boutiqueReserved: detail.source === 'boutique' ? detail.reserved : 0, boutiqueAvailable: detail.source === 'boutique' ? detail.free : 0,
   })
 
-  const visibleVariantCount = simpleStockGroups.reduce((sum: number, group: any) => sum + Number((group.rows || []).length), 0)
-  const resultScopeLabel = inventoryQuery.trim()
-    ? `Поиск: «${inventoryQuery.trim()}»`
-    : simpleStockAvailabilityFilter === 'free'
-      ? 'Только позиции со свободным остатком'
-      : simpleStockAvailabilityFilter === 'reserved'
-        ? 'Только позиции в заказах'
-        : simpleStockAvailabilityFilter === 'attention'
-          ? 'Только позиции, требующие сверки'
-          : 'Все позиции с остатком'
-
   return (
     <div className="inventory-overview-panel inventory-calm-stock" style={inventoryPanelStyle('overview')}>
                     <div className="inventory-calm-head">
@@ -279,15 +218,6 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
     
                     {simpleStockAvailabilityFilter === 'all' && !inventoryQuery.trim() ? <p className="inventory-calm-note">Пустые позиции каталога здесь не выводятся. Чтобы проверить товар с нулевым остатком, найдите его через поиск.</p> : null}
     
-
-                    <div className="inventory-stock-result-meta" aria-live="polite">
-                      <div>
-                        <strong>{simpleStockGroups.length} {w8Plural(simpleStockGroups.length, 'товар', 'товара', 'товаров')}</strong>
-                        <span>{visibleVariantCount} {w8Plural(visibleVariantCount, 'позиция', 'позиции', 'позиций')} в текущей выборке</span>
-                      </div>
-                      <small>{resultScopeLabel}</small>
-                    </div>
-    
                     <div className="inventory-calm-list">
                       {simpleStockGroups.length ? simpleStockGroups.map((group: any) => {
                         const rows = group.rows || []
@@ -305,7 +235,7 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                             <div className="inventory-calm-product-main">
                               <div className="inventory-calm-product-name">
                                 <strong>{group.productName}</strong>
-                                {single ? <span>{[singlePrimary, singleSecondary].filter(Boolean).join(' · ')}</span> : <span>{rows.length} {w8Plural(rows.length, 'позиция', 'позиции', 'позиций')} в текущей выборке</span>}
+                                {single ? <span>{[singlePrimary, singleSecondary].filter(Boolean).join(' · ')}</span> : <span>{rows.length} вариантов в текущей выборке</span>}
                               </div>
                               <div className="inventory-calm-product-free">
                                 {physical < 0 ? <><strong>Нужна сверка</strong><span>учёт ниже нуля</span></> : free < 0 ? <><strong>Не хватает {formatMoney(Math.abs(free))}</strong><span>для принятых заказов</span></> : <><strong>{formatMoney(free)}</strong><span>свободно</span></>}
@@ -319,83 +249,26 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                               {single ? (
                                 <button className="secondary compact inventory-calm-detail-button warehouse-w3-micro-check-open" type="button" onClick={() => openConcreteStockCheck(singleRow, singlePrimary)}>Проверить</button>
                               ) : (
-                                <button className="secondary compact inventory-calm-detail-button" type="button" aria-expanded={isOpen} onClick={() => setSimpleStockOpenProductKey((current) => current === group.key ? '' : group.key)}>{isOpen ? 'Скрыть позиции' : `Показать позиции (${rows.length})`}</button>
+                                <button className="secondary compact inventory-calm-detail-button" type="button" aria-expanded={isOpen} onClick={() => setSimpleStockOpenProductKey((current) => current === group.key ? '' : group.key)}>{isOpen ? 'Скрыть варианты' : `Показать варианты (${rows.length})`}</button>
                               )}
                             </div>
     
                             {!single && isOpen ? (
-                              <div className="inventory-stock-hierarchy" data-w8-stock-hierarchy="execution-color-size">
-                                {buildStockBrowseHierarchy(rows, (row: any) => row.category || 'adult').map((execution: any) => {
-                                  const executionFree = execution.rows.reduce((sum: number, row: any) => sum + simpleStockQuantity(row), 0)
-                                  const executionPhysical = execution.rows.reduce((sum: number, row: any) => sum + simpleStockPhysical(row), 0)
-                                  const executionReserved = execution.rows.reduce((sum: number, row: any) => sum + simpleStockReserved(row), 0)
-                                  const executionSizeCount = new Set(execution.rows.map((row: any) => w8Text(row.size)).filter(Boolean)).size
+                              <div className="inventory-calm-variants">
+                                {rows.map((row: any) => {
+                                  const rowFree = simpleStockQuantity(row)
+                                  const rowPhysical = simpleStockPhysical(row)
+                                  const rowReserved = simpleStockReserved(row)
+                                  const primary = [row.color, row.size].filter(Boolean).join(' · ') || 'Стандартный вариант'
+                                  const secondary = [productCategoryLabel(row.category), row.gender, row.material && row.material !== 'СТАНДАРТ' ? row.material : '', row.length && row.length !== 'СТАНДАРТ' ? row.length : ''].filter(Boolean).join(' · ')
                                   return (
-                                    <section className="inventory-stock-execution" key={`stock-execution-${group.key}-${execution.key}`}>
-                                      <div className="inventory-stock-execution-head">
-                                        <div>
-                                          <span>Исполнение</span>
-                                          <strong>{execution.label}</strong>
-                                          <small>{execution.colors.length} {w8Plural(execution.colors.length, 'цвет', 'цвета', 'цветов')} · {executionSizeCount} {w8Plural(executionSizeCount, 'размер/возраст', 'размера/возраста', 'размеров/возрастов')}</small>
-                                        </div>
-                                        <div className={`inventory-stock-execution-numbers ${executionFree < 0 || executionPhysical < 0 ? 'needs-attention' : ''}`}>
-                                          <strong>{executionPhysical < 0 ? 'Сверить' : executionFree < 0 ? `−${formatMoney(Math.abs(executionFree))}` : formatMoney(executionFree)}</strong>
-                                          <span>{executionPhysical < 0 ? 'учёт ниже нуля' : executionFree < 0 ? 'не хватает' : 'свободно'}</span>
-                                          <small>На месте {formatMoney(executionPhysical)}{executionReserved > 0 ? ` · В заказах ${formatMoney(executionReserved)}` : ''}</small>
-                                        </div>
-                                      </div>
-                                      <div className="inventory-stock-color-list">
-                                        {execution.colors.map((colorGroup: any) => {
-                                          const colorFree = colorGroup.rows.reduce((sum: number, row: any) => sum + simpleStockQuantity(row), 0)
-                                          const colorPhysical = colorGroup.rows.reduce((sum: number, row: any) => sum + simpleStockPhysical(row), 0)
-                                          const colorReserved = colorGroup.rows.reduce((sum: number, row: any) => sum + simpleStockReserved(row), 0)
-                                          return (
-                                            <section className="inventory-stock-color" key={`stock-color-${group.key}-${execution.key}-${colorGroup.key}`}>
-                                              <div className="inventory-stock-color-head">
-                                                <div><strong>{colorGroup.label}</strong><span>{colorGroup.rows.length} {w8Plural(colorGroup.rows.length, 'позиция', 'позиции', 'позиций')}</span></div>
-                                                <div className={colorFree < 0 || colorPhysical < 0 ? 'needs-attention' : ''}>
-                                                  <strong>{colorPhysical < 0 ? 'Сверить' : colorFree < 0 ? `−${formatMoney(Math.abs(colorFree))}` : formatMoney(colorFree)}</strong>
-                                                  <span>свободно · на месте {formatMoney(colorPhysical)}{colorReserved > 0 ? ` · в заказах ${formatMoney(colorReserved)}` : ''}</span>
-                                                </div>
-                                              </div>
-                                              <div className="inventory-stock-subgroups">
-                                                {colorGroup.subgroups.map((subgroup: any) => (
-                                                  <div className="inventory-stock-subgroup" key={`stock-subgroup-${group.key}-${execution.key}-${colorGroup.key}-${subgroup.key}`}>
-                                                    <div className="inventory-stock-subgroup-label">
-                                                      <strong>{subgroup.gender}</strong>
-                                                      <span>{productCategoryLabel(subgroup.category)} · {subgroup.category === 'child' ? 'возраст' : 'размер'}</span>
-                                                    </div>
-                                                    <div className="inventory-stock-size-grid">
-                                                      {subgroup.rows.map((row: any) => {
-                                                        const rowFree = simpleStockQuantity(row)
-                                                        const rowPhysical = simpleStockPhysical(row)
-                                                        const rowReserved = simpleStockReserved(row)
-                                                        const sizeLabel = w8Text(row.size) || (subgroup.category === 'child' ? '— возраст' : '— размер')
-                                                        const primary = [colorGroup.label, w8Text(row.size)].filter(Boolean).join(' · ') || 'Стандартный вариант'
-                                                        return (
-                                                          <button
-                                                            className={`inventory-stock-size-tile warehouse-w3-micro-check-open ${rowFree < 0 || rowPhysical < 0 ? 'needs-attention' : ''} ${rowFree > 0 ? 'has-free' : 'is-zero-free'}`}
-                                                            key={`stock-size-${row.key}`}
-                                                            type="button"
-                                                            data-variant-id={row.variantId}
-                                                            aria-label={`${group.productName}, ${colorGroup.label}, ${subgroup.category === 'child' ? 'возраст' : 'размер'} ${sizeLabel}: свободно ${rowFree}, на месте ${rowPhysical}${rowReserved > 0 ? `, в заказах ${rowReserved}` : ''}. Открыть проверку.`}
-                                                            onClick={() => openConcreteStockCheck(row, primary)}
-                                                          >
-                                                            <span className="inventory-stock-size-value">{sizeLabel}</span>
-                                                            <span className="inventory-stock-size-free">{rowPhysical < 0 ? 'Сверить' : rowFree < 0 ? `−${formatMoney(Math.abs(rowFree))}` : formatMoney(rowFree)} <small>свободно</small></span>
-                                                            <span className="inventory-stock-size-meta">На месте {formatMoney(rowPhysical)}{rowReserved > 0 ? ` · В заказах ${formatMoney(rowReserved)}` : ''}</span>
-                                                          </button>
-                                                        )
-                                                      })}
-                                                    </div>
-                                                  </div>
-                                                ))}
-                                              </div>
-                                            </section>
-                                          )
-                                        })}
-                                      </div>
-                                    </section>
+                                    <div className={`inventory-calm-variant ${rowFree < 0 || rowPhysical < 0 ? 'needs-attention' : ''}`} key={`calm-variant-${row.key}`}>
+                                      <div className="inventory-calm-variant-name"><strong>{primary}</strong><span>{secondary || 'Стандартный вариант'}</span></div>
+                                      <div className="inventory-calm-variant-free">{rowPhysical < 0 ? <><strong>Нужна сверка</strong><span>учёт ниже нуля</span></> : rowFree < 0 ? <><strong>−{formatMoney(Math.abs(rowFree))}</strong><span>не хватает</span></> : <><strong>{formatMoney(rowFree)}</strong><span>свободно</span></>}</div>
+                                      <span className="inventory-calm-variant-physical">На месте <b>{formatMoney(rowPhysical)}</b></span>
+                                      {rowReserved > 0 ? <button type="button" className="inventory-reservation-link" onClick={() => void openSimpleStockRowsDetail([row], { label: primary })}>{formatMoney(rowReserved)} в заказах →</button> : <span className="inventory-calm-no-reserve">Нет резервов</span>}
+                                      <button className="ghost compact warehouse-w3-micro-check-open" type="button" onClick={() => openConcreteStockCheck(row, primary)}>Проверить</button>
+                                    </div>
                                   )
                                 })}
                               </div>
