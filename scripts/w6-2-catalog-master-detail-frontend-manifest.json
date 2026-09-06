@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "revision": "w6-2-catalog-master-detail",
+  "frontend": {
+    "panelReturnChanges": {
+      "renderInventoryCatalogPanel": {
+        "before": "6b887683978eb585b97dfecafa242b9da6be76f65582703ff4386915540e2afb",
+        "after": "9174a48b8dcc447068839184cc3062b34d40ec39826ec702e015760e76884c24"
+      }
+    }
+  }
+}

@@ -21,6 +21,7 @@ check(catalog.includes('placeholder="Название, цвет, материа�
 check(catalog.includes('+ Новый товар') && catalog.includes('openNewProduct'), 'new product must be an explicit top-level action')
 check(catalog.includes('Редактировать товар') && catalog.includes('+ Вариант') && catalog.includes('Править'), 'editing must be explicit from the selected product sheet')
 check(catalog.includes('Нет вариантов') && !catalog.includes("'Взрослые: 0'"), 'compact product list must not repeat zero-heavy technical counters')
+check(catalog.includes("explicitSelectedProduct ? 'has-explicit-selection'"), 'mobile detail mode must only activate when the selected product still belongs to the current filter')
 
 check(css.includes('grid-template-columns: minmax(300px, 370px) minmax(0, 1fr)'), 'desktop master/detail width contract missing')
 check(css.includes('min-height: 53px'), 'product navigation rows are not compact enough')

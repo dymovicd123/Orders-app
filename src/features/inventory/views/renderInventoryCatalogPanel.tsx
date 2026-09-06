@@ -298,7 +298,7 @@ export function renderInventoryCatalogPanel(ctx: InventoryRenderContext) {
         </div>
       ) : null}
 
-      <div className={`catalog-master-detail ${selectedNumericId ? 'has-explicit-selection' : ''} ${showNewProduct ? 'is-new-product' : ''}`}>
+      <div className={`catalog-master-detail ${explicitSelectedProduct ? 'has-explicit-selection' : ''} ${showNewProduct ? 'is-new-product' : ''}`}>
         <aside className="catalog-master-pane" aria-label="Список товаров">
           <div className="catalog-master-pane-head">
             <strong>{browseProducts.length} товаров</strong>
