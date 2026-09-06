@@ -1,0 +1,424 @@
+/* W6.3 — Catalog polish / acceptance.
+   Keeps the W6.2 master/detail skeleton, but presents exact variants as
+   Execution -> Color -> Size while preserving exact variant ids underneath.
+   Commercial anchor classes intentionally leave room for future product /
+   execution / variant pricing without changing the information hierarchy. */
+
+.w6-catalog-toolbar {
+  grid-template-columns: minmax(320px, 1fr) auto auto;
+  align-items: center;
+}
+
+.w6-catalog-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.w6-toolbar-new-product {
+  min-height: 42px;
+  padding-inline: 16px;
+  white-space: nowrap;
+  box-shadow: 0 8px 18px rgba(36, 91, 183, .14);
+}
+
+.w6-catalog-stats {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.w6-catalog-stats > span {
+  min-height: 26px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: #7b8796;
+}
+
+.w6-catalog-stats > span + span::before {
+  content: '·';
+  margin-right: 5px;
+  color: #a4adba;
+}
+
+.w6-catalog-stats > button.w6-catalog-issue-filter {
+  min-height: 32px;
+  margin-left: 2px;
+  border-color: #c7d5e8;
+  background: #f8fbff;
+  color: #4f6686;
+}
+
+.w6-catalog-stats > button.w6-catalog-issue-filter:hover,
+.w6-catalog-stats > button.w6-catalog-issue-filter.is-active {
+  border-color: #8eadd8;
+  background: #edf4ff;
+  color: #244f8d;
+}
+
+.catalog-master-pane-head strong {
+  font-size: .88rem;
+}
+
+.catalog-detail-head {
+  padding-block: 16px;
+}
+
+.catalog-detail-meta.catalog-product-commercial-anchor {
+  min-height: 30px;
+}
+
+.catalog-detail-meta .is-filtered {
+  background: #edf4ff;
+  color: #315c97;
+}
+
+.catalog-detail-actions .secondary {
+  border-color: #cad6e4;
+  background: #fff;
+}
+
+.catalog-detail-actions .secondary:hover {
+  border-color: #9fb6d6;
+  background: #f7faff;
+}
+
+.catalog-execution-list {
+  gap: 12px;
+  padding: 12px;
+  background: #f7f9fc;
+}
+
+.catalog-execution-card {
+  border-radius: 15px;
+}
+
+.catalog-execution-head {
+  padding: 12px 14px;
+}
+
+.catalog-execution-head p {
+  margin-top: 2px;
+  font-size: .72rem;
+}
+
+.catalog-execution-summary.catalog-execution-commercial-anchor {
+  min-width: 88px;
+}
+
+.catalog-color-list {
+  display: grid;
+}
+
+.catalog-color-group {
+  display: grid;
+  border-top: 1px solid #e9eef4;
+  background: #fff;
+}
+
+.catalog-color-group:first-child {
+  border-top: 0;
+}
+
+.catalog-color-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 14px 8px;
+}
+
+.catalog-color-title {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.catalog-color-title strong {
+  overflow-wrap: anywhere;
+  color: var(--w6-md-ink);
+  font-size: .92rem;
+  line-height: 1.2;
+}
+
+.catalog-color-title span {
+  color: #8591a0;
+  font-size: .68rem;
+  font-weight: 650;
+}
+
+.catalog-color-total {
+  display: grid;
+  justify-items: end;
+  flex: 0 0 auto;
+}
+
+.catalog-color-total strong {
+  color: var(--w6-md-ink);
+  font-size: 1rem;
+}
+
+.catalog-color-total span {
+  color: #8b96a4;
+  font-size: .64rem;
+  font-weight: 700;
+}
+
+.catalog-color-subgroups {
+  display: grid;
+  gap: 8px;
+  padding: 0 14px 13px;
+}
+
+.catalog-color-subgroup {
+  display: grid;
+  grid-template-columns: minmax(118px, 150px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.catalog-color-subgroup-label {
+  display: grid;
+  gap: 2px;
+  padding-top: 8px;
+}
+
+.catalog-color-subgroup-label strong {
+  color: #46566d;
+  font-size: .72rem;
+  font-weight: 850;
+}
+
+.catalog-color-subgroup-label span {
+  color: #8994a2;
+  font-size: .65rem;
+  font-weight: 650;
+}
+
+.catalog-size-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 7px;
+}
+
+.catalog-size-tile {
+  appearance: none;
+  min-width: 0;
+  min-height: 68px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'size stock'
+    'point point';
+  align-content: center;
+  gap: 2px 6px;
+  padding: 8px 9px;
+  border: 1px solid #d8e1eb;
+  border-radius: 11px;
+  background: #fbfcfe;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color .14s ease, background .14s ease, box-shadow .14s ease, transform .14s ease;
+}
+
+.catalog-size-tile:hover {
+  border-color: #9eb7d7;
+  background: #f5f9ff;
+  box-shadow: 0 4px 11px rgba(45, 79, 122, .08);
+  transform: translateY(-1px);
+}
+
+.catalog-size-tile.is-selected {
+  border-color: #7097cf;
+  background: #edf4ff;
+  box-shadow: 0 0 0 2px rgba(62, 111, 182, .09);
+}
+
+.catalog-size-tile.is-zero {
+  background: #fafbfc;
+  border-color: #e2e7ed;
+}
+
+.catalog-size-tile.has-stock {
+  border-color: #b8cbe3;
+  background: #f7faff;
+}
+
+.catalog-size-value {
+  grid-area: size;
+  align-self: center;
+  color: var(--w6-md-ink);
+  font-size: 1.03rem;
+  font-weight: 900;
+  letter-spacing: -.02em;
+  line-height: 1;
+}
+
+.catalog-size-tile.is-zero .catalog-size-value {
+  color: #5d6978;
+}
+
+.catalog-size-stock {
+  grid-area: stock;
+  align-self: center;
+  justify-self: end;
+  color: #61738a;
+  font-size: .68rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.catalog-size-tile.has-stock .catalog-size-stock {
+  color: #294f85;
+}
+
+.catalog-size-tile small {
+  grid-area: point;
+  overflow: hidden;
+  color: #929daa;
+  font-size: .61rem;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-size-tile.is-zero small {
+  color: #a4adb8;
+}
+
+.catalog-variant-commercial-anchor {
+  position: relative;
+}
+
+.catalog-filter-context-note {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+  padding: 5px 8px;
+  border-radius: 9px;
+  background: #fff8e8;
+  color: #7c6429;
+  font-size: .7rem;
+  font-weight: 700;
+}
+
+@media (max-width: 1180px) {
+  .w6-catalog-toolbar {
+    grid-template-columns: minmax(240px, 1fr) auto auto;
+  }
+
+  .catalog-color-subgroup {
+    grid-template-columns: 110px minmax(0, 1fr);
+  }
+
+  .catalog-size-grid {
+    grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .w6-catalog-toolbar {
+    grid-template-columns: 1fr auto;
+  }
+
+  .w6-catalog-category-switcher {
+    grid-column: 1 / 2;
+  }
+
+  .w6-catalog-toolbar-actions {
+    grid-column: 2 / 3;
+    grid-row: 1 / span 2;
+    align-self: stretch;
+  }
+
+  .w6-toolbar-new-product {
+    height: 100%;
+    min-height: 44px;
+  }
+
+  .catalog-color-subgroup {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .catalog-color-subgroup-label {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding-top: 2px;
+  }
+}
+
+@media (max-width: 760px) {
+  .w6-catalog-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .w6-catalog-category-switcher,
+  .w6-catalog-toolbar-actions,
+  .w6-catalog-stats {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .w6-catalog-toolbar-actions {
+    width: 100%;
+  }
+
+  .w6-toolbar-new-product {
+    width: 100%;
+    min-height: 46px;
+  }
+
+  .catalog-color-head {
+    padding-inline: 11px;
+  }
+
+  .catalog-color-subgroups {
+    padding-inline: 11px;
+  }
+
+  .catalog-size-grid {
+    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  }
+
+  .catalog-size-tile {
+    min-height: 72px;
+    padding: 9px;
+  }
+
+  .catalog-size-value {
+    font-size: 1.08rem;
+  }
+}
+
+@media (max-width: 460px) {
+  .w6-catalog-stats {
+    gap: 5px 10px;
+  }
+
+  .w6-catalog-stats > span + span::before {
+    content: none;
+  }
+
+  .catalog-color-head {
+    align-items: flex-start;
+  }
+
+  .catalog-size-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .catalog-size-tile {
+    min-height: 74px;
+  }
+
+  .catalog-size-tile small {
+    white-space: normal;
+  }
+}

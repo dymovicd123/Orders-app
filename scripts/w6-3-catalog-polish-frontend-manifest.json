@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "revision": "w6-3-catalog-polish",
+  "frontend": {
+    "panelReturnChanges": {
+      "renderInventoryCatalogPanel": {
+        "before": "9174a48b8dcc447068839184cc3062b34d40ec39826ec702e015760e76884c24",
+        "after": "5ddec9492e28ddc236de16e59b804dc00cab5d2565b7d536a98df8ff0e79c7e1"
+      }
+    }
+  }
+}

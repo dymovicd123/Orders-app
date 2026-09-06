@@ -1,5 +1,6 @@
 import type { InventoryRenderContext } from './types'
 import { renderInventoryCatalogPanel as renderLegacyInventoryCatalogPanel } from './catalogLegacyAdminModes'
+import { CatalogPolishExecutionGroups, pluralRu } from './catalogPolishExecutionGroups'
 
 type PanelContext = Pick<InventoryRenderContext,
   | 'catalogActiveProducts'
@@ -176,6 +177,20 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
   const activeVariantsFor = (productId: number) => [...(catalogVariantsByProductId?.get?.(Number(productId)) || [])]
     .filter((variant: any) => variant?.isActive !== false)
 
+  const variantMatchesCategory = (variant: any) => catalogCategoryFilter === 'all' || getCatalogVariantCategory(variant) === catalogCategoryFilter
+
+  const variantMatchesQuery = (variant: any) => {
+    if (!query) return true
+    return [
+      productCategoryLabel(getCatalogVariantCategory(variant)),
+      variant.gender,
+      variant.color,
+      variant.material,
+      variant.length,
+      variant.sizeLabel,
+    ].filter(Boolean).join(' ').toLocaleLowerCase('ru').includes(query)
+  }
+
   const browseProducts = activeProducts.filter((product: any) => {
     const variants = activeVariantsFor(Number(product.id))
 
@@ -194,23 +209,20 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
     const productText = normalizedText(product.name).toLocaleLowerCase('ru')
     if (productText.includes(query)) return true
 
-    return variants.some((variant: any) => [
-      productCategoryLabel(getCatalogVariantCategory(variant)),
-      variant.gender,
-      variant.color,
-      variant.material,
-      variant.length,
-      variant.sizeLabel,
-    ].filter(Boolean).join(' ').toLocaleLowerCase('ru').includes(query))
+    return variants.some(variantMatchesQuery)
   })
 
   const selectedNumericKey = Object.keys(expandedCatalogProducts || {}).find((key) => /^\d+$/.test(key) && expandedCatalogProducts[key]) || ''
   const selectedNumericId = Number(selectedNumericKey || 0)
-  const explicitSelectedProduct = browseProducts.find((product: any) => Number(product.id) === selectedNumericId) || null
-  const selectedProduct = explicitSelectedProduct || browseProducts[0] || null
   const showNewProduct = Boolean(expandedCatalogProducts?.[W6_NEW_PRODUCT])
   const showEditProduct = Boolean(expandedCatalogProducts?.[W6_EDIT_PRODUCT])
   const showVariantEditor = Boolean(expandedCatalogProducts?.[W6_VARIANT_EDITOR])
+  const editingSelectedProduct = Boolean(showEditProduct || showVariantEditor)
+  const explicitSelectedProduct = browseProducts.find((product: any) => Number(product.id) === selectedNumericId) || null
+  const explicitSelectedProductAny = activeProducts.find((product: any) => Number(product.id) === selectedNumericId) || null
+  const selectedProduct = editingSelectedProduct && explicitSelectedProductAny ? explicitSelectedProductAny : explicitSelectedProduct || browseProducts[0] || null
+  const selectedProductHiddenByFilter = Boolean(selectedProduct && !browseProducts.some((product: any) => Number(product.id) === Number(selectedProduct.id)))
+  const hasExplicitDetail = Boolean(explicitSelectedProduct || (editingSelectedProduct && explicitSelectedProductAny))
 
   const selectProduct = (product: any) => {
     const category = getCatalogProductEffectiveCategory(product)
@@ -270,14 +282,21 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
     ? activeVariantsFor(Number(selectedProduct.id)).sort((a: any, b: any) => {
       const executionDiff = executionLabel(a.material, a.length).localeCompare(executionLabel(b.material, b.length), 'ru', { numeric: true })
       const categoryDiff = getCatalogVariantCategory(a).localeCompare(getCatalogVariantCategory(b))
-      const detailDiff = [a.gender, a.color, a.sizeLabel].join(' ').localeCompare([b.gender, b.color, b.sizeLabel].join(' '), 'ru', { numeric: true })
+      const detailDiff = [a.color, a.gender, a.sizeLabel].join(' ').localeCompare([b.color, b.gender, b.sizeLabel].join(' '), 'ru', { numeric: true })
       return executionDiff || categoryDiff || detailDiff
     })
     : []
 
+  const selectedProductNameMatchesQuery = Boolean(query && selectedProduct && normalizedText(selectedProduct.name).toLocaleLowerCase('ru').includes(query))
+  const visibleSelectedVariants = selectedVariants.filter((variant: any) => {
+    if (!variantMatchesCategory(variant)) return false
+    if (!query || selectedProductNameMatchesQuery) return true
+    return variantMatchesQuery(variant)
+  })
+
   const executionGroups = (() => {
     const groups = new Map<string, { key: string; label: string; material: string; length: string; variants: any[] }>()
-    for (const variant of selectedVariants) {
+    for (const variant of visibleSelectedVariants) {
       const key = executionKey(variant.material, variant.length)
       if (!groups.has(key)) {
         groups.set(key, {
@@ -297,8 +316,11 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
     })
   })()
 
+  const selectedExecutionCount = new Set(selectedVariants.map((variant: any) => executionKey(variant.material, variant.length))).size
   const selectedAdultCount = selectedVariants.filter((variant: any) => getCatalogVariantCategory(variant) === 'adult').length
   const selectedChildCount = selectedVariants.filter((variant: any) => getCatalogVariantCategory(variant) === 'child').length
+  const activeProductCount = (catalogData?.products || []).filter((product: any) => product.isActive).length
+  const activeVariantCount = (catalogData?.variants || []).filter((variant: any) => variant.isActive).length
 
   const productListSummary = (product: any) => {
     const variants = activeVariantsFor(Number(product.id))
@@ -306,8 +328,8 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
     const adult = variants.filter((variant: any) => getCatalogVariantCategory(variant) === 'adult').length
     const child = variants.filter((variant: any) => getCatalogVariantCategory(variant) === 'child').length
     if (adult && child) return `${adult} взрослых · ${child} детских`
-    if (child) return `${child} детских ${child === 1 ? 'вариант' : 'вариантов'}`
-    return `${variants.length} ${variants.length === 1 ? 'вариант' : 'вариантов'}`
+    if (child) return `${child} детских ${pluralRu(child, 'вариант', 'варианта', 'вариантов')}`
+    return `${variants.length} ${pluralRu(variants.length, 'вариант', 'варианта', 'вариантов')}`
   }
 
   return (
@@ -319,7 +341,6 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
         </div>
         <div className="w6-catalog-head-actions">
           <button className="secondary compact" type="button" onClick={() => void loadCatalogData(true)}>Обновить</button>
-          <button className="primary compact" type="button" onClick={openNewProduct}>+ Новый товар</button>
         </div>
       </div>
 
@@ -373,11 +394,14 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
             </button>
           ))}
         </div>
+        <div className="w6-catalog-toolbar-actions">
+          <button className="primary w6-toolbar-new-product" type="button" onClick={openNewProduct}>+ Новый товар</button>
+        </div>
         <div className="w6-catalog-stats" aria-label="Сводка каталога">
-          <span><b>{(catalogData?.products || []).filter((product: any) => product.isActive).length}</b> товаров</span>
-          <span><b>{(catalogData?.variants || []).filter((variant: any) => variant.isActive).length}</b> вариантов</span>
+          <span>Всего: <b>{activeProductCount}</b> {pluralRu(activeProductCount, 'товар', 'товара', 'товаров')}</span>
+          <span><b>{activeVariantCount}</b> {pluralRu(activeVariantCount, 'вариант', 'варианта', 'вариантов')}</span>
           {catalogIssueStats.productsWithoutVariants > 0 ? (
-            <button type="button" className={catalogOnlyWithoutVariants ? 'is-active' : ''} onClick={() => { setCatalogCategoryFilter('all'); setCatalogOnlyWithoutVariants(true); setInventoryQuery('') }}>
+            <button type="button" className={`w6-catalog-issue-filter ${catalogOnlyWithoutVariants ? 'is-active' : ''}`} onClick={() => { setCatalogCategoryFilter('all'); setCatalogOnlyWithoutVariants(true); setInventoryQuery('') }}>
               <b>{catalogIssueStats.productsWithoutVariants}</b> без вариантов
             </button>
           ) : <span className="is-ok">✓ все товары с вариантами</span>}
@@ -391,10 +415,10 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
         </div>
       ) : null}
 
-      <div className={`catalog-master-detail ${explicitSelectedProduct ? 'has-explicit-selection' : ''} ${showNewProduct ? 'is-new-product' : ''}`}>
+      <div className={`catalog-master-detail ${hasExplicitDetail ? 'has-explicit-selection' : ''} ${showNewProduct ? 'is-new-product' : ''}`}>
         <aside className="catalog-master-pane" aria-label="Список товаров">
           <div className="catalog-master-pane-head">
-            <strong>{browseProducts.length} товаров</strong>
+            <strong>{query ? 'Найдено ' : ''}{browseProducts.length} {pluralRu(browseProducts.length, 'товар', 'товара', 'товаров')}</strong>
             {query ? <span>по текущему поиску</span> : <span>в текущем фильтре</span>}
           </div>
           <div className="catalog-master-list">
@@ -461,11 +485,13 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                 <div className="catalog-detail-title">
                   <span className="catalog-detail-eyebrow">Товар</span>
                   <h2>{selectedProduct.name}</h2>
-                  <div className="catalog-detail-meta">
-                    <span><b>{selectedVariants.length}</b> {selectedVariants.length === 1 ? 'вариант' : 'вариантов'}</span>
-                    <span><b>{executionGroups.length}</b> {executionGroups.length === 1 ? 'исполнение' : 'исполнений'}</span>
+                  <div className="catalog-detail-meta catalog-product-commercial-anchor">
+                    <span><b>{selectedVariants.length}</b> {pluralRu(selectedVariants.length, 'вариант', 'варианта', 'вариантов')}</span>
+                    <span><b>{selectedExecutionCount}</b> {pluralRu(selectedExecutionCount, 'исполнение', 'исполнения', 'исполнений')}</span>
+                    {visibleSelectedVariants.length !== selectedVariants.length ? <span className="is-filtered"><b>{visibleSelectedVariants.length}</b> показано</span> : null}
                     {selectedAdultCount && selectedChildCount ? <span>{selectedAdultCount} взрослых · {selectedChildCount} детских</span> : selectedChildCount ? <span>Детский товар</span> : <span>Взрослый товар</span>}
                   </div>
+                  {selectedProductHiddenByFilter ? <span className="catalog-filter-context-note">Редактируемый товар скрыт текущим поиском или фильтром. Контекст сохранён до закрытия редактора.</span> : null}
                 </div>
                 <div className="catalog-detail-actions">
                   <button className="secondary compact" type="button" onClick={() => { setInventoryQuery(selectedProduct.name); ctx.openInventoryPanel('overview') }}>Найти в остатках</button>
@@ -506,60 +532,19 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                 </section>
               ) : null}
 
-              <div className="catalog-execution-list">
-                {executionGroups.length ? executionGroups.map((group) => {
-                  const groupPhysical = group.variants.reduce((sum, variant) => sum + (getStockQuantityForVariant('warehouse', variant.id) || 0) + (getStockQuantityForVariant('boutique', variant.id) || 0), 0)
-                  return (
-                    <section key={`execution-${group.key}`} className="catalog-execution-card">
-                      <div className="catalog-execution-head">
-                        <div>
-                          <span className="catalog-detail-eyebrow">Исполнение</span>
-                          <h3>{group.label}</h3>
-                          {group.label === 'Основное исполнение' ? <p>Базовые материал и длина.</p> : <p>{group.variants.length} {group.variants.length === 1 ? 'вариант' : 'вариантов'} в этом исполнении.</p>}
-                        </div>
-                        <div className="catalog-execution-summary">
-                          <strong>{groupPhysical}</strong>
-                          <span>физически в точках</span>
-                        </div>
-                      </div>
-
-                      <div className="catalog-variation-list">
-                        {group.variants.map((variant) => {
-                          const warehouseQty = getStockQuantityForVariant('warehouse', variant.id) || 0
-                          const boutiqueQty = getStockQuantityForVariant('boutique', variant.id) || 0
-                          const totalQty = warehouseQty + boutiqueQty
-                          const category = getCatalogVariantCategory(variant)
-                          const sizeLabel = normalizedText(variant.sizeLabel)
-                          return (
-                            <div key={`w6-variant-${variant.id}`} className={`catalog-variation-row ${catalogVariantDraft.id === variant.id && showVariantEditor ? 'is-selected' : ''}`}>
-                              <div className="catalog-variation-main">
-                                <strong>{normalizedText(variant.color) || 'Цвет не указан'}</strong>
-                                <span>
-                                  <b>{variant.gender || 'Пол не указан'}</b>
-                                  <em>{productCategoryLabel(category)}</em>
-                                  {sizeLabel ? <em>{category === 'child' ? 'Возраст' : 'Размер'} {sizeLabel}</em> : <em>{category === 'child' ? 'Возраст не указан' : 'Размер не указан'}</em>}
-                                </span>
-                              </div>
-                              <div className="catalog-variation-stock">
-                                <strong>{totalQty}</strong>
-                                <span>на месте</span>
-                                <small>Склад {warehouseQty} · Бутик {boutiqueQty}</small>
-                              </div>
-                              <button className="secondary compact" type="button" onClick={() => openVariantEditor(selectedProduct, variant)}>Править</button>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </section>
-                  )
-                }) : (
-                  <div className="catalog-detail-empty">
-                    <strong>У товара пока нет вариантов</strong>
-                    <p>Создайте первый вариант только если это реальная комбинация характеристик, которая должна участвовать в заказах и остатках.</p>
-                    <button className="primary compact" type="button" disabled={!stocktakeReferenceReady} onClick={() => openNewVariant(selectedProduct)}>+ Добавить первый вариант</button>
-                  </div>
-                )}
-              </div>
+              <CatalogPolishExecutionGroups
+                executionGroups={executionGroups}
+                selectedVariants={selectedVariants}
+                selectedProduct={selectedProduct}
+                getStockQuantityForVariant={getStockQuantityForVariant}
+                getCatalogVariantCategory={getCatalogVariantCategory}
+                productCategoryLabel={productCategoryLabel}
+                catalogVariantDraft={catalogVariantDraft}
+                showVariantEditor={showVariantEditor}
+                openVariantEditor={openVariantEditor}
+                stocktakeReferenceReady={stocktakeReferenceReady}
+                openNewVariant={openNewVariant}
+              />
 
               {showVariantEditor ? (
                 <section className="catalog-detail-editor catalog-variant-editor-v2 w6-variant-editor">
