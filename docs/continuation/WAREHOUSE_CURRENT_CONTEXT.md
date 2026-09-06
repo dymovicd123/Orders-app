@@ -5,6 +5,16 @@ Repository: `dymovicd123/Orders-app`
 
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
+## Checkpoint 2026-09-06 — W7 exact-SKU history / price readiness
+
+Baseline entering W7: `main` `246dfea9fb999fd10b68ad2b4a6d716f2d3792a8` (W6.4A). Work branch: `w7-sku-history-price-readiness-audit`.
+
+Current conclusion: exact SKU history already exists and must be reused rather than rebuilt. Catalog SKU cards route lazily to the existing Warehouse history with explicit `source + variant_id`; no history reads are added to ordinary Catalog browsing. Pricing remains deferred: no price fields/API/migration/UI are introduced. Stable product/execution/variant identity and existing commercial anchors are preserved; historical `order_items.unit_price` remains a transaction snapshot that future catalog-price changes must never rewrite.
+
+Next after green W7 acceptance: W8 Warehouse interface completion, starting from `Остатки`. Arrival remains frozen.
+
+---
+
 ## Mandatory continuation protocol
 
 After every meaningful intermediate Warehouse step, update this file in the branch being worked on. A meaningful step includes:

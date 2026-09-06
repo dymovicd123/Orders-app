@@ -2456,6 +2456,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         loadReferenceItems,
         normalizeSuggestion,
         openInventoryPanel,
+        openSimpleStockHistory,
         openOrderFromFinance,
         productCategoryLabel,
         reconcileCatalogReview,

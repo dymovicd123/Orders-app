@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "revision": "w7-sku-history-price-readiness",
+  "files": {
+    "src/features/inventory/views/renderInventoryCatalogPanel.tsx": {
+      "beforeGitBlob": "ba1ed93608a8077544d141bb74d2d05a9fcc9548",
+      "afterGitBlob": "71568094c118553f13175dbea6810ad165b6d55b"
+    },
+    "src/features/inventory/views/catalogPolishExecutionGroups.tsx": {
+      "beforeGitBlob": "5c7f43011c4822733e68f9e1a8cc52110ad30a2a",
+      "afterGitBlob": "9764b7bb7300c833c400eb8114a39a035fcb596b"
+    }
+  }
+}
