@@ -11,6 +11,8 @@ const windowAfter = (text, marker, size = 7000) => {
 const app = read('src/App.tsx')
 const css = read('src/styles/187-inventory-health.css')
 const catalog = read('src/features/inventory/views/renderInventoryCatalogPanel.tsx')
+const catalogAdminModes = read('src/features/inventory/views/catalogLegacyAdminModes.tsx')
+const catalogSurface = `${catalog}\n${catalogAdminModes}`
 
 const openPanel = windowAfter(app, 'const openInventoryPanel = (panel: InventoryPanel) => {', 1200)
 check(openPanel.includes("nextPanel === 'catalog' || nextPanel === 'settings'"), 'manager navigation does not preserve structural/admin panel guard')
@@ -21,8 +23,9 @@ check(css.includes('.inventory-tabs-step187.is-manager {\n    grid-template-colu
 check(css.includes('.inventory-tabs-step187.is-manager {\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n  }'), 'manager Warehouse nav has no small responsive grid')
 
 for (const marker of ['Уточнить товары', 'Нужно уточнить, какой это товар', 'система не смогла безопасно определить точный товар или вариант']) {
-  check(catalog.toLowerCase().includes(marker.toLowerCase()), `human Catalog Review explanation missing: ${marker}`)
+  check(catalogSurface.toLowerCase().includes(marker.toLowerCase()), `human Catalog Review explanation missing: ${marker}`)
 }
+check(catalog.includes("renderLegacyInventoryCatalogPanel(ctx as any)"), 'W6.2 Catalog must keep delegated admin/recovery modes reachable')
 
 for (const [label, marker] of [
   ['auto reconcile', 'async function reconcileCatalogReview'],
@@ -36,4 +39,4 @@ for (const [label, marker] of [
 }
 check(app.includes('Promise.allSettled(tasks)'), 'Catalog Review refresh isolation helper missing')
 
-console.log('W1 WAREHOUSE RELIABILITY TESTS PASSED — manager routine panels open, nav is horizontal, and successful catalog-review mutations survive secondary refresh failures')
+console.log('W1 WAREHOUSE RELIABILITY TESTS PASSED — manager routine panels open, nav is horizontal, delegated Catalog Review wording is preserved, and successful catalog-review mutations survive secondary refresh failures')

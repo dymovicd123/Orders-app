@@ -2446,6 +2446,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         inventoryLifecycleTaskIndex,
         inventoryPanelStyle,
         inventoryProductReferenceGroups,
+        inventoryQuery,
         lifecycleFactsMatchExactVariant,
         lifecycleOptionsWithCurrent,
         lifecycleValueNeedsCreation,

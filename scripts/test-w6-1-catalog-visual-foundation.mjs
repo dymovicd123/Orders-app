@@ -23,7 +23,11 @@ check(!css.includes('.catalog-product-edit-strip {\n  display: none'), 'product 
 // Existing safe catalogue controls remain intact in this presentation-only slice.
 check(catalog.includes('void saveCatalogProduct()'), 'catalogue product save path changed/disappeared')
 check(catalog.includes('void saveCatalogVariant()'), 'catalogue variant save path changed/disappeared')
-check(catalog.includes("setInventoryQuery(product.name); openInventoryPanel('overview')"), 'catalogue-to-stock navigation changed/disappeared')
+check(
+  catalog.includes("setInventoryQuery(product.name); openInventoryPanel('overview')")
+    || catalog.includes("setInventoryQuery(selectedProduct.name); ctx.openInventoryPanel('overview')"),
+  'catalogue-to-stock navigation changed/disappeared',
+)
 check(catalog.includes("material: 'СТАНДАРТ'"), 'valid STANDARD catalogue semantics must remain accepted')
 check(catalog.includes("length: 'СТАНДАРТ'"), 'valid STANDARD length semantics must remain accepted')
 
