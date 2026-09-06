@@ -24,7 +24,9 @@ check(sku.includes('cardTotalQty !== 0') && sku.includes('физический �
 check(sku.includes('Нажмите «Обновить»; повторять вывод не нужно.') && sku.includes('Не удалось подтвердить результат операции.'), 'post-write/ambiguous transport safety copy is missing')
 check(sku.indexOf("setActionMessage('Позиция выведена из активного каталога") < sku.indexOf('const refreshed = await loadCatalogData(true)'), 'authoritative retirement success is still downstream of refresh')
 check(sku.includes('if (!refreshed)') && sku.includes('loadCatalogData(true)'), 'silent refresh failure after retirement is not handled')
-check(sku.includes('Изменения каталога доступны только в админ-режиме') && catalog.includes('isAdmin={isAdmin}'), 'manager/admin SKU action boundary is missing')
+check(catalog.includes('isAdmin = true') && catalog.includes('isAdmin={isAdmin}'), 'SKU admin capability is not preserved inside the admin-only catalog host')
+check(inventory.includes("{isAdmin ? <button type=\"button\" className={inventoryPanel === 'catalog' ? 'is-active' : ''} onClick={() => openInventoryPanel('catalog')"), 'catalog navigation is no longer restricted to admin mode')
+check(sku.includes('Изменения каталога доступны только в админ-режиме') && sku.includes('!selectedVariants.length && isAdmin'), 'defensive non-admin SKU mutation boundary is missing')
 check(sku.includes('catalog-variant-commercial-anchor') && sku.includes('data-variant-id={variant.id}'), 'future pricing/exact variant anchor was lost')
 
 check(backend.includes('export async function assertCatalogVariantMayDeactivate'), 'authoritative retirement blocker is missing')
@@ -43,4 +45,4 @@ check(css.includes('@media(max-width:460px)') && css.includes('.catalog-sku-iden
 check(inventory.includes('<div className="inventory-arrival-legacy-workspace">'), 'frozen Arrival workspace changed')
 check(sku.includes('catalog-color-group') && sku.includes('catalog-size-grid'), 'W6.3 execution/color/size hierarchy regressed')
 
-console.log('W6.4 SAFE SKU CARD PASSED — exact SKU card, create-similar/correction split, guarded soft retirement, post-write reliability, role boundary, mobile layout and frozen Arrival are protected')
+console.log('W6.4 SAFE SKU CARD PASSED — exact SKU card, create-similar/correction split, guarded soft retirement, post-write reliability, admin-only host + defensive role boundary, mobile layout and frozen Arrival are protected')
