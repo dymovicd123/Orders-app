@@ -1,0 +1,41 @@
+name: W6.3 Catalog validation
+
+on:
+  push:
+    branches:
+      - w6-3-catalog-polish
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply W6.3 Catalog polish
+        run: |
+          node scripts/apply-w6-3-catalog-polish.mjs
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "W6.3: apply Catalog polish"
+            git push origin HEAD:w6-3-catalog-polish
+          fi
+      - name: Focused W6.3 regression
+        run: node scripts/test-w6-3-catalog-polish.mjs
+      - name: Cumulative release gate
+        run: npm run release:check
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+      - name: Lint
+        run: npm run lint
