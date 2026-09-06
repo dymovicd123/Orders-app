@@ -19,11 +19,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Apply W6.2 boundary deltas
+      - name: Apply remaining W6.2 controller delta
         run: |
-          node scripts/apply-w6-2-boundary-fix.mjs
-          node scripts/apply-w6-2-panel-context-fix.mjs
-          node scripts/apply-w6-2-full-context-fix.mjs
           node scripts/apply-w6-2-controller-call-fix.mjs
           if ! git diff --quiet; then
             git config user.name "github-actions[bot]"
