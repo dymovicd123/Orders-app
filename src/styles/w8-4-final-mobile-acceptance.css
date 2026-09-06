@@ -126,28 +126,20 @@
     grid-column: 1 / -1;
   }
 
-  .inventory-operation-secondary-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
-  }
-
-  .inventory-operation-secondary-actions button {
-    min-height: 44px;
-    white-space: normal;
-  }
-
-  .inventory-submit-bar-v182 {
+  .inventory-operation-card-writeoff .inventory-submit-bar-v182,
+  .inventory-operation-card-manual_set .inventory-submit-bar-v182 {
     align-items: stretch;
   }
 
-  .inventory-submit-bar-v182 .actions {
+  .inventory-operation-card-writeoff .inventory-submit-bar-v182 .actions,
+  .inventory-operation-card-manual_set .inventory-submit-bar-v182 .actions {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     width: 100%;
   }
 
-  .inventory-submit-bar-v182 .actions button {
+  .inventory-operation-card-writeoff .inventory-submit-bar-v182 .actions button,
+  .inventory-operation-card-manual_set .inventory-submit-bar-v182 .actions button {
     min-height: 44px;
   }
 
@@ -201,13 +193,14 @@
     grid-column: auto;
   }
 
-  .inventory-operation-secondary-actions,
-  .inventory-submit-bar-v182 .actions,
+  .inventory-operation-card-writeoff .inventory-submit-bar-v182 .actions,
+  .inventory-operation-card-manual_set .inventory-submit-bar-v182 .actions,
   .history-mode-switch {
     grid-template-columns: 1fr;
   }
 
-  .inventory-submit-bar-v182 .actions button {
+  .inventory-operation-card-writeoff .inventory-submit-bar-v182 .actions button,
+  .inventory-operation-card-manual_set .inventory-submit-bar-v182 .actions button {
     width: 100%;
   }
 }
