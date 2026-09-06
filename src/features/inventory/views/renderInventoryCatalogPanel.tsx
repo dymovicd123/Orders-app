@@ -47,6 +47,7 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'inventoryPanelStyle'
   | 'inventoryProductReferenceGroups'
   | 'inventoryQuery'
+  | 'isAdmin'
   | 'lifecycleFactsMatchExactVariant'
   | 'lifecycleOptionsWithCurrent'
   | 'lifecycleValueNeedsCreation'
@@ -148,6 +149,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
     getStockQuantityForVariant,
     inventoryLifecycle,
     inventoryPanelStyle,
+    isAdmin,
     loadCatalogData,
     loadCatalogReview,
     loadInventoryLifecycle,
@@ -544,15 +546,17 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                 openVariantEditor={openVariantEditor}
                 stocktakeReferenceReady={stocktakeReferenceReady}
                 openNewVariant={openNewVariant}
+                isAdmin={isAdmin}
+                loadCatalogData={loadCatalogData}
               />
 
               {showVariantEditor ? (
                 <section className="catalog-detail-editor catalog-variant-editor-v2 w6-variant-editor">
                   <div className="catalog-detail-editor-head">
                     <div>
-                      <span className="catalog-detail-eyebrow">{catalogVariantDraft.id ? 'Редактирование варианта' : 'Новый вариант'}</span>
-                      <h3>{catalogVariantDraft.id ? 'Изменить комбинацию' : 'Добавить комбинацию'}</h3>
-                      <p>Техническое значение «СТАНДАРТ» допустимо в данных; в обычном просмотре оно показывается как «Основное исполнение».</p>
+                      <span className="catalog-detail-eyebrow">{catalogVariantDraft.id ? 'Исправление новой позиции' : 'Новый вариант'}</span>
+                      <h3>{catalogVariantDraft.id ? 'Исправить ошибку в комбинации' : 'Добавить комбинацию'}</h3>
+                      <p>{catalogVariantDraft.id ? 'Исправление допустимо только пока эта точная позиция ещё нигде не использовалась. Если история уже существует, сервер не позволит её переписать — создайте правильный вариант отдельно.' : 'Техническое значение «СТАНДАРТ» допустимо в данных; в обычном просмотре оно показывается как «Основное исполнение».'}</p>
                     </div>
                     <button className="secondary compact" type="button" onClick={closeEditor}>Закрыть</button>
                   </div>
@@ -606,7 +610,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                       </select>
                     </label>
                     <button className="primary" type="button" disabled={!stocktakeReferenceReady} onClick={() => void saveCatalogVariant()}>
-                      {catalogVariantDraft.id && catalogVariantDraft.productId === String(selectedProduct.id) ? 'Сохранить вариант' : 'Добавить вариант'}
+                      {catalogVariantDraft.id && catalogVariantDraft.productId === String(selectedProduct.id) ? 'Сохранить исправление' : 'Добавить вариант'}
                     </button>
                   </div>
                 </section>
