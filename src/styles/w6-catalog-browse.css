@@ -250,7 +250,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
     "characteristics size"
-    "identity identity"
+    "category gender"
     "stock action";
   gap: 8px 10px;
   align-items: center;
@@ -274,12 +274,12 @@
 }
 
 .catalog-variant-row-v2 > span:nth-child(1) {
-  grid-area: identity;
+  grid-area: category;
   justify-self: start;
 }
 
 .catalog-variant-row-v2 > span:nth-child(2) {
-  grid-area: identity;
+  grid-area: gender;
   justify-self: end;
   color: #69778a;
   font-size: .78rem;
@@ -511,7 +511,7 @@
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
       "characteristics size"
-      "identity identity"
+      "category gender"
       "stock stock"
       "action action";
   }
