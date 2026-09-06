@@ -130,7 +130,10 @@ export function CatalogPolishExecutionGroups({
       setVariantCard(null)
       setRetireConfirmVariantId(0)
       try {
-        await loadCatalogData(true)
+        const refreshed = await loadCatalogData(true)
+        if (!refreshed) {
+          setActionMessage('Позиция выведена из активного каталога, но список не обновился. Нажмите «Обновить»; повторять вывод не нужно.')
+        }
       } catch {
         setActionMessage('Позиция выведена из активного каталога, но список не обновился. Нажмите «Обновить»; повторять вывод не нужно.')
       }
@@ -314,7 +317,7 @@ export function CatalogPolishExecutionGroups({
         <div className="catalog-detail-empty">
           <strong>{selectedVariants.length ? 'Нет вариантов по текущему фильтру' : 'У товара пока нет вариантов'}</strong>
           <p>{selectedVariants.length ? 'Измените поиск или фильтр, чтобы снова показать варианты этого товара.' : 'Создайте первый вариант только если это реальная комбинация характеристик, которая должна участвовать в заказах и остатках.'}</p>
-          {!selectedVariants.length ? <button className="primary compact" type="button" disabled={!stocktakeReferenceReady} onClick={() => openNewVariant(selectedProduct)}>+ Добавить первый вариант</button> : null}
+          {!selectedVariants.length && isAdmin ? <button className="primary compact" type="button" disabled={!stocktakeReferenceReady} onClick={() => openNewVariant(selectedProduct)}>+ Добавить первый вариант</button> : null}
         </div>
       )}
     </div>
