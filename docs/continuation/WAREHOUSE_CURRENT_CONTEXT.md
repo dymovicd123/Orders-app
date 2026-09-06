@@ -5,6 +5,14 @@ Repository: `dymovicd123/Orders-app`
 
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
+## Checkpoint 2026-09-06 — W8.2 `Остатки` workspace finish
+
+W8.2 continues W8.1 instead of declaring `Остатки` complete prematurely. Explicit search now reveals all matching SKU rows regardless of the normal availability filter; product-level totals stay truthful when the filter hides some variants; exact SKU opening is neutral and the physical check is a separate explicit action; routine short checks no longer precede the main stock list; large products collapse color groups and keep better context; reservation-detail loading is latest-request-wins. Business truth and D1 mutation paths remain unchanged.
+
+After the remaining W8 interface passes are finished, W9 is reserved for a full Warehouse audit and discussion before another broad implementation wave.
+
+---
+
 ## Checkpoint 2026-09-06 — W8.1 `Остатки` interface completion
 
 Baseline entering W8.1: `main` `ed889662e9d6dc0fc5fdfdd95943bb5641a8db5b` (W7). Work branch: `w8-1-stock-overview-completion`.

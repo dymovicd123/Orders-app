@@ -284,7 +284,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const [historyStocktakeDetail, setHistoryStocktakeDetail] = useState<InventoryStocktakeSession | null>(null)
   const [historyStocktakeDetailBusy, setHistoryStocktakeDetailBusy] = useState(false)
   const historyRequestRef = useRef(0)
-  const simpleStockReservationsRequestRef = useRef(0)
   const [simpleStockOpenProductKey, setSimpleStockOpenProductKey] = useState('')
   const [catalogAdminMode, setCatalogAdminMode] = useState<'catalog' | 'review' | 'lifecycle' | 'attributes'>('catalog')
   const [catalogReviewTaskIndex, setCatalogReviewTaskIndex] = useState(0)
@@ -1446,28 +1445,25 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
 
   const simpleStockGroups = useMemo(() => {
     const result: any[] = []
-    const hasExplicitStockSearch = Boolean(inventoryQuery.trim())
     for (const product of inventoryStocktakeGroups || []) {
       const productRows = product.rows || []
       const allRows = simpleStockCategory === 'all'
         ? productRows
         : productRows.filter((row: any) => (row.category || 'adult') === simpleStockCategory)
-      const visibleRows = hasExplicitStockSearch ? allRows : allRows.filter((row: any) => {
+      const visibleRows = allRows.filter((row: any) => {
         const free = simpleStockQuantity(row)
         const reserved = simpleStockReserved(row)
         const physical = simpleStockPhysical(row)
-        if (simpleStockAvailabilityFilter === 'all') return physical !== 0 || reserved !== 0
+        if (simpleStockAvailabilityFilter === 'all') {
+          if (inventoryQuery.trim()) return true
+          return physical !== 0 || reserved !== 0
+        }
         if (simpleStockAvailabilityFilter === 'free') return free > 0
         if (simpleStockAvailabilityFilter === 'reserved') return reserved > 0
         return free < 0 || physical < 0
       })
       if (!visibleRows.length) continue
-      result.push({
-        ...product,
-        rows: visibleRows,
-        allRows,
-        availabilityFilterApplied: !hasExplicitStockSearch,
-      })
+      result.push({ ...product, rows: visibleRows })
     }
     return result
   }, [inventoryStocktakeGroups, simpleStockSource, simpleStockAvailabilityFilter, simpleStockCategory, inventoryQuery])
@@ -1504,7 +1500,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
 
   async function openSimpleStockRowsDetail(rows: any[], options: { aggregate?: boolean; label?: string; source?: 'warehouse' | 'boutique' } = {}) {
     if (!rows?.length) return
-    const requestId = ++simpleStockReservationsRequestRef.current
     const detailSource = options.source || simpleStockSource
     const physical = rows.reduce((sum, row) => sum + (detailSource === 'warehouse' ? Number(row.warehouseQuantity || 0) : Number(row.boutiqueQuantity || 0)), 0)
     const reserved = rows.reduce((sum, row) => sum + (detailSource === 'warehouse' ? Number(row.warehouseReserved || 0) : Number(row.boutiqueReserved || 0)), 0)
@@ -1529,27 +1524,21 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       aggregate,
       label: options.label || '',
       hasDataIssue: rows.length > 1 && !aggregate,
-      microCheck: false,
     }
     setSimpleStockDetail(detail)
     setQuickStocktakeOpen(false)
     setQuickStocktakeValues({})
     setQuickStocktakeNotice('')
     setSimpleStockReservations([])
-    if (reserved <= 0 || (!detail.variantId && !detail.productId)) {
-      setSimpleStockReservationsBusy(false)
-      return
-    }
+    if (reserved <= 0 || (!detail.variantId && !detail.productId)) return
     setSimpleStockReservationsBusy(true)
     try {
       const data = await loadInventoryReservations(detailSource, detail.variantId, aggregate ? detail.productId : 0)
-      if (requestId !== simpleStockReservationsRequestRef.current) return
       setSimpleStockReservations(Array.isArray(data?.reservations) ? data.reservations : [])
     } catch {
-      if (requestId !== simpleStockReservationsRequestRef.current) return
       setSimpleStockReservations([])
     } finally {
-      if (requestId === simpleStockReservationsRequestRef.current) setSimpleStockReservationsBusy(false)
+      setSimpleStockReservationsBusy(false)
     }
   }
 

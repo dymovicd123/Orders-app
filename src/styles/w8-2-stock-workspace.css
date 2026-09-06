@@ -1,0 +1,149 @@
+/* W8.2 — finish the daily stock workspace without changing inventory truth. */
+.inventory-calm-head { padding-bottom: 9px; }
+.inventory-calm-head p { max-width: 700px; }
+.inventory-calm-toolbar { padding-bottom: 9px; }
+.inventory-calm-search { min-height: 42px; }
+
+.inventory-stock-summary-context {
+  margin: 0 20px 5px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: #7b8797;
+  font-size: 11px;
+}
+.inventory-stock-summary-context strong { color: #475569; font-size: 12px; }
+.inventory-calm-summary { margin-bottom: 9px; gap: 6px; }
+.inventory-calm-summary > div,
+.inventory-calm-summary > details { padding: 9px 11px; }
+.inventory-calm-summary strong { font-size: 19px; }
+.inventory-calm-summary small { font-size: 10px; }
+.inventory-calm-summary details p { font-size: 11px; }
+
+.inventory-calm-filters { padding-bottom: 7px; }
+.inventory-calm-filters.is-search-override > button:not(.is-active) { opacity: .72; }
+.inventory-stock-filter-override {
+  margin: -1px 20px 9px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: #f7f9fc;
+  color: #66758a;
+  font-size: 11px;
+}
+.inventory-stock-result-meta { margin-top: 1px; }
+
+.inventory-calm-list { gap: 7px; }
+.inventory-calm-product.is-open { overflow: visible; }
+.inventory-calm-product.is-open > .inventory-calm-product-main {
+  position: sticky;
+  top: 8px;
+  z-index: 7;
+  background: rgba(255,255,255,.97);
+  border-bottom: 1px solid #e6ebf1;
+  box-shadow: 0 5px 13px rgba(15,23,42,.05);
+  backdrop-filter: blur(7px);
+}
+.inventory-calm-product-name span { font-size: 11px; }
+.inventory-calm-detail-button { min-width: 126px; }
+
+.inventory-stock-hierarchy { background: #f8fafc; gap: 8px; }
+.inventory-stock-execution { border-radius: 12px; }
+.inventory-stock-execution.is-simple-execution {
+  border-color: transparent;
+  background: transparent;
+  overflow: visible;
+}
+.inventory-stock-execution.is-simple-execution > .inventory-stock-execution-head { display: none; }
+.inventory-stock-execution.is-simple-execution > .inventory-stock-color-list { border: 1px solid #dfe7f0; border-radius: 12px; background: #fff; overflow: hidden; }
+.inventory-stock-execution-head > div:first-child > span { font-size: 10px; }
+.inventory-stock-execution-head > div:first-child > strong { font-size: 15px; }
+.inventory-stock-execution-head > div:first-child > small { font-size: 11px; }
+.inventory-stock-execution-numbers > span { font-size: 11px; }
+.inventory-stock-execution-numbers > small { font-size: 10px; }
+
+.inventory-stock-color { border-top: 1px solid #edf1f5; }
+.inventory-stock-color:first-child { border-top: 0; }
+.inventory-stock-color > summary { list-style: none; cursor: pointer; }
+.inventory-stock-color > summary::-webkit-details-marker { display: none; }
+.inventory-stock-color > summary::after {
+  content: '⌄';
+  flex: 0 0 auto;
+  margin-left: 4px;
+  color: #8a96a6;
+  font-size: 13px;
+  transition: transform .14s ease;
+}
+.inventory-stock-color[open] > summary::after { transform: rotate(180deg); }
+.inventory-stock-color.is-only > summary::after { visibility: hidden; }
+.inventory-stock-color-head { min-height: 42px; padding-block: 9px; }
+.inventory-stock-color-head > div:first-child strong { font-size: 14px; }
+.inventory-stock-color-head > div:first-child span { font-size: 10px; }
+.inventory-stock-color-head > div:last-child span { font-size: 10px; }
+.inventory-stock-color:not([open]) > summary { background: #fbfcfe; }
+.inventory-stock-color:not([open]) > .inventory-stock-subgroups { display: none; }
+
+.inventory-stock-subgroup-label strong { font-size: 11px; }
+.inventory-stock-subgroup-label span { font-size: 10px; }
+.inventory-stock-size-grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 7px; }
+.inventory-stock-size-tile { min-height: 76px; padding: 10px 11px; }
+.inventory-stock-size-value { font-size: 18px; }
+.inventory-stock-size-free { font-size: 15px; }
+.inventory-stock-size-free small { font-size: 9px; }
+.inventory-stock-size-meta { font-size: 10px; line-height: 1.3; }
+
+.inventory-stock-routine-disclosure {
+  margin: 11px 20px 18px;
+  border: 1px solid #e3e9f1;
+  border-radius: 12px;
+  background: #fafbfd;
+  overflow: hidden;
+}
+.inventory-stock-routine-disclosure > summary {
+  list-style: none;
+  min-height: 48px;
+  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+}
+.inventory-stock-routine-disclosure > summary::-webkit-details-marker { display: none; }
+.inventory-stock-routine-disclosure > summary > div { display: grid; gap: 2px; }
+.inventory-stock-routine-disclosure > summary strong { color: #334155; font-size: 12px; }
+.inventory-stock-routine-disclosure > summary span { color: #7b8797; font-size: 10px; }
+.inventory-stock-routine-disclosure > summary b { color: #52657e; font-size: 11px; }
+.inventory-stock-routine-body { border-top: 1px solid #e8edf3; padding: 8px; background: #fff; }
+.inventory-stock-routine-body .inventory-cycle-count-card { margin: 0; box-shadow: none; }
+
+.inventory-calm-detail .warehouse-w3-micro-check-entry { margin-top: 15px; }
+.inventory-calm-detail .warehouse-w3-micro-check-start { align-self: flex-start; }
+
+@media (max-width: 900px) {
+  .inventory-calm-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .inventory-calm-summary > details { grid-column: 1 / -1; }
+  .inventory-stock-size-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .inventory-stock-summary-context,
+  .inventory-stock-filter-override,
+  .inventory-stock-routine-disclosure { margin-inline: 12px; }
+  .inventory-calm-product.is-open > .inventory-calm-product-main { position: static; box-shadow: none; backdrop-filter: none; }
+  .inventory-stock-color-head { align-items: flex-start; }
+  .inventory-stock-color-head > div:last-child { flex-wrap: wrap; justify-content: flex-end; text-align: right; }
+  .inventory-stock-size-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .inventory-stock-size-meta { white-space: normal; }
+}
+
+@media (max-width: 460px) {
+  .inventory-calm-summary > div { padding: 8px; }
+  .inventory-calm-summary strong { font-size: 17px; }
+  .inventory-calm-summary span { font-size: 10px; }
+  .inventory-calm-summary small { font-size: 9px; }
+  .inventory-stock-size-grid { gap: 6px; }
+  .inventory-stock-size-tile { min-height: 82px; padding: 9px; }
+  .inventory-stock-size-value { font-size: 19px; }
+  .inventory-stock-size-free { font-size: 14px; }
+  .inventory-stock-size-meta { font-size: 9.5px; }
+}
