@@ -23,11 +23,12 @@ jobs:
         run: |
           node scripts/apply-w6-2-preservation-delta.mjs
           node scripts/apply-w6-2-boundary-fix.mjs
+          node scripts/apply-w6-2-panel-context-fix.mjs
           if ! git diff --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add -A
-            git commit -m "W6.2: align Catalog renderer with preservation and type boundaries"
+            git commit -m "W6.2: keep Catalog renderer inside typed panel boundaries"
             git push origin HEAD:w6-2-catalog-master-detail
           fi
       - name: Focused W6.2 regression
