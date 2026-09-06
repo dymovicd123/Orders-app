@@ -4,7 +4,7 @@ const read = (path) => fs.readFileSync(path, 'utf8')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 
 const catalog = read('src/features/inventory/views/renderInventoryCatalogPanel.tsx')
-const legacy = read('src/features/inventory/views/renderInventoryCatalogPanelLegacy.tsx')
+const legacy = read('src/features/inventory/views/catalogLegacyAdminModes.tsx')
 const css = read('src/styles/w6-2-catalog-master-detail.css')
 const loader = read('src/styles/192b2a-warehouse-attention-actions.css')
 const inventory = read('src/features/sections/InventorySection.tsx')

@@ -1,5 +1,5 @@
 import type { InventoryRenderContext } from './types'
-import { renderInventoryCatalogPanel as renderLegacyInventoryCatalogPanel } from './renderInventoryCatalogPanelLegacy'
+import { renderInventoryCatalogPanel as renderLegacyInventoryCatalogPanel } from './catalogLegacyAdminModes'
 
 const W6_NEW_PRODUCT = '__w6_new_product'
 const W6_EDIT_PRODUCT = '__w6_edit_product'

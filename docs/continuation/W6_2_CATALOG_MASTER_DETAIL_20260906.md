@@ -30,7 +30,7 @@ The Production screenshot after W6.1/W6.2A made the desired direction explicit: 
 
 ## Preservation strategy
 
-The previous Catalog renderer was preserved byte-for-byte as `renderInventoryCatalogPanelLegacy.tsx`. W6.2 delegates all non-catalog administrative modes to that proven renderer:
+The previous Catalog renderer was preserved byte-for-byte as `catalogLegacyAdminModes.tsx`. W6.2 delegates all non-catalog administrative modes to that proven renderer:
 
 - `Уточнить товары`;
 - `Ожидают движения`;
