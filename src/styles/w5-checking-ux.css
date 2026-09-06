@@ -71,3 +71,13 @@
   .stocktake-current-product-actions-v5{grid-template-columns:1fr}
   .stocktake-current-product-actions-v5>span{grid-column:auto}
 }
+
+
+/* W5.6 stocktake completion outcome */
+.stocktake-outcome-card{display:grid;gap:16px;padding:18px;border:1px solid var(--border-color,#dfe3e8);border-radius:16px;background:var(--surface,#fff)}
+.stocktake-outcome-head h4{margin:4px 0 6px;font-size:1.3rem}.stocktake-outcome-head p{margin:0;color:var(--text-muted,#667085)}
+.stocktake-outcome-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.stocktake-outcome-metrics>div{display:flex;align-items:baseline;gap:6px;padding:12px;border-radius:12px;background:var(--surface-soft,#f7f8fa)}.stocktake-outcome-metrics span{display:block;margin-right:auto;color:var(--text-muted,#667085);font-size:.84rem}.stocktake-outcome-metrics strong{font-size:1.25rem}.stocktake-outcome-metrics small{color:var(--text-muted,#667085)}
+.stocktake-outcome-consequences{display:grid;gap:10px}.stocktake-outcome-note{display:grid;gap:4px;padding:12px 14px;border-radius:12px;background:var(--surface-soft,#f7f8fa)}.stocktake-outcome-note span{color:var(--text-muted,#667085);line-height:1.45}.stocktake-outcome-note.is-warning{border:1px solid rgba(180,120,0,.24)}.stocktake-outcome-note.is-done{border:1px solid rgba(40,130,80,.2)}
+.stocktake-outcome-details{border-top:1px solid var(--border-color,#e4e7ec);padding-top:12px}.stocktake-outcome-details summary{cursor:pointer;font-weight:700}.stocktake-outcome-change-list{display:grid;gap:8px;margin-top:10px}.stocktake-outcome-change-list>div{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:9px 0;border-bottom:1px solid var(--border-color,#eef0f2)}.stocktake-outcome-change-list span{display:grid;gap:2px}.stocktake-outcome-change-list small{color:var(--text-muted,#667085)}.stocktake-outcome-change-list b{white-space:nowrap}.stocktake-outcome-change-list p{margin:4px 0 0;color:var(--text-muted,#667085)}
+.stocktake-outcome-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+@media(max-width:600px){.stocktake-outcome-card{padding:14px}.stocktake-outcome-metrics{grid-template-columns:1fr}.stocktake-outcome-actions{display:grid;grid-template-columns:1fr}.stocktake-outcome-actions button{width:100%}.stocktake-outcome-change-list>div{align-items:flex-start}}
