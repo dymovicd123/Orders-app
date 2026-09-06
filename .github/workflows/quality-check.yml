@@ -1,6 +1,9 @@
 name: Quality check
 
 on:
+  push:
+    branches:
+      - 'w*'
   pull_request:
     branches:
       - main
