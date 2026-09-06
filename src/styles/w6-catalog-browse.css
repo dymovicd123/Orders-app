@@ -1,0 +1,523 @@
+/* W6.1 — browse-first Catalog visual foundation.
+   This layer deliberately changes presentation only. Catalog identity, writes,
+   stock truth and the frozen Arrival workspace remain untouched. */
+
+.inventory-catalog-panel {
+  --w6-catalog-ink: #172033;
+  --w6-catalog-muted: #66758a;
+  --w6-catalog-line: #dce5ef;
+  --w6-catalog-soft: #f6f8fb;
+  --w6-catalog-accent-soft: #eef5ff;
+}
+
+.inventory-catalog-panel .inventory-panel-headline {
+  margin-bottom: 14px;
+}
+
+.inventory-catalog-panel .inventory-panel-headline h3 {
+  font-size: clamp(1.35rem, 2vw, 1.7rem);
+  letter-spacing: -0.025em;
+}
+
+.inventory-catalog-panel .inventory-panel-headline p {
+  max-width: 760px;
+  color: var(--w6-catalog-muted);
+}
+
+/* Keep exceptional/admin work discoverable without making it the visual centre
+   of the ordinary catalogue browse flow. */
+.human-catalog-subtabs.inventory-products-subtabs {
+  width: 100%;
+  padding: 5px;
+  margin: 0 0 14px;
+  border-color: var(--w6-catalog-line);
+  background: #f7f9fc;
+}
+
+.human-catalog-subtabs.inventory-products-subtabs button {
+  min-height: 40px;
+  color: #5f6d80;
+}
+
+.human-catalog-subtabs.inventory-products-subtabs button.is-active {
+  color: #173d7a;
+  background: #fff;
+}
+
+.human-catalog-subtabs.inventory-products-subtabs button.has-attention:not(.is-active) {
+  color: #9a5b13;
+  background: #fff9ee;
+}
+
+.human-catalog-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.human-catalog-summary > div,
+.human-catalog-summary > button {
+  min-height: 76px;
+  padding: 13px 15px;
+  border: 1px solid var(--w6-catalog-line);
+  border-radius: 15px;
+  background: #fff;
+  text-align: left;
+}
+
+.human-catalog-summary > button {
+  cursor: pointer;
+  font: inherit;
+}
+
+.human-catalog-summary strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--w6-catalog-ink);
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.human-catalog-summary span {
+  color: var(--w6-catalog-muted);
+  font-size: .82rem;
+  font-weight: 750;
+}
+
+.human-catalog-summary .is-ok {
+  background: #f7fbf8;
+}
+
+.catalog-category-switcher {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+
+.catalog-category-switcher > span {
+  margin-right: 3px;
+  color: var(--w6-catalog-muted);
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.catalog-category-switcher button {
+  min-height: 38px;
+  padding: 7px 13px;
+  border: 1px solid var(--w6-catalog-line);
+  border-radius: 999px;
+  background: #fff;
+  color: #536176;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.catalog-category-switcher button.is-active {
+  border-color: #a9c4ed;
+  background: var(--w6-catalog-accent-soft);
+  color: #1e4b8f;
+}
+
+/* The browse list is now the first thing a person reaches. Creating master
+   data remains available, but below the catalogue rather than above it. */
+.catalog-workspace-v2 {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.catalog-workspace-v2 > .catalog-accordion-list {
+  order: 1;
+}
+
+.catalog-workspace-v2 > .catalog-new-product-panel {
+  order: 2;
+}
+
+.catalog-accordion-list {
+  gap: 9px;
+}
+
+.catalog-product-accordion {
+  border: 1px solid var(--w6-catalog-line);
+  border-radius: 16px;
+  box-shadow: none;
+  overflow: clip;
+}
+
+.catalog-product-accordion:hover {
+  border-color: #c5d4e5;
+}
+
+.catalog-product-accordion.is-open {
+  border-color: #a9c4ed;
+  box-shadow: 0 12px 30px rgba(30, 64, 110, .08);
+}
+
+.catalog-product-accordion-head {
+  grid-template-columns: minmax(260px, 1fr) auto;
+  gap: 14px;
+  min-height: 72px;
+  padding: 13px 14px 13px 16px;
+  background: #fff;
+}
+
+.catalog-product-open-button {
+  min-height: 44px;
+}
+
+.catalog-product-title-block {
+  gap: 4px;
+}
+
+.catalog-product-title-block strong {
+  color: var(--w6-catalog-ink);
+  font-size: 1.05rem;
+  line-height: 1.25;
+  letter-spacing: -.01em;
+}
+
+.catalog-product-title-block em {
+  color: #7a8799;
+  font-size: .75rem;
+  font-weight: 700;
+}
+
+.catalog-product-toggle {
+  padding: 5px 9px;
+  background: #f2f6fb;
+  color: #536a86;
+  font-size: .72rem;
+}
+
+.catalog-product-accordion.is-open .catalog-product-toggle {
+  background: var(--w6-catalog-accent-soft);
+  color: #24548f;
+}
+
+.catalog-product-actions-v2 {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.catalog-product-actions-v2 .compact {
+  min-height: 38px;
+  padding-inline: 11px;
+  white-space: nowrap;
+}
+
+/* Expanded product reads as a product sheet first. Variant cards come before
+   edit forms, which are deliberately quieter and lower in the hierarchy. */
+.catalog-product-accordion-body {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  background: var(--w6-catalog-soft);
+}
+
+.catalog-product-accordion-body > .catalog-variant-list-v2 {
+  order: 1;
+}
+
+.catalog-product-accordion-body > .catalog-variant-editor-v2 {
+  order: 2;
+}
+
+.catalog-product-accordion-body > .catalog-product-edit-strip {
+  order: 3;
+}
+
+.catalog-variant-list-v2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px;
+  padding: 10px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  overflow: visible;
+}
+
+.catalog-variant-list-head {
+  display: none;
+}
+
+.catalog-variant-row-v2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "characteristics size"
+    "identity identity"
+    "stock action";
+  gap: 8px 10px;
+  align-items: center;
+  min-width: 0;
+  min-height: 132px;
+  padding: 13px;
+  border: 1px solid var(--w6-catalog-line);
+  border-radius: 15px;
+  background: #fff;
+}
+
+.catalog-variant-row-v2:hover {
+  border-color: #bfd0e4;
+  background: #fff;
+}
+
+.catalog-variant-row-v2.is-selected {
+  border-color: #8eb4e4;
+  background: #f8fbff;
+  box-shadow: inset 0 0 0 1px rgba(80, 129, 191, .08);
+}
+
+.catalog-variant-row-v2 > span:nth-child(1) {
+  grid-area: identity;
+  justify-self: start;
+}
+
+.catalog-variant-row-v2 > span:nth-child(2) {
+  grid-area: identity;
+  justify-self: end;
+  color: #69778a;
+  font-size: .78rem;
+  font-weight: 750;
+}
+
+.catalog-variant-row-v2 > span:nth-child(2)::before {
+  content: "Пол: ";
+  color: #98a4b3;
+  font-weight: 650;
+}
+
+.catalog-variant-row-v2 > .catalog-variant-characteristics {
+  grid-area: characteristics;
+  min-width: 0;
+  color: var(--w6-catalog-ink);
+  font-size: .91rem;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.catalog-variant-row-v2 > span:nth-child(4) {
+  grid-area: size;
+  justify-self: end;
+}
+
+.catalog-variant-row-v2 > span:nth-child(4) strong {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #f1f4f8;
+  color: #34445a;
+  font-size: .8rem;
+}
+
+.catalog-variant-row-v2 > .catalog-variant-stock-pill {
+  grid-area: stock;
+}
+
+.catalog-variant-stock-pill b {
+  color: var(--w6-catalog-ink);
+  font-size: 1.15rem;
+}
+
+.catalog-variant-stock-pill em {
+  max-width: 210px;
+  color: #8692a2;
+  font-size: .69rem;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.catalog-variant-row-v2 > span:nth-child(6) {
+  grid-area: action;
+  justify-self: end;
+}
+
+.catalog-variant-row-v2 > span:nth-child(6) .secondary {
+  min-height: 36px;
+}
+
+/* Master-data editors are still available, but they no longer compete with the
+   product/variant browse hierarchy. */
+.catalog-variant-editor-v2,
+.catalog-product-edit-strip {
+  border: 1px solid #dfe6ef;
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: none;
+}
+
+.catalog-variant-editor-v2 {
+  padding: 13px;
+}
+
+.catalog-variant-editor-v2 .mini-panel-head h3 {
+  font-size: .98rem;
+}
+
+.catalog-variant-editor-v2 .mini-panel-note,
+.catalog-product-edit-strip > label > span {
+  color: #7a8798;
+}
+
+.catalog-product-edit-strip {
+  grid-template-columns: minmax(240px, 1fr) minmax(150px, 190px) auto;
+  padding: 12px;
+  background: #fbfcfe;
+}
+
+.catalog-new-product-panel {
+  margin-top: 2px;
+  padding: 15px;
+  border: 1px dashed #cfd9e6;
+  border-radius: 16px;
+  background: #fbfcfe;
+  box-shadow: none;
+}
+
+.catalog-new-product-panel .mini-panel-head h3 {
+  color: #3c4b60;
+  font-size: .98rem;
+}
+
+.catalog-new-product-panel .mini-panel-note {
+  max-width: 760px;
+  color: #7b8797;
+}
+
+.catalog-new-product-panel .catalog-product-form-v2 {
+  margin-top: 10px;
+}
+
+@media (max-width: 1050px) {
+  .catalog-product-accordion-head {
+    grid-template-columns: 1fr;
+  }
+
+  .catalog-product-actions-v2 {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .catalog-variant-form-grid-v2 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .human-catalog-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .human-catalog-summary > div,
+  .human-catalog-summary > button {
+    min-height: 64px;
+  }
+
+  .catalog-category-switcher > span {
+    width: 100%;
+  }
+
+  .catalog-category-switcher button {
+    flex: 1 1 0;
+  }
+
+  .catalog-product-accordion-head {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .catalog-product-open-button {
+    align-items: flex-start;
+  }
+
+  .catalog-product-title-block strong {
+    font-size: 1rem;
+  }
+
+  .catalog-product-actions-v2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .catalog-product-actions-v2 .compact {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .catalog-product-actions-v2 .primary {
+    grid-column: 1 / -1;
+  }
+
+  .catalog-product-accordion-body {
+    padding: 8px;
+  }
+
+  .catalog-variant-list-v2 {
+    grid-template-columns: 1fr;
+    padding: 4px;
+  }
+
+  .catalog-variant-row-v2 {
+    min-height: 0;
+  }
+
+  .catalog-variant-form-grid-v2,
+  .catalog-product-edit-strip,
+  .catalog-product-form-v2 {
+    grid-template-columns: 1fr;
+  }
+
+  .catalog-variant-form-grid-v2 .primary,
+  .catalog-product-edit-strip .primary,
+  .catalog-product-form-v2 .primary {
+    width: 100%;
+    min-height: 46px;
+  }
+}
+
+@media (max-width: 460px) {
+  .human-catalog-subtabs.inventory-products-subtabs {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .human-catalog-subtabs.inventory-products-subtabs button {
+    width: 100%;
+    text-align: left;
+  }
+
+  .catalog-product-open-button {
+    display: grid;
+    grid-template-columns: 1fr auto;
+  }
+
+  .catalog-product-actions-v2 {
+    grid-template-columns: 1fr;
+  }
+
+  .catalog-product-actions-v2 .primary {
+    grid-column: auto;
+  }
+
+  .catalog-variant-row-v2 {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "characteristics size"
+      "identity identity"
+      "stock stock"
+      "action action";
+  }
+
+  .catalog-variant-row-v2 > span:nth-child(6),
+  .catalog-variant-row-v2 > span:nth-child(6) .secondary {
+    width: 100%;
+  }
+}
