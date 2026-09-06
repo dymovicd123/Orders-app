@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: node scripts/apply-w8-2-stock-workspace.mjs
+      - run: python3 scripts/apply-w8-2-stock-workspace.py
       - run: npm ci
       - name: Cumulative regression
         run: npm run release:check
