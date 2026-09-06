@@ -1,0 +1,31 @@
+name: W6.2 Catalog validation
+
+on:
+  push:
+    branches:
+      - w6-2-catalog-master-detail
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Focused W6.2 regression
+        run: node scripts/test-w6-2-catalog-master-detail.mjs
+      - name: Cumulative release gate
+        run: npm run release:check
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+      - name: Lint
+        run: npm run lint
