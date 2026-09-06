@@ -9,6 +9,10 @@
     "src/features/inventory/views/catalogPolishExecutionGroups.tsx": {
       "beforeGitBlob": "5c7f43011c4822733e68f9e1a8cc52110ad30a2a",
       "afterGitBlob": "9764b7bb7300c833c400eb8114a39a035fcb596b"
+    },
+    "src/features/sections/InventorySection.tsx": {
+      "beforeGitBlob": "fae131eb943be53b5538986891875b4bc9d7ce2c",
+      "afterGitBlob": "aca16b5c66f43e98c8b23c5def608fc175723dd9"
     }
   }
 }
