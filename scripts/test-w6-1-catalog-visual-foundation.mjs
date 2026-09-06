@@ -5,10 +5,10 @@ const check = (condition, message) => { if (!condition) throw new Error(message)
 
 const catalog = read('src/features/inventory/views/renderInventoryCatalogPanel.tsx')
 const inventory = read('src/features/sections/InventorySection.tsx')
-const loader = read('src/styles/186-inventory-products-admin.css')
+const loader = read('src/styles/192b2a-warehouse-attention-actions.css')
 const css = read('src/styles/w6-catalog-browse.css')
 
-check(loader.includes("@import './w6-catalog-browse.css';"), 'W6 Catalog visual layer is not loaded')
+check(loader.startsWith("@import './w6-catalog-browse.css';"), 'W6 Catalog visual layer must load after the older Warehouse/Catalog style stack')
 
 // W6.1 changes hierarchy without changing catalogue truth or mutation semantics.
 check(css.includes('.catalog-workspace-v2 > .catalog-accordion-list') && css.includes('order: 1;'), 'catalogue browse list must be first')
