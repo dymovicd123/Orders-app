@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "revision": "w5-6-stocktake-outcome",
+  "frontend": {
+    "panelReturnChanges": {
+      "renderInventoryStocktakePanel": {
+        "before": "450e51291301082d755f126cbb10032e27426759f4ec9185027c4f11d211aab2",
+        "after": "d5f60b6e62512833b11b3063e9e946213bcb00db6a47f465d60a52192b388ce8"
+      }
+    }
+  }
+}

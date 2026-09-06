@@ -1274,17 +1274,10 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         setStocktakeNotice(result?.message || 'Ревизию пока нельзя завершить.')
         return
       }
-      const unresolvedFoundCount = Math.max(0, Number(result?.unresolvedFoundCount || 0))
-      setStocktakeNotice(result.message || 'Ревизия завершена.')
-      setStocktakeSession(null)
-      setStocktakeFacts({})
+      if (result.session) { adoptStocktakeSession(result.session); setStocktakeNotice('') }
+      else { setStocktakeSession(null); setStocktakeFacts({}); setStocktakeNotice(result.message || 'Проверка завершена.') }
       setStocktakeReviewMode(false)
       await Promise.allSettled([refreshInventoryModule(true), refreshActiveStocktakes()])
-      if (unresolvedFoundCount > 0) {
-        setAttentionCategory('identify')
-        openInventoryPanel('attention')
-        void loadWarehouseAttention(true)
-      }
     } catch (error) {
       setStocktakeNotice(error instanceof Error ? error.message : 'Не удалось завершить ревизию.')
     } finally {
@@ -2305,6 +2298,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         cycleCountOpen,
         cycleCountValues,
         discardStocktake,
+        dismissStocktakeOutcome: () => { setStocktakeSession(null); setStocktakeFacts({}); setStocktakeNotice(''); setStocktakeReviewMode(false) },
         filteredStocktakeProductGroups,
         filteredStocktakeSelectableProducts,
         focusNextStocktakeCountInput,
@@ -2313,6 +2307,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         inventoryPanelStyle,
         markCurrentStocktakeProductRemainingZero,
         normalizeSuggestion,
+        openStocktakeOutcomeIssues: () => { setStocktakeSession(null); setStocktakeFacts({}); setStocktakeNotice(''); setStocktakeReviewMode(false); setAttentionCategory('identify'); openInventoryPanel('attention'); void loadWarehouseAttention(true) },
         openStocktakeFoundForPosition,
         openStocktakeInlineColor,
         openStocktakeInlineSize,
@@ -2387,8 +2382,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         suggestionValues,
         toggleStocktakeInlineSize
       })}
-
-
               {renderInventoryWarehousePanel({
         filteredInventoryRows,
         formatMoney,

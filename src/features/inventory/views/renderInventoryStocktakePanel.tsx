@@ -14,6 +14,7 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'cycleCountOpen'
   | 'cycleCountValues'
   | 'discardStocktake'
+  | 'dismissStocktakeOutcome'
   | 'filteredStocktakeProductGroups'
   | 'filteredStocktakeSelectableProducts'
   | 'focusNextStocktakeCountInput'
@@ -22,6 +23,7 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'inventoryPanelStyle'
   | 'markCurrentStocktakeProductRemainingZero'
   | 'normalizeSuggestion'
+  | 'openStocktakeOutcomeIssues'
   | 'openStocktakeFoundForPosition'
   | 'openStocktakeInlineColor'
   | 'openStocktakeInlineSize'
@@ -109,6 +111,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     cycleCountLoading,
     cycleCountNotice,
     discardStocktake,
+    dismissStocktakeOutcome,
     filteredStocktakeProductGroups,
     filteredStocktakeSelectableProducts,
     focusNextStocktakeCountInput,
@@ -117,6 +120,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     inventoryPanelStyle,
     markCurrentStocktakeProductRemainingZero,
     normalizeSuggestion,
+    openStocktakeOutcomeIssues,
     openStocktakeFoundForPosition,
     openStocktakeInlineColor,
     openStocktakeInlineSize,
@@ -212,6 +216,13 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
   const currentStocktakeStatus = currentStocktakeGroup
     ? `${currentStocktakeFilled} из ${currentStocktakeRows.length} позиций посчитано${currentStocktakeRecount ? ` · пересчитать ${currentStocktakeRecount}` : ''}`
     : ''
+  const completedStocktakeItems = stocktakeSession?.status === 'completed' ? (stocktakeSession.items || []) : []
+  const completedChangedRows = completedStocktakeItems.filter((row: any) => row.appliedQuantity !== null && Number(row.appliedQuantity) !== Number(row.baselineQuantity))
+  const completedAddedUnits = completedChangedRows.reduce((sum: number, row: any) => sum + Math.max(0, Number(row.appliedQuantity || 0) - Number(row.baselineQuantity || 0)), 0)
+  const completedRemovedUnits = completedChangedRows.reduce((sum: number, row: any) => sum + Math.max(0, Number(row.baselineQuantity || 0) - Number(row.appliedQuantity || 0)), 0)
+  const completedShortageRows = completedStocktakeItems.filter((row: any) => row.appliedQuantity !== null && Number(row.appliedQuantity || 0) - Number(row.reservedQuantity || 0) < 0)
+  const completedShortageUnits = completedShortageRows.reduce((sum: number, row: any) => sum + Math.max(0, Number(row.reservedQuantity || 0) - Number(row.appliedQuantity || 0)), 0)
+  const completedUnknownRows = completedStocktakeItems.filter((row: any) => !Number(row.variantId || 0) && Number(row.appliedQuantity || 0) > 0)
 
   return (
     <div className="inventory-stocktake-panel stocktake-human-panel stocktake-session-v188e" data-step188e-stocktake="server-session" style={inventoryPanelStyle('stocktake')}>
@@ -222,7 +233,31 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                       </div>
                     </div>
     
-                    {!stocktakeSession ? (
+                    {stocktakeSession?.status === 'completed' ? (
+                      <section className="stocktake-outcome-card" aria-live="polite">
+                        <div className="stocktake-outcome-head">
+                          <span className="stocktake-step-kicker">Проверка завершена</span>
+                          <h4>{stocktakeSourceTitle(stocktakeSession.source)} · проверено {stocktakeSession.totalItems} поз.</h4>
+                          <p>{completedChangedRows.length ? `Физический остаток обновлён по ${completedChangedRows.length} поз.` : 'Фактический остаток совпал с учётом. Ничего исправлять не пришлось.'}</p>
+                        </div>
+                        <div className="stocktake-outcome-metrics">
+                          <div><span>Изменено позиций</span><strong>{completedChangedRows.length}</strong></div>
+                          <div><span>Стало больше</span><strong>+{completedAddedUnits}</strong><small>шт.</small></div>
+                          <div><span>Стало меньше</span><strong>−{completedRemovedUnits}</strong><small>шт.</small></div>
+                        </div>
+                        <div className="stocktake-outcome-consequences">
+                          <div className="stocktake-outcome-note is-calm"><strong>{completedChangedRows.length ? 'Остатки уже обновлены' : 'Остатки подтверждены'}</strong><span>Резервы заказов не переписывались. Доступное количество теперь считается из нового физического остатка и текущих резервов.</span></div>
+                          {completedShortageRows.length ? <div className="stocktake-outcome-note is-warning"><strong>Для заказов не хватает {completedShortageUnits} шт. · {completedShortageRows.length} поз.</strong><span>Проверка не отменяет заказы и не подменяет их резервы. Нехватка останется видна в обычных остатках, чтобы её можно было решить отдельно.</span></div> : null}
+                          {completedUnknownRows.length ? <div className="stocktake-outcome-note is-warning"><strong>Нужно определить найденные вещи · {completedUnknownRows.length}</strong><span>Они уже учтены как физически найденные, но пока не участвуют в обычном выборе товара и перемещениях.</span></div> : null}
+                          {!completedShortageRows.length && !completedUnknownRows.length ? <div className="stocktake-outcome-note is-done"><strong>Дополнительных действий не требуется</strong><span>Проверка закончена, результат уже действует.</span></div> : null}
+                        </div>
+                        {completedChangedRows.length ? <details className="stocktake-outcome-details"><summary>Что изменилось · {completedChangedRows.length}</summary><div className="stocktake-outcome-change-list">{completedChangedRows.slice(0, 24).map((row: any) => <div key={`stocktake-outcome-${row.id}`}><span><strong>{row.productName}</strong><small>{[stocktakePositionLabel(row), row.color, row.size].filter(Boolean).join(' · ')}</small></span><b>{Number(row.baselineQuantity || 0)} → {Number(row.appliedQuantity || 0)}</b></div>)}{completedChangedRows.length > 24 ? <p>Показаны первые 24 изменения из {completedChangedRows.length}. Полная история сохранена в разделе «История».</p> : null}</div></details> : null}
+                        <div className="stocktake-outcome-actions">
+                          {completedUnknownRows.length ? <button className="secondary" type="button" onClick={openStocktakeOutcomeIssues}>Уточнить найденные · {completedUnknownRows.length}</button> : null}
+                          <button className="primary" type="button" onClick={dismissStocktakeOutcome}>Готово</button>
+                        </div>
+                      </section>
+                    ) : !stocktakeSession ? (
                       <>
                         <section className="stocktake-e-start stocktake-e-start-v5">
                           <div className="stocktake-start-intro">
