@@ -7,6 +7,7 @@ import ts from 'typescript'
 const root = process.cwd()
 const panelPath = path.join(root, 'src/features/inventory/views/renderInventoryCatalogPanel.tsx')
 const componentPath = path.join(root, 'src/features/inventory/views/catalogPolishExecutionGroups.tsx')
+const inventoryPath = path.join(root, 'src/features/sections/InventorySection.tsx')
 const cssPath = path.join(root, 'src/styles/w6-4-catalog-sku-card.css')
 const baselinePanelPath = path.join(root, 'scripts/fixtures/renderInventoryCatalogPanel-w6-3-baseline.tsx')
 const legacyTestPath = path.join(root, 'scripts/test-step1906b-frontend-modularization-legacy.mjs')
@@ -65,7 +66,7 @@ function directHookTokens(text, fileName, functionName) {
 }
 
 try {
-  for (const required of [panelPath, componentPath, cssPath, baselinePanelPath, legacyTestPath, manifestPath]) {
+  for (const required of [panelPath, componentPath, inventoryPath, cssPath, baselinePanelPath, legacyTestPath, manifestPath]) {
     check(fs.existsSync(required), `W6.4 frontend structural file missing: ${path.relative(root, required)}`)
   }
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
@@ -79,6 +80,7 @@ try {
 
   const currentPanel = fs.readFileSync(panelPath, 'utf8')
   const currentComponent = fs.readFileSync(componentPath, 'utf8')
+  const currentInventory = fs.readFileSync(inventoryPath, 'utf8')
   const currentCss = fs.readFileSync(cssPath, 'utf8')
   const baselinePanel = fs.readFileSync(baselinePanelPath, 'utf8')
   const panelManifest = manifest.files[expectedFiles[0]]
@@ -93,11 +95,13 @@ try {
   check(directHookTokens(currentPanel, panelPath, 'renderInventoryCatalogPanel').length === 0, 'W6.4 catalog renderer unexpectedly owns React hooks/lifecycle')
 
   for (const marker of [
+    'isAdmin = true',
     'isAdmin={isAdmin}',
     'loadCatalogData={loadCatalogData}',
     'Исправить ошибку в комбинации',
     'Сохранить исправление',
   ]) check(currentPanel.includes(marker), `W6.4 catalog panel marker missing: ${marker}`)
+  check(currentInventory.includes("{isAdmin ? <button type=\"button\" className={inventoryPanel === 'catalog' ? 'is-active' : ''} onClick={() => openInventoryPanel('catalog')"), 'W6.4 catalog host is no longer admin-only in Warehouse navigation')
   for (const marker of [
     'Открыть карточку этой точной позиции',
     'Создать похожий',
@@ -122,7 +126,7 @@ try {
   check(result?.status === 0, `Legacy 1906B gate failed with code ${result?.status}`)
   check(fs.readFileSync(panelPath, 'utf8') === currentPanel, 'W6.4 frontend structural gate failed to restore current catalog panel')
 
-  console.log('W6.4 FRONTEND STRUCTURAL LAYER PASSED — W6.3 panel baseline preserved; exact W6.4 panel/component/CSS delta accepted')
+  console.log('W6.4 FRONTEND STRUCTURAL LAYER PASSED — W6.3 panel baseline preserved; exact W6.4 panel/component/CSS delta and admin-only host boundary accepted')
 } catch (error) {
   console.error(`W6.4 FRONTEND STRUCTURAL LAYER FAILED: ${error?.message || error}`)
   process.exit(1)
