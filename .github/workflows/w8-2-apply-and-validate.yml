@@ -22,10 +22,29 @@ jobs:
           node-version: 22
           cache: npm
       - run: python3 scripts/apply-w8-2-stock-workspace.py
-      - name: Adapt legacy exact-count regression to neutral SKU entry
+      - name: Finalize generated W8.2 source and adjacent regressions
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import hashlib, json
+
+          def git_blob_sha(text: str) -> str:
+              body = text.encode('utf-8')
+              return hashlib.sha1(f'blob {len(body)}\0'.encode('utf-8') + body).hexdigest()
+
+          overview_path = Path('src/features/inventory/views/renderInventoryOverviewPanel.tsx')
+          overview = overview_path.read_text(encoding='utf-8')
+          obsolete = '    quickStocktakeOpen,\n'
+          if overview.count(obsolete) != 1:
+              raise SystemExit(f'Expected one obsolete quickStocktakeOpen binding, found {overview.count(obsolete)}')
+          overview = overview.replace(obsolete, '', 1)
+          overview_path.write_text(overview, encoding='utf-8')
+
+          manifest_path = Path('scripts/w8-2-stock-workspace-frontend-manifest.json')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          manifest['files']['src/features/inventory/views/renderInventoryOverviewPanel.tsx']['afterGitBlob'] = git_blob_sha(overview)
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
           path = Path('scripts/test-step192b2a-daily-warehouse.mjs')
           text = path.read_text(encoding='utf-8')
           old = "check(overview.includes('Сверить количество') && overview.includes('На месте сейчас') && overview.includes('Сохранить факт'), 'Universal exact-SKU count UI missing from stock detail')"
