@@ -1,6 +1,48 @@
 import type { InventoryRenderContext } from './types'
 import { renderInventoryCatalogPanel as renderLegacyInventoryCatalogPanel } from './catalogLegacyAdminModes'
 
+type PanelContext = Pick<InventoryRenderContext,
+  | 'catalogActiveProducts'
+  | 'catalogAdminMode'
+  | 'catalogCategoryFilter'
+  | 'catalogData'
+  | 'catalogIssueStats'
+  | 'catalogOnlyWithoutVariants'
+  | 'catalogProductDraft'
+  | 'catalogReview'
+  | 'catalogVariantDraft'
+  | 'catalogVariantsByProductId'
+  | 'expandedCatalogProducts'
+  | 'getCatalogProductEffectiveCategory'
+  | 'getCatalogVariantCategory'
+  | 'getStockQuantityForVariant'
+  | 'inventoryLifecycle'
+  | 'inventoryPanelStyle'
+  | 'inventoryQuery'
+  | 'loadCatalogData'
+  | 'loadCatalogReview'
+  | 'loadInventoryLifecycle'
+  | 'loadReferenceItems'
+  | 'openInventoryPanel'
+  | 'productCategoryLabel'
+  | 'referenceItems'
+  | 'referenceKind'
+  | 'saveCatalogProduct'
+  | 'saveCatalogVariant'
+  | 'selectReferenceKind'
+  | 'setCatalogAdminMode'
+  | 'setCatalogCategoryFilter'
+  | 'setCatalogOnlyWithoutVariants'
+  | 'setCatalogProductDraft'
+  | 'setCatalogReviewTaskIndex'
+  | 'setCatalogVariantDraft'
+  | 'setExpandedCatalogProducts'
+  | 'setInventoryLifecycleTaskIndex'
+  | 'setInventoryQuery'
+  | 'stocktakeReferenceReady'
+  | 'suggestionValues'
+>
+
 const W6_NEW_PRODUCT = '__w6_new_product'
 const W6_EDIT_PRODUCT = '__w6_edit_product'
 const W6_VARIANT_EDITOR = '__w6_variant_editor'
@@ -35,7 +77,7 @@ const blankVariant = (productId: number, category: string) => ({
   sortOrder: '0',
 })
 
-export function renderInventoryCatalogPanel(ctx: InventoryRenderContext) {
+export function renderInventoryCatalogPanel(ctx: PanelContext) {
   if (ctx.catalogAdminMode !== 'catalog') return renderLegacyInventoryCatalogPanel(ctx as any)
 
   const {
