@@ -13,8 +13,11 @@ check(!section.includes("if (inventoryPanel !== 'stocktake' || !isAdmin) return"
 check(section.includes("if (inventoryPanel === 'catalog' && !isAdmin) return"), 'Catalog/master-data admin boundary was weakened')
 check(section.includes("if (inventoryPanel !== 'stocktake' && inventoryPanel !== 'catalog') return"), 'Stocktake reference read is not scoped')
 
-check(section.includes("async function loadHistoryMovements(reset = true) {\n    if (historyBusy) return"), 'Movement history still blocks managers')
-check(section.includes("async function loadHistoryChecks() {\n    if (historyBusy) return"), 'Check history still blocks managers')
+check(section.includes("async function loadHistoryMovements(reset = true) {\n    const requestId = ++historyRequestRef.current"), 'Movement history lost manager-readable latest-request path')
+check(section.includes("async function loadHistoryChecks() {\n    const requestId = ++historyRequestRef.current"), 'Check history lost manager-readable latest-request path')
+check(!section.includes("async function loadHistoryMovements(reset = true) {\n    if (!isAdmin"), 'Movement history became admin-only')
+check(!section.includes("async function loadHistoryChecks() {\n    if (!isAdmin"), 'Check history became admin-only')
+check(section.includes('if (requestId !== historyRequestRef.current) return'), 'Warehouse history no longer rejects stale responses')
 check(!section.includes("if (!isAdmin || inventoryPanel !== 'history') return"), 'History auto-load is still admin-only')
 check(!overview.includes("{isAdmin ? <button className=\"secondary compact\" type=\"button\" onClick={() => openInventoryPanel('stocktake')}>Открыть проверку</button> : null}"), 'Open-check recovery action still hidden from managers')
 check(overview.includes("onClick={() => openSimpleStockHistory(simpleStockDetail)}>История позиции</button>"), 'Exact SKU history action missing')
