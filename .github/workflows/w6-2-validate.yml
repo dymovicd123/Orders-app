@@ -19,6 +19,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Report Catalog renderer hashes
+        run: node scripts/print-w6-panel-hashes.mjs
       - name: Focused W6.2 regression
         run: node scripts/test-w6-2-catalog-master-detail.mjs
       - name: Cumulative release gate
