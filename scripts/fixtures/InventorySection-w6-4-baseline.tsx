@@ -283,7 +283,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const [historyQuery, setHistoryQuery] = useState('')
   const [historyStocktakeDetail, setHistoryStocktakeDetail] = useState<InventoryStocktakeSession | null>(null)
   const [historyStocktakeDetailBusy, setHistoryStocktakeDetailBusy] = useState(false)
-  const historyRequestRef = useRef(0)
   const [simpleStockOpenProductKey, setSimpleStockOpenProductKey] = useState('')
   const [catalogAdminMode, setCatalogAdminMode] = useState<'catalog' | 'review' | 'lifecycle' | 'attributes'>('catalog')
   const [catalogReviewTaskIndex, setCatalogReviewTaskIndex] = useState(0)
@@ -1561,7 +1560,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   async function loadHistoryMovements(reset = true) {
-    const requestId = ++historyRequestRef.current
+    if (historyBusy) return
     setHistoryBusy(true)
     setHistoryError('')
     try {
@@ -1572,33 +1571,29 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         beforeId: reset ? 0 : Number(historyNextBeforeId || 0),
         limit: 50,
       })
-      if (requestId !== historyRequestRef.current) return
       const rows = Array.isArray(data?.movements) ? data.movements : []
       setHistoryRows((current) => reset ? rows : [...current, ...rows])
       setHistoryHasMore(Boolean(data?.hasMore))
       setHistoryNextBeforeId(Number(data?.nextBeforeId || 0) || null)
     } catch (err) {
-      if (requestId !== historyRequestRef.current) return
       setHistoryError(err instanceof Error ? err.message : 'Не удалось загрузить историю склада.')
     } finally {
-      if (requestId === historyRequestRef.current) setHistoryBusy(false)
+      setHistoryBusy(false)
     }
   }
 
   async function loadHistoryChecks() {
-    const requestId = ++historyRequestRef.current
+    if (historyBusy) return
     setHistoryBusy(true)
     setHistoryError('')
     setHistoryStocktakeDetail(null)
     try {
       const data = await loadInventoryCheckHistory({ source: historyVariantFilter?.source || '', variantId: Number(historyVariantFilter?.variantId || 0), limit: 40 })
-      if (requestId !== historyRequestRef.current) return
       setHistoryCheckRows(Array.isArray(data?.rows) ? data.rows : [])
     } catch (err) {
-      if (requestId !== historyRequestRef.current) return
       setHistoryError(err instanceof Error ? err.message : 'Не удалось загрузить ревизии и сверки.')
     } finally {
-      if (requestId === historyRequestRef.current) setHistoryBusy(false)
+      setHistoryBusy(false)
     }
   }
 
@@ -2461,7 +2456,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         loadReferenceItems,
         normalizeSuggestion,
         openInventoryPanel,
-        openSimpleStockHistory,
         openOrderFromFinance,
         productCategoryLabel,
         reconcileCatalogReview,

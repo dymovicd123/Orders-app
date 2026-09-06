@@ -80,7 +80,6 @@ export function CatalogPolishExecutionGroups({
   openNewVariant,
   isAdmin,
   loadCatalogData,
-  openVariantHistory,
 }: any) {
   const [variantCard, setVariantCard] = useState<any | null>(null)
   const [retireConfirmVariantId, setRetireConfirmVariantId] = useState(0)
@@ -251,37 +250,6 @@ export function CatalogPolishExecutionGroups({
                                   <span><small>Склад</small><strong>{cardWarehouseQty}</strong></span>
                                   <span><small>Бутик</small><strong>{cardBoutiqueQty}</strong></span>
                                   <span><small>Всего на месте</small><strong>{cardTotalQty}</strong></span>
-                                </div>
-
-                                <div className="catalog-sku-actions catalog-sku-history-actions" aria-label="История точной позиции">
-                                  <button
-                                    className="secondary compact"
-                                    type="button"
-                                    onClick={() => openVariantHistory({
-                                      source: 'warehouse',
-                                      variantId: Number(cardVariant.id),
-                                      productId: Number(selectedProduct?.id || cardVariant.productId || 0),
-                                      productName: String(selectedProduct?.name || ''),
-                                      color: String(cardVariant.color || colorGroup.label || ''),
-                                      size: String(cardVariant.sizeLabel || ''),
-                                    })}
-                                  >
-                                    История · Склад
-                                  </button>
-                                  <button
-                                    className="secondary compact"
-                                    type="button"
-                                    onClick={() => openVariantHistory({
-                                      source: 'boutique',
-                                      variantId: Number(cardVariant.id),
-                                      productId: Number(selectedProduct?.id || cardVariant.productId || 0),
-                                      productName: String(selectedProduct?.name || ''),
-                                      color: String(cardVariant.color || colorGroup.label || ''),
-                                      size: String(cardVariant.sizeLabel || ''),
-                                    })}
-                                  >
-                                    История · Бутик
-                                  </button>
                                 </div>
 
                                 <div className="catalog-sku-safety-note">

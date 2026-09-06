@@ -56,7 +56,6 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'loadReferenceItems'
   | 'normalizeSuggestion'
   | 'openInventoryPanel'
-  | 'openSimpleStockHistory'
   | 'openOrderFromFinance'
   | 'productCategoryLabel'
   | 'reconcileCatalogReview'
@@ -548,7 +547,6 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                 openNewVariant={openNewVariant}
                 isAdmin={isAdmin}
                 loadCatalogData={loadCatalogData}
-                openVariantHistory={ctx.openSimpleStockHistory}
               />
 
               {showVariantEditor ? (

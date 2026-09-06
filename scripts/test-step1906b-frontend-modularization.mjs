@@ -16,4 +16,5 @@
 // w5StocktakeOutcomePath — W5.6 stocktake outcome panel baseline hash mismatch
 // w6CatalogMasterDetailPath — W6.2 Catalog master-detail panel baseline hash mismatch
 // w6CatalogPolishPath — W6.3 Catalog polish panel baseline hash mismatch
-await import('./test-step1906b-frontend-modularization-w6-layer.mjs')
+// w7SkuHistoryPath — W7 exact-SKU history integration preservation layer
+await import('./test-step1906b-frontend-modularization-w7-layer.mjs')
