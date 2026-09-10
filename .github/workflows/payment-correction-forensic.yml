@@ -5,31 +5,44 @@ on:
     branches:
       - order-edit-safe-payment-corrections
 
+permissions:
+  contents: write
+
 jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Print targeted source sections
+        with:
+          ref: order-edit-safe-payment-corrections
+      - name: Write targeted source sections
         run: |
           python - <<'PY'
           from pathlib import Path
           targets = [
-              ('src/App.tsx', ['function updateEditorPayment(', 'async function persistOrder(']),
+              ('src/App.tsx', ['function updateEditorPayment(', 'async function persistOrder(', 'paymentMethodCorrections: nextDraft.payments']),
               ('src/features/sections/OrderEditorSection.tsx', ['Оплата уже проведена', "onChange={(value) => updateEditorPayment(index, 'method', value)}"]),
-              ('worker/domains/orders-write.ts', ['rawPaymentMethodCorrections', 'paymentMethodCorrectionCount', "reason: 'payment_method_correction'"]),
+              ('worker/domains/orders-write.ts', ['rawPaymentMethodCorrections', 'paymentMethodCorrectionCount', "reason: 'payment_method_correction'", 'syncOrderFinancialLedger']),
               ('scripts/release-check.mjs', ['test-order-edit-payment-method-correction']),
           ]
+          out=[]
           for file, needles in targets:
-              text = Path(file).read_text(encoding='utf-8')
-              lines = text.splitlines()
-              print(f'===== {file} =====')
+              text=Path(file).read_text(encoding='utf-8')
+              lines=text.splitlines()
+              out.append(f'===== {file} =====')
               for needle in needles:
-                  hits = [i for i, line in enumerate(lines) if needle in line]
-                  print(f'--- {needle} hits={hits} ---')
-                  for i in hits[:4]:
-                      lo=max(0,i-35); hi=min(len(lines),i+80)
-                      for n in range(lo,hi):
-                          print(f'{n+1:05d}: {lines[n]}')
-                      print('---END HIT---')
+                  hits=[i for i,line in enumerate(lines) if needle in line]
+                  out.append(f'--- {needle} hits={hits} ---')
+                  for i in hits[:6]:
+                      lo=max(0,i-45); hi=min(len(lines),i+100)
+                      out.extend(f'{n+1:05d}: {lines[n]}' for n in range(lo,hi))
+                      out.append('---END HIT---')
+          Path('_tmp-payment-correction-forensic.txt').write_text('\n'.join(out)+'\n',encoding='utf-8')
           PY
+      - name: Commit forensic output
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add _tmp-payment-correction-forensic.txt
+          git commit -m 'TEMP: persist payment correction forensic output' || exit 0
+          git push origin HEAD:order-edit-safe-payment-corrections
