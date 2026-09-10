@@ -1109,12 +1109,13 @@ export async function updateOrderCritical(
       const requestedPayments = Array.isArray(input.payments) ? normalizeOrderPayments(input.payments, nextOrderDate) : null;
       const existingItemsForEdit = normalizeOrderItems((existingAny.items || []) as OrderInput['items'], nextSource);
       const existingPaymentsForEdit = normalizeOrderPayments((existingAny.payments || []) as OrderInput['payments'], nextOrderDate);
-      const rawPaymentCorrections = Array.isArray(input.paymentCorrections)
+      type PaymentCorrectionInput = NonNullable<OrderInput['paymentCorrections']>[number];
+      const rawPaymentCorrections: PaymentCorrectionInput[] = Array.isArray(input.paymentCorrections)
         ? input.paymentCorrections
         : (Array.isArray(input.paymentMethodCorrections)
           ? input.paymentMethodCorrections.map((correction) => ({ paymentId: correction.paymentId, method: correction.method }))
           : []);
-      const requestedPaymentCorrections = new Map<number, (typeof rawPaymentCorrections)[number]>();
+      const requestedPaymentCorrections = new Map<number, PaymentCorrectionInput>();
       for (const correction of rawPaymentCorrections) {
         const paymentId = toInt(correction?.paymentId, 0);
         if (!paymentId) throw new OrderInputValidationError('Не удалось определить оплату для исправления. Обновите заказ и повторите.');
