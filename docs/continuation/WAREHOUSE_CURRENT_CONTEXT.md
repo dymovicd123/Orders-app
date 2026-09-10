@@ -13,7 +13,7 @@ Production read-only audit found 32 order-observation records in manager mode ac
 
 Open product questions: full count versus seeing only the item for an order; reporting missing stock without asserting an unverified zero; contextual follow-through; aggregate variant shortages hidden by surplus; same-day handover checkpoint precision. Do not implement these under O1.
 
-O1 is a separate optimization step. See `O1_READ_BUDGET_20260909.md`. Stock/reservation/handover semantics and Arrival UI remain unchanged; Branch2 untouched.
+O1 is a separate optimization step, now deployed to primary via PR #29 / main `90750f25e491b1ba5c47b9b13d8dbdb75084caeb` with successful Cloudflare deployment confirmation. Migration 0067 indexes are applied; 30/30 measured SQL result hashes match. See `O1_READ_BUDGET_20260909.md` for costs and remaining limitations (no measured compact-handover read reduction). Stock/reservation/handover semantics and Arrival UI remain unchanged; Branch2 untouched. O1 completion does NOT complete or resume W.
 
 ## Checkpoint 2026-09-06 — W8.4 final mobile acceptance / W8 closure
 
