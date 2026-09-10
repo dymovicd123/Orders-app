@@ -1,9 +1,19 @@
 # Warehouse current context — canonical continuation
 
-Updated: 2026-08-26
+Updated: 2026-09-10
 Repository: `dymovicd123/Orders-app`
 
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
+
+## Checkpoint 2026-09-10 — W paused, not completed; O1 prioritized
+
+User explicitly postponed further Warehouse implementation to think through the audit and real usage. W remains open. Historical W8 completion means only that UI delivery package, not acceptance of the Warehouse product goal or completion of W9 discussion.
+
+Production read-only audit found 32 order-observation records in manager mode across 21 orders (28 zero-to-positive corrections, 4 unchanged confirmations), but no standalone quick-count records in the retained check history. This proves contextual order-entry recovery is used, not general spontaneous stock maintenance. Actor attribution is shared access mode plus order manager, not personal authentication. Of 32 observations, 30 equal the corresponding current order quantity; this does not establish whether a full physical count occurred.
+
+Open product questions: full count versus seeing only the item for an order; reporting missing stock without asserting an unverified zero; contextual follow-through; aggregate variant shortages hidden by surplus; same-day handover checkpoint precision. Do not implement these under O1.
+
+O1 is a separate optimization step. See `O1_READ_BUDGET_20260909.md`. Stock/reservation/handover semantics and Arrival UI remain unchanged; Branch2 untouched.
 
 ## Checkpoint 2026-09-06 — W8.4 final mobile acceptance / W8 closure
 

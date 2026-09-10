@@ -42,7 +42,15 @@ const normalize = (value) => value
 function parse(relative) {
   const file = path.join(root, relative)
   check(fs.existsSync(file), `Missing frontend module: ${relative}`)
-  const text = fs.readFileSync(file, 'utf8')
+  let text = fs.readFileSync(file, 'utf8')
+  // O1 exact API transport delta. Validate live code first, then run the historical
+  // preservation checks against its frozen predecessor without modifying source files.
+  if (relative === 'src/app/controllers/useApiClient.ts') {
+    const o1 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/o1-frontend-manifest.json'), 'utf8'))
+    check(sha(normalize(text)) === o1.after, 'O1 API client changed beyond exact transport delta')
+    text = fs.readFileSync(path.join(root, 'scripts/fixtures/o1-api-client-baseline.ts'), 'utf8')
+    check(sha(normalize(text)) === o1.before, 'O1 API client predecessor changed')
+  }
   const kind = relative.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
   return { relative, file, text, source: ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind) }
 }

@@ -590,6 +590,7 @@ export type OrdersFinanceSummaryResponse = {
 
 
 export type FinanceReportResponse = {
+  reportType?: FinanceReportType
   ok: boolean
   startDate: string
   endDate: string

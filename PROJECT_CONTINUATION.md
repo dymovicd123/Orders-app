@@ -1,6 +1,20 @@
 # Система заказов — continuation context
 
-Updated: 2026-09-02 (Asia/Almaty)
+Updated: 2026-09-10 (Asia/Qyzylorda)
+
+## Current priority — O1 (supersedes the historical execution point below)
+
+- User explicitly paused Warehouse W work for further product discussion. W is NOT complete; do not infer closure from the historical W8 UI checkpoint.
+- O1 is the separate D1 read-cost optimization step, based on production Query Insights, not a Warehouse redesign.
+- Baseline: main `f49249753676f75885afc37694b1453105ed76aa`; implementation branch `codex/o1-read-budget`.
+- O1 changes: bounded daily payment/return aggregation for manager/department plans; browser-local in-flight GET coalescing with mutation barriers. No completed-response cache added; explicit refresh semantics preserved.
+- O1 continuation: all eight report types now opt into only their required SQL; legacy full and Finance workspace responses remain unchanged. Report cache keys include report type; invalidation/force prevent older flights from refilling caches. Added migration 0067: exchange-payment lookup, normalized stock-check chronology, exact SKU/stocktake lookup indexes (additive, no business-row changes).
+- Final expanded `npm run release:check` passed uninterrupted (exit 0), including O1 parity/race/index tests, all historical regressions through W8.4, TypeScript, clean build, byte budgets and Wrangler dry-run. Lint passed with existing warnings. Full report/export DOM parity holds for all eight report types. O1 is ready for publication, NOT deployed.
+- Production SELECT-only benchmark (August, before new indexes): 28 base report queries cost 44850 reads, excluding auxiliary plans/team/leads/call-centre. Selected reports: payments 3128, managers 16817, products 7211, cities 10351, returns 130, debts 1759. This is workflow cost, not an account-wide percentage.
+- Await explicit publication decision: apply migration 0067 to primary DB and publish main via validated PR/Cloudflare monitor, or keep changes prepared. No primary mutation/deploy or Branch2 sync has happened. Read-only benchmark tool: `node scripts/measure-o1-d1.mjs before|after`; evidence is local `_o1-evidence/`, counts/hashes only.
+- Live SELECT-only comparison for August: manager plans 4403 -> 1996 rows read; department plans 1612 -> 1115. All returned fields/rows matched; zero rows written. These are per-query results, NOT an account-wide reduction claim.
+- Implementation/validation details and remaining optimization work: `docs/continuation/O1_READ_BUDGET_20260909.md`.
+- No production deployment or Branch2 sync is implied by local validation. Track publication separately.
 
 ## Current execution point
 

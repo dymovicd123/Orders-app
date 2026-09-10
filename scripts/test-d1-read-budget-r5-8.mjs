@@ -5,8 +5,8 @@ const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 
 try {
-  check(finance.includes("() => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(\n      `SELECT p.method AS method"), 'R5.8 Finance scope must skip the standalone payment-method aggregate')
-  check(finance.includes("() => financeWorkspaceOnly ? emptyRowsResult() : db.prepare(\n      `SELECT p.payment_date AS date, p.method AS method"), 'R5.8 Finance scope must skip the standalone payment-by-day aggregate')
+  check(finance.includes("() => financeWorkspaceOnly ? emptyRowsResult() : !needsReport('payments') ? emptyRowsResult() : db.prepare(\n      `SELECT p.method AS method"), 'R5.8 Finance scope must skip the standalone payment-method aggregate')
+  check(finance.includes("() => financeWorkspaceOnly ? emptyRowsResult() : !needsReport('payments') ? emptyRowsResult() : db.prepare(\n      `SELECT p.payment_date AS date, p.method AS method"), 'R5.8 Finance scope must skip the standalone payment-by-day aggregate')
   check(finance.includes('const rawPaymentOperationRows = mapSqlRows(paymentOperationRows) as any[];'), 'R5.8 raw payment source must be materialized once')
   check(finance.includes('if (financeWorkspaceOnly) {\n    for (const row of rawPaymentOperationRows)'), 'R5.8 payment-method summary must derive from the already-loaded Finance payment rows')
   check(finance.includes('const paymentOperations = rawPaymentOperationRows.map((row: any) => {'), 'R5.8 payment trace must preserve the same raw operation rows')
