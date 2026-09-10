@@ -1,0 +1,1799 @@
+===== src/App.tsx =====
+--- function updateEditorPayment( hits=[5008] ---
+04964:       gender: '',
+04965:       color: '',
+04966:       material: 'СТАНДАРТ',
+04967:       length: 'СТАНДАРТ',
+04968:       sizeLabel: '',
+04969:       sortOrder: '0',
+04970:     })
+04971:     setMessage(isEdit ? 'Вариант обновлён.' : 'Вариант добавлен.')
+04972:   }
+04973: 
+04974:   function updateEditorDraft<K extends keyof EditorDraft>(key: K, value: EditorDraft[K]) {
+04975:     setEditorDraft((current) => (current ? { ...current, [key]: value } : current))
+04976:   }
+04977: 
+04978:   function updateEditorItem(index: number, field: keyof EditorItem, value: string | number | boolean) {
+04979:     setEditorDraft((current) => {
+04980:       if (!current) return current
+04981:       const nextItems = current.items.map((item, itemIndex) => {
+04982:         if (itemIndex !== index) return item
+04983:         const nextItem = { ...item, [field]: field === 'audienceType' ? normalizeAudienceTypeValue(value) : value }
+04984:         if (['productName', 'audienceType', 'gender', 'color', 'material', 'length', 'size', 'sourceType'].includes(String(field))) {
+04985:           nextItem.stockObservationEnabled = false
+04986:           nextItem.observedPhysicalQuantity = null
+04987:           nextItem.shortageAcknowledged = false
+04988:           nextItem.serverShortage = undefined
+04989:         }
+04990:         if (field === 'quantity') {
+04991:           nextItem.shortageAcknowledged = false
+04992:           nextItem.serverShortage = undefined
+04993:         }
+04994:         if (field === 'audienceType') {
+04995:           nextItem.audienceType = normalizeAudienceTypeValue(value)
+04996:         }
+04997:         if (field === 'audienceType') {
+04998:           const nextOptions = getSizeOptions(nextItem.productName, nextItem.audienceType)
+04999:           if (nextItem.size && !nextOptions.some((option) => normalizeSuggestion(option) === normalizeSuggestion(nextItem.size))) {
+05000:             nextItem.size = ''
+05001:           }
+05002:         }
+05003:         return nextItem
+05004:       })
+05005:       return { ...current, items: nextItems }
+05006:     })
+05007:   }
+05008: 
+05009:   function updateEditorPayment(index: number, field: keyof EditorPayment, value: string | number) {
+05010:     setEditorDraft((current) => {
+05011:       if (!current) return current
+05012:       const nextPayments = current.payments.map((payment, paymentIndex) => {
+05013:         if (paymentIndex !== index) return payment
+05014:         if (payment.id && field !== 'method') return payment
+05015:         if (field === 'paymentDate' && payment.paymentKind === 'primary') return payment
+05016:         if (field === 'paymentKind') {
+05017:           const nextKind: EditorPayment['paymentKind'] = value === 'debt_close' ? 'debt_close' : 'primary'
+05018:           return {
+05019:             ...payment,
+05020:             paymentKind: nextKind,
+05021:             paymentDate: nextKind === 'primary' ? (current.orderDate || payment.paymentDate) : (payment.paymentDate || formatLocalDateInput()),
+05022:           }
+05023:         }
+05024:         return { ...payment, [field]: value }
+05025:       })
+05026:       return { ...current, payments: nextPayments }
+05027:     })
+05028:   }
+05029: 
+05030:   function addEditorPayment(paymentKind: 'primary' | 'debt_close') {
+05031:     const draftKey = `editor-payment-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+05032:     setEditorDraft((current) => {
+05033:       if (!current) return current
+05034:       const paymentDate = paymentKind === 'primary'
+05035:         ? (current.orderDate || formatLocalDateInput())
+05036:         : formatLocalDateInput()
+05037:       return {
+05038:         ...current,
+05039:         payments: [...current.payments, { ...createEmptyEditorPayment(paymentDate), paymentKind, draftKey }],
+05040:       }
+05041:     })
+05042:   }
+05043: 
+05044:   function removeEditorPayment(index: number) {
+05045:     setEditorDraft((current) => {
+05046:       if (!current || current.payments[index]?.id) return current
+05047:       return { ...current, payments: current.payments.filter((_, paymentIndex) => paymentIndex !== index) }
+05048:     })
+05049:   }
+05050: 
+05051:   async function saveEditorPayment(index: number) {
+05052:     if (!editorDraft || !selectedOrder || savingOrder) return
+05053:     const payment = editorDraft.payments[index]
+05054:     if (!payment || payment.id) return
+05055:     const paymentKind = payment.paymentKind === 'primary' || payment.paymentKind === 'debt_close'
+05056:       ? payment.paymentKind
+05057:       : null
+05058:     if (!paymentKind) {
+05059:       setError('Для обычного заказа доступны только первичная оплата и закрытие долга. Доплата оформляется только внутри обмена.')
+05060:       return
+05061:     }
+05062: 
+05063:     const amount = Number(payment.amount || 0)
+05064:     if (!payment.paymentDate) {
+05065:       setError('Укажите фактическую дату оплаты.')
+05066:       return
+05067:     }
+05068:     if (!String(payment.method || '').trim()) {
+05069:       setError('Выберите способ оплаты.')
+05070:       return
+05071:     }
+05072:     if (!Number.isInteger(amount) || amount <= 0) {
+05073:       setError('Сумма оплаты должна быть целым числом больше нуля.')
+05074:       return
+05075:     }
+05076: 
+05077:     setSavingOrder(true)
+05078:     setError(null)
+05079:     setMessage(null)
+05080:     try {
+05081:       const payload = {
+05082:         orderId: selectedOrder.id,
+05083:         paymentDate: payment.paymentDate,
+05084:         method: payment.method,
+05085:         amount,
+05086:         paymentKind,
+05087:         comment: payment.comment || '',
+05088:       }
+05089:       const criticalKey = `order-editor-payment:${selectedOrder.id}:${payment.draftKey || index}`
+05090:       const critical = prepareCriticalRequest(criticalKey, payload)
+05091:       const response = await apiFetch('/api/payments', {
+05092:         method: 'POST',
+05093:         headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
+05094:         body: JSON.stringify(critical.payload),
+05095:       })
+05096:       const result = await readJsonResponse<{
+05097:         ok?: boolean
+05098:         message?: string
+05099:         paymentId?: number | null
+05100:         order?: OrderRecord
+05101:         refreshRequired?: boolean
+05102:       }>(response, 'Добавление оплаты')
+05103:       if (!response.ok || !result.ok) throw new Error(result.message || `Payment save failed: ${response.status}`)
+05104:       const paymentId = Number(result.paymentId || 0)
+05105:       if (!paymentId) {
+05106:         throw new Error('Оплата могла сохраниться, но сервер не вернул её идентификатор. Повторите сохранение этой строки — повтор безопасен.')
+05107:       }
+05108:       completeCriticalRequest(criticalKey, critical.requestId)
+---END HIT---
+--- async function persistOrder( hits=[5319] ---
+05275:       window.location.hash = '#workshop'
+05276:     } else {
+05277:       setActiveSector('orders')
+05278:       setOrderPanel('list')
+05279:       window.location.hash = '#orders'
+05280:     }
+05281:     setEditorReturnSector('orders')
+05282:   }
+05283: 
+05284:   function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' = 'orders') {
+05285:     if (isArchivedOrderRecord(order)) {
+05286:       setSelectedOrderId(order.id)
+05287:       setEditorOpen(false)
+05288:       setMessage('Архивный заказ открыт только для просмотра.')
+05289:       return
+05290:     }
+05291:     if (!isAdmin && (['deleted', 'archived'].includes(order.order_status) || order.shipping_status === 'sent')) {
+05292:       setSelectedOrderId(order.id)
+05293:       setEditorOpen(false)
+05294:       setMessage('Отправленный, удалённый или архивный заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие.')
+05295:       return
+05296:     }
+05297:     setEditorReturnSector(returnSector)
+05298:     setEditorOrderOverride(order)
+05299:     setSelectedOrderId(order.id)
+05300:     setEditorDraft(createEditorDraft(order))
+05301:     setActiveSector('orders')
+05302:     setOrderPanel('edit')
+05303:     setEditorOpen(true)
+05304:     window.location.hash = '#editor'
+05305:   }
+05306: 
+05307:   function upsertOrderInState(nextOrder: OrderRecord) {
+05308:     setOrders((current) => {
+05309:       const exists = current.some((order) => order.id === nextOrder.id)
+05310:       const nextOrders = exists
+05311:         ? current.map((order) => (order.id === nextOrder.id ? nextOrder : order))
+05312:         : [nextOrder, ...current]
+05313:       return nextOrders.sort((a, b) => {
+05314:         if (a.order_date === b.order_date) return b.id - a.id
+05315:         return a.order_date < b.order_date ? 1 : -1
+05316:       })
+05317:     })
+05318:   }
+05319: 
+05320:   async function persistOrder(nextDraft: EditorDraft, targetOrder?: OrderRecord | null) {
+05321:     const order = targetOrder || selectedOrder
+05322:     if (!order) return
+05323:     if (!isAdmin && (['deleted', 'archived'].includes(order.order_status) || order.shipping_status === 'sent')) {
+05324:       setMessage('Отправленный, удалённый или архивный заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие.')
+05325:       return
+05326:     }
+05327:     if (isArchivedOrderRecord(order)) {
+05328:       setMessage('Архивный заказ нельзя редактировать.')
+05329:       return
+05330:     }
+05331: 
+05332:     setSavingOrder(true)
+05333:     setError(null)
+05334:     setMessage(null)
+05335: 
+05336:     try {
+05337:       const missingObservation = nextDraft.items.find((item) => item.sourceType !== 'workshop' && item.stockObservationEnabled && (item.observedPhysicalQuantity === null || item.observedPhysicalQuantity === undefined))
+05338:       if (missingObservation) {
+05339:         throw new Error(`Укажите фактическое количество для «${missingObservation.productName || 'позиции'}» или выберите «Сейчас проверить не могу».`)
+05340:       }
+05341: 
+05342:       const payload = {
+05343:         orderDate: nextDraft.orderDate,
+05344:         managerId: nextDraft.managerId || undefined,
+05345:         managerName: nextDraft.managerName,
+05346:         customerPhone: nextDraft.customerPhone,
+05347:         customerName: nextDraft.customerName,
+05348:         city: nextDraft.city,
+05349:         deliveryType: nextDraft.deliveryType,
+05350:         sourceType: deriveOrderSourceType(nextDraft.items),
+05351:         orderTotal: nextDraft.orderTotal ? Number(nextDraft.orderTotal) : undefined,
+05352:         workshopStatus: nextDraft.workshopStatus,
+05353:         orderStatus: nextDraft.orderStatus,
+05354:         comment: nextDraft.comment,
+05355:         items: nextDraft.items.map((item) => ({
+05356:           productName: item.productName,
+05357:           audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
+05358:           gender: item.gender,
+05359:           color: item.color,
+05360:           material: item.material,
+05361:           length: item.length,
+05362:           size: item.size,
+05363:           quantity: item.quantity,
+05364:           unitPrice: Number(item.unitPrice || 0),
+05365:           sourceType: item.sourceType,
+05366:           workshopComment: item.workshopComment,
+05367:           workshopUrgent: Boolean(item.workshopUrgent),
+05368:           workshopDueDate: item.workshopUrgent ? item.workshopDueDate : '',
+05369:           observedPhysicalQuantity: item.sourceType !== 'workshop' && item.stockObservationEnabled ? item.observedPhysicalQuantity : undefined,
+05370:           shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
+05371:         })),
+05372:         paymentMethodCorrections: nextDraft.payments
+05373:           .filter((payment) => Boolean(payment.id))
+05374:           .map((payment) => ({ paymentId: Number(payment.id), method: payment.method })),
+05375:       }
+05376: 
+05377:       const criticalKey = `order-edit:${order.id}`
+05378:       const critical = prepareCriticalRequest(criticalKey, payload)
+05379:       const response = await apiFetch(`/api/orders/${order.id}`, {
+05380:         method: 'PATCH',
+05381:         headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
+05382:         body: JSON.stringify(critical.payload),
+05383:       })
+05384: 
+05385:       type EditOrderShortage = {
+05386:         inputIndexes?: number[]
+05387:         physicalQuantity?: number
+05388:         reservedQuantity?: number
+05389:         requestedQuantity?: number
+05390:         shortage?: number
+05391:       }
+05392:       type OrderStockWriteResult = {
+05393:         productName?: string
+05394:         concurrentShortage?: boolean
+05395:         shortageAfter?: number
+05396:       }
+05397:       const result = await readJsonResponse<{
+05398:         message?: string
+05399:         order?: OrderRecord
+05400:         refreshRequired?: boolean
+05401:         code?: string
+05402:         shortages?: EditOrderShortage[]
+05403:         stockWriteOff?: OrderStockWriteResult[]
+05404:       }>(response, 'Сохранение заказа')
+05405:       if (!response.ok && result.code === 'order_stock_shortage' && Array.isArray(result.shortages) && result.shortages.length) {
+05406:         const shortageByInputIndex = new Map<number, EditOrderShortage>()
+05407:         for (const shortage of result.shortages) {
+05408:           for (const inputIndex of shortage.inputIndexes || []) {
+05409:             if (Number.isInteger(Number(inputIndex)) && Number(inputIndex) >= 0) shortageByInputIndex.set(Number(inputIndex), shortage)
+05410:           }
+05411:         }
+05412:         setEditorDraft((current) => current ? ({
+05413:           ...current,
+05414:           items: current.items.map((item, inputIndex) => {
+05415:             const shortage = shortageByInputIndex.get(inputIndex)
+05416:             if (!shortage || item.sourceType === 'workshop') return item
+05417:             return {
+05418:               ...item,
+05419:               stockObservationEnabled: false,
+---END HIT---
+--- paymentMethodCorrections: nextDraft.payments hits=[5371] ---
+05327:     if (isArchivedOrderRecord(order)) {
+05328:       setMessage('Архивный заказ нельзя редактировать.')
+05329:       return
+05330:     }
+05331: 
+05332:     setSavingOrder(true)
+05333:     setError(null)
+05334:     setMessage(null)
+05335: 
+05336:     try {
+05337:       const missingObservation = nextDraft.items.find((item) => item.sourceType !== 'workshop' && item.stockObservationEnabled && (item.observedPhysicalQuantity === null || item.observedPhysicalQuantity === undefined))
+05338:       if (missingObservation) {
+05339:         throw new Error(`Укажите фактическое количество для «${missingObservation.productName || 'позиции'}» или выберите «Сейчас проверить не могу».`)
+05340:       }
+05341: 
+05342:       const payload = {
+05343:         orderDate: nextDraft.orderDate,
+05344:         managerId: nextDraft.managerId || undefined,
+05345:         managerName: nextDraft.managerName,
+05346:         customerPhone: nextDraft.customerPhone,
+05347:         customerName: nextDraft.customerName,
+05348:         city: nextDraft.city,
+05349:         deliveryType: nextDraft.deliveryType,
+05350:         sourceType: deriveOrderSourceType(nextDraft.items),
+05351:         orderTotal: nextDraft.orderTotal ? Number(nextDraft.orderTotal) : undefined,
+05352:         workshopStatus: nextDraft.workshopStatus,
+05353:         orderStatus: nextDraft.orderStatus,
+05354:         comment: nextDraft.comment,
+05355:         items: nextDraft.items.map((item) => ({
+05356:           productName: item.productName,
+05357:           audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
+05358:           gender: item.gender,
+05359:           color: item.color,
+05360:           material: item.material,
+05361:           length: item.length,
+05362:           size: item.size,
+05363:           quantity: item.quantity,
+05364:           unitPrice: Number(item.unitPrice || 0),
+05365:           sourceType: item.sourceType,
+05366:           workshopComment: item.workshopComment,
+05367:           workshopUrgent: Boolean(item.workshopUrgent),
+05368:           workshopDueDate: item.workshopUrgent ? item.workshopDueDate : '',
+05369:           observedPhysicalQuantity: item.sourceType !== 'workshop' && item.stockObservationEnabled ? item.observedPhysicalQuantity : undefined,
+05370:           shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
+05371:         })),
+05372:         paymentMethodCorrections: nextDraft.payments
+05373:           .filter((payment) => Boolean(payment.id))
+05374:           .map((payment) => ({ paymentId: Number(payment.id), method: payment.method })),
+05375:       }
+05376: 
+05377:       const criticalKey = `order-edit:${order.id}`
+05378:       const critical = prepareCriticalRequest(criticalKey, payload)
+05379:       const response = await apiFetch(`/api/orders/${order.id}`, {
+05380:         method: 'PATCH',
+05381:         headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
+05382:         body: JSON.stringify(critical.payload),
+05383:       })
+05384: 
+05385:       type EditOrderShortage = {
+05386:         inputIndexes?: number[]
+05387:         physicalQuantity?: number
+05388:         reservedQuantity?: number
+05389:         requestedQuantity?: number
+05390:         shortage?: number
+05391:       }
+05392:       type OrderStockWriteResult = {
+05393:         productName?: string
+05394:         concurrentShortage?: boolean
+05395:         shortageAfter?: number
+05396:       }
+05397:       const result = await readJsonResponse<{
+05398:         message?: string
+05399:         order?: OrderRecord
+05400:         refreshRequired?: boolean
+05401:         code?: string
+05402:         shortages?: EditOrderShortage[]
+05403:         stockWriteOff?: OrderStockWriteResult[]
+05404:       }>(response, 'Сохранение заказа')
+05405:       if (!response.ok && result.code === 'order_stock_shortage' && Array.isArray(result.shortages) && result.shortages.length) {
+05406:         const shortageByInputIndex = new Map<number, EditOrderShortage>()
+05407:         for (const shortage of result.shortages) {
+05408:           for (const inputIndex of shortage.inputIndexes || []) {
+05409:             if (Number.isInteger(Number(inputIndex)) && Number(inputIndex) >= 0) shortageByInputIndex.set(Number(inputIndex), shortage)
+05410:           }
+05411:         }
+05412:         setEditorDraft((current) => current ? ({
+05413:           ...current,
+05414:           items: current.items.map((item, inputIndex) => {
+05415:             const shortage = shortageByInputIndex.get(inputIndex)
+05416:             if (!shortage || item.sourceType === 'workshop') return item
+05417:             return {
+05418:               ...item,
+05419:               stockObservationEnabled: false,
+05420:               observedPhysicalQuantity: null,
+05421:               shortageAcknowledged: false,
+05422:               serverShortage: {
+05423:                 physicalQuantity: Number(shortage.physicalQuantity || 0),
+05424:                 reservedQuantity: Math.max(0, Number(shortage.reservedQuantity || 0)),
+05425:                 requestedQuantity: Math.max(0, Number(shortage.requestedQuantity || 0)),
+05426:                 shortage: Math.max(1, Number(shortage.shortage || 1)),
+05427:               },
+05428:             }
+05429:           }),
+05430:         }) : current)
+05431:         setError(result.message || 'Перед сохранением уточните отмеченные складские позиции.')
+05432:         return null
+05433:       }
+05434:       if (!response.ok) {
+05435:         throw new Error(result.message || `Save failed: ${response.status}`)
+05436:       }
+05437:       // A 2xx response means the server-side critical operation is durably complete. Clear the
+05438:       // browser retry token before readback-driven UI work, including the common result.order path.
+05439:       completeCriticalRequest(criticalKey, critical.requestId)
+05440: 
+05441:       const pendingEditorPayments = nextDraft.payments.filter((payment) => !payment.id)
+05442:       const postSaveShortages = (result.stockWriteOff || []).filter((entry) => Number(entry.shortageAfter || 0) > 0)
+05443:       const concurrentShortages = postSaveShortages.filter((entry) => entry.concurrentShortage)
+05444:       invalidateFinanceReadCaches()
+05445:       // Unsent edits can release/recreate reservations; a sent transition can also fulfill them.
+05446:       invalidateInventoryStockCaches(true)
+05447:       if (concurrentShortages.length) {
+05448:         setMessage(`Заказ ${order.external_id} обновлён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Внимание».`)
+05449:       } else {
+05450:         setMessage(`Заказ ${order.external_id} обновлён.`)
+05451:       }
+05452:       if (result?.order) {
+05453:         const savedOrder = result.order as OrderRecord
+05454:         upsertOrderInState(savedOrder)
+05455:         void loadWorkshopData()
+05456:         setSelectedOrderId(savedOrder.id)
+05457:         setEditorOrderOverride(savedOrder)
+05458:         const savedDraft = createEditorDraft(savedOrder)
+05459:         setEditorDraft(pendingEditorPayments.length ? { ...savedDraft, payments: [...savedDraft.payments, ...pendingEditorPayments] } : savedDraft)
+05460:         if (pendingEditorPayments.length) {
+05461:           setEditorOpen(true)
+05462:           setMessage(`Заказ ${order.external_id} обновлён. Новые оплаты ещё не проведены — сохраните каждую новой кнопкой «Провести оплату».`)
+05463:         } else {
+05464:           closeOrderEditor()
+05465:         }
+05466:         if (activeSector === 'orders' && orderPanel === 'list') void loadOrdersFinanceSummary(filters, true)
+05467:         return savedOrder
+05468:       }
+05469:       if (pendingEditorPayments.length) {
+05470:         setEditorOpen(true)
+05471:         setMessage(`Заказ ${order.external_id} сохранён. Новые оплаты ещё не проведены — сохраните каждую отдельно.`)
+---END HIT---
+===== src/features/sections/OrderEditorSection.tsx =====
+--- Оплата уже проведена hits=[429] ---
+00385:                                   disabled={Boolean(payment.id) || savingOrder || payment.paymentKind === 'primary'}
+00386:                                   onChange={(event) => updateEditorPayment(index, 'paymentDate', event.target.value)}
+00387:                                 />
+00388:                               </label>
+00389:                               <label>
+00390:                                 <span>Смысл оплаты</span>
+00391:                                 <select
+00392:                                   value={payment.paymentKind || 'primary'}
+00393:                                   disabled={Boolean(payment.id) || savingOrder}
+00394:                                   onChange={(event) => updateEditorPayment(index, 'paymentKind', event.target.value)}
+00395:                                 >
+00396:                                   <option value="primary">Первичная оплата</option>
+00397:                                   <option value="debt_close">Закрытие долга</option>
+00398:                                 </select>
+00399:                               </label>
+00400:                               <label>
+00401:                                 <span>Способ</span>
+00402:                                 <SmartPickerInput
+00403:                                   value={payment.method || ''}
+00404:                                   onChange={(value) => updateEditorPayment(index, 'method', value)}
+00405:                                   placeholder="Выберите способ"
+00406:                                   options={suggestionValues.paymentMethods}
+00407:                                   disabled={savingOrder}
+00408:                                 />
+00409:                               </label>
+00410:                               <label>
+00411:                                 <span>Сумма</span>
+00412:                                 <FriendlyNumberInput
+00413:                                   type="number"
+00414:                                   min="0"
+00415:                                   value={payment.amount ?? 0}
+00416:                                   disabled={Boolean(payment.id) || savingOrder}
+00417:                                   onChange={(event) => updateEditorPayment(index, 'amount', Number(event.target.value))}
+00418:                                 />
+00419:                               </label>
+00420:                               <label className="wide-field">
+00421:                                 <span>Комментарий</span>
+00422:                                 <input
+00423:                                   value={payment.comment || ''}
+00424:                                   disabled={Boolean(payment.id) || savingOrder}
+00425:                                   onChange={(event) => updateEditorPayment(index, 'comment', event.target.value)}
+00426:                                 />
+00427:                               </label>
+00428:                             </div>
+00429:                             {payment.id ? (
+00430:                               <p className="mini-panel-note">Оплата уже проведена. Здесь можно исправить только способ оплаты; сумма, дата и тип операции не меняются.</p>
+00431:                             ) : (
+00432:                               <div className="actions">
+00433:                                 <button className="primary compact" type="button" onClick={() => void saveEditorPayment(index)} disabled={savingOrder}>
+00434:                                   {savingOrder ? 'Провожу оплату…' : 'Провести оплату'}
+00435:                                 </button>
+00436:                               </div>
+00437:                             )}
+00438:                           </div>
+00439:                         ))}
+00440:                         {!editorDraft.payments.length ? <div className="empty-state">Оплат пока нет. Добавьте нужный вид операции одной из кнопок выше.</div> : null}
+00441:                       </div>
+00442:                     </section>
+00443:                   </div>
+00444:     
+00445:                   <div className="actions form-bottom-actions">
+00446:                     <button className="primary" type="button" onClick={saveSelectedOrder} disabled={savingOrder}>
+00447:                       {savingOrder ? 'Сохраняю...' : 'Сохранить изменения'}
+00448:                     </button>
+00449:                     <button className="secondary" type="button" onClick={() => selectedOrder && setEditorDraft(createEditorDraft(selectedOrder))}>
+00450:                       Сбросить форму
+00451:                     </button>
+00452:                     <button className="secondary back-action" type="button" onClick={closeOrderEditor} disabled={savingOrder}>
+00453:                       {editorReturnSector === 'workshop' ? 'Назад в цех' : 'Назад к таблице'}
+00454:                     </button>
+00455:                   </div>
+00456:                 </>
+00457:               ) : (
+00458:                 <div className="empty-state">Выберите заказ в таблице выше, чтобы открыть редактирование.</div>
+00459:               )}
+00460:             </article>
+00461:   )
+00462: }
+---END HIT---
+--- onChange={(value) => updateEditorPayment(index, 'method', value)} hits=[403] ---
+00359:                             + Закрытие долга
+00360:                           </button>
+00361:                         </div>
+00362:                       </div>
+00363:                       <p className="mini-panel-note">
+00364:                         Если первичную оплату забыли внести, добавьте её явно — она всегда относится к дате заказа. Любая обычная оплата позже создания заказа оформляется как «Закрытие долга» и проходит через тот же серверный механизм, что и отдельная кнопка закрытия долга. У уже проведённой оплаты можно исправить способ оплаты; сумма, дата и смысл операции останутся прежними, а исправление сохранится в денежной истории.
+00365:                       </p>
+00366:                       <div className="stack">
+00367:                         {editorDraft.payments.map((payment, index) => (
+00368:                           <div className="mini-item" key={`edit-payment-${payment.id || payment.draftKey || index}`}>
+00369:                             <div className="mini-item-head">
+00370:                               <strong>Оплата {index + 1}</strong>
+00371:                               {payment.id ? (
+00372:                                 <span className="soft-badge">Проведена</span>
+00373:                               ) : (
+00374:                                 <button className="ghost danger compact" type="button" onClick={() => removeEditorPayment(index)} disabled={savingOrder}>
+00375:                                   Удалить черновик
+00376:                                 </button>
+00377:                               )}
+00378:                             </div>
+00379:                             <div className="subgrid">
+00380:                               <label>
+00381:                                 <span>Дата</span>
+00382:                                 <input
+00383:                                   type="date"
+00384:                                   value={payment.paymentDate}
+00385:                                   disabled={Boolean(payment.id) || savingOrder || payment.paymentKind === 'primary'}
+00386:                                   onChange={(event) => updateEditorPayment(index, 'paymentDate', event.target.value)}
+00387:                                 />
+00388:                               </label>
+00389:                               <label>
+00390:                                 <span>Смысл оплаты</span>
+00391:                                 <select
+00392:                                   value={payment.paymentKind || 'primary'}
+00393:                                   disabled={Boolean(payment.id) || savingOrder}
+00394:                                   onChange={(event) => updateEditorPayment(index, 'paymentKind', event.target.value)}
+00395:                                 >
+00396:                                   <option value="primary">Первичная оплата</option>
+00397:                                   <option value="debt_close">Закрытие долга</option>
+00398:                                 </select>
+00399:                               </label>
+00400:                               <label>
+00401:                                 <span>Способ</span>
+00402:                                 <SmartPickerInput
+00403:                                   value={payment.method || ''}
+00404:                                   onChange={(value) => updateEditorPayment(index, 'method', value)}
+00405:                                   placeholder="Выберите способ"
+00406:                                   options={suggestionValues.paymentMethods}
+00407:                                   disabled={savingOrder}
+00408:                                 />
+00409:                               </label>
+00410:                               <label>
+00411:                                 <span>Сумма</span>
+00412:                                 <FriendlyNumberInput
+00413:                                   type="number"
+00414:                                   min="0"
+00415:                                   value={payment.amount ?? 0}
+00416:                                   disabled={Boolean(payment.id) || savingOrder}
+00417:                                   onChange={(event) => updateEditorPayment(index, 'amount', Number(event.target.value))}
+00418:                                 />
+00419:                               </label>
+00420:                               <label className="wide-field">
+00421:                                 <span>Комментарий</span>
+00422:                                 <input
+00423:                                   value={payment.comment || ''}
+00424:                                   disabled={Boolean(payment.id) || savingOrder}
+00425:                                   onChange={(event) => updateEditorPayment(index, 'comment', event.target.value)}
+00426:                                 />
+00427:                               </label>
+00428:                             </div>
+00429:                             {payment.id ? (
+00430:                               <p className="mini-panel-note">Оплата уже проведена. Здесь можно исправить только способ оплаты; сумма, дата и тип операции не меняются.</p>
+00431:                             ) : (
+00432:                               <div className="actions">
+00433:                                 <button className="primary compact" type="button" onClick={() => void saveEditorPayment(index)} disabled={savingOrder}>
+00434:                                   {savingOrder ? 'Провожу оплату…' : 'Провести оплату'}
+00435:                                 </button>
+00436:                               </div>
+00437:                             )}
+00438:                           </div>
+00439:                         ))}
+00440:                         {!editorDraft.payments.length ? <div className="empty-state">Оплат пока нет. Добавьте нужный вид операции одной из кнопок выше.</div> : null}
+00441:                       </div>
+00442:                     </section>
+00443:                   </div>
+00444:     
+00445:                   <div className="actions form-bottom-actions">
+00446:                     <button className="primary" type="button" onClick={saveSelectedOrder} disabled={savingOrder}>
+00447:                       {savingOrder ? 'Сохраняю...' : 'Сохранить изменения'}
+00448:                     </button>
+00449:                     <button className="secondary" type="button" onClick={() => selectedOrder && setEditorDraft(createEditorDraft(selectedOrder))}>
+00450:                       Сбросить форму
+00451:                     </button>
+00452:                     <button className="secondary back-action" type="button" onClick={closeOrderEditor} disabled={savingOrder}>
+00453:                       {editorReturnSector === 'workshop' ? 'Назад в цех' : 'Назад к таблице'}
+00454:                     </button>
+00455:                   </div>
+00456:                 </>
+00457:               ) : (
+00458:                 <div className="empty-state">Выберите заказ в таблице выше, чтобы открыть редактирование.</div>
+00459:               )}
+00460:             </article>
+00461:   )
+00462: }
+---END HIT---
+===== worker/domains/orders-write.ts =====
+--- rawPaymentMethodCorrections hits=[1111, 1115] ---
+01067:           : (input.managerName !== undefined ? await resolveActiveManagerId(db, null, nextManager) : existingManagerId);
+01068:       } catch (error) {
+01069:         throw new OrderInputValidationError(error instanceof Error ? error.message : 'У заказа должен быть выбран действующий менеджер.');
+01070:       }
+01071:       if (!nextManagerId) throw new OrderInputValidationError('У заказа должен быть выбран действующий менеджер.');
+01072:       const nextPhone = input.customerPhone !== undefined ? normalizePhone(input.customerPhone) : cleanText(existingAny.customer_phone);
+01073:       if (input.customerPhone !== undefined && cleanText(input.customerPhone) && !nextPhone) throw new OrderInputValidationError('Телефон клиента должен содержать цифры.');
+01074:       const nextCustomerName = input.customerName !== undefined ? cleanText(input.customerName) : cleanText(existingAny.customer_name);
+01075:       const nextCity = input.city !== undefined ? cleanText(input.city) : cleanText(existingAny.city);
+01076:       let nextCustomerId: number | null = null;
+01077:       const nextDelivery = input.deliveryType !== undefined ? cleanText(input.deliveryType) : cleanText(existingAny.delivery_type);
+01078:       const nextSource = input.sourceType ? normalizeSourceType(input.sourceType) : normalizeSourceType(existingAny.source_type);
+01079:       const nextWorkshopStatus = input.workshopStatus ? normalizeWorkshopStatus(input.workshopStatus) : normalizeWorkshopStatus(existingAny.workshop_status);
+01080:       const nextOrderStatus = input.orderStatus ? normalizeOrderStatus(input.orderStatus) : normalizeOrderStatus(existingAny.order_status);
+01081:       const existingOrderStatus = normalizeOrderStatus(existingAny.order_status);
+01082:       const existingWorkshopStatus = normalizeWorkshopStatus(existingAny.workshop_status);
+01083:       const existingShippingStatus = normalizeShippingStatus(existingAny.shipping_status);
+01084:       const workingModeEdit = actor?.role !== 'admin';
+01085:       if (workingModeEdit && (['deleted', 'archived'].includes(existingOrderStatus) || existingShippingStatus === 'sent')) {
+01086:         throw new CriticalOperationConflictError('Отправленный, удалённый или архивный заказ нельзя переписывать в рабочем режиме. Используйте отдельное штатное действие заказа.');
+01087:       }
+01088:       const deletingOrder = existingOrderStatus !== 'deleted' && nextOrderStatus === 'deleted';
+01089:       const finalWorkshopStatus = deletingOrder && nextWorkshopStatus === 'in_workshop' ? 'cancelled' : nextWorkshopStatus;
+01090:       const nextComment = input.comment !== undefined ? cleanText(input.comment) : cleanText(existingAny.comment);
+01091:       const nextShippingStatus = input.shippingStatus !== undefined
+01092:         ? normalizeShippingStatus(input.shippingStatus)
+01093:         : existingShippingStatus;
+01094:       if (workingModeEdit && (
+01095:         nextOrderStatus !== existingOrderStatus
+01096:         || nextWorkshopStatus !== existingWorkshopStatus
+01097:         || nextShippingStatus !== existingShippingStatus
+01098:       )) {
+01099:         throw new CriticalOperationConflictError('В рабочем режиме редактор исправляет данные заказа, но не меняет его жизненный цикл. Для статуса Цеха, отправки и удаления используйте отдельные штатные действия.');
+01100:       }
+01101:       const nextShippingDate = nextShippingStatus === 'sent'
+01102:         ? normalizeDate(input.shippingDate || existingAny.shipping_date || timestamp)
+01103:         : null;
+01104: 
+01105:       if (Array.isArray(input.items)) assertOrderItemInputs(input.items);
+01106:       if (Array.isArray(input.payments)) assertOrderPaymentInputs(input.payments);
+01107:       if (input.orderTotal !== undefined) assertOrderTotalInput(input.orderTotal);
+01108:       const requestedItems = Array.isArray(input.items) ? normalizeOrderItems(input.items, nextSource) : null;
+01109:       const requestedPayments = Array.isArray(input.payments) ? normalizeOrderPayments(input.payments, nextOrderDate) : null;
+01110:       const existingItemsForEdit = normalizeOrderItems((existingAny.items || []) as OrderInput['items'], nextSource);
+01111:       const existingPaymentsForEdit = normalizeOrderPayments((existingAny.payments || []) as OrderInput['payments'], nextOrderDate);
+01112:       const rawPaymentMethodCorrections = Array.isArray((input as any).paymentMethodCorrections)
+01113:         ? (input as any).paymentMethodCorrections as Array<{ paymentId?: unknown; method?: unknown }>
+01114:         : [];
+01115:       const requestedPaymentMethodCorrections = new Map<number, string>();
+01116:       for (const correction of rawPaymentMethodCorrections) {
+01117:         const paymentId = toInt(correction?.paymentId, 0);
+01118:         const method = upperText(correction?.method);
+01119:         if (!paymentId) throw new OrderInputValidationError('Не удалось определить оплату для исправления способа. Обновите заказ и повторите.');
+01120:         if (!method) throw new OrderInputValidationError('Способ оплаты не может быть пустым.');
+01121:         requestedPaymentMethodCorrections.set(paymentId, method);
+01122:       }
+01123:       const paymentMethodCorrections: Array<Record<string, any>> = [];
+01124:       const isCashPaymentMethod = (value: unknown) => {
+01125:         const method = upperText(value);
+01126:         return method === 'CASH' || method.includes('НАЛИЧ');
+01127:       };
+01128:       for (const [paymentId, newMethod] of requestedPaymentMethodCorrections) {
+01129:         const payment = await db.prepare(
+01130:           `SELECT p.id, p.payment_date, p.method, p.amount, COALESCE(p.payment_kind, 'primary') AS payment_kind,
+01131:                   p.comment, o.created_at AS order_created_at,
+01132:                   CASE WHEN EXISTS (
+01133:                     SELECT 1 FROM exchanges e
+01134:                     WHERE e.payment_id = p.id AND e.financial_action = 'extra_payment'
+01135:                       AND COALESCE(e.status, 'completed') <> 'cancelled'
+01136:                   ) THEN 1 ELSE 0 END AS is_exchange_extra,
+01137:                   CASE WHEN EXISTS (
+01138:                     SELECT 1 FROM cash_register_entries c WHERE c.source_key = 'payment:' || p.id
+01139:                   ) THEN 1 ELSE 0 END AS cash_entry_tracked,
+01140:                   CASE WHEN EXISTS (
+01141:                     SELECT 1 FROM cash_register_settings s
+01142:                     WHERE s.id = 1 AND s.auto_tracking_enabled = 1
+01143:                       AND (
+01144:                         COALESCE(p.payment_kind, 'primary') IN ('debt_close', 'extra')
+01145:                         OR COALESCE(o.created_at, '') >= COALESCE(s.activated_at, '')
+01146:                       )
+01147:                   ) THEN 1 ELSE 0 END AS cash_tracking_eligible
+01148:            FROM payments p
+01149:            JOIN orders o ON o.id = p.order_id
+01150:            WHERE p.id = ? AND p.order_id = ?
+01151:            LIMIT 1`
+01152:         ).bind(paymentId, id).first<Record<string, unknown>>();
+01153:         if (!payment?.id) throw new OrderInputValidationError('Одна из оплат заказа уже изменилась. Обновите заказ и повторите исправление способа оплаты.');
+01154:         const oldMethod = upperText(payment.method);
+01155:         if (oldMethod === newMethod) continue;
+01156:         const paymentKind = cleanText(payment.payment_kind);
+01157:         const relatedType = toInt(payment.is_exchange_extra, 0) > 0
+01158:           ? 'exchange_extra'
+01159:           : financialOperationTypeFromPaymentKind(paymentKind);
+01160:         paymentMethodCorrections.push({
+01161:           paymentId,
+01162:           paymentDate: normalizeDate(payment.payment_date || nextOrderDate),
+01163:           amount: Math.max(0, toInt(payment.amount, 0)),
+01164:           paymentKind,
+01165:           relatedType,
+01166:           oldMethod,
+01167:           newMethod,
+01168:           comment: cleanText(payment.comment),
+01169:           oldIsCash: isCashPaymentMethod(oldMethod),
+01170:           newIsCash: isCashPaymentMethod(newMethod),
+01171:           cashEntryTracked: toInt(payment.cash_entry_tracked, 0) > 0,
+01172:           cashTrackingEligible: toInt(payment.cash_tracking_eligible, 0) > 0,
+01173:         });
+01174:       }
+01175:       const rewriteItems = Boolean(requestedItems && !sameNormalizedOrderItemsForEdit(existingItemsForEdit, requestedItems));
+01176:       const rewritePayments = !deletingOrder && Boolean(requestedPayments && !sameNormalizedOrderPaymentsForEdit(existingPaymentsForEdit, requestedPayments));
+01177:       const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
+01178:       const deferShippingCommit = humanInventoryModelEnabled && existingShippingStatus !== 'sent' && nextShippingStatus === 'sent';
+01179:       const persistedShippingStatus = deferShippingCommit ? existingShippingStatus : nextShippingStatus;
+01180:       const persistedShippingDate = deferShippingCommit ? (cleanText(existingAny.shipping_date) || null) : nextShippingDate;
+01181:       if (humanInventoryModelEnabled && existingShippingStatus === 'sent' && nextShippingStatus !== 'sent') {
+01182:         throw new CriticalOperationConflictError('Отправленный заказ нельзя вернуть в состояние «не отправлено». Физическое движение товара уже зафиксировано.');
+01183:       }
+01184:       if (humanInventoryModelEnabled && existingShippingStatus === 'sent' && (rewriteItems || deletingOrder)) {
+01185:         throw new CriticalOperationConflictError('Товар уже был физически выдан / отправлен. Состав такого заказа нельзя переписывать или удалять напрямую — используйте возврат, обмен или складскую корректировку.');
+01186:       }
+01187:       if (humanInventoryModelEnabled && existingShippingStatus !== 'sent' && (rewriteItems || deletingOrder)) {
+01188:         const issuedBeforeFullShipping = await db.prepare(
+01189:           `SELECT COUNT(*) AS count FROM inventory_reservations WHERE order_id = ? AND status = 'fulfilled'`
+01190:         ).bind(id).first<{ count: number }>();
+01191:         if (toInt(issuedBeforeFullShipping?.count, 0) > 0) {
+01192:           throw new CriticalOperationConflictError('Часть товаров этого заказа уже передана клиенту. Состав заказа нельзя менять или удалять напрямую. Для замены товара используйте «Обмен», для возврата — «Возврат».');
+01193:         }
+01194:       }
+01195:       const nextItems = requestedItems || existingItemsForEdit;
+01196:       const nextPayments = deletingOrder ? existingPaymentsForEdit : (requestedPayments || existingPaymentsForEdit);
+01197:       if (rewriteItems && nextItems.some(item => item.isWorkshop)) await assertWorkshopTaskDetailSchema(db);
+01198:       const inventoryObligationLineage = rewriteItems
+01199:         ? await inventoryObligationLineageForRewrite(db, id, nextItems)
+01200:         : [];
+01201:       let rewritePreResolvedCatalog: Array<{ productId: number | null; variantId: number | null }> | undefined;
+01202:       if (rewriteItems) {
+01203:         for (const item of nextItems) {
+01204:           if (item.observedPhysicalQuantity === null) continue;
+01205:           if (item.isWorkshop) throw new OrderInputValidationError('Фактический остаток можно уточнить только для Склада или Бутика, не для Цеха.');
+01206:           if (!Number.isInteger(item.observedPhysicalQuantity) || item.observedPhysicalQuantity < 0) {
+01207:             throw new OrderInputValidationError(`Фактическое количество для «${item.productName}» должно быть целым числом от 0.`);
+01208:           }
+01209:         }
+01210: 
+01211:         rewritePreResolvedCatalog = [];
+---END HIT---
+01071:       if (!nextManagerId) throw new OrderInputValidationError('У заказа должен быть выбран действующий менеджер.');
+01072:       const nextPhone = input.customerPhone !== undefined ? normalizePhone(input.customerPhone) : cleanText(existingAny.customer_phone);
+01073:       if (input.customerPhone !== undefined && cleanText(input.customerPhone) && !nextPhone) throw new OrderInputValidationError('Телефон клиента должен содержать цифры.');
+01074:       const nextCustomerName = input.customerName !== undefined ? cleanText(input.customerName) : cleanText(existingAny.customer_name);
+01075:       const nextCity = input.city !== undefined ? cleanText(input.city) : cleanText(existingAny.city);
+01076:       let nextCustomerId: number | null = null;
+01077:       const nextDelivery = input.deliveryType !== undefined ? cleanText(input.deliveryType) : cleanText(existingAny.delivery_type);
+01078:       const nextSource = input.sourceType ? normalizeSourceType(input.sourceType) : normalizeSourceType(existingAny.source_type);
+01079:       const nextWorkshopStatus = input.workshopStatus ? normalizeWorkshopStatus(input.workshopStatus) : normalizeWorkshopStatus(existingAny.workshop_status);
+01080:       const nextOrderStatus = input.orderStatus ? normalizeOrderStatus(input.orderStatus) : normalizeOrderStatus(existingAny.order_status);
+01081:       const existingOrderStatus = normalizeOrderStatus(existingAny.order_status);
+01082:       const existingWorkshopStatus = normalizeWorkshopStatus(existingAny.workshop_status);
+01083:       const existingShippingStatus = normalizeShippingStatus(existingAny.shipping_status);
+01084:       const workingModeEdit = actor?.role !== 'admin';
+01085:       if (workingModeEdit && (['deleted', 'archived'].includes(existingOrderStatus) || existingShippingStatus === 'sent')) {
+01086:         throw new CriticalOperationConflictError('Отправленный, удалённый или архивный заказ нельзя переписывать в рабочем режиме. Используйте отдельное штатное действие заказа.');
+01087:       }
+01088:       const deletingOrder = existingOrderStatus !== 'deleted' && nextOrderStatus === 'deleted';
+01089:       const finalWorkshopStatus = deletingOrder && nextWorkshopStatus === 'in_workshop' ? 'cancelled' : nextWorkshopStatus;
+01090:       const nextComment = input.comment !== undefined ? cleanText(input.comment) : cleanText(existingAny.comment);
+01091:       const nextShippingStatus = input.shippingStatus !== undefined
+01092:         ? normalizeShippingStatus(input.shippingStatus)
+01093:         : existingShippingStatus;
+01094:       if (workingModeEdit && (
+01095:         nextOrderStatus !== existingOrderStatus
+01096:         || nextWorkshopStatus !== existingWorkshopStatus
+01097:         || nextShippingStatus !== existingShippingStatus
+01098:       )) {
+01099:         throw new CriticalOperationConflictError('В рабочем режиме редактор исправляет данные заказа, но не меняет его жизненный цикл. Для статуса Цеха, отправки и удаления используйте отдельные штатные действия.');
+01100:       }
+01101:       const nextShippingDate = nextShippingStatus === 'sent'
+01102:         ? normalizeDate(input.shippingDate || existingAny.shipping_date || timestamp)
+01103:         : null;
+01104: 
+01105:       if (Array.isArray(input.items)) assertOrderItemInputs(input.items);
+01106:       if (Array.isArray(input.payments)) assertOrderPaymentInputs(input.payments);
+01107:       if (input.orderTotal !== undefined) assertOrderTotalInput(input.orderTotal);
+01108:       const requestedItems = Array.isArray(input.items) ? normalizeOrderItems(input.items, nextSource) : null;
+01109:       const requestedPayments = Array.isArray(input.payments) ? normalizeOrderPayments(input.payments, nextOrderDate) : null;
+01110:       const existingItemsForEdit = normalizeOrderItems((existingAny.items || []) as OrderInput['items'], nextSource);
+01111:       const existingPaymentsForEdit = normalizeOrderPayments((existingAny.payments || []) as OrderInput['payments'], nextOrderDate);
+01112:       const rawPaymentMethodCorrections = Array.isArray((input as any).paymentMethodCorrections)
+01113:         ? (input as any).paymentMethodCorrections as Array<{ paymentId?: unknown; method?: unknown }>
+01114:         : [];
+01115:       const requestedPaymentMethodCorrections = new Map<number, string>();
+01116:       for (const correction of rawPaymentMethodCorrections) {
+01117:         const paymentId = toInt(correction?.paymentId, 0);
+01118:         const method = upperText(correction?.method);
+01119:         if (!paymentId) throw new OrderInputValidationError('Не удалось определить оплату для исправления способа. Обновите заказ и повторите.');
+01120:         if (!method) throw new OrderInputValidationError('Способ оплаты не может быть пустым.');
+01121:         requestedPaymentMethodCorrections.set(paymentId, method);
+01122:       }
+01123:       const paymentMethodCorrections: Array<Record<string, any>> = [];
+01124:       const isCashPaymentMethod = (value: unknown) => {
+01125:         const method = upperText(value);
+01126:         return method === 'CASH' || method.includes('НАЛИЧ');
+01127:       };
+01128:       for (const [paymentId, newMethod] of requestedPaymentMethodCorrections) {
+01129:         const payment = await db.prepare(
+01130:           `SELECT p.id, p.payment_date, p.method, p.amount, COALESCE(p.payment_kind, 'primary') AS payment_kind,
+01131:                   p.comment, o.created_at AS order_created_at,
+01132:                   CASE WHEN EXISTS (
+01133:                     SELECT 1 FROM exchanges e
+01134:                     WHERE e.payment_id = p.id AND e.financial_action = 'extra_payment'
+01135:                       AND COALESCE(e.status, 'completed') <> 'cancelled'
+01136:                   ) THEN 1 ELSE 0 END AS is_exchange_extra,
+01137:                   CASE WHEN EXISTS (
+01138:                     SELECT 1 FROM cash_register_entries c WHERE c.source_key = 'payment:' || p.id
+01139:                   ) THEN 1 ELSE 0 END AS cash_entry_tracked,
+01140:                   CASE WHEN EXISTS (
+01141:                     SELECT 1 FROM cash_register_settings s
+01142:                     WHERE s.id = 1 AND s.auto_tracking_enabled = 1
+01143:                       AND (
+01144:                         COALESCE(p.payment_kind, 'primary') IN ('debt_close', 'extra')
+01145:                         OR COALESCE(o.created_at, '') >= COALESCE(s.activated_at, '')
+01146:                       )
+01147:                   ) THEN 1 ELSE 0 END AS cash_tracking_eligible
+01148:            FROM payments p
+01149:            JOIN orders o ON o.id = p.order_id
+01150:            WHERE p.id = ? AND p.order_id = ?
+01151:            LIMIT 1`
+01152:         ).bind(paymentId, id).first<Record<string, unknown>>();
+01153:         if (!payment?.id) throw new OrderInputValidationError('Одна из оплат заказа уже изменилась. Обновите заказ и повторите исправление способа оплаты.');
+01154:         const oldMethod = upperText(payment.method);
+01155:         if (oldMethod === newMethod) continue;
+01156:         const paymentKind = cleanText(payment.payment_kind);
+01157:         const relatedType = toInt(payment.is_exchange_extra, 0) > 0
+01158:           ? 'exchange_extra'
+01159:           : financialOperationTypeFromPaymentKind(paymentKind);
+01160:         paymentMethodCorrections.push({
+01161:           paymentId,
+01162:           paymentDate: normalizeDate(payment.payment_date || nextOrderDate),
+01163:           amount: Math.max(0, toInt(payment.amount, 0)),
+01164:           paymentKind,
+01165:           relatedType,
+01166:           oldMethod,
+01167:           newMethod,
+01168:           comment: cleanText(payment.comment),
+01169:           oldIsCash: isCashPaymentMethod(oldMethod),
+01170:           newIsCash: isCashPaymentMethod(newMethod),
+01171:           cashEntryTracked: toInt(payment.cash_entry_tracked, 0) > 0,
+01172:           cashTrackingEligible: toInt(payment.cash_tracking_eligible, 0) > 0,
+01173:         });
+01174:       }
+01175:       const rewriteItems = Boolean(requestedItems && !sameNormalizedOrderItemsForEdit(existingItemsForEdit, requestedItems));
+01176:       const rewritePayments = !deletingOrder && Boolean(requestedPayments && !sameNormalizedOrderPaymentsForEdit(existingPaymentsForEdit, requestedPayments));
+01177:       const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
+01178:       const deferShippingCommit = humanInventoryModelEnabled && existingShippingStatus !== 'sent' && nextShippingStatus === 'sent';
+01179:       const persistedShippingStatus = deferShippingCommit ? existingShippingStatus : nextShippingStatus;
+01180:       const persistedShippingDate = deferShippingCommit ? (cleanText(existingAny.shipping_date) || null) : nextShippingDate;
+01181:       if (humanInventoryModelEnabled && existingShippingStatus === 'sent' && nextShippingStatus !== 'sent') {
+01182:         throw new CriticalOperationConflictError('Отправленный заказ нельзя вернуть в состояние «не отправлено». Физическое движение товара уже зафиксировано.');
+01183:       }
+01184:       if (humanInventoryModelEnabled && existingShippingStatus === 'sent' && (rewriteItems || deletingOrder)) {
+01185:         throw new CriticalOperationConflictError('Товар уже был физически выдан / отправлен. Состав такого заказа нельзя переписывать или удалять напрямую — используйте возврат, обмен или складскую корректировку.');
+01186:       }
+01187:       if (humanInventoryModelEnabled && existingShippingStatus !== 'sent' && (rewriteItems || deletingOrder)) {
+01188:         const issuedBeforeFullShipping = await db.prepare(
+01189:           `SELECT COUNT(*) AS count FROM inventory_reservations WHERE order_id = ? AND status = 'fulfilled'`
+01190:         ).bind(id).first<{ count: number }>();
+01191:         if (toInt(issuedBeforeFullShipping?.count, 0) > 0) {
+01192:           throw new CriticalOperationConflictError('Часть товаров этого заказа уже передана клиенту. Состав заказа нельзя менять или удалять напрямую. Для замены товара используйте «Обмен», для возврата — «Возврат».');
+01193:         }
+01194:       }
+01195:       const nextItems = requestedItems || existingItemsForEdit;
+01196:       const nextPayments = deletingOrder ? existingPaymentsForEdit : (requestedPayments || existingPaymentsForEdit);
+01197:       if (rewriteItems && nextItems.some(item => item.isWorkshop)) await assertWorkshopTaskDetailSchema(db);
+01198:       const inventoryObligationLineage = rewriteItems
+01199:         ? await inventoryObligationLineageForRewrite(db, id, nextItems)
+01200:         : [];
+01201:       let rewritePreResolvedCatalog: Array<{ productId: number | null; variantId: number | null }> | undefined;
+01202:       if (rewriteItems) {
+01203:         for (const item of nextItems) {
+01204:           if (item.observedPhysicalQuantity === null) continue;
+01205:           if (item.isWorkshop) throw new OrderInputValidationError('Фактический остаток можно уточнить только для Склада или Бутика, не для Цеха.');
+01206:           if (!Number.isInteger(item.observedPhysicalQuantity) || item.observedPhysicalQuantity < 0) {
+01207:             throw new OrderInputValidationError(`Фактическое количество для «${item.productName}» должно быть целым числом от 0.`);
+01208:           }
+01209:         }
+01210: 
+01211:         rewritePreResolvedCatalog = [];
+01212:         const observedByVariant = new Map<string, number>();
+01213:         for (const item of nextItems) {
+01214:           const resolved = item.isWorkshop
+01215:             ? await resolveWorkshopCatalogProductOnly(db, item)
+---END HIT---
+--- paymentMethodCorrectionCount hits=[1356, 1357, 1436, 1470] ---
+01312:         });
+01313:       }
+01314:       operationContext = { ...operationContext, stockReversals };
+01315:       await advanceCriticalOperation(db, criticalOperation, 'old_content_retired', { context: operationContext });
+01316:     }
+01317: 
+01318:     if (criticalOperation.row.step === 'old_content_retired') {
+01319:       await db.prepare(
+01320:         `UPDATE orders SET order_date = ?, manager_id = ?, manager_snapshot_name = ?, customer_id = ?, city = ?,
+01321:             delivery_type = ?, source_type = ?, workshop_status = ?, order_status = ?, shipping_status = ?, shipping_date = ?,
+01322:             total_amount = ?, received_amount = ?, debt_amount = ?, updated_at = ?, comment = ? WHERE id = ?`
+01323:       ).bind(
+01324:         p.nextOrderDate, p.nextManagerId, p.nextManager, p.nextCustomerId, p.nextCity || null, p.nextDelivery || null,
+01325:         p.nextSource, p.finalWorkshopStatus, p.nextOrderStatus, p.persistedShippingStatus, p.persistedShippingDate,
+01326:         p.totals.totalAmount, p.totals.receivedAmount, p.totals.debtAmount, p.timestamp, p.nextComment || null, id,
+01327:       ).run();
+01328:       await advanceCriticalOperation(db, criticalOperation, 'order_updated');
+01329:     }
+01330: 
+01331:     let insertedContent = operationContext.insertedContent || { stockResults: [], workshopCount: 0 };
+01332:     if (criticalOperation.row.step === 'order_updated') {
+01333:       if (p.rewriteItems || p.rewritePayments) {
+01334:         insertedContent = await insertOrderContent(
+01335:           db, id, p.externalId,
+01336:           p.rewriteItems ? p.nextItems : [], p.rewritePayments ? p.nextPayments : [], p.timestamp,
+01337:           'order_edit_new', p.externalId,
+01338:           p.rewriteItems ? `Новый резерв после редактирования заказа ${p.externalId}` : undefined,
+01339:           p.rewriteItems && Array.isArray(p.rewritePreResolvedCatalog) ? p.rewritePreResolvedCatalog : undefined,
+01340:           criticalOperation, 'order_edit',
+01341:           Array.isArray(p.inventoryObligationLineage) ? p.inventoryObligationLineage : undefined,
+01342:         );
+01343:       }
+01344:       operationContext = { ...operationContext, insertedContent };
+01345:       await advanceCriticalOperation(db, criticalOperation, 'new_content_written', { context: operationContext });
+01346:     }
+01347: 
+01348:     let inventoryDelivery = operationContext.inventoryDelivery || null;
+01349:     if (criticalOperation.row.step === 'new_content_written') {
+01350:       inventoryDelivery = p.deferShippingCommit
+01351:         ? await fulfillOrderReservationsV2(db, id, p.externalId, p.timestamp, { shippingDate: p.nextShippingDate, checkedBy })
+01352:         : null;
+01353:       operationContext = { ...operationContext, inventoryDelivery };
+01354:       await advanceCriticalOperation(db, criticalOperation, 'shipping_committed', { context: operationContext });
+01355:     }
+01356: 
+01357:     const paymentMethodCorrectionCount = Array.isArray(p.paymentMethodCorrections) ? p.paymentMethodCorrections.length : 0;
+01358:     if (criticalOperation.row.step === 'shipping_committed' && paymentMethodCorrectionCount) {
+01359:       for (const correction of p.paymentMethodCorrections as Array<Record<string, any>>) {
+01360:         const eventSourceRef = `payments:${correction.paymentId}:method-correction:${criticalOperation.requestId}`;
+01361:         const amount = Math.abs(toInt(correction.amount, 0));
+01362:         const statements: D1PreparedStatement[] = [
+01363:           db.prepare(`UPDATE payments SET method = ? WHERE id = ? AND order_id = ?`)
+01364:             .bind(correction.newMethod, correction.paymentId, id),
+01365:         ];
+01366:         if (amount > 0) {
+01367:           statements.unshift(
+01368:             financialEventStatement(db, {
+01369:               eventKey: `1901:${criticalOperation.requestId}:payment-method:${correction.paymentId}:old`,
+01370:               orderId: id,
+01371:               externalOrderId: p.externalId,
+01372:               eventDate: correction.paymentDate,
+01373:               eventAt: p.timestamp,
+01374:               eventType: 'payment_reversal',
+01375:               relatedType: correction.relatedType,
+01376:               amountDelta: -amount,
+01377:               paymentMethod: correction.oldMethod,
+01378:               sourceType: 'payment',
+01379:               sourceId: correction.paymentId,
+01380:               sourceRef: eventSourceRef,
+01381:               reason: 'payment_method_correction',
+01382:               comment: `Исправлен способ оплаты: ${correction.oldMethod} → ${correction.newMethod}`,
+01383:             }),
+01384:             financialEventStatement(db, {
+01385:               eventKey: `1901:${criticalOperation.requestId}:payment-method:${correction.paymentId}:new`,
+01386:               orderId: id,
+01387:               externalOrderId: p.externalId,
+01388:               eventDate: correction.paymentDate,
+01389:               eventAt: p.timestamp,
+01390:               eventType: correction.relatedType,
+01391:               amountDelta: amount,
+01392:               paymentMethod: correction.newMethod,
+01393:               sourceType: 'payment',
+01394:               sourceId: correction.paymentId,
+01395:               sourceRef: eventSourceRef,
+01396:               reason: 'payment_method_correction',
+01397:               comment: `Исправлен способ оплаты: ${correction.oldMethod} → ${correction.newMethod}`,
+01398:             }),
+01399:           );
+01400:         }
+01401:         const cashDirection = amount > 0 && correction.oldIsCash && !correction.newIsCash && correction.cashEntryTracked
+01402:           ? 'out'
+01403:           : (amount > 0 && !correction.oldIsCash && correction.newIsCash && correction.cashTrackingEligible ? 'in' : '');
+01404:         if (cashDirection) {
+01405:           statements.push(db.prepare(
+01406:             `INSERT OR IGNORE INTO cash_register_entries (
+01407:               occurred_at, business_date, direction, amount, entry_type,
+01408:               source_type, source_id, source_key, order_id, external_order_id,
+01409:               payment_method, comment, created_by, created_at
+01410:             ) VALUES (?, date('now', '+5 hours'), ?, ?, 'payment_method_correction',
+01411:                       'payment_method_correction', ?, ?, ?, ?, ?, ?, ?, ?)`
+01412:           ).bind(
+01413:             p.timestamp,
+01414:             cashDirection,
+01415:             amount,
+01416:             String(correction.paymentId),
+01417:             `payment-method-correction:${criticalOperation.requestId}:${correction.paymentId}:${cashDirection}`,
+01418:             id,
+01419:             p.externalId,
+01420:             correction.newMethod,
+01421:             `Исправлен способ оплаты: ${correction.oldMethod} → ${correction.newMethod}`,
+01422:             cleanText(checkedBy) || 'admin',
+01423:             p.timestamp,
+01424:           ));
+01425:         }
+01426:         await db.batch(statements);
+01427:       }
+01428:     }
+01429: 
+01430:     const completedResponse = {
+01431:       ok: true,
+01432:       refreshRequired: true,
+01433:       stockReversals: operationContext.stockReversals || stockReversals,
+01434:       stockWriteOff: operationContext.insertedContent?.stockResults || insertedContent.stockResults || [],
+01435:       workshopCount: operationContext.insertedContent?.workshopCount ?? insertedContent.workshopCount ?? 0,
+01436:       inventoryDelivery: operationContext.inventoryDelivery ?? inventoryDelivery,
+01437:       paymentMethodCorrectionCount,
+01438:     };
+01439:     await completeCriticalOperation(db, criticalOperation, completedResponse);
+01440: 
+01441:     try {
+01442:       await recalculateCustomersAfterStorageCleanup(db, [p.existingCustomerId, p.nextCustomerId].map((value) => toInt(value, 0)).filter(Boolean));
+01443:     } catch (error) {
+01444:       console.warn('Customer statistics reconciliation after safe edit failed', error);
+01445:     }
+01446: 
+01447:     let updatedOrder = null;
+01448:     try {
+01449:       updatedOrder = await getOrder(db, id);
+01450:     } catch (error) {
+01451:       console.warn('Order readback after safe edit failed', error);
+01452:     }
+01453:     const response = updatedOrder
+01454:       ? { ...completedResponse, order: updatedOrder, refreshRequired: false }
+01455:       : completedResponse;
+01456: 
+---END HIT---
+01313:       }
+01314:       operationContext = { ...operationContext, stockReversals };
+01315:       await advanceCriticalOperation(db, criticalOperation, 'old_content_retired', { context: operationContext });
+01316:     }
+01317: 
+01318:     if (criticalOperation.row.step === 'old_content_retired') {
+01319:       await db.prepare(
+01320:         `UPDATE orders SET order_date = ?, manager_id = ?, manager_snapshot_name = ?, customer_id = ?, city = ?,
+01321:             delivery_type = ?, source_type = ?, workshop_status = ?, order_status = ?, shipping_status = ?, shipping_date = ?,
+01322:             total_amount = ?, received_amount = ?, debt_amount = ?, updated_at = ?, comment = ? WHERE id = ?`
+01323:       ).bind(
+01324:         p.nextOrderDate, p.nextManagerId, p.nextManager, p.nextCustomerId, p.nextCity || null, p.nextDelivery || null,
+01325:         p.nextSource, p.finalWorkshopStatus, p.nextOrderStatus, p.persistedShippingStatus, p.persistedShippingDate,
+01326:         p.totals.totalAmount, p.totals.receivedAmount, p.totals.debtAmount, p.timestamp, p.nextComment || null, id,
+01327:       ).run();
+01328:       await advanceCriticalOperation(db, criticalOperation, 'order_updated');
+01329:     }
+01330: 
+01331:     let insertedContent = operationContext.insertedContent || { stockResults: [], workshopCount: 0 };
+01332:     if (criticalOperation.row.step === 'order_updated') {
+01333:       if (p.rewriteItems || p.rewritePayments) {
+01334:         insertedContent = await insertOrderContent(
+01335:           db, id, p.externalId,
+01336:           p.rewriteItems ? p.nextItems : [], p.rewritePayments ? p.nextPayments : [], p.timestamp,
+01337:           'order_edit_new', p.externalId,
+01338:           p.rewriteItems ? `Новый резерв после редактирования заказа ${p.externalId}` : undefined,
+01339:           p.rewriteItems && Array.isArray(p.rewritePreResolvedCatalog) ? p.rewritePreResolvedCatalog : undefined,
+01340:           criticalOperation, 'order_edit',
+01341:           Array.isArray(p.inventoryObligationLineage) ? p.inventoryObligationLineage : undefined,
+01342:         );
+01343:       }
+01344:       operationContext = { ...operationContext, insertedContent };
+01345:       await advanceCriticalOperation(db, criticalOperation, 'new_content_written', { context: operationContext });
+01346:     }
+01347: 
+01348:     let inventoryDelivery = operationContext.inventoryDelivery || null;
+01349:     if (criticalOperation.row.step === 'new_content_written') {
+01350:       inventoryDelivery = p.deferShippingCommit
+01351:         ? await fulfillOrderReservationsV2(db, id, p.externalId, p.timestamp, { shippingDate: p.nextShippingDate, checkedBy })
+01352:         : null;
+01353:       operationContext = { ...operationContext, inventoryDelivery };
+01354:       await advanceCriticalOperation(db, criticalOperation, 'shipping_committed', { context: operationContext });
+01355:     }
+01356: 
+01357:     const paymentMethodCorrectionCount = Array.isArray(p.paymentMethodCorrections) ? p.paymentMethodCorrections.length : 0;
+01358:     if (criticalOperation.row.step === 'shipping_committed' && paymentMethodCorrectionCount) {
+01359:       for (const correction of p.paymentMethodCorrections as Array<Record<string, any>>) {
+01360:         const eventSourceRef = `payments:${correction.paymentId}:method-correction:${criticalOperation.requestId}`;
+01361:         const amount = Math.abs(toInt(correction.amount, 0));
+01362:         const statements: D1PreparedStatement[] = [
+01363:           db.prepare(`UPDATE payments SET method = ? WHERE id = ? AND order_id = ?`)
+01364:             .bind(correction.newMethod, correction.paymentId, id),
+01365:         ];
+01366:         if (amount > 0) {
+01367:           statements.unshift(
+01368:             financialEventStatement(db, {
+01369:               eventKey: `1901:${criticalOperation.requestId}:payment-method:${correction.paymentId}:old`,
+01370:               orderId: id,
+01371:               externalOrderId: p.externalId,
+01372:               eventDate: correction.paymentDate,
+01373:               eventAt: p.timestamp,
+01374:               eventType: 'payment_reversal',
+01375:               relatedType: correction.relatedType,
+01376:               amountDelta: -amount,
+01377:               paymentMethod: correction.oldMethod,
+01378:               sourceType: 'payment',
+01379:               sourceId: correction.paymentId,
+01380:               sourceRef: eventSourceRef,
+01381:               reason: 'payment_method_correction',
+01382:               comment: `Исправлен способ оплаты: ${correction.oldMethod} → ${correction.newMethod}`,
+01383:             }),
+01384:             financialEventStatement(db, {
+01385:               eventKey: `1901:${criticalOperation.requestId}:payment-method:${correction.paymentId}:new`,
+01386:               orderId: id,
+01387:               externalOrderId: p.externalId,
+01388:               eventDate: correction.paymentDate,
+01389:               eventAt: p.timestamp,
+01390:               eventType: correction.relatedType,
+01391:               amountDelta: amount,
+01392:               paymentMethod: correction.newMethod,
+01393:               sourceType: 'payment',
+01394:               sourceId: correction.paymentId,
+01395:               sourceRef: eventSourceRef,
+01396:               reason: 'payment_method_correction',
+01397:               comment: `Исправлен способ оплаты: ${correction.oldMethod} → ${correction.newMethod}`,
+01398:             }),
+01399:           );
+01400:         }
+01401:         const cashDirection = amount > 0 && correction.oldIsCash && !correction.newIsCash && correction.cashEntryTracked
+01402:           ? 'out'
+01403:           : (amount > 0 && !correction.oldIsCash && correction.newIsCash && correction.cashTrackingEligible ? 'in' : '');
+01404:         if (cashDirection) {
+01405:           statements.push(db.prepare(
+01406:             `INSERT OR IGNORE INTO cash_register_entries (
+01407:               occurred_at, business_date, direction, amount, entry_type,
+01408:               source_type, source_id, source_key, order_id, external_order_id,
+01409:               payment_method, comment, created_by, created_at
+01410:             ) VALUES (?, date('now', '+5 hours'), ?, ?, 'payment_method_correction',
+01411:                       'payment_method_correction', ?, ?, ?, ?, ?, ?, ?, ?)`
+01412:           ).bind(
+01413:             p.timestamp,
+01414:             cashDirection,
+01415:             amount,
+01416:             String(correction.paymentId),
+01417:             `payment-method-correction:${criticalOperation.requestId}:${correction.paymentId}:${cashDirection}`,
+01418:             id,
+01419:             p.externalId,
+01420:             correction.newMethod,
+01421:             `Исправлен способ оплаты: ${correction.oldMethod} → ${correction.newMethod}`,
+01422:             cleanText(checkedBy) || 'admin',
+01423:             p.timestamp,
+01424:           ));
+01425:         }
+01426:         await db.batch(statements);
+01427:       }
+01428:     }
+01429: 
+01430:     const completedResponse = {
+01431:       ok: true,
+01432:       refreshRequired: true,
+01433:       stockReversals: operationContext.stockReversals || stockReversals,
+01434:       stockWriteOff: operationContext.insertedContent?.stockResults || insertedContent.stockResults || [],
+01435:       workshopCount: operationContext.insertedContent?.workshopCount ?? insertedContent.workshopCount ?? 0,
+01436:       inventoryDelivery: operationContext.inventoryDelivery ?? inventoryDelivery,
+01437:       paymentMethodCorrectionCount,
+01438:     };
+01439:     await completeCriticalOperation(db, criticalOperation, completedResponse);
+01440: 
+01441:     try {
+01442:       await recalculateCustomersAfterStorageCleanup(db, [p.existingCustomerId, p.nextCustomerId].map((value) => toInt(value, 0)).filter(Boolean));
+01443:     } catch (error) {
+01444:       console.warn('Customer statistics reconciliation after safe edit failed', error);
+01445:     }
+01446: 
+01447:     let updatedOrder = null;
+01448:     try {
+01449:       updatedOrder = await getOrder(db, id);
+01450:     } catch (error) {
+01451:       console.warn('Order readback after safe edit failed', error);
+01452:     }
+01453:     const response = updatedOrder
+01454:       ? { ...completedResponse, order: updatedOrder, refreshRequired: false }
+01455:       : completedResponse;
+01456: 
+01457:     if (p.existingManagerId !== p.nextManagerId || upperText(p.previousManagerName) !== upperText(p.nextManager)) {
+---END HIT---
+01392:               paymentMethod: correction.newMethod,
+01393:               sourceType: 'payment',
+01394:               sourceId: correction.paymentId,
+01395:               sourceRef: eventSourceRef,
+01396:               reason: 'payment_method_correction',
+01397:               comment: `Исправлен способ оплаты: ${correction.oldMethod} → ${correction.newMethod}`,
+01398:             }),
+01399:           );
+01400:         }
+01401:         const cashDirection = amount > 0 && correction.oldIsCash && !correction.newIsCash && correction.cashEntryTracked
+01402:           ? 'out'
+01403:           : (amount > 0 && !correction.oldIsCash && correction.newIsCash && correction.cashTrackingEligible ? 'in' : '');
+01404:         if (cashDirection) {
+01405:           statements.push(db.prepare(
+01406:             `INSERT OR IGNORE INTO cash_register_entries (
+01407:               occurred_at, business_date, direction, amount, entry_type,
+01408:               source_type, source_id, source_key, order_id, external_order_id,
+01409:               payment_method, comment, created_by, created_at
+01410:             ) VALUES (?, date('now', '+5 hours'), ?, ?, 'payment_method_correction',
+01411:                       'payment_method_correction', ?, ?, ?, ?, ?, ?, ?, ?)`
+01412:           ).bind(
+01413:             p.timestamp,
+01414:             cashDirection,
+01415:             amount,
+01416:             String(correction.paymentId),
+01417:             `payment-method-correction:${criticalOperation.requestId}:${correction.paymentId}:${cashDirection}`,
+01418:             id,
+01419:             p.externalId,
+01420:             correction.newMethod,
+01421:             `Исправлен способ оплаты: ${correction.oldMethod} → ${correction.newMethod}`,
+01422:             cleanText(checkedBy) || 'admin',
+01423:             p.timestamp,
+01424:           ));
+01425:         }
+01426:         await db.batch(statements);
+01427:       }
+01428:     }
+01429: 
+01430:     const completedResponse = {
+01431:       ok: true,
+01432:       refreshRequired: true,
+01433:       stockReversals: operationContext.stockReversals || stockReversals,
+01434:       stockWriteOff: operationContext.insertedContent?.stockResults || insertedContent.stockResults || [],
+01435:       workshopCount: operationContext.insertedContent?.workshopCount ?? insertedContent.workshopCount ?? 0,
+01436:       inventoryDelivery: operationContext.inventoryDelivery ?? inventoryDelivery,
+01437:       paymentMethodCorrectionCount,
+01438:     };
+01439:     await completeCriticalOperation(db, criticalOperation, completedResponse);
+01440: 
+01441:     try {
+01442:       await recalculateCustomersAfterStorageCleanup(db, [p.existingCustomerId, p.nextCustomerId].map((value) => toInt(value, 0)).filter(Boolean));
+01443:     } catch (error) {
+01444:       console.warn('Customer statistics reconciliation after safe edit failed', error);
+01445:     }
+01446: 
+01447:     let updatedOrder = null;
+01448:     try {
+01449:       updatedOrder = await getOrder(db, id);
+01450:     } catch (error) {
+01451:       console.warn('Order readback after safe edit failed', error);
+01452:     }
+01453:     const response = updatedOrder
+01454:       ? { ...completedResponse, order: updatedOrder, refreshRequired: false }
+01455:       : completedResponse;
+01456: 
+01457:     if (p.existingManagerId !== p.nextManagerId || upperText(p.previousManagerName) !== upperText(p.nextManager)) {
+01458:       try {
+01459:         await writeOrderManagerAudit(db, {
+01460:           orderId: id, externalId: p.externalId, previousManagerId: p.existingManagerId,
+01461:           previousManagerName: p.previousManagerName, newManagerId: p.nextManagerId, newManagerName: p.nextManager,
+01462:           action: 'changed', source: 'admin_order_edit', actor,
+01463:           details: 'Менеджер исправлен через полное редактирование заказа.', createdAt: p.timestamp,
+01464:         });
+01465:       } catch (error) { console.warn('Order manager audit after safe edit failed', error); }
+01466:     }
+01467:     try {
+01468:       await writeActivityLog(db, {
+01469:         eventType: 'order_updated', entityType: 'order', entityId: id, orderId: id, externalOrderId: p.externalId,
+01470:         title: `Изменён заказ ${p.externalId}`,
+01471:         details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}${paymentMethodCorrectionCount ? `способ оплаты исправлен: ${paymentMethodCorrectionCount}; ` : ''}статус отправки: ${p.nextShippingStatus}`,
+01472:         amount: p.totals.totalAmount, createdAt: p.timestamp,
+01473:       });
+01474:     } catch (error) {
+01475:       console.warn('Order activity log after safe edit failed', error);
+01476:     }
+01477:     return response;
+01478:   } catch (error) {
+01479:     const editAlreadyWritten = criticalOperation?.row.status === 'started' && criticalOperation.row.step === 'shipping_committed';
+01480:     if (criticalOperation?.leaseToken && criticalOperation.row.step === 'started' && !criticalOperation.row.target_id && (error instanceof OrderInputValidationError || error instanceof OrderStockShortageError || error instanceof CriticalOperationConflictError)) {
+01481:       try {
+01482:         const discarded = await db.prepare(
+01483:           `DELETE FROM critical_operations
+01484:            WHERE request_id = ? AND status = 'started' AND step = 'started' AND target_id IS NULL AND lease_token = ?
+01485:              AND NOT EXISTS (SELECT 1 FROM critical_operation_entities e WHERE e.request_id = critical_operations.request_id)`
+01486:         ).bind(criticalOperation.requestId, criticalOperation.leaseToken).run();
+01487:         if (toInt(discarded.meta?.changes, 0) > 0) criticalOperation = null;
+01488:       } catch {
+01489:         // If cleanup fails, failCriticalOperation below still releases the lease for a safe retry.
+01490:       }
+01491:     }
+01492:     await failCriticalOperation(db, criticalOperation, error);
+01493:     if (editAlreadyWritten) {
+01494:       throw new CriticalOperationConflictError('Изменения заказа уже записаны, но подтверждение операции не завершилось. Нажмите «Сохранить» ещё раз — повторная отправка безопасно продолжит тот же запрос.');
+01495:     }
+01496:     throw error;
+01497:   }
+01498: }
+01499: 
+01500: 
+01501: export async function getOrder(db: D1Database, id: number) {
+01502:   const order = await db.prepare(
+01503:     `SELECT
+01504:       o.id, o.external_id, o.order_date, o.manager_id, o.customer_id,
+01505:       CASE WHEN m.id IS NOT NULL THEN m.name WHEN NULLIF(TRIM(COALESCE(o.manager_snapshot_name, '')), '') IS NOT NULL THEN o.manager_snapshot_name || ' · исторический менеджер' ELSE 'Менеджер требует уточнения' END AS manager_name,
+01506:       o.manager_snapshot_name,
+01507:       COALESCE(m.color_key, '#64748B') AS manager_color,
+01508:       c.phone_normalized AS customer_phone, c.display_name AS customer_name,
+01509:       o.city, o.delivery_type, o.source_type, o.workshop_status, o.order_status,
+01510:       o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment, o.shipping_status, o.shipping_date,
+01511:       o.archived_at, o.archived_by, o.archive_reason, o.archive_batch_id, o.created_at, o.updated_at
+01512:      FROM orders o
+01513:      LEFT JOIN managers m ON m.id = o.manager_id
+01514:      LEFT JOIN customers c ON c.id = o.customer_id
+01515:      WHERE o.id = ?`
+01516:   ).bind(id).first<OrderListRow & { created_at: string; updated_at: string }>();
+01517: 
+01518:   if (!order) {
+01519:     return null;
+01520:   }
+01521: 
+01522:   const relations = await fetchOrderRelations(db, [id]);
+01523:   return {
+01524:     ...order,
+01525:     items: (relations.itemsByOrderId.get(id) || []).map(item => ({
+01526:       id: (item as any).id,
+01527:       productName: toInt((item as any).product_id, 0) ? cleanText((item as any).canonical_product_name) : cleanText((item as any).product_name_snapshot),
+01528:       audienceType: cleanText((item as any).audience_type) || (cleanText((item as any).canonical_category).toLowerCase() === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ'),
+01529:       gender: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_gender) : cleanText((item as any).gender_snapshot),
+01530:       color: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_color) : cleanText((item as any).color_snapshot),
+01531:       material: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_material) : cleanText((item as any).material_snapshot),
+01532:       length: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_length) : cleanText((item as any).length_snapshot),
+01533:       size: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_size) : cleanText((item as any).size_snapshot),
+01534:       quantity: (item as any).quantity,
+01535:       unitPrice: (item as any).unit_price,
+01536:       lineTotal: (item as any).line_total,
+---END HIT---
+01426:         await db.batch(statements);
+01427:       }
+01428:     }
+01429: 
+01430:     const completedResponse = {
+01431:       ok: true,
+01432:       refreshRequired: true,
+01433:       stockReversals: operationContext.stockReversals || stockReversals,
+01434:       stockWriteOff: operationContext.insertedContent?.stockResults || insertedContent.stockResults || [],
+01435:       workshopCount: operationContext.insertedContent?.workshopCount ?? insertedContent.workshopCount ?? 0,
+01436:       inventoryDelivery: operationContext.inventoryDelivery ?? inventoryDelivery,
+01437:       paymentMethodCorrectionCount,
+01438:     };
+01439:     await completeCriticalOperation(db, criticalOperation, completedResponse);
+01440: 
+01441:     try {
+01442:       await recalculateCustomersAfterStorageCleanup(db, [p.existingCustomerId, p.nextCustomerId].map((value) => toInt(value, 0)).filter(Boolean));
+01443:     } catch (error) {
+01444:       console.warn('Customer statistics reconciliation after safe edit failed', error);
+01445:     }
+01446: 
+01447:     let updatedOrder = null;
+01448:     try {
+01449:       updatedOrder = await getOrder(db, id);
+01450:     } catch (error) {
+01451:       console.warn('Order readback after safe edit failed', error);
+01452:     }
+01453:     const response = updatedOrder
+01454:       ? { ...completedResponse, order: updatedOrder, refreshRequired: false }
+01455:       : completedResponse;
+01456: 
+01457:     if (p.existingManagerId !== p.nextManagerId || upperText(p.previousManagerName) !== upperText(p.nextManager)) {
+01458:       try {
+01459:         await writeOrderManagerAudit(db, {
+01460:           orderId: id, externalId: p.externalId, previousManagerId: p.existingManagerId,
+01461:           previousManagerName: p.previousManagerName, newManagerId: p.nextManagerId, newManagerName: p.nextManager,
+01462:           action: 'changed', source: 'admin_order_edit', actor,
+01463:           details: 'Менеджер исправлен через полное редактирование заказа.', createdAt: p.timestamp,
+01464:         });
+01465:       } catch (error) { console.warn('Order manager audit after safe edit failed', error); }
+01466:     }
+01467:     try {
+01468:       await writeActivityLog(db, {
+01469:         eventType: 'order_updated', entityType: 'order', entityId: id, orderId: id, externalOrderId: p.externalId,
+01470:         title: `Изменён заказ ${p.externalId}`,
+01471:         details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}${paymentMethodCorrectionCount ? `способ оплаты исправлен: ${paymentMethodCorrectionCount}; ` : ''}статус отправки: ${p.nextShippingStatus}`,
+01472:         amount: p.totals.totalAmount, createdAt: p.timestamp,
+01473:       });
+01474:     } catch (error) {
+01475:       console.warn('Order activity log after safe edit failed', error);
+01476:     }
+01477:     return response;
+01478:   } catch (error) {
+01479:     const editAlreadyWritten = criticalOperation?.row.status === 'started' && criticalOperation.row.step === 'shipping_committed';
+01480:     if (criticalOperation?.leaseToken && criticalOperation.row.step === 'started' && !criticalOperation.row.target_id && (error instanceof OrderInputValidationError || error instanceof OrderStockShortageError || error instanceof CriticalOperationConflictError)) {
+01481:       try {
+01482:         const discarded = await db.prepare(
+01483:           `DELETE FROM critical_operations
+01484:            WHERE request_id = ? AND status = 'started' AND step = 'started' AND target_id IS NULL AND lease_token = ?
+01485:              AND NOT EXISTS (SELECT 1 FROM critical_operation_entities e WHERE e.request_id = critical_operations.request_id)`
+01486:         ).bind(criticalOperation.requestId, criticalOperation.leaseToken).run();
+01487:         if (toInt(discarded.meta?.changes, 0) > 0) criticalOperation = null;
+01488:       } catch {
+01489:         // If cleanup fails, failCriticalOperation below still releases the lease for a safe retry.
+01490:       }
+01491:     }
+01492:     await failCriticalOperation(db, criticalOperation, error);
+01493:     if (editAlreadyWritten) {
+01494:       throw new CriticalOperationConflictError('Изменения заказа уже записаны, но подтверждение операции не завершилось. Нажмите «Сохранить» ещё раз — повторная отправка безопасно продолжит тот же запрос.');
+01495:     }
+01496:     throw error;
+01497:   }
+01498: }
+01499: 
+01500: 
+01501: export async function getOrder(db: D1Database, id: number) {
+01502:   const order = await db.prepare(
+01503:     `SELECT
+01504:       o.id, o.external_id, o.order_date, o.manager_id, o.customer_id,
+01505:       CASE WHEN m.id IS NOT NULL THEN m.name WHEN NULLIF(TRIM(COALESCE(o.manager_snapshot_name, '')), '') IS NOT NULL THEN o.manager_snapshot_name || ' · исторический менеджер' ELSE 'Менеджер требует уточнения' END AS manager_name,
+01506:       o.manager_snapshot_name,
+01507:       COALESCE(m.color_key, '#64748B') AS manager_color,
+01508:       c.phone_normalized AS customer_phone, c.display_name AS customer_name,
+01509:       o.city, o.delivery_type, o.source_type, o.workshop_status, o.order_status,
+01510:       o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment, o.shipping_status, o.shipping_date,
+01511:       o.archived_at, o.archived_by, o.archive_reason, o.archive_batch_id, o.created_at, o.updated_at
+01512:      FROM orders o
+01513:      LEFT JOIN managers m ON m.id = o.manager_id
+01514:      LEFT JOIN customers c ON c.id = o.customer_id
+01515:      WHERE o.id = ?`
+01516:   ).bind(id).first<OrderListRow & { created_at: string; updated_at: string }>();
+01517: 
+01518:   if (!order) {
+01519:     return null;
+01520:   }
+01521: 
+01522:   const relations = await fetchOrderRelations(db, [id]);
+01523:   return {
+01524:     ...order,
+01525:     items: (relations.itemsByOrderId.get(id) || []).map(item => ({
+01526:       id: (item as any).id,
+01527:       productName: toInt((item as any).product_id, 0) ? cleanText((item as any).canonical_product_name) : cleanText((item as any).product_name_snapshot),
+01528:       audienceType: cleanText((item as any).audience_type) || (cleanText((item as any).canonical_category).toLowerCase() === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ'),
+01529:       gender: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_gender) : cleanText((item as any).gender_snapshot),
+01530:       color: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_color) : cleanText((item as any).color_snapshot),
+01531:       material: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_material) : cleanText((item as any).material_snapshot),
+01532:       length: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_length) : cleanText((item as any).length_snapshot),
+01533:       size: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_size) : cleanText((item as any).size_snapshot),
+01534:       quantity: (item as any).quantity,
+01535:       unitPrice: (item as any).unit_price,
+01536:       lineTotal: (item as any).line_total,
+01537:       sourceType: (item as any).is_workshop ? 'workshop' : (item as any).source_type,
+01538:       isWorkshop: Boolean((item as any).is_workshop),
+01539:       workshopComment: (item as any).workshop_comment,
+01540:       workshopUrgent: Boolean((item as any).workshop_urgent),
+01541:       workshopDueDate: (item as any).workshop_due_date || '',
+01542:       workshopTaskStatus: workshopTaskStatusForOrderItem(
+01543:         item as Record<string, unknown>,
+01544:         relations.workshopTasksByOrderId.get(id) || [],
+01545:       ),
+01546:     })),
+01547:     payments: (relations.paymentsByOrderId.get(id) || []).map(payment => ({
+01548:       id: (payment as any).id,
+01549:       paymentDate: (payment as any).payment_date,
+01550:       method: (payment as any).method,
+01551:       amount: (payment as any).amount,
+01552:       paymentKind: (payment as any).payment_kind,
+01553:       comment: (payment as any).comment,
+01554:     })),
+01555:     returns: (relations.returnsByOrderId.get(id) || []).map(ret => ({
+01556:       id: (ret as any).id,
+01557:       returnDate: (ret as any).return_date,
+01558:       amount: (ret as any).amount,
+01559:       comment: (ret as any).comment,
+01560:       status: (ret as any).status || 'completed',
+01561:       cancelledAt: (ret as any).cancelled_at || null,
+01562:       cancellationComment: (ret as any).cancellation_comment || null,
+01563:     })),
+01564:   };
+01565: }
+---END HIT---
+--- reason: 'payment_method_correction' hits=[1380, 1395] ---
+01336:           p.rewriteItems ? p.nextItems : [], p.rewritePayments ? p.nextPayments : [], p.timestamp,
+01337:           'order_edit_new', p.externalId,
+01338:           p.rewriteItems ? `Новый резерв после редактирования заказа ${p.externalId}` : undefined,
+01339:           p.rewriteItems && Array.isArray(p.rewritePreResolvedCatalog) ? p.rewritePreResolvedCatalog : undefined,
+01340:           criticalOperation, 'order_edit',
+01341:           Array.isArray(p.inventoryObligationLineage) ? p.inventoryObligationLineage : undefined,
+01342:         );
+01343:       }
+01344:       operationContext = { ...operationContext, insertedContent };
+01345:       await advanceCriticalOperation(db, criticalOperation, 'new_content_written', { context: operationContext });
+01346:     }
+01347: 
+01348:     let inventoryDelivery = operationContext.inventoryDelivery || null;
+01349:     if (criticalOperation.row.step === 'new_content_written') {
+01350:       inventoryDelivery = p.deferShippingCommit
+01351:         ? await fulfillOrderReservationsV2(db, id, p.externalId, p.timestamp, { shippingDate: p.nextShippingDate, checkedBy })
+01352:         : null;
+01353:       operationContext = { ...operationContext, inventoryDelivery };
+01354:       await advanceCriticalOperation(db, criticalOperation, 'shipping_committed', { context: operationContext });
+01355:     }
+01356: 
+01357:     const paymentMethodCorrectionCount = Array.isArray(p.paymentMethodCorrections) ? p.paymentMethodCorrections.length : 0;
+01358:     if (criticalOperation.row.step === 'shipping_committed' && paymentMethodCorrectionCount) {
+01359:       for (const correction of p.paymentMethodCorrections as Array<Record<string, any>>) {
+01360:         const eventSourceRef = `payments:${correction.paymentId}:method-correction:${criticalOperation.requestId}`;
+01361:         const amount = Math.abs(toInt(correction.amount, 0));
+01362:         const statements: D1PreparedStatement[] = [
+01363:           db.prepare(`UPDATE payments SET method = ? WHERE id = ? AND order_id = ?`)
+01364:             .bind(correction.newMethod, correction.paymentId, id),
+01365:         ];
+01366:         if (amount > 0) {
+01367:           statements.unshift(
+01368:             financialEventStatement(db, {
+01369:               eventKey: `1901:${criticalOperation.requestId}:payment-method:${correction.paymentId}:old`,
+01370:               orderId: id,
+01371:               externalOrderId: p.externalId,
+01372:               eventDate: correction.paymentDate,
+01373:               eventAt: p.timestamp,
+01374:               eventType: 'payment_reversal',
+01375:               relatedType: correction.relatedType,
+01376:               amountDelta: -amount,
+01377:               paymentMethod: correction.oldMethod,
+01378:               sourceType: 'payment',
+01379:               sourceId: correction.paymentId,
+01380:               sourceRef: eventSourceRef,
+01381:               reason: 'payment_method_correction',
+01382:               comment: `Исправлен способ оплаты: ${correction.oldMethod} → ${correction.newMethod}`,
+01383:             }),
+01384:             financialEventStatement(db, {
+01385:               eventKey: `1901:${criticalOperation.requestId}:payment-method:${correction.paymentId}:new`,
+01386:               orderId: id,
+01387:               externalOrderId: p.externalId,
+01388:               eventDate: correction.paymentDate,
+01389:               eventAt: p.timestamp,
+01390:               eventType: correction.relatedType,
+01391:               amountDelta: amount,
+01392:               paymentMethod: correction.newMethod,
+01393:               sourceType: 'payment',
+01394:               sourceId: correction.paymentId,
+01395:               sourceRef: eventSourceRef,
+01396:               reason: 'payment_method_correction',
+01397:               comment: `Исправлен способ оплаты: ${correction.oldMethod} → ${correction.newMethod}`,
+01398:             }),
+01399:           );
+01400:         }
+01401:         const cashDirection = amount > 0 && correction.oldIsCash && !correction.newIsCash && correction.cashEntryTracked
+01402:           ? 'out'
+01403:           : (amount > 0 && !correction.oldIsCash && correction.newIsCash && correction.cashTrackingEligible ? 'in' : '');
+01404:         if (cashDirection) {
+01405:           statements.push(db.prepare(
+01406:             `INSERT OR IGNORE INTO cash_register_entries (
+01407:               occurred_at, business_date, direction, amount, entry_type,
+01408:               source_type, source_id, source_key, order_id, external_order_id,
+01409:               payment_method, comment, created_by, created_at
+01410:             ) VALUES (?, date('now', '+5 hours'), ?, ?, 'payment_method_correction',
+01411:                       'payment_method_correction', ?, ?, ?, ?, ?, ?, ?, ?)`
+01412:           ).bind(
+01413:             p.timestamp,
+01414:             cashDirection,
+01415:             amount,
+01416:             String(correction.paymentId),
+01417:             `payment-method-correction:${criticalOperation.requestId}:${correction.paymentId}:${cashDirection}`,
+01418:             id,
+01419:             p.externalId,
+01420:             correction.newMethod,
+01421:             `Исправлен способ оплаты: ${correction.oldMethod} → ${correction.newMethod}`,
+01422:             cleanText(checkedBy) || 'admin',
+01423:             p.timestamp,
+01424:           ));
+01425:         }
+01426:         await db.batch(statements);
+01427:       }
+01428:     }
+01429: 
+01430:     const completedResponse = {
+01431:       ok: true,
+01432:       refreshRequired: true,
+01433:       stockReversals: operationContext.stockReversals || stockReversals,
+01434:       stockWriteOff: operationContext.insertedContent?.stockResults || insertedContent.stockResults || [],
+01435:       workshopCount: operationContext.insertedContent?.workshopCount ?? insertedContent.workshopCount ?? 0,
+01436:       inventoryDelivery: operationContext.inventoryDelivery ?? inventoryDelivery,
+01437:       paymentMethodCorrectionCount,
+01438:     };
+01439:     await completeCriticalOperation(db, criticalOperation, completedResponse);
+01440: 
+01441:     try {
+01442:       await recalculateCustomersAfterStorageCleanup(db, [p.existingCustomerId, p.nextCustomerId].map((value) => toInt(value, 0)).filter(Boolean));
+01443:     } catch (error) {
+01444:       console.warn('Customer statistics reconciliation after safe edit failed', error);
+01445:     }
+01446: 
+01447:     let updatedOrder = null;
+01448:     try {
+01449:       updatedOrder = await getOrder(db, id);
+01450:     } catch (error) {
+01451:       console.warn('Order readback after safe edit failed', error);
+01452:     }
+01453:     const response = updatedOrder
+01454:       ? { ...completedResponse, order: updatedOrder, refreshRequired: false }
+01455:       : completedResponse;
+01456: 
+01457:     if (p.existingManagerId !== p.nextManagerId || upperText(p.previousManagerName) !== upperText(p.nextManager)) {
+01458:       try {
+01459:         await writeOrderManagerAudit(db, {
+01460:           orderId: id, externalId: p.externalId, previousManagerId: p.existingManagerId,
+01461:           previousManagerName: p.previousManagerName, newManagerId: p.nextManagerId, newManagerName: p.nextManager,
+01462:           action: 'changed', source: 'admin_order_edit', actor,
+01463:           details: 'Менеджер исправлен через полное редактирование заказа.', createdAt: p.timestamp,
+01464:         });
+01465:       } catch (error) { console.warn('Order manager audit after safe edit failed', error); }
+01466:     }
+01467:     try {
+01468:       await writeActivityLog(db, {
+01469:         eventType: 'order_updated', entityType: 'order', entityId: id, orderId: id, externalOrderId: p.externalId,
+01470:         title: `Изменён заказ ${p.externalId}`,
+01471:         details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}${paymentMethodCorrectionCount ? `способ оплаты исправлен: ${paymentMethodCorrectionCount}; ` : ''}статус отправки: ${p.nextShippingStatus}`,
+01472:         amount: p.totals.totalAmount, createdAt: p.timestamp,
+01473:       });
+01474:     } catch (error) {
+01475:       console.warn('Order activity log after safe edit failed', error);
+01476:     }
+01477:     return response;
+01478:   } catch (error) {
+01479:     const editAlreadyWritten = criticalOperation?.row.status === 'started' && criticalOperation.row.step === 'shipping_committed';
+01480:     if (criticalOperation?.leaseToken && criticalOperation.row.step === 'started' && !criticalOperation.row.target_id && (error instanceof OrderInputValidationError || error instanceof OrderStockShortageError || error instanceof CriticalOperationConflictError)) {
+---END HIT---
+01351:         ? await fulfillOrderReservationsV2(db, id, p.externalId, p.timestamp, { shippingDate: p.nextShippingDate, checkedBy })
+01352:         : null;
+01353:       operationContext = { ...operationContext, inventoryDelivery };
+01354:       await advanceCriticalOperation(db, criticalOperation, 'shipping_committed', { context: operationContext });
+01355:     }
+01356: 
+01357:     const paymentMethodCorrectionCount = Array.isArray(p.paymentMethodCorrections) ? p.paymentMethodCorrections.length : 0;
+01358:     if (criticalOperation.row.step === 'shipping_committed' && paymentMethodCorrectionCount) {
+01359:       for (const correction of p.paymentMethodCorrections as Array<Record<string, any>>) {
+01360:         const eventSourceRef = `payments:${correction.paymentId}:method-correction:${criticalOperation.requestId}`;
+01361:         const amount = Math.abs(toInt(correction.amount, 0));
+01362:         const statements: D1PreparedStatement[] = [
+01363:           db.prepare(`UPDATE payments SET method = ? WHERE id = ? AND order_id = ?`)
+01364:             .bind(correction.newMethod, correction.paymentId, id),
+01365:         ];
+01366:         if (amount > 0) {
+01367:           statements.unshift(
+01368:             financialEventStatement(db, {
+01369:               eventKey: `1901:${criticalOperation.requestId}:payment-method:${correction.paymentId}:old`,
+01370:               orderId: id,
+01371:               externalOrderId: p.externalId,
+01372:               eventDate: correction.paymentDate,
+01373:               eventAt: p.timestamp,
+01374:               eventType: 'payment_reversal',
+01375:               relatedType: correction.relatedType,
+01376:               amountDelta: -amount,
+01377:               paymentMethod: correction.oldMethod,
+01378:               sourceType: 'payment',
+01379:               sourceId: correction.paymentId,
+01380:               sourceRef: eventSourceRef,
+01381:               reason: 'payment_method_correction',
+01382:               comment: `Исправлен способ оплаты: ${correction.oldMethod} → ${correction.newMethod}`,
+01383:             }),
+01384:             financialEventStatement(db, {
+01385:               eventKey: `1901:${criticalOperation.requestId}:payment-method:${correction.paymentId}:new`,
+01386:               orderId: id,
+01387:               externalOrderId: p.externalId,
+01388:               eventDate: correction.paymentDate,
+01389:               eventAt: p.timestamp,
+01390:               eventType: correction.relatedType,
+01391:               amountDelta: amount,
+01392:               paymentMethod: correction.newMethod,
+01393:               sourceType: 'payment',
+01394:               sourceId: correction.paymentId,
+01395:               sourceRef: eventSourceRef,
+01396:               reason: 'payment_method_correction',
+01397:               comment: `Исправлен способ оплаты: ${correction.oldMethod} → ${correction.newMethod}`,
+01398:             }),
+01399:           );
+01400:         }
+01401:         const cashDirection = amount > 0 && correction.oldIsCash && !correction.newIsCash && correction.cashEntryTracked
+01402:           ? 'out'
+01403:           : (amount > 0 && !correction.oldIsCash && correction.newIsCash && correction.cashTrackingEligible ? 'in' : '');
+01404:         if (cashDirection) {
+01405:           statements.push(db.prepare(
+01406:             `INSERT OR IGNORE INTO cash_register_entries (
+01407:               occurred_at, business_date, direction, amount, entry_type,
+01408:               source_type, source_id, source_key, order_id, external_order_id,
+01409:               payment_method, comment, created_by, created_at
+01410:             ) VALUES (?, date('now', '+5 hours'), ?, ?, 'payment_method_correction',
+01411:                       'payment_method_correction', ?, ?, ?, ?, ?, ?, ?, ?)`
+01412:           ).bind(
+01413:             p.timestamp,
+01414:             cashDirection,
+01415:             amount,
+01416:             String(correction.paymentId),
+01417:             `payment-method-correction:${criticalOperation.requestId}:${correction.paymentId}:${cashDirection}`,
+01418:             id,
+01419:             p.externalId,
+01420:             correction.newMethod,
+01421:             `Исправлен способ оплаты: ${correction.oldMethod} → ${correction.newMethod}`,
+01422:             cleanText(checkedBy) || 'admin',
+01423:             p.timestamp,
+01424:           ));
+01425:         }
+01426:         await db.batch(statements);
+01427:       }
+01428:     }
+01429: 
+01430:     const completedResponse = {
+01431:       ok: true,
+01432:       refreshRequired: true,
+01433:       stockReversals: operationContext.stockReversals || stockReversals,
+01434:       stockWriteOff: operationContext.insertedContent?.stockResults || insertedContent.stockResults || [],
+01435:       workshopCount: operationContext.insertedContent?.workshopCount ?? insertedContent.workshopCount ?? 0,
+01436:       inventoryDelivery: operationContext.inventoryDelivery ?? inventoryDelivery,
+01437:       paymentMethodCorrectionCount,
+01438:     };
+01439:     await completeCriticalOperation(db, criticalOperation, completedResponse);
+01440: 
+01441:     try {
+01442:       await recalculateCustomersAfterStorageCleanup(db, [p.existingCustomerId, p.nextCustomerId].map((value) => toInt(value, 0)).filter(Boolean));
+01443:     } catch (error) {
+01444:       console.warn('Customer statistics reconciliation after safe edit failed', error);
+01445:     }
+01446: 
+01447:     let updatedOrder = null;
+01448:     try {
+01449:       updatedOrder = await getOrder(db, id);
+01450:     } catch (error) {
+01451:       console.warn('Order readback after safe edit failed', error);
+01452:     }
+01453:     const response = updatedOrder
+01454:       ? { ...completedResponse, order: updatedOrder, refreshRequired: false }
+01455:       : completedResponse;
+01456: 
+01457:     if (p.existingManagerId !== p.nextManagerId || upperText(p.previousManagerName) !== upperText(p.nextManager)) {
+01458:       try {
+01459:         await writeOrderManagerAudit(db, {
+01460:           orderId: id, externalId: p.externalId, previousManagerId: p.existingManagerId,
+01461:           previousManagerName: p.previousManagerName, newManagerId: p.nextManagerId, newManagerName: p.nextManager,
+01462:           action: 'changed', source: 'admin_order_edit', actor,
+01463:           details: 'Менеджер исправлен через полное редактирование заказа.', createdAt: p.timestamp,
+01464:         });
+01465:       } catch (error) { console.warn('Order manager audit after safe edit failed', error); }
+01466:     }
+01467:     try {
+01468:       await writeActivityLog(db, {
+01469:         eventType: 'order_updated', entityType: 'order', entityId: id, orderId: id, externalOrderId: p.externalId,
+01470:         title: `Изменён заказ ${p.externalId}`,
+01471:         details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}${paymentMethodCorrectionCount ? `способ оплаты исправлен: ${paymentMethodCorrectionCount}; ` : ''}статус отправки: ${p.nextShippingStatus}`,
+01472:         amount: p.totals.totalAmount, createdAt: p.timestamp,
+01473:       });
+01474:     } catch (error) {
+01475:       console.warn('Order activity log after safe edit failed', error);
+01476:     }
+01477:     return response;
+01478:   } catch (error) {
+01479:     const editAlreadyWritten = criticalOperation?.row.status === 'started' && criticalOperation.row.step === 'shipping_committed';
+01480:     if (criticalOperation?.leaseToken && criticalOperation.row.step === 'started' && !criticalOperation.row.target_id && (error instanceof OrderInputValidationError || error instanceof OrderStockShortageError || error instanceof CriticalOperationConflictError)) {
+01481:       try {
+01482:         const discarded = await db.prepare(
+01483:           `DELETE FROM critical_operations
+01484:            WHERE request_id = ? AND status = 'started' AND step = 'started' AND target_id IS NULL AND lease_token = ?
+01485:              AND NOT EXISTS (SELECT 1 FROM critical_operation_entities e WHERE e.request_id = critical_operations.request_id)`
+01486:         ).bind(criticalOperation.requestId, criticalOperation.leaseToken).run();
+01487:         if (toInt(discarded.meta?.changes, 0) > 0) criticalOperation = null;
+01488:       } catch {
+01489:         // If cleanup fails, failCriticalOperation below still releases the lease for a safe retry.
+01490:       }
+01491:     }
+01492:     await failCriticalOperation(db, criticalOperation, error);
+01493:     if (editAlreadyWritten) {
+01494:       throw new CriticalOperationConflictError('Изменения заказа уже записаны, но подтверждение операции не завершилось. Нажмите «Сохранить» ещё раз — повторная отправка безопасно продолжит тот же запрос.');
+01495:     }
+---END HIT---
+--- syncOrderFinancialLedger hits=[] ---
+===== scripts/release-check.mjs =====
+--- test-order-edit-payment-method-correction hits=[] ---
