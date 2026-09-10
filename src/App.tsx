@@ -1326,7 +1326,7 @@ function App() {
     if (activeSector === 'reports') {
       void loadFinanceReports()
     }
-  }, [activeSector, authReady])
+  }, [activeSector, authReady, financeReportType])
 
   useEffect(() => {
     if (!authReady || activeSector !== 'finance' || financeMode !== 'cash') return
@@ -2180,7 +2180,7 @@ function App() {
 
   function loadFinanceReports(nextFilters = financeReportFilters, options: { force?: boolean; scope?: 'full' | 'finance' } = {}) {
     const scope = options.scope || (activeSector === 'finance' ? 'finance' : 'full')
-    return loadFinanceReportsForRange(nextFilters, { ...options, scope })
+    return loadFinanceReportsForRange(nextFilters, { ...options, scope, reportType: activeSector === 'reports' ? financeReportType : undefined })
   }
 
   async function loadMoneyHistory(options: { append?: boolean } = {}) {
@@ -2233,13 +2233,13 @@ function App() {
     invalidateFinanceReadCaches()
     if (activeSector === 'finance' || activeSector === 'reports') {
       if (activeSector === 'finance' && financeMode === 'payments') void loadMoneyHistory()
-      return loadFinanceReportsForRange(financeReportFilters, { force: true, scope: activeSector === 'finance' ? 'finance' : 'full' })
+      return loadFinanceReports(financeReportFilters, { force: true })
     }
     return Promise.resolve(null)
   }
 
   function reloadFinanceReports() {
-    return loadFinanceReportsForRange(financeReportFilters, { force: true, scope: activeSector === 'finance' ? 'finance' : 'full' })
+    return loadFinanceReports(financeReportFilters, { force: true })
   }
 
   function makeCashRequestId(prefix: string) {

@@ -2,7 +2,6 @@ import { useCallback, useRef, type Dispatch, type SetStateAction } from 'react'
 import type { AccessRole } from '../types'
 import { ApiResponseError } from '../utils'
 import { prepareManagedInventoryWrite } from './inventoryWriteRetry'
-import { createReadCoalescer } from './coalesceReads'
 
 type CachedApiResponse = {
   body: string
@@ -59,7 +58,6 @@ type ApiClientArgs = {
 }
 
 export function useApiClient({ accessRole, setError, setMessage }: ApiClientArgs) {
-  const coalescedReadRef = useRef(createReadCoalescer())
   const getResponseCacheRef = useRef(new Map<string, CachedApiResponse>())
   const lastConnectionNoticeAtRef = useRef(0)
   const criticalRequestRef = useRef(new Map<string, { fingerprint: string; requestId: string }>())
@@ -107,7 +105,7 @@ export function useApiClient({ accessRole, setError, setMessage }: ApiClientArgs
     }
   }
 
-  const fetchWithRetry = useCallback(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+  const apiFetch = useCallback(async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const headers = new Headers(init.headers || undefined)
     headers.set('X-Access-Role', accessRole)
     if (accessRole === 'admin') headers.set('X-Archive-Actor', 'admin')
@@ -196,16 +194,6 @@ export function useApiClient({ accessRole, setError, setMessage }: ApiClientArgs
       status: lastError instanceof ApiResponseError ? lastError.status : 0,
     })
   }, [accessRole])
-
-  const apiFetch = useCallback((input: RequestInfo | URL, init: RequestInit = {}) => {
-    const method = String(init.method || (input instanceof Request ? input.method : 'GET')).toUpperCase()
-    const mutation = method !== 'GET' && method !== 'HEAD'
-    // Custom headers, signals, cache policies and Request objects keep independent semantics.
-    const plainGet = method === 'GET' && !(input instanceof Request)
-      && Object.keys(init).every(key => key === 'method')
-    const key = plainGet ? `${accessRole}:${String(input)}` : null
-    return coalescedReadRef.current(key, mutation, () => fetchWithRetry(input, init))
-  }, [accessRole, fetchWithRetry])
 
   return { apiFetch, prepareCriticalRequest, completeCriticalRequest }
 }

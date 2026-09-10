@@ -4,6 +4,7 @@ import crypto from 'node:crypto'
 import ts from 'typescript'
 
 const root = process.cwd()
+const o1Changes = JSON.parse(fs.readFileSync(path.join(root, 'scripts/o1-worker-manifest.json'), 'utf8')).changed
 const workerRoot = path.join(root, 'worker')
 const manifestPath = path.join(root, 'scripts/step1906a-worker-declaration-manifest.json')
 const cleanupPath = path.join(root, 'scripts/step1906c-dead-code-manifest.json')
@@ -543,8 +544,10 @@ try {
       check(w5FoundItemsChanged.before === acceptedPostW3NaturalRecoveryHash, `W5.5 found-items declaration baseline hash mismatch: ${name}`)
       acceptedPostW5FoundItemsHash = w5FoundItemsChanged.after
     }
+    const o1Changed = o1Changes[name]
+    if (o1Changed) check(o1Changed.before === acceptedPostW5FoundItemsHash, `O1 baseline mismatch: ${name}`)
     check(
-      sha(declarations.get(name)) === acceptedPostW5FoundItemsHash,
+      sha(declarations.get(name)) === (o1Changed ? o1Changed.after : acceptedPostW5FoundItemsHash),
       w5FoundItemsChanged
         ? `Worker declaration changed beyond exact W5.5 found-items allow-list: ${name}`
         : `Worker declaration body changed beyond accepted cumulative deltas: ${name}`,

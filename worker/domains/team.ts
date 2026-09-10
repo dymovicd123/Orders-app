@@ -503,28 +503,64 @@ export async function saveCallCentreRecord(db: D1Database, input: CallCentreInpu
 export async function listPlans(db: D1Database, url: URL) {
   const { startDate, endDate } = parseReportDateRange(url);
   const managerPlans = await db.prepare(
-    `SELECT p.id, p.period_start, p.period_end, p.manager_id, m.name AS manager, COALESCE(m.color_key, '#475569') AS manager_color,
+    `WITH scoped_plans AS MATERIALIZED (
+       SELECT * FROM plans WHERE period_end >= ? AND period_start <= ?
+     ), payment_days AS MATERIALIZED (
+       SELECT o.manager_id, pay.payment_date AS day, SUM(pay.amount) AS amount
+       FROM payments pay JOIN orders o ON o.id = pay.order_id
+       WHERE pay.payment_date BETWEEN (SELECT MIN(period_start) FROM scoped_plans) AND (SELECT MAX(period_end) FROM scoped_plans)
+         AND o.order_status <> 'deleted'
+       GROUP BY o.manager_id, pay.payment_date
+     ), return_days AS MATERIALIZED (
+       SELECT COALESCE(r.manager_id, o.manager_id) AS manager_id, r.return_date AS day, SUM(r.amount) AS amount
+       FROM returns r JOIN orders o ON o.id = r.order_id
+       WHERE r.return_date BETWEEN (SELECT MIN(period_start) FROM scoped_plans) AND (SELECT MAX(period_end) FROM scoped_plans)
+         AND COALESCE(r.status, 'completed') <> 'cancelled' AND o.order_status <> 'deleted'
+       GROUP BY COALESCE(r.manager_id, o.manager_id), r.return_date
+     ), totals AS MATERIALIZED (
+       SELECT sp.*,
+         COALESCE((SELECT SUM(amount) FROM payment_days WHERE manager_id = sp.manager_id AND day BETWEEN sp.period_start AND sp.period_end), 0) AS paid,
+         COALESCE((SELECT SUM(amount) FROM return_days WHERE manager_id = sp.manager_id AND day BETWEEN sp.period_start AND sp.period_end), 0) AS returned
+       FROM scoped_plans sp
+     )
+     SELECT p.id, p.period_start, p.period_end, p.manager_id, m.name AS manager, COALESCE(m.color_key, '#475569') AS manager_color,
             p.planned_amount, p.salary_base, COALESCE(p.bonus_hit_percent, 0) AS bonus_hit_percent,
             COALESCE(p.bonus_miss_percent, 0) AS bonus_miss_percent,
             COALESCE(p.bonus_amount, 0) AS stored_bonus_amount,
             COALESCE(p.total_salary, 0) AS stored_total_salary,
             COALESCE(p.comment, '') AS comment,
-            COALESCE((SELECT SUM(pay.amount) FROM payments pay JOIN orders o ON o.id = pay.order_id WHERE o.manager_id = p.manager_id AND pay.payment_date BETWEEN p.period_start AND p.period_end AND o.order_status <> 'deleted'), 0)
-              - COALESCE((SELECT SUM(r.amount) FROM returns r JOIN orders o ON o.id = r.order_id WHERE COALESCE(r.manager_id, o.manager_id) = p.manager_id AND r.return_date BETWEEN p.period_start AND p.period_end AND COALESCE(r.status, 'completed') <> 'cancelled' AND o.order_status <> 'deleted'), 0) AS fact_amount,
-            COALESCE((SELECT SUM(r.amount) FROM returns r JOIN orders o ON o.id = r.order_id WHERE COALESCE(r.manager_id, o.manager_id) = p.manager_id AND r.return_date BETWEEN p.period_start AND p.period_end AND COALESCE(r.status, 'completed') <> 'cancelled' AND o.order_status <> 'deleted'), 0) AS return_amount
-     FROM plans p
+            p.paid - p.returned AS fact_amount,
+            p.returned AS return_amount
+     FROM totals p
      JOIN managers m ON m.id = p.manager_id
-     WHERE p.period_end >= ? AND p.period_start <= ?
      ORDER BY p.period_start DESC, m.name ASC`
   ).bind(startDate, endDate).all<any>();
 
   const departmentPlans = await db.prepare(
-    `SELECT dp.id, dp.period_start, dp.period_end, dp.planned_amount, COALESCE(dp.comment, '') AS comment,
-            COALESCE((SELECT SUM(pay.amount) FROM payments pay JOIN orders o ON o.id = pay.order_id WHERE pay.payment_date BETWEEN dp.period_start AND dp.period_end AND o.order_status <> 'deleted'), 0)
-              - COALESCE((SELECT SUM(r.amount) FROM returns r JOIN orders o ON o.id = r.order_id WHERE r.return_date BETWEEN dp.period_start AND dp.period_end AND COALESCE(r.status, 'completed') <> 'cancelled' AND o.order_status <> 'deleted'), 0) AS fact_amount,
-            COALESCE((SELECT SUM(r.amount) FROM returns r JOIN orders o ON o.id = r.order_id WHERE r.return_date BETWEEN dp.period_start AND dp.period_end AND COALESCE(r.status, 'completed') <> 'cancelled' AND o.order_status <> 'deleted'), 0) AS return_amount
-     FROM department_plans dp
-     WHERE dp.period_end >= ? AND dp.period_start <= ?
+    `WITH scoped_plans AS MATERIALIZED (
+       SELECT * FROM department_plans WHERE period_end >= ? AND period_start <= ?
+     ), payment_days AS MATERIALIZED (
+       SELECT pay.payment_date AS day, SUM(pay.amount) AS amount
+       FROM payments pay JOIN orders o ON o.id = pay.order_id
+       WHERE pay.payment_date BETWEEN (SELECT MIN(period_start) FROM scoped_plans) AND (SELECT MAX(period_end) FROM scoped_plans)
+         AND o.order_status <> 'deleted'
+       GROUP BY pay.payment_date
+     ), return_days AS MATERIALIZED (
+       SELECT r.return_date AS day, SUM(r.amount) AS amount
+       FROM returns r JOIN orders o ON o.id = r.order_id
+       WHERE r.return_date BETWEEN (SELECT MIN(period_start) FROM scoped_plans) AND (SELECT MAX(period_end) FROM scoped_plans)
+         AND COALESCE(r.status, 'completed') <> 'cancelled' AND o.order_status <> 'deleted'
+       GROUP BY r.return_date
+     ), totals AS MATERIALIZED (
+       SELECT sp.*,
+         COALESCE((SELECT SUM(amount) FROM payment_days WHERE day BETWEEN sp.period_start AND sp.period_end), 0) AS paid,
+         COALESCE((SELECT SUM(amount) FROM return_days WHERE day BETWEEN sp.period_start AND sp.period_end), 0) AS returned
+       FROM scoped_plans sp
+     )
+     SELECT dp.id, dp.period_start, dp.period_end, dp.planned_amount, COALESCE(dp.comment, '') AS comment,
+            dp.paid - dp.returned AS fact_amount,
+            dp.returned AS return_amount
+     FROM totals dp
      ORDER BY dp.period_start DESC, dp.id DESC`
   ).bind(startDate, endDate).all<any>();
 

@@ -16,7 +16,7 @@ export function FinanceReportContentRenderer(ctx: RendererContext) {
     printSelectedFinanceReportPdf,
   } = ctx
 
-    if (!financeReport) {
+    if (!financeReport || (financeReport.reportType && financeReport.reportType !== financeReportType)) {
       return <div className="empty-state">Выберите тип отчёта и нажмите «Показать отчёт».</div>
     }
 
