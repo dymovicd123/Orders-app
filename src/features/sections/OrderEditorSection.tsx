@@ -361,7 +361,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                         </div>
                       </div>
                       <p className="mini-panel-note">
-                        Если первичную оплату забыли внести, добавьте её явно — она всегда относится к дате заказа. Любая обычная оплата позже создания заказа оформляется как «Закрытие долга» и проходит через тот же серверный механизм, что и отдельная кнопка закрытия долга. У уже проведённой оплаты можно исправить способ оплаты; сумма, дата и смысл операции останутся прежними, а исправление сохранится в денежной истории.
+                        Если первичную оплату забыли внести, добавьте её явно — при создании она относится к дате заказа. У уже проведённой обычной оплаты можно безопасно исправить дату, сумму, способ, смысл и комментарий: ID оплаты не меняется, а корректировка остаётся в денежной истории. Доплата, связанная с обменом, исправляется через операцию обмена; здесь для неё доступен только способ оплаты.
                       </p>
                       <div className="stack">
                         {editorDraft.payments.map((payment, index) => (
@@ -382,7 +382,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                                 <input
                                   type="date"
                                   value={payment.paymentDate}
-                                  disabled={Boolean(payment.id) || savingOrder || payment.paymentKind === 'primary'}
+                                  disabled={savingOrder || (!payment.id && payment.paymentKind === 'primary') || Boolean(payment.id && payment.paymentKind === 'extra')}
                                   onChange={(event) => updateEditorPayment(index, 'paymentDate', event.target.value)}
                                 />
                               </label>
@@ -390,7 +390,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                                 <span>Смысл оплаты</span>
                                 <select
                                   value={payment.paymentKind || 'primary'}
-                                  disabled={Boolean(payment.id) || savingOrder}
+                                  disabled={savingOrder || Boolean(payment.id && payment.paymentKind === 'extra')}
                                   onChange={(event) => updateEditorPayment(index, 'paymentKind', event.target.value)}
                                 >
                                   <option value="primary">Первичная оплата</option>
@@ -413,7 +413,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                                   type="number"
                                   min="0"
                                   value={payment.amount ?? 0}
-                                  disabled={Boolean(payment.id) || savingOrder}
+                                  disabled={savingOrder || Boolean(payment.id && payment.paymentKind === 'extra')}
                                   onChange={(event) => updateEditorPayment(index, 'amount', Number(event.target.value))}
                                 />
                               </label>
@@ -421,13 +421,17 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                                 <span>Комментарий</span>
                                 <input
                                   value={payment.comment || ''}
-                                  disabled={Boolean(payment.id) || savingOrder}
+                                  disabled={savingOrder || Boolean(payment.id && payment.paymentKind === 'extra')}
                                   onChange={(event) => updateEditorPayment(index, 'comment', event.target.value)}
                                 />
                               </label>
                             </div>
                             {payment.id ? (
-                              <p className="mini-panel-note">Оплата уже проведена. Здесь можно исправить только способ оплаты; сумма, дата и тип операции не меняются.</p>
+                              <p className="mini-panel-note">
+                                {payment.paymentKind === 'extra'
+                                  ? 'Эта доплата связана с обменом. Здесь можно исправить только способ оплаты; сумму, дату и смысл меняйте через операцию обмена.'
+                                  : 'Оплата уже проведена. Дату, сумму, способ, смысл и комментарий можно исправить; ID оплаты сохранится, а изменение будет отражено в денежной истории.'}
+                              </p>
                             ) : (
                               <div className="actions">
                                 <button className="primary compact" type="button" onClick={() => void saveEditorPayment(index)} disabled={savingOrder}>

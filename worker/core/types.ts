@@ -52,6 +52,20 @@ export type OrderInput = {
     paymentKind?: 'primary' | 'debt_close' | 'extra';
     comment?: string;
   }>;
+  paymentCorrections?: Array<{
+    paymentId?: number;
+    paymentDate?: string;
+    method?: string;
+    amount?: number;
+    paymentKind?: 'primary' | 'debt_close' | 'extra' | string;
+    comment?: string;
+    expectedPaymentDate?: string;
+    expectedMethod?: string;
+    expectedAmount?: number;
+    expectedPaymentKind?: 'primary' | 'debt_close' | 'extra' | string;
+    expectedComment?: string;
+  }>;
+  paymentMethodCorrections?: Array<{ paymentId?: number; method?: string }>;
 };
 
 
