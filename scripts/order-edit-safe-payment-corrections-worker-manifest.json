@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "revision": "order-edit-safe-payment-corrections-r1",
+  "changes": {
+    "OrderInput": {
+      "before": "86b4994f2d1d37aab122effc0642383e99669e6df6969bfff94ffce1b2ee57f9",
+      "after": "464a3a5d8e1bd6f59653c8d0b2f513a9abec766bc03adc163a027b0d1de568c6"
+    },
+    "updateOrderCritical": {
+      "before": "bd8d6da3bb80cab95d0972f5d0a7208ba045347af1646f4dac7b7f0375d4c78a",
+      "after": "a3689d73977fc8620dd116805519ae121433661dfe083520626b0af49c19b18a"
+    }
+  }
+}
