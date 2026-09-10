@@ -15,6 +15,7 @@ Updated: 2026-09-10 (Asia/Qyzylorda)
 - Live SELECT-only comparison for August: manager plans 4403 -> 1996 rows read; department plans 1612 -> 1115. All returned fields/rows matched; zero rows written. These are per-query results, NOT an account-wide reduction claim.
 - Implementation/validation details and remaining optimization work: `docs/continuation/O1_READ_BUDGET_20260909.md`.
 - No production deployment or Branch2 sync is implied by local validation. Track publication separately.
+- Delivery checkpoint: implementation committed locally as `204e732a2c075a9e493056eb7b57d28f5ec79cbc`. Automatic security review rejected GitHub push; nothing pushed. Read-only verification confirmed origin is the authenticated user's `dymovicd123/Orders-app` (repository ID 1342748454, admin/push access), but visibility is PUBLIC. Ask explicit consent to publish both code and updated production-audit context to that public repository before retrying. No PR, migration application or deployment yet.
 
 ## Current execution point
 

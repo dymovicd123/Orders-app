@@ -62,6 +62,8 @@ Rejected experiment: materializing `active_reservations` in compact handover inc
 
 ## Remaining work / acceptance boundary
 
+Publication blocker: local implementation commit `204e732a2c075a9e493056eb7b57d28f5ec79cbc` is validated. Git push was rejected by automatic security review before execution. Read-only GitHub checks confirm the authenticated owner/admin is `dymovicd123` and origin matches `dymovicd123/Orders-app`, repository ID 1342748454; the repository is PUBLIC. Updated context contains production usage/audit summaries. Obtain explicit permission to publish code and that context publicly before retrying. There is no remote O1 branch/PR or deployment from this work, and migration 0067 is still local only.
+
 - Do not declare the entire read-budget problem solved by O1 or promise a safe Free-tier load for Branch2.
 - After publication approval, apply migration 0067, finish measured index comparison for historical handover list flags and payment aggregation, publish the validated application and record exact deployment. Handover rules stay unchanged.
 - Broad inventory loads on form entry remain; safely narrowing them requires preserving all form choices and fresh save-time validation.
