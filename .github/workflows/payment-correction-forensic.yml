@@ -1,0 +1,35 @@
+name: TEMP payment correction forensic
+
+on:
+  push:
+    branches:
+      - order-edit-safe-payment-corrections
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print targeted source sections
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          targets = [
+              ('src/App.tsx', ['function updateEditorPayment(', 'async function persistOrder(']),
+              ('src/features/sections/OrderEditorSection.tsx', ['Оплата уже проведена', "onChange={(value) => updateEditorPayment(index, 'method', value)}"]),
+              ('worker/domains/orders-write.ts', ['rawPaymentMethodCorrections', 'paymentMethodCorrectionCount', "reason: 'payment_method_correction'"]),
+              ('scripts/release-check.mjs', ['test-order-edit-payment-method-correction']),
+          ]
+          for file, needles in targets:
+              text = Path(file).read_text(encoding='utf-8')
+              lines = text.splitlines()
+              print(f'===== {file} =====')
+              for needle in needles:
+                  hits = [i for i, line in enumerate(lines) if needle in line]
+                  print(f'--- {needle} hits={hits} ---')
+                  for i in hits[:4]:
+                      lo=max(0,i-35); hi=min(len(lines),i+80)
+                      for n in range(lo,hi):
+                          print(f'{n+1:05d}: {lines[n]}')
+                      print('---END HIT---')
+          PY
