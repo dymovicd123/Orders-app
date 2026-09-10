@@ -20,4 +20,35 @@
 // w8StockOverviewPath — W8.1 stock overview completion preservation layer
 // w8StockWorkspaceFinishPath — W8.2 stock workspace finish preservation layer
 // w8DailySurfacesPolishPath — W8.3 remaining daily Warehouse surfaces preservation layer
-await import('./test-step1906b-frontend-modularization-w8-3-layer.mjs')
+
+import fs from 'node:fs'
+import path from 'node:path'
+import crypto from 'node:crypto'
+
+const root = process.cwd()
+const legacyPath = path.join(root, 'scripts/test-step1906b-frontend-modularization-legacy.mjs')
+const manifestPath = path.join(root, 'scripts/order-edit-safe-payment-corrections-frontend-manifest.json')
+const appPath = path.join(root, 'src/App.tsx')
+const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+if (manifest?.version !== 1 || manifest?.revision !== 'order-edit-safe-payment-corrections-r1') throw new Error('Safe payment correction frontend manifest invalid')
+if (Object.keys(manifest.files || {}).join(',') !== 'src/App.tsx') throw new Error('Safe payment correction frontend allow-list widened unexpectedly')
+const delta = manifest.files['src/App.tsx']
+if (delta?.beforeLines !== 7000 || delta?.afterLines !== 7049) throw new Error('Safe payment correction App line delta changed unexpectedly')
+const gitBlobSha = (text) => {
+  const bytes = Buffer.from(text)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+const app = fs.readFileSync(appPath, 'utf8')
+if (gitBlobSha(app) !== delta.afterGitBlob) throw new Error('App.tsx changed beyond exact safe-payment-correction frontend delta')
+if (app.split(/\r?\n/).length !== delta.afterLines) throw new Error('App.tsx line count changed beyond exact safe-payment-correction frontend delta')
+
+const original = fs.readFileSync(legacyPath, 'utf8')
+const oldBudget = "check(lineCount('src/App.tsx') <= 7000, `App.tsx regrew beyond 1906B controller budget (${lineCount('src/App.tsx')} lines)`)"
+const newBudget = `check(lineCount('src/App.tsx') <= ${delta.afterLines}, \`App.tsx exceeded exact safe-payment-correction controller allowance (\${lineCount('src/App.tsx')} lines)\`)`
+if (!original.includes(oldBudget)) throw new Error('1906B App budget anchor not found')
+fs.writeFileSync(legacyPath, original.replace(oldBudget, newBudget))
+try {
+  await import('./test-step1906b-frontend-modularization-w8-3-layer.mjs')
+} finally {
+  fs.writeFileSync(legacyPath, original)
+}

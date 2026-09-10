@@ -35,21 +35,25 @@ try {
 
   const cleanup1906c = worker.includes("deadLegacyCleanup: '1906c'")
   const orderSaveIntegrity192b2a4 = worker.includes("orderCreateSaveIntegrity: '192b2a4'")
-  const orderEditPaymentMethodCorrection = worker.includes("reason: 'payment_method_correction'")
+  const orderEditPaymentCorrection = worker.includes("reason: 'payment_correction'")
   const rawMutations = [...worker.matchAll(/(?:INSERT INTO payments|DELETE FROM payments|UPDATE payments)/g)].map((m) => m.index)
-  const paymentMethodCorrectionMutations = orderEditPaymentMethodCorrection ? 1 : 0
-  const expectedRawMutations = (cleanup1906c ? (orderSaveIntegrity192b2a4 ? 4 : 3) : 5) + paymentMethodCorrectionMutations
+  const paymentCorrectionMutations = orderEditPaymentCorrection ? 1 : 0
+  const expectedRawMutations = (cleanup1906c ? (orderSaveIntegrity192b2a4 ? 4 : 3) : 5) + paymentCorrectionMutations
   if (rawMutations.length !== expectedRawMutations) {
-    fail(`Неожиданное число прямых payment mutations: ${rawMutations.length} (ожидалось ${expectedRawMutations}: действующие money helpers${orderSaveIntegrity192b2a4 ? ' + retry-safe manual payment' : ''}${orderEditPaymentMethodCorrection ? ' + точечное исправление способа оплаты без пересоздания payment' : ''}).`)
+    fail(`Неожиданное число прямых payment mutations: ${rawMutations.length} (ожидалось ${expectedRawMutations}: действующие money helpers${orderSaveIntegrity192b2a4 ? ' + retry-safe manual payment' : ''}${orderEditPaymentCorrection ? ' + безопасное исправление проведённой оплаты без пересоздания payment' : ''}).`)
   }
-  if (orderEditPaymentMethodCorrection) {
+  if (orderEditPaymentCorrection) {
     for (const marker of [
-      'UPDATE payments SET method = ? WHERE id = ? AND order_id = ?',
+      'UPDATE payments SET payment_date = ?, method = ?, amount = ?, payment_kind = ?, comment = ? WHERE id = ? AND order_id = ?',
       "eventType: 'payment_reversal'",
-      'eventType: correction.relatedType',
-      'eventDate: correction.paymentDate',
-      "reason: 'payment_method_correction'",
-    ]) if (!worker.includes(marker)) fail(`Payment-method correction money-history guard отсутствует: ${marker}`)
+      'eventType: correction.newRelatedType',
+      'eventDate: correction.oldPaymentDate',
+      'eventDate: correction.newPaymentDate',
+      "reason: 'payment_correction'",
+      'const cashDelta = newTrackedCashAmount - oldTrackedCashAmount',
+      'Эта оплата уже была изменена после открытия редактора',
+      'Эта доплата принадлежит операции обмена',
+    ]) if (!worker.includes(marker)) fail(`Payment correction money-history guard отсутствует: ${marker}`)
   }
   if (orderSaveIntegrity192b2a4) {
     for (const marker of [

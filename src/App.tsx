@@ -5011,14 +5011,16 @@ function App() {
       if (!current) return current
       const nextPayments = current.payments.map((payment, paymentIndex) => {
         if (paymentIndex !== index) return payment
-        if (payment.id && field !== 'method') return payment
-        if (field === 'paymentDate' && payment.paymentKind === 'primary') return payment
+        if (payment.id && payment.paymentKind === 'extra' && field !== 'method') return payment
+        if (!payment.id && field === 'paymentDate' && payment.paymentKind === 'primary') return payment
         if (field === 'paymentKind') {
           const nextKind: EditorPayment['paymentKind'] = value === 'debt_close' ? 'debt_close' : 'primary'
           return {
             ...payment,
             paymentKind: nextKind,
-            paymentDate: nextKind === 'primary' ? (current.orderDate || payment.paymentDate) : (payment.paymentDate || formatLocalDateInput()),
+            paymentDate: !payment.id && nextKind === 'primary'
+              ? (current.orderDate || payment.paymentDate)
+              : (payment.paymentDate || formatLocalDateInput()),
           }
         }
         return { ...payment, [field]: value }
@@ -5339,6 +5341,55 @@ function removeDebtPayment(index: number) {
         throw new Error(`Укажите фактическое количество для «${missingObservation.productName || 'позиции'}» или выберите «Сейчас проверить не могу».`)
       }
 
+      const paymentCorrections: Array<{
+        paymentId: number
+        paymentDate: string
+        method: string
+        amount: number
+        paymentKind: string
+        comment: string
+        expectedPaymentDate: string
+        expectedMethod: string
+        expectedAmount: number
+        expectedPaymentKind: string
+        expectedComment: string
+      }> = []
+      for (const payment of nextDraft.payments) {
+        const paymentId = Number(payment.id || 0)
+        if (!paymentId) continue
+        const original = order.payments.find((entry) => Number(entry.id || 0) === paymentId)
+        if (!original) throw new Error('Одна из оплат уже изменилась. Обновите заказ и повторите исправление.')
+        const nextPaymentDate = String(payment.paymentDate || '').trim()
+        const nextMethod = String(payment.method || '').trim()
+        const nextAmount = Number(payment.amount || 0)
+        const nextPaymentKind = String(payment.paymentKind || 'primary').trim()
+        const nextComment = String(payment.comment || '').trim()
+        const oldPaymentDate = String(original.paymentDate || '').trim()
+        const oldMethod = String(original.method || '').trim()
+        const oldAmount = Number(original.amount || 0)
+        const oldPaymentKind = String(original.paymentKind || 'primary').trim()
+        const oldComment = String(original.comment || '').trim()
+        const changed = nextPaymentDate !== oldPaymentDate
+          || nextMethod.toUpperCase() !== oldMethod.toUpperCase()
+          || nextAmount !== oldAmount
+          || nextPaymentKind !== oldPaymentKind
+          || nextComment !== oldComment
+        if (!changed) continue
+        paymentCorrections.push({
+          paymentId,
+          paymentDate: nextPaymentDate,
+          method: nextMethod,
+          amount: nextAmount,
+          paymentKind: nextPaymentKind,
+          comment: nextComment,
+          expectedPaymentDate: oldPaymentDate,
+          expectedMethod: oldMethod,
+          expectedAmount: oldAmount,
+          expectedPaymentKind: oldPaymentKind,
+          expectedComment: oldComment,
+        })
+      }
+
       const payload = {
         orderDate: nextDraft.orderDate,
         managerId: nextDraft.managerId || undefined,
@@ -5369,9 +5420,7 @@ function removeDebtPayment(index: number) {
           observedPhysicalQuantity: item.sourceType !== 'workshop' && item.stockObservationEnabled ? item.observedPhysicalQuantity : undefined,
           shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
         })),
-        paymentMethodCorrections: nextDraft.payments
-          .filter((payment) => Boolean(payment.id))
-          .map((payment) => ({ paymentId: Number(payment.id), method: payment.method })),
+        paymentCorrections,
       }
 
       const criticalKey = `order-edit:${order.id}`
