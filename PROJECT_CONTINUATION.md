@@ -2,7 +2,21 @@
 
 Updated: 2026-09-10 (Asia/Qyzylorda)
 
-## Current priority — O1 (supersedes the historical execution point below)
+## Current priority — Operational Autonomy R3
+
+- PR #31 `Fix safe correction of posted order payments` is complete and live. It was squash-merged to `main` as `6653e0ab4f438dca6832eb233624faed5a01602a`.
+- Full GitHub Quality check run `34486738784` passed, including the cumulative regression gate and application build. Exact Cloudflare deploy monitor run `34486914530` also completed successfully for `main`.
+- Posted ordinary payments can now be corrected in place without changing `payment_id`: date, amount, method, semantic kind (`primary` / `debt_close`) and comment. The path has stale-editor/CAS protection, append-only finance reversal + replacement, delta-only cash correction, corrected order received/debt totals and request idempotency. Exchange-linked extras remain owned by the exchange flow.
+- The release also refreshed stale 189C/F5 expectations and explicitly registered the accepted Worker/frontend source deltas in the 1906A/1906B structural preservation gates. No migration was required; Arrival and Branch2 were not changed.
+- User's current product rule: legitimate day-to-day business corrections must be executable by staff through the application without developer intervention. Safety must come from explicit correction/reversal flows, current-state validation, audit history and idempotency — not from leaving a valid business state with no supported action.
+- Remaining high-priority autonomy gaps found in current `main`: (1) only one active return per order; (2) an existing return blocks a later exchange; (3) debt closing after a return is blocked without a normal self-service continuation; (4) a mistakenly recorded `sent`/handover fact lacks a natural keep-the-order correction path; (5) exchange-linked payment/date/amount corrections appear to require cancel/recreate rather than a dedicated audited correction.
+- Physical/financial truth must NOT be weakened to remove these blockers. The target is safe correction without developer intervention while preserving history.
+- Separate maintainability issue: cumulative exact-source hash/manifest/line-count gates are too source-shape-sensitive. PR #31 proved they can reject an intentional safe behavior change. Gradually prefer semantic behavior/idempotency/reconciliation tests; keep exact hashes only for deliberately frozen artifacts such as the current Arrival UI.
+- Role/access boundaries remain a separate product-policy review: Operational Autonomy R2 already made many routine operations manager-safe, while Step 190.0 access/auth is still explicitly deferred pending client agreement.
+- Detailed audit and proposed order: `docs/continuation/OPERATIONAL_AUTONOMY_AUDIT_20260910.md`. Final payment-correction context: `docs/continuation/ORDER_EDIT_SAFE_PAYMENT_CORRECTIONS_20260910.md`.
+- Working branch for the next autonomy work is `operational-autonomy-r3`, based on the exact Production commit above. Do not merge context-only changes merely to trigger another Production build; carry them with the next validated runtime fix.
+
+## Prior completed priority — O1
 
 - User explicitly paused Warehouse W work for further product discussion. W is NOT complete; do not infer closure from the historical W8 UI checkpoint.
 - O1 is the separate D1 read-cost optimization step, based on production Query Insights, not a Warehouse redesign.
