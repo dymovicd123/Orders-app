@@ -23,6 +23,9 @@ jobs:
               ('src/App.tsx', ['function updateEditorPayment(', 'async function persistOrder(', 'paymentMethodCorrections: nextDraft.payments']),
               ('src/features/sections/OrderEditorSection.tsx', ['Оплата уже проведена', "onChange={(value) => updateEditorPayment(index, 'method', value)}"]),
               ('worker/domains/orders-write.ts', ['rawPaymentMethodCorrections', 'paymentMethodCorrectionCount', "reason: 'payment_method_correction'", 'syncOrderFinancialLedger']),
+              ('worker/index.ts', ['createManualOrderPaymentCritical', "pathname === '/api/payments'", 'maybeTrackCash']),
+              ('worker/domains/cash.ts', ["source_key = 'payment:'", "sourceKey = `payment:", 'trackCash']),
+              ('worker/domains/money.ts', ['createManualOrderPaymentCritical', 'payment_written', 'ledger_synced']),
               ('scripts/release-check.mjs', ['test-order-edit-payment-method-correction']),
           ]
           out=[]
@@ -33,8 +36,8 @@ jobs:
               for needle in needles:
                   hits=[i for i,line in enumerate(lines) if needle in line]
                   out.append(f'--- {needle} hits={hits} ---')
-                  for i in hits[:6]:
-                      lo=max(0,i-45); hi=min(len(lines),i+100)
+                  for i in hits[:8]:
+                      lo=max(0,i-55); hi=min(len(lines),i+120)
                       out.extend(f'{n+1:05d}: {lines[n]}' for n in range(lo,hi))
                       out.append('---END HIT---')
           Path('_tmp-payment-correction-forensic.txt').write_text('\n'.join(out)+'\n',encoding='utf-8')
@@ -44,5 +47,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add _tmp-payment-correction-forensic.txt
-          git commit -m 'TEMP: persist payment correction forensic output' || exit 0
+          git commit -m 'TEMP: persist payment cash forensic output' || exit 0
           git push origin HEAD:order-edit-safe-payment-corrections
