@@ -1,14 +1,22 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-const legacyPath = path.join(process.cwd(), 'scripts/test-step1906a-worker-modularization-legacy.mjs')
+const root = process.cwd()
+const legacyPath = path.join(root, 'scripts/test-step1906a-worker-modularization-legacy.mjs')
+const manifestPath = path.join(root, 'scripts/order-edit-safe-payment-corrections-worker-manifest.json')
 const original = fs.readFileSync(legacyPath, 'utf8')
-const anchor = "    if (o1Changed) check(o1Changed.before === acceptedPostW5FoundItemsHash, `O1 baseline mismatch: ${name}`)\n"
-const condition = "      sha(declarations.get(name)) === (o1Changed ? o1Changed.after : acceptedPostW5FoundItemsHash),"
-const diagnostic = `${anchor}    if (name === 'OrderInput' || name === 'updateOrderCritical') console.log(\`SAFE_PAYMENT_DECLARATION_HASH ${'${name}'} before=${'${o1Changed ? o1Changed.after : acceptedPostW5FoundItemsHash}'} after=${'${sha(declarations.get(name))}'}\`)\n`
-const relaxedCondition = "      (name === 'OrderInput' || name === 'updateOrderCritical') || sha(declarations.get(name)) === (o1Changed ? o1Changed.after : acceptedPostW5FoundItemsHash),"
-if (!original.includes(anchor) || !original.includes(condition)) throw new Error('1906A diagnostic patch anchors not found')
-fs.writeFileSync(legacyPath, original.replace(anchor, diagnostic).replace(condition, relaxedCondition))
+const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+if (manifest?.version !== 1 || manifest?.revision !== 'order-edit-safe-payment-corrections-r1') throw new Error('Safe payment correction Worker manifest invalid')
+if (Object.keys(manifest.changes || {}).join(',') !== 'OrderInput,updateOrderCritical') throw new Error('Safe payment correction Worker declaration allow-list widened unexpectedly')
+
+const o1Anchor = "const o1Changes = JSON.parse(fs.readFileSync(path.join(root, 'scripts/o1-worker-manifest.json'), 'utf8')).changed\n"
+const oldBlock = `    const o1Changed = o1Changes[name]\n    if (o1Changed) check(o1Changed.before === acceptedPostW5FoundItemsHash, \`O1 baseline mismatch: \${name}\`)\n    check(\n      sha(declarations.get(name)) === (o1Changed ? o1Changed.after : acceptedPostW5FoundItemsHash),\n      w5FoundItemsChanged\n        ? \`Worker declaration changed beyond exact W5.5 found-items allow-list: \${name}\`\n        : \`Worker declaration body changed beyond accepted cumulative deltas: \${name}\`,\n    )\n`
+const newBlock = `    const o1Changed = o1Changes[name]\n    let acceptedPostO1Hash = acceptedPostW5FoundItemsHash\n    if (o1Changed) {\n      check(o1Changed.before === acceptedPostW5FoundItemsHash, \`O1 baseline mismatch: \${name}\`)\n      acceptedPostO1Hash = o1Changed.after\n    }\n    const safePaymentCorrectionChanged = safePaymentCorrectionChanges[name]\n    let acceptedPostSafePaymentCorrectionHash = acceptedPostO1Hash\n    if (safePaymentCorrectionChanged) {\n      check(safePaymentCorrectionChanged.before === acceptedPostO1Hash, \`Safe payment correction baseline hash mismatch: \${name}\`)\n      acceptedPostSafePaymentCorrectionHash = safePaymentCorrectionChanged.after\n    }\n    check(\n      sha(declarations.get(name)) === acceptedPostSafePaymentCorrectionHash,\n      safePaymentCorrectionChanged\n        ? \`Worker declaration changed beyond exact safe-payment-correction allow-list: \${name}\`\n        : (w5FoundItemsChanged\n          ? \`Worker declaration changed beyond exact W5.5 found-items allow-list: \${name}\`\n          : \`Worker declaration body changed beyond accepted cumulative deltas: \${name}\`),\n    )\n`
+if (!original.includes(o1Anchor) || !original.includes(oldBlock)) throw new Error('1906A safe-payment layer anchors not found')
+const patched = original
+  .replace(o1Anchor, `${o1Anchor}const safePaymentCorrectionChanges = ${JSON.stringify(manifest.changes)}\n`)
+  .replace(oldBlock, newBlock)
+fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
 } finally {
