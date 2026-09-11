@@ -36,6 +36,8 @@ jobs:
           node scripts/test-catalog-gender-migration-r1.mjs
       - name: Build
         run: npm run build
+      - name: Exact Worker structural acceptance
+        run: node scripts/test-step1906a-worker-modularization.mjs
       - name: Full cumulative release check
         run: npm run release:check
       - name: Commit validated implementation
