@@ -6,6 +6,7 @@ on:
       - catalog-gender-cleanup-r1
     paths:
       - scripts/apply-order-history-preservation-r1.mjs
+      - .github/workflows/order-history-preservation-patch.yml
 
 permissions:
   contents: write
