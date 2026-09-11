@@ -28,23 +28,61 @@ import crypto from 'node:crypto'
 const root = process.cwd()
 const legacyPath = path.join(root, 'scripts/test-step1906b-frontend-modularization-legacy.mjs')
 const manifestPath = path.join(root, 'scripts/order-edit-safe-payment-corrections-frontend-manifest.json')
+const catalogGenderManifestPath = path.join(root, 'scripts/catalog-gender-scope-r1-frontend-manifest.json')
 const appPath = path.join(root, 'src/App.tsx')
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 if (manifest?.version !== 1 || manifest?.revision !== 'order-edit-safe-payment-corrections-r1') throw new Error('Safe payment correction frontend manifest invalid')
 if (Object.keys(manifest.files || {}).join(',') !== 'src/App.tsx') throw new Error('Safe payment correction frontend allow-list widened unexpectedly')
 const delta = manifest.files['src/App.tsx']
 if (delta?.beforeLines !== 7000 || delta?.afterLines !== 7049) throw new Error('Safe payment correction App line delta changed unexpectedly')
+
+const catalogGenderManifest = JSON.parse(fs.readFileSync(catalogGenderManifestPath, 'utf8'))
+if (catalogGenderManifest?.version !== 1 || catalogGenderManifest?.revision !== 'catalog-gender-scope-r1') throw new Error('Catalog gender scope frontend manifest invalid')
+if (Object.keys(catalogGenderManifest.files || {}).join(',') !== 'src/App.tsx') throw new Error('Catalog gender scope frontend allow-list widened unexpectedly')
+const catalogGenderDelta = catalogGenderManifest.files['src/App.tsx']
+if (catalogGenderDelta?.beforeGitBlob !== delta.afterGitBlob || catalogGenderDelta?.beforeLines !== delta.afterLines || catalogGenderDelta?.afterLines !== 7051) {
+  throw new Error('Catalog gender scope App baseline does not extend the exact safe-payment App state')
+}
+
 const gitBlobSha = (text) => {
   const bytes = Buffer.from(text)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 const app = fs.readFileSync(appPath, 'utf8')
-if (gitBlobSha(app) !== delta.afterGitBlob) throw new Error('App.tsx changed beyond exact safe-payment-correction frontend delta')
-if (app.split(/\r?\n/).length !== delta.afterLines) throw new Error('App.tsx line count changed beyond exact safe-payment-correction frontend delta')
+if (gitBlobSha(app) !== catalogGenderDelta.afterGitBlob) throw new Error('App.tsx changed beyond exact catalog-gender frontend delta')
+if (app.split(/\r?\n/).length !== catalogGenderDelta.afterLines) throw new Error('App.tsx line count changed beyond exact catalog-gender frontend delta')
+
+function replaceExact(text, oldText, newText, label) {
+  const count = text.split(oldText).length - 1
+  if (count !== 1) throw new Error(`${label}: expected exactly one catalog-gender App delta, got ${count}`)
+  return text.replace(oldText, newText)
+}
+let preCatalogGenderApp = app
+preCatalogGenderApp = replaceExact(
+  preCatalogGenderApp,
+  "    genderScope: '' as '' | 'female' | 'male' | 'unisex',\n",
+  '',
+  'catalog product draft gender scope',
+)
+preCatalogGenderApp = replaceExact(
+  preCatalogGenderApp,
+  '      genderScope: catalogProductDraft.genderScope,\n',
+  '',
+  'catalog product save payload gender scope',
+)
+preCatalogGenderApp = replaceExact(
+  preCatalogGenderApp,
+  "    setCatalogProductDraft({ id: 0, name: '', category: catalogCategoryFilter === 'child' ? 'child' : 'adult', genderScope: '' })",
+  "    setCatalogProductDraft({ id: 0, name: '', category: catalogCategoryFilter === 'child' ? 'child' : 'adult' })",
+  'catalog product draft reset gender scope',
+)
+if (gitBlobSha(preCatalogGenderApp) !== catalogGenderDelta.beforeGitBlob) throw new Error('Catalog gender scope App reverse baseline mismatch')
+if (preCatalogGenderApp.split(/\r?\n/).length !== catalogGenderDelta.beforeLines) throw new Error('Catalog gender scope App reverse line baseline mismatch')
+if (gitBlobSha(preCatalogGenderApp) !== delta.afterGitBlob) throw new Error('Catalog gender scope predecessor is not the exact safe-payment App state')
 
 const original = fs.readFileSync(legacyPath, 'utf8')
 const oldBudget = "check(lineCount('src/App.tsx') <= 7000, `App.tsx regrew beyond 1906B controller budget (${lineCount('src/App.tsx')} lines)`)"
-const newBudget = `check(lineCount('src/App.tsx') <= ${delta.afterLines}, \`App.tsx exceeded exact safe-payment-correction controller allowance (\${lineCount('src/App.tsx')} lines)\`)`
+const newBudget = `check(lineCount('src/App.tsx') <= ${catalogGenderDelta.afterLines}, \`App.tsx exceeded exact catalog-gender controller allowance (\${lineCount('src/App.tsx')} lines)\`)`
 if (!original.includes(oldBudget)) throw new Error('1906B App budget anchor not found')
 
 const oldO1Block = [
