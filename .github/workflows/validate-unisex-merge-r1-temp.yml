@@ -22,4 +22,4 @@ jobs:
       - run: npm ci
       - run: node scripts/test-catalog-unisex-merge-r1.mjs
       - run: npm run release:check
-      # rerun after frontend structural delta layering
+      # rerun after preserving the W6 historical-identity guard under merge behavior
