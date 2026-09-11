@@ -1,0 +1,40 @@
+name: Apply Unisex Merge R1 Work2 Temp
+
+on:
+  push:
+    branches:
+      - catalog-unisex-merge-r1-work2
+    paths:
+      - .github/workflows/apply-unisex-merge-r1-work2-temp.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: catalog-unisex-merge-r1-work2
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Apply implementation
+        run: python scripts/apply-catalog-unisex-merge-r1.py
+      - name: Validate focused behavior
+        run: |
+          node scripts/test-catalog-unisex-merge-r1.mjs
+          npx tsc -b --pretty false
+          npm run build
+      - name: Commit source implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add worker/domains/catalog.ts src/features/inventory/views/renderInventoryCatalogPanel.tsx
+          git commit -m "Support safe unisex SKU merge correction"
+          git push origin HEAD:catalog-unisex-merge-r1-work2
