@@ -1,0 +1,48 @@
+name: Catalog Targeted Forensic Readonly
+
+on:
+  push:
+    branches:
+      - ops/catalog-general-audit-20260911
+    paths:
+      - .github/workflows/catalog-targeted-forensic-readonly.yml
+
+permissions:
+  contents: read
+
+jobs:
+  forensic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/catalog-general-audit-20260911
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Targeted Production forensic
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '"database_name": "orders_db_prod"' wrangler.jsonc
+          q() { local title="$1"; shift; echo; echo "===== $title ====="; npx wrangler d1 execute orders_db_prod --remote --command="$*"; }
+
+          q 'INACTIVE_LIVE_STOCK_WITH_ACTIVE_EQUIVALENT' "SELECT p.name,old.id AS old_variant_id,old.stock_position_id,old.gender,old.color,old.size_label,SUM(COALESCE(s.quantity,0)) AS qty,SUM(COALESCE(s.reserved_quantity,0)) AS reserved,GROUP_CONCAT(DISTINCT live.id) AS active_equivalent_ids FROM catalog_variants old JOIN catalog_products p ON p.id=old.product_id JOIN inventory_stock s ON s.variant_id=old.id LEFT JOIN catalog_variants live ON live.product_id=old.product_id AND live.stock_position_id=old.stock_position_id AND live.is_active=1 AND COALESCE(live.category,'adult')=COALESCE(old.category,'adult') AND COALESCE(live.gender,'')=COALESCE(old.gender,'') AND COALESCE(live.color,'')=COALESCE(old.color,'') AND COALESCE(live.size_label,'')=COALESCE(old.size_label,'') WHERE old.is_active=0 GROUP BY p.name,old.id,old.stock_position_id,old.gender,old.color,old.size_label HAVING SUM(COALESCE(s.quantity,0))<>0 OR SUM(COALESCE(s.reserved_quantity,0))<>0 ORDER BY old.id;"
+
+          q 'INACTIVE_LIVE_STOCK_REFERENCE_COUNTS' "SELECT v.id AS variant_id,p.name,(SELECT COUNT(*) FROM order_items oi WHERE oi.variant_id=v.id) AS order_items,(SELECT COUNT(*) FROM inventory_movements im WHERE im.variant_id=v.id) AS movements,(SELECT COUNT(*) FROM inventory_reservations ir WHERE ir.variant_id=v.id) AS reservations,(SELECT COUNT(*) FROM workshop_tasks wt WHERE wt.variant_id=v.id) AS workshop_tasks FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE v.id IN (207,356,1065,1066) ORDER BY v.id;"
+
+          q 'NO_COLOR_CLOTHING_USAGE' "SELECT v.id AS variant_id,p.name,v.gender,v.color,v.size_label,v.material,v.length,COALESCE((SELECT SUM(COALESCE(s.quantity,0)) FROM inventory_stock s WHERE s.variant_id=v.id),0) AS qty,COALESCE((SELECT SUM(COALESCE(s.reserved_quantity,0)) FROM inventory_stock s WHERE s.variant_id=v.id),0) AS reserved,(SELECT COUNT(*) FROM order_items oi WHERE oi.variant_id=v.id) AS orders,(SELECT COUNT(*) FROM inventory_movements im WHERE im.variant_id=v.id) AS movements FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE v.is_active=1 AND v.id IN (1004,1238,1107) ORDER BY v.id;"
+
+          q 'UNISEX_BLANK_CLOTHING_USAGE' "SELECT p.id AS product_id,p.name,v.id AS variant_id,v.color,v.size_label,v.material,v.length,COALESCE((SELECT SUM(COALESCE(s.quantity,0)) FROM inventory_stock s WHERE s.variant_id=v.id),0) AS qty,COALESCE((SELECT SUM(COALESCE(s.reserved_quantity,0)) FROM inventory_stock s WHERE s.variant_id=v.id),0) AS reserved,(SELECT COUNT(*) FROM order_items oi WHERE oi.variant_id=v.id) AS orders,(SELECT COUNT(*) FROM inventory_movements im WHERE im.variant_id=v.id) AS movements FROM catalog_products p JOIN catalog_variants v ON v.product_id=p.id WHERE p.is_active=1 AND p.gender_scope='unisex' AND v.is_active=1 AND TRIM(COALESCE(v.gender,''))='' AND p.name NOT IN ('ПАКЕТ','УКРАШЕНИЕ','ОРАМАЛ') ORDER BY p.name,v.id LIMIT 100;"
+
+          q 'ACTIVE_PRODUCT_SHELL_USAGE' "SELECT p.id,p.name,p.gender_scope,(SELECT COUNT(*) FROM catalog_variants v WHERE v.product_id=p.id) AS all_variants,(SELECT COUNT(*) FROM order_items oi WHERE oi.product_id=p.id) AS order_items FROM catalog_products p WHERE p.is_active=1 AND NOT EXISTS (SELECT 1 FROM catalog_variants v WHERE v.product_id=p.id AND v.is_active=1) ORDER BY p.id;"
+
+          q 'EMPTY_ACTIVE_POSITION_DETAIL' "SELECT sp.id AS position_id,p.name,sp.material,sp.length,(SELECT COUNT(*) FROM catalog_variants v WHERE v.stock_position_id=sp.id) AS all_variants,(SELECT COUNT(*) FROM catalog_variants v WHERE v.stock_position_id=sp.id AND v.is_active=1) AS active_variants,COALESCE((SELECT SUM(COALESCE(s.quantity,0)+COALESCE(s.reserved_quantity,0)) FROM inventory_stock s JOIN catalog_variants v ON v.id=s.variant_id WHERE v.stock_position_id=sp.id),0) AS stock_plus_reserved FROM catalog_stock_positions sp JOIN catalog_products p ON p.id=sp.product_id WHERE sp.is_active=1 AND NOT EXISTS (SELECT 1 FROM catalog_variants v WHERE v.stock_position_id=sp.id AND v.is_active=1) ORDER BY sp.id;"
+
+          echo 'TARGETED_FORENSIC_COMPLETE'
