@@ -1,0 +1,36 @@
+name: Remove obsolete return guard temp
+
+on:
+  push:
+    branches:
+      - operational-autonomy-r3-return-exchange-capacity
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: operational-autonomy-r3-return-exchange-capacity
+      - name: Remove obsolete helper
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('worker/domains/returns-exchanges.ts')
+          s = p.read_text()
+          old = """export async function hasActiveStandaloneReturn(db: D1Database, orderId: number) {\n  const row = await db.prepare(\n    `SELECT COUNT(*) AS count\n     FROM returns r\n     WHERE r.order_id = ?\n       AND COALESCE(r.status, 'completed') <> 'cancelled'\n       AND ${noStandaloneReturnSql}`\n  ).bind(orderId).first<{ count: number }>();\n  return toInt(row?.count, 0) > 0;\n}\n\n\n"""
+          if s.count(old) != 1:
+              raise SystemExit(f'expected one obsolete helper, got {s.count(old)}')
+          p.write_text(s.replace(old, '', 1))
+          PY
+          rm .github/workflows/remove-obsolete-return-guard-temp.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add worker/domains/returns-exchanges.ts .github/workflows/remove-obsolete-return-guard-temp.yml
+          git commit -m "Drop obsolete return presence helper"
+          git push origin HEAD:operational-autonomy-r3-return-exchange-capacity
