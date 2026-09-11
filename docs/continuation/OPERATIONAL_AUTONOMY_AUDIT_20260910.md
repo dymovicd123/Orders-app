@@ -18,7 +18,7 @@ The release also refreshed the cumulative 189C/F5 tests and explicitly registere
 
 ## Remaining business-autonomy gaps found in current main
 
-> R3 update: A1+A2 are implemented on the current R3 branch with per-order-item remaining quantity. Active standalone returns consume capacity; cancelled returns release it; exchange-linked financial return rows are not double-counted; exchanges consume the same remaining capacity without rewriting prior return history.
+> R3 update: A1+A2 are implemented on the current R3 branch with per-order-item remaining quantity. Active standalone returns consume capacity; cancelled returns release it; exchange-linked financial return rows are not double-counted; exchanges consume the same remaining capacity without rewriting prior return history. The structural 1906A delta is explicitly limited to `createReturn`, `createExchange`, and `cancelReturn`; all other Worker declarations remain under the existing cumulative freeze.
 
 ### A1 — Multiple legitimate returns on one order are not supported
 
