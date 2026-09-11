@@ -74,11 +74,11 @@ const extraPatch = String.raw`patched = patched
   .replace(' + Object.keys(catalogGenderScopeR1Added).length', ' + Object.keys(catalogGenderScopeR1Added).length + Object.keys(operationalAutonomyA4Added).length')
   .replace(
     '    check(\\n      sha(declarations.get(name)) === acceptedPostCatalogUnisexMergeHash,',
-    '    const operationalAutonomyA4Changed = operationalAutonomyA4Changes[name]\\n    let acceptedPostOperationalAutonomyA4Hash = acceptedPostCatalogUnisexMergeHash\\n    if (operationalAutonomyA4Changed) {\\n      check(operationalAutonomyA4Changed.before === acceptedPostCatalogUnisexMergeHash, `Operational Autonomy A4 baseline hash mismatch: ${name}`)\\n      acceptedPostOperationalAutonomyA4Hash = operationalAutonomyA4Changed.after\\n    }\\n    check(\\n      sha(declarations.get(name)) === acceptedPostOperationalAutonomyA4Hash,',
+    '    const operationalAutonomyA4Changed = operationalAutonomyA4Changes[name]\\n    let acceptedPostOperationalAutonomyA4Hash = acceptedPostCatalogUnisexMergeHash\\n    if (operationalAutonomyA4Changed) {\\n      check(operationalAutonomyA4Changed.before === acceptedPostCatalogUnisexMergeHash, \'Operational Autonomy A4 baseline hash mismatch: \' + name)\\n      acceptedPostOperationalAutonomyA4Hash = operationalAutonomyA4Changed.after\\n    }\\n    check(\\n      sha(declarations.get(name)) === acceptedPostOperationalAutonomyA4Hash,',
   )
   .replace(
     '  // Catalog gender scope R1 changes only the product create/update request shapes.',
-    '  for (const [name, expectedHash] of Object.entries(operationalAutonomyA4Added)) {\\n    check(declarations.has(name), `Operational Autonomy A4 added Worker declaration missing: ${name}`)\\n    check(sha(declarations.get(name)) === expectedHash, `Operational Autonomy A4 added Worker declaration changed: ${name}`)\\n  }\\n\\n  // Catalog gender scope R1 changes only the product create/update request shapes.',
+    '  for (const [name, expectedHash] of Object.entries(operationalAutonomyA4Added)) {\\n    check(declarations.has(name), \'Operational Autonomy A4 added Worker declaration missing: \' + name)\\n    check(sha(declarations.get(name)) === expectedHash, \'Operational Autonomy A4 added Worker declaration changed: \' + name)\\n  }\\n\\n  // Catalog gender scope R1 changes only the product create/update request shapes.',
   )
   .replace(
     "  check(sha(normalizedRouter) === operationalAutonomyR2Worker.router.after, 'Worker router changed beyond exact operational autonomy R2 delta')",
