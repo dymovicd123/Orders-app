@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "revision": "catalog-gender-scope-r1",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "c1b0b22f4c6bf821a0c846663f756c80d268bd7e",
+      "afterGitBlob": "114435881f17d6adbadaf81ec36a755be985b823",
+      "beforeLines": 7049,
+      "afterLines": 7051
+    }
+  }
+}
