@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "revision": "operational-autonomy-a4-mistaken-handover-r1",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "114435881f17d6adbadaf81ec36a755be985b823",
+      "afterGitBlob": "78b8e2dfc3caa484fed62cb2f4c8f76f1b489f9a",
+      "beforeLines": 7051,
+      "afterLines": 7096
+    }
+  }
+}
