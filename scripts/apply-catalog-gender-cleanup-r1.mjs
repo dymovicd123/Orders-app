@@ -583,4 +583,10 @@ replaceOnce('package.json',
   "&& node scripts/test-order-shortage-save-nonblocking.mjs && node scripts/test-catalog-gender-scope-r1.mjs\",",
 )
 
+// App catalog save/reset must keep the product draft shape complete after genderScope is introduced.
+replaceOnce('src/App.tsx',
+  "    setCatalogProductDraft({ id: 0, name: '', category: catalogCategoryFilter === 'child' ? 'child' : 'adult' })",
+  "    setCatalogProductDraft({ id: 0, name: '', category: catalogCategoryFilter === 'child' ? 'child' : 'adult', genderScope: '' })",
+)
+
 console.log('Catalog Gender Scope R1 patch applied.')
