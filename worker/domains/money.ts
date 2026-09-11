@@ -445,9 +445,6 @@ export async function createManualOrderPaymentCritical(
       }
 
       const ledger = await readOrderFinancialLedger(db, orderId);
-      if (paymentKind === 'debt_close' && ledger.returnAmount > 0) {
-        throw new CriticalOperationConflictError('По заказу уже оформлен возврат. Обычное закрытие долга недоступно.');
-      }
       if (ledger.debtAmount <= 0) {
         throw new CriticalOperationConflictError('Долг по заказу уже закрыт.');
       }
