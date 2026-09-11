@@ -1586,13 +1586,15 @@ export async function getOrder(db: D1Database, id: number) {
     ...order,
     items: (relations.itemsByOrderId.get(id) || []).map(item => ({
       id: (item as any).id,
-      productName: toInt((item as any).product_id, 0) ? cleanText((item as any).canonical_product_name) : cleanText((item as any).product_name_snapshot),
+      // Detailed order readback follows the same historical contract as the orders table: current
+      // catalog links may change, while the order-time snapshots remain the source of truth.
+      productName: cleanText((item as any).product_name_snapshot) || cleanText((item as any).canonical_product_name),
       audienceType: cleanText((item as any).audience_type) || (cleanText((item as any).canonical_category).toLowerCase() === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ'),
-      gender: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_gender) : cleanText((item as any).gender_snapshot),
-      color: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_color) : cleanText((item as any).color_snapshot),
-      material: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_material) : cleanText((item as any).material_snapshot),
-      length: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_length) : cleanText((item as any).length_snapshot),
-      size: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_size) : cleanText((item as any).size_snapshot),
+      gender: cleanText((item as any).gender_snapshot),
+      color: cleanText((item as any).color_snapshot),
+      material: cleanText((item as any).material_snapshot),
+      length: cleanText((item as any).length_snapshot),
+      size: cleanText((item as any).size_snapshot),
       quantity: (item as any).quantity,
       unitPrice: (item as any).unit_price,
       lineTotal: (item as any).line_total,
