@@ -36,7 +36,7 @@ jobs:
           node scripts/test-catalog-gender-migration-r1.mjs
       - name: Build
         run: npm run build
-      - name: Trace exact catalog router delta
+      - name: Trace exact catalog router delta control
         run: node scripts/diagnose-catalog-gender-router.mjs
       - name: Exact Worker structural acceptance
         run: node scripts/test-step1906a-worker-modularization.mjs
