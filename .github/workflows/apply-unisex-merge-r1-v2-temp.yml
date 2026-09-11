@@ -1,0 +1,54 @@
+name: Apply Unisex Merge R1 V2 Temp
+
+on:
+  push:
+    branches:
+      - catalog-unisex-merge-r1
+    paths:
+      - .github/workflows/apply-unisex-merge-r1-v2-temp.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: catalog-unisex-merge-r1
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Materialize and apply implementation recipe
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import textwrap
+          source = Path('.github/workflows/apply-unisex-merge-r1-temp.yml').read_text()
+          patch_marker = "          python - <<'PY'\n"
+          patch = source.split(patch_marker, 1)[1].split("\n          PY\n          cat > scripts/test-catalog-unisex-merge-r1.mjs <<'NODE'", 1)[0]
+          Path('.tmp-unisex-merge-patch.py').write_text(textwrap.dedent(patch))
+          test = source.split("          cat > scripts/test-catalog-unisex-merge-r1.mjs <<'NODE'\n", 1)[1].split("\n          NODE\n", 1)[0]
+          Path('scripts/test-catalog-unisex-merge-r1.mjs').write_text(textwrap.dedent(test))
+          PY
+          python .tmp-unisex-merge-patch.py
+          rm .tmp-unisex-merge-patch.py
+      - name: Focused functional validation
+        run: |
+          node --experimental-strip-types scripts/test-catalog-unisex-merge-r1.mjs
+          npx tsc -b --pretty false
+          npm run build
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add worker/domains/catalog.ts src/features/inventory/views/renderInventoryCatalogPanel.tsx scripts/test-catalog-unisex-merge-r1.mjs
+          git commit -m "Support safe unisex SKU merge correction"
+          git push origin HEAD:catalog-unisex-merge-r1
