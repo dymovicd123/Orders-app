@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "revision": "catalog-integrity-deadends-r1",
+  "changes": {
+    "listInventory": {
+      "before": "e7818c8cb23371826805d4cb654e70ef3e035f26665c1392b196b9dcb58a2f52",
+      "after": "cbb904f590f79691aabb1285a35002ba72bf09f6c58d8603eeea6ab8986e7786"
+    },
+    "resolveInventoryCreatableItemsBulk": {
+      "before": "bb6c93ab0897a075f55b5cf0b15edb0c7d7ba334d97215145e171a68818363ec",
+      "after": "03cdec8b24de8bc0de9ca570419ba84442427598c390c400e5ecfd0e61dd816e"
+    }
+  }
+}
