@@ -9,6 +9,7 @@ const workerRoot = path.join(root, 'worker')
 const catalogPath = path.join(workerRoot, 'domains/catalog.ts')
 const legacyTestPath = path.join(root, 'scripts/test-step1906a-worker-modularization-legacy.mjs')
 const manifestPath = path.join(root, 'scripts/w6-4-catalog-sku-card-worker-manifest.json')
+const unisexGenderInplaceManifestPath = path.join(root, 'scripts/catalog-unisex-gender-inplace-r1-worker-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -110,13 +111,17 @@ try {
   check(manifest?.version === 1 && manifest?.revision === 'w6-4-catalog-sku-card', 'W6.4 Worker delta manifest invalid')
   check(Object.keys(manifest.changes || {}).join(',') === 'updateCatalogVariant', 'W6.4 Worker changed-declaration allow-list widened unexpectedly')
   check(Object.keys(manifest.added || {}).join(',') === 'assertCatalogVariantMayDeactivate', 'W6.4 Worker added-declaration allow-list widened unexpectedly')
+  const unisexGenderInplaceManifest = JSON.parse(fs.readFileSync(unisexGenderInplaceManifestPath, 'utf8'))
+  check(unisexGenderInplaceManifest?.version === 1 && unisexGenderInplaceManifest?.revision === 'catalog-unisex-gender-inplace-r1', 'Catalog unisex gender in-place R1 manifest invalid')
+  check(Object.keys(unisexGenderInplaceManifest.changes || {}).join(',') === 'updateCatalogVariant', 'Catalog unisex gender in-place R1 allow-list widened unexpectedly')
+  check(unisexGenderInplaceManifest.changes.updateCatalogVariant.before === manifest.changes.updateCatalogVariant.after, 'Catalog unisex gender in-place R1 baseline does not match accepted W6.4 updateCatalogVariant')
 
   const actualCatalog = fs.readFileSync(catalogPath, 'utf8')
   const actualDeclarations = declarationMap(actualCatalog, catalogPath)
   const update = actualDeclarations.get('updateCatalogVariant')
   const helper = actualDeclarations.get('assertCatalogVariantMayDeactivate')
   check(update && helper, 'W6.4 catalog declarations missing')
-  check(sha(normalizeMovedDeclaration(update.text)) === manifest.changes.updateCatalogVariant.after, 'W6.4 updateCatalogVariant changed beyond exact manifest')
+  check(sha(normalizeMovedDeclaration(update.text)) === unisexGenderInplaceManifest.changes.updateCatalogVariant.after, 'Catalog unisex gender in-place R1 updateCatalogVariant changed beyond exact manifest')
   check(sha(normalizeMovedDeclaration(helper.text)) === manifest.added.assertCatalogVariantMayDeactivate, 'W6.4 retirement guard changed beyond exact manifest')
   check(sha(normalizeMovedDeclaration(baselineUpdateCatalogVariant)) === manifest.changes.updateCatalogVariant.before, 'W6.4 baseline updateCatalogVariant text does not match accepted pre-W6 hash')
 
