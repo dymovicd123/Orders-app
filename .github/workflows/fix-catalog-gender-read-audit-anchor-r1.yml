@@ -24,26 +24,15 @@ jobs:
           from pathlib import Path
           p = Path('.github/workflows/catalog-gender-read-audit-r1.yml')
           s = p.read_text()
-          old = """          patch('worker/domains/catalog.ts',
-              'first<{ id: number; name: string; category: string; external_id?: string | null }>()',
-              'first<{ id: number; name: string; category: string; gender_scope?: string | null; external_id?: string | null }>()',
-              'canonical exact type')
-"""
-          new = """          patch('worker/domains/catalog.ts',
-              'first<{ id: number; name: string; category: string; external_id?: string | null }>()',
-              'first<{ id: number; name: string; category: string; gender_scope?: string | null; external_id?: string | null }>()',
-              'canonical exact/alias types', 2)
-"""
-          alias = """          patch('worker/domains/catalog.ts',
-              'first<{ id: number; name: string; category: string; external_id?: string | null }>();',
-              'first<{ id: number; name: string; category: string; gender_scope?: string | null; external_id?: string | null }>();',
-              'alias product type')
-"""
-          if old not in s:
-              raise SystemExit('canonical type anchor not found')
+          old_label = "              'canonical exact type')"
+          new_label = "              'canonical exact/alias types', 2)"
+          if old_label not in s:
+              raise SystemExit('canonical type label not found')
+          s = s.replace(old_label, new_label, 1)
+          alias = "          patch('worker/domains/catalog.ts',\n              'first<{ id: number; name: string; category: string; external_id?: string | null }>();',\n              'first<{ id: number; name: string; category: string; gender_scope?: string | null; external_id?: string | null }>();',\n              'alias product type')\n"
           if alias not in s:
               raise SystemExit('alias type block not found')
-          s = s.replace(old, new, 1).replace(alias, '', 1)
+          s = s.replace(alias, '', 1)
           p.write_text(s)
           PY
       - name: Commit audit workflow repair
