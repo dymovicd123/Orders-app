@@ -36,6 +36,36 @@ function responseLooksLikeHtml(response: Response, bodyText: string) {
     || preview.startsWith('<html')
 }
 
+function prepareNonBlockingOrderShortageBody(method: string, url: string, body: BodyInit | null | undefined) {
+  const path = url.split('?')[0].replace(/^https?:\/\/[^/]+/i, '')
+  const isOrderWrite = (method === 'POST' && path === '/api/orders')
+    || (method === 'PATCH' && /^\/api\/orders\/\d+$/.test(path))
+  if (!isOrderWrite || typeof body !== 'string') return body
+
+  try {
+    const payload = JSON.parse(body) as Record<string, unknown>
+    if (!Array.isArray(payload.items)) return body
+
+    let changed = false
+    const items = payload.items.map((rawItem) => {
+      if (!rawItem || typeof rawItem !== 'object') return rawItem
+      const item = rawItem as Record<string, unknown>
+      const source = String(item.sourceType ?? item.source_type ?? '').trim().toLowerCase()
+      if (source === 'workshop') return rawItem
+
+      const hasPhysicalObservation = item.observedPhysicalQuantity !== undefined && item.observedPhysicalQuantity !== null
+      if (hasPhysicalObservation || item.shortageAcknowledged === true) return rawItem
+
+      changed = true
+      return { ...item, shortageAcknowledged: true }
+    })
+
+    return changed ? JSON.stringify({ ...payload, items }) : body
+  } catch {
+    return body
+  }
+}
+
 function criticalRequestFingerprintTag(value: string) {
   // sessionStorage must not contain the order/customer payload itself. This non-cryptographic tag is
   // only a local lookup hint; the Worker still verifies the full SHA-256 request fingerprint, so a
@@ -116,7 +146,11 @@ export function useApiClient({ accessRole, setError, setMessage }: ApiClientArgs
     const safeRead = method === 'GET' || method === 'HEAD'
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
     const managedInventory = prepareManagedInventoryWrite(method, url, init.body, headers, prepareCriticalRequest)
-    const requestBody = managedInventory.body
+    // A stock shortage is not a reason to reject creating/editing an order. If the operator supplied
+    // a physical count, preserve it. Otherwise the write explicitly records the existing
+    // "Сейчас проверить не могу" decision so the first save does not have to fail merely to reveal
+    // a second-step acknowledgement control.
+    const requestBody = prepareNonBlockingOrderShortageBody(method, url, managedInventory.body)
     const managedInventoryRequestKey = managedInventory.requestKey
     const managedInventoryRequestId = managedInventory.requestId
     const idempotentWrite = !safeRead && Boolean(headers.get('X-Idempotency-Key'))
