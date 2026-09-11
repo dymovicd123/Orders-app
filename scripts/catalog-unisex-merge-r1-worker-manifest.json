@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "revision": "catalog-unisex-merge-r1",
+  "changes": {
+    "updateCatalogVariant": {
+      "before": "636a1ba09858cbd9c8cce415662a36d4bf99ac1f20ccafee47761d60d7dd74a3",
+      "after": "784eaaecfcd584b2bd9f5a0a0693a1fcbb43be06444016af74fcffff1fb8777d"
+    }
+  }
+}
