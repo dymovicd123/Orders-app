@@ -1,0 +1,42 @@
+name: Unisex Merge Preflight Temp
+
+on:
+  push:
+    branches: [catalog-unisex-merge-r1]
+    paths: [.github/workflows/unisex-merge-preflight-temp.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Read-only Production merge preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          q() { local title="$1"; shift; echo; echo "===== $title ====="; npx wrangler d1 execute orders_db_prod --remote --command="$*"; }
+          IDS='159,448,480,673,880,1171,1221'
+          q 'VARIANTS' "SELECT v.id,p.name,p.gender_scope,v.stock_position_id,v.category,v.gender,v.color,v.size_label,v.is_active,v.external_id FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE v.id IN ($IDS) ORDER BY p.name,v.id;"
+          q 'STOCK' "SELECT variant_id,inventory_source,id AS stock_id,quantity,reserved_quantity,gender_snapshot,last_action,last_source_ref FROM inventory_stock WHERE variant_id IN ($IDS) ORDER BY variant_id,inventory_source,id;"
+          q 'REFERENCE_COUNTS' "SELECT v.id AS variant_id,(SELECT COUNT(*) FROM order_items x WHERE x.variant_id=v.id) AS order_items,(SELECT COUNT(*) FROM inventory_movements x WHERE x.variant_id=v.id) AS movements,(SELECT COUNT(*) FROM workshop_tasks x WHERE x.variant_id=v.id) AS workshop,(SELECT COUNT(*) FROM inventory_reservations x WHERE x.variant_id=v.id) AS reservations,(SELECT COUNT(*) FROM catalog_input_aliases x WHERE x.variant_id=v.id) AS aliases,(SELECT COUNT(*) FROM inventory_lifecycle_events x WHERE x.variant_id=v.id) AS lifecycle,(SELECT COUNT(*) FROM inventory_transfer_items x WHERE x.variant_id=v.id) AS transfers,(SELECT COUNT(*) FROM inventory_stock_checks x WHERE x.variant_id=v.id) AS checks,(SELECT COUNT(*) FROM inventory_stocktake_items x WHERE x.variant_id=v.id) AS stocktake_items FROM catalog_variants v WHERE v.id IN ($IDS) ORDER BY v.id;"
+          q 'ACTIVE_RESERVATIONS' "SELECT variant_id,status,inventory_source,COUNT(*) AS rows,SUM(quantity) AS qty FROM inventory_reservations WHERE variant_id IN ($IDS) GROUP BY variant_id,status,inventory_source ORDER BY variant_id,status,inventory_source;"
+          q 'ORDER_STATES' "SELECT oi.variant_id,o.order_status,o.shipping_status,COUNT(*) AS rows,SUM(oi.quantity) AS qty FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.variant_id IN ($IDS) GROUP BY oi.variant_id,o.order_status,o.shipping_status ORDER BY oi.variant_id,o.order_status,o.shipping_status;"
+          q 'WORKSHOP_STATES' "SELECT variant_id,status,COUNT(*) AS rows,SUM(quantity) AS qty FROM workshop_tasks WHERE variant_id IN ($IDS) GROUP BY variant_id,status ORDER BY variant_id,status;"
+          q 'LIFECYCLE_STATES' "SELECT variant_id,status,event_type,COUNT(*) AS rows,SUM(quantity) AS qty FROM inventory_lifecycle_events WHERE variant_id IN ($IDS) GROUP BY variant_id,status,event_type ORDER BY variant_id,status,event_type;"
+          q 'TRANSFER_COLLISIONS' "SELECT a.variant_id AS old_variant,b.variant_id AS target_variant,a.transfer_id,a.id AS old_item_id,b.id AS target_item_id,a.quantity AS old_qty,b.quantity AS target_qty,d.status FROM inventory_transfer_items a JOIN inventory_transfer_items b ON b.transfer_id=a.transfer_id AND b.id<>a.id JOIN inventory_transfer_documents d ON d.id=a.transfer_id WHERE (a.variant_id=1171 AND b.variant_id=1221) OR (a.variant_id=880 AND b.variant_id IN (448,673)) OR (a.variant_id=159 AND b.variant_id=480) ORDER BY a.variant_id,b.variant_id,a.transfer_id;"
+          q 'STOCKTAKE_COLLISIONS' "SELECT a.variant_id AS old_variant,b.variant_id AS target_variant,a.session_id,a.id AS old_item_id,b.id AS target_item_id,a.status AS old_status,b.status AS target_status,s.status AS session_status FROM inventory_stocktake_items a JOIN inventory_stocktake_items b ON b.session_id=a.session_id AND b.id<>a.id JOIN inventory_stocktake_sessions s ON s.id=a.session_id WHERE (a.variant_id=1171 AND b.variant_id=1221) OR (a.variant_id=880 AND b.variant_id IN (448,673)) OR (a.variant_id=159 AND b.variant_id=480) ORDER BY a.variant_id,b.variant_id,a.session_id;"
+          q 'ACTIVE_STOCKTAKE' "SELECT i.variant_id,i.session_id,i.id,i.status,s.inventory_source,s.status AS session_status,i.baseline_quantity,i.counted_quantity FROM inventory_stocktake_items i JOIN inventory_stocktake_sessions s ON s.id=i.session_id WHERE i.variant_id IN ($IDS) AND s.status='active' ORDER BY i.variant_id,i.session_id;"
+          q 'TRANSFER_ROWS' "SELECT i.variant_id,i.transfer_id,i.id,i.quantity,d.status,d.from_source,d.to_source,d.created_at FROM inventory_transfer_items i JOIN inventory_transfer_documents d ON d.id=i.transfer_id WHERE i.variant_id IN ($IDS) ORDER BY i.variant_id,i.transfer_id;"
+          echo PREFLIGHT_COMPLETE
