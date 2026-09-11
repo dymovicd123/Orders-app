@@ -449,15 +449,15 @@ replaceOnce('src/features/sections/InventorySection.tsx',
   "type ResolutionFactsState = CatalogResolutionFacts & { productId: number }",
   "type ResolutionFactsState = CatalogResolutionFacts & { productId: number; genderScope: '' | 'female' | 'male' | 'unisex' }",
 )
-replaceOnce('src/features/sections/InventorySection.tsx',
-  "useState<ResolutionFactsState>({ productId: 0, material: 'СТАНДАРТ', length: 'СТАНДАРТ', category: 'adult', gender: '', color: '', size: '' })",
-  "useState<ResolutionFactsState>({ productId: 0, genderScope: '', material: 'СТАНДАРТ', length: 'СТАНДАРТ', category: 'adult', gender: '', color: '', size: '' })",
-)
-// same initializer occurs twice; replace the remaining occurrence
-replaceOnce('src/features/sections/InventorySection.tsx',
-  "useState<ResolutionFactsState>({ productId: 0, material: 'СТАНДАРТ', length: 'СТАНДАРТ', category: 'adult', gender: '', color: '', size: '' })",
-  "useState<ResolutionFactsState>({ productId: 0, genderScope: '', material: 'СТАНДАРТ', length: 'СТАНДАРТ', category: 'adult', gender: '', color: '', size: '' })",
-)
+{
+  const rel = 'src/features/sections/InventorySection.tsx'
+  const before = "useState<ResolutionFactsState>({ productId: 0, material: 'СТАНДАРТ', length: 'СТАНДАРТ', category: 'adult', gender: '', color: '', size: '' })"
+  const after = "useState<ResolutionFactsState>({ productId: 0, genderScope: '', material: 'СТАНДАРТ', length: 'СТАНДАРТ', category: 'adult', gender: '', color: '', size: '' })"
+  const source = read(rel)
+  const count = source.split(before).length - 1
+  if (count !== 2) throw new Error(`Expected two resolution initializers in ${rel}, got ${count}`)
+  write(rel, source.split(before).join(after))
+}
 replaceOnce('src/features/sections/InventorySection.tsx',
   "        productId: Number(context?.product?.id || 0),\n        material: facts.material || 'СТАНДАРТ',",
   "        productId: Number(context?.product?.id || 0),\n        genderScope: context?.product?.genderScope || '',\n        material: facts.material || 'СТАНДАРТ',",
