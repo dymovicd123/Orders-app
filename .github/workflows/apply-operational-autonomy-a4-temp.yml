@@ -1,0 +1,555 @@
+name: Apply Operational Autonomy A4 Temp
+
+on:
+  push:
+    branches:
+      - operational-autonomy-a4-handover-correction
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: operational-autonomy-a4-handover-correction
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply A4 correction workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          # 1) Dedicated domain correction. Keep the ordinary editor's sent -> not_sent guard intact.
+          path = Path('worker/domains/order-reservations.ts')
+          text = path.read_text()
+          anchor = "\n\nexport async function getOrderShipmentInventoryBlockers(db: D1Database, orderId: number) {"
+          if anchor not in text:
+              raise SystemExit('order-reservations insertion anchor missing')
+          function = r'''
+
+export async function correctMistakenOrderHandover(
+  db: D1Database,
+  orderId: number,
+  input: { physicalOutcome?: unknown; actor?: string } = {},
+) {
+  if (!orderId) throw new Error('Заказ не найден.');
+  if (cleanText(input.physicalOutcome).toLowerCase() !== 'not_issued') {
+    throw new Error('Исправление разрешено только после явного подтверждения, что товар фактически НЕ передавался клиенту.');
+  }
+
+  const order = await db.prepare(
+    `SELECT id, external_id, order_status, archived_at, shipping_status, shipping_date
+     FROM orders WHERE id = ? LIMIT 1`
+  ).bind(orderId).first<Record<string, unknown>>();
+  if (!order?.id) throw new Error('Заказ не найден.');
+  if (normalizeOrderStatus(order.order_status) === 'deleted') throw new Error('Удалённый заказ нельзя исправлять как действующий.');
+  if (normalizeOrderStatus(order.order_status) === 'archived' || cleanText(order.archived_at)) {
+    throw new Error('Архивный заказ доступен только для просмотра. Сначала верните его из архива.');
+  }
+
+  const externalId = cleanText(order.external_id);
+  const timestamp = new Date().toISOString();
+  const shippingWasSent = normalizeShippingStatus(order.shipping_status) === 'sent';
+  const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
+
+  if (!humanInventoryModelEnabled) {
+    if (!shippingWasSent) return { ok: true, alreadyCorrected: true, restoredPhysicalQuantity: 0, freshnessProtectedQuantity: 0, reactivatedReservations: 0 };
+    await db.prepare(
+      `UPDATE orders SET shipping_status = 'not_sent', shipping_date = NULL, updated_at = ?
+       WHERE id = ? AND shipping_status = 'sent'`
+    ).bind(timestamp, orderId).run();
+    try {
+      await writeActivityLog(db, {
+        eventType: 'order_false_handover_corrected', entityType: 'order', entityId: orderId, orderId,
+        externalOrderId: externalId, title: `Исправлена ошибочная отправка заказа ${externalId}`,
+        details: 'Товар фактически не передавался клиенту; статус отправки возвращён в «не отправлено».', createdAt: timestamp,
+      });
+    } catch (error) {
+      console.warn('False handover correction activity log failed', error);
+    }
+    return { ok: true, restoredPhysicalQuantity: 0, freshnessProtectedQuantity: 0, reactivatedReservations: 0 };
+  }
+
+  const downstream = await db.prepare(
+    `SELECT
+       EXISTS(SELECT 1 FROM returns r WHERE r.order_id = ? AND COALESCE(r.status, 'completed') <> 'cancelled') AS has_return,
+       EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id = ? AND COALESCE(e.status, 'completed') <> 'cancelled') AS has_exchange`
+  ).bind(orderId, orderId).first<{ has_return: number; has_exchange: number }>();
+  if (toInt(downstream?.has_return, 0) || toInt(downstream?.has_exchange, 0)) {
+    throw new Error('Исправление отправки остановлено: по заказу уже есть действующий возврат или обмен. Сначала исправьте/отмените эту последующую операцию, чтобы не переписать физическую историю задним числом.');
+  }
+
+  const fulfilledRows = await db.prepare(
+    `SELECT r.id, r.order_item_id, r.inventory_source, r.variant_id, r.quantity, r.fulfilled_at,
+            oi.stock_quantity_before, oi.stock_quantity_after
+     FROM inventory_reservations r
+     JOIN order_items oi ON oi.id = r.order_item_id AND oi.order_id = r.order_id
+     WHERE r.order_id = ? AND r.status = 'fulfilled'
+     ORDER BY r.id ASC`
+  ).bind(orderId).all<Record<string, unknown>>();
+  const fulfilled = fulfilledRows.results || [];
+
+  if (!fulfilled.length) {
+    if (!shippingWasSent) return { ok: true, alreadyCorrected: true, restoredPhysicalQuantity: 0, freshnessProtectedQuantity: 0, reactivatedReservations: 0 };
+    await db.prepare(
+      `UPDATE orders SET shipping_status = 'not_sent', shipping_date = NULL, updated_at = ?
+       WHERE id = ? AND shipping_status = 'sent'`
+    ).bind(timestamp, orderId).run();
+    try {
+      await writeActivityLog(db, {
+        eventType: 'order_false_handover_corrected', entityType: 'order', entityId: orderId, orderId,
+        externalOrderId: externalId, title: `Исправлена ошибочная отправка заказа ${externalId}`,
+        details: 'Складских списаний не было; исправлен только ошибочный статус отправки.', createdAt: timestamp,
+      });
+    } catch (error) {
+      console.warn('False workshop-only handover correction activity log failed', error);
+    }
+    return { ok: true, restoredPhysicalQuantity: 0, freshnessProtectedQuantity: 0, reactivatedReservations: 0 };
+  }
+
+  const activeStocktakeSources = new Set<string>();
+  const stockRowKeys = new Set<string>();
+  const payloadRows: Array<{ reservationId: number; orderItemId: number; source: string; variantId: number; restoreQuantity: number }> = [];
+  let restoredPhysicalQuantity = 0;
+  let freshnessProtectedQuantity = 0;
+
+  for (const row of fulfilled) {
+    const reservationId = toInt(row.id, 0);
+    const orderItemId = toInt(row.order_item_id, 0);
+    const source = normalizeSourceType(row.inventory_source);
+    const variantId = toInt(row.variant_id, 0);
+    const reservedQuantity = Math.max(0, toInt(row.quantity, 0));
+    const fulfilledAt = cleanText(row.fulfilled_at);
+    if (!reservationId || !orderItemId || !variantId || !reservedQuantity || !fulfilledAt) {
+      throw new Error('Ошибочную выдачу нельзя отменить автоматически: у проведённого списания неполная складская связь или отсутствует время выдачи. Нужна точечная физическая сверка.');
+    }
+    if (row.stock_quantity_before === null || row.stock_quantity_before === undefined || row.stock_quantity_after === null || row.stock_quantity_after === undefined) {
+      throw new Error('Ошибочную выдачу нельзя отменить автоматически: для одной позиции не сохранён фактически списанный складской delta. Система ничего не изменила; нужна физическая сверка.');
+    }
+    const quantityBefore = Math.max(0, toInt(row.stock_quantity_before, 0));
+    const quantityAfter = Math.max(0, toInt(row.stock_quantity_after, 0));
+    const physicalDelta = Math.max(0, Math.min(reservedQuantity, quantityBefore - quantityAfter));
+
+    if (!activeStocktakeSources.has(source)) {
+      const activeStocktake = await db.prepare(
+        `SELECT id FROM inventory_stocktake_sessions WHERE inventory_source = ? AND status = 'active' LIMIT 1`
+      ).bind(source).first<{ id: string }>();
+      if (activeStocktake?.id) {
+        throw new Error('Сейчас идёт ревизия точки, затронутой этим заказом. Завершите или отмените ревизию и повторите исправление отправки.');
+      }
+      activeStocktakeSources.add(source);
+    }
+
+    const stockKey = `${source}:${variantId}`;
+    if (!stockRowKeys.has(stockKey)) {
+      const stock = await db.prepare(
+        `SELECT id FROM inventory_stock WHERE inventory_source = ? AND variant_id = ? ORDER BY id ASC LIMIT 1`
+      ).bind(source, variantId).first<{ id: number }>();
+      if (!stock?.id) {
+        throw new Error('Ошибочную выдачу нельзя отменить автоматически: для одной позиции больше нет строки физического остатка. Нужна фактическая сверка.');
+      }
+      stockRowKeys.add(stockKey);
+    }
+
+    const newerPhysicalTruth = await db.prepare(
+      `SELECT 1 AS found
+       WHERE EXISTS (
+         SELECT 1 FROM inventory_stock_checks
+         WHERE inventory_source = ? AND variant_id = ? AND datetime(checked_at) > datetime(?)
+       ) OR EXISTS (
+         SELECT 1 FROM inventory_stocktake_sessions
+         WHERE inventory_source = ? AND status = 'completed' AND completed_at IS NOT NULL
+           AND id NOT LIKE 'REV-%-P-%' AND datetime(completed_at) > datetime(?)
+       )
+       LIMIT 1`
+    ).bind(source, variantId, fulfilledAt, source, fulfilledAt).first<{ found: number }>();
+
+    const restoreQuantity = newerPhysicalTruth?.found ? 0 : physicalDelta;
+    if (newerPhysicalTruth?.found) freshnessProtectedQuantity += physicalDelta;
+    else restoredPhysicalQuantity += restoreQuantity;
+    payloadRows.push({ reservationId, orderItemId, source, variantId, restoreQuantity });
+  }
+
+  const payload = JSON.stringify(payloadRows);
+  const rawCte = `raw AS (
+    SELECT CAST(json_extract(j.value, '$.reservationId') AS INTEGER) AS reservation_id,
+           CAST(json_extract(j.value, '$.orderItemId') AS INTEGER) AS order_item_id,
+           CAST(json_extract(j.value, '$.source') AS TEXT) AS source,
+           CAST(json_extract(j.value, '$.variantId') AS INTEGER) AS variant_id,
+           CAST(json_extract(j.value, '$.restoreQuantity') AS INTEGER) AS restore_quantity
+    FROM json_each(?) j
+  )`;
+  const restoreCte = `${rawCte}, eligible AS (
+    SELECT raw.* FROM raw
+    JOIN inventory_reservations r ON r.id = raw.reservation_id AND r.status = 'fulfilled'
+  ), x AS (
+    SELECT source, variant_id, SUM(restore_quantity) AS restore_quantity
+    FROM eligible WHERE restore_quantity > 0 GROUP BY source, variant_id
+  )`;
+  const statements: D1PreparedStatement[] = [];
+
+  if (payloadRows.some((row) => row.restoreQuantity > 0)) {
+    statements.push(
+      db.prepare(
+        `WITH ${restoreCte}
+         INSERT INTO inventory_movements (
+           inventory_source, movement_type, product_id, variant_id, product_name_snapshot, gender_snapshot,
+           color_snapshot, material_snapshot, length_snapshot, size_snapshot, quantity_delta, quantity_after,
+           reference_type, reference_id, comment, created_at
+         )
+         SELECT s.inventory_source, 'revision', s.product_id, s.variant_id, s.product_name_snapshot, s.gender_snapshot,
+                s.color_snapshot, s.material_snapshot, s.length_snapshot, s.size_snapshot,
+                x.restore_quantity, s.quantity + x.restore_quantity,
+                'order_handover_correction', ?, ?, ?
+         FROM x JOIN inventory_stock s ON s.inventory_source = x.source AND s.variant_id = x.variant_id`
+      ).bind(payload, externalId, `Отмена ошибочной физической выдачи по заказу ${externalId}`, timestamp),
+      db.prepare(
+        `WITH ${restoreCte}
+         UPDATE inventory_stock
+         SET quantity = quantity + (
+               SELECT x.restore_quantity FROM x
+               WHERE x.source = inventory_stock.inventory_source AND x.variant_id = inventory_stock.variant_id
+             ),
+             last_action = 'Отмена ошибочной выдачи',
+             last_source_ref = ?, updated_at = ?
+         WHERE EXISTS (
+           SELECT 1 FROM x
+           WHERE x.source = inventory_stock.inventory_source AND x.variant_id = inventory_stock.variant_id
+         )`
+      ).bind(payload, `order-handover-correction:${externalId}`, timestamp),
+    );
+  }
+
+  statements.push(
+    db.prepare(
+      `WITH ${rawCte}
+       UPDATE order_items
+       SET stock_writeoff_status = 'reserved', stock_quantity_before = NULL, stock_quantity_after = NULL
+       WHERE EXISTS (
+         SELECT 1 FROM raw
+         JOIN inventory_reservations r ON r.id = raw.reservation_id AND r.status = 'fulfilled'
+         WHERE raw.order_item_id = order_items.id
+       )`
+    ).bind(payload),
+    db.prepare(
+      `WITH ${rawCte}
+       UPDATE inventory_reservations
+       SET status = 'active', fulfilled_at = NULL, released_at = NULL, updated_at = ?
+       WHERE status = 'fulfilled' AND EXISTS (SELECT 1 FROM raw WHERE raw.reservation_id = inventory_reservations.id)`
+    ).bind(payload, timestamp),
+    db.prepare(
+      `WITH ${rawCte}, affected AS (SELECT DISTINCT source, variant_id FROM raw)
+       UPDATE inventory_stock
+       SET reserved_quantity = COALESCE((
+             SELECT SUM(r.quantity) FROM inventory_reservations r
+             WHERE r.status = 'active'
+               AND r.inventory_source = inventory_stock.inventory_source
+               AND r.variant_id = inventory_stock.variant_id
+           ), 0),
+           last_action = CASE WHEN last_action = 'Отмена ошибочной выдачи' THEN last_action ELSE 'Резерв восстановлен' END,
+           last_source_ref = ?, updated_at = ?
+       WHERE EXISTS (
+         SELECT 1 FROM affected
+         WHERE affected.source = inventory_stock.inventory_source AND affected.variant_id = inventory_stock.variant_id
+       )`
+    ).bind(payload, `order-handover-correction:${externalId}`, timestamp),
+    db.prepare(
+      `UPDATE orders SET shipping_status = 'not_sent', shipping_date = NULL, updated_at = ?
+       WHERE id = ? AND shipping_status = 'sent'`
+    ).bind(timestamp, orderId),
+  );
+  await db.batch(statements);
+
+  try {
+    await writeActivityLog(db, {
+      eventType: 'order_false_handover_corrected', entityType: 'order', entityId: orderId, orderId,
+      externalOrderId: externalId, title: `Исправлена ошибочная выдача / отправка заказа ${externalId}`,
+      details: `Товар фактически не передавался клиенту. Возвращено в физический остаток: ${restoredPhysicalQuantity} шт.; не изменено из-за более новой физической сверки: ${freshnessProtectedQuantity} шт.; снова в резерве: ${payloadRows.length} поз.`,
+      createdAt: timestamp,
+    });
+  } catch (error) {
+    console.warn('False handover correction activity log after committed correction failed', error);
+  }
+
+  return {
+    ok: true,
+    restoredPhysicalQuantity,
+    freshnessProtectedQuantity,
+    reactivatedReservations: payloadRows.length,
+  };
+}
+'''
+          text = text.replace(anchor, function + anchor, 1)
+          path.write_text(text)
+
+          # 2) Harden existing delete recovery: restore only the physical delta actually consumed.
+          path = Path('worker/domains/order-delete.ts')
+          text = path.read_text()
+          old_select = """      `SELECT r.id, r.order_item_id, r.inventory_source, r.product_id, r.variant_id, r.quantity, r.fulfilled_at
+       FROM inventory_reservations r
+       WHERE r.order_id = ? AND r.status = 'fulfilled'
+       ORDER BY r.id ASC`"""
+          new_select = """      `SELECT r.id, r.order_item_id, r.inventory_source, r.product_id, r.variant_id, r.quantity, r.fulfilled_at,
+              oi.stock_quantity_before, oi.stock_quantity_after
+       FROM inventory_reservations r
+       JOIN order_items oi ON oi.id = r.order_item_id AND oi.order_id = r.order_id
+       WHERE r.order_id = ? AND r.status = 'fulfilled'
+       ORDER BY r.id ASC`"""
+          if old_select not in text:
+              raise SystemExit('delete fulfilled select anchor missing')
+          text = text.replace(old_select, new_select, 1)
+
+          old_qty = """      const quantity = Math.max(0, toInt(reservation.quantity, 0))
+      const source = cleanText(reservation.inventory_source)
+      const fulfilledAt = cleanText(reservation.fulfilled_at)
+      if (!variantId || !source || !quantity) {
+        throw new CriticalOperationConflictError('Ложную выдачу нельзя отменить автоматически: у проведённого складского списания потеряна точная товарная связь. Система ничего не изменила; нужна фактическая сверка этой позиции.')
+      }
+      if (!fulfilledAt) {
+"""
+          new_qty = """      const quantity = Math.max(0, toInt(reservation.quantity, 0))
+      const source = cleanText(reservation.inventory_source)
+      const fulfilledAt = cleanText(reservation.fulfilled_at)
+      if (!variantId || !source || !quantity) {
+        throw new CriticalOperationConflictError('Ложную выдачу нельзя отменить автоматически: у проведённого складского списания потеряна точная товарная связь. Система ничего не изменила; нужна фактическая сверка этой позиции.')
+      }
+      if (reservation.stock_quantity_before === null || reservation.stock_quantity_before === undefined || reservation.stock_quantity_after === null || reservation.stock_quantity_after === undefined) {
+        throw new CriticalOperationConflictError('Ложную выдачу нельзя отменить автоматически: не сохранён фактически списанный складской delta. Система ничего не изменила; нужна физическая сверка этой позиции.')
+      }
+      const physicalRestoreQuantity = Math.max(0, Math.min(
+        quantity,
+        Math.max(0, toInt(reservation.stock_quantity_before, 0)) - Math.max(0, toInt(reservation.stock_quantity_after, 0)),
+      ))
+      if (!fulfilledAt) {
+"""
+          if old_qty not in text:
+              raise SystemExit('delete quantity anchor missing')
+          text = text.replace(old_qty, new_qty, 1)
+          text = text.replace("        falseShipmentFreshnessProtectedQuantity += quantity\n        continue", "        falseShipmentFreshnessProtectedQuantity += physicalRestoreQuantity\n        continue", 1)
+          old_group = """      const key = `${source}:${variantId}`
+      const current = restoreGroups.get(key)
+      if (current) current.quantity += quantity
+      else restoreGroups.set(key, { source, variantId, quantity })
+"""
+          new_group = """      if (physicalRestoreQuantity > 0) {
+        const key = `${source}:${variantId}`
+        const current = restoreGroups.get(key)
+        if (current) current.quantity += physicalRestoreQuantity
+        else restoreGroups.set(key, { source, variantId, quantity: physicalRestoreQuantity })
+      }
+"""
+          if old_group not in text:
+              raise SystemExit('delete restore group anchor missing')
+          text = text.replace(old_group, new_group, 1)
+          path.write_text(text)
+
+          # 3) Route: explicit correction endpoint; ordinary shipping PATCH still only sends.
+          path = Path('worker/index.ts')
+          text = path.read_text()
+          old_import = "import { activeStocktakeSessionForHandover, confirmItemStillHere, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, getOrderStockHandoverState, normalizeShipmentObservations, OrderStockShortageError, orderShipmentInventoryBlockerMessage, orderWorkshopPendingForShipping, reconcileIssuedBeforeCheckpoint } from './domains/order-reservations.ts'"
+          new_import = "import { activeStocktakeSessionForHandover, confirmItemStillHere, correctMistakenOrderHandover, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, getOrderStockHandoverState, normalizeShipmentObservations, OrderStockShortageError, orderShipmentInventoryBlockerMessage, orderWorkshopPendingForShipping, reconcileIssuedBeforeCheckpoint } from './domains/order-reservations.ts'"
+          if old_import not in text:
+              raise SystemExit('worker reservation import anchor missing')
+          text = text.replace(old_import, new_import, 1)
+          route_anchor = "\n      const orderShippingMatch = url.pathname.match(/^\\/api\\/orders\\/(\\d+)\\/shipping$/);"
+          if route_anchor not in text:
+              raise SystemExit('shipping route anchor missing')
+          route = r'''
+
+      const orderShippingCorrectionMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping\/correct$/);
+      if (orderShippingCorrectionMatch && request.method === 'POST') {
+        const id = toInt(orderShippingCorrectionMatch[1], 0);
+        const input = await readJson<{ physicalOutcome?: unknown }>(request);
+        try {
+          const result = await correctMistakenOrderHandover(env.DB, id, {
+            physicalOutcome: input.physicalOutcome,
+            actor: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
+          });
+          let updatedOrder = null;
+          try {
+            updatedOrder = await getOrder(env.DB, id);
+          } catch (error) {
+            console.warn('Order readback after handover correction failed', error);
+          }
+          return json({ ...result, ...(updatedOrder ? { order: updatedOrder } : {}), refreshRequired: !updatedOrder });
+        } catch (error) {
+          const publicError = publicApiError(error);
+          return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });
+        }
+      }
+'''
+          text = text.replace(route_anchor, route + route_anchor, 1)
+          path.write_text(text)
+
+          # 4) Frontend handler.
+          path = Path('src/App.tsx')
+          text = path.read_text()
+          handler_anchor = "\n  async function deleteOrderAsAdmin(order: OrderRecord) {"
+          if handler_anchor not in text:
+              raise SystemExit('App delete handler anchor missing')
+          handler = r'''
+
+  async function correctMistakenOrderShipping(order: OrderRecord) {
+    if (savingOrder || isArchivedOrderRecord(order) || order.shipping_status !== 'sent') return
+    const confirmed = window.confirm(
+      `Исправить ошибочную отправку заказа ${order.external_id}?\n\nПодтверждайте только если товар ФАКТИЧЕСКИ НЕ передавался клиенту. Система вернёт проведённые складские позиции в резерв заказа и восстановит только тот физический остаток, который действительно был списан.\n\nЕсли клиент получал товар, а затем вернул его — используйте «Возврат», а не это исправление.`
+    )
+    if (!confirmed) return
+
+    setSavingOrder(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const payload = { physicalOutcome: 'not_issued' as const }
+      const criticalKey = `order-handover-correction:${order.id}`
+      const critical = prepareCriticalRequest(criticalKey, payload)
+      const response = await apiFetch(`/api/orders/${order.id}/shipping/correct`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
+        body: JSON.stringify(critical.payload),
+      })
+      const result = await readJsonResponse<{
+        ok?: boolean
+        message?: string
+        order?: OrderRecord
+        refreshRequired?: boolean
+        alreadyCorrected?: boolean
+        restoredPhysicalQuantity?: number
+        freshnessProtectedQuantity?: number
+        reactivatedReservations?: number
+      }>(response, 'Исправление отправки')
+      if (!response.ok) throw new Error(result.message || 'Не удалось исправить ошибочную отправку.')
+      completeCriticalRequest(criticalKey, critical.requestId)
+      if (result.order) upsertOrderInState(result.order)
+      invalidateInventoryStockCaches(true)
+      setMessage(result.alreadyCorrected
+        ? `Заказ ${order.external_id} уже находится в состоянии «не отправлено».`
+        : `Ошибочная отправка заказа ${order.external_id} исправлена. Позиции снова зарезервированы; физический остаток восстановлен только там, где не было более новой сверки.`)
+      void loadDashboard()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось исправить ошибочную отправку.')
+    } finally {
+      setSavingOrder(false)
+    }
+  }
+'''
+          text = text.replace(handler_anchor, handler + handler_anchor, 1)
+          old_ctx = "<OrdersTableSection ctx={{ deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder"
+          new_ctx = "<OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder"
+          if old_ctx not in text:
+              raise SystemExit('OrdersTableSection context anchor missing')
+          text = text.replace(old_ctx, new_ctx, 1)
+          path.write_text(text)
+
+          # 5) Visible, explicit sent-order correction action.
+          path = Path('src/features/sections/OrdersTableSection.tsx')
+          text = path.read_text()
+          destructure_anchor = "  const {\n    deleteOrderAsAdmin,"
+          if destructure_anchor not in text:
+              raise SystemExit('OrdersTableSection destructure anchor missing')
+          text = text.replace(destructure_anchor, "  const {\n    correctMistakenOrderShipping,\n    deleteOrderAsAdmin,", 1)
+          button_anchor = """                            {!retainedOnly && !archived && !isReturnedOrderRecord(order) && order.shipping_status !== 'sent' && workshopPending ? (
+                              <span className=\"order-stock-handover-wait-note\">Отправить весь заказ можно после готовности Цеха</span>
+                            ) : null}
+"""
+          button = button_anchor + """                            {!retainedOnly && !archived && !isReturnedOrderRecord(order) && order.shipping_status === 'sent' ? (
+                              <button
+                                className=\"secondary compact\"
+                                type=\"button\"
+                                disabled={savingOrder}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void correctMistakenOrderShipping(order)
+                                }}
+                              >
+                                Исправить отправку
+                              </button>
+                            ) : null}
+"""
+          if button_anchor not in text:
+              raise SystemExit('OrdersTableSection shipping action anchor missing')
+          text = text.replace(button_anchor, button, 1)
+          path.write_text(text)
+
+          # 6) Audit note.
+          path = Path('docs/continuation/OPERATIONAL_AUTONOMY_AUDIT_20260910.md')
+          text = path.read_text()
+          heading = '### A4 — Mistaken `sent` / physical-handover fact has an incomplete recovery path\n'
+          if heading not in text:
+              raise SystemExit('A4 audit heading missing')
+          text = text.replace(heading, heading + '\n> A4 update: implemented on the current A4 branch with an explicit «Исправить отправку» action. The correction reactivates fulfilled reservations, restores only the physical delta actually consumed, respects newer physical checks/stocktakes, blocks active return/exchange history, and leaves the ordinary sent-status edit guard intact. The existing false-shipment delete recovery is hardened to the same exact-delta rule.\n', 1)
+          path.write_text(text)
+          PY
+
+          cat > scripts/test-operational-autonomy-a4-handover-correction.mjs <<'NODE'
+          import fs from 'node:fs'
+          const read = (path) => fs.readFileSync(path, 'utf8')
+          const check = (condition, message) => { if (!condition) throw new Error(message) }
+          try {
+            const reservations = read('worker/domains/order-reservations.ts')
+            const orderDelete = read('worker/domains/order-delete.ts')
+            const ordersWrite = read('worker/domains/orders-write.ts')
+            const worker = read('worker/index.ts')
+            const app = read('src/App.tsx')
+            const table = read('src/features/sections/OrdersTableSection.tsx')
+
+            check(reservations.includes('export async function correctMistakenOrderHandover'), 'dedicated handover correction domain action missing')
+            check(reservations.includes("physicalOutcome).toLowerCase() !== 'not_issued'"), 'explicit physical-not-issued confirmation missing')
+            check(reservations.includes("COALESCE(r.status, 'completed') <> 'cancelled') AS has_return"), 'active return conflict guard missing')
+            check(reservations.includes("COALESCE(e.status, 'completed') <> 'cancelled') AS has_exchange"), 'active exchange conflict guard missing')
+            check(reservations.includes("status = 'active'"), 'fulfilled reservation reactivation missing')
+            check(reservations.includes("stock_writeoff_status = 'reserved'"), 'order item is not returned to reservation state')
+            check(reservations.includes('SUM(r.quantity) FROM inventory_reservations r'), 'reserved_quantity rebuild from active reservations missing')
+            check(reservations.includes('quantityBefore - quantityAfter'), 'actual physical delta calculation missing')
+            check(reservations.includes('newerPhysicalTruth?.found ? 0 : physicalDelta'), 'newer physical truth protection missing')
+            check(reservations.includes("shipping_status = 'not_sent', shipping_date = NULL"), 'shipping fact correction missing')
+            check(reservations.includes("reference_type, reference_id, comment, created_at"), 'inventory reversal movement audit missing')
+            check(reservations.includes("'order_handover_correction'"), 'handover correction inventory reference missing')
+
+            check(orderDelete.includes('oi.stock_quantity_before, oi.stock_quantity_after'), 'delete false-shipment recovery does not read actual physical delta')
+            check(orderDelete.includes('const physicalRestoreQuantity = Math.max(0, Math.min('), 'delete recovery still restores reservation quantity blindly')
+            check(orderDelete.includes('falseShipmentFreshnessProtectedQuantity += physicalRestoreQuantity'), 'delete freshness protection still counts/restores wrong quantity')
+
+            check(ordersWrite.includes("existingShippingStatus === 'sent' && nextShippingStatus !== 'sent'"), 'ordinary sent -> not_sent edit guard was weakened')
+            check(worker.includes("/shipping\\/correct$/"), 'dedicated correction route missing')
+            check(worker.includes('correctMistakenOrderHandover(env.DB, id'), 'correction route is not wired to domain action')
+            check(worker.includes("nextShippingStatus !== 'sent'"), 'ordinary shipping route no longer remains send-only')
+
+            check(app.includes('async function correctMistakenOrderShipping(order: OrderRecord)'), 'frontend correction handler missing')
+            check(app.includes("physicalOutcome: 'not_issued' as const"), 'frontend correction does not explicitly confirm physical outcome')
+            check(app.includes("/shipping/correct"), 'frontend does not use dedicated correction endpoint')
+            check(table.includes('Исправить отправку'), 'sent-order correction action not visible in Orders table')
+            check(table.includes("order.shipping_status === 'sent'"), 'correction action is not scoped to sent orders')
+
+            console.log('Operational Autonomy A4 handover correction checks passed.')
+          } catch (error) {
+            console.error(`Operational Autonomy A4 checks failed: ${error?.message || error}`)
+            process.exit(1)
+          }
+          NODE
+
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          const path = 'package.json'
+          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'))
+          const marker = 'node scripts/test-operational-autonomy-a4-handover-correction.mjs'
+          if (!pkg.scripts['release:check'].includes(marker)) pkg.scripts['release:check'] += ` && ${marker}`
+          fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n')
+          NODE
+
+          rm .github/workflows/apply-operational-autonomy-a4-temp.yml
+          node scripts/test-operational-autonomy-a4-handover-correction.mjs
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Add safe mistaken handover correction'
+          git push origin HEAD:operational-autonomy-a4-handover-correction
