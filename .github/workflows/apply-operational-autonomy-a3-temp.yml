@@ -24,6 +24,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           node --input-type=module <<'NODE' > /tmp/a3-before
           import fs from 'node:fs'
           import crypto from 'node:crypto'
@@ -137,23 +138,55 @@ jobs:
 
           python - <<'PY'
           from pathlib import Path
-          path = Path('scripts/test-step1906a-worker-modularization.mjs')
+          path = Path('scripts/test-step1906a-worker-modularization-legacy.mjs')
           text = path.read_text()
-          anchor = "const operationalAutonomyR3ManifestPath = path.join(root, 'scripts/operational-autonomy-r3-worker-manifest.json')\n"
-          addition = anchor + "const operationalAutonomyA3ManifestPath = path.join(root, 'scripts/operational-autonomy-a3-worker-manifest.json')\n"
-          if anchor not in text:
-              raise SystemExit('R3 manifest path anchor missing')
-          text = text.replace(anchor, addition, 1)
-          validation_anchor = "if (Object.keys(operationalAutonomyR3Manifest.changes || {}).sort().join(',') !== 'cancelReturn,createExchange,createReturn') throw new Error('Operational Autonomy R3 Worker allow-list widened unexpectedly')\n"
-          validation = validation_anchor + "const operationalAutonomyA3Manifest = JSON.parse(fs.readFileSync(operationalAutonomyA3ManifestPath, 'utf8'))\nif (operationalAutonomyA3Manifest?.version !== 1 || operationalAutonomyA3Manifest?.revision !== 'operational-autonomy-a3-post-return-debt-close-r1') throw new Error('Operational Autonomy A3 Worker manifest invalid')\nif (Object.keys(operationalAutonomyA3Manifest.changes || {}).join(',') !== 'createManualOrderPaymentCritical') throw new Error('Operational Autonomy A3 Worker allow-list widened unexpectedly')\n"
-          if validation_anchor not in text:
-              raise SystemExit('R3 validation anchor missing')
-          text = text.replace(validation_anchor, validation, 1)
-          old = "...operationalAutonomyR3Manifest.changes })}\\n`)"
-          new = "...operationalAutonomyR3Manifest.changes, ...operationalAutonomyA3Manifest.changes })}\\n`)"
-          if old not in text:
-              raise SystemExit('R3 cumulative spread anchor missing')
-          text = text.replace(old, new, 1)
+
+          path_anchor = "const financeF5BusinessSemanticsPath = path.join(root, 'scripts/finance-f5-business-semantics-worker-manifest.json')\n"
+          path_addition = path_anchor + "const operationalAutonomyA3Path = path.join(root, 'scripts/operational-autonomy-a3-worker-manifest.json')\n"
+          if path_anchor not in text:
+              raise SystemExit('Finance F5 manifest path anchor missing')
+          text = text.replace(path_anchor, path_addition, 1)
+
+          load_anchor = "  const financeF5BusinessSemanticsChanges = financeF5BusinessSemantics?.version === 1 ? (financeF5BusinessSemantics.changes || {}) : {}\n"
+          load_addition = load_anchor + "  const operationalAutonomyA3 = fs.existsSync(operationalAutonomyA3Path) ? JSON.parse(fs.readFileSync(operationalAutonomyA3Path, 'utf8')) : null\n  check(operationalAutonomyA3?.version === 1 && operationalAutonomyA3?.revision === 'operational-autonomy-a3-post-return-debt-close-r1', 'Operational Autonomy A3 Worker manifest invalid')\n  const operationalAutonomyA3Changes = operationalAutonomyA3.changes || {}\n  check(Object.keys(operationalAutonomyA3Changes).join(',') === 'createManualOrderPaymentCritical', 'Operational Autonomy A3 Worker allow-list widened unexpectedly')\n"
+          if load_anchor not in text:
+              raise SystemExit('Finance F5 manifest load anchor missing')
+          text = text.replace(load_anchor, load_addition, 1)
+
+          old_block = """  for (const [name, expectedHash] of Object.entries(orderCreateSaveIntegrityAdded)) {
+            check(declarations.has(name), `192B2A4 added Worker declaration missing: ${name}`)
+            const financeF5BusinessSemanticsChanged = financeF5BusinessSemanticsChanges[name]
+            if (financeF5BusinessSemanticsChanged) {
+              check(financeF5BusinessSemanticsChanged.before === expectedHash, `Finance F5 changed 192B2A4-added declaration baseline hash mismatch: ${name}`)
+              check(sha(declarations.get(name)) === financeF5BusinessSemanticsChanged.after, `192B2A4-added declaration changed beyond exact Finance F5 business semantics allow-list: ${name}`)
+            } else {
+              check(sha(declarations.get(name)) === expectedHash, `192B2A4 added Worker declaration changed: ${name}`)
+            }
+          }
+          """
+          new_block = """  for (const [name, expectedHash] of Object.entries(orderCreateSaveIntegrityAdded)) {
+            check(declarations.has(name), `192B2A4 added Worker declaration missing: ${name}`)
+            const financeF5BusinessSemanticsChanged = financeF5BusinessSemanticsChanges[name]
+            let acceptedHash = expectedHash
+            if (financeF5BusinessSemanticsChanged) {
+              check(financeF5BusinessSemanticsChanged.before === acceptedHash, `Finance F5 changed 192B2A4-added declaration baseline hash mismatch: ${name}`)
+              acceptedHash = financeF5BusinessSemanticsChanged.after
+            }
+            const operationalAutonomyA3Changed = operationalAutonomyA3Changes[name]
+            if (operationalAutonomyA3Changed) {
+              check(operationalAutonomyA3Changed.before === acceptedHash, `Operational Autonomy A3 baseline hash mismatch: ${name}`)
+              acceptedHash = operationalAutonomyA3Changed.after
+            }
+            check(sha(declarations.get(name)) === acceptedHash, operationalAutonomyA3Changed
+              ? `192B2A4-added declaration changed beyond exact Operational Autonomy A3 allow-list: ${name}`
+              : (financeF5BusinessSemanticsChanged
+                ? `192B2A4-added declaration changed beyond exact Finance F5 business semantics allow-list: ${name}`
+                : `192B2A4 added Worker declaration changed: ${name}`))
+          }
+          """
+          if old_block not in text:
+              raise SystemExit('192B2A4 added-declaration block anchor missing')
+          text = text.replace(old_block, new_block, 1)
           path.write_text(text)
           PY
 
