@@ -26,6 +26,8 @@ jobs:
       - run: npm ci
       - name: Generate focused implementation
         run: node scripts/apply-catalog-gender-hardening-r2.mjs
+      - name: Prove and refresh W6 exact manifest
+        run: node scripts/refresh-w6-manifest-for-gender-r2.mjs
       - name: Focused catalog acceptance
         run: |
           node scripts/test-catalog-gender-scope-r1.mjs
@@ -38,6 +40,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add migrations/0068_v72_catalog_product_gender_scope.sql package.json scripts/test-catalog-gender-scope-r1.mjs scripts/test-catalog-gender-migration-r1.mjs worker/domains/catalog.ts worker/domains/catalog-review.ts src/app/controllers/useWorkspaceViewModel.tsx src/app/controllers/useOperationalViewModel.ts src/features/inventory/views/renderInventoryCatalogPanel.tsx
+          git add migrations/0068_v72_catalog_product_gender_scope.sql package.json scripts/test-catalog-gender-scope-r1.mjs scripts/test-catalog-gender-migration-r1.mjs scripts/w6-4-catalog-sku-card-worker-manifest.json worker/domains/catalog.ts worker/domains/catalog-review.ts src/app/controllers/useWorkspaceViewModel.tsx src/app/controllers/useOperationalViewModel.ts src/features/inventory/views/renderInventoryCatalogPanel.tsx
           git commit -m "Harden catalog gender cleanup and adjacent flows"
           git push origin HEAD:catalog-gender-cleanup-r1
