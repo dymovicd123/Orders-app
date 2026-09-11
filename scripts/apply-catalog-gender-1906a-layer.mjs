@@ -8,6 +8,10 @@ const manifestPath = path.join(root, 'scripts/catalog-gender-scope-r1-worker-man
 const manifest = {
   version: 1,
   revision: 'catalog-gender-scope-r1',
+  router: {
+    before: '9700ffcf609f2fcda79b3c10f332771d97e8c1606de7e8bf045b64743703bdeb',
+    after: 'cede2b5ced45db1ac0bb9f790c7f4c41d89fa6e5c1a4258695e1e73b0b5b0c39',
+  },
   changes: {
     CatalogReviewFactsInput: { before: '1c16d6041296d5467591d65aa5ef7b94ad0e83383977d12b23cf52ddd7d6226e', after: 'f25a7019eae8de366c93f57158b08b42db0b6676dc802046f7958854fbb488dc' },
     getCatalogReviewContext: { before: 'af97184886838a3213c8969e52205b2dfd5a1c4139ed06364f0facb7da801153', after: 'fb02c973cc2fe2cffd5f5809435df15dbf3801302134685ab883070c7c0652d9' },
@@ -59,5 +63,14 @@ replaceOnce(
   'added declarations verification',
 )
 
+const routerAnchor = `  // Shipping hotfix 2026-09-01: normalize only this retired final-shipping blocker\n  // back to the accepted router baseline. The shipping regression requires it absent live.\n  const w5RevertedRouter = w5FoundItemsWorker ? currentRouter`
+const routerLayer = `  // Catalog gender scope R1 changes only the product create/update request shapes.\n  // Reverse exactly those two type additions before feeding the router into prior W5 gates.\n  check(sha(currentRouter) === catalogGenderScopeR1.router.after, 'Catalog gender scope R1 Worker router changed beyond exact delta')\n  const catalogGenderRevertedRouter = currentRouter\n    .replace(\n      "const input = await readJson<{ name?: unknown; category?: unknown; genderScope?: unknown }>(request);",\n      "const input = await readJson<{ name?: unknown; category?: unknown }>(request);",\n    )\n    .replace(\n      "const input = await readJson<{ name?: unknown; category?: unknown; genderScope?: unknown; isActive?: unknown }>(request);",\n      "const input = await readJson<{ name?: unknown; category?: unknown; isActive?: unknown }>(request);",\n    )\n  check(sha(catalogGenderRevertedRouter) === catalogGenderScopeR1.router.before, 'Catalog gender scope R1 Worker router reverse baseline mismatch')\n\n  // Shipping hotfix 2026-09-01: normalize only this retired final-shipping blocker\n  // back to the accepted router baseline. The shipping regression requires it absent live.\n  const w5RevertedRouter = w5FoundItemsWorker ? catalogGenderRevertedRouter`
+replaceOnce(routerAnchor, routerLayer, 'catalog router pre-layer')
+replaceOnce(
+  `    : currentRouter\n  if (w5FoundItemsWorker) {\n    check(sha(currentRouter) === w5FoundItemsWorker.router.after, 'W5.5 Worker router changed beyond exact found-items delta')`,
+  `    : catalogGenderRevertedRouter\n  if (w5FoundItemsWorker) {\n    check(sha(catalogGenderRevertedRouter) === w5FoundItemsWorker.router.after, 'W5.5 Worker router changed beyond exact found-items delta')`,
+  'w5 router source',
+)
+
 fs.writeFileSync(legacyPath, source)
-console.log('Catalog gender scope R1 exact Step 190.6A legacy count/additions layer generated.')
+console.log('Catalog gender scope R1 exact Step 190.6A declaration/router layer generated.')
