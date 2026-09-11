@@ -3,7 +3,6 @@ import path from 'node:path'
 
 const root = process.cwd()
 const legacyPath = path.join(root, 'scripts/test-step1906a-worker-modularization-legacy.mjs')
-const wrapperPath = path.join(root, 'scripts/test-step1906a-worker-modularization.mjs')
 const manifestPath = path.join(root, 'scripts/catalog-gender-scope-r1-worker-manifest.json')
 
 const manifest = {
@@ -32,62 +31,33 @@ const manifest = {
 }
 fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
 
-function patchFile(filePath, patches) {
-  let source = fs.readFileSync(filePath, 'utf8')
-  for (const [oldText, newText, label] of patches) {
-    const count = source.split(oldText).length - 1
-    if (count !== 1) throw new Error(`${label}: expected 1 anchor, got ${count}`)
-    source = source.replace(oldText, newText)
-  }
-  fs.writeFileSync(filePath, source)
-}
-
-// The legacy gate owns declaration counting and newly-added declaration hashes.
-// Keep its O1 block untouched so the safe-payment wrapper can still recognize it.
-patchFile(legacyPath, [
-  [
-    "const w5FoundItemsWorkerPath = path.join(root, 'scripts/w5-5-found-items-worker-manifest.json')",
-    "const w5FoundItemsWorkerPath = path.join(root, 'scripts/w5-5-found-items-worker-manifest.json')\nconst catalogGenderScopeR1Path = path.join(root, 'scripts/catalog-gender-scope-r1-worker-manifest.json')",
-    'manifest path',
-  ],
-  [
-    `  const w5FoundItemsChanges = w5FoundItemsWorker?.changes || {}\n  const w5FoundItemsAdded = w5FoundItemsWorker?.added || {}`,
-    `  const w5FoundItemsChanges = w5FoundItemsWorker?.changes || {}\n  const w5FoundItemsAdded = w5FoundItemsWorker?.added || {}\n  check(fs.existsSync(catalogGenderScopeR1Path), 'Catalog gender scope R1 Worker manifest missing')\n  const catalogGenderScopeR1 = JSON.parse(fs.readFileSync(catalogGenderScopeR1Path, 'utf8'))\n  check(catalogGenderScopeR1?.version === 1 && catalogGenderScopeR1?.revision === 'catalog-gender-scope-r1', 'Catalog gender scope R1 Worker manifest invalid')\n  const catalogGenderScopeR1Changes = catalogGenderScopeR1.changes || {}\n  const catalogGenderScopeR1Added = catalogGenderScopeR1.added || {}`,
-    'manifest load',
-  ],
-  [
-    `  const expectedDeclarationCount = manifest.declarationCount - removedNames.length + Object.keys(warehouseTruthFreshnessAdded).length + Object.keys(warehouseAttentionTruthAdded).length + Object.keys(dailyWarehouseAdded).length + Object.keys(attentionContextAdded).length + Object.keys(orderCreateSaveIntegrityAdded).length + Object.keys(orderDeleteMobilityAdded).length + Object.keys(returnExchangeCancelAutonomyAdded).length + Object.keys(w5FoundItemsAdded).length`,
-    `  const expectedDeclarationCount = manifest.declarationCount - removedNames.length + Object.keys(warehouseTruthFreshnessAdded).length + Object.keys(warehouseAttentionTruthAdded).length + Object.keys(dailyWarehouseAdded).length + Object.keys(attentionContextAdded).length + Object.keys(orderCreateSaveIntegrityAdded).length + Object.keys(orderDeleteMobilityAdded).length + Object.keys(returnExchangeCancelAutonomyAdded).length + Object.keys(w5FoundItemsAdded).length + Object.keys(catalogGenderScopeR1Added).length`,
-    'declaration count',
-  ],
-  [
-    `  for (const [name, expectedHash] of Object.entries(w5FoundItemsAdded)) {\n    check(declarations.has(name), \`W5.5 added Worker declaration missing: \${name}\`)\n    check(sha(declarations.get(name)) === expectedHash, \`W5.5 added Worker declaration changed: \${name}\`)\n  }`,
-    `  for (const [name, expectedHash] of Object.entries(w5FoundItemsAdded)) {\n    check(declarations.has(name), \`W5.5 added Worker declaration missing: \${name}\`)\n    check(sha(declarations.get(name)) === expectedHash, \`W5.5 added Worker declaration changed: \${name}\`)\n  }\n\n  for (const [name, expectedHash] of Object.entries(catalogGenderScopeR1Added)) {\n    check(declarations.has(name), \`Catalog gender scope R1 added Worker declaration missing: \${name}\`)\n    check(sha(declarations.get(name)) === expectedHash, \`Catalog gender scope R1 added Worker declaration changed: \${name}\`)\n  }`,
-    'added declarations verification',
-  ],
-])
-
-// Safe-payment is the existing outer declaration layer. Extend that exact layer rather
-// than replacing its legacy anchor, so both manifests are checked in order.
-const wrapper = fs.readFileSync(wrapperPath, 'utf8')
-const oldHeader = `const manifestPath = path.join(root, 'scripts/order-edit-safe-payment-corrections-worker-manifest.json')\nconst original = fs.readFileSync(legacyPath, 'utf8')\nconst manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))\nif (manifest?.version !== 1 || manifest?.revision !== 'order-edit-safe-payment-corrections-r1') throw new Error('Safe payment correction Worker manifest invalid')\nif (Object.keys(manifest.changes || {}).join(',') !== 'OrderInput,updateOrderCritical') throw new Error('Safe payment correction Worker declaration allow-list widened unexpectedly')`
-const newHeader = `${oldHeader}\nconst catalogGenderManifestPath = path.join(root, 'scripts/catalog-gender-scope-r1-worker-manifest.json')\nconst catalogGenderManifest = JSON.parse(fs.readFileSync(catalogGenderManifestPath, 'utf8'))\nif (catalogGenderManifest?.version !== 1 || catalogGenderManifest?.revision !== 'catalog-gender-scope-r1') throw new Error('Catalog gender scope R1 Worker manifest invalid')`
-
-const oldSafeTail = `    const safePaymentCorrectionChanged = safePaymentCorrectionChanges[name]\\n    let acceptedPostSafePaymentCorrectionHash = acceptedPostO1Hash\\n    if (safePaymentCorrectionChanged) {\\n      check(safePaymentCorrectionChanged.before === acceptedPostO1Hash, \\`Safe payment correction baseline hash mismatch: \\${name}\\`)\\n      acceptedPostSafePaymentCorrectionHash = safePaymentCorrectionChanged.after\\n    }\\n    check(\\n      sha(declarations.get(name)) === acceptedPostSafePaymentCorrectionHash,\\n      safePaymentCorrectionChanged\\n        ? \\`Worker declaration changed beyond exact safe-payment-correction allow-list: \\${name}\\`\\n        : (w5FoundItemsChanged\\n          ? \\`Worker declaration changed beyond exact W5.5 found-items allow-list: \\${name}\\`\\n          : \\`Worker declaration body changed beyond accepted cumulative deltas: \\${name}\\`),\\n    )\\n`
-const newSafeTail = `    const safePaymentCorrectionChanged = safePaymentCorrectionChanges[name]\\n    let acceptedPostSafePaymentCorrectionHash = acceptedPostO1Hash\\n    if (safePaymentCorrectionChanged) {\\n      check(safePaymentCorrectionChanged.before === acceptedPostO1Hash, \\`Safe payment correction baseline hash mismatch: \\${name}\\`)\\n      acceptedPostSafePaymentCorrectionHash = safePaymentCorrectionChanged.after\\n    }\\n    const catalogGenderScopeR1Changed = catalogGenderScopeR1Changes[name]\\n    let acceptedPostCatalogGenderScopeR1Hash = acceptedPostSafePaymentCorrectionHash\\n    if (catalogGenderScopeR1Changed) {\\n      check(catalogGenderScopeR1Changed.before === acceptedPostSafePaymentCorrectionHash, \\`Catalog gender scope R1 baseline hash mismatch: \\${name}\\`)\\n      acceptedPostCatalogGenderScopeR1Hash = catalogGenderScopeR1Changed.after\\n    }\\n    check(\\n      sha(declarations.get(name)) === acceptedPostCatalogGenderScopeR1Hash,\\n      catalogGenderScopeR1Changed\\n        ? \\`Worker declaration changed beyond exact catalog gender scope R1 allow-list: \\${name}\\`\\n        : (safePaymentCorrectionChanged\\n          ? \\`Worker declaration changed beyond exact safe-payment-correction allow-list: \\${name}\\`\\n          : (w5FoundItemsChanged\\n            ? \\`Worker declaration changed beyond exact W5.5 found-items allow-list: \\${name}\\`\\n            : \\`Worker declaration body changed beyond accepted cumulative deltas: \\${name}\\`)),\\n    )\\n`
-const oldPatchedAnchor = `.replace(o1Anchor, \`${'${o1Anchor}'}const safePaymentCorrectionChanges = ${'${JSON.stringify(manifest.changes)}'}\\n\`)`
-const newPatchedAnchor = `.replace(o1Anchor, \`${'${o1Anchor}'}const safePaymentCorrectionChanges = ${'${JSON.stringify(manifest.changes)}'}\\nconst catalogGenderScopeR1Changes = ${'${JSON.stringify(catalogGenderManifest.changes || {})}'}\\n\`)`
-
-let patchedWrapper = wrapper
-for (const [oldText, newText, label] of [
-  [oldHeader, newHeader, 'wrapper manifest header'],
-  [oldSafeTail, newSafeTail, 'wrapper safe-payment tail'],
-  [oldPatchedAnchor, newPatchedAnchor, 'wrapper injected changes'],
-]) {
-  const count = patchedWrapper.split(oldText).length - 1
+let source = fs.readFileSync(legacyPath, 'utf8')
+function replaceOnce(oldText, newText, label) {
+  const count = source.split(oldText).length - 1
   if (count !== 1) throw new Error(`${label}: expected 1 anchor, got ${count}`)
-  patchedWrapper = patchedWrapper.replace(oldText, newText)
+  source = source.replace(oldText, newText)
 }
-fs.writeFileSync(wrapperPath, patchedWrapper)
 
-console.log('Catalog gender scope R1 exact Step 190.6A layer generated after safe-payment acceptance.')
+replaceOnce(
+  "const w5FoundItemsWorkerPath = path.join(root, 'scripts/w5-5-found-items-worker-manifest.json')",
+  "const w5FoundItemsWorkerPath = path.join(root, 'scripts/w5-5-found-items-worker-manifest.json')\nconst catalogGenderScopeR1Path = path.join(root, 'scripts/catalog-gender-scope-r1-worker-manifest.json')",
+  'manifest path',
+)
+replaceOnce(
+  `  const w5FoundItemsChanges = w5FoundItemsWorker?.changes || {}\n  const w5FoundItemsAdded = w5FoundItemsWorker?.added || {}`,
+  `  const w5FoundItemsChanges = w5FoundItemsWorker?.changes || {}\n  const w5FoundItemsAdded = w5FoundItemsWorker?.added || {}\n  check(fs.existsSync(catalogGenderScopeR1Path), 'Catalog gender scope R1 Worker manifest missing')\n  const catalogGenderScopeR1 = JSON.parse(fs.readFileSync(catalogGenderScopeR1Path, 'utf8'))\n  check(catalogGenderScopeR1?.version === 1 && catalogGenderScopeR1?.revision === 'catalog-gender-scope-r1', 'Catalog gender scope R1 Worker manifest invalid')\n  const catalogGenderScopeR1Changes = catalogGenderScopeR1.changes || {}\n  const catalogGenderScopeR1Added = catalogGenderScopeR1.added || {}`,
+  'manifest load',
+)
+replaceOnce(
+  `  const expectedDeclarationCount = manifest.declarationCount - removedNames.length + Object.keys(warehouseTruthFreshnessAdded).length + Object.keys(warehouseAttentionTruthAdded).length + Object.keys(dailyWarehouseAdded).length + Object.keys(attentionContextAdded).length + Object.keys(orderCreateSaveIntegrityAdded).length + Object.keys(orderDeleteMobilityAdded).length + Object.keys(returnExchangeCancelAutonomyAdded).length + Object.keys(w5FoundItemsAdded).length`,
+  `  const expectedDeclarationCount = manifest.declarationCount - removedNames.length + Object.keys(warehouseTruthFreshnessAdded).length + Object.keys(warehouseAttentionTruthAdded).length + Object.keys(dailyWarehouseAdded).length + Object.keys(attentionContextAdded).length + Object.keys(orderCreateSaveIntegrityAdded).length + Object.keys(orderDeleteMobilityAdded).length + Object.keys(returnExchangeCancelAutonomyAdded).length + Object.keys(w5FoundItemsAdded).length + Object.keys(catalogGenderScopeR1Added).length`,
+  'declaration count',
+)
+replaceOnce(
+  `  for (const [name, expectedHash] of Object.entries(w5FoundItemsAdded)) {\n    check(declarations.has(name), \`W5.5 added Worker declaration missing: \${name}\`)\n    check(sha(declarations.get(name)) === expectedHash, \`W5.5 added Worker declaration changed: \${name}\`)\n  }`,
+  `  for (const [name, expectedHash] of Object.entries(w5FoundItemsAdded)) {\n    check(declarations.has(name), \`W5.5 added Worker declaration missing: \${name}\`)\n    check(sha(declarations.get(name)) === expectedHash, \`W5.5 added Worker declaration changed: \${name}\`)\n  }\n\n  for (const [name, expectedHash] of Object.entries(catalogGenderScopeR1Added)) {\n    check(declarations.has(name), \`Catalog gender scope R1 added Worker declaration missing: \${name}\`)\n    check(sha(declarations.get(name)) === expectedHash, \`Catalog gender scope R1 added Worker declaration changed: \${name}\`)\n  }`,
+  'added declarations verification',
+)
+
+fs.writeFileSync(legacyPath, source)
+console.log('Catalog gender scope R1 exact Step 190.6A legacy count/additions layer generated.')
