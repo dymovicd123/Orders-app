@@ -488,10 +488,15 @@ replaceOnce('src/features/inventory/views/catalogLegacyAdminModes.tsx',
   "{catalogReviewCreateProduct ? <label><span>Название в каталоге</span><input value={catalogReviewNewProductName} onChange={(event) => setCatalogReviewNewProductName(event.target.value)} placeholder=\"Исправьте опечатку или задайте нормальное название\" /><small>Менеджер ввёл: {catalogReviewActiveItem.productName || 'Без названия'}. Исходный текст останется в истории заказа.</small></label> : null}",
   "{catalogReviewCreateProduct ? <><label><span>Название в каталоге</span><input value={catalogReviewNewProductName} onChange={(event) => setCatalogReviewNewProductName(event.target.value)} placeholder=\"Исправьте опечатку или задайте нормальное название\" /><small>Менеджер ввёл: {catalogReviewActiveItem.productName || 'Без названия'}. Исходный текст останется в истории заказа.</small></label><label className=\"needs-choice\"><span>Для кого этот товар?</span><select value={catalogReviewFacts.genderScope || ''} onChange={(event) => setCatalogReviewFacts((current: any) => ({ ...current, genderScope: event.target.value, gender: event.target.value === 'female' ? 'ЖЕН' : event.target.value === 'male' ? 'МУЖ' : '' }))}><option value=\"\">Выберите</option><option value=\"female\">Женский</option><option value=\"male\">Мужской</option><option value=\"unisex\">Унисекс</option></select><small>Жен/Муж будет подставляться автоматически. Для унисекс пол конкретной вещи выбирается отдельно.</small></label></> : null}",
 )
-replaceOnce('src/features/inventory/views/catalogLegacyAdminModes.tsx',
-  "gender: 'пол' } as any)[field]).join(', ')}.",
-  "gender: 'пол', genderScope: 'назначение товара по полу' } as any)[field]).join(', ')}.",
-)
+{
+  const rel = 'src/features/inventory/views/catalogLegacyAdminModes.tsx'
+  const before = "gender: 'пол' } as any)[field]).join(', ')}."
+  const after = "gender: 'пол', genderScope: 'назначение товара по полу' } as any)[field]).join(', ')}."
+  const source = read(rel)
+  const count = source.split(before).length - 1
+  if (count !== 2) throw new Error(`Expected two legacy blocking-label maps in ${rel}, got ${count}`)
+  write(rel, source.split(before).join(after))
+}
 
 // backend review/lifecycle scope support
 replaceOnce('worker/domains/catalog-review.ts',
