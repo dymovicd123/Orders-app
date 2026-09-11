@@ -10,6 +10,7 @@ const catalogPath = path.join(workerRoot, 'domains/catalog.ts')
 const legacyTestPath = path.join(root, 'scripts/test-step1906a-worker-modularization-legacy.mjs')
 const manifestPath = path.join(root, 'scripts/w6-4-catalog-sku-card-worker-manifest.json')
 const unisexGenderInplaceManifestPath = path.join(root, 'scripts/catalog-unisex-gender-inplace-r1-worker-manifest.json')
+const unisexMergeManifestPath = path.join(root, 'scripts/catalog-unisex-merge-r1-worker-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -115,13 +116,17 @@ try {
   check(unisexGenderInplaceManifest?.version === 1 && unisexGenderInplaceManifest?.revision === 'catalog-unisex-gender-inplace-r1', 'Catalog unisex gender in-place R1 manifest invalid')
   check(Object.keys(unisexGenderInplaceManifest.changes || {}).join(',') === 'updateCatalogVariant', 'Catalog unisex gender in-place R1 allow-list widened unexpectedly')
   check(unisexGenderInplaceManifest.changes.updateCatalogVariant.before === manifest.changes.updateCatalogVariant.after, 'Catalog unisex gender in-place R1 baseline does not match accepted W6.4 updateCatalogVariant')
+  const unisexMergeManifest = JSON.parse(fs.readFileSync(unisexMergeManifestPath, 'utf8'))
+  check(unisexMergeManifest?.version === 1 && unisexMergeManifest?.revision === 'catalog-unisex-merge-r1', 'Catalog unisex merge R1 manifest invalid')
+  check(Object.keys(unisexMergeManifest.changes || {}).join(',') === 'updateCatalogVariant', 'Catalog unisex merge R1 allow-list widened unexpectedly')
+  check(unisexMergeManifest.changes.updateCatalogVariant.before === unisexGenderInplaceManifest.changes.updateCatalogVariant.after, 'Catalog unisex merge R1 baseline does not match accepted in-place correction')
 
   const actualCatalog = fs.readFileSync(catalogPath, 'utf8')
   const actualDeclarations = declarationMap(actualCatalog, catalogPath)
   const update = actualDeclarations.get('updateCatalogVariant')
   const helper = actualDeclarations.get('assertCatalogVariantMayDeactivate')
   check(update && helper, 'W6.4 catalog declarations missing')
-  check(sha(normalizeMovedDeclaration(update.text)) === unisexGenderInplaceManifest.changes.updateCatalogVariant.after, 'Catalog unisex gender in-place R1 updateCatalogVariant changed beyond exact manifest')
+  check(sha(normalizeMovedDeclaration(update.text)) === unisexMergeManifest.changes.updateCatalogVariant.after, 'Catalog unisex merge R1 updateCatalogVariant changed beyond exact manifest')
   check(sha(normalizeMovedDeclaration(helper.text)) === manifest.added.assertCatalogVariantMayDeactivate, 'W6.4 retirement guard changed beyond exact manifest')
   check(sha(normalizeMovedDeclaration(baselineUpdateCatalogVariant)) === manifest.changes.updateCatalogVariant.before, 'W6.4 baseline updateCatalogVariant text does not match accepted pre-W6 hash')
 
