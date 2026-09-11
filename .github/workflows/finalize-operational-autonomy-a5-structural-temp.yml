@@ -1,0 +1,39 @@
+name: Finalize Operational Autonomy A5 Structural Temp
+
+on:
+  push:
+    branches:
+      - operational-autonomy-a5-exchange-finance-correction
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: operational-autonomy-a5-exchange-finance-correction
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Register exact A5 structural delta
+        run: node scripts/finalize-operational-autonomy-a5-structural.mjs
+      - name: Verify 1906A
+        run: node scripts/test-step1906a-worker-modularization.mjs
+      - name: Verify 1906B
+        run: node scripts/test-step1906b-frontend-modularization.mjs
+      - name: Commit clean A5 structural delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/finalize-operational-autonomy-a5-structural-temp.yml scripts/finalize-operational-autonomy-a5-structural.mjs
+          git add scripts/operational-autonomy-a5-worker-manifest.json scripts/operational-autonomy-a5-frontend-manifest.json scripts/test-step1906a-worker-modularization.mjs scripts/test-step1906b-frontend-modularization.mjs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Register Operational Autonomy A5 structural delta'
+          git push origin HEAD:operational-autonomy-a5-exchange-finance-correction
