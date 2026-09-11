@@ -1,0 +1,27 @@
+name: Fix A4 normalizeOrderStatus import temp
+on:
+  push:
+    branches:
+      - operational-autonomy-a4-handover-correction
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: operational-autonomy-a4-handover-correction
+      - name: Apply import fix
+        shell: bash
+        run: |
+          python -c "from pathlib import Path; p=Path('worker/domains/order-reservations.ts'); t=p.read_text(); old='normalizeAudienceCategory, normalizeShippingStatus'; new='normalizeAudienceCategory, normalizeOrderStatus, normalizeShippingStatus'; assert old in t; p.write_text(t.replace(old,new,1))"
+      - name: Commit clean fix
+        shell: bash
+        run: |
+          git rm .github/workflows/fix-a4-normalize-order-status-import-temp.yml
+          git add worker/domains/order-reservations.ts
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Fix A4 order status import'
+          git push origin HEAD:operational-autonomy-a4-handover-correction
