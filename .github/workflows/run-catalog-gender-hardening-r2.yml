@@ -6,6 +6,7 @@ on:
       - catalog-gender-cleanup-r1
     paths:
       - .github/workflows/run-catalog-gender-hardening-r2.yml
+      - scripts/apply-catalog-gender-1906b-layer.mjs
 
 permissions:
   contents: write
