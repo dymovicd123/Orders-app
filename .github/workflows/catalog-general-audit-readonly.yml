@@ -1,0 +1,79 @@
+name: Catalog General Audit Readonly
+
+on:
+  push:
+    branches:
+      - ops/catalog-general-audit-20260911
+    paths:
+      - .github/workflows/catalog-general-audit-readonly.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/catalog-general-audit-20260911
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Verify Production target
+        run: |
+          grep -q '"name": "orders-app"' wrangler.jsonc
+          grep -q '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -q '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          echo 'TARGET_OK orders-app / orders_db_prod'
+      - name: Read-only catalog audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          q() {
+            local title="$1"; shift
+            echo
+            echo "===== $title ====="
+            npx wrangler d1 execute orders_db_prod --remote --command="$*"
+          }
+
+          q 'CATALOG_TOTALS' "SELECT (SELECT COUNT(*) FROM catalog_products) AS products_total,(SELECT COUNT(*) FROM catalog_products WHERE is_active=1) AS products_active,(SELECT COUNT(*) FROM catalog_variants) AS variants_total,(SELECT COUNT(*) FROM catalog_variants WHERE is_active=1) AS variants_active,(SELECT COUNT(*) FROM catalog_stock_positions) AS positions_total,(SELECT COUNT(*) FROM catalog_stock_positions WHERE is_active=1) AS positions_active;"
+
+          q 'PRODUCT_SCOPE_COUNTS' "SELECT gender_scope,is_active,COUNT(*) AS count FROM catalog_products GROUP BY gender_scope,is_active ORDER BY is_active DESC,gender_scope;"
+
+          q 'FIXED_SCOPE_ACTIVE_BLANK_GENDER_MUST_BE_ZERO' "SELECT COUNT(*) AS bad_count FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE v.is_active=1 AND p.is_active=1 AND p.gender_scope IN ('female','male') AND TRIM(COALESCE(v.gender,''))='';"
+
+          q 'FIXED_SCOPE_EXPLICIT_OPPOSITE_VARIANTS_AUDIT_ONLY' "SELECT p.id AS product_id,p.name,p.gender_scope,UPPER(TRIM(v.gender)) AS variant_gender,COUNT(*) AS variants FROM catalog_products p JOIN catalog_variants v ON v.product_id=p.id WHERE p.is_active=1 AND v.is_active=1 AND ((p.gender_scope='female' AND UPPER(TRIM(COALESCE(v.gender,'')))='МУЖ') OR (p.gender_scope='male' AND UPPER(TRIM(COALESCE(v.gender,'')))='ЖЕН')) GROUP BY p.id,p.name,p.gender_scope,UPPER(TRIM(v.gender)) ORDER BY p.name LIMIT 100;"
+
+          q 'UNISEX_GENDER_PROFILE' "SELECT p.id,p.name,SUM(CASE WHEN v.is_active=1 AND UPPER(TRIM(COALESCE(v.gender,'')))='ЖЕН' THEN 1 ELSE 0 END) AS female_variants,SUM(CASE WHEN v.is_active=1 AND UPPER(TRIM(COALESCE(v.gender,'')))='МУЖ' THEN 1 ELSE 0 END) AS male_variants,SUM(CASE WHEN v.is_active=1 AND TRIM(COALESCE(v.gender,''))='' THEN 1 ELSE 0 END) AS blank_variants FROM catalog_products p LEFT JOIN catalog_variants v ON v.product_id=p.id WHERE p.is_active=1 AND p.gender_scope='unisex' GROUP BY p.id,p.name ORDER BY p.name;"
+
+          q 'EXACT_ACTIVE_PRODUCT_NAME_DUPLICATES' "SELECT UPPER(TRIM(name)) AS key,COUNT(*) AS count,GROUP_CONCAT(id) AS ids FROM catalog_products WHERE is_active=1 GROUP BY UPPER(TRIM(name)) HAVING COUNT(*)>1 ORDER BY count DESC,key LIMIT 100;"
+
+          q 'ACTIVE_VARIANT_EXACT_DUPLICATES' "SELECT product_id,stock_position_id,COALESCE(category,'adult') AS category,COALESCE(gender,'') AS gender,COALESCE(color,'') AS color,COALESCE(size_label,'') AS size_label,COUNT(*) AS count,GROUP_CONCAT(id) AS ids FROM catalog_variants WHERE is_active=1 GROUP BY product_id,stock_position_id,COALESCE(category,'adult'),COALESCE(gender,''),COALESCE(color,''),COALESCE(size_label,'') HAVING COUNT(*)>1 ORDER BY count DESC LIMIT 100;"
+
+          q 'ACTIVE_VARIANTS_WITH_NO_COLOR' "SELECT p.id AS product_id,p.name,v.id AS variant_id,v.gender,v.color,v.size_label,v.material,v.length FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE p.is_active=1 AND v.is_active=1 AND (TRIM(COALESCE(v.color,''))='' OR UPPER(TRIM(COALESCE(v.color,'')))='БЕЗ ЦВЕТА') ORDER BY p.name,v.id LIMIT 100;"
+
+          q 'ACTIVE_VARIANTS_WITH_NO_SIZE' "SELECT p.id AS product_id,p.name,v.id AS variant_id,v.gender,v.color,v.size_label,v.material,v.length FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE p.is_active=1 AND v.is_active=1 AND TRIM(COALESCE(v.size_label,''))='' ORDER BY p.name,v.id LIMIT 100;"
+
+          q 'ACTIVE_VARIANTS_ON_INACTIVE_PRODUCT' "SELECT COUNT(*) AS bad_count FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE v.is_active=1 AND p.is_active=0;"
+
+          q 'INACTIVE_VARIANTS_WITH_LIVE_STOCK' "SELECT p.name,v.id AS variant_id,v.gender,v.color,v.size_label,SUM(COALESCE(s.quantity,0)) AS quantity,SUM(COALESCE(s.reserved_quantity,0)) AS reserved FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id JOIN inventory_stock s ON s.variant_id=v.id WHERE v.is_active=0 GROUP BY p.name,v.id,v.gender,v.color,v.size_label HAVING SUM(COALESCE(s.quantity,0))<>0 OR SUM(COALESCE(s.reserved_quantity,0))<>0 ORDER BY ABS(SUM(COALESCE(s.quantity,0))) DESC LIMIT 100;"
+
+          q 'ACTIVE_ZERO_FOOTPRINT_VARIANT_COUNT' "SELECT COUNT(*) AS count FROM catalog_variants v WHERE v.is_active=1 AND NOT EXISTS (SELECT 1 FROM inventory_stock s WHERE s.variant_id=v.id AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0)) AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.variant_id=v.id);"
+
+          q 'ACTIVE_ZERO_FOOTPRINT_VARIANT_SAMPLE' "SELECT p.name,v.id AS variant_id,v.gender,v.color,v.size_label,v.material,v.length,v.created_at FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE v.is_active=1 AND p.is_active=1 AND NOT EXISTS (SELECT 1 FROM inventory_stock s WHERE s.variant_id=v.id AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0)) AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.variant_id=v.id) ORDER BY v.created_at ASC,v.id ASC LIMIT 100;"
+
+          q 'ACTIVE_PRODUCTS_WITHOUT_ACTIVE_VARIANTS' "SELECT p.id,p.name,p.gender_scope FROM catalog_products p WHERE p.is_active=1 AND NOT EXISTS (SELECT 1 FROM catalog_variants v WHERE v.product_id=p.id AND v.is_active=1) ORDER BY p.name LIMIT 100;"
+
+          q 'ACTIVE_POSITIONS_WITHOUT_ACTIVE_VARIANTS' "SELECT sp.id AS position_id,p.name,sp.material,sp.length FROM catalog_stock_positions sp JOIN catalog_products p ON p.id=sp.product_id WHERE sp.is_active=1 AND NOT EXISTS (SELECT 1 FROM catalog_variants v WHERE v.stock_position_id=sp.id AND v.is_active=1) ORDER BY p.name,sp.id LIMIT 100;"
+
+          q 'REPAIR_COUNTS_0068' "SELECT (SELECT COUNT(*) FROM catalog_gender_scope_repairs) AS scope_repairs,(SELECT COUNT(*) FROM catalog_gender_variant_repairs) AS variant_repairs,(SELECT COUNT(*) FROM catalog_gender_stock_baseline) AS stock_baselines;"
+
+          echo
+          echo 'READ_ONLY_AUDIT_COMPLETE'
