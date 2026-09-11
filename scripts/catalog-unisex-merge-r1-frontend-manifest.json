@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "revision": "catalog-unisex-merge-r1",
+  "files": {
+    "src/features/inventory/views/renderInventoryCatalogPanel.tsx": {
+      "beforeGitBlob": "66312459a649d05b0818adc9647940e408eb95bb",
+      "afterGitBlob": "32026b6b6055f5dcaded61116d757fba389ae7b5",
+      "beforeLines": 654,
+      "afterLines": 654
+    }
+  }
+}
