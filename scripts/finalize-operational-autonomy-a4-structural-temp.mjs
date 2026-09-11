@@ -73,16 +73,35 @@ if (!wrapper.includes(writeAnchor)) throw new Error('A4 wrapper write anchor mis
 const extraPatch = String.raw`patched = patched
   .replace(' + Object.keys(catalogGenderScopeR1Added).length', ' + Object.keys(catalogGenderScopeR1Added).length + Object.keys(operationalAutonomyA4Added).length')
   .replace(
-    '    check(\\n      sha(declarations.get(name)) === acceptedPostCatalogUnisexMergeHash,',
-    '    const operationalAutonomyA4Changed = operationalAutonomyA4Changes[name]\\n    let acceptedPostOperationalAutonomyA4Hash = acceptedPostCatalogUnisexMergeHash\\n    if (operationalAutonomyA4Changed) {\\n      check(operationalAutonomyA4Changed.before === acceptedPostCatalogUnisexMergeHash, \'Operational Autonomy A4 baseline hash mismatch: \' + name)\\n      acceptedPostOperationalAutonomyA4Hash = operationalAutonomyA4Changed.after\\n    }\\n    check(\\n      sha(declarations.get(name)) === acceptedPostOperationalAutonomyA4Hash,',
+    ['    check(', '      sha(declarations.get(name)) === acceptedPostCatalogUnisexMergeHash,'].join('\n'),
+    [
+      '    const operationalAutonomyA4Changed = operationalAutonomyA4Changes[name]',
+      '    let acceptedPostOperationalAutonomyA4Hash = acceptedPostCatalogUnisexMergeHash',
+      '    if (operationalAutonomyA4Changed) {',
+      "      check(operationalAutonomyA4Changed.before === acceptedPostCatalogUnisexMergeHash, 'Operational Autonomy A4 baseline hash mismatch: ' + name)",
+      '      acceptedPostOperationalAutonomyA4Hash = operationalAutonomyA4Changed.after',
+      '    }',
+      '    check(',
+      '      sha(declarations.get(name)) === acceptedPostOperationalAutonomyA4Hash,',
+    ].join('\n'),
   )
   .replace(
     '  // Catalog gender scope R1 changes only the product create/update request shapes.',
-    '  for (const [name, expectedHash] of Object.entries(operationalAutonomyA4Added)) {\\n    check(declarations.has(name), \'Operational Autonomy A4 added Worker declaration missing: \' + name)\\n    check(sha(declarations.get(name)) === expectedHash, \'Operational Autonomy A4 added Worker declaration changed: \' + name)\\n  }\\n\\n  // Catalog gender scope R1 changes only the product create/update request shapes.',
+    [
+      '  for (const [name, expectedHash] of Object.entries(operationalAutonomyA4Added)) {',
+      "    check(declarations.has(name), 'Operational Autonomy A4 added Worker declaration missing: ' + name)",
+      "    check(sha(declarations.get(name)) === expectedHash, 'Operational Autonomy A4 added Worker declaration changed: ' + name)",
+      '  }',
+      '',
+      '  // Catalog gender scope R1 changes only the product create/update request shapes.',
+    ].join('\n'),
   )
   .replace(
     "  check(sha(normalizedRouter) === operationalAutonomyR2Worker.router.after, 'Worker router changed beyond exact operational autonomy R2 delta')",
-    "  check(operationalAutonomyA4Router.before === operationalAutonomyR2Worker.router.after, 'Operational Autonomy A4 router baseline hash mismatch')\\n  console.log('__A4_ROUTER_AFTER__' + sha(normalizedRouter))",
+    [
+      "  check(operationalAutonomyA4Router.before === operationalAutonomyR2Worker.router.after, 'Operational Autonomy A4 router baseline hash mismatch')",
+      "  console.log('__A4_ROUTER_AFTER__' + sha(normalizedRouter))",
+    ].join('\n'),
   )
 `
 wrapper = wrapper.replace(writeAnchor, extraPatch + '\n' + writeAnchor)
@@ -98,8 +117,8 @@ manifest.router.after = match[1]
 fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
 
 wrapper = fs.readFileSync(wrapperPath, 'utf8')
-const diagnosticRouter = "  console.log('__A4_ROUTER_AFTER__' + sha(normalizedRouter))"
-const exactRouter = "  check(sha(normalizedRouter) === operationalAutonomyA4Router.after, 'Worker router changed beyond exact Operational Autonomy A4 delta')"
+const diagnosticRouter = "      \"  console.log('__A4_ROUTER_AFTER__' + sha(normalizedRouter))\","
+const exactRouter = "      \"  check(sha(normalizedRouter) === operationalAutonomyA4Router.after, 'Worker router changed beyond exact Operational Autonomy A4 delta')\","
 if (!wrapper.includes(diagnosticRouter)) throw new Error('A4 router diagnostic anchor missing')
 wrapper = wrapper.replace(diagnosticRouter, exactRouter)
 fs.writeFileSync(wrapperPath, wrapper)
