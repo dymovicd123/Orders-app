@@ -1,6 +1,7 @@
 {
   "version": 1,
   "revision": "operational-autonomy-a4-mistaken-handover-r1",
+  "description": "Exact App.tsx delta for safe mistaken handover correction.",
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "114435881f17d6adbadaf81ec36a755be985b823",
