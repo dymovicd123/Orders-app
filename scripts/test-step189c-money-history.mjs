@@ -36,11 +36,13 @@ try {
   const cleanup1906c = worker.includes("deadLegacyCleanup: '1906c'")
   const orderSaveIntegrity192b2a4 = worker.includes("orderCreateSaveIntegrity: '192b2a4'")
   const orderEditPaymentCorrection = worker.includes("reason: 'payment_correction'")
+  const exchangeFinancialCorrection = worker.includes("beginCriticalOperation(db, 'exchange_financial_correction'")
   const rawMutations = [...worker.matchAll(/(?:INSERT INTO payments|DELETE FROM payments|UPDATE payments)/g)].map((m) => m.index)
   const paymentCorrectionMutations = orderEditPaymentCorrection ? 1 : 0
-  const expectedRawMutations = (cleanup1906c ? (orderSaveIntegrity192b2a4 ? 4 : 3) : 5) + paymentCorrectionMutations
+  const exchangeFinancialCorrectionMutations = exchangeFinancialCorrection ? 1 : 0
+  const expectedRawMutations = (cleanup1906c ? (orderSaveIntegrity192b2a4 ? 4 : 3) : 5) + paymentCorrectionMutations + exchangeFinancialCorrectionMutations
   if (rawMutations.length !== expectedRawMutations) {
-    fail(`Неожиданное число прямых payment mutations: ${rawMutations.length} (ожидалось ${expectedRawMutations}: действующие money helpers${orderSaveIntegrity192b2a4 ? ' + retry-safe manual payment' : ''}${orderEditPaymentCorrection ? ' + безопасное исправление проведённой оплаты без пересоздания payment' : ''}).`)
+    fail(`Неожиданное число прямых payment mutations: ${rawMutations.length} (ожидалось ${expectedRawMutations}: действующие money helpers${orderSaveIntegrity192b2a4 ? ' + retry-safe manual payment' : ''}${orderEditPaymentCorrection ? ' + безопасное исправление проведённой оплаты без пересоздания payment' : ''}${exchangeFinancialCorrection ? ' + audited correction связанной доплаты обмена' : ''}).`)
   }
   if (orderEditPaymentCorrection) {
     for (const marker of [
@@ -54,6 +56,18 @@ try {
       'Эта оплата уже была изменена после открытия редактора',
       'Эта доплата принадлежит операции обмена',
     ]) if (!worker.includes(marker)) fail(`Payment correction money-history guard отсутствует: ${marker}`)
+  }
+  if (exchangeFinancialCorrection) {
+    for (const marker of [
+      'export async function correctExchangeFinancials(',
+      'UPDATE payments',
+      "eventType: financialAction === 'extra_payment' ? 'payment_reversal' : 'refund_reversal'",
+      "eventType: financialAction === 'extra_payment' ? 'exchange_extra' : 'exchange_refund'",
+      "reason: 'exchange_financial_correction'",
+      'const cashDelta = (newCashTrackedAmount * sign) - (oldCashTrackedAmount * sign)',
+      'expectedFinancialAmount',
+      'expectedPaymentMethod',
+    ]) if (!worker.includes(marker)) fail(`A5 exchange financial correction money-history guard отсутствует: ${marker}`)
   }
   if (orderSaveIntegrity192b2a4) {
     for (const marker of [
