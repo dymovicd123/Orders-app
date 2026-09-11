@@ -118,7 +118,7 @@ try {
   check(unisexGenderInplaceManifest.changes.updateCatalogVariant.before === manifest.changes.updateCatalogVariant.after, 'Catalog unisex gender in-place R1 baseline does not match accepted W6.4 updateCatalogVariant')
   const unisexMergeManifest = JSON.parse(fs.readFileSync(unisexMergeManifestPath, 'utf8'))
   check(unisexMergeManifest?.version === 1 && unisexMergeManifest?.revision === 'catalog-unisex-merge-r1', 'Catalog unisex merge R1 manifest invalid')
-  check(Object.keys(unisexMergeManifest.changes || {}).join(',') === 'updateCatalogVariant', 'Catalog unisex merge R1 allow-list widened unexpectedly')
+  check(Object.keys(unisexMergeManifest.changes || {}).sort().join(',') === 'findCatalogCombinationV3,updateCatalogVariant', 'Catalog unisex merge R1 allow-list widened unexpectedly')
   check(unisexMergeManifest.changes.updateCatalogVariant.before === unisexGenderInplaceManifest.changes.updateCatalogVariant.after, 'Catalog unisex merge R1 baseline does not match accepted in-place correction')
 
   const actualCatalog = fs.readFileSync(catalogPath, 'utf8')
