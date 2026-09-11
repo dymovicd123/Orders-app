@@ -1,0 +1,84 @@
+name: Validate D1-compatible 0068 staging
+
+on:
+  push:
+    branches:
+      - catalog-gender-cleanup-r1
+    paths:
+      - .github/workflows/fix-catalog-0068-d1-temp.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: catalog-gender-cleanup-r1
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Replace D1-unauthorized TEMP staging tables
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import crypto from 'node:crypto'
+          const migrationPath = 'migrations/0068_v72_catalog_product_gender_scope.sql'
+          let sql = fs.readFileSync(migrationPath, 'utf8')
+          const oldGender = 'CREATE TEMP TABLE _step0068_gender_map AS'
+          const oldStock = 'CREATE TEMP TABLE _step0068_stock_rollup AS'
+          if (!sql.includes(oldGender) || !sql.includes(oldStock)) throw new Error('Expected TEMP staging anchors missing')
+          sql = sql.replace(oldGender, 'CREATE TABLE _step0068_gender_map AS')
+                   .replace(oldStock, 'CREATE TABLE _step0068_stock_rollup AS')
+          fs.writeFileSync(migrationPath, sql)
+
+          const bytes = Buffer.from(sql)
+          const gitBlob = crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+          const manifestPath = 'scripts/catalog-gender-scope-r1-migration-manifest.json'
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+          if (manifest?.version !== 1 || manifest?.revision !== 'catalog-gender-scope-r1' || manifest?.file !== migrationPath) throw new Error('Migration manifest contract changed')
+          manifest.gitBlob = gitBlob
+          fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
+
+          const testPath = 'scripts/test-catalog-gender-scope-r1.mjs'
+          let test = fs.readFileSync(testPath, 'utf8')
+          const anchor = "check(migration.includes('catalog_gender_stock_baseline'), '0068 must preserve retry-safe stock merge evidence')\n"
+          if (!test.includes(anchor)) throw new Error('Scope test anchor missing')
+          const assertion = "check(!migration.includes('CREATE TEMP TABLE _step0068'), '0068 must not use D1-unauthorized TEMP staging tables')\n"
+          if (!test.includes(assertion)) test = test.replace(anchor, anchor + assertion)
+          fs.writeFileSync(testPath, test)
+          console.log('0068 now uses ordinary migration-scoped staging tables that are dropped before completion.')
+          NODE
+      - name: Full migration sequence
+        run: |
+          node --input-type=module <<'NODE'
+          import { DatabaseSync } from 'node:sqlite'
+          import { readdirSync, readFileSync } from 'node:fs'
+          const db = new DatabaseSync(':memory:')
+          db.exec('PRAGMA foreign_keys = ON;')
+          for (const file of readdirSync('migrations').filter((name) => name.endsWith('.sql')).sort()) {
+            try { db.exec(readFileSync(`migrations/${file}`, 'utf8')) }
+            catch (error) { console.error('Migration sequence failed at', file, error); process.exit(1) }
+          }
+          console.log('Full migration sequence: OK')
+          NODE
+          node scripts/test-catalog-gender-migration-r1.mjs
+          node scripts/test-catalog-gender-scope-r1.mjs
+          node scripts/test-catalog-order-history-preservation-r1.mjs
+      - name: Full release gate
+        run: npm run release:check
+      - name: Build
+        run: npm run build
+      - name: Commit validated D1 compatibility fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add migrations/0068_v72_catalog_product_gender_scope.sql scripts/catalog-gender-scope-r1-migration-manifest.json scripts/test-catalog-gender-scope-r1.mjs
+          git commit -m "Make catalog gender migration D1 compatible"
+          git push origin HEAD:catalog-gender-cleanup-r1
