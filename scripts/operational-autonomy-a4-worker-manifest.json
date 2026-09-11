@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "revision": "operational-autonomy-a4-mistaken-handover-r1",
+  "changes": {
+    "deleteOrderSafely": {
+      "before": "9aedd5339ffbed68595b439ae6a30d149be858a6e301fa16d3317041be19a0a6",
+      "after": "10b092ced1553153b52c44be5e6436c50f8a017b7b7e401678eab5d101d0ae3a"
+    }
+  },
+  "added": {
+    "correctMistakenOrderHandover": "48e72cc27637144349341fa1ca2792433b79cec264459a34f4b7894a683bc1cd"
+  },
+  "router": {
+    "before": "cede2b5ced45db1ac0bb9f790c7f4c41d89fa6e5c1a4258695e1e73b0b5b0c39",
+    "after": "b92a912c9af4653a5dfd80e5398bca92e27dd66bea12568cbaf05cd01f95c951"
+  }
+}
