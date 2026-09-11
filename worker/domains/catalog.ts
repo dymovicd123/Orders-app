@@ -784,11 +784,39 @@ export async function updateCatalogVariant(db: D1Database, id: number, input: { 
     if (deactivating && identityChanged) {
       throw new Error('Нельзя одновременно исправлять идентичность и выводить позицию из каталога. Сохраните только одно действие.');
     }
+    const duplicate = await findCatalogCombinationV3(db, execution.id, category, gender, color, sizeLabel, id);
+    const existingGender = normalizeCatalogCombinationGender(existing.gender);
+    const genderOnlyIdentityChange = identityChanged
+      && productId === toInt(existing.product_id, 0)
+      && execution.id === toInt(existing.stock_position_id, 0)
+      && category === normalizeAudienceCategory(existing.category, existing.size_label)
+      && color === normalizeCatalogCombinationColor(existing.color)
+      && sizeLabel === normalizeCatalogCombinationSize(existing.size_label)
+      && existingGender !== gender;
     if (identityChanged && await catalogVariantHasOperationalUsage(db, id)) {
+      const productScope = genderOnlyIdentityChange && existingGender === '' && (gender === 'ЖЕН' || gender === 'МУЖ')
+        ? await getCatalogProductGenderScope(db, productId)
+        : null;
+      const safeLegacyUnisexGenderCorrection = productScope === 'unisex'
+        && isActive === 1
+        && !deactivating
+        && !duplicate?.id;
+      if (safeLegacyUnisexGenderCorrection) {
+        await db.batch([
+          db.prepare('UPDATE catalog_variants SET gender = ?, updated_at = ? WHERE id = ?').bind(gender, timestamp, id),
+          db.prepare('UPDATE inventory_stock SET gender_snapshot = ?, updated_at = ? WHERE variant_id = ?').bind(gender, timestamp, id),
+          db.prepare(`INSERT OR REPLACE INTO catalog_gender_variant_repairs
+             (old_variant_id, keeper_variant_id, product_id, target_gender, repair_mode, repaired_at)
+             VALUES (?, ?, ?, ?, 'in_place', ?)`).bind(id, id, productId, gender, timestamp),
+        ]);
+        return { ok: true, correctedGender: true, merged: false };
+      }
+      if (productScope === 'unisex' && duplicate?.id) {
+        throw new Error('Для выбранного пола уже существует такая же комбинация. Её нужно безопасно объединить с текущей позицией; обычное редактирование не должно терять остаток или историю.');
+      }
       throw new Error('Эта комбинация уже использовалась в заказах или движениях склада. Нельзя переписать её историю. Создайте правильную комбинацию отдельно; старую затем можно отключить.');
     }
     if (deactivating) await assertCatalogVariantMayDeactivate(db, id);
-    const duplicate = await findCatalogCombinationV3(db, execution.id, category, gender, color, sizeLabel, id);
     if (duplicate?.id && isActive) throw new Error('Такая комбинация уже существует. Не создавайте второй дубль.');
     await db.prepare(
       `UPDATE catalog_variants

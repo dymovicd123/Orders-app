@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "revision": "catalog-unisex-gender-inplace-r1",
+  "files": {
+    "src/features/inventory/views/renderInventoryCatalogPanel.tsx": {
+      "beforeGitBlob": "2b64776240673b082b29a172fdc0aaa9b3a037e8",
+      "afterGitBlob": "66312459a649d05b0818adc9647940e408eb95bb",
+      "beforeLines": 654,
+      "afterLines": 654
+    }
+  }
+}

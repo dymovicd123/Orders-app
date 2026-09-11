@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "revision": "catalog-unisex-gender-inplace-r1",
+  "changes": {
+    "updateCatalogVariant": {
+      "before": "4e87085854312425de4d8c6d1dd6e96c7bffaf8ae8e1c1383ce4074761653547",
+      "after": "636a1ba09858cbd9c8cce415662a36d4bf99ac1f20ccafee47761d60d7dd74a3"
+    }
+  }
+}

@@ -92,6 +92,7 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 const manifestPath = path.join(root, 'scripts/catalog-gender-scope-r1-frontend-manifest.json')
+const unisexGenderInplaceManifestPath = path.join(root, 'scripts/catalog-unisex-gender-inplace-r1-frontend-manifest.json')
 const fixtureRoot = path.join(root, 'scripts/fixtures/catalog-gender-scope-r1')
 const predecessorFixture = path.join(fixtureRoot, 'test-step1906b-frontend-modularization-predecessor.mjs')
 const runtimePredecessor = path.join(root, 'scripts/.tmp-test-step1906b-catalog-predecessor.mjs')
@@ -99,6 +100,9 @@ const expectedFiles = ["src/App.tsx","src/app/controllers/useOperationalViewMode
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 if (manifest?.version !== 1 || manifest?.revision !== 'catalog-gender-scope-r1') throw new Error('Catalog gender scope frontend manifest invalid')
 if (JSON.stringify(Object.keys(manifest.files || {})) !== JSON.stringify(expectedFiles)) throw new Error('Catalog gender scope frontend allow-list widened unexpectedly')
+const unisexGenderInplaceManifest = JSON.parse(fs.readFileSync(unisexGenderInplaceManifestPath, 'utf8'))
+if (unisexGenderInplaceManifest?.version !== 1 || unisexGenderInplaceManifest?.revision !== 'catalog-unisex-gender-inplace-r1') throw new Error('Catalog unisex gender in-place frontend manifest invalid')
+if (Object.keys(unisexGenderInplaceManifest.files || {}).join(',') !== 'src/features/inventory/views/renderInventoryCatalogPanel.tsx') throw new Error('Catalog unisex gender in-place frontend allow-list widened unexpectedly')
 const gitBlobSha = (text) => { const bytes = Buffer.from(text); return crypto.createHash('sha1').update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex') }
 const current = new Map()
 try {
@@ -108,9 +112,15 @@ try {
     const actual = fs.readFileSync(actualPath, 'utf8')
     const baseline = fs.readFileSync(baselinePath, 'utf8')
     const delta = manifest.files[file]
-    if (gitBlobSha(actual) !== delta.afterGitBlob) throw new Error('Catalog gender frontend file changed beyond exact manifest: ' + file)
+    const latestDelta = unisexGenderInplaceManifest.files?.[file]
+    if (latestDelta) {
+      if (latestDelta.beforeGitBlob !== delta.afterGitBlob || latestDelta.beforeLines !== delta.afterLines) throw new Error('Catalog unisex gender in-place predecessor drifted: ' + file)
+      if (gitBlobSha(actual) !== latestDelta.afterGitBlob || actual.split(/\r?\n/).length !== latestDelta.afterLines) throw new Error('Catalog unisex gender in-place frontend file changed beyond exact manifest: ' + file)
+    } else if (gitBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+      throw new Error('Catalog gender frontend file changed beyond exact manifest: ' + file)
+    }
     if (gitBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Catalog gender frontend baseline drifted: ' + file)
-    if (actual.split(/\r?\n/).length !== delta.afterLines || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Catalog gender frontend line contract drifted: ' + file)
+    if (baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Catalog gender frontend baseline line contract drifted: ' + file)
     current.set(file, actual)
     fs.writeFileSync(actualPath, baseline)
   }
