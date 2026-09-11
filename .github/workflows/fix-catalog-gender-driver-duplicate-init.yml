@@ -25,13 +25,7 @@ jobs:
           p = Path('scripts/apply-catalog-gender-cleanup-r1.mjs')
           s = p.read_text()
           marker = "\nconsole.log('Catalog Gender Scope R1 patch applied.')"
-          patch = '''
-// App catalog save/reset must keep the product draft shape complete after genderScope is introduced.
-replaceOnce('src/App.tsx',
-  "    setCatalogProductDraft({ id: 0, name: '', category: catalogCategoryFilter === 'child' ? 'child' : 'adult' })",
-  "    setCatalogProductDraft({ id: 0, name: '', category: catalogCategoryFilter === 'child' ? 'child' : 'adult', genderScope: '' })",
-)
-'''
+          patch = "\n// App catalog save/reset must keep the product draft shape complete after genderScope is introduced.\nreplaceOnce('src/App.tsx',\n  \"    setCatalogProductDraft({ id: 0, name: '', category: catalogCategoryFilter === 'child' ? 'child' : 'adult' })\",\n  \"    setCatalogProductDraft({ id: 0, name: '', category: catalogCategoryFilter === 'child' ? 'child' : 'adult', genderScope: '' })\",\n)\n"
           if "post-save draft shape complete" in s:
               raise SystemExit('driver already contains App draft reset patch')
           if marker not in s:
