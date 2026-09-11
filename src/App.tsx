@@ -6303,6 +6303,70 @@ function removeDebtPayment(index: number) {
     }
   }
 
+  async function correctExchangeFinancialEntry(
+    entry: ExchangeHistoryEntry,
+    draft: { exchangeDate: string; financialAmount: number; paymentMethod: string; comment: string },
+  ) {
+    const amount = Math.trunc(Number(draft.financialAmount || 0))
+    if (entry.status === 'cancelled' || (entry.financialAction !== 'extra_payment' && entry.financialAction !== 'refund')) return false
+    if (!draft.exchangeDate) {
+      setError('Укажите дату денежной операции обмена.')
+      return false
+    }
+    if (!Number.isInteger(amount) || amount <= 0) {
+      setError('Укажите целую сумму больше нуля.')
+      return false
+    }
+    if (!draft.paymentMethod.trim()) {
+      setError(entry.financialAction === 'refund' ? 'Выберите способ возврата денег.' : 'Выберите способ оплаты доплаты.')
+      return false
+    }
+
+    setExchangeBusy(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const payload = {
+        exchangeDate: draft.exchangeDate,
+        financialAmount: amount,
+        paymentMethod: draft.paymentMethod,
+        comment: draft.comment,
+        expectedExchangeDate: entry.exchangeDate,
+        expectedFinancialAmount: entry.financialAmount,
+        expectedPaymentMethod: entry.paymentMethod || '',
+        expectedComment: entry.comment || '',
+      }
+      const criticalKey = `exchange-financial-correct:${entry.id}`
+      const critical = prepareCriticalRequest(criticalKey, payload)
+      const response = await apiFetch(`/api/exchanges/${entry.id}/financials`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
+        body: JSON.stringify(critical.payload),
+      })
+      const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord; unchanged?: boolean }>(response, 'Исправление денег обмена')
+      if (!response.ok) throw new Error(result.message || `Exchange correction failed: ${response.status}`)
+      completeCriticalRequest(criticalKey, critical.requestId)
+      if (result.order) upsertOrderInState(result.order)
+      invalidateFinanceReadCaches()
+      await Promise.allSettled([
+        loadExchangeHistory(),
+        refreshActivityLogIfVisible(),
+        refreshFinanceReportsIfVisible(),
+        loadDashboard(false),
+        cashRegister?.initialized ? loadCashRegister() : Promise.resolve(null),
+      ])
+      setMessage(result.unchanged
+        ? `Денежная часть обмена #${entry.id} уже соответствует этим данным.`
+        : `Денежная часть обмена #${entry.id} исправлена. Товары, остатки и цех не менялись.`)
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка исправления денег обмена')
+      return false
+    } finally {
+      setExchangeBusy(false)
+    }
+  }
+
   async function cancelExchangeEntry(entry: ExchangeHistoryEntry) {
 
     if (!window.confirm(`Отменить обмен по заказу ${entry.externalId}? Система отменит деньги, статус и новую позицию. Более свежие фактические данные склада, если они уже появились, будут сохранены.`)) return
@@ -6942,7 +7006,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'exchange'} label="Обмен размера">
-        <OrderExchangeSection ctx={{ applyExchangeProductPick, cancelExchangeEntry, closeExchangeForm, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, orderPanelStyle, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />
+        <OrderExchangeSection ctx={{ applyExchangeProductPick, cancelExchangeEntry, closeExchangeForm, correctExchangeFinancialEntry, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, orderPanelStyle, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'team'} label="Команда">

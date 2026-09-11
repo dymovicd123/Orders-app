@@ -10,6 +10,7 @@ const catalogIntegrityDeadendsManifestPath = path.join(root, 'scripts/catalog-in
 const catalogUnisexMergeManifestPath = path.join(root, 'scripts/catalog-unisex-merge-r1-worker-manifest.json')
 const operationalAutonomyR3ManifestPath = path.join(root, 'scripts/operational-autonomy-r3-worker-manifest.json')
 const operationalAutonomyA4ManifestPath = path.join(root, 'scripts/operational-autonomy-a4-worker-manifest.json')
+const operationalAutonomyA5ManifestPath = path.join(root, 'scripts/operational-autonomy-a5-worker-manifest.json')
 const original = fs.readFileSync(legacyPath, 'utf8')
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 if (manifest?.version !== 1 || manifest?.revision !== 'order-edit-safe-payment-corrections-r1') throw new Error('Safe payment correction Worker manifest invalid')
@@ -32,6 +33,11 @@ const operationalAutonomyA4Manifest = JSON.parse(fs.readFileSync(operationalAuto
 if (operationalAutonomyA4Manifest?.version !== 1 || operationalAutonomyA4Manifest?.revision !== 'operational-autonomy-a4-mistaken-handover-r1') throw new Error('Operational Autonomy A4 Worker manifest invalid')
 if (Object.keys(operationalAutonomyA4Manifest.changes || {}).join(',') !== 'deleteOrderSafely') throw new Error('Operational Autonomy A4 Worker change allow-list widened unexpectedly')
 if (Object.keys(operationalAutonomyA4Manifest.added || {}).join(',') !== 'correctMistakenOrderHandover') throw new Error('Operational Autonomy A4 Worker added allow-list widened unexpectedly')
+const operationalAutonomyA5Manifest = JSON.parse(fs.readFileSync(operationalAutonomyA5ManifestPath, 'utf8'))
+if (operationalAutonomyA5Manifest?.version !== 1 || operationalAutonomyA5Manifest?.revision !== 'operational-autonomy-a5-exchange-financial-correction-r1') throw new Error('Operational Autonomy A5 Worker manifest invalid')
+if (Object.keys(operationalAutonomyA5Manifest.changes || {}).length !== 0) throw new Error('Operational Autonomy A5 Worker changed allow-list widened unexpectedly')
+if (Object.keys(operationalAutonomyA5Manifest.added || {}).join(',') !== 'correctExchangeFinancials') throw new Error('Operational Autonomy A5 Worker added allow-list widened unexpectedly')
+if (!operationalAutonomyA5Manifest.router?.block) throw new Error('Operational Autonomy A5 Worker route block missing')
 const operationalAutonomyA4RouteBlock = "\n\n      const orderShippingCorrectionMatch = url.pathname.match(/^\\/api\\/orders\\/(\\d+)\\/shipping\\/correct$/);\n      if (orderShippingCorrectionMatch && request.method === 'POST') {\n        const id = toInt(orderShippingCorrectionMatch[1], 0);\n        const input = await readJson<{ physicalOutcome?: unknown }>(request);\n        try {\n          const result = await correctMistakenOrderHandover(env.DB, id, {\n            physicalOutcome: input.physicalOutcome,\n            actor: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),\n          });\n          let updatedOrder = null;\n          try {\n            updatedOrder = await getOrder(env.DB, id);\n          } catch (error) {\n            console.warn('Order readback after handover correction failed', error);\n          }\n          return json({ ...result, ...(updatedOrder ? { order: updatedOrder } : {}), refreshRequired: !updatedOrder });\n        } catch (error) {\n          const publicError = publicApiError(error);\n          return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });\n        }\n      }\n"
 
 const o1Anchor = "const o1Changes = JSON.parse(fs.readFileSync(path.join(root, 'scripts/o1-worker-manifest.json'), 'utf8')).changed\n"
@@ -46,6 +52,31 @@ patched = patched
   .replace("  for (const [name, expectedHash] of Object.entries(orderDeleteMobilityAdded)) {\n    check(declarations.has(name), `Order delete mobility added Worker declaration missing: ${name}`)\n    check(sha(declarations.get(name)) === expectedHash, `Order delete mobility declaration changed beyond exact allow-list: ${name}`)\n  }", "  for (const [name, expectedHash] of Object.entries(orderDeleteMobilityAdded)) {\n    check(declarations.has(name), `Order delete mobility added Worker declaration missing: ${name}`)\n    const operationalAutonomyA4Changed = operationalAutonomyA4Changes[name]\n    let acceptedHash = expectedHash\n    if (operationalAutonomyA4Changed) {\n      check(operationalAutonomyA4Changed.before === acceptedHash, `Operational Autonomy A4 order-delete baseline hash mismatch: ${name}`)\n      acceptedHash = operationalAutonomyA4Changed.after\n    }\n    check(sha(declarations.get(name)) === acceptedHash, operationalAutonomyA4Changed\n      ? `Order delete mobility declaration changed beyond exact Operational Autonomy A4 allow-list: ${name}`\n      : `Order delete mobility declaration changed beyond exact allow-list: ${name}`)\n  }")
   .replace("  // Catalog gender scope R1 changes only the product create/update request shapes.", "  for (const [name, expectedHash] of Object.entries(operationalAutonomyA4Added)) {\n    check(declarations.has(name), `Operational Autonomy A4 added Worker declaration missing: ${name}`)\n    check(sha(declarations.get(name)) === expectedHash, `Operational Autonomy A4 added Worker declaration changed: ${name}`)\n  }\n\n  // Catalog gender scope R1 changes only the product create/update request shapes.")
   .replace("  check(sha(currentRouter) === catalogGenderScopeR1.router.after, 'Catalog gender scope R1 Worker router changed beyond exact delta')\n  const catalogGenderRevertedRouter = currentRouter", "  check(sha(currentRouter) === operationalAutonomyA4Router.after, 'Operational Autonomy A4 raw Worker router changed beyond exact delta')\n  const operationalAutonomyA4RevertedRouter = currentRouter.replace(operationalAutonomyA4RouteBlock, '')\n  check(sha(operationalAutonomyA4RevertedRouter) === operationalAutonomyA4Router.before, 'Operational Autonomy A4 Worker router reverse baseline mismatch')\n  check(sha(operationalAutonomyA4RevertedRouter) === catalogGenderScopeR1.router.after, 'Catalog gender scope R1 Worker router changed beyond exact delta')\n  const catalogGenderRevertedRouter = operationalAutonomyA4RevertedRouter")
+const a4InjectedAnchor = 'const operationalAutonomyA4RouteBlock = ' + JSON.stringify(operationalAutonomyA4RouteBlock) + '\n'
+if (!patched.includes(a4InjectedAnchor)) throw new Error('1906A A5 injected A4 anchor missing')
+patched = patched.replace(a4InjectedAnchor, a4InjectedAnchor + 'const operationalAutonomyA5Added = ' + JSON.stringify(operationalAutonomyA5Manifest.added || {}) + '\n' + 'const operationalAutonomyA5Router = ' + JSON.stringify(operationalAutonomyA5Manifest.router || {}) + '\n')
+patched = patched.replace(' + Object.keys(operationalAutonomyA4Added).length', ' + Object.keys(operationalAutonomyA4Added).length + Object.keys(operationalAutonomyA5Added).length')
+const catalogCommentAnchor = '  // Catalog gender scope R1 changes only the product create/update request shapes.'
+if (!patched.includes(catalogCommentAnchor)) throw new Error('1906A A5 added-declaration anchor missing')
+const a5AddedBlock = [
+  '  for (const [name, expectedHash] of Object.entries(operationalAutonomyA5Added)) {',
+  "    check(declarations.has(name), 'Operational Autonomy A5 added Worker declaration missing: ' + name)",
+  "    check(sha(declarations.get(name)) === expectedHash, 'Operational Autonomy A5 added Worker declaration changed: ' + name)",
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(catalogCommentAnchor, a5AddedBlock + catalogCommentAnchor)
+const a4RouterAnchor = "  check(sha(currentRouter) === operationalAutonomyA4Router.after, 'Operational Autonomy A4 raw Worker router changed beyond exact delta')\n  const operationalAutonomyA4RevertedRouter = currentRouter.replace(operationalAutonomyA4RouteBlock, '')"
+if (!patched.includes(a4RouterAnchor)) throw new Error('1906A A5 router anchor missing')
+const a5RouterBlock = [
+  "  check(sha(currentRouter) === operationalAutonomyA5Router.after, 'Operational Autonomy A5 raw Worker router changed beyond exact delta')",
+  "  const operationalAutonomyA5RevertedRouter = currentRouter.replace(operationalAutonomyA5Router.block, '')",
+  "  check(sha(operationalAutonomyA5RevertedRouter) === operationalAutonomyA5Router.before, 'Operational Autonomy A5 Worker router reverse baseline mismatch')",
+  "  check(sha(operationalAutonomyA5RevertedRouter) === operationalAutonomyA4Router.after, 'Operational Autonomy A4 Worker router changed beneath A5')",
+  "  const operationalAutonomyA4RevertedRouter = operationalAutonomyA5RevertedRouter.replace(operationalAutonomyA4RouteBlock, '')",
+].join('\n')
+patched = patched.replace(a4RouterAnchor, a5RouterBlock)
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')

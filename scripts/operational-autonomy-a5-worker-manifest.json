@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "revision": "operational-autonomy-a5-exchange-financial-correction-r1",
+  "changes": {},
+  "added": {
+    "correctExchangeFinancials": "4b1c92f315c48d4d6c3ae7927c4afe8e0f2273395ada671cf1c8239021ce7d8d"
+  },
+  "router": {
+    "before": "b92a912c9af4653a5dfd80e5398bca92e27dd66bea12568cbaf05cd01f95c951",
+    "after": "b603184289505d68f89702645e6754954b987b38431bea9e1d7dc793cad77489",
+    "block": "FinancialCorrectionMatch = url.pathname.match(/^\\/api\\/exchanges\\/(\\d+)\\/financials$/);\n      if (exchangeFinancialCorrectionMatch && request.method === 'PATCH') {\n        const input = await readJson<{\n          requestId?: string;\n          exchangeDate?: string;\n          financialAmount?: number;\n          paymentMethod?: string;\n          comment?: string;\n          expectedExchangeDate?: string;\n          expectedFinancialAmount?: number;\n          expectedPaymentMethod?: string;\n          expectedComment?: string;\n        }>(request);\n        input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;\n        try {\n          return json(await correctExchangeFinancials(env.DB, Number(exchangeFinancialCorrectionMatch[1]), input));\n        } catch (error) {\n          const criticalResponse = criticalOperationErrorResponse(error);\n          if (criticalResponse) return criticalResponse;\n          throw error;\n        }\n      }\n\n      const exchange"
+  }
+}
