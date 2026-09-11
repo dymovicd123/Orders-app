@@ -1,4 +1,5 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
+import { useState } from 'react'
 import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
 type SectionContext = Record<string, any>
 
@@ -7,6 +8,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     applyExchangeProductPick,
     cancelExchangeEntry,
     closeExchangeForm,
+    correctExchangeFinancialEntry,
     createExchangeDraft,
     exchangeBusy,
     exchangeDraft,
@@ -34,6 +36,18 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     sourceLabel,
     suggestionValues,
   } = ctx
+
+  const [financialCorrection, setFinancialCorrection] = useState<any>(null)
+
+  const openFinancialCorrection = (entry: any) => {
+    setFinancialCorrection({
+      exchangeId: entry.id,
+      exchangeDate: entry.exchangeDate || '',
+      financialAmount: Number(entry.financialAmount || 0),
+      paymentMethod: entry.paymentMethod || '',
+      comment: entry.comment || '',
+    })
+  }
 
   const formatHistoryCharacteristics = (entry: any, prefix: 'old' | 'new') => {
     const fields = [
@@ -406,11 +420,32 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                           <div className="history-detail-grid">
                             <div><span>Менеджер</span><ManagerBadge name={entry.manager || '—'} colorKey={entry.managerColor || managerColorFor(entry.manager)} compact /></div>
                             <div><span>Деньги</span><strong>{entry.financialAction === 'extra_payment' ? `Доплата ${formatMoney(entry.financialAmount)}` : entry.financialAction === 'refund' ? `Возврат ${formatMoney(entry.financialAmount)}` : 'Без доплаты / возврата'}</strong></div>
+                            {entry.financialAction !== 'none' ? <div><span>Способ</span><strong>{entry.paymentMethod || '—'}</strong></div> : null}
                             <div><span>Заказ от</span><strong>{entry.orderDate || '—'}</strong></div>
                           </div>
                           {entry.comment ? <div className="history-note"><span>Комментарий обмена</span><strong>{entry.comment}</strong></div> : null}
                           {entry.cancellationComment ? <div className="history-note is-danger"><span>Причина отмены</span><strong>{entry.cancellationComment}</strong></div> : null}
-                          <div className="history-card-actions">{entry.status !== 'cancelled' ? <button className="ghost danger compact" type="button" onClick={() => void cancelExchangeEntry(entry)} disabled={exchangeBusy}>Отменить обмен</button> : null}</div>
+                          {financialCorrection?.exchangeId === entry.id ? (
+                            <div className="mini-panel" style={{ marginTop: 12 }}>
+                              <div className="mini-panel-head">
+                                <div>
+                                  <h4>Исправить денежную часть</h4>
+                                  <p className="mini-panel-note">Меняются только дата, сумма, способ и комментарий. Товары, остатки и Цех не затрагиваются. Тип операции ({entry.financialAction === 'refund' ? 'возврат' : 'доплата'}) здесь не меняется.</p>
+                                </div>
+                              </div>
+                              <div className="form-grid compact-form-grid">
+                                <label><span>Дата</span><input type="date" value={financialCorrection.exchangeDate} onChange={(event) => setFinancialCorrection((current: any) => ({ ...current, exchangeDate: event.target.value }))} /></label>
+                                <label><span>Сумма</span><FriendlyNumberInput type="number" min="1" value={financialCorrection.financialAmount} onChange={(event) => setFinancialCorrection((current: any) => ({ ...current, financialAmount: Math.max(0, Number(event.target.value || 0)) }))} /></label>
+                                <label><span>{entry.financialAction === 'refund' ? 'Способ возврата' : 'Способ оплаты'}</span><SmartPickerInput value={financialCorrection.paymentMethod} options={suggestionValues.paymentMethods} placeholder={entry.financialAction === 'refund' ? 'Например, НАЛИЧКА' : 'Например, KASPI'} onChange={(value: string) => setFinancialCorrection((current: any) => ({ ...current, paymentMethod: value }))} /></label>
+                                <label className="wide"><span>Комментарий</span><input value={financialCorrection.comment} onChange={(event) => setFinancialCorrection((current: any) => ({ ...current, comment: event.target.value }))} /></label>
+                              </div>
+                              <div className="row-actions">
+                                <button className="primary compact" type="button" disabled={exchangeBusy} onClick={async () => { if (await correctExchangeFinancialEntry(entry, financialCorrection)) setFinancialCorrection(null) }}>{exchangeBusy ? 'Сохраняю…' : 'Сохранить исправление'}</button>
+                                <button className="secondary compact" type="button" disabled={exchangeBusy} onClick={() => setFinancialCorrection(null)}>Отмена</button>
+                              </div>
+                            </div>
+                          ) : null}
+                          <div className="history-card-actions">{entry.status !== 'cancelled' && entry.financialAction !== 'none' ? <button className="secondary compact" type="button" onClick={() => openFinancialCorrection(entry)} disabled={exchangeBusy}>Исправить деньги</button> : null}{entry.status !== 'cancelled' ? <button className="ghost danger compact" type="button" onClick={() => void cancelExchangeEntry(entry)} disabled={exchangeBusy}>Отменить обмен</button> : null}</div>
                         </div>
                       </details>
                     ))}

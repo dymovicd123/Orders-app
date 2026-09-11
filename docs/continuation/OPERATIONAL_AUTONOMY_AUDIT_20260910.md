@@ -56,6 +56,8 @@ Target direction: explicit shipment/handover correction that checks fresh reserv
 
 ### A5 — Exchange-linked payment correction is cumbersome
 
+> A5 update: implemented on the current A5 branch as a dedicated audited correction of the existing exchange financial fact. Date, amount, payment method and comment can be corrected without changing exchanged items, stock/lifecycle or Workshop. The financial action itself (extra payment vs refund) remains immutable; changing that business meaning still requires exchange cancellation. Financial history is append-only and cash-register delta is reconciled.
+
 The order editor intentionally permits only payment-method correction for an exchange-linked extra. That ownership boundary is correct, but the exchange workflow currently exposes create/cancel rather than a clear in-place correction of an already recorded exchange payment/date/amount.
 
 Target direction: audit whether exchange correction should be a dedicated audited correction action instead of forcing cancel-and-recreate for ordinary data-entry mistakes.
