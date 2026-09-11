@@ -107,7 +107,7 @@ jobs:
           )
           swap(
               "check(resolver.includes(\"productGenderScope === 'unisex' && gender !== 'ЖЕН' && gender !== 'МУЖ'\"), 'Order resolver must not guess unisex gender')",
-              "check(resolver.includes('const enteredGender = normalizeCatalogCombinationGender(item.gender)'), 'Order resolver must respect an explicit human gender')\\ncheck(resolver.includes('if (!gender) {\\n    const productGenderScope = await getCatalogProductGenderScope'), 'Order resolver may read product scope only for omitted gender')",
+              "check(resolver.includes('const enteredGender = normalizeCatalogCombinationGender(item.gender)'), 'Order resolver must respect an explicit human gender')\\ncheck(resolver.includes('if (!gender) {'), 'Order resolver must branch before reading product scope')\\ncheck(resolver.includes('const productGenderScope = await getCatalogProductGenderScope(db, product.id)'), 'Order resolver must use product scope only as fallback data')",
               'resolver test semantics',
           )
 
