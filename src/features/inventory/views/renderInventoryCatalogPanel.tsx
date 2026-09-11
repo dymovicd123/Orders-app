@@ -104,6 +104,10 @@ const normalizedText = (value: unknown) => String(value || '').trim()
 const normalizedKey = (value: unknown) => normalizedText(value).toUpperCase() || 'СТАНДАРТ'
 const isStandardValue = (value: unknown) => normalizedKey(value) === 'СТАНДАРТ'
 
+const productGenderScope = (product: any): 'female' | 'male' | 'unisex' => ['female', 'male', 'unisex'].includes(String(product?.genderScope || '')) ? product.genderScope : 'unisex'
+const fixedGenderForProduct = (product: any) => productGenderScope(product) === 'female' ? 'ЖЕН' : productGenderScope(product) === 'male' ? 'МУЖ' : ''
+const productGenderScopeLabel = (product: any) => productGenderScope(product) === 'female' ? 'Женский' : productGenderScope(product) === 'male' ? 'Мужской' : 'Унисекс'
+
 const executionKey = (material: unknown, length: unknown) => `${normalizedKey(material)}¦${normalizedKey(length)}`
 
 const executionLabel = (material: unknown, length: unknown) => {
@@ -118,11 +122,11 @@ const executionLabel = (material: unknown, length: unknown) => {
   return `${materialText} · ${lengthText}`
 }
 
-const blankVariant = (productId: number, category: string) => ({
+const blankVariant = (productId: number, category: string, product?: any) => ({
   id: 0,
   productId: productId ? String(productId) : '',
   category: category === 'child' ? 'child' : 'adult',
-  gender: '',
+  gender: fixedGenderForProduct(product),
   color: '',
   material: 'СТАНДАРТ',
   length: 'СТАНДАРТ',
@@ -229,29 +233,29 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
   const selectProduct = (product: any) => {
     const category = getCatalogProductEffectiveCategory(product)
     setExpandedCatalogProducts({ [String(product.id)]: true })
-    setCatalogProductDraft({ id: product.id, name: product.name, category })
-    setCatalogVariantDraft(blankVariant(Number(product.id), catalogCategoryFilter === 'child' ? 'child' : category))
+    setCatalogProductDraft({ id: product.id, name: product.name, category, genderScope: productGenderScope(product) })
+    setCatalogVariantDraft(blankVariant(Number(product.id), catalogCategoryFilter === 'child' ? 'child' : category, product))
   }
 
   const openNewProduct = () => {
     const category = catalogCategoryFilter === 'child' ? 'child' : 'adult'
     setExpandedCatalogProducts({ [W6_NEW_PRODUCT]: true })
-    setCatalogProductDraft({ id: 0, name: '', category })
+    setCatalogProductDraft({ id: 0, name: '', category, genderScope: '' })
     setCatalogVariantDraft(blankVariant(0, category))
   }
 
   const openProductEditor = (product: any) => {
     const category = getCatalogProductEffectiveCategory(product)
     setExpandedCatalogProducts({ [String(product.id)]: true, [W6_EDIT_PRODUCT]: true })
-    setCatalogProductDraft({ id: product.id, name: product.name, category })
-    setCatalogVariantDraft(blankVariant(Number(product.id), category))
+    setCatalogProductDraft({ id: product.id, name: product.name, category, genderScope: productGenderScope(product) })
+    setCatalogVariantDraft(blankVariant(Number(product.id), category, product))
   }
 
   const openNewVariant = (product: any) => {
     const category = catalogCategoryFilter === 'child' ? 'child' : getCatalogProductEffectiveCategory(product)
     setExpandedCatalogProducts({ [String(product.id)]: true, [W6_VARIANT_EDITOR]: true })
-    setCatalogProductDraft({ id: product.id, name: product.name, category: getCatalogProductEffectiveCategory(product) })
-    setCatalogVariantDraft(blankVariant(Number(product.id), category))
+    setCatalogProductDraft({ id: product.id, name: product.name, category: getCatalogProductEffectiveCategory(product), genderScope: productGenderScope(product) })
+    setCatalogVariantDraft(blankVariant(Number(product.id), category, product))
   }
 
   const openVariantEditor = (product: any, variant: any) => {
@@ -261,7 +265,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
       id: variant.id,
       productId: String(variant.productId),
       category: getCatalogVariantCategory(variant),
-      gender: variant.gender,
+      gender: variant.gender || fixedGenderForProduct(product),
       color: variant.color,
       material: variant.material || 'СТАНДАРТ',
       length: variant.length || 'СТАНДАРТ',
@@ -276,8 +280,8 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
       return
     }
     setExpandedCatalogProducts({ [String(selectedProduct.id)]: true })
-    setCatalogProductDraft({ id: selectedProduct.id, name: selectedProduct.name, category: getCatalogProductEffectiveCategory(selectedProduct) })
-    setCatalogVariantDraft(blankVariant(Number(selectedProduct.id), getCatalogProductEffectiveCategory(selectedProduct)))
+    setCatalogProductDraft({ id: selectedProduct.id, name: selectedProduct.name, category: getCatalogProductEffectiveCategory(selectedProduct), genderScope: productGenderScope(selectedProduct) })
+    setCatalogVariantDraft(blankVariant(Number(selectedProduct.id), getCatalogProductEffectiveCategory(selectedProduct), selectedProduct))
   }
 
   const selectedVariants = selectedProduct
@@ -455,7 +459,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                 <div>
                   <span className="catalog-detail-eyebrow">Master-data</span>
                   <h3>Новый товар</h3>
-                  <p>Создайте только базовое название. Цвет, материал, длина, размер и пол добавляются как варианты.</p>
+                  <p>Задайте базовое название и назначение по полу. Для женского/мужского товара пол дальше подставляется автоматически; у унисекс человек выбирает пол конкретной вещи.</p>
                 </div>
                 <button className="secondary compact" type="button" onClick={() => setExpandedCatalogProducts({})}>Отмена</button>
               </div>
@@ -478,7 +482,17 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                     <option value="child">Детский</option>
                   </select>
                 </label>
-                <button className="primary" type="button" onClick={() => void saveCatalogProduct()}>Добавить товар</button>
+                <label>
+                  <span>Назначение по полу</span>
+                  <select value={catalogProductDraft.id ? '' : (catalogProductDraft.genderScope || '')} onChange={(event) => setCatalogProductDraft((current: any) => ({ ...current, id: 0, genderScope: event.target.value }))}>
+                    <option value="">Выберите</option>
+                    <option value="female">Женский</option>
+                    <option value="male">Мужской</option>
+                    <option value="unisex">Унисекс</option>
+                  </select>
+                  <small>У «Унисекс» пол не угадывается: в заказе, приходе или обмене человек выберет ЖЕН/МУЖ.</small>
+                </label>
+                <button className="primary" type="button" disabled={!catalogProductDraft.genderScope} onClick={() => void saveCatalogProduct()}>Добавить товар</button>
               </div>
             </div>
           ) : selectedProduct ? (
@@ -492,6 +506,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                     <span><b>{selectedExecutionCount}</b> {pluralRu(selectedExecutionCount, 'исполнение', 'исполнения', 'исполнений')}</span>
                     {visibleSelectedVariants.length !== selectedVariants.length ? <span className="is-filtered"><b>{visibleSelectedVariants.length}</b> показано</span> : null}
                     {selectedAdultCount && selectedChildCount ? <span>{selectedAdultCount} взрослых · {selectedChildCount} детских</span> : selectedChildCount ? <span>Детский товар</span> : <span>Взрослый товар</span>}
+                    <span>Пол: <b>{productGenderScopeLabel(selectedProduct)}</b></span>
                   </div>
                   {selectedProductHiddenByFilter ? <span className="catalog-filter-context-note">Редактируемый товар скрыт текущим поиском или фильтром. Контекст сохранён до закрытия редактора.</span> : null}
                 </div>
@@ -516,17 +531,23 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                       <span>Название товара</span>
                       <input
                         value={catalogProductDraft.id === selectedProduct.id ? catalogProductDraft.name : selectedProduct.name}
-                        onChange={(event) => setCatalogProductDraft({ id: selectedProduct.id, name: event.target.value, category: catalogProductDraft.id === selectedProduct.id ? catalogProductDraft.category : getCatalogProductEffectiveCategory(selectedProduct) })}
+                        onChange={(event) => setCatalogProductDraft({ id: selectedProduct.id, name: event.target.value, category: catalogProductDraft.id === selectedProduct.id ? catalogProductDraft.category : getCatalogProductEffectiveCategory(selectedProduct), genderScope: catalogProductDraft.id === selectedProduct.id ? catalogProductDraft.genderScope : productGenderScope(selectedProduct) })}
                       />
                     </label>
                     <label>
                       <span>Тип по умолчанию</span>
                       <select
                         value={catalogProductDraft.id === selectedProduct.id ? catalogProductDraft.category : getCatalogProductEffectiveCategory(selectedProduct)}
-                        onChange={(event) => setCatalogProductDraft({ id: selectedProduct.id, name: catalogProductDraft.id === selectedProduct.id ? catalogProductDraft.name : selectedProduct.name, category: event.target.value === 'child' ? 'child' : 'adult' })}
+                        onChange={(event) => setCatalogProductDraft({ id: selectedProduct.id, name: catalogProductDraft.id === selectedProduct.id ? catalogProductDraft.name : selectedProduct.name, category: event.target.value === 'child' ? 'child' : 'adult', genderScope: catalogProductDraft.id === selectedProduct.id ? catalogProductDraft.genderScope : productGenderScope(selectedProduct) })}
                       >
                         <option value="adult">Взрослый</option>
                         <option value="child">Детский</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Назначение по полу</span>
+                      <select value={catalogProductDraft.id === selectedProduct.id ? (catalogProductDraft.genderScope || productGenderScope(selectedProduct)) : productGenderScope(selectedProduct)} onChange={(event) => setCatalogProductDraft((current: any) => ({ ...current, id: selectedProduct.id, name: current.id === selectedProduct.id ? current.name : selectedProduct.name, category: current.id === selectedProduct.id ? current.category : getCatalogProductEffectiveCategory(selectedProduct), genderScope: event.target.value }))}>
+                        <option value="female">Женский</option><option value="male">Мужской</option><option value="unisex">Унисекс</option>
                       </select>
                     </label>
                     <button className="primary compact" type="button" onClick={() => void saveCatalogProduct()}>Сохранить товар</button>
@@ -572,11 +593,12 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                     </label>
                     <label>
                       <span>Пол</span>
-                      <select value={catalogVariantDraft.productId === String(selectedProduct.id) ? catalogVariantDraft.gender : ''} onChange={(event) => setCatalogVariantDraft((current: any) => ({ ...current, productId: String(selectedProduct.id), gender: event.target.value }))}>
-                        <option value="">Не указан</option>
+                      <select value={catalogVariantDraft.productId === String(selectedProduct.id) ? (catalogVariantDraft.gender || fixedGenderForProduct(selectedProduct)) : fixedGenderForProduct(selectedProduct)} onChange={(event) => setCatalogVariantDraft((current: any) => ({ ...current, productId: String(selectedProduct.id), gender: event.target.value }))}>
+                        {!fixedGenderForProduct(selectedProduct) ? <option value="">Выберите для унисекс</option> : null}
                         <option value="МУЖ">МУЖ</option>
                         <option value="ЖЕН">ЖЕН</option>
                       </select>
+                      <small>{fixedGenderForProduct(selectedProduct) ? 'Подставлено по товару. Если каталог ошибся, пол этой комбинации можно изменить.' : 'Унисекс: выберите пол этой конкретной комбинации.'}</small>
                     </label>
                     <label>
                       <span>Цвет</span>

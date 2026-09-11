@@ -276,13 +276,15 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
       }
     }
 
+    const productGenderScope = String(product.genderScope || 'unisex') as 'female' | 'male' | 'unisex'
+    const automaticGender = productGenderScope === 'female' ? 'ЖЕН' : productGenderScope === 'male' ? 'МУЖ' : ''
     const variants = (catalogVariantsByProductId.get(Number(product.id)) || []).filter((variant) => variant.isActive)
     if (!variants.length) {
       return {
         ...currentItem,
         productName: product.name,
         audienceType: getCatalogProductEffectiveCategory(product) === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',
-        gender: '',
+        gender: automaticGender,
         color: '',
         material: 'СТАНДАРТ',
         length: 'СТАНДАРТ',
@@ -346,7 +348,7 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
       ...currentItem,
       productName: product.name,
       audienceType: getCatalogVariantCategory(selected) === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',
-      gender: selected.gender || '',
+      gender: automaticGender,
       color: selected.color || '',
       material: canonicalStockPositionValue(selected.material),
       length: canonicalStockPositionValue(selected.length),
@@ -438,6 +440,9 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
     }
 
     const catalogProduct = resolveClientCatalogProduct(productName)
+    const productGenderScope = String(catalogProduct?.genderScope || 'unisex') as 'female' | 'male' | 'unisex'
+    const automaticGender = productGenderScope === 'female' ? 'ЖЕН' : productGenderScope === 'male' ? 'МУЖ' : ''
+    const scopedItemGender = canonicalOrderGender(item.gender) || automaticGender
     const resolvedProductName = catalogProduct?.name || productName
     const catalogVariants = catalogProduct
       ? (catalogVariantsByProductId.get(Number(catalogProduct.id)) || []).filter((variant) => variant.isActive)
@@ -445,7 +450,7 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
 
     const catalogVariantIsExact = (variant: CatalogVariantRecord) => (
       getCatalogVariantCategory(variant) === expectedCategory
-      && canonicalOrderGender(variant.gender) === canonicalOrderGender(item.gender)
+      && canonicalOrderGender(variant.gender) === scopedItemGender
       && canonicalOrderColor(variant.color) === canonicalOrderColor(item.color)
       && canonicalOrderMaterial(variant.material) === canonicalOrderMaterial(item.material)
       && canonicalOrderLength(variant.length) === canonicalOrderLength(item.length)
@@ -454,8 +459,9 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
     const exactCatalogVariants = catalogVariants.filter(catalogVariantIsExact)
 
     const unknownFacts: string[] = []
-    const normalizedGender = canonicalOrderGender(item.gender)
-    if (normalizedGender && normalizedGender !== 'ЖЕН' && normalizedGender !== 'МУЖ') unknownFacts.push('пол')
+    const normalizedGender = scopedItemGender
+    if (productGenderScope === 'unisex' && !normalizedGender) unknownFacts.push('пол')
+    else if (normalizedGender && normalizedGender !== 'ЖЕН' && normalizedGender !== 'МУЖ') unknownFacts.push('пол')
     if (!hasReference(suggestionValues.materials, canonicalOrderMaterial(item.material), true)) unknownFacts.push('материал')
     if (!hasReference(suggestionValues.lengths, canonicalOrderLength(item.length), true)) unknownFacts.push('длина')
     if (!hasReference(suggestionValues.colors, canonicalOrderColor(item.color))) unknownFacts.push('цвет')
@@ -474,7 +480,7 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
     })
     const rowIsExact = (row: InventoryStockRecord) => (
       getInventoryRowCategory(row) === expectedCategory
-      && canonicalOrderGender(row.gender) === canonicalOrderGender(item.gender)
+      && canonicalOrderGender(row.gender) === scopedItemGender
       && canonicalOrderColor(row.color) === canonicalOrderColor(item.color)
       && canonicalOrderMaterial(row.material) === canonicalOrderMaterial(item.material)
       && canonicalOrderLength(row.length) === canonicalOrderLength(item.length)

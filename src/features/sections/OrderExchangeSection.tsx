@@ -239,7 +239,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                               <option value="ДЕТСКИЙ">Детский</option>
                             </select>
                           </label>
-                          <label><span>Пол</span><input value={exchangeDraft.newItem.gender || ''} onChange={(event) => setExchangeDraft((current) => ({ ...current, newItem: resetObservedStock(current.newItem, { gender: event.target.value }) }))} /></label>
+                          <label><span>Пол</span><select value={exchangeDraft.newItem.gender || ''} onChange={(event) => setExchangeDraft((current) => ({ ...current, newItem: resetObservedStock(current.newItem, { gender: event.target.value }) }))}><option value="">Выберите для унисекс</option><option value="ЖЕН">ЖЕН</option><option value="МУЖ">МУЖ</option></select></label>
                           <label><span>Цвет</span><SmartPickerInput value={exchangeDraft.newItem.color || ''} options={suggestionValues.colors} onChange={(value) => setExchangeDraft((current) => ({ ...current, newItem: resetObservedStock(current.newItem, { color: value }) }))} /></label>
                           <label><span>Материал</span><SmartPickerInput value={exchangeDraft.newItem.material || ''} options={suggestionValues.materials} onChange={(value) => setExchangeDraft((current) => ({ ...current, newItem: resetObservedStock(current.newItem, { material: value }) }))} /></label>
                           <label><span>Длина</span><SmartPickerInput value={exchangeDraft.newItem.length || ''} options={suggestionValues.lengths} onChange={(value) => setExchangeDraft((current) => ({ ...current, newItem: resetObservedStock(current.newItem, { length: value }) }))} /></label>

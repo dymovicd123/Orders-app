@@ -496,6 +496,7 @@ function App() {
     id: 0,
     name: '',
     category: 'adult' as 'adult' | 'child',
+    genderScope: '' as '' | 'female' | 'male' | 'unisex',
   })
   const [catalogVariantDraft, setCatalogVariantDraft] = useState({
     id: 0,
@@ -4912,6 +4913,7 @@ function App() {
     const payload = {
       name: catalogProductDraft.name,
       category: catalogProductDraft.category,
+      genderScope: catalogProductDraft.genderScope,
     }
     const isEdit = catalogProductDraft.id > 0
     const response = await apiFetch(
@@ -4925,7 +4927,7 @@ function App() {
     const result = await readJsonResponse<{ message?: string }>(response, 'Сохранение товара каталога')
     if (!response.ok) throw new Error(result.message || `Catalog product save failed: ${response.status}`)
     await Promise.all([loadCatalogData(true), loadCatalogReview(true)])
-    setCatalogProductDraft({ id: 0, name: '', category: catalogCategoryFilter === 'child' ? 'child' : 'adult' })
+    setCatalogProductDraft({ id: 0, name: '', category: catalogCategoryFilter === 'child' ? 'child' : 'adult', genderScope: '' })
     setMessage(isEdit ? 'Товар обновлён.' : 'Товар добавлен.')
   }
 

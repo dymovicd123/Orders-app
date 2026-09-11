@@ -3,7 +3,7 @@
 import type { CatalogReferenceOptions, CatalogResolutionContext, CatalogResolutionResponse } from '../../shared/api-contracts.ts'
 import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, normalizeOrderStatus, normalizeShippingStatus, normalizeSourceType, toInt, upperText } from '../core/text.ts'
 import type { ReferenceKind } from '../core/types.ts'
-import { assertCatalogProductAliasTargetAvailable, catalogReferenceDbValueExists, createCatalogCombinationV3, createCatalogProduct, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, rememberCatalogProductAlias, rememberCatalogValueAlias, resolveCatalogValueAlias } from './catalog.ts'
+import { assertCatalogProductAliasTargetAvailable, catalogGenderForProductScope, catalogReferenceDbValueExists, createCatalogCombinationV3, createCatalogProduct, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, getCatalogProductGenderScope, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, normalizeCatalogProductGenderScope, rememberCatalogProductAlias, rememberCatalogValueAlias, resolveCatalogValueAlias } from './catalog.ts'
 import { normalizeOrderItems } from './order-core.ts'
 import { releaseOrderReservationV2, reserveOrderItemV2, resolveCatalogProductAndVariantV2, resolveWorkshopCatalogProductOnly } from './order-reservations.ts'
 import { upsertReferenceValue } from './references.ts'
@@ -162,6 +162,7 @@ export type CatalogReviewFactsInput = {
   productId?: unknown;
   createProduct?: unknown;
   productName?: unknown;
+  genderScope?: unknown;
   material?: unknown;
   length?: unknown;
   category?: unknown;
@@ -192,6 +193,8 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
   const product = toInt(anchor.product_id, 0)
     ? await db.prepare(`SELECT id, name, category FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1`).bind(toInt(anchor.product_id, 0)).first<{ id: number; name: string; category: string }>()
     : await findCatalogProductByIdentity(db, facts.productName, 0, { activeOnly: true }) as { id: number; name: string; category: string } | null;
+  const productGenderScope = product?.id ? await getCatalogProductGenderScope(db, product.id) : 'unisex';
+  if (product?.id) facts.gender = facts.gender || catalogGenderForProductScope(productGenderScope);
 
   const referencesResult = await db.prepare(
     `SELECT kind, value FROM reference_values WHERE is_active = 1 AND kind IN ('material','length','color','size','child_age') ORDER BY sort_order, value`
@@ -234,7 +237,7 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
     if (!existingVariant?.id) {
       if (!await catalogReferenceDbValueExists(db, 'material', facts.material)) unknownFields.push('material');
       if (!await catalogReferenceDbValueExists(db, 'length', facts.length)) unknownFields.push('length');
-      if (facts.gender && facts.gender !== 'ЖЕН' && facts.gender !== 'МУЖ') unknownFields.push('gender');
+      if ((productGenderScope === 'unisex' && !facts.gender) || (facts.gender && facts.gender !== 'ЖЕН' && facts.gender !== 'МУЖ')) unknownFields.push('gender');
       if (!await catalogReferenceDbValueExists(db, 'color', facts.color)) unknownFields.push('color');
       const sizeKind = facts.category === 'child' ? 'child_age' : 'size';
       if (!await catalogReferenceDbValueExists(db, sizeKind, facts.size)) unknownFields.push('size');
@@ -259,7 +262,7 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
     isWorkshop: Boolean(toInt(anchor.is_workshop, 0)),
     shippingStatus: cleanText(anchor.shipping_status),
     facts,
-    product: product ? { id: product.id, name: cleanText(product.name), category: cleanText(product.category) } : null,
+    product: product ? { id: product.id, name: cleanText(product.name), category: cleanText(product.category), genderScope: productGenderScope } : null,
     execution: execution ? { id: execution.id, material: execution.material, length: execution.length } : null,
     existingVariantId: toInt(existingVariant?.id, 0) || null,
     products: (productsResult.results || []).map((row) => ({ id: toInt(row.id, 0), name: cleanText(row.name), category: cleanText(row.category) })),
@@ -306,14 +309,16 @@ export async function resolveCatalogReviewFacts(db: D1Database, orderItemId: num
   const createFields = new Set(Array.isArray(input.createFields) ? (input.createFields as unknown[]).map(cleanText) : []);
   const material = await resolveCatalogValueAlias(db, 'material', canonicalStockPositionValue(input.material ?? anchor.material_snapshot));
   const length = await resolveCatalogValueAlias(db, 'length', canonicalStockPositionValue(input.length ?? anchor.length_snapshot));
-  const gender = normalizeCatalogCombinationGender(input.gender ?? anchor.gender_snapshot);
+  const requestedGenderScope = product?.id ? await getCatalogProductGenderScope(db, product.id) : (cleanText(input.genderScope) ? normalizeCatalogProductGenderScope(input.genderScope) : null);
+  if (!product?.id && !requestedGenderScope) throw new Error('Для нового товара выберите назначение по полу: Женский, Мужской или Унисекс.');
+  const gender = normalizeCatalogCombinationGender(input.gender ?? anchor.gender_snapshot) || catalogGenderForProductScope(requestedGenderScope || 'unisex');
   const color = await resolveCatalogValueAlias(db, 'color', normalizeCatalogCombinationColor(input.color ?? anchor.color_snapshot));
   const size = await resolveCatalogValueAlias(db, category === 'child' ? 'child_age' : 'size', normalizeCatalogCombinationSize(input.size ?? anchor.size_snapshot));
 
   // Pure workshop tasks intentionally stop at the base product and never validate/create a warehouse SKU.
   if (!normalRows.length) {
     if (!product?.id) {
-      const created = await createCatalogProduct(db, { name: requestedProductName, category });
+      const created = await createCatalogProduct(db, { name: requestedProductName, category, genderScope: requestedGenderScope });
       productId = toInt(created.id, 0);
       product = { id: productId, name: cleanText(created.name) };
     }
@@ -331,7 +336,7 @@ export async function resolveCatalogReviewFacts(db: D1Database, orderItemId: num
     return { ok: true, linked: workshopLinked, workshopLinked, message: `Цеховая позиция связана с товаром «${cleanText(product.name)}». Складская комбинация для неё не требуется.` };
   }
 
-  if (gender && gender !== 'ЖЕН' && gender !== 'МУЖ') throw new Error('Пол должен быть выбран из списка.');
+  if (gender !== 'ЖЕН' && gender !== 'МУЖ') throw new Error('Для товара «Унисекс» выберите пол конкретной вещи: ЖЕН или МУЖ.');
 
   // Read-only preflight first. A missing checkbox must fail before creating a product,
   // reference value, execution, alias or touching any order/workshop row.

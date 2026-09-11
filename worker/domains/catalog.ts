@@ -181,6 +181,62 @@ export async function isCatalogIdentityV3Enabled(db: D1Database) {
 }
 
 
+export type CatalogProductGenderScope = 'female' | 'male' | 'unisex';
+
+export function normalizeCatalogProductGenderScope(value: unknown): CatalogProductGenderScope {
+  const text = cleanText(value).toLowerCase();
+  if (['female', 'жен', 'женский', 'ж'].includes(text)) return 'female';
+  if (['male', 'муж', 'мужской', 'м'].includes(text)) return 'male';
+  return 'unisex';
+}
+
+export function catalogGenderForProductScope(scope: CatalogProductGenderScope) {
+  return scope === 'female' ? 'ЖЕН' : scope === 'male' ? 'МУЖ' : '';
+}
+
+export async function isCatalogProductGenderScopeEnabled(db: D1Database) {
+  try {
+    await db.prepare('SELECT gender_scope FROM catalog_products LIMIT 1').first();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function getCatalogProductGenderScope(db: D1Database, productId: number): Promise<CatalogProductGenderScope> {
+  if (!productId) return 'unisex';
+  if (await isCatalogProductGenderScopeEnabled(db)) {
+    const row = await db.prepare('SELECT gender_scope FROM catalog_products WHERE id = ? LIMIT 1').bind(productId).first<{ gender_scope: string }>();
+    return normalizeCatalogProductGenderScope(row?.gender_scope);
+  }
+  const profile = await db.prepare(
+    `SELECT
+       MAX(CASE WHEN UPPER(TRIM(COALESCE(gender,'')))='ЖЕН' THEN 1 ELSE 0 END) AS has_female,
+       MAX(CASE WHEN UPPER(TRIM(COALESCE(gender,'')))='МУЖ' THEN 1 ELSE 0 END) AS has_male,
+       MAX(CASE WHEN TRIM(COALESCE(gender,''))='' THEN 1 ELSE 0 END) AS has_blank
+     FROM catalog_variants WHERE product_id = ? AND is_active = 1`
+  ).bind(productId).first<Record<string, unknown>>();
+  const female = toInt(profile?.has_female, 0) > 0;
+  const male = toInt(profile?.has_male, 0) > 0;
+  const blank = toInt(profile?.has_blank, 0) > 0;
+  if (female && !male && !blank) return 'female';
+  if (male && !female && !blank) return 'male';
+  return 'unisex';
+}
+
+export async function resolveCatalogGenderForProduct(db: D1Database, productId: number, value: unknown) {
+  const scope = await getCatalogProductGenderScope(db, productId);
+  const explicitGender = normalizeCatalogCombinationGender(value);
+  if (explicitGender === 'ЖЕН' || explicitGender === 'МУЖ') return { scope, gender: explicitGender };
+  const fixed = catalogGenderForProductScope(scope);
+  if (fixed) return { scope, gender: fixed };
+  const gender = explicitGender;
+  if (gender !== 'ЖЕН' && gender !== 'МУЖ') {
+    throw new Error('Для товара «Унисекс» выберите пол конкретной вещи: ЖЕН или МУЖ.');
+  }
+  return { scope, gender };
+}
+
 export function normalizeCatalogCombinationGender(value: unknown) {
   const text = upperText(value);
   if (!text) return '';
@@ -475,9 +531,10 @@ export async function rememberCatalogValueAlias(
 
 
 export async function listCatalog(db: D1Database) {
+  const genderScopeEnabled = await isCatalogProductGenderScopeEnabled(db);
   const productsResult = await db.prepare(
     `SELECT
-      id, name, category, is_active, created_at, updated_at
+      id, name, category, ${genderScopeEnabled ? 'gender_scope' : "'unisex' AS gender_scope"}, is_active, created_at, updated_at
      FROM catalog_products
      WHERE NOT (is_active = 0 AND name IN ('КОРСЕТ','БАСҚА'))
      ORDER BY name`
@@ -554,6 +611,7 @@ export async function listCatalog(db: D1Database) {
         id,
         name: cleanText(row.name),
         category: cleanText(row.category),
+        genderScope: normalizeCatalogProductGenderScope(row.gender_scope),
         isActive: Boolean(toInt(row.is_active, 1)),
         variantsCount: variantCountByProductId.get(id) || 0,
         createdAt: cleanText(row.created_at),
@@ -595,22 +653,29 @@ export async function listCatalog(db: D1Database) {
 }
 
 
-export async function createCatalogProduct(db: D1Database, input: { name?: unknown; category?: unknown }) {
+export async function createCatalogProduct(db: D1Database, input: { name?: unknown; category?: unknown; genderScope?: unknown }) {
   const name = upperText(input.name);
   if (!name) throw new Error('Product name is required.');
   const duplicate = await findCatalogProductByIdentity(db, name);
   if (duplicate?.id) throw new Error(`Такой базовый товар уже существует: ${cleanText(duplicate.name)}.`);
+  if (input.genderScope === undefined || !cleanText(input.genderScope)) {
+    throw new Error('Выберите назначение товара по полу: Женский, Мужской или Унисекс.');
+  }
+  if (!await isCatalogProductGenderScopeEnabled(db)) {
+    throw new Error('Схема каталога ещё не поддерживает назначение товара по полу. Примените миграцию 0068 и повторите действие.');
+  }
   const category = normalizeCatalogCategory(input.category);
+  const genderScope = normalizeCatalogProductGenderScope(input.genderScope);
   const createdAt = new Date().toISOString();
   const result = await db.prepare(
-    `INSERT INTO catalog_products (name, category, is_active, created_at, updated_at)
-     VALUES (?, ?, 1, ?, ?)`
-  ).bind(name, category, createdAt, createdAt).run();
-  return { ok: true, id: Number(result.meta?.last_row_id || 0), name, category };
+    `INSERT INTO catalog_products (name, category, gender_scope, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, 1, ?, ?)`
+  ).bind(name, category, genderScope, createdAt, createdAt).run();
+  return { ok: true, id: Number(result.meta?.last_row_id || 0), name, category, genderScope };
 }
 
 
-export async function updateCatalogProduct(db: D1Database, id: number, input: { name?: unknown; category?: unknown; isActive?: unknown }) {
+export async function updateCatalogProduct(db: D1Database, id: number, input: { name?: unknown; category?: unknown; genderScope?: unknown; isActive?: unknown }) {
   const existing = await db.prepare('SELECT id FROM catalog_products WHERE id = ?').bind(id).first<{ id: number }>();
   if (!existing) throw new Error('Product not found.');
   const name = input.name !== undefined ? upperText(input.name) : undefined;
@@ -619,16 +684,21 @@ export async function updateCatalogProduct(db: D1Database, id: number, input: { 
     const duplicate = await findCatalogProductByIdentity(db, name, id);
     if (duplicate?.id) throw new Error(`Такой базовый товар уже существует: ${cleanText(duplicate.name)}.`);
   }
+  const genderScope = input.genderScope === undefined ? undefined : normalizeCatalogProductGenderScope(input.genderScope);
+  if (genderScope !== undefined && !await isCatalogProductGenderScopeEnabled(db)) {
+    throw new Error('Схема каталога ещё не поддерживает назначение товара по полу. Примените миграцию 0068 и повторите действие.');
+  }
   const isActive = input.isActive === undefined ? undefined : (cleanText(input.isActive).toLowerCase() === 'false' ? 0 : 1);
   const createdAt = new Date().toISOString();
   await db.prepare(
     `UPDATE catalog_products
      SET name = COALESCE(?, name),
          category = COALESCE(?, category),
+         gender_scope = COALESCE(?, gender_scope),
          is_active = COALESCE(?, is_active),
          updated_at = ?
      WHERE id = ?`
-  ).bind(name || null, category || null, isActive ?? null, createdAt, id).run();
+  ).bind(name || null, category || null, genderScope ?? null, isActive ?? null, createdAt, id).run();
   return { ok: true };
 }
 
@@ -647,7 +717,8 @@ export async function createCatalogVariant(db: D1Database, input: { productId?: 
   const product = await db.prepare('SELECT id FROM catalog_products WHERE id = ?').bind(productId).first<{ id: number }>();
   if (!product) throw new Error('Product not found.');
   const category = normalizeAudienceCategory(input.category, input.sizeLabel) as 'adult' | 'child';
-  const gender = normalizeCatalogCombinationGender(input.gender);
+  const genderResolution = await resolveCatalogGenderForProduct(db, productId, input.gender);
+  const gender = genderResolution.gender;
   const color = await resolveCatalogValueAlias(db, 'color', normalizeCatalogCombinationColor(input.color));
   const material = await resolveCatalogValueAlias(db, 'material', canonicalStockPositionValue(input.material));
   const length = await resolveCatalogValueAlias(db, 'length', canonicalStockPositionValue(input.length));
@@ -688,7 +759,8 @@ export async function updateCatalogVariant(db: D1Database, id: number, input: { 
   const productId = input.productId === undefined ? toInt(existing.product_id, 0) : toInt(input.productId, 0);
   const targetSize = input.sizeLabel === undefined ? cleanText(existing.size_label) : normalizeCatalogCombinationSize(input.sizeLabel);
   const category = input.category === undefined ? normalizeAudienceCategory(existing.category, targetSize) : normalizeAudienceCategory(input.category, targetSize);
-  const gender = input.gender === undefined ? normalizeCatalogCombinationGender(existing.gender) : normalizeCatalogCombinationGender(input.gender);
+  const genderResolution = await resolveCatalogGenderForProduct(db, productId, input.gender === undefined ? existing.gender : input.gender);
+  const gender = genderResolution.gender;
   const color = await resolveCatalogValueAlias(db, 'color', input.color === undefined ? normalizeCatalogCombinationColor(existing.color) : normalizeCatalogCombinationColor(input.color));
   const material = await resolveCatalogValueAlias(db, 'material', input.material === undefined ? canonicalStockPositionValue(existing.material) : canonicalStockPositionValue(input.material));
   const length = await resolveCatalogValueAlias(db, 'length', input.length === undefined ? canonicalStockPositionValue(existing.length) : canonicalStockPositionValue(input.length));

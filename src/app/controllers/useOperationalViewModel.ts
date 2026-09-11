@@ -1024,12 +1024,14 @@ const summary = useMemo(() => {
     }
     const variants = catalogVariantsByProductId.get(Number(match.id)) || []
     const first = variants.find((variant) => variant.isActive) || null
+    const productGenderScope = String(match.genderScope || 'unisex')
+    const automaticGender = productGenderScope === 'female' ? 'ЖЕН' : productGenderScope === 'male' ? 'МУЖ' : ''
     setInventoryArrivalPositions((current) => current.map((position) => position.id === id ? {
       ...position,
       productId: String(match.id),
       productName: match.name,
       category: first ? getCatalogVariantCategory(first) : (match.category === 'child' ? 'child' : 'adult'),
-      gender: first?.gender || position.gender,
+      gender: automaticGender,
       material: first?.material || position.material || 'СТАНДАРТ',
       length: first?.length || position.length || 'СТАНДАРТ',
     } : position))

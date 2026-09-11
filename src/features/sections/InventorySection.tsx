@@ -70,7 +70,7 @@ type InventoryHistoryFilter = {
   size?: string
 }
 
-type ResolutionFactsState = CatalogResolutionFacts & { productId: number }
+type ResolutionFactsState = CatalogResolutionFacts & { productId: number; genderScope: '' | 'female' | 'male' | 'unisex' }
 type ResolutionContextState = Partial<CatalogResolutionContext> & { error?: string }
 type ResolutionEditableField = 'material' | 'length' | 'color' | 'size'
 type ResolutionKnownField = ResolutionEditableField | 'gender' | 'category'
@@ -293,14 +293,14 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const [catalogReviewVariantId, setCatalogReviewVariantId] = useState(0)
   const [catalogReviewContext, setCatalogReviewContext] = useState<ResolutionContextState | null>(null)
   const [catalogReviewContextBusy, setCatalogReviewContextBusy] = useState(false)
-  const [catalogReviewFacts, setCatalogReviewFacts] = useState<ResolutionFactsState>({ productId: 0, material: 'СТАНДАРТ', length: 'СТАНДАРТ', category: 'adult', gender: '', color: '', size: '' })
+  const [catalogReviewFacts, setCatalogReviewFacts] = useState<ResolutionFactsState>({ productId: 0, genderScope: '', material: 'СТАНДАРТ', length: 'СТАНДАРТ', category: 'adult', gender: '', color: '', size: '' })
   const [catalogReviewCreateFields, setCatalogReviewCreateFields] = useState<Record<string, boolean>>({})
   const [catalogReviewCreateProduct, setCatalogReviewCreateProduct] = useState(false)
   const [catalogReviewNewProductName, setCatalogReviewNewProductName] = useState('')
   const [inventoryLifecycleTaskIndex, setInventoryLifecycleTaskIndex] = useState(0)
   const [inventoryLifecycleContext, setInventoryLifecycleContext] = useState<ResolutionContextState | null>(null)
   const [inventoryLifecycleContextBusy, setInventoryLifecycleContextBusy] = useState(false)
-  const [inventoryLifecycleFacts, setInventoryLifecycleFacts] = useState<ResolutionFactsState>({ productId: 0, material: 'СТАНДАРТ', length: 'СТАНДАРТ', category: 'adult', gender: '', color: '', size: '' })
+  const [inventoryLifecycleFacts, setInventoryLifecycleFacts] = useState<ResolutionFactsState>({ productId: 0, genderScope: '', material: 'СТАНДАРТ', length: 'СТАНДАРТ', category: 'adult', gender: '', color: '', size: '' })
   const [inventoryLifecycleCreateFields, setInventoryLifecycleCreateFields] = useState<Record<string, boolean>>({})
   const [inventoryLifecycleCreateProduct, setInventoryLifecycleCreateProduct] = useState(false)
   const [inventoryLifecycleNewProductName, setInventoryLifecycleNewProductName] = useState('')
@@ -379,6 +379,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       const facts = context?.facts || {}
       setCatalogReviewFacts({
         productId: Number(context?.product?.id || 0),
+        genderScope: context?.product?.genderScope || '',
         material: facts.material || 'СТАНДАРТ',
         length: facts.length || 'СТАНДАРТ',
         category: facts.category || 'adult',
@@ -419,8 +420,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
   const catalogReviewIssue = (catalogReviewContext?.issueType ? catalogReviewIssueCopy[catalogReviewContext.issueType] : undefined) || { title: 'Нужно уточнить позицию', text: 'Укажите только факты, в которых уверены.' }
   const catalogReviewUnconfirmedFields = resolutionEditableFields.filter((field) => reviewValueNeedsCreation(field, String(catalogReviewFacts[field] || '')) && !catalogReviewCreateFields[field])
-  const catalogReviewGenderNeedsChoice = reviewFieldUnknown('gender') && !['', 'ЖЕН', 'МУЖ'].includes(normalizeSuggestion(catalogReviewFacts.gender))
-  const catalogReviewBlockingFields = [...catalogReviewUnconfirmedFields, ...(catalogReviewGenderNeedsChoice ? ['gender'] : [])]
+  const catalogReviewGenderNeedsChoice = catalogReviewFacts.genderScope === 'unisex'
+    ? !['ЖЕН', 'МУЖ'].includes(normalizeSuggestion(catalogReviewFacts.gender))
+    : reviewFieldUnknown('gender') && !['', 'ЖЕН', 'МУЖ'].includes(normalizeSuggestion(catalogReviewFacts.gender))
+  const catalogReviewScopeNeedsChoice = catalogReviewCreateProduct && !catalogReviewFacts.genderScope
+  const catalogReviewBlockingFields = [...catalogReviewUnconfirmedFields, ...(catalogReviewGenderNeedsChoice ? ['gender'] : []), ...(catalogReviewScopeNeedsChoice ? ['genderScope'] : [])]
 
   async function submitCatalogReviewFacts() {
     if (!catalogReviewActiveItem?.orderItemId || catalogReviewBusy || catalogReviewContextBusy) return
@@ -483,6 +487,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       const facts = context?.facts || {}
       setInventoryLifecycleFacts({
         productId: Number(context?.product?.id || item.productId || 0),
+        genderScope: context?.product?.genderScope || '',
         material: facts.material || item.material || 'СТАНДАРТ',
         length: facts.length || item.length || 'СТАНДАРТ',
         category: facts.category || item.category || 'adult',
@@ -526,8 +531,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     return !lifecycleReferenceOptions(field).some((entry: string) => normalizeSuggestion(entry) === normalized)
   }
   const inventoryLifecycleUnconfirmedFields = resolutionEditableFields.filter((field) => lifecycleValueNeedsCreation(field, String(inventoryLifecycleFacts[field] || '')) && !inventoryLifecycleCreateFields[field])
-  const inventoryLifecycleGenderNeedsChoice = !['', 'ЖЕН', 'МУЖ'].includes(normalizeSuggestion(inventoryLifecycleFacts.gender))
-  const inventoryLifecycleBlockingFields = [...inventoryLifecycleUnconfirmedFields, ...(inventoryLifecycleGenderNeedsChoice ? ['gender'] : [])]
+  const inventoryLifecycleGenderNeedsChoice = inventoryLifecycleFacts.genderScope === 'unisex'
+    ? !['ЖЕН', 'МУЖ'].includes(normalizeSuggestion(inventoryLifecycleFacts.gender))
+    : !['', 'ЖЕН', 'МУЖ'].includes(normalizeSuggestion(inventoryLifecycleFacts.gender))
+  const inventoryLifecycleScopeNeedsChoice = inventoryLifecycleCreateProduct && !inventoryLifecycleFacts.genderScope
+  const inventoryLifecycleBlockingFields = [...inventoryLifecycleUnconfirmedFields, ...(inventoryLifecycleGenderNeedsChoice ? ['gender'] : []), ...(inventoryLifecycleScopeNeedsChoice ? ['genderScope'] : [])]
 
   async function submitInventoryLifecycleFacts() {
     if (!inventoryLifecycleActiveItem?.id || inventoryLifecycleBusy || inventoryLifecycleContextBusy) return
