@@ -21,6 +21,25 @@ jobs:
           ref: catalog-gender-cleanup-r1
           fetch-depth: 0
 
+      - name: Harden patch anchor
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/apply-catalog-gender-cleanup-r1.mjs')
+          s = p.read_text()
+          old = '''replaceOnce('src/app/controllers/useWorkspaceViewModel.tsx',
+            "        gender: '',\\n        color: '',\\n        material: 'СТАНДАРТ',",
+            "        gender: automaticGender,\\n        color: '',\\n        material: 'СТАНДАРТ',",
+          )'''
+          new = '''replaceOnce('src/app/controllers/useWorkspaceViewModel.tsx',
+            "    if (!variants.length) {\\n      return {\\n        ...currentItem,\\n        productName: product.name,\\n        audienceType: getCatalogProductEffectiveCategory(product) === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',\\n        gender: '',\\n        color: '',\\n        material: 'СТАНДАРТ',",
+            "    if (!variants.length) {\\n      return {\\n        ...currentItem,\\n        productName: product.name,\\n        audienceType: getCatalogProductEffectiveCategory(product) === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',\\n        gender: automaticGender,\\n        color: '',\\n        material: 'СТАНДАРТ',",
+          )'''
+          if old not in s:
+              raise SystemExit('Patch-driver gender anchor block not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+
       - name: Use Node
         uses: actions/setup-node@v4
         with:
