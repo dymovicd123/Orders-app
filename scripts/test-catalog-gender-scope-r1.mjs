@@ -47,7 +47,8 @@ check(workspace.includes("gender: automaticGender ? (selected.gender || automati
 check(workspace.includes('if (automaticGender) {'), 'Order autocomplete must prefer the product default when choosing among existing groups')
 check(operational.includes('activeVariants.find((variant) => normalizeSuggestion(variant.gender) === automaticGender)'), 'Arrival must prefer a variant matching the product gender default')
 check(migration.includes('COALESCE(target.stock_position_id,-1)=COALESCE(v.stock_position_id,-1)'), '0068 keeper matching must be NULL-safe')
-check(migration.includes("OR TRIM(COALESCE(target.gender,''))=''"), '0068 must deterministically consolidate duplicate blank fixed-scope variants')
+check(migration.includes('SELECT MIN(target.id)'), '0068 must choose deterministic lowest-id keeper candidates')
+check(migration.includes("AND TRIM(COALESCE(target.gender,''))=''"), '0068 must deterministically fall back to the lowest blank keeper')
 const review = read('worker/domains/catalog-review.ts')
 check(review.includes('createCatalogProduct(db, { name: requestedProductName, category, genderScope: requestedGenderScope })'), 'Catalog review new-product path must persist gender scope')
 
