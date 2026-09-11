@@ -4,7 +4,7 @@ p = Path('scripts/apply-operational-autonomy-a5.py')
 text = p.read_text()
 start = text.index('# Put method in visible finance details.')
 end = text.index('# Focused semantic regression test.')
-replacement = r'''# Put method in visible finance details.
+replacement = r"""# Put method in visible finance details.
 replace_once(
     'src/features/sections/OrderExchangeSection.tsx',
     "<div><span>Деньги</span><strong>{entry.financialAction === 'extra_payment' ? `Доплата ${formatMoney(entry.financialAmount)}` : entry.financialAction === 'refund' ? `Возврат ${formatMoney(entry.financialAmount)}` : 'Без доплаты / возврата'}</strong></div>",
@@ -37,7 +37,7 @@ replace_once(
     correction_panel + "\n                          <div className=\"history-card-actions\">{entry.status !== 'cancelled' && entry.financialAction !== 'none' ? <button className=\"secondary compact\" type=\"button\" onClick={() => openFinancialCorrection(entry)} disabled={exchangeBusy}>Исправить деньги</button> : null}{entry.status !== 'cancelled' ? <button className=\"ghost danger compact\" type=\"button\" onClick={() => void cancelExchangeEntry(entry)} disabled={exchangeBusy}>Отменить обмен</button> : null}</div>",
 )
 
-'''
+"""
 text = text[:start] + replacement + text[end:]
 p.write_text(text)
 print('A5 patcher anchors fixed')
