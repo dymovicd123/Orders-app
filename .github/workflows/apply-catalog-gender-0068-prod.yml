@@ -1,0 +1,106 @@
+name: Apply Catalog Gender 0068 Production
+
+on:
+  push:
+    branches:
+      - ops/catalog-gender-0068-prod-20260911
+    paths:
+      - .github/workflows/apply-catalog-gender-0068-prod.yml
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/catalog-gender-0068-prod-20260911
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Verify exact target and exact 0068
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import crypto from 'node:crypto'
+          const config = fs.readFileSync('wrangler.jsonc', 'utf8')
+          if (!config.includes('"name": "orders-app"')) throw new Error('Unexpected Worker target')
+          if (!config.includes('"database_name": "orders_db_prod"')) throw new Error('Unexpected D1 database')
+          if (!config.includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"')) throw new Error('Unexpected D1 database id')
+          const migrationPath = 'migrations/0068_v72_catalog_product_gender_scope.sql'
+          const sql = fs.readFileSync(migrationPath, 'utf8')
+          const manifest = JSON.parse(fs.readFileSync('scripts/catalog-gender-scope-r1-migration-manifest.json', 'utf8'))
+          const bytes = Buffer.from(sql)
+          const blob = crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+          if (manifest?.version !== 1 || manifest?.revision !== 'catalog-gender-scope-r1' || manifest?.file !== migrationPath || manifest?.gitBlob !== blob) throw new Error('0068 manifest mismatch')
+          if (sql.includes('CREATE TEMP TABLE _step0068')) throw new Error('D1-incompatible TEMP staging returned')
+          if (!sql.includes('CREATE TABLE _step0068_gender_map AS') || !sql.includes('CREATE TABLE _step0068_stock_rollup AS')) throw new Error('Expected D1-compatible staging missing')
+          console.log('Exact Production target and D1-compatible 0068 confirmed.')
+          NODE
+      - name: Apply only 0068 atomically
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "--- Recovery bookmark before 0068 ---"
+          npx wrangler d1 time-travel info orders_db_prod
+
+          schema="$(npx wrangler d1 execute orders_db_prod --remote --command="PRAGMA table_info(catalog_products);" 2>&1)"
+          printf '%s\n' "$schema"
+          if grep -q 'gender_scope' <<<"$schema"; then
+            echo "gender_scope already exists; refusing to repeat ALTER TABLE."
+            exit 0
+          fi
+
+          for attempt in 1 2; do
+            echo "0068 atomic import attempt $attempt/2"
+            set +e
+            npx wrangler d1 execute orders_db_prod --remote --file=migrations/0068_v72_catalog_product_gender_scope.sql
+            rc=$?
+            set -e
+            if [[ $rc -eq 0 ]]; then
+              echo "0068 atomic import succeeded."
+              exit 0
+            fi
+
+            echo "Import returned non-zero; checking whether Cloudflare rolled it back."
+            after="$(npx wrangler d1 execute orders_db_prod --remote --command="PRAGMA table_info(catalog_products);" 2>&1)"
+            printf '%s\n' "$after"
+            if grep -q 'gender_scope' <<<"$after"; then
+              echo "Schema changed despite non-zero import result; do not repeat ALTER TABLE."
+              exit 0
+            fi
+            [[ $attempt -eq 1 ]] && sleep 5
+          done
+          echo "0068 failed and both attempts rolled back; no partial schema survived." >&2
+          exit 4
+      - name: Strict read-only postflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          schema="$(npx wrangler d1 execute orders_db_prod --remote --command="PRAGMA table_info(catalog_products);" 2>&1)"
+          printf '%s\n' "$schema"
+          grep -q 'gender_scope' <<<"$schema" || { echo "gender_scope is missing" >&2; exit 5; }
+
+          tables="$(npx wrangler d1 execute orders_db_prod --remote --command="SELECT CASE WHEN COUNT(*)=3 THEN 'REPAIR_TABLES_OK' ELSE 'REPAIR_TABLES_BAD_'||COUNT(*) END AS check_result FROM sqlite_master WHERE type='table' AND name IN ('catalog_gender_scope_repairs','catalog_gender_variant_repairs','catalog_gender_stock_baseline');" 2>&1)"
+          printf '%s\n' "$tables"
+          grep -q 'REPAIR_TABLES_OK' <<<"$tables" || exit 6
+
+          blanks="$(npx wrangler d1 execute orders_db_prod --remote --command="SELECT CASE WHEN COUNT(*)=0 THEN 'FIXED_SCOPE_BLANKS_OK' ELSE 'FIXED_SCOPE_BLANKS_BAD_'||COUNT(*) END AS check_result FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE v.is_active=1 AND p.gender_scope IN ('female','male') AND TRIM(COALESCE(v.gender,''))='';" 2>&1)"
+          printf '%s\n' "$blanks"
+          grep -q 'FIXED_SCOPE_BLANKS_OK' <<<"$blanks" || exit 7
+
+          staging="$(npx wrangler d1 execute orders_db_prod --remote --command="SELECT CASE WHEN COUNT(*)=0 THEN 'STAGING_CLEAN_OK' ELSE 'STAGING_CLEAN_BAD_'||COUNT(*) END AS check_result FROM sqlite_master WHERE type='table' AND name IN ('_step0068_gender_map','_step0068_stock_rollup');" 2>&1)"
+          printf '%s\n' "$staging"
+          grep -q 'STAGING_CLEAN_OK' <<<"$staging" || exit 8
+
+          echo "--- Enlik exact variants after normalization ---"
+          npx wrangler d1 execute orders_db_prod --remote --command="SELECT p.id AS product_id,p.name,p.gender_scope,v.id AS variant_id,v.gender,v.color,v.size_label,v.is_active,COALESCE(SUM(s.quantity),0) AS quantity,COALESCE(SUM(s.reserved_quantity),0) AS reserved FROM catalog_products p LEFT JOIN catalog_variants v ON v.product_id=p.id LEFT JOIN inventory_stock s ON s.variant_id=v.id WHERE UPPER(TRIM(p.name)) IN ('ЕҢЛІК ШАПАН','ЕНЛІК ШАПАН') GROUP BY p.id,p.name,p.gender_scope,v.id,v.gender,v.color,v.size_label,v.is_active ORDER BY p.id,v.id;"
+          echo "Production 0068 postflight passed."
