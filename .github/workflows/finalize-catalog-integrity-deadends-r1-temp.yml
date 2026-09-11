@@ -32,12 +32,11 @@ jobs:
           import crypto from 'node:crypto'
           import ts from 'typescript'
           import { execFileSync } from 'node:child_process'
-
           const targets = [
             ['listInventory','worker/domains/inventory-read.ts'],
             ['resolveInventoryCreatableItemsBulk','worker/domains/inventory-movement.ts'],
           ]
-          const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
+          const sha = value => crypto.createHash('sha256').update(value).digest('hex')
           function declarationText(source, fileName, wanted) {
             const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
             for (const statement of sf.statements) {
@@ -52,42 +51,9 @@ jobs:
           for (const [name,file] of targets) {
             const beforeSource = execFileSync('git',['show',`origin/main:${file}`],{encoding:'utf8'})
             const afterSource = fs.readFileSync(file,'utf8')
-            changes[name] = {
-              before: sha(declarationText(beforeSource,file,name)),
-              after: sha(declarationText(afterSource,file,name)),
-            }
+            changes[name] = { before: sha(declarationText(beforeSource,file,name)), after: sha(declarationText(afterSource,file,name)) }
           }
           fs.writeFileSync('scripts/catalog-integrity-deadends-r1-worker-manifest.json', JSON.stringify({version:1,revision:'catalog-integrity-deadends-r1',changes},null,2)+'\n')
-
-          const wrapperPath = 'scripts/test-step1906a-worker-modularization.mjs'
-          let wrapper = fs.readFileSync(wrapperPath,'utf8')
-          const pathAnchor = "const orderHistoryManifestPath = path.join(root, 'scripts/catalog-order-history-preservation-worker-manifest.json')\n"
-          const pathInsert = "const catalogIntegrityDeadendsManifestPath = path.join(root, 'scripts/catalog-integrity-deadends-r1-worker-manifest.json')\n"
-          if (!wrapper.includes(pathAnchor)) throw new Error('Wrapper path anchor missing')
-          if (!wrapper.includes(pathInsert)) wrapper = wrapper.replace(pathAnchor, pathAnchor + pathInsert)
-
-          const loadAnchor = "if (Object.keys(orderHistoryManifest.changes || {}).sort().join(',') !== 'getOrder,listOpenDebtOrders,listOrders') throw new Error('Catalog order-history preservation Worker allow-list widened unexpectedly')\n"
-          const loadInsert = "const catalogIntegrityDeadendsManifest = JSON.parse(fs.readFileSync(catalogIntegrityDeadendsManifestPath, 'utf8'))\nif (catalogIntegrityDeadendsManifest?.version !== 1 || catalogIntegrityDeadendsManifest?.revision !== 'catalog-integrity-deadends-r1') throw new Error('Catalog integrity dead-ends R1 Worker manifest invalid')\nif (Object.keys(catalogIntegrityDeadendsManifest.changes || {}).sort().join(',') !== 'listInventory,resolveInventoryCreatableItemsBulk') throw new Error('Catalog integrity dead-ends R1 Worker allow-list widened unexpectedly')\n"
-          if (!wrapper.includes(loadAnchor)) throw new Error('Wrapper manifest load anchor missing')
-          if (!wrapper.includes('catalogIntegrityDeadendsManifest =')) wrapper = wrapper.replace(loadAnchor, loadAnchor + loadInsert)
-
-          // Patch the template source rather than the runtime-patched legacy file.
-          const templateOld = "const orderHistoryPreservationChanges = ${JSON.stringify(orderHistoryManifest.changes)}\\n`)"
-          const templateNew = "const orderHistoryPreservationChanges = ${JSON.stringify(orderHistoryManifest.changes)}\\nconst catalogIntegrityDeadendsChanges = ${JSON.stringify(catalogIntegrityDeadendsManifest.changes)}\\n`)"
-          if (!wrapper.includes(templateOld)) throw new Error('Wrapper runtime changes anchor missing')
-          wrapper = wrapper.replace(templateOld, templateNew)
-
-          const oldTail = `    const orderHistoryPreservationChanged = orderHistoryPreservationChanges[name]\n    let acceptedPostOrderHistoryPreservationHash = acceptedPostCatalogGenderScopeR1Hash\n    if (orderHistoryPreservationChanged) {\n      check(orderHistoryPreservationChanged.before === acceptedPostCatalogGenderScopeR1Hash, \`Order-history preservation baseline hash mismatch: \${name}\`)\n      acceptedPostOrderHistoryPreservationHash = orderHistoryPreservationChanged.after\n    }\n    check(\n      sha(declarations.get(name)) === acceptedPostOrderHistoryPreservationHash,\n      orderHistoryPreservationChanged\n        ? \`Worker declaration changed beyond exact order-history preservation allow-list: \${name}\`\n        : (catalogGenderScopeR1Changed\n`
-          const newTail = `    const orderHistoryPreservationChanged = orderHistoryPreservationChanges[name]\n    let acceptedPostOrderHistoryPreservationHash = acceptedPostCatalogGenderScopeR1Hash\n    if (orderHistoryPreservationChanged) {\n      check(orderHistoryPreservationChanged.before === acceptedPostCatalogGenderScopeR1Hash, \`Order-history preservation baseline hash mismatch: \${name}\`)\n      acceptedPostOrderHistoryPreservationHash = orderHistoryPreservationChanged.after\n    }\n    const catalogIntegrityDeadendsChanged = catalogIntegrityDeadendsChanges[name]\n    let acceptedPostCatalogIntegrityDeadendsHash = acceptedPostOrderHistoryPreservationHash\n    if (catalogIntegrityDeadendsChanged) {\n      check(catalogIntegrityDeadendsChanged.before === acceptedPostOrderHistoryPreservationHash, \`Catalog integrity dead-ends R1 baseline hash mismatch: \${name}\`)\n      acceptedPostCatalogIntegrityDeadendsHash = catalogIntegrityDeadendsChanged.after\n    }\n    check(\n      sha(declarations.get(name)) === acceptedPostCatalogIntegrityDeadendsHash,\n      catalogIntegrityDeadendsChanged\n        ? \`Worker declaration changed beyond exact catalog integrity dead-ends R1 allow-list: \${name}\`\n        : (orderHistoryPreservationChanged\n          ? \`Worker declaration changed beyond exact order-history preservation allow-list: \${name}\`\n          : (catalogGenderScopeR1Changed\n`
-          if (!wrapper.includes(oldTail)) throw new Error('Wrapper acceptance-tail anchor missing')
-          wrapper = wrapper.replace(oldTail,newTail)
-
-          // One extra closing parenthesis is required because the new diagnostic branch wraps the old tail.
-          const closeAnchor = "              : `Worker declaration body changed beyond accepted cumulative deltas: ${name}`))),\n    )"
-          const closeReplacement = "              : `Worker declaration body changed beyond accepted cumulative deltas: ${name}`)))),\n    )"
-          if (!wrapper.includes(closeAnchor)) throw new Error('Wrapper closing anchor missing')
-          wrapper = wrapper.replace(closeAnchor,closeReplacement)
-          fs.writeFileSync(wrapperPath,wrapper)
           console.log(JSON.stringify(changes,null,2))
           NODE
       - name: Full release gate and build
@@ -95,10 +61,10 @@ jobs:
           node scripts/test-catalog-integrity-deadends-r1.mjs
           npm run release:check
           npm run build
-      - name: Commit exact gate layer
+      - name: Commit exact gate manifest
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/catalog-integrity-deadends-r1-worker-manifest.json scripts/test-step1906a-worker-modularization.mjs
+          git add scripts/catalog-integrity-deadends-r1-worker-manifest.json
           git commit -m "Guard catalog integrity fix with exact Worker delta"
           git push origin HEAD:catalog-integrity-deadends-r1
