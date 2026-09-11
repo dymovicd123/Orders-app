@@ -46,6 +46,8 @@ Target direction: define the correct post-return outstanding balance and allow a
 
 ### A4 — Mistaken `sent` / physical-handover fact has an incomplete recovery path
 
+> A4 update: implemented on the current A4 branch with an explicit «Исправить отправку» action. The correction reactivates fulfilled reservations, restores only the physical delta actually consumed, respects newer physical checks/stocktakes, blocks active return/exchange history, and leaves the ordinary sent-status edit guard intact. The existing false-shipment delete recovery is hardened to the same exact-delta rule.
+
 Once an order is marked sent, ordinary order edit refuses to move it back to not-sent and refuses direct item rewrite/delete after physical issue. These guards correctly protect stock truth, but a mistaken shipment/handover needs an explicit correction workflow.
 
 There is already a special safe reassessment path when deleting a falsely marked sent order, and return/exchange/correction workflows cover real physical movements. What remains missing is a natural operation for the case “the order must stay, but the sent/handover fact itself was recorded incorrectly”.
