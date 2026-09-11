@@ -21,12 +21,70 @@ jobs:
           ref: catalog-gender-cleanup-r1
           fetch-depth: 0
 
-      - name: Harden patch anchor
+      - name: Harden patch and preserve manual override
         run: |
           python - <<'PY'
           from pathlib import Path
+
           p = Path('scripts/apply-catalog-gender-cleanup-r1.mjs')
           s = p.read_text()
+
+          def swap(old: str, new: str, label: str):
+              global s
+              if old not in s:
+                  raise SystemExit(f'{label}: anchor not found')
+              s = s.replace(old, new, 1)
+
+          # The product-level value is a convenient default, not a hard business constraint.
+          swap(
+              '-- Product-level gender is authoritative:',
+              '-- Product-level gender is the default used by forms, not a hard constraint:',
+              'migration semantics',
+          )
+          swap(
+              '-- Build a deterministic map for wrong/blank variants of fixed-scope products.',
+              '-- Build a deterministic map only for blank variants of products with a known default.',
+              'migration cleanup comment',
+          )
+          swap(
+              "  AND UPPER(TRIM(COALESCE(v.gender,''))) <> CASE p.gender_scope WHEN 'female' THEN 'ЖЕН' ELSE 'МУЖ' END;",
+              "  AND TRIM(COALESCE(v.gender,''))='';",
+              'blank-only catalog repair',
+          )
+
+          # A concrete human choice always wins. Product scope only fills an omitted value.
+          swap(
+              "  const fixed = catalogGenderForProductScope(scope);\\n  if (fixed) return { scope, gender: fixed };\\n  const gender = normalizeCatalogCombinationGender(value);\\n  if (gender !== 'ЖЕН' && gender !== 'МУЖ') {",
+              "  const explicitGender = normalizeCatalogCombinationGender(value);\\n  if (explicitGender === 'ЖЕН' || explicitGender === 'МУЖ') return { scope, gender: explicitGender };\\n  const fixed = catalogGenderForProductScope(scope);\\n  if (fixed) return { scope, gender: fixed };\\n  const gender = explicitGender;\\n  if (gender !== 'ЖЕН' && gender !== 'МУЖ') {",
+              'backend override semantics',
+          )
+
+          # Do not add a product-scope lookup to the hot combination-creation path.
+          hot_combination_patch = '''replaceOnce('worker/domains/catalog.ts',
+            "  const gender = normalizeCatalogCombinationGender(input.gender);\\n  const color = normalizeCatalogCombinationColor(input.color);\\n  const sizeLabel = normalizeCatalogCombinationSize(input.sizeLabel);",
+            "  const genderResolution = await resolveCatalogGenderForProduct(db, input.productId, input.gender);\\n  const gender = genderResolution.gender;\\n  const color = normalizeCatalogCombinationColor(input.color);\\n  const sizeLabel = normalizeCatalogCombinationSize(input.sizeLabel);",
+          )
+          '''
+          if hot_combination_patch not in s:
+              raise SystemExit('hot combination patch: anchor not found')
+          s = s.replace(hot_combination_patch, '', 1)
+
+          # Server order resolution: explicit value is respected without an extra D1 read.
+          # Only a blank value consults product scope; blank unisex remains unresolved.
+          swap(
+              "  const productGenderScope = await getCatalogProductGenderScope(db, product.id);\\n  const gender = catalogGenderForProductScope(productGenderScope) || normalizeCatalogCombinationGender(item.gender);\\n  if (productGenderScope === 'unisex' && gender !== 'ЖЕН' && gender !== 'МУЖ') {\\n    return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };\\n  }\\n  const rawColor = upperText(item.color);",
+              "  const enteredGender = normalizeCatalogCombinationGender(item.gender);\\n  let gender = enteredGender;\\n  if (!gender) {\\n    const productGenderScope = await getCatalogProductGenderScope(db, product.id);\\n    gender = catalogGenderForProductScope(productGenderScope);\\n    if (!gender) {\\n      return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };\\n    }\\n  }\\n  const rawColor = upperText(item.color);",
+              'order resolver override',
+          )
+
+          # Order create/edit/exchange availability uses the current form choice first.
+          swap(
+              "    const catalogProduct = resolveClientCatalogProduct(productName)\\n    const productGenderScope = String(catalogProduct?.genderScope || 'unisex') as 'female' | 'male' | 'unisex'\\n    const scopedItemGender = productGenderScope === 'female' ? 'ЖЕН' : productGenderScope === 'male' ? 'МУЖ' : canonicalOrderGender(item.gender)\\n    const resolvedProductName = catalogProduct?.name || productName",
+              "    const catalogProduct = resolveClientCatalogProduct(productName)\\n    const productGenderScope = String(catalogProduct?.genderScope || 'unisex') as 'female' | 'male' | 'unisex'\\n    const automaticGender = productGenderScope === 'female' ? 'ЖЕН' : productGenderScope === 'male' ? 'МУЖ' : ''\\n    const scopedItemGender = canonicalOrderGender(item.gender) || automaticGender\\n    const resolvedProductName = catalogProduct?.name || productName",
+              'availability override',
+          )
+
+          # The no-variant branch anchor occurs more than once in the controller; scope it tightly.
           old = '''replaceOnce('src/app/controllers/useWorkspaceViewModel.tsx',
             "        gender: '',\\n        color: '',\\n        material: 'СТАНДАРТ',",
             "        gender: automaticGender,\\n        color: '',\\n        material: 'СТАНДАРТ',",
@@ -35,9 +93,74 @@ jobs:
             "    if (!variants.length) {\\n      return {\\n        ...currentItem,\\n        productName: product.name,\\n        audienceType: getCatalogProductEffectiveCategory(product) === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',\\n        gender: '',\\n        color: '',\\n        material: 'СТАНДАРТ',",
             "    if (!variants.length) {\\n      return {\\n        ...currentItem,\\n        productName: product.name,\\n        audienceType: getCatalogProductEffectiveCategory(product) === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',\\n        gender: automaticGender,\\n        color: '',\\n        material: 'СТАНДАРТ',",
           )'''
-          if old not in s:
-              raise SystemExit('Patch-driver gender anchor block not found')
-          p.write_text(s.replace(old, new, 1))
+          swap(old, new, 'workspace no-variant anchor')
+
+          # Arrival currently used an arbitrary first variant for gender. Keep first variant only
+          # for category/material/length defaults and use the product default for gender.
+          old = '''replaceOnce('src/app/controllers/useOperationalViewModel.ts',
+            "    const variants = (catalogVariantsByProductId.get(Number(match.id)) || []).filter((variant) => variant.isActive)\\n    const first = variants[0]\\n    setInventoryArrivalPositions((current) => current.map((position) => position.id === id ? {\\n      ...position,\\n      productInput: match.name,\\n      productId: Number(match.id),\\n      category: first ? getCatalogVariantCategory(first) : getCatalogProductEffectiveCategory(match),\\n      gender: first?.gender || position.gender,",
+            "    const variants = (catalogVariantsByProductId.get(Number(match.id)) || []).filter((variant) => variant.isActive)\\n    const first = variants[0]\\n    const productGenderScope = String(match.genderScope || 'unisex')\\n    const automaticGender = productGenderScope === 'female' ? 'ЖЕН' : productGenderScope === 'male' ? 'МУЖ' : ''\\n    setInventoryArrivalPositions((current) => current.map((position) => position.id === id ? {\\n      ...position,\\n      productInput: match.name,\\n      productId: Number(match.id),\\n      category: first ? getCatalogVariantCategory(first) : getCatalogProductEffectiveCategory(match),\\n      gender: automaticGender,",
+          )'''
+          new = '''replaceOnce('src/app/controllers/useOperationalViewModel.ts',
+            "    const variants = catalogVariantsByProductId.get(Number(match.id)) || []\\n    const first = variants.find((variant) => variant.isActive) || null\\n    setInventoryArrivalPositions((current) => current.map((position) => position.id === id ? {\\n      ...position,\\n      productId: String(match.id),\\n      productName: match.name,\\n      category: first ? getCatalogVariantCategory(first) : (match.category === 'child' ? 'child' : 'adult'),\\n      gender: first?.gender || position.gender,",
+            "    const variants = catalogVariantsByProductId.get(Number(match.id)) || []\\n    const first = variants.find((variant) => variant.isActive) || null\\n    const productGenderScope = String(match.genderScope || 'unisex')\\n    const automaticGender = productGenderScope === 'female' ? 'ЖЕН' : productGenderScope === 'male' ? 'МУЖ' : ''\\n    setInventoryArrivalPositions((current) => current.map((position) => position.id === id ? {\\n      ...position,\\n      productId: String(match.id),\\n      productName: match.name,\\n      category: first ? getCatalogVariantCategory(first) : (match.category === 'child' ? 'child' : 'adult'),\\n      gender: automaticGender,",
+          )'''
+          swap(old, new, 'arrival source anchor')
+
+          # Catalog variant UI keeps the convenient default but never locks the field.
+          swap(
+              "  \\\"                      <select disabled={Boolean(fixedGenderForProduct(selectedProduct))} value={fixedGenderForProduct(selectedProduct) || (catalogVariantDraft.productId === String(selectedProduct.id) ? catalogVariantDraft.gender : '')} onChange={(event) => setCatalogVariantDraft((current: any) => ({ ...current, productId: String(selectedProduct.id), gender: event.target.value }))}>\\\\n                        {!fixedGenderForProduct(selectedProduct) ? <option value=\\\\\"\\\\\">Выберите для унисекс</option> : null}\\\\n                        <option value=\\\\\"МУЖ\\\\\">МУЖ</option>\\\\n                        <option value=\\\\\"ЖЕН\\\\\">ЖЕН</option>\\\\n                      </select>\\\\n                      <small>{fixedGenderForProduct(selectedProduct) ? 'Пол задан на уровне товара и подставляется автоматически.' : 'Унисекс: выберите пол этой конкретной комбинации.'}</small>\\\",",
+              "  \\\"                      <select value={catalogVariantDraft.productId === String(selectedProduct.id) ? (catalogVariantDraft.gender || fixedGenderForProduct(selectedProduct)) : fixedGenderForProduct(selectedProduct)} onChange={(event) => setCatalogVariantDraft((current: any) => ({ ...current, productId: String(selectedProduct.id), gender: event.target.value }))}>\\\\n                        {!fixedGenderForProduct(selectedProduct) ? <option value=\\\\\"\\\\\">Выберите для унисекс</option> : null}\\\\n                        <option value=\\\\\"МУЖ\\\\\">МУЖ</option>\\\\n                        <option value=\\\\\"ЖЕН\\\\\">ЖЕН</option>\\\\n                      </select>\\\\n                      <small>{fixedGenderForProduct(selectedProduct) ? 'Подставлено по товару. Если каталог ошибся, пол этой комбинации можно изменить.' : 'Унисекс: выберите пол этой конкретной комбинации.'}</small>\\\",",
+              'editable catalog variant gender',
+          )
+
+          # Editing an existing variant must display its actual gender, even if it differs from the product default.
+          swap(
+              '  "      gender: fixedGenderForProduct(product) || variant.gender,",',
+              '  "      gender: variant.gender || fixedGenderForProduct(product),",',
+              'existing variant gender',
+          )
+
+          # Review/lifecycle: recorded or manually chosen concrete gender wins; scope is fallback only.
+          swap(
+              "  if (product?.id) facts.gender = catalogGenderForProductScope(productGenderScope) || facts.gender;",
+              "  if (product?.id) facts.gender = facts.gender || catalogGenderForProductScope(productGenderScope);",
+              'review context concrete gender',
+          )
+          swap(
+              "  const gender = catalogGenderForProductScope(requestedGenderScope || 'unisex') || normalizeCatalogCombinationGender(input.gender ?? anchor.gender_snapshot);",
+              "  const gender = normalizeCatalogCombinationGender(input.gender ?? anchor.gender_snapshot) || catalogGenderForProductScope(requestedGenderScope || 'unisex');",
+              'review resolution concrete gender',
+          )
+          swap(
+              "  if (product?.id) facts.gender = catalogGenderForProductScope(productGenderScope) || facts.gender;",
+              "  if (product?.id) facts.gender = facts.gender || catalogGenderForProductScope(productGenderScope);",
+              'lifecycle context concrete gender',
+          )
+          swap(
+              "  const gender = catalogGenderForProductScope(requestedGenderScope || 'unisex') || normalizeCatalogCombinationGender(input.gender ?? event.gender_snapshot);",
+              "  const gender = normalizeCatalogCombinationGender(input.gender ?? event.gender_snapshot) || catalogGenderForProductScope(requestedGenderScope || 'unisex');",
+              'lifecycle resolution concrete gender',
+          )
+
+          # Static acceptance must lock in the non-blocking override and the low-read resolver shape.
+          swap(
+              "check(migration.includes(\"CASE p.gender_scope WHEN 'female' THEN 'ЖЕН' ELSE 'МУЖ' END\"), '0068 must repair fixed-scope variants')",
+              "check(migration.includes(\"TRIM(COALESCE(v.gender,''))=''\"), '0068 must repair only blank-gender variants')\\ncheck(!migration.includes(\"AND UPPER(TRIM(COALESCE(v.gender,''))) <> CASE p.gender_scope\"), '0068 must preserve explicit opposite-gender variants')",
+              'migration acceptance semantics',
+          )
+          swap(
+              "check(resolver.includes(\"productGenderScope === 'unisex' && gender !== 'ЖЕН' && gender !== 'МУЖ'\"), 'Order resolver must not guess unisex gender')",
+              "check(resolver.includes('const enteredGender = normalizeCatalogCombinationGender(item.gender)'), 'Order resolver must respect an explicit human gender')\\ncheck(resolver.includes('if (!gender) {\\n    const productGenderScope = await getCatalogProductGenderScope'), 'Order resolver may read product scope only for omitted gender')",
+              'resolver acceptance semantics',
+          )
+          swap(
+              "check(panel.includes('disabled={Boolean(fixedGenderForProduct(selectedProduct))}'), 'Fixed-scope variant editor must not ask repeatedly')",
+              "check(!panel.includes('disabled={Boolean(fixedGenderForProduct(selectedProduct))}'), 'Catalog default must not lock the concrete gender field')\\ncheck(panel.includes('можно изменить'), 'Catalog UI must explain that the automatic gender remains editable')",
+              'catalog UI acceptance semantics',
+          )
+
+          p.write_text(s)
           PY
 
       - name: Use Node
@@ -68,5 +191,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Implement catalog gender scope and cleanup"
+          git commit -m "Implement editable catalog gender defaults and cleanup"
           git push origin HEAD:catalog-gender-cleanup-r1
