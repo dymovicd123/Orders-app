@@ -21,6 +21,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Fix A5 patch anchors
+        run: python scripts/fix-operational-autonomy-a5-patcher.py
       - name: Apply A5 product patch
         run: python scripts/apply-operational-autonomy-a5.py
       - name: Focused A5 regression
@@ -31,7 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git rm .github/workflows/apply-operational-autonomy-a5-temp.yml scripts/apply-operational-autonomy-a5.py
+          git rm .github/workflows/apply-operational-autonomy-a5-temp.yml scripts/apply-operational-autonomy-a5.py scripts/fix-operational-autonomy-a5-patcher.py
           git add worker/domains/returns-exchanges.ts worker/index.ts src/App.tsx src/features/sections/OrderExchangeSection.tsx scripts/test-operational-autonomy-a5-exchange-financial-correction.mjs package.json docs/continuation/OPERATIONAL_AUTONOMY_AUDIT_20260910.md
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
