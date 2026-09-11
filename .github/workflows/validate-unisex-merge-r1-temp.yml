@@ -22,4 +22,4 @@ jobs:
       - run: npm ci
       - run: node scripts/test-catalog-unisex-merge-r1.mjs
       - run: npm run release:check
-      # rerun after structural manifest layering
+      # final rerun after both Worker declaration deltas were layered
