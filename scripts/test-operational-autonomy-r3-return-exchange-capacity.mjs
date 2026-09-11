@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 const source = fs.readFileSync('worker/domains/returns-exchanges.ts', 'utf8');
 
+// R3 deliberately replaces order-wide return/exchange locks with remaining capacity per order item.
 assert.ok(!source.includes('По этому заказу уже оформлен возврат. Сначала отмените его'), 'global second-return lock must stay removed');
 assert.ok(!source.includes('По заказу уже оформлен обычный возврат. Сначала отмените возврат'), 'global return/exchange lock must stay removed');
 assert.ok(source.includes('getActiveStandaloneReturnedQuantity'), 'shared standalone-return quantity guard is required');
