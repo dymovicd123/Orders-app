@@ -54,15 +54,7 @@ export async function createReturn(
   await syncOrderFinancialLedger(db, orderId);
   existing = await getOrder(db, orderId);
   if (!existing) throw new Error('Order not found.');
-  const existingReturn = await db.prepare(
-    `SELECT id FROM returns
-     WHERE order_id = ? AND COALESCE(status, 'completed') <> 'cancelled'
-     ORDER BY id DESC LIMIT 1`
-  ).bind(orderId).first<{ id: number }>();
   const operationReturnId = toInt(criticalOperation.row.target_id, 0);
-  if (existingReturn?.id && existingReturn.id !== operationReturnId) {
-    throw new Error('По этому заказу уже оформлен возврат. Сначала отмените его, если он был создан ошибочно.');
-  }
 
   const rawReturnDate = cleanText(input.returnDate);
   if (!rawReturnDate) throw new Error('Укажите дату возврата.');
@@ -121,7 +113,10 @@ export async function createReturn(
   for (const selected of selectedItems) {
     const orderItem = await getOrderItemForReturnOrExchange(db, orderId, selected.orderItemId);
     if (!orderItem) throw new Error(`Позиция заказа #${selected.orderItemId} не найдена.`);
-    const maxQuantity = Math.max(0, toInt(orderItem.quantity, 0));
+    const alreadyReturnedQuantity = await getActiveStandaloneReturnedQuantity(
+      db, orderId, selected.orderItemId, operationReturnId,
+    );
+    const maxQuantity = Math.max(0, toInt(orderItem.quantity, 0) - alreadyReturnedQuantity);
     if (maxQuantity <= 0) throw new Error(`Позиция ${cleanText(orderItem.product_name_snapshot)} уже возвращена или заменена.`);
     if (selected.quantity > maxQuantity) {
       throw new Error(`Для ${cleanText(orderItem.product_name_snapshot)} доступно только ${maxQuantity} шт., запрошено ${selected.quantity}.`);
@@ -360,6 +355,27 @@ export const noStandaloneReturnSql = `NOT EXISTS (
 )`;
 
 
+export async function getActiveStandaloneReturnedQuantity(
+  db: D1Database,
+  orderId: number,
+  orderItemId: number,
+  excludeReturnId = 0,
+) {
+  if (!orderId || !orderItemId) return 0;
+  const row = await db.prepare(
+    `SELECT COALESCE(SUM(ri.quantity), 0) AS quantity
+     FROM return_items ri
+     JOIN returns r ON r.id = ri.return_id
+     WHERE r.order_id = ?
+       AND ri.order_item_id = ?
+       AND COALESCE(r.status, 'completed') <> 'cancelled'
+       AND ${noStandaloneReturnSql}
+       AND (? = 0 OR r.id <> ?)`
+  ).bind(orderId, orderItemId, excludeReturnId, excludeReturnId).first<{ quantity: number }>();
+  return Math.max(0, toInt(row?.quantity, 0));
+}
+
+
 export async function hasActiveStandaloneReturn(db: D1Database, orderId: number) {
   const row = await db.prepare(
     `SELECT COUNT(*) AS count
@@ -515,18 +531,20 @@ export async function createExchange(
   if (!existing) throw new Error('Order not found.');
   if (isArchivedOrder(existing)) throw new Error('Нельзя оформлять обмен по архивному заказу.');
   if (normalizeOrderStatus((existing as any).order_status) === 'deleted') throw new Error('Нельзя оформлять обмен по удалённому заказу.');
-  if (!operationContext.baselineCaptured && await hasActiveStandaloneReturn(db, orderId)) {
-    throw new Error('По заказу уже оформлен обычный возврат. Сначала отмените возврат, затем оформляйте обмен.');
-  }
-
   const oldItemId = toInt(input.oldItemId, 0);
   if (!oldItemId) throw new Error('oldItemId is required.');
   let oldItem = await getOrderItemForReturnOrExchange(db, orderId, oldItemId);
   if (!oldItem) throw new Error('Old order item not found.');
 
+  const rawOldQuantity = operationContext.baselineCaptured
+    ? Math.max(0, toInt(operationContext.rawOldQuantity, toInt(oldItem.quantity, 0)))
+    : Math.max(0, toInt(oldItem.quantity, 0));
+  const activeStandaloneReturnedQuantity = operationContext.baselineCaptured
+    ? Math.max(0, toInt(operationContext.activeStandaloneReturnedQuantity, 0))
+    : await getActiveStandaloneReturnedQuantity(db, orderId, oldItemId);
   const availableOldQuantity = operationContext.baselineCaptured
     ? Math.max(0, toInt(operationContext.availableOldQuantity, 0))
-    : Math.max(0, toInt(oldItem.quantity, 0));
+    : Math.max(0, rawOldQuantity - activeStandaloneReturnedQuantity);
   const requestedOldQuantity = Math.max(1, toInt(input.oldQuantity, 1));
   if (availableOldQuantity <= 0) {
     throw new Error('Эта позиция уже полностью заменена или возвращена.');
@@ -669,6 +687,8 @@ export async function createExchange(
       ...operationContext,
       baselineCaptured: true,
       startedAt: timestamp,
+      rawOldQuantity,
+      activeStandaloneReturnedQuantity,
       availableOldQuantity,
       availableRefundAmount,
       baseTotalAmount: ledger.totalAmount,
@@ -752,7 +772,9 @@ export async function createExchange(
     }
   }
 
-  const remainingOldQuantity = Math.max(0, Math.max(0, toInt(operationContext.availableOldQuantity, availableOldQuantity)) - oldQuantity);
+  // order_items.quantity tracks exchange replacement only. Standalone returns stay in
+  // return_items, so subtracting them here would make the next operation count them twice.
+  const remainingOldQuantity = Math.max(0, rawOldQuantity - oldQuantity);
   await db.prepare(
     `UPDATE order_items
      SET quantity = ?,
@@ -1139,20 +1161,35 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
   }
 
   const taskSnapshots = await db.prepare(
-    `SELECT workshop_task_id, previous_status, previous_quantity
-     FROM return_workshop_task_reversals
-     WHERE return_id = ?
-     ORDER BY workshop_task_id ASC`
-  ).bind(returnId).all<Record<string, unknown>>();
+    `SELECT rwt.workshop_task_id, rwt.previous_status, rwt.previous_quantity,
+            wt.status AS current_status, wt.quantity AS current_quantity, wt.order_item_id,
+            COALESCE((
+              SELECT SUM(ri.quantity)
+              FROM return_items ri
+              WHERE ri.return_id = ? AND ri.order_item_id = wt.order_item_id
+            ), 0) AS return_quantity
+     FROM return_workshop_task_reversals rwt
+     LEFT JOIN workshop_tasks wt ON wt.id = rwt.workshop_task_id
+     WHERE rwt.return_id = ?
+     ORDER BY rwt.workshop_task_id ASC`
+  ).bind(returnId, returnId).all<Record<string, unknown>>();
 
   for (const snapshot of taskSnapshots.results || []) {
+    const returnedTaskQuantity = Math.max(0, toInt(snapshot.return_quantity, 0));
+    const currentTaskQuantity = Math.max(0, toInt(snapshot.current_quantity, 0));
+    const fallbackQuantity = Math.max(0, toInt(snapshot.previous_quantity, 0));
+    const nextQuantity = returnedTaskQuantity > 0 ? currentTaskQuantity + returnedTaskQuantity : fallbackQuantity;
+    const currentStatus = normalizeWorkshopTaskStatus(snapshot.current_status || snapshot.previous_status);
+    const nextStatus = returnedTaskQuantity > 0 && currentStatus === 'cancelled' && nextQuantity > 0
+      ? normalizeWorkshopTaskStatus(snapshot.previous_status)
+      : currentStatus;
     await db.prepare(
       `UPDATE workshop_tasks
        SET status = ?, quantity = ?, updated_at = ?
        WHERE id = ? AND order_id = ?`
     ).bind(
-      normalizeWorkshopTaskStatus(snapshot.previous_status),
-      Math.max(0, toInt(snapshot.previous_quantity, 0)),
+      nextStatus,
+      nextQuantity,
       timestamp,
       toInt(snapshot.workshop_task_id, 0),
       toInt(ret.order_id, 0),
