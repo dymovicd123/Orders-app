@@ -1,0 +1,30 @@
+name: Diagnose migration sequence
+
+on:
+  push:
+    branches:
+      - catalog-gender-cleanup-r1
+    paths:
+      - .github/workflows/diag-migration-sequence.yml
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: |
+          node --input-type=module <<'NODE'
+          import { DatabaseSync } from 'node:sqlite'
+          import { readdirSync, readFileSync } from 'node:fs'
+          const db = new DatabaseSync(':memory:')
+          db.exec('PRAGMA foreign_keys = ON;')
+          for (const file of readdirSync('migrations').filter((name) => name.endsWith('.sql')).sort()) {
+            console.log('APPLY', file)
+            try { db.exec(readFileSync(`migrations/${file}`, 'utf8')) }
+            catch (error) { console.error('FAILED', file, error); process.exit(1) }
+          }
+          console.log('ALL MIGRATIONS OK')
+          NODE
