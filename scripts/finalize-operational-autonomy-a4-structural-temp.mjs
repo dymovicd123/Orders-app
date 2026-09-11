@@ -42,25 +42,15 @@ const afterRouterText = routerText(read(indexFile), indexFile)
 
 const routeBlock = `\n\n      const orderShippingCorrectionMatch = url.pathname.match(/^\\/api\\/orders\\/(\\d+)\\/shipping\\/correct$/);\n      if (orderShippingCorrectionMatch && request.method === 'POST') {\n        const id = toInt(orderShippingCorrectionMatch[1], 0);\n        const input = await readJson<{ physicalOutcome?: unknown }>(request);\n        try {\n          const result = await correctMistakenOrderHandover(env.DB, id, {\n            physicalOutcome: input.physicalOutcome,\n            actor: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),\n          });\n          let updatedOrder = null;\n          try {\n            updatedOrder = await getOrder(env.DB, id);\n          } catch (error) {\n            console.warn('Order readback after handover correction failed', error);\n          }\n          return json({ ...result, ...(updatedOrder ? { order: updatedOrder } : {}), refreshRequired: !updatedOrder });\n        } catch (error) {\n          const publicError = publicApiError(error);\n          return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });\n        }\n      }\n`
 if (!afterRouterText.includes(routeBlock)) throw new Error('Exact A4 correction route block not found in current router')
-const revertedRouterText = afterRouterText.replace(routeBlock, '')
-if (revertedRouterText !== beforeRouterText) {
-  throw new Error('A4 raw router contains changes beyond the exact correction route block')
-}
+if (afterRouterText.replace(routeBlock, '') !== beforeRouterText) throw new Error('A4 raw router contains changes beyond exact correction route block')
 
 const manifestPath = path.join(root, 'scripts/operational-autonomy-a4-worker-manifest.json')
 const manifest = {
   version: 1,
   revision: 'operational-autonomy-a4-mistaken-handover-r1',
-  changes: {
-    deleteOrderSafely: { before: beforeDelete, after: afterDelete },
-  },
-  added: {
-    correctMistakenOrderHandover: addedCorrection,
-  },
-  router: {
-    before: sha256(beforeRouterText),
-    after: sha256(afterRouterText),
-  },
+  changes: { deleteOrderSafely: { before: beforeDelete, after: afterDelete } },
+  added: { correctMistakenOrderHandover: addedCorrection },
+  router: { before: sha256(beforeRouterText), after: sha256(afterRouterText) },
 }
 fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
 
@@ -84,58 +74,56 @@ wrapper = wrapper.replace('const patched = original', 'let patched = original')
 const writeAnchor = 'fs.writeFileSync(legacyPath, patched)\n'
 if (!wrapper.includes(writeAnchor)) throw new Error('A4 wrapper write anchor missing')
 
-const patchCode = String.raw`patched = patched
-  .replace(
-    ' + Object.keys(catalogGenderScopeR1Added).length',
-    ' + Object.keys(catalogGenderScopeR1Added).length + Object.keys(operationalAutonomyA4Added).length',
-  )
-  .replace(
-    [
-      '  for (const [name, expectedHash] of Object.entries(orderDeleteMobilityAdded)) {',
-      '    check(declarations.has(name), `Order delete mobility added Worker declaration missing: ${name}`)',
-      '    check(sha(declarations.get(name)) === expectedHash, `Order delete mobility declaration changed beyond exact allow-list: ${name}`)',
-      '  }',
-    ].join('\n'),
-    [
-      '  for (const [name, expectedHash] of Object.entries(orderDeleteMobilityAdded)) {',
-      '    check(declarations.has(name), `Order delete mobility added Worker declaration missing: ${name}`)',
-      '    const operationalAutonomyA4Changed = operationalAutonomyA4Changes[name]',
-      '    let acceptedHash = expectedHash',
-      '    if (operationalAutonomyA4Changed) {',
-      '      check(operationalAutonomyA4Changed.before === acceptedHash, `Operational Autonomy A4 order-delete baseline hash mismatch: ${name}`)',
-      '      acceptedHash = operationalAutonomyA4Changed.after',
-      '    }',
-      '    check(sha(declarations.get(name)) === acceptedHash, operationalAutonomyA4Changed',
-      '      ? `Order delete mobility declaration changed beyond exact Operational Autonomy A4 allow-list: ${name}`',
-      '      : `Order delete mobility declaration changed beyond exact allow-list: ${name}`)',
-      '  }',
-    ].join('\n'),
-  )
-  .replace(
-    '  // Catalog gender scope R1 changes only the product create/update request shapes.',
-    [
-      '  for (const [name, expectedHash] of Object.entries(operationalAutonomyA4Added)) {',
-      '    check(declarations.has(name), `Operational Autonomy A4 added Worker declaration missing: ${name}`)',
-      '    check(sha(declarations.get(name)) === expectedHash, `Operational Autonomy A4 added Worker declaration changed: ${name}`)',
-      '  }',
-      '',
-      '  // Catalog gender scope R1 changes only the product create/update request shapes.',
-    ].join('\n'),
-  )
-  .replace(
-    [
-      "  check(sha(currentRouter) === catalogGenderScopeR1.router.after, 'Catalog gender scope R1 Worker router changed beyond exact delta')",
-      '  const catalogGenderRevertedRouter = currentRouter',
-    ].join('\n'),
-    [
-      "  check(sha(currentRouter) === operationalAutonomyA4Router.after, 'Operational Autonomy A4 raw Worker router changed beyond exact delta')",
-      "  const operationalAutonomyA4RevertedRouter = currentRouter.replace(operationalAutonomyA4RouteBlock, '')",
-      "  check(sha(operationalAutonomyA4RevertedRouter) === operationalAutonomyA4Router.before, 'Operational Autonomy A4 Worker router reverse baseline mismatch')",
-      "  check(sha(operationalAutonomyA4RevertedRouter) === catalogGenderScopeR1.router.after, 'Catalog gender scope R1 Worker router changed beyond exact delta')",
-      '  const catalogGenderRevertedRouter = operationalAutonomyA4RevertedRouter',
-    ].join('\n'),
-  )
-`
+const oldCount = ' + Object.keys(catalogGenderScopeR1Added).length'
+const newCount = oldCount + ' + Object.keys(operationalAutonomyA4Added).length'
+const oldDeleteLoop = [
+  '  for (const [name, expectedHash] of Object.entries(orderDeleteMobilityAdded)) {',
+  '    check(declarations.has(name), `Order delete mobility added Worker declaration missing: ${name}`)',
+  '    check(sha(declarations.get(name)) === expectedHash, `Order delete mobility declaration changed beyond exact allow-list: ${name}`)',
+  '  }',
+].join('\n')
+const newDeleteLoop = [
+  '  for (const [name, expectedHash] of Object.entries(orderDeleteMobilityAdded)) {',
+  '    check(declarations.has(name), `Order delete mobility added Worker declaration missing: ${name}`)',
+  '    const operationalAutonomyA4Changed = operationalAutonomyA4Changes[name]',
+  '    let acceptedHash = expectedHash',
+  '    if (operationalAutonomyA4Changed) {',
+  '      check(operationalAutonomyA4Changed.before === acceptedHash, `Operational Autonomy A4 order-delete baseline hash mismatch: ${name}`)',
+  '      acceptedHash = operationalAutonomyA4Changed.after',
+  '    }',
+  '    check(sha(declarations.get(name)) === acceptedHash, operationalAutonomyA4Changed',
+  '      ? `Order delete mobility declaration changed beyond exact Operational Autonomy A4 allow-list: ${name}`',
+  '      : `Order delete mobility declaration changed beyond exact allow-list: ${name}`)',
+  '  }',
+].join('\n')
+const oldAddedAnchor = '  // Catalog gender scope R1 changes only the product create/update request shapes.'
+const newAddedAnchor = [
+  '  for (const [name, expectedHash] of Object.entries(operationalAutonomyA4Added)) {',
+  '    check(declarations.has(name), `Operational Autonomy A4 added Worker declaration missing: ${name}`)',
+  '    check(sha(declarations.get(name)) === expectedHash, `Operational Autonomy A4 added Worker declaration changed: ${name}`)',
+  '  }',
+  '',
+  oldAddedAnchor,
+].join('\n')
+const oldRouterStart = [
+  "  check(sha(currentRouter) === catalogGenderScopeR1.router.after, 'Catalog gender scope R1 Worker router changed beyond exact delta')",
+  '  const catalogGenderRevertedRouter = currentRouter',
+].join('\n')
+const newRouterStart = [
+  "  check(sha(currentRouter) === operationalAutonomyA4Router.after, 'Operational Autonomy A4 raw Worker router changed beyond exact delta')",
+  "  const operationalAutonomyA4RevertedRouter = currentRouter.replace(operationalAutonomyA4RouteBlock, '')",
+  "  check(sha(operationalAutonomyA4RevertedRouter) === operationalAutonomyA4Router.before, 'Operational Autonomy A4 Worker router reverse baseline mismatch')",
+  "  check(sha(operationalAutonomyA4RevertedRouter) === catalogGenderScopeR1.router.after, 'Catalog gender scope R1 Worker router changed beyond exact delta')",
+  '  const catalogGenderRevertedRouter = operationalAutonomyA4RevertedRouter',
+].join('\n')
+
+const patchCode = [
+  'patched = patched',
+  `  .replace(${JSON.stringify(oldCount)}, ${JSON.stringify(newCount)})`,
+  `  .replace(${JSON.stringify(oldDeleteLoop)}, ${JSON.stringify(newDeleteLoop)})`,
+  `  .replace(${JSON.stringify(oldAddedAnchor)}, ${JSON.stringify(newAddedAnchor)})`,
+  `  .replace(${JSON.stringify(oldRouterStart)}, ${JSON.stringify(newRouterStart)})`,
+].join('\n')
 wrapper = wrapper.replace(writeAnchor, patchCode + '\n' + writeAnchor)
 fs.writeFileSync(wrapperPath, wrapper)
 
