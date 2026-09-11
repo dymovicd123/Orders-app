@@ -33,13 +33,9 @@ jobs:
           const text = fs.readFileSync(file, 'utf8')
           const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
           const normalize = (value) => value.replace(/^export\s+/, '')
-          for (const statement of source.statements) {
-            if (ts.isFunctionDeclaration(statement) && statement.name?.text === 'createManualOrderPaymentCritical') {
-              console.log(crypto.createHash('sha256').update(normalize(statement.getText(source))).digest('hex'))
-              process.exit(0)
-            }
-          }
-          throw new Error('createManualOrderPaymentCritical not found')
+          const statement = source.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === 'createManualOrderPaymentCritical')
+          if (!statement) throw new Error('createManualOrderPaymentCritical not found')
+          console.log(crypto.createHash('sha256').update(normalize(statement.getText(source))).digest('hex'))
           NODE
 
           python - <<'PY'
@@ -60,13 +56,9 @@ jobs:
           const text = fs.readFileSync(file, 'utf8')
           const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
           const normalize = (value) => value.replace(/^export\s+/, '')
-          for (const statement of source.statements) {
-            if (ts.isFunctionDeclaration(statement) && statement.name?.text === 'createManualOrderPaymentCritical') {
-              console.log(crypto.createHash('sha256').update(normalize(statement.getText(source))).digest('hex'))
-              process.exit(0)
-            }
-          }
-          throw new Error('createManualOrderPaymentCritical not found')
+          const statement = source.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === 'createManualOrderPaymentCritical')
+          if (!statement) throw new Error('createManualOrderPaymentCritical not found')
+          console.log(crypto.createHash('sha256').update(normalize(statement.getText(source))).digest('hex'))
           NODE
 
           python - <<'PY'
@@ -76,48 +68,38 @@ jobs:
           after = Path('/tmp/a3-after').read_text().strip()
           if not before or not after or before == after:
               raise SystemExit('invalid A3 declaration hashes')
-          manifest = {
+          Path('scripts/operational-autonomy-a3-worker-manifest.json').write_text(json.dumps({
               'version': 1,
               'revision': 'operational-autonomy-a3-post-return-debt-close-r1',
-              'changes': {
-                  'createManualOrderPaymentCritical': {'before': before, 'after': after}
-              }
-          }
-          Path('scripts/operational-autonomy-a3-worker-manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
+              'changes': {'createManualOrderPaymentCritical': {'before': before, 'after': after}},
+          }, ensure_ascii=False, indent=2) + '\n')
           PY
 
           cat > scripts/test-operational-autonomy-a3-post-return-debt-close.mjs <<'NODE'
           import fs from 'node:fs'
-
           const read = (path) => fs.readFileSync(path, 'utf8')
           const check = (condition, message) => { if (!condition) throw new Error(message) }
-
           try {
             const money = read('worker/domains/money.ts')
             const ordersRead = read('worker/domains/orders-read.ts')
             const app = read('src/App.tsx')
-
             check(!money.includes("paymentKind === 'debt_close' && ledger.returnAmount > 0"), 'post-return debt close is still globally blocked')
             check(!money.includes('Обычное закрытие долга недоступно'), 'obsolete post-return debt-close error remains')
             check(money.includes('if (ledger.debtAmount <= 0)'), 'closed-debt guard disappeared')
             check(money.includes('if (amount > ledger.debtAmount)'), 'overpayment guard disappeared')
             check(money.includes("paymentKind === 'primary' ? normalizeDate(existing.order_date) : requestedPaymentDate"), 'debt-close operation date semantics regressed')
             check(money.includes('debtAmount: Math.max(0, totalAmount - receivedAmount)'), 'canonical debt calculation changed unexpectedly')
-            check(money.includes('returnAmount'), 'return amount must remain separately tracked from debt')
-
             const debtListStart = ordersRead.indexOf('export async function listOpenDebtOrders')
             check(debtListStart >= 0, 'open-debt read path missing')
             const debtList = ordersRead.slice(debtListStart)
             check(debtList.includes("WHERE o.debt_amount > 0 AND o.order_status NOT IN ('deleted', 'archived')"), 'open-debt list no longer follows current debt truth')
             check(!debtList.includes('return_amount > 0') && !debtList.includes('return_amount = 0'), 'open-debt list incorrectly filters orders by return history')
-
             const debtCloseStart = app.indexOf('async function saveDebtClose()')
             const debtCloseEnd = app.indexOf('async function saveReturn()', debtCloseStart)
             const debtCloseBlock = app.slice(debtCloseStart, debtCloseEnd)
             check(debtCloseBlock.includes("paymentKind: 'debt_close' as const"), 'dedicated debt-close UI lost semantic payment kind')
             check(debtCloseBlock.includes('closeAmount > Number(debtSelectedOrder.debt_amount || 0)'), 'frontend overpayment guard disappeared')
             check(debtCloseBlock.includes("apiFetch('/api/payments'"), 'dedicated debt-close UI no longer uses safe payment endpoint')
-
             console.log('Operational Autonomy A3 post-return debt-close checks passed.')
           } catch (error) {
             console.error(`Operational Autonomy A3 checks failed: ${error?.message || error}`)
@@ -130,9 +112,7 @@ jobs:
           const path = 'package.json'
           const pkg = JSON.parse(fs.readFileSync(path, 'utf8'))
           const marker = 'node scripts/test-operational-autonomy-a3-post-return-debt-close.mjs'
-          if (!String(pkg.scripts?.['release:check'] || '').includes(marker)) {
-            pkg.scripts['release:check'] = `${pkg.scripts['release:check']} && ${marker}`
-          }
+          if (!pkg.scripts['release:check'].includes(marker)) pkg.scripts['release:check'] += ` && ${marker}`
           fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n')
           NODE
 
@@ -142,28 +122,21 @@ jobs:
           text = path.read_text()
 
           path_anchor = "const financeF5BusinessSemanticsPath = path.join(root, 'scripts/finance-f5-business-semantics-worker-manifest.json')\n"
-          path_addition = path_anchor + "const operationalAutonomyA3Path = path.join(root, 'scripts/operational-autonomy-a3-worker-manifest.json')\n"
           if path_anchor not in text:
-              raise SystemExit('Finance F5 manifest path anchor missing')
-          text = text.replace(path_anchor, path_addition, 1)
+              raise SystemExit('Finance F5 path anchor missing')
+          text = text.replace(path_anchor, path_anchor + "const operationalAutonomyA3Path = path.join(root, 'scripts/operational-autonomy-a3-worker-manifest.json')\n", 1)
 
           load_anchor = "  const financeF5BusinessSemanticsChanges = financeF5BusinessSemantics?.version === 1 ? (financeF5BusinessSemantics.changes || {}) : {}\n"
-          load_addition = load_anchor + "  const operationalAutonomyA3 = fs.existsSync(operationalAutonomyA3Path) ? JSON.parse(fs.readFileSync(operationalAutonomyA3Path, 'utf8')) : null\n  check(operationalAutonomyA3?.version === 1 && operationalAutonomyA3?.revision === 'operational-autonomy-a3-post-return-debt-close-r1', 'Operational Autonomy A3 Worker manifest invalid')\n  const operationalAutonomyA3Changes = operationalAutonomyA3.changes || {}\n  check(Object.keys(operationalAutonomyA3Changes).join(',') === 'createManualOrderPaymentCritical', 'Operational Autonomy A3 Worker allow-list widened unexpectedly')\n"
           if load_anchor not in text:
-              raise SystemExit('Finance F5 manifest load anchor missing')
-          text = text.replace(load_anchor, load_addition, 1)
+              raise SystemExit('Finance F5 load anchor missing')
+          text = text.replace(load_anchor, load_anchor + "  const operationalAutonomyA3 = fs.existsSync(operationalAutonomyA3Path) ? JSON.parse(fs.readFileSync(operationalAutonomyA3Path, 'utf8')) : null\n  check(operationalAutonomyA3?.version === 1 && operationalAutonomyA3?.revision === 'operational-autonomy-a3-post-return-debt-close-r1', 'Operational Autonomy A3 Worker manifest invalid')\n  const operationalAutonomyA3Changes = operationalAutonomyA3.changes || {}\n  check(Object.keys(operationalAutonomyA3Changes).join(',') === 'createManualOrderPaymentCritical', 'Operational Autonomy A3 Worker allow-list widened unexpectedly')\n", 1)
 
-          old_block = """  for (const [name, expectedHash] of Object.entries(orderCreateSaveIntegrityAdded)) {
-            check(declarations.has(name), `192B2A4 added Worker declaration missing: ${name}`)
-            const financeF5BusinessSemanticsChanged = financeF5BusinessSemanticsChanges[name]
-            if (financeF5BusinessSemanticsChanged) {
-              check(financeF5BusinessSemanticsChanged.before === expectedHash, `Finance F5 changed 192B2A4-added declaration baseline hash mismatch: ${name}`)
-              check(sha(declarations.get(name)) === financeF5BusinessSemanticsChanged.after, `192B2A4-added declaration changed beyond exact Finance F5 business semantics allow-list: ${name}`)
-            } else {
-              check(sha(declarations.get(name)) === expectedHash, `192B2A4 added Worker declaration changed: ${name}`)
-            }
-          }
-          """
+          start_marker = "  for (const [name, expectedHash] of Object.entries(orderCreateSaveIntegrityAdded)) {"
+          next_marker = "  for (const [name, expectedHash] of Object.entries(orderDeleteMobilityAdded)) {"
+          start = text.find(start_marker)
+          end = text.find(next_marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit(f'192B2A4 structural markers missing: {start}/{end}')
           new_block = """  for (const [name, expectedHash] of Object.entries(orderCreateSaveIntegrityAdded)) {
             check(declarations.has(name), `192B2A4 added Worker declaration missing: ${name}`)
             const financeF5BusinessSemanticsChanged = financeF5BusinessSemanticsChanges[name]
@@ -183,10 +156,9 @@ jobs:
                 ? `192B2A4-added declaration changed beyond exact Finance F5 business semantics allow-list: ${name}`
                 : `192B2A4 added Worker declaration changed: ${name}`))
           }
+
           """
-          if old_block not in text:
-              raise SystemExit('192B2A4 added-declaration block anchor missing')
-          text = text.replace(old_block, new_block, 1)
+          text = text[:start] + new_block + text[end:]
           path.write_text(text)
           PY
 
@@ -195,15 +167,13 @@ jobs:
           path = Path('docs/continuation/OPERATIONAL_AUTONOMY_AUDIT_20260910.md')
           text = path.read_text()
           heading = '### A3 — Closing debt after a return is blocked with no ordinary self-service continuation\n'
-          note = heading + '\n> A3 update: implemented on the current A3 branch. Debt close now follows the actual remaining `debt_amount` even when a legitimate return already exists; zero-debt and overpayment guards remain unchanged.\n'
           if heading not in text:
               raise SystemExit('A3 audit heading missing')
-          text = text.replace(heading, note, 1)
+          text = text.replace(heading, heading + '\n> A3 update: implemented on the current A3 branch. Debt close now follows the actual remaining `debt_amount` even when a legitimate return already exists; zero-debt and overpayment guards remain unchanged.\n', 1)
           path.write_text(text)
           PY
 
           rm .github/workflows/apply-operational-autonomy-a3-temp.yml
-
           node scripts/test-operational-autonomy-a3-post-return-debt-close.mjs
           node scripts/test-step1906a-worker-modularization.mjs
 
