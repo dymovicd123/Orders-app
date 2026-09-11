@@ -1,0 +1,35 @@
+name: Hash Unisex Merge Temp
+
+on:
+  push:
+    branches:
+      - catalog-unisex-merge-r1-work2
+    paths:
+      - .github/workflows/hash-unisex-merge-temp.yml
+
+jobs:
+  hash:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: catalog-unisex-merge-r1-work2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Print declaration hash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import crypto from 'node:crypto'
+          import ts from 'typescript'
+          const p='worker/domains/catalog.ts'
+          const text=fs.readFileSync(p,'utf8')
+          const src=ts.createSourceFile(p,text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS)
+          const st=src.statements.find(s => ts.isFunctionDeclaration(s) && s.name?.text==='updateCatalogVariant')
+          if(!st) throw new Error('updateCatalogVariant missing')
+          const decl=st.getText(src).replace(/^export\s+/,'')
+          console.log('UPDATE_CATALOG_VARIANT_SHA256='+crypto.createHash('sha256').update(decl).digest('hex'))
+          NODE
