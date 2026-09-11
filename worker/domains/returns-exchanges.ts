@@ -113,9 +113,17 @@ export async function createReturn(
   for (const selected of selectedItems) {
     const orderItem = await getOrderItemForReturnOrExchange(db, orderId, selected.orderItemId);
     if (!orderItem) throw new Error(`Позиция заказа #${selected.orderItemId} не найдена.`);
-    const alreadyReturnedQuantity = await getActiveStandaloneReturnedQuantity(
-      db, orderId, selected.orderItemId, operationReturnId,
-    );
+    const alreadyReturnedRow = await db.prepare(
+      `SELECT COALESCE(SUM(ri.quantity), 0) AS quantity
+       FROM return_items ri
+       JOIN returns r ON r.id = ri.return_id
+       WHERE r.order_id = ?
+         AND ri.order_item_id = ?
+         AND COALESCE(r.status, 'completed') <> 'cancelled'
+         AND ${noStandaloneReturnSql}
+         AND (? = 0 OR r.id <> ?)`
+    ).bind(orderId, selected.orderItemId, operationReturnId, operationReturnId).first<{ quantity: number }>();
+    const alreadyReturnedQuantity = Math.max(0, toInt(alreadyReturnedRow?.quantity, 0));
     const maxQuantity = Math.max(0, toInt(orderItem.quantity, 0) - alreadyReturnedQuantity);
     if (maxQuantity <= 0) throw new Error(`Позиция ${cleanText(orderItem.product_name_snapshot)} уже возвращена или заменена.`);
     if (selected.quantity > maxQuantity) {
@@ -355,24 +363,15 @@ export const noStandaloneReturnSql = `NOT EXISTS (
 )`;
 
 
-export async function getActiveStandaloneReturnedQuantity(
-  db: D1Database,
-  orderId: number,
-  orderItemId: number,
-  excludeReturnId = 0,
-) {
-  if (!orderId || !orderItemId) return 0;
+export async function hasActiveStandaloneReturn(db: D1Database, orderId: number) {
   const row = await db.prepare(
-    `SELECT COALESCE(SUM(ri.quantity), 0) AS quantity
-     FROM return_items ri
-     JOIN returns r ON r.id = ri.return_id
+    `SELECT COUNT(*) AS count
+     FROM returns r
      WHERE r.order_id = ?
-       AND ri.order_item_id = ?
        AND COALESCE(r.status, 'completed') <> 'cancelled'
-       AND ${noStandaloneReturnSql}
-       AND (? = 0 OR r.id <> ?)`
-  ).bind(orderId, orderItemId, excludeReturnId, excludeReturnId).first<{ quantity: number }>();
-  return Math.max(0, toInt(row?.quantity, 0));
+       AND ${noStandaloneReturnSql}`
+  ).bind(orderId).first<{ count: number }>();
+  return toInt(row?.count, 0) > 0;
 }
 
 
@@ -527,9 +526,21 @@ export async function createExchange(
   const rawOldQuantity = operationContext.baselineCaptured
     ? Math.max(0, toInt(operationContext.rawOldQuantity, toInt(oldItem.quantity, 0)))
     : Math.max(0, toInt(oldItem.quantity, 0));
-  const activeStandaloneReturnedQuantity = operationContext.baselineCaptured
+  let activeStandaloneReturnedQuantity = operationContext.baselineCaptured
     ? Math.max(0, toInt(operationContext.activeStandaloneReturnedQuantity, 0))
-    : await getActiveStandaloneReturnedQuantity(db, orderId, oldItemId);
+    : 0;
+  if (!operationContext.baselineCaptured) {
+    const activeStandaloneReturnedRow = await db.prepare(
+      `SELECT COALESCE(SUM(ri.quantity), 0) AS quantity
+       FROM return_items ri
+       JOIN returns r ON r.id = ri.return_id
+       WHERE r.order_id = ?
+         AND ri.order_item_id = ?
+         AND COALESCE(r.status, 'completed') <> 'cancelled'
+         AND ${noStandaloneReturnSql}`
+    ).bind(orderId, oldItemId).first<{ quantity: number }>();
+    activeStandaloneReturnedQuantity = Math.max(0, toInt(activeStandaloneReturnedRow?.quantity, 0));
+  }
   const availableOldQuantity = operationContext.baselineCaptured
     ? Math.max(0, toInt(operationContext.availableOldQuantity, 0))
     : Math.max(0, rawOldQuantity - activeStandaloneReturnedQuantity);
