@@ -93,6 +93,7 @@ import { spawnSync } from 'node:child_process'
 const root = process.cwd()
 const manifestPath = path.join(root, 'scripts/catalog-gender-scope-r1-frontend-manifest.json')
 const unisexGenderInplaceManifestPath = path.join(root, 'scripts/catalog-unisex-gender-inplace-r1-frontend-manifest.json')
+const unisexMergeManifestPath = path.join(root, 'scripts/catalog-unisex-merge-r1-frontend-manifest.json')
 const fixtureRoot = path.join(root, 'scripts/fixtures/catalog-gender-scope-r1')
 const predecessorFixture = path.join(fixtureRoot, 'test-step1906b-frontend-modularization-predecessor.mjs')
 const runtimePredecessor = path.join(root, 'scripts/.tmp-test-step1906b-catalog-predecessor.mjs')
@@ -103,6 +104,9 @@ if (JSON.stringify(Object.keys(manifest.files || {})) !== JSON.stringify(expecte
 const unisexGenderInplaceManifest = JSON.parse(fs.readFileSync(unisexGenderInplaceManifestPath, 'utf8'))
 if (unisexGenderInplaceManifest?.version !== 1 || unisexGenderInplaceManifest?.revision !== 'catalog-unisex-gender-inplace-r1') throw new Error('Catalog unisex gender in-place frontend manifest invalid')
 if (Object.keys(unisexGenderInplaceManifest.files || {}).join(',') !== 'src/features/inventory/views/renderInventoryCatalogPanel.tsx') throw new Error('Catalog unisex gender in-place frontend allow-list widened unexpectedly')
+const unisexMergeManifest = JSON.parse(fs.readFileSync(unisexMergeManifestPath, 'utf8'))
+if (unisexMergeManifest?.version !== 1 || unisexMergeManifest?.revision !== 'catalog-unisex-merge-r1') throw new Error('Catalog unisex merge frontend manifest invalid')
+if (Object.keys(unisexMergeManifest.files || {}).join(',') !== 'src/features/inventory/views/renderInventoryCatalogPanel.tsx') throw new Error('Catalog unisex merge frontend allow-list widened unexpectedly')
 const gitBlobSha = (text) => { const bytes = Buffer.from(text); return crypto.createHash('sha1').update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex') }
 const current = new Map()
 try {
@@ -112,10 +116,16 @@ try {
     const actual = fs.readFileSync(actualPath, 'utf8')
     const baseline = fs.readFileSync(baselinePath, 'utf8')
     const delta = manifest.files[file]
-    const latestDelta = unisexGenderInplaceManifest.files?.[file]
-    if (latestDelta) {
-      if (latestDelta.beforeGitBlob !== delta.afterGitBlob || latestDelta.beforeLines !== delta.afterLines) throw new Error('Catalog unisex gender in-place predecessor drifted: ' + file)
-      if (gitBlobSha(actual) !== latestDelta.afterGitBlob || actual.split(/\r?\n/).length !== latestDelta.afterLines) throw new Error('Catalog unisex gender in-place frontend file changed beyond exact manifest: ' + file)
+    const inPlaceDelta = unisexGenderInplaceManifest.files?.[file]
+    const mergeDelta = unisexMergeManifest.files?.[file]
+    if (mergeDelta) {
+      if (!inPlaceDelta) throw new Error('Catalog unisex merge predecessor is missing: ' + file)
+      if (inPlaceDelta.beforeGitBlob !== delta.afterGitBlob || inPlaceDelta.beforeLines !== delta.afterLines) throw new Error('Catalog unisex gender in-place predecessor drifted: ' + file)
+      if (mergeDelta.beforeGitBlob !== inPlaceDelta.afterGitBlob || mergeDelta.beforeLines !== inPlaceDelta.afterLines) throw new Error('Catalog unisex merge predecessor drifted: ' + file)
+      if (gitBlobSha(actual) !== mergeDelta.afterGitBlob || actual.split(/\r?\n/).length !== mergeDelta.afterLines) throw new Error('Catalog unisex merge frontend file changed beyond exact manifest: ' + file)
+    } else if (inPlaceDelta) {
+      if (inPlaceDelta.beforeGitBlob !== delta.afterGitBlob || inPlaceDelta.beforeLines !== delta.afterLines) throw new Error('Catalog unisex gender in-place predecessor drifted: ' + file)
+      if (gitBlobSha(actual) !== inPlaceDelta.afterGitBlob || actual.split(/\r?\n/).length !== inPlaceDelta.afterLines) throw new Error('Catalog unisex gender in-place frontend file changed beyond exact manifest: ' + file)
     } else if (gitBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
       throw new Error('Catalog gender frontend file changed beyond exact manifest: ' + file)
     }
