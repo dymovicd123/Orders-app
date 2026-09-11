@@ -34,6 +34,8 @@ jobs:
           node scripts/test-catalog-gender-migration-r1.mjs
       - name: Build
         run: npm run build
+      - name: Trace exact Worker declaration delta
+        run: node scripts/diagnose-catalog-gender-worker-delta.mjs
       - name: Full cumulative release check
         run: npm run release:check
       - name: Commit validated implementation
