@@ -225,16 +225,13 @@ export async function getCatalogProductGenderScope(db: D1Database, productId: nu
 }
 
 export async function resolveCatalogGenderForProduct(db: D1Database, productId: number, value: unknown) {
-  const scope = await getCatalogProductGenderScope(db, productId);
   const explicitGender = normalizeCatalogCombinationGender(value);
-  if (explicitGender === 'ЖЕН' || explicitGender === 'МУЖ') return { scope, gender: explicitGender };
+  // A concrete human choice is authoritative and does not need another D1 read.
+  if (explicitGender === 'ЖЕН' || explicitGender === 'МУЖ') return { scope: null, gender: explicitGender };
+  const scope = await getCatalogProductGenderScope(db, productId);
   const fixed = catalogGenderForProductScope(scope);
   if (fixed) return { scope, gender: fixed };
-  const gender = explicitGender;
-  if (gender !== 'ЖЕН' && gender !== 'МУЖ') {
-    throw new Error('Для товара «Унисекс» выберите пол конкретной вещи: ЖЕН или МУЖ.');
-  }
-  return { scope, gender };
+  throw new Error('Для товара «Унисекс» выберите пол конкретной вещи: ЖЕН или МУЖ.');
 }
 
 export function normalizeCatalogCombinationGender(value: unknown) {

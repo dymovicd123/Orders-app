@@ -37,4 +37,18 @@ check(!panel.includes('disabled={Boolean(fixedGenderForProduct(selectedProduct))
 check(panel.includes('можно изменить'), 'Catalog UI must explain that automatic gender remains editable')
 check(app.includes('genderScope: catalogProductDraft.genderScope'), 'Catalog save payload must send scope')
 
+
+const genderResolverStart = catalog.indexOf('export async function resolveCatalogGenderForProduct')
+const explicitGenderIndex = catalog.indexOf('const explicitGender = normalizeCatalogCombinationGender(value)', genderResolverStart)
+const scopeReadIndex = catalog.indexOf('const scope = await getCatalogProductGenderScope(db, productId)', genderResolverStart)
+check(genderResolverStart >= 0 && explicitGenderIndex > genderResolverStart && scopeReadIndex > explicitGenderIndex, 'Explicit human gender must be checked before the product-scope D1 read')
+check(catalog.includes("return { scope: null, gender: explicitGender }"), 'Explicit human gender must bypass the product default')
+check(workspace.includes("gender: automaticGender ? (selected.gender || automaticGender) : ''"), 'Order autocomplete must preserve a concrete opposite-gender SKU')
+check(workspace.includes('if (automaticGender) {'), 'Order autocomplete must prefer the product default when choosing among existing groups')
+check(operational.includes('activeVariants.find((variant) => normalizeSuggestion(variant.gender) === automaticGender)'), 'Arrival must prefer a variant matching the product gender default')
+check(migration.includes('COALESCE(target.stock_position_id,-1)=COALESCE(v.stock_position_id,-1)'), '0068 keeper matching must be NULL-safe')
+check(migration.includes("OR TRIM(COALESCE(target.gender,''))=''"), '0068 must deterministically consolidate duplicate blank fixed-scope variants')
+const review = read('worker/domains/catalog-review.ts')
+check(review.includes('createCatalogProduct(db, { name: requestedProductName, category, genderScope: requestedGenderScope })'), 'Catalog review new-product path must persist gender scope')
+
 console.log('Catalog Gender Scope R1 semantic/static acceptance passed.')

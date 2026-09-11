@@ -1,0 +1,72 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
+
+const root = process.cwd()
+const migrationSql = fs.readFileSync(path.join(root, 'migrations/0068_v72_catalog_product_gender_scope.sql'), 'utf8')
+const db = new DatabaseSync(':memory:')
+const one = (sql, ...params) => db.prepare(sql).get(...params)
+
+db.exec(`
+  PRAGMA foreign_keys = ON;
+  CREATE TABLE catalog_products (id INTEGER PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'adult', is_active INTEGER NOT NULL DEFAULT 1, updated_at TEXT);
+  CREATE TABLE catalog_stock_positions (id INTEGER PRIMARY KEY, product_id INTEGER, material TEXT, length TEXT, is_active INTEGER DEFAULT 1);
+  CREATE TABLE catalog_variants (id INTEGER PRIMARY KEY, product_id INTEGER NOT NULL, stock_position_id INTEGER, category TEXT, gender TEXT, color TEXT, material TEXT, length TEXT, size_label TEXT, is_active INTEGER NOT NULL DEFAULT 1, updated_at TEXT);
+  CREATE TABLE inventory_stock (id INTEGER PRIMARY KEY, inventory_source TEXT NOT NULL, product_id INTEGER, variant_id INTEGER, product_name_snapshot TEXT, gender_snapshot TEXT, color_snapshot TEXT, material_snapshot TEXT, length_snapshot TEXT, size_snapshot TEXT, quantity INTEGER DEFAULT 0, reserved_quantity INTEGER DEFAULT 0, updated_at TEXT);
+  CREATE UNIQUE INDEX idx_inventory_stock_variant_unique ON inventory_stock(inventory_source, variant_id) WHERE variant_id IS NOT NULL;
+  CREATE TABLE order_items (id INTEGER PRIMARY KEY, variant_id INTEGER, gender_snapshot TEXT);
+  CREATE TABLE inventory_movements (id INTEGER PRIMARY KEY, variant_id INTEGER, gender_snapshot TEXT);
+  CREATE TABLE workshop_tasks (id INTEGER PRIMARY KEY, variant_id INTEGER);
+  CREATE TABLE inventory_reservations (id INTEGER PRIMARY KEY, variant_id INTEGER);
+  CREATE TABLE catalog_input_aliases (id INTEGER PRIMARY KEY, variant_id INTEGER);
+  CREATE TABLE inventory_lifecycle_events (id INTEGER PRIMARY KEY, variant_id INTEGER);
+  CREATE TABLE inventory_transfer_items (id INTEGER PRIMARY KEY, variant_id INTEGER);
+  CREATE TABLE inventory_stock_checks (id INTEGER PRIMARY KEY, variant_id INTEGER);
+  CREATE TABLE inventory_stocktake_items (id INTEGER PRIMARY KEY, variant_id INTEGER);
+
+  INSERT INTO catalog_products(id,name,category,is_active) VALUES
+    (1,'ЕҢЛІК ШАПАН','adult',1),(2,'БЕЛГІСІЗ УНИСЕКС','adult',1),(3,'ҚОЗЫ КӨРПЕШ ШАПАН','adult',1),(4,'БАЯН СҰЛУ ШАПАН','adult',1);
+  INSERT INTO catalog_stock_positions(id,product_id,material,length) VALUES
+    (11,1,'СТАНДАРТ','СТАНДАРТ'),(21,2,'СТАНДАРТ','СТАНДАРТ'),(31,3,'СТАНДАРТ','СТАНДАРТ');
+  INSERT INTO catalog_variants(id,product_id,stock_position_id,category,gender,color,material,length,size_label,is_active) VALUES
+    (101,1,11,'adult','','ҚЫЗЫЛ','СТАНДАРТ','СТАНДАРТ','46',1),(102,1,11,'adult','ЖЕН','ҚЫЗЫЛ','СТАНДАРТ','СТАНДАРТ','46',1),(103,1,11,'adult','МУЖ','КӨК','СТАНДАРТ','СТАНДАРТ','48',1),
+    (201,2,21,'adult','','АҚ','СТАНДАРТ','СТАНДАРТ','46',1),(202,2,21,'adult','','ҚАРА','СТАНДАРТ','СТАНДАРТ','48',1),
+    (301,3,31,'adult','','ҚАРА','СТАНДАРТ','СТАНДАРТ','50',1),(302,3,31,'adult','','ҚАРА','СТАНДАРТ','СТАНДАРТ','50',1),
+    (401,4,NULL,'adult','','АЛТЫН','СТАНДАРТ','СТАНДАРТ','44',1),(402,4,NULL,'adult','','АЛТЫН','СТАНДАРТ','СТАНДАРТ','44',1);
+  INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES
+    (1,'warehouse',1,101,'ЕҢЛІК ШАПАН','','ҚЫЗЫЛ','СТАНДАРТ','СТАНДАРТ','46',3,1),(2,'warehouse',1,102,'ЕҢЛІК ШАПАН','ЖЕН','ҚЫЗЫЛ','СТАНДАРТ','СТАНДАРТ','46',5,2),(3,'warehouse',1,103,'ЕҢЛІК ШАПАН','МУЖ','КӨК','СТАНДАРТ','СТАНДАРТ','48',7,0),(4,'warehouse',2,202,'БЕЛГІСІЗ УНИСЕКС','','ҚАРА','СТАНДАРТ','СТАНДАРТ','48',2,0),(5,'warehouse',3,301,'ҚОЗЫ КӨРПЕШ ШАПАН','','ҚАРА','СТАНДАРТ','СТАНДАРТ','50',2,0),(6,'warehouse',3,302,'ҚОЗЫ КӨРПЕШ ШАПАН','','ҚАРА','СТАНДАРТ','СТАНДАРТ','50',4,1),(7,'boutique',4,401,'БАЯН СҰЛУ ШАПАН','','АЛТЫН','СТАНДАРТ','СТАНДАРТ','44',1,0),(8,'boutique',4,402,'БАЯН СҰЛУ ШАПАН','','АЛТЫН','СТАНДАРТ','СТАНДАРТ','44',2,0);
+  INSERT INTO order_items(id,variant_id,gender_snapshot) VALUES (1,101,''),(2,103,'МУЖ'),(3,202,'');
+  INSERT INTO inventory_movements(id,variant_id,gender_snapshot) VALUES (1,101,''),(2,103,'МУЖ');
+  INSERT INTO workshop_tasks(id,variant_id) VALUES (1,101);
+  INSERT INTO inventory_reservations(id,variant_id) VALUES (1,101);
+  INSERT INTO catalog_input_aliases(id,variant_id) VALUES (1,101);
+  INSERT INTO inventory_lifecycle_events(id,variant_id) VALUES (1,101);
+  INSERT INTO inventory_transfer_items(id,variant_id) VALUES (1,101);
+  INSERT INTO inventory_stock_checks(id,variant_id) VALUES (1,101);
+  INSERT INTO inventory_stocktake_items(id,variant_id) VALUES (1,101);
+`)
+
+db.exec(migrationSql)
+const scope = (id) => one('SELECT gender_scope FROM catalog_products WHERE id=?', id).gender_scope
+const variant = (id) => one('SELECT gender,is_active FROM catalog_variants WHERE id=?', id)
+if (scope(1) !== 'female' || scope(2) !== 'unisex' || scope(3) !== 'male' || scope(4) !== 'female') throw new Error('product gender-scope assignment failed')
+if (variant(103).gender !== 'МУЖ' || variant(103).is_active !== 1) throw new Error('explicit opposite-gender override was damaged')
+if (variant(301).gender !== 'МУЖ' || variant(301).is_active !== 1 || variant(302).is_active !== 0) throw new Error('duplicate blank male variants were not consolidated')
+if (variant(401).gender !== 'ЖЕН' || variant(401).is_active !== 1 || variant(402).is_active !== 0) throw new Error('NULL stock-position blank variants were not consolidated')
+if (variant(101).is_active !== 0 || variant(102).gender !== 'ЖЕН') throw new Error('blank female duplicate was not merged')
+const enlik = one("SELECT quantity,reserved_quantity,gender_snapshot FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=102")
+if (enlik.quantity !== 8 || enlik.reserved_quantity !== 3 || enlik.gender_snapshot !== 'ЖЕН') throw new Error('Enlik stock merge lost truth')
+if (one("SELECT quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=103").quantity !== 7) throw new Error('opposite-gender stock changed')
+const maleMerge = one("SELECT quantity,reserved_quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=301")
+if (maleMerge.quantity !== 6 || maleMerge.reserved_quantity !== 1) throw new Error('blank-to-blank stock merge failed')
+if (one("SELECT quantity FROM inventory_stock WHERE inventory_source='boutique' AND variant_id=401").quantity !== 3) throw new Error('NULL-position stock merge failed')
+const order = one('SELECT variant_id,gender_snapshot FROM order_items WHERE id=1')
+const movement = one('SELECT variant_id,gender_snapshot FROM inventory_movements WHERE id=1')
+if (order.variant_id !== 102 || order.gender_snapshot !== '' || movement.variant_id !== 102 || movement.gender_snapshot !== '') throw new Error('historical snapshot invariant failed')
+for (const table of ['workshop_tasks','inventory_reservations','catalog_input_aliases','inventory_lifecycle_events','inventory_transfer_items','inventory_stock_checks','inventory_stocktake_items']) {
+  if (one(`SELECT variant_id FROM ${table} WHERE id=1`).variant_id !== 102) throw new Error(`${table} repoint failed`)
+}
+if (variant(201).is_active !== 0 || variant(202).is_active !== 1) throw new Error('ambiguous unisex placeholder handling failed')
+const repair = one('SELECT repair_mode,keeper_variant_id FROM catalog_gender_variant_repairs WHERE old_variant_id=101')
+if (repair.repair_mode !== 'merge' || repair.keeper_variant_id !== 102) throw new Error('repair audit row missing')
+console.log('Catalog Gender Migration R1 behavioral acceptance passed.')

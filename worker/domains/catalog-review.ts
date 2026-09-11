@@ -355,7 +355,7 @@ export async function resolveCatalogReviewFacts(db: D1Database, orderItemId: num
   if (unconfirmed) throw new Error(`Значение «${unconfirmed.value}» ещё не существует. Выберите существующее или явно добавьте его как новое.`);
 
   if (!product?.id) {
-    const created = await createCatalogProduct(db, { name: requestedProductName, category });
+    const created = await createCatalogProduct(db, { name: requestedProductName, category, genderScope: requestedGenderScope });
     productId = toInt(created.id, 0);
     product = { id: productId, name: cleanText(created.name) };
   }

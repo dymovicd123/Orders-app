@@ -107,13 +107,19 @@ SELECT
     SELECT target.id
     FROM catalog_variants target
     WHERE target.product_id=v.product_id
-      AND target.stock_position_id=v.stock_position_id
+      AND COALESCE(target.stock_position_id,-1)=COALESCE(v.stock_position_id,-1)
       AND COALESCE(target.category,'adult')=COALESCE(v.category,'adult')
-      AND UPPER(TRIM(COALESCE(target.gender,'')))=CASE p.gender_scope WHEN 'female' THEN 'ЖЕН' ELSE 'МУЖ' END
       AND UPPER(TRIM(COALESCE(target.color,'')))=UPPER(TRIM(COALESCE(v.color,'')))
       AND TRIM(COALESCE(target.size_label,''))=TRIM(COALESCE(v.size_label,''))
       AND target.is_active=1
-    ORDER BY target.id ASC LIMIT 1
+      AND (
+        UPPER(TRIM(COALESCE(target.gender,'')))=CASE p.gender_scope WHEN 'female' THEN 'ЖЕН' ELSE 'МУЖ' END
+        OR TRIM(COALESCE(target.gender,''))=''
+      )
+    ORDER BY
+      CASE WHEN UPPER(TRIM(COALESCE(target.gender,'')))=CASE p.gender_scope WHEN 'female' THEN 'ЖЕН' ELSE 'МУЖ' END THEN 0 ELSE 1 END,
+      target.id ASC
+    LIMIT 1
   ), v.id) AS keeper_id
 FROM catalog_variants v
 JOIN catalog_products p ON p.id=v.product_id

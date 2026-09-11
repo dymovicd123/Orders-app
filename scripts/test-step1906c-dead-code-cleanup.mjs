@@ -136,12 +136,19 @@ try {
   const migrationFiles = fs.readdirSync(migrationDir).filter((name) => name.endsWith('.sql')).sort()
   const acceptedAdditiveMigrations = ['0061_v72_warehouse_attention_truth_gates.sql', '0062_v72_d1_read_budget_r5_warehouse_indexes.sql', '0063_v72_d1_read_budget_r5_catalog_attention_index.sql', '0064_v72_d1_read_budget_r5_order_search_fts.sql', '0065_v72_d1_read_budget_r5_workshop_variant_order_index.sql', '0066_v72_d1_read_budget_r5_finance_summary_indexes.sql']
   acceptedAdditiveMigrations.push('0067_v72_o1_read_budget_indexes.sql')
+  acceptedAdditiveMigrations.push('0068_v72_catalog_product_gender_scope.sql')
   const historicalMigrationFiles = migrationFiles.filter((name) => !acceptedAdditiveMigrations.includes(name))
   const aggregate = historicalMigrationFiles.map((name) => `${sha(fs.readFileSync(path.join(migrationDir, name)))}  migrations/${name}\n`).join('')
   check(historicalMigrationFiles.length === manifest.migrationCount, `Historical migration count changed: ${historicalMigrationFiles.length}/${manifest.migrationCount}`)
   check(sha(aggregate) === manifest.migrationAggregateHash, 'Historical migration content changed after 190.6C')
   check(migrationFiles.length === manifest.migrationCount + acceptedAdditiveMigrations.length, `Unexpected migration file count: ${migrationFiles.length}`)
   for (const name of acceptedAdditiveMigrations) check(migrationFiles.includes(name), `Accepted additive migration missing: ${name}`)
+  const catalogGenderMigrationManifest = JSON.parse(read('scripts/catalog-gender-scope-r1-migration-manifest.json'))
+  check(catalogGenderMigrationManifest?.version === 1 && catalogGenderMigrationManifest?.revision === 'catalog-gender-scope-r1', 'Catalog gender migration manifest invalid')
+  check(catalogGenderMigrationManifest.file === 'migrations/0068_v72_catalog_product_gender_scope.sql', 'Catalog gender migration manifest file widened unexpectedly')
+  const catalogGenderMigrationBytes = Buffer.from(read(catalogGenderMigrationManifest.file))
+  const catalogGenderMigrationGitBlob = crypto.createHash('sha1').update(Buffer.from('blob ' + catalogGenderMigrationBytes.length + '\0')).update(catalogGenderMigrationBytes).digest('hex')
+  check(catalogGenderMigrationGitBlob === catalogGenderMigrationManifest.gitBlob, 'Accepted catalog gender migration changed beyond exact manifest')
 
   const ARRIVAL_START = '<div className="inventory-arrival-legacy-workspace">'
   const ARRIVAL_END = '<button className="inventory-arrival-add-position" type="button" onClick={addInventoryArrivalPosition}>+ Добавить позицию</button>'

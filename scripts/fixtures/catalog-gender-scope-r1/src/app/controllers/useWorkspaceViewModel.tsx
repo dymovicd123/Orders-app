@@ -276,15 +276,13 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
       }
     }
 
-    const productGenderScope = String(product.genderScope || 'unisex') as 'female' | 'male' | 'unisex'
-    const automaticGender = productGenderScope === 'female' ? 'ЖЕН' : productGenderScope === 'male' ? 'МУЖ' : ''
     const variants = (catalogVariantsByProductId.get(Number(product.id)) || []).filter((variant) => variant.isActive)
     if (!variants.length) {
       return {
         ...currentItem,
         productName: product.name,
         audienceType: getCatalogProductEffectiveCategory(product) === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',
-        gender: automaticGender,
+        gender: '',
         color: '',
         material: 'СТАНДАРТ',
         length: 'СТАНДАРТ',
@@ -328,11 +326,6 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
       const leftCategory = getCatalogVariantCategory(left.variants[0]) === targetCategory ? 0 : 1
       const rightCategory = getCatalogVariantCategory(right.variants[0]) === targetCategory ? 0 : 1
       if (leftCategory !== rightCategory) return leftCategory - rightCategory
-      if (automaticGender) {
-        const leftGender = canonicalOrderGender(left.variants[0]?.gender) === automaticGender ? 0 : 1
-        const rightGender = canonicalOrderGender(right.variants[0]?.gender) === automaticGender ? 0 : 1
-        if (leftGender !== rightGender) return leftGender - rightGender
-      }
       if (left.frequency !== right.frequency) return right.frequency - left.frequency
       if (currentItem.sourceType !== 'workshop' && left.stockTotal !== right.stockTotal) return right.stockTotal - left.stockTotal
       if (left.bestSortOrder !== right.bestSortOrder) return left.bestSortOrder - right.bestSortOrder
@@ -353,10 +346,7 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
       ...currentItem,
       productName: product.name,
       audienceType: getCatalogVariantCategory(selected) === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',
-      // Product gender is only a default. If the chosen existing SKU carries an
-      // explicit opposite gender, keep that concrete catalog fact instead of fabricating
-      // a default-gender SKU with the selected color/size/material.
-      gender: automaticGender ? (selected.gender || automaticGender) : '',
+      gender: selected.gender || '',
       color: selected.color || '',
       material: canonicalStockPositionValue(selected.material),
       length: canonicalStockPositionValue(selected.length),
@@ -448,9 +438,6 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
     }
 
     const catalogProduct = resolveClientCatalogProduct(productName)
-    const productGenderScope = String(catalogProduct?.genderScope || 'unisex') as 'female' | 'male' | 'unisex'
-    const automaticGender = productGenderScope === 'female' ? 'ЖЕН' : productGenderScope === 'male' ? 'МУЖ' : ''
-    const scopedItemGender = canonicalOrderGender(item.gender) || automaticGender
     const resolvedProductName = catalogProduct?.name || productName
     const catalogVariants = catalogProduct
       ? (catalogVariantsByProductId.get(Number(catalogProduct.id)) || []).filter((variant) => variant.isActive)
@@ -458,7 +445,7 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
 
     const catalogVariantIsExact = (variant: CatalogVariantRecord) => (
       getCatalogVariantCategory(variant) === expectedCategory
-      && canonicalOrderGender(variant.gender) === scopedItemGender
+      && canonicalOrderGender(variant.gender) === canonicalOrderGender(item.gender)
       && canonicalOrderColor(variant.color) === canonicalOrderColor(item.color)
       && canonicalOrderMaterial(variant.material) === canonicalOrderMaterial(item.material)
       && canonicalOrderLength(variant.length) === canonicalOrderLength(item.length)
@@ -467,9 +454,8 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
     const exactCatalogVariants = catalogVariants.filter(catalogVariantIsExact)
 
     const unknownFacts: string[] = []
-    const normalizedGender = scopedItemGender
-    if (productGenderScope === 'unisex' && !normalizedGender) unknownFacts.push('пол')
-    else if (normalizedGender && normalizedGender !== 'ЖЕН' && normalizedGender !== 'МУЖ') unknownFacts.push('пол')
+    const normalizedGender = canonicalOrderGender(item.gender)
+    if (normalizedGender && normalizedGender !== 'ЖЕН' && normalizedGender !== 'МУЖ') unknownFacts.push('пол')
     if (!hasReference(suggestionValues.materials, canonicalOrderMaterial(item.material), true)) unknownFacts.push('материал')
     if (!hasReference(suggestionValues.lengths, canonicalOrderLength(item.length), true)) unknownFacts.push('длина')
     if (!hasReference(suggestionValues.colors, canonicalOrderColor(item.color))) unknownFacts.push('цвет')
@@ -488,7 +474,7 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
     })
     const rowIsExact = (row: InventoryStockRecord) => (
       getInventoryRowCategory(row) === expectedCategory
-      && canonicalOrderGender(row.gender) === scopedItemGender
+      && canonicalOrderGender(row.gender) === canonicalOrderGender(item.gender)
       && canonicalOrderColor(row.color) === canonicalOrderColor(item.color)
       && canonicalOrderMaterial(row.material) === canonicalOrderMaterial(item.material)
       && canonicalOrderLength(row.length) === canonicalOrderLength(item.length)
