@@ -1,0 +1,56 @@
+name: Fix Catalog Gender Read Audit Anchor R1
+
+on:
+  push:
+    branches:
+      - catalog-gender-cleanup-r1
+    paths:
+      - .github/workflows/fix-catalog-gender-read-audit-anchor-r1.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: catalog-gender-cleanup-r1
+          fetch-depth: 0
+      - name: Make type anchor deterministic
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/catalog-gender-read-audit-r1.yml')
+          s = p.read_text()
+          old = """          patch('worker/domains/catalog.ts',
+              'first<{ id: number; name: string; category: string; external_id?: string | null }>()',
+              'first<{ id: number; name: string; category: string; gender_scope?: string | null; external_id?: string | null }>()',
+              'canonical exact type')
+"""
+          new = """          patch('worker/domains/catalog.ts',
+              'first<{ id: number; name: string; category: string; external_id?: string | null }>()',
+              'first<{ id: number; name: string; category: string; gender_scope?: string | null; external_id?: string | null }>()',
+              'canonical exact/alias types', 2)
+"""
+          alias = """          patch('worker/domains/catalog.ts',
+              'first<{ id: number; name: string; category: string; external_id?: string | null }>();',
+              'first<{ id: number; name: string; category: string; gender_scope?: string | null; external_id?: string | null }>();',
+              'alias product type')
+"""
+          if old not in s:
+              raise SystemExit('canonical type anchor not found')
+          if alias not in s:
+              raise SystemExit('alias type block not found')
+          s = s.replace(old, new, 1).replace(alias, '', 1)
+          p.write_text(s)
+          PY
+      - name: Commit audit workflow repair
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/fix-catalog-gender-read-audit-anchor-r1.yml
+          git add .github/workflows/catalog-gender-read-audit-r1.yml
+          git commit -m "Repair catalog gender read audit anchor"
+          git push origin HEAD:catalog-gender-cleanup-r1
