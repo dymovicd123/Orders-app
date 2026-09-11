@@ -29,7 +29,7 @@ try {
   const createReturn=slice(worker,'async function createReturn','async function listExchanges')
   check(createReturn.includes('ownOperationReturnAmount'),'return retry must not reject its own refund')
   const createExchange=slice(worker,'async function createExchange','async function listExchanges')
-  check(createExchange.includes('!operationContext.baselineCaptured && await hasActiveStandaloneReturn'),'exchange retry standalone-return guard not protected')
+  check(createExchange.includes('operationContext.activeStandaloneReturnedQuantity') && createExchange.includes('getActiveStandaloneReturnedQuantity(db, orderId, oldItemId)') && createExchange.includes('rawOldQuantity - activeStandaloneReturnedQuantity'),'exchange retry item-capacity baseline not protected')
   check(createExchange.includes('!operationContext.baselineCaptured && humanInventoryModelEnabled'),'exchange retry physical-issued guard not protected')
   const cancelExchange=slice(worker,'async function cancelExchange','function normalizeWorkshopViewMode')
   check(cancelExchange.includes('restoredOldQuantityTarget') && cancelExchange.includes('restoredTotalAmountTarget'),'exchange cancel target snapshot missing')
