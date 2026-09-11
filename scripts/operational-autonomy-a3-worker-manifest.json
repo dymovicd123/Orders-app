@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "revision": "operational-autonomy-a3-post-return-debt-close-r1",
+  "changes": {
+    "createManualOrderPaymentCritical": {
+      "before": "bb82115f8403fc9d9fca224199ca43ca738994ca483aed81fcd5400fada40e46",
+      "after": "a063c473206929595589adbd6a40f01ef50c8c998655dc03a0c3e9fa35aad1f1"
+    }
+  }
+}

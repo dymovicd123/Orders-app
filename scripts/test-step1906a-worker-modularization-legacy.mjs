@@ -47,6 +47,7 @@ const financeOrderDateSyncPath = path.join(root, 'scripts/finance-order-date-syn
 const financeF2TracePath = path.join(root, 'scripts/finance-f2-trace-worker-manifest.json')
 const financeF4MoneyJournalPath = path.join(root, 'scripts/finance-f4-money-journal-worker-manifest.json')
 const financeF5BusinessSemanticsPath = path.join(root, 'scripts/finance-f5-business-semantics-worker-manifest.json')
+const operationalAutonomyA3Path = path.join(root, 'scripts/operational-autonomy-a3-worker-manifest.json')
 const financeF6DeleteMoneyHistoryPath = path.join(root, 'scripts/finance-f6-delete-money-history-worker-manifest.json')
 const financeF6ReportSemanticsPath = path.join(root, 'scripts/finance-f6-report-semantics-worker-manifest.json')
 const financeF6DeadMetricsPath = path.join(root, 'scripts/finance-f6-dead-metrics-worker-manifest.json')
@@ -225,6 +226,10 @@ try {
   const financeF4MoneyJournalChanges = financeF4MoneyJournal?.version === 1 ? (financeF4MoneyJournal.changes || {}) : {}
   const financeF5BusinessSemantics = fs.existsSync(financeF5BusinessSemanticsPath) ? JSON.parse(fs.readFileSync(financeF5BusinessSemanticsPath, 'utf8')) : null
   const financeF5BusinessSemanticsChanges = financeF5BusinessSemantics?.version === 1 ? (financeF5BusinessSemantics.changes || {}) : {}
+  const operationalAutonomyA3 = fs.existsSync(operationalAutonomyA3Path) ? JSON.parse(fs.readFileSync(operationalAutonomyA3Path, 'utf8')) : null
+  check(operationalAutonomyA3?.version === 1 && operationalAutonomyA3?.revision === 'operational-autonomy-a3-post-return-debt-close-r1', 'Operational Autonomy A3 Worker manifest invalid')
+  const operationalAutonomyA3Changes = operationalAutonomyA3.changes || {}
+  check(Object.keys(operationalAutonomyA3Changes).join(',') === 'createManualOrderPaymentCritical', 'Operational Autonomy A3 Worker allow-list widened unexpectedly')
   const financeF6DeleteMoneyHistory = fs.existsSync(financeF6DeleteMoneyHistoryPath) ? JSON.parse(fs.readFileSync(financeF6DeleteMoneyHistoryPath, 'utf8')) : null
   const financeF6DeleteMoneyHistoryChanges = financeF6DeleteMoneyHistory?.version === 1 ? (financeF6DeleteMoneyHistory.changes || {}) : {}
   const financeF6ReportSemantics = fs.existsSync(financeF6ReportSemanticsPath) ? JSON.parse(fs.readFileSync(financeF6ReportSemanticsPath, 'utf8')) : null
@@ -814,15 +819,24 @@ try {
   }
 
   for (const [name, expectedHash] of Object.entries(orderCreateSaveIntegrityAdded)) {
-    check(declarations.has(name), `192B2A4 added Worker declaration missing: ${name}`)
-    const financeF5BusinessSemanticsChanged = financeF5BusinessSemanticsChanges[name]
-    if (financeF5BusinessSemanticsChanged) {
-      check(financeF5BusinessSemanticsChanged.before === expectedHash, `Finance F5 changed 192B2A4-added declaration baseline hash mismatch: ${name}`)
-      check(sha(declarations.get(name)) === financeF5BusinessSemanticsChanged.after, `192B2A4-added declaration changed beyond exact Finance F5 business semantics allow-list: ${name}`)
-    } else {
-      check(sha(declarations.get(name)) === expectedHash, `192B2A4 added Worker declaration changed: ${name}`)
-    }
+  check(declarations.has(name), `192B2A4 added Worker declaration missing: ${name}`)
+  const financeF5BusinessSemanticsChanged = financeF5BusinessSemanticsChanges[name]
+  let acceptedHash = expectedHash
+  if (financeF5BusinessSemanticsChanged) {
+    check(financeF5BusinessSemanticsChanged.before === acceptedHash, `Finance F5 changed 192B2A4-added declaration baseline hash mismatch: ${name}`)
+    acceptedHash = financeF5BusinessSemanticsChanged.after
   }
+  const operationalAutonomyA3Changed = operationalAutonomyA3Changes[name]
+  if (operationalAutonomyA3Changed) {
+    check(operationalAutonomyA3Changed.before === acceptedHash, `Operational Autonomy A3 baseline hash mismatch: ${name}`)
+    acceptedHash = operationalAutonomyA3Changed.after
+  }
+  check(sha(declarations.get(name)) === acceptedHash, operationalAutonomyA3Changed
+    ? `192B2A4-added declaration changed beyond exact Operational Autonomy A3 allow-list: ${name}`
+    : (financeF5BusinessSemanticsChanged
+      ? `192B2A4-added declaration changed beyond exact Finance F5 business semantics allow-list: ${name}`
+      : `192B2A4 added Worker declaration changed: ${name}`))
+}
 
   for (const [name, expectedHash] of Object.entries(orderDeleteMobilityAdded)) {
     check(declarations.has(name), `Order delete mobility added Worker declaration missing: ${name}`)

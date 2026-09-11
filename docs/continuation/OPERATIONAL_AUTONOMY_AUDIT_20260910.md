@@ -38,6 +38,8 @@ Target direction: return and exchange operations should coexist when their item/
 
 ### A3 — Closing debt after a return is blocked with no ordinary self-service continuation
 
+> A3 update: implemented on the current A3 branch. Debt close now follows the actual remaining `debt_amount` even when a legitimate return already exists; zero-debt and overpayment guards remain unchanged.
+
 The safe payment endpoint rejects `debt_close` when the order has a return and says that closing debt after a return is a separate operation. In the current ordinary order workflow there is no clearly exposed alternate payment operation that completes that business case.
 
 Target direction: define the correct post-return outstanding balance and allow a safe payment against that balance, preserving the actual payment date and finance history.
