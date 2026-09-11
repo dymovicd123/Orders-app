@@ -1,0 +1,56 @@
+import fs from 'node:fs'
+import path from 'node:path'
+
+const root = process.cwd()
+const read = (file) => fs.readFileSync(path.join(root, file), 'utf8')
+const check = (condition, message) => { if (!condition) throw new Error(message) }
+
+const migration = read('migrations/0068_v72_catalog_product_gender_scope.sql')
+const catalog = read('worker/domains/catalog.ts')
+const resolver = read('worker/domains/order-reservations.ts')
+const workspace = read('src/app/controllers/useWorkspaceViewModel.tsx')
+const operational = read('src/app/controllers/useOperationalViewModel.ts')
+const exchange = read('src/features/sections/OrderExchangeSection.tsx')
+const panel = read('src/features/inventory/views/renderInventoryCatalogPanel.tsx')
+const app = read('src/App.tsx')
+
+check(migration.includes("ADD COLUMN gender_scope TEXT NOT NULL DEFAULT 'unisex'"), '0068 must add product gender_scope')
+check(migration.includes("'ЕҢЛІК ШАПАН'"), '0068 must carry the approved female Enlik rule')
+check(migration.includes("TRIM(COALESCE(v.gender,''))=''"), '0068 must repair blank-gender variants')
+check(!migration.includes("AND UPPER(TRIM(COALESCE(v.gender,''))) <> CASE p.gender_scope"), '0068 must preserve explicit opposite-gender variants')
+check(migration.includes('catalog_gender_stock_baseline'), '0068 must preserve retry-safe stock merge evidence')
+check(!migration.includes('CREATE TEMP TABLE _step0068'), '0068 must not use D1-unauthorized TEMP staging tables')
+check(migration.includes("p.gender_scope='unisex' AND TRIM(COALESCE(v.gender,''))=''"), '0068 must identify unused unisex blank placeholders')
+
+check(catalog.includes("export type CatalogProductGenderScope = 'female' | 'male' | 'unisex'"), 'Worker product scope type missing')
+check(catalog.includes("Для товара «Унисекс» выберите пол конкретной вещи"), 'Worker must require concrete gender for unisex combinations')
+check(catalog.includes('genderScope: normalizeCatalogProductGenderScope(row.gender_scope)'), 'Catalog read must expose product scope')
+check(catalog.includes('gender_scope, is_active'), 'Catalog create/update must persist product scope')
+check(resolver.includes('const enteredGender = normalizeCatalogCombinationGender(item.gender)'), 'Order resolver must respect an explicit human gender')
+check(resolver.includes('if (!gender) {'), 'Order resolver must branch before reading product scope')
+check(resolver.includes('const productGenderScope = await getCatalogProductGenderScope(db, product.id)'), 'Order resolver must use product scope only as fallback data')
+check(workspace.includes("const automaticGender = productGenderScope === 'female' ? 'ЖЕН' : productGenderScope === 'male' ? 'МУЖ' : ''"), 'Order forms must auto-fill fixed scope and leave unisex blank')
+check(workspace.includes("if (productGenderScope === 'unisex' && !normalizedGender) unknownFacts.push('пол')"), 'Availability must ask for unisex gender')
+check(operational.includes("gender: automaticGender"), 'Arrival product pick must use product scope')
+check(exchange.includes('Выберите для унисекс'), 'Exchange gender must be a controlled choice')
+check(panel.includes('Назначение по полу'), 'Catalog product form must expose scope selector')
+check(!panel.includes('disabled={Boolean(fixedGenderForProduct(selectedProduct))}'), 'Product default must not lock the concrete gender field')
+check(panel.includes('можно изменить'), 'Catalog UI must explain that automatic gender remains editable')
+check(app.includes('genderScope: catalogProductDraft.genderScope'), 'Catalog save payload must send scope')
+
+
+const genderResolverStart = catalog.indexOf('export async function resolveCatalogGenderForProduct')
+const explicitGenderIndex = catalog.indexOf('const explicitGender = normalizeCatalogCombinationGender(value)', genderResolverStart)
+const scopeReadIndex = catalog.indexOf('const scope = await getCatalogProductGenderScope(db, productId)', genderResolverStart)
+check(genderResolverStart >= 0 && explicitGenderIndex > genderResolverStart && scopeReadIndex > explicitGenderIndex, 'Explicit human gender must be checked before the product-scope D1 read')
+check(catalog.includes("return { scope: null, gender: explicitGender }"), 'Explicit human gender must bypass the product default')
+check(workspace.includes("gender: automaticGender ? (selected.gender || automaticGender) : ''"), 'Order autocomplete must preserve a concrete opposite-gender SKU')
+check(workspace.includes('if (automaticGender) {'), 'Order autocomplete must prefer the product default when choosing among existing groups')
+check(operational.includes('activeVariants.find((variant) => normalizeSuggestion(variant.gender) === automaticGender)'), 'Arrival must prefer a variant matching the product gender default')
+check(migration.includes('COALESCE(target.stock_position_id,-1)=COALESCE(v.stock_position_id,-1)'), '0068 keeper matching must be NULL-safe')
+check(migration.includes('SELECT MIN(target.id)'), '0068 must choose deterministic lowest-id keeper candidates')
+check(migration.includes("AND TRIM(COALESCE(target.gender,''))=''"), '0068 must deterministically fall back to the lowest blank keeper')
+const review = read('worker/domains/catalog-review.ts')
+check(review.includes('createCatalogProduct(db, { name: requestedProductName, category, genderScope: requestedGenderScope })'), 'Catalog review new-product path must persist gender scope')
+
+console.log('Catalog Gender Scope R1 semantic/static acceptance passed.')

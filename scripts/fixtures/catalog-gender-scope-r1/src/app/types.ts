@@ -1233,13 +1233,10 @@ export type InventoryStockGroup = {
 
 
 
-export type CatalogGenderScope = 'female' | 'male' | 'unisex'
-
 export type CatalogProductRecord = {
   id: number
   name: string
   category: string
-  genderScope: CatalogGenderScope
   isActive: boolean
   variantsCount: number
   createdAt: string

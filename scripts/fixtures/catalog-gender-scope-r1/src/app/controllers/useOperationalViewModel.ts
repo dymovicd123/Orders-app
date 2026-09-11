@@ -1023,18 +1023,13 @@ const summary = useMemo(() => {
       return
     }
     const variants = catalogVariantsByProductId.get(Number(match.id)) || []
-    const productGenderScope = String(match.genderScope || 'unisex')
-    const automaticGender = productGenderScope === 'female' ? 'ЖЕН' : productGenderScope === 'male' ? 'МУЖ' : ''
-    const activeVariants = variants.filter((variant) => variant.isActive)
-    const first = (automaticGender
-      ? activeVariants.find((variant) => normalizeSuggestion(variant.gender) === automaticGender)
-      : null) || activeVariants[0] || null
+    const first = variants.find((variant) => variant.isActive) || null
     setInventoryArrivalPositions((current) => current.map((position) => position.id === id ? {
       ...position,
       productId: String(match.id),
       productName: match.name,
       category: first ? getCatalogVariantCategory(first) : (match.category === 'child' ? 'child' : 'adult'),
-      gender: automaticGender,
+      gender: first?.gender || position.gender,
       material: first?.material || position.material || 'СТАНДАРТ',
       length: first?.length || position.length || 'СТАНДАРТ',
     } : position))

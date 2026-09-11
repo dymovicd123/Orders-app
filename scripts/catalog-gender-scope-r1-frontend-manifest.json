@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "revision": "catalog-gender-scope-r1",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "c1b0b22f4c6bf821a0c846663f756c80d268bd7e",
+      "afterGitBlob": "114435881f17d6adbadaf81ec36a755be985b823",
+      "beforeLines": 7049,
+      "afterLines": 7051
+    },
+    "src/app/controllers/useOperationalViewModel.ts": {
+      "beforeGitBlob": "f4d5740f933d8d4d263be40ebbd6481cb19c5d12",
+      "afterGitBlob": "3fb3c58c5762fe8e73912daaeb87a9be8a2c989f",
+      "beforeLines": 1258,
+      "afterLines": 1263
+    },
+    "src/app/controllers/useWorkspaceViewModel.tsx": {
+      "beforeGitBlob": "54e86fc86fd3eeb77d6b108df11c068efc00f5ab",
+      "afterGitBlob": "d1eca03c2aca0f5302777779a68408171f2aef9c",
+      "beforeLines": 927,
+      "afterLines": 941
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "46658d6b5322fb5b6d25043b83b0063523a21eea",
+      "afterGitBlob": "aff1ce14609236f1171abcb96bffc7671430889a",
+      "beforeLines": 1649,
+      "afterLines": 1652
+    },
+    "src/features/inventory/views/catalogLegacyAdminModes.tsx": {
+      "beforeGitBlob": "dfdd04b1e36204bb73f0d8ad4a13901cc4a48c82",
+      "afterGitBlob": "2b3f2a480df9557722d7fd7f7c81ee44d21ced2a",
+      "beforeLines": 647,
+      "afterLines": 647
+    },
+    "src/features/inventory/views/renderInventoryCatalogPanel.tsx": {
+      "beforeGitBlob": "71568094c118553f13175dbea6810ad165b6d55b",
+      "afterGitBlob": "2b64776240673b082b29a172fdc0aaa9b3a037e8",
+      "beforeLines": 632,
+      "afterLines": 654
+    },
+    "src/features/sections/InventorySection.tsx": {
+      "beforeGitBlob": "83eb63cd1cd5a0d4f17919d343b603954735b1bd",
+      "afterGitBlob": "1f5c552b8a35b1255365efee06a9715b869e36af",
+      "beforeLines": 2591,
+      "afterLines": 2599
+    },
+    "src/features/sections/OrderExchangeSection.tsx": {
+      "beforeGitBlob": "70eaa1f4ff4bdc13e7e280c58f898ef9480dce03",
+      "afterGitBlob": "02a9a3d2c8b012a1f434aa76e0bba6d3913f095e",
+      "beforeLines": 426,
+      "afterLines": 426
+    }
+  }
+}

@@ -3,7 +3,7 @@
 import type { CatalogReferenceOptions, CatalogResolutionContext, CatalogResolutionResponse } from '../../shared/api-contracts.ts'
 import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, normalizeSourceType, toInt, upperText } from '../core/text.ts'
 import type { ReferenceKind } from '../core/types.ts'
-import { assertCatalogProductAliasTargetAvailable, catalogReferenceDbValueExists, createCatalogCombinationV3, createCatalogProduct, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, rememberCatalogProductAlias, rememberCatalogValueAlias, resolveCatalogValueAlias } from './catalog.ts'
+import { assertCatalogProductAliasTargetAvailable, catalogGenderForProductScope, catalogReferenceDbValueExists, createCatalogCombinationV3, createCatalogProduct, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, getCatalogProductGenderScope, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, normalizeCatalogProductGenderScope, rememberCatalogProductAlias, rememberCatalogValueAlias, resolveCatalogValueAlias } from './catalog.ts'
 import type { CatalogReviewFactsInput } from './catalog-review.ts'
 import { catalogReviewRowToOrderItem } from './catalog-review.ts'
 import type { ResolvedOrderCatalogReference } from './order-reservations.ts'
@@ -891,6 +891,8 @@ export async function getInventoryLifecycleContext(db: D1Database, eventId: numb
   const product = toInt(event.product_id, 0)
     ? await db.prepare(`SELECT id, name, category FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1`).bind(toInt(event.product_id, 0)).first<{ id: number; name: string; category: string }>()
     : await findCatalogProductByIdentity(db, facts.productName, 0, { activeOnly: true }) as { id: number; name: string; category: string } | null;
+  const productGenderScope = product?.id ? await getCatalogProductGenderScope(db, product.id) : 'unisex';
+  if (product?.id) facts.gender = facts.gender || catalogGenderForProductScope(productGenderScope);
 
   const referencesResult = await db.prepare(
     `SELECT kind, value FROM reference_values WHERE is_active = 1 AND kind IN ('material','length','color','size','child_age') ORDER BY sort_order, value`
@@ -919,7 +921,7 @@ export async function getInventoryLifecycleContext(db: D1Database, eventId: numb
   if (!existingVariant?.id) {
     if (!await catalogReferenceDbValueExists(db, 'material', facts.material)) unknownFields.push('material');
     if (!await catalogReferenceDbValueExists(db, 'length', facts.length)) unknownFields.push('length');
-    if (facts.gender && facts.gender !== 'ЖЕН' && facts.gender !== 'МУЖ') unknownFields.push('gender');
+    if ((productGenderScope === 'unisex' && !facts.gender) || (facts.gender && facts.gender !== 'ЖЕН' && facts.gender !== 'МУЖ')) unknownFields.push('gender');
     if (!await catalogReferenceDbValueExists(db, 'color', facts.color)) unknownFields.push('color');
     if (!await catalogReferenceDbValueExists(db, facts.category === 'child' ? 'child_age' : 'size', facts.size)) unknownFields.push('size');
   }
@@ -937,7 +939,7 @@ export async function getInventoryLifecycleContext(db: D1Database, eventId: numb
     inventorySource: cleanText(event.inventory_source),
     quantity: Math.max(1, toInt(event.quantity, 1)),
     facts,
-    product: product ? { id: product.id, name: cleanText(product.name), category: cleanText(product.category) } : null,
+    product: product ? { id: product.id, name: cleanText(product.name), category: cleanText(product.category), genderScope: productGenderScope } : null,
     execution: execution ? { id: execution.id, material: execution.material, length: execution.length } : null,
     existingVariantId: toInt(existingVariant?.id, 0) || null,
     products: (productsResult.results || []).map((row) => ({ id: toInt(row.id, 0), name: cleanText(row.name), category: cleanText(row.category) })),
@@ -985,10 +987,12 @@ export async function resolveInventoryLifecycleFacts(db: D1Database, eventId: nu
   const createFields = new Set(Array.isArray(input.createFields) ? (input.createFields as unknown[]).map(cleanText) : []);
   const material = await resolveCatalogValueAlias(db, 'material', canonicalStockPositionValue(input.material ?? event.material_snapshot));
   const length = await resolveCatalogValueAlias(db, 'length', canonicalStockPositionValue(input.length ?? event.length_snapshot));
-  const gender = normalizeCatalogCombinationGender(input.gender ?? event.gender_snapshot);
+  const requestedGenderScope = product?.id ? await getCatalogProductGenderScope(db, product.id) : (cleanText(input.genderScope) ? normalizeCatalogProductGenderScope(input.genderScope) : null);
+  if (!product?.id && !requestedGenderScope) throw new Error('Для нового товара выберите назначение по полу: Женский, Мужской или Унисекс.');
+  const gender = normalizeCatalogCombinationGender(input.gender ?? event.gender_snapshot) || catalogGenderForProductScope(requestedGenderScope || 'unisex');
   const color = await resolveCatalogValueAlias(db, 'color', normalizeCatalogCombinationColor(input.color ?? event.color_snapshot));
   const size = await resolveCatalogValueAlias(db, category === 'child' ? 'child_age' : 'size', normalizeCatalogCombinationSize(input.size ?? event.size_snapshot));
-  if (gender && gender !== 'ЖЕН' && gender !== 'МУЖ') throw new Error('Пол должен быть выбран из списка.');
+  if (gender !== 'ЖЕН' && gender !== 'МУЖ') throw new Error('Для товара «Унисекс» выберите пол конкретной вещи: ЖЕН или МУЖ.');
 
   // Step 188G keeps the Step 188E invariant: an already-existing exact canonical variant is
   // truth even if an old reference dictionary is incomplete. Reference validation is needed
@@ -1017,7 +1021,7 @@ export async function resolveInventoryLifecycleFacts(db: D1Database, eventId: nu
   }
 
   if (!product?.id) {
-    const created = await createCatalogProduct(db, { name: requestedProductName, category });
+    const created = await createCatalogProduct(db, { name: requestedProductName, category, genderScope: requestedGenderScope });
     productId = toInt(created.id, 0);
     product = { id: productId, name: cleanText(created.name) };
   }

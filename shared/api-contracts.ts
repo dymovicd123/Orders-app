@@ -6,6 +6,7 @@ export type ApiOkResponse = {
 
 export type InventorySource = 'warehouse' | 'boutique'
 export type AudienceCategory = 'adult' | 'child'
+export type CatalogGenderScope = 'female' | 'male' | 'unisex'
 export type PaymentKind = 'primary' | 'debt_close' | 'extra'
 export type OrderItemSource = InventorySource | 'workshop'
 export type OrderStatus = 'active' | 'closed' | 'archived' | 'deleted'
@@ -13,6 +14,7 @@ export type ShippingStatus = 'not_sent' | 'sent'
 
 export type CatalogResolutionFacts = {
   productId?: number
+  genderScope?: CatalogGenderScope | ''
   material: string
   length: string
   category: AudienceCategory
@@ -162,6 +164,7 @@ export type CatalogResolutionProduct = {
   id: number
   name: string
   category?: string
+  genderScope?: CatalogGenderScope
 }
 
 export type CatalogResolutionExecution = {

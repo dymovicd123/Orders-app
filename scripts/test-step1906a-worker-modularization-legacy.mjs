@@ -54,6 +54,7 @@ const financeF9SummaryPath = path.join(root, 'scripts/finance-f9-summary-worker-
 const financeF9DatePriorityPath = path.join(root, 'scripts/finance-f9-date-priority-worker-manifest.json')
 const w3NaturalRecoveryWorkerPath = path.join(root, 'scripts/w3-2-natural-recovery-worker-manifest.json')
 const w5FoundItemsWorkerPath = path.join(root, 'scripts/w5-5-found-items-worker-manifest.json')
+const catalogGenderScopeR1Path = path.join(root, 'scripts/catalog-gender-scope-r1-worker-manifest.json')
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
@@ -241,6 +242,11 @@ try {
   if (w5FoundItemsWorker) check(w5FoundItemsWorker.version === 1 && w5FoundItemsWorker.revision === 'w5-5-found-items', 'W5.5 found-items Worker manifest invalid')
   const w5FoundItemsChanges = w5FoundItemsWorker?.changes || {}
   const w5FoundItemsAdded = w5FoundItemsWorker?.added || {}
+  check(fs.existsSync(catalogGenderScopeR1Path), 'Catalog gender scope R1 Worker manifest missing')
+  const catalogGenderScopeR1 = JSON.parse(fs.readFileSync(catalogGenderScopeR1Path, 'utf8'))
+  check(catalogGenderScopeR1?.version === 1 && catalogGenderScopeR1?.revision === 'catalog-gender-scope-r1', 'Catalog gender scope R1 Worker manifest invalid')
+  const catalogGenderScopeR1Changes = catalogGenderScopeR1.changes || {}
+  const catalogGenderScopeR1Added = catalogGenderScopeR1.added || {}
 
   const files = walk(workerRoot)
   const indexPath = path.join(workerRoot, 'index.ts')
@@ -283,7 +289,7 @@ try {
   }
 
   const removedNames = Object.keys(removed)
-  const expectedDeclarationCount = manifest.declarationCount - removedNames.length + Object.keys(warehouseTruthFreshnessAdded).length + Object.keys(warehouseAttentionTruthAdded).length + Object.keys(dailyWarehouseAdded).length + Object.keys(attentionContextAdded).length + Object.keys(orderCreateSaveIntegrityAdded).length + Object.keys(orderDeleteMobilityAdded).length + Object.keys(returnExchangeCancelAutonomyAdded).length + Object.keys(w5FoundItemsAdded).length
+  const expectedDeclarationCount = manifest.declarationCount - removedNames.length + Object.keys(warehouseTruthFreshnessAdded).length + Object.keys(warehouseAttentionTruthAdded).length + Object.keys(dailyWarehouseAdded).length + Object.keys(attentionContextAdded).length + Object.keys(orderCreateSaveIntegrityAdded).length + Object.keys(orderDeleteMobilityAdded).length + Object.keys(returnExchangeCancelAutonomyAdded).length + Object.keys(w5FoundItemsAdded).length + Object.keys(catalogGenderScopeR1Added).length
   check(declarations.size === expectedDeclarationCount, `Worker declaration count changed outside accepted allow-lists: ${declarations.size}/${expectedDeclarationCount}`)
   for (const [name, expectedHash] of Object.entries(manifest.declarations)) {
     if (Object.hasOwn(removed, name)) {
@@ -559,9 +565,28 @@ try {
     check(sha(declarations.get(name)) === expectedHash, `W5.5 added Worker declaration changed: ${name}`)
   }
 
+  for (const [name, expectedHash] of Object.entries(catalogGenderScopeR1Added)) {
+    check(declarations.has(name), `Catalog gender scope R1 added Worker declaration missing: ${name}`)
+    check(sha(declarations.get(name)) === expectedHash, `Catalog gender scope R1 added Worker declaration changed: ${name}`)
+  }
+
+  // Catalog gender scope R1 changes only the product create/update request shapes.
+  // Reverse exactly those two type additions before feeding the router into prior W5 gates.
+  check(sha(currentRouter) === catalogGenderScopeR1.router.after, 'Catalog gender scope R1 Worker router changed beyond exact delta')
+  const catalogGenderRevertedRouter = currentRouter
+    .replace(
+      "const input = await readJson<{ name?: unknown; category?: unknown; genderScope?: unknown }>(request);",
+      "const input = await readJson<{ name?: unknown; category?: unknown }>(request);",
+    )
+    .replace(
+      "const input = await readJson<{ name?: unknown; category?: unknown; genderScope?: unknown; isActive?: unknown }>(request);",
+      "const input = await readJson<{ name?: unknown; category?: unknown; isActive?: unknown }>(request);",
+    )
+  check(sha(catalogGenderRevertedRouter) === catalogGenderScopeR1.router.before, 'Catalog gender scope R1 Worker router reverse baseline mismatch')
+
   // Shipping hotfix 2026-09-01: normalize only this retired final-shipping blocker
   // back to the accepted router baseline. The shipping regression requires it absent live.
-  const w5RevertedRouter = w5FoundItemsWorker ? currentRouter
+  const w5RevertedRouter = w5FoundItemsWorker ? catalogGenderRevertedRouter
     .replace(
       "const input = await readJson<{ productId?: unknown; material?: unknown; length?: unknown; category?: unknown; gender?: unknown; color?: unknown; size?: unknown; sizes?: unknown; createReferenceFields?: unknown; deferUnknown?: unknown }>(request);",
       "const input = await readJson<{ productId?: unknown; material?: unknown; length?: unknown; category?: unknown; gender?: unknown; color?: unknown; size?: unknown; createReferenceFields?: unknown }>(request);",
@@ -577,9 +602,9 @@ try {
         const wantsNewReferenceValue = Object.values(createReferenceFields).some((value) => value === true);`,
     )
     .replace(/\n\s*const inventoryFoundStockReconcileMatch = url\.pathname\.match\(\/\^\\\/api\\\/inventory\\\/found-stock\\\/\(\\d\+\)\\\/reconcile\$\/\);[\s\S]*?(?=\n\s*const inventoryStocktakeAddItemMatch)/, '')
-    : currentRouter
+    : catalogGenderRevertedRouter
   if (w5FoundItemsWorker) {
-    check(sha(currentRouter) === w5FoundItemsWorker.router.after, 'W5.5 Worker router changed beyond exact found-items delta')
+    check(sha(catalogGenderRevertedRouter) === w5FoundItemsWorker.router.after, 'W5.5 Worker router changed beyond exact found-items delta')
     check(sha(w5RevertedRouter) === w5FoundItemsWorker.router.before, 'W5.5 Worker router reverse baseline mismatch')
   }
   const normalizedRouter = w5RevertedRouter

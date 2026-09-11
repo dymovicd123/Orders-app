@@ -5,7 +5,7 @@ import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, norm
 import type { SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
 import type { CanonicalVariantSnapshot } from './catalog.ts'
-import { catalogReferenceDbValueExists, catalogReferenceValueExists, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
+import { catalogGenderForProductScope, catalogReferenceDbValueExists, catalogReferenceValueExists, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
 import { inventoryPhysicalCheckStatement } from './inventory-primitives.ts'
 import { normalizeOrderItems } from './order-core.ts'
 
@@ -209,7 +209,15 @@ export async function resolveCatalogProductAndVariantV2(
   const category = normalizeAudienceCategory(item.category, item.size);
   const material = await resolveCatalogValueAlias(db, 'material', canonicalStockPositionValue(item.material));
   const length = await resolveCatalogValueAlias(db, 'length', canonicalStockPositionValue(item.length));
-  const gender = normalizeCatalogCombinationGender(item.gender);
+  const enteredGender = normalizeCatalogCombinationGender(item.gender);
+  let gender = enteredGender;
+  if (!gender) {
+    const productGenderScope = await getCatalogProductGenderScope(db, product.id);
+    gender = catalogGenderForProductScope(productGenderScope);
+    if (!gender) {
+      return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
+    }
+  }
   const rawColor = upperText(item.color);
   const color = await resolveCatalogValueAlias(db, 'color', normalizeCatalogCombinationColor(item.color));
   const size = await resolveCatalogValueAlias(db, category === 'child' ? 'child_age' : 'size', normalizeCatalogCombinationSize(item.size));

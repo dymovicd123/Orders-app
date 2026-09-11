@@ -864,7 +864,7 @@ export default {
       if (url.pathname === '/api/catalog/products' && request.method === 'POST') {
         const denied = requireAdminAccess(request);
         if (denied) return denied;
-        const input = await readJson<{ name?: unknown; category?: unknown }>(request);
+        const input = await readJson<{ name?: unknown; category?: unknown; genderScope?: unknown }>(request);
         return json(await createCatalogProduct(env.DB, input), { status: 201 });
       }
 
@@ -872,7 +872,7 @@ export default {
       if (productMatch && request.method === 'PATCH') {
         const denied = requireAdminAccess(request);
         if (denied) return denied;
-        const input = await readJson<{ name?: unknown; category?: unknown; isActive?: unknown }>(request);
+        const input = await readJson<{ name?: unknown; category?: unknown; genderScope?: unknown; isActive?: unknown }>(request);
         return json(await updateCatalogProduct(env.DB, toInt(productMatch[1], 0), input));
       }
 

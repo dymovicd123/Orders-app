@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "revision": "catalog-order-history-preservation-r1",
+  "changes": {
+    "listOrders": {
+      "before": "7ae4832900502fadfb3448e328a9caf1e8781802545b8dcca7dfa3f969f801ef",
+      "after": "182ae124f14037a527b8fede2063209e03c6164d94fb16c2d70cee2ebe39f2a2"
+    },
+    "listOpenDebtOrders": {
+      "before": "2903954a54a3e1220dbeebff968ee3db0d3988194bcba19131972ea3a0d1a65f",
+      "after": "c5b04ae8631c063fd700ed017c801ddbd3bf8268b79f7481c6fa19cefedbffcc"
+    },
+    "getOrder": {
+      "before": "6d24d8b68f17c4130fcc56431ce6786750f1d016e50bab24b21b56ff8e2c9a58",
+      "after": "8510c9d9aa7ca652bd5017d3759a93110e5c1b4a473990281db4fa03fedebec6"
+    }
+  }
+}

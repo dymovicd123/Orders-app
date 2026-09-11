@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "revision": "catalog-gender-scope-r1",
+  "file": "migrations/0068_v72_catalog_product_gender_scope.sql",
+  "gitBlob": "6e47f180a27f1b546ad42740d7e6fc5494ee7d1b"
+}

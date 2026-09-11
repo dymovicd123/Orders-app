@@ -639,13 +639,15 @@ export async function listOrders(db: D1Database, url: URL) {
       stock_handover_has_active_items: (relations.activeStockHandoverByOrderId.get(order.id) || []).length > 0,
       items: (relations.itemsByOrderId.get(order.id) || []).map(item => ({
         id: (item as any).id,
-        productName: toInt((item as any).product_id, 0) ? cleanText((item as any).canonical_product_name) : cleanText((item as any).product_name_snapshot),
-        audienceType: toInt((item as any).variant_id, 0) ? (cleanText((item as any).canonical_category).toLowerCase() === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ') : cleanText((item as any).audience_type),
-        gender: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_gender) : cleanText((item as any).gender_snapshot),
-        color: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_color) : cleanText((item as any).color_snapshot),
-        material: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_material) : cleanText((item as any).material_snapshot),
-        length: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_length) : cleanText((item as any).length_snapshot),
-        size: toInt((item as any).variant_id, 0) ? cleanText((item as any).canonical_size) : cleanText((item as any).size_snapshot),
+        // Order history is snapshot-first. A later catalog merge may repoint variant_id, but it must
+        // never rewrite what the operator actually recorded on this historical order line.
+        productName: cleanText((item as any).product_name_snapshot) || cleanText((item as any).canonical_product_name),
+        audienceType: cleanText((item as any).audience_type) || (cleanText((item as any).canonical_category).toLowerCase() === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ'),
+        gender: cleanText((item as any).gender_snapshot),
+        color: cleanText((item as any).color_snapshot),
+        material: cleanText((item as any).material_snapshot),
+        length: cleanText((item as any).length_snapshot),
+        size: cleanText((item as any).size_snapshot),
         quantity: (item as any).quantity,
         unitPrice: (item as any).unit_price,
         lineTotal: (item as any).line_total,
@@ -728,8 +730,8 @@ export async function listOpenDebtOrders(db: D1Database, url: URL) {
   if (ids.length) {
     const itemRows = await db.prepare(
       `SELECT oi.order_id, oi.id,
-              COALESCE(p.name, oi.product_name_snapshot, '') AS product_name,
-              COALESCE(v.size_label, oi.size_snapshot, '') AS size_label,
+              COALESCE(oi.product_name_snapshot, p.name, '') AS product_name,
+              COALESCE(oi.size_snapshot, v.size_label, '') AS size_label,
               oi.quantity
        FROM order_items oi
        LEFT JOIN catalog_products p ON p.id = oi.product_id
