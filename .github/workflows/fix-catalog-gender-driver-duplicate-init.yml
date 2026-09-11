@@ -1,4 +1,4 @@
-name: Fix Catalog Gender Driver Duplicate Anchors
+name: Fix Catalog Gender Acceptance Test Generator
 
 on:
   push:
@@ -18,33 +18,22 @@ jobs:
         with:
           ref: catalog-gender-cleanup-r1
           fetch-depth: 0
-      - name: Fix duplicate legacy blocking-label patch
+      - name: Fix newline-safe resolver acceptance generation
         run: |
           python - <<'PY'
           from pathlib import Path
-          p = Path('scripts/apply-catalog-gender-cleanup-r1.mjs')
+          p = Path('.github/workflows/apply-catalog-gender-cleanup-r1.yml')
           s = p.read_text()
-          before = '''replaceOnce('src/features/inventory/views/catalogLegacyAdminModes.tsx',
-            "gender: 'пол' } as any)[field]).join(', ')}.",
-            "gender: 'пол', genderScope: 'назначение товара по полу' } as any)[field]).join(', ')}.",
-          )'''
-          after = '''{
-            const rel = 'src/features/inventory/views/catalogLegacyAdminModes.tsx'
-            const before = "gender: 'пол' } as any)[field]).join(', ')}."
-            const after = "gender: 'пол', genderScope: 'назначение товара по полу' } as any)[field]).join(', ')}."
-            const source = read(rel)
-            const count = source.split(before).length - 1
-            if (count !== 2) throw new Error(`Expected two legacy blocking-label maps in ${rel}, got ${count}`)
-            write(rel, source.split(before).join(after))
-          }'''
-          if before not in s:
-              raise SystemExit('legacy blocking-label driver block not found')
-          p.write_text(s.replace(before, after, 1))
+          old = """              \"check(resolver.includes('const enteredGender = normalizeCatalogCombinationGender(item.gender)'), 'Order resolver must respect an explicit human gender')\\\\ncheck(resolver.includes('if (!gender) {\\\\n    const productGenderScope = await getCatalogProductGenderScope'), 'Order resolver may read product scope only for omitted gender')\","""
+          new = """              \"check(resolver.includes('const enteredGender = normalizeCatalogCombinationGender(item.gender)'), 'Order resolver must respect an explicit human gender')\\\\ncheck(resolver.includes('if (!gender) {'), 'Order resolver must branch before reading product scope')\\\\ncheck(resolver.includes('const productGenderScope = await getCatalogProductGenderScope(db, product.id)'), 'Order resolver must use product scope only as fallback data')\","""
+          if old not in s:
+              raise SystemExit('resolver acceptance generator anchor not found')
+          p.write_text(s.replace(old, new, 1))
           PY
-      - name: Commit driver fix
+      - name: Commit generator fix
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/apply-catalog-gender-cleanup-r1.mjs
-          git commit -m "Fix duplicate legacy gender-scope label patch"
+          git add .github/workflows/apply-catalog-gender-cleanup-r1.yml
+          git commit -m "Fix catalog gender acceptance test generation"
           git push origin HEAD:catalog-gender-cleanup-r1
