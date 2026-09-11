@@ -376,18 +376,6 @@ export async function getActiveStandaloneReturnedQuantity(
 }
 
 
-export async function hasActiveStandaloneReturn(db: D1Database, orderId: number) {
-  const row = await db.prepare(
-    `SELECT COUNT(*) AS count
-     FROM returns r
-     WHERE r.order_id = ?
-       AND COALESCE(r.status, 'completed') <> 'cancelled'
-       AND ${noStandaloneReturnSql}`
-  ).bind(orderId).first<{ count: number }>();
-  return toInt(row?.count, 0) > 0;
-}
-
-
 export async function ensureExchangeWorkshopReplacementTask(
   db: D1Database,
   input: {
