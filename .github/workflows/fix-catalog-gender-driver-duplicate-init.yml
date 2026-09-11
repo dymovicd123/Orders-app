@@ -1,4 +1,4 @@
-name: Fix Catalog Gender Acceptance Test Generator
+name: Fix Catalog Gender Product Draft Reset
 
 on:
   push:
@@ -18,22 +18,30 @@ jobs:
         with:
           ref: catalog-gender-cleanup-r1
           fetch-depth: 0
-      - name: Fix newline-safe resolver acceptance generation
+      - name: Add gender scope to post-save draft reset
         run: |
           python - <<'PY'
           from pathlib import Path
-          p = Path('.github/workflows/apply-catalog-gender-cleanup-r1.yml')
+          p = Path('scripts/apply-catalog-gender-cleanup-r1.mjs')
           s = p.read_text()
-          old = """              \"check(resolver.includes('const enteredGender = normalizeCatalogCombinationGender(item.gender)'), 'Order resolver must respect an explicit human gender')\\\\ncheck(resolver.includes('if (!gender) {\\\\n    const productGenderScope = await getCatalogProductGenderScope'), 'Order resolver may read product scope only for omitted gender')\","""
-          new = """              \"check(resolver.includes('const enteredGender = normalizeCatalogCombinationGender(item.gender)'), 'Order resolver must respect an explicit human gender')\\\\ncheck(resolver.includes('if (!gender) {'), 'Order resolver must branch before reading product scope')\\\\ncheck(resolver.includes('const productGenderScope = await getCatalogProductGenderScope(db, product.id)'), 'Order resolver must use product scope only as fallback data')\","""
-          if old not in s:
-              raise SystemExit('resolver acceptance generator anchor not found')
-          p.write_text(s.replace(old, new, 1))
+          marker = "\nconsole.log('Catalog Gender Scope R1 patch applied.')"
+          patch = '''
+// App catalog save/reset must keep the product draft shape complete after genderScope is introduced.
+replaceOnce('src/App.tsx',
+  "    setCatalogProductDraft({ id: 0, name: '', category: catalogCategoryFilter === 'child' ? 'child' : 'adult' })",
+  "    setCatalogProductDraft({ id: 0, name: '', category: catalogCategoryFilter === 'child' ? 'child' : 'adult', genderScope: '' })",
+)
+'''
+          if "post-save draft shape complete" in s:
+              raise SystemExit('driver already contains App draft reset patch')
+          if marker not in s:
+              raise SystemExit('driver end marker not found')
+          p.write_text(s.replace(marker, patch + marker, 1))
           PY
-      - name: Commit generator fix
+      - name: Commit driver fix
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/workflows/apply-catalog-gender-cleanup-r1.yml
-          git commit -m "Fix catalog gender acceptance test generation"
+          git add scripts/apply-catalog-gender-cleanup-r1.mjs
+          git commit -m "Fix catalog product draft reset generation"
           git push origin HEAD:catalog-gender-cleanup-r1
