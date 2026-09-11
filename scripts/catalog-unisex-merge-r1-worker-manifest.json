@@ -2,6 +2,10 @@
   "version": 1,
   "revision": "catalog-unisex-merge-r1",
   "changes": {
+    "findCatalogCombinationV3": {
+      "before": "8e1b8017b3aacbc8b14acb5c85c888e1b94b0c7685602648b072f9608df7c97a",
+      "after": "b166e3dc04f3ce87ac6da2dcf0b3d0784e95676c1e8afc0daa5d7f77495b2509"
+    },
     "updateCatalogVariant": {
       "before": "636a1ba09858cbd9c8cce415662a36d4bf99ac1f20ccafee47761d60d7dd74a3",
       "after": "784eaaecfcd584b2bd9f5a0a0693a1fcbb43be06444016af74fcffff1fb8777d"
