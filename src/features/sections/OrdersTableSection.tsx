@@ -6,6 +6,7 @@ type SectionContext = Record<string, any>
 export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   const [expandedOrderPaymentCounts, setExpandedOrderPaymentCounts] = useState<Record<number, number>>({})
   const {
+    correctMistakenOrderShipping,
     deleteOrderAsAdmin,
     expandedOrderItemCounts,
     filters,
@@ -297,6 +298,19 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             ) : null}
                             {!retainedOnly && !archived && !isReturnedOrderRecord(order) && order.shipping_status !== 'sent' && workshopPending ? (
                               <span className="order-stock-handover-wait-note">Отправить весь заказ можно после готовности Цеха</span>
+                            ) : null}
+                            {!retainedOnly && !archived && !isReturnedOrderRecord(order) && order.shipping_status === 'sent' ? (
+                              <button
+                                className="secondary compact"
+                                type="button"
+                                disabled={savingOrder}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void correctMistakenOrderShipping(order)
+                                }}
+                              >
+                                Исправить отправку
+                              </button>
                             ) : null}
                             {!retainedOnly && !archived && !isReturnedOrderRecord(order) ? (
                               <>

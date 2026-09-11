@@ -1,7 +1,7 @@
 // Step 190.6A: structural module extracted from worker/index.ts.
 // Business behavior is intentionally unchanged.
 import { chunksOf } from '../core/sql.ts'
-import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, normalizeShippingStatus, normalizeSourceType, normalizeWorkshopStatus, toInt, upperText } from '../core/text.ts'
+import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, normalizeOrderStatus, normalizeShippingStatus, normalizeSourceType, normalizeWorkshopStatus, toInt, upperText } from '../core/text.ts'
 import type { SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
 import type { CanonicalVariantSnapshot } from './catalog.ts'
@@ -2020,6 +2020,259 @@ export async function fulfillOrderReservationsV2(
 
   if (statements.length) await db.batch(statements);
   return { fulfilled: activeReservationPayloads.length, unresolved: 0, observationsApplied: observations.length };
+}
+
+
+export async function correctMistakenOrderHandover(
+  db: D1Database,
+  orderId: number,
+  input: { physicalOutcome?: unknown; actor?: string } = {},
+) {
+  if (!orderId) throw new Error('Заказ не найден.');
+  if (cleanText(input.physicalOutcome).toLowerCase() !== 'not_issued') {
+    throw new Error('Исправление разрешено только после явного подтверждения, что товар фактически НЕ передавался клиенту.');
+  }
+
+  const order = await db.prepare(
+    `SELECT id, external_id, order_status, archived_at, shipping_status, shipping_date
+     FROM orders WHERE id = ? LIMIT 1`
+  ).bind(orderId).first<Record<string, unknown>>();
+  if (!order?.id) throw new Error('Заказ не найден.');
+  if (normalizeOrderStatus(order.order_status) === 'deleted') throw new Error('Удалённый заказ нельзя исправлять как действующий.');
+  if (normalizeOrderStatus(order.order_status) === 'archived' || cleanText(order.archived_at)) {
+    throw new Error('Архивный заказ доступен только для просмотра. Сначала верните его из архива.');
+  }
+
+  const externalId = cleanText(order.external_id);
+  const timestamp = new Date().toISOString();
+  const shippingWasSent = normalizeShippingStatus(order.shipping_status) === 'sent';
+  const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
+
+  if (!humanInventoryModelEnabled) {
+    if (!shippingWasSent) return { ok: true, alreadyCorrected: true, restoredPhysicalQuantity: 0, freshnessProtectedQuantity: 0, reactivatedReservations: 0 };
+    await db.prepare(
+      `UPDATE orders SET shipping_status = 'not_sent', shipping_date = NULL, updated_at = ?
+       WHERE id = ? AND shipping_status = 'sent'`
+    ).bind(timestamp, orderId).run();
+    try {
+      await writeActivityLog(db, {
+        eventType: 'order_false_handover_corrected', entityType: 'order', entityId: orderId, orderId,
+        externalOrderId: externalId, title: `Исправлена ошибочная отправка заказа ${externalId}`,
+        details: 'Товар фактически не передавался клиенту; статус отправки возвращён в «не отправлено».', createdAt: timestamp,
+      });
+    } catch (error) {
+      console.warn('False handover correction activity log failed', error);
+    }
+    return { ok: true, restoredPhysicalQuantity: 0, freshnessProtectedQuantity: 0, reactivatedReservations: 0 };
+  }
+
+  const downstream = await db.prepare(
+    `SELECT
+       EXISTS(SELECT 1 FROM returns r WHERE r.order_id = ? AND COALESCE(r.status, 'completed') <> 'cancelled') AS has_return,
+       EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id = ? AND COALESCE(e.status, 'completed') <> 'cancelled') AS has_exchange`
+  ).bind(orderId, orderId).first<{ has_return: number; has_exchange: number }>();
+  if (toInt(downstream?.has_return, 0) || toInt(downstream?.has_exchange, 0)) {
+    throw new Error('Исправление отправки остановлено: по заказу уже есть действующий возврат или обмен. Сначала исправьте/отмените эту последующую операцию, чтобы не переписать физическую историю задним числом.');
+  }
+
+  const fulfilledRows = await db.prepare(
+    `SELECT r.id, r.order_item_id, r.inventory_source, r.variant_id, r.quantity, r.fulfilled_at,
+            oi.stock_quantity_before, oi.stock_quantity_after
+     FROM inventory_reservations r
+     JOIN order_items oi ON oi.id = r.order_item_id AND oi.order_id = r.order_id
+     WHERE r.order_id = ? AND r.status = 'fulfilled'
+     ORDER BY r.id ASC`
+  ).bind(orderId).all<Record<string, unknown>>();
+  const fulfilled = fulfilledRows.results || [];
+
+  if (!fulfilled.length) {
+    if (!shippingWasSent) return { ok: true, alreadyCorrected: true, restoredPhysicalQuantity: 0, freshnessProtectedQuantity: 0, reactivatedReservations: 0 };
+    await db.prepare(
+      `UPDATE orders SET shipping_status = 'not_sent', shipping_date = NULL, updated_at = ?
+       WHERE id = ? AND shipping_status = 'sent'`
+    ).bind(timestamp, orderId).run();
+    try {
+      await writeActivityLog(db, {
+        eventType: 'order_false_handover_corrected', entityType: 'order', entityId: orderId, orderId,
+        externalOrderId: externalId, title: `Исправлена ошибочная отправка заказа ${externalId}`,
+        details: 'Складских списаний не было; исправлен только ошибочный статус отправки.', createdAt: timestamp,
+      });
+    } catch (error) {
+      console.warn('False workshop-only handover correction activity log failed', error);
+    }
+    return { ok: true, restoredPhysicalQuantity: 0, freshnessProtectedQuantity: 0, reactivatedReservations: 0 };
+  }
+
+  const checkedStocktakeSources = new Set<string>();
+  const checkedStockRows = new Set<string>();
+  const payloadRows: Array<{ reservationId: number; orderItemId: number; source: string; variantId: number; restoreQuantity: number }> = [];
+  let restoredPhysicalQuantity = 0;
+  let freshnessProtectedQuantity = 0;
+
+  for (const row of fulfilled) {
+    const reservationId = toInt(row.id, 0);
+    const orderItemId = toInt(row.order_item_id, 0);
+    const source = normalizeSourceType(row.inventory_source);
+    const variantId = toInt(row.variant_id, 0);
+    const reservedQuantity = Math.max(0, toInt(row.quantity, 0));
+    const fulfilledAt = cleanText(row.fulfilled_at);
+    if (!reservationId || !orderItemId || !variantId || !reservedQuantity || !fulfilledAt) {
+      throw new Error('Ошибочную выдачу нельзя отменить автоматически: у проведённого списания неполная складская связь или отсутствует время выдачи. Нужна точечная физическая сверка.');
+    }
+    if (row.stock_quantity_before === null || row.stock_quantity_before === undefined || row.stock_quantity_after === null || row.stock_quantity_after === undefined) {
+      throw new Error('Ошибочную выдачу нельзя отменить автоматически: для одной позиции не сохранён фактически списанный складской delta. Система ничего не изменила; нужна физическая сверка.');
+    }
+    const quantityBefore = Math.max(0, toInt(row.stock_quantity_before, 0));
+    const quantityAfter = Math.max(0, toInt(row.stock_quantity_after, 0));
+    const physicalDelta = Math.max(0, Math.min(reservedQuantity, quantityBefore - quantityAfter));
+
+    if (!checkedStocktakeSources.has(source)) {
+      const activeStocktake = await db.prepare(
+        `SELECT id FROM inventory_stocktake_sessions WHERE inventory_source = ? AND status = 'active' LIMIT 1`
+      ).bind(source).first<{ id: string }>();
+      if (activeStocktake?.id) {
+        throw new Error('Сейчас идёт ревизия точки, затронутой этим заказом. Завершите или отмените ревизию и повторите исправление отправки.');
+      }
+      checkedStocktakeSources.add(source);
+    }
+
+    const stockKey = `${source}:${variantId}`;
+    if (!checkedStockRows.has(stockKey)) {
+      const stock = await db.prepare(
+        `SELECT id FROM inventory_stock WHERE inventory_source = ? AND variant_id = ? ORDER BY id ASC LIMIT 1`
+      ).bind(source, variantId).first<{ id: number }>();
+      if (!stock?.id) {
+        throw new Error('Ошибочную выдачу нельзя отменить автоматически: для одной позиции больше нет строки физического остатка. Нужна фактическая сверка.');
+      }
+      checkedStockRows.add(stockKey);
+    }
+
+    const newerPhysicalTruth = await db.prepare(
+      `SELECT 1 AS found
+       WHERE EXISTS (
+         SELECT 1 FROM inventory_stock_checks
+         WHERE inventory_source = ? AND variant_id = ? AND datetime(checked_at) > datetime(?)
+       ) OR EXISTS (
+         SELECT 1 FROM inventory_stocktake_sessions
+         WHERE inventory_source = ? AND status = 'completed' AND completed_at IS NOT NULL
+           AND id NOT LIKE 'REV-%-P-%' AND datetime(completed_at) > datetime(?)
+       )
+       LIMIT 1`
+    ).bind(source, variantId, fulfilledAt, source, fulfilledAt).first<{ found: number }>();
+
+    const restoreQuantity = newerPhysicalTruth?.found ? 0 : physicalDelta;
+    if (newerPhysicalTruth?.found) freshnessProtectedQuantity += physicalDelta;
+    else restoredPhysicalQuantity += restoreQuantity;
+    payloadRows.push({ reservationId, orderItemId, source, variantId, restoreQuantity });
+  }
+
+  const payload = JSON.stringify(payloadRows);
+  const rawCte = `raw AS (
+    SELECT CAST(json_extract(j.value, '$.reservationId') AS INTEGER) AS reservation_id,
+           CAST(json_extract(j.value, '$.orderItemId') AS INTEGER) AS order_item_id,
+           CAST(json_extract(j.value, '$.source') AS TEXT) AS source,
+           CAST(json_extract(j.value, '$.variantId') AS INTEGER) AS variant_id,
+           CAST(json_extract(j.value, '$.restoreQuantity') AS INTEGER) AS restore_quantity
+    FROM json_each(?) j
+  )`;
+  const restoreCte = `${rawCte}, eligible AS (
+    SELECT raw.* FROM raw
+    JOIN inventory_reservations r ON r.id = raw.reservation_id AND r.status = 'fulfilled'
+  ), x AS (
+    SELECT source, variant_id, SUM(restore_quantity) AS restore_quantity
+    FROM eligible WHERE restore_quantity > 0 GROUP BY source, variant_id
+  )`;
+  const statements: D1PreparedStatement[] = [];
+
+  if (payloadRows.some((row) => row.restoreQuantity > 0)) {
+    statements.push(
+      db.prepare(
+        `WITH ${restoreCte}
+         INSERT INTO inventory_movements (
+           inventory_source, movement_type, product_id, variant_id, product_name_snapshot, gender_snapshot,
+           color_snapshot, material_snapshot, length_snapshot, size_snapshot, quantity_delta, quantity_after,
+           reference_type, reference_id, comment, created_at
+         )
+         SELECT s.inventory_source, 'revision', s.product_id, s.variant_id, s.product_name_snapshot, s.gender_snapshot,
+                s.color_snapshot, s.material_snapshot, s.length_snapshot, s.size_snapshot,
+                x.restore_quantity, s.quantity + x.restore_quantity,
+                'order_handover_correction', ?, ?, ?
+         FROM x JOIN inventory_stock s ON s.inventory_source = x.source AND s.variant_id = x.variant_id`
+      ).bind(payload, externalId, `Отмена ошибочной физической выдачи по заказу ${externalId}`, timestamp),
+      db.prepare(
+        `WITH ${restoreCte}
+         UPDATE inventory_stock
+         SET quantity = quantity + (
+               SELECT x.restore_quantity FROM x
+               WHERE x.source = inventory_stock.inventory_source AND x.variant_id = inventory_stock.variant_id
+             ),
+             last_action = 'Отмена ошибочной выдачи',
+             last_source_ref = ?, updated_at = ?
+         WHERE EXISTS (
+           SELECT 1 FROM x
+           WHERE x.source = inventory_stock.inventory_source AND x.variant_id = inventory_stock.variant_id
+         )`
+      ).bind(payload, `order-handover-correction:${externalId}`, timestamp),
+    );
+  }
+
+  statements.push(
+    db.prepare(
+      `WITH ${rawCte}
+       UPDATE order_items
+       SET stock_writeoff_status = 'reserved', stock_quantity_before = NULL, stock_quantity_after = NULL
+       WHERE EXISTS (
+         SELECT 1 FROM raw
+         JOIN inventory_reservations r ON r.id = raw.reservation_id AND r.status = 'fulfilled'
+         WHERE raw.order_item_id = order_items.id
+       )`
+    ).bind(payload),
+    db.prepare(
+      `WITH ${rawCte}
+       UPDATE inventory_reservations
+       SET status = 'active', fulfilled_at = NULL, released_at = NULL, updated_at = ?
+       WHERE status = 'fulfilled' AND EXISTS (SELECT 1 FROM raw WHERE raw.reservation_id = inventory_reservations.id)`
+    ).bind(payload, timestamp),
+    db.prepare(
+      `WITH ${rawCte}, affected AS (SELECT DISTINCT source, variant_id FROM raw)
+       UPDATE inventory_stock
+       SET reserved_quantity = COALESCE((
+             SELECT SUM(r.quantity) FROM inventory_reservations r
+             WHERE r.status = 'active'
+               AND r.inventory_source = inventory_stock.inventory_source
+               AND r.variant_id = inventory_stock.variant_id
+           ), 0),
+           last_action = CASE WHEN last_action = 'Отмена ошибочной выдачи' THEN last_action ELSE 'Резерв восстановлен' END,
+           last_source_ref = ?, updated_at = ?
+       WHERE EXISTS (
+         SELECT 1 FROM affected
+         WHERE affected.source = inventory_stock.inventory_source AND affected.variant_id = inventory_stock.variant_id
+       )`
+    ).bind(payload, `order-handover-correction:${externalId}`, timestamp),
+    db.prepare(
+      `UPDATE orders SET shipping_status = 'not_sent', shipping_date = NULL, updated_at = ?
+       WHERE id = ? AND shipping_status = 'sent'`
+    ).bind(timestamp, orderId),
+  );
+  await db.batch(statements);
+
+  try {
+    await writeActivityLog(db, {
+      eventType: 'order_false_handover_corrected', entityType: 'order', entityId: orderId, orderId,
+      externalOrderId: externalId, title: `Исправлена ошибочная выдача / отправка заказа ${externalId}`,
+      details: `Товар фактически не передавался клиенту. Возвращено в физический остаток: ${restoredPhysicalQuantity} шт.; не изменено из-за более новой физической сверки: ${freshnessProtectedQuantity} шт.; снова в резерве: ${payloadRows.length} поз.`,
+      createdAt: timestamp,
+    });
+  } catch (error) {
+    console.warn('False handover correction activity log after committed correction failed', error);
+  }
+
+  return {
+    ok: true,
+    restoredPhysicalQuantity,
+    freshnessProtectedQuantity,
+    reactivatedReservations: payloadRows.length,
+  };
 }
 
 

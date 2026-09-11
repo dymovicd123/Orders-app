@@ -5845,6 +5845,51 @@ function removeDebtPayment(index: number) {
     }
   }
 
+
+  async function correctMistakenOrderShipping(order: OrderRecord) {
+    if (savingOrder || isArchivedOrderRecord(order) || order.shipping_status !== 'sent') return
+    const confirmed = window.confirm(
+      `Исправить ошибочную отправку заказа ${order.external_id}?\n\nПодтверждайте только если товар ФАКТИЧЕСКИ НЕ передавался клиенту. Система вернёт проведённые складские позиции в резерв заказа и восстановит только тот физический остаток, который действительно был списан.\n\nЕсли клиент получал товар, а затем вернул его — используйте «Возврат», а не это исправление.`
+    )
+    if (!confirmed) return
+
+    setSavingOrder(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const payload = { physicalOutcome: 'not_issued' as const }
+      const criticalKey = `order-handover-correction:${order.id}`
+      const critical = prepareCriticalRequest(criticalKey, payload)
+      const response = await apiFetch(`/api/orders/${order.id}/shipping/correct`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
+        body: JSON.stringify(critical.payload),
+      })
+      const result = await readJsonResponse<{
+        ok?: boolean
+        message?: string
+        order?: OrderRecord
+        refreshRequired?: boolean
+        alreadyCorrected?: boolean
+        restoredPhysicalQuantity?: number
+        freshnessProtectedQuantity?: number
+        reactivatedReservations?: number
+      }>(response, 'Исправление отправки')
+      if (!response.ok) throw new Error(result.message || 'Не удалось исправить ошибочную отправку.')
+      completeCriticalRequest(criticalKey, critical.requestId)
+      if (result.order) upsertOrderInState(result.order)
+      invalidateInventoryStockCaches(true)
+      setMessage(result.alreadyCorrected
+        ? `Заказ ${order.external_id} уже находится в состоянии «не отправлено».`
+        : `Ошибочная отправка заказа ${order.external_id} исправлена. Позиции снова зарезервированы; физический остаток восстановлен только там, где не было более новой сверки.`)
+      void loadDashboard()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось исправить ошибочную отправку.')
+    } finally {
+      setSavingOrder(false)
+    }
+  }
+
   async function deleteOrderAsAdmin(order: OrderRecord) {
     if (isArchivedOrderRecord(order)) {
       setMessage('Архивный заказ нельзя удалить. Сначала верните его из архива.')
@@ -6881,7 +6926,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, isArchivedOrderRecord, isReturnedOrderRecord, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderLifecycleLabel, orderPanelStyle, orders, paymentStatusClass, paymentStatusLabel, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, isArchivedOrderRecord, isReturnedOrderRecord, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderLifecycleLabel, orderPanelStyle, orders, paymentStatusClass, paymentStatusLabel, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Детали заказа">

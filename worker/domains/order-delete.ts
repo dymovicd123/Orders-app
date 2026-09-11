@@ -24,8 +24,10 @@ export async function deleteOrderSafely(
   const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db)
   const fulfilledRows = humanInventoryModelEnabled
     ? await db.prepare(
-      `SELECT r.id, r.order_item_id, r.inventory_source, r.product_id, r.variant_id, r.quantity, r.fulfilled_at
+      `SELECT r.id, r.order_item_id, r.inventory_source, r.product_id, r.variant_id, r.quantity, r.fulfilled_at,
+              oi.stock_quantity_before, oi.stock_quantity_after
        FROM inventory_reservations r
+       JOIN order_items oi ON oi.id = r.order_item_id AND oi.order_id = r.order_id
        WHERE r.order_id = ? AND r.status = 'fulfilled'
        ORDER BY r.id ASC`
     ).bind(orderId).all<Record<string, unknown>>()
@@ -137,6 +139,13 @@ export async function deleteOrderSafely(
       if (!variantId || !source || !quantity) {
         throw new CriticalOperationConflictError('Ложную выдачу нельзя отменить автоматически: у проведённого складского списания потеряна точная товарная связь. Система ничего не изменила; нужна фактическая сверка этой позиции.')
       }
+      if (reservation.stock_quantity_before === null || reservation.stock_quantity_before === undefined || reservation.stock_quantity_after === null || reservation.stock_quantity_after === undefined) {
+        throw new CriticalOperationConflictError('Ложную выдачу нельзя отменить автоматически: не сохранён фактически списанный складской delta. Система ничего не изменила; нужна физическая сверка этой позиции.')
+      }
+      const physicalRestoreQuantity = Math.max(0, Math.min(
+        quantity,
+        Math.max(0, toInt(reservation.stock_quantity_before, 0)) - Math.max(0, toInt(reservation.stock_quantity_after, 0)),
+      ))
       if (!fulfilledAt) {
         throw new CriticalOperationConflictError('Ложную выдачу нельзя отменить автоматически: у складского списания нет времени выдачи, поэтому система не может проверить более новую физическую сверку. Система ничего не изменила.')
       }
@@ -165,13 +174,15 @@ export async function deleteOrderSafely(
          LIMIT 1`
       ).bind(source, variantId, fulfilledAt, source, fulfilledAt).first<{ found: number }>()
       if (newerPhysicalTruth?.found) {
-        falseShipmentFreshnessProtectedQuantity += quantity
+        falseShipmentFreshnessProtectedQuantity += physicalRestoreQuantity
         continue
       }
-      const key = `${source}:${variantId}`
-      const current = restoreGroups.get(key)
-      if (current) current.quantity += quantity
-      else restoreGroups.set(key, { source, variantId, quantity })
+      if (physicalRestoreQuantity > 0) {
+        const key = `${source}:${variantId}`
+        const current = restoreGroups.get(key)
+        if (current) current.quantity += physicalRestoreQuantity
+        else restoreGroups.set(key, { source, variantId, quantity: physicalRestoreQuantity })
+      }
     }
 
     for (const group of restoreGroups.values()) {
