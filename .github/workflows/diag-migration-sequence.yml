@@ -1,4 +1,4 @@
-name: Diagnose migration sequence
+name: Fix and validate catalog gender migration
 
 on:
   push:
@@ -7,32 +7,93 @@ on:
     paths:
       - .github/workflows/diag-migration-sequence.yml
 
+permissions:
+  contents: write
+
 jobs:
-  diagnose:
+  fix:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: catalog-gender-cleanup-r1
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: |
+          cache: npm
+      - run: npm ci
+      - name: Replace SQLite-incompatible correlated ORDER BY
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import crypto from 'node:crypto'
+          const migrationPath = 'migrations/0068_v72_catalog_product_gender_scope.sql'
+          let sql = fs.readFileSync(migrationPath, 'utf8')
+          const pattern = /  COALESCE\(\(\n    SELECT target\.id[\s\S]*?  \), v\.id\) AS keeper_id/
+          const matches = sql.match(new RegExp(pattern.source, 'g')) || []
+          if (matches.length !== 1) throw new Error(`Expected exactly one keeper selector, found ${matches.length}`)
+          const replacement = `  COALESCE(
+            (
+              SELECT MIN(target.id)
+              FROM catalog_variants target
+              WHERE target.product_id=v.product_id
+                AND COALESCE(target.stock_position_id,-1)=COALESCE(v.stock_position_id,-1)
+                AND COALESCE(target.category,'adult')=COALESCE(v.category,'adult')
+                AND UPPER(TRIM(COALESCE(target.color,'')))=UPPER(TRIM(COALESCE(v.color,'')))
+                AND TRIM(COALESCE(target.size_label,''))=TRIM(COALESCE(v.size_label,''))
+                AND target.is_active=1
+                AND UPPER(TRIM(COALESCE(target.gender,'')))=CASE p.gender_scope WHEN 'female' THEN 'ЖЕН' ELSE 'МУЖ' END
+            ),
+            (
+              SELECT MIN(target.id)
+              FROM catalog_variants target
+              WHERE target.product_id=v.product_id
+                AND COALESCE(target.stock_position_id,-1)=COALESCE(v.stock_position_id,-1)
+                AND COALESCE(target.category,'adult')=COALESCE(v.category,'adult')
+                AND UPPER(TRIM(COALESCE(target.color,'')))=UPPER(TRIM(COALESCE(v.color,'')))
+                AND TRIM(COALESCE(target.size_label,''))=TRIM(COALESCE(v.size_label,''))
+                AND target.is_active=1
+                AND TRIM(COALESCE(target.gender,''))=''
+            ),
+            v.id
+          ) AS keeper_id`
+          sql = sql.replace(pattern, replacement)
+          fs.writeFileSync(migrationPath, sql)
+          const bytes = Buffer.from(sql)
+          const gitBlob = crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+          const manifestPath = 'scripts/catalog-gender-scope-r1-migration-manifest.json'
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+          if (manifest?.version !== 1 || manifest?.revision !== 'catalog-gender-scope-r1' || manifest?.file !== migrationPath) throw new Error('Migration manifest contract changed')
+          manifest.gitBlob = gitBlob
+          fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
+          console.log('0068 keeper selection rewritten without correlated ORDER BY; exact migration manifest refreshed.')
+          NODE
+      - name: Validate migration sequence and focused behavior
+        run: |
           node --input-type=module <<'NODE'
           import { DatabaseSync } from 'node:sqlite'
           import { readdirSync, readFileSync } from 'node:fs'
           const db = new DatabaseSync(':memory:')
           db.exec('PRAGMA foreign_keys = ON;')
-          const files = readdirSync('migrations').filter((name) => name.endsWith('.sql')).sort()
-          for (const file of files) {
-            if (file === '0068_v72_catalog_product_gender_scope.sql') break
-            db.exec(readFileSync(`migrations/${file}`, 'utf8'))
+          for (const file of readdirSync('migrations').filter((name) => name.endsWith('.sql')).sort()) {
+            try { db.exec(readFileSync(`migrations/${file}`, 'utf8')) }
+            catch (error) { console.error('Migration sequence failed at', file, error); process.exit(1) }
           }
-          const sql = readFileSync('migrations/0068_v72_catalog_product_gender_scope.sql', 'utf8')
-          const statements = sql.split(';').map((s) => s.trim()).filter(Boolean)
-          for (let i = 0; i < statements.length; i++) {
-            const statement = statements[i] + ';'
-            console.log(`STMT ${i + 1}/${statements.length}:`, statement.replace(/\s+/g, ' ').slice(0, 240))
-            try { db.exec(statement) }
-            catch (error) { console.error('FAILED STATEMENT', i + 1, error); console.error(statement); process.exit(1) }
-          }
-          console.log('0068 STATEMENTS OK')
+          console.log('Full migration sequence: OK')
           NODE
+          node scripts/test-catalog-gender-migration-r1.mjs
+          node scripts/test-catalog-gender-scope-r1.mjs
+          node scripts/test-catalog-order-history-preservation-r1.mjs
+      - name: Full release gate
+        run: npm run release:check
+      - name: Build
+        run: npm run build
+      - name: Commit validated migration fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add migrations/0068_v72_catalog_product_gender_scope.sql scripts/catalog-gender-scope-r1-migration-manifest.json
+          git commit -m "Fix catalog gender migration SQLite compatibility"
+          git push origin HEAD:catalog-gender-cleanup-r1
