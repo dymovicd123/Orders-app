@@ -46,7 +46,36 @@ const original = fs.readFileSync(legacyPath, 'utf8')
 const oldBudget = "check(lineCount('src/App.tsx') <= 7000, `App.tsx regrew beyond 1906B controller budget (${lineCount('src/App.tsx')} lines)`)"
 const newBudget = `check(lineCount('src/App.tsx') <= ${delta.afterLines}, \`App.tsx exceeded exact safe-payment-correction controller allowance (\${lineCount('src/App.tsx')} lines)\`)`
 if (!original.includes(oldBudget)) throw new Error('1906B App budget anchor not found')
-fs.writeFileSync(legacyPath, original.replace(oldBudget, newBudget))
+
+const oldO1Block = [
+  "  if (relative === 'src/app/controllers/useApiClient.ts') {",
+  "    const o1 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/o1-frontend-manifest.json'), 'utf8'))",
+  "    check(sha(normalize(text)) === o1.after, 'O1 API client changed beyond exact transport delta')",
+  "    text = fs.readFileSync(path.join(root, 'scripts/fixtures/o1-api-client-baseline.ts'), 'utf8')",
+  "    check(sha(normalize(text)) === o1.before, 'O1 API client predecessor changed')",
+  "  }",
+].join('\n')
+const newO1Block = [
+  "  if (relative === 'src/app/controllers/useApiClient.ts') {",
+  "    const shortageDelta = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-shortage-nonblocking-frontend-manifest.json'), 'utf8'))",
+  "    check(shortageDelta?.version === 1 && shortageDelta?.revision === 'order-shortage-nonblocking-r1' && shortageDelta?.file === relative, 'Order shortage frontend manifest invalid')",
+  "    const apiClientGitBlobSha = (value) => {",
+  "      const bytes = Buffer.from(value)",
+  "      return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\\0`)).update(bytes).digest('hex')",
+  "    }",
+  "    check(apiClientGitBlobSha(text) === shortageDelta.afterGitBlob, 'Order shortage API client changed beyond exact non-blocking delta')",
+  "    text = fs.readFileSync(path.join(root, 'scripts/fixtures/order-shortage-nonblocking-api-client-baseline.ts'), 'utf8')",
+  "    check(apiClientGitBlobSha(text) === shortageDelta.beforeGitBlob, 'Order shortage API client predecessor changed')",
+  "    const o1 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/o1-frontend-manifest.json'), 'utf8'))",
+  "    check(sha(normalize(text)) === o1.after, 'Order shortage predecessor is not the accepted O1 API client')",
+  "    text = fs.readFileSync(path.join(root, 'scripts/fixtures/o1-api-client-baseline.ts'), 'utf8')",
+  "    check(sha(normalize(text)) === o1.before, 'O1 API client predecessor changed')",
+  "  }",
+].join('\n')
+if (!original.includes(oldO1Block)) throw new Error('1906B O1 API client anchor not found')
+
+const patchedLegacy = original.replace(oldBudget, newBudget).replace(oldO1Block, newO1Block)
+fs.writeFileSync(legacyPath, patchedLegacy)
 try {
   await import('./test-step1906b-frontend-modularization-w8-3-layer.mjs')
 } finally {
