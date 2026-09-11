@@ -58,9 +58,9 @@ export async function resolveInventoryCreatableItemsBulk(
   }
 
   const now = new Date().toISOString();
-  type ProductRow = { id: number; name: string; category: string; external_id?: string | null; is_active?: number };
+  type ProductRow = { id: number; name: string; category: string; external_id?: string | null; is_active?: number; gender_scope?: string | null };
   const loadProducts = async () => mapSqlRows(await db.prepare(
-    `SELECT id, name, category, external_id, is_active FROM catalog_products ORDER BY id ASC`
+    `SELECT id, name, category, external_id, is_active, gender_scope FROM catalog_products ORDER BY id ASC`
   ).all<ProductRow>()) as ProductRow[];
 
   let products = await loadProducts();
@@ -137,6 +137,15 @@ export async function resolveInventoryCreatableItemsBulk(
 
   const productForItem = rawItems.map(item => resolveProduct(item));
   if (productForItem.some(row => !row?.id)) throw new Error('Не удалось создать или найти товар для складской операции. Обновите каталог и повторите действие.');
+
+  const resolvedGenderForItem = rawItems.map((item, index) => {
+    const explicit = normalizeCatalogCombinationGender(item.gender);
+    if (explicit === 'ЖЕН' || explicit === 'МУЖ') return explicit;
+    const scope = cleanText(productForItem[index]?.gender_scope).toLowerCase();
+    if (scope === 'female') return 'ЖЕН';
+    if (scope === 'male') return 'МУЖ';
+    throw new Error('Для товара «Унисекс» выберите пол конкретной вещи: ЖЕН или МУЖ.');
+  });
 
   const productIds = Array.from(new Set(productForItem.map(row => toInt(row?.id, 0)).filter(Boolean)));
   const productIdsJson = JSON.stringify(productIds);
@@ -215,10 +224,10 @@ export async function resolveInventoryCreatableItemsBulk(
   rawItems.forEach((item, index) => {
     const product = productForItem[index]!;
     const execution = executionForItem[index]!;
-    const key = variantKey(toInt(execution.id, 0), item.category, item.gender, item.color, item.size);
+    const gender = resolvedGenderForItem[index];
+    const key = variantKey(toInt(execution.id, 0), item.category, gender, item.color, item.size);
     if (variantByKey.has(key) || missingVariants.has(key)) return;
     const category = normalizeAudienceCategory(item.category, item.size);
-    const gender = normalizeCatalogCombinationGender(item.gender);
     const color = normalizeCatalogCombinationColor(item.color);
     const size = normalizeCatalogCombinationSize(item.size);
     const material = canonicalStockPositionValue(execution.material);
@@ -285,14 +294,15 @@ export async function resolveInventoryCreatableItemsBulk(
   return rawItems.map((item, index) => {
     const product = productForItem[index]!;
     const execution = executionForItem[index]!;
-    const variant = variantByKey.get(variantKey(toInt(execution.id, 0), item.category, item.gender, item.color, item.size));
+    const resolvedGender = resolvedGenderForItem[index];
+    const variant = variantByKey.get(variantKey(toInt(execution.id, 0), item.category, resolvedGender, item.color, item.size));
     if (!variant?.id) throw new Error('Не удалось создать складскую комбинацию товара. Повторите действие.');
     return {
       productId: toInt(product.id, 0) || null,
       variantId: toInt(variant.id, 0) || null,
       productName: upperText(product.name),
       category: normalizeAudienceCategory(item.category, item.size),
-      gender: normalizeCatalogCombinationGender(item.gender) || null,
+      gender: resolvedGender || null,
       color: normalizeCatalogCombinationColor(item.color) || null,
       material: canonicalStockPositionValue(execution.material),
       length: canonicalStockPositionValue(execution.length),

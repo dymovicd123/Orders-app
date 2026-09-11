@@ -30,12 +30,18 @@ export async function listInventory(db: D1Database, url: URL) {
   const stockSql = `SELECT
       s.id, s.inventory_source, s.product_id, s.variant_id, s.product_name_snapshot, s.gender_snapshot, s.color_snapshot,
       s.material_snapshot, s.length_snapshot, s.size_snapshot, s.quantity, s.reserved_quantity,
-      s.last_action, s.last_source_ref, s.updated_at, s.created_at
+      s.last_action, s.last_source_ref, s.updated_at, s.created_at,
+      active_variant.is_active AS catalog_variant_active, active_product.is_active AS catalog_product_active
      FROM inventory_stock s
      LEFT JOIN catalog_variants active_variant ON active_variant.id = s.variant_id
      LEFT JOIN catalog_products active_product ON active_product.id = active_variant.product_id
      WHERE s.inventory_source = ?
-       AND (s.variant_id IS NULL OR (active_variant.is_active = 1 AND active_product.is_active = 1))${searchClauses ? ` AND ${searchClauses}` : ''}
+       AND (
+         s.variant_id IS NULL
+         OR (active_variant.is_active = 1 AND active_product.is_active = 1)
+         OR COALESCE(s.quantity, 0) <> 0
+         OR COALESCE(s.reserved_quantity, 0) <> 0
+       )${searchClauses ? ` AND ${searchClauses}` : ''}
      ORDER BY s.product_name_snapshot, COALESCE(s.gender_snapshot, ''), COALESCE(s.color_snapshot, ''),
        COALESCE(s.material_snapshot, ''), COALESCE(s.length_snapshot, ''), COALESCE(s.size_snapshot, '')
      LIMIT ?`;
@@ -106,6 +112,9 @@ export async function listInventory(db: D1Database, url: URL) {
       lastSourceRef: cleanText(row.last_source_ref),
       updatedAt: cleanText(row.updated_at),
       createdAt: cleanText(row.created_at),
+      catalogVariantActive: row.catalog_variant_active == null ? null : toInt(row.catalog_variant_active, 0) === 1,
+      catalogProductActive: row.catalog_product_active == null ? null : toInt(row.catalog_product_active, 0) === 1,
+      catalogArchived: Boolean(row.variant_id) && (toInt(row.catalog_variant_active, 0) !== 1 || toInt(row.catalog_product_active, 0) !== 1),
     })),
     movementsIncluded: includeMovements,
     movements: (movements.results || []).map(row => ({
