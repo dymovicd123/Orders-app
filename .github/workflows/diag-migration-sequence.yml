@@ -21,10 +21,18 @@ jobs:
           import { readdirSync, readFileSync } from 'node:fs'
           const db = new DatabaseSync(':memory:')
           db.exec('PRAGMA foreign_keys = ON;')
-          for (const file of readdirSync('migrations').filter((name) => name.endsWith('.sql')).sort()) {
-            console.log('APPLY', file)
-            try { db.exec(readFileSync(`migrations/${file}`, 'utf8')) }
-            catch (error) { console.error('FAILED', file, error); process.exit(1) }
+          const files = readdirSync('migrations').filter((name) => name.endsWith('.sql')).sort()
+          for (const file of files) {
+            if (file === '0068_v72_catalog_product_gender_scope.sql') break
+            db.exec(readFileSync(`migrations/${file}`, 'utf8'))
           }
-          console.log('ALL MIGRATIONS OK')
+          const sql = readFileSync('migrations/0068_v72_catalog_product_gender_scope.sql', 'utf8')
+          const statements = sql.split(';').map((s) => s.trim()).filter(Boolean)
+          for (let i = 0; i < statements.length; i++) {
+            const statement = statements[i] + ';'
+            console.log(`STMT ${i + 1}/${statements.length}:`, statement.replace(/\s+/g, ' ').slice(0, 240))
+            try { db.exec(statement) }
+            catch (error) { console.error('FAILED STATEMENT', i + 1, error); console.error(statement); process.exit(1) }
+          }
+          console.log('0068 STATEMENTS OK')
           NODE
