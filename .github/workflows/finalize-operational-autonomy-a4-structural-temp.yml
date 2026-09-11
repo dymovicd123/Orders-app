@@ -1,0 +1,38 @@
+name: Finalize Operational Autonomy A4 Structural Temp
+
+on:
+  push:
+    branches:
+      - operational-autonomy-a4-handover-correction
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: operational-autonomy-a4-handover-correction
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Finalize exact A4 structural contract
+        run: node scripts/finalize-operational-autonomy-a4-structural-temp.mjs
+      - name: Commit clean structural delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat scripts/.a4-frontend-status.txt || true
+          rm -f scripts/.a4-frontend-status.txt
+          git rm scripts/finalize-operational-autonomy-a4-structural-temp.mjs
+          git rm .github/workflows/finalize-operational-autonomy-a4-structural-temp.yml
+          git add scripts/test-step1906a-worker-modularization.mjs scripts/operational-autonomy-a4-worker-manifest.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Register Operational Autonomy A4 structural delta'
+          git push origin HEAD:operational-autonomy-a4-handover-correction
