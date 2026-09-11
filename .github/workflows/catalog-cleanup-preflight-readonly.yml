@@ -31,8 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           q() { local title="$1"; shift; echo; echo "===== $title ====="; npx wrangler d1 execute orders_db_prod --remote --command="$*"; }
-          q 'TARGET_PRODUCTS' "SELECT id,name,is_active,gender_scope FROM catalog_products WHERE id IN (15,16,18,58) OR id IN (SELECT DISTINCT product_id FROM catalog_variants WHERE id IN (207,356,1065,1066)) ORDER BY id;"
-          q 'SHELL_ALIAS_COUNTS' "SELECT p.id,p.name,(SELECT COUNT(*) FROM catalog_product_aliases a WHERE a.product_id=p.id) AS aliases,(SELECT COUNT(*) FROM catalog_input_aliases a WHERE a.product_id=p.id) AS input_aliases FROM catalog_products p WHERE p.id IN (15,16,18,58) ORDER BY p.id;"
+          q 'PRODUCT_ALIAS_COUNTS' "SELECT p.id,p.name,(SELECT COUNT(*) FROM catalog_product_aliases a WHERE a.product_id=p.id) AS aliases FROM catalog_products p WHERE p.id IN (15,16,18,58) ORDER BY p.id;"
           q 'STOCK_POSITION_REFERENCE_TABLES' "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%stock_position_id%' ORDER BY name;"
           q 'TARGET_POSITION_VARIANT_COUNTS' "SELECT sp.id,p.name,sp.is_active,(SELECT COUNT(*) FROM catalog_variants v WHERE v.stock_position_id=sp.id) AS variants,(SELECT COUNT(*) FROM catalog_variants v WHERE v.stock_position_id=sp.id AND v.is_active=1) AS active_variants FROM catalog_stock_positions sp JOIN catalog_products p ON p.id=sp.product_id WHERE sp.id IN (5,9,11,12,17,18,19,20,21,35,46) ORDER BY sp.id;"
           echo 'CLEANUP_PREFLIGHT_COMPLETE'
