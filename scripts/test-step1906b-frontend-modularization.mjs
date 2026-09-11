@@ -95,6 +95,7 @@ const manifestPath = path.join(root, 'scripts/catalog-gender-scope-r1-frontend-m
 const unisexGenderInplaceManifestPath = path.join(root, 'scripts/catalog-unisex-gender-inplace-r1-frontend-manifest.json')
 const unisexMergeManifestPath = path.join(root, 'scripts/catalog-unisex-merge-r1-frontend-manifest.json')
 const operationalAutonomyA4ManifestPath = path.join(root, 'scripts/operational-autonomy-a4-frontend-manifest.json')
+const operationalAutonomyA5ManifestPath = path.join(root, 'scripts/operational-autonomy-a5-frontend-manifest.json')
 const fixtureRoot = path.join(root, 'scripts/fixtures/catalog-gender-scope-r1')
 const predecessorFixture = path.join(fixtureRoot, 'test-step1906b-frontend-modularization-predecessor.mjs')
 const runtimePredecessor = path.join(root, 'scripts/.tmp-test-step1906b-catalog-predecessor.mjs')
@@ -111,6 +112,9 @@ if (Object.keys(unisexMergeManifest.files || {}).join(',') !== 'src/features/inv
 const operationalAutonomyA4Manifest = JSON.parse(fs.readFileSync(operationalAutonomyA4ManifestPath, 'utf8'))
 if (operationalAutonomyA4Manifest?.version !== 1 || operationalAutonomyA4Manifest?.revision !== 'operational-autonomy-a4-mistaken-handover-r1') throw new Error('Operational Autonomy A4 frontend manifest invalid')
 if (Object.keys(operationalAutonomyA4Manifest.files || {}).join(',') !== 'src/App.tsx') throw new Error('Operational Autonomy A4 frontend allow-list widened unexpectedly')
+const operationalAutonomyA5Manifest = JSON.parse(fs.readFileSync(operationalAutonomyA5ManifestPath, 'utf8'))
+if (operationalAutonomyA5Manifest?.version !== 1 || operationalAutonomyA5Manifest?.revision !== 'operational-autonomy-a5-exchange-financial-correction-r1') throw new Error('Operational Autonomy A5 frontend manifest invalid')
+if (Object.keys(operationalAutonomyA5Manifest.files || {}).join(',') !== 'src/App.tsx,src/features/sections/OrderExchangeSection.tsx') throw new Error('Operational Autonomy A5 frontend allow-list widened unexpectedly')
 const gitBlobSha = (text) => { const bytes = Buffer.from(text); return crypto.createHash('sha1').update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex') }
 const current = new Map()
 try {
@@ -123,6 +127,7 @@ try {
     const inPlaceDelta = unisexGenderInplaceManifest.files?.[file]
     const mergeDelta = unisexMergeManifest.files?.[file]
     const operationalAutonomyA4Delta = operationalAutonomyA4Manifest.files?.[file]
+    const operationalAutonomyA5Delta = operationalAutonomyA5Manifest.files?.[file]
     let acceptedGitBlob = delta.afterGitBlob
     let acceptedLines = delta.afterLines
     if (inPlaceDelta) {
@@ -141,10 +146,17 @@ try {
       acceptedGitBlob = operationalAutonomyA4Delta.afterGitBlob
       acceptedLines = operationalAutonomyA4Delta.afterLines
     }
+    if (operationalAutonomyA5Delta) {
+      if (operationalAutonomyA5Delta.beforeGitBlob !== acceptedGitBlob || operationalAutonomyA5Delta.beforeLines !== acceptedLines) throw new Error('Operational Autonomy A5 frontend predecessor drifted: ' + file)
+      acceptedGitBlob = operationalAutonomyA5Delta.afterGitBlob
+      acceptedLines = operationalAutonomyA5Delta.afterLines
+    }
     if (gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) {
-      throw new Error(operationalAutonomyA4Delta
-        ? 'Operational Autonomy A4 frontend file changed beyond exact manifest: ' + file
-        : mergeDelta
+      throw new Error(operationalAutonomyA5Delta
+        ? 'Operational Autonomy A5 frontend file changed beyond exact manifest: ' + file
+        : operationalAutonomyA4Delta
+          ? 'Operational Autonomy A4 frontend file changed beyond exact manifest: ' + file
+          : mergeDelta
           ? 'Catalog unisex merge frontend file changed beyond exact manifest: ' + file
           : inPlaceDelta
             ? 'Catalog unisex gender in-place frontend file changed beyond exact manifest: ' + file
