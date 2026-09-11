@@ -98,7 +98,7 @@ SET assigned_scope=(SELECT p.gender_scope FROM catalog_products p WHERE p.id=cat
 
 -- Build a deterministic map only for blank variants of products with a known default.
 DROP TABLE IF EXISTS _step0068_gender_map;
-CREATE TEMP TABLE _step0068_gender_map AS
+CREATE TABLE _step0068_gender_map AS
 SELECT
   v.id AS old_id,
   v.product_id,
@@ -168,7 +168,7 @@ WHERE variant_id IN (SELECT old_id FROM _step0068_gender_map WHERE old_id<>keepe
 
 -- Rebuild affected current stock from the immutable baseline so duplicate rows merge without double counting.
 DROP TABLE IF EXISTS _step0068_stock_rollup;
-CREATE TEMP TABLE _step0068_stock_rollup AS
+CREATE TABLE _step0068_stock_rollup AS
 SELECT
   MIN(b.stock_id) AS keeper_stock_id,
   b.inventory_source,

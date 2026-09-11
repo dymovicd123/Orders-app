@@ -19,6 +19,7 @@ check(migration.includes("'ЕҢЛІК ШАПАН'"), '0068 must carry the approv
 check(migration.includes("TRIM(COALESCE(v.gender,''))=''"), '0068 must repair blank-gender variants')
 check(!migration.includes("AND UPPER(TRIM(COALESCE(v.gender,''))) <> CASE p.gender_scope"), '0068 must preserve explicit opposite-gender variants')
 check(migration.includes('catalog_gender_stock_baseline'), '0068 must preserve retry-safe stock merge evidence')
+check(!migration.includes('CREATE TEMP TABLE _step0068'), '0068 must not use D1-unauthorized TEMP staging tables')
 check(migration.includes("p.gender_scope='unisex' AND TRIM(COALESCE(v.gender,''))=''"), '0068 must identify unused unisex blank placeholders')
 
 check(catalog.includes("export type CatalogProductGenderScope = 'female' | 'male' | 'unisex'"), 'Worker product scope type missing')
