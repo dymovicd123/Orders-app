@@ -71,7 +71,6 @@ jobs:
           if (!wrapper.includes(loadAnchor)) throw new Error('Wrapper manifest load anchor missing')
           if (!wrapper.includes('catalogIntegrityDeadendsManifest =')) wrapper = wrapper.replace(loadAnchor, loadAnchor + loadInsert)
 
-          const changesAnchor = "const orderHistoryPreservationChanges = ${JSON.stringify(orderHistoryManifest.changes)}\\n`)")
           // Patch the template source rather than the runtime-patched legacy file.
           const templateOld = "const orderHistoryPreservationChanges = ${JSON.stringify(orderHistoryManifest.changes)}\\n`)"
           const templateNew = "const orderHistoryPreservationChanges = ${JSON.stringify(orderHistoryManifest.changes)}\\nconst catalogIntegrityDeadendsChanges = ${JSON.stringify(catalogIntegrityDeadendsManifest.changes)}\\n`)"
