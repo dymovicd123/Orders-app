@@ -22,4 +22,4 @@ jobs:
       - run: npm ci
       - run: node scripts/test-catalog-unisex-merge-r1.mjs
       - run: npm run release:check
-      # rerun after separating the pre-W6 and W6 structural deltas
+      # rerun after frontend structural delta layering
