@@ -61,6 +61,7 @@ jobs:
           ) AS keeper_id`
           sql = sql.replace(pattern, replacement)
           fs.writeFileSync(migrationPath, sql)
+
           const bytes = Buffer.from(sql)
           const gitBlob = crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
           const manifestPath = 'scripts/catalog-gender-scope-r1-migration-manifest.json'
@@ -68,7 +69,15 @@ jobs:
           if (manifest?.version !== 1 || manifest?.revision !== 'catalog-gender-scope-r1' || manifest?.file !== migrationPath) throw new Error('Migration manifest contract changed')
           manifest.gitBlob = gitBlob
           fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
-          console.log('0068 keeper selection rewritten without correlated ORDER BY; exact migration manifest refreshed.')
+
+          const scopeTestPath = 'scripts/test-catalog-gender-scope-r1.mjs'
+          let scopeTest = fs.readFileSync(scopeTestPath, 'utf8')
+          const oldAssertion = `check(migration.includes("OR TRIM(COALESCE(target.gender,''))=''"), '0068 must deterministically consolidate duplicate blank fixed-scope variants')`
+          const newAssertions = `check(migration.includes('SELECT MIN(target.id)'), '0068 must choose deterministic lowest-id keeper candidates')\ncheck(migration.includes("AND TRIM(COALESCE(target.gender,''))=''"), '0068 must deterministically fall back to the lowest blank keeper')`
+          if (!scopeTest.includes(oldAssertion)) throw new Error('Catalog scope keeper assertion anchor missing')
+          scopeTest = scopeTest.replace(oldAssertion, newAssertions)
+          fs.writeFileSync(scopeTestPath, scopeTest)
+          console.log('0068 keeper selection rewritten without correlated ORDER BY; exact migration manifest and semantic gate refreshed.')
           NODE
       - name: Validate migration sequence and focused behavior
         run: |
@@ -94,6 +103,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add migrations/0068_v72_catalog_product_gender_scope.sql scripts/catalog-gender-scope-r1-migration-manifest.json
+          git add migrations/0068_v72_catalog_product_gender_scope.sql scripts/catalog-gender-scope-r1-migration-manifest.json scripts/test-catalog-gender-scope-r1.mjs
           git commit -m "Fix catalog gender migration SQLite compatibility"
           git push origin HEAD:catalog-gender-cleanup-r1
