@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "revision": "operational-autonomy-r3-return-exchange-capacity-r1",
+  "changes": {
+    "cancelReturn": {
+      "before": "6f74c59b8bc1babed9538ab434f26498448f7324ce9ee40922d1adeb026117b2",
+      "after": "995ae69a236d2e5608828dd3f17592021101f5e3611a30d018a46ddc7d0234d3"
+    },
+    "createExchange": {
+      "before": "d4b9a5acfc91adada2b3f4d0206a2eb9e4109350ad64d6c86092e988f019922a",
+      "after": "67d571963f995d908fa4c9cf06d09c12630a8ae5a457b13acfa49bb2dcfa3c23"
+    },
+    "createReturn": {
+      "before": "3dba13bf31bbc70dfdcf01b6dc169d2f021c2b764e1ea612712523b4addc53e4",
+      "after": "b40cf007c559749b9fb2d560df02a670789b86073881aaa7a0287fab2c77fba7"
+    }
+  }
+}
