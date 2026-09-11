@@ -14,22 +14,32 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: catalog-unisex-merge-r1-work2
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
-      - name: Print declaration hash
+      - name: Print declaration hashes
         run: |
+          git fetch origin main --depth=1
           node --input-type=module <<'NODE'
           import fs from 'node:fs'
           import crypto from 'node:crypto'
           import ts from 'typescript'
+          import { execFileSync } from 'node:child_process'
           const p='worker/domains/catalog.ts'
-          const text=fs.readFileSync(p,'utf8')
-          const src=ts.createSourceFile(p,text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS)
-          const st=src.statements.find(s => ts.isFunctionDeclaration(s) && s.name?.text==='updateCatalogVariant')
-          if(!st) throw new Error('updateCatalogVariant missing')
-          const decl=st.getText(src).replace(/^export\s+/,'')
-          console.log('UPDATE_CATALOG_VARIANT_SHA256='+crypto.createHash('sha256').update(decl).digest('hex'))
+          const hashDecl=(text,name)=>{
+            const src=ts.createSourceFile(p,text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS)
+            const st=src.statements.find(s => ts.isFunctionDeclaration(s) && s.name?.text===name)
+            if(!st) throw new Error(name+' missing')
+            const decl=st.getText(src).replace(/^export\s+/,'')
+            return crypto.createHash('sha256').update(decl).digest('hex')
+          }
+          const current=fs.readFileSync(p,'utf8')
+          const main=execFileSync('git',['show','origin/main:'+p],{encoding:'utf8'})
+          for (const name of ['findCatalogCombinationV3','updateCatalogVariant']) {
+            console.log(name+'_MAIN_SHA256='+hashDecl(main,name))
+            console.log(name+'_CURRENT_SHA256='+hashDecl(current,name))
+          }
           NODE
