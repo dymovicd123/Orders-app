@@ -1,0 +1,134 @@
+name: Finalize Operational Autonomy A4 Frontend Temp
+
+on:
+  push:
+    branches:
+      - operational-autonomy-a4-handover-correction
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: operational-autonomy-a4-handover-correction
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Register exact A4 frontend delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json, subprocess
+
+          base = 'f5e8e8423a101d99289b07a3afc4be20e56ef361'
+          app_path = Path('src/App.tsx')
+          current = app_path.read_text()
+          before = subprocess.check_output(['git', 'show', f'{base}:src/App.tsx'], text=True)
+
+          def blob_sha(text):
+              data = text.encode()
+              return hashlib.sha1(f'blob {len(data)}\0'.encode() + data).hexdigest()
+          def line_count(text):
+              return len(text.replace('\r\n', '\n').split('\n'))
+
+          if blob_sha(before) != '114435881f17d6adbadaf81ec36a755be985b823':
+              raise SystemExit('A4 App predecessor is not exact A3 Production baseline')
+
+          manifest = {
+              'version': 1,
+              'revision': 'operational-autonomy-a4-mistaken-handover-r1',
+              'files': {
+                  'src/App.tsx': {
+                      'beforeGitBlob': blob_sha(before),
+                      'afterGitBlob': blob_sha(current),
+                      'beforeLines': line_count(before),
+                      'afterLines': line_count(current),
+                  }
+              },
+          }
+          Path('scripts/operational-autonomy-a4-frontend-manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
+
+          path = Path('scripts/test-step1906b-frontend-modularization.mjs')
+          text = path.read_text()
+          anchor = "const unisexMergeManifestPath = path.join(root, 'scripts/catalog-unisex-merge-r1-frontend-manifest.json')\n"
+          if anchor not in text:
+              raise SystemExit('A4 frontend path anchor missing')
+          text = text.replace(anchor, anchor + "const operationalAutonomyA4ManifestPath = path.join(root, 'scripts/operational-autonomy-a4-frontend-manifest.json')\n", 1)
+
+          load_anchor = "const unisexMergeManifest = JSON.parse(fs.readFileSync(unisexMergeManifestPath, 'utf8'))\nif (unisexMergeManifest?.version !== 1 || unisexMergeManifest?.revision !== 'catalog-unisex-merge-r1') throw new Error('Catalog unisex merge frontend manifest invalid')\nif (Object.keys(unisexMergeManifest.files || {}).join(',') !== 'src/features/inventory/views/renderInventoryCatalogPanel.tsx') throw new Error('Catalog unisex merge frontend allow-list widened unexpectedly')\n"
+          if load_anchor not in text:
+              raise SystemExit('A4 frontend manifest load anchor missing')
+          a4_load = load_anchor + "const operationalAutonomyA4Manifest = JSON.parse(fs.readFileSync(operationalAutonomyA4ManifestPath, 'utf8'))\nif (operationalAutonomyA4Manifest?.version !== 1 || operationalAutonomyA4Manifest?.revision !== 'operational-autonomy-a4-mistaken-handover-r1') throw new Error('Operational Autonomy A4 frontend manifest invalid')\nif (Object.keys(operationalAutonomyA4Manifest.files || {}).join(',') !== 'src/App.tsx') throw new Error('Operational Autonomy A4 frontend allow-list widened unexpectedly')\n"
+          text = text.replace(load_anchor, a4_load, 1)
+
+          old = """    const inPlaceDelta = unisexGenderInplaceManifest.files?.[file]
+    const mergeDelta = unisexMergeManifest.files?.[file]
+    if (mergeDelta) {
+      if (!inPlaceDelta) throw new Error('Catalog unisex merge predecessor is missing: ' + file)
+      if (inPlaceDelta.beforeGitBlob !== delta.afterGitBlob || inPlaceDelta.beforeLines !== delta.afterLines) throw new Error('Catalog unisex gender in-place predecessor drifted: ' + file)
+      if (mergeDelta.beforeGitBlob !== inPlaceDelta.afterGitBlob || mergeDelta.beforeLines !== inPlaceDelta.afterLines) throw new Error('Catalog unisex merge predecessor drifted: ' + file)
+      if (gitBlobSha(actual) !== mergeDelta.afterGitBlob || actual.split(/\\r?\\n/).length !== mergeDelta.afterLines) throw new Error('Catalog unisex merge frontend file changed beyond exact manifest: ' + file)
+    } else if (inPlaceDelta) {
+      if (inPlaceDelta.beforeGitBlob !== delta.afterGitBlob || inPlaceDelta.beforeLines !== delta.afterLines) throw new Error('Catalog unisex gender in-place predecessor drifted: ' + file)
+      if (gitBlobSha(actual) !== inPlaceDelta.afterGitBlob || actual.split(/\\r?\\n/).length !== inPlaceDelta.afterLines) throw new Error('Catalog unisex gender in-place frontend file changed beyond exact manifest: ' + file)
+    } else if (gitBlobSha(actual) !== delta.afterGitBlob || actual.split(/\\r?\\n/).length !== delta.afterLines) {
+      throw new Error('Catalog gender frontend file changed beyond exact manifest: ' + file)
+    }
+"""
+          new = """    const inPlaceDelta = unisexGenderInplaceManifest.files?.[file]
+    const mergeDelta = unisexMergeManifest.files?.[file]
+    const operationalAutonomyA4Delta = operationalAutonomyA4Manifest.files?.[file]
+    let acceptedGitBlob = delta.afterGitBlob
+    let acceptedLines = delta.afterLines
+    if (inPlaceDelta) {
+      if (inPlaceDelta.beforeGitBlob !== acceptedGitBlob || inPlaceDelta.beforeLines !== acceptedLines) throw new Error('Catalog unisex gender in-place predecessor drifted: ' + file)
+      acceptedGitBlob = inPlaceDelta.afterGitBlob
+      acceptedLines = inPlaceDelta.afterLines
+    }
+    if (mergeDelta) {
+      if (!inPlaceDelta) throw new Error('Catalog unisex merge predecessor is missing: ' + file)
+      if (mergeDelta.beforeGitBlob !== acceptedGitBlob || mergeDelta.beforeLines !== acceptedLines) throw new Error('Catalog unisex merge predecessor drifted: ' + file)
+      acceptedGitBlob = mergeDelta.afterGitBlob
+      acceptedLines = mergeDelta.afterLines
+    }
+    if (operationalAutonomyA4Delta) {
+      if (operationalAutonomyA4Delta.beforeGitBlob !== acceptedGitBlob || operationalAutonomyA4Delta.beforeLines !== acceptedLines) throw new Error('Operational Autonomy A4 frontend predecessor drifted: ' + file)
+      acceptedGitBlob = operationalAutonomyA4Delta.afterGitBlob
+      acceptedLines = operationalAutonomyA4Delta.afterLines
+    }
+    if (gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\\r?\\n/).length !== acceptedLines) {
+      throw new Error(operationalAutonomyA4Delta
+        ? 'Operational Autonomy A4 frontend file changed beyond exact manifest: ' + file
+        : mergeDelta
+          ? 'Catalog unisex merge frontend file changed beyond exact manifest: ' + file
+          : inPlaceDelta
+            ? 'Catalog unisex gender in-place frontend file changed beyond exact manifest: ' + file
+            : 'Catalog gender frontend file changed beyond exact manifest: ' + file)
+    }
+"""
+          if old not in text:
+              raise SystemExit('A4 frontend exact acceptance block anchor missing')
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+          print(json.dumps(manifest, ensure_ascii=False))
+          PY
+          node scripts/test-step1906b-frontend-modularization.mjs
+      - name: Commit clean frontend structural delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/finalize-operational-autonomy-a4-frontend-temp.yml
+          git add scripts/test-step1906b-frontend-modularization.mjs scripts/operational-autonomy-a4-frontend-manifest.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Register Operational Autonomy A4 frontend delta'
+          git push origin HEAD:operational-autonomy-a4-handover-correction
