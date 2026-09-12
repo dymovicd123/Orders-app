@@ -1,0 +1,160 @@
+name: Prepare client fixes finalizer v2
+
+on:
+  push:
+    branches: [client-fixes-20260912-r1]
+    paths:
+      - '.github/workflows/prep-client-fixes-finalize-v2.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Preserve O1 parity while validating intentional reconciliation fields
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs')
+          const replaceOnce = (text, before, after, label) => {
+            const count = text.split(before).length - 1
+            if (count !== 1) throw new Error(`${label}: expected one anchor, got ${count}`)
+            return text.replace(before, after)
+          }
+
+          const financePath = 'worker/domains/finance-reports.ts'
+          let finance = fs.readFileSync(financePath, 'utf8')
+          finance = replaceOnce(
+            finance,
+            "    () => financeWorkspaceOnly ? emptyRowsResult() : !needsReport('payments') ? emptyRowsResult() : db.prepare(\n      `SELECT p.payment_date AS date, p.method AS method, COALESCE(SUM(p.amount), 0) AS total",
+            "    () => financeWorkspaceOnly || reportType === 'payments' ? emptyRowsResult() : !needsReport('payments') ? emptyRowsResult() : db.prepare(\n      `SELECT p.payment_date AS date, p.method AS method, COALESCE(SUM(p.amount), 0) AS total",
+            'selected payments by-day query reuse',
+          )
+          finance = replaceOnce(
+            finance,
+            "  const paymentMethodsByDaySource = financeWorkspaceOnly\n    ? Array.from(rawPaymentOperationRows.reduce",
+            "  const paymentMethodsByDaySource = financeWorkspaceOnly || reportType === 'payments'\n    ? Array.from(rawPaymentOperationRows.reduce",
+            'selected payments by-day source reuse',
+          )
+          fs.writeFileSync(financePath, finance)
+
+          const o1Path = 'scripts/test-o1-report-scopes.mjs'
+          let o1 = fs.readFileSync(o1Path, 'utf8')
+          o1 = replaceOnce(
+            o1,
+            "const stable = result => { const { generatedAt, ...rest } = result; return rest }\nconst fields = {",
+            `const stable = result => { const { generatedAt, ...rest } = result; return rest }
+const withoutClientReconciliation = result => {
+  const stableResult = stable(result)
+  const reports = { ...(stableResult.reports || {}) }
+  delete reports.paymentMethodReconciliation
+  delete reports.paymentReconciliationByDay
+  return { ...stableResult, reports }
+}
+const canonicalMethod = value => {
+  const method = String(value ?? '').trim().toUpperCase().replace(/\\s+/g, ' ')
+  if (!method) return '—'
+  if (method === 'КАСПИЙ МАГАЗИН' || method === 'KASPI МАГАЗИН') return 'КАСПИ МАГАЗИН'
+  return method
+}
+const expectedClientReconciliation = result => {
+  const methodMap = new Map()
+  const dayMap = new Map()
+  const emptyMethod = method => ({ method, orderPayments: 0, debtClosures: 0, exchangeExtras: 0, grossInflow: 0, refunds: 0, netMovement: 0 })
+  const touchDay = date => {
+    const key = String(date || '').trim()
+    const current = dayMap.get(key) || { date: key, orderPayments: 0, debtClosures: 0, exchangeExtras: 0, grossInflow: 0, refunds: 0, netMovement: 0 }
+    dayMap.set(key, current)
+    return current
+  }
+  for (const operation of result.reports.paymentOperations || []) {
+    const method = canonicalMethod(operation.method)
+    const current = methodMap.get(method) || emptyMethod(method)
+    const day = touchDay(operation.paymentDate)
+    const amount = Number(operation.amount || 0)
+    if (operation.operationType === 'exchange_extra') {
+      current.exchangeExtras += amount; day.exchangeExtras += amount
+    } else if (operation.operationType === 'debt_close' || operation.operationType === 'order_extra') {
+      current.debtClosures += amount; day.debtClosures += amount
+    } else {
+      current.orderPayments += amount; day.orderPayments += amount
+    }
+    current.grossInflow += amount; day.grossInflow += amount
+    methodMap.set(method, current)
+  }
+  for (const row of result.reports.returns || []) {
+    if (String(row.status || '').trim() === 'cancelled') continue
+    const method = canonicalMethod(row.payment_method)
+    const current = methodMap.get(method) || emptyMethod(method)
+    const amount = Number(row.amount || 0)
+    current.refunds += amount
+    touchDay(row.return_date).refunds += amount
+    methodMap.set(method, current)
+  }
+  return {
+    methods: Array.from(methodMap.values()).map(row => ({ ...row, netMovement: row.grossInflow - row.refunds })).sort((a,b) => b.grossInflow - a.grossInflow || a.method.localeCompare(b.method, 'ru')),
+    days: Array.from(dayMap.values()).map(row => ({ ...row, netMovement: row.grossInflow - row.refunds })).sort((a,b) => a.date.localeCompare(b.date)),
+  }
+}
+const assertClientReconciliation = result => {
+  const expected = expectedClientReconciliation(result)
+  assert.deepEqual(result.reports.paymentMethodReconciliation, expected.methods, 'payment-method reconciliation arithmetic')
+  assert.deepEqual(result.reports.paymentReconciliationByDay, expected.days, 'payment-day reconciliation arithmetic')
+}
+const fields = {`,
+            'O1 reconciliation helpers',
+          )
+          o1 = replaceOnce(
+            o1,
+            "  const full = await baseline(adapter,url)\n  assert.deepEqual(stable(await current(adapter,url)),stable(full),'legacy full response parity')\n",
+            "  const full = await baseline(adapter,url)\n  const currentFull = await current(adapter,url)\n  assert.deepEqual(withoutClientReconciliation(currentFull),stable(full),'legacy full response parity outside the two intentional additive reconciliation fields')\n  assertClientReconciliation(currentFull)\n",
+            'O1 full parity',
+          )
+          o1 = replaceOnce(
+            o1,
+            "    assert.equal(markup(selected,reportType),markup(full,reportType),`${reportType}: complete displayed/exportable report DOM parity`)\n    for (const field of fields[reportType]) assert.deepEqual(selected.reports[field],full.reports[field],`${range}: ${reportType}.${field}`)\n",
+            "    assert.equal(markup(selected,reportType),markup(currentFull,reportType),`${reportType}: complete displayed/exportable report DOM parity`)\n    for (const field of fields[reportType]) assert.deepEqual(selected.reports[field],currentFull.reports[field],`${range}: ${reportType}.${field}`)\n    if (reportType === 'payments') {\n      assertClientReconciliation(selected)\n      assert.deepEqual(selected.reports.paymentMethodReconciliation,currentFull.reports.paymentMethodReconciliation,'payments selected/full method reconciliation parity')\n      assert.deepEqual(selected.reports.paymentReconciliationByDay,currentFull.reports.paymentReconciliationByDay,'payments selected/full day reconciliation parity')\n    }\n",
+            'O1 selected parity',
+          )
+          o1 = replaceOnce(
+            o1,
+            "  assert.deepEqual(stable(await current(adapter,url)),stable(full),'unknown type keeps full contract')\n  url.searchParams.set('scope','finance'); url.searchParams.set('reportType','products')\n  assert.deepEqual(stable(await current(adapter,url)),stable(await baseline(adapter,url)),'finance workspace unaffected')\n",
+            "  const unknown = await current(adapter,url)\n  assert.deepEqual(withoutClientReconciliation(unknown),stable(full),'unknown type keeps legacy full contract outside intentional reconciliation fields')\n  assertClientReconciliation(unknown)\n  url.searchParams.set('scope','finance'); url.searchParams.set('reportType','products')\n  const financeWorkspaceCurrent = await current(adapter,url)\n  const financeWorkspaceBaseline = await baseline(adapter,url)\n  assert.deepEqual(withoutClientReconciliation(financeWorkspaceCurrent),stable(financeWorkspaceBaseline),'finance workspace legacy contract unaffected outside intentional reconciliation fields')\n  assertClientReconciliation(financeWorkspaceCurrent)\n",
+            'O1 unknown/finance parity',
+          )
+          fs.writeFileSync(o1Path, o1)
+
+          const focusedPath = 'scripts/test-client-fixes-20260912-r1.mjs'
+          let focused = fs.readFileSync(focusedPath, 'utf8')
+          focused = replaceOnce(
+            focused,
+            "  check(financeWorker.includes(\"!needsReport('payments', 'managers', 'cities')\"), 'Payments report must load operation classification')\n",
+            "  check(financeWorker.includes(\"!needsReport('payments', 'managers', 'cities')\"), 'Payments report must load operation classification')\n  check(financeWorker.includes(\"financeWorkspaceOnly || reportType === 'payments'\"), 'Selected payments report must reuse payment operation rows for daily method totals instead of adding another D1 query')\n",
+            'focused D1 query reuse guard',
+          )
+          fs.writeFileSync(focusedPath, focused)
+          NODE
+      - name: Verify targeted O1 and client checks
+        run: |
+          node scripts/test-client-fixes-20260912-r1.mjs
+          node scripts/test-o1-report-scopes.mjs
+          git diff --check
+      - name: Trigger finalizer and remove this prep workflow
+        run: |
+          printf '\n# v2: O1 additive reconciliation parity is explicitly validated.\n' >> .github/workflows/finalize-client-fixes-20260912.yml
+          rm -f .github/workflows/prep-client-fixes-finalize-v2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Validate additive finance reconciliation in O1"
+          git push origin HEAD:client-fixes-20260912-r1
