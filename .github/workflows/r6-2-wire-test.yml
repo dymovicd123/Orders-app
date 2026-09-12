@@ -1,0 +1,42 @@
+name: R6.2 wire test
+
+on:
+  push:
+    branches:
+      - d1-read-budget-r6-2-finance-payment-join
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d1-read-budget-r6-2-finance-payment-join
+
+      - name: Wire focused R6.2 regression into release gate
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('package.json')
+          text = path.read_text(encoding='utf-8')
+          old = ' && node scripts/test-d1-read-budget-r6-1.mjs",'
+          new = ' && node scripts/test-d1-read-budget-r6-1.mjs && node scripts/test-d1-read-budget-r6-2.mjs",'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one R6.1 release-check tail, got {text.count(old)}')
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Remove temporary workflow and commit gate wiring
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/r6-2-wire-test.yml
+          git add package.json
+          git commit -m "R6.2: wire Finance payment read regression"
+          git push origin HEAD:d1-read-budget-r6-2-finance-payment-join
