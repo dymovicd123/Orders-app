@@ -170,7 +170,10 @@ export async function listReturnHistory(db: D1Database, url: URL) {
             ri.gender_snapshot AS return_item_gender, ri.color_snapshot AS return_item_color,
             ri.material_snapshot AS return_item_material, ri.length_snapshot AS return_item_length,
             ri.size_snapshot AS return_item_size, ri.inventory_source AS return_item_inventory_source,
-            ri.restocked AS return_item_restocked, lifecycle.status AS return_item_lifecycle_status,
+            ri.restocked AS return_item_restocked,
+            ri.physical_tracking AS return_item_physical_tracking,
+            ri.physical_received_at AS return_item_physical_received_at,
+            lifecycle.status AS return_item_lifecycle_status,
             lifecycle.pending_reason AS return_item_pending_reason
      FROM selected_returns selected
      JOIN returns r ON r.id = selected.id JOIN orders o ON o.id = r.order_id
@@ -204,6 +207,8 @@ export async function listReturnHistory(db: D1Database, url: URL) {
       gender: cleanText(row.return_item_gender) || null, color: cleanText(row.return_item_color) || null, material: cleanText(row.return_item_material) || null,
       length: cleanText(row.return_item_length) || null, size: cleanText(row.return_item_size) || null,
       inventorySource: cleanText(row.return_item_inventory_source) || null, restocked: Boolean(toInt(row.return_item_restocked, 0)),
+      physicalTracking: Boolean(toInt(row.return_item_physical_tracking, 0)),
+      physicalReceivedAt: cleanText(row.return_item_physical_received_at) || null,
       lifecycleStatus: cleanText(row.return_item_lifecycle_status) || null, pendingReason: cleanText(row.return_item_pending_reason) || null,
     });
   }
