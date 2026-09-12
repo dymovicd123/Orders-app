@@ -5,14 +5,12 @@ export function DashboardSection({ ctx }: { ctx: SectionContext }) {
   const {
     busy,
     dashboardInsights,
-    dashboardLowStock,
     dashboardSummary,
     dashboardWorkshopWarnings,
     formatMoney,
     formatPercent,
     isAdmin,
     loadOverviewDashboard,
-    openDashboardStockItem,
     openDashboardWorkshopItem,
     openInventoryPanel,
     sectorStyle,
@@ -28,7 +26,7 @@ export function DashboardSection({ ctx }: { ctx: SectionContext }) {
                 <div>
                   <div className="card-label">Инфопанель</div>
                   <h2>Дэшборд месяца</h2>
-                  <p>Главные цифры месяца по дате заказа, горячие остатки и незавершённый цех.</p>
+                  <p>Главные цифры месяца и незавершённый цех. Просроченные и срочные заказы выносятся вперёд.</p>
                 </div>
                 <div className="dashboard-hero-actions">
                   <span className="soft-badge">Этот месяц</span>
@@ -49,7 +47,6 @@ export function DashboardSection({ ctx }: { ctx: SectionContext }) {
                 <div className="summary-card"><span>Средний чек</span><strong>{formatMoney(dashboardSummary.monthAvgCheck || 0)}</strong></div>
                 <div className="summary-card"><span>Новые клиенты</span><strong>{dashboardSummary.monthNewClients || 0}</strong></div>
                 <div className="summary-card"><span>Повторные клиенты</span><strong>{dashboardSummary.monthRepeatClients || 0}</strong></div>
-                <div className="summary-card warning-card"><span>Критичные остатки</span><strong>{dashboardSummary.criticalStockCount}</strong></div>
                 <div className="summary-card warning-card"><span>Цех активные</span><strong>{dashboardSummary.workshopActiveTotal || workshopData?.activeCount || summary.workshop}</strong></div>
               </div>
     
@@ -79,42 +76,12 @@ export function DashboardSection({ ctx }: { ctx: SectionContext }) {
                   <div className="mini-panel-head">
                     <div>
                       <h3>Что требует внимания</h3>
-                      <p className="mini-panel-note">Склад сортируется по спросу из заказов, цех — по сроку ожидания.</p>
+                      <p className="mini-panel-note">Здесь только цех: просрочка, дедлайны, срочность и долгое ожидание.</p>
                     </div>
-                    <span className="soft-badge">{dashboardLowStock.length + dashboardWorkshopWarnings.length}</span>
+                    <span className="soft-badge">{dashboardWorkshopWarnings.length}</span>
                   </div>
     
                   <div className="dashboard-attention-grid">
-                    <div className="dashboard-attention-column">
-                      <div className="dashboard-list-head">
-                        <strong>Критические остатки склада</strong>
-                        <span>{dashboardSummary.negativeStockCount} минус · {dashboardSummary.zeroStockCount} ноль · порог {dashboardInsights?.thresholds.lowStockLimit ?? 5}</span>
-                      </div>
-                      <div className="dashboard-scroll-list">
-                        {dashboardLowStock.length ? dashboardLowStock.map((item) => (
-                          <button
-                            key={`dash-stock-${item.source}-${item.id}`}
-                            type="button"
-                            className={`dashboard-warning-row ${item.quantity < 0 ? 'is-danger' : item.quantity === 0 ? 'is-zero' : 'is-low'}`}
-                            onClick={() => openDashboardStockItem(item)}
-                            title="Открыть товар в складе"
-                          >
-                            <span className="dashboard-warning-main">
-                              <strong>{item.productName}</strong>
-                              <em>{[item.sourceLabel, item.gender, item.color, item.material, item.length, item.size].filter(Boolean).join(' · ') || 'Без характеристик'}</em>
-                              <small>{item.reason}{item.latestOrderId ? ` · последний заказ: ${item.latestOrderId}` : ''}</small>
-                            </span>
-                            <span className="dashboard-warning-side">
-                              <b>{item.quantity}</b>
-                              <small>{item.demandQuantity} шт. спрос</small>
-                            </span>
-                          </button>
-                        )) : (
-                          <div className="empty-state">Критичных остатков пока нет.</div>
-                        )}
-                      </div>
-                    </div>
-    
                     <div className="dashboard-attention-column">
                       <div className="dashboard-list-head">
                         <strong>Цех долго в ожидании</strong>
