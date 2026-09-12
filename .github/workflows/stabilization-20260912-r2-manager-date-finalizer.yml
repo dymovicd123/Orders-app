@@ -1,0 +1,73 @@
+name: September 12 R2 manager-date finalizer
+
+on:
+  push:
+    branches:
+      - stabilization-20260912-r2-manager-date
+    paths:
+      - scripts/apply-stabilization-20260912-r2-manager-date.mjs
+      - .github/workflows/stabilization-20260912-r2-manager-date-finalizer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: stabilization-20260912-r2-manager-date
+          fetch-depth: 0
+
+      - name: Fetch current main baseline
+        run: git fetch origin main:refs/remotes/origin/main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply R2 finalizer
+        run: node scripts/apply-stabilization-20260912-r2-manager-date.mjs
+
+      - name: Focused R2 regression
+        run: node scripts/test-stabilization-20260912-r2-manager-date.mjs
+
+      - name: R6.3 manager reuse regression
+        run: node scripts/test-d1-read-budget-r6-3.mjs
+
+      - name: Exact Worker structural gate
+        run: node scripts/test-step1906a-worker-modularization.mjs
+
+      - name: Full cumulative release gate
+        run: npm run release:check
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Production build
+        run: npm run build
+
+      - name: Remove temporary finalizer machinery
+        run: |
+          rm scripts/apply-stabilization-20260912-r2-manager-date.mjs
+          rm .github/workflows/stabilization-20260912-r2-manager-date-finalizer.yml
+
+      - name: Verify patch formatting
+        run: git diff --check
+
+      - name: Commit finalized R2 stabilization
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git status --short
+          git commit -m "Finalize manager identity and Kazakhstan dashboard date safeguards"
+          git push origin HEAD:stabilization-20260912-r2-manager-date
