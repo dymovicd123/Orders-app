@@ -74,7 +74,7 @@ try {
   const exchangeView = read('src/features/sections/OrderExchangeSection.tsx')
   const types = read('src/app/types.ts')
 
-  const createReturn = section(exchanges, 'export async function createReturn(', 'export const noStandaloneReturnSql')
+  const createReturn = section(exchanges, 'export async function createReturn(', 'export async function receiveReturnedItem(')
   const createExchange = section(exchanges, 'export async function createExchange(', 'export async function listExchanges(')
   const cancelReturn = section(exchanges, 'export async function cancelReturn(', 'export async function cancelExchange(')
   const cancelExchange = section(exchanges, 'export async function cancelExchange(')
