@@ -1,4 +1,5 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
+import { useState } from 'react'
 import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
 type SectionContext = Record<string, any>
 
@@ -23,6 +24,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     returnHistorySummary,
     loadReturnHistory,
     returnSelectedOrder,
+    receiveReturnedItemAction,
     saveReturn,
     sectorStyle,
     setOrderPanel,
@@ -51,6 +53,17 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     : source === 'boutique'
       ? 'Бутик'
       : 'Без возврата в остатки'
+
+  const [receiptDestinations, setReceiptDestinations] = useState<Record<string, 'warehouse' | 'boutique' | 'no_stock'>>({})
+  const returnPhysicalStatus = (item: any) => {
+    if (!item.physicalTracking) return 'Старая запись — физическое получение не отслеживалось'
+    if (!item.physicalReceivedAt) return 'Ещё не пришёл'
+    if (!item.inventorySource) return 'Получен, в остаток не добавляли'
+    const destination = inventorySourceLabel(item.inventorySource)
+    if (item.lifecycleStatus === 'pending') return `Получен → ${destination}; остаток требует уточнения`
+    if (item.lifecycleStatus === 'cancelled') return `Получен; проведение в ${destination} отменено`
+    return `Получен → ${destination}`
+  }
 
   return (
     <article className="card wide sector-orders" id="order-returns" style={{ ...sectorStyle('orders'), ...orderPanelStyle('returns') }}>
@@ -176,26 +189,6 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                               placeholder="Например, НАЛИЧКА"
                             />
                           </label>
-                          <label>
-                            <span>Куда вернуть товар</span>
-                            <select
-                              value={returnDraft.restockSource}
-                              onChange={(event) => {
-                                const restockSource = event.target.value as ReturnDraft['restockSource']
-                                setReturnDraft((current) => ({
-                                  ...current,
-                                  restockSource,
-                                  items: restockSource === 'boutique'
-                                    ? current.items.map((item) => item.sourceType === 'workshop' ? { ...item, restock: false } : item)
-                                    : current.items,
-                                }))
-                              }}
-                            >
-                              <option value="none">Не возвращать в остатки</option>
-                              <option value="warehouse">Склад</option>
-                              <option value="boutique">Бутик</option>
-                            </select>
-                          </label>
                           <label className="wide-field">
                             <span>Причина / комментарий</span>
                             <SmartPickerInput
@@ -211,7 +204,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                       <div className="mini-item order-payment-card">
                         <div className="mini-item-head">
                           <strong>Какие товары возвращаются</strong>
-                          <span className="muted-small">Выберите количество. Для обычной складской/бутиковой позиции возврат в выбранное место включён по умолчанию. Товар из Цеха по умолчанию не попадает в остатки: если клиентскую вещь действительно решили оставить на Складе, включите это прямо у нужной строки. Цех → Бутик не используется.</span>
+                          <span className="muted-small">Для каждой возвращаемой позиции укажите только фактическую ситуацию: товар ещё едет или уже физически пришёл. Если он придёт позже, отметьте это одной кнопкой в истории возвратов.</span>
                         </div>
                         <div className="table-shell">
                           <table className="data-table return-items-table">
@@ -220,6 +213,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                 <th>Позиция</th>
                                 <th>Кол-во в заказе</th>
                                 <th>Вернуть</th>
+                                <th>Товар физически</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -227,28 +221,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                 <tr key={`return-item-${item.orderItemId}`}>
                                   <td>
                                     <div>{item.productName}</div>
-                                    <label className="muted-small">
-                                      <input
-                                        type="checkbox"
-                                        checked={returnDraft.restockSource !== 'none' && Boolean(item.restock)}
-                                        disabled={returnDraft.restockSource === 'none' || (item.sourceType === 'workshop' && returnDraft.restockSource === 'boutique')}
-                                        onChange={(event) => setReturnDraft((current) => ({
-                                          ...current,
-                                          items: current.items.map((entry, itemIndex) => itemIndex === index
-                                            ? { ...entry, restock: event.target.checked }
-                                            : entry),
-                                        }))}
-                                      />
-                                      <span>
-                                        {returnDraft.restockSource === 'none'
-                                          ? 'Без возврата в остатки'
-                                          : item.sourceType === 'workshop' && returnDraft.restockSource === 'boutique'
-                                            ? 'Цех → Бутик нельзя'
-                                            : item.restock
-                                              ? item.sourceType === 'workshop' ? 'Принять на Склад' : 'Вернуть в остаток'
-                                              : 'Не возвращать в остаток'}
-                                      </span>
-                                    </label>
+                                    <span className="muted-small">{item.sourceType === 'workshop' ? 'Позиция из Цеха' : item.sourceType === 'boutique' ? 'Была из Бутика' : 'Была со Склада'}</span>
                                   </td>
                                   <td>{item.maxQuantity}</td>
                                   <td>
@@ -265,9 +238,29 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                       })}
                                     />
                                   </td>
+                                  <td>
+                                    <select
+                                      value={item.physicalState}
+                                      disabled={Number(item.quantity || 0) <= 0}
+                                      onChange={(event) => {
+                                        const physicalState = event.target.value as 'pending' | 'warehouse' | 'boutique' | 'no_stock'
+                                        setReturnDraft((current) => ({
+                                          ...current,
+                                          items: current.items.map((entry, itemIndex) => itemIndex === index
+                                            ? { ...entry, physicalState, restock: physicalState === 'warehouse' || physicalState === 'boutique' }
+                                            : entry),
+                                        }))
+                                      }}
+                                    >
+                                      <option value="pending">Ещё не пришёл</option>
+                                      <option value="warehouse">Пришёл → Склад</option>
+                                      {item.sourceType !== 'workshop' ? <option value="boutique">Пришёл → Бутик</option> : null}
+                                      <option value="no_stock">Пришёл, в остаток не добавлять</option>
+                                    </select>
+                                  </td>
                                 </tr>
                               )) : (
-                                <tr><td colSpan={3} className="empty-state">У заказа нет позиций для возврата.</td></tr>
+                                <tr><td colSpan={4} className="empty-state">У заказа нет позиций для возврата.</td></tr>
                               )}
                             </tbody>
                           </table>
@@ -342,7 +335,35 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                               <div className="history-product-card" key={`return-history-item-${entry.id}-${item.id}`}>
                                 <strong>{item.productName} × {item.quantity}</strong>
                                 <span>{formatReturnItemCharacteristics(item)}</span>
-                                {entry.operationType === 'order_return' ? <em>{item.lifecycleStatus === 'pending' ? `Ожидает приёма: ${inventorySourceLabel(item.inventorySource)}` : item.lifecycleStatus === 'cancelled' ? 'Приём в остаток отменён' : item.restocked ? `Возвращён: ${inventorySourceLabel(item.inventorySource)}` : 'Не возвращён в остатки'}</em> : null}
+                                {entry.operationType === 'order_return' ? <em>{returnPhysicalStatus(item)}</em> : null}
+                                {entry.operationType === 'order_return' && entry.status !== 'cancelled' && item.physicalTracking && !item.physicalReceivedAt ? (
+                                  <div className="mini-panel-actions">
+                                    <select
+                                      value={receiptDestinations[`return:${entry.id}:${item.id}`] || 'warehouse'}
+                                      onChange={(event) => setReceiptDestinations((current) => ({ ...current, [`return:${entry.id}:${item.id}`]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
+                                      disabled={returnBusy}
+                                    >
+                                      <option value="warehouse">Склад</option>
+                                      {!item.isWorkshop ? <option value="boutique">Бутик</option> : null}
+                                      <option value="no_stock">Без добавления в остаток</option>
+                                    </select>
+                                    <button
+                                      className="primary compact"
+                                      type="button"
+                                      disabled={returnBusy}
+                                      onClick={() => void receiveReturnedItemAction({
+                                        operationType: 'return',
+                                        operationId: entry.id,
+                                        operationItemId: item.id,
+                                        destination: receiptDestinations[`return:${entry.id}:${item.id}`] || 'warehouse',
+                                        productName: item.productName,
+                                        externalId: entry.externalId,
+                                      })}
+                                    >
+                                      Товар пришёл
+                                    </button>
+                                  </div>
+                                ) : null}
                               </div>
                             ))}
                             {!entry.items?.length ? <div className="history-product-card"><span>Товары в этой старой записи не указаны.</span></div> : null}

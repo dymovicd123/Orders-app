@@ -27,6 +27,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     ManagerBadge,
     managerColorFor,
     orderPanelStyle,
+    receiveReturnedItemAction,
     saveExchange,
     sectorStyle,
     setExchangeDraft,
@@ -38,6 +39,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
   } = ctx
 
   const [financialCorrection, setFinancialCorrection] = useState<any>(null)
+  const [receiptDestinations, setReceiptDestinations] = useState<Record<string, 'warehouse' | 'boutique' | 'no_stock'>>({})
 
   const openFinancialCorrection = (entry: any) => {
     setFinancialCorrection({
@@ -63,12 +65,14 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     return fields.length ? fields.join(' · ') : 'Характеристики не указаны'
   }
 
-  const oldReturnLabel = (source: string, lifecycleStatus?: string | null) => {
-    if (source !== 'warehouse' && source !== 'boutique') return 'Не возвращён в остатки'
-    const destination = source === 'warehouse' ? 'склад' : 'бутик'
-    if (lifecycleStatus === 'pending') return `Ожидает приёма: ${destination}`
-    if (lifecycleStatus === 'cancelled') return 'Приём старой вещи отменён'
-    return `Возвращён: ${destination}`
+  const oldReturnLabel = (entry: any) => {
+    if (!entry.oldPhysicalTracking) return 'Старая запись — физическое получение не отслеживалось'
+    if (!entry.oldPhysicalReceivedAt) return 'Ещё не пришла'
+    if (entry.oldReturnSource !== 'warehouse' && entry.oldReturnSource !== 'boutique') return 'Получена, в остаток не добавляли'
+    const destination = entry.oldReturnSource === 'warehouse' ? 'Склад' : 'Бутик'
+    if (entry.oldLifecycleStatus === 'pending') return `Получена → ${destination}; остаток требует уточнения`
+    if (entry.oldLifecycleStatus === 'cancelled') return `Получена; проведение в ${destination} отменено`
+    return `Получена → ${destination}`
   }
 
   const newIssueLabel = (source: string, lifecycleStatus?: string | null) => {
@@ -120,7 +124,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
   return (
     <article className="card wide sector-orders" id="order-exchange" style={{ ...sectorStyle('orders'), ...orderPanelStyle('exchange') }}>
               <div className="card-label">Обмен товара</div>
-              <div className="card-meta">Обмен открывается из главной таблицы заказов или из активного цеха. По умолчанию старая вещь не возвращается на склад — менеджер выбирает это вручную.</div>
+              <div className="card-meta">Обмен открывается из главной таблицы заказов или из активного цеха. Для старой вещи отдельно укажите: она ещё едет или уже физически пришла.</div>
     
               <section className="mini-panel exchange-start-note">
                 <div className="mini-panel-head">
@@ -179,7 +183,8 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                   ...current,
                                   oldItemId,
                                   oldQuantity: 1,
-                                  oldReturnSource: selectedItem?.sourceType === 'workshop' && current.oldReturnSource === 'boutique' ? 'none' : current.oldReturnSource,
+                                  oldReturnSource: 'none',
+                                  oldPhysicalState: selectedItem?.sourceType === 'workshop' && current.oldPhysicalState === 'boutique' ? 'pending' : current.oldPhysicalState,
                                   newSourceWasManuallyChanged: false,
                                   newItem: resetObservedStock(current.newItem, {
                                     sourceType: replacementSourceForItem(selectedItem),
@@ -206,16 +211,24 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                             />
                           </label>
                           <label>
-                            <span>Куда вернуть старую вещь</span>
+                            <span>Старая вещь сейчас</span>
                             <select
-                              value={exchangeDraft.oldReturnSource}
-                              onChange={(event) => setExchangeDraft((current) => ({ ...current, oldReturnSource: event.target.value as ExchangeDraft['oldReturnSource'] }))}
+                              value={exchangeDraft.oldPhysicalState}
+                              onChange={(event) => {
+                                const oldPhysicalState = event.target.value as 'pending' | 'warehouse' | 'boutique' | 'no_stock'
+                                setExchangeDraft((current) => ({
+                                  ...current,
+                                  oldPhysicalState,
+                                  oldReturnSource: oldPhysicalState === 'warehouse' || oldPhysicalState === 'boutique' ? oldPhysicalState : 'none',
+                                }))
+                              }}
                             >
-                              <option value="warehouse">Склад</option>
-                              {!effectiveOldItemIsWorkshop ? <option value="boutique">Бутик</option> : null}
-                              <option value="none">Не возвращать в остатки</option>
+                              <option value="pending">Ещё не пришла</option>
+                              <option value="warehouse">Пришла → Склад</option>
+                              {!effectiveOldItemIsWorkshop ? <option value="boutique">Пришла → Бутик</option> : null}
+                              <option value="no_stock">Пришла, в остаток не добавлять</option>
                             </select>
-                            {effectiveOldItemIsWorkshop ? <small className="field-hint">Вещь из Цеха не попадает в остатки автоматически. Выберите Склад только если возвращённую клиентом вещь действительно решили оставить на Складе.</small> : null}
+                            {effectiveOldItemIsWorkshop ? <small className="field-hint">Для вещи из Цеха Бутик недоступен. Если вещь ещё едет, оставьте «Ещё не пришла».</small> : null}
                           </label>
                           <label>
                             <span>Дата обмена</span>
@@ -413,7 +426,37 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                         </summary>
                         <div className="history-card-body">
                           <div className="history-exchange-pair">
-                            <div className="history-product-card"><span>Вернули</span><strong>{entry.oldProductName} × {entry.oldQuantity}</strong><em>{formatHistoryCharacteristics(entry, 'old')}</em><b>{oldReturnLabel(entry.oldReturnSource, entry.oldLifecycleStatus)}</b></div>
+                            <div className="history-product-card">
+                              <span>Вернули</span><strong>{entry.oldProductName} × {entry.oldQuantity}</strong><em>{formatHistoryCharacteristics(entry, 'old')}</em><b>{oldReturnLabel(entry)}</b>
+                              {entry.status !== 'cancelled' && entry.oldPhysicalTracking && !entry.oldPhysicalReceivedAt && entry.oldOperationItemId ? (
+                                <div className="mini-panel-actions">
+                                  <select
+                                    value={receiptDestinations[`exchange:${entry.id}:${entry.oldOperationItemId}`] || 'warehouse'}
+                                    onChange={(event) => setReceiptDestinations((current) => ({ ...current, [`exchange:${entry.id}:${entry.oldOperationItemId}`]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
+                                    disabled={exchangeBusy}
+                                  >
+                                    <option value="warehouse">Склад</option>
+                                    {!entry.oldIsWorkshop ? <option value="boutique">Бутик</option> : null}
+                                    <option value="no_stock">Без добавления в остаток</option>
+                                  </select>
+                                  <button
+                                    className="primary compact"
+                                    type="button"
+                                    disabled={exchangeBusy}
+                                    onClick={() => void receiveReturnedItemAction({
+                                      operationType: 'exchange',
+                                      operationId: entry.id,
+                                      operationItemId: entry.oldOperationItemId,
+                                      destination: receiptDestinations[`exchange:${entry.id}:${entry.oldOperationItemId}`] || 'warehouse',
+                                      productName: entry.oldProductName,
+                                      externalId: entry.externalId,
+                                    })}
+                                  >
+                                    Товар пришёл
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
                             <div className="history-exchange-arrow">→</div>
                             <div className="history-product-card"><span>Выдали</span><strong>{entry.newProductName} × {entry.newQuantity}</strong><em>{formatHistoryCharacteristics(entry, 'new')}</em><b>{newIssueLabel(entry.newSourceType, entry.newLifecycleStatus)}</b></div>
                           </div>

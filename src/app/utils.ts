@@ -745,7 +745,8 @@ export function createReturnDraft(order?: OrderRecord | null): ReturnDraft {
       quantity: 0,
       maxQuantity: Math.max(1, Number(item.quantity || 1)),
       sourceType: (item.sourceType === 'workshop' ? 'workshop' : item.sourceType === 'boutique' ? 'boutique' : 'warehouse') as 'warehouse' | 'boutique' | 'workshop',
-      restock: item.sourceType !== 'workshop',
+      restock: false,
+      physicalState: 'pending' as const,
     })).filter((item) => item.orderItemId > 0),
   }
 }
@@ -765,6 +766,7 @@ export function createExchangeDraft(order?: OrderRecord | null): ExchangeDraft {
     oldItemId: Number(firstItem?.id || 0),
     oldQuantity: 1,
     oldReturnSource: 'none',
+    oldPhysicalState: 'pending',
     newItem: {
       ...createEmptyEditorItem(),
       sourceType: inheritedSource,
