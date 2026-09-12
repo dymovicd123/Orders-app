@@ -7,13 +7,21 @@
   gap: 12px;
 }
 
+/* Dedicated list contract: do not inherit the generic dashboard grid rows. */
 .dashboard-workshop-order-list {
   max-height: 640px;
-  gap: 12px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
   padding: 4px 10px 8px 0;
+  scrollbar-gutter: stable;
 }
 
 .dashboard-workshop-order-card {
+  flex: 0 0 auto;
   width: 100%;
   min-width: 0;
   height: auto !important;
@@ -21,33 +29,34 @@
   max-height: none !important;
   position: relative;
   display: grid !important;
-  align-content: start;
-  gap: 12px;
-  padding: 16px 18px 15px 21px;
-  border: 1px solid #e5ebf3;
-  border-radius: 16px;
+  gap: 11px;
+  padding: 15px 17px 14px 20px;
+  border: 1px solid #e1e8f1;
+  border-radius: 15px;
   background: #fff;
   color: #0f172a;
   text-align: left;
   cursor: pointer;
-  box-shadow: 0 5px 18px rgba(15, 23, 42, 0.045);
   overflow: visible !important;
-  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+  box-shadow: 0 5px 16px rgba(15, 23, 42, .04);
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
 }
 
 .dashboard-workshop-order-card::before {
   content: '';
   position: absolute;
-  inset: 11px auto 11px 0;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
   width: 5px;
   border-radius: 0 6px 6px 0;
-  background: #60a5fa;
+  background: #3b82f6;
 }
 
 .dashboard-workshop-order-card:hover,
 .dashboard-workshop-order-card:focus-visible {
-  border-color: #c9d7ea;
-  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.09);
+  border-color: #cbd8e8;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .08);
   transform: translateY(-1px);
   outline: none;
 }
@@ -70,7 +79,7 @@
 .dashboard-workshop-order-head {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(190px, 235px);
+  grid-template-columns: minmax(0, 1fr) minmax(260px, .8fr);
   gap: 18px;
   align-items: start;
 }
@@ -78,211 +87,119 @@
 .dashboard-workshop-order-identity {
   min-width: 0;
   display: grid;
-  gap: 5px;
-}
-
-.dashboard-workshop-order-ref-row {
-  min-width: 0;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.dashboard-workshop-order-ref {
-  min-width: 0;
-  max-width: 100%;
-  color: #64748b;
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.72rem;
-  line-height: 1.35;
-  font-weight: 800;
-  letter-spacing: .025em;
-  overflow-wrap: anywhere;
-}
-
-.dashboard-workshop-open-hint {
-  flex: 0 0 auto;
-  color: #2563eb;
-  font-size: 0.72rem;
-  font-weight: 750;
-  white-space: nowrap;
+  gap: 4px;
 }
 
 .dashboard-workshop-customer-name {
-  display: block;
   min-width: 0;
   color: #0f172a;
   font-size: 1.02rem;
   line-height: 1.25;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-workshop-order-ref {
+  min-width: 0;
+  color: #52637a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .72rem;
+  line-height: 1.35;
   font-weight: 800;
+  letter-spacing: .015em;
   overflow-wrap: anywhere;
 }
 
 .dashboard-workshop-order-meta-line {
   min-width: 0;
-  color: #64748b;
-  font-size: 0.78rem;
+  color: #7a8798;
+  font-size: .76rem;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
-.dashboard-workshop-deadline-panel {
+.dashboard-workshop-statuses {
   min-width: 0;
-  display: grid;
-  gap: 3px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: #f8fafc;
-  border: 1px solid #eef2f7;
-}
-
-.dashboard-workshop-deadline-panel > span {
-  color: #94a3b8;
-  font-size: 0.66rem;
-  line-height: 1.2;
-  font-weight: 800;
-  letter-spacing: .055em;
-  text-transform: uppercase;
-}
-
-.dashboard-workshop-deadline-panel > strong {
-  color: #1e293b;
-  font-size: 0.9rem;
-  line-height: 1.25;
-}
-
-.dashboard-workshop-deadline-panel > small {
-  color: #64748b;
-  font-size: 0.7rem;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
-.dashboard-workshop-order-card.is-danger .dashboard-workshop-deadline-panel,
-.dashboard-workshop-order-card.is-waiting-long .dashboard-workshop-deadline-panel {
-  background: #fff5f5;
-  border-color: #fee2e2;
-}
-
-.dashboard-workshop-order-card.is-danger .dashboard-workshop-deadline-panel > strong,
-.dashboard-workshop-order-card.is-waiting-long .dashboard-workshop-deadline-panel > strong {
-  color: #b91c1c;
-}
-
-.dashboard-workshop-order-card.is-deadline .dashboard-workshop-deadline-panel,
-.dashboard-workshop-order-card.is-urgent .dashboard-workshop-deadline-panel {
-  background: #fffaf0;
-  border-color: #fdecc8;
-}
-
-.dashboard-workshop-order-card.is-deadline .dashboard-workshop-deadline-panel > strong,
-.dashboard-workshop-order-card.is-urgent .dashboard-workshop-deadline-panel > strong {
-  color: #b45309;
-}
-
-.dashboard-workshop-order-strip {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px 13px;
-  align-items: center;
-  padding: 8px 0;
-  border-top: 1px solid #eef2f7;
-  border-bottom: 1px solid #eef2f7;
-  color: #64748b;
-  font-size: 0.75rem;
-  line-height: 1.25;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 7px;
 }
 
-.dashboard-workshop-order-strip > span {
+.dashboard-workshop-status {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-}
-
-.dashboard-workshop-order-strip b {
-  color: #334155;
-  font-size: 0.78rem;
-}
-
-.dashboard-workshop-order-strip .is-urgent-mark,
-.dashboard-workshop-order-strip .is-comment-mark {
-  padding: 3px 7px;
-  border-radius: 6px;
-  font-size: 0.69rem;
-  font-weight: 800;
-}
-
-.dashboard-workshop-order-strip .is-urgent-mark {
-  background: #fff4d6;
-  color: #a16207;
-}
-
-.dashboard-workshop-order-strip .is-comment-mark {
-  background: #f3f0ff;
-  color: #6d28d9;
-}
-
-.dashboard-workshop-order-items {
-  min-width: 0;
-  display: grid;
-  gap: 0;
-}
-
-.dashboard-workshop-order-item {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: center;
-  padding: 8px 0;
-  border-top: 1px solid #f1f5f9;
-}
-
-.dashboard-workshop-order-item:first-child {
-  border-top: 0;
-  padding-top: 0;
-}
-
-.dashboard-workshop-order-item:last-child {
-  padding-bottom: 0;
-}
-
-.dashboard-workshop-order-item > div {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.dashboard-workshop-order-item strong {
-  color: #1e293b;
-  font-size: 0.82rem;
-  line-height: 1.28;
-  overflow-wrap: anywhere;
-}
-
-.dashboard-workshop-order-item small {
-  color: #94a3b8;
-  font-size: 0.7rem;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
-.dashboard-workshop-order-item > b {
+  min-height: 27px;
+  padding: 4px 9px;
+  border-radius: 8px;
+  background: #f1f5f9;
   color: #475569;
-  font-size: 0.74rem;
+  font-size: .71rem;
+  line-height: 1.2;
+  font-weight: 850;
   white-space: nowrap;
 }
 
-.dashboard-workshop-order-more {
-  width: fit-content;
-  margin-top: 5px;
+.dashboard-workshop-status.is-overdue,
+.dashboard-workshop-status.is-waiting-long {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.dashboard-workshop-status.is-deadline {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.dashboard-workshop-status.is-waiting {
+  background: #e8f1ff;
+  color: #1d4ed8;
+}
+
+.dashboard-workshop-status.is-urgent-mark {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.dashboard-workshop-status.is-comment-mark {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.dashboard-workshop-order-summary {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding-top: 9px;
+  border-top: 1px solid #eef2f7;
+  color: #64748b;
+  font-size: .75rem;
+  line-height: 1.35;
+}
+
+.dashboard-workshop-order-summary > span:first-child {
+  white-space: nowrap;
+}
+
+.dashboard-workshop-order-summary b {
+  color: #334155;
+}
+
+.dashboard-workshop-order-products {
+  min-width: 0;
+  color: #475569;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-workshop-order-open {
   color: #2563eb;
-  font-size: 0.72rem;
-  font-weight: 750;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .dashboard-workshop-detail-backdrop {
@@ -292,7 +209,7 @@
   display: grid;
   place-items: center;
   padding: 20px;
-  background: rgba(15, 23, 42, 0.42);
+  background: rgba(15, 23, 42, .42);
   backdrop-filter: blur(5px);
 }
 
@@ -303,10 +220,10 @@
   display: grid;
   gap: 18px;
   padding: 22px;
-  border: 1px solid rgba(255, 255, 255, .85);
+  border: 1px solid rgba(255,255,255,.85);
   border-radius: 22px;
   background: #fff;
-  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.28);
+  box-shadow: 0 30px 80px rgba(15, 23, 42, .28);
 }
 
 .dashboard-workshop-detail-head {
@@ -361,7 +278,7 @@
 .dashboard-workshop-detail-grid span,
 .dashboard-workshop-detail-block > span {
   color: #94a3b8;
-  font-size: 0.66rem;
+  font-size: .66rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: .04em;
@@ -390,7 +307,7 @@
 
 .dashboard-workshop-detail-items-head > span {
   color: #64748b;
-  font-size: 0.76rem;
+  font-size: .76rem;
   font-weight: 800;
 }
 
@@ -428,7 +345,7 @@
   border-radius: 4px;
   background: #fffbeb;
   color: #92400e;
-  font-size: 0.76rem;
+  font-size: .76rem;
   font-weight: 650;
   line-height: 1.4;
 }
@@ -442,7 +359,7 @@
 
 .dashboard-workshop-detail-item-side > span {
   color: #a16207;
-  font-size: 0.69rem;
+  font-size: .69rem;
   font-weight: 800;
 }
 
@@ -459,8 +376,16 @@
     grid-template-columns: 1fr;
   }
 
-  .dashboard-workshop-deadline-panel {
-    width: 100%;
+  .dashboard-workshop-statuses {
+    justify-content: flex-start;
+  }
+
+  .dashboard-workshop-order-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .dashboard-workshop-order-open {
+    grid-column: 1 / -1;
   }
 
   .dashboard-workshop-detail-grid {
@@ -473,17 +398,20 @@
     padding: 14px 14px 14px 18px;
   }
 
-  .dashboard-workshop-order-ref-row,
+  .dashboard-workshop-order-summary {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .dashboard-workshop-order-products {
+    white-space: normal;
+  }
+
   .dashboard-workshop-detail-head,
   .dashboard-workshop-detail-items-head {
     display: grid;
   }
 
-  .dashboard-workshop-open-hint {
-    display: none;
-  }
-
-  .dashboard-workshop-order-item,
   .dashboard-workshop-detail-item {
     grid-template-columns: 1fr;
   }
