@@ -12,58 +12,21 @@ permissions:
   contents: read
 
 jobs:
-  audit:
+  locate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
-      - name: Checkout exact current main descendant
-        uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: npm
-      - name: Install dependencies
-        run: npm ci
-      - name: Verify Production D1 target
-        run: npx wrangler d1 info orders_db_prod
-      - name: Locate top scan sources
+      - uses: actions/checkout@v4
+      - name: Locate expensive query sources only
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== EARLIER_RESERVABLE_UNITS ==='
-          grep -RIn -B20 -A60 --exclude-dir=node_modules --exclude-dir=dist 'earlier_reservable_units' worker src scripts || true
-          echo '=== UNRESOLVED_CATALOG_COUNT ==='
-          grep -RIn -B20 -A60 --exclude-dir=node_modules --exclude-dir=dist "COALESCE(oi.product_id, 0) <= 0\|COALESCE(oi.product_id,0)<=0" worker src scripts || true
-          echo '=== RETURN_EXCHANGE_COUNT_PER_ORDER ==='
-          grep -RIn -B12 -A20 --exclude-dir=node_modules --exclude-dir=dist "COUNT(\*) AS count FROM returns WHERE order_id\|COUNT(\*) AS count FROM exchanges WHERE order_id" worker src scripts || true
-          echo '=== TEAM_EMPLOYEE_NAME_LOOKUP ==='
-          grep -RIn -B12 -A25 --exclude-dir=node_modules --exclude-dir=dist "UPPER(TRIM(name)) = UPPER(TRIM(?))" worker src scripts || true
-      - name: D1 insights 1h
-        shell: bash
-        run: |
-          set -o pipefail
-          echo '=== INSIGHTS_1H ==='
-          npx wrangler d1 insights orders_db_prod --sort-type=sum --sort-by=reads --sort-direction=DESC --limit=100 --timePeriod=1h --json
-      - name: D1 insights 6h
-        shell: bash
-        run: |
-          set -o pipefail
-          echo '=== INSIGHTS_6H ==='
-          npx wrangler d1 insights orders_db_prod --sort-type=sum --sort-by=reads --sort-direction=DESC --limit=100 --timePeriod=6h --json
-      - name: D1 insights 24h
-        shell: bash
-        run: |
-          set -o pipefail
-          echo '=== INSIGHTS_24H ==='
-          npx wrangler d1 insights orders_db_prod --sort-type=sum --sort-by=reads --sort-direction=DESC --limit=100 --timePeriod=24h --json
-      - name: Static frontend API fan-out inventory
-        shell: bash
-        run: |
-          echo '=== API_FETCH_CALLS_BY_SOURCE ==='
-          grep -RhoE "apiFetch\([^)]*\/api\/[A-Za-z0-9_?&=/${}.:-]+" src --include='*.ts' --include='*.tsx' | sed -E 's/[[:space:]]+/ /g' | sort | uniq -c | sort -nr | head -120 || true
-          echo '=== FETCH_CALLS_BY_SOURCE ==='
-          grep -RhoE "fetch\([^)]*\/api\/[A-Za-z0-9_?&=/${}.:-]+" src --include='*.ts' --include='*.tsx' | sed -E 's/[[:space:]]+/ /g' | sort | uniq -c | sort -nr | head -120 || true
+          for pattern in \
+            'earlier_reservable_units' \
+            'COALESCE(oi.product_id, 0) <= 0' \
+            'COUNT(*) AS count FROM returns WHERE order_id' \
+            'COUNT(*) AS count FROM exchanges WHERE order_id' \
+            'UPPER(TRIM(name)) = UPPER(TRIM(?))'
+          do
+            echo "=== $pattern ==="
+            grep -RInF --exclude-dir=node_modules --exclude-dir=dist "$pattern" worker src scripts || true
+          done
