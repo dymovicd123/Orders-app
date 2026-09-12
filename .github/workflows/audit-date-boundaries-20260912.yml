@@ -1,0 +1,30 @@
+name: Audit date boundaries 20260912
+
+on:
+  push:
+    branches:
+      - audit/date-boundaries-20260912
+    paths:
+      - .github/workflows/audit-date-boundaries-20260912.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find UTC-derived business dates
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== toISOString date slicing ==='
+          grep -RInE --exclude-dir=node_modules --exclude-dir=dist --exclude='*.map' "toISOString\(\).*slice\(0, ?10\)|toISOString\(\).*substring\(0, ?10\)" src worker shared scripts || true
+          echo '=== all toISOString calls in runtime source ==='
+          grep -RIn --exclude-dir=node_modules --exclude-dir=dist "toISOString" src worker shared || true
+          echo '=== Date constructors used near date-only fields ==='
+          grep -RInE --exclude-dir=node_modules --exclude-dir=dist "shippingDate|orderDate|returnDate|exchangeDate|paymentDate|dueDate|dateFrom|dateTo|period_start|period_end" src worker shared | grep -E "new Date|toISOString|Date\.now|formatLocalDateInput|shiftLocalDate" || true
+          echo '=== timezone declarations ==='
+          grep -RInE --exclude-dir=node_modules --exclude-dir=dist "Asia/Almaty|Asia/Qyzylorda|timeZone" src worker shared || true
