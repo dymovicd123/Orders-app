@@ -167,7 +167,7 @@ export function DashboardSection({ ctx }: { ctx: SectionContext }) {
         <div className="summary-card"><span>Средний чек</span><strong>{formatMoney(dashboardSummary.monthAvgCheck || 0)}</strong></div>
         <div className="summary-card"><span>Новые клиенты</span><strong>{dashboardSummary.monthNewClients || 0}</strong></div>
         <div className="summary-card"><span>Повторные клиенты</span><strong>{dashboardSummary.monthRepeatClients || 0}</strong></div>
-        <div className="summary-card warning-card"><span>Цех активные</span><strong>{dashboardSummary.workshopActiveTotal || workshopData?.activeCount || summary.workshop}</strong></div>
+        <div className="summary-card warning-card"><span>Цех активные</span><strong>{dashboardSummary.workshopActiveTotal ?? workshopData?.activeCount ?? summary.workshop ?? 0}</strong></div>
       </div>
 
       <div className="dashboard-workspace">

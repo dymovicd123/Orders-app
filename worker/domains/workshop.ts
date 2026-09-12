@@ -347,7 +347,7 @@ export async function enrichWorkshopTaskRowsFromOrderItems(
 
 
 export const workshopStandaloneReturnOrdersCte = `standalone_return_orders AS (
-  SELECT wr.order_id
+  SELECT wr.id AS return_id, wr.order_id
   FROM returns wr
   WHERE COALESCE(wr.status, 'completed') <> 'cancelled'
     AND NOT EXISTS (
@@ -356,31 +356,48 @@ export const workshopStandaloneReturnOrdersCte = `standalone_return_orders AS (
       WHERE we.refund_return_id = wr.id
         AND COALESCE(we.status, 'completed') <> 'cancelled'
     )
-  GROUP BY wr.order_id
+),
+hidden_return_workshop_tasks AS (
+  SELECT DISTINCT wt_hidden.id AS workshop_task_id
+  FROM standalone_return_orders wr
+  JOIN return_items wri ON wri.return_id = wr.return_id
+  JOIN workshop_tasks wt_hidden ON wt_hidden.order_id = wr.order_id
+  WHERE (
+      wri.order_item_id IS NULL
+      OR wri.order_item_id = wt_hidden.order_item_id
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM return_workshop_task_reversals rwt
+      WHERE rwt.return_id = wr.return_id
+        AND rwt.workshop_task_id = wt_hidden.id
+    )
 )`;
 
 
 export async function readWorkshopCounts(db: D1Database) {
-  // Step 173: count the common visible population directly from the existing
-  // status indexes, then subtract only tasks belonging to hidden orders. The
-  // previous query joined every workshop task to orders and return visibility,
-  // which multiplied rows read even though almost all orders are visible.
+  // Count the common visible population directly from the status indexes, then
+  // subtract only concrete hidden tasks. A modern partial return updates its own
+  // Workshop task quantity/status and records a reversal snapshot, so sibling
+  // tasks from the same order must remain visible. Legacy ambiguous return rows
+  // are still suppressed conservatively.
   const row = await db.prepare(
     `WITH ${workshopStandaloneReturnOrdersCte},
-     hidden_orders AS (
-       SELECT id AS order_id
-       FROM orders
-       WHERE order_status IN ('deleted', 'archived')
+     hidden_task_ids AS (
+       SELECT wt.id AS workshop_task_id
+       FROM workshop_tasks wt
+       JOIN orders o ON o.id = wt.order_id
+       WHERE o.order_status IN ('deleted', 'archived')
        UNION
-       SELECT order_id FROM standalone_return_orders
+       SELECT workshop_task_id FROM hidden_return_workshop_tasks
      ),
      hidden_counts AS (
        SELECT
          COALESCE(SUM(CASE WHEN wt.status = 'active' THEN 1 ELSE 0 END), 0) AS active_count,
          COALESCE(SUM(CASE WHEN wt.status = 'active' AND wt.urgent = 1 THEN 1 ELSE 0 END), 0) AS urgent_count,
          COALESCE(SUM(CASE WHEN wt.status IN ('done', 'ready') THEN 1 ELSE 0 END), 0) AS done_count
-       FROM hidden_orders hidden
-       JOIN workshop_tasks wt ON wt.order_id = hidden.order_id
+       FROM hidden_task_ids hidden
+       JOIN workshop_tasks wt ON wt.id = hidden.workshop_task_id
      )
      SELECT
        MAX(0, (SELECT COUNT(*) FROM workshop_tasks WHERE status = 'active') - COALESCE(hidden_counts.active_count, 0)) AS active_count,
@@ -508,8 +525,8 @@ export async function listWorkshopTasks(db: D1Database, url: URL) {
     LEFT JOIN managers m ON m.id = o.manager_id
     LEFT JOIN customers c ON c.id = o.customer_id
     LEFT JOIN exchanges ex ON ex.new_order_item_id = ${wtColumn('order_item_id')} AND COALESCE(ex.status, 'completed') = 'completed'
-    LEFT JOIN standalone_return_orders returned ON returned.order_id = o.id
-    ${whereParts.length ? `WHERE ${whereParts.join(' AND ')} AND o.order_status NOT IN ('deleted', 'archived') AND returned.order_id IS NULL` : `WHERE o.order_status NOT IN ('deleted', 'archived') AND returned.order_id IS NULL`}
+    LEFT JOIN hidden_return_workshop_tasks returned ON returned.workshop_task_id = wt.id
+    ${whereParts.length ? `WHERE ${whereParts.join(' AND ')} AND o.order_status NOT IN ('deleted', 'archived') AND returned.workshop_task_id IS NULL` : `WHERE o.order_status NOT IN ('deleted', 'archived') AND returned.workshop_task_id IS NULL`}
     ORDER BY ${orderBySql}
     LIMIT ?`;
 
