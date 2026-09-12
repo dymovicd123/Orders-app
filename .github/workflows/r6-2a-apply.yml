@@ -32,7 +32,7 @@ jobs:
           text = text.replace(anchor, constants, 1)
 
           block_start = text.index('  const [paymentByDayRows, paymentOperationRows')
-          block_end = text.index('  const rawPaymentOperationRows', block_start)
+          block_end = text.index("    () => financeWorkspaceOnly ? emptyRowsResult() : !needsReport('managers')", block_start)
           block = text[block_start:block_end]
 
           customer_select = "              COALESCE(c.display_name, c.phone_normalized, '—') AS customer,"
