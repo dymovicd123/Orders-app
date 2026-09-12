@@ -98,9 +98,8 @@ export async function listActivityLog(db: D1Database, url: URL) {
 
 
 export function parseReportDateRange(url: URL) {
-  const today = new Date();
-  const monthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1)).toISOString().slice(0, 10);
-  const todayIso = today.toISOString().slice(0, 10);
+  const todayIso = normalizeDate('');
+  const monthStart = `${todayIso.slice(0, 7)}-01`;
   const startDate = normalizeDate(url.searchParams.get('startDate') || monthStart);
   const endDate = normalizeDate(url.searchParams.get('endDate') || todayIso);
   if (startDate > endDate) {

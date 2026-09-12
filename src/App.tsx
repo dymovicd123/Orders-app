@@ -592,7 +592,7 @@ function App() {
   const [teamColorEditorId, setTeamColorEditorId] = useState<number | null>(null)
   const [expandedOrderItemCounts, setExpandedOrderItemCounts] = useState<Record<number, number>>({})
   const [teamMode, setTeamMode] = useState<TeamMode>('employees')
-  const [timesheetMonth, setTimesheetMonth] = useState(new Date().toISOString().slice(0, 7))
+  const [timesheetMonth, setTimesheetMonth] = useState(formatLocalDateInput().slice(0, 7))
   const [timesheetData, setTimesheetData] = useState<TeamTimesheetResponse | null>(null)
   const [timesheetBusy, setTimesheetBusy] = useState(false)
   const [timesheetSelectedDays, setTimesheetSelectedDays] = useState<string[]>([])
@@ -2684,7 +2684,7 @@ function App() {
   }
 
   function setTimesheetCurrentMonth() {
-    setTimesheetMonth(new Date().toISOString().slice(0, 7))
+    setTimesheetMonth(formatLocalDateInput().slice(0, 7))
     setTimesheetSelectedDays([])
   }
 
@@ -5774,7 +5774,7 @@ function removeDebtPayment(index: number) {
     setError(null)
     setMessage(null)
     try {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = formatLocalDateInput()
       const submitShipping = async (observations?: Array<{ source: InventorySourceKey; variantId: number; expectedQuantity: number; countedQuantity: number }>) => {
         const shippingPayload = { shippingStatus: 'sent', shippingDate: today, observations }
         const criticalKey = `order-shipping:${order.id}`

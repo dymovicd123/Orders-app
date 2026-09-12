@@ -25,8 +25,7 @@ export function normalizeBoolean(value: unknown, fallback = false) {
 
 export function parseArchiveRules(input: ArchiveRuleInput | URLSearchParams) {
   const getValue = (key: keyof ArchiveRuleInput) => input instanceof URLSearchParams ? input.get(String(key)) : input[key];
-  const today = new Date().toISOString().slice(0, 10);
-  const cutoffDate = normalizeDate(getValue('cutoffDate') || today);
+  const cutoffDate = normalizeDate(getValue('cutoffDate'));
   return {
     cutoffDate,
     reason: cleanText(getValue('reason')) || `Автоархив закрытых заказов до ${cutoffDate}`,

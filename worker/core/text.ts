@@ -71,8 +71,20 @@ export function toInt(value: unknown, fallback = 0) {
 
 
 export function normalizeDate(value: unknown) {
+  const businessDate = (date = new Date()) => {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Almaty',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const year = parts.find(part => part.type === 'year')?.value || '';
+    const month = parts.find(part => part.type === 'month')?.value || '';
+    const day = parts.find(part => part.type === 'day')?.value || '';
+    return `${year}-${month}-${day}`;
+  };
   const text = cleanText(value);
-  if (!text) return new Date().toISOString().slice(0, 10);
+  if (!text) return businessDate();
   const iso = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
   const ru = text.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/);
@@ -81,8 +93,8 @@ export function normalizeDate(value: unknown) {
     return `${year}-${ru[2].padStart(2, '0')}-${ru[1].padStart(2, '0')}`;
   }
   const parsed = new Date(text);
-  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
-  return new Date().toISOString().slice(0, 10);
+  if (!Number.isNaN(parsed.getTime())) return businessDate(parsed);
+  return businessDate();
 }
 
 
