@@ -3,6 +3,11 @@ import fs from 'node:fs'
 const file = 'scripts/apply-stabilization-20260912-r2-manager-date.mjs'
 let text = fs.readFileSync(file, 'utf8')
 
+const escapedExportNormalizer = "statement.getText(source).replace(/^export\\\\s+/, '')"
+const gateExportNormalizer = "statement.getText(source).replace(/^export\\s+/, '')"
+if (!text.includes(escapedExportNormalizer)) throw new Error('R2 declaration normalizer repair anchor missing')
+text = text.replace(escapedExportNormalizer, gateExportNormalizer)
+
 function replaceSection(startMarker, endMarker, replacement) {
   const start = text.indexOf(startMarker)
   if (start < 0) throw new Error(`Missing start marker: ${startMarker}`)
