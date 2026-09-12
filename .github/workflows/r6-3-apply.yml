@@ -69,46 +69,52 @@ jobs:
           bucket_anchor = "    bucket.orderCount += managerRow.order_count;\n"
           if text.count(bucket_anchor) != 1:
               raise SystemExit(f'R6.3 bucket anchor mismatch: {text.count(bucket_anchor)}')
-          summary_block = """    const nonzeroOrderCount = Number(row.nonzero_order_count || 0);
-    const summary = managerSummaryMap.get(managerId) || {
-      manager_id: managerId,
-      manager,
-      color_key: colorKey,
-      order_count: 0,
-      total_sales: 0,
-      total_received: 0,
-      total_returns: 0,
-      total_debt: 0,
-      nonzero_order_count: 0,
-    };
-    summary.manager = manager;
-    summary.color_key = colorKey;
-    summary.order_count += managerRow.order_count;
-    summary.total_sales += managerRow.total_sales;
-    summary.total_received += managerRow.total_received;
-    summary.total_returns += managerRow.total_returns;
-    summary.total_debt += managerRow.total_debt;
-    summary.nonzero_order_count += nonzeroOrderCount;
-    managerSummaryMap.set(managerId, summary);
-    bucket.orderCount += managerRow.order_count;
-"""
+          summary_block = '\n'.join([
+              '    const nonzeroOrderCount = Number(row.nonzero_order_count || 0);',
+              '    const summary = managerSummaryMap.get(managerId) || {',
+              '      manager_id: managerId,',
+              '      manager,',
+              '      color_key: colorKey,',
+              '      order_count: 0,',
+              '      total_sales: 0,',
+              '      total_received: 0,',
+              '      total_returns: 0,',
+              '      total_debt: 0,',
+              '      nonzero_order_count: 0,',
+              '    };',
+              '    summary.manager = manager;',
+              '    summary.color_key = colorKey;',
+              '    summary.order_count += managerRow.order_count;',
+              '    summary.total_sales += managerRow.total_sales;',
+              '    summary.total_received += managerRow.total_received;',
+              '    summary.total_returns += managerRow.total_returns;',
+              '    summary.total_debt += managerRow.total_debt;',
+              '    summary.nonzero_order_count += nonzeroOrderCount;',
+              '    managerSummaryMap.set(managerId, summary);',
+              '    bucket.orderCount += managerRow.order_count;',
+              '',
+          ])
           text = text.replace(bucket_anchor, summary_block, 1)
 
           sort_anchor = "  for (const bucket of managerDaysMap.values()) bucket.managers.sort((a: any, b: any) => b.total_received - a.total_received || a.manager.localeCompare(b.manager, 'ru') || a.managerId - b.managerId);\n"
           if text.count(sort_anchor) != 1:
               raise SystemExit(f'R6.3 manager sort anchor mismatch: {text.count(sort_anchor)}')
-          normalized_block = sort_anchor + """  const normalizedManagerRows = Array.from(managerSummaryMap.values()).map((summary: any) => ({
-    manager_id: summary.manager_id,
-    manager: summary.manager,
-    color_key: summary.color_key,
-    order_count: summary.order_count,
-    total_sales: summary.total_sales,
-    total_received: summary.total_received,
-    total_returns: summary.total_returns,
-    total_debt: summary.total_debt,
-    avg_check: summary.nonzero_order_count > 0 ? summary.total_sales / summary.nonzero_order_count : 0,
-  })).sort((a, b) => Number(b.total_received || 0) - Number(a.total_received || 0) || String(a.manager).localeCompare(String(b.manager), 'ru'));\n"
-          text = text.replace(sort_anchor, normalized_block, 1)
+          normalized_lines = [
+              sort_anchor.rstrip('\n'),
+              '  const normalizedManagerRows = Array.from(managerSummaryMap.values()).map((summary: any) => ({',
+              '    manager_id: summary.manager_id,',
+              '    manager: summary.manager,',
+              '    color_key: summary.color_key,',
+              '    order_count: summary.order_count,',
+              '    total_sales: summary.total_sales,',
+              '    total_received: summary.total_received,',
+              '    total_returns: summary.total_returns,',
+              '    total_debt: summary.total_debt,',
+              '    avg_check: summary.nonzero_order_count > 0 ? summary.total_sales / summary.nonzero_order_count : 0,',
+              "  })).sort((a, b) => Number(b.total_received || 0) - Number(a.total_received || 0) || String(a.manager).localeCompare(String(b.manager), 'ru'));",
+              '',
+          ]
+          text = text.replace(sort_anchor, '\n'.join(normalized_lines), 1)
 
           path.write_text(text, encoding='utf-8')
           PY
