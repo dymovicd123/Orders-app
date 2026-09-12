@@ -1,4 +1,4 @@
-# Rerun after Phase 1C create-return scope fix.
+# Final rerun after permanent release-check wiring.
 name: Validate return physical intake R1
 
 on:
