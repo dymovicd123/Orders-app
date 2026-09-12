@@ -26,7 +26,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
   const startAt = `${startDate}T00:00:00.000Z`;
   const endAt = `${endDate}T23:59:59.999Z`;
 
-  const [overviewRow, paymentMethods, managerRows, managerCashRows, productRows, cityRows, cityCashRows, dayRows, returnsRows,
+  const [overviewRow, paymentMethods, productRows, cityRows, cityCashRows, dayRows, returnsRows,
     exchangeRows, closedDebtRows, currentDebtRow, currentDebtTopRows, inventoryRows, repeatClientRows,
     activityRows] = await runD1Bounded([
     () => !needsReport('managers', 'products', 'cities') ? emptyRowsResult() : db.prepare(
@@ -51,46 +51,6 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        GROUP BY p.method
        ORDER BY total DESC, count DESC, method ASC`
     ).bind(startDate, endDate).all<any>(),
-
-    () => financeWorkspaceOnly ? emptyRowsResult() : !needsReport('managers') ? emptyRowsResult() : db.prepare(
-      `SELECT o.manager_id,
-              COALESCE(m.name, o.manager_snapshot_name, 'Не указан') AS manager,
-              COALESCE(m.color_key, '#475569') AS color_key,
-              COUNT(DISTINCT o.id) AS order_count,
-              COALESCE(SUM(o.total_amount), 0) AS total_sales,
-              COALESCE(SUM(o.received_amount), 0) AS total_received,
-              COALESCE(SUM(o.return_amount), 0) AS total_returns,
-              COALESCE(SUM(o.debt_amount), 0) AS total_debt,
-              COALESCE(AVG(NULLIF(o.total_amount, 0)), 0) AS avg_check
-       FROM orders o
-       LEFT JOIN managers m ON m.id = o.manager_id
-       WHERE o.order_date BETWEEN ? AND ?
-         AND o.order_status <> 'deleted'
-       GROUP BY o.manager_id, m.name, m.color_key, o.manager_snapshot_name
-       ORDER BY total_sales DESC, order_count DESC, manager ASC, o.manager_id ASC`
-    ).bind(startDate, endDate).all<any>(),
-
-    () => financeWorkspaceOnly ? emptyRowsResult() : !needsReport('managers') ? emptyRowsResult() : db.prepare(
-      `SELECT x.manager_id,
-              COALESCE(m.name, 'Не указан') AS manager,
-              COALESCE(m.color_key, '#475569') AS color_key,
-              COALESCE(SUM(x.total_received), 0) AS total_received,
-              COALESCE(SUM(x.total_returns), 0) AS total_returns
-       FROM (
-         SELECT o.manager_id AS manager_id, p.amount AS total_received, 0 AS total_returns
-         FROM payments p
-         JOIN orders o ON o.id = p.order_id
-         WHERE p.payment_date BETWEEN ? AND ? AND o.order_status <> 'deleted'
-         UNION ALL
-         SELECT COALESCE(r.manager_id, o.manager_id) AS manager_id, 0 AS total_received, r.amount AS total_returns
-         FROM returns r
-         JOIN orders o ON o.id = r.order_id
-         WHERE r.return_date BETWEEN ? AND ? AND COALESCE(r.status, 'completed') <> 'cancelled' AND o.order_status <> 'deleted'
-       ) x
-       LEFT JOIN managers m ON m.id = x.manager_id
-       GROUP BY x.manager_id, m.name, m.color_key
-       ORDER BY total_received DESC, manager ASC, x.manager_id ASC`
-    ).bind(startDate, endDate, startDate, endDate).all<any>(),
 
     () => financeWorkspaceOnly ? emptyRowsResult() : !needsReport('products') ? emptyRowsResult() : db.prepare(
       `SELECT oi.product_name_snapshot AS product,
@@ -364,6 +324,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
               COALESCE(m.name, o.manager_snapshot_name, 'Не указан') AS manager,
               COALESCE(m.color_key, '#475569') AS color_key,
               COUNT(o.id) AS order_count,
+              COUNT(CASE WHEN o.total_amount <> 0 THEN 1 END) AS nonzero_order_count,
               COALESCE(SUM(o.total_amount), 0) AS total_sales,
               COALESCE(SUM(o.received_amount), 0) AS total_received,
               COALESCE(SUM(o.return_amount), 0) AS total_returns,
@@ -575,22 +536,6 @@ export async function listFinanceReports(db: D1Database, url: URL) {
     }
   }
   const paymentRows = Array.from(paymentMethodMap.values()).sort((a, b) => b.total - a.total || a.method.localeCompare(b.method, 'ru'));
-
-  const managerMap = new Map<number, any>();
-  for (const row of mapSqlRows(managerRows) as any[]) {
-    const managerId = toInt(row.manager_id, 0);
-    managerMap.set(managerId, { ...row, manager_id: managerId, total_received: 0, total_returns: 0 });
-  }
-  for (const row of mapSqlRows(managerCashRows) as any[]) {
-    const managerId = toInt(row.manager_id, 0);
-    const manager = cleanText(row.manager) || 'Не указан';
-    const current = managerMap.get(managerId) || { manager_id: managerId, manager, color_key: row.color_key, order_count: 0, total_sales: 0, total_debt: 0, avg_check: 0 };
-    current.total_received = Number(row.total_received || 0);
-    current.total_returns = Number(row.total_returns || 0);
-    current.color_key = cleanText(row.color_key) || current.color_key;
-    managerMap.set(managerId, current);
-  }
-  const normalizedManagerRows = Array.from(managerMap.values()).sort((a, b) => Number(b.total_received || 0) - Number(a.total_received || 0) || String(a.manager).localeCompare(String(b.manager), 'ru'));
 
   const cityMap = new Map<string, any>();
   for (const row of mapSqlRows(cityRows) as any[]) cityMap.set(cleanText(row.city) || 'Не указан', { ...row, total_received: 0, total_returns: 0 });
@@ -935,6 +880,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
   }
   const managerKeys = new Set<string>([...managerOrderMap.keys(), ...managerPaymentMap.keys(), ...managerReturnMap.keys()]);
   const managerDaysMap = new Map<string, any>();
+  const managerSummaryMap = new Map<number, any>();
   for (const key of managerKeys) {
     const [date, managerIdText] = key.split('||');
     const managerId = toInt(managerIdText, 0);
@@ -962,6 +908,26 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       total_debt: Number(row.total_debt || 0),
       avg_check: Math.round(Number(row.avg_check || 0)),
     };
+    const nonzeroOrderCount = Number(row.nonzero_order_count || 0);
+    const summary = managerSummaryMap.get(managerId) || {
+      manager_id: managerId,
+      manager,
+      color_key: colorKey,
+      order_count: 0,
+      total_sales: 0,
+      total_received: 0,
+      total_returns: 0,
+      total_debt: 0,
+      nonzero_order_count: 0,
+    };
+    summary.manager = manager;
+    summary.color_key = colorKey;
+    summary.order_count += managerRow.order_count;
+    summary.total_sales += managerRow.total_sales;
+    summary.total_returns += managerRow.total_returns;
+    summary.total_debt += managerRow.total_debt;
+    summary.nonzero_order_count += nonzeroOrderCount;
+    managerSummaryMap.set(managerId, summary);
     bucket.orderCount += managerRow.order_count;
     bucket.totalSales += managerRow.total_sales;
     bucket.totalReceived += managerRow.total_received;
@@ -970,6 +936,33 @@ export async function listFinanceReports(db: D1Database, url: URL) {
     bucket.managers.push(managerRow);
   }
   for (const bucket of managerDaysMap.values()) bucket.managers.sort((a: any, b: any) => b.total_received - a.total_received || a.manager.localeCompare(b.manager, 'ru') || a.managerId - b.managerId);
+  if (!financeWorkspaceOnly) for (const operation of paymentOperations) {
+    const managerId = operation.managerId == null ? 0 : Number(operation.managerId);
+    const summary = managerSummaryMap.get(managerId) || {
+      manager_id: managerId,
+      manager: cleanText(operation.manager) || 'Не указан',
+      color_key: normalizeManagerColor(operation.managerColor, managerId - 1),
+      order_count: 0,
+      total_sales: 0,
+      total_received: 0,
+      total_returns: 0,
+      total_debt: 0,
+      nonzero_order_count: 0,
+    };
+    summary.total_received += Number(operation.amount || 0);
+    managerSummaryMap.set(managerId, summary);
+  }
+  const normalizedManagerRows = Array.from(managerSummaryMap.values()).map((summary: any) => ({
+    manager_id: summary.manager_id,
+    manager: summary.manager,
+    color_key: summary.color_key,
+    order_count: summary.order_count,
+    total_sales: summary.total_sales,
+    total_received: summary.total_received,
+    total_returns: summary.total_returns,
+    total_debt: summary.total_debt,
+    avg_check: summary.nonzero_order_count > 0 ? summary.total_sales / summary.nonzero_order_count : 0,
+  })).sort((a, b) => Number(b.total_received || 0) - Number(a.total_received || 0) || String(a.manager).localeCompare(String(b.manager), 'ru'));
 
   const productDaysMap = new Map<string, any>();
   for (const row of mapSqlRows(productDayRows) as any[]) {
