@@ -225,7 +225,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
 
 
   const [paymentByDayRows, paymentOperationRows, beforeOrderOutsidePeriodRows, managerOrderDayRows, managerPaymentDayRows, managerReturnDayRows, productDayRows, cityDayRows, cityCashDayRows, returnsDetailRows, closedDebtDetailRows, paymentEventRows] = await runD1Bounded([
-    () => financeWorkspaceOnly ? emptyRowsResult() : !needsReport('payments') ? emptyRowsResult() : db.prepare(
+    () => financeWorkspaceOnly || reportType === 'payments' ? emptyRowsResult() : !needsReport('payments') ? emptyRowsResult() : db.prepare(
       `SELECT p.payment_date AS date, p.method AS method, COALESCE(SUM(p.amount), 0) AS total
        FROM payments p
        JOIN orders o ON o.id = p.order_id
@@ -872,7 +872,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
 
 
   const paymentMethodsByDayMap = new Map<string, { date: string; total: number; methods: Record<string, number> }>();
-  const paymentMethodsByDaySource = financeWorkspaceOnly
+  const paymentMethodsByDaySource = financeWorkspaceOnly || reportType === 'payments'
     ? Array.from(rawPaymentOperationRows.reduce((groups: Map<string, any>, row: any) => {
         const date = cleanText(row.payment_date);
         const rawMethod = row.method == null ? null : String(row.method);

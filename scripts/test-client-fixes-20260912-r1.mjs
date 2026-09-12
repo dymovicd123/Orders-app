@@ -37,6 +37,7 @@ try {
 
   // Payments report: gross inflow categories are mutually exclusive; refunds subtract separately.
   check(financeWorker.includes("!needsReport('payments', 'managers', 'cities')"), 'Payments report must load operation classification')
+  check(financeWorker.includes("financeWorkspaceOnly || reportType === 'payments'"), 'Selected payments report must reuse payment operation rows for daily method totals instead of adding another D1 query')
   check(financeWorker.includes('paymentMethodReconciliation') && financeWorker.includes('paymentReconciliationByDay'), 'Finance API must expose method/day reconciliation')
   check(financeWorker.includes("operation.operationType === 'exchange_extra'") && financeWorker.includes("operation.operationType === 'debt_close' || operation.operationType === 'order_extra'"), 'Finance reconciliation must separate exchange top-ups and debt closures')
   check(financeWorker.includes('current.netMovement') === false, 'Net movement must be derived after aggregation, not incremented inconsistently per event')
