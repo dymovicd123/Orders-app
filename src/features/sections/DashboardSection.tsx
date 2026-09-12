@@ -1,5 +1,5 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import '../../styles/dashboard-workshop-attention-r1.css'
 
 type SectionContext = Record<string, any>
@@ -18,13 +18,92 @@ function dashboardShortDate(value: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('ru-RU')
 }
 
-function workshopWarningTone(item: any, ageLimit: number) {
-  if (Number(item.overdueDays || 0) > 0 || Number(item.waitingDays || 0) >= ageLimit) return 'is-danger'
+function earliestDate(left: string, right: string) {
+  if (!left) return right || ''
+  if (!right) return left
+  return left <= right ? left : right
+}
+
+function buildWorkshopOrderCards(rows: any[]) {
+  const grouped = new Map<string, any>()
+
+  for (const item of rows || []) {
+    const key = item.externalOrderId || `order-${item.orderId}`
+    const current = grouped.get(key)
+    const quantity = Math.max(1, Number(item.quantity || 1))
+
+    if (!current) {
+      grouped.set(key, {
+        key,
+        orderId: item.orderId,
+        externalOrderId: item.externalOrderId,
+        customerName: item.customerName || '',
+        customerPhone: item.customerPhone || '',
+        managerName: item.managerName || '',
+        city: item.city || '',
+        deliveryType: item.deliveryType || '',
+        orderDate: item.orderDate || '',
+        dueDate: item.dueDate || '',
+        waitingDays: Number(item.waitingDays || 0),
+        overdueDays: Number(item.overdueDays || 0),
+        urgent: Boolean(item.urgent),
+        hasComment: Boolean(String(item.comment || '').trim()),
+        priorityScore: Number(item.priorityScore || 0),
+        totalQuantity: quantity,
+        items: [item],
+      })
+      continue
+    }
+
+    current.items.push(item)
+    current.totalQuantity += quantity
+    current.waitingDays = Math.max(current.waitingDays, Number(item.waitingDays || 0))
+    current.overdueDays = Math.max(current.overdueDays, Number(item.overdueDays || 0))
+    current.urgent = current.urgent || Boolean(item.urgent)
+    current.hasComment = current.hasComment || Boolean(String(item.comment || '').trim())
+    current.priorityScore = Math.max(current.priorityScore, Number(item.priorityScore || 0))
+    current.dueDate = earliestDate(current.dueDate, item.dueDate || '')
+    current.orderDate = earliestDate(current.orderDate, item.orderDate || '')
+    if (!current.customerName && item.customerName) current.customerName = item.customerName
+    if (!current.customerPhone && item.customerPhone) current.customerPhone = item.customerPhone
+    if (!current.managerName && item.managerName) current.managerName = item.managerName
+    if (!current.city && item.city) current.city = item.city
+  }
+
+  const result = Array.from(grouped.values())
+  for (const order of result) {
+    order.items.sort((a: any, b: any) => {
+      const urgentDiff = Number(Boolean(b.urgent)) - Number(Boolean(a.urgent))
+      if (urgentDiff) return urgentDiff
+      return String(a.productName || '').localeCompare(String(b.productName || ''), 'ru')
+    })
+  }
+
+  result.sort((a, b) => {
+    if (b.overdueDays !== a.overdueDays) return b.overdueDays - a.overdueDays
+
+    const today = new Date().toISOString().slice(0, 10)
+    const aDue = a.dueDate ? dashboardDayDistance(today, a.dueDate) : null
+    const bDue = b.dueDate ? dashboardDayDistance(today, b.dueDate) : null
+    const aBucket = aDue !== null && aDue <= 2 ? 0 : a.urgent ? 1 : a.dueDate ? 2 : 3
+    const bBucket = bDue !== null && bDue <= 2 ? 0 : b.urgent ? 1 : b.dueDate ? 2 : 3
+    if (aBucket !== bBucket) return aBucket - bBucket
+    if (a.dueDate && b.dueDate && a.dueDate !== b.dueDate) return a.dueDate.localeCompare(b.dueDate)
+    if (b.waitingDays !== a.waitingDays) return b.waitingDays - a.waitingDays
+    return String(a.externalOrderId || '').localeCompare(String(b.externalOrderId || ''), 'ru')
+  })
+
+  return result
+}
+
+function workshopOrderTone(order: any, ageLimit: number) {
+  if (Number(order.overdueDays || 0) > 0) return 'is-danger'
   const today = new Date().toISOString().slice(0, 10)
-  const dueInDays = item.dueDate ? dashboardDayDistance(today, item.dueDate) : null
+  const dueInDays = order.dueDate ? dashboardDayDistance(today, order.dueDate) : null
   if (dueInDays !== null && dueInDays >= 0 && dueInDays <= 2) return 'is-deadline'
-  if (item.urgent) return 'is-urgent'
-  if (item.dueDate) return 'is-planned'
+  if (order.urgent) return 'is-urgent'
+  if (Number(order.waitingDays || 0) >= ageLimit) return 'is-waiting-long'
+  if (order.dueDate) return 'is-planned'
   return 'is-workshop'
 }
 
@@ -46,8 +125,10 @@ export function DashboardSection({ ctx }: { ctx: SectionContext }) {
     summary,
     workshopData,
   } = ctx
-  const [selectedWorkshopWarning, setSelectedWorkshopWarning] = useState<any | null>(null)
+
+  const [selectedWorkshopOrder, setSelectedWorkshopOrder] = useState<any | null>(null)
   const workshopAgeLimit = Number(dashboardInsights?.thresholds.workshopAgeLimit ?? 7)
+  const workshopOrders = useMemo(() => buildWorkshopOrderCards(dashboardWorkshopWarnings), [dashboardWorkshopWarnings])
 
   return (
     <section className="card wide sector-overview dashboard-home" id="dashboard" style={sectorStyle('overview')}>
@@ -105,99 +186,122 @@ export function DashboardSection({ ctx }: { ctx: SectionContext }) {
           <div className="mini-panel-head">
             <div>
               <h3>Что требует внимания</h3>
-              <p className="mini-panel-note">Цех: сначала просроченные дедлайны, затем ближайшие сроки, срочные и долго ожидающие позиции.</p>
+              <p className="mini-panel-note">Один блок = один заказ. Сначала просрочка и ближайшие дедлайны, затем срочные и долго ожидающие.</p>
             </div>
-            <span className="soft-badge">{dashboardWorkshopWarnings.length}</span>
+            <span className="soft-badge">{workshopOrders.length}</span>
           </div>
 
-          <div className="dashboard-attention-grid">
-            <div className="dashboard-attention-column">
-              <div className="dashboard-list-head">
-                <strong>Очередь контроля цеха</strong>
-                <span>Долгое ожидание от {workshopAgeLimit} дн. · активных всего {dashboardSummary.workshopActiveTotal}</span>
-              </div>
-              <div className="dashboard-scroll-list dashboard-workshop-list">
-                {dashboardWorkshopWarnings.length ? dashboardWorkshopWarnings.map((item) => {
-                  const tone = workshopWarningTone(item, workshopAgeLimit)
-                  const characteristics = [item.gender, item.color, item.material, item.length, item.size].filter(Boolean).join(' · ') || 'Характеристики не указаны'
-                  const customer = item.customerName || item.customerPhone || 'Клиент не указан'
-                  return (
-                    <button
-                      key={`dash-workshop-${item.id}`}
-                      type="button"
-                      className={`dashboard-workshop-warning-card ${tone}`}
-                      onClick={() => setSelectedWorkshopWarning(item)}
-                      title="Показать детали заказа"
-                    >
-                      <span className="dashboard-workshop-card-head">
-                        <span className="dashboard-workshop-order-ref">{item.externalOrderId || 'Без ORD'}</span>
-                        <span className="dashboard-workshop-card-badges">
-                          {item.overdueDays > 0 ? <b className="dashboard-attention-badge is-overdue">Просрочено {item.overdueDays} дн.</b> : null}
-                          {!item.overdueDays && item.dueDate ? <b className="dashboard-attention-badge is-deadline">До {dashboardShortDate(item.dueDate)}</b> : null}
-                          {item.urgent ? <b className="dashboard-attention-badge is-urgent">Срочно</b> : null}
-                          <b className={`dashboard-attention-badge ${item.waitingDays >= workshopAgeLimit ? 'is-waiting-long' : 'is-waiting'}`}>Ждёт {item.waitingDays} дн.</b>
+          <div className="dashboard-workshop-focus">
+            <div className="dashboard-list-head">
+              <strong>Очередь контроля цеха</strong>
+              <span>Долгое ожидание от {workshopAgeLimit} дн. · активных всего {dashboardSummary.workshopActiveTotal}</span>
+            </div>
+
+            <div className="dashboard-scroll-list dashboard-workshop-order-list">
+              {workshopOrders.length ? workshopOrders.map((order) => {
+                const tone = workshopOrderTone(order, workshopAgeLimit)
+                const previewItems = order.items.slice(0, 3)
+                const hiddenItems = Math.max(0, order.items.length - previewItems.length)
+                return (
+                  <button
+                    key={`dash-workshop-order-${order.key}`}
+                    type="button"
+                    className={`dashboard-workshop-order-card ${tone}`}
+                    onClick={() => setSelectedWorkshopOrder(order)}
+                    title="Показать заказ и позиции"
+                  >
+                    <span className="dashboard-workshop-order-top">
+                      <span className="dashboard-workshop-order-ref">{order.externalOrderId || `Заказ #${order.orderId}`}</span>
+                      <span className="dashboard-workshop-card-badges">
+                        {order.overdueDays > 0 ? <b className="dashboard-attention-badge is-overdue">Просрочено {order.overdueDays} дн.</b> : null}
+                        {!order.overdueDays && order.dueDate ? <b className="dashboard-attention-badge is-deadline">До {dashboardShortDate(order.dueDate)}</b> : null}
+                        {order.urgent ? <b className="dashboard-attention-badge is-urgent">Срочно</b> : null}
+                        {order.hasComment ? <b className="dashboard-attention-badge is-comment">Есть комментарий</b> : null}
+                        <b className={`dashboard-attention-badge ${order.waitingDays >= workshopAgeLimit ? 'is-waiting-long' : 'is-waiting'}`}>Ждёт {order.waitingDays} дн.</b>
+                      </span>
+                    </span>
+
+                    <span className="dashboard-workshop-order-main">
+                      <span className="dashboard-workshop-order-client">
+                        <strong>{order.customerName || 'Клиент не указан'}</strong>
+                        <small>{order.managerName || 'Менеджер не указан'}{order.city ? ` · ${order.city}` : ''}{order.customerPhone ? ` · ${order.customerPhone}` : ''}</small>
+                        <small>{order.dueDate ? `Дедлайн ${dashboardShortDate(order.dueDate)}` : 'Дедлайн не указан'}{order.orderDate ? ` · заказ от ${dashboardShortDate(order.orderDate)}` : ''}</small>
+                      </span>
+                      <span className="dashboard-workshop-order-count">
+                        <strong>{order.totalQuantity} шт.</strong>
+                        <small>{order.items.length} поз. в контроле</small>
+                      </span>
+                    </span>
+
+                    <span className="dashboard-workshop-order-items">
+                      {previewItems.map((item: any) => (
+                        <span className="dashboard-workshop-order-item" key={`dash-order-${order.key}-${item.id}`}>
+                          <span>
+                            <strong>{item.productName}</strong>
+                            <small>{[item.gender, item.color, item.material, item.length, item.size].filter(Boolean).join(' · ') || 'Характеристики не указаны'}</small>
+                          </span>
+                          <b>{Math.max(1, Number(item.quantity || 1))} шт.</b>
                         </span>
-                      </span>
-                      <span className="dashboard-workshop-card-main">
-                        <strong>{item.productName}</strong>
-                        <span className="dashboard-workshop-customer">{customer}</span>
-                      </span>
-                      <span className="dashboard-workshop-characteristics">{characteristics}</span>
-                      <span className="dashboard-workshop-meta">
-                        <span>{item.managerName || 'Менеджер не указан'}</span>
-                        {item.city ? <span>{item.city}</span> : null}
-                        <span>{item.quantity || 1} шт.</span>
-                      </span>
-                      {item.comment ? <span className="dashboard-workshop-comment">{item.comment}</span> : null}
-                    </button>
-                  )
-                }) : (
-                  <div className="empty-state">Просроченных, срочных или долго ожидающих позиций нет.</div>
-                )}
-              </div>
+                      ))}
+                      {hiddenItems > 0 ? <span className="dashboard-workshop-order-more">+ ещё {hiddenItems} поз.</span> : null}
+                    </span>
+                  </button>
+                )
+              }) : (
+                <div className="empty-state">Просроченных, срочных или долго ожидающих заказов нет.</div>
+              )}
             </div>
           </div>
         </section>
       </div>
 
-      {selectedWorkshopWarning ? (
+      {selectedWorkshopOrder ? (
         <div
           className="dashboard-workshop-detail-backdrop"
           role="presentation"
           onMouseDown={(event) => {
-            if (event.currentTarget === event.target) setSelectedWorkshopWarning(null)
+            if (event.currentTarget === event.target) setSelectedWorkshopOrder(null)
           }}
         >
-          <section className="dashboard-workshop-detail" role="dialog" aria-modal="true" aria-label="Детали позиции цеха">
+          <section className="dashboard-workshop-detail dashboard-workshop-order-detail" role="dialog" aria-modal="true" aria-label="Детали заказа цеха">
             <div className="dashboard-workshop-detail-head">
               <div>
-                <span className="dashboard-workshop-order-ref">{selectedWorkshopWarning.externalOrderId || 'Без ORD'}</span>
-                <h3>{selectedWorkshopWarning.productName}</h3>
-                <p>{selectedWorkshopWarning.reason}</p>
+                <span className="dashboard-workshop-order-ref">{selectedWorkshopOrder.externalOrderId || `Заказ #${selectedWorkshopOrder.orderId}`}</span>
+                <h3>{selectedWorkshopOrder.customerName || 'Клиент не указан'}</h3>
+                <p>{selectedWorkshopOrder.overdueDays > 0 ? `Дедлайн просрочен на ${selectedWorkshopOrder.overdueDays} дн.` : selectedWorkshopOrder.dueDate ? `Дедлайн ${dashboardShortDate(selectedWorkshopOrder.dueDate)}` : `В ожидании ${selectedWorkshopOrder.waitingDays} дн.`}</p>
               </div>
-              <button className="secondary compact" type="button" onClick={() => setSelectedWorkshopWarning(null)}>Закрыть</button>
+              <button className="secondary compact" type="button" onClick={() => setSelectedWorkshopOrder(null)}>Закрыть</button>
             </div>
 
             <div className="dashboard-workshop-detail-grid">
-              <div><span>Клиент</span><strong>{selectedWorkshopWarning.customerName || 'Не указан'}</strong></div>
-              <div><span>Телефон</span><strong>{selectedWorkshopWarning.customerPhone || 'Не указан'}</strong></div>
-              <div><span>Менеджер</span><strong>{selectedWorkshopWarning.managerName || 'Не указан'}</strong></div>
-              <div><span>Город</span><strong>{selectedWorkshopWarning.city || 'Не указан'}</strong></div>
-              <div><span>Дата заказа</span><strong>{dashboardShortDate(selectedWorkshopWarning.orderDate)}</strong></div>
-              <div><span>Дедлайн</span><strong>{selectedWorkshopWarning.dueDate ? dashboardShortDate(selectedWorkshopWarning.dueDate) : 'Не задан'}</strong></div>
-              <div><span>В ожидании</span><strong>{selectedWorkshopWarning.waitingDays} дн.</strong></div>
-              <div><span>Количество</span><strong>{selectedWorkshopWarning.quantity || 1} шт.</strong></div>
-              <div><span>Доставка</span><strong>{selectedWorkshopWarning.deliveryType || 'Не указана'}</strong></div>
-              <div><span>Статус</span><strong>{selectedWorkshopWarning.urgent ? 'Срочно' : 'Обычно'}</strong></div>
+              <div><span>Клиент</span><strong>{selectedWorkshopOrder.customerName || 'Не указан'}</strong></div>
+              <div><span>Телефон</span><strong>{selectedWorkshopOrder.customerPhone || 'Не указан'}</strong></div>
+              <div><span>Менеджер</span><strong>{selectedWorkshopOrder.managerName || 'Не указан'}</strong></div>
+              <div><span>Город</span><strong>{selectedWorkshopOrder.city || 'Не указан'}</strong></div>
+              <div><span>Дата заказа</span><strong>{dashboardShortDate(selectedWorkshopOrder.orderDate)}</strong></div>
+              <div><span>Дедлайн</span><strong>{selectedWorkshopOrder.dueDate ? dashboardShortDate(selectedWorkshopOrder.dueDate) : 'Не задан'}</strong></div>
+              <div><span>В ожидании</span><strong>{selectedWorkshopOrder.waitingDays} дн.</strong></div>
+              <div><span>В контроле</span><strong>{selectedWorkshopOrder.totalQuantity} шт. · {selectedWorkshopOrder.items.length} поз.</strong></div>
             </div>
 
-            <div className="dashboard-workshop-detail-block">
-              <span>Характеристики</span>
-              <strong>{[selectedWorkshopWarning.gender, selectedWorkshopWarning.color, selectedWorkshopWarning.material, selectedWorkshopWarning.length, selectedWorkshopWarning.size].filter(Boolean).join(' · ') || 'Не указаны'}</strong>
-            </div>
-            <div className="dashboard-workshop-detail-block">
-              <span>Комментарий цеху</span>
-              <strong>{selectedWorkshopWarning.comment || 'Нет комментария'}</strong>
+            <div className="dashboard-workshop-detail-items">
+              <div className="dashboard-workshop-detail-items-head">
+                <strong>Позиции заказа в очереди контроля</strong>
+                <span>{selectedWorkshopOrder.items.length}</span>
+              </div>
+              {selectedWorkshopOrder.items.map((item: any) => (
+                <article className="dashboard-workshop-detail-item" key={`dash-detail-${selectedWorkshopOrder.key}-${item.id}`}>
+                  <div>
+                    <strong>{item.productName}</strong>
+                    <small>{[item.gender, item.color, item.material, item.length, item.size].filter(Boolean).join(' · ') || 'Характеристики не указаны'}</small>
+                    {item.comment ? <p>{item.comment}</p> : null}
+                  </div>
+                  <div className="dashboard-workshop-detail-item-side">
+                    <b>{Math.max(1, Number(item.quantity || 1))} шт.</b>
+                    {item.urgent ? <span>Срочно</span> : null}
+                  </div>
+                </article>
+              ))}
             </div>
 
             <div className="dashboard-workshop-detail-actions">
@@ -205,14 +309,14 @@ export function DashboardSection({ ctx }: { ctx: SectionContext }) {
                 className="primary"
                 type="button"
                 onClick={() => {
-                  const item = selectedWorkshopWarning
-                  setSelectedWorkshopWarning(null)
-                  openDashboardWorkshopItem(item)
+                  const item = selectedWorkshopOrder.items[0]
+                  setSelectedWorkshopOrder(null)
+                  if (item) openDashboardWorkshopItem(item)
                 }}
               >
-                Открыть в цехе
+                Открыть заказ в цехе
               </button>
-              <button className="secondary" type="button" onClick={() => setSelectedWorkshopWarning(null)}>Остаться на инфопанели</button>
+              <button className="secondary" type="button" onClick={() => setSelectedWorkshopOrder(null)}>Остаться на инфопанели</button>
             </div>
           </section>
         </div>
