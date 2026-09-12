@@ -1,0 +1,41 @@
+name: Apply return physical summary R1
+
+on:
+  push:
+    branches:
+      - returns-physical-intake-r1
+    paths:
+      - .github/workflows/apply-return-physical-summary-r1.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: returns-physical-intake-r1
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply pending physical counters
+        run: python .github/scripts/patch-return-physical-summary-r1.py
+      - name: Focused regression
+        run: node scripts/test-return-exchange-physical-receipt-r1.mjs
+      - name: Typecheck app and worker
+        run: |
+          npx tsc -p tsconfig.app.json --noEmit
+          npx tsc -p tsconfig.worker.json --noEmit
+      - name: Commit counters and remove temporary patcher
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/scripts/patch-return-physical-summary-r1.py .github/workflows/apply-return-physical-summary-r1.yml
+          git add worker/domains/activity.ts worker/domains/returns-exchanges.ts src/app/types.ts src/App.tsx src/features/sections/OrderReturnsSection.tsx src/features/sections/OrderExchangeSection.tsx scripts/test-return-exchange-physical-receipt-r1.mjs
+          git commit -m "Show pending physical return quantities"
+          git push origin HEAD:returns-physical-intake-r1
