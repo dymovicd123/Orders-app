@@ -25,6 +25,16 @@ jobs:
       - run: npm ci
       - name: Apply pending physical counters
         run: python .github/scripts/patch-return-physical-summary-r1.py
+      - name: Reuse existing focused-test sources
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/test-return-exchange-physical-receipt-r1.mjs')
+          text = path.read_text()
+          text = text.replace("const app = fs.readFileSync('src/App.tsx', 'utf8')\nconst returnsSection = fs.readFileSync('src/features/sections/OrderReturnsSection.tsx', 'utf8')\nconst exchangeSection = fs.readFileSync('src/features/sections/OrderExchangeSection.tsx', 'utf8')\n", "")
+          text = text.replace('returnsSection.includes(', 'returnSection.includes(')
+          path.write_text(text)
+          PY
       - name: Focused regression
         run: node scripts/test-return-exchange-physical-receipt-r1.mjs
       - name: Typecheck app and worker
