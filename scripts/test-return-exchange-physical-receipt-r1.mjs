@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 
 const domain = fs.readFileSync('worker/domains/returns-exchanges.ts', 'utf8')
+const activity = fs.readFileSync('worker/domains/activity.ts', 'utf8')
 const router = fs.readFileSync('worker/index.ts', 'utf8')
 const migration = fs.readFileSync('migrations/0069_v72_return_exchange_physical_receipt.sql', 'utf8')
 
@@ -42,5 +43,15 @@ expect(router.includes("receiveReturnedItem"), 'receiveReturnedItem is not wired
 expect(router.includes("url.pathname === '/api/returned-items/receive'"), 'physical receipt API route missing')
 expect(router.includes("destination?: 'warehouse' | 'boutique' | 'no_stock'"), 'physical receipt route destination contract missing')
 expect(router.includes("X-Idempotency-Key"), 'physical receipt route must accept idempotency key')
+
+// Existing history endpoints must expose the physical truth without a new heavy read path.
+expect(activity.includes('ri.physical_tracking AS return_item_physical_tracking'), 'return history does not select physical tracking')
+expect(activity.includes('ri.physical_received_at AS return_item_physical_received_at'), 'return history does not select received timestamp')
+expect(activity.includes('physicalTracking: Boolean(toInt(row.return_item_physical_tracking, 0))'), 'return history does not map physical tracking')
+expect(activity.includes('physicalReceivedAt: cleanText(row.return_item_physical_received_at) || null'), 'return history does not map received timestamp')
+expect(domain.includes('old_snapshot.physical_tracking AS old_physical_tracking'), 'exchange history does not select physical tracking')
+expect(domain.includes('old_snapshot.physical_received_at AS old_physical_received_at'), 'exchange history does not select received timestamp')
+expect(domain.includes('oldPhysicalTracking: Boolean(toInt(row.old_physical_tracking, 0))'), 'exchange history does not map physical tracking')
+expect(domain.includes('oldPhysicalReceivedAt: cleanText(row.old_physical_received_at) || null'), 'exchange history does not map received timestamp')
 
 console.log('Return/exchange physical receipt R1 regression: OK')
