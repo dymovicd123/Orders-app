@@ -1,0 +1,82 @@
+name: Final stabilization 20260912
+
+on:
+  push:
+    branches:
+      - stabilization/final-audit-20260912
+    paths:
+      - .github/workflows/final-stabilization-20260912.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: stabilization/final-audit-20260912
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Refresh vulnerable transitive versions within declared ranges
+        run: npm audit fix --package-lock-only
+
+      - name: Reinstall exact refreshed lock
+        run: npm ci
+
+      - name: Require clean production dependency audit
+        run: npm audit --omit=dev --audit-level=moderate
+
+      - name: Require clean full dependency audit
+        run: npm audit --audit-level=moderate
+
+      - name: Full cumulative release gate
+        run: npm run release:check
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Production build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Remove temporary finalizer
+        run: rm -f .github/workflows/final-stabilization-20260912.yml
+
+      - name: Verify only lock/runtime-safe changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --short
+          test ! -e .github/workflows/final-stabilization-20260912.yml
+          git diff --check
+          git diff --name-only origin/main...HEAD || true
+
+      - name: Commit validated dependency refresh
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package-lock.json .github/workflows/final-stabilization-20260912.yml
+          if git diff --cached --quiet; then
+            echo 'No dependency changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Refresh vulnerable dependencies within declared ranges'
+          git push origin HEAD:stabilization/final-audit-20260912
