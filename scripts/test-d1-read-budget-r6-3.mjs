@@ -21,8 +21,8 @@ requireMatch(
   'R6.3: manager summary must be rebuilt from already-loaded day facts.'
 )
 requireMatch(
-  /avg_check: summary\.nonzero_order_count > 0 \? Math\.round\(summary\.total_sales \/ summary\.nonzero_order_count\) : 0/,
-  'R6.3: rebuilt manager avg_check must match AVG(NULLIF(total_amount, 0)) semantics.'
+  /avg_check: summary\.nonzero_order_count > 0 \? summary\.total_sales \/ summary\.nonzero_order_count : 0/,
+  'R6.3: rebuilt manager avg_check must match AVG(NULLIF(total_amount, 0)) semantics without changing precision.'
 )
 
 console.log('D1 read budget R6.3 checks passed.')
