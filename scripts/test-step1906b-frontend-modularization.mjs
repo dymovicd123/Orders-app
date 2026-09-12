@@ -99,6 +99,7 @@ const operationalAutonomyA5ManifestPath = path.join(root, 'scripts/operational-a
 const returnsPhysicalIntakeManifestPath = path.join(root, 'scripts/returns-physical-intake-r1-frontend-manifest.json')
 const stabilizationManifestPath = path.join(root, 'scripts/stabilization-20260912-r1-frontend-manifest.json')
 const businessDateBoundaryManifestPath = path.join(root, 'scripts/business-date-boundaries-r1-frontend-manifest.json')
+const clientFixesManifestPath = path.join(root, 'scripts/client-fixes-20260912-r1-frontend-manifest.json')
 const fixtureRoot = path.join(root, 'scripts/fixtures/catalog-gender-scope-r1')
 const predecessorFixture = path.join(fixtureRoot, 'test-step1906b-frontend-modularization-predecessor.mjs')
 const runtimePredecessor = path.join(root, 'scripts/.tmp-test-step1906b-catalog-predecessor.mjs')
@@ -130,6 +131,10 @@ const businessDateBoundaryManifest = JSON.parse(fs.readFileSync(businessDateBoun
 if (businessDateBoundaryManifest?.version !== 1 || businessDateBoundaryManifest?.revision !== 'business-date-boundaries-r1') throw new Error('Business date boundary frontend manifest invalid')
 const businessDateBoundaryExpectedFiles = ['src/App.tsx','src/app/utils.ts','src/features/sections/DashboardSection.tsx']
 if (JSON.stringify(Object.keys(businessDateBoundaryManifest.files || {})) !== JSON.stringify(businessDateBoundaryExpectedFiles)) throw new Error('Business date boundary frontend allow-list widened unexpectedly')
+const clientFixesManifest = JSON.parse(fs.readFileSync(clientFixesManifestPath, 'utf8'))
+if (clientFixesManifest?.version !== 1 || clientFixesManifest?.revision !== 'client-fixes-20260912-r1') throw new Error('Client fixes frontend manifest invalid')
+const clientFixesExpectedFiles = ['src/App.tsx','src/app/types.ts','src/app/utils.ts','src/features/renderers/FinanceReportContentRenderer.tsx','src/features/sections/DashboardSection.tsx','src/features/sections/OrderExchangeSection.tsx']
+if (JSON.stringify(Object.keys(clientFixesManifest.files || {})) !== JSON.stringify(clientFixesExpectedFiles)) throw new Error('Client fixes frontend allow-list widened unexpectedly')
 const gitBlobSha = (text) => { const bytes = Buffer.from(text); return crypto.createHash('sha1').update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex') }
 for (const file of ['src/app/utils.ts', 'src/features/sections/OrderReturnsSection.tsx']) {
   const delta = returnsPhysicalIntakeManifest.files[file]
@@ -148,7 +153,13 @@ for (const file of ['src/app/utils.ts', 'src/features/sections/OrderReturnsSecti
     acceptedGitBlob = businessDateBoundaryDelta.afterGitBlob
     acceptedLines = businessDateBoundaryDelta.afterLines
   }
-  if (!delta || gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) throw new Error(businessDateBoundaryDelta ? 'Business date boundary frontend file changed beyond exact manifest: ' + file : stabilizationDelta ? 'September 12 stabilization frontend file changed beyond exact manifest: ' + file : 'Returns physical intake R1 frontend file changed beyond exact manifest: ' + file)
+  const clientFixesDelta = clientFixesManifest.files?.[file]
+  if (clientFixesDelta) {
+    if (clientFixesDelta.beforeGitBlob !== acceptedGitBlob || clientFixesDelta.beforeLines !== acceptedLines) throw new Error('Client fixes frontend predecessor drifted: ' + file)
+    acceptedGitBlob = clientFixesDelta.afterGitBlob
+    acceptedLines = clientFixesDelta.afterLines
+  }
+  if (!delta || gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) throw new Error(clientFixesDelta ? 'Client fixes frontend file changed beyond exact manifest: ' + file : businessDateBoundaryDelta ? 'Business date boundary frontend file changed beyond exact manifest: ' + file : stabilizationDelta ? 'September 12 stabilization frontend file changed beyond exact manifest: ' + file : 'Returns physical intake R1 frontend file changed beyond exact manifest: ' + file)
 }
 const stabilizationDashboardFile = 'src/features/sections/DashboardSection.tsx'
 const stabilizationDashboardDelta = stabilizationManifest.files[stabilizationDashboardFile]
@@ -156,7 +167,13 @@ const stabilizationDashboardActual = fs.readFileSync(path.join(root, stabilizati
 const businessDateBoundaryDashboardDelta = businessDateBoundaryManifest.files[stabilizationDashboardFile]
 if (!stabilizationDashboardDelta || !businessDateBoundaryDashboardDelta) throw new Error('Dashboard frontend date-boundary manifests missing')
 if (businessDateBoundaryDashboardDelta.beforeGitBlob !== stabilizationDashboardDelta.afterGitBlob || businessDateBoundaryDashboardDelta.beforeLines !== stabilizationDashboardDelta.afterLines) throw new Error('Business date boundary Dashboard predecessor drifted')
-if (gitBlobSha(stabilizationDashboardActual) !== businessDateBoundaryDashboardDelta.afterGitBlob || stabilizationDashboardActual.split(/\r?\n/).length !== businessDateBoundaryDashboardDelta.afterLines) throw new Error('Business date boundary Dashboard frontend changed beyond exact manifest')
+const clientFixesDashboardDelta = clientFixesManifest.files[stabilizationDashboardFile]
+if (!clientFixesDashboardDelta || clientFixesDashboardDelta.beforeGitBlob !== businessDateBoundaryDashboardDelta.afterGitBlob || clientFixesDashboardDelta.beforeLines !== businessDateBoundaryDashboardDelta.afterLines) throw new Error('Client fixes Dashboard predecessor drifted')
+if (gitBlobSha(stabilizationDashboardActual) !== clientFixesDashboardDelta.afterGitBlob || stabilizationDashboardActual.split(/\r?\n/).length !== clientFixesDashboardDelta.afterLines) throw new Error('Client fixes Dashboard frontend changed beyond exact manifest')
+const clientFixesRendererFile = 'src/features/renderers/FinanceReportContentRenderer.tsx'
+const clientFixesRendererDelta = clientFixesManifest.files[clientFixesRendererFile]
+const clientFixesRendererActual = fs.readFileSync(path.join(root, clientFixesRendererFile), 'utf8')
+if (!clientFixesRendererDelta || gitBlobSha(clientFixesRendererActual) !== clientFixesRendererDelta.afterGitBlob || clientFixesRendererActual.split(/\r?\n/).length !== clientFixesRendererDelta.afterLines) throw new Error('Client fixes Finance renderer changed beyond exact manifest')
 
 const current = new Map()
 try {
@@ -172,6 +189,7 @@ try {
     const operationalAutonomyA5Delta = operationalAutonomyA5Manifest.files?.[file]
     const returnsPhysicalIntakeDelta = returnsPhysicalIntakeManifest.files?.[file]
     const businessDateBoundaryDelta = businessDateBoundaryManifest.files?.[file]
+    const clientFixesDelta = clientFixesManifest.files?.[file]
     let acceptedGitBlob = delta.afterGitBlob
     let acceptedLines = delta.afterLines
     if (inPlaceDelta) {
@@ -211,8 +229,15 @@ try {
       acceptedGitBlob = businessDateBoundaryDelta.afterGitBlob
       acceptedLines = businessDateBoundaryDelta.afterLines
     }
+    if (clientFixesDelta) {
+      if (clientFixesDelta.beforeGitBlob !== acceptedGitBlob || clientFixesDelta.beforeLines !== acceptedLines) throw new Error('Client fixes frontend predecessor drifted: ' + file)
+      acceptedGitBlob = clientFixesDelta.afterGitBlob
+      acceptedLines = clientFixesDelta.afterLines
+    }
     if (gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) {
-      throw new Error(businessDateBoundaryDelta
+      throw new Error(clientFixesDelta
+        ? 'Client fixes frontend file changed beyond exact manifest: ' + file
+        : businessDateBoundaryDelta
         ? 'Business date boundary frontend file changed beyond exact manifest: ' + file
         : stabilizationDelta
         ? 'September 12 stabilization frontend file changed beyond exact manifest: ' + file

@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "revision": "client-fixes-20260912-r1",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "dc238dbe0123e69ce99c474fd63bcbc7cd177c31",
+      "afterGitBlob": "bf4fc806ee6e70e31ddd2143e5a6779506ec9e29",
+      "beforeLines": 7225,
+      "afterLines": 7286
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "d7cfdf1211c64bf646fb548c3ad784ce0e405f66",
+      "afterGitBlob": "f1596007f41045da814246fa6bdec647c11c3153",
+      "beforeLines": 1662,
+      "afterLines": 1702
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "cccc131ed8b6eb9e31f4d77a3e27f163daec064a",
+      "afterGitBlob": "0c2eb440b14013d85fde64e677ea47c4b5a4cfe8",
+      "beforeLines": 978,
+      "afterLines": 985
+    },
+    "src/features/renderers/FinanceReportContentRenderer.tsx": {
+      "beforeGitBlob": "4c82c712c5094ec7cff956b35ba7651c79f195df",
+      "afterGitBlob": "5e48a6bdb636633e67ffcab5b1f24204c4e5bc31",
+      "beforeLines": 237,
+      "afterLines": 257
+    },
+    "src/features/sections/DashboardSection.tsx": {
+      "beforeGitBlob": "a52af320078f8efa5c735da384ad2af1bd348743",
+      "afterGitBlob": "fae9c6791861d85e34ec60d542cb31f6cf314982",
+      "beforeLines": 335,
+      "afterLines": 358
+    },
+    "src/features/sections/OrderExchangeSection.tsx": {
+      "beforeGitBlob": "f8002f09cbb54b9a5cec85f76db023ac792706a2",
+      "afterGitBlob": "0dbe78e1055e821c42c93ee755730de468860d72",
+      "beforeLines": 531,
+      "afterLines": 584
+    }
+  }
+}

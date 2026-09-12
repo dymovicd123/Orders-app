@@ -39,6 +39,7 @@ try {
   check(financeWorker.includes("!needsReport('payments', 'managers', 'cities')"), 'Payments report must load operation classification')
   check(financeWorker.includes("financeWorkspaceOnly || reportType === 'payments'"), 'Selected payments report must reuse payment operation rows for daily method totals instead of adding another D1 query')
   check(financeWorker.includes('paymentMethodReconciliation') && financeWorker.includes('paymentReconciliationByDay'), 'Finance API must expose method/day reconciliation')
+  check(financeWorker.includes('r.return_date, r.amount, r.payment_method, r.status') && financeWorker.includes('canonicalPaymentMethodName(row.payment_method)'), 'Refund reconciliation must use the recorded return payment method instead of collapsing refunds into an unknown method')
   check(financeWorker.includes("operation.operationType === 'exchange_extra'") && financeWorker.includes("operation.operationType === 'debt_close' || operation.operationType === 'order_extra'"), 'Finance reconciliation must separate exchange top-ups and debt closures')
   check(financeWorker.includes('current.netMovement') === false, 'Net movement must be derived after aggregation, not incremented inconsistently per event')
   check(financeUi.includes('Все поступления = оплаты заказов + закрытие долга + доплаты по обменам'), 'Payment report must explain non-overlapping inflow formula')
