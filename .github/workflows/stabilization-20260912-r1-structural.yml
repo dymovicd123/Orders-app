@@ -1,0 +1,71 @@
+name: September 12 stabilization structural finalizer
+
+on:
+  push:
+    branches:
+      - stabilization-20260912-r1
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: stabilization-20260912-r1
+          fetch-depth: 0
+
+      - name: Fetch current main baseline
+        run: git fetch origin main:refs/remotes/origin/main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply structural finalizer
+        run: node scripts/apply-stabilization-20260912-r1-structural.mjs
+
+      - name: Focused stabilization regression
+        run: node scripts/test-stabilization-20260912-r1.mjs
+
+      - name: Exact Worker structural gate
+        run: node scripts/test-step1906a-worker-modularization.mjs
+
+      - name: Exact frontend structural gate
+        run: node scripts/test-step1906b-frontend-modularization.mjs
+
+      - name: Full cumulative release gate
+        run: npm run release:check
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Production build
+        run: npm run build
+
+      - name: Remove temporary finalizer machinery
+        run: |
+          rm scripts/apply-stabilization-20260912-r1-structural.mjs
+          rm .github/workflows/stabilization-20260912-r1-structural.yml
+
+      - name: Verify patch formatting
+        run: git diff --check
+
+      - name: Commit finalized stabilization
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "Finalize September 12 stabilization safeguards"
+          git push origin HEAD:stabilization-20260912-r1
