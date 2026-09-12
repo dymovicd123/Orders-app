@@ -95,12 +95,16 @@ try {
   check(exchanges.includes("oldItemIsWorkshop && oldReturnSource === 'boutique'"), 'Workshop exchange return can again be sent to Boutique inventory')
   const receiveReturnedItemFlow = functionSection(exchanges, 'receiveReturnedItem', 'hasActiveStandaloneReturn')
   check(receiveReturnedItemFlow.includes("isWorkshop && destination === 'boutique'"), 'Delayed Workshop receipt can again be sent to Boutique inventory')
-  check(app.includes('restock: item.restock'), 'Return frontend no longer transmits the per-line stock disposition')
-  check(returnUtils.includes("restock: item.sourceType !== 'workshop'"), 'Workshop return draft no longer defaults to no-stock')
-  check(returnView.includes('Принять на Склад'), 'Return UI lost the explicit Workshop-to-Warehouse decision')
-  check(returnView.includes('Цех → Бутик нельзя'), 'Return UI no longer explains the Workshop Boutique restriction')
+  check(app.includes("restock: item.physicalState === 'warehouse' || item.physicalState === 'boutique'"), 'Return frontend no longer derives stock disposition from physical state')
+  check(app.includes('physicalState: item.physicalState'), 'Return frontend no longer transmits physical receipt state')
+  check(returnUtils.includes('restock: false,'), 'New return draft must not pre-credit inventory before physical receipt')
+  check(returnUtils.includes("physicalState: 'pending' as const"), 'New return draft no longer defaults to waiting for physical receipt')
+  check(returnView.includes('Пришёл → Склад'), 'Return UI lost the explicit physical Workshop-to-Warehouse decision')
+  check(returnView.includes("item.sourceType !== 'workshop' ? <option value=\"boutique\">Пришёл → Бутик</option> : null"), 'Return form can again offer Boutique for Workshop items')
+  check(returnView.includes("!item.isWorkshop ? <option value=\"boutique\">Бутик</option> : null"), 'Delayed return receipt can again offer Boutique for Workshop items')
   check(exchangeView.includes('effectiveOldItemIsWorkshop'), 'Exchange UI no longer distinguishes Workshop old items')
-  check(exchangeView.includes('Вещь из Цеха не попадает в остатки автоматически'), 'Exchange UI lost explicit Workshop disposition guidance')
+  check(exchangeView.includes("!effectiveOldItemIsWorkshop ? <option value=\"boutique\">Пришла → Бутик</option> : null"), 'Exchange form can again offer Boutique for Workshop old items')
+  check(exchangeView.includes('Для вещи из Цеха Бутик недоступен.'), 'Exchange UI lost explicit Workshop Boutique restriction guidance')
 
   // Cross-workflow safety audit: Workshop task completion is a production-state transition only.
   // It must never silently become a second inventory intake path. Physical Workshop-origin inbound
