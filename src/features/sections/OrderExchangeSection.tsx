@@ -407,7 +407,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                   <label><span>Статус</span><select value={exchangeHistoryFilters.status} onChange={(event) => setExchangeHistoryFilters((current: any) => ({ ...current, status: event.target.value }))}><option value="all">Все</option><option value="completed">Проведённые</option><option value="cancelled">Отменённые</option></select></label>
                   <button className="primary compact history-filter-submit" type="button" disabled={exchangeHistoryBusy} onClick={() => void loadExchangeHistory({ filters: exchangeHistoryFilters })}>Показать</button>
                 </div>
-                <div className="history-summary-line"><span><strong>{exchangeHistorySummary.count}</strong> операций</span><span>Проведено: <strong>{exchangeHistorySummary.activeCount}</strong></span>{exchangeHistorySummary.cancelledCount ? <span>Отменено: <strong>{exchangeHistorySummary.cancelledCount}</strong></span> : null}</div>
+                <div className="history-summary-line"><span><strong>{exchangeHistorySummary.count}</strong> операций</span><span>Проведено: <strong>{exchangeHistorySummary.activeCount}</strong></span><span>Старых вещей ещё не пришло: <strong>{exchangeHistorySummary.pendingPhysicalQuantity} шт.</strong></span>{exchangeHistorySummary.cancelledCount ? <span>Отменено: <strong>{exchangeHistorySummary.cancelledCount}</strong></span> : null}</div>
 
                 {exchangeHistoryError ? (
                   <div className="history-load-state is-error"><strong>Не удалось загрузить историю обменов.</strong><span>{exchangeHistoryError}</span><button className="secondary compact" type="button" onClick={() => void loadExchangeHistory()}>Повторить</button></div>

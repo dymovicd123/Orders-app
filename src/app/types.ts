@@ -99,6 +99,7 @@ export type ReturnHistoryResponse = {
     activeCount: number
     cancelledCount: number
     activeAmount: number
+    pendingPhysicalQuantity: number
   }
   returns: ReturnHistoryEntry[]
 }
@@ -673,7 +674,7 @@ export type ExchangeHistoryResponse = {
   offset?: number
   limit?: number
   hasMore?: boolean
-  summary?: { activeCount: number; cancelledCount: number }
+  summary?: { activeCount: number; cancelledCount: number; pendingPhysicalQuantity: number }
   exchanges: ExchangeHistoryEntry[]
 }
 

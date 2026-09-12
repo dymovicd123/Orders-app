@@ -1495,9 +1495,20 @@ export async function listExchanges(db: D1Database, url: URL) {
   const summary = await db.prepare(
     `SELECT COUNT(*) AS total_count,
             SUM(CASE WHEN COALESCE(e.status, 'completed') <> 'cancelled' THEN 1 ELSE 0 END) AS active_count,
-            SUM(CASE WHEN COALESCE(e.status, 'completed') = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_count
+            SUM(CASE WHEN COALESCE(e.status, 'completed') = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_count,
+            COALESCE(SUM(CASE
+              WHEN COALESCE(e.status, 'completed') <> 'cancelled'
+               AND old_summary.physical_tracking = 1
+               AND old_summary.physical_received_at IS NULL
+              THEN COALESCE(old_summary.quantity, e.old_quantity, 0)
+              ELSE 0
+            END), 0) AS pending_physical_quantity
      FROM exchanges e JOIN orders o ON o.id = e.order_id
-     LEFT JOIN managers m ON m.id = e.manager_id LEFT JOIN customers c ON c.id = o.customer_id ${whereSql}`
+     LEFT JOIN managers m ON m.id = e.manager_id LEFT JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN exchange_items old_summary ON old_summary.id = (
+       SELECT ei.id FROM exchange_items ei WHERE ei.exchange_id = e.id AND ei.role = 'old' ORDER BY ei.id ASC LIMIT 1
+     )
+     ${whereSql}`
   ).bind(...bindings).first<Record<string, unknown>>();
 
   const result = await db.prepare(
@@ -1549,7 +1560,7 @@ export async function listExchanges(db: D1Database, url: URL) {
     }));
   const totalCount = Math.max(0, toInt(summary?.total_count, 0));
   return { ok: true, count: totalCount, offset, limit, hasMore: offset + rows.length < totalCount,
-    summary: { activeCount: Math.max(0, toInt(summary?.active_count, 0)), cancelledCount: Math.max(0, toInt(summary?.cancelled_count, 0)) }, exchanges: rows };
+    summary: { activeCount: Math.max(0, toInt(summary?.active_count, 0)), cancelledCount: Math.max(0, toInt(summary?.cancelled_count, 0)), pendingPhysicalQuantity: Math.max(0, toInt(summary?.pending_physical_quantity, 0)) }, exchanges: rows };
 }
 
 

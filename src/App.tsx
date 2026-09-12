@@ -546,7 +546,7 @@ function App() {
   const [returnHistoryError, setReturnHistoryError] = useState('')
   const [returnHistoryFilters, setReturnHistoryFilters] = useState({ q: '', dateFrom: '', dateTo: '', status: 'all' })
   const [returnHistoryHasMore, setReturnHistoryHasMore] = useState(false)
-  const [returnHistorySummary, setReturnHistorySummary] = useState({ activeCount: 0, cancelledCount: 0, activeAmount: 0, count: 0 })
+  const [returnHistorySummary, setReturnHistorySummary] = useState({ activeCount: 0, cancelledCount: 0, activeAmount: 0, pendingPhysicalQuantity: 0, count: 0 })
   const [exchangeSelectedOrderId, setExchangeSelectedOrderId] = useState<number | null>(null)
   const [exchangeDraft, setExchangeDraft] = useState<ExchangeDraft>(createExchangeDraft())
   const [exchangeBusy, setExchangeBusy] = useState(false)
@@ -555,7 +555,7 @@ function App() {
   const [exchangeHistoryError, setExchangeHistoryError] = useState('')
   const [exchangeHistoryFilters, setExchangeHistoryFilters] = useState({ q: '', dateFrom: '', dateTo: '', status: 'all' })
   const [exchangeHistoryHasMore, setExchangeHistoryHasMore] = useState(false)
-  const [exchangeHistorySummary, setExchangeHistorySummary] = useState({ activeCount: 0, cancelledCount: 0, count: 0 })
+  const [exchangeHistorySummary, setExchangeHistorySummary] = useState({ activeCount: 0, cancelledCount: 0, pendingPhysicalQuantity: 0, count: 0 })
   const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([])
   const [activityBusy, setActivityBusy] = useState(false)
   const [activityFilters, setActivityFilters] = useState({ q: '', eventType: 'all', orderId: '' })
@@ -2082,6 +2082,7 @@ function App() {
         activeCount: Number(data.summary?.activeCount || 0),
         cancelledCount: Number(data.summary?.cancelledCount || 0),
         activeAmount: Number(data.summary?.activeAmount || 0),
+        pendingPhysicalQuantity: Number(data.summary?.pendingPhysicalQuantity || 0),
         count: Number(data.count || 0),
       })
       return rows
@@ -2112,7 +2113,7 @@ function App() {
       const rows = Array.isArray(data.exchanges) ? data.exchanges : []
       setExchangeHistory((current) => append ? [...current, ...rows] : rows)
       setExchangeHistoryHasMore(Boolean(data.hasMore))
-      setExchangeHistorySummary({ activeCount: Number(data.summary?.activeCount || 0), cancelledCount: Number(data.summary?.cancelledCount || 0), count: Number(data.count || 0) })
+      setExchangeHistorySummary({ activeCount: Number(data.summary?.activeCount || 0), cancelledCount: Number(data.summary?.cancelledCount || 0), pendingPhysicalQuantity: Number(data.summary?.pendingPhysicalQuantity || 0), count: Number(data.count || 0) })
       return rows
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Не удалось загрузить историю обменов.'

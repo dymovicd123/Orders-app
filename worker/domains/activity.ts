@@ -143,11 +143,18 @@ export async function listReturnHistory(db: D1Database, url: URL) {
     `SELECT COUNT(*) AS total_count,
             SUM(CASE WHEN COALESCE(r.status, 'completed') <> 'cancelled' THEN 1 ELSE 0 END) AS active_count,
             SUM(CASE WHEN COALESCE(r.status, 'completed') = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_count,
-            COALESCE(SUM(CASE WHEN COALESCE(r.status, 'completed') <> 'cancelled' THEN r.amount ELSE 0 END), 0) AS active_amount
+            COALESCE(SUM(CASE WHEN COALESCE(r.status, 'completed') <> 'cancelled' THEN r.amount ELSE 0 END), 0) AS active_amount,
+            COALESCE(SUM(CASE WHEN COALESCE(r.status, 'completed') <> 'cancelled' THEN COALESCE(pending_physical.pending_physical_quantity, 0) ELSE 0 END), 0) AS pending_physical_quantity
      FROM returns r
      JOIN orders o ON o.id = r.order_id
      LEFT JOIN managers m ON m.id = COALESCE(r.manager_id, o.manager_id)
      LEFT JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN (
+       SELECT return_id, SUM(quantity) AS pending_physical_quantity
+       FROM return_items
+       WHERE physical_tracking = 1 AND physical_received_at IS NULL
+       GROUP BY return_id
+     ) pending_physical ON pending_physical.return_id = r.id
      ${whereSql}`
   ).bind(...bindings).first<Record<string, unknown>>();
 
@@ -218,7 +225,7 @@ export async function listReturnHistory(db: D1Database, url: URL) {
   const totalCount = Math.max(0, toInt(summary?.total_count, 0));
   return {
     ok: true, count: totalCount, offset, limit, hasMore: offset + rows.length < totalCount,
-    summary: { activeCount: Math.max(0, toInt(summary?.active_count, 0)), cancelledCount: Math.max(0, toInt(summary?.cancelled_count, 0)), activeAmount: Number(summary?.active_amount || 0) },
+    summary: { activeCount: Math.max(0, toInt(summary?.active_count, 0)), cancelledCount: Math.max(0, toInt(summary?.cancelled_count, 0)), activeAmount: Number(summary?.active_amount || 0), pendingPhysicalQuantity: Math.max(0, toInt(summary?.pending_physical_quantity, 0)) },
     returns: rows,
   };
 }

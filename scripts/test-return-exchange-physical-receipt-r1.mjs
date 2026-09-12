@@ -86,4 +86,12 @@ expect(!exchangeSection.includes('<span>Куда вернуть старую в�
 expect(exchangeSection.includes('Товар пришёл'), 'exchange history delayed receipt button missing')
 expect(exchangeSection.includes('Старая запись — физическое получение не отслеживалось'), 'exchange legacy status explanation missing')
 
+expect(activity.includes('AS pending_physical_quantity'), 'return history pending physical quantity summary missing')
+expect(activity.includes('pendingPhysicalQuantity: Math.max(0, toInt(summary?.pending_physical_quantity, 0))'), 'return history pending physical quantity response missing')
+expect(domain.includes('old_summary.physical_tracking = 1'), 'exchange pending physical quantity summary missing')
+expect(domain.includes('pendingPhysicalQuantity: Math.max(0, toInt(summary?.pending_physical_quantity, 0))'), 'exchange pending physical quantity response missing')
+expect(app.includes('pendingPhysicalQuantity: Number(data.summary?.pendingPhysicalQuantity || 0)'), 'frontend does not consume pending physical quantity')
+expect(returnSection.includes('Ещё физически не пришло'), 'return summary does not show pending physical quantity')
+expect(exchangeSection.includes('Старых вещей ещё не пришло'), 'exchange summary does not show pending physical quantity')
+
 console.log('Return/exchange physical receipt R1 regression: OK')

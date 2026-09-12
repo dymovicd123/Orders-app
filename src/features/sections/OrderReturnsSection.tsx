@@ -88,6 +88,10 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                     <span>Отменённых</span>
                     <strong>{returnHistorySummary.cancelledCount}</strong>
                   </div>
+                  <div>
+                    <span>Ещё физически не пришло</span>
+                    <strong>{returnHistorySummary.pendingPhysicalQuantity} шт.</strong>
+                  </div>
                 </div>
               </div>
     
@@ -305,6 +309,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                   <span><strong>{returnHistorySummary.count}</strong> операций</span>
                   <span>Проведено: <strong>{returnHistorySummary.activeCount}</strong></span>
                   <span>Сумма проведённых: <strong>{formatMoney(returnHistorySummary.activeAmount)}</strong></span>
+                  <span>Ещё не пришло: <strong>{returnHistorySummary.pendingPhysicalQuantity} шт.</strong></span>
                   {returnHistorySummary.cancelledCount ? <span>Отменено: <strong>{returnHistorySummary.cancelledCount}</strong></span> : null}
                 </div>
 
