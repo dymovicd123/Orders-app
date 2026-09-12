@@ -767,8 +767,27 @@ export async function getDashboardInsights(db: D1Database) {
     const waitingDays = daysBetweenDates(orderDate, today);
     const dueDate = cleanText(row.due_date);
     const overdueDays = dueDate ? daysBetweenDates(dueDate, today) : 0;
+    const dueInDays = dueDate && dueDate >= today ? daysBetweenDates(today, dueDate) : null;
     const urgent = Boolean(toInt(row.urgent, 0));
-    const score = waitingDays * 10 + overdueDays * 30 + (urgent ? 300 : 0);
+    const attentionTier = overdueDays > 0
+      ? 0
+      : dueDate && dueInDays !== null && dueInDays <= 2
+        ? 1
+        : urgent
+          ? 2
+          : dueDate
+            ? 3
+            : 4;
+    const score = (5 - attentionTier) * 10000 + overdueDays * 100 + waitingDays * 10 + (urgent ? 50 : 0);
+    const reason = overdueDays > 0
+      ? `Просрочено на ${overdueDays} дн. · ждёт ${waitingDays} дн.`
+      : dueDate === today
+        ? `Дедлайн сегодня · ждёт ${waitingDays} дн.`
+        : dueInDays !== null
+          ? `Дедлайн через ${dueInDays} дн. · ждёт ${waitingDays} дн.`
+          : urgent
+            ? `Срочно · ждёт ${waitingDays} дн.`
+            : `Ждёт ${waitingDays} дн.`;
     return {
       id: toInt(row.id, 0),
       orderId: toInt(row.order_id, 0),
@@ -797,12 +816,28 @@ export async function getDashboardInsights(db: D1Database) {
       city: cleanText(row.city),
       deliveryType: cleanText(row.delivery_type),
       priorityScore: score,
-      reason: dueDate && overdueDays > 0
-        ? `Просрочено на ${overdueDays} дн., всего в ожидании ${waitingDays} дн.`
-        : `${waitingDays} дн. в ожидании`,
+      reason,
     };
-  }).filter(row => row.waitingDays >= workshopAgeLimit || row.overdueDays > 0 || row.urgent)
-    .sort((a, b) => b.priorityScore - a.priorityScore || b.waitingDays - a.waitingDays || a.productName.localeCompare(b.productName, 'ru'))
+  }).filter(row => row.waitingDays >= workshopAgeLimit || row.overdueDays > 0 || row.urgent || Boolean(row.dueDate))
+    .sort((a, b) => {
+      const tier = (row: typeof a) => row.overdueDays > 0
+        ? 0
+        : row.dueDate && row.dueDate >= today && daysBetweenDates(today, row.dueDate) <= 2
+          ? 1
+          : row.urgent
+            ? 2
+            : row.dueDate
+              ? 3
+              : 4;
+      const byTier = tier(a) - tier(b);
+      if (byTier) return byTier;
+      if (a.overdueDays !== b.overdueDays) return b.overdueDays - a.overdueDays;
+      if (a.dueDate && b.dueDate && a.dueDate !== b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+      if (a.waitingDays !== b.waitingDays) return b.waitingDays - a.waitingDays;
+      const byOrder = a.externalOrderId.localeCompare(b.externalOrderId, 'ru');
+      if (byOrder) return byOrder;
+      return a.productName.localeCompare(b.productName, 'ru');
+    })
     .slice(0, 80);
 
 
