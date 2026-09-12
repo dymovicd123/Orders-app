@@ -17,8 +17,12 @@ requireMatch(
   'R6.3: manager day rows must preserve the exact non-zero-order denominator for avg_check.'
 )
 requireMatch(
-  /const managerSummaryMap = new Map<number, any>\(\)[\s\S]*summary\.order_count \+= managerRow\.order_count[\s\S]*summary\.total_received \+= managerRow\.total_received[\s\S]*summary\.total_returns \+= managerRow\.total_returns[\s\S]*summary\.nonzero_order_count \+= nonzeroOrderCount/,
-  'R6.3: manager summary must be rebuilt from already-loaded day facts.'
+  /const managerSummaryMap = new Map<number, any>\(\)[\s\S]*summary\.order_count \+= managerRow\.order_count[\s\S]*summary\.total_returns \+= managerRow\.total_returns[\s\S]*summary\.nonzero_order_count \+= nonzeroOrderCount/,
+  'R6.3: manager summary must rebuild order and return facts from already-loaded day rows.'
+)
+requireMatch(
+  /for \(const operation of paymentOperations\)[\s\S]*summary\.total_received \+= Number\(operation\.amount \|\| 0\)/,
+  'R6.3: manager summary must reuse paymentOperations for received money, including payments without manager_id.'
 )
 requireMatch(
   /avg_check: summary\.nonzero_order_count > 0 \? summary\.total_sales \/ summary\.nonzero_order_count : 0/,
