@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "revision": "d1-read-budget-r6-2-finance-payment-customer-join-r1",
+  "changes": {
+    "listFinanceReports": {
+      "before": "1bd28051f56e333cc8c756fcce4a8a17cf91f672319cc479f8d4658b4601094f",
+      "after": "825b4d0f3d3b19d5b534f02ac264fd66c506ab7035638f28b871a9e40464ba0c"
+    }
+  }
+}
