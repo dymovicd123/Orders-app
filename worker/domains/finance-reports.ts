@@ -15,6 +15,12 @@ export async function listFinanceReports(db: D1Database, url: URL) {
   };
 
   const financeWorkspaceOnly = cleanText(url.searchParams.get('scope')).toLowerCase() === 'finance';
+  const paymentOperationCustomerSelect = financeWorkspaceOnly
+    ? "'—' AS customer"
+    : "COALESCE(c.display_name, c.phone_normalized, '—') AS customer";
+  const paymentOperationCustomerJoin = financeWorkspaceOnly
+    ? ''
+    : 'LEFT JOIN customers c ON c.id = o.customer_id';
   // Opt-in only: legacy/full and finance workspace contracts remain unchanged.
   const requestedReport = cleanText(url.searchParams.get('reportType'));
   const reportType = !financeWorkspaceOnly && ['payments', 'managers', 'products', 'cities', 'returns', 'debts', 'leads', 'callCentre'].includes(requestedReport)
@@ -290,7 +296,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
               o.manager_id,
               COALESCE(m.name, o.manager_snapshot_name, 'Не указан') AS manager,
               COALESCE(m.color_key, '#475569') AS manager_color,
-              COALESCE(c.display_name, c.phone_normalized, '—') AS customer,
+              ${paymentOperationCustomerSelect},
               COALESCE(o.city, '') AS city,
               CASE
                 WHEN EXISTS (
@@ -312,7 +318,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        FROM payments p
        JOIN orders o ON o.id = p.order_id
        LEFT JOIN managers m ON m.id = o.manager_id
-       LEFT JOIN customers c ON c.id = o.customer_id
+       ${paymentOperationCustomerJoin}
        WHERE p.payment_date BETWEEN ? AND ?
          AND o.order_status <> 'deleted'
        ORDER BY p.payment_date DESC, p.id DESC`
@@ -333,7 +339,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
               o.manager_id,
               COALESCE(m.name, o.manager_snapshot_name, 'Не указан') AS manager,
               COALESCE(m.color_key, '#475569') AS manager_color,
-              COALESCE(c.display_name, c.phone_normalized, '—') AS customer,
+              ${paymentOperationCustomerSelect},
               COALESCE(o.city, '') AS city,
               CASE
                 WHEN EXISTS (
@@ -350,7 +356,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        FROM payments p
        JOIN orders o ON o.id = p.order_id
        LEFT JOIN managers m ON m.id = o.manager_id
-       LEFT JOIN customers c ON c.id = o.customer_id
+       ${paymentOperationCustomerJoin}
        WHERE o.order_date BETWEEN ? AND ?
          AND p.payment_date < o.order_date
          AND p.payment_date < ?
