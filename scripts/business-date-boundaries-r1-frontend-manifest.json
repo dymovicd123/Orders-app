@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "revision": "business-date-boundaries-r1",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "9ff7670cb8a0dcac7edb5a8e4858535f9d72d243",
+      "afterGitBlob": "dc238dbe0123e69ce99c474fd63bcbc7cd177c31",
+      "beforeLines": 7225,
+      "afterLines": 7225
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "82fcf40d84858e5d701e49e3fffb6834432cf5aa",
+      "afterGitBlob": "cccc131ed8b6eb9e31f4d77a3e27f163daec064a",
+      "beforeLines": 955,
+      "afterLines": 978
+    },
+    "src/features/sections/DashboardSection.tsx": {
+      "beforeGitBlob": "35bd2319d6fb1c6d35d8dbaad1cc27ce66226813",
+      "afterGitBlob": "a52af320078f8efa5c735da384ad2af1bd348743",
+      "beforeLines": 334,
+      "afterLines": 335
+    }
+  }
+}

@@ -79,7 +79,7 @@ export type TimesheetInput = {
 export function normalizeMonthParam(value: unknown) {
   const raw = cleanText(value);
   if (/^\d{4}-\d{2}$/.test(raw)) return raw;
-  return new Date().toISOString().slice(0, 7);
+  return normalizeDate('').slice(0, 7);
 }
 
 

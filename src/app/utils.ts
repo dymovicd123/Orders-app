@@ -55,24 +55,42 @@ export function formatDateShort(value: unknown) {
 
 
 
+const BUSINESS_TIME_ZONE = 'Asia/Almaty'
+const businessDateFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: BUSINESS_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+function businessDateParts(value: Date) {
+  const parts = businessDateFormatter.formatToParts(value)
+  const year = parts.find((part) => part.type === 'year')?.value || ''
+  const month = parts.find((part) => part.type === 'month')?.value || ''
+  const day = parts.find((part) => part.type === 'day')?.value || ''
+  return { year, month, day }
+}
+
 export function formatLocalDateInput(value = new Date()) {
-  const local = new Date(value.getTime() - value.getTimezoneOffset() * 60000)
-  return local.toISOString().slice(0, 10)
+  const { year, month, day } = businessDateParts(value)
+  return `${year}-${month}-${day}`
 }
 
 
 
 export function shiftLocalDate(days: number) {
-  const date = new Date()
-  date.setDate(date.getDate() + days)
-  return formatLocalDateInput(date)
+  const today = formatLocalDateInput()
+  const date = new Date(`${today}T00:00:00.000Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
 }
 
 
 
 export function getPeriodRange(preset: OrderPeriodPreset) {
   const today = formatLocalDateInput()
-  const now = new Date()
+  const year = today.slice(0, 4)
+  const month = today.slice(5, 7)
   if (preset === 'today') return { dateFrom: today, dateTo: today }
   if (preset === 'yesterday') {
     const yesterday = shiftLocalDate(-1)
@@ -80,13 +98,13 @@ export function getPeriodRange(preset: OrderPeriodPreset) {
   }
   if (preset === 'year') {
     return {
-      dateFrom: `${now.getFullYear()}-01-01`,
-      dateTo: `${now.getFullYear()}-12-31`,
+      dateFrom: `${year}-01-01`,
+      dateTo: `${year}-12-31`,
     }
   }
   if (preset === 'month') {
     return {
-      dateFrom: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`,
+      dateFrom: `${year}-${month}-01`,
       dateTo: today,
     }
   }
@@ -99,15 +117,19 @@ export function getPeriodRange(preset: OrderPeriodPreset) {
 
 
 export function getClosedArchiveMonth() {
-  const now = new Date()
-  const monthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  const monthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
-  const value = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}`
+  const today = formatLocalDateInput()
+  const year = Number(today.slice(0, 4))
+  const month = Number(today.slice(5, 7))
+  const previousMonth = new Date(Date.UTC(year, month - 2, 1))
+  const previousYear = previousMonth.getUTCFullYear()
+  const previousMonthNumber = previousMonth.getUTCMonth() + 1
+  const value = `${previousYear}-${String(previousMonthNumber).padStart(2, '0')}`
+  const lastDay = new Date(Date.UTC(previousYear, previousMonthNumber, 0)).getUTCDate()
   return {
     value,
     dateFrom: `${value}-01`,
-    dateTo: formatLocalDateInput(monthEnd),
-    label: monthStart.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }),
+    dateTo: `${value}-${String(lastDay).padStart(2, '0')}`,
+    label: previousMonth.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
   }
 }
 
@@ -118,7 +140,8 @@ export function monthEndFromInput(value: string) {
   const year = Number(yearText)
   const month = Number(monthText)
   if (!year || !month) return getClosedArchiveMonth().dateTo
-  return formatLocalDateInput(new Date(year, month, 0))
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  return `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 }
 
 
@@ -138,7 +161,7 @@ export function monthLabelFromInput(value: string) {
   const year = Number(yearText)
   const month = Number(monthText)
   if (!year || !month) return getClosedArchiveMonth().label
-  return new Date(year, month - 1, 1).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric', timeZone: 'UTC' })
 }
 
 

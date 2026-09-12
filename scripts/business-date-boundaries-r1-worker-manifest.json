@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "revision": "business-date-boundaries-r1",
+  "changes": {
+    "normalizeDate": {
+      "before": "79c6c3cd47ca3a6fb084221da49837f540cca29ee7094198bbddd33bef73f868",
+      "after": "b43402301088fdf6cac6d613fe8b7a08603caa274643dc47256f1912d7a45927"
+    },
+    "parseArchiveRules": {
+      "before": "e1a8b67483b34f3ad64bacf5c06e6d813cd65bf432f901e37bda71adc95eb4d5",
+      "after": "b12fc4122a2b8262bf31c2d686325c7ad94449756449ff5715088e9cc0e6bef4"
+    },
+    "resolveWorkshopPeriod": {
+      "before": "0cd17d1e0df3001e7f1708e81cc7d8e866fc4ec39870d20144083b64c722643b",
+      "after": "b0e982829548b4c07125f8daca5ed898b999396b9fb6855607666ff3f056853f"
+    },
+    "parseReportDateRange": {
+      "before": "473e954eae315b3decc6a0e5bf4f1a3f902b2cd362cd573dda8d82a4fcd9a9ba",
+      "after": "0abde4803ade0cd52559ee1fc12b27e80ddf048dd83b8d340a260851c0ae1e6f"
+    },
+    "normalizeMonthParam": {
+      "before": "148d5fdafabb7edb654c25512085d3838c2554dd742c0805b52fc7c18fec0270",
+      "after": "3c8eee89f0b4e18cd84ee4b0f2b4e377726babcf8f70ca020bf66e08b6655ed2"
+    }
+  }
+}

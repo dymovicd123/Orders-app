@@ -25,7 +25,7 @@ export function normalizeWorkshopTaskStatus(value: unknown): WorkshopTaskStatus 
 
 export function resolveWorkshopPeriod(url: URL) {
   const period = cleanText(url.searchParams.get('period')).toLowerCase();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = normalizeDate('');
   const shifted = (days: number) => {
     const date = new Date(`${today}T00:00:00.000Z`);
     date.setUTCDate(date.getUTCDate() + days);

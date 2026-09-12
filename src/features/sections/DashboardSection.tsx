@@ -1,5 +1,6 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
 import { useMemo, useState } from 'react'
+import { formatLocalDateInput } from '../../app/utils'
 import '../../styles/dashboard-workshop-attention-r1.css'
 
 type SectionContext = Record<string, any>
@@ -82,7 +83,7 @@ function buildWorkshopOrderCards(rows: any[]) {
   result.sort((a, b) => {
     if (b.overdueDays !== a.overdueDays) return b.overdueDays - a.overdueDays
 
-    const today = new Date().toISOString().slice(0, 10)
+    const today = formatLocalDateInput()
     const aDue = a.dueDate ? dashboardDayDistance(today, a.dueDate) : null
     const bDue = b.dueDate ? dashboardDayDistance(today, b.dueDate) : null
     const aBucket = aDue !== null && aDue <= 2 ? 0 : a.urgent ? 1 : a.dueDate ? 2 : 3
@@ -98,7 +99,7 @@ function buildWorkshopOrderCards(rows: any[]) {
 
 function workshopOrderTone(order: any, ageLimit: number) {
   if (Number(order.overdueDays || 0) > 0) return 'is-danger'
-  const today = new Date().toISOString().slice(0, 10)
+  const today = formatLocalDateInput()
   const dueInDays = order.dueDate ? dashboardDayDistance(today, order.dueDate) : null
   if (dueInDays !== null && dueInDays >= 0 && dueInDays <= 2) return 'is-deadline'
   if (order.urgent) return 'is-urgent'
@@ -109,7 +110,7 @@ function workshopOrderTone(order: any, ageLimit: number) {
 
 function workshopOrderStatus(order: any) {
   if (Number(order.overdueDays || 0) > 0) return `Опоздание ${order.overdueDays} дн.`
-  const today = new Date().toISOString().slice(0, 10)
+  const today = formatLocalDateInput()
   const dueInDays = order.dueDate ? dashboardDayDistance(today, order.dueDate) : null
   if (dueInDays === 0) return 'Дедлайн сегодня'
   if (dueInDays === 1) return 'Дедлайн завтра'
