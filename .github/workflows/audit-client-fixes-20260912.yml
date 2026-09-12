@@ -1,0 +1,38 @@
+name: Audit client fixes 20260912
+
+on:
+  push:
+    branches:
+      - client-fixes-20260912-r1
+    paths:
+      - .github/workflows/audit-client-fixes-20260912.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Read-only production evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          q() { echo "=== $1 ==="; npx wrangler d1 execute orders_db_prod --remote --command="$2" --json; }
+          q exchange_shape "SELECT COUNT(*) AS active_exchanges, SUM(CASE WHEN old_count > 1 OR new_count > 1 THEN 1 ELSE 0 END) AS multi_item_exchange_records FROM (SELECT e.id, SUM(CASE WHEN ei.role='old' THEN 1 ELSE 0 END) AS old_count, SUM(CASE WHEN ei.role='new' THEN 1 ELSE 0 END) AS new_count FROM exchanges e LEFT JOIN exchange_items ei ON ei.exchange_id=e.id WHERE COALESCE(e.status,'completed')<>'cancelled' GROUP BY e.id)"
+          q return_shape "SELECT COUNT(*) AS returns_with_items, SUM(CASE WHEN item_count > 1 THEN 1 ELSE 0 END) AS multi_item_returns, MAX(item_count) AS max_items_in_return FROM (SELECT r.id, COUNT(ri.id) AS item_count FROM returns r JOIN return_items ri ON ri.return_id=r.id WHERE COALESCE(r.status,'completed')<>'cancelled' GROUP BY r.id)"
+          q payment_categories_60d "SELECT p.payment_date AS date, p.method, CASE WHEN EXISTS (SELECT 1 FROM exchanges e WHERE e.payment_id=p.id AND COALESCE(e.status,'completed')<>'cancelled' AND e.financial_action='extra_payment') THEN 'exchange_extra' WHEN p.payment_kind='debt_close' THEN 'debt_close' WHEN p.payment_kind='extra' THEN 'order_extra' ELSE 'order_payment' END AS operation_type, COUNT(*) AS count, SUM(p.amount) AS total FROM payments p JOIN orders o ON o.id=p.order_id WHERE p.payment_date>=date('now','-60 days') AND o.order_status<>'deleted' GROUP BY p.payment_date,p.method,operation_type ORDER BY p.payment_date DESC,p.method,operation_type"
+          q returns_60d "SELECT r.return_date AS date, COALESCE(NULLIF(TRIM(r.payment_method),''),'—') AS method, CASE WHEN EXISTS (SELECT 1 FROM exchanges e WHERE e.refund_return_id=r.id AND COALESCE(e.status,'completed')<>'cancelled' AND e.financial_action='refund') THEN 'exchange_refund' ELSE 'order_refund' END AS operation_type, COUNT(*) AS count, SUM(r.amount) AS total FROM returns r JOIN orders o ON o.id=r.order_id WHERE r.return_date>=date('now','-60 days') AND COALESCE(r.status,'completed')<>'cancelled' AND o.order_status<>'deleted' GROUP BY r.return_date,method,operation_type ORDER BY r.return_date DESC,method,operation_type"
+          q report_reconciliation_60d "WITH inflow AS (SELECT p.method AS method, SUM(CASE WHEN EXISTS (SELECT 1 FROM exchanges e WHERE e.payment_id=p.id AND COALESCE(e.status,'completed')<>'cancelled' AND e.financial_action='extra_payment') THEN 0 WHEN p.payment_kind IN ('debt_close','extra') THEN 0 ELSE p.amount END) AS primary_total, SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM exchanges e WHERE e.payment_id=p.id AND COALESCE(e.status,'completed')<>'cancelled' AND e.financial_action='extra_payment') AND p.payment_kind IN ('debt_close','extra') THEN p.amount ELSE 0 END) AS debt_total, SUM(CASE WHEN EXISTS (SELECT 1 FROM exchanges e WHERE e.payment_id=p.id AND COALESCE(e.status,'completed')<>'cancelled' AND e.financial_action='extra_payment') THEN p.amount ELSE 0 END) AS exchange_extra_total, SUM(p.amount) AS gross_total FROM payments p JOIN orders o ON o.id=p.order_id WHERE p.payment_date>=date('now','-60 days') AND o.order_status<>'deleted' GROUP BY p.method), refunds AS (SELECT r.payment_method AS method, SUM(r.amount) AS refund_total FROM returns r JOIN orders o ON o.id=r.order_id WHERE r.return_date>=date('now','-60 days') AND COALESCE(r.status,'completed')<>'cancelled' AND o.order_status<>'deleted' GROUP BY r.payment_method), methods AS (SELECT method FROM inflow UNION SELECT method FROM refunds) SELECT methods.method, COALESCE(primary_total,0) AS primary_total, COALESCE(debt_total,0) AS debt_total, COALESCE(exchange_extra_total,0) AS exchange_extra_total, COALESCE(gross_total,0) AS gross_total, COALESCE(refund_total,0) AS refund_total, COALESCE(gross_total,0)-COALESCE(refund_total,0) AS net_total FROM methods LEFT JOIN inflow USING(method) LEFT JOIN refunds USING(method) ORDER BY gross_total DESC"
+          q dashboard_today_yesterday "WITH dates AS (SELECT date('now','+5 hours') AS today, date('now','+5 hours','-1 day') AS yesterday) SELECT label, d AS business_date, (SELECT COUNT(*) FROM orders o WHERE o.order_date=d AND o.order_status<>'deleted') AS orders_count, (SELECT COALESCE(SUM(total_amount),0) FROM orders o WHERE o.order_date=d AND o.order_status<>'deleted') AS sales_total, (SELECT COALESCE(SUM(p.amount),0) FROM payments p JOIN orders o ON o.id=p.order_id WHERE p.payment_date=d AND o.order_status<>'deleted') AS received_total, (SELECT COALESCE(SUM(r.amount),0) FROM returns r JOIN orders o ON o.id=r.order_id WHERE r.return_date=d AND COALESCE(r.status,'completed')<>'cancelled' AND o.order_status<>'deleted') AS returns_total FROM (SELECT 'today' AS label,today AS d FROM dates UNION ALL SELECT 'yesterday',yesterday FROM dates)"
