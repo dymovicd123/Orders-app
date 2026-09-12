@@ -1,0 +1,39 @@
+name: Apply return physical history R1
+
+on:
+  push:
+    branches:
+      - returns-physical-intake-r1
+    paths:
+      - .github/workflows/apply-return-physical-history-r1.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: returns-physical-intake-r1
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Apply history truth patch
+        run: python .github/scripts/patch-return-physical-history-r1.py
+      - name: Focused regression
+        run: node scripts/test-return-exchange-physical-receipt-r1.mjs
+      - name: Worker typecheck
+        run: npx tsc -p tsconfig.worker.json --noEmit
+      - name: Commit history truth and remove temporary patcher
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/scripts/patch-return-physical-history-r1.py .github/workflows/apply-return-physical-history-r1.yml
+          git add worker/domains/activity.ts worker/domains/returns-exchanges.ts
+          git commit -m "Expose physical return status in history"
+          git push origin HEAD:returns-physical-intake-r1
