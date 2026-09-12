@@ -36,6 +36,9 @@ jobs:
       - name: Preserve Worker declaration shape
         run: node scripts/repair-date-boundary-worker-shape-r1.mjs
 
+      - name: Register exact Worker delta
+        run: node scripts/register-date-boundary-worker-gate-r1.mjs
+
       - name: Focused business-date regression
         run: node scripts/test-business-date-boundaries-r1.mjs
 
@@ -53,6 +56,7 @@ jobs:
         run: |
           rm -f scripts/apply-date-boundary-fix-r1.mjs
           rm -f scripts/repair-date-boundary-worker-shape-r1.mjs
+          rm -f scripts/register-date-boundary-worker-gate-r1.mjs
           rm -f .github/workflows/audit-date-boundaries-20260912.yml
 
       - name: Verify final diff
@@ -62,6 +66,7 @@ jobs:
           git status --short
           test ! -e scripts/apply-date-boundary-fix-r1.mjs
           test ! -e scripts/repair-date-boundary-worker-shape-r1.mjs
+          test ! -e scripts/register-date-boundary-worker-gate-r1.mjs
           test ! -e .github/workflows/audit-date-boundaries-20260912.yml
           git diff --check
 
