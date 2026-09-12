@@ -25,6 +25,8 @@ jobs:
       - run: npm ci
       - name: Apply physical receipt UI patch
         run: python .github/scripts/patch-return-physical-ui-r1.py
+      - name: Preserve literal draft type
+        run: sed -i "s/physicalState: 'pending',/physicalState: 'pending' as const,/" src/app/utils.ts
       - name: Focused regression
         run: node scripts/test-return-exchange-physical-receipt-r1.mjs
       - name: Typecheck app and worker
