@@ -27,7 +27,7 @@ const r63Replacement = `const r63Test = [
   "if (!source.includes('return managerId > 0 ?') || !source.includes('legacy:')) throw new Error('R6.3: historical manager identity must use snapshot name instead of id 0.')",
   "requireMatch(/const managerSummaryMap = new Map<string, any>\\(\\)[\\s\\S]*summary\\.order_count \\+= managerRow\\.order_count[\\s\\S]*summary\\.total_returns \\+= managerRow\\.total_returns[\\s\\S]*summary\\.nonzero_order_count \\+= nonzeroOrderCount/, 'R6.3: manager summary must reuse accumulated day rows.')",
   "requireMatch(/for \\(const operation of paymentOperations\\)[\\s\\S]*const summaryKey = managerIdentityKey\\(managerId, manager\\)[\\s\\S]*summary\\.total_received \\+= Number\\(operation\\.amount \\|\\| 0\\)/, 'R6.3: manager payments must reuse the same collision-safe identity.')",
-  "requireMatch(/avg_check: summary\\.nonzero_order_count > 0 \\? summary\\.total_sales \\/ summary\\.nonzero_order_count : 0/, 'R6.3: avg_check semantics changed unexpectedly.')",
+  "if (!source.includes('avg_check: summary.nonzero_order_count > 0 ? summary.total_sales / summary.nonzero_order_count : 0')) throw new Error('R6.3: avg_check semantics changed unexpectedly.')",
   '',
   "console.log('D1 read budget R6.3 checks passed.')",
 ].join('\\n') + '\\n'
