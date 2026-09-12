@@ -11,6 +11,7 @@ const catalogUnisexMergeManifestPath = path.join(root, 'scripts/catalog-unisex-m
 const operationalAutonomyR3ManifestPath = path.join(root, 'scripts/operational-autonomy-r3-worker-manifest.json')
 const operationalAutonomyA4ManifestPath = path.join(root, 'scripts/operational-autonomy-a4-worker-manifest.json')
 const operationalAutonomyA5ManifestPath = path.join(root, 'scripts/operational-autonomy-a5-worker-manifest.json')
+const d1ReadBudgetR63ManifestPath = path.join(root, 'scripts/d1-read-budget-r6-3-worker-manifest.json')
 const original = fs.readFileSync(legacyPath, 'utf8')
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 if (manifest?.version !== 1 || manifest?.revision !== 'order-edit-safe-payment-corrections-r1') throw new Error('Safe payment correction Worker manifest invalid')
@@ -38,6 +39,9 @@ if (operationalAutonomyA5Manifest?.version !== 1 || operationalAutonomyA5Manifes
 if (Object.keys(operationalAutonomyA5Manifest.changes || {}).length !== 0) throw new Error('Operational Autonomy A5 Worker changed allow-list widened unexpectedly')
 if (Object.keys(operationalAutonomyA5Manifest.added || {}).join(',') !== 'correctExchangeFinancials') throw new Error('Operational Autonomy A5 Worker added allow-list widened unexpectedly')
 if (!operationalAutonomyA5Manifest.router?.block) throw new Error('Operational Autonomy A5 Worker route block missing')
+const d1ReadBudgetR63Manifest = JSON.parse(fs.readFileSync(d1ReadBudgetR63ManifestPath, 'utf8'))
+if (d1ReadBudgetR63Manifest?.version !== 1 || d1ReadBudgetR63Manifest?.revision !== 'd1-read-budget-r6-3-manager-summary-reuse-r1') throw new Error('D1 read budget R6.3 Worker manifest invalid')
+if (Object.keys(d1ReadBudgetR63Manifest.changes || {}).join(',') !== 'listFinanceReports') throw new Error('D1 read budget R6.3 Worker allow-list widened unexpectedly')
 const operationalAutonomyA4RouteBlock = "\n\n      const orderShippingCorrectionMatch = url.pathname.match(/^\\/api\\/orders\\/(\\d+)\\/shipping\\/correct$/);\n      if (orderShippingCorrectionMatch && request.method === 'POST') {\n        const id = toInt(orderShippingCorrectionMatch[1], 0);\n        const input = await readJson<{ physicalOutcome?: unknown }>(request);\n        try {\n          const result = await correctMistakenOrderHandover(env.DB, id, {\n            physicalOutcome: input.physicalOutcome,\n            actor: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),\n          });\n          let updatedOrder = null;\n          try {\n            updatedOrder = await getOrder(env.DB, id);\n          } catch (error) {\n            console.warn('Order readback after handover correction failed', error);\n          }\n          return json({ ...result, ...(updatedOrder ? { order: updatedOrder } : {}), refreshRequired: !updatedOrder });\n        } catch (error) {\n          const publicError = publicApiError(error);\n          return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });\n        }\n      }\n"
 
 const o1Anchor = "const o1Changes = JSON.parse(fs.readFileSync(path.join(root, 'scripts/o1-worker-manifest.json'), 'utf8')).changed\n"
@@ -77,6 +81,21 @@ const a5RouterBlock = [
 ].join('\n')
 patched = patched.replace(a4RouterAnchor, a5RouterBlock)
 
+const r63InjectedAnchor = 'const operationalAutonomyA4RouteBlock = ' + JSON.stringify(operationalAutonomyA4RouteBlock) + '\n'
+if (!patched.includes(r63InjectedAnchor)) throw new Error('1906A R6.3 injected anchor missing')
+patched = patched.replace(r63InjectedAnchor, r63InjectedAnchor + 'const d1ReadBudgetR63Changes = ' + JSON.stringify(d1ReadBudgetR63Manifest.changes || {}) + '\n')
+const r63CheckAnchor = '    check(\n      sha(declarations.get(name)) === acceptedPostCatalogUnisexMergeHash,\n'
+if (!patched.includes(r63CheckAnchor)) throw new Error('1906A R6.3 declaration check anchor missing')
+const r63CheckReplacement = [
+  '    check(',
+  '      (() => {',
+  '        const d1ReadBudgetR63Changed = d1ReadBudgetR63Changes[name]',
+  '        if (!d1ReadBudgetR63Changed) return sha(declarations.get(name)) === acceptedPostCatalogUnisexMergeHash',
+  "        check(d1ReadBudgetR63Changed.before === acceptedPostCatalogUnisexMergeHash, 'D1 read budget R6.3 baseline hash mismatch: ' + name)",
+  '        return sha(declarations.get(name)) === d1ReadBudgetR63Changed.after',
+  '      })(),',
+].join('\n') + '\n'
+patched = patched.replace(r63CheckAnchor, r63CheckReplacement)
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')

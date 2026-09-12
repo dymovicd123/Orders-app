@@ -85,7 +85,8 @@ const fields = {
   cities: ['cities','cityDays'], returns: ['returns','returnDays'], debts: ['closedDebts','closedDebtDays'],
   leads: ['leads','leadsTotals'], callCentre: ['callCentre','callCentreTotals'],
 }
-const counts = { payments: 3, managers: 8, products: 3, cities: 6, returns: 2, debts: 2, leads: 0, callCentre: 0 }
+// R6.3 removes two redundant manager-summary reads while preserving full/selected response parity below.
+const counts = { payments: 3, managers: 6, products: 3, cities: 6, returns: 2, debts: 2, leads: 0, callCentre: 0 }
 const renderer = loadModule('src/features/renderers/FinanceReportContentRenderer.tsx').FinanceReportContentRenderer
 const markup = (financeReport, financeReportType) => renderToStaticMarkup(renderer({
   financeReport, financeReportType, financeReportOptions: [],

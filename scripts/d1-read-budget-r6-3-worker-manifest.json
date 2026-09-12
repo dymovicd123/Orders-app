@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "revision": "d1-read-budget-r6-3-manager-summary-reuse-r1",
+  "changes": {
+    "listFinanceReports": {
+      "before": "1bd28051f56e333cc8c756fcce4a8a17cf91f672319cc479f8d4658b4601094f",
+      "after": "4220b29f2607f9c58ca4af1a2bbbd468ce277e0b15610440cbb7baed3bc3864f"
+    }
+  }
+}
