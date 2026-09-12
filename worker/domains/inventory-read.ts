@@ -766,7 +766,7 @@ export async function getDashboardInsights(db: D1Database) {
   ).all<Record<string, unknown>>();
 
   const allWorkshop = await enrichWorkshopTaskRowsFromOrderItems(db, workshopResult.results || [], workshopColumns);
-  const sortedWorkshopWarnings = allWorkshop.map(row => {
+  const allWorkshopWarningRows = allWorkshop.map(row => {
     const orderDate = cleanText(row.order_date) || cleanText(row.created_at).slice(0, 10);
     const waitingDays = daysBetweenDates(orderDate, today);
     const dueDate = cleanText(row.due_date);
@@ -822,7 +822,9 @@ export async function getDashboardInsights(db: D1Database) {
       priorityScore: score,
       reason,
     };
-  }).filter(row => row.waitingDays >= workshopAgeLimit || row.overdueDays > 0 || row.urgent || Boolean(row.dueDate))
+  });
+  const sortedWorkshopWarnings = allWorkshopWarningRows
+    .filter(row => row.waitingDays >= workshopAgeLimit || row.overdueDays > 0 || row.urgent || Boolean(row.dueDate))
     .sort((a, b) => {
       const tier = (row: typeof a) => row.overdueDays > 0
         ? 0
@@ -847,12 +849,15 @@ export async function getDashboardInsights(db: D1Database) {
   // the number of task rows, so one large order cannot crowd out unrelated ORD
   // cards and a selected order never arrives with only part of its visible lines.
   const selectedWorkshopOrderKeys = new Set<string>();
-  const workshopWarnings = sortedWorkshopWarnings.filter(row => {
+  for (const row of sortedWorkshopWarnings) {
     const orderKey = row.orderId > 0 ? `id:${row.orderId}` : `ref:${row.externalOrderId || row.id}`;
-    if (selectedWorkshopOrderKeys.has(orderKey)) return true;
-    if (selectedWorkshopOrderKeys.size >= 80) return false;
+    if (selectedWorkshopOrderKeys.has(orderKey)) continue;
+    if (selectedWorkshopOrderKeys.size >= 80) break;
     selectedWorkshopOrderKeys.add(orderKey);
-    return true;
+  }
+  const workshopWarnings = allWorkshopWarningRows.filter(row => {
+    const orderKey = row.orderId > 0 ? `id:${row.orderId}` : `ref:${row.externalOrderId || row.id}`;
+    return selectedWorkshopOrderKeys.has(orderKey);
   });
 
 

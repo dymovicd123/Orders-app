@@ -97,6 +97,7 @@ const unisexMergeManifestPath = path.join(root, 'scripts/catalog-unisex-merge-r1
 const operationalAutonomyA4ManifestPath = path.join(root, 'scripts/operational-autonomy-a4-frontend-manifest.json')
 const operationalAutonomyA5ManifestPath = path.join(root, 'scripts/operational-autonomy-a5-frontend-manifest.json')
 const returnsPhysicalIntakeManifestPath = path.join(root, 'scripts/returns-physical-intake-r1-frontend-manifest.json')
+const stabilizationManifestPath = path.join(root, 'scripts/stabilization-20260912-r1-frontend-manifest.json')
 const fixtureRoot = path.join(root, 'scripts/fixtures/catalog-gender-scope-r1')
 const predecessorFixture = path.join(fixtureRoot, 'test-step1906b-frontend-modularization-predecessor.mjs')
 const runtimePredecessor = path.join(root, 'scripts/.tmp-test-step1906b-catalog-predecessor.mjs')
@@ -120,12 +121,29 @@ const returnsPhysicalIntakeManifest = JSON.parse(fs.readFileSync(returnsPhysical
 if (returnsPhysicalIntakeManifest?.version !== 1 || returnsPhysicalIntakeManifest?.revision !== 'returns-physical-intake-r1') throw new Error('Returns physical intake R1 frontend manifest invalid')
 const returnsPhysicalIntakeExpectedFiles = ['src/App.tsx','src/app/types.ts','src/app/utils.ts','src/features/sections/OrderExchangeSection.tsx','src/features/sections/OrderReturnsSection.tsx']
 if (JSON.stringify(Object.keys(returnsPhysicalIntakeManifest.files || {})) !== JSON.stringify(returnsPhysicalIntakeExpectedFiles)) throw new Error('Returns physical intake R1 frontend allow-list widened unexpectedly')
+const stabilizationManifest = JSON.parse(fs.readFileSync(stabilizationManifestPath, 'utf8'))
+if (stabilizationManifest?.version !== 1 || stabilizationManifest?.revision !== 'stabilization-20260912-r1') throw new Error('September 12 stabilization frontend manifest invalid')
+const stabilizationExpectedFiles = ['src/features/sections/DashboardSection.tsx','src/features/sections/OrderExchangeSection.tsx','src/features/sections/OrderReturnsSection.tsx']
+if (JSON.stringify(Object.keys(stabilizationManifest.files || {})) !== JSON.stringify(stabilizationExpectedFiles)) throw new Error('September 12 stabilization frontend allow-list widened unexpectedly')
 const gitBlobSha = (text) => { const bytes = Buffer.from(text); return crypto.createHash('sha1').update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex') }
 for (const file of ['src/app/utils.ts', 'src/features/sections/OrderReturnsSection.tsx']) {
   const delta = returnsPhysicalIntakeManifest.files[file]
+  const stabilizationDelta = stabilizationManifest.files?.[file]
   const actual = fs.readFileSync(path.join(root, file), 'utf8')
-  if (!delta || gitBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Returns physical intake R1 frontend file changed beyond exact manifest: ' + file)
+  let acceptedGitBlob = delta?.afterGitBlob
+  let acceptedLines = delta?.afterLines
+  if (stabilizationDelta) {
+    if (stabilizationDelta.beforeGitBlob !== acceptedGitBlob || stabilizationDelta.beforeLines !== acceptedLines) throw new Error('September 12 stabilization frontend predecessor drifted: ' + file)
+    acceptedGitBlob = stabilizationDelta.afterGitBlob
+    acceptedLines = stabilizationDelta.afterLines
+  }
+  if (!delta || gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) throw new Error(stabilizationDelta ? 'September 12 stabilization frontend file changed beyond exact manifest: ' + file : 'Returns physical intake R1 frontend file changed beyond exact manifest: ' + file)
 }
+const stabilizationDashboardFile = 'src/features/sections/DashboardSection.tsx'
+const stabilizationDashboardDelta = stabilizationManifest.files[stabilizationDashboardFile]
+const stabilizationDashboardActual = fs.readFileSync(path.join(root, stabilizationDashboardFile), 'utf8')
+if (!stabilizationDashboardDelta || gitBlobSha(stabilizationDashboardActual) !== stabilizationDashboardDelta.afterGitBlob || stabilizationDashboardActual.split(/\r?\n/).length !== stabilizationDashboardDelta.afterLines) throw new Error('September 12 Dashboard frontend changed beyond exact stabilization manifest')
+
 const current = new Map()
 try {
   for (const file of expectedFiles) {
@@ -167,8 +185,16 @@ try {
       acceptedGitBlob = returnsPhysicalIntakeDelta.afterGitBlob
       acceptedLines = returnsPhysicalIntakeDelta.afterLines
     }
+    const stabilizationDelta = stabilizationManifest.files?.[file]
+    if (stabilizationDelta) {
+      if (stabilizationDelta.beforeGitBlob !== acceptedGitBlob || stabilizationDelta.beforeLines !== acceptedLines) throw new Error('September 12 stabilization frontend predecessor drifted: ' + file)
+      acceptedGitBlob = stabilizationDelta.afterGitBlob
+      acceptedLines = stabilizationDelta.afterLines
+    }
     if (gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) {
-      throw new Error(returnsPhysicalIntakeDelta
+      throw new Error(stabilizationDelta
+        ? 'September 12 stabilization frontend file changed beyond exact manifest: ' + file
+        : returnsPhysicalIntakeDelta
         ? 'Returns physical intake R1 frontend file changed beyond exact manifest: ' + file
         : operationalAutonomyA5Delta
         ? 'Operational Autonomy A5 frontend file changed beyond exact manifest: ' + file
