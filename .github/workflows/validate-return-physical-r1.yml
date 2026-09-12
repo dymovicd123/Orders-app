@@ -25,7 +25,7 @@ jobs:
       - run: npm ci
       - name: Focused physical receipt regression
         run: node scripts/test-return-exchange-physical-receipt-r1.mjs
-      - name: Cumulative release gate
+      - name: Cumulative release gate after structural registration
         run: npm run release:check
       - name: Production build
         run: npm run build
