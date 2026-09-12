@@ -2,7 +2,7 @@
 // Business behavior is intentionally unchanged.
 import { setAppSetting } from '../core/settings.ts'
 import { readTableColumnSet } from '../core/sql.ts'
-import { canonicalStockPositionValue, cleanText, normalizeExchangeReturnSource, normalizeOrderItemSourceType, normalizeReturnRestockSource, normalizeSourceType, toInt, upperText, workshopOnlyComment } from '../core/text.ts'
+import { canonicalStockPositionValue, cleanText, normalizeExchangeReturnSource, normalizeReturnRestockSource, normalizeSourceType, toInt, upperText, workshopOnlyComment } from '../core/text.ts'
 import { isHumanInventoryModelEnabled } from './catalog.ts'
 import { isReversibleInventoryMovementReference } from './inventory-reservations.ts'
 import { enrichWorkshopTaskRowsFromOrderItems } from './workshop.ts'
@@ -721,118 +721,6 @@ export async function getDashboardInsights(db: D1Database) {
     ).bind(monthStart, today, monthStart, today).first<any>(),
   ]);
 
-  const stockResult = await db.prepare(
-    `SELECT
-       id, inventory_source, product_id, variant_id, product_name_snapshot, gender_snapshot, color_snapshot,
-       material_snapshot, length_snapshot, size_snapshot, quantity, reserved_quantity,
-       last_action, last_source_ref, updated_at, created_at
-     FROM inventory_stock
-     WHERE quantity <= ?
-     ORDER BY quantity ASC, updated_at DESC
-     LIMIT 500`
-  ).bind(lowStockLimit).all<Record<string, unknown>>();
-
-  const demandResult = await db.prepare(
-    `SELECT
-       oi.id,
-       oi.order_id,
-       oi.variant_id,
-       oi.product_name_snapshot,
-       oi.gender_snapshot,
-       oi.color_snapshot,
-       oi.material_snapshot,
-       oi.length_snapshot,
-       oi.size_snapshot,
-       oi.quantity,
-       oi.source_type,
-       oi.is_workshop,
-       o.external_id,
-       o.order_date
-     FROM order_items oi
-     JOIN orders o ON o.id = oi.order_id
-     WHERE o.order_status <> 'deleted'
-     ORDER BY o.order_date DESC, oi.id DESC
-     LIMIT 8000`
-  ).all<Record<string, unknown>>();
-
-  const demandByVariant = new Map<number, { quantity: number; orders: Set<number>; latestOrderId: string; latestOrderDate: string; sourceTypes: Set<string> }>();
-  const demandByDetail = new Map<string, { quantity: number; orders: Set<number>; latestOrderId: string; latestOrderDate: string; sourceTypes: Set<string> }>();
-  const demandByProduct = new Map<string, { quantity: number; orders: Set<number>; latestOrderId: string; latestOrderDate: string; sourceTypes: Set<string> }>();
-
-  const touchDemand = (map: Map<string | number, { quantity: number; orders: Set<number>; latestOrderId: string; latestOrderDate: string; sourceTypes: Set<string> }>, key: string | number, row: Record<string, unknown>) => {
-    if (!key && key !== 0) return;
-    const current = map.get(key) || { quantity: 0, orders: new Set<number>(), latestOrderId: '', latestOrderDate: '', sourceTypes: new Set<string>() };
-    const quantity = Math.max(1, toInt(row.quantity, 1));
-    current.quantity += quantity;
-    current.orders.add(toInt(row.order_id, 0));
-    const orderDate = cleanText(row.order_date);
-    if (orderDate >= current.latestOrderDate) {
-      current.latestOrderDate = orderDate;
-      current.latestOrderId = cleanText(row.external_id);
-    }
-    const sourceType = toInt(row.is_workshop, 0) ? 'workshop' : normalizeOrderItemSourceType(row.source_type, 'warehouse');
-    current.sourceTypes.add(sourceType);
-    map.set(key, current);
-  };
-
-  for (const row of demandResult.results || []) {
-    const variantId = toInt(row.variant_id, 0);
-    if (variantId > 0) touchDemand(demandByVariant as any, variantId, row);
-    const detailKey = dashboardItemKey(row);
-    if (detailKey.trim()) touchDemand(demandByDetail as any, detailKey, row);
-    const productKey = dashboardProductKey(row);
-    if (productKey) touchDemand(demandByProduct as any, productKey, row);
-  }
-
-  const pickDemand = (row: Record<string, unknown>) => {
-    const variantId = toInt(row.variant_id, 0);
-    if (variantId > 0 && demandByVariant.has(variantId)) return demandByVariant.get(variantId)!;
-    const detailKey = dashboardItemKey(row);
-    if (detailKey.trim() && demandByDetail.has(detailKey)) return demandByDetail.get(detailKey)!;
-    const productKey = dashboardProductKey(row);
-    return demandByProduct.get(productKey) || { quantity: 0, orders: new Set<number>(), latestOrderId: '', latestOrderDate: '', sourceTypes: new Set<string>() };
-  };
-
-  const lowStock = (stockResult.results || []).map(row => {
-    const demand = pickDemand(row);
-    const quantity = toInt(row.quantity, 0);
-    const demandQuantity = demand.quantity;
-    const orderCount = demand.orders.size;
-    const score = (quantity < 0 ? 1200 : quantity === 0 ? 900 : 500)
-      + demandQuantity * 12
-      + orderCount * 20
-      - Math.max(0, quantity) * 30;
-    return {
-      id: toInt(row.id, 0),
-      source: normalizeSourceType(row.inventory_source),
-      sourceLabel: normalizeSourceType(row.inventory_source) === 'warehouse' ? 'Склад' : 'Бутик',
-      productId: toInt(row.product_id, 0),
-      variantId: toInt(row.variant_id, 0),
-      productName: cleanText(row.product_name_snapshot),
-      gender: cleanText(row.gender_snapshot),
-      color: cleanText(row.color_snapshot),
-      material: cleanText(row.material_snapshot),
-      length: cleanText(row.length_snapshot),
-      size: cleanText(row.size_snapshot),
-      quantity,
-      reservedQuantity: toInt(row.reserved_quantity, 0),
-      demandQuantity,
-      demandOrders: orderCount,
-      latestOrderId: demand.latestOrderId,
-      latestOrderDate: demand.latestOrderDate,
-      demandSources: Array.from(demand.sourceTypes),
-      lastAction: cleanText(row.last_action),
-      lastSourceRef: cleanText(row.last_source_ref),
-      updatedAt: cleanText(row.updated_at),
-      priorityScore: score,
-      reason: quantity < 0
-        ? `Минус ${Math.abs(quantity)} шт. при спросе ${demandQuantity} шт.`
-        : quantity === 0
-          ? `Ноль на точке, спрос ${demandQuantity} шт.`
-          : `Осталось ${quantity} шт., спрос ${demandQuantity} шт.`,
-    };
-  }).sort((a, b) => b.priorityScore - a.priorityScore || a.quantity - b.quantity || a.productName.localeCompare(b.productName, 'ru')).slice(0, 80);
-
   const workshopColumns = await readTableColumnSet(db, 'workshop_tasks');
   const wtColumn = (name: string) => workshopColumns.has(name.toLowerCase()) ? `wt.${name}` : 'NULL';
   const workshopResult = await db.prepare(
@@ -879,8 +767,27 @@ export async function getDashboardInsights(db: D1Database) {
     const waitingDays = daysBetweenDates(orderDate, today);
     const dueDate = cleanText(row.due_date);
     const overdueDays = dueDate ? daysBetweenDates(dueDate, today) : 0;
+    const dueInDays = dueDate && dueDate >= today ? daysBetweenDates(today, dueDate) : null;
     const urgent = Boolean(toInt(row.urgent, 0));
-    const score = waitingDays * 10 + overdueDays * 30 + (urgent ? 300 : 0);
+    const attentionTier = overdueDays > 0
+      ? 0
+      : dueDate && dueInDays !== null && dueInDays <= 2
+        ? 1
+        : urgent
+          ? 2
+          : dueDate
+            ? 3
+            : 4;
+    const score = (5 - attentionTier) * 10000 + overdueDays * 100 + waitingDays * 10 + (urgent ? 50 : 0);
+    const reason = overdueDays > 0
+      ? `Просрочено на ${overdueDays} дн. · ждёт ${waitingDays} дн.`
+      : dueDate === today
+        ? `Дедлайн сегодня · ждёт ${waitingDays} дн.`
+        : dueInDays !== null
+          ? `Дедлайн через ${dueInDays} дн. · ждёт ${waitingDays} дн.`
+          : urgent
+            ? `Срочно · ждёт ${waitingDays} дн.`
+            : `Ждёт ${waitingDays} дн.`;
     return {
       id: toInt(row.id, 0),
       orderId: toInt(row.order_id, 0),
@@ -909,18 +816,31 @@ export async function getDashboardInsights(db: D1Database) {
       city: cleanText(row.city),
       deliveryType: cleanText(row.delivery_type),
       priorityScore: score,
-      reason: dueDate && overdueDays > 0
-        ? `Просрочено на ${overdueDays} дн., всего в ожидании ${waitingDays} дн.`
-        : `${waitingDays} дн. в ожидании`,
+      reason,
     };
-  }).filter(row => row.waitingDays >= workshopAgeLimit || row.overdueDays > 0 || row.urgent)
-    .sort((a, b) => b.priorityScore - a.priorityScore || b.waitingDays - a.waitingDays || a.productName.localeCompare(b.productName, 'ru'))
+  }).filter(row => row.waitingDays >= workshopAgeLimit || row.overdueDays > 0 || row.urgent || Boolean(row.dueDate))
+    .sort((a, b) => {
+      const tier = (row: typeof a) => row.overdueDays > 0
+        ? 0
+        : row.dueDate && row.dueDate >= today && daysBetweenDates(today, row.dueDate) <= 2
+          ? 1
+          : row.urgent
+            ? 2
+            : row.dueDate
+              ? 3
+              : 4;
+      const byTier = tier(a) - tier(b);
+      if (byTier) return byTier;
+      if (a.overdueDays !== b.overdueDays) return b.overdueDays - a.overdueDays;
+      if (a.dueDate && b.dueDate && a.dueDate !== b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+      if (a.waitingDays !== b.waitingDays) return b.waitingDays - a.waitingDays;
+      const byOrder = a.externalOrderId.localeCompare(b.externalOrderId, 'ru');
+      if (byOrder) return byOrder;
+      return a.productName.localeCompare(b.productName, 'ru');
+    })
     .slice(0, 80);
 
-  const sourceSummary = lowStock.reduce<Record<string, number>>((acc, row) => {
-    acc[row.source] = (acc[row.source] || 0) + 1;
-    return acc;
-  }, {});
+
 
   return {
     ok: true,
@@ -942,16 +862,16 @@ export async function getDashboardInsights(db: D1Database) {
       monthNotSentOrders: toInt(monthRow?.not_sent_orders, 0),
       monthNewClients: toInt(monthClientRow?.new_clients, 0),
       monthRepeatClients: toInt(monthClientRow?.repeat_clients, 0),
-      criticalStockCount: lowStock.filter(row => row.quantity <= lowStockLimit).length,
-      negativeStockCount: lowStock.filter(row => row.quantity < 0).length,
-      zeroStockCount: lowStock.filter(row => row.quantity === 0).length,
-      popularLowStockCount: lowStock.filter(row => row.demandQuantity > 0).length,
+      criticalStockCount: 0,
+      negativeStockCount: 0,
+      zeroStockCount: 0,
+      popularLowStockCount: 0,
       workshopWarningCount: workshopWarnings.length,
       workshopActiveTotal: allWorkshop.length,
-      warehouseWarnings: sourceSummary.warehouse || 0,
-      boutiqueWarnings: sourceSummary.boutique || 0,
+      warehouseWarnings: 0,
+      boutiqueWarnings: 0,
     },
-    lowStock,
+    lowStock: [],
     workshopWarnings,
   };
 }
