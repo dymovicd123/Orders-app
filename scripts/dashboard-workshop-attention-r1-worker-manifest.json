@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "revision": "dashboard-workshop-attention-r1",
+  "changes": {
+    "getDashboardInsights": {
+      "before": "bc5635dc29f9babc5be15efd8c6c2dd6aa3674d9f852f38069338bd3376eebe1",
+      "after": "a112977f6b1c8b8bbc61a615691a980e11617fda2a1a3d46678adb3db7d056f0"
+    },
+    "listWorkshopTasks": {
+      "before": "b4d4a8110c1a99d55a693bf9c2b35dd7d9461253e594eea1d8e1ccb73eb0976e",
+      "after": "92896010c41a487056b881a9e4005d375e920c7311748782e665b41de2007dd0"
+    }
+  }
+}
