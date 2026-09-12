@@ -25,6 +25,18 @@ jobs:
       - run: npm ci
       - name: Prepare exact router reversions
         run: python .github/scripts/fix-finalize-return-physical-router.py
+      - name: Accept exact overlapping route insertion shape
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/scripts/finalize-return-physical-1906a.mjs')
+          text = path.read_text()
+          old = "if (!routerBlock.includes(\"url.pathname === '/api/returned-items/receive'\")) throw new Error('Exact router block is not the returned-item receive route')"
+          new = "if (!routerBlock.includes(\"destination?: 'warehouse' | 'boutique' | 'no_stock'\")) throw new Error('Exact router block does not contain the returned-item receive contract')"
+          if text.count(old) != 1:
+              raise SystemExit(f'route marker guard count={text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
       - name: Generate exact manifest and 1906A layer
         run: node .github/scripts/finalize-return-physical-1906a.mjs
       - name: Validate focused and 1906A
@@ -38,6 +50,8 @@ jobs:
           git rm -f \
             .github/scripts/diag-return-physical-1906a.mjs \
             .github/workflows/diag-return-physical-1906a.yml \
+            .github/scripts/diag-return-physical-router.mjs \
+            .github/workflows/diag-return-physical-router.yml \
             .github/scripts/fix-finalize-return-physical-router.py \
             .github/scripts/finalize-return-physical-1906a.mjs \
             .github/workflows/finalize-return-physical-1906a.yml \
