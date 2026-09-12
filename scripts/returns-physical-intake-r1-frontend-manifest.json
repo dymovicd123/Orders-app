@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "revision": "returns-physical-intake-r1",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "47d735cb941d3d14d48d2e068b9a1f35ee0641ad",
+      "afterGitBlob": "9ff7670cb8a0dcac7edb5a8e4858535f9d72d243",
+      "beforeLines": 7160,
+      "afterLines": 7225
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "aff1ce14609236f1171abcb96bffc7671430889a",
+      "afterGitBlob": "d7cfdf1211c64bf646fb548c3ad784ce0e405f66",
+      "beforeLines": 1652,
+      "afterLines": 1662
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "a927a378d5ca630a8dcd80f33f078e1e1db52c72",
+      "afterGitBlob": "82fcf40d84858e5d701e49e3fffb6834432cf5aa",
+      "beforeLines": 953,
+      "afterLines": 955
+    },
+    "src/features/sections/OrderExchangeSection.tsx": {
+      "beforeGitBlob": "321c30f2b3aafa1676378b1fb57c54adf40ab78e",
+      "afterGitBlob": "145f17055d72cc227e4ccc60b2f7a84e76753bd0",
+      "beforeLines": 461,
+      "afterLines": 504
+    },
+    "src/features/sections/OrderReturnsSection.tsx": {
+      "beforeGitBlob": "937391f8c5cecf8628b1d29e6162e7b72af149f8",
+      "afterGitBlob": "c48ecb5c062a883cbd7d263f62b6741d03179847",
+      "beforeLines": 367,
+      "afterLines": 393
+    }
+  }
+}
