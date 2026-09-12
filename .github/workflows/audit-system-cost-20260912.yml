@@ -30,6 +30,18 @@ jobs:
         run: npm ci
       - name: Verify Production D1 target
         run: npx wrangler d1 info orders_db_prod
+      - name: Locate top scan sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== EARLIER_RESERVABLE_UNITS ==='
+          grep -RIn -B20 -A60 --exclude-dir=node_modules --exclude-dir=dist 'earlier_reservable_units' worker src scripts || true
+          echo '=== UNRESOLVED_CATALOG_COUNT ==='
+          grep -RIn -B20 -A60 --exclude-dir=node_modules --exclude-dir=dist "COALESCE(oi.product_id, 0) <= 0\|COALESCE(oi.product_id,0)<=0" worker src scripts || true
+          echo '=== RETURN_EXCHANGE_COUNT_PER_ORDER ==='
+          grep -RIn -B12 -A20 --exclude-dir=node_modules --exclude-dir=dist "COUNT(\*) AS count FROM returns WHERE order_id\|COUNT(\*) AS count FROM exchanges WHERE order_id" worker src scripts || true
+          echo '=== TEAM_EMPLOYEE_NAME_LOOKUP ==='
+          grep -RIn -B12 -A25 --exclude-dir=node_modules --exclude-dir=dist "UPPER(TRIM(name)) = UPPER(TRIM(?))" worker src scripts || true
       - name: D1 insights 1h
         shell: bash
         run: |
