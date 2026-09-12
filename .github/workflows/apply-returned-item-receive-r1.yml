@@ -6,6 +6,7 @@ on:
       - returns-physical-intake-r1
     paths:
       - .github/workflows/apply-returned-item-receive-r1.yml
+      - scripts/test-return-exchange-physical-receipt-r1.mjs
 
 permissions:
   contents: write
