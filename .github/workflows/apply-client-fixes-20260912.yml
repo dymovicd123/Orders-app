@@ -1,0 +1,46 @@
+name: Apply client fixes 20260912
+
+on:
+  push:
+    branches:
+      - client-fixes-20260912-r1
+    paths:
+      - .github/workflows/apply-client-fixes-20260912.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: client-fixes-20260912-r1
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Apply patch
+        run: python scripts/patch-client-fixes-20260912.py
+      - name: Focused regression
+        run: node scripts/test-client-fixes-20260912-r1.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Diff check
+        run: git diff --check
+      - name: Commit implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src worker scripts package.json
+          git commit -m 'Implement client exchange dashboard and cash report fixes'
+          git push origin HEAD:client-fixes-20260912-r1
