@@ -29,6 +29,8 @@ check(!dashboardSection.includes('Критические остатки скла
 check(!dashboardSection.includes('dashboardLowStock'), 'Dashboard section still depends on removed low-stock payload')
 check(dashboardSection.includes('function buildWorkshopOrderCards(rows: any[])'), 'Workshop attention must aggregate warning rows by order')
 check(dashboardSection.includes("const key = item.externalOrderId || `order-${item.orderId}`"), 'Workshop attention grouping must use ORD/order identity')
+check(dashboardSection.includes('<article\n                    key={`dash-workshop-order-${order.key}`}'), 'Workshop order card must be a free-height article, not a globally styled button')
+check(dashboardSection.includes('role="button"'), 'Workshop order article must stay keyboard/click accessible')
 check(dashboardSection.includes('setSelectedWorkshopOrder(order)'), 'Workshop order card must open local order details')
 check(dashboardSection.includes('selectedWorkshopOrder.customerName'), 'Workshop order detail must show customer identity')
 check(dashboardSection.includes('selectedWorkshopOrder.customerPhone'), 'Workshop order detail must show customer phone')
@@ -37,6 +39,8 @@ check(dashboardSection.includes('selectedWorkshopOrder.dueDate'), 'Workshop orde
 check(dashboardSection.includes('openDashboardWorkshopItem(item)'), 'Workshop order detail must preserve navigation into workshop')
 check(!dashboardSection.includes('apiFetch('), 'Workshop dashboard details must not add an API read on click')
 check(dashboardCss.includes('.dashboard-workshop-order-card.is-danger'), 'Overdue workshop orders need an explicit danger style')
+check(dashboardCss.includes('height: auto !important'), 'Workshop order cards must not be compressed by legacy global controls')
+check(dashboardCss.includes('max-height: none !important'), 'Workshop order cards must remain free-height')
 check(dashboardCss.includes('overflow-wrap: anywhere'), 'Workshop cards must wrap long identifiers/details instead of overlapping')
 
 check(workshopWorker.includes('SELECT DISTINCT urgent_sibling.order_id'), 'Urgent workshop view must select whole urgent orders')
