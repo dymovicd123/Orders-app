@@ -23,6 +23,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Prepare exact router reversions
+        run: python .github/scripts/fix-finalize-return-physical-router.py
       - name: Generate exact manifest and 1906A layer
         run: node .github/scripts/finalize-return-physical-1906a.mjs
       - name: Validate focused and 1906A
@@ -36,6 +38,7 @@ jobs:
           git rm -f \
             .github/scripts/diag-return-physical-1906a.mjs \
             .github/workflows/diag-return-physical-1906a.yml \
+            .github/scripts/fix-finalize-return-physical-router.py \
             .github/scripts/finalize-return-physical-1906a.mjs \
             .github/workflows/finalize-return-physical-1906a.yml \
             .github/workflows/validate-return-physical-r1.yml
