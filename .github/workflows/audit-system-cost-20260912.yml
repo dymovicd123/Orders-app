@@ -35,7 +35,7 @@ jobs:
             local file="/tmp/${name}.sql"
             printf '%s\n' "$sql" > "$file"
             echo "=== ${name} ==="
-            npx wrangler d1 execute orders_db_prod --remote --file="$file" --json | jq -c '.[] | {results,meta:{rows_read:.meta.rows_read,rows_written:.meta.rows_written,duration:.meta.duration}}'
+            npx wrangler d1 execute orders_db_prod --remote --file="$file" --json
           }
 
           query order_items_indexes "PRAGMA index_list('order_items');"
@@ -62,7 +62,7 @@ jobs:
             AND NOT EXISTS (SELECT 1 FROM inventory_lifecycle_events e WHERE e.status = 'pending' AND e.order_item_id = oi.id);
           SQL
           echo '=== current_operational_unresolved ==='
-          npx wrangler d1 execute orders_db_prod --remote --file=/tmp/current_operational_unresolved.sql --json | jq -c '.[] | {results,meta:{rows_read:.meta.rows_read,rows_written:.meta.rows_written,duration:.meta.duration}}'
+          npx wrangler d1 execute orders_db_prod --remote --file=/tmp/current_operational_unresolved.sql --json
 
           query relevant_missing_item_created_at "SELECT COUNT(*) AS relevant_missing_item_created_at FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.quantity > 0 AND (oi.product_id IS NULL OR oi.variant_id IS NULL) AND NULLIF(TRIM(COALESCE(oi.created_at, '')), '') IS NULL AND COALESCE(o.order_status, 'active') NOT IN ('deleted', 'archived');"
 
@@ -88,4 +88,4 @@ jobs:
             GROUP BY UPPER(TRIM(COALESCE(oi.product_name_snapshot, ''))), CASE WHEN UPPER(TRIM(COALESCE(oi.audience_type, ''))) LIKE '%ДЕТ%' OR LOWER(TRIM(COALESCE(oi.audience_type, ''))) = 'child' THEN 'child' ELSE 'adult' END, UPPER(TRIM(COALESCE(oi.gender_snapshot, ''))), UPPER(TRIM(COALESCE(oi.color_snapshot, ''))), CASE WHEN TRIM(COALESCE(oi.material_snapshot, '')) = '' THEN 'СТАНДАРТ' ELSE UPPER(TRIM(oi.material_snapshot)) END, CASE WHEN TRIM(COALESCE(oi.length_snapshot, '')) = '' THEN 'СТАНДАРТ' ELSE UPPER(TRIM(oi.length_snapshot)) END, UPPER(TRIM(COALESCE(oi.size_snapshot, '')))
           );
           SQL
-          npx wrangler d1 execute orders_db_prod --remote --file=/tmp/explain_catalog.sql --json | jq -c '.[] | {results,meta:{rows_read:.meta.rows_read,rows_written:.meta.rows_written,duration:.meta.duration}}'
+          npx wrangler d1 execute orders_db_prod --remote --file=/tmp/explain_catalog.sql --json
