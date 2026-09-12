@@ -16,17 +16,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Locate expensive query sources only
+      - name: Extract candidate SQL templates
         shell: bash
         run: |
-          set -euo pipefail
-          for pattern in \
-            'earlier_reservable_units' \
-            'COALESCE(oi.product_id, 0) <= 0' \
-            'COUNT(*) AS count FROM returns WHERE order_id' \
-            'COUNT(*) AS count FROM exchanges WHERE order_id' \
-            'UPPER(TRIM(name)) = UPPER(TRIM(?))'
-          do
-            echo "=== $pattern ==="
-            grep -RInF --exclude-dir=node_modules --exclude-dir=dist "$pattern" worker src scripts || true
-          done
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          roots = [Path('worker'), Path('src')]
+          needles = [
+              ('reservation-baseline', lambda s: 'order_items' in s and 'source_type' in s and 'count(' in s.lower()),
+              ('unresolved-catalog', lambda s: 'order_items' in s and 'product_id' in s and 'count(' in s.lower() and 'order_status' in s),
+              ('return-count', lambda s: 'from returns' in s.lower() and 'count(' in s.lower()),
+              ('exchange-count', lambda s: 'from exchanges' in s.lower() and 'count(' in s.lower()),
+              ('team-name', lambda s: 'trim(name)' in s.lower() and 'upper(' in s.lower()),
+          ]
+          seen = set()
+          for root in roots:
+              for path in root.rglob('*'):
+                  if path.suffix not in {'.ts', '.tsx'}:
+                      continue
+                  text = path.read_text(encoding='utf-8')
+                  for match in re.finditer(r'`([^`]*)`', text, re.S):
+                      sql = match.group(1)
+                      compact = ' '.join(sql.split())
+                      for label, predicate in needles:
+                          if predicate(sql):
+                              line = text.count('\n', 0, match.start()) + 1
+                              key = (label, str(path), line, compact)
+                              if key in seen:
+                                  continue
+                              seen.add(key)
+                              print(f'=== {label} {path}:{line} ===')
+                              print(compact[:3000])
+          PY
