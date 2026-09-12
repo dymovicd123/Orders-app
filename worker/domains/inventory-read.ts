@@ -680,6 +680,9 @@ export async function getDashboardInsights(db: D1Database) {
     day: '2-digit',
   }).formatToParts(new Date()).map(({ type, value }) => [type, value]));
   const today = `${todayParts.year}-${todayParts.month}-${todayParts.day}`;
+  const yesterdayDate = new Date(`${today}T00:00:00.000Z`);
+  yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1);
+  const yesterday = yesterdayDate.toISOString().slice(0, 10);
   const monthStart = `${today.slice(0, 7)}-01`;
   const lowStockLimit = 5;
   const workshopAgeLimit = 7;
@@ -726,6 +729,29 @@ export async function getDashboardInsights(db: D1Database) {
          COALESCE((SELECT SUM(r.amount) FROM returns r JOIN orders o ON o.id = r.order_id WHERE r.return_date BETWEEN ? AND ? AND COALESCE(r.status, 'completed') <> 'cancelled' AND o.order_status <> 'deleted'), 0) AS total_returns`
     ).bind(monthStart, today, monthStart, today).first<any>(),
   ]);
+
+  const dailyResult = await db.prepare(
+    `SELECT d.business_date AS date,
+            COALESCE((SELECT COUNT(*) FROM orders o WHERE o.order_date = d.business_date AND o.order_status <> 'deleted'), 0) AS order_count,
+            COALESCE((SELECT SUM(o.total_amount) FROM orders o WHERE o.order_date = d.business_date AND o.order_status <> 'deleted'), 0) AS total_sales,
+            COALESCE((SELECT SUM(p.amount) FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.payment_date = d.business_date AND o.order_status <> 'deleted'), 0) AS total_received,
+            COALESCE((SELECT SUM(r.amount) FROM returns r JOIN orders o ON o.id = r.order_id WHERE r.return_date = d.business_date AND COALESCE(r.status, 'completed') <> 'cancelled' AND o.order_status <> 'deleted'), 0) AS total_returns
+     FROM (SELECT ? AS business_date UNION ALL SELECT ?) d`
+  ).bind(today, yesterday).all<any>();
+  const dailyRows = new Map((dailyResult.results || []).map((row: any) => [cleanText(row.date), row]));
+  const mapDaily = (date: string) => {
+    const row: any = dailyRows.get(date) || {};
+    const totalReceived = toInt(row.total_received, 0);
+    const totalReturns = toInt(row.total_returns, 0);
+    return {
+      date,
+      orderCount: toInt(row.order_count, 0),
+      totalSales: toInt(row.total_sales, 0),
+      totalReceived,
+      totalReturns,
+      netCash: totalReceived - totalReturns,
+    };
+  };
 
   const workshopColumns = await readTableColumnSet(db, 'workshop_tasks');
   const wtColumn = (name: string) => workshopColumns.has(name.toLowerCase()) ? `wt.${name}` : 'NULL';
@@ -896,6 +922,10 @@ export async function getDashboardInsights(db: D1Database) {
       workshopActiveTotal: allWorkshop.length,
       warehouseWarnings: 0,
       boutiqueWarnings: 0,
+    },
+    daily: {
+      today: mapDaily(today),
+      yesterday: mapDaily(yesterday),
     },
     lowStock: [],
     workshopWarnings,

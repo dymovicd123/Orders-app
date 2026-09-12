@@ -129,9 +129,22 @@ export type ReturnDraft = {
 
 
 
+export type ExchangePairDraft = {
+  draftKey: string
+  oldItemId: number
+  oldQuantity: number
+  oldReturnSource: 'none' | 'warehouse' | 'boutique'
+  oldPhysicalState: 'pending' | 'warehouse' | 'boutique' | 'no_stock'
+  newItem: EditorItem
+  newSourceWasManuallyChanged: boolean
+  saved?: boolean
+}
+
 export type ExchangeDraft = {
   orderId: number | null
   exchangeDate: string
+  currentPairKey: string
+  queuedPairs: ExchangePairDraft[]
   oldItemId: number
   oldQuantity: number
   oldReturnSource: 'none' | 'warehouse' | 'boutique'
@@ -432,6 +445,27 @@ export type PaymentMethodsByDayRow = {
 }
 
 
+export type PaymentMethodReconciliationRow = {
+  method: string
+  orderPayments: number
+  debtClosures: number
+  exchangeExtras: number
+  grossInflow: number
+  refunds: number
+  netMovement: number
+}
+
+export type PaymentReconciliationDay = {
+  date: string
+  orderPayments: number
+  debtClosures: number
+  exchangeExtras: number
+  grossInflow: number
+  refunds: number
+  netMovement: number
+}
+
+
 
 export type ManagerReportDay = {
   date: string
@@ -651,6 +685,8 @@ export type FinanceReportResponse = {
     repeatClients: Array<{ client_key: string; client: string; period_orders: number; period_sales: number; total_orders: number; first_order_at: string; last_order_at: string }>
     activityByType: Array<{ event_type: string; count: number }>
     paymentMethodsByDay?: PaymentMethodsByDayRow[]
+    paymentMethodReconciliation?: PaymentMethodReconciliationRow[]
+    paymentReconciliationByDay?: PaymentReconciliationDay[]
     managerDays?: ManagerReportDay[]
     productDays?: ProductReportDay[]
     cityDays?: CityReportDay[]
@@ -1428,6 +1464,10 @@ export type DashboardInsightsResponse = {
     workshopActiveTotal: number
     warehouseWarnings: number
     boutiqueWarnings: number
+  }
+  daily: {
+    today: { date: string; orderCount: number; totalSales: number; totalReceived: number; totalReturns: number; netCash: number }
+    yesterday: { date: string; orderCount: number; totalSales: number; totalReceived: number; totalReturns: number; netCash: number }
   }
   lowStock: DashboardLowStockItem[]
   workshopWarnings: DashboardWorkshopWarning[]

@@ -776,6 +776,11 @@ export function createReturnDraft(order?: OrderRecord | null): ReturnDraft {
 
 
 
+function createExchangePairDraftKey() {
+  const randomUuid = globalThis.crypto?.randomUUID?.()
+  return randomUuid || `exchange-pair-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 export function createExchangeDraft(order?: OrderRecord | null): ExchangeDraft {
   const firstItem = (order?.items || []).find((item) => Number(item.id || 0) > 0 && Number(item.quantity || 0) > 0)
   const inheritedSource = firstItem?.sourceType === 'workshop'
@@ -786,6 +791,8 @@ export function createExchangeDraft(order?: OrderRecord | null): ExchangeDraft {
   return {
     orderId: order?.id || null,
     exchangeDate: formatLocalDateInput(),
+    currentPairKey: createExchangePairDraftKey(),
+    queuedPairs: [],
     oldItemId: Number(firstItem?.id || 0),
     oldQuantity: 1,
     oldReturnSource: 'none',

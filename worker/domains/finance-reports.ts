@@ -235,7 +235,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        ORDER BY p.payment_date ASC, total DESC, p.method ASC`
     ).bind(startDate, endDate).all<any>(),
 
-    () => !needsReport('managers', 'cities') ? emptyRowsResult() : db.prepare(
+    () => !needsReport('payments', 'managers', 'cities') ? emptyRowsResult() : db.prepare(
       `SELECT p.id,
               p.order_id,
               o.external_id,
@@ -817,6 +817,59 @@ export async function listFinanceReports(db: D1Database, url: URL) {
   const received = totalPayments;
   const periodReturns = returnsTotal;
 
+  const emptyReconciliation = (method: string) => ({
+    method,
+    orderPayments: 0,
+    debtClosures: 0,
+    exchangeExtras: 0,
+    grossInflow: 0,
+    refunds: 0,
+    netMovement: 0,
+  });
+  const paymentMethodReconciliationMap = new Map<string, ReturnType<typeof emptyReconciliation>>();
+  const paymentReconciliationDayMap = new Map<string, Omit<ReturnType<typeof emptyReconciliation>, 'method'> & { date: string }>();
+  const touchDay = (date: string) => {
+    const key = cleanText(date);
+    const current = paymentReconciliationDayMap.get(key) || {
+      date: key, orderPayments: 0, debtClosures: 0, exchangeExtras: 0, grossInflow: 0, refunds: 0, netMovement: 0,
+    };
+    paymentReconciliationDayMap.set(key, current);
+    return current;
+  };
+  for (const operation of paymentOperations) {
+    const method = canonicalPaymentMethodName(operation.method);
+    const current = paymentMethodReconciliationMap.get(method) || emptyReconciliation(method);
+    const day = touchDay(operation.paymentDate);
+    if (operation.operationType === 'exchange_extra') {
+      current.exchangeExtras += Number(operation.amount || 0);
+      day.exchangeExtras += Number(operation.amount || 0);
+    } else if (operation.operationType === 'debt_close' || operation.operationType === 'order_extra') {
+      current.debtClosures += Number(operation.amount || 0);
+      day.debtClosures += Number(operation.amount || 0);
+    } else {
+      current.orderPayments += Number(operation.amount || 0);
+      day.orderPayments += Number(operation.amount || 0);
+    }
+    current.grossInflow += Number(operation.amount || 0);
+    day.grossInflow += Number(operation.amount || 0);
+    paymentMethodReconciliationMap.set(method, current);
+  }
+  for (const row of completedReturns as any[]) {
+    const method = canonicalPaymentMethodName(row.payment_method);
+    const current = paymentMethodReconciliationMap.get(method) || emptyReconciliation(method);
+    const amount = Number(row.amount || 0);
+    current.refunds += amount;
+    const day = touchDay(cleanText(row.return_date));
+    day.refunds += amount;
+    paymentMethodReconciliationMap.set(method, current);
+  }
+  const paymentMethodReconciliation = Array.from(paymentMethodReconciliationMap.values())
+    .map((row) => ({ ...row, netMovement: row.grossInflow - row.refunds }))
+    .sort((a, b) => b.grossInflow - a.grossInflow || a.method.localeCompare(b.method, 'ru'));
+  const paymentReconciliationByDay = Array.from(paymentReconciliationDayMap.values())
+    .map((row) => ({ ...row, netMovement: row.grossInflow - row.refunds }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
 
   const paymentMethodsByDayMap = new Map<string, { date: string; total: number; methods: Record<string, number> }>();
   const paymentMethodsByDaySource = financeWorkspaceOnly
@@ -1164,6 +1217,8 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       repeatClients: mapSqlRows(repeatClientRows),
       activityByType: mapSqlRows(activityRows),
       paymentMethodsByDay: Array.from(paymentMethodsByDayMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+      paymentMethodReconciliation,
+      paymentReconciliationByDay,
       managerDays: Array.from(managerDaysMap.values()),
       productDays: Array.from(productDaysMap.values()),
       cityDays: Array.from(cityDaysMap.values()),
