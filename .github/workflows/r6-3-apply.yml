@@ -100,7 +100,7 @@ jobs:
               raise SystemExit(f'R6.3 manager sort anchor mismatch: {text.count(sort_anchor)}')
           normalized_lines = [
               sort_anchor.rstrip('\n'),
-              '  for (const operation of paymentOperations) {',
+              '  if (!financeWorkspaceOnly) for (const operation of paymentOperations) {',
               '    const managerId = operation.managerId == null ? 0 : Number(operation.managerId);',
               '    const summary = managerSummaryMap.get(managerId) || {',
               '      manager_id: managerId,',
