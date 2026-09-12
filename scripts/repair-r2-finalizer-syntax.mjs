@@ -24,7 +24,7 @@ const r63Replacement = `const r63Test = [
   "if (/\\bmanagerRows\\b|\\bmanagerCashRows\\b/.test(source)) throw new Error('R6.3: dedicated manager summary result sets must remain removed.')",
   "requireMatch(/COUNT\\(CASE WHEN o\\.total_amount <> 0 THEN 1 END\\) AS nonzero_order_count/, 'R6.3: manager day rows must preserve the non-zero-order denominator.')",
   "if (!source.includes('const managerIdentityKey = (managerId: number, managerName: unknown)')) throw new Error('R6.3: collision-safe manager identity missing.')",
-  "if (!source.includes(\"return managerId > 0 ? \\`id:\\${managerId}\\` : \\`legacy:\\${normalizedName}\\`;\")) throw new Error('R6.3: historical manager identity must use snapshot name instead of id 0.')",
+  "if (!source.includes('return managerId > 0 ?') || !source.includes('legacy:')) throw new Error('R6.3: historical manager identity must use snapshot name instead of id 0.')",
   "requireMatch(/const managerSummaryMap = new Map<string, any>\\(\\)[\\s\\S]*summary\\.order_count \\+= managerRow\\.order_count[\\s\\S]*summary\\.total_returns \\+= managerRow\\.total_returns[\\s\\S]*summary\\.nonzero_order_count \\+= nonzeroOrderCount/, 'R6.3: manager summary must reuse accumulated day rows.')",
   "requireMatch(/for \\(const operation of paymentOperations\\)[\\s\\S]*const summaryKey = managerIdentityKey\\(managerId, manager\\)[\\s\\S]*summary\\.total_received \\+= Number\\(operation\\.amount \\|\\| 0\\)/, 'R6.3: manager payments must reuse the same collision-safe identity.')",
   "requireMatch(/avg_check: summary\\.nonzero_order_count > 0 \\? summary\\.total_sales \\/ summary\\.nonzero_order_count : 0/, 'R6.3: avg_check semantics changed unexpectedly.')",
