@@ -38,6 +38,7 @@ jobs:
           text = text[:source_start] + text[source_end:]
 
           replacements = {
+            'normalizeExchangeReturnSource, normalizeOrderItemSourceType, normalizeReturnRestockSource': 'normalizeExchangeReturnSource, normalizeReturnRestockSource',
             '      criticalStockCount: lowStock.filter(row => row.quantity <= lowStockLimit).length,': '      criticalStockCount: 0,',
             '      negativeStockCount: lowStock.filter(row => row.quantity < 0).length,': '      negativeStockCount: 0,',
             '      zeroStockCount: lowStock.filter(row => row.quantity === 0).length,': '      zeroStockCount: 0,',
