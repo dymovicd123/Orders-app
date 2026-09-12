@@ -1,4 +1,4 @@
-# Rerun after Step 190.6C migration registration.
+# Rerun after Step 192A1 physical-state guard adaptation.
 name: Validate return physical intake R1
 
 on:
