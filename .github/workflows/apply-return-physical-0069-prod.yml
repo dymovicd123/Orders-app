@@ -1,0 +1,146 @@
+name: Apply Return Physical Receipt 0069 Production
+
+on:
+  push:
+    branches:
+      - ops/return-physical-0069-prod-20260912
+    paths:
+      - .github/workflows/apply-return-physical-0069-prod.yml
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/return-physical-0069-prod-20260912
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Verify exact Production target and exact 0069
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import crypto from 'node:crypto'
+          const config = fs.readFileSync('wrangler.jsonc', 'utf8')
+          if (!config.includes('"name": "orders-app"')) throw new Error('Unexpected Worker target')
+          if (!config.includes('"database_name": "orders_db_prod"')) throw new Error('Unexpected D1 database')
+          if (!config.includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"')) throw new Error('Unexpected D1 database id')
+          const migrationPath = 'migrations/0069_v72_return_exchange_physical_receipt.sql'
+          const sql = fs.readFileSync(migrationPath, 'utf8')
+          const bytes = Buffer.from(sql)
+          const blob = crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+          if (blob !== '261643a6a9f1747091fa5fb117e2f7483b9e1843') throw new Error(`Unexpected 0069 blob ${blob}`)
+          const required = [
+            'ALTER TABLE return_items ADD COLUMN physical_tracking',
+            'ALTER TABLE return_items ADD COLUMN physical_received_at',
+            'ALTER TABLE exchange_items ADD COLUMN physical_tracking',
+            'ALTER TABLE exchange_items ADD COLUMN physical_received_at',
+            'CREATE INDEX IF NOT EXISTS idx_return_items_physical_receipt',
+            'CREATE INDEX IF NOT EXISTS idx_exchange_items_physical_receipt',
+          ]
+          for (const marker of required) if (!sql.includes(marker)) throw new Error(`0069 marker missing: ${marker}`)
+          console.log('Exact Production target and exact additive 0069 confirmed.')
+          NODE
+      - name: Preflight and apply only 0069
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "--- Recovery bookmark before 0069 ---"
+          npx wrangler d1 time-travel info orders_db_prod
+
+          read_state() {
+            return_schema="$(npx wrangler d1 execute orders_db_prod --remote --command="PRAGMA table_info(return_items);" 2>&1)"
+            exchange_schema="$(npx wrangler d1 execute orders_db_prod --remote --command="PRAGMA table_info(exchange_items);" 2>&1)"
+            return_indexes="$(npx wrangler d1 execute orders_db_prod --remote --command="PRAGMA index_list(return_items);" 2>&1)"
+            exchange_indexes="$(npx wrangler d1 execute orders_db_prod --remote --command="PRAGMA index_list(exchange_items);" 2>&1)"
+          }
+
+          classify_state() {
+            rt=0; rr=0; et=0; er=0; ri=0; ei=0
+            grep -q 'physical_tracking' <<<"$return_schema" && rt=1
+            grep -q 'physical_received_at' <<<"$return_schema" && rr=1
+            grep -q 'physical_tracking' <<<"$exchange_schema" && et=1
+            grep -q 'physical_received_at' <<<"$exchange_schema" && er=1
+            grep -q 'idx_return_items_physical_receipt' <<<"$return_indexes" && ri=1
+            grep -q 'idx_exchange_items_physical_receipt' <<<"$exchange_indexes" && ei=1
+            schema_count=$((rt + rr + et + er))
+            index_count=$((ri + ei))
+          }
+
+          read_state
+          classify_state
+          echo "Preflight: schema columns=$schema_count/4 indexes=$index_count/2"
+
+          if [[ $schema_count -eq 4 && $index_count -eq 2 ]]; then
+            echo "0069 is already fully present; no mutation required."
+            exit 0
+          fi
+          if [[ $schema_count -ne 0 || $index_count -ne 0 ]]; then
+            echo "Partial 0069 state detected before apply; refusing to mutate Production." >&2
+            printf '%s\n%s\n%s\n%s\n' "$return_schema" "$exchange_schema" "$return_indexes" "$exchange_indexes" >&2
+            exit 3
+          fi
+
+          for attempt in 1 2; do
+            echo "0069 atomic import attempt $attempt/2"
+            set +e
+            npx wrangler d1 execute orders_db_prod --remote --file=migrations/0069_v72_return_exchange_physical_receipt.sql
+            rc=$?
+            set -e
+
+            read_state
+            classify_state
+            echo "Post-attempt state: schema columns=$schema_count/4 indexes=$index_count/2"
+
+            if [[ $schema_count -eq 4 && $index_count -eq 2 ]]; then
+              echo "0069 is fully applied."
+              exit 0
+            fi
+            if [[ $schema_count -ne 0 || $index_count -ne 0 ]]; then
+              echo "Partial 0069 state survived; refusing any retry." >&2
+              printf '%s\n%s\n%s\n%s\n' "$return_schema" "$exchange_schema" "$return_indexes" "$exchange_indexes" >&2
+              exit 4
+            fi
+            if [[ $rc -eq 0 ]]; then
+              echo "0069 command returned success but schema is absent." >&2
+              exit 5
+            fi
+            [[ $attempt -eq 1 ]] && sleep 5
+          done
+
+          echo "0069 failed and no schema change survived either attempt." >&2
+          exit 6
+      - name: Strict read-only postflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          return_schema="$(npx wrangler d1 execute orders_db_prod --remote --command="PRAGMA table_info(return_items);" 2>&1)"
+          exchange_schema="$(npx wrangler d1 execute orders_db_prod --remote --command="PRAGMA table_info(exchange_items);" 2>&1)"
+          return_indexes="$(npx wrangler d1 execute orders_db_prod --remote --command="PRAGMA index_list(return_items);" 2>&1)"
+          exchange_indexes="$(npx wrangler d1 execute orders_db_prod --remote --command="PRAGMA index_list(exchange_items);" 2>&1)"
+
+          printf '%s\n%s\n%s\n%s\n' "$return_schema" "$exchange_schema" "$return_indexes" "$exchange_indexes"
+          grep -q 'physical_tracking' <<<"$return_schema" || { echo "return_items.physical_tracking missing" >&2; exit 7; }
+          grep -q 'physical_received_at' <<<"$return_schema" || { echo "return_items.physical_received_at missing" >&2; exit 8; }
+          grep -q 'physical_tracking' <<<"$exchange_schema" || { echo "exchange_items.physical_tracking missing" >&2; exit 9; }
+          grep -q 'physical_received_at' <<<"$exchange_schema" || { echo "exchange_items.physical_received_at missing" >&2; exit 10; }
+          grep -q 'idx_return_items_physical_receipt' <<<"$return_indexes" || { echo "return physical receipt index missing" >&2; exit 11; }
+          grep -q 'idx_exchange_items_physical_receipt' <<<"$exchange_indexes" || { echo "exchange physical receipt index missing" >&2; exit 12; }
+
+          invalid_returns="$(npx wrangler d1 execute orders_db_prod --remote --command="SELECT CASE WHEN COUNT(*)=0 THEN 'RETURN_TRACKING_OK' ELSE 'RETURN_TRACKING_BAD_'||COUNT(*) END AS check_result FROM return_items WHERE physical_tracking NOT IN (0,1) OR physical_tracking IS NULL;" 2>&1)"
+          invalid_exchanges="$(npx wrangler d1 execute orders_db_prod --remote --command="SELECT CASE WHEN COUNT(*)=0 THEN 'EXCHANGE_TRACKING_OK' ELSE 'EXCHANGE_TRACKING_BAD_'||COUNT(*) END AS check_result FROM exchange_items WHERE physical_tracking NOT IN (0,1) OR physical_tracking IS NULL;" 2>&1)"
+          printf '%s\n%s\n' "$invalid_returns" "$invalid_exchanges"
+          grep -q 'RETURN_TRACKING_OK' <<<"$invalid_returns" || exit 13
+          grep -q 'EXCHANGE_TRACKING_OK' <<<"$invalid_exchanges" || exit 14
+          echo "Production 0069 postflight passed."
