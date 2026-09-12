@@ -1,0 +1,41 @@
+name: Apply return physical 1906C
+
+on:
+  push:
+    branches:
+      - returns-physical-intake-r1
+    paths:
+      - .github/workflows/apply-return-physical-1906c.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: returns-physical-intake-r1
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply exact 1906C migration allowance
+        run: python .github/scripts/patch-return-physical-1906c.py
+      - name: Validate physical receipt and structural gates
+        run: |
+          node scripts/test-return-exchange-physical-receipt-r1.mjs
+          node scripts/test-step1906a-worker-modularization.mjs
+          node scripts/test-step1906b-frontend-modularization.mjs
+          node scripts/test-step1906c-dead-code-cleanup.mjs
+      - name: Commit permanent 1906C registration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/scripts/patch-return-physical-1906c.py .github/workflows/apply-return-physical-1906c.yml
+          git add scripts/test-step1906c-dead-code-cleanup.mjs
+          git commit -m "Register physical receipt migration in cleanup gate"
+          git push origin HEAD:returns-physical-intake-r1
