@@ -13,6 +13,7 @@ type Options = {
 
 const ORDERS_SUMMARY_TTL_MS = 60 * 1000
 const FULL_REPORT_TTL_MS = 60 * 1000
+const FINANCE_WORKSPACE_TTL_MS = 3 * 60 * 1000
 
 export function useFinanceReportReads({ apiFetch, reportReadFailure }: Options) {
   const [financeReport, setFinanceReport] = useState<FinanceReportResponse | null>(null)
@@ -83,8 +84,9 @@ export function useFinanceReportReads({ apiFetch, reportReadFailure }: Options) 
     const key = `${scope}::${reportType || 'all'}::${range.dateFrom}::${range.dateTo}`
     const requestId = ++financeRequestId.current
     const cached = financeCache.current.get(key)
+    const cacheTtlMs = scope === 'finance' ? FINANCE_WORKSPACE_TTL_MS : FULL_REPORT_TTL_MS
     if (options.force) financeCache.current.delete(key)
-    if (!options.force && cached && Date.now() - cached.savedAt <= FULL_REPORT_TTL_MS) {
+    if (!options.force && cached && Date.now() - cached.savedAt <= cacheTtlMs) {
       setFinanceReport(cached.data)
       setFinanceReportBusy(false)
       return cached.data
