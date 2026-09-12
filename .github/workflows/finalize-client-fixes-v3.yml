@@ -1,0 +1,51 @@
+name: Finalize client fixes v3
+
+on:
+  push:
+    branches: [client-fixes-20260912-r1]
+    paths:
+      - '.github/workflows/finalize-client-fixes-v3.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Build exact preservation layers
+        run: node scripts/finalize-client-fixes-preservation.cjs
+      - name: Focused client regression
+        run: node scripts/test-client-fixes-20260912-r1.mjs
+      - name: O1 selected/full report parity
+        run: node scripts/test-o1-report-scopes.mjs
+      - name: Exact Worker preservation gate
+        run: node scripts/test-step1906a-worker-modularization.mjs
+      - name: Exact frontend preservation gate
+        run: node scripts/test-step1906b-frontend-modularization.mjs
+      - name: Full cumulative release gate
+        run: npm run release:check
+      - name: Typecheck
+        run: npx tsc -b --pretty false
+      - name: Build
+        run: npm run build
+      - name: Lint
+        run: npm run lint
+      - name: Diff guard
+        run: git diff --check
+      - name: Commit preservation manifests and gates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/test-client-fixes-20260912-r1.mjs scripts/client-fixes-20260912-r1-worker-manifest.json scripts/client-fixes-20260912-r1-frontend-manifest.json scripts/test-step1906a-worker-modularization.mjs scripts/test-step1906b-frontend-modularization.mjs
+          git diff --cached --quiet && exit 0
+          git commit -m "Finalize client finance exchange and dashboard preservation"
+          git push origin HEAD:client-fixes-20260912-r1
