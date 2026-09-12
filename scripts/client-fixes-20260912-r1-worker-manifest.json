@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "revision": "client-fixes-20260912-r1",
+  "changes": {
+    "getDashboardInsights": {
+      "before": "5d88a12d79bbacead7915fe01d4df2fb22bf603f583fae34d84467396eb3a417",
+      "after": "b406654804aefa5eb83b2cc1c81939ba691c68f20f19d304fbdc727aa4a3c3e6"
+    },
+    "listFinanceReports": {
+      "before": "f5ef432aa1258e9b1cb566314607a193aa0bf7ec46bb9d985f841056944ac3b0",
+      "after": "488dfd3223ca96f33ff6d9c71f7226ea5f004da66208d6f340b0170952ed6bd5"
+    }
+  }
+}

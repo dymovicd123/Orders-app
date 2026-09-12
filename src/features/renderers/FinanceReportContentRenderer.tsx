@@ -27,6 +27,16 @@ export function FinanceReportContentRenderer(ctx: RendererContext) {
     const activeReturnTotal = activeReturns.reduce((sum, row) => sum + Number(row.amount || 0), 0)
     const paymentTotal = financeReport.reports.paymentMethods.reduce((sum, row) => sum + Number(row.total || 0), 0)
     const paymentMethodsByDay = financeReport.reports.paymentMethodsByDay || []
+    const paymentMethodReconciliation = financeReport.reports.paymentMethodReconciliation || []
+    const paymentReconciliationByDay = financeReport.reports.paymentReconciliationByDay || []
+    const reconciliationTotals = paymentMethodReconciliation.reduce((acc, row) => ({
+      orderPayments: acc.orderPayments + Number(row.orderPayments || 0),
+      debtClosures: acc.debtClosures + Number(row.debtClosures || 0),
+      exchangeExtras: acc.exchangeExtras + Number(row.exchangeExtras || 0),
+      grossInflow: acc.grossInflow + Number(row.grossInflow || 0),
+      refunds: acc.refunds + Number(row.refunds || 0),
+      netMovement: acc.netMovement + Number(row.netMovement || 0),
+    }), { orderPayments: 0, debtClosures: 0, exchangeExtras: 0, grossInflow: 0, refunds: 0, netMovement: 0 })
     const managerDays = financeReport.reports.managerDays || []
     const productDays = financeReport.reports.productDays || []
     const cityDays = financeReport.reports.cityDays || []
@@ -69,17 +79,27 @@ export function FinanceReportContentRenderer(ctx: RendererContext) {
       <>
         {renderHeader('Фактически поступившие оплаты за выбранный период. Каждая сумма стоит в своей дате оплаты.')}
         {renderStatsTable([
-          { label: 'Поступило денег', value: formatMoney(paymentTotal) },
-          { label: 'Способов оплаты', value: financeReport.reports.paymentMethods.length },
-          { label: 'Дней с оплатами', value: paymentMethodsByDay.length },
-          { label: 'Возвраты за период', value: formatMoney(activeReturnTotal) },
-        ])}
+          { label: 'Все поступления', value: formatMoney(reconciliationTotals.grossInflow || paymentTotal) },
+          { label: 'Оплаты заказов', value: formatMoney(reconciliationTotals.orderPayments) },
+          { label: 'Закрыли долг', value: formatMoney(reconciliationTotals.debtClosures) },
+          { label: 'Доплата по обмену', value: formatMoney(reconciliationTotals.exchangeExtras) },
+          { label: 'Возврат', value: formatMoney(reconciliationTotals.refunds || activeReturnTotal) },
+          { label: 'Чистое движение', value: formatMoney(reconciliationTotals.netMovement || ((reconciliationTotals.grossInflow || paymentTotal) - activeReturnTotal)) },
+        ], 'Сверка денег за период')}
         <section className="report-table-card">
-          <div className="strict-section-head"><h3>Итог по способам оплаты</h3><span className="soft-badge">таблица за период</span></div>
-          <div className="table-shell"><table className="data-table strict-report-table"><thead><tr><th>Способ оплаты</th><th className="num">Сумма</th><th className="num">Доля</th></tr></thead><tbody>
-            {financeReport.reports.paymentMethods.map((row) => <tr key={`payment-report-${row.method}`}><td>{row.method || '—'}</td><td className="num">{formatMoney(row.total)}</td><td className="num">{formatPercent(paymentTotal ? Number(row.total || 0) / paymentTotal : 0)}</td></tr>)}
-            {!financeReport.reports.paymentMethods.length ? <tr><td colSpan={3} className="empty-state">Нет оплат за выбранный период.</td></tr> : null}
-            {financeReport.reports.paymentMethods.length ? <tr className="total-row"><td>ИТОГО</td><td className="num">{formatMoney(paymentTotal)}</td><td className="num">100%</td></tr> : null}
+          <div className="strict-section-head"><h3>Сверка по способам оплаты</h3><span className="soft-badge">без двойного счёта</span></div>
+          <p className="strict-report-note">Все поступления = оплаты заказов + закрытие долга + доплаты по обменам. Чистое движение = все поступления − возвраты.</p>
+          <div className="table-shell"><table className="data-table strict-report-table"><thead><tr><th>Способ оплаты</th><th className="num">Оплаты заказов</th><th className="num">Закрыли долг</th><th className="num">Доплата</th><th className="num">Все поступления</th><th className="num">Возврат</th><th className="num">Чистое движение</th></tr></thead><tbody>
+            {paymentMethodReconciliation.map((row) => <tr key={`payment-reconciliation-${row.method}`}><td>{row.method || '—'}</td><td className="num">{formatMoney(row.orderPayments)}</td><td className="num">{formatMoney(row.debtClosures)}</td><td className="num">{formatMoney(row.exchangeExtras)}</td><td className="num"><strong>{formatMoney(row.grossInflow)}</strong></td><td className="num">{formatMoney(row.refunds)}</td><td className="num"><strong>{formatMoney(row.netMovement)}</strong></td></tr>)}
+            {!paymentMethodReconciliation.length ? <tr><td colSpan={7} className="empty-state">Нет денежных операций за выбранный период.</td></tr> : null}
+            {paymentMethodReconciliation.length ? <tr className="total-row"><td>ИТОГО</td><td className="num">{formatMoney(reconciliationTotals.orderPayments)}</td><td className="num">{formatMoney(reconciliationTotals.debtClosures)}</td><td className="num">{formatMoney(reconciliationTotals.exchangeExtras)}</td><td className="num">{formatMoney(reconciliationTotals.grossInflow)}</td><td className="num">{formatMoney(reconciliationTotals.refunds)}</td><td className="num">{formatMoney(reconciliationTotals.netMovement)}</td></tr> : null}
+          </tbody></table></div>
+        </section>
+        <section className="report-table-card">
+          <div className="strict-section-head"><h3>Сверка по дням</h3><span className="soft-badge">фактические даты операций</span></div>
+          <div className="table-shell"><table className="data-table strict-report-table"><thead><tr><th>Дата</th><th className="num">Оплаты заказов</th><th className="num">Закрыли долг</th><th className="num">Доплата</th><th className="num">Поступления</th><th className="num">Возврат</th><th className="num">Чистое</th></tr></thead><tbody>
+            {paymentReconciliationByDay.map((row) => <tr key={`payment-reconciliation-day-${row.date}`}><td>{formatDateShort(row.date)}</td><td className="num">{formatMoney(row.orderPayments)}</td><td className="num">{formatMoney(row.debtClosures)}</td><td className="num">{formatMoney(row.exchangeExtras)}</td><td className="num">{formatMoney(row.grossInflow)}</td><td className="num">{formatMoney(row.refunds)}</td><td className="num"><strong>{formatMoney(row.netMovement)}</strong></td></tr>)}
+            {!paymentReconciliationByDay.length ? <tr><td colSpan={7} className="empty-state">Нет денежных операций за выбранный период.</td></tr> : null}
           </tbody></table></div>
         </section>
         <section className="report-table-card">

@@ -17,6 +17,7 @@ const returnsPhysicalIntakeManifestPath = path.join(root, 'scripts/returns-physi
 const stabilizationManifestPath = path.join(root, 'scripts/stabilization-20260912-r1-worker-manifest.json')
 const stabilizationR2ManifestPath = path.join(root, 'scripts/stabilization-20260912-r2-manager-date-worker-manifest.json')
 const businessDateBoundaryManifestPath = path.join(root, 'scripts/business-date-boundaries-r1-worker-manifest.json')
+const clientFixesManifestPath = path.join(root, 'scripts/client-fixes-20260912-r1-worker-manifest.json')
 const original = fs.readFileSync(legacyPath, 'utf8')
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 if (manifest?.version !== 1 || manifest?.revision !== 'order-edit-safe-payment-corrections-r1') throw new Error('Safe payment correction Worker manifest invalid')
@@ -64,6 +65,9 @@ if (Object.keys(stabilizationR2Manifest.changes || {}).sort().join(',') !== 'get
 const businessDateBoundaryManifest = JSON.parse(fs.readFileSync(businessDateBoundaryManifestPath, 'utf8'))
 if (businessDateBoundaryManifest?.version !== 1 || businessDateBoundaryManifest?.revision !== 'business-date-boundaries-r1') throw new Error('Business date boundary Worker manifest invalid')
 if (Object.keys(businessDateBoundaryManifest.changes || {}).sort().join(',') !== 'normalizeDate,normalizeMonthParam,parseArchiveRules,parseReportDateRange,resolveWorkshopPeriod') throw new Error('Business date boundary Worker allow-list widened unexpectedly')
+const clientFixesManifest = JSON.parse(fs.readFileSync(clientFixesManifestPath, 'utf8'))
+if (clientFixesManifest?.version !== 1 || clientFixesManifest?.revision !== 'client-fixes-20260912-r1') throw new Error('Client fixes Worker manifest invalid')
+if (Object.keys(clientFixesManifest.changes || {}).sort().join(',') !== 'getDashboardInsights,listFinanceReports') throw new Error('Client fixes Worker allow-list widened unexpectedly')
 const operationalAutonomyA4RouteBlock = "\n\n      const orderShippingCorrectionMatch = url.pathname.match(/^\\/api\\/orders\\/(\\d+)\\/shipping\\/correct$/);\n      if (orderShippingCorrectionMatch && request.method === 'POST') {\n        const id = toInt(orderShippingCorrectionMatch[1], 0);\n        const input = await readJson<{ physicalOutcome?: unknown }>(request);\n        try {\n          const result = await correctMistakenOrderHandover(env.DB, id, {\n            physicalOutcome: input.physicalOutcome,\n            actor: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),\n          });\n          let updatedOrder = null;\n          try {\n            updatedOrder = await getOrder(env.DB, id);\n          } catch (error) {\n            console.warn('Order readback after handover correction failed', error);\n          }\n          return json({ ...result, ...(updatedOrder ? { order: updatedOrder } : {}), refreshRequired: !updatedOrder });\n        } catch (error) {\n          const publicError = publicApiError(error);\n          return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });\n        }\n      }\n"
 
 const o1Anchor = "const o1Changes = JSON.parse(fs.readFileSync(path.join(root, 'scripts/o1-worker-manifest.json'), 'utf8')).changed\n"
@@ -137,7 +141,8 @@ patched = patched.replace(physicalChangesLine, (match) => match
   + 'const returnsPhysicalIntakeRouter = ' + JSON.stringify(returnsPhysicalIntakeManifest.router || {}) + '\n'
   + 'const stabilizationChanges = ' + JSON.stringify(stabilizationManifest.changes || {}) + '\n'
   + 'const stabilizationR2Changes = ' + JSON.stringify(stabilizationR2Manifest.changes || {}) + '\n'
-  + 'const businessDateBoundaryChanges = ' + JSON.stringify(businessDateBoundaryManifest.changes || {}) + '\n')
+  + 'const businessDateBoundaryChanges = ' + JSON.stringify(businessDateBoundaryManifest.changes || {}) + '\n'
+  + 'const clientFixesChanges = ' + JSON.stringify(clientFixesManifest.changes || {}) + '\n')
 
 const physicalCountAnchor = ' + Object.keys(operationalAutonomyA5Added).length'
 if (!patched.includes(physicalCountAnchor)) throw new Error('1906A physical intake declaration-count anchor missing')
@@ -170,7 +175,13 @@ patched = patched.replace(dashboardHashReturn, [
   "          check(businessDateBoundaryChanged.before === acceptedPostStabilizationR2Hash, 'Business date boundary baseline hash mismatch: ' + name)",
   '          acceptedPostBusinessDateBoundaryHash = businessDateBoundaryChanged.after',
   '        }',
-  '        return sha(declarations.get(name)) === acceptedPostBusinessDateBoundaryHash',
+  '        const clientFixesChanged = clientFixesChanges[name]',
+  '        let acceptedPostClientFixesHash = acceptedPostBusinessDateBoundaryHash',
+  '        if (clientFixesChanged) {',
+  "          check(clientFixesChanged.before === acceptedPostBusinessDateBoundaryHash, 'Client fixes baseline hash mismatch: ' + name)",
+  '          acceptedPostClientFixesHash = clientFixesChanged.after',
+  '        }',
+  '        return sha(declarations.get(name)) === acceptedPostClientFixesHash',
   '',
 ].join('\n'))
 

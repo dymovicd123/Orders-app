@@ -128,6 +128,38 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
   const exchangeReserved = Math.max(0, Number(exchangeAvailability?.currentReserved || 0))
   const exchangePhysicalShortage = Boolean(exchangeAvailability?.canObservePhysical && exchangePhysical < exchangeRequired)
   const exchangeFreeAfterIssue = exchangePhysical - exchangeReserved - exchangeRequired
+  const queuedPairs = exchangeDraft.queuedPairs || []
+  const currentPairReady = Boolean(effectiveOldItem && String(exchangeDraft.newItem.productName || '').trim())
+  const queueCurrentExchangePair = () => {
+    if (!currentPairReady) return
+    if (exchangePhysicalShortage && !exchangeObservationEnabled) return
+    if (exchangeObservationEnabled && (exchangeObservedPhysical === null || exchangeObservedPhysical === undefined || !Number.isInteger(Number(exchangeObservedPhysical)) || Number(exchangeObservedPhysical) < exchangeRequired)) return
+    const fresh = createExchangeDraft(exchangeSelectedOrder)
+    const pair = {
+      draftKey: exchangeDraft.currentPairKey || fresh.currentPairKey,
+      oldItemId: effectiveOldItemId,
+      oldQuantity: Math.max(1, Number(exchangeDraft.oldQuantity || 1)),
+      oldReturnSource: exchangeDraft.oldPhysicalState === 'warehouse' || exchangeDraft.oldPhysicalState === 'boutique' ? exchangeDraft.oldPhysicalState : 'none',
+      oldPhysicalState: exchangeDraft.oldPhysicalState,
+      newItem: { ...exchangeDraft.newItem },
+      newSourceWasManuallyChanged: Boolean(exchangeDraft.newSourceWasManuallyChanged),
+      saved: false,
+    }
+    setExchangeDraft((current) => ({
+      ...fresh,
+      orderId: current.orderId,
+      exchangeDate: current.exchangeDate,
+      queuedPairs: [...(current.queuedPairs || []), pair],
+      financialAction: current.financialAction,
+      financialAmount: current.financialAmount,
+      paymentMethod: current.paymentMethod,
+      comment: current.comment,
+    }))
+  }
+  const removeQueuedExchangePair = (draftKey: string) => setExchangeDraft((current) => ({
+    ...current,
+    queuedPairs: (current.queuedPairs || []).filter((pair: any) => pair.draftKey !== draftKey || pair.saved),
+  }))
 
   return (
     <article className="card wide sector-orders" id="order-exchange" style={{ ...sectorStyle('orders'), ...orderPanelStyle('exchange') }}>
@@ -177,6 +209,24 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                     </div>
     
                     <div className="stack">
+                      {queuedPairs.length ? (
+                        <div className="mini-item order-payment-card">
+                          <div className="mini-item-head"><strong>Позиции, добавленные в этот обмен</strong><span className="soft-badge">{queuedPairs.length}</span></div>
+                          <div className="stack">
+                            {queuedPairs.map((pair: any, index: number) => {
+                              const oldItem = exchangeableOldItems.find((item: any) => Number(item.id || 0) === Number(pair.oldItemId || 0))
+                              return (
+                                <div className="history-detail-grid" key={`queued-exchange-${pair.draftKey}`}>
+                                  <div><span>Позиция {index + 1}</span><strong>{oldItem?.productName || `Позиция #${pair.oldItemId}`} × {pair.oldQuantity}</strong></div>
+                                  <div><span>Новая вещь</span><strong>{pair.newItem?.productName || '—'} × {pair.newItem?.quantity || 1}</strong></div>
+                                  <div><span>Статус</span><strong>{pair.saved ? 'Уже сохранено' : 'Готово к оформлению'}</strong></div>
+                                  <div className="row-actions"><button className="ghost danger compact" type="button" disabled={exchangeBusy || pair.saved} onClick={() => removeQueuedExchangePair(pair.draftKey)}>{pair.saved ? 'Сохранено' : 'Убрать'}</button></div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ) : null}
                       <div className="mini-item order-payment-card">
                         <div className="mini-item-head"><strong>Старая позиция</strong></div>
                         <div className="subgrid order-payment-grid">
@@ -389,8 +439,11 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                     </div>
     
                     <div className="actions order-create-actions form-bottom-actions">
-                      <button className="primary" type="button" onClick={() => void saveExchange()} disabled={exchangeBusy}>
-                        {exchangeBusy ? 'Сохраняю...' : 'Оформить обмен'}
+                      <button className="secondary" type="button" onClick={queueCurrentExchangePair} disabled={exchangeBusy || !currentPairReady || (exchangePhysicalShortage && !exchangeObservationEnabled)}>
+                        Добавить ещё позицию
+                      </button>
+                      <button className="primary" type="button" onClick={() => void saveExchange()} disabled={exchangeBusy || (!queuedPairs.length && !currentPairReady)}>
+                        {exchangeBusy ? 'Сохраняю...' : `Оформить обмен${queuedPairs.length ? ` (${queuedPairs.length + (currentPairReady ? 1 : 0)} поз.)` : ''}`}
                       </button>
                       <button className="secondary back-action" type="button" onClick={() => closeExchangeForm(true)} disabled={exchangeBusy}>
                         Назад к таблице

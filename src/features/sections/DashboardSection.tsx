@@ -138,6 +138,8 @@ export function DashboardSection({ ctx }: { ctx: SectionContext }) {
   } = ctx
 
   const [selectedWorkshopOrder, setSelectedWorkshopOrder] = useState<any | null>(null)
+  const [dailyPeriod, setDailyPeriod] = useState<'today' | 'yesterday'>('today')
+  const dailySummary = dashboardInsights?.daily?.[dailyPeriod] || null
   const workshopAgeLimit = Number(dashboardInsights?.thresholds.workshopAgeLimit ?? 7)
   const workshopOrders = useMemo(() => buildWorkshopOrderCards(dashboardWorkshopWarnings), [dashboardWorkshopWarnings])
 
@@ -170,6 +172,27 @@ export function DashboardSection({ ctx }: { ctx: SectionContext }) {
         <div className="summary-card"><span>Повторные клиенты</span><strong>{dashboardSummary.monthRepeatClients || 0}</strong></div>
         <div className="summary-card warning-card"><span>Цех активные</span><strong>{dashboardSummary.workshopActiveTotal ?? workshopData?.activeCount ?? summary.workshop ?? 0}</strong></div>
       </div>
+
+      <section className="mini-panel dashboard-daily-panel">
+        <div className="mini-panel-head">
+          <div>
+            <h3>День работы</h3>
+            <p className="mini-panel-note">Продажи считаются по дате заказа, поступления и возвраты — по фактической дате денежной операции.</p>
+          </div>
+          <div className="mini-panel-actions">
+            <button className={dailyPeriod === 'today' ? 'primary compact' : 'secondary compact'} type="button" onClick={() => setDailyPeriod('today')}>Сегодня</button>
+            <button className={dailyPeriod === 'yesterday' ? 'primary compact' : 'secondary compact'} type="button" onClick={() => setDailyPeriod('yesterday')}>Вчера</button>
+          </div>
+        </div>
+        <div className="summary-grid dashboard-summary-grid">
+          <div className="summary-card"><span>Дата</span><strong>{dailySummary?.date ? dashboardShortDate(dailySummary.date) : '—'}</strong></div>
+          <div className="summary-card"><span>Заказов</span><strong>{dailySummary?.orderCount ?? 0}</strong></div>
+          <div className="summary-card"><span>Продажи по дате заказа</span><strong>{formatMoney(dailySummary?.totalSales || 0)}</strong></div>
+          <div className="summary-card"><span>Поступило по дате оплаты</span><strong>{formatMoney(dailySummary?.totalReceived || 0)}</strong></div>
+          <div className="summary-card danger-card"><span>Возвраты по дате операции</span><strong>{formatMoney(dailySummary?.totalReturns || 0)}</strong></div>
+          <div className="summary-card"><span>Чистое движение денег</span><strong>{formatMoney(dailySummary?.netCash || 0)}</strong></div>
+        </div>
+      </section>
 
       <div className="dashboard-workspace">
         <section className="mini-panel dashboard-actions-panel">

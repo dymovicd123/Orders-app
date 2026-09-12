@@ -6137,24 +6137,22 @@ function removeDebtPayment(index: number) {
     }
 
     const exchangeableOldItems = exchangeSelectedOrder.items.filter((item) => Number(item.id || 0) > 0 && Number(item.quantity || 0) > 0)
-    const requestedOldItem = exchangeableOldItems.find((item) => Number(item.id || 0) === Number(exchangeDraft.oldItemId || 0)) || null
-    // The browser can display the first <option> even when the controlled value
-    // matches no option. Submit the same concrete row that is visibly selected.
-    const selectedOldItem = requestedOldItem || exchangeableOldItems[0] || null
-    if (!selectedOldItem) {
-      setError(exchangeableOldItems.length
-        ? 'Выберите старую позицию, которую клиент возвращает.'
-        : 'В заказе не осталось доступных позиций для обмена.')
-      return
-    }
-
-    if (Number(exchangeDraft.oldQuantity || 0) > Number(selectedOldItem.quantity || 0)) {
-      setError(`Для обмена доступно ${Number(selectedOldItem.quantity || 0)} шт.`)
-      return
-    }
-
-    if (!exchangeDraft.newItem.productName.trim()) {
-      setError('Заполните новый товар для обмена.')
+    const queuedPairs = exchangeDraft.queuedPairs || []
+    const requestedCurrentOldItem = exchangeableOldItems.find((item) => Number(item.id || 0) === Number(exchangeDraft.oldItemId || 0)) || null
+    const visibleCurrentOldItem = requestedCurrentOldItem || exchangeableOldItems[0] || null
+    const currentPair = String(exchangeDraft.newItem.productName || '').trim() && visibleCurrentOldItem ? {
+      draftKey: exchangeDraft.currentPairKey,
+      oldItemId: Number(visibleCurrentOldItem.id || 0),
+      oldQuantity: Math.max(1, Number(exchangeDraft.oldQuantity || 1)),
+      oldReturnSource: exchangeDraft.oldPhysicalState === 'warehouse' || exchangeDraft.oldPhysicalState === 'boutique' ? exchangeDraft.oldPhysicalState : 'none',
+      oldPhysicalState: exchangeDraft.oldPhysicalState,
+      newItem: exchangeDraft.newItem,
+      newSourceWasManuallyChanged: exchangeDraft.newSourceWasManuallyChanged,
+      saved: false,
+    } : null
+    const pairDrafts = [...queuedPairs, ...(currentPair ? [currentPair] : [])]
+    if (!pairDrafts.length) {
+      setError(exchangeableOldItems.length ? 'Добавьте хотя бы одну позицию обмена.' : 'В заказе не осталось доступных позиций для обмена.')
       return
     }
 
@@ -6162,87 +6160,147 @@ function removeDebtPayment(index: number) {
       setError('Укажите сумму доплаты или возврата больше нуля.')
       return
     }
-
     if (exchangeDraft.financialAction !== 'none' && !exchangeDraft.paymentMethod.trim()) {
       setError(exchangeDraft.financialAction === 'refund' ? 'Выберите способ возврата денег.' : 'Выберите способ оплаты для доплаты.')
       return
     }
 
-    const inheritedReplacementSource = selectedOldItem.sourceType === 'workshop'
-      ? 'workshop'
-      : selectedOldItem.sourceType === 'boutique'
-        ? 'boutique'
-        : 'warehouse'
-    const effectiveNewItem = exchangeDraft.newSourceWasManuallyChanged
-      ? exchangeDraft.newItem
-      : { ...exchangeDraft.newItem, sourceType: inheritedReplacementSource as EditorItem['sourceType'] }
+    const unsavedPairs: Array<{
+      index: number
+      draftKey: string
+      isQueued: boolean
+      selectedOldItem: OrderRecord['items'][number]
+      oldQuantity: number
+      oldReturnSource: 'none' | 'warehouse' | 'boutique'
+      oldPhysicalState: 'pending' | 'warehouse' | 'boutique' | 'no_stock'
+      effectiveNewItem: EditorItem
+      newSourceWasManuallyChanged: boolean
+    }> = []
+    const requestedByOldItem = new Map<number, number>()
 
-    const exchangeAvailability = effectiveNewItem.sourceType === 'workshop'
-      ? null
-      : getOrderSourceAvailability(effectiveNewItem, Math.max(1, Number(effectiveNewItem.quantity || 1)))
-    const exchangeRequiredQuantity = Math.max(1, Number(effectiveNewItem.quantity || 1))
-    const exchangeNeedsPhysicalConfirmation = Boolean(
-      exchangeAvailability?.canObservePhysical
-      && Number(exchangeAvailability.currentPhysical || 0) < exchangeRequiredQuantity
-    )
-    if (exchangeNeedsPhysicalConfirmation && !effectiveNewItem.stockObservationEnabled) {
-      setExchangeDraft((current) => ({
-        ...current,
-        newItem: { ...current.newItem, stockObservationEnabled: true, observedPhysicalQuantity: null },
-      }))
-      setError('По учёту физического количества новой позиции недостаточно. Если товар перед вами, укажите сколько реально лежит на месте — обмен продолжится сразу после этой сверки.')
-      return
+    for (let index = 0; index < pairDrafts.length; index += 1) {
+      const pair = pairDrafts[index]
+      if (pair.saved) continue
+      const selectedOldItem = exchangeableOldItems.find((item) => Number(item.id || 0) === Number(pair.oldItemId || 0)) || null
+      if (!selectedOldItem) {
+        setError(`Позиция обмена ${index + 1}: старая вещь уже недоступна. Уберите эту строку и выберите актуальную позицию.`)
+        return
+      }
+      const oldQuantity = Math.max(1, Number(pair.oldQuantity || 1))
+      const oldItemId = Number(selectedOldItem.id || 0)
+      const accumulated = (requestedByOldItem.get(oldItemId) || 0) + oldQuantity
+      requestedByOldItem.set(oldItemId, accumulated)
+      if (accumulated > Number(selectedOldItem.quantity || 0)) {
+        setError(`Позиция обмена ${index + 1}: суммарно выбрано ${accumulated} шт., доступно ${Number(selectedOldItem.quantity || 0)} шт.`)
+        return
+      }
+      if (!String(pair.newItem?.productName || '').trim()) {
+        setError(`Позиция обмена ${index + 1}: заполните новый товар.`)
+        return
+      }
+
+      const inheritedReplacementSource = selectedOldItem.sourceType === 'workshop'
+        ? 'workshop'
+        : selectedOldItem.sourceType === 'boutique'
+          ? 'boutique'
+          : 'warehouse'
+      const effectiveNewItem = pair.newSourceWasManuallyChanged
+        ? pair.newItem
+        : { ...pair.newItem, sourceType: inheritedReplacementSource as EditorItem['sourceType'] }
+      const exchangeRequiredQuantity = Math.max(1, Number(effectiveNewItem.quantity || 1))
+      const exchangeAvailability = effectiveNewItem.sourceType === 'workshop'
+        ? null
+        : getOrderSourceAvailability(effectiveNewItem, exchangeRequiredQuantity)
+      const needsPhysicalConfirmation = Boolean(exchangeAvailability?.canObservePhysical && Number(exchangeAvailability.currentPhysical || 0) < exchangeRequiredQuantity)
+      if (needsPhysicalConfirmation && !effectiveNewItem.stockObservationEnabled) {
+        if (index === pairDrafts.length - 1 && currentPair) {
+          setExchangeDraft((current) => ({ ...current, newItem: { ...current.newItem, stockObservationEnabled: true, observedPhysicalQuantity: null } }))
+        }
+        setError(`Позиция обмена ${index + 1}: по учёту новой позиции недостаточно. ${index < queuedPairs.length ? 'Уберите её из списка, добавьте заново и укажите фактическое количество.' : 'Укажите фактическое количество на месте.'}`)
+        return
+      }
+      if (effectiveNewItem.stockObservationEnabled) {
+        const observedPhysical = effectiveNewItem.observedPhysicalQuantity
+        if (observedPhysical === null || observedPhysical === undefined || !Number.isInteger(Number(observedPhysical)) || Number(observedPhysical) < exchangeRequiredQuantity) {
+          setError(`Позиция обмена ${index + 1}: укажите целое фактическое количество не меньше ${exchangeRequiredQuantity} шт.`)
+          return
+        }
+      }
+
+      unsavedPairs.push({
+        index,
+        draftKey: pair.draftKey || `pair-${index + 1}`,
+        isQueued: index < queuedPairs.length,
+        selectedOldItem,
+        oldQuantity,
+        oldReturnSource: pair.oldPhysicalState === 'warehouse' || pair.oldPhysicalState === 'boutique' ? pair.oldPhysicalState : 'none',
+        oldPhysicalState: pair.oldPhysicalState,
+        effectiveNewItem,
+        newSourceWasManuallyChanged: Boolean(pair.newSourceWasManuallyChanged),
+      })
     }
-    if (effectiveNewItem.stockObservationEnabled) {
-      const observedPhysical = effectiveNewItem.observedPhysicalQuantity
-      if (observedPhysical === null || observedPhysical === undefined || !Number.isInteger(Number(observedPhysical)) || Number(observedPhysical) < 0) {
-        setError('Укажите целое фактическое количество новой позиции на месте.')
-        return
-      }
-      if (Number(observedPhysical) < Math.max(1, Number(effectiveNewItem.quantity || 1))) {
-        setError(`Для обмена нужно ${Math.max(1, Number(effectiveNewItem.quantity || 1))} шт., а вы подтвердили физически ${Number(observedPhysical)} шт.`)
-        return
-      }
+
+    if (!unsavedPairs.length) {
+      setError('Все позиции этого обмена уже были сохранены. Обновите историю обменов.')
+      return
     }
 
     setExchangeBusy(true)
     setError(null)
     setMessage(null)
+    let savedThisAttempt = 0
+    const savedBefore = pairDrafts.filter((pair) => pair.saved).length
+    let lastOrder: OrderRecord | null = null
+    let pendingInventoryCount = 0
+    let exchangeTouchesWorkshop = false
 
     try {
-      const payload = {
-        orderId: exchangeSelectedOrder.id,
-        exchangeDate: exchangeDraft.exchangeDate,
-        oldItemId: Number(selectedOldItem.id || 0),
-        oldQuantity: exchangeDraft.oldQuantity,
-        oldReturnSource: exchangeDraft.oldPhysicalState === 'warehouse' || exchangeDraft.oldPhysicalState === 'boutique' ? exchangeDraft.oldPhysicalState : 'none',
-        oldPhysicalState: exchangeDraft.oldPhysicalState,
-        newItem: effectiveNewItem,
-        newSourceWasManuallyChanged: exchangeDraft.newSourceWasManuallyChanged,
-        financialAction: exchangeDraft.financialAction,
-        financialAmount: exchangeDraft.financialAmount,
-        paymentMethod: exchangeDraft.paymentMethod,
-        comment: exchangeDraft.comment,
+      for (const pair of unsavedPairs) {
+        const isFinalPair = pair.index === pairDrafts.length - 1
+        const payload = {
+          orderId: exchangeSelectedOrder.id,
+          exchangeDate: exchangeDraft.exchangeDate,
+          oldItemId: Number(pair.selectedOldItem.id || 0),
+          oldQuantity: pair.oldQuantity,
+          oldReturnSource: pair.oldReturnSource,
+          oldPhysicalState: pair.oldPhysicalState,
+          newItem: pair.effectiveNewItem,
+          newSourceWasManuallyChanged: pair.newSourceWasManuallyChanged,
+          // One visit has one money difference. Put it only on the final child exchange,
+          // so debt/top-up/refund can never be counted once per selected product.
+          financialAction: isFinalPair ? exchangeDraft.financialAction : 'none',
+          financialAmount: isFinalPair ? exchangeDraft.financialAmount : 0,
+          paymentMethod: isFinalPair ? exchangeDraft.paymentMethod : '',
+          comment: exchangeDraft.comment,
+        }
+        const criticalKey = `exchange-create:${exchangeSelectedOrder.id}:${pair.draftKey}`
+        const critical = prepareCriticalRequest(criticalKey, payload)
+        const response = await apiFetch('/api/exchanges', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
+          body: JSON.stringify(critical.payload),
+        })
+        const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord; exchangeId?: number; pendingInventoryCount?: number }>(response, `Обмен · позиция ${pair.index + 1}`)
+        if (!response.ok) throw new Error(result.message || `Exchange failed: ${response.status}`)
+        completeCriticalRequest(criticalKey, critical.requestId)
+        savedThisAttempt += 1
+        pendingInventoryCount += Math.max(0, Number(result.pendingInventoryCount || 0))
+        exchangeTouchesWorkshop = exchangeTouchesWorkshop || pair.selectedOldItem.sourceType === 'workshop' || pair.effectiveNewItem.sourceType === 'workshop'
+        if (result.order) {
+          lastOrder = result.order
+          upsertOrderInState(result.order)
+          setSelectedOrderId(result.order.id)
+        }
+        if (pair.isQueued) {
+          setExchangeDraft((current) => ({
+            ...current,
+            queuedPairs: (current.queuedPairs || []).map((queued) => queued.draftKey === pair.draftKey ? { ...queued, saved: true } : queued),
+          }))
+        }
       }
-      const criticalKey = `exchange-create:${exchangeSelectedOrder.id}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch('/api/exchanges', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
 
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord; exchangeId?: number; pendingInventoryCount?: number }>(response, 'Обмен')
-      if (!response.ok) {
-        throw new Error(result.message || `Exchange failed: ${response.status}`)
-      }
-      completeCriticalRequest(criticalKey, critical.requestId)
-
-      if (result.order) {
-        upsertOrderInState(result.order)
-        setSelectedOrderId(result.order.id)
-      }
-      const exchangeTouchesWorkshop = selectedOldItem.sourceType === 'workshop' || effectiveNewItem.sourceType === 'workshop'
+      if (lastOrder) upsertOrderInState(lastOrder)
+      const totalPairCount = pairDrafts.length
       setExchangeSelectedOrderId(null)
       setExchangeDraft(createExchangeDraft())
       await Promise.allSettled([
@@ -6255,12 +6313,15 @@ function removeDebtPayment(index: number) {
         loadInventoryData('boutique', true, '', false),
         isAdmin ? loadInventoryLifecycle(true) : Promise.resolve(null),
       ])
-      const pendingInventoryCount = Math.max(0, Number(result.pendingInventoryCount || 0))
       setMessage(pendingInventoryCount > 0
-        ? `Обмен по заказу ${exchangeSelectedOrder.external_id} сохранён. ${pendingInventoryCount} складск${pendingInventoryCount === 1 ? 'ое движение ожидает' : 'их движения ожидают'} подтверждения администратора; система не угадывала остаток.`
-        : `Обмен по заказу ${exchangeSelectedOrder.external_id} сохранён.`)
+        ? `Обмен по заказу ${exchangeSelectedOrder.external_id} сохранён: ${totalPairCount} поз. ${pendingInventoryCount} складск${pendingInventoryCount === 1 ? 'ое движение ожидает' : 'их движения ожидают'} подтверждения администратора.`
+        : `Обмен по заказу ${exchangeSelectedOrder.external_id} сохранён: ${totalPairCount} поз.`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
+      const savedCount = savedBefore + savedThisAttempt
+      const details = err instanceof Error ? err.message : 'Неизвестная ошибка'
+      setError(savedCount > 0
+        ? `Сохранено ${savedCount} из ${pairDrafts.length} позиций обмена. Уже сохранённые строки отмечены и повторно не создадутся. Остальные не завершены: ${details}`
+        : details)
     } finally {
       setExchangeBusy(false)
     }

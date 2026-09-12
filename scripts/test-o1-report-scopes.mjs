@@ -79,6 +79,71 @@ modules.delete(path.resolve(currentPath))
 const baseline = loadModule(currentPath, read('scripts/fixtures/o1-finance-baseline.ts')).listFinanceReports
 const url = new URL('https://test/api/reports/finance?startDate=2026-09-01&endDate=2026-09-30')
 const stable = result => { const { generatedAt, ...rest } = result; return rest }
+const withoutClientReconciliation = result => {
+  const stableResult = stable(result)
+  const reports = { ...(stableResult.reports || {}) }
+  delete reports.paymentMethodReconciliation
+  delete reports.paymentReconciliationByDay
+  return { ...stableResult, reports }
+}
+const canonicalMethod = value => {
+  const method = String(value ?? '').trim().toUpperCase().replace(/\s+/g, ' ')
+  if (!method) return '—'
+  if (method === 'КАСПИЙ МАГАЗИН' || method === 'KASPI МАГАЗИН') return 'КАСПИ МАГАЗИН'
+  return method
+}
+const expectedClientReconciliation = result => {
+  const methodMap = new Map()
+  const dayMap = new Map()
+  const emptyMethod = method => ({ method, orderPayments: 0, debtClosures: 0, exchangeExtras: 0, grossInflow: 0, refunds: 0, netMovement: 0 })
+  const touchDay = date => {
+    const key = String(date || '').trim()
+    const current = dayMap.get(key) || { date: key, orderPayments: 0, debtClosures: 0, exchangeExtras: 0, grossInflow: 0, refunds: 0, netMovement: 0 }
+    dayMap.set(key, current)
+    return current
+  }
+  for (const operation of result.reports.paymentOperations || []) {
+    const method = canonicalMethod(operation.method)
+    const current = methodMap.get(method) || emptyMethod(method)
+    const day = touchDay(operation.paymentDate)
+    const amount = Number(operation.amount || 0)
+    if (operation.operationType === 'exchange_extra') {
+      current.exchangeExtras += amount
+      day.exchangeExtras += amount
+    } else if (operation.operationType === 'debt_close' || operation.operationType === 'order_extra') {
+      current.debtClosures += amount
+      day.debtClosures += amount
+    } else {
+      current.orderPayments += amount
+      day.orderPayments += amount
+    }
+    current.grossInflow += amount
+    day.grossInflow += amount
+    methodMap.set(method, current)
+  }
+  for (const row of result.reports.returns || []) {
+    if (String(row.status || '').trim() === 'cancelled') continue
+    const method = canonicalMethod(row.payment_method)
+    const current = methodMap.get(method) || emptyMethod(method)
+    const amount = Number(row.amount || 0)
+    current.refunds += amount
+    touchDay(row.return_date).refunds += amount
+    methodMap.set(method, current)
+  }
+  return {
+    methods: Array.from(methodMap.values())
+      .map(row => ({ ...row, netMovement: row.grossInflow - row.refunds }))
+      .sort((a,b) => b.grossInflow - a.grossInflow || a.method.localeCompare(b.method, 'ru')),
+    days: Array.from(dayMap.values())
+      .map(row => ({ ...row, netMovement: row.grossInflow - row.refunds }))
+      .sort((a,b) => a.date.localeCompare(b.date)),
+  }
+}
+const assertClientReconciliation = result => {
+  const expected = expectedClientReconciliation(result)
+  assert.deepEqual(result.reports.paymentMethodReconciliation, expected.methods, 'payment-method reconciliation arithmetic')
+  assert.deepEqual(result.reports.paymentReconciliationByDay, expected.days, 'payment-day reconciliation arithmetic')
+}
 const fields = {
   payments: ['paymentMethods','paymentMethodsByDay','returns'],
   managers: ['managers','managerDays','returns'], products: ['products','productDays'],
@@ -97,23 +162,35 @@ for (const range of [['2026-09-01','2026-09-30'],['2026-08-01','2026-10-01'],['2
   url.searchParams.set('startDate',range[0]); url.searchParams.set('endDate',range[1])
   url.searchParams.delete('scope'); url.searchParams.delete('reportType')
   const full = await baseline(adapter,url)
-  assert.deepEqual(stable(await current(adapter,url)),stable(full),'legacy full response parity')
+  const currentFull = await current(adapter,url)
+  assert.deepEqual(withoutClientReconciliation(currentFull),stable(full),'legacy full response parity outside the two intentional additive reconciliation fields')
+  assertClientReconciliation(currentFull)
   for (const reportType of Object.keys(fields)) {
     queryReads.length = 0; auxiliaryReads.length = 0
     url.searchParams.set('reportType',reportType)
     const selected = await current(adapter,url)
     assert.equal(selected.reportType,reportType)
-    assert.equal(markup(selected,reportType),markup(full,reportType),`${reportType}: complete displayed/exportable report DOM parity`)
-    for (const field of fields[reportType]) assert.deepEqual(selected.reports[field],full.reports[field],`${range}: ${reportType}.${field}`)
+    assert.equal(markup(selected,reportType),markup(currentFull,reportType),`${reportType}: complete displayed/exportable report DOM parity`)
+    for (const field of fields[reportType]) assert.deepEqual(selected.reports[field],currentFull.reports[field],`${range}: ${reportType}.${field}`)
+    if (reportType === 'payments') {
+      assertClientReconciliation(selected)
+      assert.deepEqual(selected.reports.paymentMethodReconciliation,currentFull.reports.paymentMethodReconciliation,'payments selected/full method reconciliation parity')
+      assert.deepEqual(selected.reports.paymentReconciliationByDay,currentFull.reports.paymentReconciliationByDay,'payments selected/full day reconciliation parity')
+    }
     if (['managers','cities','products'].includes(reportType)) assert.equal(selected.overview.orderCount,full.overview.orderCount)
     if (['managers','cities'].includes(reportType)) for (const key of ['totalSales','totalReceived','periodDebt']) assert.equal(selected.overview[key],full.overview[key],key)
     assert.equal(queryReads.length,counts[reportType],`${reportType} SQL budget`)
     assert.deepEqual(auxiliaryReads,['leads','callCentre'].includes(reportType) ? [reportType] : [],'no unrelated auxiliary reports')
   }
   url.searchParams.set('reportType','unknown')
-  assert.deepEqual(stable(await current(adapter,url)),stable(full),'unknown type keeps full contract')
+  const unknown = await current(adapter,url)
+  assert.deepEqual(withoutClientReconciliation(unknown),stable(full),'unknown type keeps legacy full contract outside intentional reconciliation fields')
+  assertClientReconciliation(unknown)
   url.searchParams.set('scope','finance'); url.searchParams.set('reportType','products')
-  assert.deepEqual(stable(await current(adapter,url)),stable(await baseline(adapter,url)),'finance workspace unaffected')
+  const financeWorkspaceCurrent = await current(adapter,url)
+  const financeWorkspaceBaseline = await baseline(adapter,url)
+  assert.deepEqual(withoutClientReconciliation(financeWorkspaceCurrent),stable(financeWorkspaceBaseline),'finance workspace legacy contract unaffected outside intentional reconciliation fields')
+  assertClientReconciliation(financeWorkspaceCurrent)
 }
 
 // Index migration changes access paths, not financial classifications or warehouse rows.
