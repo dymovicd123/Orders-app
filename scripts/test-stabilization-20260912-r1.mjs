@@ -20,6 +20,7 @@ const dashboardStart = dashboardWorker.indexOf('export async function getDashboa
 assert.ok(dashboardStart >= 0, 'dashboard declaration missing')
 const dashboard = dashboardWorker.slice(dashboardStart)
 assert.ok(dashboard.includes('WITH ${workshopStandaloneReturnOrdersCte}'), 'Dashboard must reuse Workshop return visibility')
+assert.ok(dashboard.includes('LEFT JOIN hidden_return_workshop_tasks returned ON returned.workshop_task_id = wt.id'), 'Dashboard must apply return visibility to the exact Workshop task')
 assert.ok(!dashboard.includes('COALESCE(o.return_amount, 0) <= 0'), 'Dashboard must not hide a whole Workshop order after any return')
 assert.ok(dashboard.includes('const allWorkshopWarningRows = allWorkshop.map'), 'Dashboard must retain all active task rows before choosing attention orders')
 assert.ok(dashboard.includes('const selectedWorkshopOrderKeys = new Set<string>()'), 'Dashboard order-level attention cap missing')
