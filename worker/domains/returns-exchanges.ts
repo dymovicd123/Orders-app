@@ -349,6 +349,22 @@ export async function createReturn(
     console.warn('Order readback after committed return failed', error);
   }
   const response = updated ? { ...completedResponse, order: updated, refreshRequired: false } : completedResponse;
+  const returnActivityItemDetails = validatedSelectedItems.map((entry) => {
+    const itemLabel = `${cleanText(entry.orderItem.product_name_snapshot)} × ${entry.quantity}`;
+    if (entry.physicalTracking) {
+      if (entry.physicalState === 'pending') return `${itemLabel}: ещё не пришёл`;
+      if (entry.physicalState === 'warehouse') return `${itemLabel}: получен → Склад`;
+      if (entry.physicalState === 'boutique') return `${itemLabel}: получен → Бутик`;
+      return `${itemLabel}: получен без добавления в остаток`;
+    }
+    if (entry.inventorySource === 'warehouse') return `${itemLabel}: возврат в Склад`;
+    if (entry.inventorySource === 'boutique') return `${itemLabel}: возврат в Бутик`;
+    return `${itemLabel}: без возврата в остатки`;
+  });
+  const returnActivityDetails = [
+    returnActivityItemDetails.length ? returnActivityItemDetails.join('; ') : 'Возврат денег без списка товаров',
+    comment,
+  ].filter(Boolean).join(' · ');
   try {
     await writeActivityLog(db, {
       eventType: 'return_created',
@@ -357,9 +373,7 @@ export async function createReturn(
       orderId,
       externalOrderId: cleanText((existing as any).external_id),
       title: `Оформлен возврат по заказу ${cleanText((existing as any).external_id)}`,
-      details: validatedSelectedItems.some((item) => item.wantsRestock)
-        ? `Возврат в ${restockSource === 'warehouse' ? 'склад' : 'бутик'}${comment ? `: ${comment}` : ''}`
-        : (comment || 'Без возврата в остатки'),
+      details: returnActivityDetails,
       amount,
       createdAt,
     });

@@ -5,7 +5,7 @@ import { readTableColumnSet } from '../core/sql.ts'
 import { canonicalStockPositionValue, cleanText, normalizeExchangeReturnSource, normalizeReturnRestockSource, normalizeSourceType, toInt, upperText, workshopOnlyComment } from '../core/text.ts'
 import { isHumanInventoryModelEnabled } from './catalog.ts'
 import { isReversibleInventoryMovementReference } from './inventory-reservations.ts'
-import { enrichWorkshopTaskRowsFromOrderItems } from './workshop.ts'
+import { enrichWorkshopTaskRowsFromOrderItems, workshopStandaloneReturnOrdersCte } from './workshop.ts'
 
 export async function listInventory(db: D1Database, url: URL) {
   const source = normalizeSourceType(url.searchParams.get('source'));
@@ -724,7 +724,8 @@ export async function getDashboardInsights(db: D1Database) {
   const workshopColumns = await readTableColumnSet(db, 'workshop_tasks');
   const wtColumn = (name: string) => workshopColumns.has(name.toLowerCase()) ? `wt.${name}` : 'NULL';
   const workshopResult = await db.prepare(
-    `SELECT
+    `WITH ${workshopStandaloneReturnOrdersCte}
+     SELECT
        wt.id,
        wt.order_id,
        ${wtColumn('order_item_id')} AS order_item_id,
@@ -756,13 +757,16 @@ export async function getDashboardInsights(db: D1Database) {
      JOIN orders o ON o.id = wt.order_id
      LEFT JOIN managers m ON m.id = o.manager_id
      LEFT JOIN customers c ON c.id = o.customer_id
-     WHERE wt.status = 'active' AND COALESCE(o.return_amount, 0) <= 0 AND o.order_status NOT IN ('deleted', 'archived')
+     LEFT JOIN hidden_return_workshop_tasks returned ON returned.workshop_task_id = wt.id
+     WHERE wt.status = 'active'
+       AND o.order_status NOT IN ('deleted', 'archived')
+       AND returned.workshop_task_id IS NULL
      ORDER BY wt.urgent DESC, o.order_date ASC, wt.id ASC
      LIMIT 1000`
   ).all<Record<string, unknown>>();
 
   const allWorkshop = await enrichWorkshopTaskRowsFromOrderItems(db, workshopResult.results || [], workshopColumns);
-  const workshopWarnings = allWorkshop.map(row => {
+  const allWorkshopWarningRows = allWorkshop.map(row => {
     const orderDate = cleanText(row.order_date) || cleanText(row.created_at).slice(0, 10);
     const waitingDays = daysBetweenDates(orderDate, today);
     const dueDate = cleanText(row.due_date);
@@ -818,7 +822,9 @@ export async function getDashboardInsights(db: D1Database) {
       priorityScore: score,
       reason,
     };
-  }).filter(row => row.waitingDays >= workshopAgeLimit || row.overdueDays > 0 || row.urgent || Boolean(row.dueDate))
+  });
+  const sortedWorkshopWarnings = allWorkshopWarningRows
+    .filter(row => row.waitingDays >= workshopAgeLimit || row.overdueDays > 0 || row.urgent || Boolean(row.dueDate))
     .sort((a, b) => {
       const tier = (row: typeof a) => row.overdueDays > 0
         ? 0
@@ -837,8 +843,22 @@ export async function getDashboardInsights(db: D1Database) {
       const byOrder = a.externalOrderId.localeCompare(b.externalOrderId, 'ru');
       if (byOrder) return byOrder;
       return a.productName.localeCompare(b.productName, 'ru');
-    })
-    .slice(0, 80);
+    });
+
+  // The UI groups Workshop attention by order. Limit the number of orders, not
+  // the number of task rows, so one large order cannot crowd out unrelated ORD
+  // cards and a selected order never arrives with only part of its visible lines.
+  const selectedWorkshopOrderKeys = new Set<string>();
+  for (const row of sortedWorkshopWarnings) {
+    const orderKey = row.orderId > 0 ? `id:${row.orderId}` : `ref:${row.externalOrderId || row.id}`;
+    if (selectedWorkshopOrderKeys.has(orderKey)) continue;
+    if (selectedWorkshopOrderKeys.size >= 80) break;
+    selectedWorkshopOrderKeys.add(orderKey);
+  }
+  const workshopWarnings = allWorkshopWarningRows.filter(row => {
+    const orderKey = row.orderId > 0 ? `id:${row.orderId}` : `ref:${row.externalOrderId || row.id}`;
+    return selectedWorkshopOrderKeys.has(orderKey);
+  });
 
 
 

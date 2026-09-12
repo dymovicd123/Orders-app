@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "revision": "stabilization-20260912-r1",
+  "files": {
+    "src/features/sections/DashboardSection.tsx": {
+      "beforeGitBlob": "bf870ccff7663768c41a6ec5e92b3cb9768ac991",
+      "afterGitBlob": "35bd2319d6fb1c6d35d8dbaad1cc27ce66226813",
+      "beforeLines": 334,
+      "afterLines": 334
+    },
+    "src/features/sections/OrderExchangeSection.tsx": {
+      "beforeGitBlob": "145f17055d72cc227e4ccc60b2f7a84e76753bd0",
+      "afterGitBlob": "f8002f09cbb54b9a5cec85f76db023ac792706a2",
+      "beforeLines": 504,
+      "afterLines": 531
+    },
+    "src/features/sections/OrderReturnsSection.tsx": {
+      "beforeGitBlob": "c48ecb5c062a883cbd7d263f62b6741d03179847",
+      "afterGitBlob": "730bc9fa3cb7a7a126a948d180380bc4e23dfb2f",
+      "beforeLines": 393,
+      "afterLines": 420
+    }
+  }
+}

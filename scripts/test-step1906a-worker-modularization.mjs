@@ -14,6 +14,7 @@ const operationalAutonomyA5ManifestPath = path.join(root, 'scripts/operational-a
 const d1ReadBudgetR63ManifestPath = path.join(root, 'scripts/d1-read-budget-r6-3-worker-manifest.json')
 const dashboardWorkshopAttentionManifestPath = path.join(root, 'scripts/dashboard-workshop-attention-r1-worker-manifest.json')
 const returnsPhysicalIntakeManifestPath = path.join(root, 'scripts/returns-physical-intake-r1-worker-manifest.json')
+const stabilizationManifestPath = path.join(root, 'scripts/stabilization-20260912-r1-worker-manifest.json')
 const original = fs.readFileSync(legacyPath, 'utf8')
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 if (manifest?.version !== 1 || manifest?.revision !== 'order-edit-safe-payment-corrections-r1') throw new Error('Safe payment correction Worker manifest invalid')
@@ -52,6 +53,9 @@ if (returnsPhysicalIntakeManifest?.version !== 1 || returnsPhysicalIntakeManifes
 if (Object.keys(returnsPhysicalIntakeManifest.changes || {}).sort().join(',') !== 'createExchange,createReturn,listExchanges,listReturnHistory') throw new Error('Returns physical intake R1 Worker change allow-list widened unexpectedly')
 if (Object.keys(returnsPhysicalIntakeManifest.added || {}).join(',') !== 'receiveReturnedItem') throw new Error('Returns physical intake R1 Worker added allow-list widened unexpectedly')
 if (!returnsPhysicalIntakeManifest.router?.block) throw new Error('Returns physical intake R1 Worker route block missing')
+const stabilizationManifest = JSON.parse(fs.readFileSync(stabilizationManifestPath, 'utf8'))
+if (stabilizationManifest?.version !== 1 || stabilizationManifest?.revision !== 'stabilization-20260912-r1') throw new Error('September 12 stabilization Worker manifest invalid')
+if (Object.keys(stabilizationManifest.changes || {}).sort().join(',') !== 'createReturn,getDashboardInsights,listWorkshopTasks,readWorkshopCounts,workshopStandaloneReturnOrdersCte') throw new Error('September 12 stabilization Worker allow-list widened unexpectedly')
 const operationalAutonomyA4RouteBlock = "\n\n      const orderShippingCorrectionMatch = url.pathname.match(/^\\/api\\/orders\\/(\\d+)\\/shipping\\/correct$/);\n      if (orderShippingCorrectionMatch && request.method === 'POST') {\n        const id = toInt(orderShippingCorrectionMatch[1], 0);\n        const input = await readJson<{ physicalOutcome?: unknown }>(request);\n        try {\n          const result = await correctMistakenOrderHandover(env.DB, id, {\n            physicalOutcome: input.physicalOutcome,\n            actor: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),\n          });\n          let updatedOrder = null;\n          try {\n            updatedOrder = await getOrder(env.DB, id);\n          } catch (error) {\n            console.warn('Order readback after handover correction failed', error);\n          }\n          return json({ ...result, ...(updatedOrder ? { order: updatedOrder } : {}), refreshRequired: !updatedOrder });\n        } catch (error) {\n          const publicError = publicApiError(error);\n          return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });\n        }\n      }\n"
 
 const o1Anchor = "const o1Changes = JSON.parse(fs.readFileSync(path.join(root, 'scripts/o1-worker-manifest.json'), 'utf8')).changed\n"
@@ -122,7 +126,8 @@ if (!physicalChangesLine.test(patched)) throw new Error('1906A physical intake i
 patched = patched.replace(physicalChangesLine, (match) => match
   + 'const returnsPhysicalIntakeChanges = ' + JSON.stringify(returnsPhysicalIntakeManifest.changes || {}) + '\n'
   + 'const returnsPhysicalIntakeAdded = ' + JSON.stringify(returnsPhysicalIntakeManifest.added || {}) + '\n'
-  + 'const returnsPhysicalIntakeRouter = ' + JSON.stringify(returnsPhysicalIntakeManifest.router || {}) + '\n')
+  + 'const returnsPhysicalIntakeRouter = ' + JSON.stringify(returnsPhysicalIntakeManifest.router || {}) + '\n'
+  + 'const stabilizationChanges = ' + JSON.stringify(stabilizationManifest.changes || {}) + '\n')
 
 const physicalCountAnchor = ' + Object.keys(operationalAutonomyA5Added).length'
 if (!patched.includes(physicalCountAnchor)) throw new Error('1906A physical intake declaration-count anchor missing')
@@ -137,7 +142,13 @@ patched = patched.replace(dashboardHashReturn, [
   "          check(returnsPhysicalIntakeChanged.before === acceptedPostDashboardAttentionHash, 'Returns physical intake R1 baseline hash mismatch: ' + name)",
   '          acceptedPostReturnsPhysicalIntakeHash = returnsPhysicalIntakeChanged.after',
   '        }',
-  '        return sha(declarations.get(name)) === acceptedPostReturnsPhysicalIntakeHash',
+  '        const stabilizationChanged = stabilizationChanges[name]',
+  '        let acceptedPostStabilizationHash = acceptedPostReturnsPhysicalIntakeHash',
+  '        if (stabilizationChanged) {',
+  "          check(stabilizationChanged.before === acceptedPostReturnsPhysicalIntakeHash, 'September 12 stabilization baseline hash mismatch: ' + name)",
+  '          acceptedPostStabilizationHash = stabilizationChanged.after',
+  '        }',
+  '        return sha(declarations.get(name)) === acceptedPostStabilizationHash',
   '',
 ].join('\n'))
 

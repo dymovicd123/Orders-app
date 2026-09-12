@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "revision": "stabilization-20260912-r1",
+  "changes": {
+    "createReturn": {
+      "before": "02c09aba0a27048d2231be10035852cce2eea6f1b428da7d8014ecb08977dc9c",
+      "after": "db826ddf6bfbb9a0894309bb82c2640dc04d6c3af8e582b1bb6e89a323032609"
+    },
+    "getDashboardInsights": {
+      "before": "a112977f6b1c8b8bbc61a615691a980e11617fda2a1a3d46678adb3db7d056f0",
+      "after": "8c52a3174b10ee593c6917a26fc41d724e8e3a70f2f808a204b7cab0f4fb2cbc"
+    },
+    "listWorkshopTasks": {
+      "before": "92896010c41a487056b881a9e4005d375e920c7311748782e665b41de2007dd0",
+      "after": "3f2c45a07804cd51b13a6ff0efffca1340ef99d88e49e01a7d17aa4393dfdecd"
+    },
+    "readWorkshopCounts": {
+      "before": "1ba9ad4dbd86fcf27ae46b943ca5dafd59d193786a2627fd876005f5a325f661",
+      "after": "e2f49093c3e1e8d8d70a66556ce8efb33e09c04dfb053c6b7507d1920db05083"
+    },
+    "workshopStandaloneReturnOrdersCte": {
+      "before": "0e5b9edc681965c371929930554b30569cab3c779946760ab6323da26d577120",
+      "after": "d3dab82ea888e271af453bcac38633627785747fdb98a55dd59766416605be07"
+    }
+  }
+}

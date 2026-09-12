@@ -65,14 +65,22 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     return fields.length ? fields.join(' · ') : 'Характеристики не указаны'
   }
 
+  const oldReceiptNeedsRecovery = (entry: any) => Boolean(
+    entry.oldPhysicalTracking
+    && entry.oldPhysicalReceivedAt
+    && (entry.oldReturnSource === 'warehouse' || entry.oldReturnSource === 'boutique')
+    && !entry.oldLifecycleStatus
+  )
   const oldReturnLabel = (entry: any) => {
     if (!entry.oldPhysicalTracking) return 'Старая запись — физическое получение не отслеживалось'
     if (!entry.oldPhysicalReceivedAt) return 'Ещё не пришла'
     if (entry.oldReturnSource !== 'warehouse' && entry.oldReturnSource !== 'boutique') return 'Получена, в остаток не добавляли'
     const destination = entry.oldReturnSource === 'warehouse' ? 'Склад' : 'Бутик'
+    if (!entry.oldLifecycleStatus) return `Получена → ${destination}; складской учёт не завершён`
     if (entry.oldLifecycleStatus === 'pending') return `Получена → ${destination}; остаток требует уточнения`
     if (entry.oldLifecycleStatus === 'cancelled') return `Получена; проведение в ${destination} отменено`
-    return `Получена → ${destination}`
+    if (entry.oldLifecycleStatus === 'applied') return `Получена → ${destination}`
+    return `Получена → ${destination}; статус учёта: ${entry.oldLifecycleStatus}`
   }
 
   const newIssueLabel = (source: string, lifecycleStatus?: string | null) => {
@@ -453,6 +461,25 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                     })}
                                   >
                                     Товар пришёл
+                                  </button>
+                                </div>
+                              ) : null}
+                              {entry.status !== 'cancelled' && entry.oldOperationItemId && oldReceiptNeedsRecovery(entry) ? (
+                                <div className="mini-panel-actions">
+                                  <button
+                                    className="primary compact"
+                                    type="button"
+                                    disabled={exchangeBusy}
+                                    onClick={() => void receiveReturnedItemAction({
+                                      operationType: 'exchange',
+                                      operationId: entry.id,
+                                      operationItemId: entry.oldOperationItemId,
+                                      destination: entry.oldReturnSource as 'warehouse' | 'boutique',
+                                      productName: entry.oldProductName,
+                                      externalId: entry.externalId,
+                                    })}
+                                  >
+                                    Завершить учёт
                                   </button>
                                 </div>
                               ) : null}

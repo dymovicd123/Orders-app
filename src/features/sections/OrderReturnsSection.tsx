@@ -55,14 +55,22 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
       : 'Без возврата в остатки'
 
   const [receiptDestinations, setReceiptDestinations] = useState<Record<string, 'warehouse' | 'boutique' | 'no_stock'>>({})
+  const returnReceiptNeedsRecovery = (item: any) => Boolean(
+    item.physicalTracking
+    && item.physicalReceivedAt
+    && (item.inventorySource === 'warehouse' || item.inventorySource === 'boutique')
+    && !item.lifecycleStatus
+  )
   const returnPhysicalStatus = (item: any) => {
     if (!item.physicalTracking) return 'Старая запись — физическое получение не отслеживалось'
     if (!item.physicalReceivedAt) return 'Ещё не пришёл'
     if (!item.inventorySource) return 'Получен, в остаток не добавляли'
     const destination = inventorySourceLabel(item.inventorySource)
+    if (!item.lifecycleStatus) return `Получен → ${destination}; складской учёт не завершён`
     if (item.lifecycleStatus === 'pending') return `Получен → ${destination}; остаток требует уточнения`
     if (item.lifecycleStatus === 'cancelled') return `Получен; проведение в ${destination} отменено`
-    return `Получен → ${destination}`
+    if (item.lifecycleStatus === 'applied') return `Получен → ${destination}`
+    return `Получен → ${destination}; статус учёта: ${item.lifecycleStatus}`
   }
 
   return (
@@ -366,6 +374,25 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                       })}
                                     >
                                       Товар пришёл
+                                    </button>
+                                  </div>
+                                ) : null}
+                                {entry.operationType === 'order_return' && entry.status !== 'cancelled' && returnReceiptNeedsRecovery(item) ? (
+                                  <div className="mini-panel-actions">
+                                    <button
+                                      className="primary compact"
+                                      type="button"
+                                      disabled={returnBusy}
+                                      onClick={() => void receiveReturnedItemAction({
+                                        operationType: 'return',
+                                        operationId: entry.id,
+                                        operationItemId: item.id,
+                                        destination: item.inventorySource as 'warehouse' | 'boutique',
+                                        productName: item.productName,
+                                        externalId: entry.externalId,
+                                      })}
+                                    >
+                                      Завершить учёт
                                     </button>
                                   </div>
                                 ) : null}
