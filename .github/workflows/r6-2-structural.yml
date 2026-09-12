@@ -68,11 +68,12 @@ jobs:
 
           const finalCheck = "      sha(declarations.get(name)) === acceptedPostCatalogUnisexMergeHash,"
           if (!text.includes(finalCheck)) throw new Error('R6.2 1906A final declaration hash anchor missing')
+          const exactChangesLiteral = JSON.stringify(manifest.changes)
           const replacement = [
             "      (() => {",
-            "        const r62Changed = d1ReadBudgetR62Manifest.changes?.[name]",
+            `        const r62Changed = ${exactChangesLiteral}[name]`,
             "        if (!r62Changed) return sha(declarations.get(name)) === acceptedPostCatalogUnisexMergeHash",
-            "        check(r62Changed.before === acceptedPostCatalogUnisexMergeHash, `D1 read budget R6.2 baseline hash mismatch: ${name}`)",
+            "        check(r62Changed.before === acceptedPostCatalogUnisexMergeHash, 'D1 read budget R6.2 baseline hash mismatch: ' + name)",
             "        return sha(declarations.get(name)) === r62Changed.after",
             "      })(),",
           ].join('\n')
