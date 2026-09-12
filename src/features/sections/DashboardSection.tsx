@@ -107,6 +107,17 @@ function workshopOrderTone(order: any, ageLimit: number) {
   return 'is-workshop'
 }
 
+function workshopOrderStatus(order: any) {
+  if (Number(order.overdueDays || 0) > 0) return `Просрочено ${order.overdueDays} дн.`
+  const today = new Date().toISOString().slice(0, 10)
+  const dueInDays = order.dueDate ? dashboardDayDistance(today, order.dueDate) : null
+  if (dueInDays === 0) return 'Дедлайн сегодня'
+  if (dueInDays === 1) return 'Дедлайн завтра'
+  if (order.dueDate) return `До ${dashboardShortDate(order.dueDate)}`
+  if (order.urgent) return 'Срочный заказ'
+  return 'Долго в работе'
+}
+
 export function DashboardSection({ ctx }: { ctx: SectionContext }) {
   const {
     busy,
@@ -186,7 +197,7 @@ export function DashboardSection({ ctx }: { ctx: SectionContext }) {
           <div className="mini-panel-head">
             <div>
               <h3>Что требует внимания</h3>
-              <p className="mini-panel-note">Один блок = один заказ. Сначала просрочка и ближайшие дедлайны, затем срочные и долго ожидающие.</p>
+              <p className="mini-panel-note">Один блок = один заказ. Вверху просрочка и ближайшие дедлайны.</p>
             </div>
             <span className="soft-badge">{workshopOrders.length}</span>
           </div>
@@ -200,52 +211,62 @@ export function DashboardSection({ ctx }: { ctx: SectionContext }) {
             <div className="dashboard-scroll-list dashboard-workshop-order-list">
               {workshopOrders.length ? workshopOrders.map((order) => {
                 const tone = workshopOrderTone(order, workshopAgeLimit)
-                const previewItems = order.items.slice(0, 3)
+                const previewItems = order.items.slice(0, 2)
                 const hiddenItems = Math.max(0, order.items.length - previewItems.length)
                 return (
-                  <button
+                  <article
                     key={`dash-workshop-order-${order.key}`}
-                    type="button"
                     className={`dashboard-workshop-order-card ${tone}`}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setSelectedWorkshopOrder(order)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        setSelectedWorkshopOrder(order)
+                      }
+                    }}
                     title="Показать заказ и позиции"
                   >
-                    <span className="dashboard-workshop-order-top">
-                      <span className="dashboard-workshop-order-ref">{order.externalOrderId || `Заказ #${order.orderId}`}</span>
-                      <span className="dashboard-workshop-card-badges">
-                        {order.overdueDays > 0 ? <b className="dashboard-attention-badge is-overdue">Просрочено {order.overdueDays} дн.</b> : null}
-                        {!order.overdueDays && order.dueDate ? <b className="dashboard-attention-badge is-deadline">До {dashboardShortDate(order.dueDate)}</b> : null}
-                        {order.urgent ? <b className="dashboard-attention-badge is-urgent">Срочно</b> : null}
-                        {order.hasComment ? <b className="dashboard-attention-badge is-comment">Есть комментарий</b> : null}
-                        <b className={`dashboard-attention-badge ${order.waitingDays >= workshopAgeLimit ? 'is-waiting-long' : 'is-waiting'}`}>Ждёт {order.waitingDays} дн.</b>
-                      </span>
-                    </span>
+                    <div className="dashboard-workshop-order-head">
+                      <div className="dashboard-workshop-order-identity">
+                        <div className="dashboard-workshop-order-ref-row">
+                          <span className="dashboard-workshop-order-ref">{order.externalOrderId || `Заказ #${order.orderId}`}</span>
+                          <span className="dashboard-workshop-open-hint">Открыть детали →</span>
+                        </div>
+                        <strong className="dashboard-workshop-customer-name">{order.customerName || 'Клиент не указан'}</strong>
+                        <span className="dashboard-workshop-order-meta-line">
+                          {order.managerName || 'Менеджер не указан'}{order.city ? ` · ${order.city}` : ''}{order.customerPhone ? ` · ${order.customerPhone}` : ''}
+                        </span>
+                      </div>
 
-                    <span className="dashboard-workshop-order-main">
-                      <span className="dashboard-workshop-order-client">
-                        <strong>{order.customerName || 'Клиент не указан'}</strong>
-                        <small>{order.managerName || 'Менеджер не указан'}{order.city ? ` · ${order.city}` : ''}{order.customerPhone ? ` · ${order.customerPhone}` : ''}</small>
-                        <small>{order.dueDate ? `Дедлайн ${dashboardShortDate(order.dueDate)}` : 'Дедлайн не указан'}{order.orderDate ? ` · заказ от ${dashboardShortDate(order.orderDate)}` : ''}</small>
-                      </span>
-                      <span className="dashboard-workshop-order-count">
-                        <strong>{order.totalQuantity} шт.</strong>
-                        <small>{order.items.length} поз. в контроле</small>
-                      </span>
-                    </span>
+                      <div className="dashboard-workshop-deadline-panel">
+                        <span>{order.overdueDays > 0 ? 'Требует реакции' : 'Срок заказа'}</span>
+                        <strong>{workshopOrderStatus(order)}</strong>
+                        <small>{order.waitingDays} дн. в работе{order.orderDate ? ` · заказ ${dashboardShortDate(order.orderDate)}` : ''}</small>
+                      </div>
+                    </div>
 
-                    <span className="dashboard-workshop-order-items">
+                    <div className="dashboard-workshop-order-strip">
+                      <span><b>{order.items.length}</b> поз.</span>
+                      <span><b>{order.totalQuantity}</b> шт.</span>
+                      {order.urgent ? <span className="is-urgent-mark">Срочно</span> : null}
+                      {order.hasComment ? <span className="is-comment-mark">Есть комментарий</span> : null}
+                    </div>
+
+                    <div className="dashboard-workshop-order-items">
                       {previewItems.map((item: any) => (
-                        <span className="dashboard-workshop-order-item" key={`dash-order-${order.key}-${item.id}`}>
-                          <span>
+                        <div className="dashboard-workshop-order-item" key={`dash-order-${order.key}-${item.id}`}>
+                          <div>
                             <strong>{item.productName}</strong>
                             <small>{[item.gender, item.color, item.material, item.length, item.size].filter(Boolean).join(' · ') || 'Характеристики не указаны'}</small>
-                          </span>
+                          </div>
                           <b>{Math.max(1, Number(item.quantity || 1))} шт.</b>
-                        </span>
+                        </div>
                       ))}
-                      {hiddenItems > 0 ? <span className="dashboard-workshop-order-more">+ ещё {hiddenItems} поз.</span> : null}
-                    </span>
-                  </button>
+                      {hiddenItems > 0 ? <div className="dashboard-workshop-order-more">+ ещё {hiddenItems} поз. в этом заказе</div> : null}
+                    </div>
+                  </article>
                 )
               }) : (
                 <div className="empty-state">Просроченных, срочных или долго ожидающих заказов нет.</div>
