@@ -9,10 +9,9 @@ const requireMatch = (pattern, message) => {
   if (!pattern.test(source)) throw new Error(message)
 }
 
-requireMatch(
-  /const \[overviewRow, paymentMethods, managerRows, managerCashRows,[\s\S]*?\(\) => emptyRowsResult\(\),\s*\n\s*\(\) => emptyRowsResult\(\),/,
-  'R6.3: dedicated manager summary and manager cash summary D1 reads must stay disabled.'
-)
+if (/\bmanagerRows\b|\bmanagerCashRows\b/.test(source)) {
+  throw new Error('R6.3: dedicated manager summary result sets must be removed instead of executing redundant D1 reads.')
+}
 requireMatch(
   /COUNT\(CASE WHEN o\.total_amount <> 0 THEN 1 END\) AS nonzero_order_count/,
   'R6.3: manager day rows must preserve the exact non-zero-order denominator for avg_check.'
