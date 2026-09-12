@@ -6,6 +6,7 @@ on:
       - stabilization-20260912-r2-manager-date
     paths:
       - scripts/apply-stabilization-20260912-r2-manager-date.mjs
+      - scripts/repair-r2-finalizer-syntax.mjs
       - .github/workflows/stabilization-20260912-r2-manager-date-finalizer.yml
   workflow_dispatch:
 
@@ -34,6 +35,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Repair R2 finalizer source
+        run: node scripts/repair-r2-finalizer-syntax.mjs
+
       - name: Apply R2 finalizer
         run: node scripts/apply-stabilization-20260912-r2-manager-date.mjs
 
@@ -58,6 +62,7 @@ jobs:
       - name: Remove temporary finalizer machinery
         run: |
           rm scripts/apply-stabilization-20260912-r2-manager-date.mjs
+          rm scripts/repair-r2-finalizer-syntax.mjs
           rm .github/workflows/stabilization-20260912-r2-manager-date-finalizer.yml
 
       - name: Verify patch formatting
