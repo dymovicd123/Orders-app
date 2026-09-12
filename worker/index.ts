@@ -24,7 +24,7 @@ import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
 import { createReferenceValue, deleteReferenceValue, getReferenceData, getReferenceValueCounts, listReferenceValues, normalizeReferenceKind, updateReferenceValue } from './domains/references.ts'
-import { cancelExchange, cancelReturn, correctExchangeFinancials, createExchange, createReturn, listExchanges } from './domains/returns-exchanges.ts'
+import { cancelExchange, cancelReturn, correctExchangeFinancials, createExchange, createReturn, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { continueDatabaseStorageCleanup, getDatabaseStorageStatus, startDatabaseStorageCleanup, updateDatabaseStorageCapacity } from './domains/storage.ts'
 import type { CallCentreInput, DepartmentPlanInput, EmployeeInput, LeadInput, PlanInput, TimesheetInput } from './domains/team.ts'
 import { deleteCallCentreRecord, deleteDepartmentPlanRecord, deleteLeadRecord, deleteManagerPlanRecord, deleteTeamEmployee, listCallCentreRecords, listLeadRecords, listPlans, listTeamActivity, listTeamEmployees, listTeamSalaryPreview, listTeamTimesheet, saveCallCentreRecord, saveDepartmentPlan, saveLeadRecord, saveManagerPlan, saveTeamEmployee, saveTeamTimesheet, setTeamEmployeeActive } from './domains/team.ts'
@@ -1254,12 +1254,25 @@ export default {
         }
       }
 
+      if (url.pathname === '/api/returned-items/receive' && request.method === 'POST') {
+        const input = await readJson<{ requestId?: string; operationType?: 'return' | 'exchange'; operationId?: number; operationItemId?: number; destination?: 'warehouse' | 'boutique' | 'no_stock' }>(request);
+        input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
+        try {
+          return json(await receiveReturnedItem(env.DB, input));
+        } catch (error) {
+          const criticalResponse = criticalOperationErrorResponse(error);
+          if (criticalResponse) return criticalResponse;
+          const publicError = publicApiError(error);
+          return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });
+        }
+      }
+
       if (url.pathname === '/api/returns' && request.method === 'GET') {
         return json(await listReturnHistory(env.DB, url));
       }
 
       if (url.pathname === '/api/returns' && request.method === 'POST') {
-        const input = await readJson<{ requestId?: string; orderId?: number; returnDate?: string; amount?: number; paymentMethod?: string; comment?: string; restockSource?: unknown; items?: Array<{ orderItemId?: number; quantity?: number; amount?: number; restock?: boolean }> }>(request);
+        const input = await readJson<{ requestId?: string; orderId?: number; returnDate?: string; amount?: number; paymentMethod?: string; comment?: string; restockSource?: unknown; items?: Array<{ orderItemId?: number; quantity?: number; amount?: number; restock?: boolean; physicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock' }> }>(request);
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
         try {
           return json(await createReturn(env.DB, input), { status: 201 });
@@ -1288,7 +1301,7 @@ export default {
       }
 
       if (url.pathname === '/api/exchanges' && request.method === 'POST') {
-        const input = await readJson<{ requestId?: string; orderId?: number; exchangeDate?: string; oldItemId?: number; oldQuantity?: number; oldReturnSource?: unknown; newItem?: NonNullable<OrderInput['items']>[number]; newSourceWasManuallyChanged?: boolean; financialAction?: unknown; financialAmount?: number; paymentMethod?: string; comment?: string }>(request);
+        const input = await readJson<{ requestId?: string; orderId?: number; exchangeDate?: string; oldItemId?: number; oldQuantity?: number; oldReturnSource?: unknown; oldPhysicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock'; newItem?: NonNullable<OrderInput['items']>[number]; newSourceWasManuallyChanged?: boolean; financialAction?: unknown; financialAmount?: number; paymentMethod?: string; comment?: string }>(request);
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
         try {
           return json(await createExchange(env.DB, input), { status: 201 });

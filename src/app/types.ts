@@ -68,6 +68,9 @@ export type ReturnHistoryItem = {
   size?: string | null
   inventorySource?: 'warehouse' | 'boutique' | null | string
   restocked?: boolean
+  physicalTracking?: boolean
+  physicalReceivedAt?: string | null
+  isWorkshop?: boolean
   lifecycleStatus?: 'pending' | 'applied' | 'cancelled' | null | string
   pendingReason?: string | null
 }
@@ -96,6 +99,7 @@ export type ReturnHistoryResponse = {
     activeCount: number
     cancelledCount: number
     activeAmount: number
+    pendingPhysicalQuantity: number
   }
   returns: ReturnHistoryEntry[]
 }
@@ -109,6 +113,7 @@ export type ReturnItemDraft = {
   maxQuantity: number
   sourceType: 'warehouse' | 'boutique' | 'workshop'
   restock: boolean
+  physicalState: 'pending' | 'warehouse' | 'boutique' | 'no_stock'
 }
 
 
@@ -130,6 +135,7 @@ export type ExchangeDraft = {
   oldItemId: number
   oldQuantity: number
   oldReturnSource: 'none' | 'warehouse' | 'boutique'
+  oldPhysicalState: 'pending' | 'warehouse' | 'boutique' | 'no_stock'
   newItem: EditorItem
   financialAction: 'none' | 'extra_payment' | 'refund'
   financialAmount: number
@@ -668,7 +674,7 @@ export type ExchangeHistoryResponse = {
   offset?: number
   limit?: number
   hasMore?: boolean
-  summary?: { activeCount: number; cancelledCount: number }
+  summary?: { activeCount: number; cancelledCount: number; pendingPhysicalQuantity: number }
   exchanges: ExchangeHistoryEntry[]
 }
 
@@ -697,6 +703,10 @@ export type ExchangeHistoryEntry = {
   newLength?: string | null
   newSize?: string | null
   newSourceType: 'warehouse' | 'boutique' | 'workshop' | string
+  oldOperationItemId?: number | null
+  oldPhysicalTracking?: boolean
+  oldPhysicalReceivedAt?: string | null
+  oldIsWorkshop?: boolean
   oldLifecycleStatus?: 'pending' | 'applied' | 'cancelled' | null | string
   newLifecycleStatus?: 'pending' | 'applied' | 'cancelled' | null | string
   financialAction: 'none' | 'extra_payment' | 'refund' | string

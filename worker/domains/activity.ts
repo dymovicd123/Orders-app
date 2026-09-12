@@ -143,11 +143,18 @@ export async function listReturnHistory(db: D1Database, url: URL) {
     `SELECT COUNT(*) AS total_count,
             SUM(CASE WHEN COALESCE(r.status, 'completed') <> 'cancelled' THEN 1 ELSE 0 END) AS active_count,
             SUM(CASE WHEN COALESCE(r.status, 'completed') = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_count,
-            COALESCE(SUM(CASE WHEN COALESCE(r.status, 'completed') <> 'cancelled' THEN r.amount ELSE 0 END), 0) AS active_amount
+            COALESCE(SUM(CASE WHEN COALESCE(r.status, 'completed') <> 'cancelled' THEN r.amount ELSE 0 END), 0) AS active_amount,
+            COALESCE(SUM(CASE WHEN COALESCE(r.status, 'completed') <> 'cancelled' THEN COALESCE(pending_physical.pending_physical_quantity, 0) ELSE 0 END), 0) AS pending_physical_quantity
      FROM returns r
      JOIN orders o ON o.id = r.order_id
      LEFT JOIN managers m ON m.id = COALESCE(r.manager_id, o.manager_id)
      LEFT JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN (
+       SELECT return_id, SUM(quantity) AS pending_physical_quantity
+       FROM return_items
+       WHERE physical_tracking = 1 AND physical_received_at IS NULL
+       GROUP BY return_id
+     ) pending_physical ON pending_physical.return_id = r.id
      ${whereSql}`
   ).bind(...bindings).first<Record<string, unknown>>();
 
@@ -170,7 +177,11 @@ export async function listReturnHistory(db: D1Database, url: URL) {
             ri.gender_snapshot AS return_item_gender, ri.color_snapshot AS return_item_color,
             ri.material_snapshot AS return_item_material, ri.length_snapshot AS return_item_length,
             ri.size_snapshot AS return_item_size, ri.inventory_source AS return_item_inventory_source,
-            ri.restocked AS return_item_restocked, lifecycle.status AS return_item_lifecycle_status,
+            ri.restocked AS return_item_restocked,
+            ri.physical_tracking AS return_item_physical_tracking,
+            ri.physical_received_at AS return_item_physical_received_at,
+            COALESCE((SELECT oi.is_workshop FROM order_items oi WHERE oi.id = ri.order_item_id), 0) AS return_item_is_workshop,
+            lifecycle.status AS return_item_lifecycle_status,
             lifecycle.pending_reason AS return_item_pending_reason
      FROM selected_returns selected
      JOIN returns r ON r.id = selected.id JOIN orders o ON o.id = r.order_id
@@ -204,6 +215,9 @@ export async function listReturnHistory(db: D1Database, url: URL) {
       gender: cleanText(row.return_item_gender) || null, color: cleanText(row.return_item_color) || null, material: cleanText(row.return_item_material) || null,
       length: cleanText(row.return_item_length) || null, size: cleanText(row.return_item_size) || null,
       inventorySource: cleanText(row.return_item_inventory_source) || null, restocked: Boolean(toInt(row.return_item_restocked, 0)),
+      physicalTracking: Boolean(toInt(row.return_item_physical_tracking, 0)),
+      physicalReceivedAt: cleanText(row.return_item_physical_received_at) || null,
+      isWorkshop: Boolean(toInt(row.return_item_is_workshop, 0)),
       lifecycleStatus: cleanText(row.return_item_lifecycle_status) || null, pendingReason: cleanText(row.return_item_pending_reason) || null,
     });
   }
@@ -211,7 +225,7 @@ export async function listReturnHistory(db: D1Database, url: URL) {
   const totalCount = Math.max(0, toInt(summary?.total_count, 0));
   return {
     ok: true, count: totalCount, offset, limit, hasMore: offset + rows.length < totalCount,
-    summary: { activeCount: Math.max(0, toInt(summary?.active_count, 0)), cancelledCount: Math.max(0, toInt(summary?.cancelled_count, 0)), activeAmount: Number(summary?.active_amount || 0) },
+    summary: { activeCount: Math.max(0, toInt(summary?.active_count, 0)), cancelledCount: Math.max(0, toInt(summary?.cancelled_count, 0)), activeAmount: Number(summary?.active_amount || 0), pendingPhysicalQuantity: Math.max(0, toInt(summary?.pending_physical_quantity, 0)) },
     returns: rows,
   };
 }

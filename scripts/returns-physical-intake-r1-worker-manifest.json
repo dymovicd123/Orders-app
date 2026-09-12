@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "revision": "returns-physical-intake-r1",
+  "changes": {
+    "listReturnHistory": {
+      "before": "27bb42694f4d201abcfb36dee31157254097788c0bd91417376a049fdd8c5d02",
+      "after": "3a554d0e122ca4277fa13e469de55495e64093be4694e28cd587afaaf7e704be"
+    },
+    "createReturn": {
+      "before": "b40cf007c559749b9fb2d560df02a670789b86073881aaa7a0287fab2c77fba7",
+      "after": "02c09aba0a27048d2231be10035852cce2eea6f1b428da7d8014ecb08977dc9c"
+    },
+    "createExchange": {
+      "before": "67d571963f995d908fa4c9cf06d09c12630a8ae5a457b13acfa49bb2dcfa3c23",
+      "after": "10be60e43a2906175916bd83ca0ee7029cf9096e189c1fe1c463717c68552443"
+    },
+    "listExchanges": {
+      "before": "539ea0db6655f43ea108f99f864be7004e9665d6a045a699fe3e58c6fb7a25b1",
+      "after": "ef1cb2e297c9af4312139db58834ffeab38a05756475f0b4e8570ce650bf65dc"
+    }
+  },
+  "added": {
+    "receiveReturnedItem": "abeace7410c870713d781b1ae6c0ff1c5354d9aa8a031dc28884ed64b478c10f"
+  },
+  "router": {
+    "before": "b603184289505d68f89702645e6754954b987b38431bea9e1d7dc793cad77489",
+    "after": "8c9b7287c6025f80e8fd1fb7f915baeb04b66f75d6986079312c6391a9685d38",
+    "block": "ed-items/receive' && request.method === 'POST') {\n        const input = await readJson<{ requestId?: string; operationType?: 'return' | 'exchange'; operationId?: number; operationItemId?: number; destination?: 'warehouse' | 'boutique' | 'no_stock' }>(request);\n        input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;\n        try {\n          return json(await receiveReturnedItem(env.DB, input));\n        } catch (error) {\n          const criticalResponse = criticalOperationErrorResponse(error);\n          if (criticalResponse) return criticalResponse;\n          const publicError = publicApiError(error);\n          return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });\n        }\n      }\n\n      if (url.pathname === '/api/return",
+    "reversions": [
+      {
+        "before": "const input = await readJson<{ requestId?: string; orderId?: number; returnDate?: string; amount?: number; paymentMethod?: string; comment?: string; restockSource?: unknown; items?: Array<{ orderItemId?: number; quantity?: number; amount?: number; restock?: boolean }> }>(request);",
+        "after": "const input = await readJson<{ requestId?: string; orderId?: number; returnDate?: string; amount?: number; paymentMethod?: string; comment?: string; restockSource?: unknown; items?: Array<{ orderItemId?: number; quantity?: number; amount?: number; restock?: boolean; physicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock' }> }>(request);"
+      },
+      {
+        "before": "const input = await readJson<{ requestId?: string; orderId?: number; exchangeDate?: string; oldItemId?: number; oldQuantity?: number; oldReturnSource?: unknown; newItem?: NonNullable<OrderInput['items']>[number]; newSourceWasManuallyChanged?: boolean; financialAction?: unknown; financialAmount?: number; paymentMethod?: string; comment?: string }>(request);",
+        "after": "const input = await readJson<{ requestId?: string; orderId?: number; exchangeDate?: string; oldItemId?: number; oldQuantity?: number; oldReturnSource?: unknown; oldPhysicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock'; newItem?: NonNullable<OrderInput['items']>[number]; newSourceWasManuallyChanged?: boolean; financialAction?: unknown; financialAmount?: number; paymentMethod?: string; comment?: string }>(request);"
+      }
+    ]
+  }
+}

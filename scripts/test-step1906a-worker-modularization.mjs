@@ -13,6 +13,7 @@ const operationalAutonomyA4ManifestPath = path.join(root, 'scripts/operational-a
 const operationalAutonomyA5ManifestPath = path.join(root, 'scripts/operational-autonomy-a5-worker-manifest.json')
 const d1ReadBudgetR63ManifestPath = path.join(root, 'scripts/d1-read-budget-r6-3-worker-manifest.json')
 const dashboardWorkshopAttentionManifestPath = path.join(root, 'scripts/dashboard-workshop-attention-r1-worker-manifest.json')
+const returnsPhysicalIntakeManifestPath = path.join(root, 'scripts/returns-physical-intake-r1-worker-manifest.json')
 const original = fs.readFileSync(legacyPath, 'utf8')
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 if (manifest?.version !== 1 || manifest?.revision !== 'order-edit-safe-payment-corrections-r1') throw new Error('Safe payment correction Worker manifest invalid')
@@ -46,6 +47,11 @@ if (Object.keys(d1ReadBudgetR63Manifest.changes || {}).join(',') !== 'listFinanc
 const dashboardWorkshopAttentionManifest = JSON.parse(fs.readFileSync(dashboardWorkshopAttentionManifestPath, 'utf8'))
 if (dashboardWorkshopAttentionManifest?.version !== 1 || dashboardWorkshopAttentionManifest?.revision !== 'dashboard-workshop-attention-r1') throw new Error('Dashboard workshop attention R1 Worker manifest invalid')
 if (Object.keys(dashboardWorkshopAttentionManifest.changes || {}).sort().join(',') !== 'getDashboardInsights,listWorkshopTasks') throw new Error('Dashboard workshop attention R1 Worker allow-list widened unexpectedly')
+const returnsPhysicalIntakeManifest = JSON.parse(fs.readFileSync(returnsPhysicalIntakeManifestPath, 'utf8'))
+if (returnsPhysicalIntakeManifest?.version !== 1 || returnsPhysicalIntakeManifest?.revision !== 'returns-physical-intake-r1') throw new Error('Returns physical intake R1 Worker manifest invalid')
+if (Object.keys(returnsPhysicalIntakeManifest.changes || {}).sort().join(',') !== 'createExchange,createReturn,listExchanges,listReturnHistory') throw new Error('Returns physical intake R1 Worker change allow-list widened unexpectedly')
+if (Object.keys(returnsPhysicalIntakeManifest.added || {}).join(',') !== 'receiveReturnedItem') throw new Error('Returns physical intake R1 Worker added allow-list widened unexpectedly')
+if (!returnsPhysicalIntakeManifest.router?.block) throw new Error('Returns physical intake R1 Worker route block missing')
 const operationalAutonomyA4RouteBlock = "\n\n      const orderShippingCorrectionMatch = url.pathname.match(/^\\/api\\/orders\\/(\\d+)\\/shipping\\/correct$/);\n      if (orderShippingCorrectionMatch && request.method === 'POST') {\n        const id = toInt(orderShippingCorrectionMatch[1], 0);\n        const input = await readJson<{ physicalOutcome?: unknown }>(request);\n        try {\n          const result = await correctMistakenOrderHandover(env.DB, id, {\n            physicalOutcome: input.physicalOutcome,\n            actor: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),\n          });\n          let updatedOrder = null;\n          try {\n            updatedOrder = await getOrder(env.DB, id);\n          } catch (error) {\n            console.warn('Order readback after handover correction failed', error);\n          }\n          return json({ ...result, ...(updatedOrder ? { order: updatedOrder } : {}), refreshRequired: !updatedOrder });\n        } catch (error) {\n          const publicError = publicApiError(error);\n          return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });\n        }\n      }\n"
 
 const o1Anchor = "const o1Changes = JSON.parse(fs.readFileSync(path.join(root, 'scripts/o1-worker-manifest.json'), 'utf8')).changed\n"
@@ -109,6 +115,61 @@ const r63CheckReplacement = [
   '      })(),',
 ].join('\n') + '\n'
 patched = patched.replace(r63CheckAnchor, r63CheckReplacement)
+
+// Returns physical intake R1 is a final narrow layer over the accepted dashboard baseline.
+const physicalChangesLine = /const dashboardWorkshopAttentionChanges = [^\n]+\n/
+if (!physicalChangesLine.test(patched)) throw new Error('1906A physical intake injected dashboard changes anchor missing')
+patched = patched.replace(physicalChangesLine, (match) => match
+  + 'const returnsPhysicalIntakeChanges = ' + JSON.stringify(returnsPhysicalIntakeManifest.changes || {}) + '\n'
+  + 'const returnsPhysicalIntakeAdded = ' + JSON.stringify(returnsPhysicalIntakeManifest.added || {}) + '\n'
+  + 'const returnsPhysicalIntakeRouter = ' + JSON.stringify(returnsPhysicalIntakeManifest.router || {}) + '\n')
+
+const physicalCountAnchor = ' + Object.keys(operationalAutonomyA5Added).length'
+if (!patched.includes(physicalCountAnchor)) throw new Error('1906A physical intake declaration-count anchor missing')
+patched = patched.replace(physicalCountAnchor, physicalCountAnchor + ' + Object.keys(returnsPhysicalIntakeAdded).length')
+
+const dashboardHashReturn = '        return sha(declarations.get(name)) === acceptedPostDashboardAttentionHash\n'
+if (!patched.includes(dashboardHashReturn)) throw new Error('1906A physical intake dashboard hash anchor missing')
+patched = patched.replace(dashboardHashReturn, [
+  '        const returnsPhysicalIntakeChanged = returnsPhysicalIntakeChanges[name]',
+  '        let acceptedPostReturnsPhysicalIntakeHash = acceptedPostDashboardAttentionHash',
+  '        if (returnsPhysicalIntakeChanged) {',
+  "          check(returnsPhysicalIntakeChanged.before === acceptedPostDashboardAttentionHash, 'Returns physical intake R1 baseline hash mismatch: ' + name)",
+  '          acceptedPostReturnsPhysicalIntakeHash = returnsPhysicalIntakeChanged.after',
+  '        }',
+  '        return sha(declarations.get(name)) === acceptedPostReturnsPhysicalIntakeHash',
+  '',
+].join('\n'))
+
+const physicalAddedAnchor = '  // Catalog gender scope R1 changes only the product create/update request shapes.'
+if (!patched.includes(physicalAddedAnchor)) throw new Error('1906A physical intake added-declaration anchor missing')
+const physicalAddedBlock = [
+  '  for (const [name, expectedHash] of Object.entries(returnsPhysicalIntakeAdded)) {',
+  "    check(declarations.has(name), 'Returns physical intake R1 added Worker declaration missing: ' + name)",
+  "    check(sha(declarations.get(name)) === expectedHash, 'Returns physical intake R1 added Worker declaration changed: ' + name)",
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(physicalAddedAnchor, physicalAddedBlock + physicalAddedAnchor)
+
+const a5RouterAnchor = [
+  "  check(sha(currentRouter) === operationalAutonomyA5Router.after, 'Operational Autonomy A5 raw Worker router changed beyond exact delta')",
+  "  const operationalAutonomyA5RevertedRouter = currentRouter.replace(operationalAutonomyA5Router.block, '')",
+].join('\n')
+if (!patched.includes(a5RouterAnchor)) throw new Error('1906A physical intake A5 router anchor missing')
+const physicalRouterBlock = [
+  "  check(sha(currentRouter) === returnsPhysicalIntakeRouter.after, 'Returns physical intake R1 raw Worker router changed beyond exact delta')",
+  "  let returnsPhysicalIntakeRevertedRouter = currentRouter.replace(returnsPhysicalIntakeRouter.block, '')",
+  "  for (const routerChange of (returnsPhysicalIntakeRouter.reversions || [])) {",
+  "    check(returnsPhysicalIntakeRevertedRouter.includes(routerChange.after), 'Returns physical intake R1 router reversion anchor missing')",
+  "    returnsPhysicalIntakeRevertedRouter = returnsPhysicalIntakeRevertedRouter.replace(routerChange.after, routerChange.before)",
+  "  }",
+  "  check(sha(returnsPhysicalIntakeRevertedRouter) === returnsPhysicalIntakeRouter.before, 'Returns physical intake R1 Worker router reverse baseline mismatch')",
+  "  check(sha(returnsPhysicalIntakeRevertedRouter) === operationalAutonomyA5Router.after, 'Operational Autonomy A5 Worker router changed beneath physical intake R1')",
+  "  const operationalAutonomyA5RevertedRouter = returnsPhysicalIntakeRevertedRouter.replace(operationalAutonomyA5Router.block, '')",
+].join('\n')
+patched = patched.replace(a5RouterAnchor, physicalRouterBlock)
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')

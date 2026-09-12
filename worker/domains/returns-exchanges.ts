@@ -26,7 +26,7 @@ export async function createReturn(
     paymentMethod?: string;
     comment?: string;
     restockSource?: unknown;
-    items?: Array<{ orderItemId?: number; quantity?: number; amount?: number; restock?: boolean }>;
+    items?: Array<{ orderItemId?: number; quantity?: number; amount?: number; restock?: boolean; physicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock' }>;
   },
 ) {
   let criticalOperation: CriticalOperationHandle | null = null;
@@ -81,29 +81,41 @@ export async function createReturn(
   }
 
   const rawItems = Array.isArray(input.items) ? input.items : [];
-  const selectedItemMap = new Map<number, { orderItemId: number; quantity: number; amount: number; restock: boolean | null }>();
+  const selectedItemMap = new Map<number, { orderItemId: number; quantity: number; amount: number; restock: boolean | null; physicalState: 'pending' | 'warehouse' | 'boutique' | 'no_stock' | null }>();
   for (const rawItem of rawItems) {
     const orderItemId = toInt(rawItem?.orderItemId, 0);
     const quantity = Math.max(0, toInt(rawItem?.quantity, 0));
     if (!orderItemId || quantity <= 0) continue;
     const explicitRestock = typeof rawItem?.restock === 'boolean' ? rawItem.restock : null;
+    const rawPhysicalState = cleanText(rawItem?.physicalState);
+    const physicalState = ['pending', 'warehouse', 'boutique', 'no_stock'].includes(rawPhysicalState)
+      ? rawPhysicalState as 'pending' | 'warehouse' | 'boutique' | 'no_stock'
+      : null;
+    if (rawPhysicalState && !physicalState) throw new Error(`Неизвестный физический статус возврата для позиции #${orderItemId}.`);
     const current = selectedItemMap.get(orderItemId);
     if (current && current.restock !== null && explicitRestock !== null && current.restock !== explicitRestock) {
       throw new Error(`Для позиции #${orderItemId} переданы противоречивые решения по возврату в остаток.`);
+    }
+    if (current?.physicalState && physicalState && current.physicalState !== physicalState) {
+      throw new Error(`Для позиции #${orderItemId} переданы противоречивые физические статусы.`);
     }
     selectedItemMap.set(orderItemId, {
       orderItemId,
       quantity: (current?.quantity || 0) + quantity,
       amount: (current?.amount || 0) + Math.max(0, toInt(rawItem?.amount, 0)),
       restock: explicitRestock ?? current?.restock ?? null,
+      physicalState: physicalState ?? current?.physicalState ?? null,
     });
   }
   const selectedItems = Array.from(selectedItemMap.values());
   const validatedSelectedItems: Array<{
-    selected: { orderItemId: number; quantity: number; amount: number; restock: boolean | null };
+    selected: { orderItemId: number; quantity: number; amount: number; restock: boolean | null; physicalState: 'pending' | 'warehouse' | 'boutique' | 'no_stock' | null };
     orderItem: Record<string, unknown>;
     quantity: number;
     isWorkshop: boolean;
+    physicalTracking: boolean;
+    physicalState: 'pending' | 'warehouse' | 'boutique' | 'no_stock' | null;
+    inventorySource: 'warehouse' | 'boutique' | null;
     wantsRestock: boolean;
   }> = [];
   const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
@@ -130,15 +142,17 @@ export async function createReturn(
       throw new Error(`Для ${cleanText(orderItem.product_name_snapshot)} доступно только ${maxQuantity} шт., запрошено ${selected.quantity}.`);
     }
     const isWorkshop = Boolean(toInt(orderItem.is_workshop, 0));
-    // Workshop production normally goes straight to the client. A returned Workshop item
-    // therefore enters inventory only after an explicit per-line decision. Legacy clients
-    // that omit the flag keep the old default for ordinary Warehouse/Boutique lines, but
-    // omission is deliberately no-stock for Workshop lines.
+    const physicalState = selected.physicalState;
+    const physicalTracking = physicalState !== null;
+    const trackedInventorySource = physicalState === 'warehouse' || physicalState === 'boutique' ? physicalState : null;
+    // Legacy payloads keep the old restock semantics. New UI payloads are explicit:
+    // pending = not physically received yet; no_stock = received but intentionally not stocked.
     const itemRestockRequested = isWorkshop ? selected.restock === true : selected.restock !== false;
-    if (isWorkshop && itemRestockRequested && restockSource === 'boutique') {
-      throw new Error(`Товар из Цеха «${cleanText(orderItem.product_name_snapshot)}» нельзя возвращать в остаток Бутика. Выберите «Не возвращать в остатки» или «Склад».`);
+    const inventorySource = physicalTracking ? trackedInventorySource : (restockSource !== 'none' && itemRestockRequested ? restockSource : null);
+    if (isWorkshop && inventorySource === 'boutique') {
+      throw new Error(`Товар из Цеха «${cleanText(orderItem.product_name_snapshot)}» нельзя возвращать в остаток Бутика. Выберите «Ещё не пришёл», «Получен без остатка» или «Склад».`);
     }
-    const wantsRestock = restockSource !== 'none' && itemRestockRequested;
+    const wantsRestock = inventorySource !== null;
     if (humanInventoryModelEnabled && wantsRestock && !isWorkshop && !orderItemWasPhysicallyIssued(orderItem)) {
       throw new Error(`Позиция «${cleanText(orderItem.product_name_snapshot)}» по учёту ещё не была физически выдана / отправлена. Возвращать её в остаток нельзя — это удвоит товар. Для неотправленного заказа используйте редактирование/удаление заказа либо выберите возврат денег без приёма вещи.`);
     }
@@ -147,6 +161,9 @@ export async function createReturn(
       orderItem,
       quantity: selected.quantity,
       isWorkshop,
+      physicalTracking,
+      physicalState,
+      inventorySource,
       wantsRestock,
     });
   }
@@ -193,7 +210,7 @@ export async function createReturn(
   const stockReturns: unknown[] = [];
   const pendingInventory: unknown[] = [];
   for (const validated of validatedSelectedItems) {
-    const { selected, orderItem, quantity, wantsRestock, isWorkshop } = validated;
+    const { selected, orderItem, quantity, wantsRestock, isWorkshop, physicalTracking, physicalState, inventorySource } = validated;
 
     const returnItemMapped = await insertCriticalMappedEntity(
       db,
@@ -203,13 +220,15 @@ export async function createReturn(
       db.prepare(
         `INSERT INTO return_items (
           return_id, order_item_id, product_name_snapshot, quantity, amount, inventory_source, restocked,
+          physical_tracking, physical_received_at,
           gender_snapshot, color_snapshot, material_snapshot, length_snapshot, size_snapshot, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         returnId, selected.orderItemId, cleanText(orderItem.product_name_snapshot), quantity, selected.amount,
-        wantsRestock ? restockSource : null, cleanText(orderItem.gender_snapshot) || null,
-        cleanText(orderItem.color_snapshot) || null, cleanText(orderItem.material_snapshot) || null,
-        cleanText(orderItem.length_snapshot) || null, cleanText(orderItem.size_snapshot) || null, createdAt,
+        inventorySource, physicalTracking ? 1 : 0, physicalTracking && physicalState !== 'pending' ? createdAt : null,
+        cleanText(orderItem.gender_snapshot) || null, cleanText(orderItem.color_snapshot) || null,
+        cleanText(orderItem.material_snapshot) || null, cleanText(orderItem.length_snapshot) || null,
+        cleanText(orderItem.size_snapshot) || null, createdAt,
       ),
     );
     const returnItemId = returnItemMapped.id;
@@ -225,7 +244,7 @@ export async function createReturn(
         orderItemId: selected.orderItemId,
         eventType: 'return_in',
         direction: 'in',
-        inventorySource: restockSource as 'warehouse' | 'boutique',
+        inventorySource: inventorySource as 'warehouse' | 'boutique',
         quantity,
         item: orderItem,
         isWorkshop,
@@ -248,7 +267,7 @@ export async function createReturn(
           eventId: event.id,
           eventType: event.event_type,
           productName: cleanText(orderItem.product_name_snapshot),
-          source: restockSource,
+          source: inventorySource,
           reason: cleanText(event.pending_reason),
         });
       }
@@ -348,6 +367,203 @@ export async function createReturn(
     console.warn('Return activity log after committed return failed', error);
   }
   return response;
+  } catch (error) {
+    await failCriticalOperation(db, criticalOperation, error);
+    throw error;
+  }
+}
+
+
+export async function receiveReturnedItem(
+  db: D1Database,
+  input: {
+    requestId?: string;
+    operationType?: 'return' | 'exchange';
+    operationId?: number;
+    operationItemId?: number;
+    destination?: 'warehouse' | 'boutique' | 'no_stock';
+  },
+) {
+  let criticalOperation: CriticalOperationHandle | null = null;
+  try {
+    const operationType = cleanText(input.operationType).toLowerCase();
+    if (operationType !== 'return' && operationType !== 'exchange') throw new Error('Не выбран тип возвратной операции.');
+    const operationId = toInt(input.operationId, 0);
+    const operationItemId = toInt(input.operationItemId, 0);
+    if (!operationId || !operationItemId) throw new Error('Не выбрана возвращаемая позиция.');
+    const destination = cleanText(input.destination).toLowerCase();
+    if (!['warehouse', 'boutique', 'no_stock'].includes(destination)) throw new Error('Выберите, куда принять вернувшийся товар.');
+
+    const startedAt = new Date().toISOString();
+    const criticalPayload = { operationType, operationId, operationItemId, destination };
+    criticalOperation = await beginCriticalOperation(db, 'returned_item_receive', input.requestId, criticalPayload, { startedAt });
+    if (criticalOperation.cachedResponse) return criticalOperation.cachedResponse;
+    const operationContext = parseCriticalContext<{ startedAt?: string }>(criticalOperation.row);
+    const timestamp = cleanText(operationContext.startedAt) || startedAt;
+
+    const loadItem = async () => operationType === 'return'
+      ? await db.prepare(
+        `SELECT ri.id AS operation_item_id, ri.return_id AS operation_id, ri.order_item_id,
+                ri.product_name_snapshot, ri.gender_snapshot, ri.color_snapshot, ri.material_snapshot,
+                ri.length_snapshot, ri.size_snapshot, ri.quantity, ri.inventory_source, ri.restocked,
+                ri.physical_tracking, ri.physical_received_at,
+                r.order_id, COALESCE(r.status, 'completed') AS operation_status,
+                o.external_id, oi.product_id, oi.variant_id, oi.audience_type, oi.is_workshop, oi.source_type
+         FROM return_items ri
+         JOIN returns r ON r.id = ri.return_id
+         JOIN orders o ON o.id = r.order_id
+         LEFT JOIN order_items oi ON oi.id = ri.order_item_id
+         WHERE ri.id = ? AND ri.return_id = ?
+         LIMIT 1`
+      ).bind(operationItemId, operationId).first<Record<string, unknown>>()
+      : await db.prepare(
+        `SELECT ei.id AS operation_item_id, ei.exchange_id AS operation_id, ei.order_item_id,
+                ei.product_name_snapshot, ei.gender_snapshot, ei.color_snapshot, ei.material_snapshot,
+                ei.length_snapshot, ei.size_snapshot, ei.quantity, ei.inventory_source, 0 AS restocked,
+                ei.physical_tracking, ei.physical_received_at,
+                e.order_id, COALESCE(e.status, 'completed') AS operation_status,
+                o.external_id, oi.product_id, oi.variant_id, oi.audience_type, oi.is_workshop, oi.source_type
+         FROM exchange_items ei
+         JOIN exchanges e ON e.id = ei.exchange_id
+         JOIN orders o ON o.id = e.order_id
+         LEFT JOIN order_items oi ON oi.id = ei.order_item_id
+         WHERE ei.id = ? AND ei.exchange_id = ? AND ei.role = 'old'
+         LIMIT 1`
+      ).bind(operationItemId, operationId).first<Record<string, unknown>>();
+
+    let item = await loadItem();
+    if (!item) throw new Error('Возвращаемая позиция не найдена. Обновите историю и повторите действие.');
+    if (cleanText(item.operation_status) === 'cancelled') throw new CriticalOperationConflictError('Эта операция уже отменена. Принимать товар по ней нельзя.');
+    if (!toInt(item.physical_tracking, 0)) {
+      throw new CriticalOperationConflictError('Это старая запись: физическое получение по ней раньше не отслеживалось. Автоматически менять остаток нельзя.');
+    }
+    const isWorkshop = Boolean(toInt(item.is_workshop, 0));
+    if (isWorkshop && destination === 'boutique') {
+      throw new Error('Возвращённую вещь из Цеха нельзя принять в остаток Бутика. Выберите Склад или «Без возврата в остаток».');
+    }
+
+    const persistedDestination = () => {
+      const source = cleanText(item?.inventory_source);
+      return source === 'warehouse' || source === 'boutique' ? source : 'no_stock';
+    };
+
+    if (cleanText(item.physical_received_at)) {
+      if (persistedDestination() !== destination) {
+        throw new CriticalOperationConflictError('Товар уже отмечен полученным с другим решением по остатку. Обновите историю.');
+      }
+    } else {
+      const source = destination === 'warehouse' || destination === 'boutique' ? destination : null;
+      const update = operationType === 'return'
+        ? await db.prepare(
+          `UPDATE return_items
+           SET physical_received_at = ?, inventory_source = ?
+           WHERE id = ? AND return_id = ? AND physical_tracking = 1 AND physical_received_at IS NULL`
+        ).bind(timestamp, source, operationItemId, operationId).run()
+        : await db.prepare(
+          `UPDATE exchange_items
+           SET physical_received_at = ?, inventory_source = ?
+           WHERE id = ? AND exchange_id = ? AND role = 'old' AND physical_tracking = 1 AND physical_received_at IS NULL`
+        ).bind(timestamp, source, operationItemId, operationId).run();
+      item = await loadItem();
+      if (!item || !cleanText(item.physical_received_at)) {
+        throw new CriticalOperationConflictError('Не удалось зафиксировать получение товара. Обновите историю и повторите действие.');
+      }
+      if (persistedDestination() !== destination) {
+        throw new CriticalOperationConflictError('Товар одновременно приняли с другим решением по остатку. Обновите историю.');
+      }
+      if (toInt(update.meta?.changes, 0) <= 0 && !cleanText(item.physical_received_at)) {
+        throw new CriticalOperationConflictError('Получение товара уже обрабатывается другим запросом. Обновите историю.');
+      }
+    }
+
+    if (operationType === 'exchange') {
+      await db.prepare(`UPDATE exchanges SET old_return_source = ? WHERE id = ? AND COALESCE(status, 'completed') <> 'cancelled'`)
+        .bind(destination === 'no_stock' ? 'none' : destination, operationId).run();
+    }
+
+    let stockApplied = false;
+    let stockAlreadyApplied = false;
+    let pendingInventory: Record<string, unknown> | null = null;
+
+    if (destination !== 'no_stock') {
+      const resolved = await resolveInventoryLifecycleCandidate(db, item, isWorkshop);
+      const event = await insertInventoryLifecycleEvent(db, {
+        eventKey: operationType === 'return' ? `return:${operationId}:item:${operationItemId}` : `exchange:${operationId}:old`,
+        operationType,
+        operationId,
+        operationItemId,
+        orderId: toInt(item.order_id, 0),
+        orderItemId: toInt(item.order_item_id, 0) || null,
+        eventType: operationType === 'return' ? 'return_in' : 'exchange_old_in',
+        direction: 'in',
+        inventorySource: destination as 'warehouse' | 'boutique',
+        quantity: Math.max(1, toInt(item.quantity, 1)),
+        item,
+        isWorkshop,
+        productId: resolved.productId,
+        variantId: resolved.variantId,
+        pendingReason: inventoryLifecyclePendingReason(resolved, isWorkshop),
+        timestamp,
+      });
+      const eventStatus = cleanText(event.status);
+      if (eventStatus === 'cancelled') throw new CriticalOperationConflictError('Складское событие этой позиции уже отменено. Автоматическое проведение остановлено.');
+      if (eventStatus === 'applied') {
+        stockAlreadyApplied = true;
+      } else {
+        const autoApplyWorkshop = Boolean(isWorkshop && resolved.variantId && await canAutoApplyFreshWorkshopInbound(db, event, resolved.variantId));
+        if (resolved.variantId && (!isWorkshop || autoApplyWorkshop)) {
+          const applied = await applyCanonicalInventoryLifecycleEvent(
+            db,
+            event.id,
+            resolved.variantId,
+            timestamp,
+            `Физически получен товар по ${operationType === 'return' ? 'возврату' : 'обмену'} ${cleanText(item.external_id)}`,
+          );
+          stockApplied = Boolean(applied.applied);
+          stockAlreadyApplied = Boolean(applied.already);
+        } else {
+          pendingInventory = {
+            eventId: event.id,
+            eventType: event.event_type,
+            productName: cleanText(item.product_name_snapshot),
+            source: destination,
+            reason: cleanText(event.pending_reason),
+          };
+        }
+      }
+    }
+
+    const completedResponse = {
+      ok: true,
+      operationType,
+      operationId,
+      operationItemId,
+      destination,
+      receivedAt: cleanText(item.physical_received_at) || timestamp,
+      stockApplied,
+      stockAlreadyApplied,
+      pendingInventory,
+      pendingInventoryCount: pendingInventory ? 1 : 0,
+    };
+    await completeCriticalOperation(db, criticalOperation, completedResponse);
+
+    try {
+      const destinationLabel = destination === 'warehouse' ? 'Склад' : destination === 'boutique' ? 'Бутик' : 'без возврата в остаток';
+      await writeActivityLog(db, {
+        eventType: 'returned_item_received',
+        entityType: operationType === 'return' ? 'return_item' : 'exchange_item',
+        entityId: operationItemId,
+        orderId: toInt(item.order_id, 0),
+        externalOrderId: cleanText(item.external_id),
+        title: `Физически получен товар по ${operationType === 'return' ? 'возврату' : 'обмену'} ${cleanText(item.external_id)}`,
+        details: `${cleanText(item.product_name_snapshot)} × ${Math.max(1, toInt(item.quantity, 1))}; ${destinationLabel}`,
+        createdAt: timestamp,
+      });
+    } catch (error) {
+      console.warn('Returned item receipt activity log failed after committed receive', error);
+    }
+
+    return completedResponse;
   } catch (error) {
     await failCriticalOperation(db, criticalOperation, error);
     throw error;
@@ -496,6 +712,7 @@ export async function createExchange(
     oldItemId?: number;
     oldQuantity?: number;
     oldReturnSource?: unknown;
+    oldPhysicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock';
     newItem?: NonNullable<OrderInput['items']>[number];
     newSourceWasManuallyChanged?: boolean;
     financialAction?: unknown;
@@ -559,9 +776,16 @@ export async function createExchange(
     && !oldItemIsWorkshop
     && !orderItemWasPhysicallyIssued(oldItem)
   );
-  const oldReturnSource = normalizeExchangeReturnSource(input.oldReturnSource);
+  const rawOldPhysicalState = cleanText(input.oldPhysicalState);
+  const oldPhysicalState = ['pending', 'warehouse', 'boutique', 'no_stock'].includes(rawOldPhysicalState)
+    ? rawOldPhysicalState as 'pending' | 'warehouse' | 'boutique' | 'no_stock'
+    : null;
+  if (rawOldPhysicalState && !oldPhysicalState) throw new Error('Неизвестный физический статус старой вещи обмена.');
+  const oldPhysicalTracking = oldPhysicalState !== null;
+  const trackedOldReturnSource = oldPhysicalState === 'warehouse' || oldPhysicalState === 'boutique' ? oldPhysicalState : 'none';
+  const oldReturnSource = oldPhysicalTracking ? trackedOldReturnSource : normalizeExchangeReturnSource(input.oldReturnSource);
   if (oldItemIsWorkshop && oldReturnSource === 'boutique') {
-    throw new Error(`Старую вещь из Цеха «${cleanText(oldItem.product_name_snapshot)}» нельзя принимать в остаток Бутика. Для цеховой вещи доступны только «Не возвращать в остатки» или явный приём на Склад.`);
+    throw new Error(`Старую вещь из Цеха «${cleanText(oldItem.product_name_snapshot)}» нельзя принимать в остаток Бутика. Для цеховой вещи доступны только «Ещё не пришла», «Получена без остатка» или явный приём на Склад.`);
   }
   const rawExchangeDate = cleanText(input.exchangeDate);
   if (!rawExchangeDate) throw new Error('Укажите дату обмена.');
@@ -723,13 +947,15 @@ export async function createExchange(
     db.prepare(
       `INSERT INTO exchange_items (
         exchange_id, role, order_item_id, product_name_snapshot, gender_snapshot, color_snapshot,
-        material_snapshot, length_snapshot, size_snapshot, quantity, inventory_source, created_at
-      ) VALUES (?, 'old', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        material_snapshot, length_snapshot, size_snapshot, quantity, inventory_source,
+        physical_tracking, physical_received_at, created_at
+      ) VALUES (?, 'old', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       exchangeId, oldItemId, cleanText(oldItem.product_name_snapshot), cleanText(oldItem.gender_snapshot) || null,
       cleanText(oldItem.color_snapshot) || null, cleanText(oldItem.material_snapshot) || null,
       cleanText(oldItem.length_snapshot) || null, cleanText(oldItem.size_snapshot) || null, oldQuantity,
-      oldReturnSource === 'none' ? null : oldReturnSource, timestamp,
+      oldReturnSource === 'none' ? null : oldReturnSource,
+      oldPhysicalTracking ? 1 : 0, oldPhysicalTracking && oldPhysicalState !== 'pending' ? timestamp : null, timestamp,
     ),
   );
   const oldExchangeItemId = oldExchangeItemMapped.id;
@@ -1269,9 +1495,20 @@ export async function listExchanges(db: D1Database, url: URL) {
   const summary = await db.prepare(
     `SELECT COUNT(*) AS total_count,
             SUM(CASE WHEN COALESCE(e.status, 'completed') <> 'cancelled' THEN 1 ELSE 0 END) AS active_count,
-            SUM(CASE WHEN COALESCE(e.status, 'completed') = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_count
+            SUM(CASE WHEN COALESCE(e.status, 'completed') = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_count,
+            COALESCE(SUM(CASE
+              WHEN COALESCE(e.status, 'completed') <> 'cancelled'
+               AND old_summary.physical_tracking = 1
+               AND old_summary.physical_received_at IS NULL
+              THEN COALESCE(old_summary.quantity, e.old_quantity, 0)
+              ELSE 0
+            END), 0) AS pending_physical_quantity
      FROM exchanges e JOIN orders o ON o.id = e.order_id
-     LEFT JOIN managers m ON m.id = e.manager_id LEFT JOIN customers c ON c.id = o.customer_id ${whereSql}`
+     LEFT JOIN managers m ON m.id = e.manager_id LEFT JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN exchange_items old_summary ON old_summary.id = (
+       SELECT ei.id FROM exchange_items ei WHERE ei.exchange_id = e.id AND ei.role = 'old' ORDER BY ei.id ASC LIMIT 1
+     )
+     ${whereSql}`
   ).bind(...bindings).first<Record<string, unknown>>();
 
   const result = await db.prepare(
@@ -1284,6 +1521,10 @@ export async function listExchanges(db: D1Database, url: URL) {
        CASE WHEN old_snapshot.id IS NOT NULL THEN old_snapshot.length_snapshot ELSE old_item.length_snapshot END AS old_length_snapshot,
        CASE WHEN old_snapshot.id IS NOT NULL THEN old_snapshot.size_snapshot ELSE old_item.size_snapshot END AS old_size_snapshot,
        CASE WHEN old_snapshot.id IS NOT NULL THEN old_snapshot.inventory_source ELSE e.old_return_source END AS old_inventory_source,
+       old_snapshot.id AS old_operation_item_id,
+       old_snapshot.physical_tracking AS old_physical_tracking,
+       old_snapshot.physical_received_at AS old_physical_received_at,
+       COALESCE(old_item.is_workshop, 0) AS old_is_workshop,
        CASE WHEN new_snapshot.id IS NOT NULL THEN new_snapshot.product_name_snapshot ELSE new_item.product_name_snapshot END AS new_product_name,
        CASE WHEN new_snapshot.id IS NOT NULL THEN new_snapshot.quantity ELSE new_item.quantity END AS new_item_quantity,
        CASE WHEN new_snapshot.id IS NOT NULL THEN new_snapshot.gender_snapshot ELSE new_item.gender_snapshot END AS new_gender_snapshot,
@@ -1308,6 +1549,9 @@ export async function listExchanges(db: D1Database, url: URL) {
       manager: row.manager_name || '—', managerColor: cleanText(row.manager_color) || null, customer: row.customer_name || row.customer_phone || '—', exchangeDate: row.exchange_date,
       oldItemId: row.old_order_item_id, oldProductName: row.old_product_name || '—', oldQuantity: row.old_item_quantity || row.old_quantity || 0,
       oldGender: row.old_gender_snapshot || '', oldColor: row.old_color_snapshot || '', oldMaterial: row.old_material_snapshot || '', oldLength: row.old_length_snapshot || '', oldSize: row.old_size_snapshot || '', oldReturnSource: row.old_inventory_source || row.old_return_source || 'none',
+      oldOperationItemId: row.old_operation_item_id == null ? null : toInt(row.old_operation_item_id, 0) || null,
+      oldPhysicalTracking: Boolean(toInt(row.old_physical_tracking, 0)), oldPhysicalReceivedAt: cleanText(row.old_physical_received_at) || null,
+      oldIsWorkshop: Boolean(toInt(row.old_is_workshop, 0)),
       newItemId: row.new_order_item_id, newProductName: row.new_product_name || '—', newQuantity: row.new_item_quantity || 0,
       newGender: row.new_gender_snapshot || '', newColor: row.new_color_snapshot || '', newMaterial: row.new_material_snapshot || '', newLength: row.new_length_snapshot || '', newSize: row.new_size_snapshot || '', newSourceType: row.new_inventory_source || row.new_source_type,
       oldLifecycleStatus: cleanText(row.old_lifecycle_status) || null, newLifecycleStatus: cleanText(row.new_lifecycle_status) || null,
@@ -1316,7 +1560,7 @@ export async function listExchanges(db: D1Database, url: URL) {
     }));
   const totalCount = Math.max(0, toInt(summary?.total_count, 0));
   return { ok: true, count: totalCount, offset, limit, hasMore: offset + rows.length < totalCount,
-    summary: { activeCount: Math.max(0, toInt(summary?.active_count, 0)), cancelledCount: Math.max(0, toInt(summary?.cancelled_count, 0)) }, exchanges: rows };
+    summary: { activeCount: Math.max(0, toInt(summary?.active_count, 0)), cancelledCount: Math.max(0, toInt(summary?.cancelled_count, 0)), pendingPhysicalQuantity: Math.max(0, toInt(summary?.pending_physical_quantity, 0)) }, exchanges: rows };
 }
 
 

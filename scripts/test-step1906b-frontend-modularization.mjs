@@ -96,6 +96,7 @@ const unisexGenderInplaceManifestPath = path.join(root, 'scripts/catalog-unisex-
 const unisexMergeManifestPath = path.join(root, 'scripts/catalog-unisex-merge-r1-frontend-manifest.json')
 const operationalAutonomyA4ManifestPath = path.join(root, 'scripts/operational-autonomy-a4-frontend-manifest.json')
 const operationalAutonomyA5ManifestPath = path.join(root, 'scripts/operational-autonomy-a5-frontend-manifest.json')
+const returnsPhysicalIntakeManifestPath = path.join(root, 'scripts/returns-physical-intake-r1-frontend-manifest.json')
 const fixtureRoot = path.join(root, 'scripts/fixtures/catalog-gender-scope-r1')
 const predecessorFixture = path.join(fixtureRoot, 'test-step1906b-frontend-modularization-predecessor.mjs')
 const runtimePredecessor = path.join(root, 'scripts/.tmp-test-step1906b-catalog-predecessor.mjs')
@@ -115,7 +116,16 @@ if (Object.keys(operationalAutonomyA4Manifest.files || {}).join(',') !== 'src/Ap
 const operationalAutonomyA5Manifest = JSON.parse(fs.readFileSync(operationalAutonomyA5ManifestPath, 'utf8'))
 if (operationalAutonomyA5Manifest?.version !== 1 || operationalAutonomyA5Manifest?.revision !== 'operational-autonomy-a5-exchange-financial-correction-r1') throw new Error('Operational Autonomy A5 frontend manifest invalid')
 if (Object.keys(operationalAutonomyA5Manifest.files || {}).join(',') !== 'src/App.tsx,src/features/sections/OrderExchangeSection.tsx') throw new Error('Operational Autonomy A5 frontend allow-list widened unexpectedly')
+const returnsPhysicalIntakeManifest = JSON.parse(fs.readFileSync(returnsPhysicalIntakeManifestPath, 'utf8'))
+if (returnsPhysicalIntakeManifest?.version !== 1 || returnsPhysicalIntakeManifest?.revision !== 'returns-physical-intake-r1') throw new Error('Returns physical intake R1 frontend manifest invalid')
+const returnsPhysicalIntakeExpectedFiles = ['src/App.tsx','src/app/types.ts','src/app/utils.ts','src/features/sections/OrderExchangeSection.tsx','src/features/sections/OrderReturnsSection.tsx']
+if (JSON.stringify(Object.keys(returnsPhysicalIntakeManifest.files || {})) !== JSON.stringify(returnsPhysicalIntakeExpectedFiles)) throw new Error('Returns physical intake R1 frontend allow-list widened unexpectedly')
 const gitBlobSha = (text) => { const bytes = Buffer.from(text); return crypto.createHash('sha1').update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex') }
+for (const file of ['src/app/utils.ts', 'src/features/sections/OrderReturnsSection.tsx']) {
+  const delta = returnsPhysicalIntakeManifest.files[file]
+  const actual = fs.readFileSync(path.join(root, file), 'utf8')
+  if (!delta || gitBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Returns physical intake R1 frontend file changed beyond exact manifest: ' + file)
+}
 const current = new Map()
 try {
   for (const file of expectedFiles) {
@@ -128,6 +138,7 @@ try {
     const mergeDelta = unisexMergeManifest.files?.[file]
     const operationalAutonomyA4Delta = operationalAutonomyA4Manifest.files?.[file]
     const operationalAutonomyA5Delta = operationalAutonomyA5Manifest.files?.[file]
+    const returnsPhysicalIntakeDelta = returnsPhysicalIntakeManifest.files?.[file]
     let acceptedGitBlob = delta.afterGitBlob
     let acceptedLines = delta.afterLines
     if (inPlaceDelta) {
@@ -151,8 +162,15 @@ try {
       acceptedGitBlob = operationalAutonomyA5Delta.afterGitBlob
       acceptedLines = operationalAutonomyA5Delta.afterLines
     }
+    if (returnsPhysicalIntakeDelta) {
+      if (returnsPhysicalIntakeDelta.beforeGitBlob !== acceptedGitBlob || returnsPhysicalIntakeDelta.beforeLines !== acceptedLines) throw new Error('Returns physical intake R1 frontend predecessor drifted: ' + file)
+      acceptedGitBlob = returnsPhysicalIntakeDelta.afterGitBlob
+      acceptedLines = returnsPhysicalIntakeDelta.afterLines
+    }
     if (gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) {
-      throw new Error(operationalAutonomyA5Delta
+      throw new Error(returnsPhysicalIntakeDelta
+        ? 'Returns physical intake R1 frontend file changed beyond exact manifest: ' + file
+        : operationalAutonomyA5Delta
         ? 'Operational Autonomy A5 frontend file changed beyond exact manifest: ' + file
         : operationalAutonomyA4Delta
           ? 'Operational Autonomy A4 frontend file changed beyond exact manifest: ' + file

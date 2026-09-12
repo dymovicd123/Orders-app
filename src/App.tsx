@@ -546,7 +546,7 @@ function App() {
   const [returnHistoryError, setReturnHistoryError] = useState('')
   const [returnHistoryFilters, setReturnHistoryFilters] = useState({ q: '', dateFrom: '', dateTo: '', status: 'all' })
   const [returnHistoryHasMore, setReturnHistoryHasMore] = useState(false)
-  const [returnHistorySummary, setReturnHistorySummary] = useState({ activeCount: 0, cancelledCount: 0, activeAmount: 0, count: 0 })
+  const [returnHistorySummary, setReturnHistorySummary] = useState({ activeCount: 0, cancelledCount: 0, activeAmount: 0, pendingPhysicalQuantity: 0, count: 0 })
   const [exchangeSelectedOrderId, setExchangeSelectedOrderId] = useState<number | null>(null)
   const [exchangeDraft, setExchangeDraft] = useState<ExchangeDraft>(createExchangeDraft())
   const [exchangeBusy, setExchangeBusy] = useState(false)
@@ -555,7 +555,7 @@ function App() {
   const [exchangeHistoryError, setExchangeHistoryError] = useState('')
   const [exchangeHistoryFilters, setExchangeHistoryFilters] = useState({ q: '', dateFrom: '', dateTo: '', status: 'all' })
   const [exchangeHistoryHasMore, setExchangeHistoryHasMore] = useState(false)
-  const [exchangeHistorySummary, setExchangeHistorySummary] = useState({ activeCount: 0, cancelledCount: 0, count: 0 })
+  const [exchangeHistorySummary, setExchangeHistorySummary] = useState({ activeCount: 0, cancelledCount: 0, pendingPhysicalQuantity: 0, count: 0 })
   const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([])
   const [activityBusy, setActivityBusy] = useState(false)
   const [activityFilters, setActivityFilters] = useState({ q: '', eventType: 'all', orderId: '' })
@@ -2082,6 +2082,7 @@ function App() {
         activeCount: Number(data.summary?.activeCount || 0),
         cancelledCount: Number(data.summary?.cancelledCount || 0),
         activeAmount: Number(data.summary?.activeAmount || 0),
+        pendingPhysicalQuantity: Number(data.summary?.pendingPhysicalQuantity || 0),
         count: Number(data.count || 0),
       })
       return rows
@@ -2112,7 +2113,7 @@ function App() {
       const rows = Array.isArray(data.exchanges) ? data.exchanges : []
       setExchangeHistory((current) => append ? [...current, ...rows] : rows)
       setExchangeHistoryHasMore(Boolean(data.hasMore))
-      setExchangeHistorySummary({ activeCount: Number(data.summary?.activeCount || 0), cancelledCount: Number(data.summary?.cancelledCount || 0), count: Number(data.count || 0) })
+      setExchangeHistorySummary({ activeCount: Number(data.summary?.activeCount || 0), cancelledCount: Number(data.summary?.cancelledCount || 0), pendingPhysicalQuantity: Number(data.summary?.pendingPhysicalQuantity || 0), count: Number(data.count || 0) })
       return rows
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Не удалось загрузить историю обменов.'
@@ -6081,7 +6082,8 @@ function removeDebtPayment(index: number) {
           .map((item) => ({
             orderItemId: item.orderItemId,
             quantity: item.quantity,
-            restock: item.restock,
+            restock: item.physicalState === 'warehouse' || item.physicalState === 'boutique',
+            physicalState: item.physicalState,
           })),
       }
       const criticalKey = `return-create:${returnSelectedOrder.id}`
@@ -6213,7 +6215,8 @@ function removeDebtPayment(index: number) {
         exchangeDate: exchangeDraft.exchangeDate,
         oldItemId: Number(selectedOldItem.id || 0),
         oldQuantity: exchangeDraft.oldQuantity,
-        oldReturnSource: exchangeDraft.oldReturnSource,
+        oldReturnSource: exchangeDraft.oldPhysicalState === 'warehouse' || exchangeDraft.oldPhysicalState === 'boutique' ? exchangeDraft.oldPhysicalState : 'none',
+        oldPhysicalState: exchangeDraft.oldPhysicalState,
         newItem: effectiveNewItem,
         newSourceWasManuallyChanged: exchangeDraft.newSourceWasManuallyChanged,
         financialAction: exchangeDraft.financialAction,
@@ -6260,6 +6263,68 @@ function removeDebtPayment(index: number) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setExchangeBusy(false)
+    }
+  }
+
+
+  async function receiveReturnedItemAction(input: {
+    operationType: 'return' | 'exchange'
+    operationId: number
+    operationItemId: number
+    destination: 'warehouse' | 'boutique' | 'no_stock'
+    productName: string
+    externalId: string
+  }) {
+    const destinationLabel = input.destination === 'warehouse' ? 'Склад' : input.destination === 'boutique' ? 'Бутик' : 'без добавления в остаток'
+    if (!window.confirm(`Подтвердить получение «${input.productName}» по ${input.externalId}? Решение: ${destinationLabel}.`)) return false
+    const setBusy = input.operationType === 'return' ? setReturnBusy : setExchangeBusy
+    setBusy(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const payload = {
+        operationType: input.operationType,
+        operationId: input.operationId,
+        operationItemId: input.operationItemId,
+        destination: input.destination,
+      }
+      const criticalKey = `returned-item-receive:${input.operationType}:${input.operationId}:${input.operationItemId}:${input.destination}`
+      const critical = prepareCriticalRequest(criticalKey, payload)
+      const response = await apiFetch('/api/returned-items/receive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
+        body: JSON.stringify(critical.payload),
+      })
+      const result = await readJsonResponse<{
+        ok?: boolean
+        message?: string
+        pendingInventoryCount?: number
+        stockApplied?: boolean
+        stockAlreadyApplied?: boolean
+      }>(response, 'Получение возвращённого товара')
+      if (!response.ok) throw new Error(result.message || `Receive returned item failed: ${response.status}`)
+      completeCriticalRequest(criticalKey, critical.requestId)
+      invalidateInventoryStockCaches(true)
+      await Promise.allSettled([
+        input.operationType === 'return' ? loadReturnHistory() : loadExchangeHistory(),
+        refreshActivityLogIfVisible(),
+        loadInventoryData('warehouse', true, '', false),
+        loadInventoryData('boutique', true, '', false),
+        isAdmin ? loadInventoryLifecycle(true) : Promise.resolve(null),
+      ])
+      if (input.destination === 'no_stock') {
+        setMessage(`«${input.productName}» отмечен как полученный. В остаток товар не добавлялся.`)
+      } else if (Number(result.pendingInventoryCount || 0) > 0) {
+        setMessage(`«${input.productName}» физически получен. Для остатка требуется уточнение товара — система ничего не прибавляла наугад.`)
+      } else {
+        setMessage(`«${input.productName}» получен и учтён: ${destinationLabel}.`)
+      }
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось отметить товар полученным.')
+      return false
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -7002,11 +7067,11 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'returns'} label="Возврат">
-        <OrderReturnsSection ctx={{ cancelReturnEntry, closeReturnForm, createReturnDraft, formatMoney, FriendlyNumberInput, isAdmin, loadReturnHistory, ManagerBadge, managerColorFor, orderPanelStyle, returnBusy, returnDraft, returnFormRef, returnHistory, returnHistoryBusy, returnHistoryError, returnHistoryFilters, returnHistoryHasMore, returnHistorySummary, returnSelectedOrder, saveReturn, sectorStyle, setOrderPanel, setReturnDraft, setReturnHistoryFilters, SmartPickerInput, suggestionValues }} />
+        <OrderReturnsSection ctx={{ cancelReturnEntry, closeReturnForm, createReturnDraft, formatMoney, FriendlyNumberInput, isAdmin, loadReturnHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, returnBusy, returnDraft, returnFormRef, returnHistory, returnHistoryBusy, returnHistoryError, returnHistoryFilters, returnHistoryHasMore, returnHistorySummary, returnSelectedOrder, saveReturn, sectorStyle, setOrderPanel, setReturnDraft, setReturnHistoryFilters, SmartPickerInput, suggestionValues }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'exchange'} label="Обмен размера">
-        <OrderExchangeSection ctx={{ applyExchangeProductPick, cancelExchangeEntry, closeExchangeForm, correctExchangeFinancialEntry, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, orderPanelStyle, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />
+        <OrderExchangeSection ctx={{ applyExchangeProductPick, cancelExchangeEntry, closeExchangeForm, correctExchangeFinancialEntry, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'team'} label="Команда">
