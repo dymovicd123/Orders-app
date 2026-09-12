@@ -49,3 +49,5 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m "Finalize client finance exchange and dashboard preservation"
           git push origin HEAD:client-fixes-20260912-r1
+
+# Rerun after strengthening the historical R5.8 assertion for selected payments reuse.
