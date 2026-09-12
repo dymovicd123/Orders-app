@@ -1,0 +1,59 @@
+name: R6.2A apply
+
+on:
+  push:
+    branches:
+      - d1-read-budget-r6-2-finance-payment-join
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d1-read-budget-r6-2-finance-payment-join
+
+      - name: Apply narrow Finance payment customer-join patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('worker/domains/finance-reports.ts')
+          text = path.read_text(encoding='utf-8')
+
+          anchor = "  const financeWorkspaceOnly = cleanText(url.searchParams.get('scope')).toLowerCase() === 'finance';\n"
+          if text.count(anchor) != 1:
+              raise SystemExit(f'expected one financeWorkspaceOnly anchor, got {text.count(anchor)}')
+          constants = anchor + "  const paymentOperationCustomerSelect = financeWorkspaceOnly\n    ? \"'—' AS customer\"\n    : \"COALESCE(c.display_name, c.phone_normalized, '—') AS customer\";\n  const paymentOperationCustomerJoin = financeWorkspaceOnly\n    ? ''\n    : 'LEFT JOIN customers c ON c.id = o.customer_id';\n"
+          text = text.replace(anchor, constants, 1)
+
+          block_start = text.index('  const [paymentByDayRows, paymentOperationRows')
+          block_end = text.index('  const rawPaymentOperationRows', block_start)
+          block = text[block_start:block_end]
+
+          customer_select = "              COALESCE(c.display_name, c.phone_normalized, '—') AS customer,"
+          customer_join = "       LEFT JOIN customers c ON c.id = o.customer_id"
+          if block.count(customer_select) != 2:
+              raise SystemExit(f'expected 2 payment customer selects, got {block.count(customer_select)}')
+          if block.count(customer_join) != 2:
+              raise SystemExit(f'expected 2 payment customer joins, got {block.count(customer_join)}')
+
+          block = block.replace(customer_select, "              ${paymentOperationCustomerSelect},")
+          block = block.replace(customer_join, "       ${paymentOperationCustomerJoin}")
+          text = text[:block_start] + block + text[block_end:]
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Remove temporary workflow and commit product patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/r6-2a-apply.yml
+          git add worker/domains/finance-reports.ts
+          git commit -m "R6.2A: skip customer join for Finance payment reads"
+          git push origin HEAD:d1-read-budget-r6-2-finance-payment-join
