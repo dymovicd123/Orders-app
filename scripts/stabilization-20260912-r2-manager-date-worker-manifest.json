@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "revision": "stabilization-20260912-r2-manager-date",
+  "changes": {
+    "getDashboardInsights": {
+      "before": "8c52a3174b10ee593c6917a26fc41d724e8e3a70f2f808a204b7cab0f4fb2cbc",
+      "after": "5d88a12d79bbacead7915fe01d4df2fb22bf603f583fae34d84467396eb3a417"
+    },
+    "listFinanceReports": {
+      "before": "4220b29f2607f9c58ca4af1a2bbbd468ce277e0b15610440cbb7baed3bc3864f",
+      "after": "f5ef432aa1258e9b1cb566314607a193aa0bf7ec46bb9d985f841056944ac3b0"
+    }
+  }
+}

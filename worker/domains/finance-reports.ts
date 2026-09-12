@@ -850,47 +850,78 @@ export async function listFinanceReports(db: D1Database, url: URL) {
     bucket.total += total;
   }
 
+  const managerIdentityKey = (managerId: number, managerName: unknown) => {
+    const normalizedName = (cleanText(managerName) || 'Не указан').replace(/\s+/g, ' ').trim().toLocaleUpperCase('ru-RU');
+    return managerId > 0 ? `id:${managerId}` : `legacy:${normalizedName}`;
+  };
+  const managerDayKey = (date: unknown, managerId: number, managerName: unknown) =>
+    `${cleanText(date)}||${managerIdentityKey(managerId, managerName)}`;
+
   const managerPaymentMap = new Map<string, { managerId: number; manager: string; colorKey: string; primary_received: number; order_extra_received: number; debt_closed: number; extra_received: number }>();
   for (const row of mapSqlRows(managerPaymentDayRows) as any[]) {
     const managerId = toInt(row.manager_id, 0);
-    managerPaymentMap.set(`${cleanText(row.date)}||${managerId}`, {
-      managerId,
-      manager: cleanText(row.manager) || 'Не указан',
-      colorKey: normalizeManagerColor(row.color_key, managerId - 1),
-      primary_received: Number(row.primary_received || 0),
-      order_extra_received: Number(row.order_extra_received || 0),
-      debt_closed: Number(row.debt_closed || 0),
-      extra_received: Number(row.extra_received || 0),
-    });
+    const manager = cleanText(row.manager) || 'Не указан';
+    const key = managerDayKey(row.date, managerId, manager);
+    const current = managerPaymentMap.get(key) || {
+      managerId, manager, colorKey: normalizeManagerColor(row.color_key, managerId - 1),
+      primary_received: 0, order_extra_received: 0, debt_closed: 0, extra_received: 0,
+    };
+    current.manager = manager;
+    current.colorKey = normalizeManagerColor(row.color_key, managerId - 1);
+    current.primary_received += Number(row.primary_received || 0);
+    current.order_extra_received += Number(row.order_extra_received || 0);
+    current.debt_closed += Number(row.debt_closed || 0);
+    current.extra_received += Number(row.extra_received || 0);
+    managerPaymentMap.set(key, current);
   }
   const managerReturnMap = new Map<string, { managerId: number; manager: string; colorKey: string; totalReturns: number }>();
   for (const row of mapSqlRows(managerReturnDayRows) as any[]) {
     const managerId = toInt(row.manager_id, 0);
-    managerReturnMap.set(`${cleanText(row.date)}||${managerId}`, {
-      managerId,
-      manager: cleanText(row.manager) || 'Не указан',
-      colorKey: normalizeManagerColor(row.color_key, managerId - 1),
-      totalReturns: Number(row.total_returns || 0),
-    });
+    const manager = cleanText(row.manager) || 'Не указан';
+    const key = managerDayKey(row.date, managerId, manager);
+    const current = managerReturnMap.get(key) || {
+      managerId, manager, colorKey: normalizeManagerColor(row.color_key, managerId - 1), totalReturns: 0,
+    };
+    current.manager = manager;
+    current.colorKey = normalizeManagerColor(row.color_key, managerId - 1);
+    current.totalReturns += Number(row.total_returns || 0);
+    managerReturnMap.set(key, current);
   }
   const managerOrderMap = new Map<string, any>();
   for (const row of mapSqlRows(managerOrderDayRows) as any[]) {
     const managerId = toInt(row.manager_id, 0);
-    managerOrderMap.set(`${cleanText(row.date)}||${managerId}`, row);
+    const manager = cleanText(row.manager) || 'Не указан';
+    const key = managerDayKey(row.date, managerId, manager);
+    const current = managerOrderMap.get(key) || {
+      date: cleanText(row.date), manager_id: managerId, manager,
+      color_key: normalizeManagerColor(row.color_key, managerId - 1),
+      order_count: 0, nonzero_order_count: 0, total_sales: 0, total_received: 0, total_returns: 0, total_debt: 0,
+    };
+    current.manager = manager;
+    current.color_key = normalizeManagerColor(row.color_key, managerId - 1);
+    current.order_count += Number(row.order_count || 0);
+    current.nonzero_order_count += Number(row.nonzero_order_count || 0);
+    current.total_sales += Number(row.total_sales || 0);
+    current.total_received += Number(row.total_received || 0);
+    current.total_returns += Number(row.total_returns || 0);
+    current.total_debt += Number(row.total_debt || 0);
+    managerOrderMap.set(key, current);
   }
   const managerKeys = new Set<string>([...managerOrderMap.keys(), ...managerPaymentMap.keys(), ...managerReturnMap.keys()]);
   const managerDaysMap = new Map<string, any>();
-  const managerSummaryMap = new Map<number, any>();
+  const managerSummaryMap = new Map<string, any>();
   for (const key of managerKeys) {
-    const [date, managerIdText] = key.split('||');
-    const managerId = toInt(managerIdText, 0);
+    const separator = key.indexOf('||');
+    const date = separator >= 0 ? key.slice(0, separator) : key;
     const row = managerOrderMap.get(key) || {};
-    const paymentInfo = managerPaymentMap.get(key) || { managerId, manager: '', colorKey: '', primary_received: 0, order_extra_received: 0, debt_closed: 0, extra_received: 0 };
-    const returnInfo = managerReturnMap.get(key) || { managerId, manager: '', colorKey: '', totalReturns: 0 };
+    const paymentInfo = managerPaymentMap.get(key) || { managerId: 0, manager: '', colorKey: '', primary_received: 0, order_extra_received: 0, debt_closed: 0, extra_received: 0 };
+    const returnInfo = managerReturnMap.get(key) || { managerId: 0, manager: '', colorKey: '', totalReturns: 0 };
+    const managerId = toInt(row.manager_id, 0) || toInt(paymentInfo.managerId, 0) || toInt(returnInfo.managerId, 0);
     const manager = cleanText(row.manager) || paymentInfo.manager || returnInfo.manager || 'Не указан';
     const colorKey = normalizeManagerColor(cleanText(row.color_key) || paymentInfo.colorKey || returnInfo.colorKey, managerId - 1);
     const actualReceived = Number(paymentInfo.primary_received || 0) + Number(paymentInfo.order_extra_received || 0) + Number(paymentInfo.debt_closed || 0) + Number(paymentInfo.extra_received || 0);
     const actualReturns = Number(returnInfo.totalReturns || 0);
+    const nonzeroOrderCount = Number(row.nonzero_order_count || 0);
     if (!managerDaysMap.has(date)) managerDaysMap.set(date, { date, orderCount: 0, totalSales: 0, totalReceived: 0, totalReturns: 0, totalDebt: 0, managers: [] });
     const bucket = managerDaysMap.get(date);
     const managerRow = {
@@ -906,10 +937,10 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       extra_received: Number(paymentInfo.extra_received || 0),
       total_returns: actualReturns,
       total_debt: Number(row.total_debt || 0),
-      avg_check: Math.round(Number(row.avg_check || 0)),
+      avg_check: nonzeroOrderCount > 0 ? Math.round(Number(row.total_sales || 0) / nonzeroOrderCount) : 0,
     };
-    const nonzeroOrderCount = Number(row.nonzero_order_count || 0);
-    const summary = managerSummaryMap.get(managerId) || {
+    const summaryKey = managerIdentityKey(managerId, manager);
+    const summary = managerSummaryMap.get(summaryKey) || {
       manager_id: managerId,
       manager,
       color_key: colorKey,
@@ -927,7 +958,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
     summary.total_returns += managerRow.total_returns;
     summary.total_debt += managerRow.total_debt;
     summary.nonzero_order_count += nonzeroOrderCount;
-    managerSummaryMap.set(managerId, summary);
+    managerSummaryMap.set(summaryKey, summary);
     bucket.orderCount += managerRow.order_count;
     bucket.totalSales += managerRow.total_sales;
     bucket.totalReceived += managerRow.total_received;
@@ -938,9 +969,11 @@ export async function listFinanceReports(db: D1Database, url: URL) {
   for (const bucket of managerDaysMap.values()) bucket.managers.sort((a: any, b: any) => b.total_received - a.total_received || a.manager.localeCompare(b.manager, 'ru') || a.managerId - b.managerId);
   if (!financeWorkspaceOnly) for (const operation of paymentOperations) {
     const managerId = operation.managerId == null ? 0 : Number(operation.managerId);
-    const summary = managerSummaryMap.get(managerId) || {
+    const manager = cleanText(operation.manager) || 'Не указан';
+    const summaryKey = managerIdentityKey(managerId, manager);
+    const summary = managerSummaryMap.get(summaryKey) || {
       manager_id: managerId,
-      manager: cleanText(operation.manager) || 'Не указан',
+      manager,
       color_key: normalizeManagerColor(operation.managerColor, managerId - 1),
       order_count: 0,
       total_sales: 0,
@@ -950,7 +983,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       nonzero_order_count: 0,
     };
     summary.total_received += Number(operation.amount || 0);
-    managerSummaryMap.set(managerId, summary);
+    managerSummaryMap.set(summaryKey, summary);
   }
   const normalizedManagerRows = Array.from(managerSummaryMap.values()).map((summary: any) => ({
     manager_id: summary.manager_id,

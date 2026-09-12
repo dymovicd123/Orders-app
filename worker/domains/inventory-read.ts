@@ -673,7 +673,13 @@ export function daysBetweenDates(fromDate: string, toDate: string) {
 
 
 export async function getDashboardInsights(db: D1Database) {
-  const today = new Date().toISOString().slice(0, 10);
+  const todayParts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Almaty',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date()).map(({ type, value }) => [type, value]));
+  const today = `${todayParts.year}-${todayParts.month}-${todayParts.day}`;
   const monthStart = `${today.slice(0, 7)}-01`;
   const lowStockLimit = 5;
   const workshopAgeLimit = 7;
