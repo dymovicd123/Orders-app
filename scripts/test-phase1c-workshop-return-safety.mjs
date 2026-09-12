@@ -93,12 +93,13 @@ try {
 
   check(createReturn.includes("const explicitRestock = typeof rawItem?.restock === 'boolean' ? rawItem.restock : null"), 'Return transport lost explicit per-line disposition')
   check(createReturn.includes("const itemRestockRequested = isWorkshop ? selected.restock === true : selected.restock !== false"), 'Workshop omission no longer means no-stock')
-  check(createReturn.includes("isWorkshop && itemRestockRequested && restockSource === 'boutique'"), 'Workshop -> Boutique return guard missing')
+  check(createReturn.includes("isWorkshop && inventorySource === 'boutique'"), 'Workshop -> Boutique return guard missing')
   const returnRestockGate = createReturn.indexOf('if (wantsRestock) {')
   const returnResolve = createReturn.indexOf('resolveInventoryLifecycleCandidate(db, orderItem, isWorkshop)')
   check(returnRestockGate >= 0 && returnResolve > returnRestockGate, 'No-stock return can resolve/mutate inventory')
   check(!section(createReturn, 'const selectedItemMap', 'const validatedSelectedItems').includes('restock: true,'), 'Return backend again forces rows into stock')
-  check(app.includes('restock: item.restock'), 'Frontend no longer sends explicit return disposition')
+  check(app.includes("restock: item.physicalState === 'warehouse' || item.physicalState === 'boutique'"), 'Frontend no longer derives return stock disposition from physical truth')
+  check(app.includes('physicalState: item.physicalState'), 'Frontend no longer sends explicit return physical state')
 
   check(createReturn.includes('`return:${returnId}:item:${returnItemId}`'), 'Return lifecycle key is not stable per item')
   check(createExchange.includes('eventKey: `exchange:${exchangeId}:old`'), 'Exchange old-item lifecycle key is not stable')
@@ -154,8 +155,9 @@ try {
   check(types.includes("lifecycleStatus?: 'pending' | 'applied' | 'cancelled'"), 'Frontend history type lost lifecycle state')
   check(returnView.includes("item.lifecycleStatus === 'pending'"), 'History UI lost pending intake state')
   check(returnView.includes("item.lifecycleStatus === 'cancelled'"), 'History UI lost cancelled/superseded intake state')
-  check(returnView.includes("item.restocked ? `Возвращён:"), 'History UI lost actual-restock distinction')
-  check(exchangeView.includes('Вещь из Цеха не попадает в остатки автоматически'), 'Exchange UI lost Workshop disposition guidance')
+  check(returnView.includes("if (!item.physicalReceivedAt) return 'Ещё не пришёл'"), 'History UI lost physical-receipt distinction')
+  check(returnView.includes("if (!item.inventorySource) return 'Получен, в остаток не добавляли'"), 'History UI lost actual stock-intake distinction')
+  check(exchangeView.includes('Для вещи из Цеха Бутик недоступен.'), 'Exchange UI lost Workshop disposition guidance')
 
   const stale = await inventoryLifecycleDeferredInboundDisposition(new FakeD1(trustedBoundary()), inboundEvent('2026-08-26T07:59:59.000Z'), 11)
   check(stale.action === 'supersede' && stale.reason === 'stale_before_full_stocktake', 'Later full stocktake does not supersede older inbound')
