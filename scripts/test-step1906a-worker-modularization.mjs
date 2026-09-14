@@ -18,6 +18,7 @@ const stabilizationManifestPath = path.join(root, 'scripts/stabilization-2026091
 const stabilizationR2ManifestPath = path.join(root, 'scripts/stabilization-20260912-r2-manager-date-worker-manifest.json')
 const businessDateBoundaryManifestPath = path.join(root, 'scripts/business-date-boundaries-r1-worker-manifest.json')
 const clientFixesManifestPath = path.join(root, 'scripts/client-fixes-20260912-r1-worker-manifest.json')
+const contextualCatalogResolutionManifestPath = path.join(root, 'scripts/contextual-catalog-resolution-r1-worker-manifest.json')
 const original = fs.readFileSync(legacyPath, 'utf8')
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 if (manifest?.version !== 1 || manifest?.revision !== 'order-edit-safe-payment-corrections-r1') throw new Error('Safe payment correction Worker manifest invalid')
@@ -68,6 +69,9 @@ if (Object.keys(businessDateBoundaryManifest.changes || {}).sort().join(',') !==
 const clientFixesManifest = JSON.parse(fs.readFileSync(clientFixesManifestPath, 'utf8'))
 if (clientFixesManifest?.version !== 1 || clientFixesManifest?.revision !== 'client-fixes-20260912-r1') throw new Error('Client fixes Worker manifest invalid')
 if (Object.keys(clientFixesManifest.changes || {}).sort().join(',') !== 'getDashboardInsights,listFinanceReports') throw new Error('Client fixes Worker allow-list widened unexpectedly')
+const contextualCatalogResolutionManifest = JSON.parse(fs.readFileSync(contextualCatalogResolutionManifestPath, 'utf8'))
+if (contextualCatalogResolutionManifest?.version !== 1 || contextualCatalogResolutionManifest?.revision !== 'contextual-catalog-resolution-r1') throw new Error('Contextual catalog resolution Worker manifest invalid')
+if (Object.keys(contextualCatalogResolutionManifest.added || {}).sort().join(',') !== 'reconcileCatalogReviewOrder,resolveOrderCatalogReviewExistingVariant') throw new Error('Contextual catalog resolution Worker added allow-list widened unexpectedly')
 const operationalAutonomyA4RouteBlock = "\n\n      const orderShippingCorrectionMatch = url.pathname.match(/^\\/api\\/orders\\/(\\d+)\\/shipping\\/correct$/);\n      if (orderShippingCorrectionMatch && request.method === 'POST') {\n        const id = toInt(orderShippingCorrectionMatch[1], 0);\n        const input = await readJson<{ physicalOutcome?: unknown }>(request);\n        try {\n          const result = await correctMistakenOrderHandover(env.DB, id, {\n            physicalOutcome: input.physicalOutcome,\n            actor: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),\n          });\n          let updatedOrder = null;\n          try {\n            updatedOrder = await getOrder(env.DB, id);\n          } catch (error) {\n            console.warn('Order readback after handover correction failed', error);\n          }\n          return json({ ...result, ...(updatedOrder ? { order: updatedOrder } : {}), refreshRequired: !updatedOrder });\n        } catch (error) {\n          const publicError = publicApiError(error);\n          return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });\n        }\n      }\n"
 
 const o1Anchor = "const o1Changes = JSON.parse(fs.readFileSync(path.join(root, 'scripts/o1-worker-manifest.json'), 'utf8')).changed\n"
@@ -142,11 +146,13 @@ patched = patched.replace(physicalChangesLine, (match) => match
   + 'const stabilizationChanges = ' + JSON.stringify(stabilizationManifest.changes || {}) + '\n'
   + 'const stabilizationR2Changes = ' + JSON.stringify(stabilizationR2Manifest.changes || {}) + '\n'
   + 'const businessDateBoundaryChanges = ' + JSON.stringify(businessDateBoundaryManifest.changes || {}) + '\n'
-  + 'const clientFixesChanges = ' + JSON.stringify(clientFixesManifest.changes || {}) + '\n')
+  + 'const clientFixesChanges = ' + JSON.stringify(clientFixesManifest.changes || {}) + '\n'
+  + 'const contextualCatalogResolutionAdded = ' + JSON.stringify(contextualCatalogResolutionManifest.added || {}) + '\n'
+  + 'const contextualCatalogResolutionRouter = ' + JSON.stringify(contextualCatalogResolutionManifest.router || {}) + '\n')
 
 const physicalCountAnchor = ' + Object.keys(operationalAutonomyA5Added).length'
 if (!patched.includes(physicalCountAnchor)) throw new Error('1906A physical intake declaration-count anchor missing')
-patched = patched.replace(physicalCountAnchor, physicalCountAnchor + ' + Object.keys(returnsPhysicalIntakeAdded).length')
+patched = patched.replace(physicalCountAnchor, physicalCountAnchor + ' + Object.keys(returnsPhysicalIntakeAdded).length + Object.keys(contextualCatalogResolutionAdded).length')
 
 const dashboardHashReturn = '        return sha(declarations.get(name)) === acceptedPostDashboardAttentionHash\n'
 if (!patched.includes(dashboardHashReturn)) throw new Error('1906A physical intake dashboard hash anchor missing')
@@ -185,6 +191,13 @@ patched = patched.replace(dashboardHashReturn, [
   '',
 ].join('\n'))
 
+const contextualAddedBlock = [
+  '  for (const [name, expectedHash] of Object.entries(contextualCatalogResolutionAdded)) {',
+  "    check(declarations.has(name), 'Contextual catalog resolution added Worker declaration missing: ' + name)",
+  "    check(sha(declarations.get(name)) === expectedHash, 'Contextual catalog resolution added Worker declaration changed: ' + name)",
+  '  }',
+  '',
+].join('\n')
 const physicalAddedAnchor = '  // Catalog gender scope R1 changes only the product create/update request shapes.'
 if (!patched.includes(physicalAddedAnchor)) throw new Error('1906A physical intake added-declaration anchor missing')
 const physicalAddedBlock = [
@@ -194,7 +207,7 @@ const physicalAddedBlock = [
   '  }',
   '',
 ].join('\n')
-patched = patched.replace(physicalAddedAnchor, physicalAddedBlock + physicalAddedAnchor)
+patched = patched.replace(physicalAddedAnchor, physicalAddedBlock + contextualAddedBlock + physicalAddedAnchor)
 
 const a5RouterAnchor = [
   "  check(sha(currentRouter) === operationalAutonomyA5Router.after, 'Operational Autonomy A5 raw Worker router changed beyond exact delta')",
@@ -202,8 +215,11 @@ const a5RouterAnchor = [
 ].join('\n')
 if (!patched.includes(a5RouterAnchor)) throw new Error('1906A physical intake A5 router anchor missing')
 const physicalRouterBlock = [
-  "  check(sha(currentRouter) === returnsPhysicalIntakeRouter.after, 'Returns physical intake R1 raw Worker router changed beyond exact delta')",
-  "  let returnsPhysicalIntakeRevertedRouter = currentRouter.replace(returnsPhysicalIntakeRouter.block, '')",
+  "  check(sha(currentRouter) === contextualCatalogResolutionRouter.after, 'Contextual catalog resolution Worker router changed beyond exact delta')",
+  "  const contextualCatalogResolutionRevertedRouter = currentRouter.replace(contextualCatalogResolutionRouter.routeBlock, '').replace(contextualCatalogResolutionRouter.shippingAfter, contextualCatalogResolutionRouter.shippingBefore)",
+  "  check(sha(contextualCatalogResolutionRevertedRouter) === contextualCatalogResolutionRouter.before, 'Contextual catalog resolution Worker router reverse baseline mismatch')",
+  "  check(sha(contextualCatalogResolutionRevertedRouter) === returnsPhysicalIntakeRouter.after, 'Returns physical intake router changed beneath contextual catalog resolution')",
+  "  let returnsPhysicalIntakeRevertedRouter = contextualCatalogResolutionRevertedRouter.replace(returnsPhysicalIntakeRouter.block, '')",
   "  for (const routerChange of (returnsPhysicalIntakeRouter.reversions || [])) {",
   "    check(returnsPhysicalIntakeRevertedRouter.includes(routerChange.after), 'Returns physical intake R1 router reversion anchor missing')",
   "    returnsPhysicalIntakeRevertedRouter = returnsPhysicalIntakeRevertedRouter.replace(routerChange.after, routerChange.before)",

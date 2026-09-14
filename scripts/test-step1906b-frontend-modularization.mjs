@@ -100,6 +100,7 @@ const returnsPhysicalIntakeManifestPath = path.join(root, 'scripts/returns-physi
 const stabilizationManifestPath = path.join(root, 'scripts/stabilization-20260912-r1-frontend-manifest.json')
 const businessDateBoundaryManifestPath = path.join(root, 'scripts/business-date-boundaries-r1-frontend-manifest.json')
 const clientFixesManifestPath = path.join(root, 'scripts/client-fixes-20260912-r1-frontend-manifest.json')
+const contextualCatalogResolutionManifestPath = path.join(root, 'scripts/contextual-catalog-resolution-r1-frontend-manifest.json')
 const fixtureRoot = path.join(root, 'scripts/fixtures/catalog-gender-scope-r1')
 const predecessorFixture = path.join(fixtureRoot, 'test-step1906b-frontend-modularization-predecessor.mjs')
 const runtimePredecessor = path.join(root, 'scripts/.tmp-test-step1906b-catalog-predecessor.mjs')
@@ -135,7 +136,17 @@ const clientFixesManifest = JSON.parse(fs.readFileSync(clientFixesManifestPath, 
 if (clientFixesManifest?.version !== 1 || clientFixesManifest?.revision !== 'client-fixes-20260912-r1') throw new Error('Client fixes frontend manifest invalid')
 const clientFixesExpectedFiles = ['src/App.tsx','src/app/types.ts','src/app/utils.ts','src/features/renderers/FinanceReportContentRenderer.tsx','src/features/sections/DashboardSection.tsx','src/features/sections/OrderExchangeSection.tsx']
 if (JSON.stringify(Object.keys(clientFixesManifest.files || {})) !== JSON.stringify(clientFixesExpectedFiles)) throw new Error('Client fixes frontend allow-list widened unexpectedly')
+const contextualCatalogResolutionManifest = JSON.parse(fs.readFileSync(contextualCatalogResolutionManifestPath, 'utf8'))
+if (contextualCatalogResolutionManifest?.version !== 1 || contextualCatalogResolutionManifest?.revision !== 'contextual-catalog-resolution-r1') throw new Error('Contextual catalog resolution frontend manifest invalid')
+const contextualCatalogResolutionExpectedFiles = ['src/App.tsx','src/features/orders/OrderCatalogResolutionModal.tsx','src/features/orders/OrderCatalogResolutionModal.css']
+if (JSON.stringify(Object.keys(contextualCatalogResolutionManifest.files || {})) !== JSON.stringify(contextualCatalogResolutionExpectedFiles)) throw new Error('Contextual catalog resolution frontend allow-list widened unexpectedly')
 const gitBlobSha = (text) => { const bytes = Buffer.from(text); return crypto.createHash('sha1').update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex') }
+
+for (const file of ['src/features/orders/OrderCatalogResolutionModal.tsx', 'src/features/orders/OrderCatalogResolutionModal.css']) {
+  const delta = contextualCatalogResolutionManifest.files[file]
+  const actual = fs.readFileSync(path.join(root, file), 'utf8')
+  if (!delta?.added || delta.beforeGitBlob !== null || gitBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Contextual catalog resolution added frontend file changed beyond exact manifest: ' + file)
+}
 for (const file of ['src/app/utils.ts', 'src/features/sections/OrderReturnsSection.tsx']) {
   const delta = returnsPhysicalIntakeManifest.files[file]
   const stabilizationDelta = stabilizationManifest.files?.[file]
@@ -190,6 +201,7 @@ try {
     const returnsPhysicalIntakeDelta = returnsPhysicalIntakeManifest.files?.[file]
     const businessDateBoundaryDelta = businessDateBoundaryManifest.files?.[file]
     const clientFixesDelta = clientFixesManifest.files?.[file]
+    const contextualCatalogResolutionDelta = contextualCatalogResolutionManifest.files?.[file]
     let acceptedGitBlob = delta.afterGitBlob
     let acceptedLines = delta.afterLines
     if (inPlaceDelta) {
@@ -234,8 +246,15 @@ try {
       acceptedGitBlob = clientFixesDelta.afterGitBlob
       acceptedLines = clientFixesDelta.afterLines
     }
+    if (contextualCatalogResolutionDelta) {
+      if (contextualCatalogResolutionDelta.beforeGitBlob !== acceptedGitBlob || contextualCatalogResolutionDelta.beforeLines !== acceptedLines) throw new Error('Contextual catalog resolution frontend predecessor drifted: ' + file)
+      acceptedGitBlob = contextualCatalogResolutionDelta.afterGitBlob
+      acceptedLines = contextualCatalogResolutionDelta.afterLines
+    }
     if (gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) {
-      throw new Error(clientFixesDelta
+      throw new Error(contextualCatalogResolutionDelta
+        ? 'Contextual catalog resolution frontend file changed beyond exact manifest: ' + file
+        : clientFixesDelta
         ? 'Client fixes frontend file changed beyond exact manifest: ' + file
         : businessDateBoundaryDelta
         ? 'Business date boundary frontend file changed beyond exact manifest: ' + file
