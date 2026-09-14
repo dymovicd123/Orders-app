@@ -25,12 +25,12 @@ const modal = `      <OrderCatalogResolutionModal
         apiFetch={apiFetch}
         isAdmin={isAdmin}
         onClose={() => setOrderCatalogResolutionOrder(null)}
-        onCompleted={async (resolvedOrder) => {
+        onCompleted={async (resolvedOrder: OrderRecord) => {
           setOrderCatalogResolutionOrder(null)
           setMessage(\`Все товары заказа \${resolvedOrder.external_id || \`#\${resolvedOrder.id}\`} уточнены. Нажмите «Отправить клиенту» ещё раз — система повторно проверит склад.\`)
           await loadDashboard(false)
         }}
-        onOpenFullReview={async (blockedOrder) => {
+        onOpenFullReview={async (blockedOrder: OrderRecord) => {
           setOrderCatalogResolutionOrder(null)
           await loadCatalogReview(true, blockedOrder.id)
           setActiveSector('inventory')
@@ -38,7 +38,10 @@ const modal = `      <OrderCatalogResolutionModal
           setMessage('Открыт полный разбор только этого заказа. Используйте его, если нужной комбинации ещё нет в каталоге.')
         }}
       />`
-app = replaceOnce(app, modal, `      <Suspense fallback={null}>\n${modal}\n      </Suspense>`, 'modal Suspense boundary')
+const oldModal = modal
+  .replace('(resolvedOrder: OrderRecord)', '(resolvedOrder)')
+  .replace('(blockedOrder: OrderRecord)', '(blockedOrder)')
+app = replaceOnce(app, oldModal, `      <Suspense fallback={null}>\n${modal}\n      </Suspense>`, 'modal Suspense boundary')
 fs.writeFileSync('src/App.tsx', app)
 
 let lazy = fs.readFileSync('src/app/lazySections.tsx', 'utf8')
