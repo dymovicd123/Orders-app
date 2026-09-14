@@ -54,11 +54,13 @@ try {
     'OrderDetailsSection','OrderDebtSection','OrderReturnsSection','OrderExchangeSection','TeamSection','LeadsSection',
     'PlanSection','FinanceSection','ReportsSection','OrderActivitySection',
   ]
-  for (const name of lazySections) {
+  const contextualLazyFeatures = ['OrderCatalogResolutionModal']
+  const allLazyFeatures = [...lazySections, ...contextualLazyFeatures]
+  for (const name of allLazyFeatures) {
     check(lazy.includes(`export const ${name} = namedLazy(`), `Lazy feature boundary missing: ${name}`)
     check(app.includes(`<${name} `), `App no longer renders lazy feature: ${name}`)
   }
-  check((lazy.match(/= namedLazy\(/g) || []).length === lazySections.length, `Expected ${lazySections.length} lazy sections`)
+  check((lazy.match(/= namedLazy\(/g) || []).length === allLazyFeatures.length, `Expected ${allLazyFeatures.length} lazy features`)
   check(lazy.includes('function DeferredSection'), 'DeferredSection wrapper missing')
   check(lazy.includes('const [activated, setActivated] = useState(active)'), 'DeferredSection no longer preserves first-mount state')
   check(lazy.includes('if (!active && !activated) return null'), 'DeferredSection loads inactive chunks eagerly')
@@ -68,6 +70,7 @@ try {
   for (const name of lazySections) {
     check(!new RegExp(`from ['\"][^'\"]*features/sections/${name}['\"]`).test(app), `App statically imports ${name}`)
   }
+  check(!app.includes("from './features/orders/OrderCatalogResolutionModal'"), 'Contextual resolver still leaks into initial App graph')
   check(!app.includes("from './features/renderers/FinanceDashboardRenderer'"), 'Finance dashboard renderer still leaks into initial App graph')
   check(!app.includes("from './features/renderers/FinanceReportContentRenderer'"), 'Finance report renderer still leaks into initial App graph')
   check(app.includes("useState<AppSector>(() => sectorFromHash(window.location.hash))"), 'Direct hash routes still mount the default Orders chunk before the requested sector')
@@ -83,6 +86,7 @@ try {
   for (const name of lazySections) {
     check(!graphRelative.includes(`src/features/sections/${name}.tsx`), `Lazy section is still initial-static: ${name}`)
   }
+  check(!graphRelative.includes('src/features/orders/OrderCatalogResolutionModal.tsx'), 'Contextual resolver remains initial-static')
   check(!graphRelative.includes('src/features/renderers/FinanceDashboardRenderer.tsx'), 'Finance dashboard renderer remains initial-static')
   check(!graphRelative.includes('src/features/renderers/FinanceReportContentRenderer.tsx'), 'Finance report renderer remains initial-static')
 
@@ -104,7 +108,7 @@ try {
   check(main.includes('15_000'), 'Dynamic import reload loop guard missing')
 
   check(worker.includes("bundleLazyLoading: '1906d'"), '1906D live health marker missing')
-  console.log(`STEP 190.6D BUNDLE / LAZY-LOADING TESTS PASSED — ${graph.size} initial-static source modules, ${sourceBytes} source bytes, ${lazySections.length} lazy feature boundaries`)
+  console.log(`STEP 190.6D BUNDLE / LAZY-LOADING TESTS PASSED — ${graph.size} initial-static source modules, ${sourceBytes} source bytes, ${allLazyFeatures.length} lazy feature boundaries`)
 } catch (error) {
   console.error(`STEP 190.6D BUNDLE / LAZY-LOADING TESTS FAILED: ${error?.message || error}`)
   process.exit(1)
