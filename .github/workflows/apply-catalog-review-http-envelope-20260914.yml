@@ -1,0 +1,101 @@
+name: Apply catalog review HTTP envelope fix 20260914
+
+on:
+  push:
+    branches:
+      - fix/catalog-review-http-envelope-20260914
+    paths:
+      - .github/workflows/apply-catalog-review-http-envelope-20260914.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/catalog-review-http-envelope-20260914
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Apply guarded patch
+        shell: python
+        run: |
+          from pathlib import Path
+          import json
+          import subprocess
+
+          def replace_once(path, before, after, label):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(before)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly 1 match, found {count}')
+              p.write_text(text.replace(before, after, 1), encoding='utf-8')
+
+          replace_once(
+              'src/app/utils.ts',
+              "export async function readJsonResponse<T extends object = Record<string, unknown>>(response: Response, context: string): Promise<T> {",
+              "export async function readJsonResponse<T extends object = Record<string, unknown>>(response: Response, context: string, options: { allowHttpError?: boolean } = {}): Promise<T> {",
+              'readJsonResponse signature',
+          )
+          replace_once(
+              'src/app/utils.ts',
+              "  if (!response.ok) {\n    const message = typeof data === 'object' && data && 'message' in data",
+              "  if (!response.ok && !options.allowHttpError) {\n    const message = typeof data === 'object' && data && 'message' in data",
+              'readJsonResponse HTTP error guard',
+          )
+          app = Path('src/App.tsx')
+          app_text = app.read_text(encoding='utf-8')
+          old = ">(response, 'Отправка клиенту')\n        if (response.ok) completeCriticalRequest"
+          new = ">(response, 'Отправка клиенту', { allowHttpError: true })\n        if (response.ok) completeCriticalRequest"
+          if app_text.count(old) != 1:
+              raise SystemExit(f'shipping reader call: expected exactly 1 match, found {app_text.count(old)}')
+          app.write_text(app_text.replace(old, new, 1), encoding='utf-8')
+
+          test = Path('scripts/test-contextual-catalog-resolution-r1.mjs')
+          test_text = test.read_text(encoding='utf-8')
+          old_decl = "  const lazySections = read('src/app/lazySections.tsx')\n"
+          new_decl = old_decl + "  const utils = read('src/app/utils.ts')\n"
+          if test_text.count(old_decl) != 1:
+              raise SystemExit('contextual test declaration guard failed')
+          test_text = test_text.replace(old_decl, new_decl, 1)
+          old_check = "  check(app.includes('setOrderCatalogResolutionOrder(order)'), 'Shipping failure must open the resolver instead of redirecting ordinary staff')\n"
+          new_check = old_check + "  check(utils.includes('allowHttpError?: boolean'), 'Central API reader must support inspecting expected non-2xx business envelopes')\n  check(app.includes(\"'Отправка клиенту', { allowHttpError: true })\"), 'Shipping must inspect catalog_review_required before the generic HTTP error is thrown')\n"
+          if test_text.count(old_check) != 1:
+              raise SystemExit('contextual test assertion guard failed')
+          test.write_text(test_text.replace(old_check, new_check, 1), encoding='utf-8')
+
+          manifest_path = Path('scripts/contextual-catalog-resolution-r1-frontend-manifest.json')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          app_blob = subprocess.check_output(['git', 'hash-object', 'src/App.tsx'], text=True).strip()
+          app_lines = len(Path('src/App.tsx').read_text(encoding='utf-8').splitlines())
+          manifest['files']['src/App.tsx']['afterGitBlob'] = app_blob
+          manifest['files']['src/App.tsx']['afterLines'] = app_lines
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+      - run: npm ci
+      - name: Focused regression
+        run: node scripts/test-contextual-catalog-resolution-r1.mjs
+      - name: Full cumulative release gate
+        run: npm run release:check
+      - name: Typecheck
+        run: npx tsc -b --pretty false
+      - name: Build
+        run: npm run build
+      - name: Lint
+        run: npm run lint
+      - name: Diff guard
+        run: git diff --check
+      - name: Commit guarded fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "dymovicd123"
+          git config user.email "dymovicd@gmail.com"
+          git add src/App.tsx src/app/utils.ts scripts/test-contextual-catalog-resolution-r1.mjs scripts/contextual-catalog-resolution-r1-frontend-manifest.json
+          git commit -m "fix: open catalog resolver for non-2xx shipping blockers"
+          git push origin HEAD:fix/catalog-review-http-envelope-20260914
