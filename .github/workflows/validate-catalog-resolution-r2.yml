@@ -10,6 +10,7 @@ on:
       - worker/domains/catalog.ts
       - scripts/test-contextual-catalog-resolution-r1.mjs
       - scripts/inspect-catalog-resolution-r2-hash.mjs
+      - scripts/inspect-catalog-resolution-r2-frontend.mjs
       - .github/workflows/validate-catalog-resolution-r2.yml
   workflow_dispatch:
 
@@ -31,6 +32,8 @@ jobs:
       - run: npm ci
       - name: Inspect exact R2 worker hash
         run: node scripts/inspect-catalog-resolution-r2-hash.mjs
+      - name: Inspect exact R2 frontend blobs
+        run: node scripts/inspect-catalog-resolution-r2-frontend.mjs
       - name: R2 focused regression
         run: node scripts/test-contextual-catalog-resolution-r1.mjs
       - name: Full cumulative release gate
@@ -43,4 +46,4 @@ jobs:
         run: npm run lint
       - name: Diff guard
         run: git diff --check
-# corrected-baseline-rerun
+# frontend-inspection-trigger
