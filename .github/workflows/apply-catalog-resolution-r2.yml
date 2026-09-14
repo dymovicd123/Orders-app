@@ -6,6 +6,7 @@ on:
       - fix/catalog-resolution-r2-20260914
     paths:
       - scripts/patch-catalog-resolution-r2.py
+      - scripts/contextual-catalog-resolution-r2-worker-manifest.json
       - .github/workflows/apply-catalog-resolution-r2.yml
 
 permissions:
@@ -19,17 +20,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: fix/catalog-resolution-r2-20260914
-      - name: Apply guarded backend patch
+      - name: Apply guarded R2 patch
         run: python3 scripts/patch-catalog-resolution-r2.py
-      - name: Commit patched backend
+      - name: Commit exact accepted deltas
         shell: bash
         run: |
           set -euo pipefail
           git diff --check
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add worker/domains/catalog.ts
+          git add worker/domains/catalog.ts scripts/test-step1906a-worker-modularization.mjs
           git diff --cached --quiet && exit 0
-          git commit -m "fix: do not learn aliases from placeholder catalog facts"
+          git commit -m "test: accept exact catalog resolution R2 worker delta"
           git push origin HEAD:fix/catalog-resolution-r2-20260914
-# trigger 20260914-r2
+# preservation-layer-trigger
