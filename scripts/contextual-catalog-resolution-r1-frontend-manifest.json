@@ -4,9 +4,15 @@
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "bf4fc806ee6e70e31ddd2143e5a6779506ec9e29",
-      "afterGitBlob": "290e86661960bd5424293515f925d7eca691ae92",
+      "afterGitBlob": "a85f8c02e4b73ad045ef3010dd6a63f8e615fce2",
       "beforeLines": 7286,
       "afterLines": 7302
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "0c2eb440b14013d85fde64e677ea47c4b5a4cfe8",
+      "afterGitBlob": "ace64def1b27df410067d389d87870f4f49c8152",
+      "beforeLines": 985,
+      "afterLines": 985
     },
     "src/features/orders/OrderCatalogResolutionModal.tsx": {
       "beforeGitBlob": null,

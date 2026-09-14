@@ -9,6 +9,7 @@ try {
   const app = read('src/App.tsx')
   const modal = read('src/features/orders/OrderCatalogResolutionModal.tsx')
   const lazySections = read('src/app/lazySections.tsx')
+  const utils = read('src/app/utils.ts')
 
   check(review.includes('export async function reconcileCatalogReviewOrder'), 'Order-scoped safe auto-reconciliation must exist')
   check(review.includes('fetchCatalogReviewRows(db, 160, orderId)'), 'Auto-reconciliation must stay scoped to one order')
@@ -25,6 +26,8 @@ try {
   check(!app.includes("from './features/orders/OrderCatalogResolutionModal'"), 'Contextual resolver must not regrow the initial static source graph')
   check(lazySections.includes("import('../features/orders/OrderCatalogResolutionModal')"), 'Contextual resolver must load through the established lazy feature boundary')
   check(app.includes('setOrderCatalogResolutionOrder(order)'), 'Shipping failure must open the resolver instead of redirecting ordinary staff')
+  check(utils.includes('allowHttpError?: boolean'), 'Central API reader must support inspecting expected non-2xx business envelopes')
+  check(app.includes("'Отправка клиенту', { allowHttpError: true })"), 'Shipping must inspect catalog_review_required before the generic HTTP error is thrown')
   check(!app.includes("Попросите администратора открыть «Склад → Товары → Требуют разбора»"), 'Ordinary staff must no longer be told to leave Orders for the old recovery queue')
 
   check(modal.includes('Подтвердить товар'), 'Contextual resolver must expose an explicit confirmation action')

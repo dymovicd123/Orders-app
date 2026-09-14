@@ -424,7 +424,7 @@ export function isTransientApiError(error: unknown) {
     || message.includes('недоступ')
 }
 
-export async function readJsonResponse<T extends object = Record<string, unknown>>(response: Response, context: string): Promise<T> {
+export async function readJsonResponse<T extends object = Record<string, unknown>>(response: Response, context: string, options: { allowHttpError?: boolean } = {}): Promise<T> {
   const bodyText = await response.text()
   const trimmed = bodyText.replace(/^\uFEFF/, '').trim()
   const transientStatus = response.status === 408
@@ -463,7 +463,7 @@ export async function readJsonResponse<T extends object = Record<string, unknown
     })
   }
 
-  if (!response.ok) {
+  if (!response.ok && !options.allowHttpError) {
     const message = typeof data === 'object' && data && 'message' in data
       ? String((data as { message?: unknown }).message || '')
       : ''
