@@ -1,0 +1,37 @@
+name: Apply contextual resolver lazy boundary 20260914
+
+on:
+  push:
+    branches:
+      - fix/contextual-catalog-resolution-20260914
+    paths:
+      - .github/workflows/apply-contextual-lazy-modal-20260914.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: node scripts/patch-contextual-lazy-modal.cjs
+      - run: node scripts/test-contextual-catalog-resolution-r1.mjs
+      - run: npx tsc -b --pretty false
+      - run: npm run build
+      - run: git diff --check
+      - name: Commit lazy boundary
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx src/app/lazySections.tsx scripts/test-contextual-catalog-resolution-r1.mjs
+          git diff --cached --quiet && exit 0
+          git commit -m "Lazy-load contextual catalog resolver"
+          git push origin HEAD:fix/contextual-catalog-resolution-20260914
