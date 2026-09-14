@@ -138,7 +138,7 @@ const clientFixesExpectedFiles = ['src/App.tsx','src/app/types.ts','src/app/util
 if (JSON.stringify(Object.keys(clientFixesManifest.files || {})) !== JSON.stringify(clientFixesExpectedFiles)) throw new Error('Client fixes frontend allow-list widened unexpectedly')
 const contextualCatalogResolutionManifest = JSON.parse(fs.readFileSync(contextualCatalogResolutionManifestPath, 'utf8'))
 if (contextualCatalogResolutionManifest?.version !== 1 || contextualCatalogResolutionManifest?.revision !== 'contextual-catalog-resolution-r1') throw new Error('Contextual catalog resolution frontend manifest invalid')
-const contextualCatalogResolutionExpectedFiles = ['src/App.tsx','src/features/orders/OrderCatalogResolutionModal.tsx','src/features/orders/OrderCatalogResolutionModal.css']
+const contextualCatalogResolutionExpectedFiles = ['src/App.tsx','src/app/utils.ts','src/features/orders/OrderCatalogResolutionModal.tsx','src/features/orders/OrderCatalogResolutionModal.css']
 if (JSON.stringify(Object.keys(contextualCatalogResolutionManifest.files || {})) !== JSON.stringify(contextualCatalogResolutionExpectedFiles)) throw new Error('Contextual catalog resolution frontend allow-list widened unexpectedly')
 const gitBlobSha = (text) => { const bytes = Buffer.from(text); return crypto.createHash('sha1').update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex') }
 
@@ -170,7 +170,13 @@ for (const file of ['src/app/utils.ts', 'src/features/sections/OrderReturnsSecti
     acceptedGitBlob = clientFixesDelta.afterGitBlob
     acceptedLines = clientFixesDelta.afterLines
   }
-  if (!delta || gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) throw new Error(clientFixesDelta ? 'Client fixes frontend file changed beyond exact manifest: ' + file : businessDateBoundaryDelta ? 'Business date boundary frontend file changed beyond exact manifest: ' + file : stabilizationDelta ? 'September 12 stabilization frontend file changed beyond exact manifest: ' + file : 'Returns physical intake R1 frontend file changed beyond exact manifest: ' + file)
+  const contextualCatalogResolutionDelta = contextualCatalogResolutionManifest.files?.[file]
+  if (contextualCatalogResolutionDelta) {
+    if (contextualCatalogResolutionDelta.beforeGitBlob !== acceptedGitBlob || contextualCatalogResolutionDelta.beforeLines !== acceptedLines) throw new Error('Contextual catalog resolution frontend predecessor drifted: ' + file)
+    acceptedGitBlob = contextualCatalogResolutionDelta.afterGitBlob
+    acceptedLines = contextualCatalogResolutionDelta.afterLines
+  }
+  if (!delta || gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) throw new Error(contextualCatalogResolutionDelta ? 'Contextual catalog resolution frontend file changed beyond exact manifest: ' + file : clientFixesDelta ? 'Client fixes frontend file changed beyond exact manifest: ' + file : businessDateBoundaryDelta ? 'Business date boundary frontend file changed beyond exact manifest: ' + file : stabilizationDelta ? 'September 12 stabilization frontend file changed beyond exact manifest: ' + file : 'Returns physical intake R1 frontend file changed beyond exact manifest: ' + file)
 }
 const stabilizationDashboardFile = 'src/features/sections/DashboardSection.tsx'
 const stabilizationDashboardDelta = stabilizationManifest.files[stabilizationDashboardFile]

@@ -5785,7 +5785,7 @@ function removeDebtPayment(index: number) {
           headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
           body: JSON.stringify(critical.payload),
         })
-        const result = await readJsonResponse<{ message?: string; order?: OrderRecord; refreshRequired?: boolean; code?: string; reviewOrderId?: number; blockers?: Array<{ blocker_reason?: string; product_name_snapshot?: string; inventory_source?: string; reservation_variant_id?: number; required_quantity?: number; physical_quantity?: number }> }>(response, 'Отправка клиенту')
+        const result = await readJsonResponse<{ message?: string; order?: OrderRecord; refreshRequired?: boolean; code?: string; reviewOrderId?: number; blockers?: Array<{ blocker_reason?: string; product_name_snapshot?: string; inventory_source?: string; reservation_variant_id?: number; required_quantity?: number; physical_quantity?: number }> }>(response, 'Отправка клиенту', { allowHttpError: true })
         if (response.ok) completeCriticalRequest(criticalKey, critical.requestId)
         return { response, result }
       }
