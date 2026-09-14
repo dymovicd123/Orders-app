@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CatalogResponse, CatalogReviewItem, CatalogReviewResponse, CatalogVariantRecord, OrderRecord } from '../../app/types'
+import { readJsonResponse } from '../../app/utils'
 import type { CatalogResolutionContext, CatalogResolutionResponse } from '../../../shared/api-contracts.ts'
 import './OrderCatalogResolutionModal.css'
 
@@ -53,10 +54,8 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         apiFetch(`/api/orders/${order.id}/catalog-review`),
         apiFetch('/api/catalog'),
       ])
-      const reviewData = await reviewResponse.json() as CatalogReviewResponse & { message?: string }
-      const catalogData = await catalogResponse.json() as CatalogResponse & { message?: string }
-      if (!reviewResponse.ok) throw new Error(reviewData.message || 'Не удалось загрузить позиции, которые требуют уточнения.')
-      if (!catalogResponse.ok) throw new Error(catalogData.message || 'Не удалось загрузить каталог.')
+      const reviewData = await readJsonResponse<CatalogReviewResponse>(reviewResponse, 'Не удалось загрузить позиции, которые требуют уточнения')
+      const catalogData = await readJsonResponse<CatalogResponse>(catalogResponse, 'Не удалось загрузить каталог')
       setReview(reviewData)
       setCatalog(catalogData)
       const first = reviewData.items?.[0]
@@ -67,8 +66,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         return
       }
       const contextResponse = await apiFetch(`/api/orders/${order.id}/catalog-review/${first.orderItemId}/context`)
-      const contextData = await contextResponse.json() as CatalogResolutionContext
-      if (!contextResponse.ok) throw new Error(contextData.message || 'Не удалось определить, что именно нужно уточнить.')
+      const contextData = await readJsonResponse<CatalogResolutionContext>(contextResponse, 'Не удалось определить, что именно нужно уточнить')
       setContext(contextData)
       setSelectedVariantId(Number(contextData.existingVariantId || 0))
       setQuery('')
@@ -135,8 +133,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ variantId: selectedVariantId }),
       })
-      const result = await response.json() as CatalogResolutionResponse
-      if (!response.ok) throw new Error(result.message || 'Не удалось связать позицию с товаром каталога.')
+      await readJsonResponse<CatalogResolutionResponse>(response, 'Не удалось связать позицию с товаром каталога')
       await load()
     } catch (value) {
       setError(value instanceof Error ? value.message : 'Не удалось сохранить уточнение товара.')
