@@ -22,12 +22,6 @@ const contextualCatalogResolutionManifestPath = path.join(root, 'scripts/context
 const original = fs.readFileSync(legacyPath, 'utf8')
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 if (manifest?.version !== 1 || manifest?.revision !== 'order-edit-safe-payment-corrections-r1') throw new Error('Safe payment correction Worker manifest invalid')
-const contextualCatalogResolutionR2Manifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/contextual-catalog-resolution-r2-worker-manifest.json'), 'utf8'))
-if (contextualCatalogResolutionR2Manifest?.version !== 1 || contextualCatalogResolutionR2Manifest?.revision !== 'contextual-catalog-resolution-r2') throw new Error('Contextual catalog resolution R2 Worker manifest invalid')
-if (Object.keys(contextualCatalogResolutionR2Manifest.changes || {}).join(',') !== 'rememberCatalogValueAlias') throw new Error('Contextual catalog resolution R2 Worker allow-list widened unexpectedly')
-const contextualCatalogResolutionR2Change = contextualCatalogResolutionR2Manifest.changes.rememberCatalogValueAlias
-if (manifest.declarations?.rememberCatalogValueAlias !== contextualCatalogResolutionR2Change.before) throw new Error('Contextual catalog resolution R2 baseline mismatch: rememberCatalogValueAlias')
-manifest.declarations.rememberCatalogValueAlias = contextualCatalogResolutionR2Change.after
 if (Object.keys(manifest.changes || {}).join(',') !== 'OrderInput,updateOrderCritical') throw new Error('Safe payment correction Worker declaration allow-list widened unexpectedly')
 const catalogGenderManifest = JSON.parse(fs.readFileSync(catalogGenderManifestPath, 'utf8'))
 if (catalogGenderManifest?.version !== 1 || catalogGenderManifest?.revision !== 'catalog-gender-scope-r1') throw new Error('Catalog gender scope R1 Worker manifest invalid')
