@@ -14,6 +14,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,7 +22,19 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
+      - name: Focused contextual regression
+        run: node scripts/test-contextual-catalog-resolution-r1.mjs
       - name: Worker preservation gate
         run: node scripts/test-step1906a-worker-modularization.mjs
       - name: Frontend preservation gate
         run: node scripts/test-step1906b-frontend-modularization.mjs
+      - name: Full cumulative release gate
+        run: npm run release:check
+      - name: Typecheck
+        run: npx tsc -b --pretty false
+      - name: Build
+        run: npm run build
+      - name: Lint
+        run: npm run lint
+      - name: Diff guard
+        run: git diff --check
