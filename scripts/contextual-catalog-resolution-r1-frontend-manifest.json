@@ -4,9 +4,9 @@
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "bf4fc806ee6e70e31ddd2143e5a6779506ec9e29",
-      "afterGitBlob": "6ac3381d734d7b007e41bbaea9006baa90d95efa",
+      "afterGitBlob": "290e86661960bd5424293515f925d7eca691ae92",
       "beforeLines": 7286,
-      "afterLines": 7301
+      "afterLines": 7302
     },
     "src/features/orders/OrderCatalogResolutionModal.tsx": {
       "beforeGitBlob": null,
