@@ -38,4 +38,4 @@ jobs:
         run: npm run lint
       - name: Diff guard
         run: git diff --check
-# rerun full gate after lazy-loading gate preservation
+# rerun full gate after multiline resolver lazy check
