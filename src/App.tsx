@@ -34,6 +34,7 @@ import { TableDragScrollManager } from './components/tables/TableDragScrollManag
 import { DatabaseStorageModal, DatabaseStorageWarning, useDatabaseStorageMaintenance } from './features/storage/DatabaseStorageMaintenance'
 import { DashboardSection, ClientsSection, ReferencesSection, InventorySection, WorkshopSection, OrdersHeaderSection, OrderFiltersSection, CreateOrderSection, OrderEditorSection, OrdersTableSection, OrderDetailsSection, OrderDebtSection, OrderReturnsSection, OrderExchangeSection, TeamSection, LeadsSection, PlanSection, FinanceSection, ReportsSection, OrderActivitySection, DeferredSection } from './app/lazySections'
 import { InventoryStockGroupsRenderer } from './features/renderers/InventoryStockGroupsRenderer'
+import { OrderCatalogResolutionModal } from './features/orders/OrderCatalogResolutionModal'
 import { useFinanceReportReads } from './features/finance/useFinanceReportReads'
 import { useWorkshopReads } from './features/workshop/useWorkshopReads'
 import { useApiClient } from './app/controllers/useApiClient'
@@ -182,6 +183,7 @@ function App() {
   const [stockHandoverData, setStockHandoverData] = useState<OrderStockHandoverResponse | null>(null)
   const [stockHandoverBusy, setStockHandoverBusy] = useState(false)
   const [stockHandoverActionItemId, setStockHandoverActionItemId] = useState<number | null>(null)
+  const [orderCatalogResolutionOrder, setOrderCatalogResolutionOrder] = useState<OrderRecord | null>(null)
   const [references, setReferences] = useState<ReferenceData | null>(null)
   const [inventoryData, setInventoryData] = useState<{
     warehouse: InventoryResponse | null
@@ -5795,14 +5797,8 @@ function removeDebtPayment(index: number) {
         return
       }
       if (!response.ok && result.code === 'catalog_review_required') {
-        if (isAdmin) {
-          await loadCatalogReview(true, Number(result.reviewOrderId || order.id))
-          setActiveSector('inventory')
-          openInventoryPanel('catalog')
-          setMessage('В этом заказе есть товар, который нужно один раз связать с каталогом. Открыт только этот заказ — старые записи не загружаются.')
-        } else {
-          setMessage(result.message || 'В заказе есть неразобранная складская позиция. Попросите администратора открыть «Склад → Товары → Требуют разбора».')
-        }
+        setOrderCatalogResolutionOrder(order)
+        setMessage(result.message || 'Перед отправкой нужно уточнить складской товар. Окно уточнения открыто прямо в заказах.')
         return
       }
       if (!response.ok && result.code === 'inventory_physical_shortage' && Array.isArray(result.blockers) && result.blockers.length) {
@@ -6935,6 +6931,25 @@ function removeDebtPayment(index: number) {
           </form>
         </div>
       ) : null}
+
+      <OrderCatalogResolutionModal
+        order={orderCatalogResolutionOrder}
+        apiFetch={apiFetch}
+        isAdmin={isAdmin}
+        onClose={() => setOrderCatalogResolutionOrder(null)}
+        onCompleted={async (resolvedOrder) => {
+          setOrderCatalogResolutionOrder(null)
+          setMessage(`Все товары заказа ${resolvedOrder.external_id || `#${resolvedOrder.id}`} уточнены. Нажмите «Отправить клиенту» ещё раз — система повторно проверит склад.`)
+          await loadDashboard(false)
+        }}
+        onOpenFullReview={async (blockedOrder) => {
+          setOrderCatalogResolutionOrder(null)
+          await loadCatalogReview(true, blockedOrder.id)
+          setActiveSector('inventory')
+          openInventoryPanel('catalog')
+          setMessage('Открыт полный разбор только этого заказа. Используйте его, если нужной комбинации ещё нет в каталоге.')
+        }}
+      />
 
       <DatabaseStorageModal maintenance={storageMaintenance} onOpenReports={openStorageMonthReports} />
 

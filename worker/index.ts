@@ -7,7 +7,7 @@ import { authUserPayload, createAuthUser, deleteAuthUser, ensureAuthSchema, hand
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
 import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
 import type { CatalogReviewFactsInput } from './domains/catalog-review.ts'
-import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem } from './domains/catalog-review.ts'
+import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant } from './domains/catalog-review.ts'
 import { getClientDetails, listClients } from './domains/clients.ts'
 import { criticalOperationErrorResponse } from './domains/critical.ts'
 import { listFinanceReports } from './domains/finance-reports.ts'
@@ -807,6 +807,45 @@ export default {
         return json(await reconcileCatalogReviewQueue(env.DB, url));
       }
 
+      const orderCatalogReviewMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/catalog-review$/);
+      if (orderCatalogReviewMatch && request.method === 'GET') {
+        const orderId = toInt(orderCatalogReviewMatch[1], 0);
+        const scopedUrl = new URL(request.url);
+        scopedUrl.searchParams.set('orderId', String(orderId));
+        return json(await listCatalogReviewQueue(env.DB, scopedUrl));
+      }
+
+      const orderCatalogReviewContextMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/catalog-review\/(\d+)\/context$/);
+      if (orderCatalogReviewContextMatch && request.method === 'GET') {
+        const orderId = toInt(orderCatalogReviewContextMatch[1], 0);
+        const orderItemId = toInt(orderCatalogReviewContextMatch[2], 0);
+        const scoped = await env.DB.prepare(
+          `SELECT oi.id FROM order_items oi JOIN orders o ON o.id = oi.order_id
+           WHERE oi.id = ? AND oi.order_id = ? AND COALESCE(o.order_status, 'active') = 'active'
+             AND COALESCE(o.archived_at, '') = '' AND COALESCE(o.shipping_status, 'not_sent') <> 'sent' LIMIT 1`
+        ).bind(orderItemId, orderId).first<{ id: number }>();
+        if (!scoped?.id) return json({ ok: false, message: 'Позиция не найдена среди активных товаров этого заказа.' }, { status: 404 });
+        return json(await getCatalogReviewContext(env.DB, orderItemId));
+      }
+
+      const orderCatalogReviewResolveMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/catalog-review\/(\d+)\/resolve-existing$/);
+      if (orderCatalogReviewResolveMatch && request.method === 'POST') {
+        const orderId = toInt(orderCatalogReviewResolveMatch[1], 0);
+        const orderItemId = toInt(orderCatalogReviewResolveMatch[2], 0);
+        const input = await readJson<{ variantId?: unknown }>(request);
+        const result = await resolveOrderCatalogReviewExistingVariant(env.DB, orderId, orderItemId, toInt(input.variantId, 0));
+        await writeActivityLog(env.DB, {
+          eventType: 'order_catalog_resolved',
+          entityType: 'order',
+          entityId: orderId,
+          orderId,
+          externalOrderId: '',
+          title: 'Уточнён товар перед отправкой',
+          details: `Связано позиций: ${result.linked}; зарезервировано: ${result.reserved}`,
+        });
+        return json(result);
+      }
+
       if (url.pathname === '/api/catalog/review' && request.method === 'GET') {
         const denied = requireAdminAccess(request);
         if (denied) return denied;
@@ -1072,8 +1111,17 @@ export default {
         const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(env.DB);
         const normalizedObservations = humanInventoryModelEnabled ? normalizeShipmentObservations(input.observations) : [];
         if (humanInventoryModelEnabled) {
-          const blockers = await getOrderShipmentInventoryBlockers(env.DB, id);
-          const unresolvedBlockers = blockers.filter((row) => cleanText(row.blocker_reason) !== 'insufficient_physical');
+          let blockers = await getOrderShipmentInventoryBlockers(env.DB, id);
+          let unresolvedBlockers = blockers.filter((row) => cleanText(row.blocker_reason) !== 'insufficient_physical');
+          if (unresolvedBlockers.length) {
+            try {
+              await reconcileCatalogReviewOrder(env.DB, id);
+            } catch (error) {
+              console.warn('Order-scoped catalog auto-reconciliation failed; keeping shipping safely blocked', error);
+            }
+            blockers = await getOrderShipmentInventoryBlockers(env.DB, id);
+            unresolvedBlockers = blockers.filter((row) => cleanText(row.blocker_reason) !== 'insufficient_physical');
+          }
           if (unresolvedBlockers.length) {
             return json({ ok: false, code: 'catalog_review_required', reviewOrderId: id, message: orderShipmentInventoryBlockerMessage(unresolvedBlockers) }, { status: 409 });
           }
