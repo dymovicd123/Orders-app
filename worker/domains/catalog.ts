@@ -513,7 +513,9 @@ export async function rememberCatalogValueAlias(
   const raw = catalogValueAliasKey(rawValue);
   const canonical = catalogValueAliasKey(canonicalValue);
   if (!raw || !canonical || raw === canonical) return false;
-  if ((kind === 'material' || kind === 'length') && canonical === 'СТАНДАРТ') return false;
+  if ((kind === 'material' || kind === 'length') && (raw === 'СТАНДАРТ' || canonical === 'СТАНДАРТ')) return false;
+  if (kind === 'color' && ['БЕЗ ЦВЕТА', 'НЕТ ЦВЕТА', 'НЕ УКАЗАН'].includes(raw)) return false;
+  if ((kind === 'size' || kind === 'child_age') && ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р', 'НЕ УКАЗАН'].includes(raw)) return false;
   if (!await catalogReferenceDbValueExists(db, kind, canonical)) {
     throw new Error(`Нельзя запомнить исправление «${raw} → ${canonical}»: каноническое значение отсутствует в справочнике.`);
   }
