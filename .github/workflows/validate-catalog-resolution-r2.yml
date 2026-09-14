@@ -10,7 +10,6 @@ on:
       - worker/domains/catalog.ts
       - scripts/test-contextual-catalog-resolution-r1.mjs
       - scripts/inspect-catalog-resolution-r2-hash.mjs
-      - scripts/inspect-catalog-resolution-r2-frontend.mjs
       - .github/workflows/validate-catalog-resolution-r2.yml
   workflow_dispatch:
 
@@ -46,4 +45,4 @@ jobs:
         run: npm run lint
       - name: Diff guard
         run: git diff --check
-# frontend-inspection-trigger
+# final-r2-rerun
