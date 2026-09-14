@@ -56,9 +56,13 @@ try {
   ]
   const contextualLazyFeatures = ['OrderCatalogResolutionModal']
   const allLazyFeatures = [...lazySections, ...contextualLazyFeatures]
-  for (const name of allLazyFeatures) {
+  for (const name of lazySections) {
     check(lazy.includes(`export const ${name} = namedLazy(`), `Lazy feature boundary missing: ${name}`)
     check(app.includes(`<${name} `), `App no longer renders lazy feature: ${name}`)
+  }
+  for (const name of contextualLazyFeatures) {
+    check(lazy.includes(`export const ${name} = namedLazy(`), `Lazy feature boundary missing: ${name}`)
+    check(app.includes(`<${name}`), `App no longer renders lazy feature: ${name}`)
   }
   check((lazy.match(/= namedLazy\(/g) || []).length === allLazyFeatures.length, `Expected ${allLazyFeatures.length} lazy features`)
   check(lazy.includes('function DeferredSection'), 'DeferredSection wrapper missing')
