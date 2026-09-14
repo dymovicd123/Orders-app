@@ -8,6 +8,7 @@ try {
   const review = read('worker/domains/catalog-review.ts')
   const app = read('src/App.tsx')
   const modal = read('src/features/orders/OrderCatalogResolutionModal.tsx')
+  const lazySections = read('src/app/lazySections.tsx')
 
   check(review.includes('export async function reconcileCatalogReviewOrder'), 'Order-scoped safe auto-reconciliation must exist')
   check(review.includes('fetchCatalogReviewRows(db, 160, orderId)'), 'Auto-reconciliation must stay scoped to one order')
@@ -21,6 +22,8 @@ try {
   check(worker.includes("code: 'catalog_review_required'"), 'Shipping must still block unresolved catalog ambiguity')
 
   check(app.includes('OrderCatalogResolutionModal'), 'Orders UI must render the contextual resolver')
+  check(!app.includes("from './features/orders/OrderCatalogResolutionModal'"), 'Contextual resolver must not regrow the initial static source graph')
+  check(lazySections.includes("import('../features/orders/OrderCatalogResolutionModal')"), 'Contextual resolver must load through the established lazy feature boundary')
   check(app.includes('setOrderCatalogResolutionOrder(order)'), 'Shipping failure must open the resolver instead of redirecting ordinary staff')
   check(!app.includes("Попросите администратора открыть «Склад → Товары → Требуют разбора»"), 'Ordinary staff must no longer be told to leave Orders for the old recovery queue')
 

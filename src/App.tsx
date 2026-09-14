@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import './styles/00-foundation.css'
 import './styles/10-workshop-reports-team.css'
 import './styles/20-inventory-dashboard.css'
@@ -32,9 +32,8 @@ import { calculateTotals, createDebtClosePayment, createEditorDraft, createEmpty
 import { ChoicePills, FriendlyNumberInput, ManagerBadge, ManagerPicker, SmartPickerInput, resolveManagerDisplayColor } from './components'
 import { TableDragScrollManager } from './components/tables/TableDragScrollManager'
 import { DatabaseStorageModal, DatabaseStorageWarning, useDatabaseStorageMaintenance } from './features/storage/DatabaseStorageMaintenance'
-import { DashboardSection, ClientsSection, ReferencesSection, InventorySection, WorkshopSection, OrdersHeaderSection, OrderFiltersSection, CreateOrderSection, OrderEditorSection, OrdersTableSection, OrderDetailsSection, OrderDebtSection, OrderReturnsSection, OrderExchangeSection, TeamSection, LeadsSection, PlanSection, FinanceSection, ReportsSection, OrderActivitySection, DeferredSection } from './app/lazySections'
+import { DashboardSection, ClientsSection, ReferencesSection, InventorySection, WorkshopSection, OrdersHeaderSection, OrderFiltersSection, CreateOrderSection, OrderEditorSection, OrdersTableSection, OrderDetailsSection, OrderDebtSection, OrderReturnsSection, OrderExchangeSection, TeamSection, LeadsSection, PlanSection, FinanceSection, ReportsSection, OrderActivitySection, OrderCatalogResolutionModal, DeferredSection } from './app/lazySections'
 import { InventoryStockGroupsRenderer } from './features/renderers/InventoryStockGroupsRenderer'
-import { OrderCatalogResolutionModal } from './features/orders/OrderCatalogResolutionModal'
 import { useFinanceReportReads } from './features/finance/useFinanceReportReads'
 import { useWorkshopReads } from './features/workshop/useWorkshopReads'
 import { useApiClient } from './app/controllers/useApiClient'
@@ -6932,17 +6931,18 @@ function removeDebtPayment(index: number) {
         </div>
       ) : null}
 
+      <Suspense fallback={null}>
       <OrderCatalogResolutionModal
         order={orderCatalogResolutionOrder}
         apiFetch={apiFetch}
         isAdmin={isAdmin}
         onClose={() => setOrderCatalogResolutionOrder(null)}
-        onCompleted={async (resolvedOrder) => {
+        onCompleted={async (resolvedOrder: OrderRecord) => {
           setOrderCatalogResolutionOrder(null)
           setMessage(`Все товары заказа ${resolvedOrder.external_id || `#${resolvedOrder.id}`} уточнены. Нажмите «Отправить клиенту» ещё раз — система повторно проверит склад.`)
           await loadDashboard(false)
         }}
-        onOpenFullReview={async (blockedOrder) => {
+        onOpenFullReview={async (blockedOrder: OrderRecord) => {
           setOrderCatalogResolutionOrder(null)
           await loadCatalogReview(true, blockedOrder.id)
           setActiveSector('inventory')
@@ -6950,6 +6950,7 @@ function removeDebtPayment(index: number) {
           setMessage('Открыт полный разбор только этого заказа. Используйте его, если нужной комбинации ещё нет в каталоге.')
         }}
       />
+      </Suspense>
 
       <DatabaseStorageModal maintenance={storageMaintenance} onOpenReports={openStorageMonthReports} />
 

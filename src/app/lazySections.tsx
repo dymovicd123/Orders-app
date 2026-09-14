@@ -27,6 +27,7 @@ export const PlanSection = namedLazy(() => import('../features/sections/PlanSect
 export const FinanceSection = namedLazy(() => import('../features/sections/FinanceSection'), 'FinanceSection')
 export const ReportsSection = namedLazy(() => import('../features/sections/ReportsSection'), 'ReportsSection')
 export const OrderActivitySection = namedLazy(() => import('../features/sections/OrderActivitySection'), 'OrderActivitySection')
+export const OrderCatalogResolutionModal = namedLazy(() => import('../features/orders/OrderCatalogResolutionModal'), 'OrderCatalogResolutionModal')
 
 type DeferredSectionProps = {
   active: boolean
