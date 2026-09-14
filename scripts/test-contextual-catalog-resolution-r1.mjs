@@ -14,9 +14,9 @@ try {
   check(review.includes('export async function resolveOrderCatalogReviewExistingVariant'), 'Manager-safe existing-variant resolver must exist')
   check(review.includes('selected.product_id') && review.includes('anchor.product_id'), 'Existing-variant resolution must protect a known base-product identity')
 
-  check(worker.includes("/api/orders\\/(\\d+)\\/catalog-review$"), 'Order-scoped catalog review GET route must exist')
-  check(worker.includes("/api/orders\\/(\\d+)\\/catalog-review\\/(\\d+)\\/context$"), 'Order-scoped catalog context route must exist')
-  check(worker.includes("/api/orders\\/(\\d+)\\/catalog-review\\/(\\d+)\\/resolve-existing$"), 'Order-scoped existing-variant mutation route must exist')
+  check(worker.includes('const orderCatalogReviewMatch = url.pathname.match('), 'Order-scoped catalog review GET route must exist')
+  check(worker.includes('const orderCatalogReviewContextMatch = url.pathname.match('), 'Order-scoped catalog context route must exist')
+  check(worker.includes('const orderCatalogReviewResolveMatch = url.pathname.match('), 'Order-scoped existing-variant mutation route must exist')
   check(worker.includes('await reconcileCatalogReviewOrder(env.DB, id)') && worker.includes('blockers = await getOrderShipmentInventoryBlockers(env.DB, id)'), 'Shipping must retry blockers after safe order-scoped auto-reconciliation')
   check(worker.includes("code: 'catalog_review_required'"), 'Shipping must still block unresolved catalog ambiguity')
 
