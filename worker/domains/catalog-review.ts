@@ -620,6 +620,88 @@ export async function reconcileCatalogReviewQueue(db: D1Database, url: URL) {
 }
 
 
+export async function reconcileCatalogReviewOrder(db: D1Database, orderId: number) {
+  if (!orderId) return { ok: true, resolvedGroups: 0, linkedItems: 0, reserved: 0 };
+  const rowsResult = await fetchCatalogReviewRows(db, 160, orderId);
+  const rows = rowsResult.results || [];
+  const groups = new Map<string, Record<string, unknown>[]>();
+  for (const row of rows) {
+    const key = normalizedCatalogReviewKey(row);
+    const list = groups.get(key) || [];
+    list.push(row);
+    groups.set(key, list);
+  }
+
+  let resolvedGroups = 0;
+  let linkedItems = 0;
+  let reserved = 0;
+  for (const [inputKey, matching] of groups) {
+    const sample = matching.find((row) => toInt(row.is_workshop, 0) !== 1) || null;
+    if (!sample) continue;
+    try {
+      const item = catalogReviewRowToOrderItem(sample);
+      const resolved = await resolveCatalogProductAndVariantV2(db, item);
+      if (resolved.productId) {
+        const timestamp = new Date().toISOString();
+        for (const row of matching) {
+          const rowId = toInt(row.id ?? row.order_item_id, 0);
+          if (rowId && !toInt(row.product_id, 0)) {
+            await db.prepare(`UPDATE order_items SET product_id = ? WHERE id = ?`).bind(resolved.productId, rowId).run();
+            await db.prepare(`UPDATE workshop_tasks SET product_id = ?, updated_at = ? WHERE order_item_id = ?`).bind(resolved.productId, timestamp, rowId).run();
+          }
+        }
+      }
+      if (!resolved.productId || !resolved.variantId) continue;
+      const selected = await db.prepare(
+        `SELECT v.id AS variant_id, v.product_id, p.name AS product_name, COALESCE(v.category, p.category, 'adult') AS category,
+                v.gender, v.color, v.material, v.length, v.size_label
+         FROM catalog_variants v JOIN catalog_products p ON p.id = v.product_id
+         WHERE v.id = ? AND v.is_active = 1 AND p.is_active = 1 LIMIT 1`
+      ).bind(resolved.variantId).first<CatalogReviewSelectedVariant>();
+      if (!selected?.variant_id) continue;
+      const result = await resolveCatalogReviewRows(db, matching, selected, inputKey, new Date().toISOString(), { writeAlias: false });
+      resolvedGroups += 1;
+      linkedItems += result.linked;
+      reserved += result.reserved;
+    } catch (error) {
+      console.warn('Order-scoped catalog auto-reconciliation skipped one ambiguous group', error);
+    }
+  }
+  return { ok: true, resolvedGroups, linkedItems, reserved };
+}
+
+
+export async function resolveOrderCatalogReviewExistingVariant(db: D1Database, orderId: number, orderItemId: number, variantId: number) {
+  if (!orderId || !orderItemId || !variantId) throw new Error('Выберите проблемную позицию и существующий вариант каталога.');
+  const anchor = await db.prepare(
+    `SELECT oi.*, o.external_id, o.shipping_status, o.shipping_date, o.order_status, o.archived_at
+     FROM order_items oi JOIN orders o ON o.id = oi.order_id
+     WHERE oi.id = ? AND oi.order_id = ? LIMIT 1`
+  ).bind(orderItemId, orderId).first<Record<string, unknown>>();
+  if (!anchor?.id) throw new Error('Позиция не найдена в этом заказе.');
+  if (normalizeShippingStatus(anchor.shipping_status) === 'sent') throw new Error('Заказ уже отправлен. Складскую привязку здесь менять нельзя.');
+  if (normalizeOrderStatus(anchor.order_status) !== 'active' || cleanText(anchor.archived_at)) throw new Error('Этот заказ уже не активен.');
+
+  const selected = await db.prepare(
+    `SELECT v.id AS variant_id, v.product_id, p.name AS product_name, COALESCE(v.category, p.category, 'adult') AS category,
+            v.gender, v.color, v.material, v.length, v.size_label
+     FROM catalog_variants v JOIN catalog_products p ON p.id = v.product_id
+     WHERE v.id = ? AND v.is_active = 1 AND p.is_active = 1 LIMIT 1`
+  ).bind(variantId).first<CatalogReviewSelectedVariant>();
+  if (!selected?.variant_id || !selected.product_id) throw new Error('Выбранный вариант каталога не найден или отключён.');
+  const knownProductId = toInt(anchor.product_id, 0);
+  if (knownProductId && knownProductId !== toInt(selected.product_id, 0)) {
+    throw new Error('Для этой позиции базовый товар уже известен. Выберите вариант именно этого товара.');
+  }
+
+  const inputKey = normalizedCatalogReviewKey(anchor);
+  const rowsResult = await fetchCatalogReviewRows(db, 160, orderId);
+  const matching = (rowsResult.results || []).filter((row) => normalizedCatalogReviewKey(row) === inputKey);
+  if (!matching.length) throw new Error('Эта позиция уже разобрана. Обновите заказ.');
+  return await resolveCatalogReviewRows(db, matching, selected, inputKey);
+}
+
+
 export async function listCatalogReviewQueue(db: D1Database, url: URL) {
   const limit = Math.min(50, Math.max(10, toInt(url.searchParams.get('limit'), 24)));
   const orderId = Math.max(0, toInt(url.searchParams.get('orderId'), 0));

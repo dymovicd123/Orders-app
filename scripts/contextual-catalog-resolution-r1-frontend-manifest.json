@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "revision": "contextual-catalog-resolution-r1",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "bf4fc806ee6e70e31ddd2143e5a6779506ec9e29",
+      "afterGitBlob": "290e86661960bd5424293515f925d7eca691ae92",
+      "beforeLines": 7286,
+      "afterLines": 7302
+    },
+    "src/features/orders/OrderCatalogResolutionModal.tsx": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "c811b676e53e3493bfa3029949f5da342024f896",
+      "beforeLines": 0,
+      "afterLines": 226,
+      "added": true
+    },
+    "src/features/orders/OrderCatalogResolutionModal.css": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "19af583899ce83a98bb52e44c93a3ed36f369aa9",
+      "beforeLines": 0,
+      "afterLines": 148,
+      "added": true
+    }
+  }
+}

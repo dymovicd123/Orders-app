@@ -1,0 +1,147 @@
+.order-catalog-resolution-backdrop {
+  z-index: 1200;
+}
+
+.order-catalog-resolution-modal {
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(820px, calc(100vh - 32px));
+  overflow: auto;
+}
+
+.order-catalog-resolution-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.order-catalog-resolution-head h3 {
+  margin: 4px 0 2px;
+}
+
+.order-catalog-resolution-loading,
+.order-catalog-resolution-error,
+.order-catalog-resolution-done,
+.order-catalog-resolution-empty {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--surface-soft, #f6f7f9);
+}
+
+.order-catalog-resolution-error {
+  background: #fff1f1;
+  color: #9c1c1c;
+  border: 1px solid #f2c8c8;
+}
+
+.order-catalog-resolution-progress {
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.order-catalog-resolution-item {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 16px;
+  border: 1px solid var(--border-color, #dde1e7);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.order-catalog-resolution-item span,
+.order-catalog-resolution-item small,
+.order-catalog-resolution-option small,
+.order-catalog-resolution-done span {
+  color: var(--muted-color, #667085);
+}
+
+.order-catalog-resolution-search {
+  display: grid;
+  gap: 7px;
+  margin-top: 16px;
+  font-weight: 600;
+}
+
+.order-catalog-resolution-search input {
+  width: 100%;
+}
+
+.order-catalog-resolution-options {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  max-height: 330px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.order-catalog-resolution-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color, #dde1e7);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.order-catalog-resolution-option.is-selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 1px #2563eb inset;
+}
+
+.order-catalog-resolution-option > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.order-catalog-resolution-option em {
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  color: #126b3a;
+  white-space: nowrap;
+}
+
+.order-catalog-resolution-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.order-catalog-resolution-done {
+  display: grid;
+  gap: 6px;
+  background: #eefaf2;
+  border: 1px solid #c6ebd1;
+}
+
+@media (max-width: 640px) {
+  .order-catalog-resolution-modal {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    padding: 16px;
+  }
+
+  .order-catalog-resolution-head {
+    align-items: stretch;
+  }
+
+  .order-catalog-resolution-option {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .order-catalog-resolution-option em {
+    grid-column: 2;
+  }
+
+  .order-catalog-resolution-actions > button {
+    flex: 1 1 100%;
+  }
+}
