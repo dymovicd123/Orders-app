@@ -154,6 +154,8 @@ export function catalogReviewRowToOrderItem(row: Record<string, unknown>) {
     workshopComment: '',
     workshopUrgent: false,
     workshopDueDate: '',
+    observedPhysicalQuantity: null,
+    shortageAcknowledged: false,
   } as ReturnType<typeof normalizeOrderItems>[number];
 }
 

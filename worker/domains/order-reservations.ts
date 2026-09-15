@@ -602,7 +602,9 @@ export async function reserveOrderItemV2(
   const stock = await ensureHumanInventoryStockRow(db, item.inventorySource, canonical, timestamp);
   const physicalBefore = toInt(stock.quantity, 0);
   const reservedBefore = Math.max(0, toInt(stock.reserved_quantity, 0));
-  const observedPhysical = item.observedPhysicalQuantity;
+  // Resolver/manual callers may construct a normalized order item without this optional field.
+  // Treat both null and undefined as ‘no physical count supplied’; never bind undefined into D1.
+  const observedPhysical = item.observedPhysicalQuantity == null ? null : item.observedPhysicalQuantity;
   const physicalForReservation = observedPhysical === null ? physicalBefore : observedPhysical;
   const stockAction = observedPhysical === null ? 'Резерв заказа' : 'Сверено менеджером при заказе';
   const statements: D1PreparedStatement[] = [
