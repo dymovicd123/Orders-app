@@ -46,3 +46,30 @@ if addition not in pkg:
         raise SystemExit('package release:check anchor missing')
     pkg = pkg.replace(anchor, anchor + addition, 1)
 package_path.write_text(pkg, encoding='utf-8')
+
+wrapper_path = Path('scripts/test-step1906a-worker-modularization.mjs')
+wrapper = wrapper_path.read_text(encoding='utf-8')
+path_anchor = "const contextualCatalogResolutionManifestPath = path.join(root, 'scripts/contextual-catalog-resolution-r1-worker-manifest.json')\n"
+path_addition = path_anchor + "const arrivalCanonicalProductAliasManifestPath = path.join(root, 'scripts/arrival-canonical-product-alias-r1-worker-manifest.json')\n"
+if path_anchor not in wrapper:
+    raise SystemExit('worker manifest path anchor missing')
+wrapper = wrapper.replace(path_anchor, path_addition, 1)
+
+validation_anchor = "if (Object.keys(contextualCatalogResolutionManifest.added || {}).sort().join(',') !== 'reconcileCatalogReviewOrder,resolveOrderCatalogReviewExistingVariant') throw new Error('Contextual catalog resolution Worker added allow-list widened unexpectedly')\n"
+validation_addition = validation_anchor + "const arrivalCanonicalProductAliasManifest = JSON.parse(fs.readFileSync(arrivalCanonicalProductAliasManifestPath, 'utf8'))\nif (arrivalCanonicalProductAliasManifest?.version !== 1 || arrivalCanonicalProductAliasManifest?.revision !== 'arrival-canonical-product-alias-r1') throw new Error('Arrival canonical product alias R1 Worker manifest invalid')\nif (Object.keys(arrivalCanonicalProductAliasManifest.changes || {}).join(',') !== 'resolveInventoryCreatableItemsBulk') throw new Error('Arrival canonical product alias R1 Worker allow-list widened unexpectedly')\n"
+if validation_anchor not in wrapper:
+    raise SystemExit('worker manifest validation anchor missing')
+wrapper = wrapper.replace(validation_anchor, validation_addition, 1)
+
+injection_anchor = "  + 'const contextualCatalogResolutionRouter = ' + JSON.stringify(contextualCatalogResolutionManifest.router || {}) + '\\n')"
+injection_replacement = "  + 'const contextualCatalogResolutionRouter = ' + JSON.stringify(contextualCatalogResolutionManifest.router || {}) + '\\n'\n  + 'const arrivalCanonicalProductAliasChanges = ' + JSON.stringify(arrivalCanonicalProductAliasManifest.changes || {}) + '\\n')"
+if injection_anchor not in wrapper:
+    raise SystemExit('worker manifest runtime injection anchor missing')
+wrapper = wrapper.replace(injection_anchor, injection_replacement, 1)
+
+hash_anchor = "  '        return sha(declarations.get(name)) === acceptedPostClientFixesHash',\n"
+hash_replacement = "  '        const arrivalCanonicalProductAliasChanged = arrivalCanonicalProductAliasChanges[name]',\n  '        let acceptedPostArrivalCanonicalProductAliasHash = acceptedPostClientFixesHash',\n  '        if (arrivalCanonicalProductAliasChanged) {',\n  \"          check(arrivalCanonicalProductAliasChanged.before === acceptedPostClientFixesHash, 'Arrival canonical product alias R1 baseline hash mismatch: ' + name)\",\n  '          acceptedPostArrivalCanonicalProductAliasHash = arrivalCanonicalProductAliasChanged.after',\n  '        }',\n  '        return sha(declarations.get(name)) === acceptedPostArrivalCanonicalProductAliasHash',\n"
+if hash_anchor not in wrapper:
+    raise SystemExit('worker manifest final hash anchor missing')
+wrapper = wrapper.replace(hash_anchor, hash_replacement, 1)
+wrapper_path.write_text(wrapper, encoding='utf-8')
