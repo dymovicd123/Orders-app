@@ -14,6 +14,7 @@ try {
 
   check(review.includes('export async function reconcileCatalogReviewOrder'), 'Order-scoped safe auto-reconciliation must exist')
   check(review.includes('fetchCatalogReviewRows(db, 160, orderId)'), 'Auto-reconciliation must stay scoped to one order')
+  check(review.includes("COALESCE(${oi}.stock_writeoff_status, '') = 'catalog_unresolved'"), 'Rows left catalog_unresolved after order edits must remain visible to order-scoped reconciliation even when product/variant ids are already present')
   check(review.includes('export async function resolveOrderCatalogReviewExistingVariant'), 'Manager-safe existing-variant resolver must exist')
   check(review.includes('selected.product_id') && review.includes('anchor.product_id'), 'Existing-variant resolution must protect a known base-product identity')
 

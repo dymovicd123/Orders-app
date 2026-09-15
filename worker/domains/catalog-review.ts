@@ -34,7 +34,7 @@ export const CATALOG_REVIEW_RECENT_DAYS = 30;
 
 export function catalogReviewBasePredicate(oi = 'oi', o = 'o') {
   return `${oi}.quantity > 0
-    AND (${oi}.product_id IS NULL OR ${oi}.variant_id IS NULL)
+    AND (${oi}.product_id IS NULL OR ${oi}.variant_id IS NULL OR COALESCE(${oi}.stock_writeoff_status, '') = 'catalog_unresolved')
     AND COALESCE(${oi}.stock_writeoff_status, '') NOT IN ('catalog_excluded', 'catalog_excluded_history', 'workshop_no_catalog')
     AND COALESCE(${o}.order_status, 'active') NOT IN ('deleted', 'archived')
     AND COALESCE(${o}.archived_at, '') = ''
