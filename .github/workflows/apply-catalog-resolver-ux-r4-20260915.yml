@@ -1,0 +1,44 @@
+name: Apply catalog resolver UX R4
+
+on:
+  push:
+    branches:
+      - fix/catalog-resolver-ux-r4-20260915
+    paths:
+      - .github/workflows/apply-catalog-resolver-ux-r4-20260915.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/catalog-resolver-ux-r4-20260915
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: npm ci
+      - name: Apply guarded UX patch
+        run: python scripts/patch-catalog-resolver-ux-r4-20260915.py
+      - name: Focused resolver regression
+        run: node scripts/test-contextual-catalog-resolution-r1.mjs
+      - name: Full release gate
+        run: npm run release:check
+      - name: Build
+        run: npm run build
+      - name: Commit validated patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/features/orders/OrderCatalogResolutionModal.tsx \
+            src/features/orders/OrderCatalogResolutionModal.css \
+            scripts/test-contextual-catalog-resolution-r1.mjs \
+            scripts/contextual-catalog-resolution-r1-frontend-manifest.json
+          git diff --cached --check
+          git commit -m "fix: make catalog resolver guidance obvious"
+          git push origin HEAD:fix/catalog-resolver-ux-r4-20260915
