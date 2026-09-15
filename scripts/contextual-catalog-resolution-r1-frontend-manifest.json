@@ -16,9 +16,9 @@
     },
     "src/features/orders/OrderCatalogResolutionModal.tsx": {
       "beforeGitBlob": null,
-      "afterGitBlob": "904f5326eba54898065eb3458009d91fdc08a91c",
+      "afterGitBlob": "019a95a2fc7d0f7f3f901ed42b989f9c59d17c73",
       "beforeLines": 0,
-      "afterLines": 509,
+      "afterLines": 513,
       "added": true
     },
     "src/features/orders/OrderCatalogResolutionModal.css": {

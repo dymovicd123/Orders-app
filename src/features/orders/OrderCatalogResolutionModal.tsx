@@ -139,7 +139,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
 
   const activeItem = review?.items?.[0] || null
 
-  const load = async () => {
+  const load = async (completeWhenEmpty = false) => {
     if (!order?.id) return
     setBusy(true)
     setError('')
@@ -157,7 +157,11 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         setContext(null)
         setDraft(null)
         setSelectedVariantId(0)
-        await onCompleted(order)
+        if (completeWhenEmpty) {
+          await onCompleted(order)
+        } else {
+          setError('Список позиций для разбора вернулся пустым. Окно оставлено открытым: автоматическое закрытие до действия пользователя запрещено. Закройте его вручную и повторите отправку, если позиция всё ещё блокирует заказ.')
+        }
         return
       }
       const contextResponse = await apiFetch(`/api/orders/${order.id}/catalog-review/${first.orderItemId}/context`)
@@ -292,7 +296,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       })
       const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Не удалось связать позицию с товаром каталога')
       if (!response.ok || result.ok === false) throw new Error(result.message || 'Не удалось связать существующий вариант.')
-      await load()
+      await load(true)
     } catch (value) {
       setError(value instanceof Error ? value.message : 'Не удалось сохранить уточнение товара.')
     } finally {
@@ -335,7 +339,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       })
       const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Не удалось создать или связать точную комбинацию')
       if (!response.ok || result.ok === false) throw new Error(result.message || 'Не удалось сохранить фактические характеристики.')
-      await load()
+      await load(true)
     } catch (value) {
       setError(value instanceof Error ? value.message : 'Не удалось сохранить фактические характеристики.')
     } finally {

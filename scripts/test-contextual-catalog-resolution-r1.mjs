@@ -41,6 +41,10 @@ try {
   check(modal.includes('rankedProducts(catalog, activeItem?.productName'), 'R2 must keep contextual base-product suggestions in the same resolver')
   check(!modal.includes('Нужна новая характеристика'), 'R2 must not send the operator to the old lossy full-review detour')
   check(modal.includes('Отправить заказ в обход этой проверки нельзя'), 'Resolver must not add a send-anyway bypass')
+  check(modal.includes('const load = async (completeWhenEmpty = false)'), 'Resolver initial load must distinguish passive open from post-resolution completion')
+  check(modal.includes('if (completeWhenEmpty)'), 'Resolver must never auto-complete from an empty initial review response')
+  check((modal.match(/await load\(true\)/g) || []).length === 2, 'Resolver may auto-complete only after the two explicit successful resolution actions')
+  check(modal.includes('void load()'), 'Resolver initial open must remain a non-completing load')
 
   check(catalog.includes("raw === 'СТАНДАРТ' || canonical === 'СТАНДАРТ'"), 'Placeholder STANDARD must never become a learned value alias')
   check(catalog.includes("['БЕЗ ЦВЕТА', 'НЕТ ЦВЕТА', 'НЕ УКАЗАН'].includes(raw)"), 'No-color placeholders must never become learned value aliases')
