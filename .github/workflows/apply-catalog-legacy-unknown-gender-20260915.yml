@@ -50,6 +50,7 @@ jobs:
             scripts/contextual-catalog-resolution-r1-frontend-manifest.json \
             scripts/step1906a-worker-declaration-manifest.json \
             scripts/shipping-shortage-hotfix-worker-manifest.json \
+            scripts/catalog-gender-scope-r1-worker-manifest.json \
             scripts/step192b2a4-order-create-save-integrity-manifest.json
           git diff --cached --check
           git commit -m "fix: allow explicit unknown gender legacy resolution"
