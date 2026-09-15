@@ -29,47 +29,38 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-          import json
 
           path = Path('worker/domains/inventory-movement.ts')
           text = path.read_text()
-          old_lookup = """      byId.set(id, row);
-              const exact = upperText(row.name);
-              if (exact && !byExact.has(exact)) byExact.set(exact, row);
-              const identity = normalizeCatalogProductIdentityKey(row.name);
-              if (identity && !byIdentity.has(identity)) byIdentity.set(identity, row);"""
-          new_lookup = """      byId.set(id, row);
-              if (toInt(row.is_active, 0) !== 1) continue;
-              const exact = upperText(row.name);
-              if (exact && !byExact.has(exact)) byExact.set(exact, row);
-              const identity = normalizeCatalogProductIdentityKey(row.name);
-              if (identity && !byIdentity.has(identity)) byIdentity.set(identity, row);"""
-          if old_lookup not in text:
-              raise SystemExit('product lookup patch anchor missing')
-          text = text.replace(old_lookup, new_lookup, 1)
+
+          anchor = "      byId.set(id, row);\n      const exact = upperText(row.name);"
+          replacement = "      byId.set(id, row);\n      if (toInt(row.is_active, 0) !== 1) continue;\n      const exact = upperText(row.name);"
+          if anchor not in text:
+              raise SystemExit('active lookup anchor missing')
+          text = text.replace(anchor, replacement, 1)
 
           old_resolver = """  const resolveProduct = (item: ReturnType<typeof normalizeInventoryItem>) => {
-              const explicit = item.productId > 0 ? lookup.byId.get(item.productId) : null;
-              if (explicit) return explicit;
-              const exact = lookup.byExact.get(item.productName);
-              if (exact) return exact;
-              const identityKey = normalizeCatalogProductIdentityKey(item.productName);
-              if (!identityKey) return null;
-              return lookup.byIdentity.get(identityKey) || lookup.byAlias.get(identityKey) || null;
-            };"""
+    const explicit = item.productId > 0 ? lookup.byId.get(item.productId) : null;
+    if (explicit) return explicit;
+    const exact = lookup.byExact.get(item.productName);
+    if (exact) return exact;
+    const identityKey = normalizeCatalogProductIdentityKey(item.productName);
+    if (!identityKey) return null;
+    return lookup.byIdentity.get(identityKey) || lookup.byAlias.get(identityKey) || null;
+  };"""
           new_resolver = """  const resolveProduct = (item: ReturnType<typeof normalizeInventoryItem>) => {
-              const explicit = item.productId > 0 ? lookup.byId.get(item.productId) : null;
-              if (explicit && toInt(explicit.is_active, 0) === 1) return explicit;
-              const identityKey = normalizeCatalogProductIdentityKey(item.productName);
-              if (!identityKey) return null;
-              const alias = lookup.byAlias.get(identityKey);
-              if (alias) return alias;
-              const exact = lookup.byExact.get(upperText(item.productName));
-              if (exact) return exact;
-              return lookup.byIdentity.get(identityKey) || null;
-            };"""
+    const explicit = item.productId > 0 ? lookup.byId.get(item.productId) : null;
+    if (explicit && toInt(explicit.is_active, 0) === 1) return explicit;
+    const identityKey = normalizeCatalogProductIdentityKey(item.productName);
+    if (!identityKey) return null;
+    const alias = lookup.byAlias.get(identityKey);
+    if (alias) return alias;
+    const exact = lookup.byExact.get(upperText(item.productName));
+    if (exact) return exact;
+    return lookup.byIdentity.get(identityKey) || null;
+  };"""
           if old_resolver not in text:
-              raise SystemExit('product resolver patch anchor missing')
+              raise SystemExit('resolver anchor missing')
           text = text.replace(old_resolver, new_resolver, 1)
           path.write_text(text)
 
