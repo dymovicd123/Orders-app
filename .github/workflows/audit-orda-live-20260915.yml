@@ -19,7 +19,7 @@ jobs:
       CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
     steps:
-      - name: Read-only Production reference and collision map
+      - name: Read-only Production final ORDA map
         shell: bash
         run: |
           set -u
@@ -29,38 +29,24 @@ jobs:
             echo
             echo "===== $label ====="
             body="$(jq -nc --arg sql "$sql" '{sql:$sql}')"
-            response="$(curl -sS -X POST -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" "$API" --data "$body")" || {
-              echo "HTTP_TRANSPORT_ERROR"
-              return 0
-            }
+            response="$(curl -sS -X POST -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" "$API" --data "$body")" || { echo HTTP_TRANSPORT_ERROR; return 0; }
             jq '{success,errors,result:[.result[]? | {success,meta,results}]}' <<<"$response" || printf '%s\n' "$response"
           }
 
-          query "RELEVANT TABLE DEFINITIONS" "SELECT name, sql FROM sqlite_master WHERE type='table' AND (name LIKE 'catalog_%' OR name LIKE 'inventory_%' OR name IN ('order_items','workshop_tasks')) AND (LOWER(COALESCE(sql,'')) LIKE '%product_id%' OR LOWER(COALESCE(sql,'')) LIKE '%variant_id%') ORDER BY name"
-
-          query "PRODUCTS 43 AND 74" "SELECT * FROM catalog_products WHERE id IN (43,74) ORDER BY id"
-          query "PRODUCT ALIASES ORDA" "SELECT * FROM catalog_product_aliases WHERE UPPER(TRIM(alias)) LIKE '%ОРДА%' OR product_id IN (43,74) ORDER BY id"
-          query "VARIANTS PRODUCT43" "SELECT id,product_id,stock_position_id,category,gender,color,material,length,size_label,is_active,external_id,created_at,updated_at FROM catalog_variants WHERE product_id=43 ORDER BY id"
-          query "VARIANTS PRODUCT74" "SELECT id,product_id,stock_position_id,category,gender,color,material,length,size_label,is_active,external_id,created_at,updated_at FROM catalog_variants WHERE product_id=74 ORDER BY id"
-          query "VARIANT COLLISIONS 74 TO 43" "SELECT a.id AS old_variant_id,b.id AS keeper_variant_id,a.stock_position_id AS old_position,b.stock_position_id AS keeper_position,a.category,a.gender,a.color,a.material,a.length,a.size_label,a.is_active AS old_active,b.is_active AS keeper_active FROM catalog_variants a JOIN catalog_variants b ON b.product_id=43 AND COALESCE(UPPER(TRIM(b.category)),'ADULT')=COALESCE(UPPER(TRIM(a.category)),'ADULT') AND CASE WHEN UPPER(TRIM(COALESCE(b.gender,''))) LIKE '%ЖЕН%' THEN 'ЖЕН' WHEN UPPER(TRIM(COALESCE(b.gender,''))) LIKE '%МУЖ%' THEN 'МУЖ' ELSE UPPER(TRIM(COALESCE(b.gender,''))) END = CASE WHEN UPPER(TRIM(COALESCE(a.gender,''))) LIKE '%ЖЕН%' THEN 'ЖЕН' WHEN UPPER(TRIM(COALESCE(a.gender,''))) LIKE '%МУЖ%' THEN 'МУЖ' ELSE UPPER(TRIM(COALESCE(a.gender,''))) END AND UPPER(TRIM(COALESCE(b.color,'')))=UPPER(TRIM(COALESCE(a.color,''))) AND UPPER(TRIM(COALESCE(b.material,'')))=UPPER(TRIM(COALESCE(a.material,''))) AND UPPER(TRIM(COALESCE(b.length,'')))=UPPER(TRIM(COALESCE(a.length,''))) AND UPPER(TRIM(COALESCE(b.size_label,'')))=UPPER(TRIM(COALESCE(a.size_label,''))) WHERE a.product_id=74 ORDER BY a.id,b.id"
-          query "VARIANTS 74 WITHOUT 43 MATCH" "SELECT a.id,a.stock_position_id,a.category,a.gender,a.color,a.material,a.length,a.size_label,a.is_active FROM catalog_variants a WHERE a.product_id=74 AND NOT EXISTS (SELECT 1 FROM catalog_variants b WHERE b.product_id=43 AND COALESCE(UPPER(TRIM(b.category)),'ADULT')=COALESCE(UPPER(TRIM(a.category)),'ADULT') AND CASE WHEN UPPER(TRIM(COALESCE(b.gender,''))) LIKE '%ЖЕН%' THEN 'ЖЕН' WHEN UPPER(TRIM(COALESCE(b.gender,''))) LIKE '%МУЖ%' THEN 'МУЖ' ELSE UPPER(TRIM(COALESCE(b.gender,''))) END = CASE WHEN UPPER(TRIM(COALESCE(a.gender,''))) LIKE '%ЖЕН%' THEN 'ЖЕН' WHEN UPPER(TRIM(COALESCE(a.gender,''))) LIKE '%МУЖ%' THEN 'МУЖ' ELSE UPPER(TRIM(COALESCE(a.gender,''))) END AND UPPER(TRIM(COALESCE(b.color,'')))=UPPER(TRIM(COALESCE(a.color,''))) AND UPPER(TRIM(COALESCE(b.material,'')))=UPPER(TRIM(COALESCE(a.material,''))) AND UPPER(TRIM(COALESCE(b.length,'')))=UPPER(TRIM(COALESCE(a.length,''))) AND UPPER(TRIM(COALESCE(b.size_label,'')))=UPPER(TRIM(COALESCE(a.size_label,'')))) ORDER BY a.id"
-
-          query "STOCK POSITIONS PRODUCTS 43 74" "SELECT * FROM catalog_stock_positions WHERE product_id IN (43,74) ORDER BY product_id,id"
-          query "STOCK PRODUCTS 43 74" "SELECT id,inventory_source,product_id,variant_id,quantity,reserved_quantity,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,last_action,last_source_ref,updated_at FROM inventory_stock WHERE product_id IN (43,74) OR variant_id BETWEEN 1259 AND 1270 ORDER BY inventory_source,variant_id,id"
-          query "ACTIVE RESERVATIONS PRODUCT74" "SELECT * FROM inventory_reservations WHERE status='active' AND (product_id=74 OR variant_id BETWEEN 1259 AND 1270) ORDER BY id"
-          query "ALL RESERVATIONS PRODUCT74" "SELECT * FROM inventory_reservations WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270 ORDER BY id"
-          query "ORDER ITEMS PRODUCT74" "SELECT oi.*,o.order_number,o.order_date,o.order_status,o.shipping_status,o.created_at AS order_created_at FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.product_id=74 OR oi.variant_id BETWEEN 1259 AND 1270 ORDER BY o.created_at,oi.id"
-          query "TODAY ORDERS PRODUCT74" "SELECT oi.id AS order_item_id,oi.order_id,o.order_number,o.order_date,o.created_at,oi.product_name,oi.product_id,oi.variant_id,oi.gender,oi.color,oi.material,oi.length,oi.size_label,oi.inventory_source,oi.stock_writeoff_status,o.order_status,o.shipping_status FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE o.order_date='2026-09-15' AND (oi.product_id=74 OR oi.variant_id BETWEEN 1259 AND 1270) ORDER BY o.created_at,oi.id"
-          query "MOVEMENTS PRODUCT74" "SELECT * FROM inventory_movements WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270 ORDER BY id"
-          query "TRANSFER ITEMS PRODUCT74" "SELECT i.*,d.status AS transfer_status,d.from_source,d.to_source,d.created_at AS transfer_created_at FROM inventory_transfer_items i JOIN inventory_transfer_documents d ON d.id=i.transfer_id WHERE i.product_id=74 OR i.variant_id BETWEEN 1259 AND 1270 ORDER BY i.id"
-          query "WORKSHOP PRODUCT74" "SELECT * FROM workshop_tasks WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270 ORDER BY id"
-          query "LIFECYCLE PRODUCT74" "SELECT * FROM inventory_lifecycle_events WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270 ORDER BY id"
-          query "INPUT ALIASES PRODUCT74" "SELECT * FROM catalog_input_aliases WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270 ORDER BY id"
-          query "STOCK CHECKS PRODUCT74" "SELECT * FROM inventory_stock_checks WHERE variant_id BETWEEN 1259 AND 1270 ORDER BY id"
-          query "STOCKTAKE PRODUCT74" "SELECT i.*,s.status AS session_status FROM inventory_stocktake_items i JOIN inventory_stocktake_sessions s ON s.id=i.session_id WHERE i.variant_id BETWEEN 1259 AND 1270 ORDER BY i.id"
-          query "IDENTITY LINKS PRODUCT74" "SELECT * FROM catalog_identity_order_item_links WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270 ORDER BY id"
-          query "MERGE REPAIRS PRODUCT74 IF PRESENT" "SELECT * FROM catalog_product_merge_repairs WHERE old_product_id=74 OR keeper_product_id=74 ORDER BY repaired_at"
-          query "MANUAL RETIREMENTS PRODUCT74 IF PRESENT" "SELECT * FROM catalog_manual_retirements WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270"
-
+          query "ORDERS SCHEMA" "SELECT sql FROM sqlite_master WHERE type='table' AND name='orders'"
+          query "CATALOG INDEXES" "SELECT name,tbl_name,sql FROM sqlite_master WHERE type='index' AND tbl_name IN ('catalog_products','catalog_stock_positions','catalog_variants','inventory_stock','inventory_transfer_items') ORDER BY tbl_name,name"
+          query "ORDA ALIASES" "SELECT * FROM catalog_product_aliases WHERE alias_key LIKE '%ОРДА%' OR UPPER(TRIM(raw_value)) LIKE '%ОРДА%' OR product_id IN (43,74) ORDER BY id"
+          query "WRONG PRODUCT ORDER ITEMS" "SELECT * FROM order_items WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270 ORDER BY id"
+          query "WRONG PRODUCT ORDERS" "SELECT o.* FROM orders o WHERE EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id=o.id AND (oi.product_id=74 OR oi.variant_id BETWEEN 1259 AND 1270)) ORDER BY o.id"
+          query "TODAY WRONG PRODUCT ORDERS" "SELECT o.* FROM orders o WHERE o.order_date='2026-09-15' AND EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id=o.id AND (oi.product_id=74 OR oi.variant_id BETWEEN 1259 AND 1270)) ORDER BY o.id"
+          query "INPUT ALIASES WRONG VARIANTS" "SELECT * FROM catalog_input_aliases WHERE variant_id BETWEEN 1259 AND 1270 ORDER BY id"
+          query "IDENTITY LINKS WRONG PRODUCT" "SELECT * FROM catalog_identity_order_item_links WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270 ORDER BY order_item_id"
+          query "MERGE REPAIR 74" "SELECT * FROM catalog_product_merge_repairs WHERE merged_product_id=74 OR keeper_product_id=74 ORDER BY id"
+          query "MANUAL RETIREMENT 74" "SELECT * FROM catalog_manual_retirements WHERE product_id=74 OR (entity_type='product' AND entity_id=74) OR (entity_type='variant' AND entity_id BETWEEN 1259 AND 1270) ORDER BY entity_type,entity_id"
+          query "ALL PRODUCT74 REFERENCE COUNTS" "SELECT 'order_items' AS table_name,COUNT(*) AS rows FROM order_items WHERE product_id=74 UNION ALL SELECT 'inventory_reservations',COUNT(*) FROM inventory_reservations WHERE product_id=74 UNION ALL SELECT 'inventory_stock',COUNT(*) FROM inventory_stock WHERE product_id=74 UNION ALL SELECT 'inventory_movements',COUNT(*) FROM inventory_movements WHERE product_id=74 UNION ALL SELECT 'workshop_tasks',COUNT(*) FROM workshop_tasks WHERE product_id=74 UNION ALL SELECT 'inventory_lifecycle_events',COUNT(*) FROM inventory_lifecycle_events WHERE product_id=74 UNION ALL SELECT 'inventory_transfer_items',COUNT(*) FROM inventory_transfer_items WHERE product_id=74 UNION ALL SELECT 'inventory_stock_checks',COUNT(*) FROM inventory_stock_checks WHERE product_id=74 UNION ALL SELECT 'inventory_stocktake_items',COUNT(*) FROM inventory_stocktake_items WHERE product_id=74 UNION ALL SELECT 'catalog_identity_order_item_links',COUNT(*) FROM catalog_identity_order_item_links WHERE product_id=74"
+          query "PRODUCT43 POSITION97" "SELECT * FROM catalog_stock_positions WHERE id=97"
+          query "PRODUCT74 POSITION145" "SELECT * FROM catalog_stock_positions WHERE id=145"
+          query "POSITION97 VARIANTS" "SELECT id,product_id,stock_position_id,gender,color,material,length,size_label,is_active FROM catalog_variants WHERE stock_position_id=97 ORDER BY id"
+          query "POSITION145 VARIANTS" "SELECT id,product_id,stock_position_id,gender,color,material,length,size_label,is_active FROM catalog_variants WHERE stock_position_id=145 ORDER BY id"
           echo
-          echo "READ_ONLY_REFERENCE_MAP_COMPLETE=1"
+          echo "READ_ONLY_FINAL_ORDA_MAP_COMPLETE=1"
