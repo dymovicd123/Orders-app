@@ -1,0 +1,110 @@
+name: Apply ORDA canonical resolver fix
+
+on:
+  push:
+    branches:
+      - fix/orda-canonical-merge-20260915
+    paths:
+      - .github/workflows/apply-orda-canonical-fix-20260915.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/orda-canonical-merge-20260915
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Patch arrival canonical product resolver and regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          path = Path('worker/domains/inventory-movement.ts')
+          text = path.read_text()
+          old_lookup = """      byId.set(id, row);
+              const exact = upperText(row.name);
+              if (exact && !byExact.has(exact)) byExact.set(exact, row);
+              const identity = normalizeCatalogProductIdentityKey(row.name);
+              if (identity && !byIdentity.has(identity)) byIdentity.set(identity, row);"""
+          new_lookup = """      byId.set(id, row);
+              if (toInt(row.is_active, 0) !== 1) continue;
+              const exact = upperText(row.name);
+              if (exact && !byExact.has(exact)) byExact.set(exact, row);
+              const identity = normalizeCatalogProductIdentityKey(row.name);
+              if (identity && !byIdentity.has(identity)) byIdentity.set(identity, row);"""
+          if old_lookup not in text:
+              raise SystemExit('product lookup patch anchor missing')
+          text = text.replace(old_lookup, new_lookup, 1)
+
+          old_resolver = """  const resolveProduct = (item: ReturnType<typeof normalizeInventoryItem>) => {
+              const explicit = item.productId > 0 ? lookup.byId.get(item.productId) : null;
+              if (explicit) return explicit;
+              const exact = lookup.byExact.get(item.productName);
+              if (exact) return exact;
+              const identityKey = normalizeCatalogProductIdentityKey(item.productName);
+              if (!identityKey) return null;
+              return lookup.byIdentity.get(identityKey) || lookup.byAlias.get(identityKey) || null;
+            };"""
+          new_resolver = """  const resolveProduct = (item: ReturnType<typeof normalizeInventoryItem>) => {
+              const explicit = item.productId > 0 ? lookup.byId.get(item.productId) : null;
+              if (explicit && toInt(explicit.is_active, 0) === 1) return explicit;
+              const identityKey = normalizeCatalogProductIdentityKey(item.productName);
+              if (!identityKey) return null;
+              const alias = lookup.byAlias.get(identityKey);
+              if (alias) return alias;
+              const exact = lookup.byExact.get(upperText(item.productName));
+              if (exact) return exact;
+              return lookup.byIdentity.get(identityKey) || null;
+            };"""
+          if old_resolver not in text:
+              raise SystemExit('product resolver patch anchor missing')
+          text = text.replace(old_resolver, new_resolver, 1)
+          path.write_text(text)
+
+          test = Path('scripts/test-arrival-canonical-product-alias-r1.mjs')
+          test.write_text("""import fs from 'node:fs'\n\nconst source = fs.readFileSync('worker/domains/inventory-movement.ts', 'utf8')\nconst start = source.indexOf('export async function resolveInventoryCreatableItemsBulk(')\nconst end = source.indexOf('\\n\\nexport async function applyInventoryMovement(', start)\nif (start < 0 || end < 0) throw new Error('Cannot isolate inventory materializer')\nconst body = source.slice(start, end)\nconst check = (value, message) => { if (!value) throw new Error(message) }\n\ncheck(body.includes('if (toInt(row.is_active, 0) !== 1) continue;'), 'inactive products are excluded from name/identity lookup')\ncheck(body.includes('if (explicit && toInt(explicit.is_active, 0) === 1) return explicit;'), 'stale explicit inactive product ids cannot keep an arrival on a retired product')\ncheck(body.includes('const alias = lookup.byAlias.get(identityKey);'), 'active learned alias participates in arrival resolution')\ncheck(body.includes('if (alias) return alias;'), 'canonical alias can resolve the raw arrival product name')\nconst aliasPos = body.indexOf('const alias = lookup.byAlias.get(identityKey);')\nconst exactPos = body.indexOf('const exact = lookup.byExact.get(upperText(item.productName));')\nconst identityPos = body.indexOf('return lookup.byIdentity.get(identityKey) || null;')\ncheck(aliasPos >= 0 && exactPos > aliasPos && identityPos > exactPos, 'alias wins before active exact/identity name lookup for non-explicit arrivals')\ncheck(!body.includes('return lookup.byIdentity.get(identityKey) || lookup.byAlias.get(identityKey) || null;'), 'old alias-last resolver is gone')\nconsole.log('ARRIVAL CANONICAL PRODUCT ALIAS R1 TESTS PASSED')\n""")
+
+          package = Path('package.json')
+          pkg = package.read_text()
+          anchor = 'node scripts/test-arrival-materialization-reliability.mjs && '
+          addition = 'node scripts/test-arrival-canonical-product-alias-r1.mjs && '
+          if addition not in pkg:
+              if anchor not in pkg:
+                  raise SystemExit('package release:check anchor missing')
+              pkg = pkg.replace(anchor, anchor + addition, 1)
+          package.write_text(pkg)
+          PY
+      - name: Install
+        run: npm ci
+      - name: Focused regression
+        run: node scripts/test-arrival-canonical-product-alias-r1.mjs
+      - name: Full release gate
+        run: npm run release:check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Lint
+        run: npm run lint
+      - name: Commit validated source fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name dymovicd123
+          git config user.email dymovicd@gmail.com
+          git add worker/domains/inventory-movement.ts scripts/test-arrival-canonical-product-alias-r1.mjs package.json
+          git diff --cached --check
+          git commit -m "Fix arrival canonical product alias resolution"
+          git push origin HEAD:fix/orda-canonical-merge-20260915
