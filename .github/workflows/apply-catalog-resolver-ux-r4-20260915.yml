@@ -23,6 +23,8 @@ jobs:
       - run: npm ci
       - name: Apply guarded UX patch
         run: python scripts/patch-catalog-resolver-ux-r4-20260915.py
+      - name: Align R4 regression wording
+        run: python scripts/patch-catalog-resolver-ux-r4-testfix-20260915.py
       - name: Focused resolver regression
         run: node scripts/test-contextual-catalog-resolution-r1.mjs
       - name: Full release gate
