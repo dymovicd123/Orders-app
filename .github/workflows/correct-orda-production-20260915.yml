@@ -1,0 +1,154 @@
+name: Correct ORDA duplicate in Production
+
+on:
+  push:
+    branches:
+      - hotfix/orda-production-correction-20260915
+    paths:
+      - .github/workflows/correct-orda-production-20260915.yml
+
+permissions:
+  contents: read
+
+jobs:
+  correct:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+    steps:
+      - name: Guard, correct, and verify ORDA canonical merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          API="https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/d1/database/$DB_ID/query"
+
+          query_json() {
+            local sql="$1"
+            local body response
+            body="$(jq -nc --arg sql "$sql" '{sql:$sql}')"
+            response="$(curl --retry 3 --retry-all-errors -sS -X POST \
+              -H "Authorization: Bearer $CF_API_TOKEN" \
+              -H "Content-Type: application/json" \
+              "$API" --data "$body")"
+            jq -e '.success == true and ([.result[]?.success] | all)' >/dev/null <<<"$response" || {
+              echo "D1_QUERY_FAILED"
+              echo "$response"
+              exit 1
+            }
+            jq -c '[.result[]?.results[]?]' <<<"$response"
+          }
+
+          echo "=== LIVE PREFLIGHT ==="
+          products="$(query_json "SELECT id,name,is_active,gender_scope FROM catalog_products WHERE id IN (43,74) ORDER BY id")"
+          positions="$(query_json "SELECT id,product_id,material,length,is_active FROM catalog_stock_positions WHERE id IN (97,145) ORDER BY id")"
+          variants="$(query_json "SELECT id,product_id,stock_position_id,gender,color,material,length,size_label,is_active FROM catalog_variants WHERE id BETWEEN 1259 AND 1270 ORDER BY id")"
+          conflicts="$(query_json "SELECT COUNT(*) AS c FROM catalog_variants w JOIN catalog_variants t ON t.stock_position_id=97 AND t.id NOT BETWEEN 1259 AND 1270 AND t.category=w.category AND COALESCE(t.gender,'')=COALESCE(w.gender,'') AND COALESCE(t.color,'')=COALESCE(w.color,'') AND COALESCE(t.material,'')=COALESCE(w.material,'') AND COALESCE(t.length,'')=COALESCE(w.length,'') AND COALESCE(t.size_label,'')=COALESCE(w.size_label,'') AND t.is_active=1 WHERE w.id BETWEEN 1259 AND 1270 AND w.is_active=1")"
+          extra_variants="$(query_json "SELECT COUNT(*) AS c FROM catalog_variants WHERE product_id=74 AND id NOT BETWEEN 1259 AND 1270")"
+          bad_refs="$(query_json "SELECT 'order_items' AS table_name, COUNT(*) AS c FROM order_items WHERE product_id=74 AND (variant_id IS NULL OR variant_id NOT BETWEEN 1259 AND 1270) UNION ALL SELECT 'inventory_stock',COUNT(*) FROM inventory_stock WHERE product_id=74 AND variant_id NOT BETWEEN 1259 AND 1270 UNION ALL SELECT 'inventory_reservations',COUNT(*) FROM inventory_reservations WHERE product_id=74 AND (variant_id IS NULL OR variant_id NOT BETWEEN 1259 AND 1270) UNION ALL SELECT 'inventory_movements',COUNT(*) FROM inventory_movements WHERE product_id=74 AND variant_id NOT BETWEEN 1259 AND 1270 UNION ALL SELECT 'inventory_transfer_items',COUNT(*) FROM inventory_transfer_items WHERE product_id=74 AND variant_id NOT BETWEEN 1259 AND 1270")"
+          alias_before="$(query_json "SELECT id,alias_key,raw_value,product_id FROM catalog_product_aliases WHERE alias_key='ОРДА'")"
+          refs_before="$(query_json "SELECT 'order_items' AS table_name,COUNT(*) AS c FROM order_items WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270 UNION ALL SELECT 'inventory_stock',COUNT(*) FROM inventory_stock WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270 UNION ALL SELECT 'inventory_reservations',COUNT(*) FROM inventory_reservations WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270 UNION ALL SELECT 'inventory_movements',COUNT(*) FROM inventory_movements WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270 UNION ALL SELECT 'inventory_transfer_items',COUNT(*) FROM inventory_transfer_items WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270")"
+          stock_before="$(query_json "SELECT inventory_source,variant_id,quantity,reserved_quantity FROM inventory_stock WHERE variant_id BETWEEN 1259 AND 1270 ORDER BY inventory_source,variant_id")"
+          reservations_before="$(query_json "SELECT id,order_id,order_item_id,inventory_source,variant_id,quantity,status FROM inventory_reservations WHERE variant_id BETWEEN 1259 AND 1270 ORDER BY id")"
+
+          echo "PRODUCTS=$products"
+          echo "POSITIONS=$positions"
+          echo "WRONG_VARIANT_COUNT=$(jq 'length' <<<"$variants")"
+          echo "CONFLICTS=$conflicts"
+          echo "EXTRA_VARIANTS=$extra_variants"
+          echo "BAD_REFS=$bad_refs"
+          echo "ALIAS_BEFORE=$alias_before"
+          echo "REFS_BEFORE=$refs_before"
+          echo "STOCK_BEFORE=$stock_before"
+          echo "RESERVATIONS_BEFORE=$reservations_before"
+
+          # Idempotent success path if the correction already ran.
+          if jq -e 'length == 2 and .[0].id == 43 and .[0].name == "ОРДА ШАПАН" and .[0].is_active == 1 and .[1].id == 74 and .[1].is_active == 0' >/dev/null <<<"$products" \
+            && jq -e 'length == 12 and all(.[]; .product_id == 43 and .stock_position_id == 97 and .is_active == 1)' >/dev/null <<<"$variants"; then
+            echo "ORDA_CORRECTION_ALREADY_APPLIED=1"
+            exit 0
+          fi
+
+          jq -e 'length == 2 and .[0].id == 43 and .[0].name == "ОРДА ШАПАН" and .[0].is_active == 1 and .[1].id == 74 and .[1].name == "ОРДА" and .[1].is_active == 1' >/dev/null <<<"$products"
+          jq -e 'length == 2 and .[0].id == 97 and .[0].product_id == 43 and .[0].material == "КАШЕМИР" and .[0].length == "СТАНДАРТ" and .[0].is_active == 1 and .[1].id == 145 and .[1].product_id == 74 and .[1].material == "КАШЕМИР" and .[1].length == "СТАНДАРТ" and .[1].is_active == 1' >/dev/null <<<"$positions"
+          jq -e 'length == 12 and all(.[]; .product_id == 74 and .stock_position_id == 145 and .is_active == 1 and .material == "КАШЕМИР" and .length == "СТАНДАРТ")' >/dev/null <<<"$variants"
+          jq -e '.[0].c == 0' >/dev/null <<<"$conflicts"
+          jq -e '.[0].c == 0' >/dev/null <<<"$extra_variants"
+          jq -e 'all(.[]; .c == 0)' >/dev/null <<<"$bad_refs"
+          jq -e 'length == 0 or all(.[]; .product_id == 43)' >/dev/null <<<"$alias_before"
+
+          echo "PREFLIGHT_OK=1"
+
+          now="$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"
+          read -r -d '' SQL <<'SQLEND' || true
+          SELECT CASE WHEN (SELECT COUNT(*) FROM catalog_products WHERE id=43 AND name='ОРДА ШАПАН' AND is_active=1)=1 THEN 1 ELSE json('GUARD_TARGET_PRODUCT') END;
+          SELECT CASE WHEN (SELECT COUNT(*) FROM catalog_products WHERE id=74 AND name='ОРДА' AND is_active=1)=1 THEN 1 ELSE json('GUARD_SOURCE_PRODUCT') END;
+          SELECT CASE WHEN (SELECT COUNT(*) FROM catalog_variants WHERE id BETWEEN 1259 AND 1270 AND product_id=74 AND stock_position_id=145 AND is_active=1)=12 THEN 1 ELSE json('GUARD_SOURCE_VARIANTS') END;
+          SELECT CASE WHEN (SELECT COUNT(*) FROM catalog_variants WHERE product_id=74 AND id NOT BETWEEN 1259 AND 1270)=0 THEN 1 ELSE json('GUARD_EXTRA_VARIANTS') END;
+          SELECT CASE WHEN (SELECT COUNT(*) FROM catalog_variants w JOIN catalog_variants t ON t.stock_position_id=97 AND t.id NOT BETWEEN 1259 AND 1270 AND t.category=w.category AND COALESCE(t.gender,'')=COALESCE(w.gender,'') AND COALESCE(t.color,'')=COALESCE(w.color,'') AND COALESCE(t.material,'')=COALESCE(w.material,'') AND COALESCE(t.length,'')=COALESCE(w.length,'') AND COALESCE(t.size_label,'')=COALESCE(w.size_label,'') AND t.is_active=1 WHERE w.id BETWEEN 1259 AND 1270 AND w.is_active=1)=0 THEN 1 ELSE json('GUARD_VARIANT_CONFLICT') END;
+
+          UPDATE catalog_variants SET product_id=43, stock_position_id=97, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id BETWEEN 1259 AND 1270 AND product_id=74 AND stock_position_id=145;
+          UPDATE order_items SET product_id=43, product_name_snapshot='ОРДА ШАПАН' WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270;
+          UPDATE inventory_stock SET product_id=43, product_name_snapshot='ОРДА ШАПАН' WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270;
+          UPDATE inventory_reservations SET product_id=43, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270;
+          UPDATE inventory_movements SET product_id=43, product_name_snapshot='ОРДА ШАПАН' WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270;
+          UPDATE inventory_transfer_items SET product_id=43 WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270;
+          UPDATE inventory_stock_checks SET product_id=43 WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270;
+          UPDATE inventory_stocktake_items SET product_id=43 WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270;
+          UPDATE inventory_lifecycle_events SET product_id=43 WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270;
+          UPDATE workshop_tasks SET product_id=43 WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270;
+          UPDATE catalog_identity_order_item_links SET product_id=43 WHERE product_id=74 OR variant_id BETWEEN 1259 AND 1270;
+
+          INSERT INTO catalog_product_aliases (alias_key,raw_value,product_id,created_at,updated_at)
+          VALUES ('ОРДА','ОРДА',43,strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+          ON CONFLICT(alias_key) DO UPDATE SET raw_value='ОРДА',product_id=43,updated_at=excluded.updated_at;
+
+          UPDATE catalog_stock_positions SET is_active=0, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=145 AND product_id=74;
+          UPDATE catalog_products SET is_active=0, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=74 AND name='ОРДА';
+          SQLEND
+
+          echo "=== ATOMIC D1 BATCH ==="
+          body="$(jq -nc --arg sql "$SQL" '{sql:$sql}')"
+          response="$(curl --retry 3 --retry-all-errors -sS -X POST \
+            -H "Authorization: Bearer $CF_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            "$API" --data "$body")"
+          jq -e '.success == true and ([.result[]?.success] | all)' >/dev/null <<<"$response" || {
+            echo "ORDA_CORRECTION_BATCH_FAILED"
+            echo "$response"
+            exit 1
+          }
+          echo "BATCH_RESULT=$(jq -c '[.result[] | {success,meta}]' <<<"$response")"
+
+          echo "=== POST VERIFY ==="
+          products_after="$(query_json "SELECT id,name,is_active FROM catalog_products WHERE id IN (43,74) ORDER BY id")"
+          positions_after="$(query_json "SELECT id,product_id,is_active FROM catalog_stock_positions WHERE id IN (97,145) ORDER BY id")"
+          variants_after="$(query_json "SELECT id,product_id,stock_position_id,is_active FROM catalog_variants WHERE id BETWEEN 1259 AND 1270 ORDER BY id")"
+          alias_after="$(query_json "SELECT alias_key,raw_value,product_id FROM catalog_product_aliases WHERE alias_key='ОРДА'")"
+          refs_after="$(query_json "SELECT 'order_items' AS table_name,COUNT(*) AS c FROM order_items WHERE product_id=74 UNION ALL SELECT 'inventory_stock',COUNT(*) FROM inventory_stock WHERE product_id=74 UNION ALL SELECT 'inventory_reservations',COUNT(*) FROM inventory_reservations WHERE product_id=74 UNION ALL SELECT 'inventory_movements',COUNT(*) FROM inventory_movements WHERE product_id=74 UNION ALL SELECT 'inventory_transfer_items',COUNT(*) FROM inventory_transfer_items WHERE product_id=74 UNION ALL SELECT 'inventory_stock_checks',COUNT(*) FROM inventory_stock_checks WHERE product_id=74 UNION ALL SELECT 'inventory_stocktake_items',COUNT(*) FROM inventory_stocktake_items WHERE product_id=74 UNION ALL SELECT 'inventory_lifecycle_events',COUNT(*) FROM inventory_lifecycle_events WHERE product_id=74 UNION ALL SELECT 'workshop_tasks',COUNT(*) FROM workshop_tasks WHERE product_id=74 UNION ALL SELECT 'catalog_identity_order_item_links',COUNT(*) FROM catalog_identity_order_item_links WHERE product_id=74")"
+          stale_names="$(query_json "SELECT (SELECT COUNT(*) FROM order_items WHERE variant_id BETWEEN 1259 AND 1270 AND product_name_snapshot<>'ОРДА ШАПАН') + (SELECT COUNT(*) FROM inventory_stock WHERE variant_id BETWEEN 1259 AND 1270 AND product_name_snapshot<>'ОРДА ШАПАН') + (SELECT COUNT(*) FROM inventory_movements WHERE variant_id BETWEEN 1259 AND 1270 AND product_name_snapshot<>'ОРДА ШАПАН') AS c")"
+          stock_after="$(query_json "SELECT inventory_source,variant_id,quantity,reserved_quantity FROM inventory_stock WHERE variant_id BETWEEN 1259 AND 1270 ORDER BY inventory_source,variant_id")"
+          reservations_after="$(query_json "SELECT id,order_id,order_item_id,inventory_source,variant_id,quantity,status FROM inventory_reservations WHERE variant_id BETWEEN 1259 AND 1270 ORDER BY id")"
+          orders_after="$(query_json "SELECT oi.id AS order_item_id,o.external_id,oi.product_id,oi.variant_id,oi.product_name_snapshot,oi.stock_writeoff_status FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.variant_id BETWEEN 1259 AND 1270 ORDER BY oi.id")"
+
+          echo "PRODUCTS_AFTER=$products_after"
+          echo "POSITIONS_AFTER=$positions_after"
+          echo "ALIAS_AFTER=$alias_after"
+          echo "REFS_AFTER=$refs_after"
+          echo "STALE_NAMES=$stale_names"
+          echo "STOCK_AFTER=$stock_after"
+          echo "RESERVATIONS_AFTER=$reservations_after"
+          echo "ORDERS_AFTER=$orders_after"
+
+          jq -e 'length == 2 and .[0].id == 43 and .[0].name == "ОРДА ШАПАН" and .[0].is_active == 1 and .[1].id == 74 and .[1].is_active == 0' >/dev/null <<<"$products_after"
+          jq -e 'length == 2 and .[0].id == 97 and .[0].product_id == 43 and .[0].is_active == 1 and .[1].id == 145 and .[1].product_id == 74 and .[1].is_active == 0' >/dev/null <<<"$positions_after"
+          jq -e 'length == 12 and all(.[]; .product_id == 43 and .stock_position_id == 97 and .is_active == 1)' >/dev/null <<<"$variants_after"
+          jq -e 'length == 1 and .[0].alias_key == "ОРДА" and .[0].product_id == 43' >/dev/null <<<"$alias_after"
+          jq -e 'all(.[]; .c == 0)' >/dev/null <<<"$refs_after"
+          jq -e '.[0].c == 0' >/dev/null <<<"$stale_names"
+          [[ "$stock_before" == "$stock_after" ]]
+          [[ "$reservations_before" == "$reservations_after" ]]
+
+          echo "ORDA_PRODUCTION_CORRECTION_OK=1"
