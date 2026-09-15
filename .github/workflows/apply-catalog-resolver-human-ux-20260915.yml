@@ -44,7 +44,8 @@ jobs:
             src/features/orders/OrderCatalogResolutionModal.css \
             scripts/test-contextual-catalog-resolution-r1.mjs \
             scripts/contextual-catalog-resolution-r1-frontend-manifest.json \
-            scripts/step1906a-worker-declaration-manifest.json
+            scripts/step1906a-worker-declaration-manifest.json \
+            scripts/step192b2a4-order-create-save-integrity-manifest.json
           git diff --cached --check
           git commit -m "fix: make catalog resolver human and restore reservations"
           git push origin HEAD:fix/catalog-resolver-human-ux-20260915
