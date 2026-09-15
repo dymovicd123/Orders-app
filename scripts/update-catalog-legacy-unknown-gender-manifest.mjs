@@ -2,8 +2,10 @@ import fs from 'node:fs'
 import crypto from 'node:crypto'
 import ts from 'typescript'
 
-const manifestPath = 'scripts/step1906a-worker-declaration-manifest.json'
-const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+const declarationManifestPath = 'scripts/step1906a-worker-declaration-manifest.json'
+const shippingShortageManifestPath = 'scripts/shipping-shortage-hotfix-worker-manifest.json'
+const declarationManifest = JSON.parse(fs.readFileSync(declarationManifestPath, 'utf8'))
+const shippingShortageManifest = JSON.parse(fs.readFileSync(shippingShortageManifestPath, 'utf8'))
 
 function declarationHash(path, name) {
   const text = fs.readFileSync(path, 'utf8')
@@ -17,19 +19,32 @@ function declarationHash(path, name) {
   throw new Error(`Declaration not found: ${name}`)
 }
 
-const changes = [
+const baseManifestChanges = [
   ['worker/domains/catalog-review.ts', 'catalogReviewBasePredicate'],
   ['worker/domains/catalog-review.ts', 'resolveCatalogReviewFacts'],
-  ['worker/domains/order-reservations.ts', 'getOrderShipmentInventoryBlockers'],
 ]
 
-for (const [path, name] of changes) {
-  if (!manifest.declarations?.[name]) throw new Error(`Missing accepted baseline declaration: ${name}`)
-  const before = manifest.declarations[name]
+for (const [path, name] of baseManifestChanges) {
+  if (!declarationManifest.declarations?.[name]) throw new Error(`Missing accepted baseline declaration: ${name}`)
+  const before = declarationManifest.declarations[name]
   const after = declarationHash(path, name)
   if (before === after) throw new Error(`Expected real declaration delta for ${name}`)
-  manifest.declarations[name] = after
+  declarationManifest.declarations[name] = after
   console.log(`${name}: ${before} -> ${after}`)
 }
 
-fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
+const shipmentName = 'getOrderShipmentInventoryBlockers'
+const shipmentChange = shippingShortageManifest.changes?.[shipmentName]
+if (!shipmentChange?.before || !shipmentChange?.after) {
+  throw new Error(`Missing shipping-shortage accepted delta: ${shipmentName}`)
+}
+if (shipmentChange.before !== declarationManifest.declarations?.[shipmentName]) {
+  throw new Error(`Shipping-shortage baseline chain mismatch: ${shipmentName}`)
+}
+const shipmentAfter = declarationHash('worker/domains/order-reservations.ts', shipmentName)
+if (shipmentAfter === shipmentChange.after) throw new Error(`Expected real declaration delta for ${shipmentName}`)
+console.log(`${shipmentName}: ${shipmentChange.after} -> ${shipmentAfter}`)
+shipmentChange.after = shipmentAfter
+
+fs.writeFileSync(declarationManifestPath, JSON.stringify(declarationManifest, null, 2) + '\n')
+fs.writeFileSync(shippingShortageManifestPath, JSON.stringify(shippingShortageManifest, null, 2) + '\n')
