@@ -54,13 +54,6 @@ function variantLabel(variant: CatalogVariantRecord) {
     .join(' · ')
 }
 
-function itemLabel(item: CatalogReviewItem) {
-  return [item.gender, item.color, item.material, item.length, item.size]
-    .map(clean)
-    .filter(Boolean)
-    .join(' · ')
-}
-
 function fixedGender(scope: CatalogGenderScope | '' | undefined) {
   return scope === 'female' ? 'ЖЕН' : scope === 'male' ? 'МУЖ' : ''
 }
@@ -102,6 +95,29 @@ function productVariantCategory(variant: CatalogVariantRecord): 'adult' | 'child
   return String(variant.productCategory || '').toLowerCase() === 'child' ? 'child' : 'adult'
 }
 
+function noSizeValue(value: unknown) {
+  const text = normalize(value)
+  return !text || ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р'].includes(text) ? '' : text
+}
+
+function variantCompatibleWithDraft(variant: CatalogVariantRecord, draft: ResolverDraft) {
+  if (Number(variant.productId) !== Number(draft.productId)) return false
+  if (productVariantCategory(variant) !== draft.category) return false
+  if (normalize(variant.gender) !== normalize(draft.gender)) return false
+  if ((normalize(variant.material) || 'СТАНДАРТ') !== (normalize(draft.material) || 'СТАНДАРТ')) return false
+  if ((normalize(variant.length) || 'СТАНДАРТ') !== (normalize(draft.length) || 'СТАНДАРТ')) return false
+  if (clean(draft.color) && (normalize(variant.color) || 'БЕЗ ЦВЕТА') !== normalize(draft.color)) return false
+  if (clean(draft.size) && noSizeValue(variant.sizeLabel) !== noSizeValue(draft.size)) return false
+  return true
+}
+
+function variantExactlyMatchesDraft(variant: CatalogVariantRecord, draft: ResolverDraft) {
+  if (!clean(draft.color) || !clean(draft.size)) return false
+  return variantCompatibleWithDraft(variant, draft)
+    && (normalize(variant.color) || 'БЕЗ ЦВЕТА') === normalize(draft.color)
+    && noSizeValue(variant.sizeLabel) === noSizeValue(draft.size)
+}
+
 function initialDraft(item: CatalogReviewItem, context: CatalogResolutionContext, catalog: CatalogResponse): ResolverDraft {
   const suggestions = rankedProducts(catalog, item.productName)
   const suggestedProduct = context.product?.id
@@ -136,6 +152,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   const [selectedVariantId, setSelectedVariantId] = useState(0)
   const [createFields, setCreateFields] = useState<Record<string, boolean>>({})
   const [error, setError] = useState('')
+  const [advancedOpen, setAdvancedOpen] = useState(false)
 
   const activeItem = review?.items?.[0] || null
 
@@ -171,6 +188,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       setSelectedVariantId(Number(contextData.existingVariantId || 0))
       setVariantQuery('')
       setCreateFields({})
+      setAdvancedOpen(!contextData.existingVariantId)
     } catch (value) {
       setError(value instanceof Error ? value.message : 'Не удалось открыть уточнение товара.')
     } finally {
@@ -211,6 +229,19 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     }
     return rows.slice().sort((left, right) => score(right) - score(left) || variantLabel(left).localeCompare(variantLabel(right), 'ru', { numeric: true })).slice(0, 24)
   }, [catalog, context?.existingVariantId, draft, variantQuery])
+
+  const exactDraftVariant = useMemo(() => {
+    if (!draft || !catalog) return null
+    return (catalog.variants || []).find((variant) => variant.isActive && variantExactlyMatchesDraft(variant, draft)) || null
+  }, [catalog, draft])
+
+  const contextRecommendedVariant = useMemo(() => {
+    if (!draft || !catalog || !context?.existingVariantId) return null
+    const candidate = (catalog.variants || []).find((variant) => Number(variant.id) === Number(context.existingVariantId) && variant.isActive) || null
+    return candidate && variantCompatibleWithDraft(candidate, draft) ? candidate : null
+  }, [catalog, context?.existingVariantId, draft])
+
+  const recommendedVariant = exactDraftVariant || contextRecommendedVariant
 
   const compoundHint = useMemo(() => {
     if (!activeItem || !selectedProduct) return ''
@@ -286,13 +317,13 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     } : current)
   }
 
-  const resolveSelected = async () => {
-    if (!activeItem || !selectedVariantId || resolving) return
+  const resolveSelected = async (variantId = selectedVariantId) => {
+    if (!activeItem || !variantId || resolving) return
     setResolving(true)
     setError('')
     try {
       const response = await apiFetch(`/api/orders/${order.id}/catalog-review/${activeItem.orderItemId}/resolve-existing`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ variantId: selectedVariantId }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ variantId }),
       })
       const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Не удалось связать позицию с товаром каталога')
       if (!response.ok || result.ok === false) throw new Error(result.message || 'Не удалось связать существующий вариант.')
@@ -318,6 +349,10 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
 
   const resolveFacts = async () => {
     if (!activeItem || !draft || resolving || factsBlocked || !isAdmin) return
+    if (exactDraftVariant?.id) {
+      await resolveSelected(Number(exactDraftVariant.id))
+      return
+    }
     setResolving(true)
     setError('')
     try {
@@ -346,14 +381,6 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       setResolving(false)
     }
   }
-
-  const issueText = context?.issueType === 'exact_existing'
-    ? 'Точная комбинация уже существует — можно связать её одним действием.'
-    : context?.issueType === 'unknown_product'
-      ? 'Базовый товар не определён. Система может предложить совпадение, но окончательное решение остаётся за человеком.'
-      : context?.issueType === 'unknown_attribute'
-        ? 'Товар известен, но хотя бы одна характеристика неоднозначна. Все поля ниже можно исправить.'
-        : 'Существующей точной комбинации нет. Проверьте каждый факт и при необходимости создайте новую комбинацию.'
 
   const renderField = (field: EditableField, label: string) => {
     if (!draft) return null
@@ -388,123 +415,170 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       <div className="modal-card order-catalog-resolution-modal" role="dialog" aria-modal="true" aria-label="Уточнение товара перед отправкой">
         <div className="order-catalog-resolution-head">
           <div>
-            <div className="card-label">Перед отправкой · разбор товара</div>
-            <h3>Уточнить фактический товар</h3>
-            <div className="muted">Заказ {order.external_id || `#${order.id}`}</div>
+            <div className="card-label">Перед отправкой</div>
+            <h3>Уточнить товар</h3>
+            <div className="muted">{order.external_id || `Заказ #${order.id}`}</div>
           </div>
           <button type="button" className="secondary-button" onClick={onClose} disabled={resolving}>Закрыть</button>
         </div>
 
-        {busy ? <div className="order-catalog-resolution-loading">Загружаю проблемную позицию…</div> : null}
+        {busy ? <div className="order-catalog-resolution-loading">Загружаю товар…</div> : null}
         {error ? <div className="order-catalog-resolution-error">{error}</div> : null}
 
         {!busy && activeItem && draft ? (
           <>
-            <div className="order-catalog-resolution-progress">Осталось уточнить: <strong>{review?.count || review?.items?.length || 1}</strong></div>
+            <div className="order-catalog-resolution-progress">
+              {review?.count || review?.items?.length || 1} {Number(review?.count || review?.items?.length || 1) === 1 ? 'позиция требует уточнения' : 'позиции требуют уточнения'}
+            </div>
 
             <section className="order-catalog-resolution-source">
-              <div><span>Менеджер ввёл</span><strong>{activeItem.productName || 'Без названия'}</strong></div>
-              <p>{itemLabel(activeItem) || 'Характеристики не указаны'}</p>
-              <small>{issueText} Исходный текст заказа не переписывается и остаётся в истории.</small>
-            </section>
-
-            <section className="order-catalog-resolution-product">
-              <div className="order-catalog-resolution-section-title">
-                <div><span>1. Базовый товар</span><strong>Что это за товар на самом деле?</strong></div>
-                {context?.product?.id ? <em>Базовый товар найден системой</em> : null}
+              <div className="order-catalog-resolution-source-main">
+                <span>В заказе</span>
+                <strong>{activeItem.productName || 'Без названия'}</strong>
               </div>
-
-              {!draft.createProduct ? (
-                <label>
-                  <span>Товар из каталога</span>
-                  <select value={draft.productId || ''} onChange={(event) => chooseProduct(Number(event.target.value || 0))}>
-                    <option value="">Выберите товар</option>
-                    {(catalog?.products || []).filter((product) => product.isActive).slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru')).map((product) => (
-                      <option key={`resolver-product-${product.id}`} value={product.id}>{product.name}</option>
-                    ))}
-                  </select>
-                </label>
-              ) : (
-                <div className="order-catalog-resolution-new-product-grid">
-                  <label><span>Название нового базового товара</span><input value={draft.productName} onChange={(event) => changeField('productName', event.target.value)} /></label>
-                  <label><span>Назначение по полу</span><select value={draft.genderScope} onChange={(event) => {
-                    const scope = event.target.value as CatalogGenderScope | ''
-                    setDraft((current) => current ? { ...current, genderScope: scope, gender: fixedGender(scope) || current.gender } : current)
-                  }}><option value="">Выберите</option><option value="female">Женский</option><option value="male">Мужской</option><option value="unisex">Унисекс</option></select></label>
-                </div>
-              )}
-
-              {!context?.product?.id && productSuggestions.length ? (
-                <div className="order-catalog-resolution-suggestions">
-                  <span>Похоже на существующий товар:</span>
-                  {productSuggestions.slice(0, 4).map(({ product }) => <button key={`suggested-product-${product.id}`} type="button" className={Number(draft.productId) === Number(product.id) ? 'is-active' : ''} onClick={() => chooseProduct(Number(product.id))}>{product.name}</button>)}
-                </div>
-              ) : null}
-
-              {isAdmin ? <button type="button" className="order-catalog-resolution-new-product-toggle" onClick={() => {
-                setDraft((current) => current ? { ...current, createProduct: !current.createProduct, productId: current.createProduct ? current.productId : 0, productName: clean(activeItem.productName), genderScope: current.createProduct ? current.genderScope : '' } : current)
-                setSelectedVariantId(0)
-              }}>{draft.createProduct ? 'Выбрать существующий товар' : 'Такого товара действительно нет — создать новый'}</button> : null}
-
-              {compoundHint ? (
-                <div className="order-catalog-resolution-compound-hint">
-                  <strong>В исходном названии остался текст: «{compoundHint}»</strong>
-                  <span>Система не будет сама решать, что это значит. Если это характеристика, подставьте её:</span>
-                  <div><button type="button" onClick={() => changeField('material', compoundHint)}>как материал</button><button type="button" onClick={() => changeField('color', compoundHint)}>как цвет</button></div>
-                </div>
-              ) : null}
-              {productCategoryWarning ? <div className="order-catalog-resolution-warning">{productCategoryWarning}</div> : null}
+              <div className="order-catalog-resolution-chips">
+                {clean(activeItem.gender) ? <span>{activeItem.gender}</span> : null}
+                {clean(activeItem.material) ? <span>{activeItem.material}</span> : null}
+                {clean(activeItem.length) && normalize(activeItem.length) !== 'СТАНДАРТ' ? <span>{activeItem.length}</span> : null}
+                {clean(activeItem.color) ? <span>{activeItem.color}</span> : <span className="is-missing">Цвет не указан</span>}
+                {clean(activeItem.size) ? <span>{activeItem.size}</span> : <span className="is-missing">Размер не указан</span>}
+              </div>
             </section>
 
-            {draft.productId && variants.length ? (
-              <section className="order-catalog-resolution-existing">
-                <div className="order-catalog-resolution-section-title"><div><span>2. Быстрый путь</span><strong>Если нужная комбинация уже есть</strong></div></div>
-                <input className="order-catalog-resolution-variant-search" value={variantQuery} onChange={(event) => setVariantQuery(event.target.value)} placeholder="Поиск по материалу, цвету, размеру…" />
-                <div className="order-catalog-resolution-options">
-                  {variants.map((variant) => (
-                    <label key={variant.id} className={`order-catalog-resolution-option${selectedVariantId === variant.id ? ' is-selected' : ''}`}>
-                      <input type="radio" name="order-catalog-resolution-variant" checked={selectedVariantId === variant.id} onChange={() => chooseVariant(variant)} />
-                      <span><strong>{variant.productName}</strong><small>{[productVariantCategory(variant) === 'child' ? 'Детский' : 'Взрослый', variant.gender, variant.color || 'БЕЗ ЦВЕТА', variant.material, variant.length, variant.sizeLabel || 'БЕЗ РАЗМЕРА'].filter(Boolean).join(' · ')}</small></span>
-                      {Number(context?.existingVariantId || 0) === Number(variant.id) ? <em>Точное совпадение</em> : null}
-                    </label>
-                  ))}
+            {recommendedVariant ? (
+              <section className="order-catalog-resolution-recommendation">
+                <div className="order-catalog-resolution-recommendation-head">
+                  <div>
+                    <span>Подходит существующий вариант</span>
+                    <strong>{recommendedVariant.productName}</strong>
+                  </div>
+                  <em>Совпадение найдено</em>
                 </div>
-                <button type="button" className="primary-button" disabled={!selectedVariantId || resolving} onClick={() => void resolveSelected()}>{resolving ? 'Сохраняю…' : 'Связать выбранный существующий вариант'}</button>
+                <div className="order-catalog-resolution-recommendation-facts">
+                  {[productVariantCategory(recommendedVariant) === 'child' ? 'Детский' : 'Взрослый', recommendedVariant.gender, recommendedVariant.color || 'БЕЗ ЦВЕТА', recommendedVariant.material || 'СТАНДАРТ', normalize(recommendedVariant.length) === 'СТАНДАРТ' ? null : recommendedVariant.length, recommendedVariant.sizeLabel || 'БЕЗ РАЗМЕРА'].filter(Boolean).map((value) => <span key={String(value)}>{value}</span>)}
+                </div>
+
+                {(explicitColorMissing || explicitSizeMissing) ? (
+                  <div className="order-catalog-resolution-missing-decisions">
+                    <span>В заказе не хватало данных. Подтвердите:</span>
+                    <div>
+                      {explicitColorMissing ? <button type="button" onClick={() => changeField('color', 'БЕЗ ЦВЕТА')}>Без цвета</button> : <span className="is-done">✓ Без цвета</span>}
+                      {explicitSizeMissing ? <button type="button" onClick={() => changeField('size', 'БЕЗ РАЗМЕРА')}>Без размера</button> : <span className="is-done">✓ Без размера</span>}
+                    </div>
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  className="primary-button order-catalog-resolution-confirm"
+                  disabled={resolving || genderMissing || explicitColorMissing || explicitSizeMissing}
+                  onClick={() => void resolveSelected(Number(recommendedVariant.id))}
+                >
+                  {resolving ? 'Сохраняю…' : 'Подтвердить этот товар'}
+                </button>
               </section>
             ) : null}
 
-            {isAdmin ? (
-              <section className="order-catalog-resolution-facts">
-                <div className="order-catalog-resolution-section-title"><div><span>{draft.productId && variants.length ? '3' : '2'}. Точные характеристики</span><strong>Можно исправить любое поле</strong></div><em>«Распознано» не означает «заблокировано»</em></div>
+            <details
+              className="order-catalog-resolution-advanced"
+              open={advancedOpen}
+              onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+            >
+              <summary>{recommendedVariant ? 'Выбрать другой вариант или исправить данные' : 'Уточнить товар и характеристики'}</summary>
+              <div className="order-catalog-resolution-advanced-body">
+                <section className="order-catalog-resolution-product">
+                  <div className="order-catalog-resolution-compact-title"><strong>Товар</strong>{context?.product?.id ? <span>Система нашла базовый товар</span> : null}</div>
 
-                {context?.isWorkshop ? <div className="order-catalog-resolution-workshop-note">Это позиция Цеха. Для неё достаточно подтвердить базовый товар; складскую комбинацию система создавать не будет.</div> : (
-                  <>
-                    <div className="order-catalog-resolution-facts-grid">
-                      <label className="order-catalog-resolution-field"><span>Тип</span><select value={draft.category} onChange={(event) => changeField('category', event.target.value === 'child' ? 'child' : 'adult')}><option value="adult">Взрослый</option><option value="child">Детский</option></select><small>Тип заказа тоже можно исправить.</small></label>
-                      <label className={`order-catalog-resolution-field${genderMissing ? ' needs-create' : ''}`}><span>Пол</span><select value={draft.gender} onChange={(event) => changeField('gender', event.target.value)}><option value="">Не указан</option><option value="ЖЕН">ЖЕН</option><option value="МУЖ">МУЖ</option></select><small>{effectiveScope === 'unisex' ? 'Для унисекс нужно явно выбрать пол этой вещи.' : 'Можно исправить при необходимости.'}</small></label>
-                      {renderField('material', 'Материал')}
-                      {renderField('length', 'Длина')}
-                      <div className="order-catalog-resolution-field-with-shortcut">{renderField('color', 'Цвет')}<button type="button" onClick={() => changeField('color', 'БЕЗ ЦВЕТА')}>У вещи действительно нет цвета</button></div>
-                      <div className="order-catalog-resolution-field-with-shortcut">{renderField('size', draft.category === 'child' ? 'Возраст' : 'Размер')}<button type="button" onClick={() => changeField('size', 'БЕЗ РАЗМЕРА')}>У вещи действительно нет размера</button></div>
+                  {!draft.createProduct ? (
+                    <label className="order-catalog-resolution-simple-field">
+                      <span>Товар из каталога</span>
+                      <select value={draft.productId || ''} onChange={(event) => chooseProduct(Number(event.target.value || 0))}>
+                        <option value="">Выберите товар</option>
+                        {(catalog?.products || []).filter((product) => product.isActive).slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru')).map((product) => (
+                          <option key={`resolver-product-${product.id}`} value={product.id}>{product.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <div className="order-catalog-resolution-new-product-grid">
+                      <label><span>Название нового товара</span><input value={draft.productName} onChange={(event) => changeField('productName', event.target.value)} /></label>
+                      <label><span>Для кого</span><select value={draft.genderScope} onChange={(event) => {
+                        const scope = event.target.value as CatalogGenderScope | ''
+                        setDraft((current) => current ? { ...current, genderScope: scope, gender: fixedGender(scope) || current.gender } : current)
+                      }}><option value="">Выберите</option><option value="female">Женский</option><option value="male">Мужской</option><option value="unisex">Унисекс</option></select></label>
                     </div>
-                    {(explicitColorMissing || explicitSizeMissing) ? <div className="order-catalog-resolution-warning">Пустое поле из заказа не считается фактом. Укажите значение или явно подтвердите «без цвета / без размера».</div> : null}
-                    {unconfirmedNewFields.length ? <div className="order-catalog-resolution-warning">Новые значения ещё не подтверждены для справочника: {unconfirmedNewFields.map((field) => ({ material: 'материал', length: 'длина', color: 'цвет', size: draft.category === 'child' ? 'возраст' : 'размер' }[field])).join(', ')}.</div> : null}
-                  </>
-                )}
+                  )}
 
-                <div className="order-catalog-resolution-actions">
-                  <button type="button" className="primary-button" disabled={factsBlocked || resolving} onClick={() => void resolveFacts()}>{resolving ? 'Сохраняю…' : context?.isWorkshop ? 'Связать с базовым товаром' : 'Подтвердить и создать/связать точную комбинацию'}</button>
-                  <span>Система изменит только каноническую привязку. Исходная строка заказа останется в истории.</span>
-                </div>
-              </section>
-            ) : (
-              <div className="order-catalog-resolution-empty">Если существующего варианта нет, создание новой характеристики требует админ-режима. Отправить заказ в обход этой проверки нельзя.</div>
-            )}
+                  {!context?.product?.id && productSuggestions.length ? (
+                    <div className="order-catalog-resolution-suggestions">
+                      <span>Возможно, это:</span>
+                      {productSuggestions.slice(0, 4).map(({ product }) => <button key={`suggested-product-${product.id}`} type="button" className={Number(draft.productId) === Number(product.id) ? 'is-active' : ''} onClick={() => chooseProduct(Number(product.id))}>{product.name}</button>)}
+                    </div>
+                  ) : null}
+
+                  {isAdmin ? <button type="button" className="order-catalog-resolution-new-product-toggle" onClick={() => {
+                    setDraft((current) => current ? { ...current, createProduct: !current.createProduct, productId: current.createProduct ? current.productId : 0, productName: clean(activeItem.productName), genderScope: current.createProduct ? current.genderScope : '' } : current)
+                    setSelectedVariantId(0)
+                  }}>{draft.createProduct ? 'Выбрать товар из каталога' : 'Такого товара нет — создать новый'}</button> : null}
+
+                  {compoundHint ? (
+                    <div className="order-catalog-resolution-compound-hint">
+                      <strong>В названии есть «{compoundHint}»</strong>
+                      <span>Если это характеристика, можно сразу подставить:</span>
+                      <div><button type="button" onClick={() => changeField('material', compoundHint)}>Материал</button><button type="button" onClick={() => changeField('color', compoundHint)}>Цвет</button></div>
+                    </div>
+                  ) : null}
+                  {productCategoryWarning ? <div className="order-catalog-resolution-warning">{productCategoryWarning}</div> : null}
+                </section>
+
+                {draft.productId && variants.length ? (
+                  <section className="order-catalog-resolution-existing">
+                    <div className="order-catalog-resolution-compact-title"><strong>Другие существующие варианты</strong><span>Если предложенный выше не подходит</span></div>
+                    <input className="order-catalog-resolution-variant-search" value={variantQuery} onChange={(event) => setVariantQuery(event.target.value)} placeholder="Материал, цвет или размер" />
+                    <div className="order-catalog-resolution-options">
+                      {variants.filter((variant) => Number(variant.id) !== Number(recommendedVariant?.id || 0)).slice(0, 12).map((variant) => (
+                        <label key={variant.id} className={`order-catalog-resolution-option${selectedVariantId === variant.id ? ' is-selected' : ''}`}>
+                          <input type="radio" name="order-catalog-resolution-variant" checked={selectedVariantId === variant.id} onChange={() => chooseVariant(variant)} />
+                          <span><strong>{variant.productName}</strong><small>{[variant.gender, variant.color || 'БЕЗ ЦВЕТА', variant.material || 'СТАНДАРТ', normalize(variant.length) === 'СТАНДАРТ' ? null : variant.length, variant.sizeLabel || 'БЕЗ РАЗМЕРА'].filter(Boolean).join(' · ')}</small></span>
+                        </label>
+                      ))}
+                    </div>
+                    {selectedVariantId && Number(selectedVariantId) !== Number(recommendedVariant?.id || 0) ? <button type="button" className="primary-button" disabled={resolving} onClick={() => void resolveSelected()}>{resolving ? 'Сохраняю…' : 'Использовать выбранный вариант'}</button> : null}
+                  </section>
+                ) : null}
+
+                {isAdmin ? (
+                  <section className="order-catalog-resolution-facts">
+                    <div className="order-catalog-resolution-compact-title"><strong>Характеристики</strong><span>Изменяйте только то, что нужно</span></div>
+                    {context?.isWorkshop ? <div className="order-catalog-resolution-workshop-note">Для позиции Цеха достаточно выбрать базовый товар.</div> : (
+                      <>
+                        <div className="order-catalog-resolution-facts-grid">
+                          <label className="order-catalog-resolution-field"><span>Тип</span><select value={draft.category} onChange={(event) => changeField('category', event.target.value === 'child' ? 'child' : 'adult')}><option value="adult">Взрослый</option><option value="child">Детский</option></select></label>
+                          <label className={`order-catalog-resolution-field${genderMissing ? ' needs-create' : ''}`}><span>Пол</span><select value={draft.gender} onChange={(event) => changeField('gender', event.target.value)}><option value="">Не указан</option><option value="ЖЕН">ЖЕН</option><option value="МУЖ">МУЖ</option></select></label>
+                          {renderField('material', 'Материал')}
+                          {renderField('length', 'Длина')}
+                          <div className="order-catalog-resolution-field-with-shortcut">{renderField('color', 'Цвет')}<button type="button" onClick={() => changeField('color', 'БЕЗ ЦВЕТА')}>Без цвета</button></div>
+                          <div className="order-catalog-resolution-field-with-shortcut">{renderField('size', draft.category === 'child' ? 'Возраст' : 'Размер')}<button type="button" onClick={() => changeField('size', 'БЕЗ РАЗМЕРА')}>Без размера</button></div>
+                        </div>
+                        {(explicitColorMissing || explicitSizeMissing) ? <div className="order-catalog-resolution-warning">Подтвердите отсутствующие данные: цвет и размер нельзя угадывать.</div> : null}
+                        {unconfirmedNewFields.length ? <div className="order-catalog-resolution-warning">Новые значения нужно подтвердить перед добавлением: {unconfirmedNewFields.map((field) => ({ material: 'материал', length: 'длина', color: 'цвет', size: draft.category === 'child' ? 'возраст' : 'размер' }[field])).join(', ')}.</div> : null}
+                      </>
+                    )}
+                    <div className="order-catalog-resolution-actions">
+                      <button type="button" className="primary-button" disabled={factsBlocked || resolving} onClick={() => void resolveFacts()}>{resolving ? 'Сохраняю…' : exactDraftVariant ? 'Подтвердить этот вариант' : context?.isWorkshop ? 'Подтвердить товар' : 'Сохранить характеристики'}</button>
+                    </div>
+                  </section>
+                ) : (
+                  <div className="order-catalog-resolution-empty">Если подходящего варианта нет, попросите администратора добавить или исправить характеристики.</div>
+                )}
+              </div>
+            </details>
+            <div className="order-catalog-resolution-guard">Без уточнения отправить заказ нельзя.</div>
           </>
         ) : null}
 
         {!busy && !activeItem && !error ? (
-          <div className="order-catalog-resolution-done"><strong>Все позиции этого заказа распознаны.</strong><span>Теперь нажмите «Отправить клиенту» ещё раз — система повторно проверит физический склад.</span></div>
+          <div className="order-catalog-resolution-done"><strong>Готово.</strong><span>Товар уточнён. Повторите отправку заказа.</span></div>
         ) : null}
       </div>
     </div>
