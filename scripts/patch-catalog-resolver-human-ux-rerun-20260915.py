@@ -42,8 +42,10 @@ test_path.write_text(test, encoding='utf-8')
 manifest_path = Path('scripts/contextual-catalog-resolution-r1-frontend-manifest.json')
 manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
 for path in ['src/features/orders/OrderCatalogResolutionModal.tsx', 'src/features/orders/OrderCatalogResolutionModal.css']:
+    text = Path(path).read_text(encoding='utf-8')
     manifest['files'][path]['afterGitBlob'] = subprocess.check_output(['git', 'hash-object', path], text=True).strip()
-    manifest['files'][path]['afterLines'] = len(Path(path).read_text(encoding='utf-8').splitlines())
+    # Match JS actual.split(/\r?\n/).length exactly, including the final empty segment after a trailing newline.
+    manifest['files'][path]['afterLines'] = len(text.replace('\r\n', '\n').split('\n'))
 manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
 print('human resolver safety copy aligned')
