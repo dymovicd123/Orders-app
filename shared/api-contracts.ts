@@ -203,6 +203,7 @@ export type CatalogResolutionInput = CatalogResolutionFacts & {
   createProduct?: boolean
   productName?: string
   createFields?: string[]
+  legacyUnknownGender?: boolean
 }
 
 export type CatalogResolutionResponse = ApiOkResponse & {
@@ -221,6 +222,7 @@ export type CatalogResolutionResponse = ApiOkResponse & {
   scannedGroups?: number
   excluded?: number
   releasedReservations?: number
+  legacyUnknownGender?: boolean
 }
 
 export type InventoryReservation = {
