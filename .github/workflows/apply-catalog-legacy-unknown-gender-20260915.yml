@@ -1,5 +1,6 @@
 name: Apply catalog legacy unknown gender
 
+# Retry after preserving the actual catalog-gender manifest chain.
 on:
   push:
     branches:
