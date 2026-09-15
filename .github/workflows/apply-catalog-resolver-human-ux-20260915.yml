@@ -25,6 +25,8 @@ jobs:
         run: python scripts/patch-catalog-resolver-human-ux-20260915.py
       - name: Align human safety copy
         run: python scripts/patch-catalog-resolver-human-ux-rerun-20260915.py
+      - name: Accept exact declaration deltas
+        run: node scripts/update-catalog-resolver-human-ux-manifest.mjs
       - name: Focused regression
         run: node scripts/test-contextual-catalog-resolution-r1.mjs
       - name: Full release gate
@@ -41,7 +43,8 @@ jobs:
             src/features/orders/OrderCatalogResolutionModal.tsx \
             src/features/orders/OrderCatalogResolutionModal.css \
             scripts/test-contextual-catalog-resolution-r1.mjs \
-            scripts/contextual-catalog-resolution-r1-frontend-manifest.json
+            scripts/contextual-catalog-resolution-r1-frontend-manifest.json \
+            scripts/step1906a-worker-declaration-manifest.json
           git diff --cached --check
           git commit -m "fix: make catalog resolver human and restore reservations"
           git push origin HEAD:fix/catalog-resolver-human-ux-20260915
