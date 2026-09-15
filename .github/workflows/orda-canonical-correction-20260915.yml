@@ -6,35 +6,78 @@ on:
       - ops/orda-canonical-correction-20260915
     paths:
       - .github/workflows/orda-canonical-correction-20260915.yml
-      - scripts/orda-canonical-correction-20260915.py
 
 permissions:
   contents: read
 
 jobs:
-  correction:
+  verify:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
-      MODE: apply
     steps:
-      - uses: actions/checkout@v4
-      - name: Harden one-shot correction checks
+      - name: Read-only ORDA post-check
         shell: bash
         run: |
           python3 - <<'PY'
-          from pathlib import Path
-          path = Path('scripts/orda-canonical-correction-20260915.py')
-          text = path.read_text(encoding='utf-8')
-          text = text.replace('r.get("reserved_qty")', 'r.get("reserved_quantity")')
-          old = '("inventory_stock", [("product_id", "43"), ("stock_position_id", "97"), ("product_name", "\'ОРДА ШАПАН\'"), ("updated_at", "CURRENT_TIMESTAMP")]),'
-          new = '("inventory_stock", [("product_id", "43"), ("stock_position_id", "97"), ("product_name", "\'ОРДА ШАПАН\'"), ("product_name_snapshot", "\'ОРДА ШАПАН\'"), ("updated_at", "CURRENT_TIMESTAMP")]),'
-          if old not in text:
-              raise SystemExit('inventory_stock mapping anchor missing')
-          path.write_text(text.replace(old, new), encoding='utf-8')
+          import json, os, urllib.request
+          api = f"https://api.cloudflare.com/client/v4/accounts/{os.environ['CF_ACCOUNT_ID']}/d1/database/{os.environ['DB_ID']}/query"
+          token = os.environ['CF_API_TOKEN']
+          def q(sql, params=None):
+              payload = {'sql': sql}
+              if params is not None: payload['params'] = params
+              req = urllib.request.Request(api, data=json.dumps(payload, ensure_ascii=False).encode(), method='POST', headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
+              with urllib.request.urlopen(req, timeout=60) as r: body = json.loads(r.read())
+              if not body.get('success') or any(x.get('success') is False for x in body.get('result', [])):
+                  raise RuntimeError(body)
+              return [row for x in body.get('result', []) for row in (x.get('results') or [])]
+          def need(ok, msg):
+              if not ok: raise RuntimeError('VERIFY_FAILED: ' + msg)
+          products=q("SELECT id,name,is_active FROM catalog_products WHERE id IN (43,74) ORDER BY id")
+          positions=q("SELECT id,product_id,material,length,is_active FROM catalog_stock_positions WHERE id IN (97,145) ORDER BY id")
+          variants=q("SELECT id,product_id,stock_position_id,gender,color,material,length,size_label,is_active FROM catalog_variants WHERE id BETWEEN 1259 AND 1270 ORDER BY id")
+          alias=q("SELECT alias_key,raw_value,product_id FROM catalog_product_aliases WHERE alias_key='ОРДА'")
+          need(len(products)==2 and products[0]['id']==43 and products[0]['name']=='ОРДА ШАПАН' and products[0]['is_active']==1 and products[1]['id']==74 and products[1]['name']=='ОРДА' and products[1]['is_active']==0, 'products')
+          need(len(positions)==2 and positions[0]['id']==97 and positions[0]['product_id']==43 and positions[0]['is_active']==1 and positions[1]['id']==145 and positions[1]['product_id']==74 and positions[1]['is_active']==0, 'positions')
+          need(len(variants)==12 and all(v['product_id']==43 and v['stock_position_id']==97 and v['is_active']==1 for v in variants), 'variants')
+          need(len(alias)==1 and alias[0]['product_id']==43 and alias[0]['raw_value']=='ОРДА', 'alias')
+          operational=['order_items','inventory_stock','inventory_reservations','inventory_movements','inventory_transfer_items','inventory_stock_checks','inventory_stocktake_items','inventory_lifecycle_events','workshop_tasks','catalog_identity_order_item_links']
+          existing={r['name'] for r in q("SELECT name FROM sqlite_master WHERE type='table'")}
+          old_refs={}
+          for table in operational:
+              if table not in existing: continue
+              cols={r['name'] for r in q(f'PRAGMA table_info("{table}")')}
+              if 'product_id' not in cols: continue
+              c=q(f'SELECT COUNT(*) AS c FROM "{table}" WHERE product_id=74')[0]['c']
+              old_refs[table]=c
+              need(c==0, f'{table} still references product 74')
+          stale={}
+          for table in ['order_items','inventory_stock','inventory_movements']:
+              if table not in existing: continue
+              cols={r['name'] for r in q(f'PRAGMA table_info("{table}")')}
+              if 'variant_id' in cols and 'product_name_snapshot' in cols:
+                  c=q(f'''SELECT COUNT(*) AS c FROM "{table}" WHERE variant_id BETWEEN 1259 AND 1270 AND COALESCE(product_name_snapshot,'')<>'ОРДА ШАПАН' ''')[0]['c']
+                  stale[table]=c
+                  need(c==0, f'{table} has stale ORDA snapshots')
+          reservations=q("SELECT id,order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status FROM inventory_reservations WHERE id IN (1023,1024,1025) ORDER BY id")
+          need([(r['id'],r['variant_id'],r['quantity'],r['status']) for r in reservations]==[(1023,1267,1,'active'),(1024,1261,1,'active'),(1025,1262,1,'active')], 'original reservations changed')
+          need(all(r['product_id']==43 for r in reservations), 'reservations not canonical')
+          transfers=q("SELECT id,product_id,variant_id,quantity FROM inventory_transfer_items WHERE id IN (76,77) ORDER BY id")
+          need([(r['id'],r['variant_id'],r['quantity']) for r in transfers]==[(76,1267,1),(77,1262,1)], 'original transfer items changed')
+          need(all(r['product_id']==43 for r in transfers), 'transfer items not canonical')
+          stock=q("SELECT inventory_source,product_id,variant_id,product_name_snapshot,quantity,reserved_quantity FROM inventory_stock WHERE variant_id BETWEEN 1259 AND 1270 ORDER BY inventory_source,variant_id")
+          need(all(r['product_id']==43 and r['product_name_snapshot']=='ОРДА ШАПАН' and r['quantity']>=0 and r['reserved_quantity']>=0 and r['reserved_quantity']<=r['quantity'] for r in stock), 'stock rows invalid')
+          mismatch=q("""SELECT s.inventory_source,s.variant_id,s.reserved_quantity,COALESCE(SUM(CASE WHEN r.status='active' THEN r.quantity ELSE 0 END),0) AS active_reserved FROM inventory_stock s LEFT JOIN inventory_reservations r ON r.inventory_source=s.inventory_source AND r.variant_id=s.variant_id WHERE s.variant_id BETWEEN 1259 AND 1270 GROUP BY s.id,s.inventory_source,s.variant_id,s.reserved_quantity HAVING s.reserved_quantity<>COALESCE(SUM(CASE WHEN r.status='active' THEN r.quantity ELSE 0 END),0)""")
+          need(not mismatch, 'stock reserved_quantity does not match active reservations')
+          conflicts=q("""SELECT COUNT(*) AS c FROM catalog_variants a JOIN catalog_variants b ON a.id<b.id AND a.stock_position_id=97 AND b.stock_position_id=97 AND a.category=b.category AND COALESCE(a.gender,'')=COALESCE(b.gender,'') AND COALESCE(a.color,'')=COALESCE(b.color,'') AND COALESCE(a.material,'')=COALESCE(b.material,'') AND COALESCE(a.length,'')=COALESCE(b.length,'') AND COALESCE(a.size_label,'')=COALESCE(b.size_label,'') AND a.is_active=1 AND b.is_active=1 WHERE a.id BETWEEN 1259 AND 1270 OR b.id BETWEEN 1259 AND 1270""")[0]['c']
+          need(conflicts==0, 'duplicate active variants after merge')
+          print('PRODUCTS='+json.dumps(products,ensure_ascii=False))
+          print('OLD_REFS='+json.dumps(old_refs,ensure_ascii=False,sort_keys=True))
+          print('STALE_SNAPSHOTS='+json.dumps(stale,ensure_ascii=False,sort_keys=True))
+          print('STOCK_TOTAL='+str(sum(float(r['quantity']) for r in stock)))
+          print('RESERVED_TOTAL='+str(sum(float(r['reserved_quantity']) for r in stock)))
+          print('ORDA_PRODUCTION_VERIFY_OK=1')
           PY
-      - name: Guarded ORDA canonical correction
-        run: python3 scripts/orda-canonical-correction-20260915.py
