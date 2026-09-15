@@ -38,37 +38,28 @@ console.log(`${predicateName}: ${predicateBefore} -> ${predicateAfter}`)
 
 const shipmentName = 'getOrderShipmentInventoryBlockers'
 const shipmentChange = shippingShortageManifest.changes?.[shipmentName]
-if (!shipmentChange?.before || !shipmentChange?.after) {
-  throw new Error(`Missing shipping-shortage accepted delta: ${shipmentName}`)
-}
-if (shipmentChange.before !== declarationManifest.declarations?.[shipmentName]) {
-  throw new Error(`Shipping-shortage baseline chain mismatch: ${shipmentName}`)
-}
+if (!shipmentChange?.before || !shipmentChange?.after) throw new Error(`Missing shipping-shortage accepted delta: ${shipmentName}`)
+if (shipmentChange.before !== declarationManifest.declarations?.[shipmentName]) throw new Error(`Shipping-shortage baseline chain mismatch: ${shipmentName}`)
 const shipmentAfter = declarationHash('worker/domains/order-reservations.ts', shipmentName)
 if (shipmentAfter === shipmentChange.after) throw new Error(`Expected real declaration delta for ${shipmentName}`)
 console.log(`${shipmentName}: ${shipmentChange.after} -> ${shipmentAfter}`)
 shipmentChange.after = shipmentAfter
 
-if (catalogGenderManifest?.version !== 1 || catalogGenderManifest?.revision !== 'catalog-gender-scope-r1') {
-  throw new Error('Catalog gender scope R1 manifest invalid')
-}
+if (catalogGenderManifest?.version !== 1 || catalogGenderManifest?.revision !== 'catalog-gender-scope-r1') throw new Error('Catalog gender scope R1 manifest invalid')
+
 const factsTypeName = 'CatalogReviewFactsInput'
-const factsTypeChange = catalogGenderManifest.typeChanges?.[factsTypeName]
-if (!factsTypeChange?.before || !factsTypeChange?.after) throw new Error(`Missing catalog-gender type delta: ${factsTypeName}`)
-if (factsTypeChange.after !== 'f25a3584694a7d4a57c3102645d457a7c3bba399a348e75a04da01a78ef91a12') {
-  throw new Error(`Unexpected prior catalog-gender type state: ${factsTypeName}`)
-}
+const factsTypeChange = catalogGenderManifest.changes?.[factsTypeName]
+if (!factsTypeChange?.before || !factsTypeChange?.after) throw new Error(`Missing catalog-gender declaration delta: ${factsTypeName}`)
+if (factsTypeChange.after !== 'f25a7019eae8de366c93f57158b08b42db0b6676dc802046f7958854fbb488dc') throw new Error(`Unexpected prior catalog-gender state: ${factsTypeName}`)
 const factsTypeAfter = declarationHash('worker/domains/catalog-review.ts', factsTypeName)
 if (factsTypeAfter === factsTypeChange.after) throw new Error(`Expected real declaration delta for ${factsTypeName}`)
 console.log(`${factsTypeName}: ${factsTypeChange.after} -> ${factsTypeAfter}`)
 factsTypeChange.after = factsTypeAfter
 
 const resolverName = 'resolveCatalogReviewFacts'
-const resolverChange = catalogGenderManifest.functionChanges?.[resolverName]
-if (!resolverChange?.before || !resolverChange?.after) throw new Error(`Missing catalog-gender function delta: ${resolverName}`)
-if (resolverChange.after !== 'af41858526981a511487ae323c607a8d3da2e081f9bd07193ed00d190b8a94ce') {
-  throw new Error(`Unexpected prior catalog-gender function state: ${resolverName}`)
-}
+const resolverChange = catalogGenderManifest.changes?.[resolverName]
+if (!resolverChange?.before || !resolverChange?.after) throw new Error(`Missing catalog-gender declaration delta: ${resolverName}`)
+if (resolverChange.after !== 'af418a1771569479c0dfc5820a7e11f2939a95aee0790a5754123012528a40f5') throw new Error(`Unexpected prior catalog-gender state: ${resolverName}`)
 const resolverAfter = declarationHash('worker/domains/catalog-review.ts', resolverName)
 if (resolverAfter === resolverChange.after) throw new Error(`Expected real declaration delta for ${resolverName}`)
 console.log(`${resolverName}: ${resolverChange.after} -> ${resolverAfter}`)
