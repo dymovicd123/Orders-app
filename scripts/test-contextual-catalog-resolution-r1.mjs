@@ -37,9 +37,13 @@ try {
   check(modal.includes('Выбрать другой вариант или исправить данные'), 'R3 must keep advanced correction available without making it the default surface')
   check(modal.includes('/resolve-existing'), 'Orders UI must retain the narrow existing-variant resolver')
   check(modal.includes('/resolve-facts'), 'R3 must resolve new/corrected characteristics without leaving Orders')
-  check(modal.includes('Новое значение — добавить'), 'R3 must add a new reference value inline with explicit confirmation')
+  check(modal.includes('Подтвердить новое значение'), 'R4 must add a new reference value inline with explicit confirmation')
   check(modal.includes('Подтвердите отсутствующие данные'), 'Missing color/size must still require an explicit operator decision')
-  check(modal.includes('В названии есть'), 'R3 must surface compound-name residue without technical wording')
+  check(modal.includes('Из названия отдельно найдено'), 'R4 must surface compound-name residue with immediate human feedback')
+  check(modal.includes("const rawTokens = rawKey.split(' ')") && modal.includes('productTokens.every'), 'R4 compound-name extraction must work for any embedded known base-product name, not only dash-separated input')
+  check(modal.includes('Будет сохранено') && modal.includes('Осталось уточнить:'), 'R4 must always show the current result and remaining required decisions')
+  check(modal.includes('order-catalog-resolution-sticky-action'), 'R4 must keep the primary action and blockers visible while the operator scrolls')
+  check(modal.includes('✓ Выбрано как материал'), 'R4 compound hypotheses must show immediate visible confirmation after selection')
   check(modal.includes('Материал'), 'Compound-name residue must remain reusable as a material hypothesis')
   check(!modal.includes('2. Быстрый путь') && !modal.includes('каноническую привязку'), 'R3 must remove developer-facing catalog jargon from the ordinary flow')
   check(modal.includes('exactDraftVariant') && modal.includes('await resolveSelected(Number(exactDraftVariant.id))'), 'Facts matching an existing SKU must use the existing-variant path instead of recreating facts')
@@ -57,8 +61,8 @@ try {
   check(catalog.includes("['БЕЗ ЦВЕТА', 'НЕТ ЦВЕТА', 'НЕ УКАЗАН'].includes(raw)"), 'No-color placeholders must never become learned value aliases')
   check(catalog.includes("['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р', 'НЕ УКАЗАН'].includes(raw)"), 'No-size placeholders must never become learned value aliases')
 
-  console.log('CONTEXTUAL CATALOG RESOLUTION R3 PASSED — ambiguous shipping rows stay blocked, existing variants remain fast, and admins can correct/create exact catalog facts inline without learning placeholder aliases')
+  console.log('CONTEXTUAL CATALOG RESOLUTION R4 PASSED — ambiguous shipping rows stay blocked, existing variants remain fast, and admins can correct/create exact catalog facts inline without learning placeholder aliases')
 } catch (error) {
-  console.error(`CONTEXTUAL CATALOG RESOLUTION R3 FAILED: ${error?.message || error}`)
+  console.error(`CONTEXTUAL CATALOG RESOLUTION R4 FAILED: ${error?.message || error}`)
   process.exit(1)
 }

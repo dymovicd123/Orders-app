@@ -16,16 +16,16 @@
     },
     "src/features/orders/OrderCatalogResolutionModal.tsx": {
       "beforeGitBlob": null,
-      "afterGitBlob": "e75f324a979851e5d5fefccbc3d33168766047c6",
+      "afterGitBlob": "66f9d49d77a06d2fad93966a2c0badd1dbea5c45",
       "beforeLines": 0,
-      "afterLines": 587,
+      "afterLines": 640,
       "added": true
     },
     "src/features/orders/OrderCatalogResolutionModal.css": {
       "beforeGitBlob": null,
-      "afterGitBlob": "706c4aec88d892af58a2965304a59b5c7f1fff29",
+      "afterGitBlob": "00f0ef5d1fcee347f615ef2f517557916851cf49",
       "beforeLines": 0,
-      "afterLines": 430,
+      "afterLines": 588,
       "added": true
     }
   }

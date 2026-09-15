@@ -80,13 +80,16 @@ function rankedProducts(catalog: CatalogResponse | null, rawName: string) {
 }
 
 function compoundRemainder(rawName: string, productName: string) {
-  const cleanRaw = clean(rawName).replace(/[«»“”„"']/g, '').trim()
+  const rawKey = identityText(rawName)
   const productKey = identityText(productName)
-  if (!cleanRaw || !productKey) return ''
-  const parts = cleanRaw.split(/\s*[‐‑‒–—-]+\s*/).map((part) => part.trim()).filter(Boolean)
-  if (parts.length > 1) {
-    const rest = parts.filter((part) => identityText(part) !== productKey)
-    if (rest.length !== parts.length) return rest.join(' · ')
+  if (!rawKey || !productKey) return ''
+  const rawTokens = rawKey.split(' ').filter(Boolean)
+  const productTokens = productKey.split(' ').filter(Boolean)
+  if (!productTokens.length || productTokens.length > rawTokens.length) return ''
+  for (let start = 0; start <= rawTokens.length - productTokens.length; start += 1) {
+    const matches = productTokens.every((token, offset) => rawTokens[start + offset] === token)
+    if (!matches) continue
+    return [...rawTokens.slice(0, start), ...rawTokens.slice(start + productTokens.length)].join(' ').trim()
   }
   return ''
 }
@@ -346,6 +349,25 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   const productMissing = !draft?.productId && !draft?.createProduct
   const newProductIncomplete = Boolean(draft?.createProduct && (!clean(draft.productName) || !draft.genderScope))
   const factsBlocked = productMissing || newProductIncomplete || genderMissing || explicitColorMissing || explicitSizeMissing || unconfirmedNewFields.length > 0
+  const pendingLabels = [
+    productMissing ? 'выбрать товар' : '',
+    newProductIncomplete ? 'заполнить новый товар' : '',
+    genderMissing ? 'выбрать пол' : '',
+    explicitColorMissing ? 'подтвердить цвет' : '',
+    explicitSizeMissing ? 'подтвердить размер' : '',
+    ...unconfirmedNewFields.map((field) => `подтвердить новое значение «${draft?.[field] || ''}»`),
+  ].filter(Boolean)
+  const saveButtonText = resolving
+    ? 'Сохраняю…'
+    : factsBlocked
+      ? `Осталось: ${pendingLabels[0] || 'уточнить данные'}`
+      : exactDraftVariant
+        ? 'Подтвердить этот вариант'
+        : context?.isWorkshop
+          ? 'Подтвердить товар'
+          : 'Сохранить характеристики'
+  const compoundMaterialSelected = Boolean(compoundHint && normalize(draft?.material) === normalize(compoundHint))
+  const compoundColorSelected = Boolean(compoundHint && normalize(draft?.color) === normalize(compoundHint))
 
   const resolveFacts = async () => {
     if (!activeItem || !draft || resolving || factsBlocked || !isAdmin) return
@@ -388,7 +410,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     const needsCreation = valueNeedsCreation(field, value)
     const listId = `order-catalog-${field}-options`
     return (
-      <label className={`order-catalog-resolution-field${needsCreation ? ' needs-create' : ''}`}>
+      <label className={`order-catalog-resolution-field${needsCreation && !createFields[field] ? ' needs-create' : ''}${needsCreation && createFields[field] ? ' is-confirmed' : ''}`}>
         <span>{label}</span>
         <input
           value={value}
@@ -403,7 +425,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
             type="button"
             onClick={() => setCreateFields((current) => ({ ...current, [field]: !current[field] }))}
           >
-            {createFields[field] ? `✓ Добавить «${value}» в справочник` : `Новое значение — добавить «${value}» в справочник`}
+            {createFields[field] ? `✓ «${value}» будет добавлено` : `Подтвердить новое значение «${value}»`}
           </button>
         ) : <small>Можно изменить, даже если исходное значение формально было допустимым.</small>}
       </label>
@@ -522,10 +544,13 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
                   }}>{draft.createProduct ? 'Выбрать товар из каталога' : 'Такого товара нет — создать новый'}</button> : null}
 
                   {compoundHint ? (
-                    <div className="order-catalog-resolution-compound-hint">
-                      <strong>В названии есть «{compoundHint}»</strong>
-                      <span>Если это характеристика, можно сразу подставить:</span>
-                      <div><button type="button" onClick={() => changeField('material', compoundHint)}>Материал</button><button type="button" onClick={() => changeField('color', compoundHint)}>Цвет</button></div>
+                    <div className={`order-catalog-resolution-compound-hint${compoundMaterialSelected || compoundColorSelected ? ' is-applied' : ''}`}>
+                      <strong>Из названия отдельно найдено: «{compoundHint}»</strong>
+                      {compoundMaterialSelected ? <span className="order-catalog-resolution-applied">✓ Выбрано как материал</span> : compoundColorSelected ? <span className="order-catalog-resolution-applied">✓ Выбрано как цвет</span> : <span>Что это за часть названия?</span>}
+                      <div>
+                        <button type="button" className={compoundMaterialSelected ? 'is-active' : ''} onClick={() => changeField('material', compoundHint)}>{compoundMaterialSelected ? '✓ Материал' : 'Материал'}</button>
+                        <button type="button" className={compoundColorSelected ? 'is-active' : ''} onClick={() => changeField('color', compoundHint)}>{compoundColorSelected ? '✓ Цвет' : 'Цвет'}</button>
+                      </div>
                     </div>
                   ) : null}
                   {productCategoryWarning ? <div className="order-catalog-resolution-warning">{productCategoryWarning}</div> : null}
@@ -550,11 +575,28 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
                 {isAdmin ? (
                   <section className="order-catalog-resolution-facts">
                     <div className="order-catalog-resolution-compact-title"><strong>Характеристики</strong><span>Изменяйте только то, что нужно</span></div>
+                    <div className="order-catalog-resolution-save-preview">
+                      <div className="order-catalog-resolution-save-preview-head">
+                        <span>Будет сохранено</span>
+                        <strong>{draft.createProduct ? draft.productName : selectedProduct?.name || activeItem.productName}</strong>
+                      </div>
+                      <div className="order-catalog-resolution-save-preview-facts">
+                        <span>{draft.category === 'child' ? 'Детский' : 'Взрослый'}</span>
+                        <span className={genderMissing ? 'is-pending' : ''}>{clean(draft.gender) || 'Пол не выбран'}</span>
+                        <span>{clean(draft.material) || 'СТАНДАРТ'}</span>
+                        {normalize(draft.length) !== 'СТАНДАРТ' ? <span>{draft.length}</span> : null}
+                        <span className={explicitColorMissing ? 'is-pending' : ''}>{clean(draft.color) || 'Цвет не подтверждён'}</span>
+                        <span className={explicitSizeMissing ? 'is-pending' : ''}>{clean(draft.size) || 'Размер не подтверждён'}</span>
+                      </div>
+                      {pendingLabels.length ? (
+                        <div className="order-catalog-resolution-pending"><strong>Осталось уточнить:</strong> {pendingLabels.join(' · ')}</div>
+                      ) : <div className="order-catalog-resolution-ready">✓ Всё обязательное заполнено</div>}
+                    </div>
                     {context?.isWorkshop ? <div className="order-catalog-resolution-workshop-note">Для позиции Цеха достаточно выбрать базовый товар.</div> : (
                       <>
                         <div className="order-catalog-resolution-facts-grid">
                           <label className="order-catalog-resolution-field"><span>Тип</span><select value={draft.category} onChange={(event) => changeField('category', event.target.value === 'child' ? 'child' : 'adult')}><option value="adult">Взрослый</option><option value="child">Детский</option></select></label>
-                          <label className={`order-catalog-resolution-field${genderMissing ? ' needs-create' : ''}`}><span>Пол</span><select value={draft.gender} onChange={(event) => changeField('gender', event.target.value)}><option value="">Не указан</option><option value="ЖЕН">ЖЕН</option><option value="МУЖ">МУЖ</option></select></label>
+                          <label className={`order-catalog-resolution-field${genderMissing ? ' needs-create' : ''}${!genderMissing && clean(draft.gender) ? ' is-confirmed' : ''}`}><span>Пол {genderMissing ? '· нужно выбрать' : '· ✓'}</span><select value={draft.gender} onChange={(event) => changeField('gender', event.target.value)}><option value="">Не указан</option><option value="ЖЕН">Женский</option><option value="МУЖ">Мужской</option></select>{genderMissing ? <small className="order-catalog-resolution-required-note">Это обязательное поле для складской комбинации.</small> : null}</label>
                           {renderField('material', 'Материал')}
                           {renderField('length', 'Длина')}
                           <div className="order-catalog-resolution-field-with-shortcut">{renderField('color', 'Цвет')}<button type="button" onClick={() => changeField('color', 'БЕЗ ЦВЕТА')}>Без цвета</button></div>
@@ -564,15 +606,26 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
                         {unconfirmedNewFields.length ? <div className="order-catalog-resolution-warning">Новые значения нужно подтвердить перед добавлением: {unconfirmedNewFields.map((field) => ({ material: 'материал', length: 'длина', color: 'цвет', size: draft.category === 'child' ? 'возраст' : 'размер' }[field])).join(', ')}.</div> : null}
                       </>
                     )}
-                    <div className="order-catalog-resolution-actions">
-                      <button type="button" className="primary-button" disabled={factsBlocked || resolving} onClick={() => void resolveFacts()}>{resolving ? 'Сохраняю…' : exactDraftVariant ? 'Подтвердить этот вариант' : context?.isWorkshop ? 'Подтвердить товар' : 'Сохранить характеристики'}</button>
-                    </div>
                   </section>
                 ) : (
                   <div className="order-catalog-resolution-empty">Если подходящего варианта нет, попросите администратора добавить или исправить характеристики.</div>
                 )}
               </div>
             </details>
+            {isAdmin && advancedOpen ? (
+              <div className={`order-catalog-resolution-sticky-action${factsBlocked ? ' is-blocked' : ' is-ready'}`}>
+                <div className="order-catalog-resolution-sticky-copy">
+                  <strong>{factsBlocked ? `Осталось уточнить: ${pendingLabels.join(' · ')}` : 'Всё готово к сохранению'}</strong>
+                  {genderMissing ? (
+                    <div className="order-catalog-resolution-inline-choice"><span>Пол:</span><button type="button" onClick={() => changeField('gender', 'ЖЕН')}>Женский</button><button type="button" onClick={() => changeField('gender', 'МУЖ')}>Мужской</button></div>
+                  ) : null}
+                  {explicitColorMissing ? <button type="button" className="order-catalog-resolution-quick-choice" onClick={() => changeField('color', 'БЕЗ ЦВЕТА')}>Подтвердить: без цвета</button> : null}
+                  {explicitSizeMissing ? <button type="button" className="order-catalog-resolution-quick-choice" onClick={() => changeField('size', 'БЕЗ РАЗМЕРА')}>Подтвердить: без размера</button> : null}
+                  {unconfirmedNewFields.map((field) => <button key={`confirm-${field}`} type="button" className="order-catalog-resolution-quick-choice" onClick={() => setCreateFields((current) => ({ ...current, [field]: true }))}>Добавить «{draft[field]}» в справочник</button>)}
+                </div>
+                <button type="button" className="primary-button" disabled={factsBlocked || resolving} onClick={() => void resolveFacts()}>{saveButtonText}</button>
+              </div>
+            ) : null}
             <div className="order-catalog-resolution-guard">Без уточнения отправить заказ нельзя.</div>
           </>
         ) : null}
