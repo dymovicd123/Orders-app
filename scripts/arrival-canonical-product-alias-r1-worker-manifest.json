@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "revision": "arrival-canonical-product-alias-r1",
+  "changes": {
+    "resolveInventoryCreatableItemsBulk": {
+      "before": "03cdec8b24de8bc0de9ca570419ba84442427598c390c400e5ecfd0e61dd816e",
+      "after": "507c58604bd2254379ccad51d9d67bbb0a9b8ac5d320beb57983d89beadcb35c"
+    }
+  }
+}

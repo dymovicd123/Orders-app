@@ -84,6 +84,7 @@ export async function resolveInventoryCreatableItemsBulk(
       const id = toInt(row.id, 0);
       if (!id) continue;
       byId.set(id, row);
+      if (toInt(row.is_active, 0) !== 1) continue;
       const exact = upperText(row.name);
       if (exact && !byExact.has(exact)) byExact.set(exact, row);
       const identity = normalizeCatalogProductIdentityKey(row.name);
@@ -101,12 +102,14 @@ export async function resolveInventoryCreatableItemsBulk(
   let lookup = buildProductLookup(products);
   const resolveProduct = (item: ReturnType<typeof normalizeInventoryItem>) => {
     const explicit = item.productId > 0 ? lookup.byId.get(item.productId) : null;
-    if (explicit) return explicit;
-    const exact = lookup.byExact.get(item.productName);
-    if (exact) return exact;
+    if (explicit && toInt(explicit.is_active, 0) === 1) return explicit;
     const identityKey = normalizeCatalogProductIdentityKey(item.productName);
     if (!identityKey) return null;
-    return lookup.byIdentity.get(identityKey) || lookup.byAlias.get(identityKey) || null;
+    const alias = lookup.byAlias.get(identityKey);
+    if (alias) return alias;
+    const exact = lookup.byExact.get(upperText(item.productName));
+    if (exact) return exact;
+    return lookup.byIdentity.get(identityKey) || null;
   };
 
   const missingProducts = new Map<string, { name: string; category: string; externalId: string }>();

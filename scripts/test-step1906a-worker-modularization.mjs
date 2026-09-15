@@ -19,6 +19,7 @@ const stabilizationR2ManifestPath = path.join(root, 'scripts/stabilization-20260
 const businessDateBoundaryManifestPath = path.join(root, 'scripts/business-date-boundaries-r1-worker-manifest.json')
 const clientFixesManifestPath = path.join(root, 'scripts/client-fixes-20260912-r1-worker-manifest.json')
 const contextualCatalogResolutionManifestPath = path.join(root, 'scripts/contextual-catalog-resolution-r1-worker-manifest.json')
+const arrivalCanonicalProductAliasManifestPath = path.join(root, 'scripts/arrival-canonical-product-alias-r1-worker-manifest.json')
 const original = fs.readFileSync(legacyPath, 'utf8')
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 if (manifest?.version !== 1 || manifest?.revision !== 'order-edit-safe-payment-corrections-r1') throw new Error('Safe payment correction Worker manifest invalid')
@@ -72,6 +73,9 @@ if (Object.keys(clientFixesManifest.changes || {}).sort().join(',') !== 'getDash
 const contextualCatalogResolutionManifest = JSON.parse(fs.readFileSync(contextualCatalogResolutionManifestPath, 'utf8'))
 if (contextualCatalogResolutionManifest?.version !== 1 || contextualCatalogResolutionManifest?.revision !== 'contextual-catalog-resolution-r1') throw new Error('Contextual catalog resolution Worker manifest invalid')
 if (Object.keys(contextualCatalogResolutionManifest.added || {}).sort().join(',') !== 'reconcileCatalogReviewOrder,resolveOrderCatalogReviewExistingVariant') throw new Error('Contextual catalog resolution Worker added allow-list widened unexpectedly')
+const arrivalCanonicalProductAliasManifest = JSON.parse(fs.readFileSync(arrivalCanonicalProductAliasManifestPath, 'utf8'))
+if (arrivalCanonicalProductAliasManifest?.version !== 1 || arrivalCanonicalProductAliasManifest?.revision !== 'arrival-canonical-product-alias-r1') throw new Error('Arrival canonical product alias R1 Worker manifest invalid')
+if (Object.keys(arrivalCanonicalProductAliasManifest.changes || {}).join(',') !== 'resolveInventoryCreatableItemsBulk') throw new Error('Arrival canonical product alias R1 Worker allow-list widened unexpectedly')
 const operationalAutonomyA4RouteBlock = "\n\n      const orderShippingCorrectionMatch = url.pathname.match(/^\\/api\\/orders\\/(\\d+)\\/shipping\\/correct$/);\n      if (orderShippingCorrectionMatch && request.method === 'POST') {\n        const id = toInt(orderShippingCorrectionMatch[1], 0);\n        const input = await readJson<{ physicalOutcome?: unknown }>(request);\n        try {\n          const result = await correctMistakenOrderHandover(env.DB, id, {\n            physicalOutcome: input.physicalOutcome,\n            actor: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),\n          });\n          let updatedOrder = null;\n          try {\n            updatedOrder = await getOrder(env.DB, id);\n          } catch (error) {\n            console.warn('Order readback after handover correction failed', error);\n          }\n          return json({ ...result, ...(updatedOrder ? { order: updatedOrder } : {}), refreshRequired: !updatedOrder });\n        } catch (error) {\n          const publicError = publicApiError(error);\n          return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });\n        }\n      }\n"
 
 const o1Anchor = "const o1Changes = JSON.parse(fs.readFileSync(path.join(root, 'scripts/o1-worker-manifest.json'), 'utf8')).changed\n"
@@ -148,7 +152,8 @@ patched = patched.replace(physicalChangesLine, (match) => match
   + 'const businessDateBoundaryChanges = ' + JSON.stringify(businessDateBoundaryManifest.changes || {}) + '\n'
   + 'const clientFixesChanges = ' + JSON.stringify(clientFixesManifest.changes || {}) + '\n'
   + 'const contextualCatalogResolutionAdded = ' + JSON.stringify(contextualCatalogResolutionManifest.added || {}) + '\n'
-  + 'const contextualCatalogResolutionRouter = ' + JSON.stringify(contextualCatalogResolutionManifest.router || {}) + '\n')
+  + 'const contextualCatalogResolutionRouter = ' + JSON.stringify(contextualCatalogResolutionManifest.router || {}) + '\n'
+  + 'const arrivalCanonicalProductAliasChanges = ' + JSON.stringify(arrivalCanonicalProductAliasManifest.changes || {}) + '\n')
 
 const physicalCountAnchor = ' + Object.keys(operationalAutonomyA5Added).length'
 if (!patched.includes(physicalCountAnchor)) throw new Error('1906A physical intake declaration-count anchor missing')
@@ -187,7 +192,13 @@ patched = patched.replace(dashboardHashReturn, [
   "          check(clientFixesChanged.before === acceptedPostBusinessDateBoundaryHash, 'Client fixes baseline hash mismatch: ' + name)",
   '          acceptedPostClientFixesHash = clientFixesChanged.after',
   '        }',
-  '        return sha(declarations.get(name)) === acceptedPostClientFixesHash',
+  '        const arrivalCanonicalProductAliasChanged = arrivalCanonicalProductAliasChanges[name]',
+  '        let acceptedPostArrivalCanonicalProductAliasHash = acceptedPostClientFixesHash',
+  '        if (arrivalCanonicalProductAliasChanged) {',
+  "          check(arrivalCanonicalProductAliasChanged.before === acceptedPostClientFixesHash, 'Arrival canonical product alias R1 baseline hash mismatch: ' + name)",
+  '          acceptedPostArrivalCanonicalProductAliasHash = arrivalCanonicalProductAliasChanged.after',
+  '        }',
+  '        return sha(declarations.get(name)) === acceptedPostArrivalCanonicalProductAliasHash',
   '',
 ].join('\n'))
 
