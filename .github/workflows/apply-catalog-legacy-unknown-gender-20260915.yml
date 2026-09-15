@@ -1,0 +1,53 @@
+name: Apply catalog legacy unknown gender
+
+on:
+  push:
+    branches:
+      - fix/catalog-legacy-unknown-gender-20260915
+    paths:
+      - .github/workflows/apply-catalog-legacy-unknown-gender-20260915.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/catalog-legacy-unknown-gender-20260915
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: npm ci
+      - name: Apply guarded patch
+        run: python scripts/patch-catalog-legacy-unknown-gender-20260915.py
+      - name: Focused resolver regression
+        run: node scripts/test-contextual-catalog-resolution-r1.mjs
+      - name: Full release gate
+        run: npm run release:check
+      - name: TypeScript
+        run: npx tsc -b --pretty false
+      - name: Build
+        run: npm run build
+      - name: Lint
+        run: npm run lint --if-present
+      - name: Commit validated patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add shared/api-contracts.ts \
+            worker/domains/catalog-review.ts \
+            worker/domains/order-reservations.ts \
+            src/features/orders/OrderCatalogResolutionModal.tsx \
+            src/features/orders/OrderCatalogResolutionModal.css \
+            scripts/test-contextual-catalog-resolution-r1.mjs \
+            scripts/contextual-catalog-resolution-r1-frontend-manifest.json \
+            scripts/step1906a-worker-declaration-manifest.json \
+            scripts/step192b2a4-order-create-save-integrity-manifest.json
+          git diff --cached --check
+          git commit -m "fix: allow explicit unknown gender legacy resolution"
+          git push origin HEAD:fix/catalog-legacy-unknown-gender-20260915
