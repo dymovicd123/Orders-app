@@ -1,4 +1,4 @@
-# validation revision 5
+# validation revision 6
 name: Apply catalog resolver human UX fix
 
 on:
@@ -26,6 +26,8 @@ jobs:
         run: python scripts/patch-catalog-resolver-human-ux-20260915.py
       - name: Align human safety copy
         run: python scripts/patch-catalog-resolver-human-ux-rerun-20260915.py
+      - name: Remove stale resolver declarations
+        run: python scripts/patch-catalog-resolver-human-ux-ts-cleanup-20260915.py
       - name: Accept exact declaration deltas
         run: node scripts/update-catalog-resolver-human-ux-manifest.mjs
       - name: Focused regression
