@@ -1,0 +1,54 @@
+name: Audit ORDA live read-only
+
+on:
+  push:
+    branches:
+      - audit/orda-live-20260915
+    paths:
+      - .github/workflows/audit-orda-live-20260915.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+    steps:
+      - name: Read-only Production forensic
+        shell: bash
+        run: |
+          set -euo pipefail
+          API="https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/d1/database/$DB_ID/query"
+          query() {
+            local label="$1"
+            local sql="$2"
+            echo
+            echo "===== $label ====="
+            body="$(jq -nc --arg sql "$sql" '{sql:$sql}')"
+            response="$(curl --fail-with-body -sS -X POST -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" "$API" --data "$body")"
+            jq '{success,errors,result:[.result[]? | {success,meta,results}]}' <<<"$response"
+          }
+
+          query "ORDA CATALOG PRODUCTS" "SELECT p.id, p.name, p.category, p.gender_scope, p.is_active, p.created_at, p.updated_at FROM catalog_products p WHERE UPPER(p.name) LIKE '%ОРДА%' ORDER BY p.id"
+
+          query "ORDA VARIANTS AND EXECUTIONS" "SELECT p.id AS product_id, p.name AS product_name, p.is_active AS product_active, p.gender_scope, sp.id AS stock_position_id, sp.material, sp.length, sp.is_active AS position_active, v.id AS variant_id, v.category, v.gender, v.color, v.size_label, v.is_active AS variant_active, v.created_at, v.updated_at FROM catalog_products p LEFT JOIN catalog_stock_positions sp ON sp.product_id = p.id LEFT JOIN catalog_variants v ON v.product_id = p.id AND (v.stock_position_id = sp.id OR (v.stock_position_id IS NULL AND sp.id IS NULL)) WHERE UPPER(p.name) LIKE '%ОРДА%' ORDER BY p.id, sp.id, v.id"
+
+          query "ORDA PRODUCT ALIASES" "SELECT a.id, a.alias_key, a.raw_value, a.product_id, p.name AS target_product, p.is_active AS target_active, a.created_at, a.updated_at FROM catalog_product_aliases a LEFT JOIN catalog_products p ON p.id = a.product_id WHERE UPPER(COALESCE(a.raw_value,'')) LIKE '%ОРДА%' OR UPPER(COALESCE(a.alias_key,'')) LIKE '%ОРДА%' OR UPPER(COALESCE(p.name,'')) LIKE '%ОРДА%' ORDER BY a.id"
+
+          query "ALL ORDA ORDER ITEMS" "SELECT o.id AS order_id, o.external_id, o.order_date, o.created_at AS order_created_at, o.updated_at AS order_updated_at, o.order_status, o.shipping_status, oi.id AS order_item_id, oi.product_name_snapshot, oi.product_id, p.name AS bound_product, oi.variant_id, oi.audience_type, oi.gender_snapshot, oi.color_snapshot, oi.material_snapshot, oi.length_snapshot, oi.size_snapshot, oi.quantity, oi.source_type, oi.is_workshop, oi.stock_writeoff_status, oi.created_at AS item_created_at FROM order_items oi JOIN orders o ON o.id = oi.order_id LEFT JOIN catalog_products p ON p.id = oi.product_id WHERE UPPER(COALESCE(oi.product_name_snapshot,'')) LIKE '%ОРДА%' OR UPPER(COALESCE(p.name,'')) LIKE '%ОРДА%' ORDER BY o.order_date DESC, o.id DESC, oi.id"
+
+          query "TODAY 2026-09-15 ORDERS CONTAINING ORDA" "SELECT o.id AS order_id, o.external_id, o.order_date, o.created_at AS order_created_at, o.updated_at AS order_updated_at, o.order_status, o.shipping_status, oi.id AS order_item_id, oi.product_name_snapshot, oi.product_id, p.name AS bound_product, oi.variant_id, v.gender AS variant_gender, v.color AS variant_color, v.size_label AS variant_size, oi.gender_snapshot, oi.color_snapshot, oi.material_snapshot, oi.length_snapshot, oi.size_snapshot, oi.quantity, oi.source_type, oi.is_workshop, oi.stock_writeoff_status FROM orders o JOIN order_items oi ON oi.order_id = o.id LEFT JOIN catalog_products p ON p.id = oi.product_id LEFT JOIN catalog_variants v ON v.id = oi.variant_id WHERE o.order_date = '2026-09-15' AND (UPPER(COALESCE(oi.product_name_snapshot,'')) LIKE '%ОРДА%' OR UPPER(COALESCE(p.name,'')) LIKE '%ОРДА%') ORDER BY o.id DESC, oi.id"
+
+          query "ORDA RESERVATIONS" "SELECT r.id AS reservation_id, r.order_item_id, r.status, r.inventory_source, r.product_id, p.name AS reservation_product, r.variant_id, r.quantity, r.unresolved_reason, r.created_at, r.updated_at FROM inventory_reservations r JOIN order_items oi ON oi.id = r.order_item_id LEFT JOIN catalog_products p ON p.id = r.product_id WHERE UPPER(COALESCE(oi.product_name_snapshot,'')) LIKE '%ОРДА%' OR UPPER(COALESCE(p.name,'')) LIKE '%ОРДА%' ORDER BY r.id DESC"
+
+          query "ORDA CURRENT STOCK" "SELECT s.id, s.inventory_source, s.product_id, p.name AS product_name, s.variant_id, s.product_name_snapshot, s.gender_snapshot, s.color_snapshot, s.material_snapshot, s.length_snapshot, s.size_snapshot, s.quantity, s.reserved_quantity, s.last_action, s.last_source_ref, s.updated_at FROM inventory_stock s LEFT JOIN catalog_products p ON p.id = s.product_id WHERE UPPER(COALESCE(s.product_name_snapshot,'')) LIKE '%ОРДА%' OR UPPER(COALESCE(p.name,'')) LIKE '%ОРДА%' ORDER BY s.product_id, s.inventory_source, s.variant_id, s.id"
+
+          query "RECENT ORDA MOVEMENTS" "SELECT m.id, m.inventory_source, m.movement_type, m.product_id, p.name AS product_name, m.variant_id, m.product_name_snapshot, m.gender_snapshot, m.color_snapshot, m.material_snapshot, m.length_snapshot, m.size_snapshot, m.quantity_delta, m.quantity_after, m.reference_type, m.reference_id, m.comment, m.created_at FROM inventory_movements m LEFT JOIN catalog_products p ON p.id = m.product_id WHERE (UPPER(COALESCE(m.product_name_snapshot,'')) LIKE '%ОРДА%' OR UPPER(COALESCE(p.name,'')) LIKE '%ОРДА%') AND m.created_at >= '2026-09-01' ORDER BY m.id DESC LIMIT 300"
+
+          echo
+          echo "READ_ONLY_AUDIT_COMPLETE=1"
