@@ -1,0 +1,78 @@
+name: Verify ORDA Production correction
+
+on:
+  push:
+    branches:
+      - hotfix/orda-production-correction-20260915
+    paths:
+      - .github/workflows/verify-orda-production-correction-20260915.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+    steps:
+      - name: Read-only verify ORDA canonical merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          API="https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/d1/database/$DB_ID/query"
+          query_json() {
+            local sql="$1" body response
+            body="$(jq -nc --arg sql "$sql" '{sql:$sql}')"
+            response="$(curl --retry 5 --retry-all-errors -sS -X POST \
+              -H "Authorization: Bearer $CF_API_TOKEN" \
+              -H "Content-Type: application/json" \
+              "$API" --data "$body")"
+            if ! jq -e '.success == true and ([.result[]?.success] | all)' >/dev/null <<<"$response"; then
+              echo "D1_VERIFY_QUERY_FAILED"
+              echo "$response"
+              return 1
+            fi
+            jq -c '[.result[]?.results[]?]' <<<"$response"
+          }
+
+          products="$(query_json "SELECT id,name,is_active FROM catalog_products WHERE id IN (43,74) ORDER BY id")"
+          positions="$(query_json "SELECT id,product_id,material,length,is_active FROM catalog_stock_positions WHERE id IN (97,145) ORDER BY id")"
+          variants="$(query_json "SELECT id,product_id,stock_position_id,gender,color,material,length,size_label,is_active FROM catalog_variants WHERE id BETWEEN 1259 AND 1270 ORDER BY id")"
+          alias_row="$(query_json "SELECT alias_key,raw_value,product_id FROM catalog_product_aliases WHERE alias_key='ОРДА'")"
+          old_refs="$(query_json "SELECT 'order_items' AS table_name,COUNT(*) AS c FROM order_items WHERE product_id=74 UNION ALL SELECT 'inventory_stock',COUNT(*) FROM inventory_stock WHERE product_id=74 UNION ALL SELECT 'inventory_reservations',COUNT(*) FROM inventory_reservations WHERE product_id=74 UNION ALL SELECT 'inventory_movements',COUNT(*) FROM inventory_movements WHERE product_id=74 UNION ALL SELECT 'inventory_transfer_items',COUNT(*) FROM inventory_transfer_items WHERE product_id=74 UNION ALL SELECT 'inventory_stock_checks',COUNT(*) FROM inventory_stock_checks WHERE product_id=74 UNION ALL SELECT 'inventory_stocktake_items',COUNT(*) FROM inventory_stocktake_items WHERE product_id=74 UNION ALL SELECT 'inventory_lifecycle_events',COUNT(*) FROM inventory_lifecycle_events WHERE product_id=74 UNION ALL SELECT 'workshop_tasks',COUNT(*) FROM workshop_tasks WHERE product_id=74 UNION ALL SELECT 'catalog_identity_order_item_links',COUNT(*) FROM catalog_identity_order_item_links WHERE product_id=74 UNION ALL SELECT 'catalog_product_aliases',COUNT(*) FROM catalog_product_aliases WHERE product_id=74")"
+          stale_snapshots="$(query_json "SELECT 'order_items' AS table_name,COUNT(*) AS c FROM order_items WHERE variant_id BETWEEN 1259 AND 1270 AND COALESCE(product_name_snapshot,'')<>'ОРДА ШАПАН' UNION ALL SELECT 'inventory_stock',COUNT(*) FROM inventory_stock WHERE variant_id BETWEEN 1259 AND 1270 AND COALESCE(product_name_snapshot,'')<>'ОРДА ШАПАН' UNION ALL SELECT 'inventory_movements',COUNT(*) FROM inventory_movements WHERE variant_id BETWEEN 1259 AND 1270 AND COALESCE(product_name_snapshot,'')<>'ОРДА ШАПАН'")"
+          reservation_mismatch="$(query_json "SELECT s.inventory_source,s.variant_id,s.reserved_quantity,COALESCE(SUM(CASE WHEN r.status='active' THEN r.quantity ELSE 0 END),0) AS active_reserved FROM inventory_stock s LEFT JOIN inventory_reservations r ON r.inventory_source=s.inventory_source AND r.variant_id=s.variant_id WHERE s.variant_id BETWEEN 1259 AND 1270 GROUP BY s.id,s.inventory_source,s.variant_id,s.reserved_quantity HAVING s.reserved_quantity<>COALESCE(SUM(CASE WHEN r.status='active' THEN r.quantity ELSE 0 END),0) ORDER BY s.inventory_source,s.variant_id")"
+          stock="$(query_json "SELECT inventory_source,product_id,variant_id,product_name_snapshot,quantity,reserved_quantity FROM inventory_stock WHERE variant_id BETWEEN 1259 AND 1270 ORDER BY inventory_source,variant_id")"
+          reservations="$(query_json "SELECT id,order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status FROM inventory_reservations WHERE variant_id BETWEEN 1259 AND 1270 ORDER BY id")"
+          orders="$(query_json "SELECT oi.id AS order_item_id,o.external_id,oi.product_id,oi.variant_id,oi.product_name_snapshot,oi.stock_writeoff_status FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.variant_id BETWEEN 1259 AND 1270 ORDER BY oi.id")"
+          conflicts="$(query_json "SELECT COUNT(*) AS c FROM catalog_variants a JOIN catalog_variants b ON a.id<b.id AND a.stock_position_id=97 AND b.stock_position_id=97 AND a.category=b.category AND COALESCE(a.gender,'')=COALESCE(b.gender,'') AND COALESCE(a.color,'')=COALESCE(b.color,'') AND COALESCE(a.material,'')=COALESCE(b.material,'') AND COALESCE(a.length,'')=COALESCE(b.length,'') AND COALESCE(a.size_label,'')=COALESCE(b.size_label,'') AND a.is_active=1 AND b.is_active=1 WHERE a.id BETWEEN 1259 AND 1270 OR b.id BETWEEN 1259 AND 1270")"
+
+          echo "PRODUCTS=$products"
+          echo "POSITIONS=$positions"
+          echo "VARIANTS=$variants"
+          echo "ALIAS=$alias_row"
+          echo "OLD_REFS=$old_refs"
+          echo "STALE_SNAPSHOTS=$stale_snapshots"
+          echo "RESERVATION_MISMATCH=$reservation_mismatch"
+          echo "STOCK=$stock"
+          echo "RESERVATIONS=$reservations"
+          echo "ORDERS=$orders"
+          echo "CONFLICTS=$conflicts"
+
+          jq -e 'length==2 and .[0].id==43 and .[0].name=="ОРДА ШАПАН" and .[0].is_active==1 and .[1].id==74 and .[1].name=="ОРДА" and .[1].is_active==0' >/dev/null <<<"$products"
+          jq -e 'length==2 and .[0].id==97 and .[0].product_id==43 and .[0].is_active==1 and .[1].id==145 and .[1].product_id==74 and .[1].is_active==0' >/dev/null <<<"$positions"
+          jq -e 'length==12 and all(.[]; .product_id==43 and .stock_position_id==97 and .is_active==1 and .material=="КАШЕМИР" and .length=="СТАНДАРТ")' >/dev/null <<<"$variants"
+          jq -e 'length==1 and .[0].alias_key=="ОРДА" and .[0].raw_value=="ОРДА" and .[0].product_id==43' >/dev/null <<<"$alias_row"
+          jq -e 'all(.[]; .c==0)' >/dev/null <<<"$old_refs"
+          jq -e 'all(.[]; .c==0)' >/dev/null <<<"$stale_snapshots"
+          jq -e 'length==0' >/dev/null <<<"$reservation_mismatch"
+          jq -e 'all(.[]; .product_id==43 and .product_name_snapshot=="ОРДА ШАПАН" and .quantity>=0 and .reserved_quantity>=0 and .reserved_quantity<=.quantity)' >/dev/null <<<"$stock"
+          jq -e 'all(.[]; .product_id==43)' >/dev/null <<<"$reservations"
+          jq -e 'all(.[]; .product_id==43 and .product_name_snapshot=="ОРДА ШАПАН")' >/dev/null <<<"$orders"
+          jq -e '.[0].c==0' >/dev/null <<<"$conflicts"
+
+          echo "ORDA_PRODUCTION_VERIFY_OK=1"
