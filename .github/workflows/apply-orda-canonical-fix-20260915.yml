@@ -27,6 +27,8 @@ jobs:
         run: python scripts/apply-orda-canonical-resolver-20260915.py
       - name: Install dependencies
         run: npm ci
+      - name: Build exact preservation manifest
+        run: node scripts/write-orda-canonical-worker-manifest-20260915.mjs
       - name: Focused regression
         run: node scripts/test-arrival-canonical-product-alias-r1.mjs
       - name: Full release gate
@@ -43,7 +45,7 @@ jobs:
           set -euo pipefail
           git config user.name dymovicd123
           git config user.email dymovicd@gmail.com
-          git add worker/domains/inventory-movement.ts scripts/test-arrival-canonical-product-alias-r1.mjs package.json
+          git add worker/domains/inventory-movement.ts scripts/test-arrival-canonical-product-alias-r1.mjs scripts/arrival-canonical-product-alias-r1-worker-manifest.json scripts/test-step1906a-worker-modularization.mjs package.json
           git diff --cached --check
           git commit -m "Fix arrival canonical product alias resolution"
           git push origin HEAD:fix/orda-canonical-merge-20260915
