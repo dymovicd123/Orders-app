@@ -50,3 +50,5 @@ jobs:
           query "POSITION145 VARIANTS" "SELECT id,product_id,stock_position_id,gender,color,material,length,size_label,is_active FROM catalog_variants WHERE stock_position_id=145 ORDER BY id"
           echo
           echo "READ_ONLY_FINAL_ORDA_MAP_COMPLETE=1"
+
+# rerun-after-production-deploy d067afc8 2026-09-15
