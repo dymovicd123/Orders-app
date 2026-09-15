@@ -348,7 +348,9 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   const explicitSizeMissing = !context?.isWorkshop && !clean(draft?.size)
   const productMissing = !draft?.productId && !draft?.createProduct
   const newProductIncomplete = Boolean(draft?.createProduct && (!clean(draft.productName) || !draft.genderScope))
-  const factsBlocked = productMissing || newProductIncomplete || genderMissing || explicitColorMissing || explicitSizeMissing || unconfirmedNewFields.length > 0
+  const nonGenderFactsBlocked = productMissing || newProductIncomplete || explicitColorMissing || explicitSizeMissing || unconfirmedNewFields.length > 0
+  const factsBlocked = nonGenderFactsBlocked || genderMissing
+  const canMarkLegacyUnknownGender = Boolean(isAdmin && genderMissing && !draft?.createProduct && draft?.productId && !context?.isWorkshop && !nonGenderFactsBlocked)
   const pendingLabels = [
     productMissing ? 'выбрать товар' : '',
     newProductIncomplete ? 'заполнить новый товар' : '',
@@ -369,9 +371,11 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   const compoundMaterialSelected = Boolean(compoundHint && normalize(draft?.material) === normalize(compoundHint))
   const compoundColorSelected = Boolean(compoundHint && normalize(draft?.color) === normalize(compoundHint))
 
-  const resolveFacts = async () => {
-    if (!activeItem || !draft || resolving || factsBlocked || !isAdmin) return
-    if (exactDraftVariant?.id) {
+  const resolveFacts = async (options: { legacyUnknownGender?: boolean } = {}) => {
+    const legacyUnknownGender = Boolean(options.legacyUnknownGender)
+    if (!activeItem || !draft || resolving || !isAdmin) return
+    if (legacyUnknownGender ? !canMarkLegacyUnknownGender : factsBlocked) return
+    if (!legacyUnknownGender && exactDraftVariant?.id) {
       await resolveSelected(Number(exactDraftVariant.id))
       return
     }
@@ -390,6 +394,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         color: clean(draft.color),
         size: clean(draft.size),
         createFields: Object.entries(createFields).filter(([, enabled]) => enabled).map(([field]) => field),
+        legacyUnknownGender,
       }
       const response = await apiFetch(`/api/catalog/review/${activeItem.orderItemId}/resolve-facts`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
@@ -617,7 +622,10 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
                 <div className="order-catalog-resolution-sticky-copy">
                   <strong>{factsBlocked ? `Осталось уточнить: ${pendingLabels.join(' · ')}` : 'Всё готово к сохранению'}</strong>
                   {genderMissing ? (
-                    <div className="order-catalog-resolution-inline-choice"><span>Пол:</span><button type="button" onClick={() => changeField('gender', 'ЖЕН')}>Женский</button><button type="button" onClick={() => changeField('gender', 'МУЖ')}>Мужской</button></div>
+                    <div className="order-catalog-resolution-gender-decision">
+                      <div className="order-catalog-resolution-inline-choice"><span>Пол:</span><button type="button" onClick={() => changeField('gender', 'ЖЕН')}>Женский</button><button type="button" onClick={() => changeField('gender', 'МУЖ')}>Мужской</button><button type="button" className="is-legacy" disabled={!canMarkLegacyUnknownGender || resolving} onClick={() => void resolveFacts({ legacyUnknownGender: true })}>Не удалось выяснить</button></div>
+                      <small>«Не удалось выяснить» не создаёт бесполый SKU. Эта строка станет явным историческим исключением и не будет списана по точному складскому варианту.</small>
+                    </div>
                   ) : null}
                   {explicitColorMissing ? <button type="button" className="order-catalog-resolution-quick-choice" onClick={() => changeField('color', 'БЕЗ ЦВЕТА')}>Подтвердить: без цвета</button> : null}
                   {explicitSizeMissing ? <button type="button" className="order-catalog-resolution-quick-choice" onClick={() => changeField('size', 'БЕЗ РАЗМЕРА')}>Подтвердить: без размера</button> : null}

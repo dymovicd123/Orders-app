@@ -12,6 +12,7 @@ try {
   const modal = read('src/features/orders/OrderCatalogResolutionModal.tsx')
   const lazySections = read('src/app/lazySections.tsx')
   const utils = read('src/app/utils.ts')
+  const contracts = read('shared/api-contracts.ts')
 
   check(review.includes('export async function reconcileCatalogReviewOrder'), 'Order-scoped safe auto-reconciliation must exist')
   check(review.includes('fetchCatalogReviewRows(db, 160, orderId)'), 'Auto-reconciliation must stay scoped to one order')
@@ -52,6 +53,11 @@ try {
   check(modal.includes('rankedProducts(catalog, activeItem?.productName'), 'R2 must keep contextual base-product suggestions in the same resolver')
   check(!modal.includes('Нужна новая характеристика'), 'R2 must not send the operator to the old lossy full-review detour')
   check(modal.includes('Без уточнения отправить заказ нельзя'), 'Resolver must keep the no-bypass safety rule in human language')
+  check(contracts.includes('legacyUnknownGender?: boolean'), 'API contract must model the explicit legacy unknown-gender action')
+  check(modal.includes('Не удалось выяснить') && modal.includes('legacyUnknownGender: true'), 'Resolver must offer an explicit unknown-gender historical exception without inventing a gender')
+  check(review.includes("stock_writeoff_status = 'legacy_unknown_gender'"), 'Backend must persist a dedicated legacy unknown-gender status instead of a genderless SKU')
+  check(review.includes('if (legacyGenderException)') && review.indexOf('if (legacyGenderException)') < review.indexOf('const execution = await ensureCatalogExecutionV3'), 'Legacy unknown gender must exit before execution/SKU creation')
+  check(reservations.includes("'legacy_unknown_gender'"), 'Shipment blocker must intentionally recognize the explicit historical exception')
   check(modal.includes('const load = async (completeWhenEmpty = false)'), 'Resolver initial load must distinguish passive open from post-resolution completion')
   check(modal.includes('if (completeWhenEmpty)'), 'Resolver must never auto-complete from an empty initial review response')
   check((modal.match(/await load\(true\)/g) || []).length === 2, 'Resolver may auto-complete only after the two explicit successful resolution actions')
@@ -61,8 +67,8 @@ try {
   check(catalog.includes("['БЕЗ ЦВЕТА', 'НЕТ ЦВЕТА', 'НЕ УКАЗАН'].includes(raw)"), 'No-color placeholders must never become learned value aliases')
   check(catalog.includes("['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р', 'НЕ УКАЗАН'].includes(raw)"), 'No-size placeholders must never become learned value aliases')
 
-  console.log('CONTEXTUAL CATALOG RESOLUTION R4 PASSED — ambiguous shipping rows stay blocked, existing variants remain fast, and admins can correct/create exact catalog facts inline without learning placeholder aliases')
+  console.log('CONTEXTUAL CATALOG RESOLUTION R5 PASSED — ambiguous shipping rows stay blocked, existing variants remain fast, and admins can correct/create exact catalog facts inline without learning placeholder aliases')
 } catch (error) {
-  console.error(`CONTEXTUAL CATALOG RESOLUTION R4 FAILED: ${error?.message || error}`)
+  console.error(`CONTEXTUAL CATALOG RESOLUTION R5 FAILED: ${error?.message || error}`)
   process.exit(1)
 }

@@ -7,6 +7,7 @@ import { assertCatalogProductAliasTargetAvailable, catalogGenderForProductScope,
 import { normalizeOrderItems } from './order-core.ts'
 import { releaseOrderReservationV2, reserveOrderItemV2, resolveCatalogProductAndVariantV2, resolveWorkshopCatalogProductOnly } from './order-reservations.ts'
 import { upsertReferenceValue } from './references.ts'
+import { writeActivityLog } from './activity.ts'
 
 export function orderItemWasPhysicallyIssued(row: Record<string, unknown>) {
   const status = cleanText(row.stock_writeoff_status);
@@ -35,7 +36,7 @@ export const CATALOG_REVIEW_RECENT_DAYS = 30;
 export function catalogReviewBasePredicate(oi = 'oi', o = 'o') {
   return `${oi}.quantity > 0
     AND (${oi}.product_id IS NULL OR ${oi}.variant_id IS NULL OR COALESCE(${oi}.stock_writeoff_status, '') = 'catalog_unresolved')
-    AND COALESCE(${oi}.stock_writeoff_status, '') NOT IN ('catalog_excluded', 'catalog_excluded_history', 'workshop_no_catalog')
+    AND COALESCE(${oi}.stock_writeoff_status, '') NOT IN ('catalog_excluded', 'catalog_excluded_history', 'workshop_no_catalog', 'legacy_unknown_gender')
     AND COALESCE(${o}.order_status, 'active') NOT IN ('deleted', 'archived')
     AND COALESCE(${o}.archived_at, '') = ''
     AND COALESCE((
@@ -172,6 +173,7 @@ export type CatalogReviewFactsInput = {
   color?: unknown;
   size?: unknown;
   createFields?: unknown;
+  legacyUnknownGender?: unknown;
 };
 
 
@@ -289,6 +291,7 @@ export async function resolveCatalogReviewFacts(db: D1Database, orderItemId: num
   const normalRows = matching.filter((row) => toInt(row.is_workshop, 0) !== 1);
   const category = normalizeAudienceCategory(input.category ?? anchor.audience_type, input.size ?? anchor.size_snapshot);
   const createProduct = Boolean(input.createProduct);
+  const legacyUnknownGender = Boolean(input.legacyUnknownGender);
   let productId = Math.max(0, toInt(input.productId, 0));
   const requestedProductName = cleanText(input.productName) || cleanText(anchor.product_name_snapshot);
 
@@ -302,6 +305,10 @@ export async function resolveCatalogReviewFacts(db: D1Database, orderItemId: num
     if (!requestedProductName) throw new Error('Введите название нового товара для каталога.');
     const duplicate = await findCatalogProductByIdentity(db, requestedProductName);
     if (duplicate?.id) throw new Error(`Такой базовый товар уже существует: ${cleanText(duplicate.name)}. Выберите его вместо создания дубля.`);
+  }
+
+  if (legacyUnknownGender && (!product?.id || createProduct)) {
+    throw new Error('Историческое исключение можно применить только к уже существующему базовому товару.');
   }
 
   // Validate the learned raw spelling before creating any product/reference/execution. An alias
@@ -338,7 +345,11 @@ export async function resolveCatalogReviewFacts(db: D1Database, orderItemId: num
     return { ok: true, linked: workshopLinked, workshopLinked, message: `Цеховая позиция связана с товаром «${cleanText(product.name)}». Складская комбинация для неё не требуется.` };
   }
 
-  if (gender !== 'ЖЕН' && gender !== 'МУЖ') throw new Error('Для товара «Унисекс» выберите пол конкретной вещи: ЖЕН или МУЖ.');
+  const legacyGenderException = Boolean(legacyUnknownGender && product?.id && requestedGenderScope === 'unisex' && !gender);
+  if (legacyUnknownGender && !legacyGenderException) {
+    throw new Error('«Не удалось выяснить пол» доступно только когда существующий товар действительно требует выбора пола, а данных нет.');
+  }
+  if (!legacyGenderException && gender !== 'ЖЕН' && gender !== 'МУЖ') throw new Error('Для товара «Унисекс» выберите пол конкретной вещи: ЖЕН или МУЖ.');
 
   // Read-only preflight first. A missing checkbox must fail before creating a product,
   // reference value, execution, alias or touching any order/workshop row.
@@ -368,6 +379,71 @@ export async function resolveCatalogReviewFacts(db: D1Database, orderItemId: num
   }
 
   const timestamp = new Date().toISOString();
+
+  if (legacyGenderException) {
+    let linked = 0;
+    let workshopLinked = 0;
+    let releasedReservations = 0;
+    const audienceType = category === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ';
+    const explicitSize = cleanText(input.size) || cleanText(anchor.size_snapshot) || 'БЕЗ РАЗМЕРА';
+    const explicitColor = cleanText(input.color) || color || 'БЕЗ ЦВЕТА';
+
+    for (const row of matching) {
+      const id = toInt(row.id ?? row.order_item_id, 0);
+      if (!id) continue;
+      if (toInt(row.is_workshop, 0) === 1) {
+        await db.prepare(`UPDATE order_items SET product_id = ?, variant_id = NULL, stock_writeoff_status = 'workshop' WHERE id = ?`).bind(product.id, id).run();
+        await db.prepare(`UPDATE workshop_tasks SET product_id = ?, variant_id = NULL, updated_at = ? WHERE order_item_id = ?`).bind(product.id, timestamp, id).run();
+        workshopLinked += 1;
+        linked += 1;
+        continue;
+      }
+
+      const reservation = await db.prepare(`SELECT id, status FROM inventory_reservations WHERE order_item_id = ? LIMIT 1`).bind(id).first<Record<string, unknown>>();
+      const reservationStatus = cleanText(reservation?.status);
+      if (reservation?.id && reservationStatus === 'active') {
+        if (await releaseOrderReservationV2(db, id, timestamp, 'Пол исторической позиции не удалось установить')) releasedReservations += 1;
+      } else if (reservation?.id && reservationStatus === 'unresolved') {
+        await db.prepare(
+          `UPDATE inventory_reservations
+           SET status = 'released', unresolved_reason = 'legacy_unknown_gender', released_at = ?, updated_at = ?
+           WHERE id = ? AND status = 'unresolved'`
+        ).bind(timestamp, timestamp, toInt(reservation.id, 0)).run();
+        releasedReservations += 1;
+      }
+
+      await db.prepare(
+        `UPDATE order_items
+         SET product_id = ?, variant_id = NULL, audience_type = ?, gender_snapshot = NULL,
+             color_snapshot = ?, material_snapshot = ?, length_snapshot = ?, size_snapshot = ?,
+             stock_writeoff_status = 'legacy_unknown_gender', stock_quantity_before = NULL, stock_quantity_after = NULL
+         WHERE id = ?`
+      ).bind(product.id, audienceType, explicitColor, material, length, explicitSize, id).run();
+      linked += 1;
+    }
+
+    try {
+      await writeActivityLog(db, {
+        eventType: 'catalog_legacy_unknown_gender', entityType: 'order', entityId: toInt(anchor.order_id, 0),
+        orderId: toInt(anchor.order_id, 0), externalOrderId: cleanText(anchor.external_id),
+        title: `Пол позиции не удалось установить: ${cleanText(product.name)}`,
+        details: `Позиция сохранена как историческое исключение без точного складского SKU и без физического списания по варианту. Материал: ${material}; цвет: ${explicitColor}; размер: ${explicitSize}.`,
+        createdAt: timestamp,
+      });
+    } catch (error) {
+      console.warn('Legacy unknown-gender activity log failed after committed resolution', error);
+    }
+
+    return {
+      ok: true,
+      linked,
+      workshopLinked,
+      releasedReservations,
+      legacyUnknownGender: true,
+      message: 'Пол не удалось установить. Позиция сохранена как историческое исключение без бесполого SKU и без точного физического списания по варианту.',
+    };
+  }
+
   const execution = await ensureCatalogExecutionV3(db, product.id, material, length, timestamp);
   const combination = await createCatalogCombinationV3(db, {
     productId: product.id,

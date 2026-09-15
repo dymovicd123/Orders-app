@@ -585,3 +585,27 @@
     width: 100%;
   }
 }
+
+
+.order-catalog-resolution-gender-decision {
+  display: grid;
+  gap: 5px;
+}
+
+.order-catalog-resolution-gender-decision small {
+  max-width: 560px;
+  color: #7a4d00;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.order-catalog-resolution-inline-choice button.is-legacy {
+  border-color: #d7b36a;
+  background: #fff8e8;
+  color: #744b00;
+}
+
+.order-catalog-resolution-inline-choice button.is-legacy:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
