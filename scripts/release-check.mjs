@@ -145,7 +145,7 @@ function verifySource() {
     if (!app.includes(marker)) fail(`Step 189C App marker отсутствует: ${marker}`)
   }
   const financeRenderer = read('src/features/renderers/FinanceDashboardRenderer.tsx')
-  for (const marker of ['История денег', 'Здесь видно, как менялись деньги в системе']) {
+  for (const marker of ['Операции по датам', 'Операции идут по дате, к которой относятся деньги']) {
     if (!financeRenderer.includes(marker)) fail(`Step 189C finance marker отсутствует: ${marker}`)
   }
 

@@ -130,51 +130,19 @@ assert.equal(page2.hasMore,false)
 assert.equal(new Set([...page1.events,...page2.events].map(r=>r.id)).size,65)
 assert.deepEqual(page1.payments,page2.payments)
 
-// Real request controller: latest day wins, refresh clears old totals, append does not duplicate.
-const { createFinanceDayReader } = load('src/features/finance/financeDayRead.ts')
-const pending = [], states = []
-const reader = createFinanceDayReader((url,init)=>new Promise((resolve,reject)=>pending.push({url,init,resolve,reject})),s=>states.push(s))
-const respond = (pendingRequest,data,headers={})=>pendingRequest.resolve(new Response(JSON.stringify(data),{headers}))
-const first = reader.load(day.date,'money')
-const later = reader.load('2026-09-06','money')
-assert.equal(pending[0].init.signal.aborted,true)
-respond(pending[1],{...day,date:'2026-09-06'}); await later
-respond(pending[0],day); await first
-assert.equal(states.at(-1).data.date,'2026-09-06')
-const refresh = reader.load(day.date,'money')
-assert.equal(states.at(-1).data,null)
-respond(pending[2],page1); await refresh
-const append = reader.load(day.date,'money',true)
-await reader.load(day.date,'money',true)
-assert.equal(pending.length,4)
-assert.match(pending[3].url,/offset=50/)
-respond(pending[3],page2); await append
-assert.equal(states.at(-1).data.events.length,65)
-const failure = reader.load(day.date,'money')
-pending[4].reject(new Error('network')); await failure
-assert.equal(states.at(-1).data,null)
-assert.equal(states.at(-1).error,'network')
-const stale = reader.load(day.date,'money')
-respond(pending[5],day,{'X-Orders-App-Stale':'1'}); await stale
-assert.equal(states.at(-1).data,null,'a stale fallback cannot assert reconciliation')
-const disposed = reader.load(day.date,'money')
-reader.dispose(); const statesBefore = states.length
-respond(pending[6],day); await disposed
-assert.equal(states.length,statesBefore)
 const section = fs.readFileSync('src/features/sections/FinanceSection.tsx','utf8')
-assert.ok(section.includes('active && singleDay'))
-assert.ok(section.includes('initialLedger={financeMode'))
-assert.ok(section.includes('accessRole}`'))
-assert.ok(section.includes('Дата дня'))
+assert.ok(!section.includes('FinanceDayPanel'), 'a single day must not replace the normal finance workspace')
+assert.ok(section.includes("const periodApplies = !['cash', 'methods'].includes(financeMode)"), 'cash and payment-method settings must not inherit the report period')
+assert.ok(section.includes('Все операции ниже относятся именно к выбранным датам'), 'period semantics must be explicit to the user')
 const router = fs.readFileSync('worker/domains/cash.ts','utf8')
 assert.ok(router.includes("if (url.searchParams.get('view') === 'day') return readFinanceDay(db, url)"))
 assert.ok(router.includes('ORDER BY fe.event_date DESC, datetime(fe.event_at) DESC, fe.id DESC'))
 const rendererSource = fs.readFileSync('src/features/renderers/FinanceDashboardRenderer.tsx', 'utf8')
-const financeDayCss = fs.readFileSync('src/features/finance/finance-day.css', 'utf8')
+assert.ok(rendererSource.includes("{ id: 'payments', label: 'Операции', hint: 'По дате операции' }"), 'human money journal label missing')
+assert.ok(rendererSource.includes("{ id: 'cash', label: 'Касса', hint: 'Наличные сейчас' }"), 'cash must be presented as current operational state')
+assert.ok(!rendererSource.includes('ctx.financeDay'), 'historical day must not replace summary, operations or cash')
+assert.ok(rendererSource.includes('moneyHistory.map((row, index)'), 'operations must be grouped by business date')
+assert.ok(rendererSource.includes('дата операции'), 'business-date group heading missing')
 assert.ok(rendererSource.includes("payment_correction: 'Исправление способа оплаты'"), 'cash journal must not expose payment_correction')
-assert.ok(rendererSource.includes('Внесено / относится к'), 'cash journal date heading must explain insertion order')
-assert.ok(rendererSource.includes('<strong>{financeRecordedAt(entry.createdAt)}</strong><span className="cash-entry-meta">Относится к {formatDateShort(entry.businessDate)}</span>'), 'cash journal must emphasize recorded-at before business date')
-assert.ok(rendererSource.includes('finance-current-cash-disclosure'), 'historical day must collapse the live cash workspace')
-assert.ok(financeDayCss.includes('.finance-current-cash-disclosure.is-historical'), 'historical cash disclosure styles missing')
-console.log('FINANCE DAY FOCUSED GREEN — corrected payments, separate cash, late dates, unknowns, read-only SQL and human rendering')
+console.log('FINANCE DAY FOCUSED GREEN — backend day audit preserved; human finance UI uses business-date periods without a special-day client')
 export { day, initialCashDay }

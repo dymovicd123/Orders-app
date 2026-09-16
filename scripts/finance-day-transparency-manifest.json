@@ -20,21 +20,19 @@
     },
     "src/features/sections/FinanceSection.tsx": {
       "beforeGitBlob": "48005beb90b797e16dce17b86e4e2b97e0a64844",
-      "afterGitBlob": "25fb30c4b1c9cab3febb663513e8dbcd0f044ed2",
+      "afterGitBlob": "dcdfe07ce69b0779ad179c702a07f0ac6fde9e59",
       "beforeLines": 55,
-      "afterLines": 70
+      "afterLines": 68
     },
     "src/features/renderers/FinanceDashboardRenderer.tsx": {
       "beforeGitBlob": "7ccadc64c9cdd0f1c2d65b3f3424564d71cc2eae",
-      "afterGitBlob": "e5be95ac883128115ffb5df28d8e9862932133c3",
+      "afterGitBlob": "f3882b36a3b4bab109b6a33cca14c804ce00abf1",
       "beforeLines": 745,
-      "afterLines": 758
+      "afterLines": 752
     }
   },
   "addedFiles": {
     "shared/finance-day-contracts.ts": "20e570a8b633eda5cc7bb51e3c5b597b27cfc41471eb9be7ba94837d0b4e7edc",
-    "src/features/finance/financeDayRead.ts": "ad66ef6474da2dd39f37176c429f5b16f801b36bcc5f9c1e791f114b90ff474d",
-    "src/features/finance/FinanceDayPanel.tsx": "9d9c47a5c93d12f44081e52bafd50c12318e08fec2da276022c30ba6b91ca6fb",
     "src/features/finance/FinanceDayView.tsx": "d53af33f8b5e7371a369a827248bca204ea8871ff5c2739f593900d95d5213fd",
     "src/features/finance/finance-day.css": "b9a672829100d86d2a1f45e9df27f8950c4f8562bf1741cf358175adefb1367c"
   }
