@@ -97,6 +97,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
       order_refund: 'Возврат клиенту',
       exchange_refund: 'Возврат по обмену',
       payment_reversal: 'Отмена оплаты',
+      payment_correction: 'Исправление способа оплаты',
       return_reversal: 'Отмена возврата',
       order_cancel_payment: 'Удаление заказа',
       manual_in: 'Ручное внесение',
@@ -110,7 +111,12 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
       <div className="finance-tabs-shell finance-truth-shell">
         {financeTabsNode}
         {ctx.financeDay}
-        <div className="finance-tab-content cash-register-content cash-register-v2">
+        <details className={`finance-current-cash-disclosure${ctx.financeDay ? ' is-historical' : ' is-live'}`} open={ctx.financeDay ? undefined : true}>
+          <summary>
+            <span><strong>Текущая касса — сейчас</strong>{cashRegister?.initialized ? <small>{formatMoney(cashRegister.currentBalance)} в кассе · текущий цикл</small> : <small>Открыть текущую кассу</small>}</span>
+            {ctx.financeDay ? <span>Показать</span> : null}
+          </summary>
+          <div className="finance-tab-content cash-register-content cash-register-v2">
           {cashRegisterBusy && !cashRegister ? (
             <div className="empty-state">Загружаю кассу…</div>
           ) : !cashRegister ? (
@@ -233,11 +239,11 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                 </div>
                 <div className="table-shell">
                   <table className="data-table cash-register-ledger">
-                    <thead><tr><th>Дата</th><th>Операция</th><th>Заказ / источник</th><th>Комментарий</th><th className="num">Приход</th><th className="num">Расход</th><th className="num">Остаток</th><th>Действия</th></tr></thead>
+                    <thead><tr><th>Внесено / относится к</th><th>Операция</th><th>Заказ / источник</th><th>Комментарий</th><th className="num">Приход</th><th className="num">Расход</th><th className="num">Остаток</th><th>Действия</th></tr></thead>
                     <tbody>
                       {cashRegister.entries.length ? cashRegister.entries.map((entry) => (
                         <tr key={`cash-entry-${entry.id}`} className={entry.direction === 'out' ? 'is-out' : 'is-in'}>
-                          <td><strong>Относится к {formatDateShort(entry.businessDate)}</strong><span className="cash-entry-meta">Внесено в систему {financeRecordedAt(entry.createdAt)}</span></td>
+                          <td><strong>{financeRecordedAt(entry.createdAt)}</strong><span className="cash-entry-meta">Относится к {formatDateShort(entry.businessDate)}</span></td>
                           <td><strong>{entryTypeLabel(entry.entryType)}</strong><span className="cash-entry-meta">{entry.paymentMethod || entry.createdBy || '—'}</span></td>
                           <td>{entry.externalOrderId ? <strong>{entry.externalOrderId}</strong> : entry.sourceType === 'manual' ? 'Ручная операция' : entry.entryType === 'ledger_reset' ? 'Новый цикл' : entry.sourceType === 'opening' ? 'Начальная точка' : '—'}</td>
                           <td>{entry.comment || '—'}</td>
@@ -253,7 +259,8 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
               </section>
             </>
           )}
-        </div>
+          </div>
+        </details>
       </div>
     )
   }
