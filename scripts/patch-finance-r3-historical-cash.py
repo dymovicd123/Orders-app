@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import re
 import subprocess
 
 root = Path('.')
@@ -10,52 +11,66 @@ test_path = root / 'scripts/test-finance-day-transparency.mjs'
 manifest_path = root / 'scripts/finance-day-transparency-manifest.json'
 
 app = app_path.read_text(encoding='utf-8')
-old = "  const [cashMovementDraft, setCashMovementDraft] = useState<{ direction: 'in' | 'out'; amount: number; comment: string }>({ direction: 'out', amount: 0, comment: '' })"
-new = "  const [cashMovementDraft, setCashMovementDraft] = useState<{ direction: 'in' | 'out'; amount: number; comment: string; businessDate: string }>({ direction: 'out', amount: 0, comment: '', businessDate: '' })"
-if old not in app:
+old_state = "  const [cashMovementDraft, setCashMovementDraft] = useState<{ direction: 'in' | 'out'; amount: number; comment: string }>({ direction: 'out', amount: 0, comment: '' })"
+new_state = "  const [cashMovementDraft, setCashMovementDraft] = useState<{ direction: 'in' | 'out'; amount: number; comment: string; businessDate: string }>({ direction: 'out', amount: 0, comment: '', businessDate: '' })"
+if old_state not in app:
     raise SystemExit('cashMovementDraft state anchor missing')
-app = app.replace(old, new, 1)
+app = app.replace(old_state, new_state, 1)
 
-old = "    if (cashMovementDraft.direction === 'out' && cashRegister && amount > cashRegister.currentBalance) {\n      setError(`По учёту в кассе только ${formatMoney(cashRegister.currentBalance)}.`)\n      return\n    }\n    if (cashMovementDraft.direction === 'out' && !window.confirm(`Выдать из кассы ${formatMoney(amount)}?\\\n\\\n${comment}`)) return\n    const requestId = makeCashRequestId('manual')"
-new = "    if (cashMovementDraft.direction === 'out' && cashRegister && amount > cashRegister.currentBalance) {\n      setError(`По учёту в кассе только ${formatMoney(cashRegister.currentBalance)}.`)\n      return\n    }\n    const historicalBusinessDate = isAdmin ? cashMovementDraft.businessDate.trim() : ''\n    if (historicalBusinessDate && !/^\\d{4}-\\d{2}-\\d{2}$/.test(historicalBusinessDate)) {\n      setError('Укажите корректную дату пропущенной операции.')\n      return\n    }\n    if (historicalBusinessDate) {\n      const directionLabel = cashMovementDraft.direction === 'in' ? 'внесение' : 'выдачу'\n      if (!window.confirm(`Добавить пропущенное ${directionLabel} ${formatMoney(amount)} за ${formatDateShort(historicalBusinessDate)}?\\\n\\\nДата операции будет сохранена отдельно от сегодняшнего времени внесения.\\\n${comment}`)) return\n    } else if (cashMovementDraft.direction === 'out' && !window.confirm(`Выдать из кассы ${formatMoney(amount)}?\\\n\\\n${comment}`)) return\n    const requestId = makeCashRequestId('manual')"
-if old not in app:
-    raise SystemExit('cash movement validation anchor missing')
-app = app.replace(old, new, 1)
+pattern = re.compile(r"    if \(cashMovementDraft\.direction === 'out' && !window\.confirm\(`Выдать из кассы .*?\)\) return\n    const requestId = makeCashRequestId\('manual'\)", re.S)
+replacement = """    const historicalBusinessDate = isAdmin ? cashMovementDraft.businessDate.trim() : ''
+    if (historicalBusinessDate && !/^\\d{4}-\\d{2}-\\d{2}$/.test(historicalBusinessDate)) {
+      setError('Укажите корректную дату пропущенной операции.')
+      return
+    }
+    if (historicalBusinessDate) {
+      const directionLabel = cashMovementDraft.direction === 'in' ? 'внесение' : 'выдачу'
+      if (!window.confirm(`Добавить пропущенное ${directionLabel} ${formatMoney(amount)} за ${formatDateShort(historicalBusinessDate)}?\\
+\\
+Дата операции будет сохранена отдельно от сегодняшнего времени внесения.\\
+${comment}`)) return
+    } else if (cashMovementDraft.direction === 'out' && !window.confirm(`Выдать из кассы ${formatMoney(amount)}?\\
+\\
+${comment}`)) return
+    const requestId = makeCashRequestId('manual')"""
+app, count = pattern.subn(replacement, app, count=1)
+if count != 1:
+    raise SystemExit('cash movement confirmation anchor missing')
 
-old = "          body: JSON.stringify({ direction: cashMovementDraft.direction, amount, comment, requestId }),"
-new = "          body: JSON.stringify({ direction: cashMovementDraft.direction, amount, comment, requestId, ...(historicalBusinessDate ? { businessDate: historicalBusinessDate } : {}) }),"
-if old not in app:
+old_request = "          body: JSON.stringify({ direction: cashMovementDraft.direction, amount, comment, requestId }),"
+new_request = "          body: JSON.stringify({ direction: cashMovementDraft.direction, amount, comment, requestId, ...(historicalBusinessDate ? { businessDate: historicalBusinessDate } : {}) }),"
+if old_request not in app:
     raise SystemExit('cash movement request anchor missing')
-app = app.replace(old, new, 1)
+app = app.replace(old_request, new_request, 1)
 
-old = "        setCashMovementDraft((current) => ({ ...current, amount: 0, comment: '' }))\n        setMessage(cashMovementDraft.direction === 'in' ? 'Внесение наличных записано.' : 'Выдача наличных записана.')"
-new = "        setCashMovementDraft((current) => ({ ...current, amount: 0, comment: '', businessDate: '' }))\n        setMessage(historicalBusinessDate\n          ? `Пропущенная операция добавлена за ${formatDateShort(historicalBusinessDate)}. Время внесения сохранено отдельно.`\n          : cashMovementDraft.direction === 'in' ? 'Внесение наличных записано.' : 'Выдача наличных записана.')"
-if old not in app:
+old_success = "        setCashMovementDraft((current) => ({ ...current, amount: 0, comment: '' }))\n        setMessage(cashMovementDraft.direction === 'in' ? 'Внесение наличных записано.' : 'Выдача наличных записана.')"
+new_success = "        setCashMovementDraft((current) => ({ ...current, amount: 0, comment: '', businessDate: '' }))\n        setMessage(historicalBusinessDate\n          ? `Пропущенная операция добавлена за ${formatDateShort(historicalBusinessDate)}. Время внесения сохранено отдельно.`\n          : cashMovementDraft.direction === 'in' ? 'Внесение наличных записано.' : 'Выдача наличных записана.')"
+if old_success not in app:
     raise SystemExit('cash movement success anchor missing')
-app = app.replace(old, new, 1)
+app = app.replace(old_success, new_success, 1)
 app_path.write_text(app, encoding='utf-8')
 
 renderer = renderer_path.read_text(encoding='utf-8')
-old = "<div className=\"mini-panel-head\"><div><h3>Ручная операция</h3><p className=\"mini-panel-note\">Комментарий обязателен. Новая операция записывается сегодняшней датой, а не выбранным прошлым днём.</p></div></div>"
-new = "<div className=\"mini-panel-head\"><div><h3>Ручная операция</h3><p className=\"mini-panel-note\">Комментарий обязателен. Обычная операция записывается сегодня. Администратор может отдельно указать прошлую дату только для действительно пропущенного движения текущего цикла.</p></div></div>"
-if old not in renderer:
+old_copy = "<div className=\"mini-panel-head\"><div><h3>Ручная операция</h3><p className=\"mini-panel-note\">Комментарий обязателен. Новая операция записывается сегодняшней датой, а не выбранным прошлым днём.</p></div></div>"
+new_copy = "<div className=\"mini-panel-head\"><div><h3>Ручная операция</h3><p className=\"mini-panel-note\">Комментарий обязателен. Обычная операция записывается сегодня. Администратор может отдельно указать прошлую дату только для действительно пропущенного движения текущего цикла.</p></div></div>"
+if old_copy not in renderer:
     raise SystemExit('cash manual copy anchor missing')
-renderer = renderer.replace(old, new, 1)
+renderer = renderer.replace(old_copy, new_copy, 1)
 
-old = "                    <label><span>Сумма</span><FriendlyNumberInput type=\"number\" min=\"0\" value={cashMovementDraft.amount || ''} onChange={(event) => setCashMovementDraft((current) => ({ ...current, amount: Math.max(0, Number(event.target.value || 0)) }))} /></label>\n                    <label className=\"wide-field\"><span>Комментарий</span><input value={cashMovementDraft.comment} onChange={(event) => setCashMovementDraft((current) => ({ ...current, comment: event.target.value }))} /></label>"
-new = "                    <label><span>Сумма</span><FriendlyNumberInput type=\"number\" min=\"0\" value={cashMovementDraft.amount || ''} onChange={(event) => setCashMovementDraft((current) => ({ ...current, amount: Math.max(0, Number(event.target.value || 0)) }))} /></label>\n                    {isAdmin ? <label><span>Прошлая дата — только если запись забыли</span><input type=\"date\" value={cashMovementDraft.businessDate || ''} onChange={(event) => setCashMovementDraft((current) => ({ ...current, businessDate: event.target.value }))} /><small className=\"cash-entry-meta\">Оставьте пустым для обычной операции сегодня. Дата не может быть раньше начала текущего цикла кассы.</small></label> : null}\n                    <label className=\"wide-field\"><span>Комментарий</span><input value={cashMovementDraft.comment} onChange={(event) => setCashMovementDraft((current) => ({ ...current, comment: event.target.value }))} /></label>"
-if old not in renderer:
+old_form = "                    <label><span>Сумма</span><FriendlyNumberInput type=\"number\" min=\"0\" value={cashMovementDraft.amount || ''} onChange={(event) => setCashMovementDraft((current) => ({ ...current, amount: Math.max(0, Number(event.target.value || 0)) }))} /></label>\n                    <label className=\"wide-field\"><span>Комментарий</span><input value={cashMovementDraft.comment} onChange={(event) => setCashMovementDraft((current) => ({ ...current, comment: event.target.value }))} /></label>"
+new_form = "                    <label><span>Сумма</span><FriendlyNumberInput type=\"number\" min=\"0\" value={cashMovementDraft.amount || ''} onChange={(event) => setCashMovementDraft((current) => ({ ...current, amount: Math.max(0, Number(event.target.value || 0)) }))} /></label>\n                    {isAdmin ? <label><span>Прошлая дата — только если запись забыли</span><input type=\"date\" value={cashMovementDraft.businessDate || ''} onChange={(event) => setCashMovementDraft((current) => ({ ...current, businessDate: event.target.value }))} /><small className=\"cash-entry-meta\">Оставьте пустым для обычной операции сегодня. Дата не может быть раньше начала текущего цикла кассы.</small></label> : null}\n                    <label className=\"wide-field\"><span>Комментарий</span><input value={cashMovementDraft.comment} onChange={(event) => setCashMovementDraft((current) => ({ ...current, comment: event.target.value }))} /></label>"
+if old_form not in renderer:
     raise SystemExit('cash manual form anchor missing')
-renderer = renderer.replace(old, new, 1)
+renderer = renderer.replace(old_form, new_form, 1)
 renderer_path.write_text(renderer, encoding='utf-8')
 
 worker = worker_path.read_text(encoding='utf-8')
-old = """      if (url.pathname === '/api/finance/cash-register/movements' && request.method === 'POST') {
+old_route = """      if (url.pathname === '/api/finance/cash-register/movements' && request.method === 'POST') {
         const input = await readJson<{ direction?: unknown; amount?: number; comment?: string; requestId?: unknown }>(request);
         return json(await addManualCashRegisterMovement(env.DB, input, authUser), { status: 201 });
       }
 """
-new = """      if (url.pathname === '/api/finance/cash-register/movements' && request.method === 'POST') {
+new_route = """      if (url.pathname === '/api/finance/cash-register/movements' && request.method === 'POST') {
         const input = await readJson<{ direction?: unknown; amount?: number; comment?: string; requestId?: unknown; businessDate?: unknown }>(request);
         const requestedBusinessDate = cleanText(input.businessDate);
         if (requestedBusinessDate) {
@@ -91,9 +106,9 @@ new = """      if (url.pathname === '/api/finance/cash-register/movements' && re
         return json(await addManualCashRegisterMovement(env.DB, input, authUser), { status: 201 });
       }
 """
-if old not in worker:
+if old_route not in worker:
     raise SystemExit('cash movement worker route anchor missing')
-worker = worker.replace(old, new, 1)
+worker = worker.replace(old_route, new_route, 1)
 worker_path.write_text(worker, encoding='utf-8')
 
 test = test_path.read_text(encoding='utf-8')
