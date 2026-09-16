@@ -1,0 +1,167 @@
+name: Clean temporary Branch2 resolver smoke fixtures
+
+on:
+  push:
+    branches:
+      - ops/branch2-manager-seed-20260916
+    paths:
+      - .github/workflows/branch2-smoke-cleanup-20260916.yml
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      WH_REF: SMOKE-WH-20260916T155955Z-35118350672
+      WS_REF: SMOKE-WS-20260916T155955Z-35118350672
+      WH_REQ: smoke-wh-20260916T155955Z-35118350672
+      WS_REQ: smoke-ws-20260916T155955Z-35118350672
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/branch2-manager-seed-20260916
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+
+      - name: Verify exact isolated Branch2 target
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -q '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -q '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          ! grep -q 'orders_db_prod' wrangler.jsonc
+          npx wrangler d1 list --json > /tmp/d1.json
+          node <<'NODE'
+          const fs = require('fs')
+          const raw = JSON.parse(fs.readFileSync('/tmp/d1.json','utf8'))
+          const rows = Array.isArray(raw) ? raw : (raw.result || [])
+          const b = rows.find(x => x.name === 'orders_db_branch2')
+          const p = rows.find(x => x.name === 'orders_db_prod')
+          const id = x => x && (x.uuid || x.id || x.database_id || '')
+          if (id(b) !== '40065052-854e-44b8-bcd5-251bdd488301') throw new Error('Branch2 D1 identity drift')
+          if (id(p) === id(b)) throw new Error('Branch2 resolves to Production D1')
+          NODE
+
+      - name: Strict read-only fixture preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          SQL="SELECT id,external_id,customer_id,order_status,shipping_status,total_amount,received_amount,debt_amount FROM orders WHERE id IN (1,2) ORDER BY id;
+          SELECT order_id,COUNT(*) AS n FROM order_items WHERE order_id IN (1,2) GROUP BY order_id ORDER BY order_id;
+          SELECT order_id,status,COUNT(*) AS n FROM inventory_reservations WHERE order_id IN (1,2) GROUP BY order_id,status ORDER BY order_id,status;
+          SELECT order_id,status,COUNT(*) AS n FROM workshop_tasks WHERE order_id IN (1,2) GROUP BY order_id,status ORDER BY order_id,status;
+          SELECT COUNT(*) AS n FROM payments WHERE order_id IN (1,2);
+          SELECT COUNT(*) AS n FROM returns WHERE order_id IN (1,2);
+          SELECT COUNT(*) AS n FROM exchanges WHERE order_id IN (1,2);
+          SELECT COUNT(*) AS n FROM inventory_movements WHERE reference_id IN ('$WH_REF','$WS_REF');
+          SELECT COUNT(*) AS n FROM financial_events WHERE order_id IN (1,2) OR external_order_id IN ('$WH_REF','$WS_REF');
+          SELECT COUNT(*) AS n FROM cash_register_entries WHERE order_id IN (1,2) OR external_order_id IN ('$WH_REF','$WS_REF');
+          SELECT id,order_id,external_order_id,event_type FROM activity_log WHERE order_id IN (1,2) OR external_order_id IN ('$WH_REF','$WS_REF') ORDER BY id;
+          SELECT order_id,external_id,action,source FROM order_manager_audit WHERE order_id IN (1,2) OR external_id IN ('$WH_REF','$WS_REF') ORDER BY id;
+          SELECT request_id,operation_type,status,step,target_type,target_id,target_ref,last_error FROM critical_operations WHERE request_id IN ('$WH_REQ','$WS_REQ') ORDER BY request_id;
+          SELECT request_id,entity_type,entity_key,entity_id FROM critical_operation_entities WHERE request_id IN ('$WH_REQ','$WS_REQ') ORDER BY request_id;
+          SELECT order_id FROM order_search_orders_fts WHERE order_id IN (1,2) ORDER BY order_id;
+          SELECT order_id FROM order_search_items_fts WHERE order_id IN (1,2) ORDER BY order_id;
+          SELECT order_id FROM order_search_payments_fts WHERE order_id IN (1,2) ORDER BY order_id;"
+          npx wrangler d1 execute orders_db_branch2 --remote --json --command="$SQL" > /tmp/preflight.json
+          PREFLIGHT=/tmp/preflight.json WH_REF="$WH_REF" WS_REF="$WS_REF" WH_REQ="$WH_REQ" WS_REQ="$WS_REQ" node <<'NODE'
+          const fs = require('fs')
+          const raw = JSON.parse(fs.readFileSync(process.env.PREFLIGHT,'utf8'))
+          const c = Array.isArray(raw) ? raw : [raw]
+          if (c.length !== 16 || c.some(x => !x.success || Number(x?.meta?.rows_written || 0) !== 0)) throw new Error('Preflight shape/read-only guarantee failed')
+          const orders = c[0].results || []
+          if (orders.length !== 2) throw new Error(`Expected exactly 2 temporary orders, got ${orders.length}`)
+          const expected = new Map([[1,process.env.WH_REF],[2,process.env.WS_REF]])
+          for (const o of orders) {
+            if (expected.get(Number(o.id)) !== o.external_id) throw new Error(`Unexpected order identity: ${JSON.stringify(o)}`)
+            if (o.customer_id != null) throw new Error(`Smoke order unexpectedly owns customer identity: ${JSON.stringify(o)}`)
+            if (o.order_status !== 'active' || o.shipping_status !== 'not_sent' || Number(o.total_amount)!==1 || Number(o.received_amount)!==0 || Number(o.debt_amount)!==1) throw new Error(`Smoke order state drift: ${JSON.stringify(o)}`)
+          }
+          const items = c[1].results || []
+          if (items.length !== 2 || items.some(r => Number(r.n)!==1) || new Set(items.map(r=>Number(r.order_id))).size!==2) throw new Error(`Unexpected item footprint: ${JSON.stringify(items)}`)
+          const reservations = c[2].results || []
+          if (reservations.length!==1 || Number(reservations[0].order_id)!==1 || reservations[0].status!=='unresolved' || Number(reservations[0].n)!==1) throw new Error(`Unexpected reservation footprint: ${JSON.stringify(reservations)}`)
+          const workshop = c[3].results || []
+          if (workshop.length!==1 || Number(workshop[0].order_id)!==2 || workshop[0].status!=='active' || Number(workshop[0].n)!==1) throw new Error(`Unexpected workshop footprint: ${JSON.stringify(workshop)}`)
+          for (let i=4;i<=9;i++) if (Number(c[i]?.results?.[0]?.n ?? -1)!==0) throw new Error(`Financial/inventory footprint at result ${i}: ${JSON.stringify(c[i].results)}`)
+          const activity = c[10].results || []
+          if (activity.length!==2 || activity.some(r => r.event_type!=='order_created')) throw new Error(`Unexpected activity footprint: ${JSON.stringify(activity)}`)
+          const audit = c[11].results || []
+          if (audit.length!==2 || audit.some(r => r.action!=='created' || r.source!=='order_create')) throw new Error(`Unexpected manager audit footprint: ${JSON.stringify(audit)}`)
+          const ops = c[12].results || []
+          if (ops.length!==2 || ops.some(r => r.operation_type!=='order_create' || r.status!=='completed' || r.step!=='completed' || r.target_type!=='order' || r.last_error!=null)) throw new Error(`Unexpected critical op footprint: ${JSON.stringify(ops)}`)
+          const opIds = new Set(ops.map(r=>r.request_id)); if (!opIds.has(process.env.WH_REQ)||!opIds.has(process.env.WS_REQ)) throw new Error('Critical op IDs drifted')
+          const entities = c[13].results || []
+          if (entities.length!==2 || entities.some(r=>r.entity_type!=='order_item')) throw new Error(`Unexpected critical entities: ${JSON.stringify(entities)}`)
+          const orderFts=(c[14].results||[]).map(r=>Number(r.order_id)).sort(); if (JSON.stringify(orderFts)!=='[1,2]') throw new Error(`Order FTS drift: ${JSON.stringify(orderFts)}`)
+          const itemFts=(c[15].results||[]).map(r=>Number(r.order_id)).sort(); if (JSON.stringify(itemFts)!=='[1,2]') throw new Error(`Item FTS drift: ${JSON.stringify(itemFts)}`)
+          console.log('Exact temporary Branch2 smoke footprint confirmed; no business stock or money side effects.')
+          NODE
+
+      - name: Record D1 recovery bookmark immediately before cleanup
+        run: npx wrangler d1 time-travel info orders_db_branch2 | tee /tmp/branch2-smoke-cleanup-bookmark.txt
+
+      - name: Delete only exact temporary smoke fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/branch2-smoke-cleanup.sql <<SQL
+          DELETE FROM activity_log
+          WHERE (order_id = 1 AND external_order_id = '$WH_REF')
+             OR (order_id = 2 AND external_order_id = '$WS_REF');
+
+          DELETE FROM order_manager_audit
+          WHERE (order_id = 1 AND external_id = '$WH_REF' AND action = 'created' AND source = 'order_create')
+             OR (order_id = 2 AND external_id = '$WS_REF' AND action = 'created' AND source = 'order_create');
+
+          DELETE FROM critical_operations
+          WHERE request_id IN ('$WH_REQ','$WS_REQ')
+            AND operation_type = 'order_create'
+            AND status = 'completed';
+
+          DELETE FROM orders WHERE id = 1 AND external_id = '$WH_REF';
+          DELETE FROM orders WHERE id = 2 AND external_id = '$WS_REF';
+          SQL
+          npx wrangler d1 execute orders_db_branch2 --remote --file=/tmp/branch2-smoke-cleanup.sql
+
+      - name: Strict read-only cleanup postflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          SQL="SELECT COUNT(*) AS n FROM orders WHERE id IN (1,2) OR external_id IN ('$WH_REF','$WS_REF');
+          SELECT COUNT(*) AS n FROM order_items WHERE order_id IN (1,2);
+          SELECT COUNT(*) AS n FROM inventory_reservations WHERE order_id IN (1,2);
+          SELECT COUNT(*) AS n FROM workshop_tasks WHERE order_id IN (1,2);
+          SELECT COUNT(*) AS n FROM payments WHERE order_id IN (1,2);
+          SELECT COUNT(*) AS n FROM returns WHERE order_id IN (1,2);
+          SELECT COUNT(*) AS n FROM exchanges WHERE order_id IN (1,2);
+          SELECT COUNT(*) AS n FROM activity_log WHERE order_id IN (1,2) OR external_order_id IN ('$WH_REF','$WS_REF');
+          SELECT COUNT(*) AS n FROM order_manager_audit WHERE order_id IN (1,2) OR external_id IN ('$WH_REF','$WS_REF');
+          SELECT COUNT(*) AS n FROM critical_operations WHERE request_id IN ('$WH_REQ','$WS_REQ');
+          SELECT COUNT(*) AS n FROM critical_operation_entities WHERE request_id IN ('$WH_REQ','$WS_REQ');
+          SELECT COUNT(*) AS n FROM order_search_orders_fts WHERE order_id IN (1,2);
+          SELECT COUNT(*) AS n FROM order_search_items_fts WHERE order_id IN (1,2);
+          SELECT COUNT(*) AS n FROM order_search_payments_fts WHERE order_id IN (1,2);
+          SELECT COUNT(*) AS n FROM inventory_movements WHERE reference_id IN ('$WH_REF','$WS_REF');
+          SELECT COUNT(*) AS n FROM financial_events WHERE order_id IN (1,2) OR external_order_id IN ('$WH_REF','$WS_REF');
+          SELECT COUNT(*) AS n FROM cash_register_entries WHERE order_id IN (1,2) OR external_order_id IN ('$WH_REF','$WS_REF');
+          SELECT COUNT(*) AS n FROM inventory_stock;"
+          npx wrangler d1 execute orders_db_branch2 --remote --json --command="$SQL" > /tmp/postflight.json
+          POST=/tmp/postflight.json node <<'NODE'
+          const fs=require('fs')
+          const raw=JSON.parse(fs.readFileSync(process.env.POST,'utf8'))
+          const c=Array.isArray(raw)?raw:[raw]
+          if (c.length!==18 || c.some(x=>!x.success || Number(x?.meta?.rows_written||0)!==0)) throw new Error('Postflight shape/read-only guarantee failed')
+          for (let i=0;i<17;i++) if (Number(c[i]?.results?.[0]?.n ?? -1)!==0) throw new Error(`Cleanup residue in result ${i}: ${JSON.stringify(c[i].results)}`)
+          if (Number(c[17]?.results?.[0]?.n ?? -1)!==0) throw new Error(`Inventory stock unexpectedly changed/nonempty: ${JSON.stringify(c[17].results)}`)
+          console.log('Temporary Branch2 resolver smoke fixtures fully removed; stock remains empty.')
+          NODE
