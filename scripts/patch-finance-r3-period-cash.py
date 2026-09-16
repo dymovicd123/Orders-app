@@ -97,7 +97,7 @@ manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
 def blob(path: Path) -> str:
     return subprocess.check_output(['git', 'hash-object', str(path)], text=True).strip()
 def lines(path: Path) -> int:
-    return len(path.read_text(encoding='utf-8').splitlines())
+    return len(path.read_text(encoding='utf-8').split('\n'))
 manifest['files']['src/App.tsx']['afterGitBlob'] = blob(app_path)
 manifest['files']['src/App.tsx']['afterLines'] = lines(app_path)
 manifest['files']['src/features/renderers/FinanceDashboardRenderer.tsx']['afterGitBlob'] = blob(renderer_path)
