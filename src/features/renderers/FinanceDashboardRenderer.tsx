@@ -64,10 +64,10 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
 
   const financeTabs: Array<{ id: typeof financeMode; label: string; hint: string }> = [
     { id: 'summary', label: 'Сводка', hint: 'Чёткие итоги' },
-    { id: 'payments', label: 'Денежный журнал', hint: 'История денег' },
+    { id: 'payments', label: 'Операции', hint: 'По дате операции' },
     { id: 'debts', label: 'Долги', hint: 'Текущие и закрытые' },
     { id: 'returns', label: 'Возвраты / обмены', hint: 'По дате операции' },
-    { id: 'cash', label: 'Инкассация', hint: 'Наличные в офисе' },
+    { id: 'cash', label: 'Касса', hint: 'Наличные сейчас' },
     { id: 'methods', label: 'Способы оплаты', hint: 'Справочник оплат' },
   ]
 
@@ -82,9 +82,6 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
     </div>
   )
 
-  if (ctx.financeDay && (financeMode === 'summary' || financeMode === 'payments')) {
-    return <div className="finance-tabs-shell finance-truth-shell">{financeTabsNode}{ctx.financeDay}</div>
-  }
 
   if (financeMode === 'cash') {
     const entryTypeLabel = (entryType: string) => ({
@@ -110,13 +107,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
     return (
       <div className="finance-tabs-shell finance-truth-shell">
         {financeTabsNode}
-        {ctx.financeDay}
-        <details className={`finance-current-cash-disclosure${ctx.financeDay ? ' is-historical' : ' is-live'}`} open={ctx.financeDay ? undefined : true}>
-          <summary>
-            <span><strong>Текущая касса — сейчас</strong>{cashRegister?.initialized ? <small>{formatMoney(cashRegister.currentBalance)} в кассе · текущий цикл</small> : <small>Открыть текущую кассу</small>}</span>
-            {ctx.financeDay ? <span>Показать</span> : null}
-          </summary>
-          <div className="finance-tab-content cash-register-content cash-register-v2">
+        <div className="finance-tab-content cash-register-content cash-register-v2">
           {cashRegisterBusy && !cashRegister ? (
             <div className="empty-state">Загружаю кассу…</div>
           ) : !cashRegister ? (
@@ -259,8 +250,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
               </section>
             </>
           )}
-          </div>
-        </details>
+        </div>
       </div>
     )
   }
@@ -608,12 +598,12 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
           <section className="report-block finance-money-history-block">
             <div className="strict-section-head finance-money-history-head">
               <div>
-                <h3>История денег</h3>
-                <p className="mini-panel-note">Здесь видно, как менялись деньги в системе. Оплата, возврат и последующее исправление остаются отдельными строками.</p>
+                <h3>Операции по датам</h3>
+                <p className="mini-panel-note">Операции идут по дате, к которой относятся деньги. Если запись внесли позже, это показано внутри операции и не меняет её место в журнале.</p>
               </div>
               <div className="finance-money-history-summary">
                 <span className="money-summary"><span>Записей</span><strong>{moneyHistorySummary.count}</strong></span>
-                <span className="money-summary"><span>Итог изменений</span><strong>{moneyHistorySummary.net >= 0 ? '+ ' : '− '}{formatMoney(Math.abs(moneyHistorySummary.net))}</strong></span>
+                <span className="money-summary"><span>Изменение по журналу</span><strong>{moneyHistorySummary.net >= 0 ? '+ ' : '− '}{formatMoney(Math.abs(moneyHistorySummary.net))}</strong></span>
               </div>
             </div>
 
@@ -644,8 +634,12 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
 
             {moneyHistoryBusy && !moneyHistory.length ? <div className="finance-money-history-state"><strong>Загружаю историю денег…</strong></div>
             : moneyHistoryError && !moneyHistory.length ? <div className="finance-money-history-state"><strong>Не удалось загрузить историю денег.</strong><span>{moneyHistoryError}</span><button className="secondary compact" type="button" onClick={() => void loadMoneyHistory()}>Повторить</button></div>
-            : moneyHistory.length ? <div className="finance-money-history-list">{moneyHistory.map((row) => (
-              <article className={`finance-money-history-row finance-money-history-row-f4 trace-${row.traceSeverity || 'normal'}`} key={`money-history-${row.id}`}>
+            : moneyHistory.length ? <div className="finance-money-history-list">{moneyHistory.map((row, index) => {
+              const previous = moneyHistory[index - 1]
+              const showDay = !previous || previous.eventDate !== row.eventDate
+              return <div className="finance-money-history-entry" key={`money-history-entry-${row.id}`}>
+                {showDay ? <div className="strict-section-head finance-money-history-day"><h3>{formatDateShort(row.eventDate)}</h3><span className="soft-badge">дата операции</span></div> : null}
+              <article className={`finance-money-history-row finance-money-history-row-f4 trace-${row.traceSeverity || 'normal'}`}>
                 <div className="finance-money-history-date">
                   <strong>Относится к {formatDateShort(row.eventDate)}</strong>
                   <small>{row.isBackfill || row.reason === 'baseline' ? 'Перенесено из старого учёта; время первоначального ввода неизвестно' : `Внесено в систему ${financeRecordedAt(row.eventRecordedAt)}`}</small>
@@ -669,7 +663,8 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                   {row.orderId || row.externalOrderId ? <button className="secondary compact finance-order-link" type="button" onClick={() => void openOrderFromFinance({ orderId: row.orderId || undefined, externalId: row.externalOrderId, orderDate: row.orderDate || undefined })}>К заказу</button> : null}
                 </div>
               </article>
-            ))}</div>
+              </div>
+            })}</div>
             : <div className="finance-money-history-state"><strong>За выбранный период денежных операций нет.</strong></div>}
 
             {moneyHistoryError && moneyHistory.length ? <div className="finance-money-history-state"><strong>Не удалось загрузить продолжение истории.</strong><button className="secondary compact" type="button" onClick={() => void loadMoneyHistory({ append: true })}>Повторить</button></div> : null}
