@@ -1,0 +1,78 @@
+name: Restore Branch2 canonical managers
+
+on:
+  push:
+    branches:
+      - ops/branch2-manager-seed-20260916
+    paths:
+      - .github/workflows/apply-branch2-canonical-managers-20260916.yml
+
+permissions:
+  contents: read
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/branch2-manager-seed-20260916
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Verify exact isolated Branch2 target
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -q '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -q '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          ! grep -q 'orders_db_prod' wrangler.jsonc
+          npx wrangler d1 list --json > /tmp/d1.json
+          node <<'NODE'
+          const fs = require('fs')
+          const raw = JSON.parse(fs.readFileSync('/tmp/d1.json','utf8'))
+          const rows = Array.isArray(raw) ? raw : (raw.result || [])
+          const b = rows.find(x => x.name === 'orders_db_branch2')
+          const id = b && (b.uuid || b.id || b.database_id || '')
+          if (id !== '40065052-854e-44b8-bcd5-251bdd488301') throw new Error('Branch2 D1 identity drift')
+          NODE
+      - name: Confirm manager table is empty before repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(npx wrangler d1 execute orders_db_branch2 --remote --json --command="SELECT COUNT(*) AS n FROM managers;")"
+          printf '%s\n' "$out"
+          COUNT_JSON="$out" node <<'NODE'
+          const raw = JSON.parse(process.env.COUNT_JSON)
+          const chunks = Array.isArray(raw) ? raw : [raw]
+          const n = Number(chunks[0]?.results?.[0]?.n ?? -1)
+          if (n !== 0) throw new Error(`Managers unexpectedly non-empty (${n}); refusing blind seed`)
+          NODE
+      - name: Restore exact canonical manager seed from 0002
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --command="INSERT INTO managers (name,is_active,created_at,updated_at) VALUES ('СЫМБАТ',1,datetime('now'),datetime('now')),('АСЕЛЬ',1,datetime('now'),datetime('now')),('ГАЗИЗА',1,datetime('now'),datetime('now')),('ГУЛНУР',1,datetime('now'),datetime('now')),('ЖАНЕРКЕ',1,datetime('now'),datetime('now')),('МАКПАЛ',1,datetime('now'),datetime('now')),('САИДА',1,datetime('now'),datetime('now')) ON CONFLICT(name) DO UPDATE SET is_active=excluded.is_active,updated_at=excluded.updated_at;"
+      - name: Strict postflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(npx wrangler d1 execute orders_db_branch2 --remote --json --command="SELECT name,is_active FROM managers ORDER BY name;")"
+          printf '%s\n' "$out"
+          MANAGERS_JSON="$out" node <<'NODE'
+          const raw = JSON.parse(process.env.MANAGERS_JSON)
+          const chunks = Array.isArray(raw) ? raw : [raw]
+          const rows = chunks[0]?.results || []
+          const expected = ['АСЕЛЬ','ГАЗИЗА','ГУЛНУР','ЖАНЕРКЕ','МАКПАЛ','САИДА','СЫМБАТ'].sort()
+          const actual = rows.map(r => String(r.name)).sort()
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`Manager seed mismatch: ${JSON.stringify(actual)}`)
+          if (rows.some(r => Number(r.is_active) !== 1)) throw new Error('A canonical manager is inactive')
+          NODE
+          echo 'Branch2 canonical managers restored.'
