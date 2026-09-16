@@ -34,7 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           npx wrangler d1 execute orders_db_branch2 --remote --command="
-          SELECT id,name,phone,total_orders,total_spent FROM customers WHERE name='Branch2 smoke' OR phone LIKE '%SMOKE%' ORDER BY id;
+          SELECT sql FROM sqlite_master WHERE type='table' AND name='customers';
           SELECT request_id,operation_type,status,step,target_type,target_id,target_ref,last_error FROM critical_operations WHERE request_id LIKE 'smoke-%' ORDER BY created_at,request_id;
           SELECT request_id,entity_type,entity_key,entity_id FROM critical_operation_entities WHERE request_id LIKE 'smoke-%' ORDER BY request_id,entity_type,entity_key;
           SELECT id,order_id,external_order_id,event_type,title FROM activity_log WHERE order_id IN (1,2) OR external_order_id IN ('SMOKE-WH-20260916T155955Z-35118350672','SMOKE-WS-20260916T155955Z-35118350672') ORDER BY id;
