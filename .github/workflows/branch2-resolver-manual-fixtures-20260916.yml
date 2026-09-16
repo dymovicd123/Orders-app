@@ -50,6 +50,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/resolver-fixtures
+
+          # Roll back the one fixture left by the previous script bug. This uses the normal supported delete path.
+          old_rid="fixture-recover-previous-order-5-${GITHUB_RUN_ID}"
+          old_code="$(curl -sS -o /tmp/resolver-fixtures/old5-delete.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "X-Idempotency-Key: $old_rid" --data "{\"requestId\":\"$old_rid\",\"comment\":\"Cleanup failed resolver fixture attempt\"}" "$BASE_URL/api/orders/5/delete")"
+          [[ "$old_code" == 200 || "$old_code" == 404 || "$old_code" == 409 ]]
+          echo "previous fixture order 5 cleanup -> HTTP $old_code"
+
           created_ids=()
           keep=0
           cleanup() {
@@ -59,100 +66,84 @@ jobs:
               set +e
               for id in "${created_ids[@]}"; do
                 rid="fixture-rollback-${GITHUB_RUN_ID}-${id}"
-                curl -sS -X POST -H 'Content-Type: application/json' -H "X-Idempotency-Key: $rid" \
-                  --data "{\"requestId\":\"$rid\",\"comment\":\"Rollback failed resolver fixture preparation\"}" \
-                  "$BASE_URL/api/orders/$id/delete" >/dev/null || true
+                curl -sS -X POST -H 'Content-Type: application/json' -H "X-Idempotency-Key: $rid" --data "{\"requestId\":\"$rid\",\"comment\":\"Rollback failed resolver fixture preparation\"}" "$BASE_URL/api/orders/$id/delete" >/dev/null || true
               done
             fi
             exit $rc
           }
           trap cleanup EXIT
 
-          health_code="$(curl -sS -o /tmp/resolver-fixtures/health.json -w '%{http_code}' "$BASE_URL/api/health")"
-          [[ "$health_code" == 200 ]]
+          [[ "$(curl -sS -o /tmp/resolver-fixtures/health.json -w '%{http_code}' "$BASE_URL/api/health")" == 200 ]]
           jq -e '.ok == true and .service == "orders-app"' /tmp/resolver-fixtures/health.json >/dev/null
-
-          mgr_code="$(curl -sS -o /tmp/resolver-fixtures/managers.json -w '%{http_code}' "$BASE_URL/api/reference-values?kind=managers")"
-          [[ "$mgr_code" == 200 ]]
+          [[ "$(curl -sS -o /tmp/resolver-fixtures/managers.json -w '%{http_code}' "$BASE_URL/api/reference-values?kind=managers")" == 200 ]]
           manager_id="$(jq -r '[.items[]? | select(.isActive == true)][0].id // 0' /tmp/resolver-fixtures/managers.json)"
           manager_name="$(jq -r '[.items[]? | select(.isActive == true)][0].value // ""' /tmp/resolver-fixtures/managers.json)"
           [[ "$manager_id" =~ ^[1-9][0-9]*$ && -n "$manager_name" ]]
 
           stamp="20260916-${GITHUB_RUN_ID}"
           order_date="2026-09-16"
+          CREATED_ID=''
+          CONTEXT_ITEM_ID=''
 
           create_order() {
-            label="$1"; external="$2"; body_file="$3"
-            req="test-resolver-${label}-${stamp}"
-            code="$(curl -sS -o "/tmp/resolver-fixtures/${label}-create-response.json" -w '%{http_code}' \
-              -X POST -H 'Content-Type: application/json' -H "X-Idempotency-Key: $req" \
-              --data-binary "@$body_file" "$BASE_URL/api/orders")"
+            local label="$1" body_file="$2" req="test-resolver-$1-${stamp}" code id
+            code="$(curl -sS -o "/tmp/resolver-fixtures/${label}-create-response.json" -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "X-Idempotency-Key: $req" --data-binary "@$body_file" "$BASE_URL/api/orders")"
             echo "$label create -> HTTP $code"
             cat "/tmp/resolver-fixtures/${label}-create-response.json" | jq -c .
             [[ "$code" == 201 ]]
             id="$(jq -r '.orderId // 0' "/tmp/resolver-fixtures/${label}-create-response.json")"
             [[ "$id" =~ ^[1-9][0-9]*$ ]]
             created_ids+=("$id")
-            printf '%s' "$id"
+            CREATED_ID="$id"
           }
 
-          first_item_context() {
-            label="$1"; id="$2"
+          first_context() {
+            local label="$1" id="$2" code item_id
             code="$(curl -sS -o "/tmp/resolver-fixtures/${label}-review.json" -w '%{http_code}' "$BASE_URL/api/orders/$id/catalog-review")"
             [[ "$code" == 200 ]]
             item_id="$(jq -r '[.. | objects | (.order_item_id? // .orderItemId? // empty) | select(type=="number" and .>0)][0] // 0' "/tmp/resolver-fixtures/${label}-review.json")"
             [[ "$item_id" =~ ^[1-9][0-9]*$ ]]
             code="$(curl -sS -o "/tmp/resolver-fixtures/${label}-context.json" -w '%{http_code}' "$BASE_URL/api/orders/$id/catalog-review/$item_id/context")"
             [[ "$code" == 200 ]]
-            jq -c '{ok,orderItemId,issueType,unknownFields,isWorkshop,canLeaveGenderUnknown,product,exactVariant,productOptions:(.products|length),facts}' "/tmp/resolver-fixtures/${label}-context.json"
-            printf '%s' "$item_id"
+            echo "$label context: $(jq -c '{ok,orderItemId,issueType,unknownFields,isWorkshop,canLeaveGenderUnknown,product,exactVariant,productOptions:(.products|length),facts}' "/tmp/resolver-fixtures/${label}-context.json")"
+            CONTEXT_ITEM_ID="$item_id"
           }
 
-          # A (+ C after the combined confirmation): exact canonical ОРАМАЛ has БЕЗ ЦВЕТА + no size,
-          # while the same execution has a concrete-color sibling. Blank manager color therefore stays unresolved at create time.
-          jq -n --arg requestId "test-resolver-A-${stamp}" --arg externalId "TEST-RESOLVER-A-${stamp}" --arg orderDate "$order_date" --argjson managerId "$manager_id" --arg managerName "$manager_name" \
-            '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,managerId:$managerId,managerName:$managerName,customerName:"TEST RESOLVER A",sourceType:"warehouse",orderTotal:1,orderStatus:"active",shippingStatus:"not_sent",comment:"TEST RESOLVER 20260916 A — combined no-color/no-size; then exact confirmation C",items:[{productName:"ОРАМАЛ",gender:"ЖЕН",color:"",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"",quantity:1,unitPrice:1,sourceType:"warehouse",shortageAcknowledged:true}],payments:[]}' > /tmp/resolver-fixtures/A.json
-          A_ID="$(create_order A "TEST-RESOLVER-A-${stamp}" /tmp/resolver-fixtures/A.json)"
-          A_ITEM="$(first_item_context A "$A_ID")"
+          # A (+ C after confirming the combined placeholders).
+          jq -n --arg requestId "test-resolver-A-${stamp}" --arg externalId "TEST-RESOLVER-A-${stamp}" --arg orderDate "$order_date" --argjson managerId "$manager_id" --arg managerName "$manager_name" '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,managerId:$managerId,managerName:$managerName,customerName:"TEST RESOLVER A",sourceType:"warehouse",orderTotal:1,orderStatus:"active",shippingStatus:"not_sent",comment:"TEST RESOLVER 20260916 A — combined no-color/no-size; then exact confirmation C",items:[{productName:"ОРАМАЛ",gender:"ЖЕН",color:"",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"",quantity:1,unitPrice:1,sourceType:"warehouse",shortageAcknowledged:true}],payments:[]}' > /tmp/resolver-fixtures/A.json
+          create_order A /tmp/resolver-fixtures/A.json; A_ID="$CREATED_ID"
+          first_context A "$A_ID"; A_ITEM="$CONTEXT_ITEM_ID"
           jq -e '.ok==true and .issueType=="exact_existing" and .isWorkshop==false and .product.id==48 and .exactVariant.id==498 and .facts.color=="БЕЗ ЦВЕТА" and (.facts.size=="" or .facts.size=="БЕЗ РАЗМЕРА")' /tmp/resolver-fixtures/A-context.json >/dev/null
 
-          # B/E: compound name contains a real base product plus an obvious disposable TEST remainder.
-          # It also serves as the lazy-catalog manual network check: opening the normal flow must not request /api/catalog.
+          # B/E: compound base product + disposable TEST remainder; also manual lazy-/api/catalog check.
           B_PRODUCT="БАЯН СҰЛУ ШАПАН TESTМАТЕРИАЛ ${stamp}"
-          jq -n --arg requestId "test-resolver-BE-${stamp}" --arg externalId "TEST-RESOLVER-BE-${stamp}" --arg orderDate "$order_date" --argjson managerId "$manager_id" --arg managerName "$manager_name" --arg productName "$B_PRODUCT" \
-            '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,managerId:$managerId,managerName:$managerName,customerName:"TEST RESOLVER B E",sourceType:"warehouse",orderTotal:1,orderStatus:"active",shippingStatus:"not_sent",comment:"TEST RESOLVER 20260916 B/E — compound remainder + lazy full catalog",items:[{productName:$productName,gender:"ЖЕН",color:"СВЕТЛО-БЕЖЕВЫЙ",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"48",quantity:1,unitPrice:1,sourceType:"warehouse",shortageAcknowledged:true}],payments:[]}' > /tmp/resolver-fixtures/BE.json
-          BE_ID="$(create_order BE "TEST-RESOLVER-BE-${stamp}" /tmp/resolver-fixtures/BE.json)"
-          BE_ITEM="$(first_item_context BE "$BE_ID")"
+          jq -n --arg requestId "test-resolver-BE-${stamp}" --arg externalId "TEST-RESOLVER-BE-${stamp}" --arg orderDate "$order_date" --argjson managerId "$manager_id" --arg managerName "$manager_name" --arg productName "$B_PRODUCT" '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,managerId:$managerId,managerName:$managerName,customerName:"TEST RESOLVER B E",sourceType:"warehouse",orderTotal:1,orderStatus:"active",shippingStatus:"not_sent",comment:"TEST RESOLVER 20260916 B/E — compound remainder + lazy full catalog",items:[{productName:$productName,gender:"ЖЕН",color:"СВЕТЛО-БЕЖЕВЫЙ",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"48",quantity:1,unitPrice:1,sourceType:"warehouse",shortageAcknowledged:true}],payments:[]}' > /tmp/resolver-fixtures/BE.json
+          create_order BE /tmp/resolver-fixtures/BE.json; BE_ID="$CREATED_ID"
+          first_context BE "$BE_ID"; BE_ITEM="$CONTEXT_ITEM_ID"
           jq -e '.ok==true and .issueType=="unknown_product" and .isWorkshop==false and .product==null and (.products|length)>0' /tmp/resolver-fixtures/BE-context.json >/dev/null
           jq -e --arg base "БАЯН СҰЛУ ШАПАН" '.products | any(.name==$base)' /tmp/resolver-fixtures/BE-context.json >/dev/null
 
-          # D: a real unisex product with gender intentionally absent. Admin may use the explicit legacy exception;
-          # ordinary users must resolve gender and may not silently create an unknown-gender SKU.
-          jq -n --arg requestId "test-resolver-D-${stamp}" --arg externalId "TEST-RESOLVER-D-${stamp}" --arg orderDate "$order_date" --argjson managerId "$manager_id" --arg managerName "$manager_name" \
-            '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,managerId:$managerId,managerName:$managerName,customerName:"TEST RESOLVER D",sourceType:"warehouse",orderTotal:1,orderStatus:"active",shippingStatus:"not_sent",comment:"TEST RESOLVER 20260916 D — unknown gender legacy",items:[{productName:"АЛАН БОМБЕР",gender:"",color:"ХАКИ",material:"ДЖИНСА",length:"СТАНДАРТ",size:"50",quantity:1,unitPrice:1,sourceType:"warehouse",shortageAcknowledged:true}],payments:[]}' > /tmp/resolver-fixtures/D.json
-          D_ID="$(create_order D "TEST-RESOLVER-D-${stamp}" /tmp/resolver-fixtures/D.json)"
-          D_ITEM="$(first_item_context D "$D_ID")"
+          # D: real unisex product with intentionally unknown gender.
+          jq -n --arg requestId "test-resolver-D-${stamp}" --arg externalId "TEST-RESOLVER-D-${stamp}" --arg orderDate "$order_date" --argjson managerId "$manager_id" --arg managerName "$manager_name" '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,managerId:$managerId,managerName:$managerName,customerName:"TEST RESOLVER D",sourceType:"warehouse",orderTotal:1,orderStatus:"active",shippingStatus:"not_sent",comment:"TEST RESOLVER 20260916 D — unknown gender legacy",items:[{productName:"АЛАН БОМБЕР",gender:"",color:"ХАКИ",material:"ДЖИНСА",length:"СТАНДАРТ",size:"50",quantity:1,unitPrice:1,sourceType:"warehouse",shortageAcknowledged:true}],payments:[]}' > /tmp/resolver-fixtures/D.json
+          create_order D /tmp/resolver-fixtures/D.json; D_ID="$CREATED_ID"
+          first_context D "$D_ID"; D_ITEM="$CONTEXT_ITEM_ID"
           jq -e '.ok==true and .issueType=="unknown_attribute" and .isWorkshop==false and .product.id==29 and .product.genderScope=="unisex" and (.unknownFields|index("gender")!=null) and .canLeaveGenderUnknown==true' /tmp/resolver-fixtures/D-context.json >/dev/null
 
-          # F: workshop only needs base-product resolution; stock color/size/material questions must not appear.
+          # F: workshop product-only resolver.
           F_PRODUCT="БАЯН СҰЛУ ШАПАН TEST WORKSHOP ${stamp}"
-          jq -n --arg requestId "test-resolver-F-${stamp}" --arg externalId "TEST-RESOLVER-F-${stamp}" --arg orderDate "$order_date" --argjson managerId "$manager_id" --arg managerName "$manager_name" --arg productName "$F_PRODUCT" \
-            '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,managerId:$managerId,managerName:$managerName,customerName:"TEST RESOLVER F",sourceType:"warehouse",orderTotal:1,orderStatus:"active",shippingStatus:"not_sent",comment:"TEST RESOLVER 20260916 F — workshop product-only",items:[{productName:$productName,gender:"",color:"",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"",quantity:1,unitPrice:1,sourceType:"workshop",workshopComment:"TEST resolver workshop product-only",workshopUrgent:false}],payments:[]}' > /tmp/resolver-fixtures/F.json
-          F_ID="$(create_order F "TEST-RESOLVER-F-${stamp}" /tmp/resolver-fixtures/F.json)"
-          F_ITEM="$(first_item_context F "$F_ID")"
+          jq -n --arg requestId "test-resolver-F-${stamp}" --arg externalId "TEST-RESOLVER-F-${stamp}" --arg orderDate "$order_date" --argjson managerId "$manager_id" --arg managerName "$manager_name" --arg productName "$F_PRODUCT" '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,managerId:$managerId,managerName:$managerName,customerName:"TEST RESOLVER F",sourceType:"warehouse",orderTotal:1,orderStatus:"active",shippingStatus:"not_sent",comment:"TEST RESOLVER 20260916 F — workshop product-only",items:[{productName:$productName,gender:"",color:"",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"",quantity:1,unitPrice:1,sourceType:"workshop",workshopComment:"TEST resolver workshop product-only",workshopUrgent:false}],payments:[]}' > /tmp/resolver-fixtures/F.json
+          create_order F /tmp/resolver-fixtures/F.json; F_ID="$CREATED_ID"
+          first_context F "$F_ID"; F_ITEM="$CONTEXT_ITEM_ID"
           jq -e '.ok==true and .issueType=="workshop_product" and .isWorkshop==true and .product==null and (.products|length)>0' /tmp/resolver-fixtures/F-context.json >/dev/null
 
-          # G: three unresolved positions in one order for sequential flow + double-click/recheck behavior.
-          jq -n --arg requestId "test-resolver-G-${stamp}" --arg externalId "TEST-RESOLVER-G-${stamp}" --arg orderDate "$order_date" --argjson managerId "$manager_id" --arg managerName "$manager_name" --arg stamp "$stamp" \
-            '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,managerId:$managerId,managerName:$managerName,customerName:"TEST RESOLVER G",sourceType:"warehouse",orderTotal:3,orderStatus:"active",shippingStatus:"not_sent",comment:"TEST RESOLVER 20260916 G — sequential three unresolved positions",items:[{productName:("TEST RESOLVER G1 "+$stamp),gender:"ЖЕН",color:"TEST",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"48",quantity:1,unitPrice:1,sourceType:"warehouse",shortageAcknowledged:true},{productName:("TEST RESOLVER G2 "+$stamp),gender:"МУЖ",color:"TEST",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"50",quantity:1,unitPrice:1,sourceType:"warehouse",shortageAcknowledged:true},{productName:("TEST RESOLVER G3 "+$stamp),gender:"ЖЕН",color:"TEST",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"52",quantity:1,unitPrice:1,sourceType:"warehouse",shortageAcknowledged:true}],payments:[]}' > /tmp/resolver-fixtures/G.json
-          G_ID="$(create_order G "TEST-RESOLVER-G-${stamp}" /tmp/resolver-fixtures/G.json)"
-          code="$(curl -sS -o /tmp/resolver-fixtures/G-review.json -w '%{http_code}' "$BASE_URL/api/orders/$G_ID/catalog-review")"
-          [[ "$code" == 200 ]]
+          # G: three unresolved positions in one order for sequential handling.
+          jq -n --arg requestId "test-resolver-G-${stamp}" --arg externalId "TEST-RESOLVER-G-${stamp}" --arg orderDate "$order_date" --argjson managerId "$manager_id" --arg managerName "$manager_name" --arg stamp "$stamp" '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,managerId:$managerId,managerName:$managerName,customerName:"TEST RESOLVER G",sourceType:"warehouse",orderTotal:3,orderStatus:"active",shippingStatus:"not_sent",comment:"TEST RESOLVER 20260916 G — sequential three unresolved positions",items:[{productName:("TEST RESOLVER G1 "+$stamp),gender:"ЖЕН",color:"TEST",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"48",quantity:1,unitPrice:1,sourceType:"warehouse",shortageAcknowledged:true},{productName:("TEST RESOLVER G2 "+$stamp),gender:"МУЖ",color:"TEST",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"50",quantity:1,unitPrice:1,sourceType:"warehouse",shortageAcknowledged:true},{productName:("TEST RESOLVER G3 "+$stamp),gender:"ЖЕН",color:"TEST",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"52",quantity:1,unitPrice:1,sourceType:"warehouse",shortageAcknowledged:true}],payments:[]}' > /tmp/resolver-fixtures/G.json
+          create_order G /tmp/resolver-fixtures/G.json; G_ID="$CREATED_ID"
+          [[ "$(curl -sS -o /tmp/resolver-fixtures/G-review.json -w '%{http_code}' "$BASE_URL/api/orders/$G_ID/catalog-review")" == 200 ]]
           mapfile -t G_ITEMS < <(jq -r '[.. | objects | (.order_item_id? // .orderItemId? // empty) | select(type=="number" and .>0)] | unique | .[]' /tmp/resolver-fixtures/G-review.json)
           [[ "${#G_ITEMS[@]}" -eq 3 ]]
           for iid in "${G_ITEMS[@]}"; do
-            code="$(curl -sS -o "/tmp/resolver-fixtures/G-${iid}-context.json" -w '%{http_code}' "$BASE_URL/api/orders/$G_ID/catalog-review/$iid/context")"
-            [[ "$code" == 200 ]]
+            [[ "$(curl -sS -o "/tmp/resolver-fixtures/G-${iid}-context.json" -w '%{http_code}' "$BASE_URL/api/orders/$G_ID/catalog-review/$iid/context")" == 200 ]]
             jq -e '.ok==true and .issueType=="unknown_product" and .isWorkshop==false' "/tmp/resolver-fixtures/G-${iid}-context.json" >/dev/null
           done
 
@@ -163,4 +154,4 @@ jobs:
           printf 'D_ID=%s D_ITEM=%s EXTERNAL=%s\n' "$D_ID" "$D_ITEM" "TEST-RESOLVER-D-${stamp}"
           printf 'F_ID=%s F_ITEM=%s EXTERNAL=%s\n' "$F_ID" "$F_ITEM" "TEST-RESOLVER-F-${stamp}"
           printf 'G_ID=%s G_ITEMS=%s EXTERNAL=%s\n' "$G_ID" "${G_ITEMS[*]}" "TEST-RESOLVER-G-${stamp}"
-          echo 'Fixtures intentionally left active and untouched for manual UX testing. Do not auto-clean them.'
+          echo 'Fixtures intentionally left active and untouched for manual UX testing.'
