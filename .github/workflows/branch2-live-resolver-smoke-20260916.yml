@@ -46,6 +46,15 @@ jobs:
           [[ "$code" == 200 ]]
           jq -e '.ok == true and .service == "orders-app" and .orderCreateSaveIntegrity == "192b2a4"' /tmp/branch2-smoke/health.json >/dev/null
 
+          code="$(curl -sS -o /tmp/branch2-smoke/managers.json -w '%{http_code}' "$BASE_URL/api/reference-values?kind=managers")"
+          echo "active manager lookup -> HTTP $code"
+          [[ "$code" == 200 ]]
+          manager_id="$(jq -r '[.items[]? | select(.isActive == true)][0].id // 0' /tmp/branch2-smoke/managers.json)"
+          manager_name="$(jq -r '[.items[]? | select(.isActive == true)][0].value // ""' /tmp/branch2-smoke/managers.json)"
+          [[ "$manager_id" =~ ^[1-9][0-9]*$ ]]
+          [[ -n "$manager_name" ]]
+          echo "using manager id=$manager_id name=$manager_name"
+
           stamp="$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_RUN_ID}"
           order_date="$(date -u +%F)"
 
@@ -56,8 +65,10 @@ jobs:
             --arg requestId "$warehouse_request" \
             --arg externalId "$warehouse_external" \
             --arg orderDate "$order_date" \
+            --argjson managerId "$manager_id" \
+            --arg managerName "$manager_name" \
             --arg productName "$warehouse_name" \
-            '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,customerName:"Branch2 smoke",sourceType:"warehouse",orderTotal:1,orderStatus:"active",shippingStatus:"not_sent",comment:"TEMP Branch2 unknown-product resolver smoke",items:[{productName:$productName,gender:"ЖЕН",color:"SMOKE",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"SMOKE",quantity:1,unitPrice:1,sourceType:"warehouse",shortageAcknowledged:true}],payments:[]}' \
+            '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,managerId:$managerId,managerName:$managerName,customerName:"Branch2 smoke",sourceType:"warehouse",orderTotal:1,orderStatus:"active",shippingStatus:"not_sent",comment:"TEMP Branch2 unknown-product resolver smoke",items:[{productName:$productName,gender:"ЖЕН",color:"SMOKE",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"SMOKE",quantity:1,unitPrice:1,sourceType:"warehouse",shortageAcknowledged:true}],payments:[]}' \
             > /tmp/branch2-smoke/create-warehouse.json
           code="$(curl -sS -o /tmp/branch2-smoke/create-warehouse-response.json -w '%{http_code}' \
             -X POST -H 'Content-Type: application/json' -H "X-Idempotency-Key: $warehouse_request" \
@@ -90,8 +101,10 @@ jobs:
             --arg requestId "$workshop_request" \
             --arg externalId "$workshop_external" \
             --arg orderDate "$order_date" \
+            --argjson managerId "$manager_id" \
+            --arg managerName "$manager_name" \
             --arg productName "$workshop_name" \
-            '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,customerName:"Branch2 smoke",sourceType:"warehouse",orderTotal:1,orderStatus:"active",shippingStatus:"not_sent",comment:"TEMP Branch2 workshop product-only resolver smoke",items:[{productName:$productName,gender:"ЖЕН",color:"SMOKE",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"SMOKE",quantity:1,unitPrice:1,sourceType:"workshop",workshopComment:"temporary resolver smoke",workshopUrgent:false}],payments:[]}' \
+            '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,managerId:$managerId,managerName:$managerName,customerName:"Branch2 smoke",sourceType:"warehouse",orderTotal:1,orderStatus:"active",shippingStatus:"not_sent",comment:"TEMP Branch2 workshop product-only resolver smoke",items:[{productName:$productName,gender:"ЖЕН",color:"SMOKE",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"SMOKE",quantity:1,unitPrice:1,sourceType:"workshop",workshopComment:"temporary resolver smoke",workshopUrgent:false}],payments:[]}' \
             > /tmp/branch2-smoke/create-workshop.json
           code="$(curl -sS -o /tmp/branch2-smoke/create-workshop-response.json -w '%{http_code}' \
             -X POST -H 'Content-Type: application/json' -H "X-Idempotency-Key: $workshop_request" \
