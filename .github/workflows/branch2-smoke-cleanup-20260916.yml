@@ -77,7 +77,7 @@ jobs:
           const fs = require('fs')
           const raw = JSON.parse(fs.readFileSync(process.env.PREFLIGHT,'utf8'))
           const c = Array.isArray(raw) ? raw : [raw]
-          if (c.length !== 16 || c.some(x => !x.success || Number(x?.meta?.rows_written || 0) !== 0)) throw new Error('Preflight shape/read-only guarantee failed')
+          if (c.length !== 17 || c.some(x => !x.success || Number(x?.meta?.rows_written || 0) !== 0)) throw new Error('Preflight shape/read-only guarantee failed')
           const orders = c[0].results || []
           if (orders.length !== 2) throw new Error(`Expected exactly 2 temporary orders, got ${orders.length}`)
           const expected = new Map([[1,process.env.WH_REF],[2,process.env.WS_REF]])
@@ -104,6 +104,7 @@ jobs:
           if (entities.length!==2 || entities.some(r=>r.entity_type!=='order_item')) throw new Error(`Unexpected critical entities: ${JSON.stringify(entities)}`)
           const orderFts=(c[14].results||[]).map(r=>Number(r.order_id)).sort(); if (JSON.stringify(orderFts)!=='[1,2]') throw new Error(`Order FTS drift: ${JSON.stringify(orderFts)}`)
           const itemFts=(c[15].results||[]).map(r=>Number(r.order_id)).sort(); if (JSON.stringify(itemFts)!=='[1,2]') throw new Error(`Item FTS drift: ${JSON.stringify(itemFts)}`)
+          if ((c[16].results||[]).length!==0) throw new Error(`Payment FTS unexpectedly populated: ${JSON.stringify(c[16].results)}`)
           console.log('Exact temporary Branch2 smoke footprint confirmed; no business stock or money side effects.')
           NODE
 
