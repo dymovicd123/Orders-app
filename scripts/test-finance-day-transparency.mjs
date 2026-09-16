@@ -130,37 +130,6 @@ assert.equal(page2.hasMore,false)
 assert.equal(new Set([...page1.events,...page2.events].map(r=>r.id)).size,65)
 assert.deepEqual(page1.payments,page2.payments)
 
-// Real request controller: latest day wins, refresh clears old totals, append does not duplicate.
-const { createFinanceDayReader } = load('src/features/finance/financeDayRead.ts')
-const pending = [], states = []
-const reader = createFinanceDayReader((url,init)=>new Promise((resolve,reject)=>pending.push({url,init,resolve,reject})),s=>states.push(s))
-const respond = (pendingRequest,data,headers={})=>pendingRequest.resolve(new Response(JSON.stringify(data),{headers}))
-const first = reader.load(day.date,'money')
-const later = reader.load('2026-09-06','money')
-assert.equal(pending[0].init.signal.aborted,true)
-respond(pending[1],{...day,date:'2026-09-06'}); await later
-respond(pending[0],day); await first
-assert.equal(states.at(-1).data.date,'2026-09-06')
-const refresh = reader.load(day.date,'money')
-assert.equal(states.at(-1).data,null)
-respond(pending[2],page1); await refresh
-const append = reader.load(day.date,'money',true)
-await reader.load(day.date,'money',true)
-assert.equal(pending.length,4)
-assert.match(pending[3].url,/offset=50/)
-respond(pending[3],page2); await append
-assert.equal(states.at(-1).data.events.length,65)
-const failure = reader.load(day.date,'money')
-pending[4].reject(new Error('network')); await failure
-assert.equal(states.at(-1).data,null)
-assert.equal(states.at(-1).error,'network')
-const stale = reader.load(day.date,'money')
-respond(pending[5],day,{'X-Orders-App-Stale':'1'}); await stale
-assert.equal(states.at(-1).data,null,'a stale fallback cannot assert reconciliation')
-const disposed = reader.load(day.date,'money')
-reader.dispose(); const statesBefore = states.length
-respond(pending[6],day); await disposed
-assert.equal(states.length,statesBefore)
 const section = fs.readFileSync('src/features/sections/FinanceSection.tsx','utf8')
 assert.ok(!section.includes('FinanceDayPanel'), 'a single day must not replace the normal finance workspace')
 assert.ok(section.includes("const periodApplies = !['cash', 'methods'].includes(financeMode)"), 'cash and payment-method settings must not inherit the report period')
@@ -175,5 +144,5 @@ assert.ok(!rendererSource.includes('ctx.financeDay'), 'historical day must not r
 assert.ok(rendererSource.includes('moneyHistory.map((row, index)'), 'operations must be grouped by business date')
 assert.ok(rendererSource.includes('дата операции'), 'business-date group heading missing')
 assert.ok(rendererSource.includes("payment_correction: 'Исправление способа оплаты'"), 'cash journal must not expose payment_correction')
-console.log('FINANCE DAY FOCUSED GREEN — corrected payments, separate cash, late dates, unknowns, read-only SQL and human rendering')
+console.log('FINANCE DAY FOCUSED GREEN — backend day audit preserved; human finance UI uses business-date periods without a special-day client')
 export { day, initialCashDay }
