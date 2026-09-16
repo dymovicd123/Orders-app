@@ -1,0 +1,91 @@
+name: Apply finance human summary R2
+
+on:
+  push:
+    branches:
+      - fix/finance-human-summary-r2-20260916
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/finance-human-summary-r2-20260916
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Apply bounded R2 patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+          renderer_path = Path('src/features/renderers/FinanceDashboardRenderer.tsx')
+          css_path = Path('src/styles/140-finance-truth.css')
+          test_path = Path('scripts/test-finance-f9-summary-finish.mjs')
+          manifest_path = Path('scripts/finance-day-transparency-manifest.json')
+          renderer = renderer_path.read_text(encoding='utf-8')
+          reps = [
+            ('<h3>Финансовая сводка без смешивания дат</h3>', '<h3>Итоги за выбранный период</h3>'),
+            ('<p className="mini-panel-note">Продажи считаются по дате заказа. Деньги — только по фактической дате оплаты или возврата.</p>', '<p className="mini-panel-note">Деньги показаны по дате оплаты или возврата. Продажи — по дате заказа.</p>'),
+            ('''                <div className="finance-truth-lines">\n                  <div><span>Открытый долг сейчас</span><strong>{formatMoney(financeReport.overview.currentDebt)}</strong></div>\n                  <div><span>Заказов с долгом</span><strong>{financeReport.overview.currentDebtOrders}</strong></div>\n                </div>''', '''                <div className="finance-truth-lines">\n                  <div><span>Поступило</span><strong>{formatMoney(paymentTotal)}</strong></div>\n                  <div><span>Возвращено</span><strong>{formatMoney(totalReturned)}</strong></div>\n                </div>'''),
+            ('''                <strong>Финансовая сверка</strong>\n                <span>Поступления считаются по дате денежной операции. Внутренняя сверка проверяет, что один и тот же набор оплат одинаково складывается по видам операций и способам оплаты.</span>''', '''                <strong>{consistency.ok ? 'Данные согласованы' : 'Есть расхождение в финансовой сверке'}</strong>\n                <span>{consistency.ok ? 'Оплаты одинаково сходятся по операциям и способам оплаты.' : 'Система получила разные итоги из связанных финансовых представлений. Ниже показана диагностика.'}</span>'''),
+            ("{consistency.ok ? 'Внутренняя сверка: без расхождений' : `Внутреннее расхождение: ${formatMoney(consistency.difference)}`}", "{consistency.ok ? 'Без расхождений' : `Расхождение: ${formatMoney(consistency.difference)}`}"),
+            ('''            <div className="finance-reconciliation-primary-total">\n              <span>Поступило за период</span>\n              <strong>{formatMoney(consistency.ledgerTotal)}</strong>\n            </div>''', '''            {!consistency.ok ? <div className="finance-reconciliation-primary-total">\n              <span>Поступило по журналу</span>\n              <strong>{formatMoney(consistency.ledgerTotal)}</strong>\n            </div> : null}'''),
+            ('''            {crossDatePaymentOperations.length ? (\n              <div className="finance-reconciliation-cross-date">''', '''            {crossDatePaymentOperations.length ? (\n              <details className="finance-secondary-details">\n                <summary>Оплаты по заказам другой даты · {crossDatePaymentOperations.length}</summary>\n              <div className="finance-reconciliation-cross-date">'''),
+            ('''                </div>\n              </div>\n            ) : null}\n          </section>''', '''                </div>\n              </div>\n              </details>\n            ) : null}\n          </section>'''),
+            ('<h3>Деньги по дням</h3>', '<h3>По дням</h3>'),
+            ('<p className="mini-panel-note">Каждая строка отвечает на вопрос: сколько реально поступило и сколько реально вернули в этот день.</p>', '<p className="mini-panel-note">Главная хронология периода: деньги стоят в том дне, к которому относятся.</p>'),
+            ('''                <thead><tr><th>Дата</th><th className="num">Заказов<br /><small>по дате заказа</small></th><th className="num">Продажи<br /><small>по дате заказа</small></th><th className="num">Оплаты заказов<br /><small>по дате оплаты</small></th><th className="num">Закрытие долгов</th><th className="num">Доплаты обмена</th><th className="num">Всего поступило</th><th className="num">Возвращено</th><th className="num">Чистыми</th><th>Проверка дат</th></tr></thead>''', '''                <thead><tr><th>Дата</th><th className="num">Поступило</th><th className="num">Возвращено</th><th className="num">Чистое движение</th><th className="num">Продажи</th><th>Состояние</th></tr></thead>'''),
+            ('''                    <td className="num">{row.orderCount}</td>\n                    <td className="num">{formatMoney(row.sales)}</td>\n                    <td className="num">{formatMoney(row.orderPayments)}</td>\n                    <td className="num">{formatMoney(row.debtPayments)}</td>\n                    <td className="num">{formatMoney(row.exchangeExtras)}</td>\n                    <td className="num"><strong>{formatMoney(row.received)}</strong></td>\n                    <td className="num">{formatMoney(row.returned)}</td>\n                    <td className="num"><strong>{formatMoney(row.net)}</strong></td>''', '''                    <td className="num"><strong>{formatMoney(row.received)}</strong></td>\n                    <td className="num">{formatMoney(row.returned)}</td>\n                    <td className="num"><strong>{formatMoney(row.net)}</strong></td>\n                    <td className="num">{formatMoney(row.sales)}</td>'''),
+            ('<tr><td colSpan={10} className="empty-state">За выбранный период нет заказов и денежных операций.</td></tr>', '<tr><td colSpan={6} className="empty-state">За выбранный период нет заказов и денежных операций.</td></tr>'),
+          ]
+          for old,new in reps:
+            c=renderer.count(old)
+            if c != 1: raise SystemExit(f'renderer anchor count {c}: {old[:90]!r}')
+            renderer=renderer.replace(old,new,1)
+          renderer_path.write_text(renderer,encoding='utf-8')
+
+          css=css_path.read_text(encoding='utf-8')
+          addition='''\n/* Finance human summary R2: business information first, diagnostics second. */\n.finance-truth-overview { order: 1; }\n.finance-days-truth-panel { order: 2; }\n.finance-reconciliation-v2 { order: 3; }\n.finance-review-panel.has-review { order: 4; }\n.finance-review-panel.is-info { order: 5; }\n.finance-no-anomalies { order: 6; }\n.finance-truth-card.is-income { order: 1; }\n.finance-truth-card.is-outflow { order: 2; }\n.finance-truth-card.is-net { order: 3; }\n.finance-truth-card.is-sales { order: 4; }\n.finance-days-truth-table { min-width: 720px; }\n.finance-reconciliation-v2.is-ok { padding: 10px 14px; }\n.finance-reconciliation-v2.is-ok .finance-reconciliation-head > div:first-child > span { color: #3f5f52; }\n.finance-secondary-details { margin-top: 8px; border-top: 1px solid rgba(100,116,139,.2); padding-top: 8px; }\n.finance-secondary-details > summary { cursor: pointer; font-size: 12px; font-weight: 800; color: #475569; }\n.finance-secondary-details[open] > summary { margin-bottom: 10px; }\n'''
+          if 'Finance human summary R2' in css: raise SystemExit('R2 css already applied')
+          css_path.write_text(css+addition,encoding='utf-8')
+
+          test=test_path.read_text(encoding='utf-8')
+          old="check(ui.includes('Поступило за период') && ui.includes('Внутренняя сверка: без расхождений'), 'Summary still lacks one clear incoming-money total and reconciliation status')"
+          new="check(ui.includes('Данные согласованы') && ui.includes('По дням') && ui.includes('Главная хронология периода'), 'Summary is not human-first by period day')"
+          if test.count(old)!=1: raise SystemExit('F9 summary assertion anchor missing')
+          test=test.replace(old,new,1)
+          insert="  check(ui.includes('finance-secondary-details') && ui.includes('Оплаты по заказам другой даты'), 'Secondary cross-date diagnostics are not collapsed')\n  check(ui.includes('<th className=\"num\">Поступило</th>') && ui.includes('<th className=\"num\">Чистое движение</th>'), 'Daily table is still overloaded with internal breakdown columns')\n"
+          marker="  check(ui.includes('!consistency.ok ? (') && ui.includes('finance-reconciliation-diagnostics'), 'Three technical reconciliation totals are still always visible')\n"
+          if test.count(marker)!=1: raise SystemExit('F9 marker missing')
+          test=test.replace(marker,marker+insert,1)
+          test_path.write_text(test,encoding='utf-8')
+
+          manifest=json.loads(manifest_path.read_text(encoding='utf-8'))
+          raw=renderer_path.read_bytes()
+          blob=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+          manifest['files']['src/features/renderers/FinanceDashboardRenderer.tsx']['afterGitBlob']=blob
+          manifest['files']['src/features/renderers/FinanceDashboardRenderer.tsx']['afterLines']=len(renderer_path.read_text(encoding='utf-8').splitlines())
+          manifest_path.write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          PY
+          git rm .github/workflows/apply-finance-human-summary-r2.yml
+      - name: Focused checks
+        run: |
+          node scripts/test-finance-f9-summary-finish.mjs
+          node scripts/test-finance-day-transparency.mjs
+          npx tsc -b --pretty false
+          git diff --check
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/features/renderers/FinanceDashboardRenderer.tsx src/styles/140-finance-truth.css scripts/test-finance-f9-summary-finish.mjs scripts/finance-day-transparency-manifest.json
+          git commit -m "Make finance summary human-first"
+          git push origin HEAD:fix/finance-human-summary-r2-20260916
