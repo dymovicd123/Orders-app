@@ -45,8 +45,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p audit
-          SQL="$(cat scripts/branch2-0068-preflight.sql)"
-          npx wrangler d1 execute orders_db_branch2 --remote --command "$SQL" | tee audit/branch2-0068-preflight-results.txt
+          SQL="$(sed '/^[[:space:]]*--/d' scripts/branch2-0068-preflight.sql)"
+          npx wrangler d1 execute orders_db_branch2 --remote --command="$SQL" | tee audit/branch2-0068-preflight-results.txt
           if grep -E 'rows_written[^0-9]*[1-9]' audit/branch2-0068-preflight-results.txt; then
             echo 'Unexpected write during SELECT-only preflight' >&2
             exit 4
