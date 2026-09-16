@@ -290,6 +290,18 @@ patched = patched.replace(physicalAddedAnchor, [
   "  check(sha(currentRouter) === resolverUxRouter.before && resolverUxRouter.before === contextualCatalogResolutionRouter.after, 'Resolver UX router predecessor drifted')",
   physicalAddedAnchor,
 ].join('\n'))
+// Branch2 environment is the final deployment-only declaration layer over current main.
+const branch2Environment = JSON.parse(fs.readFileSync(path.join(root, 'scripts/branch2-environment-worker-manifest.json'), 'utf8'))
+if (branch2Environment.version !== 1 || branch2Environment.revision !== 'branch2-environment-r2-current-main' || Object.keys(branch2Environment.changes || {}).join(',') !== 'verifySimpleAdminPassword') throw new Error('Branch2 environment Worker allow-list changed')
+patched = 'const branch2EnvironmentChanges = ' + JSON.stringify(branch2Environment.changes) + '\n' + patched
+const branch2HashAnchor = '        return sha(declarations.get(name)) === (resolverUxChanged ? resolverUxChanged.after : acceptedFinanceR3HistoricalCashHash)'
+if (!patched.includes(branch2HashAnchor)) throw new Error('Branch2 environment predecessor anchor missing')
+patched = patched.replace(branch2HashAnchor, [
+  '        const acceptedPostResolverUxHash = resolverUxChanged ? resolverUxChanged.after : acceptedFinanceR3HistoricalCashHash',
+  '        const branch2EnvironmentChanged = branch2EnvironmentChanges[name]',
+  "        if (branch2EnvironmentChanged) check(branch2EnvironmentChanged.before === acceptedPostResolverUxHash, 'Branch2 environment predecessor drifted: ' + name)",
+  '        return sha(declarations.get(name)) === (branch2EnvironmentChanged ? branch2EnvironmentChanged.after : acceptedPostResolverUxHash)',
+].join('\n'))
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
