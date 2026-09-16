@@ -1,0 +1,89 @@
+name: Branch2 sync candidate validation
+
+on:
+  push:
+    branches:
+      - sync/branch2-20260916
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sync/branch2-20260916
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Apply exact Branch2-only deltas
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+          import json
+
+          auth_path = Path('worker/domains/auth.ts')
+          auth = auth_path.read_text()
+          old = """  return password === getAdminModePassword(env);\n}"""
+          new = """  const storedPasswordRequired = (await getAppSetting(db, 'require_stored_admin_password', '0')) === '1';\n  if (storedPasswordRequired) return false;\n  return password === getAdminModePassword(env);\n}"""
+          if new not in auth:
+              if auth.count(old) != 1:
+                  raise SystemExit('Could not identify exact verifySimpleAdminPassword fallback in current main')
+              auth = auth.replace(old, new, 1)
+              auth_path.write_text(auth)
+
+          package_path = Path('package.json')
+          package = json.loads(package_path.read_text())
+          release = package['scripts']['release:check']
+          suffix = ' && node scripts/test-branch2-environment.mjs'
+          if 'scripts/test-branch2-environment.mjs' not in release:
+              package['scripts']['release:check'] = release + suffix
+              package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n')
+          PY
+
+          node scripts/test-branch2-environment.mjs
+          if grep -R --line-number --fixed-strings 'orders_db_prod' wrangler.jsonc index.html scripts/test-branch2-environment.mjs; then
+            echo 'Primary binding leaked into Branch2 environment files' >&2
+            exit 1
+          fi
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Full release gate
+        run: npm run release:check
+
+      - name: Database safety gate
+        run: npm run verify:db-safety
+
+      - name: Build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Wrangler dry run only
+        run: npx wrangler deploy --dry-run --outdir /tmp/branch2-wrangler-dry-run
+
+      - name: Commit validated Branch2-only deltas when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- worker/domains/auth.ts package.json; then
+            echo 'Candidate already contains exact Branch2 deltas.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add worker/domains/auth.ts package.json
+          git commit -m 'Preserve Branch2 environment guards on current main'
+          git push origin HEAD:sync/branch2-20260916
