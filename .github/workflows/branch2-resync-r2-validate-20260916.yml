@@ -18,7 +18,7 @@ jobs:
       - name: Checkout exact Branch2 candidate
         uses: actions/checkout@v4
         with:
-          ref: de8a3e0765a73b48cb16ec9739c9fa3f8bbba508
+          ref: fb43e8d709b57b67cc080bb9bd64246bb036aede
           fetch-depth: 2
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "de8a3e0765a73b48cb16ec9739c9fa3f8bbba508"
+          test "$(git rev-parse HEAD)" = "fb43e8d709b57b67cc080bb9bd64246bb036aede"
           test "$(git rev-parse HEAD^)" = "412ba8b4f2a72873232103944e2a3a777a6dbcd9"
           grep -q '"name": "orders-app-branch2"' wrangler.jsonc
           grep -q '"database_name": "orders_db_branch2"' wrangler.jsonc
