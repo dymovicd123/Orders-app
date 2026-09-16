@@ -182,7 +182,7 @@ export async function activateCashRegister(db: D1Database, actor?: AuthUser | nu
 
 export async function addManualCashRegisterMovement(
   db: D1Database,
-  input: { direction?: unknown; amount?: number; comment?: string; requestId?: unknown },
+  input: { direction?: unknown; amount?: number; comment?: string; requestId?: unknown; businessDate?: unknown },
   actor?: AuthUser | null,
 ) {
   const state = await getCashRegisterState(db);
@@ -196,10 +196,38 @@ export async function addManualCashRegisterMovement(
   if (direction === 'out' && amount > state.currentBalance) throw new Error(`Нельзя выдать ${amount}: в кассе по учёту ${state.currentBalance}.`);
 
   const timestamp = new Date().toISOString();
-  const businessDate = kazakhstanBusinessDate();
+  const todayBusinessDate = kazakhstanBusinessDate();
+  const requestedBusinessDate = cleanText(input.businessDate);
+  let businessDate = todayBusinessDate;
+  if (requestedBusinessDate) {
+    if (actor?.role !== 'admin') throw new Error('Добавлять пропущенные операции кассы может только администратор.');
+    const parsedBusinessDate = new Date(`${requestedBusinessDate}T00:00:00.000Z`);
+    const validBusinessDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedBusinessDate)
+      && Number.isFinite(parsedBusinessDate.getTime())
+      && parsedBusinessDate.toISOString().slice(0, 10) === requestedBusinessDate;
+    if (!validBusinessDate) throw new Error('Укажите корректную дату пропущенной операции.');
+    if (requestedBusinessDate > todayBusinessDate) throw new Error('Нельзя добавить операцию будущей датой.');
+    const cycleAnchor = cleanText(state.currentCycleStartedAt || state.initializedAt);
+    const cycleStartDate = cycleAnchor ? normalizeDate(cycleAnchor) : '';
+    if (cycleStartDate && requestedBusinessDate < cycleStartDate) {
+      throw new Error(`Дата ${requestedBusinessDate} раньше начала текущего цикла кассы (${cycleStartDate}). Такая операция уже должна быть учтена в начальном остатке или прошлом цикле.`);
+    }
+    businessDate = requestedBusinessDate;
+  }
+
   const createdBy = cleanText(actor?.displayName || actor?.email) || 'Пользователь';
-  const requestId = normalizeCashRequestId(input.requestId) || `server-${Date.now()}-${randomToken(8)}`;
+  const normalizedRequestId = normalizeCashRequestId(input.requestId);
+  if (requestedBusinessDate && !normalizedRequestId) throw new Error('Не удалось сформировать безопасный идентификатор пропущенной операции. Повторите действие.');
+  const requestId = normalizedRequestId || `server-${Date.now()}-${randomToken(8)}`;
   const sourceKey = `manual:${requestId}`;
+  if (requestedBusinessDate) {
+    const existing = await db.prepare(
+      'SELECT business_date FROM cash_register_entries WHERE source_key = ? LIMIT 1'
+    ).bind(sourceKey).first<any>();
+    if (existing && cleanText(existing.business_date) !== businessDate) {
+      throw new Error('Эта операция уже записана с другой датой. Обновите кассу перед повтором.');
+    }
+  }
   const insertResult = await db.prepare(
     `INSERT OR IGNORE INTO cash_register_entries (
        occurred_at, business_date, direction, amount, entry_type,
@@ -211,7 +239,9 @@ export async function addManualCashRegisterMovement(
   if (toInt((insertResult.meta as any)?.changes, 0) > 0) {
     await writeActivityLog(db, {
       eventType: direction === 'in' ? 'cash_manual_in' : 'cash_manual_out', entityType: 'cash_register',
-      title: direction === 'in' ? 'Ручное внесение наличных' : 'Ручная выдача наличных', details: comment, amount, createdAt: timestamp,
+      title: direction === 'in' ? 'Ручное внесение наличных' : 'Ручная выдача наличных',
+      details: businessDate === todayBusinessDate ? comment : `${comment}; относится к ${businessDate}`,
+      amount, createdAt: timestamp,
     });
   }
   return getCashRegisterState(db);
@@ -254,7 +284,7 @@ export async function reconcileCashRegister(
 
 export async function reverseManualCashRegisterMovement(db: D1Database, entryId: number, actor?: AuthUser | null) {
   const original = await db.prepare(
-    `SELECT id, direction, amount, comment, source_type
+    `SELECT id, direction, amount, comment, source_type, business_date
      FROM cash_register_entries WHERE id = ?`
   ).bind(entryId).first<any>();
   if (!original || cleanText(original.source_type) !== 'manual') throw new Error('Можно отменить только ручное внесение или выдачу.');
@@ -263,6 +293,7 @@ export async function reverseManualCashRegisterMovement(db: D1Database, entryId:
   if (existing) return getCashRegisterState(db);
   const timestamp = new Date().toISOString();
   const direction = cleanText(original.direction) === 'out' ? 'in' : 'out';
+  const businessDate = cleanText(original.business_date) || kazakhstanBusinessDate();
   const createdBy = cleanText(actor?.displayName || actor?.email) || 'Пользователь';
   const comment = `Отмена ручной операции: ${cleanText(original.comment) || `#${entryId}`}`;
   await db.prepare(
@@ -271,7 +302,7 @@ export async function reverseManualCashRegisterMovement(db: D1Database, entryId:
        source_type, source_id, source_key, order_id, external_order_id,
        payment_method, comment, created_by, created_at
      ) VALUES (?, ?, ?, ?, 'manual_reversal', 'manual_reversal', ?, ?, NULL, NULL, NULL, ?, ?, ?)`
-  ).bind(timestamp, kazakhstanBusinessDate(), direction, Math.max(0, toInt(original.amount, 0)), String(entryId), sourceKey, comment, createdBy, timestamp).run();
+  ).bind(timestamp, businessDate, direction, Math.max(0, toInt(original.amount, 0)), String(entryId), sourceKey, comment, createdBy, timestamp).run();
   await writeActivityLog(db, {
     eventType: 'cash_manual_reversed', entityType: 'cash_register', entityId: entryId,
     title: 'Отменена ручная операция кассы', details: comment, amount: Math.max(0, toInt(original.amount, 0)), createdAt: timestamp,

@@ -578,7 +578,7 @@ function App() {
   const [cashRegisterCyclesHasMore, setCashRegisterCyclesHasMore] = useState(false)
   const [cashRegisterCyclesOpen, setCashRegisterCyclesOpen] = useState(false)
   const [cashSetupAmount, setCashSetupAmount] = useState(0)
-  const [cashMovementDraft, setCashMovementDraft] = useState<{ direction: 'in' | 'out'; amount: number; comment: string }>({ direction: 'out', amount: 0, comment: '' })
+  const [cashMovementDraft, setCashMovementDraft] = useState<{ direction: 'in' | 'out'; amount: number; comment: string; businessDate: string }>({ direction: 'out', amount: 0, comment: '', businessDate: '' })
   const [cashReconcileAmount, setCashReconcileAmount] = useState(0)
   const [cashReconcileComment, setCashReconcileComment] = useState('')
   const cashMutationLockRef = useRef(false)
@@ -1344,9 +1344,8 @@ function App() {
   }, [activeSector, authReady, teamMode, timesheetMonth])
 
   useEffect(() => {
-    if (!authReady || activeSector !== 'finance' || financeMode === 'cash') return
+    if (!authReady || activeSector !== 'finance' || financeMode === 'cash' || financeMode === 'methods') return
     if (!financeReportFilters.dateFrom || !financeReportFilters.dateTo) return
-    if (financeReportFilters.dateFrom === financeReportFilters.dateTo && (financeMode === 'summary' || financeMode === 'payments')) return
     const timer = window.setTimeout(() => {
       void loadFinanceReports(financeReportFilters)
     }, 250)
@@ -1357,7 +1356,6 @@ function App() {
   useEffect(() => {
     if (!authReady || activeSector !== 'finance' || financeMode !== 'payments') return
     if (!financeReportFilters.dateFrom || !financeReportFilters.dateTo) return
-    if (financeReportFilters.dateFrom === financeReportFilters.dateTo) return
     const timer = window.setTimeout(() => {
       void loadMoneyHistory()
     }, 250)
@@ -2364,21 +2362,31 @@ function App() {
       setError(`По учёту в кассе только ${formatMoney(cashRegister.currentBalance)}.`)
       return
     }
-    if (cashMovementDraft.direction === 'out' && !window.confirm(`Выдать из кассы ${formatMoney(amount)}?\n\n${comment}`)) return
+    const historicalBusinessDate = isAdmin ? cashMovementDraft.businessDate.trim() : ''
+    if (historicalBusinessDate && !/^\d{4}-\d{2}-\d{2}$/.test(historicalBusinessDate)) {
+      setError('Укажите корректную дату пропущенной операции.')
+      return
+    }
+    if (historicalBusinessDate) {
+      const directionLabel = cashMovementDraft.direction === 'in' ? 'внесение' : 'выдачу'
+      if (!window.confirm(`Добавить пропущенное ${directionLabel} ${formatMoney(amount)} за ${formatDateShort(historicalBusinessDate)}?\n\nДата операции будет сохранена отдельно от сегодняшнего времени внесения.\n${comment}`)) return
+    } else if (cashMovementDraft.direction === 'out' && !window.confirm(`Выдать из кассы ${formatMoney(amount)}?\n\n${comment}`)) return
     const requestId = makeCashRequestId('manual')
     await runCashMutation(async () => {
       try {
         const response = await apiFetch('/api/finance/cash-register/movements', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ direction: cashMovementDraft.direction, amount, comment, requestId }),
+          body: JSON.stringify({ direction: cashMovementDraft.direction, amount, comment, requestId, ...(historicalBusinessDate ? { businessDate: historicalBusinessDate } : {}) }),
         })
         const data = await readJsonResponse<CashRegisterResponse & { message?: string }>(response, 'Ручное движение наличных')
         if (!response.ok) throw new Error(data.message || 'Не удалось сохранить движение наличных.')
         setCashRegister(data)
         setCashReconcileAmount(data.currentBalance)
-        setCashMovementDraft((current) => ({ ...current, amount: 0, comment: '' }))
-        setMessage(cashMovementDraft.direction === 'in' ? 'Внесение наличных записано.' : 'Выдача наличных записана.')
+        setCashMovementDraft((current) => ({ ...current, amount: 0, comment: '', businessDate: '' }))
+        setMessage(historicalBusinessDate
+          ? `Пропущенная операция добавлена за ${formatDateShort(historicalBusinessDate)}. Время внесения сохранено отдельно.`
+          : cashMovementDraft.direction === 'in' ? 'Внесение наличных записано.' : 'Выдача наличных записана.')
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Не удалось сохранить движение наличных.')
       }
