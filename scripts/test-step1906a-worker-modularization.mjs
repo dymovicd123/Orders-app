@@ -290,6 +290,32 @@ patched = patched.replace(physicalAddedAnchor, [
   "  check(sha(currentRouter) === resolverUxRouter.before && resolverUxRouter.before === contextualCatalogResolutionRouter.after, 'Resolver UX router predecessor drifted')",
   physicalAddedAnchor,
 ].join('\n'))
+const orderDeleteLifecycle = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-delete-working-mode-lifecycle-worker-manifest.json'), 'utf8'))
+if (orderDeleteLifecycle.version !== 1 || orderDeleteLifecycle.revision !== 'order-delete-working-mode-lifecycle-r1' || Object.keys(orderDeleteLifecycle.changes || {}).sort().join(',') !== 'deleteOrderSafely,updateOrderCritical') throw new Error('Order delete lifecycle Worker allow-list changed')
+patched = 'const orderDeleteLifecycleChanges = ' + JSON.stringify(orderDeleteLifecycle.changes) + '\n' + patched
+const orderDeleteLifecycleHashAnchor = '        return sha(declarations.get(name)) === (resolverUxChanged ? resolverUxChanged.after : acceptedFinanceR3HistoricalCashHash)'
+if (!patched.includes(orderDeleteLifecycleHashAnchor)) throw new Error('Order delete lifecycle predecessor anchor missing')
+patched = patched.replace(orderDeleteLifecycleHashAnchor, [
+  '        const acceptedPostResolverUxHash = resolverUxChanged ? resolverUxChanged.after : acceptedFinanceR3HistoricalCashHash',
+  '        const orderDeleteLifecycleChanged = orderDeleteLifecycleChanges[name]',
+  "        if (orderDeleteLifecycleChanged) check(orderDeleteLifecycleChanged.before === acceptedPostResolverUxHash, 'Order delete lifecycle predecessor drifted: ' + name)",
+  '        return sha(declarations.get(name)) === (orderDeleteLifecycleChanged ? orderDeleteLifecycleChanged.after : acceptedPostResolverUxHash)',
+].join('\n'))
+const orderDeleteLifecycleAddedAnchor = '    check(sha(declarations.get(name)) === acceptedHash, operationalAutonomyA4Changed\n      ? `Order delete mobility declaration changed beyond exact Operational Autonomy A4 allow-list: ${name}`\n      : `Order delete mobility declaration changed beyond exact allow-list: ${name}`)\n'
+if (!patched.includes(orderDeleteLifecycleAddedAnchor)) throw new Error('Order delete lifecycle added-declaration anchor missing')
+patched = patched.replace(orderDeleteLifecycleAddedAnchor, [
+  '    const orderDeleteLifecycleChanged = orderDeleteLifecycleChanges[name]',
+  '    if (orderDeleteLifecycleChanged) {',
+  "      check(orderDeleteLifecycleChanged.before === acceptedHash, 'Order delete lifecycle added-declaration predecessor drifted: ' + name)",
+  '      acceptedHash = orderDeleteLifecycleChanged.after',
+  '    }',
+  '    check(sha(declarations.get(name)) === acceptedHash, orderDeleteLifecycleChanged',
+  '      ? `Order delete mobility declaration changed beyond exact lifecycle-fix allow-list: ${name}`',
+  '      : (operationalAutonomyA4Changed',
+  '        ? `Order delete mobility declaration changed beyond exact Operational Autonomy A4 allow-list: ${name}`',
+  '        : `Order delete mobility declaration changed beyond exact allow-list: ${name}`))',
+  '',
+].join('\n'))
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')

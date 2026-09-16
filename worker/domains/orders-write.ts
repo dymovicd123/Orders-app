@@ -1042,6 +1042,7 @@ export async function updateOrderCritical(
   input: OrderInput,
   actor: AuthUser | null,
   checkedBy: string,
+  options: { lifecycleAction?: 'order_delete' } = {},
 ) {
   let criticalOperation: CriticalOperationHandle | null = null;
   try {
@@ -1091,7 +1092,11 @@ export async function updateOrderCritical(
       const nextShippingStatus = input.shippingStatus !== undefined
         ? normalizeShippingStatus(input.shippingStatus)
         : existingShippingStatus;
-      if (workingModeEdit && (
+      const dedicatedOrderDelete = options.lifecycleAction === 'order_delete'
+        && deletingOrder
+        && nextWorkshopStatus === existingWorkshopStatus
+        && nextShippingStatus === existingShippingStatus;
+      if (workingModeEdit && !dedicatedOrderDelete && (
         nextOrderStatus !== existingOrderStatus
         || nextWorkshopStatus !== existingWorkshopStatus
         || nextShippingStatus !== existingShippingStatus

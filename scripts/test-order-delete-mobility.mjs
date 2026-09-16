@@ -10,6 +10,7 @@ try {
   const table = read('src/features/sections/OrdersTableSection.tsx')
   const worker = read('worker/index.ts')
   const deletion = read('worker/domains/order-delete.ts')
+  const ordersWrite = read('worker/domains/orders-write.ts')
 
   check(!app.includes("setError('Удаление заказа доступно только администратору.')"), 'frontend still blocks manager deletion')
   check(app.includes("apiFetch(`/api/orders/${order.id}/delete`"), 'frontend does not use scoped delete endpoint')
@@ -45,6 +46,12 @@ try {
   check(deletion.includes('requestId: `${requestId}:return:${returnId}`'), 'return cancellation is not retry-idempotent')
   check(deletion.includes('requestId: `${requestId}:order`'), 'final logical deletion is not retry-idempotent')
   check(deletion.includes("orderStatus: 'deleted'"), 'existing logical deletion path is not reused')
+  check(deletion.includes("{ lifecycleAction: 'order_delete' }"), 'dedicated delete path does not declare its lifecycle action')
+  check(ordersWrite.includes("options: { lifecycleAction?: 'order_delete' } = {}"), 'order editor lacks a typed internal lifecycle-action option')
+  check(ordersWrite.includes("options.lifecycleAction === 'order_delete'"), 'dedicated delete lifecycle bypass is missing')
+  check(ordersWrite.includes('workingModeEdit && !dedicatedOrderDelete'), 'ordinary working-mode lifecycle edits are no longer protected')
+  check(ordersWrite.includes('nextWorkshopStatus === existingWorkshopStatus'), 'dedicated delete bypass is not constrained against workshop lifecycle changes')
+  check(ordersWrite.includes('nextShippingStatus === existingShippingStatus'), 'dedicated delete bypass is not constrained against shipping lifecycle changes')
 
   console.log('ORDER DELETE MOBILITY PASSED — ordinary staff get one safe delete action, deterministic return/exchange blockers auto-cancel, recorded handover asks one physical fact, false shipment reverses only when no newer physical truth supersedes it, retries are idempotent')
 } catch (error) {
