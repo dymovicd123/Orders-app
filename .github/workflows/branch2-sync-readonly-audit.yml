@@ -26,12 +26,15 @@ jobs:
       - name: Install exact dependencies
         run: npm ci
 
-      - name: Resolve Branch2 D1 by logical name
+      - name: Run Branch2 D1 read-only audit
         shell: bash
         run: |
           set -euo pipefail
+          exec > >(tee "$GITHUB_WORKSPACE/branch2-audit.txt") 2>&1
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
           test -n "${CLOUDFLARE_API_TOKEN:-}"
+
+          echo '=== live Branch2 D1 identity by logical name ==='
           npx wrangler d1 list --json > /tmp/d1-list.json
           node <<'NODE'
           const fs = require('fs')
@@ -44,10 +47,7 @@ jobs:
           console.log(`BRANCH2_DB_CREATED_AT=${hit.created_at || ''}`)
           NODE
 
-      - name: Show repository Branch2 binding
-        shell: bash
-        run: |
-          set -euo pipefail
+          echo '=== repository Branch2 binding ==='
           node <<'NODE'
           const fs = require('fs')
           const text = fs.readFileSync('wrangler.jsonc', 'utf8')
@@ -62,10 +62,6 @@ jobs:
           if (text.includes('orders_db_prod')) throw new Error('Primary D1 binding leaked into Branch2 config')
           NODE
 
-      - name: Read-only schema inventory
-        shell: bash
-        run: |
-          set -euo pipefail
           echo '=== required tables ==='
           npx wrangler d1 execute orders_db_branch2 --remote --command "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('orders','order_items','workshop_tasks','catalog_products','catalog_variants','catalog_input_aliases','catalog_value_aliases','inventory_stock','inventory_reservations','return_items','exchange_items','d1_migrations') ORDER BY name;"
           echo '=== catalog_products columns ==='
@@ -80,8 +76,17 @@ jobs:
           npx wrangler d1 execute orders_db_branch2 --remote --command "SELECT id, name, applied_at FROM d1_migrations ORDER BY id;" || true
           echo '=== post-0064 indexes ==='
           npx wrangler d1 execute orders_db_branch2 --remote --command "SELECT name, sql FROM sqlite_master WHERE type='index' AND name IN ('idx_catalog_variants_product_active_desc_sort','idx_payments_payment_date_order_amount','idx_orders_current_debt_partial','idx_order_items_pending_writeoff_status_order','idx_order_items_workshop_order_quantity','idx_o1_exchanges_payment_finance','idx_o1_stock_checks_normalized_time','idx_o1_stock_checks_exact_stocktake','idx_return_items_physical_receipt','idx_exchange_items_physical_receipt') ORDER BY name;"
+          echo '=== catalog gender-repair support tables ==='
+          npx wrangler d1 execute orders_db_branch2 --remote --command "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('catalog_gender_scope_repairs','catalog_gender_variant_repairs','catalog_gender_stock_baseline') ORDER BY name;"
           echo '=== non-sensitive catalog sanity ==='
           npx wrangler d1 execute orders_db_branch2 --remote --command "SELECT (SELECT COUNT(*) FROM catalog_products) AS products, (SELECT COUNT(*) FROM catalog_variants) AS variants;"
+          echo 'READ-ONLY AUDIT COMPLETE — no D1 mutation commands were executed.'
 
-      - name: Prove audit is read-only
-        run: echo 'READ-ONLY AUDIT COMPLETE — no D1 mutation commands were executed.'
+      - name: Upload audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch2-sync-readonly-audit
+          path: branch2-audit.txt
+          if-no-files-found: error
+          retention-days: 7
