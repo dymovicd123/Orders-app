@@ -26,9 +26,9 @@
     },
     "src/features/renderers/FinanceDashboardRenderer.tsx": {
       "beforeGitBlob": "7ccadc64c9cdd0f1c2d65b3f3424564d71cc2eae",
-      "afterGitBlob": "f3882b36a3b4bab109b6a33cca14c804ce00abf1",
+      "afterGitBlob": "0e494b30d152867d935ed2eed8cd0651eed0f137",
       "beforeLines": 745,
-      "afterLines": 752
+      "afterLines": 751
     }
   },
   "addedFiles": {

@@ -381,8 +381,8 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
           <section className="mini-panel finance-overview-panel finance-truth-overview">
             <div className="mini-panel-head">
               <div>
-                <h3>Финансовая сводка без смешивания дат</h3>
-                <p className="mini-panel-note">Продажи считаются по дате заказа. Деньги — только по фактической дате оплаты или возврата.</p>
+                <h3>Итоги за выбранный период</h3>
+                <p className="mini-panel-note">Деньги показаны по дате оплаты или возврата. Продажи — по дате заказа.</p>
               </div>
               <span className="status-pill status-online">{formatDateShort(financeReport.startDate)} — {formatDateShort(financeReport.endDate)}</span>
             </div>
@@ -420,8 +420,8 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                 <div className="finance-truth-card-head"><span>Чистое движение</span><small>поступило минус возвращено</small></div>
                 <div className="finance-truth-main">{formatMoney(netCash)}</div>
                 <div className="finance-truth-lines">
-                  <div><span>Открытый долг сейчас</span><strong>{formatMoney(financeReport.overview.currentDebt)}</strong></div>
-                  <div><span>Заказов с долгом</span><strong>{financeReport.overview.currentDebtOrders}</strong></div>
+                  <div><span>Поступило</span><strong>{formatMoney(paymentTotal)}</strong></div>
+                  <div><span>Возвращено</span><strong>{formatMoney(totalReturned)}</strong></div>
                 </div>
               </article>
             </div>
@@ -430,19 +430,19 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
           <section className={`finance-reconciliation finance-reconciliation-v2 ${consistency.ok ? 'is-ok' : 'is-error'}`}>
             <div className="finance-reconciliation-head">
               <div>
-                <strong>Финансовая сверка</strong>
-                <span>Поступления считаются по дате денежной операции. Внутренняя сверка проверяет, что один и тот же набор оплат одинаково складывается по видам операций и способам оплаты.</span>
+                <strong>{consistency.ok ? 'Данные согласованы' : 'Есть расхождение в финансовой сверке'}</strong>
+                <span>{consistency.ok ? 'Оплаты одинаково сходятся по операциям и способам оплаты.' : 'Система получила разные итоги из связанных финансовых представлений. Ниже показана диагностика.'}</span>
               </div>
               <div className="finance-reconciliation-badges">
-                <span className={`status-pill ${consistency.ok ? 'status-online' : 'status-offline'}`}>{consistency.ok ? 'Внутренняя сверка: без расхождений' : `Внутреннее расхождение: ${formatMoney(consistency.difference)}`}</span>
+                <span className={`status-pill ${consistency.ok ? 'status-online' : 'status-offline'}`}>{consistency.ok ? 'Без расхождений' : `Расхождение: ${formatMoney(consistency.difference)}`}</span>
                 {crossDatePaymentOperations.length ? <span className="soft-badge finance-info-badge">Заказы другой даты: {crossDatePaymentOperations.length} · {formatMoney(crossDatePaymentOperations.reduce((sum, row) => sum + Number(row.amount || 0), 0))}</span> : <span className="soft-badge">Заказов другой даты нет</span>}
                 {paymentTraceReview.length ? <span className="soft-badge warning-soft">Требуют проверки: {paymentTraceReview.length}</span> : <span className="soft-badge">Ошибок дат не найдено</span>}
               </div>
             </div>
-            <div className="finance-reconciliation-primary-total">
-              <span>Поступило за период</span>
+            {!consistency.ok ? <div className="finance-reconciliation-primary-total">
+              <span>Поступило по журналу</span>
               <strong>{formatMoney(consistency.ledgerTotal)}</strong>
-            </div>
+            </div> : null}
             {!consistency.ok ? (
               <div className="finance-reconciliation-values finance-reconciliation-diagnostics">
                 <span>По операциям: <strong>{formatMoney(consistency.ledgerTotal)}</strong></span>
@@ -452,6 +452,8 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
             ) : null}
 
             {crossDatePaymentOperations.length ? (
+              <details className="finance-secondary-details">
+                <summary>Оплаты по заказам другой даты · {crossDatePaymentOperations.length}</summary>
               <div className="finance-reconciliation-cross-date">
                 <div className="mini-panel-head">
                   <div>
@@ -476,6 +478,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                   </table>
                 </div>
               </div>
+              </details>
             ) : null}
           </section>
 
@@ -547,27 +550,23 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
           <section className="mini-panel finance-days-truth-panel">
             <div className="mini-panel-head">
               <div>
-                <h3>Деньги по дням</h3>
-                <p className="mini-panel-note">Каждая строка отвечает на вопрос: сколько реально поступило и сколько реально вернули в этот день.</p>
+                <h3>По дням</h3>
+                <p className="mini-panel-note">Главная хронология периода: деньги стоят в том дне, к которому относятся.</p>
               </div>
             </div>
             <div className="table-shell">
               <table className="data-table finance-days-truth-table">
-                <thead><tr><th>Дата</th><th className="num">Заказов<br /><small>по дате заказа</small></th><th className="num">Продажи<br /><small>по дате заказа</small></th><th className="num">Оплаты заказов<br /><small>по дате оплаты</small></th><th className="num">Закрытие долгов</th><th className="num">Доплаты обмена</th><th className="num">Всего поступило</th><th className="num">Возвращено</th><th className="num">Чистыми</th><th>Проверка дат</th></tr></thead>
+                <thead><tr><th>Дата</th><th className="num">Поступило</th><th className="num">Возвращено</th><th className="num">Чистое движение</th><th className="num">Продажи</th><th>Состояние</th></tr></thead>
                 <tbody>
                   {cashDays.map((row) => <tr key={`finance-cash-day-${row.date}`}>
                     <td><strong>{formatDateShort(row.date)}</strong></td>
-                    <td className="num">{row.orderCount}</td>
-                    <td className="num">{formatMoney(row.sales)}</td>
-                    <td className="num">{formatMoney(row.orderPayments)}</td>
-                    <td className="num">{formatMoney(row.debtPayments)}</td>
-                    <td className="num">{formatMoney(row.exchangeExtras)}</td>
                     <td className="num"><strong>{formatMoney(row.received)}</strong></td>
                     <td className="num">{formatMoney(row.returned)}</td>
                     <td className="num"><strong>{formatMoney(row.net)}</strong></td>
+                    <td className="num">{formatMoney(row.sales)}</td>
                     <td>{row.reviewCount ? <span className="soft-badge warning-soft">Проверить: {row.reviewCount}</span> : row.infoCount ? <span className="soft-badge">Пояснение: {row.infoCount}</span> : <span className="soft-badge">Без замечаний</span>}</td>
                   </tr>)}
-                  {!cashDays.length ? <tr><td colSpan={10} className="empty-state">За выбранный период нет заказов и денежных операций.</td></tr> : null}
+                  {!cashDays.length ? <tr><td colSpan={6} className="empty-state">За выбранный период нет заказов и денежных операций.</td></tr> : null}
                 </tbody>
               </table>
             </div>
