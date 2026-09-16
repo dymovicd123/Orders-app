@@ -101,6 +101,8 @@ const stabilizationManifestPath = path.join(root, 'scripts/stabilization-2026091
 const businessDateBoundaryManifestPath = path.join(root, 'scripts/business-date-boundaries-r1-frontend-manifest.json')
 const clientFixesManifestPath = path.join(root, 'scripts/client-fixes-20260912-r1-frontend-manifest.json')
 const contextualCatalogResolutionManifestPath = path.join(root, 'scripts/contextual-catalog-resolution-r1-frontend-manifest.json')
+const resolverUx = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-resolver-ux-manifest.json'), 'utf8'))
+if (resolverUx.revision !== 'catalog-resolver-ux-r1' || Object.keys(resolverUx.files).join(',') !== 'src/App.tsx,src/features/orders/OrderCatalogResolutionModal.tsx,src/features/orders/OrderCatalogResolutionModal.css,shared/api-contracts.ts' || Object.keys(resolverUx.addedFiles).join(',') !== 'src/features/orders/catalogResolutionFlow.ts') throw new Error('Resolver UX frontend allow-list changed')
 const financeDayManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/finance-day-transparency-manifest.json'), 'utf8'))
 if (financeDayManifest.revision !== 'finance-day-transparency-r1' || Object.keys(financeDayManifest.files).join(',') !== 'src/App.tsx,src/features/sections/FinanceSection.tsx,src/features/renderers/FinanceDashboardRenderer.tsx') throw new Error('Finance day frontend allow-list changed')
 const fixtureRoot = path.join(root, 'scripts/fixtures/catalog-gender-scope-r1')
@@ -157,9 +159,14 @@ for (const file of financeDayAddedFiles) {
 
 for (const file of ['src/features/orders/OrderCatalogResolutionModal.tsx', 'src/features/orders/OrderCatalogResolutionModal.css']) {
   const delta = contextualCatalogResolutionManifest.files[file]
+  const latest = resolverUx.files[file]
   const actual = fs.readFileSync(path.join(root, file), 'utf8')
-  if (!delta?.added || delta.beforeGitBlob !== null || gitBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Contextual catalog resolution added frontend file changed beyond exact manifest: ' + file)
+  if (!delta?.added || delta.beforeGitBlob !== null || latest.beforeGitBlob !== delta.afterGitBlob || latest.beforeLines !== delta.afterLines || gitBlobSha(actual) !== latest.afterGitBlob || actual.split(/\r?\n/).length !== latest.afterLines) throw new Error('Resolver UX frontend file changed beyond exact manifest: ' + file)
 }
+for (const [file, hash] of Object.entries(resolverUx.addedFiles)) {
+  if (crypto.createHash('sha256').update(fs.readFileSync(path.join(root, file), 'utf8')).digest('hex') !== hash) throw new Error('Resolver UX helper changed outside manifest: ' + file)
+}
+if (gitBlobSha(fs.readFileSync(path.join(root, 'shared/api-contracts.ts'), 'utf8')) !== resolverUx.files['shared/api-contracts.ts'].afterGitBlob) throw new Error('Resolver UX contract changed outside manifest')
 for (const file of ['src/app/utils.ts', 'src/features/sections/OrderReturnsSection.tsx']) {
   const delta = returnsPhysicalIntakeManifest.files[file]
   const stabilizationDelta = stabilizationManifest.files?.[file]
@@ -275,6 +282,12 @@ try {
       if (financeDayDelta.beforeGitBlob !== acceptedGitBlob || financeDayDelta.beforeLines !== acceptedLines) throw new Error('Finance day frontend predecessor drifted: ' + file)
       acceptedGitBlob = financeDayDelta.afterGitBlob
       acceptedLines = financeDayDelta.afterLines
+    }
+    const resolverUxDelta = resolverUx.files[file]
+    if (resolverUxDelta) {
+      if (resolverUxDelta.beforeGitBlob !== acceptedGitBlob || resolverUxDelta.beforeLines !== acceptedLines) throw new Error('Resolver UX frontend predecessor drifted: ' + file)
+      acceptedGitBlob = resolverUxDelta.afterGitBlob
+      acceptedLines = resolverUxDelta.afterLines
     }
     if (gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) {
       throw new Error(contextualCatalogResolutionDelta

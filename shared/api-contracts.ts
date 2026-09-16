@@ -181,6 +181,8 @@ export type CatalogResolutionContext = {
   product?: CatalogResolutionProduct | null
   execution?: CatalogResolutionExecution | null
   existingVariantId?: number | null
+  exactVariant?: { id: number; productId: number; productName: string; facts: CatalogResolutionFacts } | null
+  canLeaveGenderUnknown?: boolean
   products?: CatalogResolutionProduct[]
   references?: CatalogReferenceOptions
   orderItemId?: number

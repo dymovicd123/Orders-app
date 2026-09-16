@@ -825,7 +825,9 @@ export default {
              AND COALESCE(o.archived_at, '') = '' AND COALESCE(o.shipping_status, 'not_sent') <> 'sent' LIMIT 1`
         ).bind(orderItemId, orderId).first<{ id: number }>();
         if (!scoped?.id) return json({ ok: false, message: 'Позиция не найдена среди активных товаров этого заказа.' }, { status: 404 });
-        return json(await getCatalogReviewContext(env.DB, orderItemId));
+        const preview = Object.fromEntries(['productId', 'category', 'gender', 'material', 'length', 'color', 'size']
+          .filter((key) => url.searchParams.has(key)).map((key) => [key, url.searchParams.get(key)]));
+        return json(await getCatalogReviewContext(env.DB, orderItemId, preview));
       }
 
       const orderCatalogReviewResolveMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/catalog-review\/(\d+)\/resolve-existing$/);
