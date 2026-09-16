@@ -26,9 +26,9 @@
     },
     "src/features/renderers/FinanceDashboardRenderer.tsx": {
       "beforeGitBlob": "7ccadc64c9cdd0f1c2d65b3f3424564d71cc2eae",
-      "afterGitBlob": "1565335396d8b2c13b4b4730dd5759585b61d99f",
+      "afterGitBlob": "e5be95ac883128115ffb5df28d8e9862932133c3",
       "beforeLines": 745,
-      "afterLines": 751
+      "afterLines": 758
     }
   },
   "addedFiles": {
@@ -36,6 +36,6 @@
     "src/features/finance/financeDayRead.ts": "ad66ef6474da2dd39f37176c429f5b16f801b36bcc5f9c1e791f114b90ff474d",
     "src/features/finance/FinanceDayPanel.tsx": "9d9c47a5c93d12f44081e52bafd50c12318e08fec2da276022c30ba6b91ca6fb",
     "src/features/finance/FinanceDayView.tsx": "d53af33f8b5e7371a369a827248bca204ea8871ff5c2739f593900d95d5213fd",
-    "src/features/finance/finance-day.css": "831dced6779d3a2748c1bac99582fae33e3d784168e368e352a0a52a6c56d934"
+    "src/features/finance/finance-day.css": "b9a672829100d86d2a1f45e9df27f8950c4f8562bf1741cf358175adefb1367c"
   }
 }

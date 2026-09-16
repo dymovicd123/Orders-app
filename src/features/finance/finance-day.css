@@ -1,15 +1,15 @@
-.finance-day { display: grid; gap: 14px; padding: 18px; background: #fff; border: 1px solid #dbe3eb; border-radius: 14px; color: #172b41; min-width: 0; }
+.finance-day { display: grid; gap: 12px; padding: 16px; background: #fff; border: 1px solid #dbe3eb; border-radius: 14px; color: #172b41; min-width: 0; }
 .finance-day p { margin: 5px 0; line-height: 1.45; }
 .finance-day-heading, .finance-day-journal-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
 .finance-day-heading h3 { margin: 0; }
 .finance-day-heading p, .finance-day-note { font-size: 13px; color: #536375; }
-.finance-day-totals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-.finance-day-totals article { display: grid; align-content: start; gap: 7px; padding: 13px; border: 1px solid #dbe3eb; border-radius: 10px; }
+.finance-day-totals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.finance-day-totals article { display: grid; align-content: start; gap: 4px; padding: 10px; border: 1px solid #dbe3eb; border-radius: 10px; }
 .finance-day-totals article:first-child { background: #edf4ff; border-color: #b9d0f4; }
-.finance-day-totals strong { font-size: 22px; font-variant-numeric: tabular-nums; }
-.finance-day-totals small { color: #536375; line-height: 1.4; }
+.finance-day-totals strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.finance-day-totals small { color: #536375; line-height: 1.35; font-size: 12px; }
 .finance-day-methods { display: flex; flex-wrap: wrap; gap: 8px; }
-.finance-day-methods > div { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: #f6f8fb; border-radius: 8px; flex-wrap: wrap; }
+.finance-day-methods > div { display: flex; align-items: center; gap: 8px; padding: 6px 9px; background: #f6f8fb; border-radius: 8px; flex-wrap: wrap; }
 .finance-day-kind { display: inline-block; padding: 3px 6px; border-radius: 5px; font-size: 12px; background: #edf0f4; }
 .finance-day-kind.cash { background: #e2f0e8; color: #215239; }
 .finance-day-kind.noncash { background: #e5edff; color: #304e83; }
@@ -27,5 +27,17 @@
 .finance-day-event-amount strong { font-size: 18px; white-space: nowrap; }
 .finance-day-late { font-size: 12px; background: #fff0cd; padding: 3px 6px; border-radius: 5px; }
 .finance-day-event.is-correction { background: #f8f7fc; }
+.finance-current-cash-disclosure { margin-top: 12px; border: 1px solid #dbe3eb; border-radius: 12px; background: #fff; overflow: clip; }
+.finance-current-cash-disclosure > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; cursor: pointer; list-style: none; background: #f8fafc; }
+.finance-current-cash-disclosure > summary::-webkit-details-marker { display: none; }
+.finance-current-cash-disclosure > summary > span:first-child { display: grid; gap: 2px; }
+.finance-current-cash-disclosure > summary strong { font-size: 15px; }
+.finance-current-cash-disclosure > summary small { color: #536375; font-size: 12px; font-weight: 400; }
+.finance-current-cash-disclosure > summary > span:last-child { color: #365c91; font-size: 12px; font-weight: 700; }
+.finance-current-cash-disclosure[open].is-historical > summary { border-bottom: 1px solid #dbe3eb; }
+.finance-current-cash-disclosure.is-historical .cash-register-content { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+.finance-current-cash-disclosure.is-live { margin-top: 0; border: 0; border-radius: 0; overflow: visible; }
+.finance-current-cash-disclosure.is-live > summary { display: none; }
+.finance-current-cash-disclosure.is-live .cash-register-content { margin-top: 0; }
 @media (max-width: 1050px) { .finance-day-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 650px) { .finance-day { padding: 12px; } .finance-day-totals { grid-template-columns: 1fr; } .finance-day-event { grid-template-columns: 1fr; } .finance-day-event-amount { text-align: left; align-items: flex-start !important; } .finance-day-events { max-height: none; } }
