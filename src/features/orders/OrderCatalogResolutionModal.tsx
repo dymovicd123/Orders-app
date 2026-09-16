@@ -1,647 +1,258 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CatalogResponse, CatalogReviewItem, CatalogReviewResponse, CatalogVariantRecord, OrderRecord } from '../../app/types'
 import { readJsonResponse } from '../../app/utils'
-import type { CatalogGenderScope, CatalogResolutionContext, CatalogResolutionInput, CatalogResolutionResponse } from '../../../shared/api-contracts.ts'
+import type { CatalogResolutionContext, CatalogResolutionProduct, CatalogResolutionResponse } from '../../../shared/api-contracts'
+import { clean, normalize, fields, labels, initialDraft, nextQuestion, compoundRemainder, rankedProducts, referenceValues, needsReference, createResolutionSession } from './catalogResolutionFlow'
+import type { Draft, Field } from './catalogResolutionFlow'
 import './OrderCatalogResolutionModal.css'
-
-type ApiFetch = (path: string, init?: RequestInit) => Promise<Response>
-type CatalogProduct = CatalogResponse['products'][number]
-type EditableField = 'material' | 'length' | 'color' | 'size'
-
-type ResolverDraft = {
-  productId: number
-  createProduct: boolean
-  productName: string
-  genderScope: CatalogGenderScope | ''
-  material: string
-  length: string
-  category: 'adult' | 'child'
-  gender: string
-  color: string
-  size: string
-}
 
 type Props = {
   order: OrderRecord | null
-  apiFetch: ApiFetch
+  apiFetch: (path: string, init?: RequestInit) => Promise<Response>
   isAdmin: boolean
   onClose: () => void
   onCompleted: (order: OrderRecord) => void | Promise<void>
   onOpenFullReview?: (order: OrderRecord) => void | Promise<void>
 }
-
-function clean(value: unknown) {
-  return String(value || '').trim()
-}
-
-function normalize(value: unknown) {
-  return clean(value).toUpperCase().replace(/\s+/g, ' ')
-}
-
-function identityText(value: unknown) {
-  return normalize(value)
-    .replace(/[«»“”„"']/g, ' ')
-    .replace(/[‐‑‒–—-]+/g, ' ')
-    .replace(/[^0-9A-ZА-ЯЁӘҒҚҢӨҰҮҺІ]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function variantLabel(variant: CatalogVariantRecord) {
-  return [variant.productName, variant.gender, variant.color, variant.material, variant.length, variant.sizeLabel]
-    .map(clean)
-    .filter(Boolean)
-    .join(' · ')
-}
-
-function fixedGender(scope: CatalogGenderScope | '' | undefined) {
-  return scope === 'female' ? 'ЖЕН' : scope === 'male' ? 'МУЖ' : ''
-}
-
-function productScore(rawName: string, product: CatalogProduct) {
-  const raw = identityText(rawName)
-  const name = identityText(product.name)
-  if (!raw || !name) return 0
-  if (raw === name) return 10_000 + name.length
-  if (raw.includes(name)) return 5_000 + name.length
-  if (name.includes(raw) && raw.length >= 4) return 2_000 + raw.length
-  const rawTokens = new Set(raw.split(' ').filter((token) => token.length >= 3))
-  const nameTokens = name.split(' ').filter((token) => token.length >= 3)
-  const overlap = nameTokens.filter((token) => rawTokens.has(token)).length
-  return overlap ? overlap * 100 + name.length : 0
-}
-
-function rankedProducts(catalog: CatalogResponse | null, rawName: string) {
-  return (catalog?.products || [])
-    .filter((product) => product.isActive)
-    .map((product) => ({ product, score: productScore(rawName, product) }))
-    .filter((entry) => entry.score > 0)
-    .sort((left, right) => right.score - left.score || String(left.product.name).localeCompare(String(right.product.name), 'ru'))
-}
-
-function compoundRemainder(rawName: string, productName: string) {
-  const rawKey = identityText(rawName)
-  const productKey = identityText(productName)
-  if (!rawKey || !productKey) return ''
-  const rawTokens = rawKey.split(' ').filter(Boolean)
-  const productTokens = productKey.split(' ').filter(Boolean)
-  if (!productTokens.length || productTokens.length > rawTokens.length) return ''
-  for (let start = 0; start <= rawTokens.length - productTokens.length; start += 1) {
-    const matches = productTokens.every((token, offset) => rawTokens[start + offset] === token)
-    if (!matches) continue
-    return [...rawTokens.slice(0, start), ...rawTokens.slice(start + productTokens.length)].join(' ').trim()
-  }
-  return ''
-}
-
-function productVariantCategory(variant: CatalogVariantRecord): 'adult' | 'child' {
-  return String(variant.productCategory || '').toLowerCase() === 'child' ? 'child' : 'adult'
-}
-
-function noSizeValue(value: unknown) {
-  const text = normalize(value)
-  return !text || ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р'].includes(text) ? '' : text
-}
-
-function variantCompatibleWithDraft(variant: CatalogVariantRecord, draft: ResolverDraft) {
-  if (Number(variant.productId) !== Number(draft.productId)) return false
-  if (productVariantCategory(variant) !== draft.category) return false
-  if (normalize(variant.gender) !== normalize(draft.gender)) return false
-  if ((normalize(variant.material) || 'СТАНДАРТ') !== (normalize(draft.material) || 'СТАНДАРТ')) return false
-  if ((normalize(variant.length) || 'СТАНДАРТ') !== (normalize(draft.length) || 'СТАНДАРТ')) return false
-  if (clean(draft.color) && (normalize(variant.color) || 'БЕЗ ЦВЕТА') !== normalize(draft.color)) return false
-  if (clean(draft.size) && noSizeValue(variant.sizeLabel) !== noSizeValue(draft.size)) return false
-  return true
-}
-
-function variantExactlyMatchesDraft(variant: CatalogVariantRecord, draft: ResolverDraft) {
-  if (!clean(draft.color) || !clean(draft.size)) return false
-  return variantCompatibleWithDraft(variant, draft)
-    && (normalize(variant.color) || 'БЕЗ ЦВЕТА') === normalize(draft.color)
-    && noSizeValue(variant.sizeLabel) === noSizeValue(draft.size)
-}
-
-function initialDraft(item: CatalogReviewItem, context: CatalogResolutionContext, catalog: CatalogResponse): ResolverDraft {
-  const suggestions = rankedProducts(catalog, item.productName)
-  const suggestedProduct = context.product?.id
-    ? (catalog.products || []).find((product) => Number(product.id) === Number(context.product?.id)) || null
-    : suggestions[0]?.score >= 5_000 ? suggestions[0].product : null
-  const scope = (suggestedProduct?.genderScope || context.product?.genderScope || '') as CatalogGenderScope | ''
-  const facts = context.facts || { material: '', length: '', category: 'adult', gender: '', color: '', size: '' }
-  const rawColor = clean(item.color)
-  const rawSize = clean(item.size)
-  return {
-    productId: Number(suggestedProduct?.id || context.product?.id || item.productId || 0),
-    createProduct: false,
-    productName: clean(item.productName),
-    genderScope: scope,
-    material: clean(item.material) || clean(facts.material) || 'СТАНДАРТ',
-    length: clean(item.length) || clean(facts.length) || 'СТАНДАРТ',
-    category: String(item.category || facts.category).toLowerCase() === 'child' ? 'child' : 'adult',
-    gender: clean(item.gender) || clean(facts.gender) || fixedGender(scope),
-    color: rawColor,
-    size: rawSize,
-  }
-}
+const displayFact = (field: Field, value: string) => field === 'category' ? (value === 'child' ? 'Детский' : 'Взрослый') : field === 'gender' ? (value === 'ЖЕН' ? 'Женский' : value === 'МУЖ' ? 'Мужской' : value) : value
 
 export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose, onCompleted }: Props) {
-  const [review, setReview] = useState<CatalogReviewResponse | null>(null)
-  const [catalog, setCatalog] = useState<CatalogResponse | null>(null)
+  const [item, setItem] = useState<CatalogReviewItem | null>(null)
   const [context, setContext] = useState<CatalogResolutionContext | null>(null)
-  const [draft, setDraft] = useState<ResolverDraft | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [draft, setDraft] = useState<Draft | null>(null)
+  const [catalog, setCatalog] = useState<CatalogResponse | null>(null)
+  const [choices, setChoices] = useState<CatalogResolutionProduct[]>([])
+  const [busy, setBusy] = useState(true)
   const [resolving, setResolving] = useState(false)
-  const [variantQuery, setVariantQuery] = useState('')
-  const [selectedVariantId, setSelectedVariantId] = useState(0)
-  const [createFields, setCreateFields] = useState<Record<string, boolean>>({})
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [fallbackOpen, setFallbackOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const [variantQuery, setVariantQuery] = useState('')
+  const [classified, setClassified] = useState(false)
+  const [confirmed, setConfirmed] = useState<Partial<Record<Field, boolean>>>({})
+  const [legacy, setLegacy] = useState(false)
+  const [editing, setEditing] = useState<Field | null>(null)
+  const [answer, setAnswer] = useState('')
+  const [needsRecheck, setNeedsRecheck] = useState(false)
+  const [progress, setProgress] = useState({ total: 0, remaining: 0 })
+  const generation = useRef(0)
+  const session = useRef(createResolutionSession())
+  const catalogPromise = useRef<Promise<CatalogResponse> | null>(null)
+  const previewPending = useRef(false)
+  const mutationPending = useRef(false)
+  const dialog = useRef<HTMLDivElement>(null)
+  const questionHeading = useRef<HTMLHeadingElement>(null)
 
-  const activeItem = review?.items?.[0] || null
-
-  const load = async (completeWhenEmpty = false) => {
-    if (!order?.id) return
-    setBusy(true)
-    setError('')
-    try {
-      const [reviewResponse, catalogResponse] = await Promise.all([
-        apiFetch(`/api/orders/${order.id}/catalog-review`),
-        apiFetch('/api/catalog'),
-      ])
-      const reviewData = await readJsonResponse<CatalogReviewResponse>(reviewResponse, 'Не удалось загрузить позиции, которые требуют уточнения')
-      const catalogData = await readJsonResponse<CatalogResponse>(catalogResponse, 'Не удалось загрузить каталог')
-      setReview(reviewData)
-      setCatalog(catalogData)
-      const first = reviewData.items?.[0]
-      if (!first) {
-        setContext(null)
-        setDraft(null)
-        setSelectedVariantId(0)
-        if (completeWhenEmpty) {
-          await onCompleted(order)
-        } else {
-          setError('Список позиций для разбора вернулся пустым. Окно оставлено открытым: автоматическое закрытие до действия пользователя запрещено. Закройте его вручную и повторите отправку, если позиция всё ещё блокирует заказ.')
-        }
-        return
-      }
-      const contextResponse = await apiFetch(`/api/orders/${order.id}/catalog-review/${first.orderItemId}/context`)
-      const contextData = await readJsonResponse<CatalogResolutionContext>(contextResponse, 'Не удалось определить, что именно нужно уточнить')
-      setContext(contextData)
-      setDraft(initialDraft(first, contextData, catalogData))
-      setSelectedVariantId(Number(contextData.existingVariantId || 0))
-      setVariantQuery('')
-      setCreateFields({})
-      setAdvancedOpen(!contextData.existingVariantId)
-    } catch (value) {
-      setError(value instanceof Error ? value.message : 'Не удалось открыть уточнение товара.')
-    } finally {
-      setBusy(false)
-    }
+  const read = async <T extends object>(path: string, init?: RequestInit) => {
+    const response = await apiFetch(path, { cache: 'no-store', ...init })
+    if (response.headers.get('X-Orders-App-Stale') === '1') throw new Error('Нужны свежие данные. Повторите проверку.')
+    const data = await readJsonResponse<T & { ok?: boolean; message?: string }>(response, 'Уточнение товара')
+    if (data.ok === false) throw new Error(data.message || 'Не удалось проверить товар.')
+    return data
   }
-
+  const readContext = (orderItemId: number, next?: Draft) => {
+    const params = new URLSearchParams()
+    if (next) for (const key of ['productId', ...fields] as const) params.set(key, String(next[key]))
+    return read<CatalogResolutionContext>(`/api/orders/${order!.id}/catalog-review/${orderItemId}/context?${params}`)
+  }
+  const load = async () => {
+    if (!order) return false
+    const ticket = ++generation.current
+    setBusy(true); setError('')
+    try {
+      const review = await read<CatalogReviewResponse>(`/api/orders/${order.id}/catalog-review`)
+      if (ticket !== generation.current) return false
+      if (!Array.isArray(review.items) || !Number.isInteger(review.count) || review.count < 0) throw new Error('Список позиций не подтверждён. Повторите проверку.')
+      const first = review.items?.[0]
+      if (!first) {
+        if (review.count !== 0 || review.truncated) throw new Error('Не удалось получить все позиции. Повторите проверку.')
+        setItem(null); setDraft(null); setContext(null)
+        if (!session.current.changed) setError('Список уточнений пуст. Отправка не продолжена. Закройте окно и проверьте заказ.')
+        return true
+      }
+      const data = await readContext(first.orderItemId)
+      if (ticket !== generation.current) return false
+      setItem(first); setContext(data); setDraft(initialDraft(first, data)); setChoices(data.products || [])
+      setProgress(previous => ({ total: previous.total || Number(review.count || review.items.length), remaining: Number(review.count || review.items.length) }))
+      setConfirmed({}); setClassified(false); setLegacy(false); setEditing(null); setAnswer('')
+      setSearchOpen(false); setSearch(''); setAdvancedOpen(false); setFallbackOpen(false); setVariantQuery(''); setNeedsRecheck(false)
+      return false
+    } finally { if (ticket === generation.current) setBusy(false) }
+  }
   useEffect(() => {
-    if (!order?.id) return
-    void load()
-    // Resolver state must restart for every blocked order.
+    const owner = createResolutionSession()
+    session.current = owner
+    setItem(null); setDraft(null); setContext(null); setProgress({ total: 0, remaining: 0 }); setNotice('')
+    setNeedsRecheck(false); setCatalog(null); catalogPromise.current = null
+    void load().catch(value => { if (owner === session.current) setError(value instanceof Error ? value.message : 'Не удалось загрузить товар.') })
+    return () => { generation.current++; session.current = createResolutionSession() }
+    // Every order owns a separate completion latch; passive loading cannot complete.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order?.id])
 
-  const productSuggestions = useMemo(() => rankedProducts(catalog, activeItem?.productName || ''), [catalog, activeItem?.productName])
-  const selectedProduct = useMemo(() => {
-    if (!draft?.productId) return null
-    return (catalog?.products || []).find((product) => Number(product.id) === Number(draft.productId)) || null
-  }, [catalog, draft?.productId])
+  const remainder = item && context?.product ? compoundRemainder(item.productName, context.product.name) : ''
+  const alreadyClassified = Boolean(remainder && [draft?.material, draft?.color].some(v => normalize(v) === remainder))
+  const question = context && draft ? nextQuestion(context, draft, { remainder, classified: classified || alreadyClassified, confirmed, legacy, editing }) : null
+  const questionKey = question ? `${item?.orderItemId}:${question.kind}:${'field' in question ? question.field : ''}` : ''
+  useEffect(() => { if (!busy) questionHeading.current?.focus() }, [questionKey, busy])
 
-  const variants = useMemo(() => {
-    if (!draft?.productId || !catalog) return []
-    const search = normalize(variantQuery)
-    const rows = (catalog.variants || []).filter((variant) => {
-      if (!variant.isActive || Number(variant.productId) !== Number(draft.productId)) return false
-      return !search || normalize(variantLabel(variant)).includes(search)
-    })
-    const score = (variant: CatalogVariantRecord) => {
-      let value = 0
-      if (Number(context?.existingVariantId || 0) === Number(variant.id)) value += 10_000
-      if (normalize(variant.material) === normalize(draft.material)) value += 50
-      if (normalize(variant.length) === normalize(draft.length)) value += 40
-      if (normalize(variant.gender) === normalize(draft.gender)) value += 30
-      if (normalize(variant.color) === normalize(draft.color)) value += 30
-      if (normalize(variant.sizeLabel) === normalize(draft.size)) value += 30
-      if (productVariantCategory(variant) === draft.category) value += 20
-      return value
-    }
-    return rows.slice().sort((left, right) => score(right) - score(left) || variantLabel(left).localeCompare(variantLabel(right), 'ru', { numeric: true })).slice(0, 24)
-  }, [catalog, context?.existingVariantId, draft, variantQuery])
-
-  const exactDraftVariant = useMemo(() => {
-    if (!draft || !catalog) return null
-    return (catalog.variants || []).find((variant) => variant.isActive && variantExactlyMatchesDraft(variant, draft)) || null
-  }, [catalog, draft])
-
-  const contextRecommendedVariant = useMemo(() => {
-    if (!draft || !catalog || !context?.existingVariantId) return null
-    const candidate = (catalog.variants || []).find((variant) => Number(variant.id) === Number(context.existingVariantId) && variant.isActive) || null
-    return candidate && variantCompatibleWithDraft(candidate, draft) ? candidate : null
-  }, [catalog, context?.existingVariantId, draft])
-
-  const recommendedVariant = exactDraftVariant || contextRecommendedVariant
-
-  const compoundHint = useMemo(() => {
-    if (!activeItem || !selectedProduct) return ''
-    return compoundRemainder(activeItem.productName, selectedProduct.name)
-  }, [activeItem, selectedProduct])
-
-  const productCategoryWarning = useMemo(() => {
-    if (!selectedProduct || !draft || !catalog) return ''
-    const active = (catalog.variants || []).filter((variant) => variant.isActive && Number(variant.productId) === Number(selectedProduct.id))
-    if (!active.length) return 'У этого товара пока нет активных вариантов. Проверьте характеристики и создайте первую точную комбинацию.'
-    const sameCategory = active.filter((variant) => productVariantCategory(variant) === draft.category)
-    if (!sameCategory.length) {
-      const other = draft.category === 'adult' ? 'детские' : 'взрослые'
-      return `В каталоге у «${selectedProduct.name}» есть только ${other} варианты. Не выбирайте их автоматически: подтвердите тип и создайте правильную комбинацию, если это действительно другая вещь.`
-    }
-    return ''
-  }, [catalog, draft, selectedProduct])
-
-  if (!order) return null
-
-  const referencesFor = (field: EditableField) => {
-    const refs = context?.references
-    if (field === 'material') return refs?.materials || []
-    if (field === 'length') return refs?.lengths || []
-    if (field === 'color') return refs?.colors || []
-    return draft?.category === 'child' ? (refs?.childAges || []) : (refs?.sizes || [])
-  }
-
-  const valueNeedsCreation = (field: EditableField, value: string) => {
-    const normalized = normalize(value)
-    if (!normalized) return false
-    if ((field === 'material' || field === 'length') && normalized === 'СТАНДАРТ') return false
-    if (field === 'size' && ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р'].includes(normalized)) return false
-    return !referencesFor(field).some((entry) => normalize(entry) === normalized)
-  }
-
-  const changeField = <K extends keyof ResolverDraft>(field: K, value: ResolverDraft[K]) => {
-    setDraft((current) => current ? { ...current, [field]: value } : current)
-    if (field === 'material' || field === 'length' || field === 'color' || field === 'size') {
-      setCreateFields((current) => ({ ...current, [field]: false }))
-    }
-    setSelectedVariantId(0)
-  }
-
-  const chooseProduct = (productId: number) => {
-    const product = (catalog?.products || []).find((entry) => Number(entry.id) === Number(productId)) || null
-    const scope = (product?.genderScope || '') as CatalogGenderScope | ''
-    setDraft((current) => current ? {
-      ...current,
-      productId: Number(product?.id || 0),
-      createProduct: false,
-      genderScope: scope,
-      gender: fixedGender(scope) || current.gender,
-    } : current)
-    setSelectedVariantId(0)
-  }
-
-  const chooseVariant = (variant: CatalogVariantRecord) => {
-    setSelectedVariantId(Number(variant.id))
-    setCreateFields({})
-    setDraft((current) => current ? {
-      ...current,
-      productId: Number(variant.productId),
-      createProduct: false,
-      productName: variant.productName,
-      genderScope: (selectedProduct?.genderScope || current.genderScope || '') as CatalogGenderScope | '',
-      category: productVariantCategory(variant),
-      gender: clean(variant.gender),
-      color: clean(variant.color) || 'БЕЗ ЦВЕТА',
-      material: clean(variant.material) || 'СТАНДАРТ',
-      length: clean(variant.length) || 'СТАНДАРТ',
-      size: clean(variant.sizeLabel) || 'БЕЗ РАЗМЕРА',
-    } : current)
-  }
-
-  const resolveSelected = async (variantId = selectedVariantId) => {
-    if (!activeItem || !variantId || resolving) return
-    setResolving(true)
-    setError('')
+  const preview = async (next: Draft) => {
+    if (!item || previewPending.current || resolving) return
+    const ticket = ++generation.current
+    previewPending.current = true
+    setDraft(next); setBusy(true); setError('')
     try {
-      const response = await apiFetch(`/api/orders/${order.id}/catalog-review/${activeItem.orderItemId}/resolve-existing`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ variantId }),
-      })
-      const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Не удалось связать позицию с товаром каталога')
-      if (!response.ok || result.ok === false) throw new Error(result.message || 'Не удалось связать существующий вариант.')
-      await load(true)
-    } catch (value) {
-      setError(value instanceof Error ? value.message : 'Не удалось сохранить уточнение товара.')
-    } finally {
-      setResolving(false)
-    }
-  }
-
-  const newReferenceFields = draft
-    ? (['material', 'length', 'color', 'size'] as const).filter((field) => valueNeedsCreation(field, draft[field]))
-    : []
-  const unconfirmedNewFields = newReferenceFields.filter((field) => !createFields[field])
-  const effectiveScope = draft?.createProduct ? draft.genderScope : ((selectedProduct?.genderScope || draft?.genderScope || '') as CatalogGenderScope | '')
-  const genderMissing = !context?.isWorkshop && effectiveScope === 'unisex' && !['ЖЕН', 'МУЖ'].includes(normalize(draft?.gender))
-  const explicitColorMissing = !context?.isWorkshop && !clean(draft?.color)
-  const explicitSizeMissing = !context?.isWorkshop && !clean(draft?.size)
-  const productMissing = !draft?.productId && !draft?.createProduct
-  const newProductIncomplete = Boolean(draft?.createProduct && (!clean(draft.productName) || !draft.genderScope))
-  const nonGenderFactsBlocked = productMissing || newProductIncomplete || explicitColorMissing || explicitSizeMissing || unconfirmedNewFields.length > 0
-  const factsBlocked = nonGenderFactsBlocked || genderMissing
-  const canMarkLegacyUnknownGender = Boolean(isAdmin && genderMissing && !draft?.createProduct && draft?.productId && !context?.isWorkshop && !nonGenderFactsBlocked)
-  const pendingLabels = [
-    productMissing ? 'выбрать товар' : '',
-    newProductIncomplete ? 'заполнить новый товар' : '',
-    genderMissing ? 'выбрать пол' : '',
-    explicitColorMissing ? 'подтвердить цвет' : '',
-    explicitSizeMissing ? 'подтвердить размер' : '',
-    ...unconfirmedNewFields.map((field) => `подтвердить новое значение «${draft?.[field] || ''}»`),
-  ].filter(Boolean)
-  const saveButtonText = resolving
-    ? 'Сохраняю…'
-    : factsBlocked
-      ? `Осталось: ${pendingLabels[0] || 'уточнить данные'}`
-      : exactDraftVariant
-        ? 'Подтвердить этот вариант'
-        : context?.isWorkshop
-          ? 'Подтвердить товар'
-          : 'Сохранить характеристики'
-  const compoundMaterialSelected = Boolean(compoundHint && normalize(draft?.material) === normalize(compoundHint))
-  const compoundColorSelected = Boolean(compoundHint && normalize(draft?.color) === normalize(compoundHint))
-
-  const resolveFacts = async (options: { legacyUnknownGender?: boolean } = {}) => {
-    const legacyUnknownGender = Boolean(options.legacyUnknownGender)
-    if (!activeItem || !draft || resolving || !isAdmin) return
-    if (legacyUnknownGender ? !canMarkLegacyUnknownGender : factsBlocked) return
-    if (!legacyUnknownGender && exactDraftVariant?.id) {
-      await resolveSelected(Number(exactDraftVariant.id))
-      return
-    }
-    setResolving(true)
-    setError('')
-    try {
-      const payload: CatalogResolutionInput = {
-        productId: Number(draft.productId || 0),
-        createProduct: draft.createProduct,
-        productName: draft.createProduct ? clean(draft.productName) : clean(activeItem.productName),
-        genderScope: draft.genderScope,
-        material: clean(draft.material) || 'СТАНДАРТ',
-        length: clean(draft.length) || 'СТАНДАРТ',
-        category: draft.category,
-        gender: clean(draft.gender),
-        color: clean(draft.color),
-        size: clean(draft.size),
-        createFields: Object.entries(createFields).filter(([, enabled]) => enabled).map(([field]) => field),
-        legacyUnknownGender,
+      if (!next.createProduct) {
+        const data = await readContext(item.orderItemId, next)
+        if (ticket !== generation.current) return
+        setContext(data)
+        // Only canonicalize supplied facts; blank source color/size stay unconfirmed.
+        setDraft({ ...next, genderScope: data.product?.genderScope || '', gender: data.facts?.gender || next.gender,
+          material: data.facts?.material || next.material, length: data.facts?.length || next.length,
+          color: next.color ? data.facts?.color || next.color : '', size: next.size ? data.facts?.size || next.size : '' })
+        if (data.products?.length) setChoices(data.products)
       }
-      const response = await apiFetch(`/api/catalog/review/${activeItem.orderItemId}/resolve-facts`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-      })
-      const result = await readJsonResponse<CatalogResolutionResponse>(response, 'Не удалось создать или связать точную комбинацию')
-      if (!response.ok || result.ok === false) throw new Error(result.message || 'Не удалось сохранить фактические характеристики.')
-      await load(true)
     } catch (value) {
-      setError(value instanceof Error ? value.message : 'Не удалось сохранить фактические характеристики.')
-    } finally {
-      setResolving(false)
+      if (ticket === generation.current) { setContext(current => current ? { ...current, exactVariant: null, existingVariantId: null } : current); setError(value instanceof Error ? value.message : 'Не удалось проверить ответ.') }
+    } finally { previewPending.current = false; if (ticket === generation.current) setBusy(false) }
+  }
+  const answerField = (field: Field, value: string) => {
+    if (!draft || !clean(value)) return
+    setNotice(`${labels[field]}: ${displayFact(field, value)} ✓`)
+    setConfirmed(current => ({ ...current, [field]: true })); setEditing(null); setAnswer('')
+    if (field === 'gender') setLegacy(false)
+    void preview({ ...draft, [field]: value, createFields: draft.createFields?.filter(f => f !== field) })
+  }
+  const chooseProduct = (product: CatalogResolutionProduct) => {
+    if (!draft) return
+    setNotice(`Мы нашли: ${product.name} ✓`); setClassified(false); setLegacy(false); setSearchOpen(false); setConfirmed({})
+    void preview({ ...draft, productId: product.id, createProduct: false, genderScope: product.genderScope || '', gender: clean(item?.gender) })
+  }
+  const openAdvanced = async (createProduct = false) => {
+    if (!isAdmin || resolving || busy) return
+    setBusy(true); setError('')
+    const ticket = generation.current
+    try {
+      // The only full-catalog read: explicit admin fallback, reused on subsequent opens.
+      if (!catalogPromise.current) catalogPromise.current = read<CatalogResponse>('/api/catalog').catch(error => { catalogPromise.current = null; throw error })
+      const data = await catalogPromise.current
+      if (ticket !== generation.current) return
+      setCatalog(data); setAdvancedOpen(true)
+      if (createProduct && draft) { setDraft({ ...draft, productId: 0, createProduct: true, genderScope: '' }); setContext(current => current ? { ...current, exactVariant: null } : current) }
+    } catch (value) { if (ticket === generation.current) setError(value instanceof Error ? value.message : 'Не удалось открыть редактирование.') }
+    finally { if (ticket === generation.current) setBusy(false) }
+  }
+  const finish = async (variantId?: number, next = draft) => {
+    if (!order || !item || !next || resolving || busy || error || previewPending.current || mutationPending.current) return
+    if (!variantId && !isAdmin) return
+    mutationPending.current = true
+    const owner = session.current, ticket = generation.current
+    setResolving(true); setError('')
+    try {
+      await owner.run(async () => {
+        const path = variantId ? `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-existing` : `/api/catalog/review/${item.orderItemId}/resolve-facts`
+        await read<CatalogResolutionResponse>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(variantId ? { variantId } : { ...next, legacyUnknownGender: legacy }) })
+        if (ticket === generation.current) { setNeedsRecheck(true); setNotice('Товар уточнён ✓ Проверяю остальные позиции…') }
+      }, async () => ticket === generation.current ? load() : false, async () => { if (owner === session.current) await onCompleted(order) })
+    } catch (value) { if (owner === session.current) setError(value instanceof Error ? value.message : 'Не удалось сохранить товар.') }
+    finally { mutationPending.current = false; if (owner === session.current) setResolving(false) }
+  }
+  const retry = async () => {
+    setError('')
+    const owner = session.current
+    try {
+      if (needsRecheck) await owner.run(null, load, async () => { if (order && owner === session.current) await onCompleted(order) })
+      else if (item && draft) await preview(draft)
+      else await load()
+    } catch (value) { if (owner === session.current) setError(value instanceof Error ? value.message : 'Не удалось проверить товар.') }
+  }
+  const editDraft = (field: keyof Draft, value: string | boolean | number) => {
+    setDraft(current => current ? { ...current, [field]: value, createFields: current.createFields?.filter(f => f !== field) } : current)
+    setContext(current => current ? { ...current, exactVariant: null, existingVariantId: null } : current)
+  }
+  const chooseVariant = (variant: CatalogVariantRecord) => {
+    if (!draft) return
+    setNotice('Характеристики выбранного товара показаны ниже ✓')
+    void preview({ ...draft, createProduct: false, productId: variant.productId, category: variant.productCategory === 'child' ? 'child' : 'adult', gender: clean(variant.gender), color: clean(variant.color) || 'БЕЗ ЦВЕТА', material: clean(variant.material) || 'СТАНДАРТ', length: clean(variant.length) || 'СТАНДАРТ', size: clean(variant.sizeLabel) || 'БЕЗ РАЗМЕРА', createFields: [] })
+  }
+  if (!order) return null
+  const exactDraftVariant = context?.exactVariant
+  const canLegacy = isAdmin && Boolean(context?.canLeaveGenderUnknown) && !draft?.createProduct
+  const disabled = busy || resolving || needsRecheck
+  const approveReference = (field: Field) => { setDraft(current => current ? { ...current, createFields: [...(current.createFields || []), field] } : current); setNotice(`«${draft?.[field]}» будет добавлено при сохранении ✓`) }
+  const finalAction = () => {
+    if (!draft || !context) return null
+    if (!isAdmin && !exactDraftVariant) return <p>Для добавления или исправления товара нужен администратор. Ваш заказ пока не отправлен.</p>
+    return <><p>{legacy ? 'Пол останется неизвестным только у этой позиции. Сам товар в каталоге от этого не изменится.' : exactDraftVariant || context.isWorkshop ? 'Будет уточнён товар в заказе. Затем система продолжит проверку отправки.' : 'Такой комбинации ещё нет. Она станет доступна для следующих заказов.'}</p>
+      <button type="button" className="primary-button" disabled={disabled || Boolean(error)} onClick={() => void finish(legacy ? undefined : exactDraftVariant?.id)}>{resolving ? 'Сохраняю…' : legacy ? 'Сохранить и продолжить' : exactDraftVariant || context.isWorkshop ? 'Подтвердить товар' : 'Создать и использовать'}</button></>
+  }
+  const renderQuestion = () => {
+    if (!question || !draft || !context || !item) return null
+    if (question.kind === 'product') {
+      const sorted = rankedProducts(choices, item.productName)
+      const shown = searchOpen ? sorted.filter(({ product }) => normalize(product.name).includes(normalize(search))).slice(0, 5) : sorted.filter(entry => entry.score > 0).slice(0, 4)
+      return <><h4 ref={questionHeading} tabIndex={-1}>Какой это товар?</h4>
+        {searchOpen ? <label>Найти товар<input autoFocus value={search} onChange={e => setSearch(e.target.value)} /></label> : null}
+        <div className="resolution-choices">{shown.map(({ product }) => <button type="button" key={product.id} onClick={() => chooseProduct(product)}>{product.name}</button>)}</div>
+        {searchOpen && !shown.length ? <p>Совпадений нет. Проверьте название или попросите администратора уточнить товар.</p> : null}
+        {!searchOpen ? <button type="button" className="secondary-button" onClick={() => setSearchOpen(true)}>Найти другой товар</button> : null}
+        {isAdmin ? <button type="button" className="resolution-link" onClick={() => void openAdvanced(true)}>Такого товара нет</button> : null}</>
     }
+    if (question.kind === 'compound') return <><h4 ref={questionHeading} tabIndex={-1}>Что означает часть названия «{remainder}»?</h4><div className="resolution-choices">
+      <button type="button" onClick={() => { setClassified(true); answerField('material', remainder) }}>Материал</button>
+      <button type="button" onClick={() => { setClassified(true); answerField('color', remainder) }}>Цвет</button>
+      <button type="button" onClick={() => { setSearchOpen(true); setNotice('Выберите правильный товар'); void preview({ ...draft, productId: 0 }) }}>Это часть названия / товар определён неверно</button>
+    </div></>
+    if (question.kind === 'combined') return <><h4 ref={questionHeading} tabIndex={-1}>В заказе не указаны цвет и размер. Этот товар действительно без цвета и без размера?</h4><div className="resolution-choices">
+      <button type="button" className="primary-button" onClick={() => { const next = { ...draft, color: 'БЕЗ ЦВЕТА', size: 'БЕЗ РАЗМЕРА' }; setDraft(next); setNotice('Без цвета и без размера ✓'); void finish(exactDraftVariant?.id, next) }}>Да, всё верно</button>
+      <button type="button" onClick={() => { setEditing('color'); setAnswer('') }}>Нет, исправить</button>
+    </div></>
+    if (question.kind === 'reference') return <><h4 ref={questionHeading} tabIndex={-1}>Значение «{draft[question.field]}» ещё не использовалось. Добавить?</h4><p>{labels[question.field]}: это значение станет доступно в следующих заказах. Добавление произойдёт при сохранении товара.</p>
+      {isAdmin ? <button type="button" className="primary-button" onClick={() => approveReference(question.field)}>Добавить</button> : <p>Добавить новое значение может администратор.</p>}
+      <button type="button" className="secondary-button" onClick={() => { setEditing(question.field); setAnswer(draft[question.field]) }}>Исправить название</button></>
+    if (question.kind === 'field') {
+      const field = question.field
+      const small = field === 'gender' ? [['ЖЕН', 'Женский'], ['МУЖ', 'Мужской']] : field === 'category' ? [['adult', 'Взрослый'], ['child', 'Детский']] : []
+      return <><h4 ref={questionHeading} tabIndex={-1}>{field === 'gender' ? 'Какой здесь пол?' : field === 'category' ? 'Это взрослый или детский товар?' : `${labels[field]} ${clean(draft[field]) ? 'нужно уточнить' : 'в заказе не указан'}.`}</h4>
+        {small.length ? <div className="resolution-choices">{small.map(([value, label]) => <button type="button" key={value} onClick={() => answerField(field, value)}>{label}</button>)}</div> : <>
+          {!editing && (field === 'color' || field === 'size') ? <div className="resolution-choices"><button type="button" onClick={() => answerField(field, field === 'color' ? 'БЕЗ ЦВЕТА' : 'БЕЗ РАЗМЕРА')}>{field === 'color' ? 'Без цвета' : 'Без размера'}</button><button type="button" onClick={() => { setEditing(field); setAnswer('') }}>{field === 'color' ? 'Выбрать цвет' : 'Выбрать размер / возраст'}</button></div> : <form onSubmit={event => { event.preventDefault(); answerField(field, answer) }}><label>{labels[field]}<input autoFocus list="resolution-answers" value={answer} onChange={event => setAnswer(event.target.value)} /></label><datalist id="resolution-answers">{referenceValues(context, draft, field).map(value => <option key={value} value={value} />)}</datalist><button type="submit" className="primary-button" disabled={!clean(answer)}>Подтвердить</button>{!clean(answer) ? <small>Введите или выберите {labels[field].toLowerCase()}.</small> : null}</form>}
+        </>}
+        {field === 'gender' && canLegacy ? <div className="resolution-exception"><p>Пол в старом заказе не удалось выяснить? Можно оставить его неизвестным только для этой позиции. Сам товар в каталоге от этого не изменится.</p><button type="button" onClick={() => { setLegacy(true); setNotice('Пол останется неизвестным для этой позиции ✓') }}>Оставить неизвестным</button></div> : null}</>
+    }
+    return <><h4 ref={questionHeading} tabIndex={-1}>{question.kind === 'workshop' ? 'Подтвердите товар для Цеха' : 'Всё необходимое уточнено'}</h4>{finalAction()}</>
   }
-
-  const renderField = (field: EditableField, label: string) => {
-    if (!draft) return null
-    const value = draft[field]
-    const needsCreation = valueNeedsCreation(field, value)
-    const listId = `order-catalog-${field}-options`
-    return (
-      <label className={`order-catalog-resolution-field${needsCreation && !createFields[field] ? ' needs-create' : ''}${needsCreation && createFields[field] ? ' is-confirmed' : ''}`}>
-        <span>{label}</span>
-        <input
-          value={value}
-          list={listId}
-          onChange={(event) => changeField(field, event.target.value)}
-          placeholder={field === 'size' ? (draft.category === 'child' ? 'Возраст или «БЕЗ РАЗМЕРА»' : 'Размер или «БЕЗ РАЗМЕРА»') : label}
-        />
-        <datalist id={listId}>{referencesFor(field).map((entry) => <option key={`${field}-${entry}`} value={entry} />)}</datalist>
-        {needsCreation ? (
-          <button
-            className={createFields[field] ? 'order-catalog-resolution-create is-approved' : 'order-catalog-resolution-create'}
-            type="button"
-            onClick={() => setCreateFields((current) => ({ ...current, [field]: !current[field] }))}
-          >
-            {createFields[field] ? `✓ «${value}» будет добавлено` : `Подтвердить новое значение «${value}»`}
-          </button>
-        ) : <small>Можно изменить, даже если исходное значение формально было допустимым.</small>}
-      </label>
-    )
-  }
-
-  return (
-    <div className="modal-backdrop order-catalog-resolution-backdrop" role="presentation">
-      <div className="modal-card order-catalog-resolution-modal" role="dialog" aria-modal="true" aria-label="Уточнение товара перед отправкой">
-        <div className="order-catalog-resolution-head">
-          <div>
-            <div className="card-label">Перед отправкой</div>
-            <h3>Уточнить товар</h3>
-            <div className="muted">{order.external_id || `Заказ #${order.id}`}</div>
-          </div>
-          <button type="button" className="secondary-button" onClick={onClose} disabled={resolving}>Закрыть</button>
-        </div>
-
-        {busy ? <div className="order-catalog-resolution-loading">Загружаю товар…</div> : null}
-        {error ? <div className="order-catalog-resolution-error">{error}</div> : null}
-
-        {!busy && activeItem && draft ? (
-          <>
-            <div className="order-catalog-resolution-progress">
-              {review?.count || review?.items?.length || 1} {Number(review?.count || review?.items?.length || 1) === 1 ? 'позиция требует уточнения' : 'позиции требуют уточнения'}
-            </div>
-
-            <section className="order-catalog-resolution-source">
-              <div className="order-catalog-resolution-source-main">
-                <span>В заказе</span>
-                <strong>{activeItem.productName || 'Без названия'}</strong>
-              </div>
-              <div className="order-catalog-resolution-chips">
-                {clean(activeItem.gender) ? <span>{activeItem.gender}</span> : null}
-                {clean(activeItem.material) ? <span>{activeItem.material}</span> : null}
-                {clean(activeItem.length) && normalize(activeItem.length) !== 'СТАНДАРТ' ? <span>{activeItem.length}</span> : null}
-                {clean(activeItem.color) ? <span>{activeItem.color}</span> : <span className="is-missing">Цвет не указан</span>}
-                {clean(activeItem.size) ? <span>{activeItem.size}</span> : <span className="is-missing">Размер не указан</span>}
-              </div>
-            </section>
-
-            {recommendedVariant ? (
-              <section className="order-catalog-resolution-recommendation">
-                <div className="order-catalog-resolution-recommendation-head">
-                  <div>
-                    <span>Подходит существующий вариант</span>
-                    <strong>{recommendedVariant.productName}</strong>
-                  </div>
-                  <em>Совпадение найдено</em>
-                </div>
-                <div className="order-catalog-resolution-recommendation-facts">
-                  {[productVariantCategory(recommendedVariant) === 'child' ? 'Детский' : 'Взрослый', recommendedVariant.gender, recommendedVariant.color || 'БЕЗ ЦВЕТА', recommendedVariant.material || 'СТАНДАРТ', normalize(recommendedVariant.length) === 'СТАНДАРТ' ? null : recommendedVariant.length, recommendedVariant.sizeLabel || 'БЕЗ РАЗМЕРА'].filter(Boolean).map((value) => <span key={String(value)}>{value}</span>)}
-                </div>
-
-                {(explicitColorMissing || explicitSizeMissing) ? (
-                  <div className="order-catalog-resolution-missing-decisions">
-                    <span>В заказе не хватало данных. Подтвердите:</span>
-                    <div>
-                      {explicitColorMissing ? <button type="button" onClick={() => changeField('color', 'БЕЗ ЦВЕТА')}>Без цвета</button> : <span className="is-done">✓ Без цвета</span>}
-                      {explicitSizeMissing ? <button type="button" onClick={() => changeField('size', 'БЕЗ РАЗМЕРА')}>Без размера</button> : <span className="is-done">✓ Без размера</span>}
-                    </div>
-                  </div>
-                ) : null}
-
-                <button
-                  type="button"
-                  className="primary-button order-catalog-resolution-confirm"
-                  disabled={resolving || genderMissing || explicitColorMissing || explicitSizeMissing}
-                  onClick={() => void resolveSelected(Number(recommendedVariant.id))}
-                >
-                  {resolving ? 'Сохраняю…' : 'Подтвердить этот товар'}
-                </button>
-              </section>
-            ) : null}
-
-            <details
-              className="order-catalog-resolution-advanced"
-              open={advancedOpen}
-              onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
-            >
-              <summary>{recommendedVariant ? 'Выбрать другой вариант или исправить данные' : 'Уточнить товар и характеристики'}</summary>
-              <div className="order-catalog-resolution-advanced-body">
-                <section className="order-catalog-resolution-product">
-                  <div className="order-catalog-resolution-compact-title"><strong>Товар</strong>{context?.product?.id ? <span>Система нашла базовый товар</span> : null}</div>
-
-                  {!draft.createProduct ? (
-                    <label className="order-catalog-resolution-simple-field">
-                      <span>Товар из каталога</span>
-                      <select value={draft.productId || ''} onChange={(event) => chooseProduct(Number(event.target.value || 0))}>
-                        <option value="">Выберите товар</option>
-                        {(catalog?.products || []).filter((product) => product.isActive).slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru')).map((product) => (
-                          <option key={`resolver-product-${product.id}`} value={product.id}>{product.name}</option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : (
-                    <div className="order-catalog-resolution-new-product-grid">
-                      <label><span>Название нового товара</span><input value={draft.productName} onChange={(event) => changeField('productName', event.target.value)} /></label>
-                      <label><span>Для кого</span><select value={draft.genderScope} onChange={(event) => {
-                        const scope = event.target.value as CatalogGenderScope | ''
-                        setDraft((current) => current ? { ...current, genderScope: scope, gender: fixedGender(scope) || current.gender } : current)
-                      }}><option value="">Выберите</option><option value="female">Женский</option><option value="male">Мужской</option><option value="unisex">Унисекс</option></select></label>
-                    </div>
-                  )}
-
-                  {!context?.product?.id && productSuggestions.length ? (
-                    <div className="order-catalog-resolution-suggestions">
-                      <span>Возможно, это:</span>
-                      {productSuggestions.slice(0, 4).map(({ product }) => <button key={`suggested-product-${product.id}`} type="button" className={Number(draft.productId) === Number(product.id) ? 'is-active' : ''} onClick={() => chooseProduct(Number(product.id))}>{product.name}</button>)}
-                    </div>
-                  ) : null}
-
-                  {isAdmin ? <button type="button" className="order-catalog-resolution-new-product-toggle" onClick={() => {
-                    setDraft((current) => current ? { ...current, createProduct: !current.createProduct, productId: current.createProduct ? current.productId : 0, productName: clean(activeItem.productName), genderScope: current.createProduct ? current.genderScope : '' } : current)
-                    setSelectedVariantId(0)
-                  }}>{draft.createProduct ? 'Выбрать товар из каталога' : 'Такого товара нет — создать новый'}</button> : null}
-
-                  {compoundHint ? (
-                    <div className={`order-catalog-resolution-compound-hint${compoundMaterialSelected || compoundColorSelected ? ' is-applied' : ''}`}>
-                      <strong>Из названия отдельно найдено: «{compoundHint}»</strong>
-                      {compoundMaterialSelected ? <span className="order-catalog-resolution-applied">✓ Выбрано как материал</span> : compoundColorSelected ? <span className="order-catalog-resolution-applied">✓ Выбрано как цвет</span> : <span>Что это за часть названия?</span>}
-                      <div>
-                        <button type="button" className={compoundMaterialSelected ? 'is-active' : ''} onClick={() => changeField('material', compoundHint)}>{compoundMaterialSelected ? '✓ Материал' : 'Материал'}</button>
-                        <button type="button" className={compoundColorSelected ? 'is-active' : ''} onClick={() => changeField('color', compoundHint)}>{compoundColorSelected ? '✓ Цвет' : 'Цвет'}</button>
-                      </div>
-                    </div>
-                  ) : null}
-                  {productCategoryWarning ? <div className="order-catalog-resolution-warning">{productCategoryWarning}</div> : null}
-                </section>
-
-                {draft.productId && variants.length ? (
-                  <section className="order-catalog-resolution-existing">
-                    <div className="order-catalog-resolution-compact-title"><strong>Другие существующие варианты</strong><span>Если предложенный выше не подходит</span></div>
-                    <input className="order-catalog-resolution-variant-search" value={variantQuery} onChange={(event) => setVariantQuery(event.target.value)} placeholder="Материал, цвет или размер" />
-                    <div className="order-catalog-resolution-options">
-                      {variants.filter((variant) => Number(variant.id) !== Number(recommendedVariant?.id || 0)).slice(0, 12).map((variant) => (
-                        <label key={variant.id} className={`order-catalog-resolution-option${selectedVariantId === variant.id ? ' is-selected' : ''}`}>
-                          <input type="radio" name="order-catalog-resolution-variant" checked={selectedVariantId === variant.id} onChange={() => chooseVariant(variant)} />
-                          <span><strong>{variant.productName}</strong><small>{[variant.gender, variant.color || 'БЕЗ ЦВЕТА', variant.material || 'СТАНДАРТ', normalize(variant.length) === 'СТАНДАРТ' ? null : variant.length, variant.sizeLabel || 'БЕЗ РАЗМЕРА'].filter(Boolean).join(' · ')}</small></span>
-                        </label>
-                      ))}
-                    </div>
-                    {selectedVariantId && Number(selectedVariantId) !== Number(recommendedVariant?.id || 0) ? <button type="button" className="primary-button" disabled={resolving} onClick={() => void resolveSelected()}>{resolving ? 'Сохраняю…' : 'Использовать выбранный вариант'}</button> : null}
-                  </section>
-                ) : null}
-
-                {isAdmin ? (
-                  <section className="order-catalog-resolution-facts">
-                    <div className="order-catalog-resolution-compact-title"><strong>Характеристики</strong><span>Изменяйте только то, что нужно</span></div>
-                    <div className="order-catalog-resolution-save-preview">
-                      <div className="order-catalog-resolution-save-preview-head">
-                        <span>Будет сохранено</span>
-                        <strong>{draft.createProduct ? draft.productName : selectedProduct?.name || activeItem.productName}</strong>
-                      </div>
-                      <div className="order-catalog-resolution-save-preview-facts">
-                        <span>{draft.category === 'child' ? 'Детский' : 'Взрослый'}</span>
-                        <span className={genderMissing ? 'is-pending' : ''}>{clean(draft.gender) || 'Пол не выбран'}</span>
-                        <span>{clean(draft.material) || 'СТАНДАРТ'}</span>
-                        {normalize(draft.length) !== 'СТАНДАРТ' ? <span>{draft.length}</span> : null}
-                        <span className={explicitColorMissing ? 'is-pending' : ''}>{clean(draft.color) || 'Цвет не подтверждён'}</span>
-                        <span className={explicitSizeMissing ? 'is-pending' : ''}>{clean(draft.size) || 'Размер не подтверждён'}</span>
-                      </div>
-                      {pendingLabels.length ? (
-                        <div className="order-catalog-resolution-pending"><strong>Осталось уточнить:</strong> {pendingLabels.join(' · ')}</div>
-                      ) : <div className="order-catalog-resolution-ready">✓ Всё обязательное заполнено</div>}
-                    </div>
-                    {context?.isWorkshop ? <div className="order-catalog-resolution-workshop-note">Для позиции Цеха достаточно выбрать базовый товар.</div> : (
-                      <>
-                        <div className="order-catalog-resolution-facts-grid">
-                          <label className="order-catalog-resolution-field"><span>Тип</span><select value={draft.category} onChange={(event) => changeField('category', event.target.value === 'child' ? 'child' : 'adult')}><option value="adult">Взрослый</option><option value="child">Детский</option></select></label>
-                          <label className={`order-catalog-resolution-field${genderMissing ? ' needs-create' : ''}${!genderMissing && clean(draft.gender) ? ' is-confirmed' : ''}`}><span>Пол {genderMissing ? '· нужно выбрать' : '· ✓'}</span><select value={draft.gender} onChange={(event) => changeField('gender', event.target.value)}><option value="">Не указан</option><option value="ЖЕН">Женский</option><option value="МУЖ">Мужской</option></select>{genderMissing ? <small className="order-catalog-resolution-required-note">Это обязательное поле для складской комбинации.</small> : null}</label>
-                          {renderField('material', 'Материал')}
-                          {renderField('length', 'Длина')}
-                          <div className="order-catalog-resolution-field-with-shortcut">{renderField('color', 'Цвет')}<button type="button" onClick={() => changeField('color', 'БЕЗ ЦВЕТА')}>Без цвета</button></div>
-                          <div className="order-catalog-resolution-field-with-shortcut">{renderField('size', draft.category === 'child' ? 'Возраст' : 'Размер')}<button type="button" onClick={() => changeField('size', 'БЕЗ РАЗМЕРА')}>Без размера</button></div>
-                        </div>
-                        {(explicitColorMissing || explicitSizeMissing) ? <div className="order-catalog-resolution-warning">Подтвердите отсутствующие данные: цвет и размер нельзя угадывать.</div> : null}
-                        {unconfirmedNewFields.length ? <div className="order-catalog-resolution-warning">Новые значения нужно подтвердить перед добавлением: {unconfirmedNewFields.map((field) => ({ material: 'материал', length: 'длина', color: 'цвет', size: draft.category === 'child' ? 'возраст' : 'размер' }[field])).join(', ')}.</div> : null}
-                      </>
-                    )}
-                  </section>
-                ) : (
-                  <div className="order-catalog-resolution-empty">Если подходящего варианта нет, попросите администратора добавить или исправить характеристики.</div>
-                )}
-              </div>
-            </details>
-            {isAdmin && advancedOpen ? (
-              <div className={`order-catalog-resolution-sticky-action${factsBlocked ? ' is-blocked' : ' is-ready'}`}>
-                <div className="order-catalog-resolution-sticky-copy">
-                  <strong>{factsBlocked ? `Осталось уточнить: ${pendingLabels.join(' · ')}` : 'Всё готово к сохранению'}</strong>
-                  {genderMissing ? (
-                    <div className="order-catalog-resolution-gender-decision">
-                      <div className="order-catalog-resolution-inline-choice"><span>Пол:</span><button type="button" onClick={() => changeField('gender', 'ЖЕН')}>Женский</button><button type="button" onClick={() => changeField('gender', 'МУЖ')}>Мужской</button><button type="button" className="is-legacy" disabled={!canMarkLegacyUnknownGender || resolving} onClick={() => void resolveFacts({ legacyUnknownGender: true })}>Не удалось выяснить</button></div>
-                      <small>«Не удалось выяснить» не создаёт бесполый SKU. Эта строка станет явным историческим исключением и не будет списана по точному складскому варианту.</small>
-                    </div>
-                  ) : null}
-                  {explicitColorMissing ? <button type="button" className="order-catalog-resolution-quick-choice" onClick={() => changeField('color', 'БЕЗ ЦВЕТА')}>Подтвердить: без цвета</button> : null}
-                  {explicitSizeMissing ? <button type="button" className="order-catalog-resolution-quick-choice" onClick={() => changeField('size', 'БЕЗ РАЗМЕРА')}>Подтвердить: без размера</button> : null}
-                  {unconfirmedNewFields.map((field) => <button key={`confirm-${field}`} type="button" className="order-catalog-resolution-quick-choice" onClick={() => setCreateFields((current) => ({ ...current, [field]: true }))}>Добавить «{draft[field]}» в справочник</button>)}
-                </div>
-                <button type="button" className="primary-button" disabled={factsBlocked || resolving} onClick={() => void resolveFacts()}>{saveButtonText}</button>
-              </div>
-            ) : null}
-            <div className="order-catalog-resolution-guard">Без уточнения отправить заказ нельзя.</div>
-          </>
-        ) : null}
-
-        {!busy && !activeItem && !error ? (
-          <div className="order-catalog-resolution-done"><strong>Готово.</strong><span>Товар уточнён. Повторите отправку заказа.</span></div>
-        ) : null}
-      </div>
-    </div>
-  )
+  return <div className="modal-backdrop order-catalog-resolution-backdrop"><div ref={dialog} className="modal-card order-catalog-resolution-modal" role="dialog" aria-modal="true" aria-labelledby="resolution-title" onKeyDown={event => {
+    if (event.key === 'Escape' && !resolving) onClose()
+    if (event.key === 'Tab') {
+      const nodes = [...(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]') || [])].filter(node => node.getClientRects().length)
+      const first = nodes[0], last = nodes[nodes.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+    }
+  }}>
+    <header><div><h3 id="resolution-title">Уточним товар перед отправкой</h3><small>{order.external_id || `Заказ #${order.id}`}{progress.total > 1 ? ` · Товар ${progress.total - progress.remaining + 1} из ${progress.total}` : ''}</small></div><button type="button" className="secondary-button" disabled={resolving} onClick={onClose}>Закрыть</button></header>
+    {item ? <section className="resolution-source"><small>Менеджер записал</small><strong>{item.productName}</strong><span>{[item.gender, item.material, normalize(item.length) !== 'СТАНДАРТ' ? item.length : '', context?.isWorkshop ? '' : item.color || 'Цвет не указан', context?.isWorkshop ? '' : item.size || 'Размер не указан'].filter(Boolean).join(' · ')}</span></section> : null}
+    {draft && context ? <section className="resolution-understanding"><strong>{draft.createProduct ? `Новый товар: ${draft.productName}` : context.product ? `Мы нашли: ${context.product.name}` : 'Товар пока не определён'}</strong>
+      {!context.isWorkshop ? <p>{fields.filter(field => clean(draft[field]) && (field !== 'length' || normalize(draft.length) !== 'СТАНДАРТ')).map(field => <span key={field}>{labels[field]}: {displayFact(field, draft[field])}{confirmed[field] ? ' ✓' : ''}</span>)}</p> : <p>Для Цеха нужно уточнить только сам товар.</p>}
+    </section> : null}
+    <div role="status" aria-live="polite" className="resolution-feedback">{notice}</div>
+    {error ? <div role="alert" className="resolution-error"><p>{error}</p><button type="button" className="secondary-button" disabled={busy || resolving} onClick={() => void retry()}>{needsRecheck ? 'Проверить оставшиеся позиции' : 'Повторить проверку'}</button></div> : null}
+    {busy ? <p role="status">Проверяю товар…</p> : null}
+    {!advancedOpen ? <fieldset disabled={disabled || Boolean(error)} className="resolution-question" aria-busy={disabled}>{!needsRecheck ? renderQuestion() : <p>Товар сохранён. Проверяем, остались ли ещё вопросы.</p>}</fieldset> : draft && context ? <section className="resolution-advanced">
+      <h4>Расширенное исправление</h4><p>Создание товара и новых характеристик изменяет каталог для следующих заказов. Уточнение связывает также совпадающие неразобранные позиции.</p>
+      <fieldset disabled={disabled}>
+        <label>Товар<select value={draft.createProduct ? '' : draft.productId} onChange={e => { const product = catalog?.products.find(p => p.id === Number(e.target.value)); if (product) chooseProduct(product) }}><option value="">Выберите товар</option>{catalog?.products.filter(p => p.isActive).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+        <button type="button" className="resolution-link" onClick={() => { editDraft('createProduct', !draft.createProduct); if (!draft.createProduct) { editDraft('productId', 0); editDraft('genderScope', '') } }}>{draft.createProduct ? 'Выбрать существующий товар' : 'Создать новый товар'}</button>
+        {draft.createProduct ? <><label>Название нового товара<input value={draft.productName} onChange={e => editDraft('productName', e.target.value)} /></label><label>Для кого<select value={draft.genderScope} onChange={e => { editDraft('genderScope', e.target.value); editDraft('gender', e.target.value === 'female' ? 'ЖЕН' : e.target.value === 'male' ? 'МУЖ' : '') }}><option value="">Выберите</option><option value="female">Женский</option><option value="male">Мужской</option><option value="unisex">Для обоих полов</option></select></label></> : <><label>Найти существующий товар с нужными характеристиками<input value={variantQuery} onChange={e => setVariantQuery(e.target.value)} /></label><div className="resolution-choices">{(catalog?.variants || []).filter(v => v.isActive && v.productId === draft.productId && normalize([v.gender, v.material, v.length, v.color, v.sizeLabel].join(' ')).includes(normalize(variantQuery))).slice(0, 12).map(v => <button type="button" key={v.id} onClick={() => chooseVariant(v)}>{[v.gender, v.material, v.length, v.color || 'БЕЗ ЦВЕТА', v.sizeLabel || 'БЕЗ РАЗМЕРА'].join(' · ')}</button>)}</div></>}
+        {!context.isWorkshop ? <div className="resolution-fields">{fields.map(field => <label key={field}>{labels[field]}{field === 'category' || field === 'gender' ? <select value={draft[field]} onChange={e => editDraft(field, e.target.value)}>{field === 'gender' ? <><option value="">Не указан</option><option value="ЖЕН">Женский</option><option value="МУЖ">Мужской</option></> : <><option value="adult">Взрослый</option><option value="child">Детский</option></>}</select> : <><input list={`advanced-${field}`} value={draft[field]} onChange={e => editDraft(field, e.target.value)} /><datalist id={`advanced-${field}`}>{referenceValues(context, draft, field).map(v => <option key={v} value={v} />)}</datalist></>}{needsReference(context, draft, field) && !draft.createFields?.includes(field) ? <button type="button" onClick={() => approveReference(field)}>Добавить «{draft[field]}» для следующих заказов</button> : null}</label>)}</div> : null}
+        <button type="button" className="primary-button" disabled={draft.createProduct && (!clean(draft.productName) || !draft.genderScope)} onClick={() => { setAdvancedOpen(false); setClassified(true); setEditing(null); void preview(draft) }}>Проверить и продолжить</button>
+        {draft.createProduct && (!clean(draft.productName) || !draft.genderScope) ? <p>Укажите название нового товара и для кого он предназначен.</p> : null}
+      </fieldset>
+    </section> : null}
+    {isAdmin && item && !advancedOpen ? <footer>{fallbackOpen ? <button type="button" className="resolution-link" disabled={disabled} onClick={() => void openAdvanced()}>Расширенное исправление</button> : <button type="button" className="resolution-link" disabled={disabled} onClick={() => setFallbackOpen(true)}>Не нашли правильный вариант?</button>}</footer> : null}
+    <small className="resolution-guard">Без уточнения отправить заказ нельзя.</small>
+  </div></div>
 }

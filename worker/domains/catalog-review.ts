@@ -177,26 +177,26 @@ export type CatalogReviewFactsInput = {
 };
 
 
-export async function getCatalogReviewContext(db: D1Database, orderItemId: number): Promise<CatalogResolutionContext> {
+export async function getCatalogReviewContext(db: D1Database, orderItemId: number, preview: CatalogReviewFactsInput = {}): Promise<CatalogResolutionContext> {
   const anchor = await db.prepare(
     `SELECT oi.*, o.external_id, o.shipping_status, o.shipping_date, o.order_status, o.archived_at
      FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.id = ? LIMIT 1`
   ).bind(orderItemId).first<Record<string, unknown>>();
   if (!anchor?.id) throw new Error('Позиция заказа для разбора не найдена.');
 
-  const category = normalizeAudienceCategory(anchor.audience_type, anchor.size_snapshot);
+  const category = normalizeAudienceCategory(preview.category ?? anchor.audience_type, preview.size ?? anchor.size_snapshot);
   const facts = {
     productName: cleanText(anchor.product_name_snapshot),
-    material: await resolveCatalogValueAlias(db, 'material', canonicalStockPositionValue(anchor.material_snapshot)),
-    length: await resolveCatalogValueAlias(db, 'length', canonicalStockPositionValue(anchor.length_snapshot)),
+    material: await resolveCatalogValueAlias(db, 'material', canonicalStockPositionValue(preview.material ?? anchor.material_snapshot)),
+    length: await resolveCatalogValueAlias(db, 'length', canonicalStockPositionValue(preview.length ?? anchor.length_snapshot)),
     category,
-    gender: normalizeCatalogCombinationGender(anchor.gender_snapshot),
-    color: await resolveCatalogValueAlias(db, 'color', normalizeCatalogCombinationColor(anchor.color_snapshot)),
-    size: await resolveCatalogValueAlias(db, category === 'child' ? 'child_age' : 'size', normalizeCatalogCombinationSize(anchor.size_snapshot)),
+    gender: normalizeCatalogCombinationGender(preview.gender ?? anchor.gender_snapshot),
+    color: await resolveCatalogValueAlias(db, 'color', normalizeCatalogCombinationColor(preview.color ?? anchor.color_snapshot)),
+    size: await resolveCatalogValueAlias(db, category === 'child' ? 'child_age' : 'size', normalizeCatalogCombinationSize(preview.size ?? anchor.size_snapshot)),
   };
-  const product = toInt(anchor.product_id, 0)
-    ? await db.prepare(`SELECT id, name, category FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1`).bind(toInt(anchor.product_id, 0)).first<{ id: number; name: string; category: string }>()
-    : await findCatalogProductByIdentity(db, facts.productName, 0, { activeOnly: true }) as { id: number; name: string; category: string } | null;
+  const product = toInt(preview.productId ?? anchor.product_id, 0)
+    ? await db.prepare(`SELECT id, name, category FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1`).bind(toInt(preview.productId ?? anchor.product_id, 0)).first<{ id: number; name: string; category: string }>()
+    : preview.productId !== undefined ? null : await findCatalogProductByIdentity(db, facts.productName, 0, { activeOnly: true }) as { id: number; name: string; category: string } | null;
   const productGenderScope = product?.id ? await getCatalogProductGenderScope(db, product.id) : 'unisex';
   if (product?.id) facts.gender = facts.gender || catalogGenderForProductScope(productGenderScope);
 
@@ -269,6 +269,8 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
     product: product ? { id: product.id, name: cleanText(product.name), category: cleanText(product.category), genderScope: productGenderScope } : null,
     execution: execution ? { id: execution.id, material: execution.material, length: execution.length } : null,
     existingVariantId: toInt(existingVariant?.id, 0) || null,
+    exactVariant: existingVariant?.id && product ? { id: existingVariant.id, productId: product.id, productName: cleanText(product.name), facts: { ...facts } } : null,
+    canLeaveGenderUnknown: Boolean(product?.id && productGenderScope === 'unisex' && !facts.gender && !toInt(anchor.is_workshop, 0)),
     products: (productsResult.results || []).map((row) => ({ id: toInt(row.id, 0), name: cleanText(row.name), category: cleanText(row.category) })),
     executions: executions.map((row) => ({ id: toInt(row.id, 0), material: canonicalStockPositionValue(row.material), length: canonicalStockPositionValue(row.length) })),
     references,

@@ -6949,8 +6949,7 @@ function removeDebtPayment(index: number) {
         onClose={() => setOrderCatalogResolutionOrder(null)}
         onCompleted={async (resolvedOrder: OrderRecord) => {
           setOrderCatalogResolutionOrder(null)
-          setMessage(`Все товары заказа ${resolvedOrder.external_id || `#${resolvedOrder.id}`} уточнены. Нажмите «Отправить клиенту» ещё раз — система повторно проверит склад.`)
-          await loadDashboard(false)
+          await markOrderSentToClient(resolvedOrder)
         }}
         onOpenFullReview={async (blockedOrder: OrderRecord) => {
           setOrderCatalogResolutionOrder(null)

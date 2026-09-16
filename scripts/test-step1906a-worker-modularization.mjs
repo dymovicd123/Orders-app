@@ -273,6 +273,23 @@ patched = patched.replace(physicalAddedAnchor, [
   '  }',
   physicalAddedAnchor,
 ].join('\n'))
+const resolverUx = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-resolver-ux-manifest.json'), 'utf8'))
+if (resolverUx.revision !== 'catalog-resolver-ux-r1' || Object.keys(resolverUx.changes).join(',') !== 'getCatalogReviewContext') throw new Error('Resolver UX Worker allow-list changed')
+patched = 'const resolverUxChanges = ' + JSON.stringify(resolverUx.changes) + '\nconst resolverUxRouter = ' + JSON.stringify(resolverUx.router) + '\n' + patched
+const resolverUxHashAnchor = '        return sha(declarations.get(name)) === acceptedFinanceR3HistoricalCashHash'
+if (!patched.includes(resolverUxHashAnchor)) throw new Error('Resolver UX predecessor anchor missing')
+patched = patched.replace(resolverUxHashAnchor, [
+  '        const resolverUxChanged = resolverUxChanges[name]',
+  "        if (resolverUxChanged) check(resolverUxChanged.before === acceptedFinanceR3HistoricalCashHash, 'Resolver UX predecessor drifted: ' + name)",
+  '        return sha(declarations.get(name)) === (resolverUxChanged ? resolverUxChanged.after : acceptedFinanceR3HistoricalCashHash)',
+].join('\n'))
+patched = patched.replace(physicalAddedAnchor, [
+  "  check(sha(currentRouter) === resolverUxRouter.after, 'Resolver UX router changed outside exact delta')",
+  "  check(currentRouter.includes(resolverUxRouter.new), 'Resolver UX router reversion anchor missing')",
+  '  currentRouter = currentRouter.replace(resolverUxRouter.new, resolverUxRouter.old)',
+  "  check(sha(currentRouter) === resolverUxRouter.before && resolverUxRouter.before === contextualCatalogResolutionRouter.after, 'Resolver UX router predecessor drifted')",
+  physicalAddedAnchor,
+].join('\n'))
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')

@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "revision": "catalog-resolver-ux-r1",
+  "baseCommit": "083f2b7fb9cab08e2108b8c07ebb934053ae3413",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "b3b640bb50d548f273947ee21847c607e85be490",
+      "afterGitBlob": "302879d8caf6f545927f184f13cc9a6782750e30",
+      "beforeLines": 7312,
+      "afterLines": 7311
+    },
+    "src/features/orders/OrderCatalogResolutionModal.tsx": {
+      "beforeGitBlob": "b7357beadb10deb5a09e00f3761d9f9a8968da0d",
+      "afterGitBlob": "76ee4d431e5ad37f64cb4df63aae52666cb60e9a",
+      "beforeLines": 648,
+      "afterLines": 259
+    },
+    "src/features/orders/OrderCatalogResolutionModal.css": {
+      "beforeGitBlob": "9ecd40d59c05eab22764805d4ed228aba30a5f64",
+      "afterGitBlob": "9dab84a9b2693977f4f26b5ef895fa04885715f6",
+      "beforeLines": 612,
+      "afterLines": 40
+    },
+    "shared/api-contracts.ts": {
+      "beforeGitBlob": "e3f5f15e2635bf44dfa6cd9d560339e2c8207201",
+      "afterGitBlob": "0a67f527fbe7cf1d8fde13d99f943dada75b35d9",
+      "beforeLines": 401,
+      "afterLines": 403
+    }
+  },
+  "addedFiles": {
+    "src/features/orders/catalogResolutionFlow.ts": "f21f5aa03cec5495e0d37fa5430c5a6c92bdeaa076500bd36094c07378d93c65"
+  },
+  "changes": {
+    "getCatalogReviewContext": {
+      "before": "fb02c973cc2fe2cffd5f5809435df15dbf3801302134685ab883070c7c0652d9",
+      "after": "8f82527e728a7f1e7374f7bc059f41f685aeeaf7a791a96766ac9f3ba7f3a10e"
+    }
+  },
+  "router": {
+    "before": "62903515b44fbfdc523942d01b1bbc782b5e5cddaa64ac571197d3abf63f9cf0",
+    "after": "225f9d630686f52cc4e3b6e4d737ea86aa5e758f56ad3aeac0577e9b80a585e6",
+    "old": "        return json(await getCatalogReviewContext(env.DB, orderItemId));",
+    "new": "        const preview = Object.fromEntries(['productId', 'category', 'gender', 'material', 'length', 'color', 'size']\n          .filter((key) => url.searchParams.has(key)).map((key) => [key, url.searchParams.get(key)]));\n        return json(await getCatalogReviewContext(env.DB, orderItemId, preview));"
+  }
+}
