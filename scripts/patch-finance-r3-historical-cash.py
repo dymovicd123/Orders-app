@@ -33,7 +33,7 @@ ${comment}`)) return
 \\
 ${comment}`)) return
     const requestId = makeCashRequestId('manual')"""
-app, count = pattern.subn(replacement, app, count=1)
+app, count = pattern.subn(lambda _: replacement, app, count=1)
 if count != 1:
     raise SystemExit('cash movement confirmation anchor missing')
 
