@@ -18,26 +18,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: audit/branch2-schema-deep-20260916
+
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
           cache: npm
+
       - run: npm ci
 
       - name: Resolve exact D1 identities
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler d1 list --json > d1-list.json
-          node <<'NODE'
+          mkdir -p audit
+          npx wrangler d1 list --json > audit/d1-list.json
+          node <<'NODE' | tee audit/d1-identities.txt
           const fs = require('fs')
-          const raw = JSON.parse(fs.readFileSync('d1-list.json','utf8'))
+          const raw = JSON.parse(fs.readFileSync('audit/d1-list.json','utf8'))
           const rows = Array.isArray(raw) ? raw : (raw.result || [])
-          for (const name of ['orders_db_branch2','orders_db_prod']) {
+          const expected = {
+            orders_db_branch2: '40065052-854e-44b8-bcd5-251bdd488301',
+            orders_db_prod: '17e68a41-1d58-4a36-8a63-47c3e32443c4',
+          }
+          for (const [name, id] of Object.entries(expected)) {
             const hit = rows.find(r => r.name === name)
             if (!hit) throw new Error(`Missing D1 ${name}`)
-            console.log(`${name}: ${hit.uuid || hit.id || hit.database_id || ''}`)
+            const actual = hit.uuid || hit.id || hit.database_id || ''
+            if (actual !== id) throw new Error(`${name} identity drifted: ${actual}`)
+            console.log(`${name}: ${actual}`)
           }
           NODE
 
@@ -45,24 +54,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p audit
           for db in orders_db_branch2 orders_db_prod; do
             npx wrangler d1 execute "$db" --remote --json --command "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type,name;" > "audit/${db}-sqlite-master.json"
             npx wrangler d1 execute "$db" --remote --json --command "SELECT id,name,applied_at FROM d1_migrations ORDER BY id;" > "audit/${db}-migrations.json" || true
             for table in catalog_products catalog_variants catalog_input_aliases catalog_value_aliases inventory_stock inventory_reservations inventory_movements inventory_lifecycle_events inventory_transfer_items inventory_stock_checks inventory_stocktake_items orders order_items workshop_tasks returns return_items exchanges exchange_items payments cash_register_entries critical_operation_requests; do
-              safe="${table//[^a-zA-Z0-9_]/_}"
-              npx wrangler d1 execute "$db" --remote --json --command "PRAGMA table_info(${table});" > "audit/${db}-${safe}-columns.json" || true
+              npx wrangler d1 execute "$db" --remote --json --command "PRAGMA table_info(${table});" > "audit/${db}-${table}-columns.json" || true
             done
           done
 
-      - name: Export Branch2 backup read-only
+      - name: Record Branch2 D1 recovery bookmark
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler d1 export orders_db_branch2 --remote --output audit/orders_db_branch2-before-sync.sql
-          sha256sum audit/orders_db_branch2-before-sync.sql | tee audit/orders_db_branch2-before-sync.sha256
+          npx wrangler d1 time-travel info orders_db_branch2 | tee audit/orders_db_branch2-time-travel-before-sync.txt
 
-      - name: Compare schema names
+      - name: Compare live Branch2 and Production schemas
         shell: bash
         run: |
           set -euo pipefail
@@ -92,29 +98,24 @@ jobs:
           NODE
           cat audit/schema-name-diff.txt
 
-      - name: Build disposable local Branch2 clone and test migrations 0065-0069
+      - name: Run 0068 SELECT-only Branch2 preflight
         shell: bash
         run: |
           set -euo pipefail
-          sqlite3 audit/branch2-clone.sqlite < audit/orders_db_branch2-before-sync.sql
-          cp audit/branch2-clone.sqlite audit/branch2-before-0065.sqlite
-          : > audit/local-migration-results.txt
-          for f in migrations/0065_v72_d1_read_budget_r5_workshop_variant_order_index.sql migrations/0066_v72_d1_read_budget_r5_finance_summary_indexes.sql migrations/0067_v72_o1_read_budget_indexes.sql migrations/0068_v72_catalog_product_gender_scope.sql migrations/0069_v72_return_exchange_physical_receipt.sql; do
-            echo "=== $f ===" | tee -a audit/local-migration-results.txt
-            cp audit/branch2-clone.sqlite audit/before-one.sqlite
-            if sqlite3 audit/branch2-clone.sqlite < "$f" >> audit/local-migration-results.txt 2>&1; then
-              echo PASS | tee -a audit/local-migration-results.txt
-            else
-              echo FAIL_ROLLED_BACK_TO_PREVIOUS_FILE_STATE | tee -a audit/local-migration-results.txt
-              mv audit/before-one.sqlite audit/branch2-clone.sqlite
-            fi
-          done
-          sqlite3 audit/branch2-clone.sqlite ".schema" > audit/local-after-0065-0069.schema.txt
-          sqlite3 -header -csv audit/branch2-clone.sqlite "SELECT gender_scope, COUNT(*) AS products FROM catalog_products GROUP BY gender_scope ORDER BY gender_scope;" > audit/local-after-0068-product-scopes.csv || true
-          sqlite3 -header -csv audit/branch2-clone.sqlite "SELECT COUNT(*) AS active_blank_gender_variants FROM catalog_variants WHERE is_active=1 AND TRIM(COALESCE(gender,''))='';" > audit/local-after-0068-blank-variants.csv || true
-          cat audit/local-migration-results.txt
+          npx wrangler d1 execute orders_db_branch2 --remote --file=scripts/branch2-0068-preflight.sql | tee audit/branch2-0068-preflight.txt
+          if grep -E 'rows_written[^0-9]*[1-9]' audit/branch2-0068-preflight.txt; then
+            echo 'Unexpected D1 write reported during SELECT-only preflight' >&2
+            exit 4
+          fi
 
-      - name: Upload read-only audit and backup evidence
+      - name: Capture focused missing-effect checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --command "SELECT name,type FROM sqlite_master WHERE name IN ('idx_catalog_variants_product_active_desc_sort','idx_payments_payment_date_order_amount','idx_orders_current_debt_partial','idx_order_items_pending_writeoff_status_order','idx_order_items_workshop_order_quantity','idx_o1_exchanges_payment_finance','idx_o1_stock_checks_normalized_time','idx_o1_stock_checks_exact_stocktake','idx_catalog_products_gender_scope','idx_return_items_physical_receipt','idx_exchange_items_physical_receipt','catalog_gender_scope_repairs','catalog_gender_variant_repairs','catalog_gender_stock_baseline') ORDER BY name;" | tee audit/branch2-focused-0065-0069.txt
+
+      - name: Upload read-only audit evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: branch2-schema-deep-audit
