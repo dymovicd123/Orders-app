@@ -209,6 +209,21 @@ const contextualAddedBlock = [
   '  }',
   '',
 ].join('\n')
+const orderDeleteLifecycleAddedAnchor = '    check(sha(declarations.get(name)) === acceptedHash, operationalAutonomyA4Changed\n      ? `Order delete mobility declaration changed beyond exact Operational Autonomy A4 allow-list: ${name}`\n      : `Order delete mobility declaration changed beyond exact allow-list: ${name}`)\n'
+if (!patched.includes(orderDeleteLifecycleAddedAnchor)) throw new Error('Order delete lifecycle added-declaration anchor missing')
+patched = patched.replace(orderDeleteLifecycleAddedAnchor, [
+  '    const orderDeleteLifecycleChanged = orderDeleteLifecycleChanges[name]',
+  '    if (orderDeleteLifecycleChanged) {',
+  "      check(orderDeleteLifecycleChanged.before === acceptedHash, 'Order delete lifecycle added-declaration predecessor drifted: ' + name)",
+  '      acceptedHash = orderDeleteLifecycleChanged.after',
+  '    }',
+  '    check(sha(declarations.get(name)) === acceptedHash, orderDeleteLifecycleChanged',
+  '      ? `Order delete mobility declaration changed beyond exact lifecycle-fix allow-list: ${name}`',
+  '      : (operationalAutonomyA4Changed',
+  '        ? `Order delete mobility declaration changed beyond exact Operational Autonomy A4 allow-list: ${name}`',
+  '        : `Order delete mobility declaration changed beyond exact allow-list: ${name}`))',
+  '',
+].join('\n'))
 const physicalAddedAnchor = '  // Catalog gender scope R1 changes only the product create/update request shapes.'
 if (!patched.includes(physicalAddedAnchor)) throw new Error('1906A physical intake added-declaration anchor missing')
 const physicalAddedBlock = [
@@ -293,28 +308,20 @@ patched = patched.replace(physicalAddedAnchor, [
 const orderDeleteLifecycle = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-delete-working-mode-lifecycle-worker-manifest.json'), 'utf8'))
 if (orderDeleteLifecycle.version !== 1 || orderDeleteLifecycle.revision !== 'order-delete-working-mode-lifecycle-r1' || Object.keys(orderDeleteLifecycle.changes || {}).sort().join(',') !== 'deleteOrderSafely,updateOrderCritical') throw new Error('Order delete lifecycle Worker allow-list changed')
 patched = 'const orderDeleteLifecycleChanges = ' + JSON.stringify(orderDeleteLifecycle.changes) + '\n' + patched
-const orderDeleteLifecycleHashAnchor = '        return sha(declarations.get(name)) === (resolverUxChanged ? resolverUxChanged.after : acceptedFinanceR3HistoricalCashHash)'
-if (!patched.includes(orderDeleteLifecycleHashAnchor)) throw new Error('Order delete lifecycle predecessor anchor missing')
-patched = patched.replace(orderDeleteLifecycleHashAnchor, [
+// Branch2 environment is the final deployment-only declaration layer over current main.
+const branch2Environment = JSON.parse(fs.readFileSync(path.join(root, 'scripts/branch2-environment-worker-manifest.json'), 'utf8'))
+if (branch2Environment.version !== 1 || branch2Environment.revision !== 'branch2-environment-r2-current-main' || Object.keys(branch2Environment.changes || {}).join(',') !== 'verifySimpleAdminPassword') throw new Error('Branch2 environment Worker allow-list changed')
+patched = 'const branch2EnvironmentChanges = ' + JSON.stringify(branch2Environment.changes) + '\n' + patched
+const branch2HashAnchor = '        return sha(declarations.get(name)) === (resolverUxChanged ? resolverUxChanged.after : acceptedFinanceR3HistoricalCashHash)'
+if (!patched.includes(branch2HashAnchor)) throw new Error('Branch2 environment predecessor anchor missing')
+patched = patched.replace(branch2HashAnchor, [
   '        const acceptedPostResolverUxHash = resolverUxChanged ? resolverUxChanged.after : acceptedFinanceR3HistoricalCashHash',
+  '        const branch2EnvironmentChanged = branch2EnvironmentChanges[name]',
+  "        if (branch2EnvironmentChanged) check(branch2EnvironmentChanged.before === acceptedPostResolverUxHash, 'Branch2 environment predecessor drifted: ' + name)",
+  '        const acceptedPostBranch2EnvironmentHash = branch2EnvironmentChanged ? branch2EnvironmentChanged.after : acceptedPostResolverUxHash',
   '        const orderDeleteLifecycleChanged = orderDeleteLifecycleChanges[name]',
-  "        if (orderDeleteLifecycleChanged) check(orderDeleteLifecycleChanged.before === acceptedPostResolverUxHash, 'Order delete lifecycle predecessor drifted: ' + name)",
-  '        return sha(declarations.get(name)) === (orderDeleteLifecycleChanged ? orderDeleteLifecycleChanged.after : acceptedPostResolverUxHash)',
-].join('\n'))
-const orderDeleteLifecycleAddedAnchor = '    check(sha(declarations.get(name)) === acceptedHash, operationalAutonomyA4Changed\n      ? `Order delete mobility declaration changed beyond exact Operational Autonomy A4 allow-list: ${name}`\n      : `Order delete mobility declaration changed beyond exact allow-list: ${name}`)\n'
-if (!patched.includes(orderDeleteLifecycleAddedAnchor)) throw new Error('Order delete lifecycle added-declaration anchor missing')
-patched = patched.replace(orderDeleteLifecycleAddedAnchor, [
-  '    const orderDeleteLifecycleChanged = orderDeleteLifecycleChanges[name]',
-  '    if (orderDeleteLifecycleChanged) {',
-  "      check(orderDeleteLifecycleChanged.before === acceptedHash, 'Order delete lifecycle added-declaration predecessor drifted: ' + name)",
-  '      acceptedHash = orderDeleteLifecycleChanged.after',
-  '    }',
-  '    check(sha(declarations.get(name)) === acceptedHash, orderDeleteLifecycleChanged',
-  '      ? `Order delete mobility declaration changed beyond exact lifecycle-fix allow-list: ${name}`',
-  '      : (operationalAutonomyA4Changed',
-  '        ? `Order delete mobility declaration changed beyond exact Operational Autonomy A4 allow-list: ${name}`',
-  '        : `Order delete mobility declaration changed beyond exact allow-list: ${name}`))',
-  '',
+  "        if (orderDeleteLifecycleChanged) check(orderDeleteLifecycleChanged.before === acceptedPostBranch2EnvironmentHash, 'Order delete lifecycle predecessor drifted: ' + name)",
+  '        return sha(declarations.get(name)) === (orderDeleteLifecycleChanged ? orderDeleteLifecycleChanged.after : acceptedPostBranch2EnvironmentHash)',
 ].join('\n'))
 fs.writeFileSync(legacyPath, patched)
 try {
