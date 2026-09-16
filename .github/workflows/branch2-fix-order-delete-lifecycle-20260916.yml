@@ -41,42 +41,37 @@ jobs:
 
           write_path = Path('worker/domains/orders-write.ts')
           write = write_path.read_text()
-          old_sig = """export async function updateOrderCritical(\n  db: D1Database,\n  id: number,\n  input: OrderInput,\n  actor: AuthUser | null,\n  checkedBy: string,\n) {"""
-          new_sig = """export async function updateOrderCritical(\n  db: D1Database,\n  id: number,\n  input: OrderInput,\n  actor: AuthUser | null,\n  checkedBy: string,\n  options: { lifecycleAction?: 'order_delete' } = {},\n) {"""
+          old_sig = "export async function updateOrderCritical(\n  db: D1Database,\n  id: number,\n  input: OrderInput,\n  actor: AuthUser | null,\n  checkedBy: string,\n) {"
+          new_sig = "export async function updateOrderCritical(\n  db: D1Database,\n  id: number,\n  input: OrderInput,\n  actor: AuthUser | null,\n  checkedBy: string,\n  options: { lifecycleAction?: 'order_delete' } = {},\n) {"
           if write.count(old_sig) != 1:
               raise SystemExit('updateOrderCritical signature baseline drift')
           write = write.replace(old_sig, new_sig, 1)
-
-          old_guard = """      const nextShippingStatus = input.shippingStatus !== undefined\n        ? normalizeShippingStatus(input.shippingStatus)\n        : existingShippingStatus;\n      if (workingModeEdit && (\n        nextOrderStatus !== existingOrderStatus\n        || nextWorkshopStatus !== existingWorkshopStatus\n        || nextShippingStatus !== existingShippingStatus\n      )) {"""
-          new_guard = """      const nextShippingStatus = input.shippingStatus !== undefined\n        ? normalizeShippingStatus(input.shippingStatus)\n        : existingShippingStatus;\n      const dedicatedOrderDelete = options.lifecycleAction === 'order_delete'\n        && deletingOrder\n        && nextWorkshopStatus === existingWorkshopStatus\n        && nextShippingStatus === existingShippingStatus;\n      if (workingModeEdit && !dedicatedOrderDelete && (\n        nextOrderStatus !== existingOrderStatus\n        || nextWorkshopStatus !== existingWorkshopStatus\n        || nextShippingStatus !== existingShippingStatus\n      )) {"""
+          old_guard = "      const nextShippingStatus = input.shippingStatus !== undefined\n        ? normalizeShippingStatus(input.shippingStatus)\n        : existingShippingStatus;\n      if (workingModeEdit && (\n        nextOrderStatus !== existingOrderStatus\n        || nextWorkshopStatus !== existingWorkshopStatus\n        || nextShippingStatus !== existingShippingStatus\n      )) {"
+          new_guard = "      const nextShippingStatus = input.shippingStatus !== undefined\n        ? normalizeShippingStatus(input.shippingStatus)\n        : existingShippingStatus;\n      const dedicatedOrderDelete = options.lifecycleAction === 'order_delete'\n        && deletingOrder\n        && nextWorkshopStatus === existingWorkshopStatus\n        && nextShippingStatus === existingShippingStatus;\n      if (workingModeEdit && !dedicatedOrderDelete && (\n        nextOrderStatus !== existingOrderStatus\n        || nextWorkshopStatus !== existingWorkshopStatus\n        || nextShippingStatus !== existingShippingStatus\n      )) {"
           if write.count(old_guard) != 1:
               raise SystemExit('working-mode lifecycle guard baseline drift')
-          write = write.replace(old_guard, new_guard, 1)
-          write_path.write_text(write)
+          write_path.write_text(write.replace(old_guard, new_guard, 1))
 
           delete_path = Path('worker/domains/order-delete.ts')
           deletion = delete_path.read_text()
-          old_call = """    actor ?? null,\n    checkedBy,\n  )"""
-          new_call = """    actor ?? null,\n    checkedBy,\n    { lifecycleAction: 'order_delete' },\n  )"""
+          old_call = "    actor ?? null,\n    checkedBy,\n  )"
+          new_call = "    actor ?? null,\n    checkedBy,\n    { lifecycleAction: 'order_delete' },\n  )"
           if deletion.count(old_call) != 1:
               raise SystemExit('deleteOrderSafely updateOrderCritical call baseline drift')
-          deletion = deletion.replace(old_call, new_call, 1)
-          delete_path.write_text(deletion)
+          delete_path.write_text(deletion.replace(old_call, new_call, 1))
 
           test_path = Path('scripts/test-order-delete-mobility.mjs')
           test = test_path.read_text()
-          old_reads = """  const worker = read('worker/index.ts')\n  const deletion = read('worker/domains/order-delete.ts')"""
-          new_reads = """  const worker = read('worker/index.ts')\n  const deletion = read('worker/domains/order-delete.ts')\n  const ordersWrite = read('worker/domains/orders-write.ts')"""
+          old_reads = "  const worker = read('worker/index.ts')\n  const deletion = read('worker/domains/order-delete.ts')"
+          new_reads = old_reads + "\n  const ordersWrite = read('worker/domains/orders-write.ts')"
           if test.count(old_reads) != 1:
               raise SystemExit('order-delete test read baseline drift')
           test = test.replace(old_reads, new_reads, 1)
-
-          old_assert = """  check(deletion.includes('requestId: `${requestId}:order`'), 'final logical deletion is not retry-idempotent')\n  check(deletion.includes(\"orderStatus: 'deleted'\"), 'existing logical deletion path is not reused')"""
-          new_assert = """  check(deletion.includes('requestId: `${requestId}:order`'), 'final logical deletion is not retry-idempotent')\n  check(deletion.includes(\"orderStatus: 'deleted'\"), 'existing logical deletion path is not reused')\n  check(deletion.includes(\"{ lifecycleAction: 'order_delete' }\"), 'dedicated delete path does not declare its lifecycle action')\n  check(ordersWrite.includes(\"options: { lifecycleAction?: 'order_delete' } = {}\"), 'order editor lacks a typed internal lifecycle-action option')\n  check(ordersWrite.includes(\"options.lifecycleAction === 'order_delete'\"), 'dedicated delete lifecycle bypass is missing')\n  check(ordersWrite.includes('workingModeEdit && !dedicatedOrderDelete'), 'ordinary working-mode lifecycle edits are no longer protected')\n  check(ordersWrite.includes('nextWorkshopStatus === existingWorkshopStatus'), 'dedicated delete bypass is not constrained against workshop lifecycle changes')\n  check(ordersWrite.includes('nextShippingStatus === existingShippingStatus'), 'dedicated delete bypass is not constrained against shipping lifecycle changes')"""
+          old_assert = "  check(deletion.includes('requestId: `${requestId}:order`'), 'final logical deletion is not retry-idempotent')\n  check(deletion.includes(\"orderStatus: 'deleted'\"), 'existing logical deletion path is not reused')"
+          new_assert = old_assert + "\n  check(deletion.includes(\"{ lifecycleAction: 'order_delete' }\"), 'dedicated delete path does not declare its lifecycle action')\n  check(ordersWrite.includes(\"options: { lifecycleAction?: 'order_delete' } = {}\"), 'order editor lacks a typed internal lifecycle-action option')\n  check(ordersWrite.includes(\"options.lifecycleAction === 'order_delete'\"), 'dedicated delete lifecycle bypass is missing')\n  check(ordersWrite.includes('workingModeEdit && !dedicatedOrderDelete'), 'ordinary working-mode lifecycle edits are no longer protected')\n  check(ordersWrite.includes('nextWorkshopStatus === existingWorkshopStatus'), 'dedicated delete bypass is not constrained against workshop lifecycle changes')\n  check(ordersWrite.includes('nextShippingStatus === existingShippingStatus'), 'dedicated delete bypass is not constrained against shipping lifecycle changes')"
           if test.count(old_assert) != 1:
               raise SystemExit('order-delete test assertion baseline drift')
-          test = test.replace(old_assert, new_assert, 1)
-          test_path.write_text(test)
+          test_path.write_text(test.replace(old_assert, new_assert, 1))
           PY
 
           node <<'NODE'
@@ -84,7 +79,6 @@ jobs:
           import crypto from 'node:crypto'
           import ts from 'typescript'
           import { execFileSync } from 'node:child_process'
-
           const sha = value => crypto.createHash('sha256').update(value).digest('hex')
           function declarationText(file, name, text) {
             const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
@@ -96,25 +90,15 @@ jobs:
             }
             throw new Error(`Declaration ${name} missing in ${file}`)
           }
-          const entries = [
-            ['deleteOrderSafely', 'worker/domains/order-delete.ts'],
-            ['updateOrderCritical', 'worker/domains/orders-write.ts'],
-          ]
+          const entries = [['deleteOrderSafely','worker/domains/order-delete.ts'],['updateOrderCritical','worker/domains/orders-write.ts']]
           const changes = {}
-          for (const [name, file] of entries) {
-            const beforeText = execFileSync('git', ['show', `HEAD:${file}`], { encoding: 'utf8' })
-            const afterText = fs.readFileSync(file, 'utf8')
-            changes[name] = {
-              before: sha(declarationText(file, name, beforeText)),
-              after: sha(declarationText(file, name, afterText)),
-            }
+          for (const [name,file] of entries) {
+            const beforeText = execFileSync('git',['show',`HEAD:${file}`],{encoding:'utf8'})
+            const afterText = fs.readFileSync(file,'utf8')
+            changes[name] = {before:sha(declarationText(file,name,beforeText)),after:sha(declarationText(file,name,afterText))}
             if (changes[name].before === changes[name].after) throw new Error(`${name} did not change`)
           }
-          fs.writeFileSync('scripts/order-delete-working-mode-lifecycle-worker-manifest.json', JSON.stringify({
-            version: 1,
-            revision: 'order-delete-working-mode-lifecycle-r1',
-            changes,
-          }, null, 2) + '\n')
+          fs.writeFileSync('scripts/order-delete-working-mode-lifecycle-worker-manifest.json', JSON.stringify({version:1,revision:'order-delete-working-mode-lifecycle-r1',changes},null,2)+'\n')
           NODE
 
           python <<'PY'
@@ -124,50 +108,51 @@ jobs:
           marker = "// Branch2 environment is the final deployment-only declaration layer over current main."
           if text.count(marker) != 1:
               raise SystemExit('Branch2 Worker gate marker drift')
-
-          insert_before = """const orderDeleteLifecycle = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-delete-working-mode-lifecycle-worker-manifest.json'), 'utf8'))
-if (orderDeleteLifecycle.version !== 1 || orderDeleteLifecycle.revision !== 'order-delete-working-mode-lifecycle-r1' || Object.keys(orderDeleteLifecycle.changes || {}).sort().join(',') !== 'deleteOrderSafely,updateOrderCritical') throw new Error('Order delete lifecycle Worker allow-list changed')
-patched = 'const orderDeleteLifecycleChanges = ' + JSON.stringify(orderDeleteLifecycle.changes) + '\\n' + patched
-"""
+          insert_before = "\n".join([
+              "const orderDeleteLifecycle = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-delete-working-mode-lifecycle-worker-manifest.json'), 'utf8'))",
+              "if (orderDeleteLifecycle.version !== 1 || orderDeleteLifecycle.revision !== 'order-delete-working-mode-lifecycle-r1' || Object.keys(orderDeleteLifecycle.changes || {}).sort().join(',') !== 'deleteOrderSafely,updateOrderCritical') throw new Error('Order delete lifecycle Worker allow-list changed')",
+              "patched = 'const orderDeleteLifecycleChanges = ' + JSON.stringify(orderDeleteLifecycle.changes) + '\\n' + patched",
+              "",
+          ])
           text = text.replace(marker, insert_before + marker, 1)
 
-          main_anchor = """  '        return sha(declarations.get(name)) === (branch2EnvironmentChanged ? branch2EnvironmentChanged.after : acceptedPostResolverUxHash)',
-].join('\\n'))"""
-          main_replacement = """  '        const acceptedPostBranch2EnvironmentHash = branch2EnvironmentChanged ? branch2EnvironmentChanged.after : acceptedPostResolverUxHash',
-  '        const orderDeleteLifecycleChanged = orderDeleteLifecycleChanges[name]',
-  \"        if (orderDeleteLifecycleChanged) check(orderDeleteLifecycleChanged.before === acceptedPostBranch2EnvironmentHash, 'Order delete lifecycle predecessor drifted: ' + name)\",
-  '        return sha(declarations.get(name)) === (orderDeleteLifecycleChanged ? orderDeleteLifecycleChanged.after : acceptedPostBranch2EnvironmentHash)',
-].join('\\n'))"""
+          main_anchor = "  '        return sha(declarations.get(name)) === (branch2EnvironmentChanged ? branch2EnvironmentChanged.after : acceptedPostResolverUxHash)',\n].join('\\n'))"
+          main_replacement = "\n".join([
+              "  '        const acceptedPostBranch2EnvironmentHash = branch2EnvironmentChanged ? branch2EnvironmentChanged.after : acceptedPostResolverUxHash',",
+              "  '        const orderDeleteLifecycleChanged = orderDeleteLifecycleChanges[name]',",
+              "  \"        if (orderDeleteLifecycleChanged) check(orderDeleteLifecycleChanged.before === acceptedPostBranch2EnvironmentHash, 'Order delete lifecycle predecessor drifted: ' + name)\",",
+              "  '        return sha(declarations.get(name)) === (orderDeleteLifecycleChanged ? orderDeleteLifecycleChanged.after : acceptedPostBranch2EnvironmentHash)',",
+              "].join('\\n'))",
+          ])
           if text.count(main_anchor) != 1:
               raise SystemExit('Branch2 final Worker hash anchor drift')
           text = text.replace(main_anchor, main_replacement, 1)
 
-          loop_anchor = """const physicalAddedAnchor = '  // Catalog gender scope R1 changes only the product create/update request shapes.'"""
-          loop_patch = """const orderDeleteLifecycleAddedAnchor = '    check(sha(declarations.get(name)) === acceptedHash, operationalAutonomyA4Changed\\n      ? `Order delete mobility declaration changed beyond exact Operational Autonomy A4 allow-list: ${name}`\\n      : `Order delete mobility declaration changed beyond exact allow-list: ${name}`)\\n'
-if (!patched.includes(orderDeleteLifecycleAddedAnchor)) throw new Error('Order delete lifecycle added-declaration anchor missing')
-patched = patched.replace(orderDeleteLifecycleAddedAnchor, [
-  '    const orderDeleteLifecycleChanged = orderDeleteLifecycleChanges[name]',
-  '    if (orderDeleteLifecycleChanged) {',
-  \"      check(orderDeleteLifecycleChanged.before === acceptedHash, 'Order delete lifecycle added-declaration predecessor drifted: ' + name)\",
-  '      acceptedHash = orderDeleteLifecycleChanged.after',
-  '    }',
-  '    check(sha(declarations.get(name)) === acceptedHash, orderDeleteLifecycleChanged',
-  '      ? `Order delete mobility declaration changed beyond exact lifecycle-fix allow-list: ${name}`',
-  '      : (operationalAutonomyA4Changed',
-  '        ? `Order delete mobility declaration changed beyond exact Operational Autonomy A4 allow-list: ${name}`',
-  '        : `Order delete mobility declaration changed beyond exact allow-list: ${name}`))',
-  '',
-].join('\\n'))
-
-"""
+          loop_anchor = "const physicalAddedAnchor = '  // Catalog gender scope R1 changes only the product create/update request shapes.'"
+          loop_patch = "\n".join([
+              "const orderDeleteLifecycleAddedAnchor = '    check(sha(declarations.get(name)) === acceptedHash, operationalAutonomyA4Changed\\n      ? `Order delete mobility declaration changed beyond exact Operational Autonomy A4 allow-list: ${name}`\\n      : `Order delete mobility declaration changed beyond exact allow-list: ${name}`)\\n'",
+              "if (!patched.includes(orderDeleteLifecycleAddedAnchor)) throw new Error('Order delete lifecycle added-declaration anchor missing')",
+              "patched = patched.replace(orderDeleteLifecycleAddedAnchor, [",
+              "  '    const orderDeleteLifecycleChanged = orderDeleteLifecycleChanges[name]',",
+              "  '    if (orderDeleteLifecycleChanged) {',",
+              "  \"      check(orderDeleteLifecycleChanged.before === acceptedHash, 'Order delete lifecycle added-declaration predecessor drifted: ' + name)\",",
+              "  '      acceptedHash = orderDeleteLifecycleChanged.after',",
+              "  '    }',",
+              "  '    check(sha(declarations.get(name)) === acceptedHash, orderDeleteLifecycleChanged',",
+              "  '      ? `Order delete mobility declaration changed beyond exact lifecycle-fix allow-list: ${name}`',",
+              "  '      : (operationalAutonomyA4Changed',",
+              "  '        ? `Order delete mobility declaration changed beyond exact Operational Autonomy A4 allow-list: ${name}`',",
+              "  '        : `Order delete mobility declaration changed beyond exact allow-list: ${name}`))',",
+              "  '',",
+              "].join('\\n'))",
+              "",
+          ])
           if text.count(loop_anchor) != 1:
               raise SystemExit('Worker added-declaration insertion anchor drift')
-          text = text.replace(loop_anchor, loop_patch + loop_anchor, 1)
-          path.write_text(text)
+          path.write_text(text.replace(loop_anchor, loop_patch + loop_anchor, 1))
           PY
 
           git diff --check
-          git diff -- worker/domains/orders-write.ts worker/domains/order-delete.ts scripts/test-order-delete-mobility.mjs scripts/test-step1906a-worker-modularization.mjs scripts/order-delete-working-mode-lifecycle-worker-manifest.json
       - name: Focused regression
         run: node scripts/test-order-delete-mobility.mjs
       - name: Worker integrity regression
