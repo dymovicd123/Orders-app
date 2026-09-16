@@ -40,15 +40,15 @@ jobs:
           PRAGMA table_info(catalog_products);
           PRAGMA table_info(catalog_variants);
           SELECT p.id AS product_id,p.name,p.category,p.gender_scope,p.is_active,
-                 v.id AS variant_id,v.gender,v.material,v.length,v.color,v.size,v.is_active AS variant_active
+                 v.id AS variant_id,v.gender,v.material,v.length,v.color,v.size_label,v.is_active AS variant_active
           FROM catalog_products p JOIN catalog_variants v ON v.product_id=p.id
           WHERE p.is_active=1 AND v.is_active=1
           ORDER BY p.name,v.id LIMIT 120;
-          SELECT p.id AS product_id,p.name,p.gender_scope,v.id AS variant_id,v.gender,v.material,v.length,v.color,v.size
+          SELECT p.id AS product_id,p.name,p.gender_scope,v.id AS variant_id,v.gender,v.material,v.length,v.color,v.size_label
           FROM catalog_products p JOIN catalog_variants v ON v.product_id=p.id
           WHERE p.is_active=1 AND v.is_active=1
             AND (TRIM(COALESCE(v.color,''))='' OR UPPER(TRIM(v.color)) IN ('БЕЗ ЦВЕТА','НЕТ ЦВЕТА'))
-            AND (TRIM(COALESCE(v.size,''))='' OR UPPER(TRIM(v.size)) IN ('БЕЗ РАЗМЕРА','НЕТ РАЗМЕРА'))
+            AND (TRIM(COALESCE(v.size_label,''))='' OR UPPER(TRIM(v.size_label)) IN ('БЕЗ РАЗМЕРА','НЕТ РАЗМЕРА'))
           ORDER BY p.name,v.id LIMIT 40;
           SELECT p.id AS product_id,p.name,p.gender_scope,COUNT(*) AS active_variants
           FROM catalog_products p JOIN catalog_variants v ON v.product_id=p.id AND v.is_active=1
