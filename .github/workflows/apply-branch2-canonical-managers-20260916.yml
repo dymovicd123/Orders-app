@@ -59,7 +59,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler d1 execute orders_db_branch2 --remote --command="INSERT INTO managers (name,is_active,created_at,updated_at) VALUES ('СЫМБАТ',1,datetime('now'),datetime('now')),('АСЕЛЬ',1,datetime('now'),datetime('now')),('ГАЗИЗА',1,datetime('now'),datetime('now')),('ГУЛНУР',1,datetime('now'),datetime('now')),('ЖАНЕРКЕ',1,datetime('now'),datetime('now')),('МАКПАЛ',1,datetime('now'),datetime('now')),('САИДА',1,datetime('now'),datetime('now')) ON CONFLICT(name) DO UPDATE SET is_active=excluded.is_active,updated_at=excluded.updated_at;"
+          npx wrangler d1 execute orders_db_branch2 --remote --command="INSERT INTO managers (name,is_active,created_at,updated_at) VALUES ('СЫМБАТ',1,datetime('now'),datetime('now')),('АСЕЛЬ',1,datetime('now'),datetime('now')),('ГАЗИЗА',1,datetime('now'),datetime('now')),('ГУЛНУР',1,datetime('now'),datetime('now')),('ЖАНЕРКЕ',1,datetime('now'),datetime('now')),('МАКПАЛ',1,datetime('now'),datetime('now')),('САИДА',1,datetime('now'),datetime('now'));"
       - name: Strict postflight
         shell: bash
         run: |
