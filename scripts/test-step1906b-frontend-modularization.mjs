@@ -101,6 +101,8 @@ const stabilizationManifestPath = path.join(root, 'scripts/stabilization-2026091
 const businessDateBoundaryManifestPath = path.join(root, 'scripts/business-date-boundaries-r1-frontend-manifest.json')
 const clientFixesManifestPath = path.join(root, 'scripts/client-fixes-20260912-r1-frontend-manifest.json')
 const contextualCatalogResolutionManifestPath = path.join(root, 'scripts/contextual-catalog-resolution-r1-frontend-manifest.json')
+const financeDayManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/finance-day-transparency-manifest.json'), 'utf8'))
+if (financeDayManifest.revision !== 'finance-day-transparency-r1' || Object.keys(financeDayManifest.files).join(',') !== 'src/App.tsx,src/features/sections/FinanceSection.tsx,src/features/renderers/FinanceDashboardRenderer.tsx') throw new Error('Finance day frontend allow-list changed')
 const fixtureRoot = path.join(root, 'scripts/fixtures/catalog-gender-scope-r1')
 const predecessorFixture = path.join(fixtureRoot, 'test-step1906b-frontend-modularization-predecessor.mjs')
 const runtimePredecessor = path.join(root, 'scripts/.tmp-test-step1906b-catalog-predecessor.mjs')
@@ -141,6 +143,17 @@ if (contextualCatalogResolutionManifest?.version !== 1 || contextualCatalogResol
 const contextualCatalogResolutionExpectedFiles = ['src/App.tsx','src/app/utils.ts','src/features/orders/OrderCatalogResolutionModal.tsx','src/features/orders/OrderCatalogResolutionModal.css']
 if (JSON.stringify(Object.keys(contextualCatalogResolutionManifest.files || {})) !== JSON.stringify(contextualCatalogResolutionExpectedFiles)) throw new Error('Contextual catalog resolution frontend allow-list widened unexpectedly')
 const gitBlobSha = (text) => { const bytes = Buffer.from(text); return crypto.createHash('sha1').update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex') }
+
+for (const file of ['src/features/sections/FinanceSection.tsx', 'src/features/renderers/FinanceDashboardRenderer.tsx']) {
+  const actual = fs.readFileSync(path.join(root, file), 'utf8')
+  if (gitBlobSha(actual) !== financeDayManifest.files[file].afterGitBlob) throw new Error('Finance day UI changed outside exact delta: ' + file)
+}
+const financeDayAddedFiles = ['shared/finance-day-contracts.ts','src/features/finance/financeDayRead.ts','src/features/finance/FinanceDayPanel.tsx','src/features/finance/FinanceDayView.tsx','src/features/finance/finance-day.css']
+if (Object.keys(financeDayManifest.addedFiles).join(',') !== financeDayAddedFiles.join(',')) throw new Error('Finance day added file allow-list changed')
+for (const file of financeDayAddedFiles) {
+  const actual = fs.readFileSync(path.join(root, file), 'utf8')
+  if (crypto.createHash('sha256').update(actual).digest('hex') !== financeDayManifest.addedFiles[file]) throw new Error('Finance day added file changed outside manifest: ' + file)
+}
 
 for (const file of ['src/features/orders/OrderCatalogResolutionModal.tsx', 'src/features/orders/OrderCatalogResolutionModal.css']) {
   const delta = contextualCatalogResolutionManifest.files[file]
@@ -256,6 +269,12 @@ try {
       if (contextualCatalogResolutionDelta.beforeGitBlob !== acceptedGitBlob || contextualCatalogResolutionDelta.beforeLines !== acceptedLines) throw new Error('Contextual catalog resolution frontend predecessor drifted: ' + file)
       acceptedGitBlob = contextualCatalogResolutionDelta.afterGitBlob
       acceptedLines = contextualCatalogResolutionDelta.afterLines
+    }
+    const financeDayDelta = financeDayManifest.files[file]
+    if (financeDayDelta) {
+      if (financeDayDelta.beforeGitBlob !== acceptedGitBlob || financeDayDelta.beforeLines !== acceptedLines) throw new Error('Finance day frontend predecessor drifted: ' + file)
+      acceptedGitBlob = financeDayDelta.afterGitBlob
+      acceptedLines = financeDayDelta.afterLines
     }
     if (gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) {
       throw new Error(contextualCatalogResolutionDelta

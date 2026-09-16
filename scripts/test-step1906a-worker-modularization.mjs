@@ -241,6 +241,30 @@ const physicalRouterBlock = [
 ].join('\n')
 patched = patched.replace(a5RouterAnchor, physicalRouterBlock)
 
+// Latest narrow layer: finance day reads and business-date ordering only.
+const financeDay = JSON.parse(fs.readFileSync(path.join(root, 'scripts/finance-day-transparency-manifest.json'), 'utf8'))
+if (financeDay.revision !== 'finance-day-transparency-r1' || Object.keys(financeDay.changes).join(',') !== 'listFinancialHistory' || Object.keys(financeDay.added).join(',') !== 'readFinanceDay') throw new Error('Finance day Worker allow-list changed')
+patched = 'const financeDayChanges = ' + JSON.stringify(financeDay.changes) + '\nconst financeDayAdded = ' + JSON.stringify(financeDay.added) + '\n' + patched
+const financeDayCountAnchor = ' + Object.keys(contextualCatalogResolutionAdded).length'
+if (!patched.includes(financeDayCountAnchor)) throw new Error('Finance day declaration-count anchor missing')
+patched = patched.replace(financeDayCountAnchor, financeDayCountAnchor + ' + Object.keys(financeDayAdded).length')
+const financeDayHashAnchor = '        return sha(declarations.get(name)) === acceptedPostArrivalCanonicalProductAliasHash'
+if (!patched.includes(financeDayHashAnchor)) throw new Error('Finance day predecessor hash anchor missing')
+patched = patched.replace(financeDayHashAnchor, [
+  '        const financeDayChanged = financeDayChanges[name]',
+  '        let acceptedFinanceDayHash = acceptedPostArrivalCanonicalProductAliasHash',
+  '        if (financeDayChanged) {',
+  "          check(financeDayChanged.before === acceptedPostArrivalCanonicalProductAliasHash, 'Finance day predecessor drifted: ' + name)",
+  '          acceptedFinanceDayHash = financeDayChanged.after',
+  '        }',
+  '        return sha(declarations.get(name)) === acceptedFinanceDayHash',
+].join('\n'))
+patched = patched.replace(physicalAddedAnchor, [
+  '  for (const [name, hash] of Object.entries(financeDayAdded)) {',
+  "    check(declarations.has(name) && sha(declarations.get(name)) === hash, 'Finance day added declaration changed: ' + name)",
+  '  }',
+  physicalAddedAnchor,
+].join('\n'))
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "revision": "finance-day-transparency-r1",
+  "base": "d067afc8db6efc0b716f8a8f200aea6618655517",
+  "changes": {
+    "listFinancialHistory": {
+      "before": "8f4a1ccbf7ca1d859a6daeb3abf42b9d87676e9ffff5b72a656d8aff2bb71f44",
+      "after": "a53549db6f6cf4628d0d766ad27039dafafd4aa8c894b1b72050d3ed19d9c360"
+    }
+  },
+  "added": {
+    "readFinanceDay": "4615d786b274c75519bcea436c1c1c7aa3e72fad0efa283e454555db86f6b598"
+  },
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "a85f8c02e4b73ad045ef3010dd6a63f8e615fce2",
+      "afterGitBlob": "c566b00695f252642fcf41a87be0a8313a5efcf4",
+      "beforeLines": 7302,
+      "afterLines": 7304
+    },
+    "src/features/sections/FinanceSection.tsx": {
+      "beforeGitBlob": "48005beb90b797e16dce17b86e4e2b97e0a64844",
+      "afterGitBlob": "25fb30c4b1c9cab3febb663513e8dbcd0f044ed2",
+      "beforeLines": 55,
+      "afterLines": 70
+    },
+    "src/features/renderers/FinanceDashboardRenderer.tsx": {
+      "beforeGitBlob": "7ccadc64c9cdd0f1c2d65b3f3424564d71cc2eae",
+      "afterGitBlob": "1565335396d8b2c13b4b4730dd5759585b61d99f",
+      "beforeLines": 745,
+      "afterLines": 751
+    }
+  },
+  "addedFiles": {
+    "shared/finance-day-contracts.ts": "20e570a8b633eda5cc7bb51e3c5b597b27cfc41471eb9be7ba94837d0b4e7edc",
+    "src/features/finance/financeDayRead.ts": "ad66ef6474da2dd39f37176c429f5b16f801b36bcc5f9c1e791f114b90ff474d",
+    "src/features/finance/FinanceDayPanel.tsx": "9d9c47a5c93d12f44081e52bafd50c12318e08fec2da276022c30ba6b91ca6fb",
+    "src/features/finance/FinanceDayView.tsx": "d53af33f8b5e7371a369a827248bca204ea8871ff5c2739f593900d95d5213fd",
+    "src/features/finance/finance-day.css": "831dced6779d3a2748c1bac99582fae33e3d784168e368e352a0a52a6c56d934"
+  }
+}

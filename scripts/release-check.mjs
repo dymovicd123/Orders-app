@@ -201,6 +201,7 @@ try {
   console.log('=== RELEASE CHECK — current project invariants ===')
   verifySource()
   console.log('Source invariants: OK')
+  run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])
   run('Step 189B SQL shape tests', process.execPath, [path.join(root, 'scripts/test-step189b-history-sql.mjs')])

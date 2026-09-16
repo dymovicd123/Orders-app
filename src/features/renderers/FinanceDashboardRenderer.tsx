@@ -1,4 +1,5 @@
 // @ts-nocheck -- extracted view renderer; controller remains typed in App.tsx.
+import { financeRecordedAt } from '../finance/FinanceDayView'
 
 type RendererContext = Record<string, any>
 
@@ -81,6 +82,10 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
     </div>
   )
 
+  if (ctx.financeDay && (financeMode === 'summary' || financeMode === 'payments')) {
+    return <div className="finance-tabs-shell finance-truth-shell">{financeTabsNode}{ctx.financeDay}</div>
+  }
+
   if (financeMode === 'cash') {
     const entryTypeLabel = (entryType: string) => ({
       opening: 'Начальный остаток',
@@ -104,6 +109,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
     return (
       <div className="finance-tabs-shell finance-truth-shell">
         {financeTabsNode}
+        {ctx.financeDay}
         <div className="finance-tab-content cash-register-content cash-register-v2">
           {cashRegisterBusy && !cashRegister ? (
             <div className="empty-state">Загружаю кассу…</div>
@@ -140,7 +146,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
               <div className="cash-register-status-line cash-register-status-v2">
                 <div>
                   <span className="card-label">Инкассация</span>
-                  <h3>Касса офиса</h3>
+                  <h3>Касса офиса — сейчас</h3>
                   <p>Текущий остаток и все движения наличных. Журнал не переписывается задним числом.</p>
                 </div>
                 <div className={`cash-auto-status ${cashRegister.autoTrackingEnabled ? 'is-enabled' : 'is-paused'}`}>
@@ -162,7 +168,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
 
               <div className="cash-register-tools-grid">
                 <section className="mini-panel cash-manual-movement-panel">
-                  <div className="mini-panel-head"><div><h3>Ручная операция</h3><p className="mini-panel-note">Комментарий обязателен.</p></div></div>
+                  <div className="mini-panel-head"><div><h3>Ручная операция</h3><p className="mini-panel-note">Комментарий обязателен. Новая операция записывается сегодняшней датой, а не выбранным прошлым днём.</p></div></div>
                   <div className="cash-manual-form cash-manual-form-v2">
                     <div className="cash-direction-switch" role="group" aria-label="Направление движения наличных">
                       <button className={`secondary ${cashMovementDraft.direction === 'out' ? 'is-active' : ''}`} type="button" disabled={cashRegisterBusy} onClick={() => setCashMovementDraft((current) => ({ ...current, direction: 'out' }))}>Выдать / забрали</button>
@@ -219,7 +225,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
 
               <section className="mini-panel cash-register-ledger-panel">
                 <div className="mini-panel-head">
-                  <div><h3>Журнал наличных</h3><p className="mini-panel-note">Ошибочную ручную операцию лучше отменять кнопкой «Отменить», а не создавать встречное внесение вручную.</p></div>
+                  <div><h3>Журнал наличных — текущий цикл</h3><p className="mini-panel-note">Записи идут в порядке внесения. Для истории конкретного дня используйте «Один день». Ошибочную ручную операцию лучше отменять кнопкой «Отменить», а не создавать встречное внесение вручную.</p></div>
                   <div className="cash-ledger-actions">
                     <button className="secondary compact" type="button" disabled={cashRegisterBusy} onClick={() => void loadCashRegister()}>Обновить</button>
                     {isAdmin ? <button className="secondary compact danger-outline" type="button" disabled={cashRegisterBusy} onClick={() => void resetCashRegisterCycle()}>Начать новый цикл с 0 ₸</button> : null}
@@ -231,7 +237,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                     <tbody>
                       {cashRegister.entries.length ? cashRegister.entries.map((entry) => (
                         <tr key={`cash-entry-${entry.id}`} className={entry.direction === 'out' ? 'is-out' : 'is-in'}>
-                          <td><strong>{formatDateShort(entry.businessDate)}</strong></td>
+                          <td><strong>Относится к {formatDateShort(entry.businessDate)}</strong><span className="cash-entry-meta">Внесено в систему {financeRecordedAt(entry.createdAt)}</span></td>
                           <td><strong>{entryTypeLabel(entry.entryType)}</strong><span className="cash-entry-meta">{entry.paymentMethod || entry.createdBy || '—'}</span></td>
                           <td>{entry.externalOrderId ? <strong>{entry.externalOrderId}</strong> : entry.sourceType === 'manual' ? 'Ручная операция' : entry.entryType === 'ledger_reset' ? 'Новый цикл' : entry.sourceType === 'opening' ? 'Начальная точка' : '—'}</td>
                           <td>{entry.comment || '—'}</td>
@@ -512,7 +518,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                 <div>
                   <h3>Пояснения по датам</h3>
                   <p className="mini-panel-note">Проверьте эти заказы. Если дата оплаты указана неверно, исправьте её, чтобы оплата попала в правильный период.</p>
-                  {historicalPeriodSelected && visibleLegacyBaselineCount ? <p className="mini-panel-note">Вы выбрали старый период: {visibleLegacyBaselineCount} исторических записей показаны как baseline. Их текущее состояние известно, но первоначальное действие пользователя по ним не всегда можно доказать.</p> : null}
+                  {historicalPeriodSelected && visibleLegacyBaselineCount ? <p className="mini-panel-note">Вы выбрали старый период: {visibleLegacyBaselineCount} записей перенесены из старого учёта. Их состояние сохранено, но время первоначального ввода может быть неизвестно.</p> : null}
                 </div>
                 <span className="soft-badge finance-info-badge">Пояснений: {visiblePaymentTraceInfo.length}</span>
               </div>
@@ -624,18 +630,18 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                 <option value="normal">Обычные операции</option>
                 <option value="info">С пояснением</option>
                 <option value="review">Нужно проверить</option>
-                <option value="legacy" disabled={!historicalPeriodSelected}>Исторический baseline{historicalPeriodSelected ? '' : ' — выберите старый период'}</option>
+                <option value="legacy" disabled={!historicalPeriodSelected}>Перенесённые старые записи{historicalPeriodSelected ? '' : ' — выберите старый период'}</option>
               </select></label>
             </div>
-            {historicalPeriodSelected ? <div className="finance-history-scope-note">Выбран старый период. Исторические baseline-записи разрешены и помечаются отдельно; их первоначальный пользовательский ввод может быть недоказуем.</div> : null}
+            {historicalPeriodSelected ? <div className="finance-history-scope-note">Выбран старый период. Перенесённые записи помечены отдельно; время первоначального ввода может быть неизвестно.</div> : null}
 
             {moneyHistoryBusy && !moneyHistory.length ? <div className="finance-money-history-state"><strong>Загружаю историю денег…</strong></div>
             : moneyHistoryError && !moneyHistory.length ? <div className="finance-money-history-state"><strong>Не удалось загрузить историю денег.</strong><span>{moneyHistoryError}</span><button className="secondary compact" type="button" onClick={() => void loadMoneyHistory()}>Повторить</button></div>
             : moneyHistory.length ? <div className="finance-money-history-list">{moneyHistory.map((row) => (
               <article className={`finance-money-history-row finance-money-history-row-f4 trace-${row.traceSeverity || 'normal'}`} key={`money-history-${row.id}`}>
                 <div className="finance-money-history-date">
-                  <strong>{formatDateShort(row.eventDate)}</strong>
-                  <small>Операция записана: {formatFinanceDateTime(row.eventAt)}</small>
+                  <strong>Относится к {formatDateShort(row.eventDate)}</strong>
+                  <small>{row.isBackfill || row.reason === 'baseline' ? 'Перенесено из старого учёта; время первоначального ввода неизвестно' : `Внесено в систему ${financeRecordedAt(row.eventRecordedAt)}`}</small>
                 </div>
                 <div className="finance-money-history-order">
                   <strong>{row.externalOrderId || 'Без номера заказа'}</strong>

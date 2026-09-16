@@ -109,7 +109,7 @@ check(`${money}\n${orderWrite}`.includes("'payment_reversal'"), 'Immutable payme
 
   // Mobile/read-through audit information must remain available.
   check(journalCss.includes('@media (max-width: 760px)') && journalCss.includes('.finance-money-history-row-f4'), 'Money journal mobile layout protection missing')
-  check(financeUi.includes('Операция записана:') && financeUi.includes('Заказ введён:'), 'Audit timestamps are hidden from Finance drilldown')
+  check(financeUi.includes('Внесено в систему') && financeUi.includes('financeRecordedAt(row.eventRecordedAt)') && financeUi.includes('Заказ введён:'), 'Audit timestamps are hidden from Finance drilldown')
   check(financeUi.includes('openMoneyHistoryForOrder') && financeUi.includes('openOrderFromFinance'), 'Finance drilldown actions disappeared')
 
 
