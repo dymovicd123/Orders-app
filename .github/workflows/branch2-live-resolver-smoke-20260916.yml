@@ -1,0 +1,120 @@
+name: Branch2 live resolver smoke
+
+on:
+  push:
+    branches:
+      - audit/branch2-live-resolver-smoke-20260916
+    paths:
+      - .github/workflows/branch2-live-resolver-smoke-20260916.yml
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: https://orders-app-branch2.orders-clothes.workers.dev
+    steps:
+      - name: Exercise deployed Branch2 resolver via normal API and clean up
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/branch2-smoke
+          ids=()
+          cleanup() {
+            set +e
+            for id in "${ids[@]}"; do
+              [[ -n "$id" ]] || continue
+              rid="smoke-delete-${id}-$(date +%s%N)"
+              code="$(curl -sS -o "/tmp/branch2-smoke/delete-${id}.json" -w '%{http_code}' \
+                -X POST -H 'Content-Type: application/json' \
+                -H "X-Idempotency-Key: $rid" \
+                --data "{\"requestId\":\"$rid\",\"comment\":\"Temporary Branch2 resolver smoke cleanup\"}" \
+                "$BASE_URL/api/orders/$id/delete")"
+              echo "cleanup order $id -> HTTP $code"
+              cat "/tmp/branch2-smoke/delete-${id}.json" || true
+              echo
+            done
+          }
+          trap cleanup EXIT
+
+          code="$(curl -sS -o /tmp/branch2-smoke/health.json -w '%{http_code}' "$BASE_URL/api/health")"
+          echo "health -> HTTP $code"
+          cat /tmp/branch2-smoke/health.json | jq -c '{ok,service,structuralModularization,orderCreateSaveIntegrity,catalogTruthFinalizer}'
+          [[ "$code" == 200 ]]
+          jq -e '.ok == true and .service == "orders-app" and .orderCreateSaveIntegrity == "192b2a4"' /tmp/branch2-smoke/health.json >/dev/null
+
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_RUN_ID}"
+          order_date="$(date -u +%F)"
+
+          warehouse_name="BRANCH2 SMOKE UNKNOWN ${stamp}"
+          warehouse_external="SMOKE-WH-${stamp}"
+          warehouse_request="smoke-wh-${stamp}"
+          jq -n \
+            --arg requestId "$warehouse_request" \
+            --arg externalId "$warehouse_external" \
+            --arg orderDate "$order_date" \
+            --arg productName "$warehouse_name" \
+            '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,customerName:"Branch2 smoke",sourceType:"warehouse",orderTotal:1,orderStatus:"active",shippingStatus:"not_sent",comment:"TEMP Branch2 unknown-product resolver smoke",items:[{productName:$productName,gender:"ЖЕН",color:"SMOKE",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"SMOKE",quantity:1,unitPrice:1,sourceType:"warehouse",shortageAcknowledged:true}],payments:[]}' \
+            > /tmp/branch2-smoke/create-warehouse.json
+          code="$(curl -sS -o /tmp/branch2-smoke/create-warehouse-response.json -w '%{http_code}' \
+            -X POST -H 'Content-Type: application/json' -H "X-Idempotency-Key: $warehouse_request" \
+            --data-binary @/tmp/branch2-smoke/create-warehouse.json "$BASE_URL/api/orders")"
+          echo "warehouse unresolved create -> HTTP $code"
+          cat /tmp/branch2-smoke/create-warehouse-response.json | jq -c .
+          [[ "$code" == 201 ]]
+          warehouse_id="$(jq -r '.orderId // 0' /tmp/branch2-smoke/create-warehouse-response.json)"
+          [[ "$warehouse_id" =~ ^[1-9][0-9]*$ ]]
+          ids+=("$warehouse_id")
+          jq -e '.ok == true and ([.stockWriteOff[]? | .reservationStatus] | index("unresolved") != null)' /tmp/branch2-smoke/create-warehouse-response.json >/dev/null
+
+          code="$(curl -sS -o /tmp/branch2-smoke/warehouse-review.json -w '%{http_code}' "$BASE_URL/api/orders/$warehouse_id/catalog-review")"
+          echo "warehouse review queue -> HTTP $code"
+          cat /tmp/branch2-smoke/warehouse-review.json | jq -c .
+          [[ "$code" == 200 ]]
+          warehouse_item_id="$(jq -r '[.. | objects | (.order_item_id? // .orderItemId? // empty) | select(type=="number" and .>0)][0] // 0' /tmp/branch2-smoke/warehouse-review.json)"
+          [[ "$warehouse_item_id" =~ ^[1-9][0-9]*$ ]]
+
+          code="$(curl -sS -o /tmp/branch2-smoke/warehouse-context.json -w '%{http_code}' "$BASE_URL/api/orders/$warehouse_id/catalog-review/$warehouse_item_id/context")"
+          echo "warehouse resolver context -> HTTP $code"
+          cat /tmp/branch2-smoke/warehouse-context.json | jq -c '{ok,issueType,unknownFields,isWorkshop,product,productOptions:(.products|length)}'
+          [[ "$code" == 200 ]]
+          jq -e '.ok == true and .issueType == "unknown_product" and .isWorkshop == false and (.product == null) and ((.products | length) > 0)' /tmp/branch2-smoke/warehouse-context.json >/dev/null
+
+          workshop_name="BRANCH2 SMOKE WORKSHOP ${stamp}"
+          workshop_external="SMOKE-WS-${stamp}"
+          workshop_request="smoke-ws-${stamp}"
+          jq -n \
+            --arg requestId "$workshop_request" \
+            --arg externalId "$workshop_external" \
+            --arg orderDate "$order_date" \
+            --arg productName "$workshop_name" \
+            '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,customerName:"Branch2 smoke",sourceType:"warehouse",orderTotal:1,orderStatus:"active",shippingStatus:"not_sent",comment:"TEMP Branch2 workshop product-only resolver smoke",items:[{productName:$productName,gender:"ЖЕН",color:"SMOKE",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"SMOKE",quantity:1,unitPrice:1,sourceType:"workshop",workshopComment:"temporary resolver smoke",workshopUrgent:false}],payments:[]}' \
+            > /tmp/branch2-smoke/create-workshop.json
+          code="$(curl -sS -o /tmp/branch2-smoke/create-workshop-response.json -w '%{http_code}' \
+            -X POST -H 'Content-Type: application/json' -H "X-Idempotency-Key: $workshop_request" \
+            --data-binary @/tmp/branch2-smoke/create-workshop.json "$BASE_URL/api/orders")"
+          echo "workshop unresolved create -> HTTP $code"
+          cat /tmp/branch2-smoke/create-workshop-response.json | jq -c .
+          [[ "$code" == 201 ]]
+          workshop_id="$(jq -r '.orderId // 0' /tmp/branch2-smoke/create-workshop-response.json)"
+          [[ "$workshop_id" =~ ^[1-9][0-9]*$ ]]
+          ids+=("$workshop_id")
+          jq -e '.ok == true and .workshopCount == 1' /tmp/branch2-smoke/create-workshop-response.json >/dev/null
+
+          code="$(curl -sS -o /tmp/branch2-smoke/workshop-review.json -w '%{http_code}' "$BASE_URL/api/orders/$workshop_id/catalog-review")"
+          echo "workshop review queue -> HTTP $code"
+          cat /tmp/branch2-smoke/workshop-review.json | jq -c .
+          [[ "$code" == 200 ]]
+          workshop_item_id="$(jq -r '[.. | objects | (.order_item_id? // .orderItemId? // empty) | select(type=="number" and .>0)][0] // 0' /tmp/branch2-smoke/workshop-review.json)"
+          [[ "$workshop_item_id" =~ ^[1-9][0-9]*$ ]]
+
+          code="$(curl -sS -o /tmp/branch2-smoke/workshop-context.json -w '%{http_code}' "$BASE_URL/api/orders/$workshop_id/catalog-review/$workshop_item_id/context")"
+          echo "workshop resolver context -> HTTP $code"
+          cat /tmp/branch2-smoke/workshop-context.json | jq -c '{ok,issueType,unknownFields,isWorkshop,product,productOptions:(.products|length)}'
+          [[ "$code" == 200 ]]
+          jq -e '.ok == true and .issueType == "workshop_product" and .isWorkshop == true and (.product == null) and ((.products | length) > 0)' /tmp/branch2-smoke/workshop-context.json >/dev/null
+
+          echo 'Live Branch2 resolver smoke passed; cleanup trap will soft-delete both temporary orders.'
