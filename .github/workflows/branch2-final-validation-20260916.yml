@@ -1,0 +1,67 @@
+name: Branch2 final source validation
+
+on:
+  push:
+    branches:
+      - audit/branch2-final-validation-20260916
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sync/branch2-final-20260916
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Prove exact base and allowed Branch2-only source delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          BASE="$(git merge-base HEAD origin/main)"
+          MAIN="$(git rev-parse origin/main)"
+          echo "BASE=$BASE"
+          echo "MAIN=$MAIN"
+          test "$BASE" = "$MAIN"
+          test "$MAIN" = 'f183c41a6f02a4bb996d174516ef9e0b1ba04eaa'
+          git diff --name-only origin/main...HEAD | tee /tmp/branch2-diff.txt
+          cat > /tmp/allowed.txt <<'EOF'
+          index.html
+          package.json
+          scripts/branch2-environment-worker-manifest.json
+          scripts/test-branch2-environment.mjs
+          scripts/test-step1906a-worker-modularization.mjs
+          worker/domains/auth.ts
+          wrangler.jsonc
+          EOF
+          sort -u /tmp/branch2-diff.txt > /tmp/actual.sorted
+          sed 's/^[[:space:]]*//' /tmp/allowed.txt | sed '/^$/d' | sort -u > /tmp/allowed.sorted
+          diff -u /tmp/allowed.sorted /tmp/actual.sorted
+          test ! -e .github/workflows/branch2-sync-candidate.yml
+          grep -q '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -q '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -q '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          ! grep -q 'orders_db_prod' wrangler.jsonc
+          grep -q '<title>Система заказов 2</title>' index.html
+          node scripts/test-branch2-environment.mjs
+      - run: npm ci
+      - name: Full release gate
+        run: npm run release:check
+      - name: Database safety gate
+        run: npm run verify:db-safety
+      - name: Build
+        run: npm run build
+      - name: Lint
+        run: npm run lint
+      - name: Wrangler dry run
+        run: npx wrangler deploy --dry-run --outdir /tmp/branch2-final-dry-run
+      - name: Final exact SHA
+        run: git rev-parse HEAD
