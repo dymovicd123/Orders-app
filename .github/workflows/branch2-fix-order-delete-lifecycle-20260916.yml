@@ -1,0 +1,97 @@
+name: Fix dedicated order delete lifecycle path on Branch2
+
+on:
+  push:
+    branches:
+      - ops/branch2-manager-seed-20260916
+    paths:
+      - .github/workflows/branch2-fix-order-delete-lifecycle-20260916.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branch2
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Verify expected Branch2 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "5dc216ddc7f2b5f11fea04bd72880aa1cd8bea47"
+          grep -q '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -q '"database_name": "orders_db_branch2"' wrangler.jsonc
+          ! grep -q 'orders_db_prod' wrangler.jsonc
+      - name: Apply narrow dedicated-delete bypass and regression guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+
+          write_path = Path('worker/domains/orders-write.ts')
+          write = write_path.read_text()
+          old_sig = """export async function updateOrderCritical(\n  db: D1Database,\n  id: number,\n  input: OrderInput,\n  actor: AuthUser | null,\n  checkedBy: string,\n) {"""
+          new_sig = """export async function updateOrderCritical(\n  db: D1Database,\n  id: number,\n  input: OrderInput,\n  actor: AuthUser | null,\n  checkedBy: string,\n  options: { lifecycleAction?: 'order_delete' } = {},\n) {"""
+          if write.count(old_sig) != 1:
+              raise SystemExit('updateOrderCritical signature baseline drift')
+          write = write.replace(old_sig, new_sig, 1)
+
+          old_guard = """      const nextShippingStatus = input.shippingStatus !== undefined\n        ? normalizeShippingStatus(input.shippingStatus)\n        : existingShippingStatus;\n      if (workingModeEdit && (\n        nextOrderStatus !== existingOrderStatus\n        || nextWorkshopStatus !== existingWorkshopStatus\n        || nextShippingStatus !== existingShippingStatus\n      )) {"""
+          new_guard = """      const nextShippingStatus = input.shippingStatus !== undefined\n        ? normalizeShippingStatus(input.shippingStatus)\n        : existingShippingStatus;\n      const dedicatedOrderDelete = options.lifecycleAction === 'order_delete'\n        && deletingOrder\n        && nextWorkshopStatus === existingWorkshopStatus\n        && nextShippingStatus === existingShippingStatus;\n      if (workingModeEdit && !dedicatedOrderDelete && (\n        nextOrderStatus !== existingOrderStatus\n        || nextWorkshopStatus !== existingWorkshopStatus\n        || nextShippingStatus !== existingShippingStatus\n      )) {"""
+          if write.count(old_guard) != 1:
+              raise SystemExit('working-mode lifecycle guard baseline drift')
+          write = write.replace(old_guard, new_guard, 1)
+          write_path.write_text(write)
+
+          delete_path = Path('worker/domains/order-delete.ts')
+          deletion = delete_path.read_text()
+          old_call = """    actor ?? null,\n    checkedBy,\n  )"""
+          new_call = """    actor ?? null,\n    checkedBy,\n    { lifecycleAction: 'order_delete' },\n  )"""
+          if deletion.count(old_call) != 1:
+              raise SystemExit('deleteOrderSafely updateOrderCritical call baseline drift')
+          deletion = deletion.replace(old_call, new_call, 1)
+          delete_path.write_text(deletion)
+
+          test_path = Path('scripts/test-order-delete-mobility.mjs')
+          test = test_path.read_text()
+          old_reads = """  const worker = read('worker/index.ts')\n  const deletion = read('worker/domains/order-delete.ts')"""
+          new_reads = """  const worker = read('worker/index.ts')\n  const deletion = read('worker/domains/order-delete.ts')\n  const ordersWrite = read('worker/domains/orders-write.ts')"""
+          if test.count(old_reads) != 1:
+              raise SystemExit('order-delete test read baseline drift')
+          test = test.replace(old_reads, new_reads, 1)
+
+          old_assert = """  check(deletion.includes('requestId: `${requestId}:order`'), 'final logical deletion is not retry-idempotent')\n  check(deletion.includes(\"orderStatus: 'deleted'\"), 'existing logical deletion path is not reused')"""
+          new_assert = """  check(deletion.includes('requestId: `${requestId}:order`'), 'final logical deletion is not retry-idempotent')\n  check(deletion.includes(\"orderStatus: 'deleted'\"), 'existing logical deletion path is not reused')\n  check(deletion.includes(\"{ lifecycleAction: 'order_delete' }\"), 'dedicated delete path does not declare its lifecycle action')\n  check(ordersWrite.includes(\"options: { lifecycleAction?: 'order_delete' } = {}\"), 'order editor lacks a typed internal lifecycle-action option')\n  check(ordersWrite.includes(\"options.lifecycleAction === 'order_delete'\"), 'dedicated delete lifecycle bypass is missing')\n  check(ordersWrite.includes('workingModeEdit && !dedicatedOrderDelete'), 'ordinary working-mode lifecycle edits are no longer protected')\n  check(ordersWrite.includes('nextWorkshopStatus === existingWorkshopStatus'), 'dedicated delete bypass is not constrained against workshop lifecycle changes')\n  check(ordersWrite.includes('nextShippingStatus === existingShippingStatus'), 'dedicated delete bypass is not constrained against shipping lifecycle changes')"""
+          if test.count(old_assert) != 1:
+              raise SystemExit('order-delete test assertion baseline drift')
+          test = test.replace(old_assert, new_assert, 1)
+          test_path.write_text(test)
+          PY
+          git diff --check
+          git diff -- worker/domains/orders-write.ts worker/domains/order-delete.ts scripts/test-order-delete-mobility.mjs
+      - run: npm ci
+      - name: Focused regression
+        run: node scripts/test-order-delete-mobility.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Full release gate
+        run: npm run release:check
+      - name: Commit and push Branch2 fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "dymovicd123"
+          git config user.email "dymovicd@gmail.com"
+          git add worker/domains/orders-write.ts worker/domains/order-delete.ts scripts/test-order-delete-mobility.mjs
+          git commit -m "Fix dedicated order deletion in working mode"
+          git push origin HEAD:branch2
