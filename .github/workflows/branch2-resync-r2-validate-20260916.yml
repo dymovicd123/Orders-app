@@ -1,0 +1,52 @@
+name: Validate Branch2 resync r2
+
+on:
+  push:
+    branches:
+      - audit/branch2-resync-r2-validate-20260916
+    paths:
+      - .github/workflows/branch2-resync-r2-validate-20260916.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact Branch2 candidate
+        uses: actions/checkout@v4
+        with:
+          ref: de8a3e0765a73b48cb16ec9739c9fa3f8bbba508
+          fetch-depth: 2
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Verify exact candidate and parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "de8a3e0765a73b48cb16ec9739c9fa3f8bbba508"
+          test "$(git rev-parse HEAD^)" = "412ba8b4f2a72873232103944e2a3a777a6dbcd9"
+          grep -q '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -q '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -q '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          ! grep -q 'orders_db_prod' wrangler.jsonc
+          grep -q '<title>Система заказов 2</title>' index.html
+      - name: Install dependencies
+        run: npm ci
+      - name: Branch2 environment gate
+        run: node scripts/test-branch2-environment.mjs
+      - name: Full release gate
+        run: npm run release:check
+      - name: Database safety gate
+        run: npm run verify:db-safety
+      - name: Build
+        run: npm run build
+      - name: Lint
+        run: npm run lint
+      - name: Wrangler Branch2 dry run
+        run: npx wrangler deploy --dry-run --outdir /tmp/branch2-resync-r2-dry-run
