@@ -46,9 +46,17 @@ jobs:
           WHERE v.id IN (SELECT DISTINCT variant_id FROM order_items WHERE order_id IN (6,7,8,9,10) AND variant_id IS NOT NULL)
           ORDER BY v.id;
           SELECT kind,value,is_active FROM reference_values WHERE UPPER(value) LIKE '%TEST%' OR UPPER(value) LIKE '%КОСТЮМ%' ORDER BY kind,value;
+          SELECT kind,alias_key,raw_value,canonical_value,created_at,updated_at FROM catalog_value_aliases
+          WHERE UPPER(alias_key) LIKE '%TEST%' OR UPPER(alias_key)='СТАНДАРТ' OR UPPER(canonical_value) LIKE '%КОСТЮМ%' ORDER BY kind,id;
+          SELECT alias_key,raw_value,product_id,created_at,updated_at FROM catalog_product_aliases
+          WHERE UPPER(raw_value) LIKE '%TEST RESOLVER%' OR UPPER(raw_value) LIKE '%TESTМАТЕРИАЛ%' ORDER BY id DESC LIMIT 50;
           SELECT input_key,variant_id,created_at,updated_at FROM catalog_input_aliases WHERE UPPER(input_key) LIKE '%TEST RESOLVER%' OR UPPER(input_key) LIKE '%TESTМАТЕРИАЛ%' ORDER BY updated_at DESC LIMIT 50;
           SELECT id,order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,unresolved_reason,created_at,updated_at,released_at
           FROM inventory_reservations WHERE order_id IN (6,7,8,9,10) ORDER BY order_id,order_item_id,id;
+          SELECT id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity,last_action,last_source_ref
+          FROM inventory_stock WHERE variant_id=626 ORDER BY id;
+          SELECT id,inventory_source,movement_type,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity_delta,quantity_after,reference_type,reference_id,comment,created_at
+          FROM inventory_movements WHERE variant_id=626 ORDER BY id;
           SQL
           )
           npx wrangler d1 execute orders_db_branch2 --remote --json --command="$SQL" | tee /tmp/resolver-user-session.json
