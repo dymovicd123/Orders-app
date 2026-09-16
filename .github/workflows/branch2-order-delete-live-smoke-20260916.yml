@@ -1,0 +1,180 @@
+name: Verify Branch2 order delete fix live
+
+on:
+  push:
+    branches:
+      - ops/branch2-manager-seed-20260916
+    paths:
+      - .github/workflows/branch2-order-delete-live-smoke-20260916.yml
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BASE_URL: https://orders-app-branch2.orders-clothes.workers.dev
+      EXPECTED_SHA: 0458068359883b18807642e15ad20c0f0a46f498
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: branch2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Verify exact isolated Branch2 checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          grep -q '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -q '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -q '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          ! grep -q 'orders_db_prod' wrangler.jsonc
+      - name: Wait for exact Cloudflare Branch2 build
+        shell: bash
+        run: |
+          set -euo pipefail
+          CF_API=https://api.cloudflare.com/client/v4
+          AUTH=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+          workers_json="$(curl --fail-with-body -sS "${AUTH[@]}" "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts")"
+          worker_tag="$(jq -r '.result[] | select(.id == "orders-app-branch2") | .tag // empty' <<<"$workers_json" | head -n1)"
+          [[ -n "$worker_tag" ]]
+          found=''
+          for attempt in $(seq 1 48); do
+            builds_json="$(curl --fail-with-body -sS "${AUTH[@]}" "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/builds/workers/$worker_tag/builds")"
+            found="$(jq -c --arg sha "$EXPECTED_SHA" '[.result[]? | select(.build_trigger_metadata.commit_hash == $sha and .build_trigger_metadata.branch == "branch2")] | sort_by(.created_on) | last // empty' <<<"$builds_json")"
+            if [[ -n "$found" ]]; then
+              status="$(jq -r '.status // empty' <<<"$found")"
+              outcome="$(jq -r '.build_outcome // empty' <<<"$found")"
+              uuid="$(jq -r '.build_uuid // empty' <<<"$found")"
+              echo "exact Branch2 build $uuid status=$status outcome=${outcome:-pending}"
+              if [[ "$status" == stopped ]]; then
+                [[ "$outcome" == success ]]
+                exit 0
+              fi
+            fi
+            echo "waiting for exact Branch2 build $EXPECTED_SHA ($attempt/48)"
+            sleep 10
+          done
+          echo "Exact Cloudflare build did not complete in time" >&2
+          exit 1
+      - name: Exercise ordinary delete path and hard-clean exact smoke fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/delete-smoke
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_RUN_ID}"
+          order_date="$(date -u +%F)"
+          wh_ref="DEL-SMOKE-WH-${stamp}"
+          ws_ref="DEL-SMOKE-WS-${stamp}"
+          wh_create="delete-smoke-create-wh-${stamp}"
+          ws_create="delete-smoke-create-ws-${stamp}"
+          wh_delete="delete-smoke-delete-wh-${stamp}"
+          ws_delete="delete-smoke-delete-ws-${stamp}"
+          cleanup_needed=0
+
+          cleanup() {
+            rc=$?
+            set +e
+            if [[ "$cleanup_needed" == 1 ]]; then
+              echo "Hard-cleaning only exact Branch2 smoke fixtures"
+              npx wrangler d1 time-travel info orders_db_branch2 || true
+              cat >/tmp/delete-smoke/cleanup.sql <<SQL
+          DELETE FROM activity_log WHERE external_order_id IN ('$wh_ref','$ws_ref');
+          DELETE FROM order_manager_audit WHERE external_id IN ('$wh_ref','$ws_ref');
+          DELETE FROM critical_operations
+           WHERE request_id IN ('$wh_create','$ws_create','$wh_delete:order','$ws_delete:order')
+              OR target_ref IN ('$wh_ref','$ws_ref');
+          DELETE FROM orders WHERE external_id IN ('$wh_ref','$ws_ref');
+          SQL
+              npx wrangler d1 execute orders_db_branch2 --remote --file=/tmp/delete-smoke/cleanup.sql || true
+              npx wrangler d1 execute orders_db_branch2 --remote --command="
+          SELECT COUNT(*) AS n FROM orders WHERE external_id IN ('$wh_ref','$ws_ref');
+          SELECT COUNT(*) AS n FROM activity_log WHERE external_order_id IN ('$wh_ref','$ws_ref');
+          SELECT COUNT(*) AS n FROM order_manager_audit WHERE external_id IN ('$wh_ref','$ws_ref');
+          SELECT COUNT(*) AS n FROM critical_operations WHERE request_id IN ('$wh_create','$ws_create','$wh_delete:order','$ws_delete:order') OR target_ref IN ('$wh_ref','$ws_ref');" || true
+            fi
+            exit $rc
+          }
+          trap cleanup EXIT
+
+          health_code="$(curl -sS -o /tmp/delete-smoke/health.json -w '%{http_code}' "$BASE_URL/api/health")"
+          [[ "$health_code" == 200 ]]
+          jq -e '.ok == true and .service == "orders-app"' /tmp/delete-smoke/health.json >/dev/null
+
+          mgr_code="$(curl -sS -o /tmp/delete-smoke/managers.json -w '%{http_code}' "$BASE_URL/api/reference-values?kind=managers")"
+          [[ "$mgr_code" == 200 ]]
+          manager_id="$(jq -r '[.items[]? | select(.isActive == true)][0].id // 0' /tmp/delete-smoke/managers.json)"
+          manager_name="$(jq -r '[.items[]? | select(.isActive == true)][0].value // ""' /tmp/delete-smoke/managers.json)"
+          [[ "$manager_id" =~ ^[1-9][0-9]*$ && -n "$manager_name" ]]
+
+          wh_name="BRANCH2 DELETE SMOKE UNKNOWN ${stamp}"
+          jq -n --arg requestId "$wh_create" --arg externalId "$wh_ref" --arg orderDate "$order_date" --argjson managerId "$manager_id" --arg managerName "$manager_name" --arg productName "$wh_name" \
+            '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,managerId:$managerId,managerName:$managerName,sourceType:"warehouse",orderTotal:1,orderStatus:"active",shippingStatus:"not_sent",comment:"TEMP Branch2 delete smoke warehouse",items:[{productName:$productName,gender:"ЖЕН",color:"SMOKE",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"SMOKE",quantity:1,unitPrice:1,sourceType:"warehouse",shortageAcknowledged:true}],payments:[]}' >/tmp/delete-smoke/wh-create.json
+          code="$(curl -sS -o /tmp/delete-smoke/wh-create-response.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "X-Idempotency-Key: $wh_create" --data-binary @/tmp/delete-smoke/wh-create.json "$BASE_URL/api/orders")"
+          echo "warehouse create -> $code"
+          cat /tmp/delete-smoke/wh-create-response.json | jq -c .
+          [[ "$code" == 201 ]]
+          wh_id="$(jq -r '.orderId // 0' /tmp/delete-smoke/wh-create-response.json)"
+          [[ "$wh_id" =~ ^[1-9][0-9]*$ ]]
+          cleanup_needed=1
+
+          ws_name="BRANCH2 DELETE SMOKE WORKSHOP ${stamp}"
+          jq -n --arg requestId "$ws_create" --arg externalId "$ws_ref" --arg orderDate "$order_date" --argjson managerId "$manager_id" --arg managerName "$manager_name" --arg productName "$ws_name" \
+            '{requestId:$requestId,externalId:$externalId,orderDate:$orderDate,managerId:$managerId,managerName:$managerName,sourceType:"warehouse",orderTotal:1,orderStatus:"active",shippingStatus:"not_sent",comment:"TEMP Branch2 delete smoke workshop",items:[{productName:$productName,gender:"ЖЕН",color:"SMOKE",material:"СТАНДАРТ",length:"СТАНДАРТ",size:"SMOKE",quantity:1,unitPrice:1,sourceType:"workshop",workshopComment:"temporary delete smoke",workshopUrgent:false}],payments:[]}' >/tmp/delete-smoke/ws-create.json
+          code="$(curl -sS -o /tmp/delete-smoke/ws-create-response.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "X-Idempotency-Key: $ws_create" --data-binary @/tmp/delete-smoke/ws-create.json "$BASE_URL/api/orders")"
+          echo "workshop create -> $code"
+          cat /tmp/delete-smoke/ws-create-response.json | jq -c .
+          [[ "$code" == 201 ]]
+          ws_id="$(jq -r '.orderId // 0' /tmp/delete-smoke/ws-create-response.json)"
+          [[ "$ws_id" =~ ^[1-9][0-9]*$ ]]
+
+          for spec in "wh:$wh_id:$wh_delete" "ws:$ws_id:$ws_delete"; do
+            IFS=: read -r label id rid <<<"$spec"
+            code="$(curl -sS -o "/tmp/delete-smoke/${label}-delete-response.json" -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "X-Idempotency-Key: $rid" --data "{\"requestId\":\"$rid\",\"comment\":\"Temporary Branch2 delete lifecycle smoke\"}" "$BASE_URL/api/orders/$id/delete")"
+            echo "$label delete -> $code"
+            cat "/tmp/delete-smoke/${label}-delete-response.json" | jq -c .
+            [[ "$code" == 200 ]]
+            jq -e '.ok == true' "/tmp/delete-smoke/${label}-delete-response.json" >/dev/null
+          done
+
+          # Retry the same request IDs: must be harmless and still succeed.
+          for spec in "wh:$wh_id:$wh_delete" "ws:$ws_id:$ws_delete"; do
+            IFS=: read -r label id rid <<<"$spec"
+            code="$(curl -sS -o "/tmp/delete-smoke/${label}-retry-response.json" -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "X-Idempotency-Key: $rid" --data "{\"requestId\":\"$rid\",\"comment\":\"Temporary Branch2 delete lifecycle smoke\"}" "$BASE_URL/api/orders/$id/delete")"
+            [[ "$code" == 200 ]]
+            jq -e '.ok == true' "/tmp/delete-smoke/${label}-retry-response.json" >/dev/null
+          done
+
+          npx wrangler d1 execute orders_db_branch2 --remote --json --command="
+          SELECT id,external_id,order_status,shipping_status,workshop_status FROM orders WHERE id IN ($wh_id,$ws_id) ORDER BY id;
+          SELECT order_id,status,COUNT(*) AS n FROM inventory_reservations WHERE order_id IN ($wh_id,$ws_id) GROUP BY order_id,status ORDER BY order_id,status;
+          SELECT order_id,status,COUNT(*) AS n FROM workshop_tasks WHERE order_id IN ($wh_id,$ws_id) GROUP BY order_id,status ORDER BY order_id,status;
+          SELECT COUNT(*) AS n FROM inventory_movements WHERE reference_id IN ('$wh_ref','$ws_ref');
+          SELECT COUNT(*) AS n FROM financial_events WHERE order_id IN ($wh_id,$ws_id) OR external_order_id IN ('$wh_ref','$ws_ref');
+          SELECT COUNT(*) AS n FROM cash_register_entries WHERE order_id IN ($wh_id,$ws_id) OR external_order_id IN ('$wh_ref','$ws_ref');
+          SELECT COUNT(*) AS n FROM inventory_stock;" >/tmp/delete-smoke/post-delete.json
+          POST=/tmp/delete-smoke/post-delete.json WH_ID="$wh_id" WS_ID="$ws_id" node <<'NODE'
+          const fs=require('fs')
+          const raw=JSON.parse(fs.readFileSync(process.env.POST,'utf8'))
+          const c=Array.isArray(raw)?raw:[raw]
+          if(c.length!==7 || c.some(x=>!x.success || Number(x?.meta?.rows_written||0)!==0)) throw new Error('post-delete read shape failed')
+          const orders=c[0].results||[]
+          if(orders.length!==2 || orders.some(o=>o.order_status!=='deleted' || o.shipping_status!=='not_sent')) throw new Error('orders were not safely deleted: '+JSON.stringify(orders))
+          const reservations=c[1].results||[]
+          if(reservations.some(r=>['active','unresolved','fulfilled'].includes(r.status))) throw new Error('live reservation survived delete: '+JSON.stringify(reservations))
+          const tasks=c[2].results||[]
+          if(tasks.some(r=>r.status==='active')) throw new Error('active workshop task survived delete: '+JSON.stringify(tasks))
+          for(let i=3;i<=5;i++) if(Number(c[i].results?.[0]?.n||0)!==0) throw new Error('unexpected stock/money side effect at result '+i+': '+JSON.stringify(c[i].results))
+          if(Number(c[6].results?.[0]?.n||0)!==0) throw new Error('Branch2 inventory stock changed unexpectedly')
+          console.log('Live delete path succeeded for warehouse and workshop orders; no stock/money side effects.')
+          NODE
+
+          echo "Live delete smoke passed. Exact fixtures will now be hard-cleaned by trap."
