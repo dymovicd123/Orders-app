@@ -1,0 +1,87 @@
+name: Branch2 sync read-only audit
+
+on:
+  push:
+    branches:
+      - audit/branch2-sync-20260916
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Resolve Branch2 D1 by logical name
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          npx wrangler d1 list --json > /tmp/d1-list.json
+          node <<'NODE'
+          const fs = require('fs')
+          const list = JSON.parse(fs.readFileSync('/tmp/d1-list.json', 'utf8'))
+          const rows = Array.isArray(list) ? list : (list.result || [])
+          const hit = rows.find((row) => row.name === 'orders_db_branch2')
+          if (!hit) throw new Error('orders_db_branch2 was not found in the connected Cloudflare account')
+          console.log(`BRANCH2_DB_NAME=${hit.name}`)
+          console.log(`BRANCH2_DB_ID=${hit.uuid || hit.id || hit.database_id || ''}`)
+          console.log(`BRANCH2_DB_CREATED_AT=${hit.created_at || ''}`)
+          NODE
+
+      - name: Show repository Branch2 binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs')
+          const text = fs.readFileSync('wrangler.jsonc', 'utf8')
+          const name = text.match(/"name"\s*:\s*"([^"]+)"/)?.[1]
+          const dbName = text.match(/"database_name"\s*:\s*"([^"]+)"/)?.[1]
+          const dbId = text.match(/"database_id"\s*:\s*"([^"]+)"/)?.[1]
+          console.log(`REPO_WORKER_NAME=${name || ''}`)
+          console.log(`REPO_DB_NAME=${dbName || ''}`)
+          console.log(`REPO_DB_ID=${dbId || ''}`)
+          if (name !== 'orders-app-branch2') throw new Error('Repository branch is not bound to orders-app-branch2')
+          if (dbName !== 'orders_db_branch2') throw new Error('Repository branch is not bound to orders_db_branch2')
+          if (text.includes('orders_db_prod')) throw new Error('Primary D1 binding leaked into Branch2 config')
+          NODE
+
+      - name: Read-only schema inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== required tables ==='
+          npx wrangler d1 execute orders_db_branch2 --remote --command "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('orders','order_items','workshop_tasks','catalog_products','catalog_variants','catalog_input_aliases','catalog_value_aliases','inventory_stock','inventory_reservations','return_items','exchange_items','d1_migrations') ORDER BY name;"
+          echo '=== catalog_products columns ==='
+          npx wrangler d1 execute orders_db_branch2 --remote --command "PRAGMA table_info(catalog_products);"
+          echo '=== return_items columns ==='
+          npx wrangler d1 execute orders_db_branch2 --remote --command "PRAGMA table_info(return_items);"
+          echo '=== exchange_items columns ==='
+          npx wrangler d1 execute orders_db_branch2 --remote --command "PRAGMA table_info(exchange_items);"
+          echo '=== order_items resolver columns ==='
+          npx wrangler d1 execute orders_db_branch2 --remote --command "PRAGMA table_info(order_items);"
+          echo '=== migrations journal ==='
+          npx wrangler d1 execute orders_db_branch2 --remote --command "SELECT id, name, applied_at FROM d1_migrations ORDER BY id;" || true
+          echo '=== post-0064 indexes ==='
+          npx wrangler d1 execute orders_db_branch2 --remote --command "SELECT name, sql FROM sqlite_master WHERE type='index' AND name IN ('idx_catalog_variants_product_active_desc_sort','idx_payments_payment_date_order_amount','idx_orders_current_debt_partial','idx_order_items_pending_writeoff_status_order','idx_order_items_workshop_order_quantity','idx_o1_exchanges_payment_finance','idx_o1_stock_checks_normalized_time','idx_o1_stock_checks_exact_stocktake','idx_return_items_physical_receipt','idx_exchange_items_physical_receipt') ORDER BY name;"
+          echo '=== non-sensitive catalog sanity ==='
+          npx wrangler d1 execute orders_db_branch2 --remote --command "SELECT (SELECT COUNT(*) FROM catalog_products) AS products, (SELECT COUNT(*) FROM catalog_variants) AS variants;"
+
+      - name: Prove audit is read-only
+        run: echo 'READ-ONLY AUDIT COMPLETE — no D1 mutation commands were executed.'
