@@ -1,5 +1,22 @@
 # Finance — current canonical context
 
+## Latest local checkpoint — 2026-09-16
+
+Finance day transparency is implemented on `astra/finance-transparency-20260916`, based on freshly fetched `main` commit `d067afc8db6efc0b716f8a8f200aea6618655517`. The user authorized a commit and GitHub push of this bounded change only; **no PR, merge, deployment or Production/D1 changes**. The Production statements below describe the earlier F1–F7 release, not this new work.
+
+- Scope: the supplied `ASTRA_PROJECT_CONTEXT.md` and `ASTRA_TASK_PACKET_FINANCE_2026-09-05.md`; no broad repository/warehouse audit, no Branch2 changes.
+- Approved business meaning: the all-method headline uses current payments assigned to the selected business date, after corrections. Immutable correction history is separate and must not be summed as repeated physical receipts.
+- New day view separates all-method payments, cash incoming/outgoing/net change, payment methods, and money/cash journals. Business date and actual recorded-at (Kazakhstan time) are separate; late records are explicit. Imported records retain unknown original entry time.
+- Read path: existing authorized money-history endpoint with `view=day`; four read-only SELECTs in one D1 batch, 50-row journal pages, complete day totals. No migrations or mutation-path changes. Current cash actions remain explicitly separate from a historical selected day.
+- Reconciliation compares per-order incoming and outgoing separately, not merely a zero net difference. Corrections/unknown history are not silently declared consistent.
+- Focused regression passed before full gate. Full `npm run release:check` passed, including build, Wrangler dry-run and all chained regressions. Sandbox blocked esbuild directory access in the first full run; the approved unrestricted local rerun passed. No deployment occurred.
+- `npm run lint` exits 0 with warnings; two new warnings concern helper exports in `FinanceDayView.tsx` and Fast Refresh, not runtime errors. Existing warnings were not cleaned up outside scope.
+- Browser acceptance on a GET-only local fixture confirmed 100,000 total payments, 20,000 cash, two 40,000 noncash methods, the late 07.09 17:01 timestamp, journal switching, and historical/current-cash separation. Native date-picker interaction crashed the in-app browser twice; calendar interaction and mobile visual acceptance are **not verified**. Request-controller date races, cancellation, stale-response rejection, pagination and retry passed automated tests.
+- Final diff checked for technical UI copy, temporary files and misleading cash/date wording. Temporary preview files removed and server stopped; unrelated `_github_bootstrap_r4_report.txt` preserved. Production data was neither changed nor queried by this implementation task.
+- Regression entry point: `node scripts/test-finance-day-transparency.mjs`; exact preservation deltas: `scripts/finance-day-transparency-manifest.json`.
+
+## Earlier published checkpoint
+
 Updated: 2026-08-25
 Repository: `dymovicd123/Orders-app`
 Status: **FINANCE F1–F7 COMPLETE IN PRODUCTION**. Warehouse may resume from its canonical Phase 1A checkpoint.

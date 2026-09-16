@@ -5,6 +5,7 @@ import { cleanText, normalizeDate, toInt, upperText } from '../core/text.ts'
 import type { AuthUser } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
 import { randomToken } from './auth.ts'
+import { readFinanceDay } from './finance-day.ts'
 
 export function kazakhstanBusinessDate(now = new Date()) {
   return new Date(now.getTime() + 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -375,6 +376,7 @@ export function moneyHistoryOperationLabel(eventType: string, relatedType: strin
 
 
 export async function listFinancialHistory(db: D1Database, url: URL) {
+  if (url.searchParams.get('view') === 'day') return readFinanceDay(db, url);
   const limit = Math.min(100, Math.max(20, toInt(url.searchParams.get('limit'), 50)));
   const offset = Math.max(0, toInt(url.searchParams.get('offset'), 0));
   const query = upperText(url.searchParams.get('q'));
@@ -464,7 +466,7 @@ export async function listFinancialHistory(db: D1Database, url: URL) {
        LEFT JOIN orders o ON o.id = fe.order_id
        LEFT JOIN managers m ON m.id = o.manager_id
        ${whereSql}
-       ORDER BY fe.event_at DESC, fe.id DESC
+       ORDER BY fe.event_date DESC, datetime(fe.event_at) DESC, fe.id DESC
        LIMIT ? OFFSET ?`
     ).bind(...bindings, limit + 1, offset).all<Record<string, unknown>>(),
     db.prepare(
