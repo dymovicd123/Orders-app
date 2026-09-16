@@ -222,7 +222,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
 
               <section className="mini-panel cash-register-ledger-panel">
                 <div className="mini-panel-head">
-                  <div><h3>Журнал наличных — текущий цикл</h3><p className="mini-panel-note">Записи идут в порядке внесения. Для истории конкретного дня используйте «Один день». Ошибочную ручную операцию лучше отменять кнопкой «Отменить», а не создавать встречное внесение вручную.</p></div>
+                  <div><h3>Журнал наличных — текущий цикл</h3><p className="mini-panel-note">Это техническая последовательность текущей кассы. Обычную историю денег смотрите во вкладке «Операции». Ошибочную ручную операцию лучше отменять кнопкой «Отменить», а не создавать встречное внесение вручную.</p></div>
                   <div className="cash-ledger-actions">
                     <button className="secondary compact" type="button" disabled={cashRegisterBusy} onClick={() => void loadCashRegister()}>Обновить</button>
                     {isAdmin ? <button className="secondary compact danger-outline" type="button" disabled={cashRegisterBusy} onClick={() => void resetCashRegisterCycle()}>Начать новый цикл с 0 ₸</button> : null}
@@ -372,6 +372,41 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
     .map((row) => ({ ...row, net: row.received - row.returned }))
     .sort((a, b) => String(b.date).localeCompare(String(a.date)))
 
+  const humanOperations = [
+    ...paymentOperations.map((row) => ({
+      key: `payment-${row.id}`,
+      date: row.paymentDate,
+      orderId: row.orderId,
+      externalId: row.externalId,
+      orderDate: row.orderDate,
+      label: row.operationLabel || ({ order_payment: 'Оплата заказа', debt_close: 'Закрытие долга', order_extra: 'Доплата по заказу', exchange_extra: 'Доплата по обмену' } as Record<string, string>)[row.operationType] || 'Оплата',
+      method: row.method || 'Способ не указан',
+      amount: Number(row.amount || 0),
+      direction: 'in',
+      customer: row.customer || '',
+      manager: row.manager || '',
+      managerColor: row.managerColor || '',
+      comment: row.comment || '',
+      recordedAt: row.createdAt || '',
+    })),
+    ...activeReturns.map((row) => ({
+      key: `return-${row.id}`,
+      date: row.return_date,
+      orderId: row.order_id,
+      externalId: row.external_id,
+      orderDate: row.order_date,
+      label: row.return_type === 'exchange_refund' ? 'Возврат по обмену' : 'Возврат клиенту',
+      method: row.payment_method || 'Способ не указан',
+      amount: Number(row.amount || 0),
+      direction: 'out',
+      customer: row.customer || '',
+      manager: row.manager || '',
+      managerColor: row.manager_color || '',
+      comment: row.comment || '',
+      recordedAt: '',
+    })),
+  ].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.key).localeCompare(String(a.key)))
+
   return (
     <div className="finance-tabs-shell finance-truth-shell">
       {financeTabsNode}
@@ -424,6 +459,31 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                   <div><span>Возвращено</span><strong>{formatMoney(totalReturned)}</strong></div>
                 </div>
               </article>
+            </div>
+          </section>
+
+          <section className="mini-panel finance-days-truth-panel">
+            <div className="mini-panel-head">
+              <div>
+                <h3>По дням</h3>
+                <p className="mini-panel-note">Главная хронология периода: деньги стоят в том дне, к которому относятся.</p>
+              </div>
+            </div>
+            <div className="table-shell">
+              <table className="data-table finance-days-truth-table">
+                <thead><tr><th>Дата</th><th className="num">Поступило</th><th className="num">Возвращено</th><th className="num">Чистое движение</th><th className="num">Продажи</th><th>Состояние</th></tr></thead>
+                <tbody>
+                  {cashDays.map((row) => <tr key={`finance-cash-day-${row.date}`}>
+                    <td><strong>{formatDateShort(row.date)}</strong></td>
+                    <td className="num"><strong>{formatMoney(row.received)}</strong></td>
+                    <td className="num">{formatMoney(row.returned)}</td>
+                    <td className="num"><strong>{formatMoney(row.net)}</strong></td>
+                    <td className="num">{formatMoney(row.sales)}</td>
+                    <td>{row.reviewCount ? <span className="soft-badge warning-soft">Проверить: {row.reviewCount}</span> : row.infoCount ? <span className="soft-badge">Пояснение: {row.infoCount}</span> : <span className="soft-badge">Без замечаний</span>}</td>
+                  </tr>)}
+                  {!cashDays.length ? <tr><td colSpan={6} className="empty-state">За выбранный период нет заказов и денежных операций.</td></tr> : null}
+                </tbody>
+              </table>
             </div>
           </section>
 
@@ -547,35 +607,53 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
             <section className="finance-no-anomalies"><span className="status-pill">По датам без замечаний</span><span>В выбранном периоде не найдено операций, которые требуют проверки или отдельного пояснения.</span></section>
           ) : null}
 
-          <section className="mini-panel finance-days-truth-panel">
-            <div className="mini-panel-head">
-              <div>
-                <h3>По дням</h3>
-                <p className="mini-panel-note">Главная хронология периода: деньги стоят в том дне, к которому относятся.</p>
-              </div>
-            </div>
-            <div className="table-shell">
-              <table className="data-table finance-days-truth-table">
-                <thead><tr><th>Дата</th><th className="num">Поступило</th><th className="num">Возвращено</th><th className="num">Чистое движение</th><th className="num">Продажи</th><th>Состояние</th></tr></thead>
-                <tbody>
-                  {cashDays.map((row) => <tr key={`finance-cash-day-${row.date}`}>
-                    <td><strong>{formatDateShort(row.date)}</strong></td>
-                    <td className="num"><strong>{formatMoney(row.received)}</strong></td>
-                    <td className="num">{formatMoney(row.returned)}</td>
-                    <td className="num"><strong>{formatMoney(row.net)}</strong></td>
-                    <td className="num">{formatMoney(row.sales)}</td>
-                    <td>{row.reviewCount ? <span className="soft-badge warning-soft">Проверить: {row.reviewCount}</span> : row.infoCount ? <span className="soft-badge">Пояснение: {row.infoCount}</span> : <span className="soft-badge">Без замечаний</span>}</td>
-                  </tr>)}
-                  {!cashDays.length ? <tr><td colSpan={6} className="empty-state">За выбранный период нет заказов и денежных операций.</td></tr> : null}
-                </tbody>
-              </table>
-            </div>
-          </section>
+
         </div>
       ) : null}
 
       {financeMode === 'payments' ? (
         <div className="finance-payment-ledger finance-tab-content finance-truth-content">
+          <section className="report-block finance-human-operations-block">
+            <div className="strict-section-head finance-money-history-head">
+              <div>
+                <h3>Операции по датам</h3>
+                <p className="mini-panel-note">Операции идут по дате, к которой относятся деньги. Время внесения показывается только как примечание и не меняет порядок журнала.</p>
+              </div>
+              <span className="soft-badge">{humanOperations.length} операций</span>
+            </div>
+            {humanOperations.length ? <div className="finance-money-history-list">{humanOperations.map((row, index) => {
+              const previous = humanOperations[index - 1]
+              const showDay = !previous || previous.date !== row.date
+              const recordedLater = row.recordedAt && String(row.recordedAt).slice(0, 10) !== String(row.date)
+              return <div className="finance-money-history-entry" key={row.key}>
+                {showDay ? <div className="strict-section-head finance-money-history-day"><h3>{formatDateShort(row.date)}</h3><span className="soft-badge">дата операции</span></div> : null}
+                <article className={`finance-money-history-row finance-money-history-row-f4 ${row.direction === 'out' ? 'trace-review' : 'trace-normal'}`}>
+                  <div className="finance-money-history-date">
+                    <strong>{row.label}</strong>
+                    <small>{recordedLater ? `Внесено позже — ${financeRecordedAt(row.recordedAt)}` : `Относится к ${formatDateShort(row.date)}`}</small>
+                  </div>
+                  <div className="finance-money-history-order">
+                    <strong>{row.externalId || 'Без номера заказа'}</strong>
+                    {row.customer ? <small>{row.customer}</small> : null}
+                    {row.orderDate ? <small>Дата заказа: {formatDateShort(row.orderDate)}</small> : null}
+                    {row.manager ? <ManagerBadge name={row.manager} colorKey={row.managerColor || managerColorFor(row.manager)} compact /> : null}
+                  </div>
+                  <div className="finance-money-history-operation">
+                    <strong>{row.method}</strong>
+                    {row.comment ? <span className="finance-money-history-note">{row.comment}</span> : null}
+                  </div>
+                  <div className="finance-money-history-method">{row.direction === 'out' ? 'Возврат' : 'Поступление'}</div>
+                  <div className={`finance-money-history-amount ${row.direction === 'out' ? 'is-out' : 'is-in'}`}>{row.direction === 'out' ? '− ' : '+ '}{formatMoney(row.amount)}</div>
+                  <div className="finance-money-history-actions">
+                    {row.orderId || row.externalId ? <button className="secondary compact finance-order-link" type="button" onClick={() => void openOrderFromFinance({ orderId: row.orderId || undefined, externalId: row.externalId, orderDate: row.orderDate || undefined })}>К заказу</button> : null}
+                  </div>
+                </article>
+              </div>
+            })}</div> : <div className="finance-money-history-state"><strong>За выбранный период денежных операций нет.</strong></div>}
+          </section>
+
+          <details className="finance-secondary-details">
+            <summary>Разбивка поступлений по видам и способам оплаты</summary>
           <div className="report-grid two-columns finance-payment-classification">
             <section className="report-block">
               <div className="strict-section-head"><h3>По видам операций</h3><span className="soft-badge">что именно принесло деньги</span></div>
@@ -594,11 +672,15 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
             </section>
           </div>
 
+          </details>
+
+          <details className="finance-secondary-details">
+            <summary>История исправлений и технический аудит</summary>
           <section className="report-block finance-money-history-block">
             <div className="strict-section-head finance-money-history-head">
               <div>
-                <h3>Операции по датам</h3>
-                <p className="mini-panel-note">Операции идут по дате, к которой относятся деньги. Если запись внесли позже, это показано внутри операции и не меняет её место в журнале.</p>
+                <h3>История изменений</h3>
+                <p className="mini-panel-note">Здесь хранится аудит исправлений, отмен и перенесённых записей. Для обычной работы используйте список операций выше.</p>
               </div>
               <div className="finance-money-history-summary">
                 <span className="money-summary"><span>Записей</span><strong>{moneyHistorySummary.count}</strong></span>
@@ -677,6 +759,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
               {!paymentMethodsByDay.length ? <tr><td colSpan={paymentMethodNames.length + 2} className="empty-state">Оплат за выбранный период нет.</td></tr> : null}
             </tbody></table></div>
           </section>
+          </details>
         </div>
       ) : null}
 

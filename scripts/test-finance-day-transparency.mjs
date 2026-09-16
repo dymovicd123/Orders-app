@@ -144,5 +144,11 @@ assert.ok(!rendererSource.includes('ctx.financeDay'), 'historical day must not r
 assert.ok(rendererSource.includes('moneyHistory.map((row, index)'), 'operations must be grouped by business date')
 assert.ok(rendererSource.includes('дата операции'), 'business-date group heading missing')
 assert.ok(rendererSource.includes("payment_correction: 'Исправление способа оплаты'"), 'cash journal must not expose payment_correction')
-console.log('FINANCE DAY FOCUSED GREEN — backend day audit preserved; human finance UI uses business-date periods without a special-day client')
+assert.ok(rendererSource.includes('const humanOperations = ['), 'effective payments and returns must drive the human journal')
+assert.ok(rendererSource.includes('История исправлений и технический аудит'), 'raw financial events must be secondary audit detail')
+assert.ok(rendererSource.includes('Разбивка поступлений по видам и способам оплаты'), 'classification tables must be secondary detail')
+assert.ok(!rendererSource.includes('Для истории конкретного дня используйте «Один день»'), 'removed single-day UX must not remain in cash copy')
+assert.ok(rendererSource.indexOf('finance-days-truth-panel') < rendererSource.indexOf('finance-reconciliation-v2'), 'day chronology must appear before reconciliation diagnostics')
+assert.ok(rendererSource.indexOf('finance-human-operations-block') < rendererSource.indexOf('finance-payment-classification'), 'human operations must appear before classifications')
+console.log('FINANCE DAY FOCUSED GREEN — business-date human journal leads; corrections and audit stay secondary; cash remains a separate current-state workspace')
 export { day, initialCashDay }
