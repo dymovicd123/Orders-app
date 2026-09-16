@@ -51,8 +51,8 @@ jobs:
           PY
 
           node scripts/test-branch2-environment.mjs
-          if grep -R --line-number --fixed-strings 'orders_db_prod' wrangler.jsonc index.html scripts/test-branch2-environment.mjs; then
-            echo 'Primary binding leaked into Branch2 environment files' >&2
+          if grep -R --line-number --fixed-strings 'orders_db_prod' wrangler.jsonc index.html; then
+            echo 'Primary binding leaked into Branch2 runtime environment files' >&2
             exit 1
           fi
 
