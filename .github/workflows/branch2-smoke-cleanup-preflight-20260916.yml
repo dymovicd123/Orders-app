@@ -1,0 +1,49 @@
+name: Branch2 smoke cleanup preflight
+
+on:
+  push:
+    branches:
+      - ops/branch2-manager-seed-20260916
+    paths:
+      - .github/workflows/branch2-smoke-cleanup-preflight-20260916.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Verify Branch2 target
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -q '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          ! grep -q 'orders_db_prod' wrangler.jsonc
+      - name: Read temporary smoke footprint only
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --command="
+          SELECT id,external_id,order_status,shipping_status,total_amount,received_amount,debt_amount FROM orders WHERE id IN (1,2) ORDER BY id;
+          SELECT order_id,COUNT(*) AS n FROM order_items WHERE order_id IN (1,2) GROUP BY order_id ORDER BY order_id;
+          SELECT order_id,status,COUNT(*) AS n FROM inventory_reservations WHERE order_id IN (1,2) GROUP BY order_id,status ORDER BY order_id,status;
+          SELECT order_id,status,COUNT(*) AS n FROM workshop_tasks WHERE order_id IN (1,2) GROUP BY order_id,status ORDER BY order_id,status;
+          SELECT order_id,COUNT(*) AS n FROM payments WHERE order_id IN (1,2) GROUP BY order_id;
+          SELECT order_id,COUNT(*) AS n FROM returns WHERE order_id IN (1,2) GROUP BY order_id;
+          SELECT order_id,COUNT(*) AS n FROM exchanges WHERE order_id IN (1,2) GROUP BY order_id;
+          SELECT order_id,COUNT(*) AS n FROM activity_log WHERE order_id IN (1,2) GROUP BY order_id;
+          SELECT reference_type,reference_id,movement_type,COUNT(*) AS n FROM inventory_movements WHERE reference_id IN ('SMOKE-WH-20260916T155955Z-35118350672','SMOKE-WS-20260916T155955Z-35118350672') GROUP BY reference_type,reference_id,movement_type;
+          SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND EXISTS (SELECT 1 FROM pragma_table_info(name) WHERE name='order_id') ORDER BY name;
+          PRAGMA foreign_key_check;"
