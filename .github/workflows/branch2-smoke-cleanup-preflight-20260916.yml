@@ -45,5 +45,4 @@ jobs:
           SELECT order_id,COUNT(*) AS n FROM exchanges WHERE order_id IN (1,2) GROUP BY order_id;
           SELECT order_id,COUNT(*) AS n FROM activity_log WHERE order_id IN (1,2) GROUP BY order_id;
           SELECT reference_type,reference_id,movement_type,COUNT(*) AS n FROM inventory_movements WHERE reference_id IN ('SMOKE-WH-20260916T155955Z-35118350672','SMOKE-WS-20260916T155955Z-35118350672') GROUP BY reference_type,reference_id,movement_type;
-          SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND EXISTS (SELECT 1 FROM pragma_table_info(name) WHERE name='order_id') ORDER BY name;
-          PRAGMA foreign_key_check;"
+          SELECT name,sql FROM sqlite_master WHERE type='table' AND sql LIKE '%order_id%' ORDER BY name;"
