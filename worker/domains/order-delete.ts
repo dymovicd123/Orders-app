@@ -313,6 +313,7 @@ export async function deleteOrderSafely(
     },
     actor ?? null,
     checkedBy,
+    { lifecycleAction: 'order_delete' },
   )
   return {
     ...result,
