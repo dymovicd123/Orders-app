@@ -1344,9 +1344,8 @@ function App() {
   }, [activeSector, authReady, teamMode, timesheetMonth])
 
   useEffect(() => {
-    if (!authReady || activeSector !== 'finance' || financeMode === 'cash') return
+    if (!authReady || activeSector !== 'finance' || financeMode === 'cash' || financeMode === 'methods') return
     if (!financeReportFilters.dateFrom || !financeReportFilters.dateTo) return
-    if (financeReportFilters.dateFrom === financeReportFilters.dateTo && (financeMode === 'summary' || financeMode === 'payments')) return
     const timer = window.setTimeout(() => {
       void loadFinanceReports(financeReportFilters)
     }, 250)
@@ -1357,7 +1356,6 @@ function App() {
   useEffect(() => {
     if (!authReady || activeSector !== 'finance' || financeMode !== 'payments') return
     if (!financeReportFilters.dateFrom || !financeReportFilters.dateTo) return
-    if (financeReportFilters.dateFrom === financeReportFilters.dateTo) return
     const timer = window.setTimeout(() => {
       void loadMoneyHistory()
     }, 250)

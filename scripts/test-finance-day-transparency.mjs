@@ -150,5 +150,12 @@ assert.ok(rendererSource.includes('Разбивка поступлений по 
 assert.ok(!rendererSource.includes('Для истории конкретного дня используйте «Один день»'), 'removed single-day UX must not remain in cash copy')
 assert.ok(rendererSource.indexOf('finance-days-truth-panel') < rendererSource.indexOf('finance-reconciliation-v2'), 'day chronology must appear before reconciliation diagnostics')
 assert.ok(rendererSource.indexOf('finance-human-operations-block') < rendererSource.indexOf('finance-payment-classification'), 'human operations must appear before classifications')
+const appSource = fs.readFileSync('src/App.tsx', 'utf8')
+assert.ok(!appSource.includes("financeReportFilters.dateFrom === financeReportFilters.dateTo && (financeMode === 'summary' || financeMode === 'payments')"), 'single-day report must use the normal range loader')
+assert.ok(!appSource.includes("if (financeReportFilters.dateFrom === financeReportFilters.dateTo) return"), 'single-day operations must reload money history')
+assert.ok(rendererSource.includes('История наличных по дням'), 'cash needs a business-date-first human history')
+assert.ok(rendererSource.includes('Технический журнал кассы'), 'insertion-order ledger must remain available only as technical audit')
+assert.ok(rendererSource.indexOf('История наличных по дням') < rendererSource.indexOf('Технический журнал кассы'), 'human cash history must lead technical ledger')
+assert.ok(rendererSource.includes('Внесено позже'), 'late-recorded cash must be secondary annotation')
 console.log('FINANCE DAY FOCUSED GREEN — business-date human journal leads; corrections and audit stay secondary; cash remains a separate current-state workspace')
 export { day, initialCashDay }

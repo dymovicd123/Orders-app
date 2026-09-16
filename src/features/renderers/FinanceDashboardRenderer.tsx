@@ -104,6 +104,29 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
       balance_adjustment_out: 'Сверка остатка',
     } as Record<string, string>)[entryType] || entryType || 'Движение'
 
+    const cashRecordedBusinessDate = (value: unknown) => {
+      const text = String(value || '').trim()
+      if (!text) return ''
+      const date = new Date(text)
+      if (Number.isNaN(date.getTime())) return text.slice(0, 10)
+      return new Date(date.getTime() + 5 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    }
+    const cashBusinessDayMap = new Map<string, any[]>()
+    ;(cashRegister?.entries || []).forEach((entry: any) => {
+      const date = String(entry.businessDate || '').trim() || 'Без даты'
+      const rows = cashBusinessDayMap.get(date) || []
+      rows.push(entry)
+      cashBusinessDayMap.set(date, rows)
+    })
+    const cashBusinessDays = Array.from(cashBusinessDayMap.entries())
+      .map(([date, entries]) => ({
+        date,
+        entries: [...entries].sort((a: any, b: any) => String(b.occurredAt || b.createdAt || '').localeCompare(String(a.occurredAt || a.createdAt || '')) || Number(b.id || 0) - Number(a.id || 0)),
+        totalIn: entries.reduce((sum: number, entry: any) => sum + (entry.direction === 'in' ? Number(entry.amount || 0) : 0), 0),
+        totalOut: entries.reduce((sum: number, entry: any) => sum + (entry.direction === 'out' ? Number(entry.amount || 0) : 0), 0),
+      }))
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+
     return (
       <div className="finance-tabs-shell finance-truth-shell">
         {financeTabsNode}
@@ -220,7 +243,48 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                 </section>
               ) : null}
 
-              <section className="mini-panel cash-register-ledger-panel">
+              <section className="mini-panel cash-business-history-panel">
+                <div className="mini-panel-head">
+                  <div>
+                    <h3>История наличных по дням</h3>
+                    <p className="mini-panel-note">Основная история сгруппирована по дате, к которой относятся деньги. Время внесения показывается только как дополнительная пометка.</p>
+                  </div>
+                  <button className="secondary compact" type="button" disabled={cashRegisterBusy} onClick={() => void loadCashRegister()}>Обновить</button>
+                </div>
+                {cashBusinessDays.length ? cashBusinessDays.map((day) => (
+                  <section className="mini-panel" key={`cash-business-day-${day.date}`}>
+                    <div className="mini-panel-head">
+                      <div>
+                        <h3>{day.date === 'Без даты' ? day.date : formatDateShort(day.date)}</h3>
+                        <p className="mini-panel-note">Пришло + {formatMoney(day.totalIn)} · Ушло − {formatMoney(day.totalOut)} · Изменение {day.totalIn - day.totalOut >= 0 ? '+' : '−'} {formatMoney(Math.abs(day.totalIn - day.totalOut))}</p>
+                      </div>
+                    </div>
+                    <div className="table-shell">
+                      <table className="data-table cash-business-day-table">
+                        <thead><tr><th>Операция</th><th>Заказ / источник</th><th>Комментарий</th><th>Когда внесено</th><th className="num">Приход</th><th className="num">Расход</th></tr></thead>
+                        <tbody>
+                          {day.entries.map((entry: any) => {
+                            const recordedDate = cashRecordedBusinessDate(entry.createdAt)
+                            const recordedLater = Boolean(recordedDate && day.date !== 'Без даты' && recordedDate !== day.date)
+                            return <tr key={`cash-business-entry-${entry.id}`} className={entry.direction === 'out' ? 'is-out' : 'is-in'}>
+                              <td><strong>{entryTypeLabel(entry.entryType)}</strong><span className="cash-entry-meta">{entry.paymentMethod || entry.createdBy || '—'}</span></td>
+                              <td>{entry.externalOrderId ? <strong>{entry.externalOrderId}</strong> : entry.sourceType === 'manual' ? 'Ручная операция' : entry.entryType === 'ledger_reset' ? 'Новый цикл' : entry.sourceType === 'opening' ? 'Начальная точка' : '—'}</td>
+                              <td>{entry.comment || '—'}</td>
+                              <td>{recordedLater ? <><strong>Внесено позже</strong><span className="cash-entry-meta">{financeRecordedAt(entry.createdAt)}</span></> : <span className="cash-entry-meta">{financeRecordedAt(entry.createdAt)}</span>}</td>
+                              <td className="num cash-in">{entry.direction === 'in' ? `+ ${formatMoney(entry.amount)}` : '—'}</td>
+                              <td className="num cash-out">{entry.direction === 'out' ? `− ${formatMoney(entry.amount)}` : '—'}</td>
+                            </tr>
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                )) : <div className="empty-state">История наличных пока пуста.</div>}
+              </section>
+
+              <details className="mini-panel cash-technical-ledger-details">
+                <summary><strong>Технический журнал кассы</strong> · порядок внесения и остаток после каждой записи</summary>
+              <section className="cash-register-ledger-panel">
                 <div className="mini-panel-head">
                   <div><h3>Журнал наличных — текущий цикл</h3><p className="mini-panel-note">Это техническая последовательность текущей кассы. Обычную историю денег смотрите во вкладке «Операции». Ошибочную ручную операцию лучше отменять кнопкой «Отменить», а не создавать встречное внесение вручную.</p></div>
                   <div className="cash-ledger-actions">
@@ -248,6 +312,7 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
                   </table>
                 </div>
               </section>
+              </details>
             </>
           )}
         </div>

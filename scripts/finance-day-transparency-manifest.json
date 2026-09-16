@@ -14,9 +14,9 @@
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "a85f8c02e4b73ad045ef3010dd6a63f8e615fce2",
-      "afterGitBlob": "c566b00695f252642fcf41a87be0a8313a5efcf4",
+      "afterGitBlob": "b56f49f1c58bfa07c12f34f99a6497db57ac6ef6",
       "beforeLines": 7302,
-      "afterLines": 7304
+      "afterLines": 7302
     },
     "src/features/sections/FinanceSection.tsx": {
       "beforeGitBlob": "48005beb90b797e16dce17b86e4e2b97e0a64844",
@@ -26,9 +26,9 @@
     },
     "src/features/renderers/FinanceDashboardRenderer.tsx": {
       "beforeGitBlob": "7ccadc64c9cdd0f1c2d65b3f3424564d71cc2eae",
-      "afterGitBlob": "20ad16b152df7958519ffa3fcc913c000a56eb95",
+      "afterGitBlob": "0f5fd3580cdd17aeac101ae69633543781d585f7",
       "beforeLines": 745,
-      "afterLines": 834
+      "afterLines": 900
     }
   },
   "addedFiles": {
