@@ -1,0 +1,60 @@
+name: Branch2 0068 preflight results
+
+on:
+  push:
+    branches:
+      - audit/branch2-0068-preflight-20260916
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/branch2-0068-preflight-20260916
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Verify exact Branch2 target
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 list --json > /tmp/d1.json
+          node <<'NODE'
+          const fs = require('fs')
+          const raw = JSON.parse(fs.readFileSync('/tmp/d1.json','utf8'))
+          const rows = Array.isArray(raw) ? raw : (raw.result || [])
+          const b = rows.find(r => r.name === 'orders_db_branch2')
+          if (!b) throw new Error('orders_db_branch2 missing')
+          const id = b.uuid || b.id || b.database_id || ''
+          if (id !== '40065052-854e-44b8-bcd5-251bdd488301') throw new Error(`Branch2 D1 drift: ${id}`)
+          const p = rows.find(r => r.name === 'orders_db_prod')
+          if (p && id === (p.uuid || p.id || p.database_id || '')) throw new Error('Branch2 resolves to Production D1')
+          NODE
+      - name: Run SELECT-only 0068 preflight with visible result sets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p audit
+          SQL="$(cat scripts/branch2-0068-preflight.sql)"
+          npx wrangler d1 execute orders_db_branch2 --remote --command "$SQL" | tee audit/branch2-0068-preflight-results.txt
+          if grep -E 'rows_written[^0-9]*[1-9]' audit/branch2-0068-preflight-results.txt; then
+            echo 'Unexpected write during SELECT-only preflight' >&2
+            exit 4
+          fi
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch2-0068-preflight-results
+          path: audit/
+          retention-days: 14
