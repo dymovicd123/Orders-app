@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "revision": "finance-r3-historical-cash",
+  "changes": {
+    "addManualCashRegisterMovement": {
+      "before": "4249e64242c840611d9edda9bf1c0a05dd101aef6673f69dfc5c8ca45f77d061",
+      "after": "c42b6c69196b7dcb6e1c54bf008c5080ead41d4393a4dbde1e39829b17db3943"
+    },
+    "reverseManualCashRegisterMovement": {
+      "before": "349dea92ebe4895384ed88f023b0c65fc1837ef46579adb367400889d0772ea0",
+      "after": "2a30dba8f1d1656956997665368a5d6ee1b5f928d172c2f2f8de2920d2064e0c"
+    }
+  }
+}

@@ -244,7 +244,9 @@ patched = patched.replace(a5RouterAnchor, physicalRouterBlock)
 // Latest narrow layer: finance day reads and business-date ordering only.
 const financeDay = JSON.parse(fs.readFileSync(path.join(root, 'scripts/finance-day-transparency-manifest.json'), 'utf8'))
 if (financeDay.revision !== 'finance-day-transparency-r1' || Object.keys(financeDay.changes).join(',') !== 'listFinancialHistory' || Object.keys(financeDay.added).join(',') !== 'readFinanceDay') throw new Error('Finance day Worker allow-list changed')
-patched = 'const financeDayChanges = ' + JSON.stringify(financeDay.changes) + '\nconst financeDayAdded = ' + JSON.stringify(financeDay.added) + '\n' + patched
+const financeR3HistoricalCash = JSON.parse(fs.readFileSync(path.join(root, 'scripts/finance-r3-historical-cash-worker-manifest.json'), 'utf8'))
+if (financeR3HistoricalCash.version !== 1 || financeR3HistoricalCash.revision !== 'finance-r3-historical-cash' || Object.keys(financeR3HistoricalCash.changes).join(',') !== 'addManualCashRegisterMovement,reverseManualCashRegisterMovement') throw new Error('Finance R3 historical cash Worker allow-list changed')
+patched = 'const financeR3HistoricalCashChanges = ' + JSON.stringify(financeR3HistoricalCash.changes) + '\nconst financeDayChanges = ' + JSON.stringify(financeDay.changes) + '\nconst financeDayAdded = ' + JSON.stringify(financeDay.added) + '\n' + patched
 const financeDayCountAnchor = ' + Object.keys(contextualCatalogResolutionAdded).length'
 if (!patched.includes(financeDayCountAnchor)) throw new Error('Finance day declaration-count anchor missing')
 patched = patched.replace(financeDayCountAnchor, financeDayCountAnchor + ' + Object.keys(financeDayAdded).length')
@@ -257,7 +259,13 @@ patched = patched.replace(financeDayHashAnchor, [
   "          check(financeDayChanged.before === acceptedPostArrivalCanonicalProductAliasHash, 'Finance day predecessor drifted: ' + name)",
   '          acceptedFinanceDayHash = financeDayChanged.after',
   '        }',
-  '        return sha(declarations.get(name)) === acceptedFinanceDayHash',
+  '        const financeR3HistoricalCashChanged = financeR3HistoricalCashChanges[name]',
+  '        let acceptedFinanceR3HistoricalCashHash = acceptedFinanceDayHash',
+  '        if (financeR3HistoricalCashChanged) {',
+  "          check(financeR3HistoricalCashChanged.before === acceptedFinanceDayHash, 'Finance R3 historical cash predecessor drifted: ' + name)",
+  '          acceptedFinanceR3HistoricalCashHash = financeR3HistoricalCashChanged.after',
+  '        }',
+  '        return sha(declarations.get(name)) === acceptedFinanceR3HistoricalCashHash',
 ].join('\n'))
 patched = patched.replace(physicalAddedAnchor, [
   '  for (const [name, hash] of Object.entries(financeDayAdded)) {',

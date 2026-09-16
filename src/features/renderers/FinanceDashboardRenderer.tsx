@@ -188,13 +188,14 @@ export function FinanceDashboardRenderer(ctx: RendererContext) {
 
               <div className="cash-register-tools-grid">
                 <section className="mini-panel cash-manual-movement-panel">
-                  <div className="mini-panel-head"><div><h3>Ручная операция</h3><p className="mini-panel-note">Комментарий обязателен. Новая операция записывается сегодняшней датой, а не выбранным прошлым днём.</p></div></div>
+                  <div className="mini-panel-head"><div><h3>Ручная операция</h3><p className="mini-panel-note">Комментарий обязателен. Обычная операция записывается сегодня. Администратор может отдельно указать прошлую дату только для действительно пропущенного движения текущего цикла.</p></div></div>
                   <div className="cash-manual-form cash-manual-form-v2">
                     <div className="cash-direction-switch" role="group" aria-label="Направление движения наличных">
                       <button className={`secondary ${cashMovementDraft.direction === 'out' ? 'is-active' : ''}`} type="button" disabled={cashRegisterBusy} onClick={() => setCashMovementDraft((current) => ({ ...current, direction: 'out' }))}>Выдать / забрали</button>
                       <button className={`secondary ${cashMovementDraft.direction === 'in' ? 'is-active' : ''}`} type="button" disabled={cashRegisterBusy} onClick={() => setCashMovementDraft((current) => ({ ...current, direction: 'in' }))}>Внести</button>
                     </div>
                     <label><span>Сумма</span><FriendlyNumberInput type="number" min="0" value={cashMovementDraft.amount || ''} onChange={(event) => setCashMovementDraft((current) => ({ ...current, amount: Math.max(0, Number(event.target.value || 0)) }))} /></label>
+                    {isAdmin ? <label><span>Прошлая дата — только если запись забыли</span><input type="date" value={cashMovementDraft.businessDate || ''} onChange={(event) => setCashMovementDraft((current) => ({ ...current, businessDate: event.target.value }))} /><small className="cash-entry-meta">Оставьте пустым для обычной операции сегодня. Дата не может быть раньше начала текущего цикла кассы.</small></label> : null}
                     <label className="wide-field"><span>Комментарий</span><input value={cashMovementDraft.comment} onChange={(event) => setCashMovementDraft((current) => ({ ...current, comment: event.target.value }))} /></label>
                     <button className="primary" type="button" disabled={cashRegisterBusy || !cashMovementDraft.comment.trim() || Number(cashMovementDraft.amount || 0) <= 0} onClick={() => void saveCashRegisterMovement()}>{cashRegisterBusy ? 'Сохраняю…' : cashMovementDraft.direction === 'out' ? 'Записать выдачу' : 'Записать внесение'}</button>
                   </div>
