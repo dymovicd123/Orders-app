@@ -30,7 +30,7 @@ try {
   check(ui.includes('paymentTraceReview.map') && ui.includes('visiblePaymentTraceInfo.map'), 'Split trace panels do not render their own row sets')
   check(!ui.includes('<h3>Проверка дат и ввода</h3>'), 'Old mixed review/info heading returned')
 
-  console.log('FINANCE F9 SUMMARY FINISH TESTS PASSED — concise reconciliation, split review/info, and order-period early-payment detection are enforced.')
+  console.log('FINANCE F9 SUMMARY FINISH TESTS PASSED — human-first period totals and daily chronology stay primary while diagnostics remain available but secondary.')
 } catch (error) {
   console.error(`FINANCE F9 SUMMARY FINISH TESTS FAILED: ${error?.message || error}`)
   process.exit(1)
