@@ -366,3 +366,21 @@
 @media (max-width: 640px) {
   .finance-reconciliation-primary-total { align-items: flex-start; flex-direction: column; gap: 4px; }
 }
+
+/* Finance human summary R2: business information first, diagnostics second. */
+.finance-truth-overview { order: 1; }
+.finance-days-truth-panel { order: 2; }
+.finance-reconciliation-v2 { order: 3; }
+.finance-review-panel.has-review { order: 4; }
+.finance-review-panel.is-info { order: 5; }
+.finance-no-anomalies { order: 6; }
+.finance-truth-card.is-income { order: 1; }
+.finance-truth-card.is-outflow { order: 2; }
+.finance-truth-card.is-net { order: 3; }
+.finance-truth-card.is-sales { order: 4; }
+.finance-days-truth-table { min-width: 720px; }
+.finance-reconciliation-v2.is-ok { padding: 10px 14px; }
+.finance-reconciliation-v2.is-ok .finance-reconciliation-head > div:first-child > span { color: #3f5f52; }
+.finance-secondary-details { margin-top: 8px; border-top: 1px solid rgba(100,116,139,.2); padding-top: 8px; }
+.finance-secondary-details > summary { cursor: pointer; font-size: 12px; font-weight: 800; color: #475569; }
+.finance-secondary-details[open] > summary { margin-bottom: 10px; }

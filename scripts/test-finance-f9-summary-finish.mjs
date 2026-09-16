@@ -22,8 +22,10 @@ try {
   check(finance.includes('traceScope: { startDate, endDate, selectedOperationPeriodOnly: true, includesOrderPeriodBeforePayments: true }'), 'Trace scope contract is ambiguous')
   check(types.includes('selectedOperationPeriodOnly') && types.includes('includesOrderPeriodBeforePayments'), 'Frontend trace scope type was not updated')
 
-  check(ui.includes('Поступило за период') && ui.includes('Внутренняя сверка: без расхождений'), 'Summary still lacks one clear incoming-money total and reconciliation status')
+  check(ui.includes('Данные согласованы') && ui.includes('По дням') && ui.includes('Главная хронология периода'), 'Summary is not human-first by period day')
   check(ui.includes('!consistency.ok ? (') && ui.includes('finance-reconciliation-diagnostics'), 'Three technical reconciliation totals are still always visible')
+  check(ui.includes('finance-secondary-details') && ui.includes('Оплаты по заказам другой даты'), 'Secondary cross-date diagnostics are not collapsed')
+  check(ui.includes('<th className="num">Поступило</th>') && ui.includes('<th className="num">Чистое движение</th>'), 'Daily table is still overloaded with internal breakdown columns')
   check(ui.includes('<h3>Требуют проверки</h3>') && ui.includes('<h3>Пояснения по датам</h3>'), 'Review errors and neutral explanations are still mixed in one table')
   check(ui.includes('paymentTraceReview.map') && ui.includes('visiblePaymentTraceInfo.map'), 'Split trace panels do not render their own row sets')
   check(!ui.includes('<h3>Проверка дат и ввода</h3>'), 'Old mixed review/info heading returned')
