@@ -148,7 +148,7 @@ for (const file of ['src/features/sections/FinanceSection.tsx', 'src/features/re
   const actual = fs.readFileSync(path.join(root, file), 'utf8')
   if (gitBlobSha(actual) !== financeDayManifest.files[file].afterGitBlob) throw new Error('Finance day UI changed outside exact delta: ' + file)
 }
-const financeDayAddedFiles = ['shared/finance-day-contracts.ts','src/features/finance/financeDayRead.ts','src/features/finance/FinanceDayPanel.tsx','src/features/finance/FinanceDayView.tsx','src/features/finance/finance-day.css']
+const financeDayAddedFiles = ['shared/finance-day-contracts.ts','src/features/finance/FinanceDayView.tsx','src/features/finance/finance-day.css']
 if (Object.keys(financeDayManifest.addedFiles).join(',') !== financeDayAddedFiles.join(',')) throw new Error('Finance day added file allow-list changed')
 for (const file of financeDayAddedFiles) {
   const actual = fs.readFileSync(path.join(root, file), 'utf8')
