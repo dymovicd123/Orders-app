@@ -4465,7 +4465,7 @@ function App() {
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
       setMessage(projection.hasCommittedDownstreamOperation
-        ? 'Заказ из Цеха нельзя редактировать, пока по нему есть действующий возврат.'
+        ? 'Заказ из Цеха нельзя переписывать: по нему уже проведён возврат или обмен. Сначала отмените или исправьте эту последующую операцию штатным действием.'
         : 'Этот заказ из Цеха сейчас недоступен для обычного редактирования.')
       return
     }
