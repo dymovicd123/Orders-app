@@ -20,7 +20,7 @@ Production code branch currently audited:
 
 Documentation/audit branch:
 - `audit/system-ux-walkthrough-20260917`
-- current audit head before this context update: `5fda1a0c034106b5266a9d38f7411c136a7ee34b`
+- audit head immediately before this context update: `699ead84a9a8be1dd725ce2c7fa65c6338394a68`
 
 Rules:
 - do not mutate Production D1 for exploratory work;
@@ -77,6 +77,7 @@ Read these before continuing:
 - `docs/audits/WAREHOUSE_CLIENT_REQUIREMENTS_20260917.md`
 - `docs/audits/SYSTEM_UX_WALKTHROUGH_ASTRA_LIFECYCLE_20260917.md`
 - `docs/audits/MANAGER_CODE_AUDIT_04_LIFECYCLE_RETURN_EXCHANGE_20260918.md`
+- `docs/audits/FOUNDATION_TRUTH_MAP_01_ORDER_LIFECYCLE_20260918.md`
 
 Astra lifecycle Phase 1 report is also preserved in the audit branch. It should not be re-run unless a specific missing scenario becomes necessary.
 
@@ -106,6 +107,24 @@ Important UI/read-model defects confirmed:
 - order rows show gross `received_amount` / “Оплачено” without local refund/net context;
 - Return history uses historical snapshots, stock uses canonical identity, with no visible relationship;
 - cancellation intentionally opens a fresh Return draft and stores the literal technical comment `Отменено из интерфейса Cloudflare`.
+
+## Completed foundation truth-map slice: Order lifecycle
+
+The first full truth-map slice is complete.
+
+Strong findings:
+- `order_status` is best understood as administrative record state / archive gate, not operational fulfillment truth;
+- `shipping_status` is a whole-order milestone while individual physical handover truth lives in reservations/lifecycle state;
+- `workshop_status` is a coarse compatibility aggregate beside stronger per-item Workshop tasks;
+- financial columns on `orders` are cached aggregates, not one payment lifecycle;
+- `return_amount > 0` is incorrectly promoted by the frontend into whole-order `Возвращён` state and action gating;
+- `order_items` represents current post-exchange composition as well as sale-line snapshots, so future profitability/history must not assume current `order_items` alone equals the original sale.
+
+The strongest architectural diagnosis after this slice:
+
+> The write model often has enough independent truth, but there is no single deliberate operational projection that composes those facts for ordinary users. Screens use local shortcuts as whole-process meaning.
+
+Do not “fix” this by adding one more status column. The next slices must determine the authoritative facts first, then later a reusable operational read-model can be designed across domains.
 
 ## Warehouse/client requirements that must influence later design, but are NOT yet an approved plan
 
@@ -181,15 +200,18 @@ The output should distinguish:
 
 ## Immediate next step
 
-Start with **Order lifecycle** as the first full truth-map slice.
+Next full slice: **Product identity / canonical SKU / historical snapshots / assortment state**.
 
 Questions:
-- What does an order itself own versus what is merely aggregated from payments/returns/workshop/inventory?
-- Which coarse columns are legacy/projections rather than authoritative state?
-- Which actions are incorrectly gated by financial/aggregate shortcuts?
-- What should a single ordinary order read-model contain so Orders table, Return/Exchange, Workshop, Finance and Warehouse do not invent their own lifecycle interpretation?
+- What is the authoritative current identity of a product/SKU?
+- Which order-item values are immutable historical wording versus current operational identity?
+- When resolver changes `product_id / variant_id`, which screens should switch to canonical display and which must preserve raw history?
+- How do aliases, executions, variants and reference values participate in identity without becoming separate user concepts?
+- What exactly does `is_active` mean for product and variant, especially when retired assortment still has physical stock/history?
+- Where can future default sale price and default cost belong without rewriting historical order/receipt facts?
+- Is the catalog/resolver model already sufficient and only missing a shared read projection, or are there genuine identity ownership defects?
 
-After this slice, STOP, save the findings into a new audit document, update this continuation file, and report to the user before moving to Product Identity/Stock.
+After Product Identity, STOP, save the audit doc, update this context again, and report before moving to physical Stock/Reservations.
 
 ## Working discipline
 
