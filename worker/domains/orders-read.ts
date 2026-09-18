@@ -327,8 +327,9 @@ export async function listOrders(db: D1Database, url: URL) {
   if (shippingStatus === 'sent') {
     baseWhereParts.push("COALESCE(o.shipping_status, '') = 'sent'");
   } else if (shippingStatus === 'not_sent') {
+    // Shipping is its own operational fact. A historical/partial refund must not
+    // hide an otherwise active unshipped order from the ordinary work queue.
     baseWhereParts.push("COALESCE(o.shipping_status, '') <> 'sent'");
-    if (status !== 'returned') baseWhereParts.push('COALESCE(o.return_amount, 0) <= 0');
   }
 
   if (status === 'active') {
