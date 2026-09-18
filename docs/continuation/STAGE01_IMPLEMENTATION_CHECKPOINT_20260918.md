@@ -1,13 +1,13 @@
 # Stage 0+1 — implementation checkpoint (2026-09-18)
 
-Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 + R11 + R12 + R13 + R14 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
+Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 + R11 + R12 + R13 + R14 + R15 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
 
 ## Source of truth
 
 - Production/main baseline at the beginning of this slice: `main`.
 - Implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green implementation head: `a12c9c5307f7d147a17881ff6e846b08ff92ebbc`.
-- Branch2 is the isolated UI/integration proving environment. After R14 passed the full gate it was fast-forwarded to the same green head: `a12c9c5307f7d147a17881ff6e846b08ff92ebbc`.
+- Current green implementation head: `5db747e685f7e94b30edc26210c705cef5a9e3e4`.
+- Branch2 is the isolated UI/integration proving environment. After R15 passed the full gate it was fast-forwarded to the same green head: `5db747e685f7e94b30edc26210c705cef5a9e3e4`.
 - No Production D1 migration/write was performed.
 
 ## R1 — OrderOperationalProjection
@@ -503,6 +503,41 @@ Validation:
 Important Branch2 proving note:
 the migration file is now present in Branch2 source, but this Stage01 work did **not** execute D1 migrations. Before interactive R14 canonical-search testing in Branch2, apply the normal Branch2 migration path so `0070_v72_stage01_canonical_order_search.sql` reaches `orders_db_branch2`. Production D1 remains untouched.
 
+
+## R15 — Return/Exchange item availability is current-state truth
+
+The Return/Exchange audit found that the forms still treated the original order-line quantity as if all units were always available for another operation.
+
+That was wrong after a standalone return: an item with quantity 3 and an already-completed standalone return of 1 could still offer all 3 units again. Exchange UI had the same risk, including multiple unsaved old-item pairs in one draft.
+
+R15 adds an explicit current-state item operation availability projection:
+
+- backend relation loading sums non-cancelled standalone returned quantity per `order_item_id`;
+- return rows owned by an active exchange are excluded from the standalone-return subtraction so exchange accounting is not double-counted;
+- if that exchange is cancelled, its formerly owned refund return becomes standalone evidence again;
+- `orderItemAvailableOperationQuantity()` computes `max(0, current quantity - active standalone returned quantity)`;
+- `listOrders` and `getOrder` expose `availableOperationQuantity` on each working order item;
+- Return draft construction uses that value, omits fully exhausted positions and labels the column “Доступно к возврату”;
+- Exchange draft/save validation uses the same backend-derived remaining quantity;
+- queued unsaved exchange pairs reserve their quantities locally so one draft cannot over-allocate the same old order item several times.
+
+Historical Return/Exchange records remain historical; R15 changes only the current availability of a live order item for another operation.
+
+Focused regression:
+`scripts/test-stage01-return-exchange-item-availability-r15.mjs`
+
+Exact preservation layers:
+- `scripts/stage01-return-exchange-item-availability-r15-worker-manifest.json`
+- `scripts/stage01-return-exchange-item-availability-r15-frontend-manifest.json`
+
+Validation:
+- temporary draft PR #85, closed without merge;
+- GitHub Actions Quality check run `35347157116`: SUCCESS;
+- cumulative release gate: SUCCESS;
+- production build: SUCCESS;
+- dependency audits: SUCCESS;
+- Branch2 fast-forwarded to `5db747e685f7e94b30edc26210c705cef5a9e3e4`.
+
 ## Current safety boundary
 
 Do not touch Production D1 while Stage 0+1 is still being assembled.
@@ -517,7 +552,7 @@ Do not collapse return money, return workflow, shipping, Workshop, and catalog i
 
 ## Next work
 
-R1–R14 are green. Continue auditing the remaining Return/Exchange, Finance and historical surfaces by purpose. Do not mechanically convert historical/audit views to canonical-first.
+R1–R15 are green. Continue auditing the remaining Return/Exchange, Finance and historical surfaces by purpose. Do not mechanically convert historical/audit views to canonical-first.
 
 Priority targets:
 
