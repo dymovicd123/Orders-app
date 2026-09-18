@@ -1098,6 +1098,36 @@ export async function fetchOrderStockHandoverRows(
          oi.material_snapshot,
          oi.length_snapshot,
          oi.size_snapshot,
+         CASE
+           WHEN reservation_variant.id IS NOT NULL THEN reservation_product.name
+           WHEN order_product.id IS NOT NULL THEN order_product.name
+           ELSE oi.product_name_snapshot
+         END AS working_product_name,
+         CASE
+           WHEN reservation_variant.id IS NOT NULL THEN reservation_variant.gender
+           WHEN order_variant.id IS NOT NULL THEN order_variant.gender
+           ELSE oi.gender_snapshot
+         END AS working_gender,
+         CASE
+           WHEN reservation_variant.id IS NOT NULL THEN reservation_variant.color
+           WHEN order_variant.id IS NOT NULL THEN order_variant.color
+           ELSE oi.color_snapshot
+         END AS working_color,
+         CASE
+           WHEN reservation_variant.id IS NOT NULL THEN reservation_variant.material
+           WHEN order_variant.id IS NOT NULL THEN order_variant.material
+           ELSE oi.material_snapshot
+         END AS working_material,
+         CASE
+           WHEN reservation_variant.id IS NOT NULL THEN reservation_variant.length
+           WHEN order_variant.id IS NOT NULL THEN order_variant.length
+           ELSE oi.length_snapshot
+         END AS working_length,
+         CASE
+           WHEN reservation_variant.id IS NOT NULL THEN reservation_variant.size_label
+           WHEN order_variant.id IS NOT NULL THEN order_variant.size_label
+           ELSE oi.size_snapshot
+         END AS working_size,
          oi.source_type AS item_source_type,
          oi.quantity AS item_quantity,
          oi.stock_writeoff_status,
@@ -1131,6 +1161,10 @@ export async function fetchOrderStockHandoverRows(
        JOIN orders o ON o.id = oi.order_id
        LEFT JOIN customers customer ON customer.id = o.customer_id
        LEFT JOIN inventory_reservations r ON r.order_item_id = oi.id
+       LEFT JOIN catalog_variants reservation_variant ON reservation_variant.id = r.variant_id
+       LEFT JOIN catalog_products reservation_product ON reservation_product.id = reservation_variant.product_id
+       LEFT JOIN catalog_variants order_variant ON order_variant.id = oi.variant_id
+       LEFT JOIN catalog_products order_product ON order_product.id = oi.product_id
        LEFT JOIN inventory_stock stock ON stock.inventory_source = r.inventory_source AND stock.variant_id = r.variant_id
        LEFT JOIN inventory_handover_reviews review ON review.id = (
          SELECT hr.id
@@ -1224,11 +1258,11 @@ export function stockHandoverItemFromRow(row: Record<string, unknown>): OrderSto
     : reviewNeeded ? 'handover_review'
       : reservationStatus === 'active' && reservationId ? 'ready_to_issue' : 'needs_attention';
   const rawReason = useFullStocktakeCheckpoint ? 'late_entry' : cleanText(row.checkpoint_reason);
-  const details = [row.gender_snapshot, row.color_snapshot, row.material_snapshot, row.length_snapshot, row.size_snapshot]
+  const details = [row.working_gender, row.working_color, row.working_material, row.working_length, row.working_size]
     .map((value) => cleanText(value)).filter(Boolean).join(' · ');
   return {
     orderItemId,
-    productName: cleanText(row.product_name_snapshot) || `Позиция #${orderItemId}`,
+    productName: cleanText(row.working_product_name) || cleanText(row.product_name_snapshot) || `Позиция #${orderItemId}`,
     itemDetails: details,
     source: normalizeSourceType(row.inventory_source || row.item_source_type),
     quantity: Math.max(1, toInt(row.item_quantity, toInt(row.reservation_quantity, 1))),
@@ -1684,9 +1718,13 @@ export async function fulfillOrderReservationsV2(
   const reservationBindings: Array<string | number> = [orderId];
   if (scopedOrderItemIds.length) reservationBindings.push(JSON.stringify(scopedOrderItemIds));
   const rows = await db.prepare(
-    `SELECT r.*, oi.product_name_snapshot
+    `SELECT r.*, oi.product_name_snapshot,
+            CASE WHEN reservation_variant.id IS NOT NULL THEN reservation_product.name
+                 ELSE oi.product_name_snapshot END AS working_product_name
      FROM inventory_reservations r
      JOIN order_items oi ON oi.id = r.order_item_id
+     LEFT JOIN catalog_variants reservation_variant ON reservation_variant.id = r.variant_id
+     LEFT JOIN catalog_products reservation_product ON reservation_product.id = reservation_variant.product_id
      WHERE r.order_id = ? AND r.status IN ('active', 'unresolved')${scopeSql}
      ORDER BY r.id ASC`
   ).bind(...reservationBindings).all<Record<string, unknown>>();
@@ -1726,7 +1764,7 @@ export async function fulfillOrderReservationsV2(
       source,
       variantId,
       required: (current?.required || 0) + Math.max(1, toInt(reservation.quantity, 1)),
-      productName: current?.productName || cleanText(reservation.product_name_snapshot) || `variant #${variantId}`,
+      productName: current?.productName || cleanText(reservation.working_product_name) || cleanText(reservation.product_name_snapshot) || `variant #${variantId}`,
     });
   }
 
@@ -2285,7 +2323,9 @@ export async function correctMistakenOrderHandover(
 
 export async function getOrderShipmentInventoryBlockers(db: D1Database, orderId: number) {
   const unresolvedResult = await db.prepare(
-    `SELECT oi.id, oi.product_name_snapshot, oi.stock_writeoff_status,
+    `SELECT oi.id,
+            COALESCE(variant_product.name, order_product.name, oi.product_name_snapshot) AS product_name_snapshot,
+            oi.stock_writeoff_status,
             r.status AS reservation_status, r.variant_id AS reservation_variant_id,
             stock.id AS inventory_stock_id,
             'unresolved' AS blocker_reason,
@@ -2293,6 +2333,9 @@ export async function getOrderShipmentInventoryBlockers(db: D1Database, orderId:
             NULL AS physical_quantity
      FROM order_items oi
      LEFT JOIN inventory_reservations r ON r.order_item_id = oi.id
+     LEFT JOIN catalog_variants order_variant ON order_variant.id = oi.variant_id
+     LEFT JOIN catalog_products variant_product ON variant_product.id = order_variant.product_id
+     LEFT JOIN catalog_products order_product ON order_product.id = oi.product_id
      LEFT JOIN inventory_stock stock
        ON stock.inventory_source = r.inventory_source AND stock.variant_id = r.variant_id
      WHERE oi.order_id = ?
@@ -2306,7 +2349,7 @@ export async function getOrderShipmentInventoryBlockers(db: D1Database, orderId:
 
   const shortageResult = await db.prepare(
     `SELECT MIN(oi.id) AS id,
-            MIN(oi.product_name_snapshot) AS product_name_snapshot,
+            MIN(COALESCE(reservation_product.name, oi.product_name_snapshot)) AS product_name_snapshot,
             'insufficient_physical' AS blocker_reason,
             SUM(r.quantity) AS required_quantity,
             COALESCE(stock.quantity, 0) AS physical_quantity,
@@ -2314,6 +2357,8 @@ export async function getOrderShipmentInventoryBlockers(db: D1Database, orderId:
             r.variant_id AS reservation_variant_id
      FROM inventory_reservations r
      JOIN order_items oi ON oi.id = r.order_item_id
+     LEFT JOIN catalog_variants reservation_variant ON reservation_variant.id = r.variant_id
+     LEFT JOIN catalog_products reservation_product ON reservation_product.id = reservation_variant.product_id
      LEFT JOIN inventory_stock stock
        ON stock.inventory_source = r.inventory_source AND stock.variant_id = r.variant_id
      WHERE r.order_id = ?
