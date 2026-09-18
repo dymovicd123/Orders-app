@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite'
 
 const source = fs.readFileSync('worker/domains/orders-read.ts', 'utf8')
 const baseMigration = fs.readFileSync('migrations/0064_v72_d1_read_budget_r5_order_search_fts.sql', 'utf8')
-const migration = fs.readFileSync('migrations/0073_v72_stage01_canonical_order_search.sql', 'utf8')
+const migration = fs.readFileSync('migrations/0070_v72_stage01_canonical_order_search.sql', 'utf8')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 
 check(source.includes("LEFT JOIN catalog_products search_product ON search_product.id = oi.product_id"), 'Short order search does not read current canonical product identity')
