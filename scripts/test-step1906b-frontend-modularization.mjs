@@ -92,6 +92,59 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
+const stage01R19BFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-money-only-return-shipping-r19b-frontend-manifest.json'), 'utf8'))
+if (stage01R19BFrontendManifest?.version !== 1 || stage01R19BFrontendManifest?.revision !== 'stage01-money-only-return-shipping-r19b') throw new Error('Stage01 money-only Return shipping R19B frontend manifest invalid')
+const stage01R19BFrontendFiles = [
+  'src/App.tsx',
+  'src/app/types.ts',
+  'src/app/orderOperationalProjection.ts',
+  'src/features/sections/OrdersTableSection.tsx',
+]
+if (Object.keys(stage01R19BFrontendManifest.files || {}).join(',') !== stage01R19BFrontendFiles.join(',')) throw new Error('Stage01 money-only Return shipping R19B frontend allow-list widened')
+const stage01R19BGitBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+
+if (!process.env.STAGE01_R19B_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 0
+  try {
+    for (const relative of stage01R19BFrontendFiles) {
+      const delta = stage01R19BFrontendManifest.files[relative]
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage01R19BGitBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Stage01 money-only Return shipping R19B frontend changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of delta.replacements || []) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage01 money-only Return shipping R19B exact after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (stage01R19BGitBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Stage01 money-only Return shipping R19B frontend predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, STAGE01_R19B_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE01 R19B FRONTEND STRUCTURAL LAYER PASSED — money-only Return shipping delta accepted over preserved R19 frontend')
+  process.exit(0)
+}
+
 const stage01R19FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-return-exchange-downstream-semantics-r19-frontend-manifest.json'), 'utf8'))
 if (stage01R19FrontendManifest?.version !== 1 || stage01R19FrontendManifest?.revision !== 'stage01-return-exchange-downstream-semantics-r19') throw new Error('Stage01 Return/Exchange downstream R19 frontend manifest invalid')
 const stage01R19FrontendFiles = [
