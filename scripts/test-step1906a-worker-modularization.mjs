@@ -351,6 +351,32 @@ patched = patched.replace(stage01CanonicalAddedAnchor, [
   stage01CanonicalAddedAnchor,
 ].join('\n'))
 
+const stage01WorkshopTruth = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-workshop-truth-r3-worker-manifest.json'), 'utf8'))
+if (stage01WorkshopTruth.version !== 1 || stage01WorkshopTruth.revision !== 'stage01-workshop-truth-r3') throw new Error('Stage01 Workshop truth R3 Worker manifest invalid')
+if (Object.keys(stage01WorkshopTruth.changes || {}).sort().join(',') !== 'orderWorkshopPendingForShipping,updateWorkshopTask') throw new Error('Stage01 Workshop truth R3 Worker allow-list widened')
+if (!stage01WorkshopTruth.router?.before || !stage01WorkshopTruth.router?.after || !stage01WorkshopTruth.router?.beforeBlock || !stage01WorkshopTruth.router?.afterBlock) throw new Error('Stage01 Workshop truth R3 router manifest incomplete')
+patched = 'const stage01WorkshopTruthChanges = ' + JSON.stringify(stage01WorkshopTruth.changes || {}) + '\n'
+  + 'const stage01WorkshopTruthRouter = ' + JSON.stringify(stage01WorkshopTruth.router || {}) + '\n'
+  + patched
+const stage01WorkshopHashAnchor = '        return sha(declarations.get(name)) === (stage01CanonicalItemProjectionChanged ? stage01CanonicalItemProjectionChanged.after : acceptedPostOrderDeleteLifecycleHash)'
+if (!patched.includes(stage01WorkshopHashAnchor)) throw new Error('Stage01 Workshop truth R3 predecessor hash anchor missing')
+patched = patched.replace(stage01WorkshopHashAnchor, [
+  '        const acceptedPostStage01CanonicalItemHash = stage01CanonicalItemProjectionChanged ? stage01CanonicalItemProjectionChanged.after : acceptedPostOrderDeleteLifecycleHash',
+  '        const stage01WorkshopTruthChanged = stage01WorkshopTruthChanges[name]',
+  "        if (stage01WorkshopTruthChanged) check(stage01WorkshopTruthChanged.before === acceptedPostStage01CanonicalItemHash, 'Stage01 Workshop truth R3 predecessor drifted: ' + name)",
+  '        return sha(declarations.get(name)) === (stage01WorkshopTruthChanged ? stage01WorkshopTruthChanged.after : acceptedPostStage01CanonicalItemHash)',
+].join('\n'))
+const stage01WorkshopRouterAnchor = "  check(sha(currentRouter) === resolverUxRouter.after, 'Resolver UX router changed outside exact delta')"
+if (!patched.includes(stage01WorkshopRouterAnchor)) throw new Error('Stage01 Workshop truth R3 router predecessor anchor missing')
+patched = patched.replace(stage01WorkshopRouterAnchor, [
+  "  check(sha(currentRouter) === stage01WorkshopTruthRouter.after, 'Stage01 Workshop truth R3 router changed outside exact delta')",
+  "  check(currentRouter.includes(stage01WorkshopTruthRouter.afterBlock), 'Stage01 Workshop truth R3 router reversion anchor missing')",
+  '  currentRouter = currentRouter.replace(stage01WorkshopTruthRouter.afterBlock, stage01WorkshopTruthRouter.beforeBlock)',
+  "  check(sha(currentRouter) === stage01WorkshopTruthRouter.before, 'Stage01 Workshop truth R3 router reverse baseline mismatch')",
+  "  check(stage01WorkshopTruthRouter.before === resolverUxRouter.after, 'Stage01 Workshop truth R3 router predecessor drifted')",
+  stage01WorkshopRouterAnchor,
+].join('\n'))
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
