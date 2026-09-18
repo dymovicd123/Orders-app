@@ -171,7 +171,7 @@ export async function createInventoryStocktakeSession(
   const now = new Date().toISOString();
   const sessionId = inventoryStocktakeSessionId(source, scope);
   const scopeClause = selectedProductIds.length
-    ? ` AND COALESCE(s.product_id, v.product_id) IN (${selectedProductIds.map(() => '?').join(',')})`
+    ? ` AND COALESCE(v.product_id, s.product_id) IN (${selectedProductIds.map(() => '?').join(',')})`
     : '';
 
   if (scope === 'selective') {
