@@ -55,13 +55,13 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
   const itemsByOrderId = new Map<number, unknown[]>();
   const paymentsByOrderId = new Map<number, unknown[]>();
   const returnsByOrderId = new Map<number, unknown[]>();
-  const exchangesByOrderId = new Map<number, unknown[]>();
+  const committedExchangeCountByOrderId = new Map<number, number>();
   const workshopTasksByOrderId = new Map<number, unknown[]>();
   const handoverReviewByOrderId = new Map<number, unknown[]>();
   const activeStockHandoverByOrderId = new Map<number, unknown[]>();
 
   if (!orderIds.length) {
-    return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, exchangesByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
+    return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, committedExchangeCountByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
   }
 
   const appendRows = (target: Map<number, unknown[]>, rows: unknown[]) => {
@@ -81,8 +81,9 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
   for (let index = 0; index < orderIds.length; index += chunkSize) {
     const chunk = orderIds.slice(index, index + chunkSize);
     const placeholders = chunk.map(() => '?').join(',');
+    const requestedOrderValues = chunk.map(() => '(?)').join(',');
 
-    const [itemsResult, paymentsResult, returnsResult, exchangesResult, workshopTasksResult, handoverStateResult, standaloneReturnedResult] = await Promise.all([
+    const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverStateResult, standaloneReturnedResult] = await Promise.all([
       db.prepare(
         `SELECT oi.*,
                 p.name AS canonical_product_name,
@@ -105,30 +106,44 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
         `SELECT * FROM returns WHERE order_id IN (${placeholders}) ORDER BY return_date DESC, id DESC`
       ).bind(...chunk).all(),
       db.prepare(
-        `SELECT id, order_id, status FROM exchanges WHERE order_id IN (${placeholders}) ORDER BY id DESC`
-      ).bind(...chunk).all(),
-      db.prepare(
         `SELECT * FROM workshop_tasks WHERE order_id IN (${placeholders}) ORDER BY id ASC`
       ).bind(...chunk).all(),
       fetchOrderStockHandoverRows(db, chunk, { listFlagsOnly: true }),
       db.prepare(
-        `SELECT r.order_id, ri.order_item_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
-         FROM return_items ri
-         JOIN returns r ON r.id = ri.return_id
-         WHERE r.order_id IN (${placeholders})
-           AND COALESCE(r.status, 'completed') <> 'cancelled'
-           AND NOT EXISTS (
-             SELECT 1
-             FROM exchanges e
-             WHERE e.refund_return_id = r.id
-               AND COALESCE(e.status, 'completed') <> 'cancelled'
-           )
-         GROUP BY r.order_id, ri.order_item_id`
+        `WITH requested_orders(order_id) AS (VALUES ${requestedOrderValues}),
+         standalone_returns AS (
+           SELECT r.order_id, ri.order_item_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
+           FROM requested_orders ro
+           JOIN returns r ON r.order_id = ro.order_id
+           JOIN return_items ri ON ri.return_id = r.id
+           WHERE COALESCE(r.status, 'completed') <> 'cancelled'
+             AND NOT EXISTS (
+               SELECT 1
+               FROM exchanges e
+               WHERE e.refund_return_id = r.id
+                 AND COALESCE(e.status, 'completed') <> 'cancelled'
+             )
+           GROUP BY r.order_id, ri.order_item_id
+         ),
+         exchange_counts AS (
+           SELECT e.order_id, COUNT(*) AS committed_exchange_count
+           FROM requested_orders ro
+           JOIN exchanges e ON e.order_id = ro.order_id
+           WHERE COALESCE(e.status, 'completed') <> 'cancelled'
+           GROUP BY e.order_id
+         )
+         SELECT ro.order_id, sr.order_item_id, COALESCE(sr.returned_quantity, 0) AS returned_quantity,
+                COALESCE(ec.committed_exchange_count, 0) AS committed_exchange_count
+         FROM requested_orders ro
+         LEFT JOIN standalone_returns sr ON sr.order_id = ro.order_id
+         LEFT JOIN exchange_counts ec ON ec.order_id = ro.order_id`
       ).bind(...chunk).all<Record<string, unknown>>(),
     ]);
 
     const activeStandaloneReturnedByItem = new Map<number, number>();
     for (const row of standaloneReturnedResult.results || []) {
+      const orderId = toInt(row.order_id, 0);
+      if (orderId) committedExchangeCountByOrderId.set(orderId, Math.max(0, toInt(row.committed_exchange_count, 0)));
       const orderItemId = toInt(row.order_item_id, 0);
       if (!orderItemId) continue;
       activeStandaloneReturnedByItem.set(orderItemId, Math.max(0, toInt(row.returned_quantity, 0)));
@@ -141,7 +156,6 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
     appendRows(itemsByOrderId, itemsResult.results || []);
     appendRows(paymentsByOrderId, paymentsResult.results || []);
     appendRows(returnsByOrderId, returnsResult.results || []);
-    appendRows(exchangesByOrderId, exchangesResult.results || []);
     appendRows(workshopTasksByOrderId, workshopTasksResult.results || []);
     appendRows(activeStockHandoverByOrderId, handoverStateResult || []);
     appendRows(handoverReviewByOrderId, (handoverStateResult || []).filter((row) => toInt((row as Record<string, unknown>).review_needed, 0) === 1));
@@ -160,7 +174,7 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
     }
   }
 
-  return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, exchangesByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
+  return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, committedExchangeCountByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
 }
 
 
