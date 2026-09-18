@@ -251,6 +251,31 @@ Validation:
 - production build: SUCCESS;
 - dependency audits: SUCCESS.
 
+## R6 — Unshipped/refund truth decoupling
+
+The Orders read-path still contained one legacy truth collapse: the `shippingStatus=not_sent` filter also required `return_amount <= 0`.
+
+That meant an active order with any historical or partial refund could disappear from the ordinary “Не отправлено” work queue even though its actual shipping fact was still `shipping_status <> 'sent'`.
+
+R6 removes that coupling. The unshipped filter now follows shipping truth only.
+
+Important scope boundary:
+- this slice does not redefine the separate legacy `status=returned` API filter;
+- it only prevents refund history from hiding otherwise active unshipped work.
+
+Focused regression:
+`scripts/test-stage01-unshipped-refund-decoupling-r6.mjs`
+
+Exact Worker preservation layer:
+`scripts/stage01-unshipped-refund-decoupling-r6-worker-manifest.json`
+
+Final validation:
+- temporary draft PR #76, closed without merge;
+- GitHub Actions Quality check run `35332881155`: SUCCESS;
+- cumulative release gate: SUCCESS;
+- production build: SUCCESS;
+- dependency audits: SUCCESS.
+
 ## Current safety boundary
 
 Do not touch Production D1 while Stage 0+1 is still being assembled.
