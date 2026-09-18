@@ -7,7 +7,7 @@ Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 are implemented and gre
 - Production/main baseline at the beginning of this slice: `main`.
 - Implementation branch: `feature/stage01-truth-projections-20260918`.
 - Current green implementation head: `de3eb0fc6cd439cdfa8fadb193ddf807c924373c`.
-- Branch2 remains separate; its head observed during this work: `fb43e8d709b57b67cc080bb9bd64246bb036aede`.
+- Branch2 is the isolated UI/integration proving environment. After R10 passed the full gate it was fast-forwarded to the same green head: `de3eb0fc6cd439cdfa8fadb193ddf807c924373c`.
 - No Production D1 migration/write was performed.
 
 ## R1 — OrderOperationalProjection
