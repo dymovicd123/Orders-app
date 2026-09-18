@@ -1,0 +1,157 @@
+name: Stage01 Production post-deploy read-only smoke
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: production-postdeploy-readonly-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_API: https://api.cloudflare.com/client/v4
+      PROD_DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      EXPECTED_MAIN_SHA: 0ff105ab2941e20cbd0259c204f77bc767af45ca
+      EXPECTED_WORKFLOW_PATH: .github/workflows/stage01-production-postdeploy-smoke.yml
+
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Guard exact deployed main lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent_sha="$(git rev-parse HEAD^)"
+          current_main="$(git ls-remote origin refs/heads/main | cut -f1)"
+          echo "Parent: $parent_sha"
+          echo "Current main: $current_main"
+          test "$parent_sha" = "$EXPECTED_MAIN_SHA"
+          test "$current_main" = "$EXPECTED_MAIN_SHA"
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_MAIN_SHA" HEAD)
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = "$EXPECTED_WORKFLOW_PATH"
+
+      - name: Resolve Production endpoint
+        id: endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          subdomain="$(curl --fail-with-body -sS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain // empty')"
+          test -n "$subdomain"
+          base="https://orders-app.$subdomain.workers.dev"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "Production endpoint: $base"
+
+      - name: Verify deployed shell and core read APIs
+        shell: bash
+        env:
+          BASE: ${{ steps.endpoint.outputs.base }}
+        run: |
+          set -euo pipefail
+
+          curl --fail-with-body -sS "$BASE/" -o /tmp/root.html
+          grep -q '<title>orders-app</title>' /tmp/root.html
+          ! grep -q 'Система заказов 2' /tmp/root.html
+
+          endpoints=(
+            "/api/admin-mode/status"
+            "/api/auth/me"
+            "/api/dashboard"
+            "/api/reference-data"
+            "/api/orders?limit=20&includePaymentCount=0"
+            "/api/workshop/counts"
+            "/api/inventory/attention?details=0&limit=5"
+            "/api/catalog"
+            "/api/returns"
+            "/api/exchanges"
+          )
+          for path in "${endpoints[@]}"; do
+            code="$(curl -sS -o /tmp/prod-smoke.json -w '%{http_code}' "$BASE$path")"
+            echo "$code $path"
+            if [[ "$code" -lt 200 || "$code" -ge 300 ]]; then
+              cat /tmp/prod-smoke.json >&2 || true
+              exit 3
+            fi
+            jq -e 'type=="object" or type=="array"' /tmp/prod-smoke.json >/dev/null
+          done
+
+      - name: Verify R14 item search through live Orders API
+        shell: bash
+        env:
+          BASE: ${{ steps.endpoint.outputs.base }}
+        run: |
+          set -euo pipefail
+          query() {
+            local sql="$1"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/query"
+          }
+
+          sample="$(query "SELECT
+            oi.order_id AS order_id,
+            TRIM(COALESCE(NULLIF(p.name,''), NULLIF(oi.product_name_snapshot,''), '')) AS term
+            FROM order_items oi
+            LEFT JOIN catalog_products p ON p.id = oi.product_id
+            WHERE LENGTH(TRIM(COALESCE(NULLIF(p.name,''), NULLIF(oi.product_name_snapshot,''), ''))) >= 3
+            ORDER BY oi.id DESC
+            LIMIT 1;")"
+          jq -e '.success == true and .result[0].success == true and (.result[0].results | length) == 1' <<<"$sample" >/dev/null
+          order_id="$(jq -r '.result[0].results[0].order_id' <<<"$sample")"
+          term="$(jq -r '.result[0].results[0].term' <<<"$sample")"
+          test "$order_id" -gt 0
+          test -n "$term"
+          echo "Search sample order_id=$order_id term=$term"
+
+          curl --fail-with-body -sS -G             --data-urlencode "q=$term"             --data-urlencode "limit=20"             --data-urlencode "includePaymentCount=0"             "$BASE/api/orders" -o /tmp/search.json
+          jq -e --argjson id "$order_id" '.ok == true and any(.orders[]?; (.id|tonumber) == $id)' /tmp/search.json >/dev/null
+          echo "Orders item search resolved order $order_id"
+
+          curl --fail-with-body -sS "$BASE/api/orders/$order_id" -o /tmp/order.json
+          jq -e --argjson id "$order_id" '.ok == true and (.order.id|tonumber) == $id and (.order.items|type) == "array"' /tmp/order.json >/dev/null
+          echo "Order detail readback passed for $order_id"
+
+      - name: Verify R14 database boundary after deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            local sql="$1"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/query"
+          }
+          post="$(query "SELECT
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM order_search_items_fts) AS fts_rows_count,
+            (SELECT COUNT(DISTINCT rowid) FROM order_search_items_fts) AS fts_distinct_rowids,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN (
+              'trg_order_search_items_ai',
+              'trg_order_search_items_ad',
+              'trg_order_search_items_au',
+              'trg_order_search_catalog_products_au',
+              'trg_order_search_catalog_variants_au'
+            )) AS r14_trigger_count;")"
+          echo "$post" | jq '.result[0].results[0]'
+          jq -e '.success == true and .result[0].success == true and
+            .result[0].results[0].order_items_count == .result[0].results[0].fts_rows_count and
+            .result[0].results[0].order_items_count == .result[0].results[0].fts_distinct_rowids and
+            .result[0].results[0].r14_trigger_count == 5' <<<"$post" >/dev/null
+
+          {
+            echo "### Stage01 Production post-deploy smoke"
+            echo ""
+            echo "- Production shell marker: OK"
+            echo "- Core read APIs: OK"
+            echo "- Returns/Exchanges reads: OK"
+            echo "- Live item-name Orders search through R14 FTS: OK"
+            echo "- Order detail readback: OK"
+            echo "- Five R14 triggers + FTS parity: OK"
+          } >> "$GITHUB_STEP_SUMMARY"
