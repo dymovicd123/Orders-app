@@ -1,0 +1,256 @@
+name: Stage01 Production R14 guarded rollout
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  rollout:
+    name: production-r14-guarded-rollout
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_API: https://api.cloudflare.com/client/v4
+      PROD_DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      EXPECTED_MAIN_SHA: 412ba8b4f2a72873232103944e2a3a777a6dbcd9
+      EXPECTED_RELEASE_SHA: 61a232383ff9b4b2493c75385a0ab6b184b9b938
+      EXPECTED_WORKFLOW_PATH: .github/workflows/stage01-production-r14-rollout.yml
+
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Guard exact release lineage and frozen main
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse HEAD)"
+          parent_sha="$(git rev-parse HEAD^)"
+          current_main="$(git ls-remote origin refs/heads/main | cut -f1)"
+          echo "Head: $head_sha"
+          echo "Parent: $parent_sha"
+          echo "Current main: $current_main"
+          test "$parent_sha" = "$EXPECTED_RELEASE_SHA"
+          test "$current_main" = "$EXPECTED_MAIN_SHA"
+
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_RELEASE_SHA" HEAD)
+          printf 'Changed from release candidate:\n%s\n' "${changed[*]}"
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = "$EXPECTED_WORKFLOW_PATH"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Hard guard Production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/test-production-environment.mjs
+          grep -q '"name": "orders-app"' wrangler.jsonc
+          grep -q '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -q '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -q 'orders-app-branch2' wrangler.jsonc
+          ! grep -q 'orders_db_branch2' wrangler.jsonc
+          ! grep -q '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+
+      - name: Production read-only preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            local sql="$1"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/query"
+          }
+
+          schema="$(query "SELECT
+            EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='order_items') AS order_items_table,
+            EXISTS(SELECT 1 FROM sqlite_master WHERE name='order_search_items_fts') AS order_search_fts,
+            EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='catalog_products') AS catalog_products_table,
+            EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='catalog_variants') AS catalog_variants_table,
+            EXISTS(SELECT 1 FROM pragma_table_info('order_items') WHERE name='product_name_snapshot') AS product_name_snapshot,
+            EXISTS(SELECT 1 FROM pragma_table_info('order_items') WHERE name='gender_snapshot') AS gender_snapshot,
+            EXISTS(SELECT 1 FROM pragma_table_info('order_items') WHERE name='color_snapshot') AS color_snapshot,
+            EXISTS(SELECT 1 FROM pragma_table_info('order_items') WHERE name='material_snapshot') AS material_snapshot,
+            EXISTS(SELECT 1 FROM pragma_table_info('order_items') WHERE name='length_snapshot') AS length_snapshot,
+            EXISTS(SELECT 1 FROM pragma_table_info('order_items') WHERE name='size_snapshot') AS size_snapshot,
+            EXISTS(SELECT 1 FROM pragma_table_info('catalog_variants') WHERE name='size_label') AS size_label;")"
+          echo "$schema" | jq '.result[0].results[0]'
+          jq -e '.success == true and .result[0].success == true and
+            ([.result[0].results[0][]] | all(. == 1))' <<<"$schema" >/dev/null
+
+          markers="$(query "SELECT
+            COALESCE((SELECT value FROM inventory_model_meta WHERE key='human_inventory_v2'),'')='active' AS human_inventory_v2,
+            COALESCE((SELECT value FROM inventory_model_meta WHERE key='safe_early_handover_v1_guard'),'')='ready' AS safe_early_handover_v1_guard,
+            COALESCE((SELECT value FROM catalog_identity_meta WHERE key='catalog_identity_v3'),'')='active' AS catalog_identity_v3,
+            COALESCE((SELECT value FROM catalog_identity_meta WHERE key='catalog_cleanup_188j'),'')='active' AS catalog_cleanup_188j,
+            COALESCE((SELECT value FROM catalog_identity_meta WHERE key='client_cleanup_188k2'),'')='active' AS client_cleanup_188k2,
+            COALESCE((SELECT value FROM app_settings WHERE key='financial_history_model'),'')='189c-v1' AS financial_history_model;")"
+          echo "$markers" | jq '.result[0].results[0]'
+          jq -e '.success == true and .result[0].success == true and
+            ([.result[0].results[0][]] | all(. == 1))' <<<"$markers" >/dev/null
+
+          pre="$(query "SELECT
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM order_search_items_fts) AS fts_rows_count,
+            (SELECT COUNT(DISTINCT rowid) FROM order_search_items_fts) AS fts_distinct_rowids,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('trg_order_search_items_ai','trg_order_search_items_ad','trg_order_search_items_au')) AS item_trigger_count,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('trg_order_search_catalog_products_au','trg_order_search_catalog_variants_au')) AS r14_catalog_trigger_count;")"
+          echo "$pre" | jq '.result[0].results[0]'
+          jq -e '.success == true and .result[0].success == true and
+            .result[0].results[0].order_items_count == .result[0].results[0].fts_rows_count and
+            .result[0].results[0].order_items_count == .result[0].results[0].fts_distinct_rowids and
+            .result[0].results[0].item_trigger_count == 3 and
+            .result[0].results[0].r14_catalog_trigger_count == 0' <<<"$pre" >/dev/null
+
+      - name: Capture fresh encrypted D1 Time Travel bookmark
+        id: bookmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --fail-with-body -sS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/time_travel/bookmark")"
+          bookmark="$(jq -r '.result.bookmark // empty' <<<"$response")"
+          jq -e '.success == true and (.result.bookmark // "") != ""' <<<"$response" >/dev/null
+          test -n "$bookmark"
+          echo "::add-mask::$bookmark"
+          fingerprint="$(printf '%s' "$bookmark" | sha256sum | awk '{print $1}')"
+          printf '%s' "$bookmark" > /tmp/pre-release-bookmark.txt
+          openssl enc -aes-256-cbc -pbkdf2 -salt             -in /tmp/pre-release-bookmark.txt             -out pre-release-bookmark.enc             -pass env:CLOUDFLARE_API_TOKEN
+          rm -f /tmp/pre-release-bookmark.txt
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Stage01 Production R14 pre-release rollback point"
+            echo ""
+            echo "- D1: `orders_db_prod`"
+            echo "- Bookmark SHA-256 fingerprint: `$fingerprint`"
+            echo "- Plain bookmark is masked; encrypted copy is attached as a workflow artifact."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve encrypted pre-release bookmark
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage01-production-r14-pre-release-bookmark-${{ github.run_id }}
+          path: pre-release-bookmark.enc
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Production read-only API smoke before R14
+        shell: bash
+        run: |
+          set -euo pipefail
+          subdomain="$(curl --fail-with-body -sS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain // empty')"
+          test -n "$subdomain"
+          base="https://orders-app.$subdomain.workers.dev"
+          echo "Production endpoint: $base"
+          endpoints=(
+            "/api/admin-mode/status"
+            "/api/auth/me"
+            "/api/dashboard"
+            "/api/reference-data"
+            "/api/orders?limit=5"
+            "/api/workshop/counts"
+            "/api/inventory/attention?details=0&limit=5"
+            "/api/catalog"
+          )
+          for path in "${endpoints[@]}"; do
+            code="$(curl -sS -o /tmp/prod-smoke.json -w '%{http_code}' "$base$path")"
+            echo "$code $path"
+            if [[ "$code" -lt 200 || "$code" -ge 300 ]]; then
+              cat /tmp/prod-smoke.json >&2 || true
+              exit 3
+            fi
+            jq -e 'type=="object" or type=="array"' /tmp/prod-smoke.json >/dev/null
+          done
+
+      - name: Apply only R14 canonical search migration to Production
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc             --file migrations/0070_v72_stage01_canonical_order_search.sql
+
+      - name: Verify Production R14 after apply
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            local sql="$1"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/query"
+          }
+          post="$(query "SELECT
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM order_search_items_fts) AS fts_rows_count,
+            (SELECT COUNT(DISTINCT rowid) FROM order_search_items_fts) AS fts_distinct_rowids,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN (
+              'trg_order_search_items_ai',
+              'trg_order_search_items_ad',
+              'trg_order_search_items_au',
+              'trg_order_search_catalog_products_au',
+              'trg_order_search_catalog_variants_au'
+            )) AS r14_trigger_count;")"
+          echo "$post" | jq '.result[0].results[0]'
+          jq -e '.success == true and .result[0].success == true and
+            .result[0].results[0].order_items_count == .result[0].results[0].fts_rows_count and
+            .result[0].results[0].order_items_count == .result[0].results[0].fts_distinct_rowids and
+            .result[0].results[0].r14_trigger_count == 5' <<<"$post" >/dev/null
+
+          triggers="$(query "SELECT name FROM sqlite_master
+            WHERE type='trigger' AND name IN (
+              'trg_order_search_items_ai',
+              'trg_order_search_items_ad',
+              'trg_order_search_items_au',
+              'trg_order_search_catalog_products_au',
+              'trg_order_search_catalog_variants_au'
+            ) ORDER BY name;")"
+          echo "$triggers" | jq '.result[0].results'
+          jq -e '.result[0].results | length == 5' <<<"$triggers" >/dev/null
+
+      - name: Production read-only API smoke after R14
+        shell: bash
+        run: |
+          set -euo pipefail
+          subdomain="$(curl --fail-with-body -sS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain // empty')"
+          test -n "$subdomain"
+          base="https://orders-app.$subdomain.workers.dev"
+          endpoints=(
+            "/api/admin-mode/status"
+            "/api/auth/me"
+            "/api/dashboard"
+            "/api/reference-data"
+            "/api/orders?limit=5"
+            "/api/workshop/counts"
+            "/api/inventory/attention?details=0&limit=5"
+            "/api/catalog"
+          )
+          for path in "${endpoints[@]}"; do
+            code="$(curl -sS -o /tmp/prod-smoke.json -w '%{http_code}' "$base$path")"
+            echo "$code $path"
+            if [[ "$code" -lt 200 || "$code" -ge 300 ]]; then
+              cat /tmp/prod-smoke.json >&2 || true
+              exit 4
+            fi
+            jq -e 'type=="object" or type=="array"' /tmp/prod-smoke.json >/dev/null
+          done
+
+          {
+            echo ""
+            echo "### R14 result"
+            echo ""
+            echo "- Direct migration file applied to Production D1."
+            echo "- Five R14 triggers verified."
+            echo "- FTS rowids match current order_items."
+            echo "- Production read-only API smoke passed after migration."
+          } >> "$GITHUB_STEP_SUMMARY"
