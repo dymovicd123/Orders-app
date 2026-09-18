@@ -4,8 +4,11 @@ export type OrderOperationalProjection = {
   archived: boolean
   deleted: boolean
   retainedOnly: boolean
-  hasActiveReturnOperation: boolean
-  activeReturnCount: number
+  hasCommittedReturn: boolean
+  hasCommittedExchange: boolean
+  hasCommittedDownstreamOperation: boolean
+  committedReturnCount: number
+  committedExchangeCount: number
   refundAmount: number
   receivedAmount: number
   debtAmount: number
@@ -49,11 +52,16 @@ export function projectOrderOperationalState(
   const archived = retainedOnly || normalizedOrderStatus === 'archived'
   const deleted = normalizedOrderStatus === 'deleted'
 
-  const activeReturns = Array.isArray(order.returns)
+  const committedReturns = Array.isArray(order.returns)
     ? order.returns.filter((entry) => String(entry?.status || 'completed').trim().toLowerCase() !== 'cancelled')
     : []
-  const activeReturnCount = activeReturns.length
-  const hasActiveReturnOperation = activeReturnCount > 0
+  const committedReturnCount = Number.isFinite(Number(order.committed_return_count))
+    ? Math.max(0, Number(order.committed_return_count || 0))
+    : committedReturns.length
+  const committedExchangeCount = Math.max(0, Number(order.committed_exchange_count || 0))
+  const hasCommittedReturn = committedReturnCount > 0
+  const hasCommittedExchange = committedExchangeCount > 0
+  const hasCommittedDownstreamOperation = hasCommittedReturn || hasCommittedExchange
 
   const refundAmount = Math.max(0, Number(order.return_amount || 0))
   const receivedAmount = Math.max(0, Number(order.received_amount || 0))
@@ -132,8 +140,11 @@ export function projectOrderOperationalState(
     archived,
     deleted,
     retainedOnly,
-    hasActiveReturnOperation,
-    activeReturnCount,
+    hasCommittedReturn,
+    hasCommittedExchange,
+    hasCommittedDownstreamOperation,
+    committedReturnCount,
+    committedExchangeCount,
     refundAmount,
     receivedAmount,
     debtAmount,
@@ -148,19 +159,19 @@ export function projectOrderOperationalState(
     paymentLabel,
     paymentClass,
     canOpenDebt: mutableWorkingOrder && debtAmount > 0,
-    // Existing completed returns must not turn the whole order into a terminal
-    // "returned" state. The Return/Exchange domains validate remaining quantity.
+    // Existing completed returns/exchanges do not turn the whole order into a terminal
+    // lifecycle state. The Return/Exchange domains validate remaining quantity.
     canOpenReturn: mutableWorkingOrder,
     canOpenExchange: mutableWorkingOrder,
-    // Current backend intentionally blocks rewriting an order while a completed
-    // Return is active. Keep that safety without using return_amount as lifecycle.
-    canEdit: mutableWorkingOrder && !hasActiveReturnOperation && (simpleAdmin || !sent),
-    // Preserve current conservative shipping/correction behavior while an active
-    // Return exists; this is an action guard, not a lifecycle label.
-    canShip: mutableWorkingOrder && !hasActiveReturnOperation && !sent && !workshopPending,
-    canCorrectShipping: mutableWorkingOrder && !hasActiveReturnOperation && sent,
+    // Current backend blocks rewriting an order after a committed Return or Exchange
+    // until that downstream operation is cancelled. Mirror that fact explicitly.
+    canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation && (simpleAdmin || !sent),
+    // Preserve conservative shipping/correction behavior once a committed downstream
+    // Return/Exchange exists; this is an action guard, not a lifecycle label.
+    canShip: mutableWorkingOrder && !hasCommittedDownstreamOperation && !sent && !workshopPending,
+    canCorrectShipping: mutableWorkingOrder && !hasCommittedDownstreamOperation && sent,
     canOpenStockHandover: mutableWorkingOrder
-      && !hasActiveReturnOperation
+      && !hasCommittedDownstreamOperation
       && !sent
       && Boolean(order.stock_handover_review_needed || (mixedOrder && workshopPending && order.stock_handover_has_active_items)),
   }
