@@ -5,8 +5,11 @@ const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Almaty' }).form
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 
 async function api(path, options = {}, expected = [200]) {
+  const method = options.method || 'GET'
+  console.log(`→ ${method} ${path}`)
   const response = await fetch(base + path, {
     ...options,
+    signal: AbortSignal.timeout(20_000),
     headers: {
       'Accept': 'application/json',
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
@@ -17,7 +20,7 @@ async function api(path, options = {}, expected = [200]) {
   let data = null
   try { data = text ? JSON.parse(text) : null } catch {}
   if (!expected.includes(response.status)) {
-    throw new Error(`${options.method || 'GET'} ${path} -> ${response.status}: ${text.slice(0, 1200)}`)
+    throw new Error(`${method} ${path} -> ${response.status}: ${text.slice(0, 1200)}`)
   }
   if (data && typeof data === 'object' && 'ok' in data) check(data.ok === true, `${path} returned ok=false: ${text.slice(0, 1200)}`)
   return { status: response.status, data }
