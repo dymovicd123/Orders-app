@@ -721,10 +721,16 @@ export async function listOpenDebtOrders(db: D1Database, url: URL) {
   const itemsByOrder = new Map<number, Array<Record<string, unknown>>>();
   if (ids.length) {
     const itemRows = await db.prepare(
-      `SELECT oi.order_id, oi.id,
-              COALESCE(oi.product_name_snapshot, p.name, '') AS product_name,
-              COALESCE(oi.size_snapshot, v.size_label, '') AS size_label,
-              oi.quantity
+      `SELECT oi.order_id, oi.id, oi.product_id, oi.variant_id,
+              oi.product_name_snapshot, oi.audience_type, oi.gender_snapshot, oi.color_snapshot,
+              oi.material_snapshot, oi.length_snapshot, oi.size_snapshot, oi.quantity,
+              p.name AS canonical_product_name,
+              COALESCE(v.category, p.category) AS canonical_category,
+              v.gender AS canonical_gender,
+              v.color AS canonical_color,
+              v.material AS canonical_material,
+              v.length AS canonical_length,
+              v.size_label AS canonical_size
        FROM order_items oi
        LEFT JOIN catalog_products p ON p.id = oi.product_id
        LEFT JOIN catalog_variants v ON v.id = oi.variant_id
@@ -737,8 +743,7 @@ export async function listOpenDebtOrders(db: D1Database, url: URL) {
       if (!itemsByOrder.has(orderId)) itemsByOrder.set(orderId, []);
       itemsByOrder.get(orderId)!.push({
         id: toInt(item.id, 0),
-        productName: cleanText(item.product_name),
-        size: cleanText(item.size_label),
+        ...canonicalItemProjection(item),
         quantity: Math.max(0, toInt(item.quantity, 0)),
       });
     }
