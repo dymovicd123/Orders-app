@@ -20,7 +20,7 @@ Production code branch currently audited:
 
 Documentation/audit branch:
 - `audit/system-ux-walkthrough-20260917`
-- audit head immediately before this context update: `84f5aa401daa21a2cc4a4f13631fca1a45bb25c4`
+- audit head immediately before this context update: `5e8343cb6bae01178b08c80068c49b41bc1f7bf6`
 
 Rules:
 - do not mutate Production D1 for exploratory work;
@@ -79,6 +79,7 @@ Read these before continuing:
 - `docs/audits/MANAGER_CODE_AUDIT_04_LIFECYCLE_RETURN_EXCHANGE_20260918.md`
 - `docs/audits/FOUNDATION_TRUTH_MAP_01_ORDER_LIFECYCLE_20260918.md`
 - `docs/audits/FOUNDATION_TRUTH_MAP_02_PRODUCT_IDENTITY_20260918.md`
+- `docs/audits/FOUNDATION_TRUTH_MAP_03_PHYSICAL_STOCK_20260918.md`
 
 Astra lifecycle Phase 1 report is also preserved in the audit branch. It should not be re-run unless a specific missing scenario becomes necessary.
 
@@ -154,6 +155,30 @@ The foundation hypothesis is now supported by both Order and Product domains:
 
 > The system often has the right facts, but does not explicitly classify historical snapshots, current canonical identity, mutable display caches and derived operational read-models.
 
+## Completed foundation truth-map slice: Physical stock
+
+The third full truth-map slice is complete.
+
+Strong findings:
+- current physical quantity authority is `inventory_stock.quantity`;
+- durable business reservation truth is active `inventory_reservations`; `inventory_stock.reserved_quantity` is a derived/cache aggregate;
+- ordinary Остатки reads the reserved cache, reservation detail reads actual reservation rows, and Warehouse Attention recomputes active reservation totals — no single read contract currently declares/reconciles the hierarchy;
+- physical-check rows and completed stocktakes are deliberately stronger facts than older inferred lifecycle reversals;
+- full stocktake implementation is strong: baseline/recount conflict handling, atomic completion lock, exact count application, check-history write, and no partial completion;
+- pending Return/Exchange/Workshop inbound respects newer physical checks/full-stocktake boundaries rather than blindly double-adding stock;
+- positive physically-found stock may exist with no canonical variant yet, which is a good separation of physical truth from product identity;
+- **confirmed contradiction:** ordinary inventory keeps inactive SKU visible when it still has quantity/reserve, but creation of a “full” stocktake excludes inactive product/variant rows; retired physical stock can therefore be visible yet omitted from physical revision;
+- **confirmed ownership defect:** Warehouse Arrival can create product/execution/variant through `resolveInventoryCreatableItemsBulk()`, a separate master-data creation implementation from Catalog/Resolver and without the same complete reference/value validation contract;
+- current Остатки combines three jobs: browse, explain order reservations, and perform integrity/cycle-count work;
+- browse hierarchy follows technical execution → color → category/gender → size, while client asks primarily product → color → size and commercial usefulness;
+- future inventory value cannot safely be `quantity × today's cost` if historical batch cost can vary; cost methodology remains a business decision.
+
+Current strongest root diagnosis:
+
+> Business facts are increasingly correct, but truth ownership and the ordinary read projection are not centralized. Complexity accumulates at subsystem boundaries and in UI-side reconstruction.
+
+Do not rewrite Revision/Return/Reservation safety machinery. Most of it should be preserved.
+
 ## Warehouse/client requirements that must influence later design, but are NOT yet an approved plan
 
 Client asks for:
@@ -228,20 +253,19 @@ The output should distinguish:
 
 ## Immediate next step
 
-Next full slice: **Physical stock / reservations / lifecycle / stocktake truth**.
+Next full slice: **Workshop lifecycle / finished-goods intake / production boundary**.
 
 Questions:
-- What is authoritative for physical quantity?
-- What is authoritative for reserved quantity?
-- How are free/available quantities derived?
-- Which movement rows are immutable history and which current caches can be overwritten?
-- How do checks/stocktakes supersede older Return/Exchange/shipping facts?
-- Where can stale snapshots or duplicated counters diverge?
-- Which parts of current “Остатки” are accounting machinery leaking into a user-facing browse screen?
-- Can one operational stock projection later support product → color → size plus physical/reserved/free and client-requested performance data without duplicating business logic?
-- How should Return/Exchange physical receipt and no-stock disposition affect future inventory value/profitability?
+- What is authoritative per-item Workshop lifecycle?
+- What does the current “Готово” action actually mean?
+- Does production completion imply physical receipt, stock creation, or only task completion?
+- How do Workshop tasks and coarse orders.workshop_status interact?
+- How are produced items linked to product identity/SKU?
+- Where should a future historical production cost be captured?
+- What real business event should create the client's production invoice/payable entry: each item completion, physical batch receipt, a grouped document, or another explicit boundary?
+- What must remain separate between production completion, physical acceptance, inventory addition and Workshop payment liability?
 
-After this Stock slice, STOP, save its audit document, update this continuation file, and report before Workshop/Money.
+After the Workshop slice, STOP, save its audit document, update this continuation file, and report before Money/Finance.
 
 ## Working discipline
 
