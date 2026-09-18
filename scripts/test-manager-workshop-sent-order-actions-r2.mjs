@@ -5,12 +5,14 @@ const check = (condition, message) => { if (!condition) throw new Error(message)
 
 const workshop = read('src/features/sections/WorkshopSection.tsx')
 const editor = read('src/features/sections/OrderEditorSection.tsx')
+const projection = read('src/app/orderOperationalProjection.ts')
 
 check(workshop.includes("task.shippingStatus !== 'sent' ? ("), 'Workshop must not offer the normal order editor for an already-sent order')
 check(workshop.includes('onClick={() => void openWorkshopOrderEditor(task)}'), 'Normal unsent Workshop rows lost the order editor action')
 check(workshop.includes('onClick={() => void openWorkshopExchange(task)}'), 'Workshop exchange action disappeared')
 check(workshop.includes("task.status === 'active'"), 'Workshop ready/done action flow changed unexpectedly')
-check(editor.includes("selectedOrder.shipping_status !== 'sent'"), 'Sent-order manager edit protection was weakened')
+check(editor.includes('projection?.canEdit'), 'Order editor is not guarded by the shared operational projection')
+check(projection.includes('canEdit: mutableWorkingOrder && !hasActiveReturnOperation && (simpleAdmin || !sent)'), 'Sent-order manager edit protection was weakened')
 check(editor.includes("editorReturnSector === 'workshop' ? 'Назад в цех'"), 'Workshop editor return path changed unexpectedly')
 
 const editGuard = workshop.indexOf("task.shippingStatus !== 'sent' ? (")
