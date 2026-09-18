@@ -4,6 +4,46 @@ import { cleanText, toInt } from '../core/text.ts'
 import { matchWorkshopTasksToOrderItems } from './workshop-matching.ts'
 import { fetchOrderStockHandoverRows } from './order-reservations.ts'
 
+export function canonicalItemProjection(item: Record<string, unknown>) {
+  const productId = toInt(item.product_id, 0) || null;
+  const variantId = toInt(item.variant_id, 0) || null;
+  const originalSnapshot = {
+    productName: cleanText(item.product_name_snapshot),
+    audienceType: cleanText(item.audience_type),
+    gender: cleanText(item.gender_snapshot),
+    color: cleanText(item.color_snapshot),
+    material: cleanText(item.material_snapshot),
+    length: cleanText(item.length_snapshot),
+    size: cleanText(item.size_snapshot),
+  };
+
+  const canonicalProductName = cleanText(item.canonical_product_name);
+  const canonicalCategory = cleanText(item.canonical_category).toLowerCase();
+  const hasCanonicalProduct = Boolean(productId && canonicalProductName);
+  const hasCanonicalVariant = Boolean(variantId);
+  const canonicalAudienceType = hasCanonicalProduct && canonicalCategory
+    ? (canonicalCategory === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ')
+    : '';
+
+  return {
+    productId,
+    variantId,
+    catalogIdentity: hasCanonicalVariant ? 'variant' : (hasCanonicalProduct ? 'product' : 'snapshot'),
+    productName: (hasCanonicalProduct ? canonicalProductName : '') || originalSnapshot.productName,
+    audienceType: canonicalAudienceType || originalSnapshot.audienceType,
+    // A base-product-only resolution is enough to update the product name/category, but not
+    // enough to invent SKU characteristics. Exact variant links may safely project the
+    // current canonical SKU while the immutable order-time values stay in originalSnapshot.
+    gender: hasCanonicalVariant ? (cleanText(item.canonical_gender) || originalSnapshot.gender) : originalSnapshot.gender,
+    color: hasCanonicalVariant ? (cleanText(item.canonical_color) || originalSnapshot.color) : originalSnapshot.color,
+    material: hasCanonicalVariant ? (cleanText(item.canonical_material) || originalSnapshot.material) : originalSnapshot.material,
+    length: hasCanonicalVariant ? (cleanText(item.canonical_length) || originalSnapshot.length) : originalSnapshot.length,
+    size: hasCanonicalVariant ? (cleanText(item.canonical_size) || originalSnapshot.size) : originalSnapshot.size,
+    originalSnapshot,
+  };
+}
+
+
 export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
   const itemsByOrderId = new Map<number, unknown[]>();
   const paymentsByOrderId = new Map<number, unknown[]>();
