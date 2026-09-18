@@ -9,6 +9,7 @@ import { catalogReviewRowToOrderItem } from './catalog-review.ts'
 import type { ResolvedOrderCatalogReference } from './order-reservations.ts'
 import { catalogOrderInputKey, ensureHumanInventoryStockRow, resolveCatalogProductAndVariantV2 } from './order-reservations.ts'
 import { upsertReferenceValue } from './references.ts'
+import { canonicalItemProjection } from './orders-relations.ts'
 
 export async function getOrderItemForReturnOrExchange(db: D1Database, orderId: number, orderItemId: number) {
   if (!orderItemId) return null;
@@ -845,9 +846,19 @@ export async function cancelInventoryLifecycleEvent(
 export async function listInventoryLifecyclePending(db: D1Database, url: URL) {
   const limit = Math.min(100, Math.max(10, toInt(url.searchParams.get('limit'), 40)));
   const result = await db.prepare(
-    `SELECT e.*, o.external_id, o.order_date
+    `SELECT e.*, o.external_id, o.order_date,
+            COALESCE(cv.product_id, e.product_id) AS canonical_product_id,
+            cp.name AS canonical_product_name,
+            COALESCE(cv.category, cp.category) AS canonical_category,
+            cv.gender AS canonical_gender,
+            cv.color AS canonical_color,
+            cv.material AS canonical_material,
+            cv.length AS canonical_length,
+            cv.size_label AS canonical_size
      FROM inventory_lifecycle_events e
      JOIN orders o ON o.id = e.order_id
+     LEFT JOIN catalog_variants cv ON cv.id = e.variant_id
+     LEFT JOIN catalog_products cp ON cp.id = COALESCE(cv.product_id, e.product_id)
      WHERE e.status = 'pending'
      ORDER BY e.created_at ASC, e.id ASC
      LIMIT ?`
@@ -856,32 +867,41 @@ export async function listInventoryLifecyclePending(db: D1Database, url: URL) {
   return {
     ok: true,
     count: Math.max(0, toInt(countRow?.count, 0)),
-    items: (result.results || []).map((row) => ({
-      id: toInt(row.id, 0),
-      eventKey: cleanText(row.event_key),
-      eventType: cleanText(row.event_type),
-      direction: cleanText(row.direction),
-      operationType: cleanText(row.operation_type),
-      operationId: toInt(row.operation_id, 0),
-      orderId: toInt(row.order_id, 0),
-      orderItemId: toInt(row.order_item_id, 0) || null,
-      externalId: cleanText(row.external_id),
-      orderDate: cleanText(row.order_date),
-      inventorySource: cleanText(row.inventory_source),
-      quantity: Math.max(1, toInt(row.quantity, 1)),
-      productId: toInt(row.product_id, 0) || null,
-      variantId: toInt(row.variant_id, 0) || null,
-      productName: cleanText(row.product_name_snapshot),
-      category: normalizeAudienceCategory(row.audience_type, row.size_snapshot),
-      gender: cleanText(row.gender_snapshot),
-      color: cleanText(row.color_snapshot),
-      material: canonicalStockPositionValue(row.material_snapshot),
-      length: canonicalStockPositionValue(row.length_snapshot),
-      size: cleanText(row.size_snapshot),
-      isWorkshop: Boolean(toInt(row.is_workshop, 0)),
-      pendingReason: cleanText(row.pending_reason),
-      createdAt: cleanText(row.created_at),
-    })),
+    items: (result.results || []).map((row) => {
+      // Pending lifecycle tasks are a live operational queue. Show repaired/current
+      // catalog identity when the event already has canonical links, while keeping
+      // immutable event snapshots untouched for resolver context and audit history.
+      const projection = canonicalItemProjection({
+        ...row,
+        product_id: row.canonical_product_id,
+      });
+      return {
+        id: toInt(row.id, 0),
+        eventKey: cleanText(row.event_key),
+        eventType: cleanText(row.event_type),
+        direction: cleanText(row.direction),
+        operationType: cleanText(row.operation_type),
+        operationId: toInt(row.operation_id, 0),
+        orderId: toInt(row.order_id, 0),
+        orderItemId: toInt(row.order_item_id, 0) || null,
+        externalId: cleanText(row.external_id),
+        orderDate: cleanText(row.order_date),
+        inventorySource: cleanText(row.inventory_source),
+        quantity: Math.max(1, toInt(row.quantity, 1)),
+        productId: projection.productId,
+        variantId: projection.variantId,
+        productName: projection.productName,
+        category: normalizeAudienceCategory(projection.audienceType, projection.size),
+        gender: cleanText(projection.gender),
+        color: cleanText(projection.color),
+        material: canonicalStockPositionValue(projection.material),
+        length: canonicalStockPositionValue(projection.length),
+        size: cleanText(projection.size),
+        isWorkshop: Boolean(toInt(row.is_workshop, 0)),
+        pendingReason: cleanText(row.pending_reason),
+        createdAt: cleanText(row.created_at),
+      };
+    }),
   };
 }
 
