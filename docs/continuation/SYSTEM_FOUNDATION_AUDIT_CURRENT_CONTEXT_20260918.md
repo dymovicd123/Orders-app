@@ -6,11 +6,11 @@ This file is the current continuation pointer for the Orders-app foundation clea
 
 - GitHub repository: `dymovicd123/Orders-app`.
 - Current Stage 0+1 implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green Stage 0+1 head: `3d1e28748d0892126f2deb7ca30b6bfa98f5f5c3`.
+- Current green Stage 0+1 head: `d8af03c492db9b44629578ecfcd94c72b4177aef`.
 - Production D1 has not been changed by the Stage 0+1 work.
 - Branch2 is a separate environment and must not be casually folded into Production work.
 - Branch2 is reserved for interactive UI/end-to-end proving of coherent Stage01 groups before Production. Feature-branch static/CI work should remain isolated until it is ready for that test.
-- Branch2 current proving head: `3d1e28748d0892126f2deb7ca30b6bfa98f5f5c3` (R1–R12 green).
+- Branch2 current proving head: `d8af03c492db9b44629578ecfcd94c72b4177aef` (R1–R13 green).
 - `Приход` remains a frozen/high-risk surface unless a separate approved task explicitly requires changing it.
 
 ## Why Stage 0+1 exists
@@ -183,6 +183,20 @@ Focused regression:
 
 Validation: GitHub Actions run `35340711953` passed the cumulative release gate, dependency audits and production build. Temporary PR #82 was closed without merge. Branch2 was fast-forwarded to `3d1e28748d0892126f2deb7ca30b6bfa98f5f5c3`.
 
+
+## Completed slice M — Handover physical canonical identity
+
+The live handover/shipping surface now displays the same canonical SKU that the active physical reservation will actually consume.
+
+Reservation-linked canonical product/SKU identity is first truth. Current order-item canonical links are the next fallback. Immutable order-time snapshots remain fallback/history only and are not rewritten.
+
+Shipment preparation and blocker/shortage diagnostics use the same live canonical identity for human-facing labels.
+
+Focused regression:
+- `scripts/test-stage01-handover-physical-canonical-identity-r13.mjs`
+
+Validation: GitHub Actions run `35344170743` passed the cumulative release gate, dependency audits and production build. Temporary PR #83 was closed without merge. Branch2 was fast-forwarded to `d8af03c492db9b44629578ecfcd94c72b4177aef`.
+
 ## Validation state
 
 R2 passed the cumulative release gate and production build on GitHub Actions run `35327687377`.
@@ -207,6 +221,8 @@ R11 passed the same full gate on GitHub Actions run `35339510564`. Temporary PR 
 
 R12 passed the same full gate on GitHub Actions run `35340711953`. Temporary PR #82 was closed without merge, and Branch2 was fast-forwarded to the same green head.
 
+R13 passed the same full gate on GitHub Actions run `35344170743`. Temporary PR #83 was closed without merge, and Branch2 was fast-forwarded to the same green head.
+
 R6 passed the same full gate on GitHub Actions run `35332881155`. Temporary PR #76 was closed without merge.
 
 R7 passed the same full gate on GitHub Actions run `35333766883`. Temporary PR #77 was closed without merge.
@@ -223,7 +239,7 @@ The next audit must classify each remaining read surface by purpose before chang
 
 ## Immediate next checkpoint
 
-Audit remaining Return/Exchange and Finance read surfaces by purpose. Live operational views may use canonical current identity; historical/audit/transaction views must preserve order-time evidence. Keep F2–F9 money semantics unchanged unless a concrete contradiction is proven.
+Audit the remaining Return/Exchange, Finance and any still-live order/inventory surfaces by purpose. Live operational views may use canonical current identity; historical/audit/transaction views must preserve order-time evidence. Keep F2–F9 money semantics unchanged unless a concrete contradiction is proven.
 
 See:
 `docs/continuation/STAGE01_IMPLEMENTATION_CHECKPOINT_20260918.md`
