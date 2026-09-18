@@ -20,7 +20,7 @@ Production code branch currently audited:
 
 Documentation/audit branch:
 - `audit/system-ux-walkthrough-20260917`
-- audit head immediately before this context update: `699ead84a9a8be1dd725ce2c7fa65c6338394a68`
+- audit head immediately before this context update: `84f5aa401daa21a2cc4a4f13631fca1a45bb25c4`
 
 Rules:
 - do not mutate Production D1 for exploratory work;
@@ -78,6 +78,7 @@ Read these before continuing:
 - `docs/audits/SYSTEM_UX_WALKTHROUGH_ASTRA_LIFECYCLE_20260917.md`
 - `docs/audits/MANAGER_CODE_AUDIT_04_LIFECYCLE_RETURN_EXCHANGE_20260918.md`
 - `docs/audits/FOUNDATION_TRUTH_MAP_01_ORDER_LIFECYCLE_20260918.md`
+- `docs/audits/FOUNDATION_TRUTH_MAP_02_PRODUCT_IDENTITY_20260918.md`
 
 Astra lifecycle Phase 1 report is also preserved in the audit branch. It should not be re-run unless a specific missing scenario becomes necessary.
 
@@ -125,6 +126,33 @@ The strongest architectural diagnosis after this slice:
 > The write model often has enough independent truth, but there is no single deliberate operational projection that composes those facts for ordinary users. Screens use local shortcuts as whole-process meaning.
 
 Do not “fix” this by adding one more status column. The next slices must determine the authoritative facts first, then later a reusable operational read-model can be designed across domains.
+
+## Completed foundation truth-map slice: Product identity
+
+The second full truth-map slice is complete.
+
+Strong findings:
+- canonical identity core is good and should be preserved: product ID → execution (product + material + length) → concrete variant (execution + category + gender + color + size);
+- aliases are recognition rules, not alternate identities;
+- order snapshots are intentionally historical/raw while product_id/variant_id are current canonical links;
+- Orders API already joins canonical fields but deliberately returns snapshot-first fields, which explains the visible resolver mismatch;
+- inventory_stock *_snapshot fields are mutable current display caches, unlike immutable order/movement snapshots — the same naming hides different contracts;
+- execution owns material/length by Identity V3, but variants also keep copied material/length and the canonical loader reads the variant copies;
+- used variant identity edits are generally guarded well;
+- product rename is weaker: it changes the canonical label without automatically preserving the old name as alias or immediately refreshing current stock display;
+- product is_active supports “stop new selection, keep remaining stock/history visible” reasonably well, but does not model “sell remaining stock, stop replenishment”;
+- resolved in-flight orders can still fulfill after product deactivation, but unresolved raw order lines can become stranded because resolver only targets active products.
+
+Price/cost consequence:
+- do not yet assume product-level price/cost;
+- confirm whether material/length execution can change sale price or cost;
+- actual sold unit_price remains historical sale truth;
+- cost for profitability must be captured at receipt/production time;
+- grouping must use stable canonical IDs, not raw names.
+
+The foundation hypothesis is now supported by both Order and Product domains:
+
+> The system often has the right facts, but does not explicitly classify historical snapshots, current canonical identity, mutable display caches and derived operational read-models.
 
 ## Warehouse/client requirements that must influence later design, but are NOT yet an approved plan
 
@@ -200,18 +228,20 @@ The output should distinguish:
 
 ## Immediate next step
 
-Next full slice: **Product identity / canonical SKU / historical snapshots / assortment state**.
+Next full slice: **Physical stock / reservations / lifecycle / stocktake truth**.
 
 Questions:
-- What is the authoritative current identity of a product/SKU?
-- Which order-item values are immutable historical wording versus current operational identity?
-- When resolver changes `product_id / variant_id`, which screens should switch to canonical display and which must preserve raw history?
-- How do aliases, executions, variants and reference values participate in identity without becoming separate user concepts?
-- What exactly does `is_active` mean for product and variant, especially when retired assortment still has physical stock/history?
-- Where can future default sale price and default cost belong without rewriting historical order/receipt facts?
-- Is the catalog/resolver model already sufficient and only missing a shared read projection, or are there genuine identity ownership defects?
+- What is authoritative for physical quantity?
+- What is authoritative for reserved quantity?
+- How are free/available quantities derived?
+- Which movement rows are immutable history and which current caches can be overwritten?
+- How do checks/stocktakes supersede older Return/Exchange/shipping facts?
+- Where can stale snapshots or duplicated counters diverge?
+- Which parts of current “Остатки” are accounting machinery leaking into a user-facing browse screen?
+- Can one operational stock projection later support product → color → size plus physical/reserved/free and client-requested performance data without duplicating business logic?
+- How should Return/Exchange physical receipt and no-stock disposition affect future inventory value/profitability?
 
-After Product Identity, STOP, save the audit doc, update this context again, and report before moving to physical Stock/Reservations.
+After this Stock slice, STOP, save its audit document, update this continuation file, and report before Workshop/Money.
 
 ## Working discipline
 
