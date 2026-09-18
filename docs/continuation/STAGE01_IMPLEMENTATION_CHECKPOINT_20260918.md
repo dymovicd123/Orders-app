@@ -1,13 +1,13 @@
 # Stage 0+1 — implementation checkpoint (2026-09-18)
 
-Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 + R11 + R12 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
+Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 + R11 + R12 + R13 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
 
 ## Source of truth
 
 - Production/main baseline at the beginning of this slice: `main`.
 - Implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green implementation head: `3d1e28748d0892126f2deb7ca30b6bfa98f5f5c3`.
-- Branch2 is the isolated UI/integration proving environment. After R12 passed the full gate it was fast-forwarded to the same green head: `3d1e28748d0892126f2deb7ca30b6bfa98f5f5c3`.
+- Current green implementation head: `d8af03c492db9b44629578ecfcd94c72b4177aef`.
+- Branch2 is the isolated UI/integration proving environment. After R13 passed the full gate it was fast-forwarded to the same green head: `d8af03c492db9b44629578ecfcd94c72b4177aef`.
 - No Production D1 migration/write was performed.
 
 ## R1 — OrderOperationalProjection
@@ -436,6 +436,38 @@ Validation:
 - dependency audits: SUCCESS;
 - Branch2 fast-forwarded to `3d1e28748d0892126f2deb7ca30b6bfa98f5f5c3`.
 
+
+## R13 — Handover displays the physical canonical SKU
+
+After R12 aligned Resolver and active reservations, the next live-read audit found that the handover/shipping UI still labelled items from immutable order-time snapshots. That could show an old name/size while the physical reservation — and therefore the final stock decrement — correctly pointed at the repaired canonical SKU.
+
+R13 changes live handover/shipping presentation only:
+
+- detailed handover rows prefer the canonical product/SKU behind the active reservation;
+- if there is no reservation-side canonical identity, current `order_items.product_id / variant_id` is the next fallback;
+- immutable order-time snapshots remain the final fallback and are not rewritten;
+- the handover UI model renders those working canonical fields;
+- shipping preparation/error labels prefer the product attached to the physically reserved SKU;
+- shipment blocker/shortage diagnostics also report current canonical product identity where available.
+
+No immutable movement/history snapshot is rewritten.
+
+Focused regression:
+`scripts/test-stage01-handover-physical-canonical-identity-r13.mjs`
+
+Exact Worker preservation layer:
+`scripts/stage01-handover-physical-canonical-identity-r13-worker-manifest.json`
+
+Validation:
+- first CI run exposed only an outdated SQLite fixture in the old 192B2A3 SQL-compilation regression; it did not create the catalog tables now legitimately joined by the live handover query;
+- the fixture was extended to include the relevant catalog tables/columns;
+- final temporary draft PR #83 was closed without merge;
+- GitHub Actions Quality check run `35344170743`: SUCCESS;
+- cumulative release gate: SUCCESS;
+- production build: SUCCESS;
+- dependency audits: SUCCESS;
+- Branch2 fast-forwarded to `d8af03c492db9b44629578ecfcd94c72b4177aef`.
+
 ## Current safety boundary
 
 Do not touch Production D1 while Stage 0+1 is still being assembled.
@@ -450,7 +482,7 @@ Do not collapse return money, return workflow, shipping, Workshop, and catalog i
 
 ## Next work
 
-R1–R12 are green. Continue auditing the remaining Return/Exchange, Finance and historical surfaces by purpose. Do not mechanically convert historical/audit views to canonical-first.
+R1–R13 are green. Continue auditing the remaining Return/Exchange, Finance and historical surfaces by purpose. Do not mechanically convert historical/audit views to canonical-first.
 
 Priority targets:
 
