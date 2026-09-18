@@ -39,7 +39,6 @@ import { useWorkshopReads } from './features/workshop/useWorkshopReads'
 import { useApiClient } from './app/controllers/useApiClient'
 import { useOperationalViewModel } from './app/controllers/useOperationalViewModel'
 import { useWorkspaceViewModel } from './app/controllers/useWorkspaceViewModel'
-import { projectOrderOperationalState } from './app/orderOperationalProjection'
 import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft } from './features/inventory/inventoryDraftFactories'
 import { downloadBlobFile, makeExportHtml } from './features/export/documentExport'
 import './styles/1905-small-screen-acceptance.css'
@@ -4459,7 +4458,7 @@ function App() {
       return
     }
 
-    const projection = projectOrderOperationalState(order, { isAdmin })
+    const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
       setMessage(projection.hasActiveReturnOperation
         ? 'Заказ из Цеха нельзя редактировать, пока по нему есть действующий возврат.'
@@ -5240,8 +5239,13 @@ function removeDebtPayment(index: number) {
     setMessage(`Показан заказ ${externalId || orderId}.`)
   }
 
-  function handleOpenDebt(order: OrderRecord) {
-    const projection = projectOrderOperationalState(order, { isAdmin })
+  async function getOrderOperationalProjection(order: OrderRecord) {
+    const { projectOrderOperationalState } = await import('./app/orderOperationalProjection')
+    return await getOrderOperationalProjection(order)
+  }
+
+  async function handleOpenDebt(order: OrderRecord) {
+    const projection = await getOrderOperationalProjection(order)
     if (!projection.canOpenDebt) {
       setSelectedOrderId(order.id)
       setMessage(projection.debtAmount <= 0
@@ -5257,8 +5261,8 @@ function removeDebtPayment(index: number) {
     setEditorOpen(false)
   }
 
-  function handleOpenReturn(order: OrderRecord) {
-    const projection = projectOrderOperationalState(order, { isAdmin })
+  async function handleOpenReturn(order: OrderRecord) {
+    const projection = await getOrderOperationalProjection(order)
     if (!projection.canOpenReturn) {
       setSelectedOrderId(order.id)
       setMessage('По этому заказу нельзя оформлять возврат из рабочего режима. Он доступен только как история.')
@@ -5271,8 +5275,8 @@ function removeDebtPayment(index: number) {
     setEditorOpen(false)
   }
 
-  function handleOpenExchange(order: OrderRecord) {
-    const projection = projectOrderOperationalState(order, { isAdmin })
+  async function handleOpenExchange(order: OrderRecord) {
+    const projection = await getOrderOperationalProjection(order)
     if (!projection.canOpenExchange) {
       setSelectedOrderId(order.id)
       setMessage('По этому заказу нельзя оформлять обмен из рабочего режима. Он доступен только как история.')
@@ -5301,8 +5305,8 @@ function removeDebtPayment(index: number) {
     setEditorReturnSector('orders')
   }
 
-  function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' = 'orders') {
-    const projection = projectOrderOperationalState(order, { isAdmin })
+  async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' = 'orders') {
+    const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
       setSelectedOrderId(order.id)
       setEditorOpen(false)
@@ -5337,7 +5341,7 @@ function removeDebtPayment(index: number) {
   async function persistOrder(nextDraft: EditorDraft, targetOrder?: OrderRecord | null) {
     const order = targetOrder || selectedOrder
     if (!order) return
-    const projection = projectOrderOperationalState(order, { isAdmin })
+    const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
       setMessage(projection.hasActiveReturnOperation
         ? 'Заказ нельзя редактировать, пока по нему есть действующий возврат. Завершите или отмените возврат штатным действием.'
@@ -5777,7 +5781,7 @@ function removeDebtPayment(index: number) {
   }
 
   async function markOrderSentToClient(order: OrderRecord) {
-    const projection = projectOrderOperationalState(order, { isAdmin })
+    const projection = await getOrderOperationalProjection(order)
     if (!projection.canShip) {
       setMessage(projection.workshopPending
         ? 'Отправить весь заказ можно после готовности позиций Цеха.'
@@ -5858,7 +5862,7 @@ function removeDebtPayment(index: number) {
 
 
   async function correctMistakenOrderShipping(order: OrderRecord) {
-    const projection = projectOrderOperationalState(order, { isAdmin })
+    const projection = await getOrderOperationalProjection(order)
     if (savingOrder || !projection.canCorrectShipping) return
     const confirmed = window.confirm(
       `Исправить ошибочную отправку заказа ${order.external_id}?\n\nПодтверждайте только если товар ФАКТИЧЕСКИ НЕ передавался клиенту. Система вернёт проведённые складские позиции в резерв заказа и восстановит только тот физический остаток, который действительно был списан.\n\nЕсли клиент получал товар, а затем вернул его — используйте «Возврат», а не это исправление.`
