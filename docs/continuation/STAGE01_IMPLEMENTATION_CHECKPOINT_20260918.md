@@ -1,12 +1,12 @@
 # Stage 0+1 — implementation checkpoint (2026-09-18)
 
-Status: R1 + R2 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
+Status: R1 + R2 + R3 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
 
 ## Source of truth
 
 - Production/main baseline at the beginning of this slice: `main`.
 - Implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green implementation head: `1499582f1ca1819f7e18971b1073cf45495f144a`.
+- Current green implementation head: `4c252b5b1a5bc23466327fba7f74a22f699b7f0c`.
 - Branch2 remains separate; its head observed during this work: `fb43e8d709b57b67cc080bb9bd64246bb036aede`.
 - No Production D1 migration/write was performed.
 
@@ -95,19 +95,56 @@ No production rule was bypassed to make these tests pass.
 
 ## Final validation
 
-A temporary CI-only branch `w-stage01-check4-20260918` and draft PR #72 were used only to trigger the existing `Quality check` workflow.
+R2 used temporary CI-only branch `w-stage01-check4-20260918` / draft PR #72. R3 used `w-stage01-check5-20260918` / draft PR #73. Both PRs were CI triggers only and were closed without merge.
 
 Final successful run:
 
-- GitHub Actions run: `35327687377`
+- R2 GitHub Actions run: `35327687377` — SUCCESS.
+- R3 final GitHub Actions run: `35330539221` — SUCCESS.
 - cumulative `npm run release:check`: SUCCESS
 - production build: SUCCESS
 - dependency audits: SUCCESS
-- PR #72 was closed without merge.
+- PR #72 and PR #73 were closed without merge.
 
 The focused Stage01 R2 regression itself also passed before the remaining cumulative suite:
 
 `STAGE01 CANONICAL ITEM PROJECTION R2 PASSED`
+
+## R3 — Workshop / order action truth
+
+The next audit found two concrete contradictions around Workshop state and order action entry.
+
+### Workshop task truth
+
+`workshop_tasks` is now the operational truth for whether Workshop work is still pending.
+
+- `orderWorkshopPendingForShipping()` counts concrete task rows and uses coarse `orders.workshop_status` only as a compatibility fallback when an order has Workshop items but genuinely has no task records.
+- A stale coarse `in_workshop` cache can no longer keep shipment blocked after all real tasks are done/cancelled.
+- `updateWorkshopTask()` treats refresh of the coarse order cache as secondary after the concrete task mutation is committed. A cache-refresh failure is logged and cannot turn the successful task mutation into a false API failure.
+- Workshop activity-log writes are also secondary after the mutation; log failure no longer reclassifies a committed task update as failed.
+- The Workshop PATCH route best-effort reads back the fresh order and returns it to the frontend. If readback fails, it returns `refreshRequired` instead of false-failing.
+- The frontend immediately `upsert`s that fresh order, so Orders and Workshop no longer disagree about readiness until a later unrelated reload.
+
+Focused regression:
+`scripts/test-stage01-workshop-truth-r3.mjs`
+
+Exact Worker/frontend preservation layers:
+- `scripts/stage01-workshop-truth-r3-worker-manifest.json`
+- `scripts/stage01-workshop-truth-r3-frontend-manifest.json`
+
+### Shared action entry
+
+Order controller entry points now consult the same `OrderOperationalProjection` before opening or executing working actions.
+
+Covered entry points include debt, return, exchange, edit, Workshop edit, final shipment and mistaken-shipment correction. This removes another class of drift where buttons and controller handlers could encode different lifecycle rules.
+
+Focused regression:
+`scripts/test-stage01-order-action-entry-r3.mjs`
+
+Exact frontend layer:
+`scripts/stage01-order-action-entry-r3-frontend-manifest.json`
+
+The existing manager/autonomy regressions were updated only where they had been asserting obsolete inline JSX/controller conditions. They now protect the same safety boundary through the shared projection.
 
 ## Current safety boundary
 
@@ -121,7 +158,7 @@ Do not collapse return money, return workflow, shipping, Workshop, and catalog i
 
 ## Next work
 
-Before starting the next mutation-bearing block, audit the remaining order surfaces for duplicated/contradictory truth derivation against the two shared projections.
+The Order / product identity / Workshop/action slices are green. The next foundation block is money/finance truth. Audit first; do not broadly rewrite Finance.
 
 Priority targets:
 
