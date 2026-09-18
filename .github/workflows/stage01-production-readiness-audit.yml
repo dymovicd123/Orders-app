@@ -151,6 +151,26 @@ jobs:
           cat /tmp/branch2-meta.json
           cmp -s /tmp/prod-meta.json /tmp/branch2-meta.json
 
+      - name: Verify Production rollback point and R14 preconditions
+        shell: bash
+        run: |
+          set -euo pipefail
+          bookmark="$(curl --fail-with-body -sS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/time_travel/bookmark")"
+          echo "$bookmark" | jq .
+          jq -e '.success == true and (.result.bookmark // "") != ""' <<<"$bookmark" >/dev/null
+
+          query() {
+            local sql="$1"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/query"
+          }
+          pre="$(query "SELECT
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM order_search_items_fts) AS fts_rows_count,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('trg_order_search_catalog_products_au','trg_order_search_catalog_variants_au')) AS r14_catalog_trigger_count;")"
+          echo "$pre" | jq '.result[0].results[0]'
+          jq -e '.result[0].results[0].order_items_count == .result[0].results[0].fts_rows_count' <<<"$pre" >/dev/null
+          jq -e '.result[0].results[0].r14_catalog_trigger_count == 0' <<<"$pre" >/dev/null
+
       - name: Resolve Production URL and run read-only smoke
         shell: bash
         run: |
