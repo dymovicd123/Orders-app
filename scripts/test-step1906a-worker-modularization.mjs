@@ -437,6 +437,25 @@ patched = patched.replace(stage01UnshippedRefundHashAnchor, [
   '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash',
 ].join('\n'))
 
+const stage01WorkshopBulkCacheR7 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-workshop-bulk-cache-reliability-r7-worker-manifest.json'), 'utf8'))
+if (stage01WorkshopBulkCacheR7.version !== 1 || stage01WorkshopBulkCacheR7.revision !== 'stage01-workshop-bulk-cache-reliability-r7') throw new Error('Stage01 Workshop bulk cache R7 Worker manifest invalid')
+if (Object.keys(stage01WorkshopBulkCacheR7.changes || {}).join(',') !== 'bulkUpdateWorkshopTasks') throw new Error('Stage01 Workshop bulk cache R7 Worker allow-list widened')
+patched = 'const stage01WorkshopBulkCacheR7Changes = ' + JSON.stringify(stage01WorkshopBulkCacheR7.changes || {}) + '\n' + patched
+
+const stage01WorkshopBulkHashAnchor = '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash'
+if (!patched.includes(stage01WorkshopBulkHashAnchor)) throw new Error('Stage01 Workshop bulk cache R7 predecessor hash anchor missing')
+patched = patched.replace(stage01WorkshopBulkHashAnchor, [
+  '        const stage01WorkshopBulkCacheChanged = stage01WorkshopBulkCacheR7Changes[name]',
+  '        if (stage01WorkshopBulkCacheChanged) {',
+  "          check(stage01WorkshopBulkCacheChanged.before === acceptedPostStage01ReturnExchangeHash, 'Stage01 Workshop bulk cache R7 predecessor drifted: ' + name)",
+  "          check(declarations.get(name).includes(stage01WorkshopBulkCacheChanged.afterBlock), 'Stage01 Workshop bulk cache R7 exact replacement missing: ' + name)",
+  '          const revertedStage01WorkshopBulkCache = declarations.get(name).replace(stage01WorkshopBulkCacheChanged.afterBlock, stage01WorkshopBulkCacheChanged.beforeBlock)',
+  "          check(sha(revertedStage01WorkshopBulkCache) === stage01WorkshopBulkCacheChanged.before, 'Stage01 Workshop bulk cache R7 changed beyond exact replacement: ' + name)",
+  '          return true',
+  '        }',
+  '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash',
+].join('\n'))
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
