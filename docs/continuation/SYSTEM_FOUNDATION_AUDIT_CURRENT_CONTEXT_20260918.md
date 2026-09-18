@@ -6,7 +6,7 @@ This file is the current continuation pointer for the Orders-app foundation clea
 
 - GitHub repository: `dymovicd123/Orders-app`.
 - Current Stage 0+1 implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green Stage 0+1 head: `8f1a0046b3b42f146001bb863b4bb814f935351f`.
+- Current green Stage 0+1 head: `ce4dbadf9e55c341311d858839bc44ccd26223e0`.
 - Production D1 has not been changed by the Stage 0+1 work.
 - Branch2 is a separate environment and must not be casually folded into Production work.
 - `Приход` remains a frozen/high-risk surface unless a separate approved task explicitly requires changing it.
@@ -82,6 +82,17 @@ Focused regression:
 
 Validation: GitHub Actions run `35332084525` passed the cumulative release gate, dependency audits and production build. Temporary PR #75 was closed without merge.
 
+## Completed slice F — Unshipped/refund decoupling
+
+The normal Orders `Не отправлено` filter now follows shipping truth only. Historical or partial returned money no longer removes an active unshipped order from the work queue.
+
+This is the backend counterpart of the R1 rule that `return_amount` is financial history, not a whole-order lifecycle state.
+
+Focused regression:
+- `scripts/test-stage01-unshipped-refund-decoupling-r6.mjs`
+
+Validation: GitHub Actions run `35332881155` passed the cumulative release gate, dependency audits and production build. Temporary PR #76 was closed without merge.
+
 ## Validation state
 
 R2 passed the cumulative release gate and production build on GitHub Actions run `35327687377`.
@@ -91,6 +102,8 @@ R3 passed the full cumulative release gate, dependency audits and production bui
 R4 passed the same full gate on GitHub Actions run `35331323128`. Temporary PR #74 was closed without merge.
 
 R5 passed the same full gate on GitHub Actions run `35332084525`. Temporary PR #75 was closed without merge.
+
+R6 passed the same full gate on GitHub Actions run `35332881155`. Temporary PR #76 was closed without merge.
 
 ## Important distinction for the next audit
 
