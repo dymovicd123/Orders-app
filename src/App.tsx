@@ -4464,7 +4464,7 @@ function App() {
 
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
-      setMessage(projection.hasActiveReturnOperation
+      setMessage(projection.hasCommittedDownstreamOperation
         ? 'Заказ из Цеха нельзя редактировать, пока по нему есть действующий возврат.'
         : 'Этот заказ из Цеха сейчас недоступен для обычного редактирования.')
       return
@@ -5314,8 +5314,8 @@ function removeDebtPayment(index: number) {
     if (!projection.canEdit) {
       setSelectedOrderId(order.id)
       setEditorOpen(false)
-      setMessage(projection.hasActiveReturnOperation
-        ? 'Заказ нельзя редактировать, пока по нему есть действующий возврат. Завершите или отмените возврат штатным действием.'
+      setMessage(projection.hasCommittedDownstreamOperation
+        ? 'Заказ нельзя переписывать: по нему уже проведён возврат или обмен. Сначала отмените или исправьте эту последующую операцию штатным действием.'
         : 'Этот заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие или просмотр истории.')
       return
     }
@@ -5347,8 +5347,8 @@ function removeDebtPayment(index: number) {
     if (!order) return
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
-      setMessage(projection.hasActiveReturnOperation
-        ? 'Заказ нельзя редактировать, пока по нему есть действующий возврат. Завершите или отмените возврат штатным действием.'
+      setMessage(projection.hasCommittedDownstreamOperation
+        ? 'Заказ нельзя переписывать: по нему уже проведён возврат или обмен. Сначала отмените или исправьте эту последующую операцию штатным действием.'
         : 'Этот заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие или просмотр истории.')
       return
     }
@@ -5789,8 +5789,8 @@ function removeDebtPayment(index: number) {
     if (!projection.canShip) {
       setMessage(projection.workshopPending
         ? 'Отправить весь заказ можно после готовности позиций Цеха.'
-        : projection.hasActiveReturnOperation
-          ? 'Отправка недоступна, пока по заказу есть действующий возврат.'
+        : projection.hasCommittedDownstreamOperation
+          ? 'Отправка недоступна: по заказу уже проведён возврат или обмен. Сначала отмените или исправьте эту последующую операцию.'
           : 'Этот заказ сейчас нельзя отметить как отправленный.')
       return
     }
