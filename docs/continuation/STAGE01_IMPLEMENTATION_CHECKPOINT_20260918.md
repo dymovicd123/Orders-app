@@ -1,12 +1,12 @@
 # Stage 0+1 — implementation checkpoint (2026-09-18)
 
-Status: R1 + R2 + R3 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
+Status: R1 + R2 + R3 + R4 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
 
 ## Source of truth
 
 - Production/main baseline at the beginning of this slice: `main`.
 - Implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green implementation head: `4c252b5b1a5bc23466327fba7f74a22f699b7f0c`.
+- Current green implementation head: `43d79e3fd6638014bf3101a05d63cf1a592ba056`.
 - Branch2 remains separate; its head observed during this work: `fb43e8d709b57b67cc080bb9bd64246bb036aede`.
 - No Production D1 migration/write was performed.
 
@@ -146,6 +146,34 @@ Exact frontend layer:
 
 The existing manager/autonomy regressions were updated only where they had been asserting obsolete inline JSX/controller conditions. They now protect the same safety boundary through the shared projection.
 
+## R4 — Finance correction commit/readback boundary
+
+The money/finance audit found one concrete reliability contradiction in `correctExchangeFinancials()`.
+
+Before R4, the exchange financial correction could successfully commit the payment/refund/exchange/order/cash changes and synchronize the order ledger, then call `getOrder()` before `completeCriticalOperation()`. A transient secondary read failure at that point could report the already-committed money correction as failed and leave the idempotent operation in a misleading state.
+
+R4 aligns this path with the safer Return/Exchange patterns already used elsewhere:
+
+- after the business writes and `syncOrderFinancialLedger()` succeed, the critical operation is completed immediately with a minimal successful response and `refreshRequired: true`;
+- order readback happens only after completion and is best-effort;
+- successful readback enriches only the first response with `order` and `refreshRequired: false`;
+- readback failure logs a warning and keeps the operation successful;
+- activity logging remains secondary and cannot false-fail the correction;
+- the unchanged/idempotent branch uses the same readback isolation.
+
+Focused regression:
+`scripts/test-stage01-finance-correction-reliability-r4.mjs`
+
+Exact Worker preservation layer:
+`scripts/stage01-finance-correction-reliability-r4-worker-manifest.json`
+
+Final validation:
+- temporary draft PR #74, closed without merge;
+- GitHub Actions Quality check run `35331323128`: SUCCESS;
+- cumulative release gate: SUCCESS;
+- production build: SUCCESS;
+- dependency audits: SUCCESS.
+
 ## Current safety boundary
 
 Do not touch Production D1 while Stage 0+1 is still being assembled.
@@ -158,7 +186,7 @@ Do not collapse return money, return workflow, shipping, Workshop, and catalog i
 
 ## Next work
 
-The Order / product identity / Workshop/action slices are green. The next foundation block is money/finance truth. Audit first; do not broadly rewrite Finance.
+The Order / product identity / Workshop/action slices and the first Finance reliability slice are green. Continue the money/finance audit, but preserve the already-proven F2–F9 semantics and only patch concrete contradictions.
 
 Priority targets:
 
