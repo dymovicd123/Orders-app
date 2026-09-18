@@ -23,6 +23,6 @@ check(afterCommit.includes('FROM json_each(?)'), 'Bulk Workshop cache refresh no
 check(afterCommit.includes('UPDATE orders\n         SET workshop_status'), 'Bulk Workshop cache refresh disappeared')
 check(afterCommit.includes('try {') && afterCommit.includes('} catch (error) {'), 'Bulk Workshop cache refresh is not best-effort')
 check(afterCommit.includes(".bind(JSON.stringify(orderIds), timestamp).run()"), 'Bulk Workshop cache refresh does not use unique affected order ids')
-check(afterCommit.indexOf('return {') > cacheWarning, 'Bulk Workshop route result is returned before secondary cache handling completes')
+check(fn.indexOf('return {', cacheWarning) > cacheWarning, 'Bulk Workshop route result is returned before secondary cache handling completes')
 
 console.log('STAGE01 WORKSHOP BULK CACHE R7 PASSED — concrete bulk task/item truth commits atomically before the coarse order cache refresh, which is bounded and best-effort')
