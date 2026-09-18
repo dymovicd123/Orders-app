@@ -39,6 +39,7 @@ import { useWorkshopReads } from './features/workshop/useWorkshopReads'
 import { useApiClient } from './app/controllers/useApiClient'
 import { useOperationalViewModel } from './app/controllers/useOperationalViewModel'
 import { useWorkspaceViewModel } from './app/controllers/useWorkspaceViewModel'
+import { projectOrderOperationalState } from './app/orderOperationalProjection'
 import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft } from './features/inventory/inventoryDraftFactories'
 import { downloadBlobFile, makeExportHtml } from './features/export/documentExport'
 import './styles/1905-small-screen-acceptance.css'
@@ -4458,6 +4459,14 @@ function App() {
       return
     }
 
+    const projection = projectOrderOperationalState(order, { isAdmin })
+    if (!projection.canEdit) {
+      setMessage(projection.hasActiveReturnOperation
+        ? 'Заказ из Цеха нельзя редактировать, пока по нему есть действующий возврат.'
+        : 'Этот заказ из Цеха сейчас недоступен для обычного редактирования.')
+      return
+    }
+
     setEditorReturnSector('workshop')
     setEditorOrderOverride(order)
     setSelectedOrderId(order.id)
@@ -5232,14 +5241,12 @@ function removeDebtPayment(index: number) {
   }
 
   function handleOpenDebt(order: OrderRecord) {
-    if (isArchivedOrderRecord(order)) {
+    const projection = projectOrderOperationalState(order, { isAdmin })
+    if (!projection.canOpenDebt) {
       setSelectedOrderId(order.id)
-      setMessage('Архивный заказ доступен только для просмотра. Долг по нему не закрывается из рабочей таблицы.')
-      return
-    }
-    if (Number(order.debt_amount || 0) <= 0) {
-      setSelectedOrderId(order.id)
-      setMessage('У заказа нет открытого долга.')
+      setMessage(projection.debtAmount <= 0
+        ? 'У заказа нет открытого долга.'
+        : 'Этот заказ доступен только как история. Долг по нему не закрывается из рабочей таблицы.')
       return
     }
     setActiveSector('orders')
@@ -5251,9 +5258,10 @@ function removeDebtPayment(index: number) {
   }
 
   function handleOpenReturn(order: OrderRecord) {
-    if (isArchivedOrderRecord(order)) {
+    const projection = projectOrderOperationalState(order, { isAdmin })
+    if (!projection.canOpenReturn) {
       setSelectedOrderId(order.id)
-      setMessage('По архивному заказу нельзя оформлять возврат. Он доступен только как история.')
+      setMessage('По этому заказу нельзя оформлять возврат из рабочего режима. Он доступен только как история.')
       return
     }
     setActiveSector('orders')
@@ -5264,9 +5272,10 @@ function removeDebtPayment(index: number) {
   }
 
   function handleOpenExchange(order: OrderRecord) {
-    if (isArchivedOrderRecord(order)) {
+    const projection = projectOrderOperationalState(order, { isAdmin })
+    if (!projection.canOpenExchange) {
       setSelectedOrderId(order.id)
-      setMessage('По архивному заказу нельзя оформлять обмен. Он доступен только как история.')
+      setMessage('По этому заказу нельзя оформлять обмен из рабочего режима. Он доступен только как история.')
       return
     }
     setActiveSector('orders')
@@ -5293,16 +5302,13 @@ function removeDebtPayment(index: number) {
   }
 
   function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' = 'orders') {
-    if (isArchivedOrderRecord(order)) {
+    const projection = projectOrderOperationalState(order, { isAdmin })
+    if (!projection.canEdit) {
       setSelectedOrderId(order.id)
       setEditorOpen(false)
-      setMessage('Архивный заказ открыт только для просмотра.')
-      return
-    }
-    if (!isAdmin && (['deleted', 'archived'].includes(order.order_status) || order.shipping_status === 'sent')) {
-      setSelectedOrderId(order.id)
-      setEditorOpen(false)
-      setMessage('Отправленный, удалённый или архивный заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие.')
+      setMessage(projection.hasActiveReturnOperation
+        ? 'Заказ нельзя редактировать, пока по нему есть действующий возврат. Завершите или отмените возврат штатным действием.'
+        : 'Этот заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие или просмотр истории.')
       return
     }
     setEditorReturnSector(returnSector)
@@ -5331,12 +5337,11 @@ function removeDebtPayment(index: number) {
   async function persistOrder(nextDraft: EditorDraft, targetOrder?: OrderRecord | null) {
     const order = targetOrder || selectedOrder
     if (!order) return
-    if (!isAdmin && (['deleted', 'archived'].includes(order.order_status) || order.shipping_status === 'sent')) {
-      setMessage('Отправленный, удалённый или архивный заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие.')
-      return
-    }
-    if (isArchivedOrderRecord(order)) {
-      setMessage('Архивный заказ нельзя редактировать.')
+    const projection = projectOrderOperationalState(order, { isAdmin })
+    if (!projection.canEdit) {
+      setMessage(projection.hasActiveReturnOperation
+        ? 'Заказ нельзя редактировать, пока по нему есть действующий возврат. Завершите или отмените возврат штатным действием.'
+        : 'Этот заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие или просмотр истории.')
       return
     }
 
@@ -5772,8 +5777,13 @@ function removeDebtPayment(index: number) {
   }
 
   async function markOrderSentToClient(order: OrderRecord) {
-    if (isArchivedOrderRecord(order)) {
-      setMessage('Архивный заказ нельзя отправлять клиенту или менять.')
+    const projection = projectOrderOperationalState(order, { isAdmin })
+    if (!projection.canShip) {
+      setMessage(projection.workshopPending
+        ? 'Отправить весь заказ можно после готовности позиций Цеха.'
+        : projection.hasActiveReturnOperation
+          ? 'Отправка недоступна, пока по заказу есть действующий возврат.'
+          : 'Этот заказ сейчас нельзя отметить как отправленный.')
       return
     }
     setSavingOrder(true)
@@ -5848,7 +5858,8 @@ function removeDebtPayment(index: number) {
 
 
   async function correctMistakenOrderShipping(order: OrderRecord) {
-    if (savingOrder || isArchivedOrderRecord(order) || order.shipping_status !== 'sent') return
+    const projection = projectOrderOperationalState(order, { isAdmin })
+    if (savingOrder || !projection.canCorrectShipping) return
     const confirmed = window.confirm(
       `Исправить ошибочную отправку заказа ${order.external_id}?\n\nПодтверждайте только если товар ФАКТИЧЕСКИ НЕ передавался клиенту. Система вернёт проведённые складские позиции в резерв заказа и восстановит только тот физический остаток, который действительно был списан.\n\nЕсли клиент получал товар, а затем вернул его — используйте «Возврат», а не это исправление.`
     )
