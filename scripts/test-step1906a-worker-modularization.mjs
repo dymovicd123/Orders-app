@@ -537,6 +537,105 @@ patched = patched.replace(stage01WorkshopLifecycleCanonicalAddedAnchor, [
   '    }',
 ].join('\n'))
 
+const stage01PendingLifecycleR11Manifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-pending-lifecycle-current-links-r11-worker-manifest.json'), 'utf8'))
+if (stage01PendingLifecycleR11Manifest.version !== 1 || stage01PendingLifecycleR11Manifest.revision !== 'stage01-pending-lifecycle-current-links-r11') throw new Error('Stage01 pending lifecycle current links R11 Worker manifest invalid')
+const stage01PendingLifecycleR11Changes = stage01PendingLifecycleR11Manifest.files?.['worker/domains/lifecycle.ts']?.changes || {}
+if (Object.keys(stage01PendingLifecycleR11Changes).sort().join(',') !== 'getInventoryLifecycleContext,listInventoryLifecyclePending,reconcileKnownPendingInventoryInbound') throw new Error('Stage01 pending lifecycle R11 lifecycle allow-list widened')
+const stage01PendingLifecycleR11Attention = stage01PendingLifecycleR11Manifest.files?.['worker/domains/warehouse-attention.ts']?.changes?.exactLifecycleVariantSql
+if (!stage01PendingLifecycleR11Attention?.beforeBlock || !stage01PendingLifecycleR11Attention?.afterBlock) throw new Error('Stage01 pending lifecycle R11 attention delta incomplete')
+patched = 'const stage01PendingLifecycleR11Changes = ' + JSON.stringify(stage01PendingLifecycleR11Changes) + '\n'
+  + 'const stage01PendingLifecycleR11Attention = ' + JSON.stringify(stage01PendingLifecycleR11Attention) + '\n'
+  + patched
+
+const stage01PendingLifecycleBaseAnchor = [
+  '    const o1Changed = o1Changes[name]',
+  '    if (o1Changed) check(o1Changed.before === acceptedPostW5FoundItemsHash, `O1 baseline mismatch: ${name}`)',
+  '    check(',
+  '      sha(declarations.get(name)) === (o1Changed ? o1Changed.after : acceptedPostW5FoundItemsHash),',
+  '      w5FoundItemsChanged',
+  '        ? `Worker declaration changed beyond exact W5.5 found-items allow-list: ${name}`',
+  '        : `Worker declaration body changed beyond accepted cumulative deltas: ${name}`,',
+  '    )',
+].join('\n')
+if (!patched.includes(stage01PendingLifecycleBaseAnchor)) throw new Error('Stage01 pending lifecycle R11 base declaration anchor missing')
+patched = patched.replace(stage01PendingLifecycleBaseAnchor, [
+  '    const o1Changed = o1Changes[name]',
+  '    if (o1Changed) check(o1Changed.before === acceptedPostW5FoundItemsHash, `O1 baseline mismatch: ${name}`)',
+  '    const acceptedPostO1Hash = o1Changed ? o1Changed.after : acceptedPostW5FoundItemsHash',
+  '    const stage01PendingLifecycleChanged = stage01PendingLifecycleR11Changes[name]',
+  '    if (stage01PendingLifecycleChanged) {',
+  "      check(declarations.get(name).includes(stage01PendingLifecycleChanged.afterBlock), 'Stage01 pending lifecycle R11 exact replacement missing: ' + name)",
+  '      const revertedStage01PendingLifecycle = declarations.get(name).replace(stage01PendingLifecycleChanged.afterBlock, stage01PendingLifecycleChanged.beforeBlock)',
+  "      check(sha(revertedStage01PendingLifecycle) === acceptedPostO1Hash, 'Stage01 pending lifecycle R11 changed beyond exact replacement: ' + name)",
+  '    } else {',
+  '      check(',
+  '        sha(declarations.get(name)) === acceptedPostO1Hash,',
+  '        w5FoundItemsChanged',
+  '          ? `Worker declaration changed beyond exact W5.5 found-items allow-list: ${name}`',
+  '          : `Worker declaration body changed beyond accepted cumulative deltas: ${name}`,',
+  '      )',
+  '    }',
+].join('\n'))
+
+const stage01PendingLifecycleAttentionAddedAnchor = [
+  '    check(',
+  '      sha(declarations.get(name)) === acceptedPostW5FoundItemsHash,',
+  '      w5FoundItemsChanged',
+  '        ? `192B1-added declaration changed beyond exact W5.5 found-items allow-list: ${name}`',
+  '        : `192B1 added Worker declaration changed beyond accepted deltas: ${name}`,',
+  '    )',
+].join('\n')
+if (!patched.includes(stage01PendingLifecycleAttentionAddedAnchor)) throw new Error('Stage01 pending lifecycle R11 Warehouse Attention anchor missing')
+patched = patched.replace(stage01PendingLifecycleAttentionAddedAnchor, [
+  "    if (name === 'getWarehouseAttentionSummary') {",
+  "      check(declarations.get(name).includes(stage01PendingLifecycleR11Attention.afterBlock), 'Stage01 pending lifecycle R11 Warehouse Attention exact replacement missing')",
+  '      const revertedStage01PendingAttention = declarations.get(name).replace(stage01PendingLifecycleR11Attention.afterBlock, stage01PendingLifecycleR11Attention.beforeBlock)',
+  "      check(sha(revertedStage01PendingAttention) === acceptedPostW5FoundItemsHash, 'Stage01 pending lifecycle R11 Warehouse Attention changed beyond exact replacement')",
+  '    } else {',
+  '      check(',
+  '        sha(declarations.get(name)) === acceptedPostW5FoundItemsHash,',
+  '        w5FoundItemsChanged',
+  '          ? `192B1-added declaration changed beyond exact W5.5 found-items allow-list: ${name}`',
+  '          : `192B1 added Worker declaration changed beyond accepted deltas: ${name}`,',
+  '      )',
+  '    }',
+].join('\n'))
+
+const stage01PendingLifecycleAttentionContextAnchor = [
+  '  for (const [name, expectedHash] of Object.entries(attentionContextAdded)) {',
+  '    check(declarations.has(name), `192B2A2 added Worker declaration missing: ${name}`)',
+  '    const orderCreateSaveIntegrityChanged = orderCreateSaveIntegrityChanges[name]',
+  '    if (orderCreateSaveIntegrityChanged) {',
+  '      check(orderCreateSaveIntegrityChanged.before === expectedHash, `192B2A4 changed 192B2A2-added declaration baseline hash mismatch: ${name}`)',
+  '      check(sha(declarations.get(name)) === orderCreateSaveIntegrityChanged.after, `192B2A2-added declaration changed beyond exact 192B2A4 allow-list: ${name}`)',
+  '    } else {',
+  '      check(sha(declarations.get(name)) === expectedHash, `192B2A2 added Worker declaration changed: ${name}`)',
+  '    }',
+  '  }',
+].join('\n')
+if (!patched.includes(stage01PendingLifecycleAttentionContextAnchor)) throw new Error('Stage01 pending lifecycle R11 192B2A2-added anchor missing')
+patched = patched.replace(stage01PendingLifecycleAttentionContextAnchor, [
+  '  for (const [name, expectedHash] of Object.entries(attentionContextAdded)) {',
+  '    check(declarations.has(name), `192B2A2 added Worker declaration missing: ${name}`)',
+  '    const orderCreateSaveIntegrityChanged = orderCreateSaveIntegrityChanges[name]',
+  '    let acceptedPostOrderCreateHash = expectedHash',
+  '    if (orderCreateSaveIntegrityChanged) {',
+  '      check(orderCreateSaveIntegrityChanged.before === expectedHash, `192B2A4 changed 192B2A2-added declaration baseline hash mismatch: ${name}`)',
+  '      acceptedPostOrderCreateHash = orderCreateSaveIntegrityChanged.after',
+  '    }',
+  '    const stage01PendingLifecycleChanged = stage01PendingLifecycleR11Changes[name]',
+  '    if (stage01PendingLifecycleChanged) {',
+  "      check(declarations.get(name).includes(stage01PendingLifecycleChanged.afterBlock), 'Stage01 pending lifecycle R11 192B2A2-added exact replacement missing: ' + name)",
+  '      const revertedStage01PendingLifecycle = declarations.get(name).replace(stage01PendingLifecycleChanged.afterBlock, stage01PendingLifecycleChanged.beforeBlock)',
+  "      check(sha(revertedStage01PendingLifecycle) === acceptedPostOrderCreateHash, 'Stage01 pending lifecycle R11 changed 192B2A2-added declaration beyond exact replacement: ' + name)",
+  '    } else {',
+  '      check(sha(declarations.get(name)) === acceptedPostOrderCreateHash, orderCreateSaveIntegrityChanged',
+  '        ? `192B2A2-added declaration changed beyond exact 192B2A4 allow-list: ${name}`',
+  '        : `192B2A2 added Worker declaration changed: ${name}`)',
+  '    }',
+  '  }',
+].join('\n'))
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
