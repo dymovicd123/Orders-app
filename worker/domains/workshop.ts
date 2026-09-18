@@ -854,10 +854,20 @@ export async function bulkUpdateWorkshopTasks(
              AND x.order_id = order_items.order_id
          )`
       ).bind(...rowBindings),
-      db.prepare(
-        `WITH ${rowsSql},
-         affected_orders AS (
-           SELECT DISTINCT order_id FROM x WHERE order_id > 0
+    );
+  }
+
+  // The concrete task/item mutations are the operational truth and commit atomically.
+  // The coarse orders.workshop_status field is only a compatibility cache, so refresh it
+  // afterwards and never let a cache write block valid bulk Workshop work.
+  await db.batch(statements);
+
+  const orderIds = Array.from(new Set(updates.map(row => row.orderId).filter(id => id > 0)));
+  if (orderIds.length) {
+    try {
+      await db.prepare(
+        `WITH affected_orders(order_id) AS (
+           SELECT CAST(value AS INTEGER) FROM json_each(?)
          ),
          state AS (
            SELECT o.id,
@@ -877,13 +887,11 @@ export async function bulkUpdateWorkshopTasks(
              AND state.task_count > 0
              AND COALESCE(orders.workshop_status, '') <> state.next_status
          )`
-      ).bind(...rowBindings, timestamp),
-    );
+      ).bind(JSON.stringify(orderIds), timestamp).run();
+    } catch (error) {
+      console.warn('Workshop order status cache refresh failed after committed bulk task mutation', error);
+    }
   }
-
-  await db.batch(statements);
-
-  const orderIds = Array.from(new Set(updates.map(row => row.orderId).filter(id => id > 0)));
   return {
     ok: true,
     updated: rows.length,
