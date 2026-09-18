@@ -4,6 +4,7 @@ import { bindInChunks, chunksOf, readTableColumnSet } from '../core/sql.ts'
 import { cleanText, isArchivedOrder, normalizeDate, toInt, workshopOnlyComment } from '../core/text.ts'
 import type { WorkshopTaskStatus, WorkshopViewMode } from '../core/types.ts'
 import { isHighConfidenceWorkshopTaskItemMatch, matchWorkshopTasksToOrderItems } from './workshop-matching.ts'
+import { canonicalItemProjection } from './orders-relations.ts'
 
 export function normalizeWorkshopViewMode(value: unknown): WorkshopViewMode {
   const text = cleanText(value).toLowerCase();
@@ -93,6 +94,29 @@ export async function enrichWorkshopTaskRowsFromOrderItems(
   const wtColumn = (name: string) => columns.has(name.toLowerCase()) ? `wt.${name}` : 'NULL';
   const directItemIds = Array.from(new Set(taskRows.map(row => toInt(row.order_item_id, 0)).filter(Boolean)));
 
+  const projectOrderItem = (row: Record<string, unknown>) => {
+    const projection = canonicalItemProjection({
+      ...row,
+      canonical_category: row.direct_category,
+      canonical_gender: row.direct_gender,
+      canonical_color: row.direct_color,
+      canonical_material: row.direct_material,
+      canonical_length: row.direct_length,
+      canonical_size: row.direct_size,
+    });
+    return {
+      ...row,
+      resolved_product_name: projection.productName,
+      resolved_gender: projection.gender,
+      resolved_color: projection.color,
+      resolved_material: projection.material,
+      resolved_length: projection.length,
+      resolved_size: projection.size,
+      resolved_audience_type: projection.audienceType,
+    } as Record<string, unknown>;
+  };
+
+
   const directLinkRows = directItemIds.length
     ? await bindInChunks<Record<string, unknown>>(
         db,
@@ -115,10 +139,13 @@ export async function enrichWorkshopTaskRowsFromOrderItems(
          oi.product_name_snapshot, oi.audience_type, oi.gender_snapshot, oi.color_snapshot,
          oi.material_snapshot, oi.length_snapshot, oi.size_snapshot,
          oi.quantity, oi.is_workshop, oi.source_type, oi.stock_writeoff_status,
-         cv_direct.category AS direct_category, cv_direct.gender AS direct_gender,
+         p_direct.name AS canonical_product_name,
+         COALESCE(cv_direct.category, p_direct.category) AS direct_category,
+         cv_direct.gender AS direct_gender,
          cv_direct.color AS direct_color, cv_direct.material AS direct_material,
          cv_direct.length AS direct_length, cv_direct.size_label AS direct_size
        FROM order_items oi
+       LEFT JOIN catalog_products p_direct ON p_direct.id = oi.product_id
        LEFT JOIN catalog_variants cv_direct ON cv_direct.id = oi.variant_id
        WHERE oi.id IN (`,
       directItemIds,
@@ -148,13 +175,6 @@ export async function enrichWorkshopTaskRowsFromOrderItems(
     }
     const trimSpaces = (value: unknown) => String(value ?? '').replace(/^ +| +$/g, '');
     const asciiUpper = (value: unknown) => trimSpaces(value).replace(/[a-z]/g, char => char.toUpperCase());
-    const asciiLower = (value: unknown) => String(value ?? '').replace(/[A-Z]/g, char => char.toLowerCase());
-    const firstNonEmpty = (...values: unknown[]) => {
-      for (const value of values) {
-        if (value !== null && value !== undefined && String(value) !== '') return value;
-      }
-      return null;
-    };
     directItemRows = rawRows.map(row => {
       const variantIsNull = row.variant_id === null || row.variant_id === undefined;
       const rawColor = trimSpaces(row.color_snapshot);
@@ -164,35 +184,34 @@ export async function enrichWorkshopTaskRowsFromOrderItems(
             (!rawColor || asciiUpper(variant.color) === asciiUpper(row.color_snapshot))
             && (!rawSize || asciiUpper(variant.size_label) === asciiUpper(row.size_snapshot)))
         : undefined;
-      const category = firstNonEmpty(row.audience_type, row.direct_category, fallbackVariant?.category);
-      const child = asciiLower(category) === 'child' || asciiUpper(row.audience_type).includes('ДЕТ');
-      return {
-        id: row.id,
-        order_id: row.order_id,
-        product_id: row.product_id,
+      return projectOrderItem({
+        ...row,
         resolved_variant_id: variantIsNull ? (fallbackVariant?.id ?? null) : row.variant_id,
-        product_name_snapshot: row.product_name_snapshot,
-        resolved_gender: firstNonEmpty(row.gender_snapshot, row.direct_gender, fallbackVariant?.gender),
-        resolved_color: firstNonEmpty(row.color_snapshot, row.direct_color, fallbackVariant?.color),
-        resolved_material: firstNonEmpty(row.material_snapshot, row.direct_material, fallbackVariant?.material),
-        resolved_length: firstNonEmpty(row.length_snapshot, row.direct_length, fallbackVariant?.length),
-        resolved_size: firstNonEmpty(row.size_snapshot, row.direct_size, fallbackVariant?.size_label),
-        resolved_audience_type: child ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',
-        quantity: row.quantity,
-        is_workshop: row.is_workshop,
-        source_type: row.source_type,
-        stock_writeoff_status: row.stock_writeoff_status,
-      };
+      });
     });
   } else if (directItemIds.length) {
-    directItemRows = await bindInChunks<Record<string, unknown>>(
+    directItemRows = (await bindInChunks<Record<string, unknown>>(
       db,
       `SELECT
          oi.id,
          oi.order_id,
          oi.product_id,
+         oi.variant_id,
          COALESCE(oi.variant_id, cv_fallback.id) AS resolved_variant_id,
          oi.product_name_snapshot,
+         oi.audience_type,
+         oi.gender_snapshot,
+         oi.color_snapshot,
+         oi.material_snapshot,
+         oi.length_snapshot,
+         oi.size_snapshot,
+         p_direct.name AS canonical_product_name,
+         COALESCE(cv_direct.category, p_direct.category) AS direct_category,
+         cv_direct.gender AS direct_gender,
+         cv_direct.color AS direct_color,
+         cv_direct.material AS direct_material,
+         cv_direct.length AS direct_length,
+         cv_direct.size_label AS direct_size,
          COALESCE(NULLIF(oi.gender_snapshot, ''), NULLIF(cv_direct.gender, ''), NULLIF(cv_fallback.gender, '')) AS resolved_gender,
          COALESCE(NULLIF(oi.color_snapshot, ''), NULLIF(cv_direct.color, ''), NULLIF(cv_fallback.color, '')) AS resolved_color,
          COALESCE(NULLIF(oi.material_snapshot, ''), NULLIF(cv_direct.material, ''), NULLIF(cv_fallback.material, '')) AS resolved_material,
@@ -209,6 +228,7 @@ export async function enrichWorkshopTaskRowsFromOrderItems(
          oi.source_type,
          oi.stock_writeoff_status
        FROM order_items oi
+       LEFT JOIN catalog_products p_direct ON p_direct.id = oi.product_id
        LEFT JOIN catalog_variants cv_direct ON cv_direct.id = oi.variant_id
        LEFT JOIN catalog_variants cv_fallback ON cv_fallback.id = (
          SELECT cv2.id
@@ -229,7 +249,7 @@ export async function enrichWorkshopTaskRowsFromOrderItems(
        WHERE oi.id IN (`,
       directItemIds,
       ') AND COALESCE(oi.quantity, 0) > 0',
-    );
+    )).map(projectOrderItem);
   }
 
   const directLinkCountByKey = new Map(
@@ -271,14 +291,28 @@ export async function enrichWorkshopTaskRowsFromOrderItems(
       ') ORDER BY wt.order_id ASC, wt.id ASC',
     );
 
-    const orderItemRows = await bindInChunks<Record<string, unknown>>(
+    const orderItemRows = (await bindInChunks<Record<string, unknown>>(
       db,
       `SELECT
          oi.id,
          oi.order_id,
          oi.product_id,
+         oi.variant_id,
          COALESCE(oi.variant_id, cv_fallback.id) AS resolved_variant_id,
          oi.product_name_snapshot,
+         oi.audience_type,
+         oi.gender_snapshot,
+         oi.color_snapshot,
+         oi.material_snapshot,
+         oi.length_snapshot,
+         oi.size_snapshot,
+         p_direct.name AS canonical_product_name,
+         COALESCE(cv_direct.category, p_direct.category) AS direct_category,
+         cv_direct.gender AS direct_gender,
+         cv_direct.color AS direct_color,
+         cv_direct.material AS direct_material,
+         cv_direct.length AS direct_length,
+         cv_direct.size_label AS direct_size,
          COALESCE(NULLIF(oi.gender_snapshot, ''), NULLIF(cv_direct.gender, ''), NULLIF(cv_fallback.gender, '')) AS resolved_gender,
          COALESCE(NULLIF(oi.color_snapshot, ''), NULLIF(cv_direct.color, ''), NULLIF(cv_fallback.color, '')) AS resolved_color,
          COALESCE(NULLIF(oi.material_snapshot, ''), NULLIF(cv_direct.material, ''), NULLIF(cv_fallback.material, '')) AS resolved_material,
@@ -295,6 +329,7 @@ export async function enrichWorkshopTaskRowsFromOrderItems(
          oi.source_type,
          oi.stock_writeoff_status
        FROM order_items oi
+       LEFT JOIN catalog_products p_direct ON p_direct.id = oi.product_id
        LEFT JOIN catalog_variants cv_direct ON cv_direct.id = oi.variant_id
        LEFT JOIN catalog_variants cv_fallback ON cv_fallback.id = (
          SELECT cv2.id
@@ -315,7 +350,7 @@ export async function enrichWorkshopTaskRowsFromOrderItems(
        WHERE oi.order_id IN (`,
       orderIds,
       ') AND COALESCE(oi.quantity, 0) > 0 ORDER BY oi.order_id ASC, oi.id ASC',
-    );
+    )).map(projectOrderItem);
 
     fallbackMatches = matchWorkshopTasksToOrderItems(taskIdentityRows, orderItemRows);
   }
@@ -334,7 +369,7 @@ export async function enrichWorkshopTaskRowsFromOrderItems(
       resolved_order_item_id: toInt(matchedItem?.id, 0) || toInt(row.order_item_id, 0) || null,
       product_id: toInt(matchedItem?.product_id, 0) || toInt(row.product_id, 0) || null,
       variant_id: toInt(matchedItem?.resolved_variant_id, 0) || null,
-      product_name_snapshot: cleanText(matchedItem?.product_name_snapshot) || cleanText(row.product_name_snapshot),
+      product_name_snapshot: cleanText(matchedItem?.resolved_product_name) || cleanText(matchedItem?.product_name_snapshot) || cleanText(row.product_name_snapshot),
       resolved_gender: cleanText(matchedItem?.resolved_gender) || cleanText(row.gender_snapshot),
       resolved_color: cleanText(matchedItem?.resolved_color) || cleanText(row.color_snapshot),
       resolved_material: cleanText(matchedItem?.resolved_material) || cleanText(row.material_snapshot),
