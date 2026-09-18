@@ -719,9 +719,17 @@ export async function updateWorkshopTask(db: D1Database, id: number, input: { st
   }
 
   if (statements.length) await db.batch(statements);
-  const orderStatusChanged = previousStatus !== nextStatus
-    ? await refreshOrderWorkshopStatusFromTasks(db, orderId, timestamp)
-    : false;
+  let orderStatusChanged = false;
+  if (previousStatus !== nextStatus) {
+    try {
+      orderStatusChanged = await refreshOrderWorkshopStatusFromTasks(db, orderId, timestamp);
+    } catch (error) {
+      // workshop_tasks already contains the committed operational truth. The coarse
+      // orders.workshop_status field is compatibility cache only and must never turn
+      // a successful Workshop action into a false failure.
+      console.warn('Workshop order status cache refresh failed after committed task mutation', error);
+    }
+  }
   const changed = taskNeedsUpdate || itemNeedsRepair || orderStatusChanged;
   const task = {
     id,
