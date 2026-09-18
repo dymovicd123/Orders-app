@@ -18,6 +18,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CF_API: https://api.cloudflare.com/client/v4
       PROD_DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      BRANCH2_DB_ID: 40065052-854e-44b8-bcd5-251bdd488301
       EXPECTED_MAIN_SHA: 412ba8b4f2a72873232103944e2a3a777a6dbcd9
     steps:
       - name: Checkout
@@ -88,6 +89,52 @@ jobs:
             (SELECT COUNT(*) FROM inventory_reservations) AS inventory_reservations_count,
             (SELECT COUNT(*) FROM inventory_lifecycle_events) AS lifecycle_count;")"
           echo "$counts" | jq '.result[0].results[0]'
+
+      - name: Compare Production and Branch2 schema excluding R14 triggers
+        shell: bash
+        run: |
+          set -euo pipefail
+          query_db() {
+            local db_id="$1"
+            local sql="$2"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$db_id/query"
+          }
+          schema_sql="SELECT type,name,tbl_name,COALESCE(sql,'') AS sql
+            FROM sqlite_master
+            WHERE name NOT LIKE 'sqlite_%'
+              AND name NOT LIKE 'd1_%'
+              AND name NOT LIKE '_cf_%'
+              AND name NOT IN (
+                'trg_order_search_items_ai',
+                'trg_order_search_items_ad',
+                'trg_order_search_items_au',
+                'trg_order_search_catalog_products_au',
+                'trg_order_search_catalog_variants_au'
+              )
+            ORDER BY type,name;"
+          query_db "$PROD_DB_ID" "$schema_sql" | jq -S '.result[0].results' > /tmp/prod-schema.json
+          query_db "$BRANCH2_DB_ID" "$schema_sql" | jq -S '.result[0].results' > /tmp/branch2-schema.json
+          echo "Production schema hash: $(sha256sum /tmp/prod-schema.json | cut -d' ' -f1)"
+          echo "Branch2 schema hash:    $(sha256sum /tmp/branch2-schema.json | cut -d' ' -f1)"
+          if ! cmp -s /tmp/prod-schema.json /tmp/branch2-schema.json; then
+            echo "Non-R14 schema differs between Production and Branch2:" >&2
+            diff -u /tmp/prod-schema.json /tmp/branch2-schema.json | head -n 300 >&2 || true
+            exit 4
+          fi
+
+          meta_sql="SELECT 'inventory_model_meta' AS source,key,value FROM inventory_model_meta WHERE key IN ('human_inventory_v2','safe_early_handover_v1_guard')
+            UNION ALL SELECT 'catalog_identity_meta',key,value FROM catalog_identity_meta WHERE key IN ('catalog_identity_v3','catalog_cleanup_188j','client_cleanup_188k2')
+            UNION ALL SELECT 'app_settings',key,value FROM app_settings WHERE key='financial_history_model'
+            ORDER BY source,key;"
+          query_db "$PROD_DB_ID" "$meta_sql" | jq -S '.result[0].results' > /tmp/prod-meta.json
+          query_db "$BRANCH2_DB_ID" "$meta_sql" | jq -S '.result[0].results' > /tmp/branch2-meta.json
+          echo "Production migration markers:"
+          cat /tmp/prod-meta.json
+          if ! cmp -s /tmp/prod-meta.json /tmp/branch2-meta.json; then
+            echo "Migration marker values differ between Production and Branch2" >&2
+            diff -u /tmp/prod-meta.json /tmp/branch2-meta.json >&2 || true
+            exit 5
+          fi
 
       - name: Resolve Production URL and run read-only smoke
         shell: bash
