@@ -179,17 +179,12 @@ export async function createInventoryStocktakeSession(
       `SELECT COUNT(*) AS qty
        FROM inventory_stock s
        LEFT JOIN catalog_variants v ON v.id = s.variant_id
+       LEFT JOIN catalog_products p ON p.id = v.product_id
        WHERE s.inventory_source = ?
          AND (COALESCE(s.quantity, 0) <> 0 OR COALESCE(s.reserved_quantity, 0) <> 0)
          AND (
            s.variant_id IS NULL
-           OR (
-             COALESCE(v.is_active, 0) = 1
-             AND EXISTS (
-               SELECT 1 FROM catalog_products active_product
-               WHERE active_product.id = v.product_id AND active_product.is_active = 1
-             )
-           )
+           OR (COALESCE(v.is_active, 0) = 1 AND COALESCE(p.is_active, 0) = 1)
          )
          ${scopeClause}`
     ).bind(source, ...selectedProductIds).first<{ qty: number }>();
@@ -216,8 +211,8 @@ export async function createInventoryStocktakeSession(
          status, created_at, updated_at
        )
        SELECT
-         ?, s.inventory_source, s.id, COALESCE(s.product_id, v.product_id), s.variant_id,
-         s.product_name_snapshot,
+         ?, s.inventory_source, s.id, COALESCE(v.product_id, s.product_id), s.variant_id,
+         COALESCE(NULLIF(p.name, ''), s.product_name_snapshot),
          CASE WHEN COALESCE(v.category, '') = 'child' THEN 'child' ELSE 'adult' END,
          COALESCE(v.gender, s.gender_snapshot, ''), COALESCE(v.color, s.color_snapshot, ''),
          COALESCE(NULLIF(v.material, ''), NULLIF(s.material_snapshot, ''), 'СТАНДАРТ'),
@@ -227,17 +222,12 @@ export async function createInventoryStocktakeSession(
          'pending', ?, ?
        FROM inventory_stock s
        LEFT JOIN catalog_variants v ON v.id = s.variant_id
+       LEFT JOIN catalog_products p ON p.id = v.product_id
        WHERE s.inventory_source = ?
          AND (COALESCE(s.quantity, 0) <> 0 OR COALESCE(s.reserved_quantity, 0) <> 0)
          AND (
            s.variant_id IS NULL
-           OR (
-             COALESCE(v.is_active, 0) = 1
-             AND EXISTS (
-               SELECT 1 FROM catalog_products active_product
-               WHERE active_product.id = v.product_id AND active_product.is_active = 1
-             )
-           )
+           OR (COALESCE(v.is_active, 0) = 1 AND COALESCE(p.is_active, 0) = 1)
          )
          ${scopeClause}`
     ).bind(sessionId, now, now, source, ...selectedProductIds),
