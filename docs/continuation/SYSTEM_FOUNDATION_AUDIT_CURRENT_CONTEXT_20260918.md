@@ -334,3 +334,35 @@ Continue the purpose-based audit from the remaining live operational surfaces. W
 
 See:
 `docs/continuation/STAGE01_IMPLEMENTATION_CHECKPOINT_20260918.md`
+
+
+# Final Stage01 audit state — 2026-09-18
+
+The post-R18 audit produced four concrete fixes rather than speculative cleanup:
+
+- R19: committed Return/Exchange downstream truth;
+- R19B: money-only Return decoupled from physical outbound blocking;
+- R20: new stocktake sessions seed current canonical product identity;
+- R21: exact-known inbound removed from the manual lifecycle queue.
+
+All four are covered by focused regressions and by a later cross-regression that exercises their interaction with R14 search and the shared order operational projection.
+
+Current Branch2 head is `21b6ad6bbe066d7c11ced060507c4ccff2d5e7f6`.
+
+GitHub Actions Quality check run `35361865692` passed the cumulative release gate, D1 read-budget/capacity suite, post-fix cross-regression, dependency audits and production build.
+
+A separate live mutation E2E against the deployed isolated Branch2 Worker passed on run `35364377476`. It proved create/search → Exchange → Exchange cancellation → money-only Return → Workshop readiness → shipment → Return cancellation as one connected operational path.
+
+The Branch2 migration ledger was also repaired safely after proving that migrations `0045`–`0070` were already materially applied. Only `d1_migrations` metadata was repaired; migration bodies were not replayed. Repair run `35366366986` passed and Wrangler now reports no pending migrations.
+
+No Production code or Production D1 mutation was performed during this final proving work.
+
+## Remaining risk boundary
+
+No automated suite can prove the absence of every defect, but the specific regression risk from R19–R21 is now covered at three levels:
+
+1. focused slice regressions;
+2. cross-slice regression on the shared truth model;
+3. live Branch2 mutation E2E across Orders, Workshop, Exchange, Return, search and shipping.
+
+The remaining work should therefore be treated as release engineering / production promotion, not as an invitation to keep inventing new Stage01 code changes without a concrete contradiction.
