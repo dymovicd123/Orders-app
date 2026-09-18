@@ -96,12 +96,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "
-            SELECT 'catalog_identity_meta' AS marker, COUNT(*) AS rows FROM catalog_identity_meta
-            UNION ALL SELECT 'catalog_identity_order_item_links', COUNT(*) FROM catalog_identity_order_item_links
-            UNION ALL SELECT 'catalog_cleanup_position_baseline', COUNT(*) FROM catalog_cleanup_position_baseline
-            UNION ALL SELECT 'catalog_cleanup_variant_baseline', COUNT(*) FROM catalog_cleanup_variant_baseline
-            UNION ALL SELECT 'catalog_cleanup_stock_baseline', COUNT(*) FROM catalog_cleanup_stock_baseline
-            UNION ALL SELECT 'catalog_gender_scope_repairs', COUNT(*) FROM catalog_gender_scope_repairs
-            UNION ALL SELECT 'catalog_gender_variant_repairs', COUNT(*) FROM catalog_gender_variant_repairs
-            UNION ALL SELECT 'catalog_gender_stock_baseline', COUNT(*) FROM catalog_gender_stock_baseline;"
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS rows FROM catalog_identity_meta; SELECT COUNT(*) AS rows FROM catalog_identity_order_item_links;"
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS rows FROM catalog_cleanup_position_baseline; SELECT COUNT(*) AS rows FROM catalog_cleanup_variant_baseline; SELECT COUNT(*) AS rows FROM catalog_cleanup_stock_baseline;"
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS rows FROM catalog_gender_scope_repairs; SELECT COUNT(*) AS rows FROM catalog_gender_variant_repairs; SELECT COUNT(*) AS rows FROM catalog_gender_stock_baseline;"
