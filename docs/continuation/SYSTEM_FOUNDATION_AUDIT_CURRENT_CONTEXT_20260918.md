@@ -6,7 +6,7 @@ This file is the current continuation pointer for the Orders-app foundation clea
 
 - GitHub repository: `dymovicd123/Orders-app`.
 - Current Stage 0+1 implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green Stage 0+1 head: `1499582f1ca1819f7e18971b1073cf45495f144a`.
+- Current green Stage 0+1 head: `4c252b5b1a5bc23466327fba7f74a22f699b7f0c`.
 - Production D1 has not been changed by the Stage 0+1 work.
 - Branch2 is a separate environment and must not be casually folded into Production work.
 - `Приход` remains a frozen/high-risk surface unless a separate approved task explicitly requires changing it.
@@ -46,11 +46,23 @@ Resolver remains link-based: it updates canonical foreign keys rather than rewri
 
 This is especially important for repaired old orders: current work should follow the catalog identity that the system has actually resolved, while audit/history can still answer “what was entered at the time?”.
 
+## Completed slice C — Workshop and action-entry truth
+
+Concrete `workshop_tasks` now control Workshop readiness and shipment blocking. The coarse `orders.workshop_status` field is fallback/cache only when no task truth exists.
+
+Committed Workshop task updates no longer false-fail because a secondary coarse-cache refresh, activity-log write or order readback failed. The route returns fresh order truth when possible, and the frontend updates Orders state immediately.
+
+Order working actions now enter through the same `OrderOperationalProjection`, so UI visibility and controller safety checks no longer maintain separate lifecycle interpretations.
+
+Focused regressions:
+- `scripts/test-stage01-workshop-truth-r3.mjs`
+- `scripts/test-stage01-order-action-entry-r3.mjs`
+
 ## Validation state
 
-The entire cumulative release gate and production build passed on GitHub Actions run `35327687377`.
+R2 passed the cumulative release gate and production build on GitHub Actions run `35327687377`.
 
-Temporary PR #72 existed only to trigger CI and was closed without merge.
+R3 passed the full cumulative release gate, dependency audits and production build on GitHub Actions run `35330539221`. Temporary PR #73 existed only to trigger CI and was closed without merge.
 
 ## Important distinction for the next audit
 
@@ -64,7 +76,7 @@ The next audit must classify each remaining read surface by purpose before chang
 
 ## Immediate next checkpoint
 
-Audit remaining order-related code for duplicate truth derivations. The next implementation slice should be chosen from concrete contradictions found there, not from a broad rewrite.
+Audit money/finance truth next. Classify current-state money facts, immutable transaction history, correction/reversal lineage, cash state and period reporting before changing code. Preserve the already-green Finance F2–F9 semantics unless a concrete contradiction is proven.
 
 See:
 `docs/continuation/STAGE01_IMPLEMENTATION_CHECKPOINT_20260918.md`
