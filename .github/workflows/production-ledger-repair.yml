@@ -1,0 +1,315 @@
+name: Production migration ledger guarded repair
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    name: production-ledger-guarded-repair
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_API: https://api.cloudflare.com/client/v4
+      PROD_DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      BRANCH2_DB_ID: 40065052-854e-44b8-bcd5-251bdd488301
+      EXPECTED_MAIN_SHA: 0ff105ab2941e20cbd0259c204f77bc767af45ca
+      EXPECTED_WORKFLOW_PATH: .github/workflows/production-ledger-repair.yml
+
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Guard exact Production baseline and repair-only diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_MAIN_SHA"
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_MAIN_SHA" HEAD)
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = "$EXPECTED_WORKFLOW_PATH"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Hard guard Production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/test-production-environment.mjs
+          grep -q '"name": "orders-app"' wrangler.jsonc
+          grep -q '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -q '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -q 'orders_db_branch2' wrangler.jsonc
+
+      - name: Re-prove ledger reconstruction boundary and capture before-state
+        shell: bash
+        run: |
+          set -euo pipefail
+          query_db() {
+            local db_id="$1"
+            local sql="$2"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$db_id/query"
+          }
+
+          query_db "$PROD_DB_ID" "SELECT id,name,applied_at FROM d1_migrations ORDER BY id;" | jq '.result[0].results' > /tmp/prod-ledger-before.json
+          query_db "$BRANCH2_DB_ID" "SELECT id,name,applied_at FROM d1_migrations ORDER BY id;" | jq '.result[0].results' > /tmp/b2-ledger.json
+
+          objects_sql="SELECT type,name,tbl_name FROM sqlite_master
+            WHERE name NOT LIKE 'sqlite_%' AND name NOT LIKE 'd1_%' AND name NOT LIKE '_cf_%'
+            ORDER BY type,name,tbl_name;"
+          columns_sql="SELECT m.name AS table_name,p.name AS column_name,UPPER(COALESCE(p.type,'')) AS column_type,
+            p.[notnull] AS not_null,COALESCE(p.dflt_value,'') AS default_value,p.pk AS pk
+            FROM sqlite_master m, pragma_table_info(m.name) p
+            WHERE m.type='table'
+              AND m.name NOT LIKE 'sqlite_%' AND m.name NOT LIKE 'd1_%' AND m.name NOT LIKE '_cf_%'
+            ORDER BY m.name,p.cid;"
+          query_db "$PROD_DB_ID" "$objects_sql" | jq -S '.result[0].results' > /tmp/prod-objects-before.json
+          query_db "$PROD_DB_ID" "$columns_sql" | jq -S '.result[0].results' > /tmp/prod-columns-before.json
+          query_db "$BRANCH2_DB_ID" "$objects_sql" | jq -S '.result[0].results' > /tmp/b2-objects.json
+          query_db "$BRANCH2_DB_ID" "$columns_sql" | jq -S '.result[0].results' > /tmp/b2-columns.json
+
+          jq -r '.[] | [.type,.name,.tbl_name] | @tsv' /tmp/prod-objects-before.json | sort > /tmp/prod-objects.tsv
+          jq -r '.[] | [.type,.name,.tbl_name] | @tsv' /tmp/b2-objects.json | sort > /tmp/b2-objects.tsv
+          jq -r '.[] | [.table_name,.column_name,.column_type,(.not_null|tostring),.default_value,(.pk|tostring)] | @tsv' /tmp/prod-columns-before.json | sort > /tmp/prod-columns.tsv
+          jq -r '.[] | [.table_name,.column_name,.column_type,(.not_null|tostring),.default_value,(.pk|tostring)] | @tsv' /tmp/b2-columns.json | sort > /tmp/b2-columns.tsv
+          comm -23 /tmp/b2-objects.tsv /tmp/prod-objects.tsv > /tmp/missing-objects.tsv
+          comm -23 /tmp/b2-columns.tsv /tmp/prod-columns.tsv > /tmp/missing-columns.tsv
+          test ! -s /tmp/missing-objects.tsv
+          test ! -s /tmp/missing-columns.tsv
+
+          query_db "$PROD_DB_ID" "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM payments) AS payments_count,
+            (SELECT COUNT(*) FROM returns) AS returns_count,
+            (SELECT COUNT(*) FROM exchanges) AS exchanges_count,
+            (SELECT COUNT(*) FROM workshop_tasks) AS workshop_tasks_count,
+            (SELECT COUNT(*) FROM inventory_stock) AS inventory_stock_count,
+            (SELECT COUNT(*) FROM inventory_reservations) AS inventory_reservations_count,
+            (SELECT COUNT(*) FROM inventory_lifecycle_events) AS lifecycle_count;" | jq -S '.result[0].results[0]' > /tmp/business-counts-before.json
+
+          query_db "$PROD_DB_ID" "SELECT
+            COALESCE((SELECT value FROM inventory_model_meta WHERE key='human_inventory_v2'),'') AS human_inventory_v2,
+            COALESCE((SELECT value FROM inventory_model_meta WHERE key='safe_early_handover_v1_guard'),'') AS safe_early_handover_v1_guard,
+            COALESCE((SELECT value FROM catalog_identity_meta WHERE key='catalog_identity_v3'),'') AS catalog_identity_v3,
+            COALESCE((SELECT value FROM catalog_identity_meta WHERE key='catalog_cleanup_188j'),'') AS catalog_cleanup_188j,
+            COALESCE((SELECT value FROM catalog_identity_meta WHERE key='client_cleanup_188k2'),'') AS client_cleanup_188k2,
+            COALESCE((SELECT value FROM app_settings WHERE key='financial_history_model'),'') AS financial_history_model,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM order_search_items_fts) AS fts_rows_count,
+            (SELECT COUNT(DISTINCT rowid) FROM order_search_items_fts) AS fts_distinct_rowids,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('trg_order_search_items_ai','trg_order_search_items_ad','trg_order_search_items_au','trg_order_search_catalog_products_au','trg_order_search_catalog_variants_au')) AS r14_trigger_count;" | jq -S '.result[0].results[0]' > /tmp/durable-proof-before.json
+
+          node <<'NODE'
+          const fs=require('fs');
+          const repoFiles=fs.readdirSync('migrations').filter(x=>x.endsWith('.sql')).sort();
+          const prodRows=JSON.parse(fs.readFileSync('/tmp/prod-ledger-before.json','utf8'));
+          const b2Rows=JSON.parse(fs.readFileSync('/tmp/b2-ledger.json','utf8'));
+          const prod=prodRows.map(x=>x.name);
+          const b2=b2Rows.map(x=>x.name);
+          const missing=repoFiles.filter(x=>!prod.includes(x));
+          const extra=prod.filter(x=>!repoFiles.includes(x));
+          const b2Missing=repoFiles.filter(x=>!b2.includes(x));
+          const b2Extra=b2.filter(x=>!repoFiles.includes(x));
+          console.log(JSON.stringify({
+            repoMigrationCount:repoFiles.length,
+            productionLedgerCount:prod.length,
+            branch2LedgerCount:b2.length,
+            productionMissingCount:missing.length,
+            productionMissing:missing,
+            productionExtra:extra,
+            branch2Missing:b2Missing,
+            branch2Extra:b2Extra
+          },null,2));
+          if(repoFiles.length!==73) process.exit(10);
+          if(b2.length!==73 || b2Missing.length || b2Extra.length) process.exit(11);
+          if(prod.length!==2 || !prod.includes('0001_init.sql') || !prod.includes('0067_v72_o1_read_budget_indexes.sql') || extra.length) process.exit(12);
+          if(missing.length!==71) process.exit(13);
+          const proof=JSON.parse(fs.readFileSync('/tmp/durable-proof-before.json','utf8'));
+          if(proof.human_inventory_v2!=='active' ||
+             proof.safe_early_handover_v1_guard!=='ready' ||
+             proof.catalog_identity_v3!=='active' ||
+             proof.catalog_cleanup_188j!=='active' ||
+             proof.client_cleanup_188k2!=='active' ||
+             proof.financial_history_model!=='189c-v1' ||
+             proof.order_items_count!==proof.fts_rows_count ||
+             proof.order_items_count!==proof.fts_distinct_rowids ||
+             proof.r14_trigger_count!==5) process.exit(14);
+          fs.writeFileSync('/tmp/missing-migrations.json',JSON.stringify(missing));
+          const esc=s=>s.replaceAll("'","''");
+          fs.writeFileSync('/tmp/repair.sql', 'INSERT INTO d1_migrations(name) VALUES\n' + missing.map(x=>`('${esc(x)}')`).join(',\n') + ';\n');
+          NODE
+
+      - name: Capture fresh encrypted pre-repair D1 Time Travel bookmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --fail-with-body -sS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/time_travel/bookmark")"
+          bookmark="$(jq -r '.result.bookmark // empty' <<<"$response")"
+          jq -e '.success == true and (.result.bookmark // "") != ""' <<<"$response" >/dev/null
+          test -n "$bookmark"
+          echo "::add-mask::$bookmark"
+          fingerprint="$(printf '%s' "$bookmark" | sha256sum | awk '{print $1}')"
+          printf '%s' "$bookmark" > /tmp/pre-ledger-repair-bookmark.txt
+          openssl enc -aes-256-cbc -pbkdf2 -salt             -in /tmp/pre-ledger-repair-bookmark.txt             -out pre-ledger-repair-bookmark.enc             -pass env:CLOUDFLARE_API_TOKEN
+          rm -f /tmp/pre-ledger-repair-bookmark.txt
+          {
+            echo "### Production migration-ledger repair rollback point"
+            echo ""
+            echo "- D1: `orders_db_prod`"
+            echo "- Bookmark SHA-256 fingerprint: `$fingerprint`"
+            echo "- Plain bookmark masked; encrypted artifact preserved."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve encrypted rollback bookmark
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-ledger-repair-pre-bookmark-${{ github.run_id }}
+          path: pre-ledger-repair-bookmark.enc
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Repair d1_migrations names only
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql="$(cat /tmp/repair.sql)"
+          response="$(curl --fail-with-body -sS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -H "Content-Type: application/json"             --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"             "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/query")"
+          echo "$response" | jq '.result[0].meta | {changes,rows_read,rows_written}'
+          jq -e '.success==true and .result[0].success==true and .result[0].meta.changes==71' <<<"$response" >/dev/null
+
+      - name: Verify repaired ledger is exactly repository migration set
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            local sql="$1"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/query"
+          }
+          query "SELECT id,name,applied_at FROM d1_migrations ORDER BY id;" | jq '.result[0].results' > /tmp/prod-ledger-after.json
+
+          node <<'NODE'
+          const fs=require('fs');
+          const repoFiles=fs.readdirSync('migrations').filter(x=>x.endsWith('.sql')).sort();
+          const rows=JSON.parse(fs.readFileSync('/tmp/prod-ledger-after.json','utf8'));
+          const names=rows.map(x=>x.name);
+          const missing=repoFiles.filter(x=>!names.includes(x));
+          const extra=names.filter(x=>!repoFiles.includes(x));
+          const unique=new Set(names);
+          console.log(JSON.stringify({
+            ledgerRows:rows.length,
+            uniqueNames:unique.size,
+            missing,
+            extra,
+            firstRows:rows.slice(0,6),
+            lastRows:rows.slice(-6)
+          },null,2));
+          if(rows.length!==73 || unique.size!==73 || missing.length || extra.length) process.exit(20);
+          NODE
+
+          npx wrangler d1 migrations list DB --remote --config wrangler.jsonc | tee /tmp/pending-after.txt
+          if grep -Eq '^[[:space:]│|]*00[0-9]{2}.*\.sql' /tmp/pending-after.txt; then
+            echo "Wrangler still reports migration files as pending" >&2
+            exit 21
+          fi
+
+      - name: Prove repair touched only migration ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            local sql="$1"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/query"
+          }
+
+          query "SELECT type,name,tbl_name FROM sqlite_master
+            WHERE name NOT LIKE 'sqlite_%' AND name NOT LIKE 'd1_%' AND name NOT LIKE '_cf_%'
+            ORDER BY type,name,tbl_name;" | jq -S '.result[0].results' > /tmp/prod-objects-after.json
+          query "SELECT m.name AS table_name,p.name AS column_name,UPPER(COALESCE(p.type,'')) AS column_type,
+            p.[notnull] AS not_null,COALESCE(p.dflt_value,'') AS default_value,p.pk AS pk
+            FROM sqlite_master m, pragma_table_info(m.name) p
+            WHERE m.type='table'
+              AND m.name NOT LIKE 'sqlite_%' AND m.name NOT LIKE 'd1_%' AND m.name NOT LIKE '_cf_%'
+            ORDER BY m.name,p.cid;" | jq -S '.result[0].results' > /tmp/prod-columns-after.json
+          query "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM payments) AS payments_count,
+            (SELECT COUNT(*) FROM returns) AS returns_count,
+            (SELECT COUNT(*) FROM exchanges) AS exchanges_count,
+            (SELECT COUNT(*) FROM workshop_tasks) AS workshop_tasks_count,
+            (SELECT COUNT(*) FROM inventory_stock) AS inventory_stock_count,
+            (SELECT COUNT(*) FROM inventory_reservations) AS inventory_reservations_count,
+            (SELECT COUNT(*) FROM inventory_lifecycle_events) AS lifecycle_count;" | jq -S '.result[0].results[0]' > /tmp/business-counts-after.json
+          query "SELECT
+            COALESCE((SELECT value FROM inventory_model_meta WHERE key='human_inventory_v2'),'') AS human_inventory_v2,
+            COALESCE((SELECT value FROM inventory_model_meta WHERE key='safe_early_handover_v1_guard'),'') AS safe_early_handover_v1_guard,
+            COALESCE((SELECT value FROM catalog_identity_meta WHERE key='catalog_identity_v3'),'') AS catalog_identity_v3,
+            COALESCE((SELECT value FROM catalog_identity_meta WHERE key='catalog_cleanup_188j'),'') AS catalog_cleanup_188j,
+            COALESCE((SELECT value FROM catalog_identity_meta WHERE key='client_cleanup_188k2'),'') AS client_cleanup_188k2,
+            COALESCE((SELECT value FROM app_settings WHERE key='financial_history_model'),'') AS financial_history_model,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM order_search_items_fts) AS fts_rows_count,
+            (SELECT COUNT(DISTINCT rowid) FROM order_search_items_fts) AS fts_distinct_rowids,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('trg_order_search_items_ai','trg_order_search_items_ad','trg_order_search_items_au','trg_order_search_catalog_products_au','trg_order_search_catalog_variants_au')) AS r14_trigger_count;" | jq -S '.result[0].results[0]' > /tmp/durable-proof-after.json
+
+          cmp -s /tmp/prod-objects-before.json /tmp/prod-objects-after.json
+          cmp -s /tmp/prod-columns-before.json /tmp/prod-columns-after.json
+          cmp -s /tmp/business-counts-before.json /tmp/business-counts-after.json
+          cmp -s /tmp/durable-proof-before.json /tmp/durable-proof-after.json
+          echo "APPLICATION SCHEMA, BUSINESS COUNTS AND DURABLE MARKERS UNCHANGED"
+
+      - name: Production read-only smoke after ledger repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          subdomain="$(curl --fail-with-body -sS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain // empty')"
+          test -n "$subdomain"
+          base="https://orders-app.$subdomain.workers.dev"
+          endpoints=(
+            "/api/admin-mode/status"
+            "/api/auth/me"
+            "/api/dashboard"
+            "/api/reference-data"
+            "/api/orders?limit=5"
+            "/api/workshop/counts"
+            "/api/inventory/attention?details=0&limit=5"
+            "/api/catalog"
+            "/api/returns"
+            "/api/exchanges"
+          )
+          for path in "${endpoints[@]}"; do
+            code="$(curl -sS -o /tmp/prod-smoke.json -w '%{http_code}' "$base$path")"
+            echo "$code $path"
+            if [[ "$code" -lt 200 || "$code" -ge 300 ]]; then
+              cat /tmp/prod-smoke.json >&2 || true
+              exit 30
+            fi
+          done
+          {
+            echo ""
+            echo "### Repair result"
+            echo ""
+            echo "- Production d1_migrations now contains exactly all 73 repository migration names."
+            echo "- Existing 0001 and historical 0067 ledger records were preserved."
+            echo "- 71 missing names were added; no migration SQL was replayed."
+            echo "- Wrangler reports no repository migration file pending."
+            echo "- Application schema, business row counts, durable markers and R14 FTS invariants are unchanged."
+            echo "- Production read-only smoke passed."
+          } >> "$GITHUB_STEP_SUMMARY"
