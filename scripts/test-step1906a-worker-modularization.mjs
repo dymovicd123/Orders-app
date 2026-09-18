@@ -537,6 +537,11 @@ patched = patched.replace(stage01WorkshopLifecycleCanonicalAddedAnchor, [
   '    }',
 ].join('\n'))
 
+const stage01LifecycleManualQueueR21 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-lifecycle-manual-queue-r21-worker-manifest.json'), 'utf8'))
+if (stage01LifecycleManualQueueR21.version !== 1 || stage01LifecycleManualQueueR21.revision !== 'stage01-lifecycle-manual-queue-r21') throw new Error('Stage01 lifecycle manual queue R21 Worker manifest invalid')
+if (Object.keys(stage01LifecycleManualQueueR21.changes || {}).join(',') !== 'listInventoryLifecyclePending') throw new Error('Stage01 lifecycle manual queue R21 Worker allow-list widened')
+patched = 'const stage01LifecycleManualQueueR21Changes = ' + JSON.stringify(stage01LifecycleManualQueueR21.changes || {}) + '\n' + patched
+
 const stage01PendingLifecycleR11Manifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-pending-lifecycle-current-links-r11-worker-manifest.json'), 'utf8'))
 if (stage01PendingLifecycleR11Manifest.version !== 1 || stage01PendingLifecycleR11Manifest.revision !== 'stage01-pending-lifecycle-current-links-r11') throw new Error('Stage01 pending lifecycle current links R11 Worker manifest invalid')
 const stage01PendingLifecycleR11Changes = stage01PendingLifecycleR11Manifest.files?.['worker/domains/lifecycle.ts']?.changes || {}
@@ -550,6 +555,21 @@ if (!stage01PendingLifecycleR11Attention?.beforeBlock || !stage01PendingLifecycl
 patched = 'const stage01PendingLifecycleR11Changes = ' + JSON.stringify(stage01PendingLifecycleR11Changes) + '\n'
   + 'const stage01PendingLifecycleR11Attention = ' + JSON.stringify(stage01PendingLifecycleR11Attention) + '\n'
   + patched
+
+const stage01LifecycleManualQueueNormalizeAnchor = '  for (const [name, change] of Object.entries(stage01PendingLifecycleR11Changes)) {'
+if (!patched.includes(stage01LifecycleManualQueueNormalizeAnchor)) throw new Error('Stage01 lifecycle manual queue R21 predecessor anchor missing')
+const stage01LifecycleManualQueueNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01LifecycleManualQueueR21Changes)) {',
+  "    check(declarations.has(name), 'Stage01 lifecycle manual queue R21 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 lifecycle manual queue R21 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 lifecycle manual queue R21 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01LifecycleManualQueueNormalizeAnchor, stage01LifecycleManualQueueNormalizeBlock + stage01LifecycleManualQueueNormalizeAnchor)
 
 const stage01PendingLifecycleNormalizeAnchor = '  const removedNames = Object.keys(removed)\n'
 if (!patched.includes(stage01PendingLifecycleNormalizeAnchor)) throw new Error('Stage01 pending lifecycle R11 declaration-normalization anchor missing')
