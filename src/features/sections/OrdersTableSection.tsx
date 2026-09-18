@@ -130,7 +130,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                       <tr
                         key={order.id}
                         data-order-id={order.id}
-                        className={`${selectedOrderId === order.id ? 'row-active' : ''} ${archived ? 'row-archived' : ''} ${projection.hasActiveReturnOperation ? 'row-returned' : ''}`}
+                        className={`${selectedOrderId === order.id ? 'row-active' : ''} ${archived ? 'row-archived' : ''} ${projection.hasCommittedDownstreamOperation ? 'row-returned' : ''}`}
                       >
                         <td>
                           <div className="order-cell-stack">
@@ -298,7 +298,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 Отправить клиенту
                               </button>
                             ) : null}
-                            {!retainedOnly && !archived && !projection.hasActiveReturnOperation && order.shipping_status !== 'sent' && projection.workshopPending ? (
+                            {!retainedOnly && !archived && !projection.hasCommittedDownstreamOperation && order.shipping_status !== 'sent' && projection.workshopPending ? (
                               <span className="order-stock-handover-wait-note">Отправить весь заказ можно после готовности Цеха</span>
                             ) : null}
                             {projection.canCorrectShipping ? (
@@ -350,8 +350,14 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 Обмен
                               </button>
                             ) : null}
-                            {projection.hasActiveReturnOperation ? (
-                              <span className="soft-badge">Есть действующий возврат</span>
+                            {projection.hasCommittedDownstreamOperation ? (
+                              <span className="soft-badge">
+                                {projection.hasCommittedReturn && projection.hasCommittedExchange
+                                  ? 'Есть проведённые возврат и обмен'
+                                  : projection.hasCommittedExchange
+                                    ? 'Есть проведённый обмен'
+                                    : 'Есть проведённый возврат'}
+                              </span>
                             ) : null}
                             {projection.canEdit ? (
                               <button
