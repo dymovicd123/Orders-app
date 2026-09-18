@@ -1,0 +1,65 @@
+name: Stage01 Branch2 live read smoke
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: branch2-live-read-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Resolve isolated Branch2 Worker URL
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          subdomain="$(curl --fail-with-body -sS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain // empty')"
+          test -n "$subdomain"
+          base_url="https://orders-app-branch2.$subdomain.workers.dev"
+          echo "base_url=$base_url" >> "$GITHUB_OUTPUT"
+          echo "Target: orders-app-branch2 on workers.dev"
+
+      - name: Read-only API smoke
+        shell: bash
+        env:
+          BASE_URL: ${{ steps.target.outputs.base_url }}
+        run: |
+          set -euo pipefail
+
+          get_json() {
+            local label="$1"
+            local path="$2"
+            local out="/tmp/${label}.json"
+            code="$(curl -sS -o "$out" -w '%{http_code}' "$BASE_URL$path")"
+            if [[ "$code" != "200" ]]; then
+              echo "$label returned HTTP $code" >&2
+              cat "$out" >&2
+              exit 1
+            fi
+            jq -e '.ok == true' "$out" >/dev/null
+            echo "$label: OK"
+          }
+
+          get_json health "/api/health"
+          get_json orders "/api/orders?limit=20"
+          get_json order_search "/api/orders?limit=20&q=QA"
+          get_json debts "/api/orders/open-debts?limit=20"
+          get_json workshop "/api/workshop?limit=20"
+          get_json inventory "/api/inventory?source=warehouse&includeMovements=0&limit=50"
+          get_json attention "/api/inventory/attention?details=1&limit=20"
+          get_json stocktakes "/api/inventory/stocktakes?source=warehouse"
+          get_json catalog "/api/catalog"
+
+          jq -e '(.orders // []) | type == "array"' /tmp/orders.json >/dev/null
+          jq -e '(.items // []) | type == "array"' /tmp/inventory.json >/dev/null
+          jq -e '(.counts // {}) | type == "object"' /tmp/attention.json >/dev/null
+          echo "BRANCH2 LIVE READ SMOKE PASSED"
