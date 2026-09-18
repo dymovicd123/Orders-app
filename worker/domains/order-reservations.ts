@@ -906,14 +906,19 @@ export async function orderWorkshopPendingForShipping(db: D1Database, orderId: n
     `SELECT
        COALESCE(o.workshop_status, '') AS workshop_status,
        COALESCE((SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id AND COALESCE(oi.is_workshop, 0) = 1 AND oi.quantity > 0), 0) AS workshop_item_count,
+       COALESCE((SELECT COUNT(*) FROM workshop_tasks wt WHERE wt.order_id = o.id AND wt.quantity > 0), 0) AS workshop_task_count,
        COALESCE((SELECT COUNT(*) FROM workshop_tasks wt WHERE wt.order_id = o.id AND wt.quantity > 0 AND wt.status = 'active'), 0) AS active_workshop_task_count
      FROM orders o
      WHERE o.id = ?`
   ).bind(orderId).first<Record<string, unknown>>();
   const workshopItemCount = Math.max(0, toInt(row?.workshop_item_count, 0));
+  const workshopTaskCount = Math.max(0, toInt(row?.workshop_task_count, 0));
   const activeWorkshopTaskCount = Math.max(0, toInt(row?.active_workshop_task_count, 0));
-  const pending = activeWorkshopTaskCount > 0 || (workshopItemCount > 0 && normalizeWorkshopStatus(row?.workshop_status) === 'in_workshop');
-  return { pending, workshopItemCount, activeWorkshopTaskCount };
+  // workshop_tasks is the operational truth. orders.workshop_status is only a
+  // compatibility fallback for legacy rows that genuinely have no task records.
+  const pending = activeWorkshopTaskCount > 0
+    || (workshopItemCount > 0 && workshopTaskCount === 0 && normalizeWorkshopStatus(row?.workshop_status) === 'in_workshop');
+  return { pending, workshopItemCount, workshopTaskCount, activeWorkshopTaskCount };
 }
 
 
