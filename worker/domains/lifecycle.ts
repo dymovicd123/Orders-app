@@ -72,10 +72,10 @@ export async function resolveWorkshopCatalogExactCandidate(
   const normalized = inventoryLifecycleItemFromRow(item);
   const inputKey = catalogOrderInputKey(normalized);
   const linkedProductId = toInt(item.product_id, 0);
-  let product = linkedProductId
+  let product: { id: number; category?: string } | null = linkedProductId
     ? await db.prepare('SELECT id, category FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1')
         .bind(linkedProductId)
-        .first<{ id: number; category: string }>()
+        .first<{ id: number; category?: string }>()
     : null;
   if (!product?.id) {
     product = await findCatalogProductByIdentity(db, normalized.productName, 0, { activeOnly: true }) as { id: number; category?: string } | null;
