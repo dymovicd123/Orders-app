@@ -380,32 +380,67 @@ The output should distinguish:
 - genuine missing business states;
 - pure local UI defects.
 
+## Stage 0+1 implementation progress checkpoint — 2026-09-18
+
+Implementation has started on isolated branch:
+
+- `feature/stage01-truth-projections-20260918`
+- current green implementation head: `f0551322f59ed8b83f68368e4e02572a6833653a`
+- Branch2 remains untouched at `fb43e8d709b57b67cc080bb9bd64246bb036aede`
+- Production D1 untouched
+
+Durable detailed checkpoint:
+
+`docs/continuation/STAGE01_IMPLEMENTATION_CHECKPOINT_20260918.md`
+
+Completed sub-block:
+- introduced shared `OrderOperationalProjection`;
+- removed `return_amount > 0` as whole-order terminal lifecycle shortcut;
+- previous Return no longer hides the order from Return/Exchange workflows;
+- gross received/refund/net retained/debt are shown as separate dimensions;
+- Workshop summary uses per-item task state first and coarse `orders.workshop_status` only as fallback;
+- generic order editor no longer edits coarse Workshop status;
+- old order-details whole-order “Готово” control removed;
+- Stage01 focused regression added to `release:check`;
+- existing static regressions updated where they depended on removed inline predicates.
+
+Verification:
+- Quality check run `35323483156`
+- tested SHA `f0551322f59ed8b83f68368e4e02572a6833653a`
+- conclusion: SUCCESS
+- cumulative release checks, TypeScript, Vite builds, bundle budget and Wrangler dry-run passed.
+
+Stage 1 is not complete.
+
+Next coherent sub-block:
+1. introduce CanonicalItemProjection/read mapping;
+2. API/order surfaces expose both historical snapshot and current canonical identity without rewriting history;
+3. active operational order UI prefers canonical identity after resolver;
+4. then fix resolver local-selected vs saved clarity and simple Admin mutation boundary;
+5. rerun cumulative quality check before any Branch2 deploy.
+
 ## Immediate next step
 
-The architecture audit and cross-domain synthesis are complete.
+Stage 0+1 implementation is in progress and the first order-lifecycle projection sub-block is green.
 
-**Do not implement yet until the owner reviews/accepts the finite sequence.**
+Resume from:
+`docs/continuation/STAGE01_IMPLEMENTATION_CHECKPOINT_20260918.md`
 
-If the owner approves the synthesis, next implementation block is only:
+Next task only:
 
-### Stage 0 + Stage 1
+### Canonical item projection / current-vs-history order read model
 
-- freeze truth contracts with focused tests;
-- introduce shared operational/canonical projections;
-- remove `return_amount > 0` whole-order lifecycle shortcut;
-- derive Workshop order summary from per-item task truth;
-- display current canonical identity for active work while keeping historical raw snapshot available;
-- make Resolver one contextual flow;
-- allow ordinary mode to link existing canonical facts;
-- require simple Admin mode only at the exact reusable master-data mutation;
-- make local resolver choices clearly unsaved until committed.
+- recheck Branch2 + feature heads;
+- inspect order read/write relation mapping and frontend order-item types;
+- expose current canonical product/SKU fields alongside immutable historical snapshots;
+- operational order surfaces should prefer canonical identity after successful resolver linkage;
+- history/raw-input context remains available and snapshots are never rewritten for presentation;
+- update the old “snapshot-first” regression into a “history preserved + operational canonical projection” regression;
+- run the same cumulative Quality check on a temporary `w*` branch;
+- STOP and report before doing resolver save-state/Admin cleanup.
 
-Use an isolated Branch2-derived feature branch.
+Do not begin Warehouse/pricing/payables in this checkpoint.
 Production D1 remains untouched.
-Do not start Warehouse/pricing/payables in the same implementation block.
-After Stage 0+1 build/regression/deploy-to-Branch2 acceptance, STOP and review.
-
-The remaining pricing/cost/Workshop business choices should be asked when approaching Stage 3/4, not invented now.
 
 ## Working discipline
 
