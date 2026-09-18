@@ -1590,7 +1590,7 @@ export async function getOrder(db: D1Database, id: number) {
   return {
     ...order,
     committed_return_count: (relations.returnsByOrderId.get(id) || []).filter(ret => cleanText((ret as any).status || 'completed').toLowerCase() !== 'cancelled').length,
-    committed_exchange_count: (relations.exchangesByOrderId.get(id) || []).filter(exchange => cleanText((exchange as any).status || 'completed').toLowerCase() !== 'cancelled').length,
+    committed_exchange_count: relations.committedExchangeCountByOrderId.get(id) || 0,
     items: (relations.itemsByOrderId.get(id) || []).map(item => ({
       id: (item as any).id,
       ...canonicalItemProjection(item as Record<string, unknown>),
