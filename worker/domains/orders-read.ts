@@ -651,7 +651,7 @@ export async function listOrders(db: D1Database, url: URL) {
       stock_handover_review_needed: (relations.handoverReviewByOrderId.get(order.id) || []).length > 0,
       stock_handover_has_active_items: (relations.activeStockHandoverByOrderId.get(order.id) || []).length > 0,
       committed_return_count: (relations.returnsByOrderId.get(order.id) || []).filter(ret => cleanText((ret as any).status || 'completed').toLowerCase() !== 'cancelled').length,
-      committed_exchange_count: (relations.exchangesByOrderId.get(order.id) || []).filter(exchange => cleanText((exchange as any).status || 'completed').toLowerCase() !== 'cancelled').length,
+      committed_exchange_count: relations.committedExchangeCountByOrderId.get(order.id) || 0,
       items: (relations.itemsByOrderId.get(order.id) || []).map(item => ({
         id: (item as any).id,
         ...canonicalItemProjection(item as Record<string, unknown>),
