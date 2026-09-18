@@ -3,7 +3,7 @@
 import { cleanText, isArchivedOrder, normalizeArchiveMode, normalizeDate, normalizeShippingFilter, normalizeStatusFilter, toInt } from '../core/text.ts'
 import type { OrderListRow } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
-import { fetchOrderRelations, workshopTaskStatusForOrderItem } from './orders-relations.ts'
+import { canonicalItemProjection, fetchOrderRelations, workshopTaskStatusForOrderItem } from './orders-relations.ts'
 import { getOrder } from './orders-write.ts'
 
 export type ArchiveRuleInput = {
@@ -638,15 +638,7 @@ export async function listOrders(db: D1Database, url: URL) {
       stock_handover_has_active_items: (relations.activeStockHandoverByOrderId.get(order.id) || []).length > 0,
       items: (relations.itemsByOrderId.get(order.id) || []).map(item => ({
         id: (item as any).id,
-        // Order history is snapshot-first. A later catalog merge may repoint variant_id, but it must
-        // never rewrite what the operator actually recorded on this historical order line.
-        productName: cleanText((item as any).product_name_snapshot) || cleanText((item as any).canonical_product_name),
-        audienceType: cleanText((item as any).audience_type) || (cleanText((item as any).canonical_category).toLowerCase() === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ'),
-        gender: cleanText((item as any).gender_snapshot),
-        color: cleanText((item as any).color_snapshot),
-        material: cleanText((item as any).material_snapshot),
-        length: cleanText((item as any).length_snapshot),
-        size: cleanText((item as any).size_snapshot),
+        ...canonicalItemProjection(item as Record<string, unknown>),
         quantity: (item as any).quantity,
         unitPrice: (item as any).unit_price,
         lineTotal: (item as any).line_total,
