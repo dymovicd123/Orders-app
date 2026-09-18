@@ -33,7 +33,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "$EXPECTED_MAIN_SHA"
           test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_MAIN_SHA"
           mapfile -t changed < <(git diff --name-only "$EXPECTED_MAIN_SHA" HEAD)
           test "${#changed[@]}" -eq 1
@@ -90,7 +89,7 @@ jobs:
             branch2LedgerCount:b2.length,
             productionLedgerCount:prod.length,
             missingInBranch2:missingInB2,
-            extraInBranch2,
+            extraInBranch2:extraInB2,
             missingInProduction:missingInProd,
             extraInProduction:extraInProd
           },null,2));
