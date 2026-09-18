@@ -860,22 +860,58 @@ export async function cancelInventoryLifecycleEvent(
 
 export async function listInventoryLifecyclePending(db: D1Database, url: URL) {
   const limit = Math.min(100, Math.max(10, toInt(url.searchParams.get('limit'), 40)));
+  // Exact inbound rows belong to the normal Warehouse Attention intake lane. They are
+  // already safe to reconcile against a concrete current SKU and should not be shown
+  // again as manual catalog-resolution work.
+  const exactVariantSql = `COALESCE(
+    (SELECT v_link.id
+     FROM order_items oi_link
+     JOIN catalog_variants v_link ON v_link.id = oi_link.variant_id
+     WHERE oi_link.id = e.order_item_id
+       AND oi_link.order_id = e.order_id
+       AND v_link.is_active = 1
+     LIMIT 1),
+    (SELECT v0.id FROM catalog_variants v0 WHERE v0.id = e.variant_id AND v0.is_active = 1 LIMIT 1),
+    (SELECT v.id
+     FROM catalog_variants v
+     WHERE v.is_active = 1
+       AND v.product_id = COALESCE(oi.product_id, e.product_id)
+       AND LOWER(TRIM(COALESCE(v.category, 'adult'))) = CASE WHEN UPPER(TRIM(COALESCE(e.audience_type, ''))) LIKE '%ДЕТ%' OR LOWER(TRIM(COALESCE(e.audience_type, ''))) = 'child' THEN 'child' ELSE 'adult' END
+       AND UPPER(TRIM(COALESCE(v.gender, ''))) = UPPER(TRIM(COALESCE(e.gender_snapshot, '')))
+       AND UPPER(TRIM(COALESCE(v.color, ''))) = UPPER(TRIM(COALESCE(e.color_snapshot, '')))
+       AND UPPER(TRIM(COALESCE(NULLIF(v.material, ''), 'СТАНДАРТ'))) = UPPER(TRIM(COALESCE(NULLIF(e.material_snapshot, ''), 'СТАНДАРТ')))
+       AND UPPER(TRIM(COALESCE(NULLIF(v.length, ''), 'СТАНДАРТ'))) = UPPER(TRIM(COALESCE(NULLIF(e.length_snapshot, ''), 'СТАНДАРТ')))
+       AND UPPER(TRIM(COALESCE(v.size_label, ''))) = UPPER(TRIM(COALESCE(e.size_snapshot, '')))
+     ORDER BY v.id
+     LIMIT 1)
+  )`;
+
   const result = await db.prepare(
-    `SELECT e.*, o.external_id, o.order_date,
-            oi.product_id AS current_order_product_id,
-            oi.variant_id AS current_order_variant_id
-     FROM inventory_lifecycle_events e
-     JOIN orders o ON o.id = e.order_id
-     LEFT JOIN order_items oi ON oi.id = e.order_item_id AND oi.order_id = e.order_id
-     WHERE e.status = 'pending'
-     ORDER BY e.created_at ASC, e.id ASC
+    `WITH pending_lifecycle AS (
+       SELECT e.*, o.external_id, o.order_date,
+              oi.product_id AS current_order_product_id,
+              oi.variant_id AS current_order_variant_id,
+              ${exactVariantSql} AS exact_variant_id
+       FROM inventory_lifecycle_events e
+       JOIN orders o ON o.id = e.order_id
+       LEFT JOIN order_items oi ON oi.id = e.order_item_id AND oi.order_id = e.order_id
+       WHERE e.status = 'pending'
+     ),
+     manual_queue AS (
+       SELECT pending_lifecycle.*, COUNT(*) OVER() AS manual_queue_count
+       FROM pending_lifecycle
+       WHERE NOT (direction = 'in' AND exact_variant_id IS NOT NULL)
+     )
+     SELECT *
+     FROM manual_queue
+     ORDER BY created_at ASC, id ASC
      LIMIT ?`
   ).bind(limit).all<Record<string, unknown>>();
-  const countRow = await db.prepare(`SELECT COUNT(*) AS count FROM inventory_lifecycle_events WHERE status = 'pending'`).first<{ count: number }>();
+  const rows = result.results || [];
   return {
     ok: true,
-    count: Math.max(0, toInt(countRow?.count, 0)),
-    items: (result.results || []).map((row) => ({
+    count: Math.max(0, toInt(rows[0]?.manual_queue_count, 0)),
+    items: rows.map((row) => ({
       id: toInt(row.id, 0),
       eventKey: cleanText(row.event_key),
       eventType: cleanText(row.event_type),
@@ -890,8 +926,8 @@ export async function listInventoryLifecyclePending(db: D1Database, url: URL) {
       quantity: Math.max(1, toInt(row.quantity, 1)),
       productId: toInt(row.current_order_product_id, 0) || toInt(row.product_id, 0) || null,
       variantId: toInt(row.current_order_variant_id, 0) || toInt(row.variant_id, 0) || null,
-      // Keep event-time text facts visible as evidence. Only live canonical FK identity
-      // is refreshed here; immutable lifecycle snapshots are never rewritten.
+      // Manual queue remains evidence-first. Exact known inbound rows were filtered
+      // above and are shown in Warehouse Attention with current canonical identity.
       productName: cleanText(row.product_name_snapshot),
       category: normalizeAudienceCategory(row.audience_type, row.size_snapshot),
       gender: cleanText(row.gender_snapshot),
