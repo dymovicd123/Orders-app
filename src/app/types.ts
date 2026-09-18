@@ -780,6 +780,7 @@ export type OrderRecord = {
   return_amount: number
   committed_return_count?: number
   committed_exchange_count?: number
+  has_committed_item_return?: boolean
   comment: string | null
   archived_at?: string | null
   archived_by?: string | null
