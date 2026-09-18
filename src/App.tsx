@@ -28,7 +28,7 @@ import './styles/189d-team-activity-cleanup.css'
 import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, ExchangeDraft, ExchangeHistoryEntry, ExchangeHistoryResponse, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, InventoryHistoryResponse, InventoryCheckHistoryResponse, FinancialHistoryEntry, FinancialHistoryResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryDraftItem, InventoryMatrixDraft, InventoryMovementRecord, InventoryOperationVariantDraft, InventoryPanel, InventoryResponse, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, InventoryStockRecord, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, ReturnDraft, ReturnHistoryEntry, ReturnHistoryResponse, SimpleAdminStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
 import type { CatalogResolutionContext, CatalogResolutionInput, CatalogResolutionResponse, InventoryCycleCountApplyResponse, InventoryCycleCountSuggestionsResponse, InventoryReservationsResponse, InventoryStocktakeMutationResponse, InventoryStocktakeSessionsResponse, WarehouseAttentionSummaryResponse } from '../shared/api-contracts.ts'
 import { MANAGER_COLOR_OPTIONS, SIMPLE_ADMIN_USER, SIMPLE_MANAGER_USER, orderPanelOptions, workspaceModules } from './app/constants'
-import { calculateTotals, createDebtClosePayment, createEditorDraft, createEmptyEditorItem, createEmptyEditorPayment, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, deriveOrderSourceType, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, htmlEscape, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, isReturnedOrderRecord, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, paymentStatusClass, paymentStatusLabel, productCategoryLabel, readJsonResponse, isTransientApiError, resolvePaymentKind, sectorFromHash, shippingStatusLabel, sortSizeLikeValues, sourceLabel, statusLabelByState, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
+import { calculateTotals, createDebtClosePayment, createEditorDraft, createEmptyEditorItem, createEmptyEditorPayment, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, deriveOrderSourceType, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, htmlEscape, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, resolvePaymentKind, sectorFromHash, shippingStatusLabel, sortSizeLikeValues, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
 import { ChoicePills, FriendlyNumberInput, ManagerBadge, ManagerPicker, SmartPickerInput, resolveManagerDisplayColor } from './components'
 import { TableDragScrollManager } from './components/tables/TableDragScrollManager'
 import { DatabaseStorageModal, DatabaseStorageWarning, useDatabaseStorageMaintenance } from './features/storage/DatabaseStorageMaintenance'
@@ -5237,11 +5237,6 @@ function removeDebtPayment(index: number) {
       setMessage('Архивный заказ доступен только для просмотра. Долг по нему не закрывается из рабочей таблицы.')
       return
     }
-    if (isReturnedOrderRecord(order)) {
-      setSelectedOrderId(order.id)
-      setMessage('Возвращённый заказ уже закрыт как возврат. Долг по нему не закрывается обычной оплатой.')
-      return
-    }
     if (Number(order.debt_amount || 0) <= 0) {
       setSelectedOrderId(order.id)
       setMessage('У заказа нет открытого долга.')
@@ -6539,19 +6534,6 @@ function removeDebtPayment(index: number) {
     }
   }
 
-  async function setSelectedWorkshopStatus(status: EditorDraft['workshopStatus'], targetOrder?: OrderRecord) {
-    if (targetOrder && isArchivedOrderRecord(targetOrder)) {
-      setMessage('Архивный заказ нельзя менять.')
-      return
-    }
-    const baseDraft = targetOrder ? createEditorDraft(targetOrder) : editorDraft
-    if (!baseDraft) return
-    const nextDraft = { ...baseDraft, workshopStatus: status }
-    setEditorDraft(nextDraft)
-    await persistOrder(nextDraft, targetOrder)
-  }
-
-
   function renderInventoryStockGroups(source: InventorySourceKey, groups: InventoryStockGroup[]) {
     return InventoryStockGroupsRenderer(source, groups, { expandedInventoryGroups, getInventoryRowCategory, hasInventoryQuickFilters, inventorySearchTokens, isAdmin, productCategoryLabel, sourceLabel, startInventoryTransferFromStockRow, toggleInventoryGroup })
   }
@@ -7137,15 +7119,15 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'edit'} label="Редактирование заказа">
-        <OrderEditorSection ctx={{ addEditorItem, addEditorPayment, applyEditorProductPick, ChoicePills, closeOrderEditor, createEditorDraft, editorDraft, editorFormRef, editorOpen, editorReturnSector, formatMoney, formatOrderItemTitle, FriendlyNumberInput, isAdmin, isArchivedOrderRecord, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderPanelStyle, references, removeEditorItem, removeEditorPayment, renderOrderSizeSelect, renderOrderSourceAvailability, saveEditorPayment, saveSelectedOrder, savingOrder, sectorStyle, selectedOrder, setEditorDraft, SmartPickerInput, sourceLabel, statusLabelByState, suggestionValues, updateEditorDraft, updateEditorItem, updateEditorPayment }} />
+        <OrderEditorSection ctx={{ addEditorItem, addEditorPayment, applyEditorProductPick, ChoicePills, closeOrderEditor, createEditorDraft, editorDraft, editorFormRef, editorOpen, editorReturnSector, formatMoney, formatOrderItemTitle, FriendlyNumberInput, isAdmin, isArchivedOrderRecord, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderPanelStyle, references, removeEditorItem, removeEditorPayment, renderOrderSizeSelect, renderOrderSourceAvailability, saveEditorPayment, saveSelectedOrder, savingOrder, sectorStyle, selectedOrder, setEditorDraft, SmartPickerInput, sourceLabel, suggestionValues, updateEditorDraft, updateEditorItem, updateEditorPayment }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, isArchivedOrderRecord, isReturnedOrderRecord, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderLifecycleLabel, orderPanelStyle, orders, paymentStatusClass, paymentStatusLabel, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Детали заказа">
-        <OrderDetailsSection ctx={{ formatDateShort, formatMoney, formatOrderItemTitle, handleEditOrder, isAdmin, isArchivedOrderRecord, isReturnedOrderRecord, orderPanelStyle, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrder, setSelectedWorkshopStatus, sourceLabel }} />
+        <OrderDetailsSection ctx={{ formatDateShort, formatMoney, formatOrderItemTitle, handleEditOrder, isAdmin, orderPanelStyle, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrder, sourceLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'debt'} label="Закрытие долга">
