@@ -11,9 +11,10 @@ const app = read('src/App.tsx')
 const table = read('src/features/sections/OrdersTableSection.tsx')
 const types = read('src/app/types.ts')
 
-check(relations.includes('const exchangesByOrderId = new Map<number, unknown[]>()'), 'Order relations do not carry Exchange state')
-check(relations.includes('SELECT id, order_id, status FROM exchanges WHERE order_id IN'), 'Order relation loader does not batch-load exchanges')
-check(relations.includes('appendRows(exchangesByOrderId, exchangesResult.results || [])'), 'Exchange relation rows are not attached to orders')
+check(relations.includes('const committedExchangeCountByOrderId = new Map<number, number>()'), 'Order relations do not carry committed Exchange state')
+check(relations.includes('exchange_counts AS ('), 'Order relation loader does not batch-count committed exchanges')
+check(relations.includes('committedExchangeCountByOrderId.set(orderId'), 'Committed Exchange counts are not attached to orders')
+check(!relations.includes('exchangesResult'), 'R19 must not add a seventh Promise.all D1 query')
 
 check(ordersRead.includes('committed_return_count:'), 'Order list does not publish committed Return count')
 check(ordersRead.includes('committed_exchange_count:'), 'Order list does not publish committed Exchange count')
