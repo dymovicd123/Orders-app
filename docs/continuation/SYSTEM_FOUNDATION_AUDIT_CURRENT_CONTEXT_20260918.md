@@ -6,11 +6,11 @@ This file is the current continuation pointer for the Orders-app foundation clea
 
 - GitHub repository: `dymovicd123/Orders-app`.
 - Current Stage 0+1 implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green Stage 0+1 head: `fc797f5da88ddb5eaa409b2101583c8910529b7f`.
+- Current green Stage 0+1 head: `3d1e28748d0892126f2deb7ca30b6bfa98f5f5c3`.
 - Production D1 has not been changed by the Stage 0+1 work.
 - Branch2 is a separate environment and must not be casually folded into Production work.
 - Branch2 is reserved for interactive UI/end-to-end proving of coherent Stage01 groups before Production. Feature-branch static/CI work should remain isolated until it is ready for that test.
-- Branch2 current proving head: `fc797f5da88ddb5eaa409b2101583c8910529b7f` (R1–R11 green).
+- Branch2 current proving head: `3d1e28748d0892126f2deb7ca30b6bfa98f5f5c3` (R1–R12 green).
 - `Приход` remains a frozen/high-risk surface unless a separate approved task explicitly requires changing it.
 
 ## Why Stage 0+1 exists
@@ -171,6 +171,18 @@ Focused regression:
 
 Validation: GitHub Actions run `35339510564` passed the cumulative release gate, dependency audits and production build. Temporary PR #81 was closed without merge. Branch2 was fast-forwarded to `fc797f5da88ddb5eaa409b2101583c8910529b7f`.
 
+
+## Completed slice L — Resolver reservation identity
+
+Resolver now cannot expose a corrected canonical SKU while an active physical reservation still points at the previous SKU.
+
+For active unsent work, physical reservation truth is aligned and re-read first; only then are the order item's current canonical links published. Already-issued/fulfilled physical history remains immutable, and sent historical orders remain identity-only.
+
+Focused regression:
+- `scripts/test-stage01-resolver-active-reservation-r12.mjs`
+
+Validation: GitHub Actions run `35340711953` passed the cumulative release gate, dependency audits and production build. Temporary PR #82 was closed without merge. Branch2 was fast-forwarded to `3d1e28748d0892126f2deb7ca30b6bfa98f5f5c3`.
+
 ## Validation state
 
 R2 passed the cumulative release gate and production build on GitHub Actions run `35327687377`.
@@ -192,6 +204,8 @@ R9 passed the same full gate on GitHub Actions run `35336256637`. Temporary PR #
 R10 passed the same full gate on GitHub Actions run `35337039333`. Temporary PR #80 was closed without merge.
 
 R11 passed the same full gate on GitHub Actions run `35339510564`. Temporary PR #81 was closed without merge, and Branch2 was fast-forwarded to the same green head.
+
+R12 passed the same full gate on GitHub Actions run `35340711953`. Temporary PR #82 was closed without merge, and Branch2 was fast-forwarded to the same green head.
 
 R6 passed the same full gate on GitHub Actions run `35332881155`. Temporary PR #76 was closed without merge.
 
