@@ -6,7 +6,7 @@ This file is the current continuation pointer for the Orders-app foundation clea
 
 - GitHub repository: `dymovicd123/Orders-app`.
 - Current Stage 0+1 implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green Stage 0+1 head: `ce4dbadf9e55c341311d858839bc44ccd26223e0`.
+- Current green Stage 0+1 head: `839bb98015830efd36cdad5f41aa997b265e8abb`.
 - Production D1 has not been changed by the Stage 0+1 work.
 - Branch2 is a separate environment and must not be casually folded into Production work.
 - `Приход` remains a frozen/high-risk surface unless a separate approved task explicitly requires changing it.
@@ -93,6 +93,17 @@ Focused regression:
 
 Validation: GitHub Actions run `35332881155` passed the cumulative release gate, dependency audits and production build. Temporary PR #76 was closed without merge.
 
+## Completed slice G — Bulk Workshop cache boundary
+
+`bulkUpdateWorkshopTasks()` now commits concrete task/item truth before refreshing the compatibility `orders.workshop_status` cache.
+
+The cache refresh is a single bounded affected-order update and is best-effort. A stale/failed coarse cache cannot block valid bulk Workshop work.
+
+Focused regression:
+- `scripts/test-stage01-workshop-bulk-cache-r7.mjs`
+
+Validation: GitHub Actions run `35333766883` passed the cumulative release gate, dependency audits and production build. Temporary PR #77 was closed without merge.
+
 ## Validation state
 
 R2 passed the cumulative release gate and production build on GitHub Actions run `35327687377`.
@@ -104,6 +115,8 @@ R4 passed the same full gate on GitHub Actions run `35331323128`. Temporary PR #
 R5 passed the same full gate on GitHub Actions run `35332084525`. Temporary PR #75 was closed without merge.
 
 R6 passed the same full gate on GitHub Actions run `35332881155`. Temporary PR #76 was closed without merge.
+
+R7 passed the same full gate on GitHub Actions run `35333766883`. Temporary PR #77 was closed without merge.
 
 ## Important distinction for the next audit
 
