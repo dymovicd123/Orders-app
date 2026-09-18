@@ -593,6 +593,26 @@ const stage01ResolverActiveReservationNormalizeBlock = [
 ].join('\n')
 patched = patched.replace(stage01ResolverActiveReservationNormalizeAnchor, stage01ResolverActiveReservationNormalizeBlock + stage01ResolverActiveReservationNormalizeAnchor)
 
+const stage01HandoverPhysicalIdentityR13 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-handover-physical-canonical-identity-r13-worker-manifest.json'), 'utf8'))
+if (stage01HandoverPhysicalIdentityR13.version !== 1 || stage01HandoverPhysicalIdentityR13.revision !== 'stage01-handover-physical-canonical-identity-r13') throw new Error('Stage01 handover physical identity R13 Worker manifest invalid')
+if (Object.keys(stage01HandoverPhysicalIdentityR13.changes || {}).sort().join(',') !== 'fetchOrderStockHandoverRows,fulfillOrderReservationsV2,getOrderShipmentInventoryBlockers,stockHandoverItemFromRow') throw new Error('Stage01 handover physical identity R13 Worker allow-list widened')
+patched = 'const stage01HandoverPhysicalIdentityR13Changes = ' + JSON.stringify(stage01HandoverPhysicalIdentityR13.changes || {}) + '\n' + patched
+
+const stage01HandoverPhysicalIdentityNormalizeAnchor = '  const removedNames = Object.keys(removed)\n'
+if (!patched.includes(stage01HandoverPhysicalIdentityNormalizeAnchor)) throw new Error('Stage01 handover physical identity R13 normalization anchor missing')
+const stage01HandoverPhysicalIdentityNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01HandoverPhysicalIdentityR13Changes)) {',
+  "    check(declarations.has(name), 'Stage01 handover physical identity R13 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 handover physical identity R13 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 handover physical identity R13 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01HandoverPhysicalIdentityNormalizeAnchor, stage01HandoverPhysicalIdentityNormalizeBlock + stage01HandoverPhysicalIdentityNormalizeAnchor)
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
