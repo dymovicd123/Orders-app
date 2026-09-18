@@ -44,6 +44,13 @@ jobs:
           set -euo pipefail
           npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "SELECT id,name,applied_at FROM d1_migrations ORDER BY id;"
 
+      - name: Inspect ledger tail and shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "SELECT id,name,applied_at FROM d1_migrations ORDER BY id DESC LIMIT 15;"
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "PRAGMA table_info(d1_migrations);"
+
       - name: Check durable schema markers 0045-0070
         shell: bash
         run: |
