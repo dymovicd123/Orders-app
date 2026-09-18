@@ -52,7 +52,7 @@ check(app.includes("if (!isAdmin && inventoryPanel === 'catalog') setInventoryPa
 check(app.includes("if (!isAdmin && inventoryDraft.movementType === 'arrival' && cleanItems.some((item) => !item.variantId))"), 'known-only Arrival boundary missing in frontend')
 check(app.includes("Новый товар или новая характеристика требуют админ-режима"), 'ordinary user needs a clear master-data boundary message')
 check(projection.includes('const mutableWorkingOrder = !retainedOnly && !archived && !deleted'), 'deleted/archived order edit protection must remain in shared projection')
-check(projection.includes('canEdit: mutableWorkingOrder && !hasActiveReturnOperation && (simpleAdmin || !sent)'), 'sent order manager edit protection must remain in shared projection')
+check(projection.includes('canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation && (simpleAdmin || !sent)'), 'sent order manager edit protection must remain in shared projection')
 check(!app.includes("order.order_status !== 'active' || order.shipping_status === 'sent'"), 'closed unshipped orders must remain editable in working mode')
 
 check(section.includes("{ value: 'movement' as const, label: 'Операции'"), 'manager-safe operations tab missing')
