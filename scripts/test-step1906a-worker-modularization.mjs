@@ -377,6 +377,33 @@ patched = patched.replace(stage01WorkshopRouterAnchor, [
   stage01WorkshopRouterAnchor,
 ].join('\n'))
 
+const stage01FinanceCorrectionReliabilityR4 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-finance-correction-reliability-r4-worker-manifest.json'), 'utf8'))
+if (stage01FinanceCorrectionReliabilityR4.version !== 1 || stage01FinanceCorrectionReliabilityR4.revision !== 'stage01-finance-correction-reliability-r4') throw new Error('Stage01 finance correction reliability R4 Worker manifest invalid')
+if (Object.keys(stage01FinanceCorrectionReliabilityR4.changes || {}).join(',') !== 'correctExchangeFinancials') throw new Error('Stage01 finance correction reliability R4 Worker allow-list widened')
+patched = 'const stage01FinanceCorrectionReliabilityR4Changes = ' + JSON.stringify(stage01FinanceCorrectionReliabilityR4.changes || {}) + '\n' + patched
+
+const stage01FinanceA5AddedAnchor = [
+  '  for (const [name, expectedHash] of Object.entries(operationalAutonomyA5Added)) {',
+  "    check(declarations.has(name), 'Operational Autonomy A5 added Worker declaration missing: ' + name)",
+  "    check(sha(declarations.get(name)) === expectedHash, 'Operational Autonomy A5 added Worker declaration changed: ' + name)",
+  '  }',
+  '',
+].join('\n')
+if (!patched.includes(stage01FinanceA5AddedAnchor)) throw new Error('Stage01 finance correction reliability R4 A5-added predecessor anchor missing')
+patched = patched.replace(stage01FinanceA5AddedAnchor, [
+  '  for (const [name, expectedHash] of Object.entries(operationalAutonomyA5Added)) {',
+  "    check(declarations.has(name), 'Operational Autonomy A5 added Worker declaration missing: ' + name)",
+  '    const stage01FinanceCorrectionChanged = stage01FinanceCorrectionReliabilityR4Changes[name]',
+  '    if (stage01FinanceCorrectionChanged) {',
+  "      check(stage01FinanceCorrectionChanged.before === expectedHash, 'Stage01 finance correction reliability R4 predecessor drifted: ' + name)",
+  '    }',
+  "    check(sha(declarations.get(name)) === (stage01FinanceCorrectionChanged ? stage01FinanceCorrectionChanged.after : expectedHash), stage01FinanceCorrectionChanged",
+  "      ? 'Stage01 finance correction reliability R4 declaration changed beyond exact delta: ' + name",
+  "      : 'Operational Autonomy A5 added Worker declaration changed: ' + name)",
+  '  }',
+  '',
+].join('\n'))
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
