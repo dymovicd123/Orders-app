@@ -6,11 +6,11 @@ This file is the current continuation pointer for the Orders-app foundation clea
 
 - GitHub repository: `dymovicd123/Orders-app`.
 - Current Stage 0+1 implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green Stage 0+1 head: `5db747e685f7e94b30edc26210c705cef5a9e3e4`.
+- Current green Stage 0+1 head: `867fdaae5d15a66a38da195d05d47eca62ccbd2b`.
 - Production D1 has not been changed by the Stage 0+1 work.
 - Branch2 is a separate environment and must not be casually folded into Production work.
 - Branch2 is reserved for interactive UI/end-to-end proving of coherent Stage01 groups before Production. Feature-branch static/CI work should remain isolated until it is ready for that test.
-- Branch2 current proving head: `5db747e685f7e94b30edc26210c705cef5a9e3e4` (R1–R15 green).
+- Branch2 current proving head: `867fdaae5d15a66a38da195d05d47eca62ccbd2b` (R1–R16 green).
 - `Приход` remains a frozen/high-risk surface unless a separate approved task explicitly requires changing it.
 
 ## Why Stage 0+1 exists
@@ -229,6 +229,23 @@ Focused regression:
 
 Validation: GitHub Actions run `35347157116` passed the cumulative release gate, dependency audits and production build. Temporary PR #85 was closed without merge. Branch2 was fast-forwarded to `5db747e685f7e94b30edc26210c705cef5a9e3e4`.
 
+## Completed slice P — Live inventory current identity
+
+The ordinary Warehouse stock list was the remaining live physical-state surface that still rendered, searched and sorted by `inventory_stock` snapshot labels even when a valid current catalog link existed.
+
+R16 makes live stock follow current canonical product/SKU identity while preserving the different semantics of movement history:
+
+- current stock display projects the linked catalog product/variant first;
+- current catalog vocabulary is searchable;
+- old stock snapshot vocabulary remains searchable as fallback/history;
+- stock sorting follows the working identity;
+- `inventory_movements` remains event-time snapshot evidence and is not rewritten or relabelled canonically.
+
+Focused regression:
+- `scripts/test-stage01-inventory-current-canonical-identity-r16.mjs`
+
+Validation: the first two CI attempts failed only in the cumulative 190.6A wrapper because the newly generated structural manifest included declaration-boundary whitespace/export text that the AST-normalized gate does not retain. The manifest boundary was corrected without changing business code. Final GitHub Actions run `35351019907` passed the cumulative release gate, dependency audits and production build. Temporary PR #86 was closed without merge. Branch2 was fast-forwarded to `867fdaae5d15a66a38da195d05d47eca62ccbd2b`.
+
 ## Validation state
 
 R2 passed the cumulative release gate and production build on GitHub Actions run `35327687377`.
@@ -259,6 +276,8 @@ R14 passed the same full gate on GitHub Actions run `35345556890`. Temporary PR 
 
 R15 passed the same full gate on GitHub Actions run `35347157116`. Temporary PR #85 was closed without merge, and Branch2 was fast-forwarded to the same green head.
 
+R16 passed the same full gate on GitHub Actions run `35351019907`. Temporary PR #86 was closed without merge, and Branch2 was fast-forwarded to `867fdaae5d15a66a38da195d05d47eca62ccbd2b`.
+
 R6 passed the same full gate on GitHub Actions run `35332881155`. Temporary PR #76 was closed without merge.
 
 R7 passed the same full gate on GitHub Actions run `35333766883`. Temporary PR #77 was closed without merge.
@@ -275,7 +294,7 @@ The next audit must classify each remaining read surface by purpose before chang
 
 ## Immediate next checkpoint
 
-Audit the remaining Finance and any still-live order/inventory surfaces by purpose; Return/Exchange current item availability is now explicit. Live operational views may use canonical current identity; historical/audit/transaction views must preserve order-time evidence. Keep F2–F9 money semantics unchanged unless a concrete contradiction is proven.
+Continue the purpose-based audit. The next concrete live surface to inspect is Warehouse Attention known-intake: it can now act directly on a repaired exact lifecycle variant, so verify that the operator-facing identity shown before that action follows the exact current variant while the lifecycle event snapshot stays available only as historical evidence. Finance product/return reporting and movement/history surfaces should remain snapshot-based unless a real operational contradiction is proven. Keep F2–F9 money semantics unchanged.
 
 See:
 `docs/continuation/STAGE01_IMPLEMENTATION_CHECKPOINT_20260918.md`
