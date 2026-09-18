@@ -1,12 +1,12 @@
 # Stage 0+1 — implementation checkpoint (2026-09-18)
 
-Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
+Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
 
 ## Source of truth
 
 - Production/main baseline at the beginning of this slice: `main`.
 - Implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green implementation head: `839bb98015830efd36cdad5f41aa997b265e8abb`.
+- Current green implementation head: `94eb3927c1fd4a5005023e2b379f358c24b9a5a2`.
 - Branch2 remains separate; its head observed during this work: `fb43e8d709b57b67cc080bb9bd64246bb036aede`.
 - No Production D1 migration/write was performed.
 
@@ -320,9 +320,37 @@ Validation:
 - production build: SUCCESS;
 - dependency audits: SUCCESS.
 
+## R9 — Workshop canonical item truth
+
+The live Workshop read path still enriched product/SKU labels snapshot-first even after Orders and Debt had moved to the shared canonical item projection.
+
+R9 keeps Workshop matching/recovery behavior intact but changes the displayed working identity:
+- linked `order_items` now load the current canonical product name alongside immutable snapshots;
+- exact linked SKU identity is projected through `canonicalItemProjection()`;
+- base-product-only or legacy inferred variant matches do not get promoted into exact canonical SKU truth;
+- the existing inferred `resolved_variant_id` remains available for legacy matching/recovery, but `canonicalItemProjection()` sees the real `oi.variant_id` only;
+- immutable order/task snapshots remain unchanged in D1 and continue to serve as matching/fallback evidence.
+
+This is read-model-only. No Workshop/order snapshot column is rewritten.
+
+Focused regression:
+`scripts/test-stage01-workshop-canonical-item-r9.mjs`
+
+Exact Worker preservation layer:
+`scripts/stage01-workshop-canonical-item-r9-worker-manifest.json`
+
+Validation:
+- temporary draft PR #79, closed without merge;
+- GitHub Actions Quality check run `35336256637`: SUCCESS;
+- cumulative release gate: SUCCESS;
+- production build: SUCCESS;
+- dependency audits: SUCCESS.
+
 ## Current safety boundary
 
 Do not touch Production D1 while Stage 0+1 is still being assembled.
+
+Branch2 is the UI/integration proving ground. Keep assembling guarded Stage01 slices on the feature branch; when a coherent group is ready for interactive UI/end-to-end validation, move that group into Branch2 rather than testing it in Production.
 
 Do not rewrite order snapshots during Resolver repair.
 
@@ -332,7 +360,7 @@ Do not collapse return money, return workflow, shipping, Workshop, and catalog i
 
 ## Next work
 
-The Order / product identity / Workshop/action slices and the first Finance reliability slice are green. Continue the money/finance audit, but preserve the already-proven F2–F9 semantics and only patch concrete contradictions.
+R1–R9 are green. Continue auditing the remaining Return/Exchange, Finance and historical surfaces by purpose. Do not mechanically convert historical/audit views to canonical-first.
 
 Priority targets:
 
