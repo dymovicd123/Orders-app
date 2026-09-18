@@ -323,6 +323,34 @@ patched = patched.replace(branch2HashAnchor, [
   "        if (orderDeleteLifecycleChanged) check(orderDeleteLifecycleChanged.before === acceptedPostBranch2EnvironmentHash, 'Order delete lifecycle predecessor drifted: ' + name)",
   '        return sha(declarations.get(name)) === (orderDeleteLifecycleChanged ? orderDeleteLifecycleChanged.after : acceptedPostBranch2EnvironmentHash)',
 ].join('\n'))
+const stage01CanonicalItemProjection = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-canonical-item-projection-r2-worker-manifest.json'), 'utf8'))
+if (stage01CanonicalItemProjection.version !== 1 || stage01CanonicalItemProjection.revision !== 'stage01-canonical-item-projection-r2') throw new Error('Stage01 canonical item projection Worker manifest invalid')
+if (Object.keys(stage01CanonicalItemProjection.changes || {}).sort().join(',') !== 'getOrder,listOrders') throw new Error('Stage01 canonical item projection Worker change allow-list widened')
+if (Object.keys(stage01CanonicalItemProjection.added || {}).join(',') !== 'canonicalItemProjection') throw new Error('Stage01 canonical item projection Worker added allow-list widened')
+patched = 'const stage01CanonicalItemProjectionChanges = ' + JSON.stringify(stage01CanonicalItemProjection.changes || {}) + '\n'
+  + 'const stage01CanonicalItemProjectionAdded = ' + JSON.stringify(stage01CanonicalItemProjection.added || {}) + '\n'
+  + patched
+const stage01CanonicalCountAnchor = ' + Object.keys(financeDayAdded).length'
+if (!patched.includes(stage01CanonicalCountAnchor)) throw new Error('Stage01 canonical item projection declaration-count anchor missing')
+patched = patched.replace(stage01CanonicalCountAnchor, stage01CanonicalCountAnchor + ' + Object.keys(stage01CanonicalItemProjectionAdded).length')
+const stage01CanonicalHashAnchor = '        return sha(declarations.get(name)) === (orderDeleteLifecycleChanged ? orderDeleteLifecycleChanged.after : acceptedPostBranch2EnvironmentHash)'
+if (!patched.includes(stage01CanonicalHashAnchor)) throw new Error('Stage01 canonical item projection predecessor hash anchor missing')
+patched = patched.replace(stage01CanonicalHashAnchor, [
+  '        const acceptedPostOrderDeleteLifecycleHash = orderDeleteLifecycleChanged ? orderDeleteLifecycleChanged.after : acceptedPostBranch2EnvironmentHash',
+  '        const stage01CanonicalItemProjectionChanged = stage01CanonicalItemProjectionChanges[name]',
+  "        if (stage01CanonicalItemProjectionChanged) check(stage01CanonicalItemProjectionChanged.before === acceptedPostOrderDeleteLifecycleHash, 'Stage01 canonical item projection predecessor drifted: ' + name)",
+  '        return sha(declarations.get(name)) === (stage01CanonicalItemProjectionChanged ? stage01CanonicalItemProjectionChanged.after : acceptedPostOrderDeleteLifecycleHash)',
+].join('\n'))
+const stage01CanonicalAddedAnchor = '  // Catalog gender scope R1 changes only the product create/update request shapes.'
+if (!patched.includes(stage01CanonicalAddedAnchor)) throw new Error('Stage01 canonical item projection added-declaration anchor missing')
+patched = patched.replace(stage01CanonicalAddedAnchor, [
+  '  for (const [name, hash] of Object.entries(stage01CanonicalItemProjectionAdded)) {',
+  "    check(declarations.has(name) && sha(declarations.get(name)) === hash, 'Stage01 canonical item projection added declaration changed: ' + name)",
+  '  }',
+  '',
+  stage01CanonicalAddedAnchor,
+].join('\n'))
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
