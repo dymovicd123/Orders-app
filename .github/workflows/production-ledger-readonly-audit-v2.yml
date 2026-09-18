@@ -1,0 +1,174 @@
+name: Production migration ledger reconstruction audit v2
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: production-ledger-readonly-audit-v2
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_API: https://api.cloudflare.com/client/v4
+      PROD_DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      BRANCH2_DB_ID: 40065052-854e-44b8-bcd5-251bdd488301
+      EXPECTED_MAIN_SHA: 0ff105ab2941e20cbd0259c204f77bc767af45ca
+      EXPECTED_WORKFLOW_PATH: .github/workflows/production-ledger-readonly-audit-v2.yml
+
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Guard exact Production baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_MAIN_SHA"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_MAIN_SHA"
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_MAIN_SHA" HEAD)
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = "$EXPECTED_WORKFLOW_PATH"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Hard guard Production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/test-production-environment.mjs
+
+      - name: Read ledgers and prove Branch2 ledger matches repository migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          query_db() {
+            local db_id="$1"
+            local sql="$2"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$db_id/query"
+          }
+
+          query_db "$PROD_DB_ID" "SELECT id,name,applied_at FROM d1_migrations ORDER BY id;" > /tmp/prod-ledger-response.json
+          query_db "$BRANCH2_DB_ID" "SELECT id,name,applied_at FROM d1_migrations ORDER BY id;" > /tmp/b2-ledger-response.json
+          jq -e '.success == true and .result[0].success == true' /tmp/prod-ledger-response.json >/dev/null
+          jq -e '.success == true and .result[0].success == true' /tmp/b2-ledger-response.json >/dev/null
+          jq '.result[0].results' /tmp/prod-ledger-response.json > /tmp/prod-ledger.json
+          jq '.result[0].results' /tmp/b2-ledger-response.json > /tmp/b2-ledger.json
+
+          echo "=== Production ledger ==="
+          cat /tmp/prod-ledger.json
+          echo "=== Branch2 ledger row count ==="
+          jq 'length' /tmp/b2-ledger.json
+
+          node <<'NODE'
+          const fs=require('fs');
+          const repoFiles=fs.readdirSync('migrations').filter(x=>x.endsWith('.sql')).sort();
+          const b2=JSON.parse(fs.readFileSync('/tmp/b2-ledger.json','utf8')).map(x=>x.name).sort();
+          const prod=JSON.parse(fs.readFileSync('/tmp/prod-ledger.json','utf8')).map(x=>x.name).sort();
+          const missingInB2=repoFiles.filter(x=>!b2.includes(x));
+          const extraInB2=b2.filter(x=>!repoFiles.includes(x));
+          const missingInProd=repoFiles.filter(x=>!prod.includes(x));
+          const extraInProd=prod.filter(x=>!repoFiles.includes(x));
+          console.log(JSON.stringify({
+            repoMigrationCount:repoFiles.length,
+            branch2LedgerCount:b2.length,
+            productionLedgerCount:prod.length,
+            missingInBranch2:missingInB2,
+            extraInBranch2,
+            missingInProduction:missingInProd,
+            extraInProduction:extraInProd
+          },null,2));
+          if(repoFiles.length!==73 || missingInB2.length || extraInB2.length) process.exit(3);
+          if(prod.length!==2 || !prod.includes('0001_init.sql') || !prod.includes('0067_v72_o1_read_budget_indexes.sql')) process.exit(4);
+          NODE
+
+      - name: Compare current Production and Branch2 physical schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          query_db() {
+            local db_id="$1"
+            local sql="$2"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$db_id/query"
+          }
+
+          objects_sql="SELECT type,name,tbl_name FROM sqlite_master
+            WHERE name NOT LIKE 'sqlite_%' AND name NOT LIKE 'd1_%' AND name NOT LIKE '_cf_%'
+            ORDER BY type,name,tbl_name;"
+          columns_sql="SELECT m.name AS table_name,p.name AS column_name,UPPER(COALESCE(p.type,'')) AS column_type,
+            p.[notnull] AS not_null,COALESCE(p.dflt_value,'') AS default_value,p.pk AS pk
+            FROM sqlite_master m, pragma_table_info(m.name) p
+            WHERE m.type='table'
+              AND m.name NOT LIKE 'sqlite_%' AND m.name NOT LIKE 'd1_%' AND m.name NOT LIKE '_cf_%'
+            ORDER BY m.name,p.cid;"
+
+          query_db "$PROD_DB_ID" "$objects_sql" | jq -S '.result[0].results' > /tmp/prod-objects.json
+          query_db "$BRANCH2_DB_ID" "$objects_sql" | jq -S '.result[0].results' > /tmp/b2-objects.json
+          query_db "$PROD_DB_ID" "$columns_sql" | jq -S '.result[0].results' > /tmp/prod-columns.json
+          query_db "$BRANCH2_DB_ID" "$columns_sql" | jq -S '.result[0].results' > /tmp/b2-columns.json
+
+          jq -r '.[] | [.type,.name,.tbl_name] | @tsv' /tmp/prod-objects.json | sort > /tmp/prod-objects.tsv
+          jq -r '.[] | [.type,.name,.tbl_name] | @tsv' /tmp/b2-objects.json | sort > /tmp/b2-objects.tsv
+          jq -r '.[] | [.table_name,.column_name,.column_type,(.not_null|tostring),.default_value,(.pk|tostring)] | @tsv' /tmp/prod-columns.json | sort > /tmp/prod-columns.tsv
+          jq -r '.[] | [.table_name,.column_name,.column_type,(.not_null|tostring),.default_value,(.pk|tostring)] | @tsv' /tmp/b2-columns.json | sort > /tmp/b2-columns.tsv
+
+          echo "=== Schema object differences ==="
+          diff -u /tmp/b2-objects.tsv /tmp/prod-objects.tsv || true
+          echo "=== Column differences ==="
+          diff -u /tmp/b2-columns.tsv /tmp/prod-columns.tsv || true
+          cmp -s /tmp/b2-objects.tsv /tmp/prod-objects.tsv
+          cmp -s /tmp/b2-columns.tsv /tmp/prod-columns.tsv
+          echo "PRODUCTION AND BRANCH2 CURRENT OBJECT/COLUMN SCHEMA MATCH"
+
+      - name: Verify durable migration invariants in Production
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            local sql="$1"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/query"
+          }
+          proof="$(query "SELECT
+            COALESCE((SELECT value FROM inventory_model_meta WHERE key='human_inventory_v2'),'') AS human_inventory_v2,
+            COALESCE((SELECT value FROM inventory_model_meta WHERE key='safe_early_handover_v1_guard'),'') AS safe_early_handover_v1_guard,
+            COALESCE((SELECT value FROM catalog_identity_meta WHERE key='catalog_identity_v3'),'') AS catalog_identity_v3,
+            COALESCE((SELECT value FROM catalog_identity_meta WHERE key='catalog_cleanup_188j'),'') AS catalog_cleanup_188j,
+            COALESCE((SELECT value FROM catalog_identity_meta WHERE key='client_cleanup_188k2'),'') AS client_cleanup_188k2,
+            COALESCE((SELECT value FROM app_settings WHERE key='financial_history_model'),'') AS financial_history_model,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM order_search_items_fts) AS fts_rows_count,
+            (SELECT COUNT(DISTINCT rowid) FROM order_search_items_fts) AS fts_distinct_rowids,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('trg_order_search_items_ai','trg_order_search_items_ad','trg_order_search_items_au','trg_order_search_catalog_products_au','trg_order_search_catalog_variants_au')) AS r14_trigger_count;")"
+          echo "$proof" | jq '.result[0].results[0]'
+          jq -e '.success==true and .result[0].success==true and
+            .result[0].results[0].human_inventory_v2=="active" and
+            .result[0].results[0].safe_early_handover_v1_guard=="ready" and
+            .result[0].results[0].catalog_identity_v3=="active" and
+            .result[0].results[0].catalog_cleanup_188j=="active" and
+            .result[0].results[0].client_cleanup_188k2=="active" and
+            .result[0].results[0].financial_history_model=="189c-v1" and
+            .result[0].results[0].order_items_count==.result[0].results[0].fts_rows_count and
+            .result[0].results[0].order_items_count==.result[0].results[0].fts_distinct_rowids and
+            .result[0].results[0].r14_trigger_count==5' <<<"$proof" >/dev/null
+
+      - name: Show current Wrangler pending view
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations list DB --remote --config wrangler.jsonc | tee /tmp/pending.txt
