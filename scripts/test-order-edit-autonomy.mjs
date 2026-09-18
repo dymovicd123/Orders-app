@@ -30,7 +30,7 @@ check(!app.includes('Редактирование заказа доступно 
 check(!app.includes('Сохранение редактирования заказа доступно только администратору.'), 'frontend still blocks ordinary edit at save')
 check(app.includes("await import('./app/orderOperationalProjection')"), 'controller does not consume the shared operational projection')
 const openEditHandler = app.slice(app.indexOf('async function handleEditOrder('), app.indexOf('function upsertOrderInState'))
-const persistEditHandler = app.slice(app.indexOf('async function persistOrder('), app.indexOf('async function archiveOrderAsAdmin'))
+const persistEditHandler = app.slice(app.indexOf('async function persistOrder('), app.indexOf('async function loadArchivePreview'))
 check(openEditHandler.includes('await getOrderOperationalProjection(order)') && openEditHandler.includes('!projection.canEdit'), 'controller safe-scope guard missing at edit open')
 check(persistEditHandler.includes('await getOrderOperationalProjection(order)') && persistEditHandler.includes('!projection.canEdit'), 'controller safe-scope guard missing at edit save')
 check(!app.includes("order.order_status !== 'active' || order.shipping_status === 'sent'"), 'controller still blocks closed unshipped orders')
