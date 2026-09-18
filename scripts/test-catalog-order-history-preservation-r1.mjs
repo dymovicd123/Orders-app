@@ -49,8 +49,11 @@ check(relations.includes('originalSnapshot,'), 'historical order-time snapshot i
 for (const [name, source] of [['orders table/list', ordersRead], ['single-order readback', ordersWrite]]) {
   check(source.includes('...canonicalItemProjection(item as Record<string, unknown>)'), name + ' stopped using the shared canonical/history projection')
 }
-check(ordersRead.includes("COALESCE(oi.product_name_snapshot, p.name, '') AS product_name"), 'debt-order item name must prefer historical snapshot')
-check(ordersRead.includes("COALESCE(oi.size_snapshot, v.size_label, '') AS size_label"), 'debt-order item size must prefer historical snapshot')
+const debtStart = ordersRead.indexOf('export async function listOpenDebtOrders')
+check(debtStart >= 0, 'Debt order reader missing')
+const debtRead = ordersRead.slice(debtStart)
+check(debtRead.includes('...canonicalItemProjection(item)'), 'Debt order reader stopped using shared canonical/history projection')
+check(debtRead.includes('oi.product_name_snapshot') && debtRead.includes('oi.size_snapshot'), 'Debt order reader stopped preserving order-time snapshot input for fallback/history')
 
 // Frontend order surfaces render API order.items; the details view may expose the preserved order-time snapshot separately.
 check(tableUi.includes('order.items'), 'OrdersTableSection must render returned order items')
