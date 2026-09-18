@@ -1,12 +1,12 @@
 # Stage 0+1 — implementation checkpoint (2026-09-18)
 
-Status: R1 + R2 + R3 + R4 + R5 + R6 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
+Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
 
 ## Source of truth
 
 - Production/main baseline at the beginning of this slice: `main`.
 - Implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green implementation head: `ce4dbadf9e55c341311d858839bc44ccd26223e0`.
+- Current green implementation head: `839bb98015830efd36cdad5f41aa997b265e8abb`.
 - Branch2 remains separate; its head observed during this work: `fb43e8d709b57b67cc080bb9bd64246bb036aede`.
 - No Production D1 migration/write was performed.
 
@@ -219,6 +219,34 @@ Exact Worker preservation layer:
 Final validation:
 - temporary draft PR #76, closed without merge;
 - GitHub Actions Quality check run `35332881155`: SUCCESS;
+- cumulative release gate: SUCCESS;
+- production build: SUCCESS;
+- dependency audits: SUCCESS.
+
+## R7 — Bulk Workshop cache is secondary
+
+The remaining Workshop write path `bulkUpdateWorkshopTasks()` still transaction-coupled the coarse `orders.workshop_status` cache to the authoritative task/item mutations.
+
+R7 separates those layers:
+
+- bulk `workshop_tasks` and linked `order_items` changes still commit together atomically;
+- only after that concrete truth commits, the affected orders are deduplicated;
+- one bounded cache refresh updates `orders.workshop_status` for those order ids;
+- cache refresh failure is caught and logged and cannot roll back or false-fail the valid Workshop bulk work.
+
+This completes the same task-first/cache-second rule already used by single Workshop actions and Return/Exchange paths.
+
+Focused regression:
+`scripts/test-stage01-workshop-bulk-cache-r7.mjs`
+
+Exact Worker preservation layer:
+`scripts/stage01-workshop-bulk-cache-reliability-r7-worker-manifest.json`
+
+Validation:
+- first CI run exposed only a coordinate bug in the new static regression; production code had already built and the preceding release checks were green;
+- the regression was corrected without changing business code;
+- final temporary draft PR #77, closed without merge;
+- GitHub Actions Quality check run `35333766883`: SUCCESS;
 - cumulative release gate: SUCCESS;
 - production build: SUCCESS;
 - dependency audits: SUCCESS.
