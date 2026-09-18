@@ -1,13 +1,13 @@
 # Stage 0+1 — implementation checkpoint (2026-09-18)
 
-Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 + R11 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
+Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 + R11 + R12 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
 
 ## Source of truth
 
 - Production/main baseline at the beginning of this slice: `main`.
 - Implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green implementation head: `fc797f5da88ddb5eaa409b2101583c8910529b7f`.
-- Branch2 is the isolated UI/integration proving environment. After R11 passed the full gate it was fast-forwarded to the same green head: `fc797f5da88ddb5eaa409b2101583c8910529b7f`.
+- Current green implementation head: `3d1e28748d0892126f2deb7ca30b6bfa98f5f5c3`.
+- Branch2 is the isolated UI/integration proving environment. After R12 passed the full gate it was fast-forwarded to the same green head: `3d1e28748d0892126f2deb7ca30b6bfa98f5f5c3`.
 - No Production D1 migration/write was performed.
 
 ## R1 — OrderOperationalProjection
@@ -405,6 +405,37 @@ Validation:
 - dependency audits: SUCCESS;
 - Branch2 fast-forwarded to the same green R11 head `fc797f5da88ddb5eaa409b2101583c8910529b7f`.
 
+
+## R12 — Resolver and active reservation stay one physical truth
+
+The audit found a high-risk split in the live shipping path. Resolver could repair `order_items.product_id / variant_id`, while an already-active `inventory_reservations` row kept pointing at the previous SKU. The order could therefore display one canonical SKU while final handover physically decremented another.
+
+R12 makes active unsent Resolver repair reservation-first:
+
+- an active reservation is compared with the Resolver target by source, exact variant and quantity;
+- a matching active reservation keeps its id/lineage and only refreshes the redundant product FK;
+- a mismatching active reservation is released first so the old SKU's `reserved_quantity` is corrected, then its current-state row is replaced by an exact reservation for the Resolver target;
+- unresolved/released placeholder reservations are removed before exact reservation creation;
+- a retry marker keeps the order item in `catalog_unresolved` if replacement reservation creation fails;
+- the committed reservation is re-read and must match active source/product/variant/quantity before the new canonical identity is published on the order item;
+- fulfilled/already-issued physical history is never re-reserved;
+- sent/historical order behavior remains identity-only and does not manufacture present-day stock movement.
+
+Focused regression:
+`scripts/test-stage01-resolver-active-reservation-r12.mjs`
+
+Exact Worker preservation layer:
+`scripts/stage01-resolver-active-reservation-r12-worker-manifest.json`
+
+Validation:
+- first CI run exposed only an over-broad coordinate in the new focused regression; business code and the preceding cumulative release check were already green;
+- final temporary draft PR #82 was closed without merge;
+- GitHub Actions Quality check run `35340711953`: SUCCESS;
+- cumulative release gate: SUCCESS;
+- production build: SUCCESS;
+- dependency audits: SUCCESS;
+- Branch2 fast-forwarded to `3d1e28748d0892126f2deb7ca30b6bfa98f5f5c3`.
+
 ## Current safety boundary
 
 Do not touch Production D1 while Stage 0+1 is still being assembled.
@@ -419,7 +450,7 @@ Do not collapse return money, return workflow, shipping, Workshop, and catalog i
 
 ## Next work
 
-R1–R11 are green. Continue auditing the remaining Return/Exchange, Finance and historical surfaces by purpose. Do not mechanically convert historical/audit views to canonical-first.
+R1–R12 are green. Continue auditing the remaining Return/Exchange, Finance and historical surfaces by purpose. Do not mechanically convert historical/audit views to canonical-first.
 
 Priority targets:
 
