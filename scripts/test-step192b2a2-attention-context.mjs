@@ -61,7 +61,9 @@ try {
   check(!panel.includes('В остальных заказах') && !panel.includes('разбираются отдельно во вкладке «Выдача»'), 'Shortage/count explanation leaked back into secondary clarification')
 
   // Known exact inbound is intake, unknown identity stays identify. No six-field form for an exact known SKU.
-  check(attention.includes('exactKnown: Boolean') && attention.includes("cleanText(row.direction) === 'in'"), 'Exact known inbound classification missing')
+  // Inspect the lifecycle projection itself; do not accidentally satisfy this guard from the separate found-stock model.
+  const lifecycleProjection = between(attention, 'const lifecycleItems =', 'response.items =')
+  check(lifecycleProjection.includes('const exactKnown = Boolean(exactVariantId') && lifecycleProjection.includes("cleanText(row.direction) === 'in'"), 'Exact known inbound classification missing')
   check(attention.includes('intake: lifecycleItems.filter((row) => row.exactKnown)') && attention.includes('lifecycle: lifecycleItems.filter((row) => !row.exactKnown)'), 'Known intake and unknown identity are not separated')
   check(panel.includes('Принять в остаток') && panel.includes('Товар уже известен.') && panel.includes('Принимайте только если вещь действительно находится у вас.'), 'Known intake no longer communicates known identity plus physical confirmation')
   check(panel.includes('Здесь только позиции, которым действительно не хватает точной идентичности.'), 'Identify tab still mixes known intake')

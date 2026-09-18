@@ -4,16 +4,65 @@ import { cleanText, toInt } from '../core/text.ts'
 import { matchWorkshopTasksToOrderItems } from './workshop-matching.ts'
 import { fetchOrderStockHandoverRows } from './order-reservations.ts'
 
+export function canonicalItemProjection(item: Record<string, unknown>) {
+  const productId = toInt(item.product_id, 0) || null;
+  const variantId = toInt(item.variant_id, 0) || null;
+  const originalSnapshot = {
+    productName: cleanText(item.product_name_snapshot),
+    audienceType: cleanText(item.audience_type),
+    gender: cleanText(item.gender_snapshot),
+    color: cleanText(item.color_snapshot),
+    material: cleanText(item.material_snapshot),
+    length: cleanText(item.length_snapshot),
+    size: cleanText(item.size_snapshot),
+  };
+
+  const canonicalProductName = cleanText(item.canonical_product_name);
+  const canonicalCategory = cleanText(item.canonical_category).toLowerCase();
+  const hasCanonicalProduct = Boolean(productId && canonicalProductName);
+  const hasCanonicalVariant = Boolean(variantId);
+  const canonicalAudienceType = hasCanonicalProduct && canonicalCategory
+    ? (canonicalCategory === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ')
+    : '';
+
+  return {
+    productId,
+    variantId,
+    catalogIdentity: hasCanonicalVariant ? 'variant' : (hasCanonicalProduct ? 'product' : 'snapshot'),
+    productName: (hasCanonicalProduct ? canonicalProductName : '') || originalSnapshot.productName,
+    audienceType: canonicalAudienceType || originalSnapshot.audienceType,
+    // A base-product-only resolution is enough to update the product name/category, but not
+    // enough to invent SKU characteristics. Exact variant links may safely project the
+    // current canonical SKU while the immutable order-time values stay in originalSnapshot.
+    gender: hasCanonicalVariant ? (cleanText(item.canonical_gender) || originalSnapshot.gender) : originalSnapshot.gender,
+    color: hasCanonicalVariant ? (cleanText(item.canonical_color) || originalSnapshot.color) : originalSnapshot.color,
+    material: hasCanonicalVariant ? (cleanText(item.canonical_material) || originalSnapshot.material) : originalSnapshot.material,
+    length: hasCanonicalVariant ? (cleanText(item.canonical_length) || originalSnapshot.length) : originalSnapshot.length,
+    size: hasCanonicalVariant ? (cleanText(item.canonical_size) || originalSnapshot.size) : originalSnapshot.size,
+    originalSnapshot,
+  };
+}
+
+
+export function orderItemAvailableOperationQuantity(item: Record<string, unknown>) {
+  const currentQuantity = Math.max(0, toInt(item.quantity, 0));
+  const activeStandaloneReturnedQuantity = Math.max(0, toInt(item.active_standalone_returned_quantity, 0));
+  return Math.max(0, currentQuantity - activeStandaloneReturnedQuantity);
+}
+
+
 export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
   const itemsByOrderId = new Map<number, unknown[]>();
   const paymentsByOrderId = new Map<number, unknown[]>();
   const returnsByOrderId = new Map<number, unknown[]>();
+  const committedExchangeCountByOrderId = new Map<number, number>();
+  const hasCommittedItemReturnByOrderId = new Map<number, boolean>();
   const workshopTasksByOrderId = new Map<number, unknown[]>();
   const handoverReviewByOrderId = new Map<number, unknown[]>();
   const activeStockHandoverByOrderId = new Map<number, unknown[]>();
 
   if (!orderIds.length) {
-    return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
+    return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, committedExchangeCountByOrderId, hasCommittedItemReturnByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
   }
 
   const appendRows = (target: Map<number, unknown[]>, rows: unknown[]) => {
@@ -33,8 +82,9 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
   for (let index = 0; index < orderIds.length; index += chunkSize) {
     const chunk = orderIds.slice(index, index + chunkSize);
     const placeholders = chunk.map(() => '?').join(',');
+    const requestedOrderValues = chunk.map(() => '(?)').join(',');
 
-    const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverStateResult] = await Promise.all([
+    const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverStateResult, standaloneReturnedResult] = await Promise.all([
       db.prepare(
         `SELECT oi.*,
                 p.name AS canonical_product_name,
@@ -60,7 +110,51 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
         `SELECT * FROM workshop_tasks WHERE order_id IN (${placeholders}) ORDER BY id ASC`
       ).bind(...chunk).all(),
       fetchOrderStockHandoverRows(db, chunk, { listFlagsOnly: true }),
+      db.prepare(
+        `WITH requested_orders(order_id) AS (VALUES ${requestedOrderValues}),
+         standalone_returns AS (
+           SELECT r.order_id, ri.order_item_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
+           FROM requested_orders ro
+           JOIN returns r ON r.order_id = ro.order_id
+           JOIN return_items ri ON ri.return_id = r.id
+           WHERE COALESCE(r.status, 'completed') <> 'cancelled'
+             AND NOT EXISTS (
+               SELECT 1
+               FROM exchanges e
+               WHERE e.refund_return_id = r.id
+                 AND COALESCE(e.status, 'completed') <> 'cancelled'
+             )
+           GROUP BY r.order_id, ri.order_item_id
+         ),
+         exchange_counts AS (
+           SELECT e.order_id, COUNT(*) AS committed_exchange_count
+           FROM requested_orders ro
+           JOIN exchanges e ON e.order_id = ro.order_id
+           WHERE COALESCE(e.status, 'completed') <> 'cancelled'
+           GROUP BY e.order_id
+         )
+         SELECT ro.order_id, sr.order_item_id, COALESCE(sr.returned_quantity, 0) AS returned_quantity,
+                COALESCE(ec.committed_exchange_count, 0) AS committed_exchange_count
+         FROM requested_orders ro
+         LEFT JOIN standalone_returns sr ON sr.order_id = ro.order_id
+         LEFT JOIN exchange_counts ec ON ec.order_id = ro.order_id`
+      ).bind(...chunk).all<Record<string, unknown>>(),
     ]);
+
+    const activeStandaloneReturnedByItem = new Map<number, number>();
+    for (const row of standaloneReturnedResult.results || []) {
+      const orderId = toInt(row.order_id, 0);
+      if (orderId) committedExchangeCountByOrderId.set(orderId, Math.max(0, toInt(row.committed_exchange_count, 0)));
+      const orderItemId = toInt(row.order_item_id, 0);
+      const returnedQuantity = Math.max(0, toInt(row.returned_quantity, 0));
+      if (!orderItemId) continue;
+      if (returnedQuantity > 0) hasCommittedItemReturnByOrderId.set(orderId, true);
+      activeStandaloneReturnedByItem.set(orderItemId, returnedQuantity);
+    }
+    for (const rawItem of itemsResult.results || []) {
+      const item = rawItem as Record<string, unknown>;
+      item.active_standalone_returned_quantity = activeStandaloneReturnedByItem.get(toInt(item.id, 0)) || 0;
+    }
 
     appendRows(itemsByOrderId, itemsResult.results || []);
     appendRows(paymentsByOrderId, paymentsResult.results || []);
@@ -83,7 +177,7 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
     }
   }
 
-  return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
+  return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, committedExchangeCountByOrderId, hasCommittedItemReturnByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
 }
 
 

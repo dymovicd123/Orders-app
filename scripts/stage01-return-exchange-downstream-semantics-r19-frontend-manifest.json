@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "revision": "stage01-return-exchange-downstream-semantics-r19",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "d60abecb3ff32e4c614637948198eb77bc091810",
+      "afterGitBlob": "413fb378db90f31de49161e86b7091b30415c8a8",
+      "beforeLines": 7313,
+      "afterLines": 7313,
+      "replacements": [
+        {
+          "beforeBlock": "      setMessage(projection.hasActiveReturnOperation\n        ? 'Заказ из Цеха нельзя редактировать, пока по нему есть действующий возврат.'\n        : 'Этот заказ из Цеха сейчас недоступен для обычного редактирования.')",
+          "afterBlock": "      setMessage(projection.hasCommittedDownstreamOperation\n        ? 'Заказ из Цеха нельзя переписывать: по нему уже проведён возврат или обмен. Сначала отмените или исправьте эту последующую операцию штатным действием.'\n        : 'Этот заказ из Цеха сейчас недоступен для обычного редактирования.')"
+        },
+        {
+          "beforeBlock": "      setMessage(projection.hasActiveReturnOperation\n        ? 'Заказ нельзя редактировать, пока по нему есть действующий возврат. Завершите или отмените возврат штатным действием.'\n        : 'Этот заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие или просмотр истории.')",
+          "afterBlock": "      setMessage(projection.hasCommittedDownstreamOperation\n        ? 'Заказ нельзя переписывать: по нему уже проведён возврат или обмен. Сначала отмените или исправьте эту последующую операцию штатным действием.'\n        : 'Этот заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие или просмотр истории.')"
+        },
+        {
+          "beforeBlock": "      setMessage(projection.hasActiveReturnOperation\n        ? 'Заказ нельзя редактировать, пока по нему есть действующий возврат. Завершите или отмените возврат штатным действием.'\n        : 'Этот заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие или просмотр истории.')",
+          "afterBlock": "      setMessage(projection.hasCommittedDownstreamOperation\n        ? 'Заказ нельзя переписывать: по нему уже проведён возврат или обмен. Сначала отмените или исправьте эту последующую операцию штатным действием.'\n        : 'Этот заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие или просмотр истории.')"
+        },
+        {
+          "beforeBlock": "        : projection.hasActiveReturnOperation\n          ? 'Отправка недоступна, пока по заказу есть действующий возврат.'",
+          "afterBlock": "        : projection.hasCommittedDownstreamOperation\n          ? 'Отправка недоступна: по заказу уже проведён возврат или обмен. Сначала отмените или исправьте эту последующую операцию.'"
+        }
+      ]
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "b101b56b1ad1bd1bb76924ee14d6d901fc5610c3",
+      "afterGitBlob": "d92c025681cd20c29729ef60a5a5a2fe84e715e4",
+      "beforeLines": 1715,
+      "afterLines": 1717,
+      "replacements": [
+        {
+          "beforeBlock": "  return_amount: number\n  comment: string | null",
+          "afterBlock": "  return_amount: number\n  committed_return_count?: number\n  committed_exchange_count?: number\n  comment: string | null"
+        }
+      ]
+    },
+    "src/app/orderOperationalProjection.ts": {
+      "beforeGitBlob": "4d13d7202a47fa91719257037baa52db1da4f617",
+      "afterGitBlob": "09f0b45e1c90c076de665ab5ef4634edacfedb48",
+      "beforeLines": 168,
+      "afterLines": 179,
+      "replacements": [
+        {
+          "beforeBlock": "  hasActiveReturnOperation: boolean\n  activeReturnCount: number",
+          "afterBlock": "  hasCommittedReturn: boolean\n  hasCommittedExchange: boolean\n  hasCommittedDownstreamOperation: boolean\n  committedReturnCount: number\n  committedExchangeCount: number"
+        },
+        {
+          "beforeBlock": "  const activeReturns = Array.isArray(order.returns)\n    ? order.returns.filter((entry) => String(entry?.status || 'completed').trim().toLowerCase() !== 'cancelled')\n    : []\n  const activeReturnCount = activeReturns.length\n  const hasActiveReturnOperation = activeReturnCount > 0",
+          "afterBlock": "  const committedReturns = Array.isArray(order.returns)\n    ? order.returns.filter((entry) => String(entry?.status || 'completed').trim().toLowerCase() !== 'cancelled')\n    : []\n  const committedReturnCount = Number.isFinite(Number(order.committed_return_count))\n    ? Math.max(0, Number(order.committed_return_count || 0))\n    : committedReturns.length\n  const committedExchangeCount = Math.max(0, Number(order.committed_exchange_count || 0))\n  const hasCommittedReturn = committedReturnCount > 0\n  const hasCommittedExchange = committedExchangeCount > 0\n  const hasCommittedDownstreamOperation = hasCommittedReturn || hasCommittedExchange"
+        },
+        {
+          "beforeBlock": "    hasActiveReturnOperation,\n    activeReturnCount,",
+          "afterBlock": "    hasCommittedReturn,\n    hasCommittedExchange,\n    hasCommittedDownstreamOperation,\n    committedReturnCount,\n    committedExchangeCount,"
+        },
+        {
+          "beforeBlock": "    // Existing completed returns must not turn the whole order into a terminal\n    // \"returned\" state. The Return/Exchange domains validate remaining quantity.\n    canOpenReturn: mutableWorkingOrder,\n    canOpenExchange: mutableWorkingOrder,\n    // Current backend intentionally blocks rewriting an order while a completed\n    // Return is active. Keep that safety without using return_amount as lifecycle.\n    canEdit: mutableWorkingOrder && !hasActiveReturnOperation && (simpleAdmin || !sent),\n    // Preserve current conservative shipping/correction behavior while an active\n    // Return exists; this is an action guard, not a lifecycle label.\n    canShip: mutableWorkingOrder && !hasActiveReturnOperation && !sent && !workshopPending,\n    canCorrectShipping: mutableWorkingOrder && !hasActiveReturnOperation && sent,\n    canOpenStockHandover: mutableWorkingOrder\n      && !hasActiveReturnOperation",
+          "afterBlock": "    // Existing completed returns/exchanges do not turn the whole order into a terminal\n    // lifecycle state. The Return/Exchange domains validate remaining quantity.\n    canOpenReturn: mutableWorkingOrder,\n    canOpenExchange: mutableWorkingOrder,\n    // Current backend blocks rewriting an order after a committed Return or Exchange\n    // until that downstream operation is cancelled. Mirror that fact explicitly.\n    canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation && (simpleAdmin || !sent),\n    // Preserve conservative shipping/correction behavior once a committed downstream\n    // Return/Exchange exists; this is an action guard, not a lifecycle label.\n    canShip: mutableWorkingOrder && !hasCommittedDownstreamOperation && !sent && !workshopPending,\n    canCorrectShipping: mutableWorkingOrder && !hasCommittedDownstreamOperation && sent,\n    canOpenStockHandover: mutableWorkingOrder\n      && !hasCommittedDownstreamOperation"
+        }
+      ]
+    },
+    "src/features/sections/OrdersTableSection.tsx": {
+      "beforeGitBlob": "1826cae358c0fac03f4fa326ad8c189946ee7921",
+      "afterGitBlob": "deff9eaf39e063fa6298dcb1fcd4ccd4631fef8d",
+      "beforeLines": 419,
+      "afterLines": 425,
+      "replacements": [
+        {
+          "beforeBlock": "                        className={`${selectedOrderId === order.id ? 'row-active' : ''} ${archived ? 'row-archived' : ''} ${projection.hasActiveReturnOperation ? 'row-returned' : ''}`}",
+          "afterBlock": "                        className={`${selectedOrderId === order.id ? 'row-active' : ''} ${archived ? 'row-archived' : ''} ${projection.hasCommittedDownstreamOperation ? 'row-returned' : ''}`}"
+        },
+        {
+          "beforeBlock": "                            {!retainedOnly && !archived && !projection.hasActiveReturnOperation && order.shipping_status !== 'sent' && projection.workshopPending ? (",
+          "afterBlock": "                            {!retainedOnly && !archived && !projection.hasCommittedDownstreamOperation && order.shipping_status !== 'sent' && projection.workshopPending ? ("
+        },
+        {
+          "beforeBlock": "                            {projection.hasActiveReturnOperation ? (\n                              <span className=\"soft-badge\">Есть действующий возврат</span>\n                            ) : null}",
+          "afterBlock": "                            {projection.hasCommittedDownstreamOperation ? (\n                              <span className=\"soft-badge\">\n                                {projection.hasCommittedReturn && projection.hasCommittedExchange\n                                  ? 'Есть проведённые возврат и обмен'\n                                  : projection.hasCommittedExchange\n                                    ? 'Есть проведённый обмен'\n                                    : 'Есть проведённый возврат'}\n                              </span>\n                            ) : null}"
+        }
+      ]
+    }
+  }
+}

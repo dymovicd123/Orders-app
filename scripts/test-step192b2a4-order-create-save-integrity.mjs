@@ -21,6 +21,7 @@ try {
   const orders = read('worker/domains/orders-write.ts')
   const money = read('worker/domains/money.ts')
   const ordersRead = read('worker/domains/orders-read.ts')
+  const ordersRelations = read('worker/domains/orders-relations.ts')
   const returnsExchanges = read('worker/domains/returns-exchanges.ts')
   const references = read('worker/domains/references.ts')
   const workshopSchema = read('worker/domains/workshop-schema.ts')
@@ -205,7 +206,7 @@ try {
 
   // Editor must round-trip hidden identity/value fields without triggering false inventory rewrites.
   check(appUtils.includes('unitPrice: Number(item.unitPrice || 0)'), 'Editor drops stored item unitPrice')
-  check(appTypes.includes('audienceType') && orders.includes('audienceType:'), 'Order read/editor path drops audienceType')
+  check(appTypes.includes('audienceType') && ordersRelations.includes('audienceType: canonicalAudienceType || originalSnapshot.audienceType'), 'Order read/editor path drops audienceType')
 
   // Empty payment row is UI-only; it must not appear as a real optimistic payment.
   check(app.includes(".filter((payment) => String(payment.method || '').trim() && Number(payment.amount || 0) > 0)"), 'Optimistic created order still exposes blank payment row')

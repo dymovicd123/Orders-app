@@ -31,7 +31,6 @@ import {
   getCatalogVariantCategory,
   getVariantCategoryFromFields,
   inferProductCategoryFromVariants,
-  isReturnedOrderRecord,
   normalizeSearchText,
   normalizeSuggestion,
   productCategoryLabel,
@@ -374,7 +373,7 @@ const summary = useMemo(() => {
   )
 
   const returnOrders = useMemo(
-    () => orders.filter((order) => order.order_status !== 'deleted' && order.order_status !== 'archived' && !isReturnedOrderRecord(order)),
+    () => orders.filter((order) => order.order_status !== 'deleted' && order.order_status !== 'archived'),
     [orders],
   )
 
@@ -384,7 +383,7 @@ const summary = useMemo(() => {
   )
 
   const exchangeOrders = useMemo(
-    () => orders.filter((order) => order.order_status !== 'deleted' && order.order_status !== 'archived' && !isReturnedOrderRecord(order)),
+    () => orders.filter((order) => order.order_status !== 'deleted' && order.order_status !== 'archived'),
     [orders],
   )
 

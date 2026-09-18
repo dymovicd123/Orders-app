@@ -328,9 +328,13 @@ export async function createReturn(
 
   await syncOrderFinancialLedger(db, orderId, returnUpdateAt);
   if (touchedWorkshopTasks > 0) {
-    const activeWorkshop = await db.prepare(`SELECT COUNT(*) AS count FROM workshop_tasks WHERE order_id = ? AND status = 'active' AND quantity > 0`).bind(orderId).first<{ count: number }>();
-    const nextWorkshopStatus = toInt(activeWorkshop?.count, 0) > 0 ? 'in_workshop' : 'cancelled';
-    await db.prepare(`UPDATE orders SET workshop_status = ?, updated_at = ? WHERE id = ?`).bind(nextWorkshopStatus, returnUpdateAt, orderId).run();
+    try {
+      const activeWorkshop = await db.prepare(`SELECT COUNT(*) AS count FROM workshop_tasks WHERE order_id = ? AND status = 'active' AND quantity > 0`).bind(orderId).first<{ count: number }>();
+      const nextWorkshopStatus = toInt(activeWorkshop?.count, 0) > 0 ? 'in_workshop' : 'cancelled';
+      await db.prepare(`UPDATE orders SET workshop_status = ?, updated_at = ? WHERE id = ?`).bind(nextWorkshopStatus, returnUpdateAt, orderId).run();
+    } catch (error) {
+      console.warn('Workshop order status cache refresh failed after committed return', error);
+    }
   }
 
   const completedResponse = {
@@ -1192,7 +1196,11 @@ export async function createExchange(
   }
 
   await syncOrderFinancialLedger(db, orderId, timestamp);
-  await refreshOrderWorkshopStatusFromTasks(db, orderId, timestamp);
+  try {
+    await refreshOrderWorkshopStatusFromTasks(db, orderId, timestamp);
+  } catch (error) {
+    console.warn('Workshop order status cache refresh failed after committed exchange', error);
+  }
 
   const completedResponse = {
     ok: true,
@@ -1331,10 +1339,15 @@ export async function correctExchangeFinancials(
     const externalOrderId = cleanText(row.external_id);
     if (alreadyDesired) {
       await syncOrderFinancialLedger(db, orderId);
-      const order = await getOrder(db, orderId);
-      const response = { ok: true, exchangeId, unchanged: true, order };
-      await completeCriticalOperation(db, criticalOperation, response);
-      return response;
+      const completedResponse = { ok: true, exchangeId, unchanged: true, refreshRequired: true };
+      await completeCriticalOperation(db, criticalOperation, completedResponse);
+      let order = null;
+      try {
+        order = await getOrder(db, orderId);
+      } catch (error) {
+        console.warn('Order readback after unchanged exchange financial correction failed', error);
+      }
+      return order ? { ...completedResponse, order, refreshRequired: false } : completedResponse;
     }
 
     await syncOrderFinancialLedger(db, orderId);
@@ -1456,7 +1469,25 @@ export async function correctExchangeFinancials(
 
     await db.batch(statements);
     await syncOrderFinancialLedger(db, orderId);
-    const order = await getOrder(db, orderId);
+    const completedResponse = {
+      ok: true,
+      exchangeId,
+      financialAction,
+      financialAmount: nextAmount,
+      exchangeDate: nextExchangeDate,
+      paymentMethod: nextMethod,
+      refreshRequired: true,
+    };
+    // All business writes are committed at this point. Complete the idempotent operation
+    // before secondary readback/logging so a transient read failure cannot report a
+    // successful money correction as failed and invite a misleading retry.
+    await completeCriticalOperation(db, criticalOperation, completedResponse);
+    let order = null;
+    try {
+      order = await getOrder(db, orderId);
+    } catch (error) {
+      console.warn('Order readback after committed exchange financial correction failed', error);
+    }
     try {
       await writeActivityLog(db, {
         eventType: 'exchange_financial_corrected',
@@ -1472,9 +1503,7 @@ export async function correctExchangeFinancials(
     } catch (error) {
       console.warn('Exchange financial correction activity log failed after committed correction', error);
     }
-    const response = { ok: true, exchangeId, financialAction, financialAmount: nextAmount, exchangeDate: nextExchangeDate, paymentMethod: nextMethod, order };
-    await completeCriticalOperation(db, criticalOperation, response);
-    return response;
+    return order ? { ...completedResponse, order, refreshRequired: false } : completedResponse;
   } catch (error) {
     if (criticalOperation) await failCriticalOperation(db, criticalOperation, error);
     throw error;
@@ -1718,7 +1747,11 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
   ]);
 
   await syncOrderFinancialLedger(db, toInt(ret.order_id, 0), timestamp);
-  await refreshOrderWorkshopStatusFromTasks(db, toInt(ret.order_id, 0), timestamp);
+  try {
+    await refreshOrderWorkshopStatusFromTasks(db, toInt(ret.order_id, 0), timestamp);
+  } catch (error) {
+    console.warn('Workshop order status cache refresh failed after committed return cancellation', error);
+  }
 
   const completedResponse = {
     ok: true,
@@ -1999,7 +2032,11 @@ export async function cancelExchange(db: D1Database, exchangeId: number, input: 
   ).bind(timestamp, comment, timestamp, exchangeId).run();
 
   await syncOrderFinancialLedger(db, orderId, timestamp);
-  await refreshOrderWorkshopStatusFromTasks(db, orderId, timestamp);
+  try {
+    await refreshOrderWorkshopStatusFromTasks(db, orderId, timestamp);
+  } catch (error) {
+    console.warn('Workshop order status cache refresh failed after committed exchange cancellation', error);
+  }
   const completedResponse = { ok: true, exchangeId, stockReversals, financialAction, financialAmount, refreshRequired: true };
   await completeCriticalOperation(db, criticalOperation, completedResponse);
   let updatedOrder = null;

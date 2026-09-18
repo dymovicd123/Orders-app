@@ -38,10 +38,18 @@ try {
     );
     CREATE TABLE customers (id INTEGER PRIMARY KEY, display_name TEXT);
     CREATE TABLE order_items (
-      id INTEGER PRIMARY KEY, order_id INTEGER, product_name_snapshot TEXT, gender_snapshot TEXT,
+      id INTEGER PRIMARY KEY, order_id INTEGER, product_id INTEGER, variant_id INTEGER,
+      product_name_snapshot TEXT, gender_snapshot TEXT,
       color_snapshot TEXT, material_snapshot TEXT, length_snapshot TEXT, size_snapshot TEXT,
       source_type TEXT, quantity INTEGER, stock_writeoff_status TEXT, created_at TEXT,
       inventory_obligation_key TEXT, inventory_obligation_origin_at TEXT, is_workshop INTEGER
+    );
+    CREATE TABLE catalog_products (
+      id INTEGER PRIMARY KEY, name TEXT, category TEXT, is_active INTEGER
+    );
+    CREATE TABLE catalog_variants (
+      id INTEGER PRIMARY KEY, product_id INTEGER, gender TEXT, color TEXT,
+      material TEXT, length TEXT, size_label TEXT, category TEXT, is_active INTEGER
     );
     CREATE TABLE inventory_reservations (
       id INTEGER PRIMARY KEY, order_id INTEGER, order_item_id INTEGER, status TEXT,

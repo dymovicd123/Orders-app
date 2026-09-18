@@ -28,11 +28,24 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
   const limit = clampLimit(url?.searchParams.get('limit'))
 
   const exactLifecycleVariantSql = `COALESCE(
+    (SELECT v_link.id
+     FROM order_items oi_link
+     JOIN catalog_variants v_link ON v_link.id = oi_link.variant_id
+     WHERE oi_link.id = e.order_item_id
+       AND oi_link.order_id = e.order_id
+       AND v_link.is_active = 1
+     LIMIT 1),
     (SELECT v0.id FROM catalog_variants v0 WHERE v0.id = e.variant_id AND v0.is_active = 1 LIMIT 1),
     (SELECT v.id
      FROM catalog_variants v
      WHERE v.is_active = 1
-       AND v.product_id = e.product_id
+       AND v.product_id = COALESCE(
+         (SELECT oi_product.product_id
+          FROM order_items oi_product
+          WHERE oi_product.id = e.order_item_id AND oi_product.order_id = e.order_id
+          LIMIT 1),
+         e.product_id
+       )
        AND LOWER(TRIM(COALESCE(v.category, 'adult'))) = CASE WHEN UPPER(TRIM(COALESCE(e.audience_type, ''))) LIKE '%ДЕТ%' OR LOWER(TRIM(COALESCE(e.audience_type, ''))) = 'child' THEN 'child' ELSE 'adult' END
        AND UPPER(TRIM(COALESCE(v.gender, ''))) = UPPER(TRIM(COALESCE(e.gender_snapshot, '')))
        AND UPPER(TRIM(COALESCE(v.color, ''))) = UPPER(TRIM(COALESCE(e.color_snapshot, '')))
@@ -192,15 +205,30 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
        LIMIT ?`
     ).bind(shortageFetchLimit).all<Record<string, unknown>>(),
     db.prepare(
-      `SELECT e.id, e.event_type, e.direction, e.order_id, e.order_item_id, e.inventory_source, e.quantity,
-              e.product_id, e.variant_id, e.product_name_snapshot, e.audience_type, e.gender_snapshot,
-              e.color_snapshot, e.material_snapshot, e.length_snapshot, e.size_snapshot, e.is_workshop,
-              e.pending_reason, e.created_at, o.external_id, o.order_date, ${exactLifecycleVariantSql} AS exact_variant_id
-       FROM inventory_lifecycle_events e
-       JOIN orders o ON o.id = e.order_id
-       WHERE e.status = 'pending'
-       ORDER BY e.created_at ASC, e.id ASC
-       LIMIT ?`
+      `WITH pending_lifecycle AS (
+         SELECT e.id, e.event_type, e.direction, e.order_id, e.order_item_id, e.inventory_source, e.quantity,
+                e.product_id, e.variant_id, e.product_name_snapshot, e.audience_type, e.gender_snapshot,
+                e.color_snapshot, e.material_snapshot, e.length_snapshot, e.size_snapshot, e.is_workshop,
+                e.pending_reason, e.created_at, o.external_id, o.order_date, ${exactLifecycleVariantSql} AS exact_variant_id
+         FROM inventory_lifecycle_events e
+         JOIN orders o ON o.id = e.order_id
+         WHERE e.status = 'pending'
+         ORDER BY e.created_at ASC, e.id ASC
+         LIMIT ?
+       )
+       SELECT pending_lifecycle.*,
+              exact_variant.product_id AS exact_product_id,
+              exact_product.name AS exact_product_name,
+              COALESCE(exact_variant.category, exact_product.category) AS exact_category,
+              exact_variant.gender AS exact_gender,
+              exact_variant.color AS exact_color,
+              exact_variant.material AS exact_material,
+              exact_variant.length AS exact_length,
+              exact_variant.size_label AS exact_size
+       FROM pending_lifecycle
+       LEFT JOIN catalog_variants exact_variant ON exact_variant.id = pending_lifecycle.exact_variant_id
+       LEFT JOIN catalog_products exact_product ON exact_product.id = exact_variant.product_id
+       ORDER BY pending_lifecycle.created_at ASC, pending_lifecycle.id ASC`
     ).bind(limit).all<Record<string, unknown>>(),
     db.prepare(
       `SELECT MIN(oi.id) AS order_item_id, MIN(oi.order_id) AS order_id, MIN(o.external_id) AS external_id,
@@ -258,16 +286,31 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
   ])
 
   const foundResult = await db.prepare(
-    `SELECT s.id AS stock_id, s.inventory_source, s.product_id, s.product_name_snapshot,
-            s.gender_snapshot, s.color_snapshot, s.material_snapshot, s.length_snapshot, s.size_snapshot,
-            s.quantity, s.created_at, s.updated_at,
-            COALESCE((SELECT i.category_snapshot FROM inventory_stocktake_items i WHERE i.stock_id = s.id ORDER BY i.id DESC LIMIT 1), 'adult') AS category_snapshot,
-            ${exactFoundVariantSql} AS exact_variant_id,
-            COUNT(*) OVER() AS found_count
-     FROM inventory_stock s
-     WHERE s.variant_id IS NULL AND s.quantity > 0 AND s.last_source_ref LIKE 'stocktake-unresolved:%'
-     ORDER BY s.updated_at DESC, s.id DESC
-     LIMIT ?`
+    `WITH found_stock AS (
+       SELECT s.id AS stock_id, s.inventory_source, s.product_id, s.product_name_snapshot,
+              s.gender_snapshot, s.color_snapshot, s.material_snapshot, s.length_snapshot, s.size_snapshot,
+              s.quantity, s.created_at, s.updated_at,
+              COALESCE((SELECT i.category_snapshot FROM inventory_stocktake_items i WHERE i.stock_id = s.id ORDER BY i.id DESC LIMIT 1), 'adult') AS category_snapshot,
+              ${exactFoundVariantSql} AS exact_variant_id,
+              COUNT(*) OVER() AS found_count
+       FROM inventory_stock s
+       WHERE s.variant_id IS NULL AND s.quantity > 0 AND s.last_source_ref LIKE 'stocktake-unresolved:%'
+       ORDER BY s.updated_at DESC, s.id DESC
+       LIMIT ?
+     )
+     SELECT found_stock.*,
+            exact_variant.product_id AS exact_product_id,
+            exact_product.name AS exact_product_name,
+            COALESCE(exact_variant.category, exact_product.category) AS exact_category,
+            exact_variant.gender AS exact_gender,
+            exact_variant.color AS exact_color,
+            exact_variant.material AS exact_material,
+            exact_variant.length AS exact_length,
+            exact_variant.size_label AS exact_size
+     FROM found_stock
+     LEFT JOIN catalog_variants exact_variant ON exact_variant.id = found_stock.exact_variant_id
+     LEFT JOIN catalog_products exact_product ON exact_product.id = exact_variant.product_id
+     ORDER BY found_stock.updated_at DESC, found_stock.stock_id DESC`
   ).bind(limit).all<Record<string, unknown>>()
 
   const rawShortageCount = Math.max(0, toInt(coreSummary?.shortage_count, 0))
@@ -316,30 +359,36 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     }
   }).filter((row) => row.physical < 0 || row.countRelevantReserved > row.physical).slice(0, limit)
 
-  const lifecycleItems = (lifecycleResult.results || []).map((row) => ({
-    id: toInt(row.id, 0),
-    eventType: cleanText(row.event_type),
-    direction: cleanText(row.direction),
-    orderId: toInt(row.order_id, 0),
-    orderItemId: toInt(row.order_item_id, 0) || null,
-    externalId: cleanText(row.external_id),
-    orderDate: cleanText(row.order_date),
-    source: normalizeSourceType(row.inventory_source),
-    quantity: Math.max(1, toInt(row.quantity, 1)),
-    productId: toInt(row.product_id, 0) || null,
-    variantId: toInt(row.exact_variant_id, 0) || toInt(row.variant_id, 0) || null,
-    exactKnown: Boolean(toInt(row.exact_variant_id, 0) && cleanText(row.direction) === 'in'),
-    productName: cleanText(row.product_name_snapshot),
-    category: normalizeAudienceCategory(row.audience_type, row.size_snapshot),
-    gender: cleanText(row.gender_snapshot),
-    color: cleanText(row.color_snapshot),
-    material: canonicalStockPositionValue(row.material_snapshot) || 'СТАНДАРТ',
-    length: canonicalStockPositionValue(row.length_snapshot) || 'СТАНДАРТ',
-    size: cleanText(row.size_snapshot),
-    isWorkshop: Boolean(toInt(row.is_workshop, 0)),
-    pendingReason: cleanText(row.pending_reason),
-    createdAt: cleanText(row.created_at),
-  }))
+  const lifecycleItems = (lifecycleResult.results || []).map((row) => {
+    const exactVariantId = toInt(row.exact_variant_id, 0)
+    const exactKnown = Boolean(exactVariantId && cleanText(row.direction) === 'in')
+    return {
+      id: toInt(row.id, 0),
+      eventType: cleanText(row.event_type),
+      direction: cleanText(row.direction),
+      orderId: toInt(row.order_id, 0),
+      orderItemId: toInt(row.order_item_id, 0) || null,
+      externalId: cleanText(row.external_id),
+      orderDate: cleanText(row.order_date),
+      source: normalizeSourceType(row.inventory_source),
+      quantity: Math.max(1, toInt(row.quantity, 1)),
+      productId: exactKnown ? (toInt(row.exact_product_id, 0) || toInt(row.product_id, 0) || null) : (toInt(row.product_id, 0) || null),
+      variantId: exactVariantId || toInt(row.variant_id, 0) || null,
+      exactKnown,
+      // Known intake is a live action against the exact current SKU. Show that identity
+      // before the operator commits the receipt; unresolved lifecycle rows stay event-snapshot based.
+      productName: exactKnown ? (cleanText(row.exact_product_name) || cleanText(row.product_name_snapshot)) : cleanText(row.product_name_snapshot),
+      category: exactKnown ? normalizeAudienceCategory(row.exact_category, row.exact_size) : normalizeAudienceCategory(row.audience_type, row.size_snapshot),
+      gender: exactKnown ? (cleanText(row.exact_gender) || cleanText(row.gender_snapshot)) : cleanText(row.gender_snapshot),
+      color: exactKnown ? (cleanText(row.exact_color) || cleanText(row.color_snapshot)) : cleanText(row.color_snapshot),
+      material: exactKnown ? (canonicalStockPositionValue(row.exact_material ?? row.material_snapshot) || 'СТАНДАРТ') : (canonicalStockPositionValue(row.material_snapshot) || 'СТАНДАРТ'),
+      length: exactKnown ? (canonicalStockPositionValue(row.exact_length ?? row.length_snapshot) || 'СТАНДАРТ') : (canonicalStockPositionValue(row.length_snapshot) || 'СТАНДАРТ'),
+      size: exactKnown ? (cleanText(row.exact_size) || cleanText(row.size_snapshot)) : cleanText(row.size_snapshot),
+      isWorkshop: Boolean(toInt(row.is_workshop, 0)),
+      pendingReason: cleanText(row.pending_reason),
+      createdAt: cleanText(row.created_at),
+    }
+  })
 
   response.items = {
     shortages: shortageItems,
@@ -369,23 +418,29 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
       customerName: cleanText(row.customer_name),
       ...item,
     })),
-    found: (foundResult.results || []).map((row) => ({
-      stockId: toInt(row.stock_id, 0),
-      source: normalizeSourceType(row.inventory_source),
-      productId: toInt(row.product_id, 0),
-      productName: cleanText(row.product_name_snapshot),
-      category: normalizeAudienceCategory(row.category_snapshot, row.size_snapshot),
-      gender: cleanText(row.gender_snapshot),
-      color: cleanText(row.color_snapshot),
-      material: canonicalStockPositionValue(row.material_snapshot) || 'СТАНДАРТ',
-      length: canonicalStockPositionValue(row.length_snapshot) || 'СТАНДАРТ',
-      size: cleanText(row.size_snapshot),
-      physical: Math.max(0, toInt(row.quantity, 0)),
-      createdAt: cleanText(row.created_at),
-      updatedAt: cleanText(row.updated_at),
-      exactVariantId: toInt(row.exact_variant_id, 0) || null,
-      exactKnown: Boolean(toInt(row.exact_variant_id, 0)),
-    })),
+    found: (foundResult.results || []).map((row) => {
+      const exactVariantId = toInt(row.exact_variant_id, 0)
+      const exactKnown = Boolean(exactVariantId)
+      return {
+        stockId: toInt(row.stock_id, 0),
+        source: normalizeSourceType(row.inventory_source),
+        productId: exactKnown ? (toInt(row.exact_product_id, 0) || toInt(row.product_id, 0)) : toInt(row.product_id, 0),
+        // The direct “Связать с вариантом” action resolves into this exact current SKU.
+        // Show that SKU before the operator commits the identity link; unresolved rows remain snapshot evidence.
+        productName: exactKnown ? (cleanText(row.exact_product_name) || cleanText(row.product_name_snapshot)) : cleanText(row.product_name_snapshot),
+        category: exactKnown ? normalizeAudienceCategory(row.exact_category, row.exact_size) : normalizeAudienceCategory(row.category_snapshot, row.size_snapshot),
+        gender: exactKnown ? (cleanText(row.exact_gender) || cleanText(row.gender_snapshot)) : cleanText(row.gender_snapshot),
+        color: exactKnown ? (cleanText(row.exact_color) || cleanText(row.color_snapshot)) : cleanText(row.color_snapshot),
+        material: exactKnown ? (canonicalStockPositionValue(row.exact_material ?? row.material_snapshot) || 'СТАНДАРТ') : (canonicalStockPositionValue(row.material_snapshot) || 'СТАНДАРТ'),
+        length: exactKnown ? (canonicalStockPositionValue(row.exact_length ?? row.length_snapshot) || 'СТАНДАРТ') : (canonicalStockPositionValue(row.length_snapshot) || 'СТАНДАРТ'),
+        size: exactKnown ? (cleanText(row.exact_size) || cleanText(row.size_snapshot)) : cleanText(row.size_snapshot),
+        physical: Math.max(0, toInt(row.quantity, 0)),
+        createdAt: cleanText(row.created_at),
+        updatedAt: cleanText(row.updated_at),
+        exactVariantId: exactVariantId || null,
+        exactKnown,
+      }
+    }),
     stocktakes: (stocktakeResult.results || []).map((row) => ({
       id: cleanText(row.id),
       source: normalizeSourceType(row.inventory_source),

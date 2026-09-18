@@ -14,7 +14,15 @@ export async function listInventory(db: D1Database, url: URL) {
   const limit = Math.min(1000, Math.max(50, toInt(url.searchParams.get('limit'), 300)));
   const includeMovements = !['0', 'false', 'no'].includes(cleanText(url.searchParams.get('includeMovements')).toLowerCase());
 
+  // Stage01 R16: inventory_stock is live physical state, so its working label follows
+  // the current catalog link. Snapshot text remains searchable as historical/fallback evidence.
   const searchableSql = `LOWER(
+    COALESCE(active_product.name, '') || ' ' ||
+    COALESCE(active_variant.gender, '') || ' ' ||
+    COALESCE(active_variant.color, '') || ' ' ||
+    COALESCE(active_variant.material, '') || ' ' ||
+    COALESCE(active_variant.length, '') || ' ' ||
+    COALESCE(active_variant.size_label, '') || ' ' ||
     COALESCE(s.product_name_snapshot, '') || ' ' ||
     COALESCE(s.gender_snapshot, '') || ' ' ||
     COALESCE(s.color_snapshot, '') || ' ' ||
@@ -31,10 +39,16 @@ export async function listInventory(db: D1Database, url: URL) {
       s.id, s.inventory_source, s.product_id, s.variant_id, s.product_name_snapshot, s.gender_snapshot, s.color_snapshot,
       s.material_snapshot, s.length_snapshot, s.size_snapshot, s.quantity, s.reserved_quantity,
       s.last_action, s.last_source_ref, s.updated_at, s.created_at,
-      active_variant.is_active AS catalog_variant_active, active_product.is_active AS catalog_product_active
+      active_variant.is_active AS catalog_variant_active, active_product.is_active AS catalog_product_active,
+      COALESCE(NULLIF(active_product.name, ''), s.product_name_snapshot) AS working_product_name,
+      CASE WHEN active_variant.id IS NOT NULL THEN COALESCE(NULLIF(active_variant.gender, ''), s.gender_snapshot) ELSE s.gender_snapshot END AS working_gender,
+      CASE WHEN active_variant.id IS NOT NULL THEN COALESCE(NULLIF(active_variant.color, ''), s.color_snapshot) ELSE s.color_snapshot END AS working_color,
+      CASE WHEN active_variant.id IS NOT NULL THEN COALESCE(NULLIF(active_variant.material, ''), s.material_snapshot) ELSE s.material_snapshot END AS working_material,
+      CASE WHEN active_variant.id IS NOT NULL THEN COALESCE(NULLIF(active_variant.length, ''), s.length_snapshot) ELSE s.length_snapshot END AS working_length,
+      CASE WHEN active_variant.id IS NOT NULL THEN COALESCE(NULLIF(active_variant.size_label, ''), s.size_snapshot) ELSE s.size_snapshot END AS working_size
      FROM inventory_stock s
      LEFT JOIN catalog_variants active_variant ON active_variant.id = s.variant_id
-     LEFT JOIN catalog_products active_product ON active_product.id = active_variant.product_id
+     LEFT JOIN catalog_products active_product ON active_product.id = COALESCE(active_variant.product_id, s.product_id)
      WHERE s.inventory_source = ?
        AND (
          s.variant_id IS NULL
@@ -42,8 +56,8 @@ export async function listInventory(db: D1Database, url: URL) {
          OR COALESCE(s.quantity, 0) <> 0
          OR COALESCE(s.reserved_quantity, 0) <> 0
        )${searchClauses ? ` AND ${searchClauses}` : ''}
-     ORDER BY s.product_name_snapshot, COALESCE(s.gender_snapshot, ''), COALESCE(s.color_snapshot, ''),
-       COALESCE(s.material_snapshot, ''), COALESCE(s.length_snapshot, ''), COALESCE(s.size_snapshot, '')
+     ORDER BY working_product_name, COALESCE(working_gender, ''), COALESCE(working_color, ''),
+       COALESCE(working_material, ''), COALESCE(working_length, ''), COALESCE(working_size, '')
      LIMIT ?`;
 
   const inventorySearchBindings = qTokens.flatMap(token => [token, token.toUpperCase(), token.toLowerCase()]);
@@ -97,12 +111,12 @@ export async function listInventory(db: D1Database, url: URL) {
       inventorySource: cleanText(row.inventory_source),
       productId: toInt(row.product_id, 0),
       variantId: toInt(row.variant_id, 0),
-      productName: cleanText(row.product_name_snapshot),
-      gender: cleanText(row.gender_snapshot),
-      color: cleanText(row.color_snapshot),
-      material: canonicalStockPositionValue(row.material_snapshot),
-      length: canonicalStockPositionValue(row.length_snapshot),
-      size: cleanText(row.size_snapshot),
+      productName: cleanText(row.working_product_name) || cleanText(row.product_name_snapshot),
+      gender: cleanText(row.working_gender) || cleanText(row.gender_snapshot),
+      color: cleanText(row.working_color) || cleanText(row.color_snapshot),
+      material: canonicalStockPositionValue(row.working_material ?? row.material_snapshot),
+      length: canonicalStockPositionValue(row.working_length ?? row.length_snapshot),
+      size: cleanText(row.working_size) || cleanText(row.size_snapshot),
       quantity: toInt(row.quantity, 0),
       reservedQuantity: humanInventoryModelEnabled ? Math.max(0, toInt(row.reserved_quantity, 0)) : 0,
       availableQuantity: humanInventoryModelEnabled

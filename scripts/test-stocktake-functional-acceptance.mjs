@@ -339,11 +339,16 @@ async function main() {
     name: 'QA РЕВИЗИЯ СКЛАД',
   })
 
+  db.run(`UPDATE catalog_products SET name = 'QA РЕВИЗИЯ СКЛАД — НОВОЕ ИМЯ' WHERE id = 1`)
+  check(db.row(`SELECT product_name_snapshot FROM inventory_stock WHERE inventory_source = 'warehouse' AND variant_id = 101`)?.product_name_snapshot === 'QA РЕВИЗИЯ СКЛАД', 'Fixture no longer preserves stale stock snapshot before stocktake')
+
   const started = await createInventoryStocktakeSession(db, { source: 'warehouse' }, 'qa-manager')
   check(started.ok && started.resumed === false, 'First stocktake start must create a new session')
   const warehouseSessionId = started.session?.id
   check(Boolean(warehouseSessionId), 'Created stocktake session id is missing')
   check(started.session?.items?.length === 1, 'Created stocktake did not snapshot the seeded position')
+  check(started.session.items[0].productName === 'QA РЕВИЗИЯ СКЛАД — НОВОЕ ИМЯ', 'New stocktake session captured stale inventory_stock product name instead of current catalog identity')
+  check(db.row(`SELECT product_name_snapshot FROM inventory_stock WHERE inventory_source = 'warehouse' AND variant_id = 101`)?.product_name_snapshot === 'QA РЕВИЗИЯ СКЛАД', 'Starting stocktake rewrote the live stock snapshot instead of only capturing current canonical identity')
   check(started.session.items[0].baselineQuantity === 5, 'Stocktake baseline is not the physical opening quantity')
 
   const resumed = await createInventoryStocktakeSession(db, { source: 'warehouse' }, 'qa-manager')

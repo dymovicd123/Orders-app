@@ -3,7 +3,7 @@
 import { cleanText, isArchivedOrder, normalizeArchiveMode, normalizeDate, normalizeShippingFilter, normalizeStatusFilter, toInt } from '../core/text.ts'
 import type { OrderListRow } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
-import { fetchOrderRelations, workshopTaskStatusForOrderItem } from './orders-relations.ts'
+import { canonicalItemProjection, fetchOrderRelations, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
 import { getOrder } from './orders-write.ts'
 
 export type ArchiveRuleInput = {
@@ -327,8 +327,9 @@ export async function listOrders(db: D1Database, url: URL) {
   if (shippingStatus === 'sent') {
     baseWhereParts.push("COALESCE(o.shipping_status, '') = 'sent'");
   } else if (shippingStatus === 'not_sent') {
+    // Shipping is its own operational fact. A historical/partial refund must not
+    // hide an otherwise active unshipped order from the ordinary work queue.
     baseWhereParts.push("COALESCE(o.shipping_status, '') <> 'sent'");
-    if (status !== 'returned') baseWhereParts.push('COALESCE(o.return_amount, 0) <= 0');
   }
 
   if (status === 'active') {
@@ -355,6 +356,9 @@ export async function listOrders(db: D1Database, url: URL) {
       baseBindings.push(externalIdPrefix, `${externalIdPrefix}￿`);
     } else if (Array.from(q).length >= 3) {
       // D1 read-budget R5.3: arbitrary substring search is the remaining order-list scan hotspot.
+      // The derived item FTS row is refreshed from both current canonical catalog identity and
+      // immutable order-time snapshots, so Resolver repair changes what can be found without
+      // erasing the historical search vocabulary.
       // A case-sensitive trigram FTS index queried with the exact legacy raw/upper/lower variants
       // preserves the old INSTR semantics while avoiding correlated scans of items/payments.
       const qVariants = Array.from(new Set([q, q.toUpperCase(), q.toLowerCase()]));
@@ -378,16 +382,26 @@ export async function listOrders(db: D1Database, url: URL) {
       const searchOrderText = `COALESCE(o.external_id, '') || ' ' || COALESCE(o.order_date, '') || ' ' ||
         COALESCE(m.name, o.manager_snapshot_name, '') || ' ' || COALESCE(c.phone_normalized, '') || ' ' ||
         COALESCE(c.display_name, '') || ' ' || COALESCE(o.city, '') || ' ' || COALESCE(o.delivery_type, '') || ' ' || COALESCE(o.comment, '')`;
-      const searchItemText = `COALESCE(oi.product_name_snapshot, '') || ' ' || COALESCE(oi.gender_snapshot, '') || ' ' ||
+      const searchItemText = `COALESCE(search_product.name, '') || ' ' ||
+        COALESCE(search_variant.gender, '') || ' ' || COALESCE(search_variant.color, '') || ' ' ||
+        COALESCE(search_variant.material, '') || ' ' || COALESCE(search_variant.length, '') || ' ' ||
+        COALESCE(search_variant.size_label, '') || ' ' ||
+        COALESCE(oi.product_name_snapshot, '') || ' ' || COALESCE(oi.gender_snapshot, '') || ' ' ||
         COALESCE(oi.color_snapshot, '') || ' ' || COALESCE(oi.material_snapshot, '') || ' ' ||
         COALESCE(oi.length_snapshot, '') || ' ' || COALESCE(oi.size_snapshot, '')`;
       const searchPaymentText = `COALESCE(search_payment.method, '') || ' ' || COALESCE(search_payment.comment, '')`;
       const qVariants = [q, q.toUpperCase(), q.toLowerCase()];
       baseWhereParts.push(`(
         INSTR(${searchOrderText}, ?) > 0 OR INSTR(${searchOrderText}, ?) > 0 OR INSTR(${searchOrderText}, ?) > 0
-        OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND (
-          INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0
-        ))
+        OR EXISTS (
+          SELECT 1
+          FROM order_items oi
+          LEFT JOIN catalog_products search_product ON search_product.id = oi.product_id
+          LEFT JOIN catalog_variants search_variant ON search_variant.id = oi.variant_id
+          WHERE oi.order_id = o.id AND (
+            INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0
+          )
+        )
         OR EXISTS (SELECT 1 FROM payments search_payment WHERE search_payment.order_id = o.id AND (
           INSTR(${searchPaymentText}, ?) > 0 OR INSTR(${searchPaymentText}, ?) > 0 OR INSTR(${searchPaymentText}, ?) > 0
         ))
@@ -636,18 +650,14 @@ export async function listOrders(db: D1Database, url: URL) {
       ...order,
       stock_handover_review_needed: (relations.handoverReviewByOrderId.get(order.id) || []).length > 0,
       stock_handover_has_active_items: (relations.activeStockHandoverByOrderId.get(order.id) || []).length > 0,
+      committed_return_count: (relations.returnsByOrderId.get(order.id) || []).filter(ret => cleanText((ret as any).status || 'completed').toLowerCase() !== 'cancelled').length,
+      committed_exchange_count: relations.committedExchangeCountByOrderId.get(order.id) || 0,
+      has_committed_item_return: relations.hasCommittedItemReturnByOrderId.get(order.id) || false,
       items: (relations.itemsByOrderId.get(order.id) || []).map(item => ({
         id: (item as any).id,
-        // Order history is snapshot-first. A later catalog merge may repoint variant_id, but it must
-        // never rewrite what the operator actually recorded on this historical order line.
-        productName: cleanText((item as any).product_name_snapshot) || cleanText((item as any).canonical_product_name),
-        audienceType: cleanText((item as any).audience_type) || (cleanText((item as any).canonical_category).toLowerCase() === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ'),
-        gender: cleanText((item as any).gender_snapshot),
-        color: cleanText((item as any).color_snapshot),
-        material: cleanText((item as any).material_snapshot),
-        length: cleanText((item as any).length_snapshot),
-        size: cleanText((item as any).size_snapshot),
+        ...canonicalItemProjection(item as Record<string, unknown>),
         quantity: (item as any).quantity,
+        availableOperationQuantity: orderItemAvailableOperationQuantity(item as Record<string, unknown>),
         unitPrice: (item as any).unit_price,
         lineTotal: (item as any).line_total,
         sourceType: (item as any).is_workshop ? 'workshop' : (item as any).source_type,
@@ -728,10 +738,16 @@ export async function listOpenDebtOrders(db: D1Database, url: URL) {
   const itemsByOrder = new Map<number, Array<Record<string, unknown>>>();
   if (ids.length) {
     const itemRows = await db.prepare(
-      `SELECT oi.order_id, oi.id,
-              COALESCE(oi.product_name_snapshot, p.name, '') AS product_name,
-              COALESCE(oi.size_snapshot, v.size_label, '') AS size_label,
-              oi.quantity
+      `SELECT oi.order_id, oi.id, oi.product_id, oi.variant_id,
+              oi.product_name_snapshot, oi.audience_type, oi.gender_snapshot, oi.color_snapshot,
+              oi.material_snapshot, oi.length_snapshot, oi.size_snapshot, oi.quantity,
+              p.name AS canonical_product_name,
+              COALESCE(v.category, p.category) AS canonical_category,
+              v.gender AS canonical_gender,
+              v.color AS canonical_color,
+              v.material AS canonical_material,
+              v.length AS canonical_length,
+              v.size_label AS canonical_size
        FROM order_items oi
        LEFT JOIN catalog_products p ON p.id = oi.product_id
        LEFT JOIN catalog_variants v ON v.id = oi.variant_id
@@ -744,8 +760,7 @@ export async function listOpenDebtOrders(db: D1Database, url: URL) {
       if (!itemsByOrder.has(orderId)) itemsByOrder.set(orderId, []);
       itemsByOrder.get(orderId)!.push({
         id: toInt(item.id, 0),
-        productName: cleanText(item.product_name),
-        size: cleanText(item.size_label),
+        ...canonicalItemProjection(item),
         quantity: Math.max(0, toInt(item.quantity, 0)),
       });
     }

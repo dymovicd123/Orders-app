@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "revision": "stage01-unshipped-refund-decoupling-r6",
+  "changes": {
+    "listOrders": {
+      "before": "01c41e4bf9faacce6734c4ef0fe8567146f6a5678a436432b3ff7af698af250f",
+      "beforeBlock": "  } else if (shippingStatus === 'not_sent') {\n    baseWhereParts.push(\"COALESCE(o.shipping_status, '') <> 'sent'\");\n    if (status !== 'returned') baseWhereParts.push('COALESCE(o.return_amount, 0) <= 0');\n  }\n",
+      "afterBlock": "  } else if (shippingStatus === 'not_sent') {\n    // Shipping is its own operational fact. A historical/partial refund must not\n    // hide an otherwise active unshipped order from the ordinary work queue.\n    baseWhereParts.push(\"COALESCE(o.shipping_status, '') <> 'sent'\");\n  }\n"
+    }
+  }
+}

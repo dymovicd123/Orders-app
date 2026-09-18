@@ -71,10 +71,21 @@ export async function resolveWorkshopCatalogExactCandidate(
 ): Promise<ResolvedOrderCatalogReference> {
   const normalized = inventoryLifecycleItemFromRow(item);
   const inputKey = catalogOrderInputKey(normalized);
-  const product = await findCatalogProductByIdentity(db, normalized.productName, 0, { activeOnly: true }) as { id: number } | null;
+  const linkedProductId = toInt(item.product_id, 0);
+  let product: { id: number; category?: string } | null = linkedProductId
+    ? await db.prepare('SELECT id, category FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1')
+        .bind(linkedProductId)
+        .first<{ id: number; category?: string }>()
+    : null;
+  if (!product?.id) {
+    product = await findCatalogProductByIdentity(db, normalized.productName, 0, { activeOnly: true }) as { id: number; category?: string } | null;
+  }
   if (!product?.id) return { productId: null, variantId: null, matchStatus: 'unresolved_product', inputKey };
 
-  const category = normalizeAudienceCategory(normalized.category, normalized.size);
+  // A repaired base-product link is stronger than an old free-text product name,
+  // while the recorded SKU characteristics still remain the evidence used to find
+  // an exact Workshop combination when no explicit variant link exists yet.
+  const category = normalizeAudienceCategory(cleanText(product.category) || normalized.category, normalized.size);
   const material = await resolveCatalogValueAlias(db, 'material', canonicalStockPositionValue(normalized.material));
   const length = await resolveCatalogValueAlias(db, 'length', canonicalStockPositionValue(normalized.length));
   const gender = normalizeCatalogCombinationGender(normalized.gender);
@@ -93,18 +104,20 @@ export async function resolveInventoryLifecycleCandidate(
   item: Record<string, unknown>,
   isWorkshop: boolean,
 ): Promise<ResolvedOrderCatalogReference> {
-  if (isWorkshop) return await resolveWorkshopCatalogExactCandidate(db, item);
-
   const existingVariantId = toInt(item.variant_id, 0);
   if (existingVariantId) {
     try {
       const canonical = await loadCanonicalVariantSnapshot(db, existingVariantId);
+      // An explicit valid order-item variant link is canonical truth for both ordinary
+      // and Workshop lines. Do not re-resolve a repaired Workshop line from stale text.
       return { productId: canonical.productId, variantId: canonical.variantId, matchStatus: 'matched', inputKey: catalogOrderInputKey(inventoryLifecycleItemFromRow(item)) };
     } catch {
       // A stale legacy link is not trusted for a new physical movement. Fall through to
       // independent identity resolution from the recorded item facts.
     }
   }
+
+  if (isWorkshop) return await resolveWorkshopCatalogExactCandidate(db, item);
   return await resolveCatalogProductAndVariantV2(db, inventoryLifecycleItemFromRow(item));
 }
 
@@ -229,14 +242,30 @@ export async function reconcileKnownPendingInventoryInbound(
   db: D1Database,
   eventId: number,
 ) {
-  const event = await db.prepare(`SELECT * FROM inventory_lifecycle_events WHERE id = ? LIMIT 1`).bind(eventId).first<InventoryLifecycleEventRow>();
+  const event = await db.prepare(
+    `SELECT e.*,
+            oi.product_id AS current_order_product_id,
+            oi.variant_id AS current_order_variant_id
+     FROM inventory_lifecycle_events e
+     LEFT JOIN order_items oi ON oi.id = e.order_item_id AND oi.order_id = e.order_id
+     WHERE e.id = ?
+     LIMIT 1`
+  ).bind(eventId).first<InventoryLifecycleEventRow>();
   if (!event?.id) throw new Error('Складская задача не найдена.');
   const status = cleanText(event.status);
   if (status === 'applied' || status === 'cancelled') return { ok: true, applied: status === 'applied', already: true, eventId: event.id, message: 'Эта складская задача уже завершена.' };
   if (status !== 'pending') throw new Error('Складская задача уже не ожидает решения.');
   if (cleanText(event.direction) !== 'in') throw new Error('Автоматическое завершение доступно только для приёмки товара.');
 
-  const resolved = await resolveInventoryLifecycleCandidate(db, event, Boolean(toInt(event.is_workshop, 0)));
+  // A pending lifecycle row is historical evidence from the moment the physical event
+  // was recorded. Resolver may legitimately repair the linked order_item later. Use
+  // those current canonical FKs for live reconciliation without rewriting snapshots.
+  const resolutionEvent = {
+    ...event,
+    product_id: toInt(event.current_order_product_id, 0) || event.product_id,
+    variant_id: toInt(event.current_order_variant_id, 0) || event.variant_id,
+  };
+  const resolved = await resolveInventoryLifecycleCandidate(db, resolutionEvent, Boolean(toInt(event.is_workshop, 0)));
   const variantId = toInt(resolved.variantId, 0);
   if (!variantId) throw new Error('Точный существующий вариант не найден. Нужно определить товар вручную.');
 
@@ -831,19 +860,58 @@ export async function cancelInventoryLifecycleEvent(
 
 export async function listInventoryLifecyclePending(db: D1Database, url: URL) {
   const limit = Math.min(100, Math.max(10, toInt(url.searchParams.get('limit'), 40)));
+  // Exact inbound rows belong to the normal Warehouse Attention intake lane. They are
+  // already safe to reconcile against a concrete current SKU and should not be shown
+  // again as manual catalog-resolution work.
+  const exactVariantSql = `COALESCE(
+    (SELECT v_link.id
+     FROM order_items oi_link
+     JOIN catalog_variants v_link ON v_link.id = oi_link.variant_id
+     WHERE oi_link.id = e.order_item_id
+       AND oi_link.order_id = e.order_id
+       AND v_link.is_active = 1
+     LIMIT 1),
+    (SELECT v0.id FROM catalog_variants v0 WHERE v0.id = e.variant_id AND v0.is_active = 1 LIMIT 1),
+    (SELECT v.id
+     FROM catalog_variants v
+     WHERE v.is_active = 1
+       AND v.product_id = COALESCE(oi.product_id, e.product_id)
+       AND LOWER(TRIM(COALESCE(v.category, 'adult'))) = CASE WHEN UPPER(TRIM(COALESCE(e.audience_type, ''))) LIKE '%ДЕТ%' OR LOWER(TRIM(COALESCE(e.audience_type, ''))) = 'child' THEN 'child' ELSE 'adult' END
+       AND UPPER(TRIM(COALESCE(v.gender, ''))) = UPPER(TRIM(COALESCE(e.gender_snapshot, '')))
+       AND UPPER(TRIM(COALESCE(v.color, ''))) = UPPER(TRIM(COALESCE(e.color_snapshot, '')))
+       AND UPPER(TRIM(COALESCE(NULLIF(v.material, ''), 'СТАНДАРТ'))) = UPPER(TRIM(COALESCE(NULLIF(e.material_snapshot, ''), 'СТАНДАРТ')))
+       AND UPPER(TRIM(COALESCE(NULLIF(v.length, ''), 'СТАНДАРТ'))) = UPPER(TRIM(COALESCE(NULLIF(e.length_snapshot, ''), 'СТАНДАРТ')))
+       AND UPPER(TRIM(COALESCE(v.size_label, ''))) = UPPER(TRIM(COALESCE(e.size_snapshot, '')))
+     ORDER BY v.id
+     LIMIT 1)
+  )`;
+
   const result = await db.prepare(
-    `SELECT e.*, o.external_id, o.order_date
-     FROM inventory_lifecycle_events e
-     JOIN orders o ON o.id = e.order_id
-     WHERE e.status = 'pending'
-     ORDER BY e.created_at ASC, e.id ASC
+    `WITH pending_lifecycle AS (
+       SELECT e.*, o.external_id, o.order_date,
+              oi.product_id AS current_order_product_id,
+              oi.variant_id AS current_order_variant_id,
+              ${exactVariantSql} AS exact_variant_id
+       FROM inventory_lifecycle_events e
+       JOIN orders o ON o.id = e.order_id
+       LEFT JOIN order_items oi ON oi.id = e.order_item_id AND oi.order_id = e.order_id
+       WHERE e.status = 'pending'
+     ),
+     manual_queue AS (
+       SELECT pending_lifecycle.*, COUNT(*) OVER() AS manual_queue_count
+       FROM pending_lifecycle
+       WHERE NOT (direction = 'in' AND exact_variant_id IS NOT NULL)
+     )
+     SELECT *
+     FROM manual_queue
+     ORDER BY created_at ASC, id ASC
      LIMIT ?`
   ).bind(limit).all<Record<string, unknown>>();
-  const countRow = await db.prepare(`SELECT COUNT(*) AS count FROM inventory_lifecycle_events WHERE status = 'pending'`).first<{ count: number }>();
+  const rows = result.results || [];
   return {
     ok: true,
-    count: Math.max(0, toInt(countRow?.count, 0)),
-    items: (result.results || []).map((row) => ({
+    count: Math.max(0, toInt(rows[0]?.manual_queue_count, 0)),
+    items: rows.map((row) => ({
       id: toInt(row.id, 0),
       eventKey: cleanText(row.event_key),
       eventType: cleanText(row.event_type),
@@ -856,8 +924,10 @@ export async function listInventoryLifecyclePending(db: D1Database, url: URL) {
       orderDate: cleanText(row.order_date),
       inventorySource: cleanText(row.inventory_source),
       quantity: Math.max(1, toInt(row.quantity, 1)),
-      productId: toInt(row.product_id, 0) || null,
-      variantId: toInt(row.variant_id, 0) || null,
+      productId: toInt(row.current_order_product_id, 0) || toInt(row.product_id, 0) || null,
+      variantId: toInt(row.current_order_variant_id, 0) || toInt(row.variant_id, 0) || null,
+      // Manual queue remains evidence-first. Exact known inbound rows were filtered
+      // above and are shown in Warehouse Attention with current canonical identity.
       productName: cleanText(row.product_name_snapshot),
       category: normalizeAudienceCategory(row.audience_type, row.size_snapshot),
       gender: cleanText(row.gender_snapshot),
@@ -874,12 +944,38 @@ export async function listInventoryLifecyclePending(db: D1Database, url: URL) {
 
 
 export async function getInventoryLifecycleContext(db: D1Database, eventId: number): Promise<CatalogResolutionContext> {
-  const event = await db.prepare(`SELECT * FROM inventory_lifecycle_events WHERE id = ? LIMIT 1`).bind(eventId).first<InventoryLifecycleEventRow>();
+  const event = await db.prepare(
+    `SELECT e.*,
+            oi.product_id AS current_order_product_id,
+            oi.variant_id AS current_order_variant_id
+     FROM inventory_lifecycle_events e
+     LEFT JOIN order_items oi ON oi.id = e.order_item_id AND oi.order_id = e.order_id
+     WHERE e.id = ?
+     LIMIT 1`
+  ).bind(eventId).first<InventoryLifecycleEventRow>();
   if (!event?.id) throw new Error('Складская задача не найдена.');
   if (cleanText(event.status) !== 'pending') return { ok: true, eventId, status: cleanText(event.status), completed: true };
 
-  const category = normalizeAudienceCategory(event.audience_type, event.size_snapshot);
-  const facts = {
+  const currentVariantId = toInt(event.current_order_variant_id, 0);
+  let currentCanonical = null;
+  if (currentVariantId) {
+    try {
+      currentCanonical = await loadCanonicalVariantSnapshot(db, currentVariantId);
+    } catch {
+      // Broken current FK is ignored here; the lifecycle snapshot remains safe fallback evidence.
+    }
+  }
+
+  const category = currentCanonical?.category || normalizeAudienceCategory(event.audience_type, event.size_snapshot);
+  const facts = currentCanonical ? {
+    productName: currentCanonical.productName,
+    material: canonicalStockPositionValue(currentCanonical.material),
+    length: canonicalStockPositionValue(currentCanonical.length),
+    category,
+    gender: normalizeCatalogCombinationGender(currentCanonical.gender),
+    color: normalizeCatalogCombinationColor(currentCanonical.color),
+    size: normalizeCatalogCombinationSize(currentCanonical.size),
+  } : {
     productName: cleanText(event.product_name_snapshot),
     material: canonicalStockPositionValue(event.material_snapshot),
     length: canonicalStockPositionValue(event.length_snapshot),
@@ -888,8 +984,11 @@ export async function getInventoryLifecycleContext(db: D1Database, eventId: numb
     color: normalizeCatalogCombinationColor(event.color_snapshot),
     size: normalizeCatalogCombinationSize(event.size_snapshot),
   };
-  const product = toInt(event.product_id, 0)
-    ? await db.prepare(`SELECT id, name, category FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1`).bind(toInt(event.product_id, 0)).first<{ id: number; name: string; category: string }>()
+  const effectiveProductId = toInt(currentCanonical?.productId, 0)
+    || toInt(event.current_order_product_id, 0)
+    || toInt(event.product_id, 0);
+  const product = effectiveProductId
+    ? await db.prepare(`SELECT id, name, category FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1`).bind(effectiveProductId).first<{ id: number; name: string; category: string }>()
     : await findCatalogProductByIdentity(db, facts.productName, 0, { activeOnly: true }) as { id: number; name: string; category: string } | null;
   const productGenderScope = product?.id ? await getCatalogProductGenderScope(db, product.id) : 'unisex';
   if (product?.id) facts.gender = facts.gender || catalogGenderForProductScope(productGenderScope);
@@ -912,11 +1011,11 @@ export async function getInventoryLifecycleContext(db: D1Database, eventId: numb
   }
 
   let execution: { id: number; material: string; length: string } | null = null;
-  let existingVariant: { id: number } | null = null;
+  let existingVariant: { id: number } | null = currentCanonical?.variantId ? { id: currentCanonical.variantId } : null;
   const unknownFields: string[] = [];
   if (product?.id) {
     execution = await findCatalogExecutionV3(db, product.id, facts.material, facts.length);
-    if (execution?.id) existingVariant = await findCatalogCombinationV3(db, execution.id, facts.category, facts.gender, facts.color, facts.size);
+    if (!existingVariant?.id && execution?.id) existingVariant = await findCatalogCombinationV3(db, execution.id, facts.category, facts.gender, facts.color, facts.size);
   }
   if (!existingVariant?.id) {
     if (!await catalogReferenceDbValueExists(db, 'material', facts.material)) unknownFields.push('material');

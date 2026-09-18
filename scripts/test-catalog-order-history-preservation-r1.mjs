@@ -29,23 +29,35 @@ check(
   'order relations must retain LEFT JOIN catalog enrichment',
 )
 
-const snapshotReadMarkers = [
-  'productName: cleanText((item as any).product_name_snapshot) || cleanText((item as any).canonical_product_name)',
-  'gender: cleanText((item as any).gender_snapshot)',
-  'color: cleanText((item as any).color_snapshot)',
-  'material: cleanText((item as any).material_snapshot)',
-  'length: cleanText((item as any).length_snapshot)',
-  'size: cleanText((item as any).size_snapshot)',
+// Working orders may follow a repaired canonical FK, but immutable order-time text must still
+// be projected separately instead of being overwritten or silently discarded.
+const historicalSnapshotMarkers = [
+  'productName: cleanText(item.product_name_snapshot)',
+  'audienceType: cleanText(item.audience_type)',
+  'gender: cleanText(item.gender_snapshot)',
+  'color: cleanText(item.color_snapshot)',
+  'material: cleanText(item.material_snapshot)',
+  'length: cleanText(item.length_snapshot)',
+  'size: cleanText(item.size_snapshot)',
 ]
-for (const marker of snapshotReadMarkers) {
-  check(ordersRead.includes(marker), 'orders table/list read lost snapshot-first marker: ' + marker)
-  check(ordersWrite.includes(marker), 'single-order readback lost snapshot-first marker: ' + marker)
+for (const marker of historicalSnapshotMarkers) {
+  check(relations.includes(marker), 'canonical order projection lost historical snapshot field: ' + marker)
 }
-check(ordersRead.includes("COALESCE(oi.product_name_snapshot, p.name, '') AS product_name"), 'debt-order item name must prefer historical snapshot')
-check(ordersRead.includes("COALESCE(oi.size_snapshot, v.size_label, '') AS size_label"), 'debt-order item size must prefer historical snapshot')
+check(relations.includes("productName: (hasCanonicalProduct ? canonicalProductName : '') || originalSnapshot.productName"), 'working order product identity must prefer the current canonical product with snapshot fallback')
+check(relations.includes("gender: hasCanonicalVariant ? (cleanText(item.canonical_gender) || originalSnapshot.gender) : originalSnapshot.gender"), 'working order exact SKU must keep canonical gender with snapshot fallback')
+check(relations.includes('originalSnapshot,'), 'historical order-time snapshot is not exposed separately')
+for (const [name, source] of [['orders table/list', ordersRead], ['single-order readback', ordersWrite]]) {
+  check(source.includes('...canonicalItemProjection(item as Record<string, unknown>)'), name + ' stopped using the shared canonical/history projection')
+}
+const debtStart = ordersRead.indexOf('export async function listOpenDebtOrders')
+check(debtStart >= 0, 'Debt order reader missing')
+const debtRead = ordersRead.slice(debtStart)
+check(debtRead.includes('...canonicalItemProjection(item)'), 'Debt order reader stopped using shared canonical/history projection')
+check(debtRead.includes('oi.product_name_snapshot') && debtRead.includes('oi.size_snapshot'), 'Debt order reader stopped preserving order-time snapshot input for fallback/history')
 
-// Frontend order surfaces render API order.items; they do not reconstruct historical lines from the live catalog.
+// Frontend order surfaces render API order.items; the details view may expose the preserved order-time snapshot separately.
 check(tableUi.includes('order.items'), 'OrdersTableSection must render returned order items')
 check(detailsUi.includes('selectedOrder.items'), 'OrderDetailsSection must render returned order items')
+check(detailsUi.includes('item.originalSnapshot'), 'OrderDetailsSection must keep changed order-time identity available as separate history')
 
-console.log('CATALOG ORDER HISTORY PRESERVATION R1 PASSED — 0068 keeps orders/lines/snapshots intact and order reads are snapshot-first')
+console.log('CATALOG ORDER HISTORY PRESERVATION R1 PASSED — 0068 keeps orders/lines/snapshots intact while working reads may project repaired canonical identity separately')

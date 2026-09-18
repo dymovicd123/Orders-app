@@ -209,6 +209,21 @@ const contextualAddedBlock = [
   '  }',
   '',
 ].join('\n')
+const orderDeleteLifecycleAddedAnchor = '    check(sha(declarations.get(name)) === acceptedHash, operationalAutonomyA4Changed\n      ? `Order delete mobility declaration changed beyond exact Operational Autonomy A4 allow-list: ${name}`\n      : `Order delete mobility declaration changed beyond exact allow-list: ${name}`)\n'
+if (!patched.includes(orderDeleteLifecycleAddedAnchor)) throw new Error('Order delete lifecycle added-declaration anchor missing')
+patched = patched.replace(orderDeleteLifecycleAddedAnchor, [
+  '    const orderDeleteLifecycleChanged = orderDeleteLifecycleChanges[name]',
+  '    if (orderDeleteLifecycleChanged) {',
+  "      check(orderDeleteLifecycleChanged.before === acceptedHash, 'Order delete lifecycle added-declaration predecessor drifted: ' + name)",
+  '      acceptedHash = orderDeleteLifecycleChanged.after',
+  '    }',
+  '    check(sha(declarations.get(name)) === acceptedHash, orderDeleteLifecycleChanged',
+  '      ? `Order delete mobility declaration changed beyond exact lifecycle-fix allow-list: ${name}`',
+  '      : (operationalAutonomyA4Changed',
+  '        ? `Order delete mobility declaration changed beyond exact Operational Autonomy A4 allow-list: ${name}`',
+  '        : `Order delete mobility declaration changed beyond exact allow-list: ${name}`))',
+  '',
+].join('\n'))
 const physicalAddedAnchor = '  // Catalog gender scope R1 changes only the product create/update request shapes.'
 if (!patched.includes(physicalAddedAnchor)) throw new Error('1906A physical intake added-declaration anchor missing')
 const physicalAddedBlock = [
@@ -293,29 +308,508 @@ patched = patched.replace(physicalAddedAnchor, [
 const orderDeleteLifecycle = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-delete-working-mode-lifecycle-worker-manifest.json'), 'utf8'))
 if (orderDeleteLifecycle.version !== 1 || orderDeleteLifecycle.revision !== 'order-delete-working-mode-lifecycle-r1' || Object.keys(orderDeleteLifecycle.changes || {}).sort().join(',') !== 'deleteOrderSafely,updateOrderCritical') throw new Error('Order delete lifecycle Worker allow-list changed')
 patched = 'const orderDeleteLifecycleChanges = ' + JSON.stringify(orderDeleteLifecycle.changes) + '\n' + patched
-const orderDeleteLifecycleHashAnchor = '        return sha(declarations.get(name)) === (resolverUxChanged ? resolverUxChanged.after : acceptedFinanceR3HistoricalCashHash)'
-if (!patched.includes(orderDeleteLifecycleHashAnchor)) throw new Error('Order delete lifecycle predecessor anchor missing')
-patched = patched.replace(orderDeleteLifecycleHashAnchor, [
+// Branch2 environment is the final deployment-only declaration layer over current main.
+const branch2Environment = JSON.parse(fs.readFileSync(path.join(root, 'scripts/branch2-environment-worker-manifest.json'), 'utf8'))
+if (branch2Environment.version !== 1 || branch2Environment.revision !== 'branch2-environment-r2-current-main' || Object.keys(branch2Environment.changes || {}).join(',') !== 'verifySimpleAdminPassword') throw new Error('Branch2 environment Worker allow-list changed')
+patched = 'const branch2EnvironmentChanges = ' + JSON.stringify(branch2Environment.changes) + '\n' + patched
+const branch2HashAnchor = '        return sha(declarations.get(name)) === (resolverUxChanged ? resolverUxChanged.after : acceptedFinanceR3HistoricalCashHash)'
+if (!patched.includes(branch2HashAnchor)) throw new Error('Branch2 environment predecessor anchor missing')
+patched = patched.replace(branch2HashAnchor, [
   '        const acceptedPostResolverUxHash = resolverUxChanged ? resolverUxChanged.after : acceptedFinanceR3HistoricalCashHash',
+  '        const branch2EnvironmentChanged = branch2EnvironmentChanges[name]',
+  "        if (branch2EnvironmentChanged) check(branch2EnvironmentChanged.before === acceptedPostResolverUxHash, 'Branch2 environment predecessor drifted: ' + name)",
+  '        const acceptedPostBranch2EnvironmentHash = branch2EnvironmentChanged ? branch2EnvironmentChanged.after : acceptedPostResolverUxHash',
   '        const orderDeleteLifecycleChanged = orderDeleteLifecycleChanges[name]',
-  "        if (orderDeleteLifecycleChanged) check(orderDeleteLifecycleChanged.before === acceptedPostResolverUxHash, 'Order delete lifecycle predecessor drifted: ' + name)",
-  '        return sha(declarations.get(name)) === (orderDeleteLifecycleChanged ? orderDeleteLifecycleChanged.after : acceptedPostResolverUxHash)',
+  "        if (orderDeleteLifecycleChanged) check(orderDeleteLifecycleChanged.before === acceptedPostBranch2EnvironmentHash, 'Order delete lifecycle predecessor drifted: ' + name)",
+  '        return sha(declarations.get(name)) === (orderDeleteLifecycleChanged ? orderDeleteLifecycleChanged.after : acceptedPostBranch2EnvironmentHash)',
 ].join('\n'))
-const orderDeleteLifecycleAddedAnchor = '    check(sha(declarations.get(name)) === acceptedHash, operationalAutonomyA4Changed\n      ? `Order delete mobility declaration changed beyond exact Operational Autonomy A4 allow-list: ${name}`\n      : `Order delete mobility declaration changed beyond exact allow-list: ${name}`)\n'
-if (!patched.includes(orderDeleteLifecycleAddedAnchor)) throw new Error('Order delete lifecycle added-declaration anchor missing')
-patched = patched.replace(orderDeleteLifecycleAddedAnchor, [
-  '    const orderDeleteLifecycleChanged = orderDeleteLifecycleChanges[name]',
-  '    if (orderDeleteLifecycleChanged) {',
-  "      check(orderDeleteLifecycleChanged.before === acceptedHash, 'Order delete lifecycle added-declaration predecessor drifted: ' + name)",
-  '      acceptedHash = orderDeleteLifecycleChanged.after',
+const stage01CanonicalItemProjection = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-canonical-item-projection-r2-worker-manifest.json'), 'utf8'))
+if (stage01CanonicalItemProjection.version !== 1 || stage01CanonicalItemProjection.revision !== 'stage01-canonical-item-projection-r2') throw new Error('Stage01 canonical item projection Worker manifest invalid')
+if (Object.keys(stage01CanonicalItemProjection.changes || {}).sort().join(',') !== 'getOrder,listOrders') throw new Error('Stage01 canonical item projection Worker change allow-list widened')
+if (Object.keys(stage01CanonicalItemProjection.added || {}).join(',') !== 'canonicalItemProjection') throw new Error('Stage01 canonical item projection Worker added allow-list widened')
+patched = 'const stage01CanonicalItemProjectionChanges = ' + JSON.stringify(stage01CanonicalItemProjection.changes || {}) + '\n'
+  + 'const stage01CanonicalItemProjectionAdded = ' + JSON.stringify(stage01CanonicalItemProjection.added || {}) + '\n'
+  + patched
+const stage01CanonicalCountAnchor = ' + Object.keys(financeDayAdded).length'
+if (!patched.includes(stage01CanonicalCountAnchor)) throw new Error('Stage01 canonical item projection declaration-count anchor missing')
+patched = patched.replace(stage01CanonicalCountAnchor, stage01CanonicalCountAnchor + ' + Object.keys(stage01CanonicalItemProjectionAdded).length')
+const stage01CanonicalHashAnchor = '        return sha(declarations.get(name)) === (orderDeleteLifecycleChanged ? orderDeleteLifecycleChanged.after : acceptedPostBranch2EnvironmentHash)'
+if (!patched.includes(stage01CanonicalHashAnchor)) throw new Error('Stage01 canonical item projection predecessor hash anchor missing')
+patched = patched.replace(stage01CanonicalHashAnchor, [
+  '        const acceptedPostOrderDeleteLifecycleHash = orderDeleteLifecycleChanged ? orderDeleteLifecycleChanged.after : acceptedPostBranch2EnvironmentHash',
+  '        const stage01CanonicalItemProjectionChanged = stage01CanonicalItemProjectionChanges[name]',
+  "        if (stage01CanonicalItemProjectionChanged) check(stage01CanonicalItemProjectionChanged.before === acceptedPostOrderDeleteLifecycleHash, 'Stage01 canonical item projection predecessor drifted: ' + name)",
+  '        return sha(declarations.get(name)) === (stage01CanonicalItemProjectionChanged ? stage01CanonicalItemProjectionChanged.after : acceptedPostOrderDeleteLifecycleHash)',
+].join('\n'))
+const stage01CanonicalAddedAnchor = '  // Catalog gender scope R1 changes only the product create/update request shapes.'
+if (!patched.includes(stage01CanonicalAddedAnchor)) throw new Error('Stage01 canonical item projection added-declaration anchor missing')
+patched = patched.replace(stage01CanonicalAddedAnchor, [
+  '  for (const [name, hash] of Object.entries(stage01CanonicalItemProjectionAdded)) {',
+  "    check(declarations.has(name) && sha(declarations.get(name)) === hash, 'Stage01 canonical item projection added declaration changed: ' + name)",
+  '  }',
+  '',
+  stage01CanonicalAddedAnchor,
+].join('\n'))
+
+const stage01WorkshopTruth = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-workshop-truth-r3-worker-manifest.json'), 'utf8'))
+if (stage01WorkshopTruth.version !== 1 || stage01WorkshopTruth.revision !== 'stage01-workshop-truth-r3') throw new Error('Stage01 Workshop truth R3 Worker manifest invalid')
+if (Object.keys(stage01WorkshopTruth.changes || {}).sort().join(',') !== 'orderWorkshopPendingForShipping,updateWorkshopTask') throw new Error('Stage01 Workshop truth R3 Worker allow-list widened')
+if (!stage01WorkshopTruth.router?.before || !stage01WorkshopTruth.router?.after || !stage01WorkshopTruth.router?.beforeBlock || !stage01WorkshopTruth.router?.afterBlock) throw new Error('Stage01 Workshop truth R3 router manifest incomplete')
+patched = 'const stage01WorkshopTruthChanges = ' + JSON.stringify(stage01WorkshopTruth.changes || {}) + '\n'
+  + 'const stage01WorkshopTruthRouter = ' + JSON.stringify(stage01WorkshopTruth.router || {}) + '\n'
+  + patched
+const stage01WorkshopHashAnchor = '        return sha(declarations.get(name)) === (stage01CanonicalItemProjectionChanged ? stage01CanonicalItemProjectionChanged.after : acceptedPostOrderDeleteLifecycleHash)'
+if (!patched.includes(stage01WorkshopHashAnchor)) throw new Error('Stage01 Workshop truth R3 predecessor hash anchor missing')
+patched = patched.replace(stage01WorkshopHashAnchor, [
+  '        const acceptedPostStage01CanonicalItemHash = stage01CanonicalItemProjectionChanged ? stage01CanonicalItemProjectionChanged.after : acceptedPostOrderDeleteLifecycleHash',
+  '        const stage01WorkshopTruthChanged = stage01WorkshopTruthChanges[name]',
+  "        if (stage01WorkshopTruthChanged) check(stage01WorkshopTruthChanged.before === acceptedPostStage01CanonicalItemHash, 'Stage01 Workshop truth R3 predecessor drifted: ' + name)",
+  '        return sha(declarations.get(name)) === (stage01WorkshopTruthChanged ? stage01WorkshopTruthChanged.after : acceptedPostStage01CanonicalItemHash)',
+].join('\n'))
+const stage01WorkshopRouterAnchor = "  check(sha(currentRouter) === resolverUxRouter.after, 'Resolver UX router changed outside exact delta')"
+if (!patched.includes(stage01WorkshopRouterAnchor)) throw new Error('Stage01 Workshop truth R3 router predecessor anchor missing')
+patched = patched.replace(stage01WorkshopRouterAnchor, [
+  "  check(sha(currentRouter) === stage01WorkshopTruthRouter.after, 'Stage01 Workshop truth R3 router changed outside exact delta')",
+  "  check(currentRouter.includes(stage01WorkshopTruthRouter.afterBlock), 'Stage01 Workshop truth R3 router reversion anchor missing')",
+  '  currentRouter = currentRouter.replace(stage01WorkshopTruthRouter.afterBlock, stage01WorkshopTruthRouter.beforeBlock)',
+  "  check(sha(currentRouter) === stage01WorkshopTruthRouter.before, 'Stage01 Workshop truth R3 router reverse baseline mismatch')",
+  "  check(stage01WorkshopTruthRouter.before === resolverUxRouter.after, 'Stage01 Workshop truth R3 router predecessor drifted')",
+  stage01WorkshopRouterAnchor,
+].join('\n'))
+
+const stage01FinanceCorrectionReliabilityR4 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-finance-correction-reliability-r4-worker-manifest.json'), 'utf8'))
+if (stage01FinanceCorrectionReliabilityR4.version !== 1 || stage01FinanceCorrectionReliabilityR4.revision !== 'stage01-finance-correction-reliability-r4') throw new Error('Stage01 finance correction reliability R4 Worker manifest invalid')
+if (Object.keys(stage01FinanceCorrectionReliabilityR4.changes || {}).join(',') !== 'correctExchangeFinancials') throw new Error('Stage01 finance correction reliability R4 Worker allow-list widened')
+patched = 'const stage01FinanceCorrectionReliabilityR4Changes = ' + JSON.stringify(stage01FinanceCorrectionReliabilityR4.changes || {}) + '\n' + patched
+
+const stage01FinanceA5AddedAnchor = [
+  '  for (const [name, expectedHash] of Object.entries(operationalAutonomyA5Added)) {',
+  "    check(declarations.has(name), 'Operational Autonomy A5 added Worker declaration missing: ' + name)",
+  "    check(sha(declarations.get(name)) === expectedHash, 'Operational Autonomy A5 added Worker declaration changed: ' + name)",
+  '  }',
+  '',
+].join('\n')
+if (!patched.includes(stage01FinanceA5AddedAnchor)) throw new Error('Stage01 finance correction reliability R4 A5-added predecessor anchor missing')
+patched = patched.replace(stage01FinanceA5AddedAnchor, [
+  '  for (const [name, expectedHash] of Object.entries(operationalAutonomyA5Added)) {',
+  "    check(declarations.has(name), 'Operational Autonomy A5 added Worker declaration missing: ' + name)",
+  '    const stage01FinanceCorrectionChanged = stage01FinanceCorrectionReliabilityR4Changes[name]',
+  '    if (stage01FinanceCorrectionChanged) {',
+  "      check(stage01FinanceCorrectionChanged.before === expectedHash, 'Stage01 finance correction reliability R4 predecessor drifted: ' + name)",
   '    }',
-  '    check(sha(declarations.get(name)) === acceptedHash, orderDeleteLifecycleChanged',
-  '      ? `Order delete mobility declaration changed beyond exact lifecycle-fix allow-list: ${name}`',
-  '      : (operationalAutonomyA4Changed',
-  '        ? `Order delete mobility declaration changed beyond exact Operational Autonomy A4 allow-list: ${name}`',
-  '        : `Order delete mobility declaration changed beyond exact allow-list: ${name}`))',
+  "    check(sha(declarations.get(name)) === (stage01FinanceCorrectionChanged ? stage01FinanceCorrectionChanged.after : expectedHash), stage01FinanceCorrectionChanged",
+  "      ? 'Stage01 finance correction reliability R4 declaration changed beyond exact delta: ' + name",
+  "      : 'Operational Autonomy A5 added Worker declaration changed: ' + name)",
+  '  }',
   '',
 ].join('\n'))
+
+const stage01ReturnExchangeWorkshopCacheR5 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-return-exchange-workshop-cache-reliability-r5-worker-manifest.json'), 'utf8'))
+if (stage01ReturnExchangeWorkshopCacheR5.version !== 1 || stage01ReturnExchangeWorkshopCacheR5.revision !== 'stage01-return-exchange-workshop-cache-reliability-r5') throw new Error('Stage01 Return/Exchange Workshop cache R5 Worker manifest invalid')
+if (Object.keys(stage01ReturnExchangeWorkshopCacheR5.changes || {}).sort().join(',') !== 'cancelExchange,cancelReturn,createExchange,createReturn') throw new Error('Stage01 Return/Exchange Workshop cache R5 Worker allow-list widened')
+patched = 'const stage01ReturnExchangeWorkshopCacheR5Changes = ' + JSON.stringify(stage01ReturnExchangeWorkshopCacheR5.changes || {}) + '\n' + patched
+const stage01ReturnExchangeHashAnchor = '        return sha(declarations.get(name)) === (stage01WorkshopTruthChanged ? stage01WorkshopTruthChanged.after : acceptedPostStage01CanonicalItemHash)'
+if (!patched.includes(stage01ReturnExchangeHashAnchor)) throw new Error('Stage01 Return/Exchange Workshop cache R5 predecessor hash anchor missing')
+patched = patched.replace(stage01ReturnExchangeHashAnchor, [
+  '        const acceptedPostStage01WorkshopHash = stage01WorkshopTruthChanged ? stage01WorkshopTruthChanged.after : acceptedPostStage01CanonicalItemHash',
+  '        const stage01ReturnExchangeWorkshopCacheChanged = stage01ReturnExchangeWorkshopCacheR5Changes[name]',
+  "        if (stage01ReturnExchangeWorkshopCacheChanged) check(stage01ReturnExchangeWorkshopCacheChanged.before === acceptedPostStage01WorkshopHash, 'Stage01 Return/Exchange Workshop cache R5 predecessor drifted: ' + name)",
+  '        return sha(declarations.get(name)) === (stage01ReturnExchangeWorkshopCacheChanged ? stage01ReturnExchangeWorkshopCacheChanged.after : acceptedPostStage01WorkshopHash)',
+].join('\n'))
+
+const stage01UnshippedRefundR6 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-unshipped-refund-decoupling-r6-worker-manifest.json'), 'utf8'))
+if (stage01UnshippedRefundR6.version !== 1 || stage01UnshippedRefundR6.revision !== 'stage01-unshipped-refund-decoupling-r6') throw new Error('Stage01 unshipped refund R6 Worker manifest invalid')
+if (Object.keys(stage01UnshippedRefundR6.changes || {}).join(',') !== 'listOrders') throw new Error('Stage01 unshipped refund R6 Worker allow-list widened')
+patched = 'const stage01UnshippedRefundR6Changes = ' + JSON.stringify(stage01UnshippedRefundR6.changes || {}) + '\n' + patched
+
+const stage01UnshippedRefundHashAnchor = '        return sha(declarations.get(name)) === (stage01ReturnExchangeWorkshopCacheChanged ? stage01ReturnExchangeWorkshopCacheChanged.after : acceptedPostStage01WorkshopHash)'
+if (!patched.includes(stage01UnshippedRefundHashAnchor)) throw new Error('Stage01 unshipped refund R6 predecessor hash anchor missing')
+patched = patched.replace(stage01UnshippedRefundHashAnchor, [
+  '        const acceptedPostStage01ReturnExchangeHash = stage01ReturnExchangeWorkshopCacheChanged ? stage01ReturnExchangeWorkshopCacheChanged.after : acceptedPostStage01WorkshopHash',
+  '        const stage01UnshippedRefundChanged = stage01UnshippedRefundR6Changes[name]',
+  '        if (stage01UnshippedRefundChanged) {',
+  "          check(stage01UnshippedRefundChanged.before === acceptedPostStage01ReturnExchangeHash, 'Stage01 unshipped refund R6 predecessor drifted: ' + name)",
+  "          check(declarations.get(name).includes(stage01UnshippedRefundChanged.afterBlock), 'Stage01 unshipped refund R6 exact replacement missing: ' + name)",
+  '          const revertedStage01UnshippedRefund = declarations.get(name).replace(stage01UnshippedRefundChanged.afterBlock, stage01UnshippedRefundChanged.beforeBlock)',
+  "          check(sha(revertedStage01UnshippedRefund) === stage01UnshippedRefundChanged.before, 'Stage01 unshipped refund R6 changed beyond exact replacement: ' + name)",
+  '          return true',
+  '        }',
+  '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash',
+].join('\n'))
+
+const stage01WorkshopBulkCacheR7 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-workshop-bulk-cache-reliability-r7-worker-manifest.json'), 'utf8'))
+if (stage01WorkshopBulkCacheR7.version !== 1 || stage01WorkshopBulkCacheR7.revision !== 'stage01-workshop-bulk-cache-reliability-r7') throw new Error('Stage01 Workshop bulk cache R7 Worker manifest invalid')
+if (Object.keys(stage01WorkshopBulkCacheR7.changes || {}).join(',') !== 'bulkUpdateWorkshopTasks') throw new Error('Stage01 Workshop bulk cache R7 Worker allow-list widened')
+patched = 'const stage01WorkshopBulkCacheR7Changes = ' + JSON.stringify(stage01WorkshopBulkCacheR7.changes || {}) + '\n' + patched
+
+const stage01WorkshopBulkHashAnchor = '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash'
+if (!patched.includes(stage01WorkshopBulkHashAnchor)) throw new Error('Stage01 Workshop bulk cache R7 predecessor hash anchor missing')
+patched = patched.replace(stage01WorkshopBulkHashAnchor, [
+  '        const stage01WorkshopBulkCacheChanged = stage01WorkshopBulkCacheR7Changes[name]',
+  '        if (stage01WorkshopBulkCacheChanged) {',
+  "          check(stage01WorkshopBulkCacheChanged.before === acceptedPostStage01ReturnExchangeHash, 'Stage01 Workshop bulk cache R7 predecessor drifted: ' + name)",
+  "          check(declarations.get(name).includes(stage01WorkshopBulkCacheChanged.afterBlock), 'Stage01 Workshop bulk cache R7 exact replacement missing: ' + name)",
+  '          const revertedStage01WorkshopBulkCache = declarations.get(name).replace(stage01WorkshopBulkCacheChanged.afterBlock, stage01WorkshopBulkCacheChanged.beforeBlock)',
+  "          check(sha(revertedStage01WorkshopBulkCache) === stage01WorkshopBulkCacheChanged.before, 'Stage01 Workshop bulk cache R7 changed beyond exact replacement: ' + name)",
+  '          return true',
+  '        }',
+  '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash',
+].join('\n'))
+
+const stage01DebtCanonicalItemR8 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-debt-canonical-item-r8-worker-manifest.json'), 'utf8'))
+if (stage01DebtCanonicalItemR8.version !== 1 || stage01DebtCanonicalItemR8.revision !== 'stage01-debt-canonical-item-r8') throw new Error('Stage01 Debt canonical item R8 Worker manifest invalid')
+if (Object.keys(stage01DebtCanonicalItemR8.changes || {}).join(',') !== 'listOpenDebtOrders') throw new Error('Stage01 Debt canonical item R8 Worker allow-list widened')
+patched = 'const stage01DebtCanonicalItemR8Changes = ' + JSON.stringify(stage01DebtCanonicalItemR8.changes || {}) + '\n' + patched
+
+const stage01DebtCanonicalHashAnchor = '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash'
+if (!patched.includes(stage01DebtCanonicalHashAnchor)) throw new Error('Stage01 Debt canonical item R8 predecessor hash anchor missing')
+patched = patched.replace(stage01DebtCanonicalHashAnchor, [
+  '        const stage01DebtCanonicalItemChanged = stage01DebtCanonicalItemR8Changes[name]',
+  '        if (stage01DebtCanonicalItemChanged) {',
+  "          check(stage01DebtCanonicalItemChanged.before === acceptedPostStage01ReturnExchangeHash, 'Stage01 Debt canonical item R8 predecessor drifted: ' + name)",
+  "          check(declarations.get(name).includes(stage01DebtCanonicalItemChanged.afterBlock), 'Stage01 Debt canonical item R8 exact replacement missing: ' + name)",
+  '          const revertedStage01DebtCanonicalItem = declarations.get(name).replace(stage01DebtCanonicalItemChanged.afterBlock, stage01DebtCanonicalItemChanged.beforeBlock)',
+  "          check(sha(revertedStage01DebtCanonicalItem) === stage01DebtCanonicalItemChanged.before, 'Stage01 Debt canonical item R8 changed beyond exact replacement: ' + name)",
+  '          return true',
+  '        }',
+  '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash',
+].join('\n'))
+
+const stage01WorkshopCanonicalItemR9 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-workshop-canonical-item-r9-worker-manifest.json'), 'utf8'))
+if (stage01WorkshopCanonicalItemR9.version !== 1 || stage01WorkshopCanonicalItemR9.revision !== 'stage01-workshop-canonical-item-r9') throw new Error('Stage01 Workshop canonical item R9 Worker manifest invalid')
+if (Object.keys(stage01WorkshopCanonicalItemR9.changes || {}).join(',') !== 'enrichWorkshopTaskRowsFromOrderItems') throw new Error('Stage01 Workshop canonical item R9 Worker allow-list widened')
+patched = 'const stage01WorkshopCanonicalItemR9Changes = ' + JSON.stringify(stage01WorkshopCanonicalItemR9.changes || {}) + '\n' + patched
+
+const stage01WorkshopCanonicalHashAnchor = '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash'
+if (!patched.includes(stage01WorkshopCanonicalHashAnchor)) throw new Error('Stage01 Workshop canonical item R9 predecessor hash anchor missing')
+patched = patched.replace(stage01WorkshopCanonicalHashAnchor, [
+  '        const stage01WorkshopCanonicalItemChanged = stage01WorkshopCanonicalItemR9Changes[name]',
+  '        if (stage01WorkshopCanonicalItemChanged) {',
+  "          check(stage01WorkshopCanonicalItemChanged.before === acceptedPostStage01ReturnExchangeHash, 'Stage01 Workshop canonical item R9 predecessor drifted: ' + name)",
+  "          check(declarations.get(name).includes(stage01WorkshopCanonicalItemChanged.afterBlock), 'Stage01 Workshop canonical item R9 exact replacement missing: ' + name)",
+  '          const revertedStage01WorkshopCanonicalItem = declarations.get(name).replace(stage01WorkshopCanonicalItemChanged.afterBlock, stage01WorkshopCanonicalItemChanged.beforeBlock)',
+  "          check(sha(revertedStage01WorkshopCanonicalItem) === stage01WorkshopCanonicalItemChanged.before, 'Stage01 Workshop canonical item R9 changed beyond exact replacement: ' + name)",
+  '          return true',
+  '        }',
+  '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash',
+].join('\n'))
+
+const stage01WorkshopLifecycleCanonicalR10 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-workshop-lifecycle-canonical-link-r10-worker-manifest.json'), 'utf8'))
+if (stage01WorkshopLifecycleCanonicalR10.version !== 1 || stage01WorkshopLifecycleCanonicalR10.revision !== 'stage01-workshop-lifecycle-canonical-link-r10') throw new Error('Stage01 Workshop lifecycle canonical link R10 Worker manifest invalid')
+if (Object.keys(stage01WorkshopLifecycleCanonicalR10.changes || {}).sort().join(',') !== 'resolveInventoryLifecycleCandidate,resolveWorkshopCatalogExactCandidate') throw new Error('Stage01 Workshop lifecycle canonical link R10 Worker allow-list widened')
+patched = 'const stage01WorkshopLifecycleCanonicalR10Changes = ' + JSON.stringify(stage01WorkshopLifecycleCanonicalR10.changes || {}) + '\n' + patched
+
+const stage01WorkshopLifecycleCanonicalHashAnchor = '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash'
+if (!patched.includes(stage01WorkshopLifecycleCanonicalHashAnchor)) throw new Error('Stage01 Workshop lifecycle canonical link R10 predecessor hash anchor missing')
+patched = patched.replace(stage01WorkshopLifecycleCanonicalHashAnchor, [
+  '        const stage01WorkshopLifecycleCanonicalChanged = stage01WorkshopLifecycleCanonicalR10Changes[name]',
+  '        if (stage01WorkshopLifecycleCanonicalChanged) {',
+  "          check(declarations.get(name).includes(stage01WorkshopLifecycleCanonicalChanged.afterBlock), 'Stage01 Workshop lifecycle canonical link R10 exact replacement missing: ' + name)",
+  '          const revertedStage01WorkshopLifecycleCanonical = declarations.get(name).replace(stage01WorkshopLifecycleCanonicalChanged.afterBlock, stage01WorkshopLifecycleCanonicalChanged.beforeBlock)',
+  "          check(sha(revertedStage01WorkshopLifecycleCanonical) === acceptedPostStage01ReturnExchangeHash, 'Stage01 Workshop lifecycle canonical link R10 changed beyond exact replacement: ' + name)",
+  '          return true',
+  '        }',
+  '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash',
+].join('\n'))
+
+const stage01WorkshopLifecycleCanonicalAddedAnchor = [
+  '    check(',
+  '      sha(declarations.get(name)) === acceptedPostW3NaturalRecoveryHash,',
+  '      w3NaturalRecoveryWorkerChanged',
+  '        ? `192A1-added declaration changed beyond exact W3.2 allow-list: ${name}`',
+  '        : `192A1 added Worker declaration changed beyond accepted deltas: ${name}`,',
+  '    )',
+].join('\n')
+if (!patched.includes(stage01WorkshopLifecycleCanonicalAddedAnchor)) throw new Error('Stage01 Workshop lifecycle canonical link R10 192A1-added anchor missing')
+patched = patched.replace(stage01WorkshopLifecycleCanonicalAddedAnchor, [
+  '    const stage01WorkshopLifecycleCanonicalAddedChanged = stage01WorkshopLifecycleCanonicalR10Changes[name]',
+  '    if (stage01WorkshopLifecycleCanonicalAddedChanged) {',
+  "      check(declarations.get(name).includes(stage01WorkshopLifecycleCanonicalAddedChanged.afterBlock), 'Stage01 Workshop lifecycle canonical link R10 added exact replacement missing: ' + name)",
+  '      const revertedStage01WorkshopLifecycleCanonicalAdded = declarations.get(name).replace(stage01WorkshopLifecycleCanonicalAddedChanged.afterBlock, stage01WorkshopLifecycleCanonicalAddedChanged.beforeBlock)',
+  "      check(sha(revertedStage01WorkshopLifecycleCanonicalAdded) === acceptedPostW3NaturalRecoveryHash, 'Stage01 Workshop lifecycle canonical link R10 changed 192A1-added declaration beyond exact replacement: ' + name)",
+  '    } else {',
+  '      check(',
+  '        sha(declarations.get(name)) === acceptedPostW3NaturalRecoveryHash,',
+  '        w3NaturalRecoveryWorkerChanged',
+  '          ? `192A1-added declaration changed beyond exact W3.2 allow-list: ${name}`',
+  '          : `192A1 added Worker declaration changed beyond accepted deltas: ${name}`,',
+  '      )',
+  '    }',
+].join('\n'))
+
+const stage01LifecycleManualQueueR21 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-lifecycle-manual-queue-r21-worker-manifest.json'), 'utf8'))
+if (stage01LifecycleManualQueueR21.version !== 1 || stage01LifecycleManualQueueR21.revision !== 'stage01-lifecycle-manual-queue-r21') throw new Error('Stage01 lifecycle manual queue R21 Worker manifest invalid')
+if (Object.keys(stage01LifecycleManualQueueR21.changes || {}).join(',') !== 'listInventoryLifecyclePending') throw new Error('Stage01 lifecycle manual queue R21 Worker allow-list widened')
+patched = 'const stage01LifecycleManualQueueR21Changes = ' + JSON.stringify(stage01LifecycleManualQueueR21.changes || {}) + '\n' + patched
+
+const stage01PendingLifecycleR11Manifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-pending-lifecycle-current-links-r11-worker-manifest.json'), 'utf8'))
+if (stage01PendingLifecycleR11Manifest.version !== 1 || stage01PendingLifecycleR11Manifest.revision !== 'stage01-pending-lifecycle-current-links-r11') throw new Error('Stage01 pending lifecycle current links R11 Worker manifest invalid')
+const stage01PendingLifecycleR11Changes = stage01PendingLifecycleR11Manifest.files?.['worker/domains/lifecycle.ts']?.changes || {}
+if (Object.keys(stage01PendingLifecycleR11Changes).sort().join(',') !== 'getInventoryLifecycleContext,listInventoryLifecyclePending,reconcileKnownPendingInventoryInbound') throw new Error('Stage01 pending lifecycle R11 lifecycle allow-list widened')
+const stage01PendingLifecycleR11Attention = stage01PendingLifecycleR11Manifest.files?.['worker/domains/warehouse-attention.ts']?.changes?.exactLifecycleVariantSql
+if (!stage01PendingLifecycleR11Attention?.beforeBlock || !stage01PendingLifecycleR11Attention?.afterBlock) throw new Error('Stage01 pending lifecycle R11 attention delta incomplete')
+
+// R11 is the newest exact layer. Instead of guessing which historical hash branch each declaration
+// belongs to, validate the live after-block here and temporarily normalize only that exact delta back
+// to its predecessor. The complete legacy gate then proves every older manifest/hash unchanged.
+patched = 'const stage01PendingLifecycleR11Changes = ' + JSON.stringify(stage01PendingLifecycleR11Changes) + '\n'
+  + 'const stage01PendingLifecycleR11Attention = ' + JSON.stringify(stage01PendingLifecycleR11Attention) + '\n'
+  + patched
+
+const stage01PendingLifecycleNormalizeAnchor = '  const removedNames = Object.keys(removed)\n'
+if (!patched.includes(stage01PendingLifecycleNormalizeAnchor)) throw new Error('Stage01 pending lifecycle R11 declaration-normalization anchor missing')
+const stage01PendingLifecycleNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01PendingLifecycleR11Changes)) {',
+  "    check(declarations.has(name), 'Stage01 pending lifecycle R11 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 pending lifecycle R11 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 pending lifecycle R11 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  "  const stage01PendingLifecycleAttentionName = 'getWarehouseAttentionSummary'",
+  "  check(declarations.has(stage01PendingLifecycleAttentionName), 'Stage01 pending lifecycle R11 Warehouse Attention declaration missing')",
+  '  const stage01PendingLifecycleAttentionCurrent = declarations.get(stage01PendingLifecycleAttentionName)',
+  "  check(stage01PendingLifecycleAttentionCurrent.includes(stage01PendingLifecycleR11Attention.afterBlock), 'Stage01 pending lifecycle R11 Warehouse Attention exact after-block missing')",
+  '  const stage01PendingLifecycleAttentionReverted = stage01PendingLifecycleAttentionCurrent.replace(stage01PendingLifecycleR11Attention.afterBlock, stage01PendingLifecycleR11Attention.beforeBlock)',
+  "  check(stage01PendingLifecycleAttentionReverted !== stage01PendingLifecycleAttentionCurrent, 'Stage01 pending lifecycle R11 Warehouse Attention exact replacement did not apply')",
+  '  declarations.set(stage01PendingLifecycleAttentionName, stage01PendingLifecycleAttentionReverted)',
+  '',
+].join('\n')
+patched = patched.replace(stage01PendingLifecycleNormalizeAnchor, stage01PendingLifecycleNormalizeBlock + stage01PendingLifecycleNormalizeAnchor)
+
+const stage01LifecycleManualQueueNormalizeAnchor = '  for (const [name, change] of Object.entries(stage01PendingLifecycleR11Changes)) {'
+if (!patched.includes(stage01LifecycleManualQueueNormalizeAnchor)) throw new Error('Stage01 lifecycle manual queue R21 predecessor anchor missing')
+const stage01LifecycleManualQueueNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01LifecycleManualQueueR21Changes)) {',
+  "    check(declarations.has(name), 'Stage01 lifecycle manual queue R21 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 lifecycle manual queue R21 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 lifecycle manual queue R21 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01LifecycleManualQueueNormalizeAnchor, stage01LifecycleManualQueueNormalizeBlock + stage01LifecycleManualQueueNormalizeAnchor)
+
+
+const stage01ResolverActiveReservationR12 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-resolver-active-reservation-r12-worker-manifest.json'), 'utf8'))
+if (stage01ResolverActiveReservationR12.version !== 1 || stage01ResolverActiveReservationR12.revision !== 'stage01-resolver-active-reservation-r12') throw new Error('Stage01 Resolver active reservation R12 Worker manifest invalid')
+if (Object.keys(stage01ResolverActiveReservationR12.changes || {}).join(',') !== 'resolveCatalogReviewRows') throw new Error('Stage01 Resolver active reservation R12 Worker allow-list widened')
+patched = 'const stage01ResolverActiveReservationR12Changes = ' + JSON.stringify(stage01ResolverActiveReservationR12.changes || {}) + '\n' + patched
+
+const stage01ResolverActiveReservationNormalizeAnchor = '  const removedNames = Object.keys(removed)\n'
+if (!patched.includes(stage01ResolverActiveReservationNormalizeAnchor)) throw new Error('Stage01 Resolver active reservation R12 normalization anchor missing')
+const stage01ResolverActiveReservationNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01ResolverActiveReservationR12Changes)) {',
+  "    check(declarations.has(name), 'Stage01 Resolver active reservation R12 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 Resolver active reservation R12 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 Resolver active reservation R12 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01ResolverActiveReservationNormalizeAnchor, stage01ResolverActiveReservationNormalizeBlock + stage01ResolverActiveReservationNormalizeAnchor)
+
+const stage01HandoverPhysicalIdentityR13 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-handover-physical-canonical-identity-r13-worker-manifest.json'), 'utf8'))
+if (stage01HandoverPhysicalIdentityR13.version !== 1 || stage01HandoverPhysicalIdentityR13.revision !== 'stage01-handover-physical-canonical-identity-r13') throw new Error('Stage01 handover physical identity R13 Worker manifest invalid')
+if (Object.keys(stage01HandoverPhysicalIdentityR13.changes || {}).sort().join(',') !== 'fetchOrderStockHandoverRows,fulfillOrderReservationsV2,getOrderShipmentInventoryBlockers,stockHandoverItemFromRow') throw new Error('Stage01 handover physical identity R13 Worker allow-list widened')
+patched = 'const stage01HandoverPhysicalIdentityR13Changes = ' + JSON.stringify(stage01HandoverPhysicalIdentityR13.changes || {}) + '\n' + patched
+
+const stage01HandoverPhysicalIdentityNormalizeAnchor = '  const removedNames = Object.keys(removed)\n'
+if (!patched.includes(stage01HandoverPhysicalIdentityNormalizeAnchor)) throw new Error('Stage01 handover physical identity R13 normalization anchor missing')
+const stage01HandoverPhysicalIdentityNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01HandoverPhysicalIdentityR13Changes)) {',
+  "    check(declarations.has(name), 'Stage01 handover physical identity R13 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 handover physical identity R13 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 handover physical identity R13 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01HandoverPhysicalIdentityNormalizeAnchor, stage01HandoverPhysicalIdentityNormalizeBlock + stage01HandoverPhysicalIdentityNormalizeAnchor)
+
+const stage01ReturnExchangeAvailabilityR15 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-return-exchange-item-availability-r15-worker-manifest.json'), 'utf8'))
+if (stage01ReturnExchangeAvailabilityR15.version !== 1 || stage01ReturnExchangeAvailabilityR15.revision !== 'stage01-return-exchange-item-availability-r15') throw new Error('Stage01 Return/Exchange item availability R15 Worker manifest invalid')
+if (Object.keys(stage01ReturnExchangeAvailabilityR15.changes || {}).sort().join(',') !== 'fetchOrderRelations,getOrder,listOrders') throw new Error('Stage01 Return/Exchange item availability R15 Worker change allow-list widened')
+if (Object.keys(stage01ReturnExchangeAvailabilityR15.added || {}).join(',') !== 'orderItemAvailableOperationQuantity') throw new Error('Stage01 Return/Exchange item availability R15 Worker added allow-list widened')
+patched = 'const stage01ReturnExchangeAvailabilityR15Changes = ' + JSON.stringify(stage01ReturnExchangeAvailabilityR15.changes || {}) + '\n'
+  + 'const stage01ReturnExchangeAvailabilityR15Added = ' + JSON.stringify(stage01ReturnExchangeAvailabilityR15.added || {}) + '\n'
+  + patched
+
+const stage01ReturnExchangeAvailabilityNormalizeAnchor = '  const removedNames = Object.keys(removed)\n'
+if (!patched.includes(stage01ReturnExchangeAvailabilityNormalizeAnchor)) throw new Error('Stage01 Return/Exchange item availability R15 normalization anchor missing')
+const stage01ReturnExchangeAvailabilityNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01ReturnExchangeAvailabilityR15Changes)) {',
+  "    check(declarations.has(name), 'Stage01 Return/Exchange item availability R15 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 Return/Exchange item availability R15 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 Return/Exchange item availability R15 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '  for (const [name, change] of Object.entries(stage01ReturnExchangeAvailabilityR15Added)) {',
+  "    check(declarations.has(name), 'Stage01 Return/Exchange item availability R15 added declaration missing: ' + name)",
+  "    check(declarations.get(name) === change.afterBlock, 'Stage01 Return/Exchange item availability R15 added declaration changed: ' + name)",
+  '    declarations.delete(name)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01ReturnExchangeAvailabilityNormalizeAnchor, stage01ReturnExchangeAvailabilityNormalizeBlock + stage01ReturnExchangeAvailabilityNormalizeAnchor)
+
+const stage01CanonicalOrderSearchR14 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-canonical-order-search-r14-worker-manifest.json'), 'utf8'))
+if (stage01CanonicalOrderSearchR14.version !== 1 || stage01CanonicalOrderSearchR14.revision !== 'stage01-canonical-order-search-r14') throw new Error('Stage01 canonical order search R14 Worker manifest invalid')
+if (Object.keys(stage01CanonicalOrderSearchR14.changes || {}).join(',') !== 'listOrders') throw new Error('Stage01 canonical order search R14 Worker allow-list widened')
+patched = 'const stage01CanonicalOrderSearchR14Changes = ' + JSON.stringify(stage01CanonicalOrderSearchR14.changes || {}) + '\n' + patched
+
+const stage01StocktakeCanonicalSeedNormalizeAnchor = '  const removedNames = Object.keys(removed)\n'
+if (!patched.includes(stage01StocktakeCanonicalSeedNormalizeAnchor)) throw new Error('Stage01 stocktake canonical seed R20 normalization anchor missing')
+const stage01StocktakeCanonicalSeedNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01StocktakeCanonicalSeedR20Changes)) {',
+  "    check(declarations.has(name), 'Stage01 stocktake canonical seed R20 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 stocktake canonical seed R20 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 stocktake canonical seed R20 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01StocktakeCanonicalSeedNormalizeAnchor, stage01StocktakeCanonicalSeedNormalizeBlock + stage01StocktakeCanonicalSeedNormalizeAnchor)
+
+const stage01CanonicalOrderSearchNormalizeAnchor = '  const removedNames = Object.keys(removed)\n'
+if (!patched.includes(stage01CanonicalOrderSearchNormalizeAnchor)) throw new Error('Stage01 canonical order search R14 normalization anchor missing')
+const stage01CanonicalOrderSearchNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01CanonicalOrderSearchR14Changes)) {',
+  "    check(declarations.has(name), 'Stage01 canonical order search R14 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 canonical order search R14 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 canonical order search R14 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01CanonicalOrderSearchNormalizeAnchor, stage01CanonicalOrderSearchNormalizeBlock + stage01CanonicalOrderSearchNormalizeAnchor)
+
+const stage01StocktakeCanonicalSeedR20 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-stocktake-canonical-seed-r20-worker-manifest.json'), 'utf8'))
+if (stage01StocktakeCanonicalSeedR20.version !== 1 || stage01StocktakeCanonicalSeedR20.revision !== 'stage01-stocktake-canonical-seed-r20') throw new Error('Stage01 stocktake canonical seed R20 Worker manifest invalid')
+if (Object.keys(stage01StocktakeCanonicalSeedR20.changes || {}).join(',') !== 'createInventoryStocktakeSession') throw new Error('Stage01 stocktake canonical seed R20 Worker allow-list widened')
+patched = 'const stage01StocktakeCanonicalSeedR20Changes = ' + JSON.stringify(stage01StocktakeCanonicalSeedR20.changes || {}) + '\n' + patched
+
+const stage01InventoryCurrentCanonicalR16 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-inventory-current-canonical-identity-r16-worker-manifest.json'), 'utf8'))
+if (stage01InventoryCurrentCanonicalR16.version !== 1 || stage01InventoryCurrentCanonicalR16.revision !== 'stage01-inventory-current-canonical-identity-r16') throw new Error('Stage01 inventory current canonical identity R16 Worker manifest invalid')
+if (Object.keys(stage01InventoryCurrentCanonicalR16.changes || {}).join(',') !== 'listInventory') throw new Error('Stage01 inventory current canonical identity R16 Worker allow-list widened')
+patched = 'const stage01InventoryCurrentCanonicalR16Changes = ' + JSON.stringify(stage01InventoryCurrentCanonicalR16.changes || {}) + '\n' + patched
+
+const stage01InventoryCurrentCanonicalNormalizeAnchor = '  const removedNames = Object.keys(removed)\n'
+if (!patched.includes(stage01InventoryCurrentCanonicalNormalizeAnchor)) throw new Error('Stage01 inventory current canonical identity R16 normalization anchor missing')
+const stage01InventoryCurrentCanonicalNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01InventoryCurrentCanonicalR16Changes)) {',
+  "    check(declarations.has(name), 'Stage01 inventory current canonical identity R16 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 inventory current canonical identity R16 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 inventory current canonical identity R16 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01InventoryCurrentCanonicalNormalizeAnchor, stage01InventoryCurrentCanonicalNormalizeBlock + stage01InventoryCurrentCanonicalNormalizeAnchor)
+
+const stage01KnownIntakeCurrentCanonicalR17 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-known-intake-current-canonical-identity-r17-worker-manifest.json'), 'utf8'))
+if (stage01KnownIntakeCurrentCanonicalR17.version !== 1 || stage01KnownIntakeCurrentCanonicalR17.revision !== 'stage01-known-intake-current-canonical-identity-r17') throw new Error('Stage01 known-intake current canonical identity R17 Worker manifest invalid')
+if (Object.keys(stage01KnownIntakeCurrentCanonicalR17.changes || {}).join(',') !== 'getWarehouseAttentionSummary') throw new Error('Stage01 known-intake current canonical identity R17 Worker allow-list widened')
+patched = 'const stage01KnownIntakeCurrentCanonicalR17Changes = ' + JSON.stringify(stage01KnownIntakeCurrentCanonicalR17.changes || {}) + '\n' + patched
+
+// R17 changes the same Warehouse Attention declaration that R11 touched earlier.
+// Normalize the newest whole-declaration layer before R11 rewinds its older nested SQL delta.
+const stage01KnownIntakeCurrentCanonicalNormalizeAnchor = '  for (const [name, change] of Object.entries(stage01PendingLifecycleR11Changes)) {'
+if (!patched.includes(stage01KnownIntakeCurrentCanonicalNormalizeAnchor)) throw new Error('Stage01 known-intake current canonical identity R17 predecessor anchor missing')
+const stage01KnownIntakeCurrentCanonicalNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01KnownIntakeCurrentCanonicalR17Changes)) {',
+  "    check(declarations.has(name), 'Stage01 known-intake current canonical identity R17 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 known-intake current canonical identity R17 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 known-intake current canonical identity R17 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01KnownIntakeCurrentCanonicalNormalizeAnchor, stage01KnownIntakeCurrentCanonicalNormalizeBlock + stage01KnownIntakeCurrentCanonicalNormalizeAnchor)
+
+const stage01MoneyOnlyReturnShippingR19B = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-money-only-return-shipping-r19b-worker-manifest.json'), 'utf8'))
+if (stage01MoneyOnlyReturnShippingR19B.version !== 1 || stage01MoneyOnlyReturnShippingR19B.revision !== 'stage01-money-only-return-shipping-r19b') throw new Error('Stage01 money-only Return shipping R19B Worker manifest invalid')
+if (Object.keys(stage01MoneyOnlyReturnShippingR19B.changes || {}).sort().join(',') !== 'fetchOrderRelations,getOrder,listOrders') throw new Error('Stage01 money-only Return shipping R19B Worker allow-list widened')
+patched = 'const stage01MoneyOnlyReturnShippingR19BChanges = ' + JSON.stringify(stage01MoneyOnlyReturnShippingR19B.changes || {}) + '\n' + patched
+
+const stage01ReturnExchangeDownstreamR19 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-return-exchange-downstream-semantics-r19-worker-manifest.json'), 'utf8'))
+if (stage01ReturnExchangeDownstreamR19.version !== 1 || stage01ReturnExchangeDownstreamR19.revision !== 'stage01-return-exchange-downstream-semantics-r19') throw new Error('Stage01 Return/Exchange downstream R19 Worker manifest invalid')
+if (Object.keys(stage01ReturnExchangeDownstreamR19.changes || {}).sort().join(',') !== 'fetchOrderRelations,getOrder,listOrders') throw new Error('Stage01 Return/Exchange downstream R19 Worker allow-list widened')
+patched = 'const stage01ReturnExchangeDownstreamR19Changes = ' + JSON.stringify(stage01ReturnExchangeDownstreamR19.changes || {}) + '\n' + patched
+
+const stage01FoundStockCurrentCanonicalR18 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-found-stock-current-canonical-identity-r18-worker-manifest.json'), 'utf8'))
+if (stage01FoundStockCurrentCanonicalR18.version !== 1 || stage01FoundStockCurrentCanonicalR18.revision !== 'stage01-found-stock-current-canonical-identity-r18') throw new Error('Stage01 found-stock current canonical identity R18 Worker manifest invalid')
+if (Object.keys(stage01FoundStockCurrentCanonicalR18.changes || {}).join(',') !== 'getWarehouseAttentionSummary') throw new Error('Stage01 found-stock current canonical identity R18 Worker allow-list widened')
+patched = 'const stage01FoundStockCurrentCanonicalR18Changes = ' + JSON.stringify(stage01FoundStockCurrentCanonicalR18.changes || {}) + '\n' + patched
+
+// R18 is newer than R17 and changes the same Warehouse Attention declaration.
+// Replay it first, then let R17 and R11 unwind their predecessor layers.
+const stage01FoundStockCurrentCanonicalNormalizeAnchor = '  for (const [name, change] of Object.entries(stage01KnownIntakeCurrentCanonicalR17Changes)) {'
+if (!patched.includes(stage01FoundStockCurrentCanonicalNormalizeAnchor)) throw new Error('Stage01 found-stock current canonical identity R18 predecessor anchor missing')
+const stage01FoundStockCurrentCanonicalNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01FoundStockCurrentCanonicalR18Changes)) {',
+  "    check(declarations.has(name), 'Stage01 found-stock current canonical identity R18 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 found-stock current canonical identity R18 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 found-stock current canonical identity R18 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01FoundStockCurrentCanonicalNormalizeAnchor, stage01FoundStockCurrentCanonicalNormalizeBlock + stage01FoundStockCurrentCanonicalNormalizeAnchor)
+
+// R19 is the newest Worker layer for order relation/readback declarations. Normalize it
+// before the older Stage01 layers so the legacy structural hashes still see their predecessor text.
+const stage01ReturnExchangeDownstreamNormalizeAnchor = '  for (const [name, change] of Object.entries(stage01FoundStockCurrentCanonicalR18Changes)) {'
+if (!patched.includes(stage01ReturnExchangeDownstreamNormalizeAnchor)) throw new Error('Stage01 Return/Exchange downstream R19 predecessor anchor missing')
+const stage01ReturnExchangeDownstreamNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01ReturnExchangeDownstreamR19Changes)) {',
+  "    check(declarations.has(name), 'Stage01 Return/Exchange downstream R19 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 Return/Exchange downstream R19 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 Return/Exchange downstream R19 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01ReturnExchangeDownstreamNormalizeAnchor, stage01ReturnExchangeDownstreamNormalizeBlock + stage01ReturnExchangeDownstreamNormalizeAnchor)
+
+// R19B is newer than R19 on the same order relation/readback declarations.
+const stage01MoneyOnlyReturnShippingNormalizeAnchor = '  for (const [name, change] of Object.entries(stage01ReturnExchangeDownstreamR19Changes)) {'
+if (!patched.includes(stage01MoneyOnlyReturnShippingNormalizeAnchor)) throw new Error('Stage01 money-only Return shipping R19B predecessor anchor missing')
+const stage01MoneyOnlyReturnShippingNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01MoneyOnlyReturnShippingR19BChanges)) {',
+  "    check(declarations.has(name), 'Stage01 money-only Return shipping R19B declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 money-only Return shipping R19B exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 money-only Return shipping R19B exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01MoneyOnlyReturnShippingNormalizeAnchor, stage01MoneyOnlyReturnShippingNormalizeBlock + stage01MoneyOnlyReturnShippingNormalizeAnchor)
+
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')

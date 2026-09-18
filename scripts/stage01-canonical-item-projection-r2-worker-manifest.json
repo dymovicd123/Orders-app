@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "revision": "stage01-canonical-item-projection-r2",
+  "changes": {
+    "listOrders": {
+      "before": "182ae124f14037a527b8fede2063209e03c6164d94fb16c2d70cee2ebe39f2a2",
+      "after": "01c41e4bf9faacce6734c4ef0fe8567146f6a5678a436432b3ff7af698af250f"
+    },
+    "getOrder": {
+      "before": "8510c9d9aa7ca652bd5017d3759a93110e5c1b4a473990281db4fa03fedebec6",
+      "after": "f5c5d8f8f47d10e777af88b9adb08644b8b250b0e3f5c8ef8f8c8bb1742db6d9"
+    }
+  },
+  "added": {
+    "canonicalItemProjection": "a8e7f558e1bbcdcc8ad1e857673b53bc19380f53bea28275775f9831b6b34e39"
+  }
+}

@@ -9,7 +9,7 @@ import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOpera
 import { buildPaymentAndMoneyEventStatements, financialEventStatement, financialOperationTypeFromPaymentKind, removeOrderPaymentsWithMoneyEvents } from './money.ts'
 import { assertOrderItemInputs, assertOrderPaymentInputs, assertOrderTotalInput, calculateTotals, completedOrderOperationCounts, normalizeOrderItems, normalizeOrderPayments, OrderInputValidationError, sameNormalizedOrderItemsForEdit, sameNormalizedOrderPaymentsForEdit } from './order-core.ts'
 import { assertCreateOrderShortageDecisions, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, OrderStockShortageError, orderShipmentInventoryBlockerMessage, releaseOrderReservationsV2, reserveOrderItemV2, resolveCatalogProductAndVariant, resolveWorkshopCatalogProductOnly } from './order-reservations.ts'
-import { fetchOrderRelations, workshopTaskStatusForOrderItem } from './orders-relations.ts'
+import { canonicalItemProjection, fetchOrderRelations, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
 import { upsertCustomerIdentityForOrderCreate } from './references.ts'
 import { isInventoryAutoWriteoffEnabled, recalculateCustomersAfterStorageCleanup } from './storage.ts'
 import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'
@@ -1589,18 +1589,14 @@ export async function getOrder(db: D1Database, id: number) {
   const relations = await fetchOrderRelations(db, [id]);
   return {
     ...order,
+    committed_return_count: (relations.returnsByOrderId.get(id) || []).filter(ret => cleanText((ret as any).status || 'completed').toLowerCase() !== 'cancelled').length,
+    committed_exchange_count: relations.committedExchangeCountByOrderId.get(id) || 0,
+    has_committed_item_return: relations.hasCommittedItemReturnByOrderId.get(id) || false,
     items: (relations.itemsByOrderId.get(id) || []).map(item => ({
       id: (item as any).id,
-      // Detailed order readback follows the same historical contract as the orders table: current
-      // catalog links may change, while the order-time snapshots remain the source of truth.
-      productName: cleanText((item as any).product_name_snapshot) || cleanText((item as any).canonical_product_name),
-      audienceType: cleanText((item as any).audience_type) || (cleanText((item as any).canonical_category).toLowerCase() === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ'),
-      gender: cleanText((item as any).gender_snapshot),
-      color: cleanText((item as any).color_snapshot),
-      material: cleanText((item as any).material_snapshot),
-      length: cleanText((item as any).length_snapshot),
-      size: cleanText((item as any).size_snapshot),
+      ...canonicalItemProjection(item as Record<string, unknown>),
       quantity: (item as any).quantity,
+      availableOperationQuantity: orderItemAvailableOperationQuantity(item as Record<string, unknown>),
       unitPrice: (item as any).unit_price,
       lineTotal: (item as any).line_total,
       sourceType: (item as any).is_workshop ? 'workshop' : (item as any).source_type,

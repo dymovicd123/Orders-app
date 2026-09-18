@@ -588,11 +588,11 @@ export async function resolveCatalogReviewRows(
       continue;
     }
 
-    await db.prepare(`UPDATE order_items SET product_id = ?, variant_id = ? WHERE id = ?`).bind(productId, variantId, id).run();
-    await db.prepare(`UPDATE workshop_tasks SET product_id = ?, variant_id = ?, updated_at = ? WHERE order_item_id = ?`).bind(productId, variantId, timestamp, id).run();
-    linked += 1;
     const orderStatus = normalizeOrderStatus(row.order_status);
     if (orderStatus === 'deleted' || orderStatus === 'archived' || cleanText(row.archived_at)) {
+      await db.prepare(`UPDATE order_items SET product_id = ?, variant_id = ? WHERE id = ?`).bind(productId, variantId, id).run();
+      await db.prepare(`UPDATE workshop_tasks SET product_id = ?, variant_id = ?, updated_at = ? WHERE order_item_id = ?`).bind(productId, variantId, timestamp, id).run();
+      linked += 1;
       skipped += 1;
       continue;
     }
@@ -600,6 +600,9 @@ export async function resolveCatalogReviewRows(
     // Historical sent orders are identity repair only. Never manufacture a new present-day
     // stock movement because an old catalog link was corrected later.
     if (normalizeShippingStatus(row.shipping_status) === 'sent') {
+      await db.prepare(`UPDATE order_items SET product_id = ?, variant_id = ? WHERE id = ?`).bind(productId, variantId, id).run();
+      await db.prepare(`UPDATE workshop_tasks SET product_id = ?, variant_id = ?, updated_at = ? WHERE order_item_id = ?`).bind(productId, variantId, timestamp, id).run();
+      linked += 1;
       const existingReservation = await db.prepare(`SELECT id, status FROM inventory_reservations WHERE order_item_id = ? LIMIT 1`).bind(id).first<Record<string, unknown>>();
       if (existingReservation?.id && cleanText(existingReservation.status) === 'unresolved') {
         await db.prepare(
@@ -612,17 +615,109 @@ export async function resolveCatalogReviewRows(
     }
 
     const item = catalogReviewRowToOrderItem(row);
-    const existingReservation = await db.prepare(`SELECT id, status FROM inventory_reservations WHERE order_item_id = ? LIMIT 1`).bind(id).first<Record<string, unknown>>();
-    if (existingReservation?.id && cleanText(existingReservation.status) === 'unresolved') {
-      await db.prepare(`DELETE FROM inventory_reservations WHERE id = ?`).bind(toInt(existingReservation.id, 0)).run();
+    const targetSource = normalizeSourceType(item.inventorySource);
+    let existingReservation = await db.prepare(
+      `SELECT id, status, quantity, inventory_source, product_id, variant_id
+       FROM inventory_reservations
+       WHERE order_item_id = ?
+       LIMIT 1`
+    ).bind(id).first<Record<string, unknown>>();
+    const existingStatus = cleanText(existingReservation?.status);
+
+    // A line that was already physically issued must remain historical physical truth.
+    // Resolver may repair its catalog identity, but must never manufacture a new reservation.
+    if (orderItemWasPhysicallyIssued(row) || existingStatus === 'fulfilled') {
+      await db.prepare(`UPDATE order_items SET product_id = ?, variant_id = ? WHERE id = ?`).bind(productId, variantId, id).run();
+      await db.prepare(`UPDATE workshop_tasks SET product_id = ?, variant_id = ?, updated_at = ? WHERE order_item_id = ?`).bind(productId, variantId, timestamp, id).run();
+      linked += 1;
+      reserved += 1;
+      continue;
     }
-    await reserveOrderItemV2(db, orderId, cleanText(row.external_id), item, productId, variantId, timestamp, id, 'order', cleanText(row.external_id));
+
+    if (existingReservation?.id && existingStatus === 'active') {
+      const currentSource = normalizeSourceType(existingReservation.inventory_source);
+      const currentVariantId = toInt(existingReservation.variant_id, 0);
+      const currentQuantity = Math.max(0, toInt(existingReservation.quantity, 0));
+      const reservationMatchesTarget = currentSource === targetSource
+        && currentVariantId === variantId
+        && currentQuantity === Math.max(1, toInt(item.quantity, 1));
+
+      if (reservationMatchesTarget) {
+        // Variant is the physical identity. Keep the reservation id/lineage and only refresh
+        // its redundant product FK if an older row was incomplete.
+        await db.prepare(
+          `UPDATE inventory_reservations SET product_id = ?, updated_at = ? WHERE id = ? AND status = 'active'`
+        ).bind(productId, timestamp, toInt(existingReservation.id, 0)).run();
+      } else {
+        // Resolver is changing the physical identity of work that has not been issued yet.
+        // Release the old reservation first so the old SKU's reserved_quantity is corrected.
+        await releaseOrderReservationV2(db, id, timestamp, 'Исправлена canonical identity позиции заказа');
+        await db.batch([
+          db.prepare(`DELETE FROM inventory_reservations WHERE id = ? AND status = 'released'`).bind(toInt(existingReservation.id, 0)),
+          // If creating the replacement reservation fails, keep this row in Resolver instead
+          // of silently losing it from the review queue.
+          db.prepare(
+            `UPDATE order_items
+             SET stock_writeoff_status = 'catalog_unresolved', stock_quantity_before = NULL, stock_quantity_after = NULL
+             WHERE id = ?`
+          ).bind(id),
+        ]);
+        existingReservation = null;
+      }
+    } else if (existingReservation?.id && existingStatus !== 'fulfilled') {
+      // Unresolved/released legacy reservation rows are current-state placeholders, not audit
+      // history. Remove them before creating the exact active reservation.
+      await db.batch([
+        db.prepare(`DELETE FROM inventory_reservations WHERE id = ? AND status <> 'fulfilled'`).bind(toInt(existingReservation.id, 0)),
+        db.prepare(
+          `UPDATE order_items
+           SET stock_writeoff_status = 'catalog_unresolved', stock_quantity_before = NULL, stock_quantity_after = NULL
+           WHERE id = ?`
+        ).bind(id),
+      ]);
+      existingReservation = null;
+    }
+
+    await reserveOrderItemV2(
+      db,
+      orderId,
+      cleanText(row.external_id),
+      item,
+      productId,
+      variantId,
+      timestamp,
+      id,
+      'order',
+      cleanText(row.external_id),
+    );
+
+    // reserveOrderItemV2 is deliberately retry-safe and may return an existing row. Prove that
+    // the committed reservation now matches the Resolver decision before exposing that decision
+    // as current order truth. This also closes a concurrent conflicting Resolver race safely.
+    const committedReservation = await db.prepare(
+      `SELECT id, status, quantity, inventory_source, product_id, variant_id
+       FROM inventory_reservations
+       WHERE order_item_id = ?
+       LIMIT 1`
+    ).bind(id).first<Record<string, unknown>>();
+    const committedMatchesTarget = cleanText(committedReservation?.status) === 'active'
+      && normalizeSourceType(committedReservation?.inventory_source) === targetSource
+      && toInt(committedReservation?.variant_id, 0) === variantId
+      && toInt(committedReservation?.product_id, 0) === productId
+      && Math.max(0, toInt(committedReservation?.quantity, 0)) === Math.max(1, toInt(item.quantity, 1));
+    if (!committedMatchesTarget) {
+      throw new Error('Резерв позиции изменился одновременно с исправлением каталога. Обновите заказ и повторите действие.');
+    }
+
+    // Current working identity is published only after the matching physical reservation exists.
+    await db.prepare(`UPDATE order_items SET product_id = ?, variant_id = ? WHERE id = ?`).bind(productId, variantId, id).run();
+    await db.prepare(`UPDATE workshop_tasks SET product_id = ?, variant_id = ?, updated_at = ? WHERE order_item_id = ?`).bind(productId, variantId, timestamp, id).run();
+    linked += 1;
     reserved += 1;
   }
 
   return { ok: true, linked, reserved, historicalLinked, fulfilled: 0, skipped };
 }
-
 
 export async function reconcileCatalogReviewQueue(db: D1Database, url: URL) {
   const groupLimit = Math.min(20, Math.max(1, toInt(url.searchParams.get('limit'), 10)));

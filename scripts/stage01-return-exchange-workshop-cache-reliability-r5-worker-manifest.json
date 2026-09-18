@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "revision": "stage01-return-exchange-workshop-cache-reliability-r5",
+  "changes": {
+    "createReturn": {
+      "before": "db826ddf6bfbb9a0894309bb82c2640dc04d6c3af8e582b1bb6e89a323032609",
+      "after": "04c20e09d4df68e52545a640e5ee539529399f2647db81e2a833859a4289e13e"
+    },
+    "createExchange": {
+      "before": "10be60e43a2906175916bd83ca0ee7029cf9096e189c1fe1c463717c68552443",
+      "after": "082865a260948caed83551cbc3e1b256e1ea9530166a07ab14654ff8552f56e4"
+    },
+    "cancelReturn": {
+      "before": "995ae69a236d2e5608828dd3f17592021101f5e3611a30d018a46ddc7d0234d3",
+      "after": "32cf2a46eeef0fd39b99a1fe0b340be8d7be3ed504de21276446f4bccbbcc47a"
+    },
+    "cancelExchange": {
+      "before": "84307674f8f32ee2baa21922ca5e399a5cdffa85cf779647c78abe0c266aed8a",
+      "after": "79a062a7c25c9b5a55c2eece921cfc5948251751af781bcfdd9fb87a2ed20182"
+    }
+  }
+}

@@ -39,7 +39,12 @@ check(reservations.includes("fetchOrderStockHandoverRows(db, [], { allActive: tr
 check(ordersRead.includes('const exactExternalId = /^ORD-'), 'Complete ORD identifiers must retain an explicit exact-id detector')
 check(ordersRead.includes("baseWhereParts.push('o.external_id = ?')"), 'Exact order search must use external_id equality')
 check(ordersRead.includes('const searchOrderText = `COALESCE(o.external_id'), 'General free-text search fallback must remain available')
-check(ordersRead.includes('EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id'), 'General item search fallback must remain available')
+check(
+  ordersRead.includes('FROM order_items oi')
+    && ordersRead.includes('WHERE oi.order_id = o.id AND (')
+    && ordersRead.includes('INSTR(${searchItemText}, ?) > 0'),
+  'General item search fallback must remain available',
+)
 check(ordersRead.includes('EXISTS (SELECT 1 FROM payments search_payment WHERE search_payment.order_id = o.id'), 'General payment search fallback must remain available')
 
 console.log('D1 read-budget R1 regression: OK')

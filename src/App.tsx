@@ -28,7 +28,7 @@ import './styles/189d-team-activity-cleanup.css'
 import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, ExchangeDraft, ExchangeHistoryEntry, ExchangeHistoryResponse, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, InventoryHistoryResponse, InventoryCheckHistoryResponse, FinancialHistoryEntry, FinancialHistoryResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryDraftItem, InventoryMatrixDraft, InventoryMovementRecord, InventoryOperationVariantDraft, InventoryPanel, InventoryResponse, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, InventoryStockRecord, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, ReturnDraft, ReturnHistoryEntry, ReturnHistoryResponse, SimpleAdminStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
 import type { CatalogResolutionContext, CatalogResolutionInput, CatalogResolutionResponse, InventoryCycleCountApplyResponse, InventoryCycleCountSuggestionsResponse, InventoryReservationsResponse, InventoryStocktakeMutationResponse, InventoryStocktakeSessionsResponse, WarehouseAttentionSummaryResponse } from '../shared/api-contracts.ts'
 import { MANAGER_COLOR_OPTIONS, SIMPLE_ADMIN_USER, SIMPLE_MANAGER_USER, orderPanelOptions, workspaceModules } from './app/constants'
-import { calculateTotals, createDebtClosePayment, createEditorDraft, createEmptyEditorItem, createEmptyEditorPayment, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, deriveOrderSourceType, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, htmlEscape, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, isReturnedOrderRecord, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, paymentStatusClass, paymentStatusLabel, productCategoryLabel, readJsonResponse, isTransientApiError, resolvePaymentKind, sectorFromHash, shippingStatusLabel, sortSizeLikeValues, sourceLabel, statusLabelByState, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
+import { calculateTotals, createDebtClosePayment, createEditorDraft, createEmptyEditorItem, createEmptyEditorPayment, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, deriveOrderSourceType, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, htmlEscape, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, resolvePaymentKind, sectorFromHash, shippingStatusLabel, sortSizeLikeValues, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
 import { ChoicePills, FriendlyNumberInput, ManagerBadge, ManagerPicker, SmartPickerInput, resolveManagerDisplayColor } from './components'
 import { TableDragScrollManager } from './components/tables/TableDragScrollManager'
 import { DatabaseStorageModal, DatabaseStorageWarning, useDatabaseStorageMaintenance } from './features/storage/DatabaseStorageMaintenance'
@@ -3249,12 +3249,14 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'done', orderItemId: task.orderItemId || null }),
       })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; changed?: boolean; previousStatus?: string }>(response, 'Цех')
+      const result = await readJsonResponse<{ ok?: boolean; message?: string; changed?: boolean; previousStatus?: string; order?: OrderRecord; refreshRequired?: boolean }>(response, 'Цех')
       if (!response.ok) {
         throw new Error(result.message || 'Не удалось отметить позицию готовой.')
       }
       if (result.changed === false) await loadWorkshopData(workshopFilters, { force: true, refreshCounts: true })
       else applyWorkshopTaskStatusChange(task, 'done', result.previousStatus || task.status)
+      if (result.order) upsertOrderInState(result.order)
+      else if (result.refreshRequired) void loadDashboard(false)
       setMessage(`Позиция цеха по заказу ${task.externalOrderId} отмечена как готовая.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка обновления цеха')
@@ -3273,12 +3275,14 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'active', orderItemId: task.orderItemId || null }),
       })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; changed?: boolean; previousStatus?: string }>(response, 'Цех')
+      const result = await readJsonResponse<{ ok?: boolean; message?: string; changed?: boolean; previousStatus?: string; order?: OrderRecord; refreshRequired?: boolean }>(response, 'Цех')
       if (!response.ok) {
         throw new Error(result.message || 'Не удалось вернуть позицию в актуальные.')
       }
       if (result.changed === false) await loadWorkshopData(workshopFilters, { force: true, refreshCounts: true })
       else applyWorkshopTaskStatusChange(task, 'active', result.previousStatus || task.status)
+      if (result.order) upsertOrderInState(result.order)
+      else if (result.refreshRequired) void loadDashboard(false)
       setMessage(`Позиция цеха по заказу ${task.externalOrderId} возвращена в актуальные.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка обновления цеха')
@@ -4458,6 +4462,14 @@ function App() {
       return
     }
 
+    const projection = await getOrderOperationalProjection(order)
+    if (!projection.canEdit) {
+      setMessage(projection.hasCommittedDownstreamOperation
+        ? 'Заказ из Цеха нельзя переписывать: по нему уже проведён возврат или обмен. Сначала отмените или исправьте эту последующую операцию штатным действием.'
+        : 'Этот заказ из Цеха сейчас недоступен для обычного редактирования.')
+      return
+    }
+
     setEditorReturnSector('workshop')
     setEditorOrderOverride(order)
     setSelectedOrderId(order.id)
@@ -5231,20 +5243,18 @@ function removeDebtPayment(index: number) {
     setMessage(`Показан заказ ${externalId || orderId}.`)
   }
 
-  function handleOpenDebt(order: OrderRecord) {
-    if (isArchivedOrderRecord(order)) {
+  async function getOrderOperationalProjection(order: OrderRecord) {
+    const { projectOrderOperationalState } = await import('./app/orderOperationalProjection')
+    return projectOrderOperationalState(order, { isAdmin })
+  }
+
+  async function handleOpenDebt(order: OrderRecord) {
+    const projection = await getOrderOperationalProjection(order)
+    if (!projection.canOpenDebt) {
       setSelectedOrderId(order.id)
-      setMessage('Архивный заказ доступен только для просмотра. Долг по нему не закрывается из рабочей таблицы.')
-      return
-    }
-    if (isReturnedOrderRecord(order)) {
-      setSelectedOrderId(order.id)
-      setMessage('Возвращённый заказ уже закрыт как возврат. Долг по нему не закрывается обычной оплатой.')
-      return
-    }
-    if (Number(order.debt_amount || 0) <= 0) {
-      setSelectedOrderId(order.id)
-      setMessage('У заказа нет открытого долга.')
+      setMessage(projection.debtAmount <= 0
+        ? 'У заказа нет открытого долга.'
+        : 'Этот заказ доступен только как история. Долг по нему не закрывается из рабочей таблицы.')
       return
     }
     setActiveSector('orders')
@@ -5255,10 +5265,11 @@ function removeDebtPayment(index: number) {
     setEditorOpen(false)
   }
 
-  function handleOpenReturn(order: OrderRecord) {
-    if (isArchivedOrderRecord(order)) {
+  async function handleOpenReturn(order: OrderRecord) {
+    const projection = await getOrderOperationalProjection(order)
+    if (!projection.canOpenReturn) {
       setSelectedOrderId(order.id)
-      setMessage('По архивному заказу нельзя оформлять возврат. Он доступен только как история.')
+      setMessage('По этому заказу нельзя оформлять возврат из рабочего режима. Он доступен только как история.')
       return
     }
     setActiveSector('orders')
@@ -5268,10 +5279,11 @@ function removeDebtPayment(index: number) {
     setEditorOpen(false)
   }
 
-  function handleOpenExchange(order: OrderRecord) {
-    if (isArchivedOrderRecord(order)) {
+  async function handleOpenExchange(order: OrderRecord) {
+    const projection = await getOrderOperationalProjection(order)
+    if (!projection.canOpenExchange) {
       setSelectedOrderId(order.id)
-      setMessage('По архивному заказу нельзя оформлять обмен. Он доступен только как история.')
+      setMessage('По этому заказу нельзя оформлять обмен из рабочего режима. Он доступен только как история.')
       return
     }
     setActiveSector('orders')
@@ -5297,17 +5309,14 @@ function removeDebtPayment(index: number) {
     setEditorReturnSector('orders')
   }
 
-  function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' = 'orders') {
-    if (isArchivedOrderRecord(order)) {
+  async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' = 'orders') {
+    const projection = await getOrderOperationalProjection(order)
+    if (!projection.canEdit) {
       setSelectedOrderId(order.id)
       setEditorOpen(false)
-      setMessage('Архивный заказ открыт только для просмотра.')
-      return
-    }
-    if (!isAdmin && (['deleted', 'archived'].includes(order.order_status) || order.shipping_status === 'sent')) {
-      setSelectedOrderId(order.id)
-      setEditorOpen(false)
-      setMessage('Отправленный, удалённый или архивный заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие.')
+      setMessage(projection.hasCommittedDownstreamOperation
+        ? 'Заказ нельзя переписывать: по нему уже проведён возврат или обмен. Сначала отмените или исправьте эту последующую операцию штатным действием.'
+        : 'Этот заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие или просмотр истории.')
       return
     }
     setEditorReturnSector(returnSector)
@@ -5336,12 +5345,11 @@ function removeDebtPayment(index: number) {
   async function persistOrder(nextDraft: EditorDraft, targetOrder?: OrderRecord | null) {
     const order = targetOrder || selectedOrder
     if (!order) return
-    if (!isAdmin && (['deleted', 'archived'].includes(order.order_status) || order.shipping_status === 'sent')) {
-      setMessage('Отправленный, удалённый или архивный заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие.')
-      return
-    }
-    if (isArchivedOrderRecord(order)) {
-      setMessage('Архивный заказ нельзя редактировать.')
+    const projection = await getOrderOperationalProjection(order)
+    if (!projection.canEdit) {
+      setMessage(projection.hasCommittedDownstreamOperation
+        ? 'Заказ нельзя переписывать: по нему уже проведён возврат или обмен. Сначала отмените или исправьте эту последующую операцию штатным действием.'
+        : 'Этот заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие или просмотр истории.')
       return
     }
 
@@ -5777,8 +5785,13 @@ function removeDebtPayment(index: number) {
   }
 
   async function markOrderSentToClient(order: OrderRecord) {
-    if (isArchivedOrderRecord(order)) {
-      setMessage('Архивный заказ нельзя отправлять клиенту или менять.')
+    const projection = await getOrderOperationalProjection(order)
+    if (!projection.canShip) {
+      setMessage(projection.workshopPending
+        ? 'Отправить весь заказ можно после готовности позиций Цеха.'
+        : projection.hasCommittedPhysicalDownstreamOperation
+          ? 'Отправка недоступна: по заказу уже проведён товарный возврат или обмен. Сначала отмените или исправьте эту последующую операцию.'
+          : 'Этот заказ сейчас нельзя отметить как отправленный.')
       return
     }
     setSavingOrder(true)
@@ -5853,7 +5866,8 @@ function removeDebtPayment(index: number) {
 
 
   async function correctMistakenOrderShipping(order: OrderRecord) {
-    if (savingOrder || isArchivedOrderRecord(order) || order.shipping_status !== 'sent') return
+    const projection = await getOrderOperationalProjection(order)
+    if (savingOrder || !projection.canCorrectShipping) return
     const confirmed = window.confirm(
       `Исправить ошибочную отправку заказа ${order.external_id}?\n\nПодтверждайте только если товар ФАКТИЧЕСКИ НЕ передавался клиенту. Система вернёт проведённые складские позиции в резерв заказа и восстановит только тот физический остаток, который действительно был списан.\n\nЕсли клиент получал товар, а затем вернул его — используйте «Возврат», а не это исправление.`
     )
@@ -6141,7 +6155,7 @@ function removeDebtPayment(index: number) {
       return
     }
 
-    const exchangeableOldItems = exchangeSelectedOrder.items.filter((item) => Number(item.id || 0) > 0 && Number(item.quantity || 0) > 0)
+    const exchangeableOldItems = exchangeSelectedOrder.items.filter((item) => Number(item.id || 0) > 0 && Number(item.availableOperationQuantity ?? item.quantity ?? 0) > 0)
     const queuedPairs = exchangeDraft.queuedPairs || []
     const requestedCurrentOldItem = exchangeableOldItems.find((item) => Number(item.id || 0) === Number(exchangeDraft.oldItemId || 0)) || null
     const visibleCurrentOldItem = requestedCurrentOldItem || exchangeableOldItems[0] || null
@@ -6195,8 +6209,9 @@ function removeDebtPayment(index: number) {
       const oldItemId = Number(selectedOldItem.id || 0)
       const accumulated = (requestedByOldItem.get(oldItemId) || 0) + oldQuantity
       requestedByOldItem.set(oldItemId, accumulated)
-      if (accumulated > Number(selectedOldItem.quantity || 0)) {
-        setError(`Позиция обмена ${index + 1}: суммарно выбрано ${accumulated} шт., доступно ${Number(selectedOldItem.quantity || 0)} шт.`)
+      const availableOldQuantity = Math.max(0, Number(selectedOldItem.availableOperationQuantity ?? selectedOldItem.quantity ?? 0))
+      if (accumulated > availableOldQuantity) {
+        setError(`Позиция обмена ${index + 1}: суммарно выбрано ${accumulated} шт., доступно ${availableOldQuantity} шт.`)
         return
       }
       if (!String(pair.newItem?.productName || '').trim()) {
@@ -6538,19 +6553,6 @@ function removeDebtPayment(index: number) {
       setExchangeBusy(false)
     }
   }
-
-  async function setSelectedWorkshopStatus(status: EditorDraft['workshopStatus'], targetOrder?: OrderRecord) {
-    if (targetOrder && isArchivedOrderRecord(targetOrder)) {
-      setMessage('Архивный заказ нельзя менять.')
-      return
-    }
-    const baseDraft = targetOrder ? createEditorDraft(targetOrder) : editorDraft
-    if (!baseDraft) return
-    const nextDraft = { ...baseDraft, workshopStatus: status }
-    setEditorDraft(nextDraft)
-    await persistOrder(nextDraft, targetOrder)
-  }
-
 
   function renderInventoryStockGroups(source: InventorySourceKey, groups: InventoryStockGroup[]) {
     return InventoryStockGroupsRenderer(source, groups, { expandedInventoryGroups, getInventoryRowCategory, hasInventoryQuickFilters, inventorySearchTokens, isAdmin, productCategoryLabel, sourceLabel, startInventoryTransferFromStockRow, toggleInventoryGroup })
@@ -7137,15 +7139,15 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'edit'} label="Редактирование заказа">
-        <OrderEditorSection ctx={{ addEditorItem, addEditorPayment, applyEditorProductPick, ChoicePills, closeOrderEditor, createEditorDraft, editorDraft, editorFormRef, editorOpen, editorReturnSector, formatMoney, formatOrderItemTitle, FriendlyNumberInput, isAdmin, isArchivedOrderRecord, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderPanelStyle, references, removeEditorItem, removeEditorPayment, renderOrderSizeSelect, renderOrderSourceAvailability, saveEditorPayment, saveSelectedOrder, savingOrder, sectorStyle, selectedOrder, setEditorDraft, SmartPickerInput, sourceLabel, statusLabelByState, suggestionValues, updateEditorDraft, updateEditorItem, updateEditorPayment }} />
+        <OrderEditorSection ctx={{ addEditorItem, addEditorPayment, applyEditorProductPick, ChoicePills, closeOrderEditor, createEditorDraft, editorDraft, editorFormRef, editorOpen, editorReturnSector, formatMoney, formatOrderItemTitle, FriendlyNumberInput, isAdmin, isArchivedOrderRecord, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderPanelStyle, references, removeEditorItem, removeEditorPayment, renderOrderSizeSelect, renderOrderSourceAvailability, saveEditorPayment, saveSelectedOrder, savingOrder, sectorStyle, selectedOrder, setEditorDraft, SmartPickerInput, sourceLabel, suggestionValues, updateEditorDraft, updateEditorItem, updateEditorPayment }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, isArchivedOrderRecord, isReturnedOrderRecord, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderLifecycleLabel, orderPanelStyle, orders, paymentStatusClass, paymentStatusLabel, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Детали заказа">
-        <OrderDetailsSection ctx={{ formatDateShort, formatMoney, formatOrderItemTitle, handleEditOrder, isAdmin, isArchivedOrderRecord, isReturnedOrderRecord, orderPanelStyle, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrder, setSelectedWorkshopStatus, sourceLabel }} />
+        <OrderDetailsSection ctx={{ formatDateShort, formatMoney, formatOrderItemTitle, handleEditOrder, isAdmin, orderPanelStyle, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrder, sourceLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'debt'} label="Закрытие долга">

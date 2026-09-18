@@ -92,8 +92,23 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     return `Источник: ${sourceLabel(source as OrderRecord['source_type'])}`
   }
 
+  const queuedPairs = exchangeDraft.queuedPairs || []
+  const queuedOldQuantityByItem = new Map<number, number>()
+  for (const pair of queuedPairs) {
+    if (pair.saved) continue
+    const orderItemId = Number(pair.oldItemId || 0)
+    if (!orderItemId) continue
+    queuedOldQuantityByItem.set(orderItemId, (queuedOldQuantityByItem.get(orderItemId) || 0) + Math.max(1, Number(pair.oldQuantity || 1)))
+  }
   const exchangeableOldItems = (exchangeSelectedOrder?.items || [])
-    .filter((item: any) => Number(item.id || 0) > 0 && Number(item.quantity || 0) > 0)
+    .map((item: any) => ({
+      ...item,
+      operationAvailableQuantity: Math.max(
+        0,
+        Number(item.availableOperationQuantity ?? item.quantity ?? 0) - (queuedOldQuantityByItem.get(Number(item.id || 0)) || 0),
+      ),
+    }))
+    .filter((item: any) => Number(item.id || 0) > 0 && Number(item.operationAvailableQuantity || 0) > 0)
   const draftOldItemIsValid = exchangeableOldItems.some((item: any) => (
     Number(item.id || 0) === Number(exchangeDraft.oldItemId || 0)
   ))
@@ -128,8 +143,8 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
   const exchangeReserved = Math.max(0, Number(exchangeAvailability?.currentReserved || 0))
   const exchangePhysicalShortage = Boolean(exchangeAvailability?.canObservePhysical && exchangePhysical < exchangeRequired)
   const exchangeFreeAfterIssue = exchangePhysical - exchangeReserved - exchangeRequired
-  const queuedPairs = exchangeDraft.queuedPairs || []
-  const currentPairReady = Boolean(effectiveOldItem && String(exchangeDraft.newItem.productName || '').trim())
+  const effectiveOldAvailableQuantity = Math.max(0, Number(effectiveOldItem?.operationAvailableQuantity || 0))
+  const currentPairReady = Boolean(effectiveOldItem && effectiveOldAvailableQuantity > 0 && String(exchangeDraft.newItem.productName || '').trim())
   const queueCurrentExchangePair = () => {
     if (!currentPairReady) return
     if (exchangePhysicalShortage && !exchangeObservationEnabled) return
@@ -138,7 +153,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     const pair = {
       draftKey: exchangeDraft.currentPairKey || fresh.currentPairKey,
       oldItemId: effectiveOldItemId,
-      oldQuantity: Math.max(1, Number(exchangeDraft.oldQuantity || 1)),
+      oldQuantity: Math.min(effectiveOldAvailableQuantity, Math.max(1, Number(exchangeDraft.oldQuantity || 1))),
       oldReturnSource: exchangeDraft.oldPhysicalState === 'warehouse' || exchangeDraft.oldPhysicalState === 'boutique' ? exchangeDraft.oldPhysicalState : 'none',
       oldPhysicalState: exchangeDraft.oldPhysicalState,
       newItem: { ...exchangeDraft.newItem },
@@ -214,7 +229,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                           <div className="mini-item-head"><strong>Позиции, добавленные в этот обмен</strong><span className="soft-badge">{queuedPairs.length}</span></div>
                           <div className="stack">
                             {queuedPairs.map((pair: any, index: number) => {
-                              const oldItem = exchangeableOldItems.find((item: any) => Number(item.id || 0) === Number(pair.oldItemId || 0))
+                              const oldItem = (exchangeSelectedOrder?.items || []).find((item: any) => Number(item.id || 0) === Number(pair.oldItemId || 0))
                               return (
                                 <div className="history-detail-grid" key={`queued-exchange-${pair.draftKey}`}>
                                   <div><span>Позиция {index + 1}</span><strong>{oldItem?.productName || `Позиция #${pair.oldItemId}`} × {pair.oldQuantity}</strong></div>
@@ -254,7 +269,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                               {!exchangeableOldItems.length ? <option value="">Нет доступных позиций</option> : null}
                               {exchangeableOldItems.map((item: any) => (
                                 <option value={String(Number(item.id || 0))} key={`exchange-old-${item.id}`}>
-                                  {item.productName} · {[item.gender, item.color, item.material, item.length, item.size].filter(Boolean).join(' · ') || 'без характеристик'} × {item.quantity}
+                                  {item.productName} · {[item.gender, item.color, item.material, item.length, item.size].filter(Boolean).join(' · ') || 'без характеристик'} · доступно {item.operationAvailableQuantity} шт.
                                 </option>
                               ))}
                             </select>
@@ -264,9 +279,14 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                             <FriendlyNumberInput
                               type="number"
                               min="1"
-                              value={exchangeDraft.oldQuantity}
-                              onChange={(event) => setExchangeDraft((current) => ({ ...current, oldQuantity: Math.max(1, Number(event.target.value || 1)) }))}
+                              max={effectiveOldAvailableQuantity}
+                              value={Math.min(effectiveOldAvailableQuantity || 1, Math.max(1, Number(exchangeDraft.oldQuantity || 1)))}
+                              onChange={(event) => setExchangeDraft((current) => ({
+                                ...current,
+                                oldQuantity: Math.min(effectiveOldAvailableQuantity, Math.max(1, Number(event.target.value || 1))),
+                              }))}
                             />
+                            <small className="field-hint">Доступно сейчас: {effectiveOldAvailableQuantity} шт.</small>
                           </label>
                           <label>
                             <span>Старая вещь сейчас</span>
