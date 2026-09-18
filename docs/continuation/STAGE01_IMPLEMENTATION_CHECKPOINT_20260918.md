@@ -1,13 +1,13 @@
 # Stage 0+1 — implementation checkpoint (2026-09-18)
 
-Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 + R11 + R12 + R13 + R14 + R15 + R16 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
+Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 + R11 + R12 + R13 + R14 + R15 + R16 + R17 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
 
 ## Source of truth
 
 - Production/main baseline at the beginning of this slice: `main`.
 - Implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green implementation head: `867fdaae5d15a66a38da195d05d47eca62ccbd2b`.
-- Branch2 is the isolated UI/integration proving environment. After R16 passed the full gate it was fast-forwarded to the same green head: `867fdaae5d15a66a38da195d05d47eca62ccbd2b`.
+- Current green implementation head: `00385e30547edafba4cc798115dee8897f3f2dd3`.
+- Branch2 is the isolated UI/integration proving environment. After R17 passed the full gate it was fast-forwarded to the same green head: `00385e30547edafba4cc798115dee8897f3f2dd3`.
 - No Production D1 migration/write was performed.
 
 ## R1 — OrderOperationalProjection
@@ -567,6 +567,34 @@ Validation:
 - dependency audits: SUCCESS;
 - Branch2 fast-forwarded to `867fdaae5d15a66a38da195d05d47eca62ccbd2b`.
 
+## R17 — Known-intake attention shows the exact current SKU
+
+Warehouse Attention already knew when a pending inbound lifecycle event had an exact current catalog variant and allowed the operator to press “Принять в остаток” directly. The action itself targeted the exact variant, but the card still displayed the event-time snapshot identity first. After Resolver/catalog repair that could show one product/SKU label while the button would receive another canonical SKU.
+
+R17 makes only the direct known-intake action canonical-first:
+
+- pending lifecycle rows still preserve immutable event snapshots;
+- when an inbound event has an exact current variant, Warehouse Attention additionally loads that exact product/SKU;
+- the operator-facing known-intake card publishes the current canonical product, category and SKU details before the receipt action;
+- unresolved lifecycle rows remain snapshot/evidence-first because their current identity is not yet known;
+- no lifecycle event, order item or inventory row is rewritten.
+
+Focused regression:
+`scripts/test-stage01-known-intake-current-canonical-identity-r17.mjs`
+
+Exact Worker preservation layer:
+`scripts/stage01-known-intake-current-canonical-identity-r17-worker-manifest.json`
+
+Validation:
+- the first CI attempt failed safely in the cumulative 190.6A wrapper because R11 and R17 touch the same Warehouse Attention declaration and the older R11 normalization ran first;
+- the structural wrapper was corrected to unwind the newest R17 declaration before the older R11 nested delta;
+- temporary draft PR #87 was closed without merge;
+- GitHub Actions Quality check run `35352382922`: SUCCESS;
+- cumulative release gate: SUCCESS;
+- production build: SUCCESS;
+- dependency audits: SUCCESS;
+- Branch2 fast-forwarded to `00385e30547edafba4cc798115dee8897f3f2dd3`.
+
 ## Current safety boundary
 
 Do not touch Production D1 while Stage 0+1 is still being assembled.
@@ -581,7 +609,7 @@ Do not collapse return money, return workflow, shipping, Workshop, and catalog i
 
 ## Next work
 
-R1–R16 are green. Continue auditing the remaining Return/Exchange, Finance and historical surfaces by purpose. Do not mechanically convert historical/audit views to canonical-first.
+R1–R17 are green. Continue auditing remaining live action surfaces separately from historical evidence. Do not mechanically convert historical/audit views to canonical-first.
 
 Priority targets:
 
