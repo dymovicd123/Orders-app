@@ -18,7 +18,10 @@ check(relations.includes("color: hasCanonicalVariant ? (cleanText(item.canonical
 check(relations.includes('originalSnapshot,'), 'Order-time item snapshot is no longer exposed separately')
 
 for (const [name, source] of [['listOrders', ordersRead], ['getOrder', ordersWrite]]) {
-  check(source.includes("import { canonicalItemProjection, fetchOrderRelations, workshopTaskStatusForOrderItem }"), name + ' does not import the shared canonical projection')
+  check(
+    /import\s*\{[^}]*\bcanonicalItemProjection\b[^}]*\}\s*from '\.\/orders-relations\.ts'/.test(source),
+    name + ' does not import the shared canonical projection',
+  )
   check(source.includes('...canonicalItemProjection(item as Record<string, unknown>)'), name + ' does not use the shared canonical projection')
 }
 
