@@ -494,6 +494,24 @@ patched = patched.replace(stage01WorkshopCanonicalHashAnchor, [
   '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash',
 ].join('\n'))
 
+const stage01WorkshopLifecycleCanonicalR10 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-workshop-lifecycle-canonical-link-r10-worker-manifest.json'), 'utf8'))
+if (stage01WorkshopLifecycleCanonicalR10.version !== 1 || stage01WorkshopLifecycleCanonicalR10.revision !== 'stage01-workshop-lifecycle-canonical-link-r10') throw new Error('Stage01 Workshop lifecycle canonical link R10 Worker manifest invalid')
+if (Object.keys(stage01WorkshopLifecycleCanonicalR10.changes || {}).sort().join(',') !== 'resolveInventoryLifecycleCandidate,resolveWorkshopCatalogExactCandidate') throw new Error('Stage01 Workshop lifecycle canonical link R10 Worker allow-list widened')
+patched = 'const stage01WorkshopLifecycleCanonicalR10Changes = ' + JSON.stringify(stage01WorkshopLifecycleCanonicalR10.changes || {}) + '\n' + patched
+
+const stage01WorkshopLifecycleCanonicalHashAnchor = '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash'
+if (!patched.includes(stage01WorkshopLifecycleCanonicalHashAnchor)) throw new Error('Stage01 Workshop lifecycle canonical link R10 predecessor hash anchor missing')
+patched = patched.replace(stage01WorkshopLifecycleCanonicalHashAnchor, [
+  '        const stage01WorkshopLifecycleCanonicalChanged = stage01WorkshopLifecycleCanonicalR10Changes[name]',
+  '        if (stage01WorkshopLifecycleCanonicalChanged) {',
+  "          check(declarations.get(name).includes(stage01WorkshopLifecycleCanonicalChanged.afterBlock), 'Stage01 Workshop lifecycle canonical link R10 exact replacement missing: ' + name)",
+  '          const revertedStage01WorkshopLifecycleCanonical = declarations.get(name).replace(stage01WorkshopLifecycleCanonicalChanged.afterBlock, stage01WorkshopLifecycleCanonicalChanged.beforeBlock)',
+  "          check(sha(revertedStage01WorkshopLifecycleCanonical) === acceptedPostStage01ReturnExchangeHash, 'Stage01 Workshop lifecycle canonical link R10 changed beyond exact replacement: ' + name)",
+  '          return true',
+  '        }',
+  '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash',
+].join('\n'))
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
