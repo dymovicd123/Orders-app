@@ -73,15 +73,21 @@ export function OrderDetailsSection({ ctx }: { ctx: SectionContext }) {
                   <div className="details-grid">
                     <section>
                       <h3>Товары</h3>
-                    {selectedOrder.items.length ? selectedOrder.items.map((item, index) => (
-                      <div className="detail-row" key={`${selectedOrder.id}-item-${index}`}>
-                        <strong>{formatOrderItemTitle(item) || item.productName}</strong>
-                        <span>
-                          {[item.color, item.material, item.length, item.size].filter(Boolean).join(' · ') || 'Без варианта'}
-                        </span>
-                        <small>{item.quantity} шт.</small>
-                      </div>
-                    )) : <p className="muted">Нет позиций.</p>}
+                    {selectedOrder.items.length ? selectedOrder.items.map((item, index) => {
+                      const currentTitle = formatOrderItemTitle(item) || item.productName
+                      const originalTitle = item.originalSnapshot ? formatOrderItemTitle(item.originalSnapshot) : ''
+                      const showOriginalSnapshot = Boolean(originalTitle && originalTitle !== currentTitle)
+                      return (
+                        <div className="detail-row" key={`${selectedOrder.id}-item-${index}`}>
+                          <strong>{currentTitle}</strong>
+                          <span>
+                            {[item.color, item.material, item.length, item.size].filter(Boolean).join(' · ') || 'Без варианта'}
+                          </span>
+                          {showOriginalSnapshot ? <small>Изначально при оформлении: {originalTitle}</small> : null}
+                          <small>{item.quantity} шт.</small>
+                        </div>
+                      )
+                    }) : <p className="muted">Нет позиций.</p>}
                     </section>
     
                     <section>
