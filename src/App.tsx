@@ -3249,12 +3249,14 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'done', orderItemId: task.orderItemId || null }),
       })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; changed?: boolean; previousStatus?: string }>(response, 'Цех')
+      const result = await readJsonResponse<{ ok?: boolean; message?: string; changed?: boolean; previousStatus?: string; order?: OrderRecord; refreshRequired?: boolean }>(response, 'Цех')
       if (!response.ok) {
         throw new Error(result.message || 'Не удалось отметить позицию готовой.')
       }
       if (result.changed === false) await loadWorkshopData(workshopFilters, { force: true, refreshCounts: true })
       else applyWorkshopTaskStatusChange(task, 'done', result.previousStatus || task.status)
+      if (result.order) upsertOrderInState(result.order)
+      else if (result.refreshRequired) void loadDashboard(false)
       setMessage(`Позиция цеха по заказу ${task.externalOrderId} отмечена как готовая.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка обновления цеха')
@@ -3273,12 +3275,14 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'active', orderItemId: task.orderItemId || null }),
       })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; changed?: boolean; previousStatus?: string }>(response, 'Цех')
+      const result = await readJsonResponse<{ ok?: boolean; message?: string; changed?: boolean; previousStatus?: string; order?: OrderRecord; refreshRequired?: boolean }>(response, 'Цех')
       if (!response.ok) {
         throw new Error(result.message || 'Не удалось вернуть позицию в актуальные.')
       }
       if (result.changed === false) await loadWorkshopData(workshopFilters, { force: true, refreshCounts: true })
       else applyWorkshopTaskStatusChange(task, 'active', result.previousStatus || task.status)
+      if (result.order) upsertOrderInState(result.order)
+      else if (result.refreshRequired) void loadDashboard(false)
       setMessage(`Позиция цеха по заказу ${task.externalOrderId} возвращена в актуальные.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка обновления цеха')
