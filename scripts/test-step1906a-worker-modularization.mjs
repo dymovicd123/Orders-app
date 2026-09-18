@@ -573,6 +573,26 @@ const stage01PendingLifecycleNormalizeBlock = [
 ].join('\n')
 patched = patched.replace(stage01PendingLifecycleNormalizeAnchor, stage01PendingLifecycleNormalizeBlock + stage01PendingLifecycleNormalizeAnchor)
 
+const stage01ResolverActiveReservationR12 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-resolver-active-reservation-r12-worker-manifest.json'), 'utf8'))
+if (stage01ResolverActiveReservationR12.version !== 1 || stage01ResolverActiveReservationR12.revision !== 'stage01-resolver-active-reservation-r12') throw new Error('Stage01 Resolver active reservation R12 Worker manifest invalid')
+if (Object.keys(stage01ResolverActiveReservationR12.changes || {}).join(',') !== 'resolveCatalogReviewRows') throw new Error('Stage01 Resolver active reservation R12 Worker allow-list widened')
+patched = 'const stage01ResolverActiveReservationR12Changes = ' + JSON.stringify(stage01ResolverActiveReservationR12.changes || {}) + '\n' + patched
+
+const stage01ResolverActiveReservationNormalizeAnchor = '  const removedNames = Object.keys(removed)\n'
+if (!patched.includes(stage01ResolverActiveReservationNormalizeAnchor)) throw new Error('Stage01 Resolver active reservation R12 normalization anchor missing')
+const stage01ResolverActiveReservationNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01ResolverActiveReservationR12Changes)) {',
+  "    check(declarations.has(name), 'Stage01 Resolver active reservation R12 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 Resolver active reservation R12 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 Resolver active reservation R12 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01ResolverActiveReservationNormalizeAnchor, stage01ResolverActiveReservationNormalizeBlock + stage01ResolverActiveReservationNormalizeAnchor)
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
