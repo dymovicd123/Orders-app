@@ -356,6 +356,9 @@ export async function listOrders(db: D1Database, url: URL) {
       baseBindings.push(externalIdPrefix, `${externalIdPrefix}￿`);
     } else if (Array.from(q).length >= 3) {
       // D1 read-budget R5.3: arbitrary substring search is the remaining order-list scan hotspot.
+      // The derived item FTS row is refreshed from both current canonical catalog identity and
+      // immutable order-time snapshots, so Resolver repair changes what can be found without
+      // erasing the historical search vocabulary.
       // A case-sensitive trigram FTS index queried with the exact legacy raw/upper/lower variants
       // preserves the old INSTR semantics while avoiding correlated scans of items/payments.
       const qVariants = Array.from(new Set([q, q.toUpperCase(), q.toLowerCase()]));
@@ -379,16 +382,26 @@ export async function listOrders(db: D1Database, url: URL) {
       const searchOrderText = `COALESCE(o.external_id, '') || ' ' || COALESCE(o.order_date, '') || ' ' ||
         COALESCE(m.name, o.manager_snapshot_name, '') || ' ' || COALESCE(c.phone_normalized, '') || ' ' ||
         COALESCE(c.display_name, '') || ' ' || COALESCE(o.city, '') || ' ' || COALESCE(o.delivery_type, '') || ' ' || COALESCE(o.comment, '')`;
-      const searchItemText = `COALESCE(oi.product_name_snapshot, '') || ' ' || COALESCE(oi.gender_snapshot, '') || ' ' ||
+      const searchItemText = `COALESCE(search_product.name, '') || ' ' ||
+        COALESCE(search_variant.gender, '') || ' ' || COALESCE(search_variant.color, '') || ' ' ||
+        COALESCE(search_variant.material, '') || ' ' || COALESCE(search_variant.length, '') || ' ' ||
+        COALESCE(search_variant.size_label, '') || ' ' ||
+        COALESCE(oi.product_name_snapshot, '') || ' ' || COALESCE(oi.gender_snapshot, '') || ' ' ||
         COALESCE(oi.color_snapshot, '') || ' ' || COALESCE(oi.material_snapshot, '') || ' ' ||
         COALESCE(oi.length_snapshot, '') || ' ' || COALESCE(oi.size_snapshot, '')`;
       const searchPaymentText = `COALESCE(search_payment.method, '') || ' ' || COALESCE(search_payment.comment, '')`;
       const qVariants = [q, q.toUpperCase(), q.toLowerCase()];
       baseWhereParts.push(`(
         INSTR(${searchOrderText}, ?) > 0 OR INSTR(${searchOrderText}, ?) > 0 OR INSTR(${searchOrderText}, ?) > 0
-        OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND (
-          INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0
-        ))
+        OR EXISTS (
+          SELECT 1
+          FROM order_items oi
+          LEFT JOIN catalog_products search_product ON search_product.id = oi.product_id
+          LEFT JOIN catalog_variants search_variant ON search_variant.id = oi.variant_id
+          WHERE oi.order_id = o.id AND (
+            INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0
+          )
+        )
         OR EXISTS (SELECT 1 FROM payments search_payment WHERE search_payment.order_id = o.id AND (
           INSTR(${searchPaymentText}, ?) > 0 OR INSTR(${searchPaymentText}, ?) > 0 OR INSTR(${searchPaymentText}, ?) > 0
         ))
