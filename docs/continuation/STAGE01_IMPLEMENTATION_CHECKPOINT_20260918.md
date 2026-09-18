@@ -782,3 +782,39 @@ Branch2 code head:
 Stage01 R1–R21 is now implementation-complete and cross-validated on Branch2. The current release gate and live E2E did not expose a new regression caused by R19–R21.
 
 The next step is no longer another speculative Stage01 fix. It is a release/promotion decision and production rollout plan with explicit backup, migration-ledger verification and smoke checks before any Production mutation.
+
+
+## Production release preparation
+
+Production readiness was audited read-only before any deployment.
+
+Production baseline:
+- `main`: `412ba8b4f2a72873232103944e2a3a777a6dbcd9`
+- deployed Production status for that commit: `cloudflare-deploy/main = success`
+- Production D1: `orders_db_prod` / `17e68a41-1d58-4a36-8a63-47c3e32443c4`
+
+Read-only Production readiness run `35368742387`: SUCCESS.
+
+Findings:
+- Production already contains every Branch2-required pre-R14 schema object and column;
+- major migration/data markers match Branch2;
+- Production read smoke is green;
+- D1 Time Travel is available;
+- `order_search_items_fts` coverage is currently 3751/3751 order items;
+- R14 catalog-refresh triggers are the intentional missing schema delta;
+- Production `d1_migrations` is stale/unreliable and contains only `0001_init.sql` and `0067_v72_o1_read_budget_indexes.sql`; do not run `wrangler d1 migrations apply` during this rollout.
+
+Release candidate:
+- branch: `release/stage01-production-20260918`
+- PR: #102, draft, not merged
+- candidate head: `61a232383ff9b4b2493c75385a0ab6b184b9b938`
+- restores Production `wrangler.jsonc`;
+- removes Branch2 title marker;
+- replaces Branch2 environment gate with a Production environment gate;
+- includes `docs/continuation/PRODUCTION_STAGE01_ROLLOUT_PLAN_20260918.md`.
+
+Release candidate Quality check run `35369028676`: SUCCESS, including cumulative regression gate, post-fix cross-regression, Production environment safety guard, dependency audits and production build.
+
+No Production D1 migration and no Production code deployment has been performed.
+
+Next release action requires explicit execution of the guarded rollout sequence: fresh Time Travel bookmark -> direct apply of only `0070_v72_stage01_canonical_order_search.sql` -> verify five R14 triggers/FTS coverage -> merge PR #102 -> wait for Cloudflare main deploy -> post-deploy read smoke.
