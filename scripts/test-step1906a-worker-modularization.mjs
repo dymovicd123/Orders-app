@@ -646,6 +646,21 @@ if (stage01CanonicalOrderSearchR14.version !== 1 || stage01CanonicalOrderSearchR
 if (Object.keys(stage01CanonicalOrderSearchR14.changes || {}).join(',') !== 'listOrders') throw new Error('Stage01 canonical order search R14 Worker allow-list widened')
 patched = 'const stage01CanonicalOrderSearchR14Changes = ' + JSON.stringify(stage01CanonicalOrderSearchR14.changes || {}) + '\n' + patched
 
+const stage01StocktakeCanonicalSeedNormalizeAnchor = '  const removedNames = Object.keys(removed)\n'
+if (!patched.includes(stage01StocktakeCanonicalSeedNormalizeAnchor)) throw new Error('Stage01 stocktake canonical seed R20 normalization anchor missing')
+const stage01StocktakeCanonicalSeedNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01StocktakeCanonicalSeedR20Changes)) {',
+  "    check(declarations.has(name), 'Stage01 stocktake canonical seed R20 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 stocktake canonical seed R20 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 stocktake canonical seed R20 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01StocktakeCanonicalSeedNormalizeAnchor, stage01StocktakeCanonicalSeedNormalizeBlock + stage01StocktakeCanonicalSeedNormalizeAnchor)
+
 const stage01CanonicalOrderSearchNormalizeAnchor = '  const removedNames = Object.keys(removed)\n'
 if (!patched.includes(stage01CanonicalOrderSearchNormalizeAnchor)) throw new Error('Stage01 canonical order search R14 normalization anchor missing')
 const stage01CanonicalOrderSearchNormalizeBlock = [
@@ -660,6 +675,11 @@ const stage01CanonicalOrderSearchNormalizeBlock = [
   '',
 ].join('\n')
 patched = patched.replace(stage01CanonicalOrderSearchNormalizeAnchor, stage01CanonicalOrderSearchNormalizeBlock + stage01CanonicalOrderSearchNormalizeAnchor)
+
+const stage01StocktakeCanonicalSeedR20 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-stocktake-canonical-seed-r20-worker-manifest.json'), 'utf8'))
+if (stage01StocktakeCanonicalSeedR20.version !== 1 || stage01StocktakeCanonicalSeedR20.revision !== 'stage01-stocktake-canonical-seed-r20') throw new Error('Stage01 stocktake canonical seed R20 Worker manifest invalid')
+if (Object.keys(stage01StocktakeCanonicalSeedR20.changes || {}).join(',') !== 'createInventoryStocktakeSession') throw new Error('Stage01 stocktake canonical seed R20 Worker allow-list widened')
+patched = 'const stage01StocktakeCanonicalSeedR20Changes = ' + JSON.stringify(stage01StocktakeCanonicalSeedR20.changes || {}) + '\n' + patched
 
 const stage01InventoryCurrentCanonicalR16 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-inventory-current-canonical-identity-r16-worker-manifest.json'), 'utf8'))
 if (stage01InventoryCurrentCanonicalR16.version !== 1 || stage01InventoryCurrentCanonicalR16.revision !== 'stage01-inventory-current-canonical-identity-r16') throw new Error('Stage01 inventory current canonical identity R16 Worker manifest invalid')
