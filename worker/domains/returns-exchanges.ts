@@ -1331,10 +1331,15 @@ export async function correctExchangeFinancials(
     const externalOrderId = cleanText(row.external_id);
     if (alreadyDesired) {
       await syncOrderFinancialLedger(db, orderId);
-      const order = await getOrder(db, orderId);
-      const response = { ok: true, exchangeId, unchanged: true, order };
-      await completeCriticalOperation(db, criticalOperation, response);
-      return response;
+      const completedResponse = { ok: true, exchangeId, unchanged: true, refreshRequired: true };
+      await completeCriticalOperation(db, criticalOperation, completedResponse);
+      let order = null;
+      try {
+        order = await getOrder(db, orderId);
+      } catch (error) {
+        console.warn('Order readback after unchanged exchange financial correction failed', error);
+      }
+      return order ? { ...completedResponse, order, refreshRequired: false } : completedResponse;
     }
 
     await syncOrderFinancialLedger(db, orderId);
@@ -1456,7 +1461,25 @@ export async function correctExchangeFinancials(
 
     await db.batch(statements);
     await syncOrderFinancialLedger(db, orderId);
-    const order = await getOrder(db, orderId);
+    const completedResponse = {
+      ok: true,
+      exchangeId,
+      financialAction,
+      financialAmount: nextAmount,
+      exchangeDate: nextExchangeDate,
+      paymentMethod: nextMethod,
+      refreshRequired: true,
+    };
+    // All business writes are committed at this point. Complete the idempotent operation
+    // before secondary readback/logging so a transient read failure cannot report a
+    // successful money correction as failed and invite a misleading retry.
+    await completeCriticalOperation(db, criticalOperation, completedResponse);
+    let order = null;
+    try {
+      order = await getOrder(db, orderId);
+    } catch (error) {
+      console.warn('Order readback after committed exchange financial correction failed', error);
+    }
     try {
       await writeActivityLog(db, {
         eventType: 'exchange_financial_corrected',
@@ -1472,9 +1495,7 @@ export async function correctExchangeFinancials(
     } catch (error) {
       console.warn('Exchange financial correction activity log failed after committed correction', error);
     }
-    const response = { ok: true, exchangeId, financialAction, financialAmount: nextAmount, exchangeDate: nextExchangeDate, paymentMethod: nextMethod, order };
-    await completeCriticalOperation(db, criticalOperation, response);
-    return response;
+    return order ? { ...completedResponse, order, refreshRequired: false } : completedResponse;
   } catch (error) {
     if (criticalOperation) await failCriticalOperation(db, criticalOperation, error);
     throw error;
