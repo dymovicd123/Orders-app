@@ -713,21 +713,29 @@ if (stage01FoundStockCurrentCanonicalR18.version !== 1 || stage01FoundStockCurre
 if (Object.keys(stage01FoundStockCurrentCanonicalR18.changes || {}).join(',') !== 'getWarehouseAttentionSummary') throw new Error('Stage01 found-stock current canonical identity R18 Worker allow-list widened')
 patched = 'const stage01FoundStockCurrentCanonicalR18Changes = ' + JSON.stringify(stage01FoundStockCurrentCanonicalR18.changes || {}) + '\n' + patched
 
+// R19 is the newest Worker layer for order relation/readback declarations. Normalize it
+// before the older Stage01 layers so the legacy structural hashes still see their predecessor text.
+const stage01ReturnExchangeDownstreamNormalizeAnchor = '  for (const [name, change] of Object.entries(stage01FoundStockCurrentCanonicalR18Changes)) {'
+if (!patched.includes(stage01ReturnExchangeDownstreamNormalizeAnchor)) throw new Error('Stage01 Return/Exchange downstream R19 predecessor anchor missing')
+const stage01ReturnExchangeDownstreamNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01ReturnExchangeDownstreamR19Changes)) {',
+  "    check(declarations.has(name), 'Stage01 Return/Exchange downstream R19 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 Return/Exchange downstream R19 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 Return/Exchange downstream R19 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01ReturnExchangeDownstreamNormalizeAnchor, stage01ReturnExchangeDownstreamNormalizeBlock + stage01ReturnExchangeDownstreamNormalizeAnchor)
+
 // R18 is newer than R17 and changes the same Warehouse Attention declaration.
 // Replay it first, then let R17 and R11 unwind their predecessor layers.
 const stage01FoundStockCurrentCanonicalNormalizeAnchor = '  for (const [name, change] of Object.entries(stage01KnownIntakeCurrentCanonicalR17Changes)) {'
 if (!patched.includes(stage01FoundStockCurrentCanonicalNormalizeAnchor)) throw new Error('Stage01 found-stock current canonical identity R18 predecessor anchor missing')
 const stage01FoundStockCurrentCanonicalNormalizeBlock = [
-  '  for (const [name, change] of Object.entries(stage01ReturnExchangeDownstreamR19Changes)) {
-    check(declarations.has(name), 'Stage01 Return/Exchange downstream R19 declaration missing: ' + name)
-    const current = declarations.get(name)
-    check(current.includes(change.afterBlock), 'Stage01 Return/Exchange downstream R19 exact after-block missing: ' + name)
-    const reverted = current.replace(change.afterBlock, change.beforeBlock)
-    check(reverted !== current, 'Stage01 Return/Exchange downstream R19 exact replacement did not apply: ' + name)
-    declarations.set(name, reverted)
-  }
-
-  for (const [name, change] of Object.entries(stage01FoundStockCurrentCanonicalR18Changes)) {',
+  '  for (const [name, change] of Object.entries(stage01FoundStockCurrentCanonicalR18Changes)) {',
   "    check(declarations.has(name), 'Stage01 found-stock current canonical identity R18 declaration missing: ' + name)",
   '    const current = declarations.get(name)',
   "    check(current.includes(change.afterBlock), 'Stage01 found-stock current canonical identity R18 exact after-block missing: ' + name)",
