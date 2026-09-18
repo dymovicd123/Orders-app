@@ -71,10 +71,21 @@ export async function resolveWorkshopCatalogExactCandidate(
 ): Promise<ResolvedOrderCatalogReference> {
   const normalized = inventoryLifecycleItemFromRow(item);
   const inputKey = catalogOrderInputKey(normalized);
-  const product = await findCatalogProductByIdentity(db, normalized.productName, 0, { activeOnly: true }) as { id: number } | null;
+  const linkedProductId = toInt(item.product_id, 0);
+  let product = linkedProductId
+    ? await db.prepare('SELECT id, category FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1')
+        .bind(linkedProductId)
+        .first<{ id: number; category: string }>()
+    : null;
+  if (!product?.id) {
+    product = await findCatalogProductByIdentity(db, normalized.productName, 0, { activeOnly: true }) as { id: number; category?: string } | null;
+  }
   if (!product?.id) return { productId: null, variantId: null, matchStatus: 'unresolved_product', inputKey };
 
-  const category = normalizeAudienceCategory(normalized.category, normalized.size);
+  // A repaired base-product link is stronger than an old free-text product name,
+  // while the recorded SKU characteristics still remain the evidence used to find
+  // an exact Workshop combination when no explicit variant link exists yet.
+  const category = normalizeAudienceCategory(cleanText(product.category) || normalized.category, normalized.size);
   const material = await resolveCatalogValueAlias(db, 'material', canonicalStockPositionValue(normalized.material));
   const length = await resolveCatalogValueAlias(db, 'length', canonicalStockPositionValue(normalized.length));
   const gender = normalizeCatalogCombinationGender(normalized.gender);
@@ -93,18 +104,20 @@ export async function resolveInventoryLifecycleCandidate(
   item: Record<string, unknown>,
   isWorkshop: boolean,
 ): Promise<ResolvedOrderCatalogReference> {
-  if (isWorkshop) return await resolveWorkshopCatalogExactCandidate(db, item);
-
   const existingVariantId = toInt(item.variant_id, 0);
   if (existingVariantId) {
     try {
       const canonical = await loadCanonicalVariantSnapshot(db, existingVariantId);
+      // An explicit valid order-item variant link is canonical truth for both ordinary
+      // and Workshop lines. Do not re-resolve a repaired Workshop line from stale text.
       return { productId: canonical.productId, variantId: canonical.variantId, matchStatus: 'matched', inputKey: catalogOrderInputKey(inventoryLifecycleItemFromRow(item)) };
     } catch {
       // A stale legacy link is not trusted for a new physical movement. Fall through to
       // independent identity resolution from the recorded item facts.
     }
   }
+
+  if (isWorkshop) return await resolveWorkshopCatalogExactCandidate(db, item);
   return await resolveCatalogProductAndVariantV2(db, inventoryLifecycleItemFromRow(item));
 }
 
