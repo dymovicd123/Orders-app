@@ -16,7 +16,9 @@ check(source.includes('order_search_items_fts MATCH ?'), '>=3-character order se
 for (const fragment of [
   'LEFT JOIN catalog_products p ON p.id = oi.product_id',
   'LEFT JOIN catalog_variants v ON v.id = oi.variant_id',
-  'AFTER UPDATE OF\\n  order_id,\\n  product_id,\\n  variant_id,',
+  'AFTER UPDATE OF',
+  '  product_id,',
+  '  variant_id,',
   'CREATE TRIGGER trg_order_search_catalog_products_au',
   'CREATE TRIGGER trg_order_search_catalog_variants_au',
   "COALESCE(oi.product_name_snapshot, '')",
