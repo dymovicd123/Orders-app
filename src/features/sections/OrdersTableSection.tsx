@@ -298,7 +298,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 Отправить клиенту
                               </button>
                             ) : null}
-                            {!retainedOnly && !archived && !projection.hasCommittedDownstreamOperation && order.shipping_status !== 'sent' && projection.workshopPending ? (
+                            {!retainedOnly && !archived && !projection.hasCommittedPhysicalDownstreamOperation && order.shipping_status !== 'sent' && projection.workshopPending ? (
                               <span className="order-stock-handover-wait-note">Отправить весь заказ можно после готовности Цеха</span>
                             ) : null}
                             {projection.canCorrectShipping ? (
@@ -356,7 +356,9 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                   ? 'Есть проведённые возврат и обмен'
                                   : projection.hasCommittedExchange
                                     ? 'Есть проведённый обмен'
-                                    : 'Есть проведённый возврат'}
+                                    : projection.hasCommittedItemReturn
+                                      ? 'Есть проведённый возврат'
+                                      : 'Есть возврат денег'}
                               </span>
                             ) : null}
                             {projection.canEdit ? (
