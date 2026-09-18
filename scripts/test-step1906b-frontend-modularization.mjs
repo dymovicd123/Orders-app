@@ -103,7 +103,7 @@ const stage01R19FrontendFiles = [
 if (Object.keys(stage01R19FrontendManifest.files || {}).join(',') !== stage01R19FrontendFiles.join(',')) throw new Error('Stage01 Return/Exchange downstream R19 frontend allow-list widened')
 const stage01R19GitBlobSha = (text) => {
   const bytes = Buffer.from(text)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\\0`)).update(bytes).digest('hex')
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 
 if (!process.env.STAGE01_R19_FRONTEND_NORMALIZED) {
