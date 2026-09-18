@@ -28,7 +28,7 @@ check(exchange.includes('!projection.canOpenExchange'), 'Exchange entry bypasses
 
 const edit = between(app, 'async function handleEditOrder(', 'function upsertOrderInState(')
 check(edit.includes('!projection.canEdit'), 'Edit open bypasses projection eligibility')
-check(edit.includes('projection.hasActiveReturnOperation'), 'Edit open does not explain active Return protection')
+check(edit.includes('projection.hasCommittedDownstreamOperation'), 'Edit open does not explain committed Return/Exchange protection')
 
 const persist = between(app, 'async function persistOrder(', 'async function loadArchivePreview')
 check(persist.includes('!projection.canEdit'), 'Edit save bypasses projection eligibility')
@@ -39,7 +39,7 @@ check(workshopEdit.includes('!projection.canEdit'), 'Workshop edit entry bypasse
 
 const ship = between(app, 'async function markOrderSentToClient(', 'async function correctMistakenOrderShipping(')
 check(ship.includes('!projection.canShip'), 'Shipping entry bypasses projection eligibility')
-check(ship.includes('projection.workshopPending') && ship.includes('projection.hasActiveReturnOperation'), 'Shipping entry lost human explanations for projection blockers')
+check(ship.includes('projection.workshopPending') && ship.includes('projection.hasCommittedDownstreamOperation'), 'Shipping entry lost human explanations for projection blockers')
 
 const correction = between(app, 'async function correctMistakenOrderShipping(', 'async function deleteOrderAsAdmin(')
 check(correction.includes('!projection.canCorrectShipping'), 'Shipping correction entry bypasses projection eligibility')
