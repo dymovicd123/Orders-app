@@ -20,7 +20,7 @@ Production code branch currently audited:
 
 Documentation/audit branch:
 - `audit/system-ux-walkthrough-20260917`
-- audit head immediately before this context update: `826454fb43247870baffa11ec3a7a54a52bd4272`
+- audit head immediately before this context update: `900292c45c67a9a2ff02a53fe4f361d21323b9a7`
 
 Rules:
 - do not mutate Production D1 for exploratory work;
@@ -81,6 +81,7 @@ Read these before continuing:
 - `docs/audits/FOUNDATION_TRUTH_MAP_02_PRODUCT_IDENTITY_20260918.md`
 - `docs/audits/FOUNDATION_TRUTH_MAP_03_PHYSICAL_STOCK_20260918.md`
 - `docs/audits/FOUNDATION_TRUTH_MAP_04_WORKSHOP_PRODUCTION_20260918.md`
+- `docs/audits/FOUNDATION_TRUTH_MAP_05_MONEY_FINANCE_PRICING_20260918.md`
 
 Astra lifecycle Phase 1 report is also preserved in the audit branch. It should not be re-run unless a specific missing scenario becomes necessary.
 
@@ -204,6 +205,39 @@ Strong findings:
 
 Preserve the strong per-item Workshop linking and Workshop-aware Return/Exchange safety. Do not auto-stock on `Готово`.
 
+## Completed foundation truth-map slice: Money / Finance / price readiness
+
+The fifth full truth-map slice is complete.
+
+Strong findings:
+- there are three legitimate financial layers that should remain separate:
+  1. current commercial-operation state: `payments`, active `returns`, and `orders.total_amount`;
+  2. immutable audit history: append-only `financial_events` with reversal/correction events;
+  3. physical cash: `cash_register_entries`, including opening/manual/reconciliation/reset facts;
+- `orders.received_amount`, `return_amount`, and `debt_amount` are denormalized read projections/cache rebuilt by `syncOrderFinancialLedger()`; they should not be treated as independent transaction truth;
+- customer debt currently means `order total - received payments`; refunds do not recreate debt, which is correct for the current obligation meaning;
+- Finance summary generally separates sales by order date, payments by payment date, refunds by refund date and net cash movement;
+- Astra's tested Return lifecycle found no arithmetic contradiction and confirmed cancelled refunds are excluded, while physical receipt remains separate from refund money;
+- **confirmed report-contract defect:** Reports says every financial period uses order date, while the backend deliberately uses payment/refund dates for several report types. Astra M-08 independently observed the contradictory explanations in the GUI;
+- **critical price/profitability gap:** new-order create payload sends `unitPrice: 0` for every item while a separate whole-order `Цена заказа` becomes `orders.total_amount`; therefore new multi-item orders have no truthful line-level revenue allocation despite `order_items.unit_price/line_total` existing in schema;
+- the current manual whole-order price can override line sums, so future auto-pricing also needs an explicit discount/override allocation contract before profitability is trustworthy;
+- **critical return-attribution gap:** current Return UI sends returned item identity/quantity/physical state but no per-item refund amount; total refund money is known, but ordinary multi-item refund money cannot be allocated truthfully to exact products/colors/sizes;
+- **exchange accounting trap:** exchange refunds both decrease `orders.total_amount` and create a refund Return/event. Future analytics must not calculate `net revenue = total_amount - returns`, or exchange refunds can be double-subtracted;
+- standalone Return does not reduce `orders.total_amount`, while exchange refund does; thus `orders.total_amount` is current commercial order amount, not immutable original sale and not a uniform net-after-refunds figure;
+- visible Product report is only quantity/order-frequency analytics. It has no revenue, returns, color/size profitability, cost or margin;
+- one backend product grouping field `order_sales` sums whole order totals by product grouping and is unsafe as product revenue for multi-product orders; current renderer fortunately does not expose it;
+- identity is mostly ready for pricing, but transaction attribution is not. Future default/current price must remain separate from frozen historical line sale price;
+- historical cost must be frozen at receipt/production boundary; today's mutable cost cannot be used as historical COGS if cost can change;
+- future Workshop debt/payments are a separate payable/liability domain, not customer debt, negative revenue or cash-register-only data.
+
+Finance is therefore not fundamentally broken. The strongest missing foundation is **commercial line attribution**: actual line sale value, return/commercial reversal allocation, and historical cost basis.
+
+The repeated root cause after five slices is now strong enough to state:
+
+> The low-level write model usually preserves real facts well. Fragility appears when broad legacy aggregates or UI-local projections summarize those facts without one explicit cross-domain contract.
+
+Do not rewrite the money ledger. Preserve the strong event/reversal/cash separation and fix ownership/projections plus the genuinely missing economic facts.
+
 ## Warehouse/client requirements that must influence later design, but are NOT yet an approved plan
 
 Client asks for:
@@ -278,19 +312,28 @@ The output should distinguish:
 
 ## Immediate next step
 
-Next full slice: **Money / Finance source of truth**.
+The five planned foundation truth-map domains are now complete:
+- Order;
+- Product identity;
+- Physical Stock;
+- Workshop;
+- Money / Finance.
 
-Questions:
-- Which source is authoritative for received money, refunds and net cash: payments, returns, financial_events, cash entries, or order aggregates?
-- Which order totals are immutable historical facts and which are caches/derived values?
-- Where are payment rows and financial_events deliberately duplicated, and how is drift prevented/repaired?
-- What should “выручка”, “получено”, “долг”, “возврат”, “чистые деньги” and future “прибыль” each mean?
-- Can current per-item unit_price/line_total be trusted for product profitability, especially because create flow currently sends unitPrice=0 while orderTotal is separate?
-- Where should default selling price and auto-pricing attach, and when must a historical price snapshot be frozen?
-- How should future Workshop production completion/cost/payable enter Finance without becoming order revenue?
-- Which existing finance/report surfaces consume incompatible interpretations of the same money?
+Next block: **cross-domain synthesis / target truth contracts + finite repair sequence**.
 
-After the Money/Finance slice, STOP, save its audit document, update this continuation file, and report before moving to report/UI redesign.
+Do not start implementation yet.
+
+The synthesis must:
+- classify every important field/table as authoritative fact, immutable historical snapshot, derived/cache projection, or legacy compatibility;
+- identify duplicated mutation ownership that should collapse to one domain command;
+- identify the genuinely missing facts required before prices/profitability/Workshop payable;
+- reuse Astra's Manager/Admin/Return-Exchange GUI evidence instead of repeating expensive walkthroughs unless one unresolved question truly needs it;
+- define how Resolver, Warehouse, Finance, Reports and Returns/Exchange should consume shared read projections instead of rebuilding meaning locally;
+- produce a finite staged repair plan and explicit “done” acceptance criteria so this project can end.
+
+A separate full Return/Exchange re-audit is not automatically required. Astra's lifecycle report plus the Stock/Workshop/Money code slices already cover the major physical and financial boundaries. Perform only a focused code check if the synthesis exposes a remaining unresolved Return/Exchange dependency.
+
+After that synthesis, STOP and report before any implementation.
 
 ## Working discipline
 
