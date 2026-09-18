@@ -1,13 +1,13 @@
 # Stage 0+1 — implementation checkpoint (2026-09-18)
 
-Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 + R11 + R12 + R13 + R14 + R15 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
+Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 + R11 + R12 + R13 + R14 + R15 + R16 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
 
 ## Source of truth
 
 - Production/main baseline at the beginning of this slice: `main`.
 - Implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green implementation head: `5db747e685f7e94b30edc26210c705cef5a9e3e4`.
-- Branch2 is the isolated UI/integration proving environment. After R15 passed the full gate it was fast-forwarded to the same green head: `5db747e685f7e94b30edc26210c705cef5a9e3e4`.
+- Current green implementation head: `867fdaae5d15a66a38da195d05d47eca62ccbd2b`.
+- Branch2 is the isolated UI/integration proving environment. After R16 passed the full gate it was fast-forwarded to the same green head: `867fdaae5d15a66a38da195d05d47eca62ccbd2b`.
 - No Production D1 migration/write was performed.
 
 ## R1 — OrderOperationalProjection
@@ -538,6 +538,35 @@ Validation:
 - dependency audits: SUCCESS;
 - Branch2 fast-forwarded to `5db747e685f7e94b30edc26210c705cef5a9e3e4`.
 
+## R16 — Live inventory stock follows current canonical identity
+
+The remaining live Stock read path still rendered and searched `inventory_stock` snapshot labels first even when the row had a valid current catalog link. That could leave ordinary Warehouse stock showing an old product/SKU label after catalog identity repair while shortage/handover paths already followed the canonical variant.
+
+R16 classifies `inventory_stock` as current physical state and keeps movement rows historical:
+
+- the live stock query joins the current canonical product/variant behind `variant_id` / `product_id`;
+- current product/SKU fields are projected first for ordinary stock display;
+- old stock snapshot vocabulary remains in search as fallback/history so legacy terms still find the row;
+- live stock sorting follows the projected working identity rather than stale snapshot text;
+- `inventory_movements` remains event-time snapshot evidence and is not converted to canonical-first;
+- no stock or movement row is rewritten.
+
+Focused regression:
+`scripts/test-stage01-inventory-current-canonical-identity-r16.mjs`
+
+Exact Worker preservation layer:
+`scripts/stage01-inventory-current-canonical-identity-r16-worker-manifest.json`
+
+Validation:
+- the first two CI runs failed safely only in the cumulative 190.6A structural wrapper because the new manifest block had declaration-boundary formatting that did not match the AST-normalized declaration;
+- the manifest boundary was normalized without changing business code;
+- final temporary draft PR #86 was closed without merge;
+- GitHub Actions Quality check run `35351019907`: SUCCESS;
+- cumulative release gate: SUCCESS;
+- production build: SUCCESS;
+- dependency audits: SUCCESS;
+- Branch2 fast-forwarded to `867fdaae5d15a66a38da195d05d47eca62ccbd2b`.
+
 ## Current safety boundary
 
 Do not touch Production D1 while Stage 0+1 is still being assembled.
@@ -552,7 +581,7 @@ Do not collapse return money, return workflow, shipping, Workshop, and catalog i
 
 ## Next work
 
-R1–R15 are green. Continue auditing the remaining Return/Exchange, Finance and historical surfaces by purpose. Do not mechanically convert historical/audit views to canonical-first.
+R1–R16 are green. Continue auditing the remaining Return/Exchange, Finance and historical surfaces by purpose. Do not mechanically convert historical/audit views to canonical-first.
 
 Priority targets:
 
