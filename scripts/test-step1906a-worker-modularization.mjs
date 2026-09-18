@@ -613,6 +613,26 @@ const stage01HandoverPhysicalIdentityNormalizeBlock = [
 ].join('\n')
 patched = patched.replace(stage01HandoverPhysicalIdentityNormalizeAnchor, stage01HandoverPhysicalIdentityNormalizeBlock + stage01HandoverPhysicalIdentityNormalizeAnchor)
 
+const stage01CanonicalOrderSearchR14 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-canonical-order-search-r14-worker-manifest.json'), 'utf8'))
+if (stage01CanonicalOrderSearchR14.version !== 1 || stage01CanonicalOrderSearchR14.revision !== 'stage01-canonical-order-search-r14') throw new Error('Stage01 canonical order search R14 Worker manifest invalid')
+if (Object.keys(stage01CanonicalOrderSearchR14.changes || {}).join(',') !== 'listOrders') throw new Error('Stage01 canonical order search R14 Worker allow-list widened')
+patched = 'const stage01CanonicalOrderSearchR14Changes = ' + JSON.stringify(stage01CanonicalOrderSearchR14.changes || {}) + '\n' + patched
+
+const stage01CanonicalOrderSearchNormalizeAnchor = '  const removedNames = Object.keys(removed)\n'
+if (!patched.includes(stage01CanonicalOrderSearchNormalizeAnchor)) throw new Error('Stage01 canonical order search R14 normalization anchor missing')
+const stage01CanonicalOrderSearchNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01CanonicalOrderSearchR14Changes)) {',
+  "    check(declarations.has(name), 'Stage01 canonical order search R14 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 canonical order search R14 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 canonical order search R14 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01CanonicalOrderSearchNormalizeAnchor, stage01CanonicalOrderSearchNormalizeBlock + stage01CanonicalOrderSearchNormalizeAnchor)
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
