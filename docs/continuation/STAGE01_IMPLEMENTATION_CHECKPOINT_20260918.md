@@ -1,13 +1,13 @@
 # Stage 0+1 — implementation checkpoint (2026-09-18)
 
-Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 + R11 + R12 + R13 + R14 + R15 + R16 + R17 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
+Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 + R11 + R12 + R13 + R14 + R15 + R16 + R17 + R18 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
 
 ## Source of truth
 
 - Production/main baseline at the beginning of this slice: `main`.
 - Implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green implementation head: `00385e30547edafba4cc798115dee8897f3f2dd3`.
-- Branch2 is the isolated UI/integration proving environment. After R17 passed the full gate it was fast-forwarded to the same green head: `00385e30547edafba4cc798115dee8897f3f2dd3`.
+- Current green implementation head: `324af02d35471622d0d27649fe774e083a5ec7dd`.
+- Branch2 is the isolated UI/integration proving environment. After R18 passed the full gate it was fast-forwarded to the same green head: `324af02d35471622d0d27649fe774e083a5ec7dd`.
 - No Production D1 migration/write was performed.
 
 ## R1 — OrderOperationalProjection
@@ -595,6 +595,34 @@ Validation:
 - dependency audits: SUCCESS;
 - Branch2 fast-forwarded to `00385e30547edafba4cc798115dee8897f3f2dd3`.
 
+## R18 — Found-stock direct binding shows the exact current SKU
+
+Warehouse Attention also has a direct “Связать с вариантом” action for a physical stock row found during revision once the backend can identify one exact current catalog variant. Before R18, the card still rendered the unresolved stock snapshot identity even though the direct action would bind that row to the exact current SKU.
+
+R18 aligns the pre-action read model with the existing binding target:
+
+- unresolved found-stock rows remain immutable physical/snapshot evidence;
+- when an exact variant candidate exists, Attention additionally loads its current product/SKU identity;
+- the direct-bind card shows that current product, category and SKU before the operator confirms the link;
+- rows without an exact candidate remain snapshot/evidence-first and still require admin review;
+- the existing `reconcileFoundInventoryStock` mutation path is unchanged.
+
+Focused regression:
+`scripts/test-stage01-found-stock-current-canonical-identity-r18.mjs`
+
+Exact Worker preservation layer:
+`scripts/stage01-found-stock-current-canonical-identity-r18-worker-manifest.json`
+
+Validation:
+- the first CI attempt passed the structural gate but exposed a weak legacy B2A2 regression assertion: it had accidentally detected `exactKnown: Boolean` in the found-stock model instead of checking the lifecycle projection it was meant to guard;
+- that regression was narrowed to the actual lifecycle projection, without changing R18 business behavior;
+- temporary draft PR #88 was closed without merge;
+- final GitHub Actions Quality check run `35352886204`: SUCCESS;
+- cumulative release gate: SUCCESS;
+- production build: SUCCESS;
+- dependency audits: SUCCESS;
+- Branch2 fast-forwarded to `324af02d35471622d0d27649fe774e083a5ec7dd`.
+
 ## Current safety boundary
 
 Do not touch Production D1 while Stage 0+1 is still being assembled.
@@ -609,7 +637,7 @@ Do not collapse return money, return workflow, shipping, Workshop, and catalog i
 
 ## Next work
 
-R1–R17 are green. Continue auditing remaining live action surfaces separately from historical evidence. Do not mechanically convert historical/audit views to canonical-first.
+R1–R18 are green. Continue auditing remaining live action surfaces separately from historical evidence. Do not mechanically convert historical/audit views to canonical-first.
 
 Priority targets:
 
