@@ -24,9 +24,9 @@ check(projection.includes("canShip: mutableWorkingOrder && !hasActiveReturnOpera
 check(!projection.includes('stock_handover_review_needed') || projection.includes('canOpenStockHandover'), 'Historical handover review must not become a final-send blocker')
 check(orders.includes("order.stock_handover_review_needed ? 'Уточнить выдачу' : 'Выдать готовые товары'"), 'Handover review action must remain available')
 
-check(app.includes("import { projectOrderOperationalState } from './app/orderOperationalProjection'"), 'App action handlers do not consume the shared operational projection')
-const editHandler = app.slice(app.indexOf('function handleEditOrder('), app.indexOf('function upsertOrderInState'))
-check(editHandler.includes('projectOrderOperationalState(order, { isAdmin })') && editHandler.includes('!projection.canEdit'), 'Sent/deleted/archived edit protection is no longer enforced through the shared projection')
+check(app.includes("await import('./app/orderOperationalProjection')"), 'App action handlers do not lazy-load the shared operational projection')
+const editHandler = app.slice(app.indexOf('async function handleEditOrder('), app.indexOf('function upsertOrderInState'))
+check(editHandler.includes('await getOrderOperationalProjection(order)') && editHandler.includes('!projection.canEdit'), 'Sent/deleted/archived edit protection is no longer enforced through the shared projection')
 check(!app.includes("order.order_status !== 'active' || order.shipping_status === 'sent'"), 'Closed unshipped manager edit restriction returned')
 
 const shippingRouteStart = worker.indexOf('const orderShippingMatch =')
