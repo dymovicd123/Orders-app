@@ -276,6 +276,50 @@ Final validation:
 - production build: SUCCESS;
 - dependency audits: SUCCESS.
 
+## R7 — Workshop bulk cache reliability
+
+The bulk Workshop mutation still coupled concrete task/item updates with the coarse `orders.workshop_status` cache inside the same batch.
+
+R7 separates them:
+- concrete `workshop_tasks` and `order_items` changes commit atomically first;
+- affected order ids are deduplicated afterwards;
+- the coarse order cache is refreshed with one bounded `json_each(?)` update;
+- cache refresh is best-effort and cannot false-fail already-committed Workshop work.
+
+Focused regression:
+`scripts/test-stage01-workshop-bulk-cache-r7.mjs`
+
+Exact Worker preservation layer:
+`scripts/stage01-workshop-bulk-cache-reliability-r7-worker-manifest.json`
+
+Validation:
+- temporary draft PR #77, closed without merge;
+- GitHub Actions Quality check run `35333766883`: SUCCESS.
+
+## R8 — Debt workspace canonical item truth
+
+The Debt workspace still rendered item identity from historical snapshots before current catalog identity, unlike the main Orders read path.
+
+R8 makes the live Debt workspace consume the same shared `canonicalItemProjection()` used by Orders:
+- repaired/current product and exact SKU identity are projected first when canonical links exist;
+- order-time snapshots remain loaded and preserved as fallback/history;
+- the old snapshot-first Debt-only interpretation is removed.
+
+The old catalog-history regression was updated so it still protects immutable snapshots without forcing stale identity into the live Debt view.
+
+Focused regression:
+`scripts/test-stage01-debt-canonical-item-r8.mjs`
+
+Exact Worker preservation layer:
+`scripts/stage01-debt-canonical-item-r8-worker-manifest.json`
+
+Validation:
+- temporary draft PR #78, closed without merge;
+- GitHub Actions Quality check run `35335232585`: SUCCESS;
+- cumulative release gate: SUCCESS;
+- production build: SUCCESS;
+- dependency audits: SUCCESS.
+
 ## Current safety boundary
 
 Do not touch Production D1 while Stage 0+1 is still being assembled.
