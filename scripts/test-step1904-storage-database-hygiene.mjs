@@ -68,7 +68,7 @@ expect(worker.includes("event: 'heavy_read_metric'"), 'Structured heavy-read met
 
 expect(types.includes('retained_only?: boolean'), 'Order type lacks retained_only')
 expect(types.includes('retained_summary_text?: string | null'), 'Order type lacks retained summary text')
-expect(ordersView.includes('const retainedOnly = Boolean(order.retained_only)'), 'Orders table does not recognize retained-only history')
+expect(ordersView.includes('const retainedOnly = projection.retainedOnly'), 'Orders table does not recognize retained-only history through the shared projection')
 expect(ordersView.includes('Только история'), 'Orders table does not disable retained-only actions visibly')
 expect(ordersView.includes('isAdmin && archived && !retainedOnly'), 'Retained-only order can still expose restore action')
 expect(clientsView.includes('Краткая история'), 'Client drawer does not label retained-only orders')
