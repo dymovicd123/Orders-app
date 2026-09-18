@@ -1164,7 +1164,7 @@ export async function fetchOrderStockHandoverRows(
        LEFT JOIN catalog_variants reservation_variant ON reservation_variant.id = r.variant_id
        LEFT JOIN catalog_products reservation_product ON reservation_product.id = reservation_variant.product_id
        LEFT JOIN catalog_variants order_variant ON order_variant.id = oi.variant_id
-       LEFT JOIN catalog_products order_product ON order_product.id = oi.product_id
+       LEFT JOIN catalog_products order_product ON order_product.id = COALESCE(oi.product_id, order_variant.product_id)
        LEFT JOIN inventory_stock stock ON stock.inventory_source = r.inventory_source AND stock.variant_id = r.variant_id
        LEFT JOIN inventory_handover_reviews review ON review.id = (
          SELECT hr.id
