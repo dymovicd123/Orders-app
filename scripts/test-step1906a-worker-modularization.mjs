@@ -456,6 +456,25 @@ patched = patched.replace(stage01WorkshopBulkHashAnchor, [
   '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash',
 ].join('\n'))
 
+const stage01DebtCanonicalItemR8 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-debt-canonical-item-r8-worker-manifest.json'), 'utf8'))
+if (stage01DebtCanonicalItemR8.version !== 1 || stage01DebtCanonicalItemR8.revision !== 'stage01-debt-canonical-item-r8') throw new Error('Stage01 Debt canonical item R8 Worker manifest invalid')
+if (Object.keys(stage01DebtCanonicalItemR8.changes || {}).join(',') !== 'listOpenDebtOrders') throw new Error('Stage01 Debt canonical item R8 Worker allow-list widened')
+patched = 'const stage01DebtCanonicalItemR8Changes = ' + JSON.stringify(stage01DebtCanonicalItemR8.changes || {}) + '\n' + patched
+
+const stage01DebtCanonicalHashAnchor = '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash'
+if (!patched.includes(stage01DebtCanonicalHashAnchor)) throw new Error('Stage01 Debt canonical item R8 predecessor hash anchor missing')
+patched = patched.replace(stage01DebtCanonicalHashAnchor, [
+  '        const stage01DebtCanonicalItemChanged = stage01DebtCanonicalItemR8Changes[name]',
+  '        if (stage01DebtCanonicalItemChanged) {',
+  "          check(stage01DebtCanonicalItemChanged.before === acceptedPostStage01ReturnExchangeHash, 'Stage01 Debt canonical item R8 predecessor drifted: ' + name)",
+  "          check(declarations.get(name).includes(stage01DebtCanonicalItemChanged.afterBlock), 'Stage01 Debt canonical item R8 exact replacement missing: ' + name)",
+  '          const revertedStage01DebtCanonicalItem = declarations.get(name).replace(stage01DebtCanonicalItemChanged.afterBlock, stage01DebtCanonicalItemChanged.beforeBlock)',
+  "          check(sha(revertedStage01DebtCanonicalItem) === stage01DebtCanonicalItemChanged.before, 'Stage01 Debt canonical item R8 changed beyond exact replacement: ' + name)",
+  '          return true',
+  '        }',
+  '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash',
+].join('\n'))
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
