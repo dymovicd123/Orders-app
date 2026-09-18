@@ -6,11 +6,11 @@ This file is the current continuation pointer for the Orders-app foundation clea
 
 - GitHub repository: `dymovicd123/Orders-app`.
 - Current Stage 0+1 implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green Stage 0+1 head: `d8af03c492db9b44629578ecfcd94c72b4177aef`.
+- Current green Stage 0+1 head: `a12c9c5307f7d147a17881ff6e846b08ff92ebbc`.
 - Production D1 has not been changed by the Stage 0+1 work.
 - Branch2 is a separate environment and must not be casually folded into Production work.
 - Branch2 is reserved for interactive UI/end-to-end proving of coherent Stage01 groups before Production. Feature-branch static/CI work should remain isolated until it is ready for that test.
-- Branch2 current proving head: `d8af03c492db9b44629578ecfcd94c72b4177aef` (R1–R13 green).
+- Branch2 current proving head: `a12c9c5307f7d147a17881ff6e846b08ff92ebbc` (R1–R14 green).
 - `Приход` remains a frozen/high-risk surface unless a separate approved task explicitly requires changing it.
 
 ## Why Stage 0+1 exists
@@ -197,6 +197,22 @@ Focused regression:
 
 Validation: GitHub Actions run `35344170743` passed the cumulative release gate, dependency audits and production build. Temporary PR #83 was closed without merge. Branch2 was fast-forwarded to `d8af03c492db9b44629578ecfcd94c72b4177aef`.
 
+
+## Completed slice N — Canonical working-order search
+
+The live Orders search now follows repaired canonical product/SKU identity while retaining immutable order-time terms as searchable historical vocabulary.
+
+The >=3-character path stays on the existing trigram FTS architecture. Additive migration `0070_v72_stage01_canonical_order_search.sql` refreshes the derived item FTS index and keeps it synchronized when Resolver links an item or catalog name/SKU fields change. Short searches use canonical catalog joins plus snapshots directly.
+
+No business/history row is rewritten.
+
+Focused regression:
+- `scripts/test-stage01-canonical-order-search-r14.mjs`
+
+Validation: GitHub Actions run `35345556890` passed the cumulative release gate, dependency audits and production build. Temporary PR #84 was closed without merge. Branch2 was fast-forwarded to `a12c9c5307f7d147a17881ff6e846b08ff92ebbc`.
+
+Branch2 D1 note: source contains migration 0070, but no D1 migration was executed by this Stage01 work. Apply it through the normal Branch2 migration path before interactive canonical-search proving. Production D1 remains untouched.
+
 ## Validation state
 
 R2 passed the cumulative release gate and production build on GitHub Actions run `35327687377`.
@@ -222,6 +238,8 @@ R11 passed the same full gate on GitHub Actions run `35339510564`. Temporary PR 
 R12 passed the same full gate on GitHub Actions run `35340711953`. Temporary PR #82 was closed without merge, and Branch2 was fast-forwarded to the same green head.
 
 R13 passed the same full gate on GitHub Actions run `35344170743`. Temporary PR #83 was closed without merge, and Branch2 was fast-forwarded to the same green head.
+
+R14 passed the same full gate on GitHub Actions run `35345556890`. Temporary PR #84 was closed without merge, and Branch2 was fast-forwarded to the same green head.
 
 R6 passed the same full gate on GitHub Actions run `35332881155`. Temporary PR #76 was closed without merge.
 
