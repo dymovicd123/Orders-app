@@ -1,0 +1,41 @@
+name: Stage01 Branch2 live write E2E
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: branch2-live-write-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Resolve isolated Branch2 Worker URL
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          subdomain="$(curl --fail-with-body -sS -H "Authorization: Bearer $CF_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain // empty')"
+          test -n "$subdomain"
+          echo "base_url=https://orders-app-branch2.$subdomain.workers.dev" >> "$GITHUB_OUTPUT"
+
+      - name: Run isolated Branch2 mutation E2E
+        env:
+          BRANCH2_BASE_URL: ${{ steps.target.outputs.base_url }}
+        run: node scripts/tmp-stage01-branch2-live-write-e2e.mjs
