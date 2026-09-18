@@ -703,6 +703,11 @@ const stage01KnownIntakeCurrentCanonicalNormalizeBlock = [
 ].join('\n')
 patched = patched.replace(stage01KnownIntakeCurrentCanonicalNormalizeAnchor, stage01KnownIntakeCurrentCanonicalNormalizeBlock + stage01KnownIntakeCurrentCanonicalNormalizeAnchor)
 
+const stage01ReturnExchangeDownstreamR19 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-return-exchange-downstream-semantics-r19-worker-manifest.json'), 'utf8'))
+if (stage01ReturnExchangeDownstreamR19.version !== 1 || stage01ReturnExchangeDownstreamR19.revision !== 'stage01-return-exchange-downstream-semantics-r19') throw new Error('Stage01 Return/Exchange downstream R19 Worker manifest invalid')
+if (Object.keys(stage01ReturnExchangeDownstreamR19.changes || {}).sort().join(',') !== 'fetchOrderRelations,getOrder,listOrders') throw new Error('Stage01 Return/Exchange downstream R19 Worker allow-list widened')
+patched = 'const stage01ReturnExchangeDownstreamR19Changes = ' + JSON.stringify(stage01ReturnExchangeDownstreamR19.changes || {}) + '\n' + patched
+
 const stage01FoundStockCurrentCanonicalR18 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-found-stock-current-canonical-identity-r18-worker-manifest.json'), 'utf8'))
 if (stage01FoundStockCurrentCanonicalR18.version !== 1 || stage01FoundStockCurrentCanonicalR18.revision !== 'stage01-found-stock-current-canonical-identity-r18') throw new Error('Stage01 found-stock current canonical identity R18 Worker manifest invalid')
 if (Object.keys(stage01FoundStockCurrentCanonicalR18.changes || {}).join(',') !== 'getWarehouseAttentionSummary') throw new Error('Stage01 found-stock current canonical identity R18 Worker allow-list widened')
@@ -713,7 +718,16 @@ patched = 'const stage01FoundStockCurrentCanonicalR18Changes = ' + JSON.stringif
 const stage01FoundStockCurrentCanonicalNormalizeAnchor = '  for (const [name, change] of Object.entries(stage01KnownIntakeCurrentCanonicalR17Changes)) {'
 if (!patched.includes(stage01FoundStockCurrentCanonicalNormalizeAnchor)) throw new Error('Stage01 found-stock current canonical identity R18 predecessor anchor missing')
 const stage01FoundStockCurrentCanonicalNormalizeBlock = [
-  '  for (const [name, change] of Object.entries(stage01FoundStockCurrentCanonicalR18Changes)) {',
+  '  for (const [name, change] of Object.entries(stage01ReturnExchangeDownstreamR19Changes)) {
+    check(declarations.has(name), 'Stage01 Return/Exchange downstream R19 declaration missing: ' + name)
+    const current = declarations.get(name)
+    check(current.includes(change.afterBlock), 'Stage01 Return/Exchange downstream R19 exact after-block missing: ' + name)
+    const reverted = current.replace(change.afterBlock, change.beforeBlock)
+    check(reverted !== current, 'Stage01 Return/Exchange downstream R19 exact replacement did not apply: ' + name)
+    declarations.set(name, reverted)
+  }
+
+  for (const [name, change] of Object.entries(stage01FoundStockCurrentCanonicalR18Changes)) {',
   "    check(declarations.has(name), 'Stage01 found-stock current canonical identity R18 declaration missing: ' + name)",
   '    const current = declarations.get(name)',
   "    check(current.includes(change.afterBlock), 'Stage01 found-stock current canonical identity R18 exact after-block missing: ' + name)",
