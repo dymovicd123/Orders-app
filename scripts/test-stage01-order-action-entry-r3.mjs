@@ -13,19 +13,20 @@ const between = (source, start, end) => {
 const app = read('src/App.tsx')
 const projection = read('src/app/orderOperationalProjection.ts')
 
-check(app.includes("import { projectOrderOperationalState } from './app/orderOperationalProjection'"), 'App must use the shared order projection at action entry points')
+check(app.includes("await import('./app/orderOperationalProjection')"), 'App must lazy-load the shared order projection at action entry points')
+check(app.includes('async function getOrderOperationalProjection(order: OrderRecord)'), 'App is missing the lazy shared projection helper')
 
-const debt = between(app, 'function handleOpenDebt(', 'function handleOpenReturn(')
-check(debt.includes('projectOrderOperationalState(order, { isAdmin })'), 'Debt entry does not use shared order truth')
+const debt = between(app, 'async function handleOpenDebt(', 'async function handleOpenReturn(')
+check(debt.includes('await getOrderOperationalProjection(order)'), 'Debt entry does not use shared order truth')
 check(debt.includes('!projection.canOpenDebt'), 'Debt entry bypasses projection eligibility')
 
-const ret = between(app, 'function handleOpenReturn(', 'function handleOpenExchange(')
+const ret = between(app, 'async function handleOpenReturn(', 'async function handleOpenExchange(')
 check(ret.includes('!projection.canOpenReturn'), 'Return entry bypasses projection eligibility')
 
-const exchange = between(app, 'function handleOpenExchange(', 'function closeOrderEditor(')
+const exchange = between(app, 'async function handleOpenExchange(', 'function closeOrderEditor(')
 check(exchange.includes('!projection.canOpenExchange'), 'Exchange entry bypasses projection eligibility')
 
-const edit = between(app, 'function handleEditOrder(', 'function upsertOrderInState(')
+const edit = between(app, 'async function handleEditOrder(', 'function upsertOrderInState(')
 check(edit.includes('!projection.canEdit'), 'Edit open bypasses projection eligibility')
 check(edit.includes('projection.hasActiveReturnOperation'), 'Edit open does not explain active Return protection')
 
