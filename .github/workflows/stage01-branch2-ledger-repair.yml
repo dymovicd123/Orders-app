@@ -1,0 +1,212 @@
+name: Stage01 Branch2 migration ledger repair
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    name: branch2-ledger-repair
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      DB_ID: 40065052-854e-44b8-bcd5-251bdd488301
+      CF_API: https://api.cloudflare.com/client/v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Hard guard isolated Branch2 target
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -q '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -q '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          ! grep -q 'orders_db_prod' wrangler.jsonc
+
+      - name: Preflight ledger and schema evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            local sql="$1"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$DB_ID/query"
+          }
+
+          ledger_sql="SELECT MAX(id) AS max_id,
+            SUM(CASE WHEN name IN (
+              '0045_v72_hot_read_indexes.sql',
+              '0046_v72_cash_register_and_inventory_revision.sql',
+              '0047_v72_human_inventory_model.sql',
+              '0048_v72_catalog_identity_v3.sql',
+              '0049_v72_inventory_stocktake_sessions.sql',
+              '0050_v72_product_aliases.sql',
+              '0051_v72_inventory_lifecycle_gate.sql',
+              '0052_v72_inventory_transfer_documents.sql',
+              '0053_v72_inventory_cycle_counts.sql',
+              '0054_v72_catalog_cleanup_learning.sql',
+              '0055_v72_warehouse_stability_hardening.sql',
+              '0056_v72_client_catalog_retirements.sql',
+              '0057_v72_safe_early_handover.sql',
+              '0058_v72_reliable_money_history.sql',
+              '0059_v72_critical_operation_idempotency.sql',
+              '0060_v72_storage_database_hygiene.sql',
+              '0061_v72_warehouse_attention_truth_gates.sql',
+              '0062_v72_d1_read_budget_r5_warehouse_indexes.sql',
+              '0063_v72_d1_read_budget_r5_catalog_attention_index.sql',
+              '0064_v72_d1_read_budget_r5_order_search_fts.sql',
+              '0065_v72_d1_read_budget_r5_workshop_variant_order_index.sql',
+              '0066_v72_d1_read_budget_r5_finance_summary_indexes.sql',
+              '0067_v72_o1_read_budget_indexes.sql',
+              '0068_v72_catalog_product_gender_scope.sql',
+              '0069_v72_return_exchange_physical_receipt.sql',
+              '0070_v72_stage01_canonical_order_search.sql'
+            ) THEN 1 ELSE 0 END) AS stage01_rows
+            FROM d1_migrations;"
+          ledger="$(query "$ledger_sql")"
+          echo "$ledger" | jq .
+          jq -e '.success == true and .result[0].success == true' <<<"$ledger" >/dev/null
+          jq -e '.result[0].results[0].max_id == 47 and .result[0].results[0].stage01_rows == 0' <<<"$ledger" >/dev/null
+
+          objects_sql="WITH expected(name) AS (VALUES
+            ('idx_exchanges_new_order_item_status_date'),
+            ('idx_exchanges_refund_return_status'),
+            ('cash_register_settings'),
+            ('cash_register_entries'),
+            ('inventory_model_meta'),
+            ('inventory_reservations'),
+            ('catalog_input_aliases'),
+            ('catalog_identity_meta'),
+            ('catalog_identity_order_item_links'),
+            ('inventory_stocktake_sessions'),
+            ('inventory_stocktake_items'),
+            ('catalog_product_aliases'),
+            ('inventory_lifecycle_events'),
+            ('inventory_transfer_documents'),
+            ('inventory_stock_checks'),
+            ('catalog_value_aliases'),
+            ('inventory_operation_request_fingerprints'),
+            ('catalog_manual_retirements'),
+            ('inventory_handover_reviews'),
+            ('financial_events'),
+            ('critical_operations'),
+            ('critical_operation_entities'),
+            ('retained_order_summaries'),
+            ('idx_inventory_stock_source_variant'),
+            ('idx_order_items_catalog_attention_order'),
+            ('order_search_orders_fts'),
+            ('order_search_items_fts'),
+            ('order_search_payments_fts'),
+            ('idx_catalog_variants_product_active_desc_sort'),
+            ('idx_payments_payment_date_order_amount'),
+            ('idx_o1_exchanges_payment_finance'),
+            ('idx_catalog_products_gender_scope'),
+            ('idx_return_items_physical_receipt'),
+            ('idx_exchange_items_physical_receipt'),
+            ('trg_order_search_catalog_products_au'),
+            ('trg_order_search_catalog_variants_au')
+          )
+          SELECT COUNT(*) AS expected_count,
+                 SUM(CASE WHEN sm.name IS NOT NULL THEN 1 ELSE 0 END) AS present_count
+          FROM expected e
+          LEFT JOIN sqlite_master sm ON sm.name=e.name;"
+          objects="$(query "$objects_sql")"
+          echo "$objects" | jq .
+          jq -e '.result[0].results[0].expected_count == 36 and .result[0].results[0].present_count == 36' <<<"$objects" >/dev/null
+
+          columns_sql="SELECT
+            EXISTS(SELECT 1 FROM pragma_table_info('returns') WHERE name='payment_method') AS c46,
+            EXISTS(SELECT 1 FROM pragma_table_info('order_items') WHERE name='inventory_obligation_key') AS c61a,
+            EXISTS(SELECT 1 FROM pragma_table_info('order_items') WHERE name='inventory_obligation_origin_at') AS c61b,
+            EXISTS(SELECT 1 FROM pragma_table_info('catalog_products') WHERE name='gender_scope') AS c68,
+            EXISTS(SELECT 1 FROM pragma_table_info('return_items') WHERE name='physical_tracking') AS c69a,
+            EXISTS(SELECT 1 FROM pragma_table_info('return_items') WHERE name='physical_received_at') AS c69b,
+            EXISTS(SELECT 1 FROM pragma_table_info('exchange_items') WHERE name='physical_tracking') AS c69c,
+            EXISTS(SELECT 1 FROM pragma_table_info('exchange_items') WHERE name='physical_received_at') AS c69d;"
+          columns="$(query "$columns_sql")"
+          echo "$columns" | jq .
+          jq -e '.result[0].results[0] | all(.[]; . == 1)' <<<"$columns" >/dev/null
+
+          meta_sql="SELECT
+            EXISTS(SELECT 1 FROM inventory_model_meta WHERE key='human_inventory_v2' AND value='active') AS m47,
+            EXISTS(SELECT 1 FROM catalog_identity_meta WHERE key='catalog_identity_v3' AND value='active') AS m48,
+            EXISTS(SELECT 1 FROM catalog_identity_meta WHERE key='catalog_cleanup_188j' AND value='active') AS m54,
+            EXISTS(SELECT 1 FROM catalog_identity_meta WHERE key='client_cleanup_188k2' AND value='active') AS m56,
+            EXISTS(SELECT 1 FROM inventory_model_meta WHERE key='safe_early_handover_v1_guard' AND value='ready') AS m57,
+            EXISTS(SELECT 1 FROM app_settings WHERE key='financial_history_model' AND value='189c-v1') AS m58;"
+          meta="$(query "$meta_sql")"
+          echo "$meta" | jq .
+          jq -e '.result[0].results[0] | all(.[]; . == 1)' <<<"$meta" >/dev/null
+
+          fts="$(query "SELECT (SELECT COUNT(*) FROM order_items) AS order_items_count, (SELECT COUNT(*) FROM order_search_items_fts) AS fts_rows_count;")"
+          echo "$fts" | jq .
+          jq -e '.result[0].results[0].order_items_count == .result[0].results[0].fts_rows_count' <<<"$fts" >/dev/null
+
+      - name: Repair migration ledger only
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql="INSERT INTO d1_migrations(name) VALUES
+            ('0045_v72_hot_read_indexes.sql'),
+            ('0046_v72_cash_register_and_inventory_revision.sql'),
+            ('0047_v72_human_inventory_model.sql'),
+            ('0048_v72_catalog_identity_v3.sql'),
+            ('0049_v72_inventory_stocktake_sessions.sql'),
+            ('0050_v72_product_aliases.sql'),
+            ('0051_v72_inventory_lifecycle_gate.sql'),
+            ('0052_v72_inventory_transfer_documents.sql'),
+            ('0053_v72_inventory_cycle_counts.sql'),
+            ('0054_v72_catalog_cleanup_learning.sql'),
+            ('0055_v72_warehouse_stability_hardening.sql'),
+            ('0056_v72_client_catalog_retirements.sql'),
+            ('0057_v72_safe_early_handover.sql'),
+            ('0058_v72_reliable_money_history.sql'),
+            ('0059_v72_critical_operation_idempotency.sql'),
+            ('0060_v72_storage_database_hygiene.sql'),
+            ('0061_v72_warehouse_attention_truth_gates.sql'),
+            ('0062_v72_d1_read_budget_r5_warehouse_indexes.sql'),
+            ('0063_v72_d1_read_budget_r5_catalog_attention_index.sql'),
+            ('0064_v72_d1_read_budget_r5_order_search_fts.sql'),
+            ('0065_v72_d1_read_budget_r5_workshop_variant_order_index.sql'),
+            ('0066_v72_d1_read_budget_r5_finance_summary_indexes.sql'),
+            ('0067_v72_o1_read_budget_indexes.sql'),
+            ('0068_v72_catalog_product_gender_scope.sql'),
+            ('0069_v72_return_exchange_physical_receipt.sql'),
+            ('0070_v72_stage01_canonical_order_search.sql');"
+          response="$(curl --fail-with-body -sS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             -H "Content-Type: application/json"             --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"             "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$DB_ID/query")"
+          echo "$response" | jq .
+          jq -e '.success == true and .result[0].success == true and .result[0].meta.changes == 26' <<<"$response" >/dev/null
+
+      - name: Verify repaired ledger and Wrangler view
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            local sql="$1"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$DB_ID/query"
+          }
+          result="$(query "SELECT COUNT(*) AS stage01_rows, MIN(id) AS first_id, MAX(id) AS last_id, MAX(CASE WHEN name='0070_v72_stage01_canonical_order_search.sql' THEN 1 ELSE 0 END) AS has_0070 FROM d1_migrations WHERE id >= 48;")"
+          echo "$result" | jq .
+          jq -e '.result[0].results[0].stage01_rows == 26 and .result[0].results[0].first_id == 48 and .result[0].results[0].last_id == 73 and .result[0].results[0].has_0070 == 1' <<<"$result" >/dev/null
+
+          npx wrangler d1 migrations list DB --remote --config wrangler.jsonc | tee /tmp/migrations-list.txt
+          if grep -q '0045_v72_hot_read_indexes.sql\|0070_v72_stage01_canonical_order_search.sql' /tmp/migrations-list.txt; then
+            echo "Wrangler still reports Stage01 migration files as pending" >&2
+            exit 4
+          fi
