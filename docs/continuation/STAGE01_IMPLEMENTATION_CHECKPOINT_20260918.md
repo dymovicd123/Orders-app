@@ -646,3 +646,139 @@ Priority targets:
 3. keep historical/finance/audit views intentionally historical where appropriate rather than mechanically converting every screen to canonical-first;
 4. only after that audit, take the next smallest Stage 0+1 slice and add its own focused regression + exact structural layer.
 
+
+
+# Stage01 completion checkpoint — R19 through final Branch2 proving
+
+## R19 — explicit Return/Exchange downstream truth
+
+R19 removed the misleading `hasActiveReturnOperation` abstraction and made committed Return and Exchange history explicit in the order read model.
+
+Current order payloads expose:
+- `committed_return_count`;
+- `committed_exchange_count`;
+- current projection facts for committed Return/Exchange state.
+
+The frontend no longer treats Return history as a fake active lifecycle state. Structural edit protection follows any committed downstream operation, while Return/Exchange entry itself remains governed by remaining quantity/domain validation.
+
+Validation:
+- final R19 head: `bcfe9c7eeae360a244872a0cb2eb06dc732418db`;
+- Quality check run `35357677429`: SUCCESS;
+- D1 query fan-out remained within the existing bounded limit.
+
+## R19B — money-only Return no longer dead-ends physical outbound flow
+
+The post-R19 audit proved that a money-only Return can legitimately exist before physical shipment. Treating every completed Return as a physical downstream operation blocked a still-valid outbound obligation.
+
+R19B separates:
+- any committed downstream financial/history operation;
+- committed physical downstream operation.
+
+A money-only Return still protects structural order history, but does not block physical shipment/handover. Item-linked Returns and Exchanges remain physical blockers.
+
+Validation:
+- final head: `a044cfcaf5b4b2225cdf346cf2137184b920df6a`;
+- Quality check run `35358733752`: SUCCESS;
+- focused projection regression executes money-only Return, item Return, Exchange, and legacy payload behavior.
+
+## R20 — new stocktake sessions capture current catalog identity
+
+Starting a new stocktake after a catalog rename previously copied stale `inventory_stock.product_name_snapshot`.
+
+R20 makes a new stocktake snapshot the current canonical product identity when a valid current catalog link exists, while preserving the older stock snapshot as fallback/history and leaving already-created stocktakes unchanged.
+
+Validation:
+- final head: `4170ab0298cadfe55fa04730fab579faac81ef6e`;
+- Quality check run `35359369178`: SUCCESS.
+
+## R21 — lifecycle manual queue no longer duplicates exact-known inbound
+
+Exact-known inbound lifecycle work already belongs to Warehouse Attention's normal intake lane. R21 removes those rows from the admin manual-resolution queue while keeping unresolved inbound and outgoing physical lifecycle work there.
+
+Historical lifecycle event snapshots remain immutable.
+
+Validation:
+- final head: `b05b866580005de88028ab426a9e3b3bef329f15`;
+- Quality check run `35360065135`: SUCCESS.
+
+## Post-fix cross-regression
+
+A dedicated cross-regression now proves R19/R19B/R20/R21 and R14 remain mutually consistent rather than merely passing isolated tests.
+
+It covers:
+- plain order actions;
+- money-only Return;
+- item Return;
+- Exchange;
+- cancelled downstream history;
+- sent-order correction protection;
+- Workshop readiness after refund;
+- combined Return/Exchange relation arithmetic;
+- current-canonical stocktake seeding without snapshot rewrite;
+- lifecycle queue ownership;
+- R14 derived-search boundaries.
+
+Branch2 head after adding that guard:
+`21b6ad6bbe066d7c11ced060507c4ccff2d5e7f6`
+
+Quality check run `35361865692`: SUCCESS, including:
+- cumulative regression gate;
+- R19, R19B, R20, R21;
+- post-fix cross-regression;
+- D1 capacity/read-budget regressions;
+- production build;
+- production and high-risk dependency audits.
+
+## Branch2 live proving
+
+A live mutation E2E was executed against the isolated deployed Branch2 Worker, not Production.
+
+Successful path:
+1. create Workshop order;
+2. read it back;
+3. find it through order search;
+4. create Exchange without refund;
+5. verify Exchange readback;
+6. cancel Exchange and verify original item restoration;
+7. create money-only Return;
+8. verify it is not classified as an item Return;
+9. mark restored Workshop task ready;
+10. ship the order successfully despite the money-only Return;
+11. cancel the Return;
+12. verify downstream counts clear.
+
+Live result:
+- run `35364377476`: SUCCESS;
+- test order `QA-S01-5364377476`, Branch2 order id `13`;
+- final shipping state: `sent`.
+
+This is the strongest current evidence that the recent fixes did not repair one path by breaking the adjacent Return/Exchange/Workshop/shipping path.
+
+## Branch2 migration ledger repair
+
+Branch2 D1 had a stale `d1_migrations` ledger ending at `0044` even though the actual schema/data markers for `0045`–`0070` were already present.
+
+A guarded Branch2-only repair:
+- proved the expected tables/indexes/triggers and critical columns existed;
+- proved major data-migration markers were present;
+- proved R14 FTS row coverage matched `order_items`;
+- inserted only the missing migration names into `d1_migrations`;
+- did not replay migration SQL;
+- did not touch business tables.
+
+Repair run `35366366986`: SUCCESS.
+
+After repair:
+- 26 ledger entries `0045`–`0070` are present;
+- Wrangler reports `No migrations to apply!`.
+
+Production D1 was not touched.
+
+## Current Stage01 state
+
+Branch2 code head:
+`21b6ad6bbe066d7c11ced060507c4ccff2d5e7f6`
+
+Stage01 R1–R21 is now implementation-complete and cross-validated on Branch2. The current release gate and live E2E did not expose a new regression caused by R19–R21.
+
+The next step is no longer another speculative Stage01 fix. It is a release/promotion decision and production rollout plan with explicit backup, migration-ledger verification and smoke checks before any Production mutation.
