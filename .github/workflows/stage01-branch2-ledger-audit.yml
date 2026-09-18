@@ -1,0 +1,111 @@
+name: Stage01 Branch2 migration ledger audit
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: branch2-migration-ledger-readonly
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Hard guard Branch2
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -q '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -q '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          ! grep -q 'orders_db_prod' wrangler.jsonc
+
+      - name: Read migration ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "SELECT id,name,applied_at FROM d1_migrations ORDER BY id;"
+
+      - name: Check durable schema markers 0045-0070
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "
+            WITH expected(name) AS (VALUES
+              ('idx_exchanges_new_order_item_status_date'),
+              ('cash_register_settings'),
+              ('inventory_model_meta'),
+              ('catalog_identity_meta'),
+              ('inventory_stocktake_sessions'),
+              ('catalog_product_aliases'),
+              ('inventory_lifecycle_events'),
+              ('inventory_transfer_documents'),
+              ('inventory_stock_checks'),
+              ('catalog_value_aliases'),
+              ('inventory_operation_request_fingerprints'),
+              ('catalog_manual_retirements'),
+              ('inventory_handover_reviews'),
+              ('financial_events'),
+              ('critical_operations'),
+              ('retained_order_summaries'),
+              ('idx_inventory_stock_source_variant'),
+              ('idx_order_items_catalog_attention_order'),
+              ('order_search_orders_fts'),
+              ('order_search_items_fts'),
+              ('order_search_payments_fts'),
+              ('idx_catalog_variants_product_active_desc_sort'),
+              ('idx_payments_payment_date_order_amount'),
+              ('idx_o1_exchanges_payment_finance'),
+              ('idx_catalog_products_gender_scope'),
+              ('idx_return_items_physical_receipt'),
+              ('idx_exchange_items_physical_receipt'),
+              ('trg_order_search_catalog_products_au'),
+              ('trg_order_search_catalog_variants_au')
+            )
+            SELECT e.name,
+                   CASE WHEN sm.name IS NULL THEN 0 ELSE 1 END AS present,
+                   COALESCE(sm.type,'') AS type
+            FROM expected e
+            LEFT JOIN sqlite_master sm ON sm.name=e.name
+            ORDER BY e.name;"
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "
+            SELECT 'returns.payment_method' AS marker, EXISTS(SELECT 1 FROM pragma_table_info('returns') WHERE name='payment_method') AS present
+            UNION ALL SELECT 'order_items.inventory_obligation_key', EXISTS(SELECT 1 FROM pragma_table_info('order_items') WHERE name='inventory_obligation_key')
+            UNION ALL SELECT 'order_items.inventory_obligation_origin_at', EXISTS(SELECT 1 FROM pragma_table_info('order_items') WHERE name='inventory_obligation_origin_at')
+            UNION ALL SELECT 'catalog_products.gender_scope', EXISTS(SELECT 1 FROM pragma_table_info('catalog_products') WHERE name='gender_scope')
+            UNION ALL SELECT 'return_items.physical_tracking', EXISTS(SELECT 1 FROM pragma_table_info('return_items') WHERE name='physical_tracking')
+            UNION ALL SELECT 'return_items.physical_received_at', EXISTS(SELECT 1 FROM pragma_table_info('return_items') WHERE name='physical_received_at')
+            UNION ALL SELECT 'exchange_items.physical_tracking', EXISTS(SELECT 1 FROM pragma_table_info('exchange_items') WHERE name='physical_tracking')
+            UNION ALL SELECT 'exchange_items.physical_received_at', EXISTS(SELECT 1 FROM pragma_table_info('exchange_items') WHERE name='physical_received_at');"
+
+      - name: Check migration audit/meta evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "
+            SELECT 'catalog_identity_meta' AS marker, COUNT(*) AS rows FROM catalog_identity_meta
+            UNION ALL SELECT 'catalog_identity_order_item_links', COUNT(*) FROM catalog_identity_order_item_links
+            UNION ALL SELECT 'catalog_cleanup_position_baseline', COUNT(*) FROM catalog_cleanup_position_baseline
+            UNION ALL SELECT 'catalog_cleanup_variant_baseline', COUNT(*) FROM catalog_cleanup_variant_baseline
+            UNION ALL SELECT 'catalog_cleanup_stock_baseline', COUNT(*) FROM catalog_cleanup_stock_baseline
+            UNION ALL SELECT 'catalog_gender_scope_repairs', COUNT(*) FROM catalog_gender_scope_repairs
+            UNION ALL SELECT 'catalog_gender_variant_repairs', COUNT(*) FROM catalog_gender_variant_repairs
+            UNION ALL SELECT 'catalog_gender_stock_baseline', COUNT(*) FROM catalog_gender_stock_baseline;"
