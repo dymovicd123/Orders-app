@@ -29,7 +29,7 @@ check(projection.includes('canOpenReturn: mutableWorkingOrder'), 'projection mus
 check(projection.includes('canOpenExchange: mutableWorkingOrder'), 'projection must not make any refund terminal for future Exchange eligibility')
 
 // Backend still protects destructive editing; UI uses active Return operations, not refund amount, for that guard.
-check(projection.includes('canEdit: mutableWorkingOrder && !hasActiveReturnOperation'), 'edit safety must use active Return operations instead of return_amount lifecycle semantics')
+check(projection.includes('canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation'), 'edit safety must use committed Return/Exchange operations instead of return_amount lifecycle semantics')
 check(table.includes('projection.canEdit'), 'orders table is not consuming projection edit safety')
 check(details.includes('projection.canEdit'), 'order details are not consuming projection edit safety')
 check(editor.includes('projection?.canEdit'), 'order editor visibility is not consuming projection edit safety')
