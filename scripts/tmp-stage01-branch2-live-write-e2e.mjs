@@ -35,23 +35,16 @@ const paymentMethod = String(refs.paymentMethods.find(Boolean) || '').trim()
 check(manager?.id && manager?.name, 'No valid active manager for Branch2 E2E')
 check(paymentMethod, 'No valid payment method for Branch2 E2E')
 
-let inventory = (await api('/api/inventory?source=warehouse&includeMovements=0&limit=200')).data
-let candidate = (inventory.items || []).find((row) => Number(row?.availableQuantity) >= 1 && Number(row?.variantId) > 0 && !row?.catalogArchived)
-if (!candidate) {
-  inventory = (await api('/api/inventory?source=boutique&includeMovements=0&limit=200')).data
-  candidate = (inventory.items || []).find((row) => Number(row?.availableQuantity) >= 1 && Number(row?.variantId) > 0 && !row?.catalogArchived)
-}
-check(candidate, 'No active stock candidate with available quantity >= 1 in Branch2')
-
 const catalog = (await api('/api/catalog')).data
-const variant = (catalog.variants || []).find((row) => Number(row?.id) === Number(candidate.variantId) && row?.isActive)
-const product = (catalog.products || []).find((row) => Number(row?.id) === Number(candidate.productId) && row?.isActive)
-check(variant && product, 'Selected Branch2 stock row no longer has an active canonical catalog identity')
+const variant = (catalog.variants || []).find((row) => Number(row?.id) > 0 && row?.isActive && String(row?.productName || '').trim())
+const product = variant
+  ? (catalog.products || []).find((row) => Number(row?.id) === Number(variant.productId) && row?.isActive)
+  : null
+check(variant && product, 'No active canonical catalog variant available for Branch2 Workshop E2E')
 
-const sourceType = candidate.inventorySource === 'boutique' ? 'boutique' : 'warehouse'
 const externalId = `QA-S01-${runId.slice(-10)}`
 const item = {
-  productName: String(product.name || variant.productName || candidate.productName || ''),
+  productName: String(product.name || variant.productName || ''),
   audienceType: String(variant.productCategory || product.category || '').toLowerCase() === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',
   gender: String(variant.gender || ''),
   color: String(variant.color || ''),
@@ -60,13 +53,13 @@ const item = {
   size: String(variant.sizeLabel || ''),
   quantity: 1,
   unitPrice: 0,
-  sourceType,
-  workshopComment: '',
+  sourceType: 'workshop',
+  workshopComment: 'Stage01 live E2E Workshop item',
   workshopUrgent: false,
   workshopDueDate: '',
   shortageAcknowledged: false,
 }
-check(item.productName, 'Canonical product name is empty for selected stock row')
+check(item.productName, 'Canonical product name is empty for selected Workshop catalog row')
 
 const createPayload = {
   externalId,
@@ -103,6 +96,7 @@ console.log(`created order #${orderId} ${externalId}`)
 let order = (await api(`/api/orders/${orderId}`)).data?.order
 check(order?.id === orderId, 'Created order cannot be read back')
 check(Array.isArray(order.items) && order.items.length === 1, 'Created order item readback is wrong')
+check(Boolean(order.items[0]?.isWorkshop) || String(order.items[0]?.sourceType || '').toLowerCase() === 'workshop', 'Created E2E order did not enter Workshop flow')
 const originalItemId = Number(order.items[0]?.id)
 check(originalItemId > 0, 'Created order item id missing')
 check(Number(order.committed_return_count || 0) === 0 && Number(order.committed_exchange_count || 0) === 0, 'Fresh order already has downstream operations')
@@ -172,6 +166,16 @@ check(Number(order.committed_return_count || 0) === 1, 'Money-only Return is mis
 check(order.has_committed_item_return === false, 'Money-only Return was misclassified as an item Return')
 check(Number(order.committed_exchange_count || 0) === 0, 'Cancelled Exchange leaked into downstream count')
 
+const workshop = (await api(`/api/workshop?limit=500&q=${encodeURIComponent(externalId)}`)).data
+const activeTask = (workshop.tasks || []).find((task) => Number(task?.orderId) === orderId)
+check(activeTask?.id, 'Restored Workshop task is missing before shipping')
+await api(`/api/workshop/${Number(activeTask.id)}`, {
+  method: 'PATCH',
+  body: JSON.stringify({ status: 'ready' }),
+})
+order = (await api(`/api/orders/${orderId}`)).data?.order
+check(String(order.workshop_status || '').toLowerCase() !== 'in_workshop', 'Workshop readiness did not clear after restored task was marked ready')
+
 await api(`/api/orders/${orderId}/shipping`, {
   method: 'PATCH',
   body: JSON.stringify({ shippingStatus: 'sent', shippingDate: today, observations: [] }),
@@ -192,10 +196,10 @@ console.log(JSON.stringify({
   ok: true,
   orderId,
   externalId,
-  sourceType,
-  variantId: Number(candidate.variantId),
+  sourceType: 'workshop',
+  variantId: Number(variant.id),
   exchangeId,
   returnId,
   shippingStatus: order.shipping_status,
 }))
-console.log('STAGE01 BRANCH2 LIVE WRITE E2E PASSED — create/search, exchange+cancel, money-only refund, shipping and refund cancellation are mutually consistent')
+console.log('STAGE01 BRANCH2 LIVE WRITE E2E PASSED — Workshop create/search, Exchange+cancel, money-only refund, Workshop readiness, shipping and refund cancellation are mutually consistent')
