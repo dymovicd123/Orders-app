@@ -686,8 +686,10 @@ if (stage01KnownIntakeCurrentCanonicalR17.version !== 1 || stage01KnownIntakeCur
 if (Object.keys(stage01KnownIntakeCurrentCanonicalR17.changes || {}).join(',') !== 'getWarehouseAttentionSummary') throw new Error('Stage01 known-intake current canonical identity R17 Worker allow-list widened')
 patched = 'const stage01KnownIntakeCurrentCanonicalR17Changes = ' + JSON.stringify(stage01KnownIntakeCurrentCanonicalR17.changes || {}) + '\n' + patched
 
-const stage01KnownIntakeCurrentCanonicalNormalizeAnchor = '  const removedNames = Object.keys(removed)\n'
-if (!patched.includes(stage01KnownIntakeCurrentCanonicalNormalizeAnchor)) throw new Error('Stage01 known-intake current canonical identity R17 normalization anchor missing')
+// R17 changes the same Warehouse Attention declaration that R11 touched earlier.
+// Normalize the newest whole-declaration layer before R11 rewinds its older nested SQL delta.
+const stage01KnownIntakeCurrentCanonicalNormalizeAnchor = '  for (const [name, change] of Object.entries(stage01PendingLifecycleR11Changes)) {'
+if (!patched.includes(stage01KnownIntakeCurrentCanonicalNormalizeAnchor)) throw new Error('Stage01 known-intake current canonical identity R17 predecessor anchor missing')
 const stage01KnownIntakeCurrentCanonicalNormalizeBlock = [
   '  for (const [name, change] of Object.entries(stage01KnownIntakeCurrentCanonicalR17Changes)) {',
   "    check(declarations.has(name), 'Stage01 known-intake current canonical identity R17 declaration missing: ' + name)",
