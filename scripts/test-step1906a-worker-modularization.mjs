@@ -681,6 +681,26 @@ const stage01InventoryCurrentCanonicalNormalizeBlock = [
 ].join('\n')
 patched = patched.replace(stage01InventoryCurrentCanonicalNormalizeAnchor, stage01InventoryCurrentCanonicalNormalizeBlock + stage01InventoryCurrentCanonicalNormalizeAnchor)
 
+const stage01KnownIntakeCurrentCanonicalR17 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-known-intake-current-canonical-identity-r17-worker-manifest.json'), 'utf8'))
+if (stage01KnownIntakeCurrentCanonicalR17.version !== 1 || stage01KnownIntakeCurrentCanonicalR17.revision !== 'stage01-known-intake-current-canonical-identity-r17') throw new Error('Stage01 known-intake current canonical identity R17 Worker manifest invalid')
+if (Object.keys(stage01KnownIntakeCurrentCanonicalR17.changes || {}).join(',') !== 'getWarehouseAttentionSummary') throw new Error('Stage01 known-intake current canonical identity R17 Worker allow-list widened')
+patched = 'const stage01KnownIntakeCurrentCanonicalR17Changes = ' + JSON.stringify(stage01KnownIntakeCurrentCanonicalR17.changes || {}) + '\n' + patched
+
+const stage01KnownIntakeCurrentCanonicalNormalizeAnchor = '  const removedNames = Object.keys(removed)\n'
+if (!patched.includes(stage01KnownIntakeCurrentCanonicalNormalizeAnchor)) throw new Error('Stage01 known-intake current canonical identity R17 normalization anchor missing')
+const stage01KnownIntakeCurrentCanonicalNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01KnownIntakeCurrentCanonicalR17Changes)) {',
+  "    check(declarations.has(name), 'Stage01 known-intake current canonical identity R17 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 known-intake current canonical identity R17 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 known-intake current canonical identity R17 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01KnownIntakeCurrentCanonicalNormalizeAnchor, stage01KnownIntakeCurrentCanonicalNormalizeBlock + stage01KnownIntakeCurrentCanonicalNormalizeAnchor)
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
