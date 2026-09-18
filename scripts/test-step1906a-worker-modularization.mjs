@@ -417,6 +417,26 @@ patched = patched.replace(stage01ReturnExchangeHashAnchor, [
   '        return sha(declarations.get(name)) === (stage01ReturnExchangeWorkshopCacheChanged ? stage01ReturnExchangeWorkshopCacheChanged.after : acceptedPostStage01WorkshopHash)',
 ].join('\n'))
 
+const stage01UnshippedRefundR6 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-unshipped-refund-decoupling-r6-worker-manifest.json'), 'utf8'))
+if (stage01UnshippedRefundR6.version !== 1 || stage01UnshippedRefundR6.revision !== 'stage01-unshipped-refund-decoupling-r6') throw new Error('Stage01 unshipped refund R6 Worker manifest invalid')
+if (Object.keys(stage01UnshippedRefundR6.changes || {}).join(',') !== 'listOrders') throw new Error('Stage01 unshipped refund R6 Worker allow-list widened')
+patched = 'const stage01UnshippedRefundR6Changes = ' + JSON.stringify(stage01UnshippedRefundR6.changes || {}) + '\n' + patched
+
+const stage01UnshippedRefundHashAnchor = '        return sha(declarations.get(name)) === (stage01ReturnExchangeWorkshopCacheChanged ? stage01ReturnExchangeWorkshopCacheChanged.after : acceptedPostStage01WorkshopHash)'
+if (!patched.includes(stage01UnshippedRefundHashAnchor)) throw new Error('Stage01 unshipped refund R6 predecessor hash anchor missing')
+patched = patched.replace(stage01UnshippedRefundHashAnchor, [
+  '        const acceptedPostStage01ReturnExchangeHash = stage01ReturnExchangeWorkshopCacheChanged ? stage01ReturnExchangeWorkshopCacheChanged.after : acceptedPostStage01WorkshopHash',
+  '        const stage01UnshippedRefundChanged = stage01UnshippedRefundR6Changes[name]',
+  '        if (stage01UnshippedRefundChanged) {',
+  "          check(stage01UnshippedRefundChanged.before === acceptedPostStage01ReturnExchangeHash, 'Stage01 unshipped refund R6 predecessor drifted: ' + name)",
+  "          check(declarations.get(name).includes(stage01UnshippedRefundChanged.afterBlock), 'Stage01 unshipped refund R6 exact replacement missing: ' + name)",
+  '          const revertedStage01UnshippedRefund = declarations.get(name).replace(stage01UnshippedRefundChanged.afterBlock, stage01UnshippedRefundChanged.beforeBlock)',
+  "          check(sha(revertedStage01UnshippedRefund) === stage01UnshippedRefundChanged.before, 'Stage01 unshipped refund R6 changed beyond exact replacement: ' + name)",
+  '          return true',
+  '        }',
+  '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash',
+].join('\n'))
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
