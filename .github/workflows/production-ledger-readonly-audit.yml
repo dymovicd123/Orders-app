@@ -1,0 +1,185 @@
+name: Production migration ledger read-only reconstruction audit
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: production-ledger-readonly-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_API: https://api.cloudflare.com/client/v4
+      PROD_DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      EXPECTED_MAIN_SHA: 0ff105ab2941e20cbd0259c204f77bc767af45ca
+      EXPECTED_WORKFLOW_PATH: .github/workflows/production-ledger-readonly-audit.yml
+
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Guard exact Production baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent_sha="$(git rev-parse HEAD^)"
+          current_main="$(git ls-remote origin refs/heads/main | cut -f1)"
+          test "$parent_sha" = "$EXPECTED_MAIN_SHA"
+          test "$current_main" = "$EXPECTED_MAIN_SHA"
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_MAIN_SHA" HEAD)
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = "$EXPECTED_WORKFLOW_PATH"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Hard guard Production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/test-production-environment.mjs
+          grep -q '"name": "orders-app"' wrangler.jsonc
+          grep -q '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -q '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+
+      - name: Inventory repository migration effects
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const files = fs.readdirSync('migrations').filter(x => x.endsWith('.sql')).sort();
+          const effects = [];
+          for (const file of files) {
+            const raw = fs.readFileSync(path.join('migrations', file), 'utf8');
+            const sql = raw.replace(/--.*$/gm, ' ');
+            const objects = [];
+            const columns = [];
+            const patterns = [
+              ['table', /CREATE\s+(?:VIRTUAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["\[]?([A-Za-z0-9_]+)["\]]?/gi],
+              ['index', /CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?["\[]?([A-Za-z0-9_]+)["\]]?/gi],
+              ['trigger', /CREATE\s+TRIGGER\s+(?:IF\s+NOT\s+EXISTS\s+)?["\[]?([A-Za-z0-9_]+)["\]]?/gi],
+              ['view', /CREATE\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?["\[]?([A-Za-z0-9_]+)["\]]?/gi],
+            ];
+            for (const [type, re] of patterns) {
+              let m; while ((m = re.exec(sql))) objects.push({type, name:m[1]});
+            }
+            {
+              const re = /ALTER\s+TABLE\s+["\[]?([A-Za-z0-9_]+)["\]]?\s+ADD\s+(?:COLUMN\s+)?["\[]?([A-Za-z0-9_]+)["\]]?/gi;
+              let m; while ((m = re.exec(sql))) columns.push({table:m[1], column:m[2]});
+            }
+            const dml = [];
+            for (const kind of ['INSERT','UPDATE','DELETE','REPLACE']) {
+              if (new RegExp('\\b'+kind+'\\b','i').test(sql)) dml.push(kind);
+            }
+            effects.push({file, objects, columns, dml});
+          }
+          fs.writeFileSync('/tmp/migration-effects.json', JSON.stringify(effects, null, 2));
+          console.log(JSON.stringify({
+            migrationCount: files.length,
+            files,
+            schemaObjectCount: effects.reduce((n,x)=>n+x.objects.length,0),
+            addedColumnCount: effects.reduce((n,x)=>n+x.columns.length,0),
+            dmlFiles: effects.filter(x=>x.dml.length).map(x=>({file:x.file,dml:x.dml}))
+          }, null, 2));
+          NODE
+
+      - name: Read Production ledger and physical schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            local sql="$1"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/query"
+          }
+          ledger="$(query "SELECT id,name,applied_at FROM d1_migrations ORDER BY id;")"
+          echo "=== PRODUCTION LEDGER ==="
+          echo "$ledger" | jq '.result[0].results'
+          jq -e '.success == true and .result[0].success == true' <<<"$ledger" >/dev/null
+
+          query "SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND name NOT LIKE 'd1_%' AND name NOT LIKE '_cf_%' ORDER BY type,name;" > /tmp/prod-objects-response.json
+          query "SELECT m.name AS table_name,p.name AS column_name FROM sqlite_master m, pragma_table_info(m.name) p WHERE m.type='table' AND m.name NOT LIKE 'sqlite_%' AND m.name NOT LIKE 'd1_%' AND m.name NOT LIKE '_cf_%' ORDER BY m.name,p.cid;" > /tmp/prod-columns-response.json
+          jq -e '.success == true and .result[0].success == true' /tmp/prod-objects-response.json >/dev/null
+          jq -e '.success == true and .result[0].success == true' /tmp/prod-columns-response.json >/dev/null
+          jq '.result[0].results' /tmp/prod-objects-response.json > /tmp/prod-objects.json
+          jq '.result[0].results' /tmp/prod-columns-response.json > /tmp/prod-columns.json
+
+      - name: Prove repository DDL effects already exist physically
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('fs');
+          const effects=JSON.parse(fs.readFileSync('/tmp/migration-effects.json','utf8'));
+          const objects=JSON.parse(fs.readFileSync('/tmp/prod-objects.json','utf8'));
+          const columns=JSON.parse(fs.readFileSync('/tmp/prod-columns.json','utf8'));
+          const objectKeys=new Set(objects.map(x=>`${String(x.type).toLowerCase()}:${x.name}`));
+          const columnKeys=new Set(columns.map(x=>`${x.table_name}:${x.column_name}`));
+          const missingObjects=[];
+          const missingColumns=[];
+          for(const e of effects){
+            for(const o of e.objects){
+              if(!objectKeys.has(`${o.type}:${o.name}`)) missingObjects.push({file:e.file,...o});
+            }
+            for(const c of e.columns){
+              if(!columnKeys.has(`${c.table}:${c.column}`)) missingColumns.push({file:e.file,...c});
+            }
+          }
+          console.log('=== MISSING DECLARED SCHEMA OBJECTS ===');
+          console.log(JSON.stringify(missingObjects,null,2));
+          console.log('=== MISSING DECLARED ADD-COLUMNS ===');
+          console.log(JSON.stringify(missingColumns,null,2));
+          if(missingObjects.length || missingColumns.length) process.exit(3);
+          console.log('ALL DECLARED CREATE/ADD-COLUMN EFFECTS PRESENT IN PRODUCTION');
+          NODE
+
+      - name: Show Wrangler pending migration view
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations list DB --remote --config wrangler.jsonc | tee /tmp/pending.txt
+
+      - name: Verify current Stage01 durable markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            local sql="$1"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/query"
+          }
+          markers="$(query "SELECT
+            COALESCE((SELECT value FROM inventory_model_meta WHERE key='human_inventory_v2'),'') AS human_inventory_v2,
+            COALESCE((SELECT value FROM inventory_model_meta WHERE key='safe_early_handover_v1_guard'),'') AS safe_early_handover_v1_guard,
+            COALESCE((SELECT value FROM catalog_identity_meta WHERE key='catalog_identity_v3'),'') AS catalog_identity_v3,
+            COALESCE((SELECT value FROM catalog_identity_meta WHERE key='catalog_cleanup_188j'),'') AS catalog_cleanup_188j,
+            COALESCE((SELECT value FROM catalog_identity_meta WHERE key='client_cleanup_188k2'),'') AS client_cleanup_188k2,
+            COALESCE((SELECT value FROM app_settings WHERE key='financial_history_model'),'') AS financial_history_model,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM order_search_items_fts) AS fts_rows_count,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('trg_order_search_items_ai','trg_order_search_items_ad','trg_order_search_items_au','trg_order_search_catalog_products_au','trg_order_search_catalog_variants_au')) AS r14_trigger_count;")"
+          echo "$markers" | jq '.result[0].results[0]'
+          jq -e '.result[0].results[0].human_inventory_v2=="active" and
+            .result[0].results[0].safe_early_handover_v1_guard=="ready" and
+            .result[0].results[0].catalog_identity_v3=="active" and
+            .result[0].results[0].catalog_cleanup_188j=="active" and
+            .result[0].results[0].client_cleanup_188k2=="active" and
+            .result[0].results[0].financial_history_model=="189c-v1" and
+            .result[0].results[0].order_items_count==.result[0].results[0].fts_rows_count and
+            .result[0].results[0].r14_trigger_count==5' <<<"$markers" >/dev/null
