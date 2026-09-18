@@ -104,6 +104,17 @@ Focused regression:
 
 Validation: GitHub Actions run `35333766883` passed the cumulative release gate, dependency audits and production build. Temporary PR #77 was closed without merge.
 
+## Completed slice F — Unshipped/refund truth decoupling
+
+The ordinary Orders “Не отправлено” filter now follows `shipping_status` only. Historical or partial refunds no longer remove an active unshipped order from that operational queue.
+
+The separate legacy `status=returned` filter was intentionally left unchanged in this slice.
+
+Focused regression:
+- `scripts/test-stage01-unshipped-refund-decoupling-r6.mjs`
+
+Validation: GitHub Actions run `35332881155` passed the cumulative release gate, dependency audits and production build. Temporary PR #76 was closed without merge.
+
 ## Validation state
 
 R2 passed the cumulative release gate and production build on GitHub Actions run `35327687377`.
@@ -113,6 +124,8 @@ R3 passed the full cumulative release gate, dependency audits and production bui
 R4 passed the same full gate on GitHub Actions run `35331323128`. Temporary PR #74 was closed without merge.
 
 R5 passed the same full gate on GitHub Actions run `35332084525`. Temporary PR #75 was closed without merge.
+
+R6 passed the same full gate on GitHub Actions run `35332881155`. Temporary PR #76 was closed without merge.
 
 R6 passed the same full gate on GitHub Actions run `35332881155`. Temporary PR #76 was closed without merge.
 
