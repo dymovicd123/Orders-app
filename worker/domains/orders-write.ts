@@ -9,7 +9,7 @@ import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOpera
 import { buildPaymentAndMoneyEventStatements, financialEventStatement, financialOperationTypeFromPaymentKind, removeOrderPaymentsWithMoneyEvents } from './money.ts'
 import { assertOrderItemInputs, assertOrderPaymentInputs, assertOrderTotalInput, calculateTotals, completedOrderOperationCounts, normalizeOrderItems, normalizeOrderPayments, OrderInputValidationError, sameNormalizedOrderItemsForEdit, sameNormalizedOrderPaymentsForEdit } from './order-core.ts'
 import { assertCreateOrderShortageDecisions, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, OrderStockShortageError, orderShipmentInventoryBlockerMessage, releaseOrderReservationsV2, reserveOrderItemV2, resolveCatalogProductAndVariant, resolveWorkshopCatalogProductOnly } from './order-reservations.ts'
-import { canonicalItemProjection, fetchOrderRelations, workshopTaskStatusForOrderItem } from './orders-relations.ts'
+import { canonicalItemProjection, fetchOrderRelations, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
 import { upsertCustomerIdentityForOrderCreate } from './references.ts'
 import { isInventoryAutoWriteoffEnabled, recalculateCustomersAfterStorageCleanup } from './storage.ts'
 import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'
@@ -1593,6 +1593,7 @@ export async function getOrder(db: D1Database, id: number) {
       id: (item as any).id,
       ...canonicalItemProjection(item as Record<string, unknown>),
       quantity: (item as any).quantity,
+      availableOperationQuantity: orderItemAvailableOperationQuantity(item as Record<string, unknown>),
       unitPrice: (item as any).unit_price,
       lineTotal: (item as any).line_total,
       sourceType: (item as any).is_workshop ? 'workshop' : (item as any).source_type,
