@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "revision": "stage01-money-only-return-shipping-r19b",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "413fb378db90f31de49161e86b7091b30415c8a8",
+      "afterGitBlob": "d5928bb9ba43caf51fbcf4f56d4dff7d20249ba5",
+      "beforeLines": 7313,
+      "afterLines": 7313,
+      "replacements": [
+        {
+          "beforeBlock": "        : projection.hasCommittedDownstreamOperation\n          ? 'Отправка недоступна: по заказу уже проведён возврат или обмен. Сначала отмените или исправьте эту последующую операцию.'",
+          "afterBlock": "        : projection.hasCommittedPhysicalDownstreamOperation\n          ? 'Отправка недоступна: по заказу уже проведён товарный возврат или обмен. Сначала отмените или исправьте эту последующую операцию.'"
+        }
+      ]
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "d92c025681cd20c29729ef60a5a5a2fe84e715e4",
+      "afterGitBlob": "7790d3ef2a9e35c703852f6a3c4e14cbd67d3614",
+      "beforeLines": 1717,
+      "afterLines": 1718,
+      "replacements": [
+        {
+          "beforeBlock": "  committed_return_count?: number\n  committed_exchange_count?: number\n  comment: string | null",
+          "afterBlock": "  committed_return_count?: number\n  committed_exchange_count?: number\n  has_committed_item_return?: boolean\n  comment: string | null"
+        }
+      ]
+    },
+    "src/app/orderOperationalProjection.ts": {
+      "beforeGitBlob": "09f0b45e1c90c076de665ab5ef4634edacfedb48",
+      "afterGitBlob": "484b66096f38d4364a115ac3299cda85594aa3a7",
+      "beforeLines": 179,
+      "afterLines": 189,
+      "replacements": [
+        {
+          "beforeBlock": "  hasCommittedExchange: boolean\n  hasCommittedDownstreamOperation: boolean\n  committedReturnCount: number",
+          "afterBlock": "  hasCommittedExchange: boolean\n  hasCommittedItemReturn: boolean\n  hasCommittedDownstreamOperation: boolean\n  hasCommittedPhysicalDownstreamOperation: boolean\n  committedReturnCount: number"
+        },
+        {
+          "beforeBlock": "  const hasCommittedReturn = committedReturnCount > 0\n  const hasCommittedExchange = committedExchangeCount > 0\n  const hasCommittedDownstreamOperation = hasCommittedReturn || hasCommittedExchange",
+          "afterBlock": "  const hasCommittedReturn = committedReturnCount > 0\n  const hasCommittedExchange = committedExchangeCount > 0\n  const hasCommittedItemReturn = typeof order.has_committed_item_return === 'boolean'\n    ? order.has_committed_item_return\n    : hasCommittedReturn\n  const hasCommittedDownstreamOperation = hasCommittedReturn || hasCommittedExchange\n  const hasCommittedPhysicalDownstreamOperation = hasCommittedItemReturn || hasCommittedExchange"
+        },
+        {
+          "beforeBlock": "    hasCommittedReturn,\n    hasCommittedExchange,\n    hasCommittedDownstreamOperation,\n    committedReturnCount,",
+          "afterBlock": "    hasCommittedReturn,\n    hasCommittedExchange,\n    hasCommittedItemReturn,\n    hasCommittedDownstreamOperation,\n    hasCommittedPhysicalDownstreamOperation,\n    committedReturnCount,"
+        },
+        {
+          "beforeBlock": "    // Preserve conservative shipping/correction behavior once a committed downstream\n    // Return/Exchange exists; this is an action guard, not a lifecycle label.\n    canShip: mutableWorkingOrder && !hasCommittedDownstreamOperation && !sent && !workshopPending,\n    canCorrectShipping: mutableWorkingOrder && !hasCommittedDownstreamOperation && sent,\n    canOpenStockHandover: mutableWorkingOrder\n      && !hasCommittedDownstreamOperation",
+          "afterBlock": "    // Money-only refunds do not change the physical outbound obligation. Item-linked\n    // Returns and Exchanges do, so they remain the shipping/handover blocker.\n    canShip: mutableWorkingOrder && !hasCommittedPhysicalDownstreamOperation && !sent && !workshopPending,\n    // Shipping correction rewrites prior physical history and stays blocked by any\n    // committed downstream financial/physical operation, matching the backend guard.\n    canCorrectShipping: mutableWorkingOrder && !hasCommittedDownstreamOperation && sent,\n    canOpenStockHandover: mutableWorkingOrder\n      && !hasCommittedPhysicalDownstreamOperation"
+        }
+      ]
+    },
+    "src/features/sections/OrdersTableSection.tsx": {
+      "beforeGitBlob": "deff9eaf39e063fa6298dcb1fcd4ccd4631fef8d",
+      "afterGitBlob": "89d8ee7d8576d394e266b6f30f3a8cbc6121c5b1",
+      "beforeLines": 425,
+      "afterLines": 427,
+      "replacements": [
+        {
+          "beforeBlock": "                            {!retainedOnly && !archived && !projection.hasCommittedDownstreamOperation && order.shipping_status !== 'sent' && projection.workshopPending ? (",
+          "afterBlock": "                            {!retainedOnly && !archived && !projection.hasCommittedPhysicalDownstreamOperation && order.shipping_status !== 'sent' && projection.workshopPending ? ("
+        },
+        {
+          "beforeBlock": "                                  : projection.hasCommittedExchange\n                                    ? 'Есть проведённый обмен'\n                                    : 'Есть проведённый возврат'}",
+          "afterBlock": "                                  : projection.hasCommittedExchange\n                                    ? 'Есть проведённый обмен'\n                                    : projection.hasCommittedItemReturn\n                                      ? 'Есть проведённый возврат'\n                                      : 'Есть возврат денег'}"
+        }
+      ]
+    }
+  }
+}
