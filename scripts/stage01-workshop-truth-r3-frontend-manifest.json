@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "revision": "stage01-workshop-truth-r3",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "bd687b4f502734c7c630674720deb2e371cd8856",
+      "beforeLines": 7308,
+      "afterGitBlob": "41c66bea3566cf836f38eff8b8b0eda0eaec803b",
+      "afterLines": 7312
+    }
+  }
+}
