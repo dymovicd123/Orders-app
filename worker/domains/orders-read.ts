@@ -3,7 +3,7 @@
 import { cleanText, isArchivedOrder, normalizeArchiveMode, normalizeDate, normalizeShippingFilter, normalizeStatusFilter, toInt } from '../core/text.ts'
 import type { OrderListRow } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
-import { canonicalItemProjection, fetchOrderRelations, workshopTaskStatusForOrderItem } from './orders-relations.ts'
+import { canonicalItemProjection, fetchOrderRelations, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
 import { getOrder } from './orders-write.ts'
 
 export type ArchiveRuleInput = {
@@ -654,6 +654,7 @@ export async function listOrders(db: D1Database, url: URL) {
         id: (item as any).id,
         ...canonicalItemProjection(item as Record<string, unknown>),
         quantity: (item as any).quantity,
+        availableOperationQuantity: orderItemAvailableOperationQuantity(item as Record<string, unknown>),
         unitPrice: (item as any).unit_price,
         lineTotal: (item as any).line_total,
         sourceType: (item as any).is_workshop ? 'workshop' : (item as any).source_type,
