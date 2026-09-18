@@ -6,11 +6,11 @@ This file is the current continuation pointer for the Orders-app foundation clea
 
 - GitHub repository: `dymovicd123/Orders-app`.
 - Current Stage 0+1 implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green Stage 0+1 head: `00385e30547edafba4cc798115dee8897f3f2dd3`.
+- Current green Stage 0+1 head: `324af02d35471622d0d27649fe774e083a5ec7dd`.
 - Production D1 has not been changed by the Stage 0+1 work.
 - Branch2 is a separate environment and must not be casually folded into Production work.
 - Branch2 is reserved for interactive UI/end-to-end proving of coherent Stage01 groups before Production. Feature-branch static/CI work should remain isolated until it is ready for that test.
-- Branch2 current proving head: `00385e30547edafba4cc798115dee8897f3f2dd3` (R1–R17 green).
+- Branch2 current proving head: `324af02d35471622d0d27649fe774e083a5ec7dd` (R1–R18 green).
 - `Приход` remains a frozen/high-risk surface unless a separate approved task explicitly requires changing it.
 
 ## Why Stage 0+1 exists
@@ -262,6 +262,22 @@ Focused regression:
 
 Validation: the first CI attempt failed only because the structural replay order had the older R11 Warehouse Attention delta normalized before the newer R17 whole-declaration layer. Reordering the replay fixed the guard without changing business code. Final GitHub Actions run `35352382922` passed the cumulative release gate, dependency audits and production build. Temporary PR #87 was closed without merge. Branch2 was fast-forwarded to `00385e30547edafba4cc798115dee8897f3f2dd3`.
 
+## Completed slice R — Found-stock current identity before direct binding
+
+The Warehouse Attention “Найдено при проверке” path can directly bind an unresolved physical stock row once one exact active catalog variant is known. The backend already binds to that exact variant, but the card previously showed the unresolved stock snapshot first.
+
+R18 makes that live pre-action card canonical-first only when the target is exact:
+
+- exact found-stock candidates load the current catalog product/SKU;
+- the direct-bind card shows the current identity that will actually receive the physical row;
+- unresolved found-stock rows keep their stocktake snapshot evidence and remain in admin clarification;
+- the existing identity-resolution write path remains unchanged.
+
+Focused regression:
+- `scripts/test-stage01-found-stock-current-canonical-identity-r18.mjs`
+
+Validation: the first R18 CI run exposed an unrelated weakness in the old 192B2A2 static test—it had been satisfying its known-intake assertion from the found-stock model. The test was corrected to inspect the lifecycle projection it is intended to protect. Final GitHub Actions run `35352886204` passed the cumulative release gate, dependency audits and production build. Temporary PR #88 was closed without merge. Branch2 was fast-forwarded to `324af02d35471622d0d27649fe774e083a5ec7dd`.
+
 ## Validation state
 
 R2 passed the cumulative release gate and production build on GitHub Actions run `35327687377`.
@@ -296,6 +312,8 @@ R16 passed the same full gate on GitHub Actions run `35351019907`. Temporary PR 
 
 R17 passed the same full gate on GitHub Actions run `35352382922`. Temporary PR #87 was closed without merge, and Branch2 was fast-forwarded to `00385e30547edafba4cc798115dee8897f3f2dd3`.
 
+R18 passed the same full gate on GitHub Actions run `35352886204`. Temporary PR #88 was closed without merge, and Branch2 was fast-forwarded to `324af02d35471622d0d27649fe774e083a5ec7dd`.
+
 R6 passed the same full gate on GitHub Actions run `35332881155`. Temporary PR #76 was closed without merge.
 
 R7 passed the same full gate on GitHub Actions run `35333766883`. Temporary PR #77 was closed without merge.
@@ -312,7 +330,7 @@ The next audit must classify each remaining read surface by purpose before chang
 
 ## Immediate next checkpoint
 
-Continue the purpose-based audit. The next concrete live action to inspect is Warehouse Attention “Найдено при проверке”: when an unresolved stock row already has an exact canonical variant candidate, the operator can bind it directly, so the card shown immediately before that action should be checked for the same current-identity mismatch. Finance product/return reporting and movement/history surfaces remain snapshot-based unless a concrete operational contradiction is proven. Keep F2–F9 money semantics unchanged.
+Continue the purpose-based audit from the remaining live operational surfaces. Warehouse stock, known intake, found-stock direct binding, handover, debt, Workshop and working-order search now have explicit current-identity behavior. Before creating another slice, inspect the remaining lifecycle/catalog admin review screens and any client-facing live summaries; Finance reports and inventory movement/history remain snapshot-based unless a concrete operational contradiction is proven. Keep F2–F9 money semantics unchanged.
 
 See:
 `docs/continuation/STAGE01_IMPLEMENTATION_CHECKPOINT_20260918.md`
