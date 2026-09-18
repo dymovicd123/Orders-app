@@ -789,6 +789,9 @@ export type OrderRecord = {
   retained_return_count?: number
   items: Array<{
     id?: number
+    productId?: number | null
+    variantId?: number | null
+    catalogIdentity?: 'snapshot' | 'product' | 'variant'
     productName: string
     audienceType?: string | null
     gender?: string | null
@@ -805,6 +808,15 @@ export type OrderRecord = {
     workshopDueDate?: string | null
     isWorkshop?: boolean
     workshopTaskStatus?: string | null
+    originalSnapshot?: {
+      productName: string
+      audienceType?: string | null
+      gender?: string | null
+      color?: string | null
+      material?: string | null
+      length?: string | null
+      size?: string | null
+    }
   }>
   payments: Array<{
     id?: number
