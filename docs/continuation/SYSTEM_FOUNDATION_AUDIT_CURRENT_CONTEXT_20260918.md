@@ -6,11 +6,11 @@ This file is the current continuation pointer for the Orders-app foundation clea
 
 - GitHub repository: `dymovicd123/Orders-app`.
 - Current Stage 0+1 implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green Stage 0+1 head: `a12c9c5307f7d147a17881ff6e846b08ff92ebbc`.
+- Current green Stage 0+1 head: `5db747e685f7e94b30edc26210c705cef5a9e3e4`.
 - Production D1 has not been changed by the Stage 0+1 work.
 - Branch2 is a separate environment and must not be casually folded into Production work.
 - Branch2 is reserved for interactive UI/end-to-end proving of coherent Stage01 groups before Production. Feature-branch static/CI work should remain isolated until it is ready for that test.
-- Branch2 current proving head: `a12c9c5307f7d147a17881ff6e846b08ff92ebbc` (R1–R14 green).
+- Branch2 current proving head: `5db747e685f7e94b30edc26210c705cef5a9e3e4` (R1–R15 green).
 - `Приход` remains a frozen/high-risk surface unless a separate approved task explicitly requires changing it.
 
 ## Why Stage 0+1 exists
@@ -213,6 +213,22 @@ Validation: GitHub Actions run `35345556890` passed the cumulative release gate,
 
 Branch2 D1 note: source contains migration 0070, but no D1 migration was executed by this Stage01 work. Apply it through the normal Branch2 migration path before interactive canonical-search proving. Production D1 remains untouched.
 
+
+## Completed slice O — Return/Exchange item availability
+
+Live Return/Exchange forms now consume an explicit remaining item quantity instead of reusing the order-time line quantity after previous standalone returns.
+
+The backend subtracts active standalone returned quantity, excludes return rows currently owned by active exchanges to avoid double counting, and exposes `availableOperationQuantity` with each working order item.
+
+Return UI hides exhausted positions. Exchange UI caps the selected old quantity and also subtracts quantities already queued in the current unsaved exchange draft.
+
+Historical Return/Exchange records remain unchanged.
+
+Focused regression:
+- `scripts/test-stage01-return-exchange-item-availability-r15.mjs`
+
+Validation: GitHub Actions run `35347157116` passed the cumulative release gate, dependency audits and production build. Temporary PR #85 was closed without merge. Branch2 was fast-forwarded to `5db747e685f7e94b30edc26210c705cef5a9e3e4`.
+
 ## Validation state
 
 R2 passed the cumulative release gate and production build on GitHub Actions run `35327687377`.
@@ -241,6 +257,8 @@ R13 passed the same full gate on GitHub Actions run `35344170743`. Temporary PR 
 
 R14 passed the same full gate on GitHub Actions run `35345556890`. Temporary PR #84 was closed without merge, and Branch2 was fast-forwarded to the same green head.
 
+R15 passed the same full gate on GitHub Actions run `35347157116`. Temporary PR #85 was closed without merge, and Branch2 was fast-forwarded to the same green head.
+
 R6 passed the same full gate on GitHub Actions run `35332881155`. Temporary PR #76 was closed without merge.
 
 R7 passed the same full gate on GitHub Actions run `35333766883`. Temporary PR #77 was closed without merge.
@@ -257,7 +275,7 @@ The next audit must classify each remaining read surface by purpose before chang
 
 ## Immediate next checkpoint
 
-Audit the remaining Return/Exchange, Finance and any still-live order/inventory surfaces by purpose. Live operational views may use canonical current identity; historical/audit/transaction views must preserve order-time evidence. Keep F2–F9 money semantics unchanged unless a concrete contradiction is proven.
+Audit the remaining Finance and any still-live order/inventory surfaces by purpose; Return/Exchange current item availability is now explicit. Live operational views may use canonical current identity; historical/audit/transaction views must preserve order-time evidence. Keep F2–F9 money semantics unchanged unless a concrete contradiction is proven.
 
 See:
 `docs/continuation/STAGE01_IMPLEMENTATION_CHECKPOINT_20260918.md`
