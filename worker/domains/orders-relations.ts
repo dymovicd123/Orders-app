@@ -44,6 +44,13 @@ export function canonicalItemProjection(item: Record<string, unknown>) {
 }
 
 
+export function orderItemAvailableOperationQuantity(item: Record<string, unknown>) {
+  const currentQuantity = Math.max(0, toInt(item.quantity, 0));
+  const activeStandaloneReturnedQuantity = Math.max(0, toInt(item.active_standalone_returned_quantity, 0));
+  return Math.max(0, currentQuantity - activeStandaloneReturnedQuantity);
+}
+
+
 export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
   const itemsByOrderId = new Map<number, unknown[]>();
   const paymentsByOrderId = new Map<number, unknown[]>();
@@ -74,7 +81,7 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
     const chunk = orderIds.slice(index, index + chunkSize);
     const placeholders = chunk.map(() => '?').join(',');
 
-    const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverStateResult] = await Promise.all([
+    const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverStateResult, standaloneReturnedResult] = await Promise.all([
       db.prepare(
         `SELECT oi.*,
                 p.name AS canonical_product_name,
@@ -100,7 +107,32 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
         `SELECT * FROM workshop_tasks WHERE order_id IN (${placeholders}) ORDER BY id ASC`
       ).bind(...chunk).all(),
       fetchOrderStockHandoverRows(db, chunk, { listFlagsOnly: true }),
+      db.prepare(
+        `SELECT r.order_id, ri.order_item_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
+         FROM return_items ri
+         JOIN returns r ON r.id = ri.return_id
+         WHERE r.order_id IN (${placeholders})
+           AND COALESCE(r.status, 'completed') <> 'cancelled'
+           AND NOT EXISTS (
+             SELECT 1
+             FROM exchanges e
+             WHERE e.refund_return_id = r.id
+               AND COALESCE(e.status, 'completed') <> 'cancelled'
+           )
+         GROUP BY r.order_id, ri.order_item_id`
+      ).bind(...chunk).all<Record<string, unknown>>(),
     ]);
+
+    const activeStandaloneReturnedByItem = new Map<number, number>();
+    for (const row of standaloneReturnedResult.results || []) {
+      const orderItemId = toInt(row.order_item_id, 0);
+      if (!orderItemId) continue;
+      activeStandaloneReturnedByItem.set(orderItemId, Math.max(0, toInt(row.returned_quantity, 0)));
+    }
+    for (const rawItem of itemsResult.results || []) {
+      const item = rawItem as Record<string, unknown>;
+      item.active_standalone_returned_quantity = activeStandaloneReturnedByItem.get(toInt(item.id, 0)) || 0;
+    }
 
     appendRows(itemsByOrderId, itemsResult.results || []);
     appendRows(paymentsByOrderId, paymentsResult.results || []);
