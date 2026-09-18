@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "revision": "stage01-finance-correction-reliability-r4",
+  "changes": {
+    "correctExchangeFinancials": {
+      "before": "4b1c92f315c48d4d6c3ae7927c4afe8e0f2273395ada671cf1c8239021ce7d8d",
+      "after": "d3510a1eb67f1aa00fc8c03e2f24dab655ad4974fe73f29517997dab0cb5ed8d"
+    }
+  }
+}
