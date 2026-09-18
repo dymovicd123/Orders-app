@@ -703,6 +703,28 @@ const stage01KnownIntakeCurrentCanonicalNormalizeBlock = [
 ].join('\n')
 patched = patched.replace(stage01KnownIntakeCurrentCanonicalNormalizeAnchor, stage01KnownIntakeCurrentCanonicalNormalizeBlock + stage01KnownIntakeCurrentCanonicalNormalizeAnchor)
 
+const stage01FoundStockCurrentCanonicalR18 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-found-stock-current-canonical-identity-r18-worker-manifest.json'), 'utf8'))
+if (stage01FoundStockCurrentCanonicalR18.version !== 1 || stage01FoundStockCurrentCanonicalR18.revision !== 'stage01-found-stock-current-canonical-identity-r18') throw new Error('Stage01 found-stock current canonical identity R18 Worker manifest invalid')
+if (Object.keys(stage01FoundStockCurrentCanonicalR18.changes || {}).join(',') !== 'getWarehouseAttentionSummary') throw new Error('Stage01 found-stock current canonical identity R18 Worker allow-list widened')
+patched = 'const stage01FoundStockCurrentCanonicalR18Changes = ' + JSON.stringify(stage01FoundStockCurrentCanonicalR18.changes || {}) + '\n' + patched
+
+// R18 is newer than R17 and changes the same Warehouse Attention declaration.
+// Replay it first, then let R17 and R11 unwind their predecessor layers.
+const stage01FoundStockCurrentCanonicalNormalizeAnchor = '  for (const [name, change] of Object.entries(stage01KnownIntakeCurrentCanonicalR17Changes)) {'
+if (!patched.includes(stage01FoundStockCurrentCanonicalNormalizeAnchor)) throw new Error('Stage01 found-stock current canonical identity R18 predecessor anchor missing')
+const stage01FoundStockCurrentCanonicalNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01FoundStockCurrentCanonicalR18Changes)) {',
+  "    check(declarations.has(name), 'Stage01 found-stock current canonical identity R18 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 found-stock current canonical identity R18 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 found-stock current canonical identity R18 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01FoundStockCurrentCanonicalNormalizeAnchor, stage01FoundStockCurrentCanonicalNormalizeBlock + stage01FoundStockCurrentCanonicalNormalizeAnchor)
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
