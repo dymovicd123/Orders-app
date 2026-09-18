@@ -27,9 +27,9 @@ check(projection.includes('hasCommittedExchange: boolean'), 'Projection lacks co
 check(projection.includes('hasCommittedDownstreamOperation: boolean'), 'Projection lacks combined downstream-operation fact')
 check(!projection.includes('hasActiveReturnOperation'), 'Completed Return is still mislabeled as an active operation')
 check(projection.includes('canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation'), 'Edit guard ignores committed Return/Exchange')
-check(projection.includes('canShip: mutableWorkingOrder && !hasCommittedDownstreamOperation'), 'Shipping guard ignores committed Return/Exchange')
+check(projection.includes('canShip: mutableWorkingOrder && !hasCommittedPhysicalDownstreamOperation'), 'Shipping guard ignores item Return/Exchange physical downstream state')
 check(projection.includes('canCorrectShipping: mutableWorkingOrder && !hasCommittedDownstreamOperation'), 'Shipping correction guard ignores committed Return/Exchange')
-check(projection.includes('canOpenStockHandover: mutableWorkingOrder') && projection.includes('&& !hasCommittedDownstreamOperation'), 'Stock handover guard ignores committed Return/Exchange')
+check(projection.includes('canOpenStockHandover: mutableWorkingOrder') && projection.includes('&& !hasCommittedPhysicalDownstreamOperation'), 'Stock handover guard ignores item Return/Exchange physical downstream state')
 
 // A previous downstream operation is not a terminal whole-order lifecycle state.
 // The Return/Exchange domains still decide remaining quantity for another operation.
