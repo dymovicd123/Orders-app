@@ -26,7 +26,7 @@ for (const [name, block, marker] of [
 ]) {
   const refresh = block.indexOf('await refreshOrderWorkshopStatusFromTasks')
   const warning = block.indexOf("console.warn('" + marker + "'")
-  const complete = block.indexOf('await completeCriticalOperation(db, criticalOperation, completedResponse)')
+  const complete = block.indexOf('await completeCriticalOperation(db, criticalOperation, completedResponse)', warning)
   check(refresh >= 0 && warning > refresh, name + ' Workshop cache refresh is not protected by best-effort isolation')
   check(complete > warning, name + ' no longer completes after the best-effort coarse cache refresh')
 }
