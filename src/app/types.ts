@@ -800,6 +800,7 @@ export type OrderRecord = {
     length?: string | null
     size?: string | null
     quantity: number
+    availableOperationQuantity?: number
     unitPrice: number
     lineTotal: number
     sourceType: string
