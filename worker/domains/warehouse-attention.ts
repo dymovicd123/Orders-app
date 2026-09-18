@@ -28,11 +28,24 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
   const limit = clampLimit(url?.searchParams.get('limit'))
 
   const exactLifecycleVariantSql = `COALESCE(
+    (SELECT v_link.id
+     FROM order_items oi_link
+     JOIN catalog_variants v_link ON v_link.id = oi_link.variant_id
+     WHERE oi_link.id = e.order_item_id
+       AND oi_link.order_id = e.order_id
+       AND v_link.is_active = 1
+     LIMIT 1),
     (SELECT v0.id FROM catalog_variants v0 WHERE v0.id = e.variant_id AND v0.is_active = 1 LIMIT 1),
     (SELECT v.id
      FROM catalog_variants v
      WHERE v.is_active = 1
-       AND v.product_id = e.product_id
+       AND v.product_id = COALESCE(
+         (SELECT oi_product.product_id
+          FROM order_items oi_product
+          WHERE oi_product.id = e.order_item_id AND oi_product.order_id = e.order_id
+          LIMIT 1),
+         e.product_id
+       )
        AND LOWER(TRIM(COALESCE(v.category, 'adult'))) = CASE WHEN UPPER(TRIM(COALESCE(e.audience_type, ''))) LIKE '%ДЕТ%' OR LOWER(TRIM(COALESCE(e.audience_type, ''))) = 'child' THEN 'child' ELSE 'adult' END
        AND UPPER(TRIM(COALESCE(v.gender, ''))) = UPPER(TRIM(COALESCE(e.gender_snapshot, '')))
        AND UPPER(TRIM(COALESCE(v.color, ''))) = UPPER(TRIM(COALESCE(e.color_snapshot, '')))
