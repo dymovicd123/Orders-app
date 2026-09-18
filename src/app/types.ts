@@ -778,6 +778,8 @@ export type OrderRecord = {
   received_amount: number
   debt_amount: number
   return_amount: number
+  committed_return_count?: number
+  committed_exchange_count?: number
   comment: string | null
   archived_at?: string | null
   archived_by?: string | null
