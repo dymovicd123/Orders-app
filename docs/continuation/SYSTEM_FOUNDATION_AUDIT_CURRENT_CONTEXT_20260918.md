@@ -6,7 +6,7 @@ This file is the current continuation pointer for the Orders-app foundation clea
 
 - GitHub repository: `dymovicd123/Orders-app`.
 - Current Stage 0+1 implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green Stage 0+1 head: `94eb3927c1fd4a5005023e2b379f358c24b9a5a2`.
+- Current green Stage 0+1 head: `de3eb0fc6cd439cdfa8fadb193ddf807c924373c`.
 - Production D1 has not been changed by the Stage 0+1 work.
 - Branch2 is a separate environment and must not be casually folded into Production work.
 - Branch2 is reserved for interactive UI/end-to-end proving of coherent Stage01 groups before Production. Feature-branch static/CI work should remain isolated until it is ready for that test.
@@ -145,6 +145,17 @@ Focused regression:
 
 Validation: GitHub Actions run `35336256637` passed the cumulative release gate, dependency audits and production build. Temporary PR #79 was closed without merge.
 
+## Completed slice J — Workshop lifecycle canonical links
+
+New Return/Exchange physical lifecycle work now respects repaired explicit Workshop catalog links before attempting legacy snapshot re-resolution.
+
+Exact linked `variant_id` is canonical truth when valid. A repaired base `product_id` is also preferred for Workshop fallback combination matching. Historical snapshots remain fallback evidence if links are absent or stale; physical freshness/full-stocktake guards are unchanged.
+
+Focused regression:
+- `scripts/test-stage01-workshop-lifecycle-canonical-link-r10.mjs`
+
+Validation: GitHub Actions run `35337039333` passed the cumulative release gate, dependency audits and production build. Temporary PR #80 was closed without merge.
+
 ## Validation state
 
 R2 passed the cumulative release gate and production build on GitHub Actions run `35327687377`.
@@ -162,6 +173,8 @@ R7 passed the same full gate on GitHub Actions run `35333766883`. Temporary PR #
 R8 passed the same full gate on GitHub Actions run `35335232585`. Temporary PR #78 was closed without merge.
 
 R9 passed the same full gate on GitHub Actions run `35336256637`. Temporary PR #79 was closed without merge.
+
+R10 passed the same full gate on GitHub Actions run `35337039333`. Temporary PR #80 was closed without merge.
 
 R6 passed the same full gate on GitHub Actions run `35332881155`. Temporary PR #76 was closed without merge.
 
