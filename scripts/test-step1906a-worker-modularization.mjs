@@ -556,21 +556,6 @@ patched = 'const stage01PendingLifecycleR11Changes = ' + JSON.stringify(stage01P
   + 'const stage01PendingLifecycleR11Attention = ' + JSON.stringify(stage01PendingLifecycleR11Attention) + '\n'
   + patched
 
-const stage01LifecycleManualQueueNormalizeAnchor = '  for (const [name, change] of Object.entries(stage01PendingLifecycleR11Changes)) {'
-if (!patched.includes(stage01LifecycleManualQueueNormalizeAnchor)) throw new Error('Stage01 lifecycle manual queue R21 predecessor anchor missing')
-const stage01LifecycleManualQueueNormalizeBlock = [
-  '  for (const [name, change] of Object.entries(stage01LifecycleManualQueueR21Changes)) {',
-  "    check(declarations.has(name), 'Stage01 lifecycle manual queue R21 declaration missing: ' + name)",
-  '    const current = declarations.get(name)',
-  "    check(current.includes(change.afterBlock), 'Stage01 lifecycle manual queue R21 exact after-block missing: ' + name)",
-  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
-  "    check(reverted !== current, 'Stage01 lifecycle manual queue R21 exact replacement did not apply: ' + name)",
-  '    declarations.set(name, reverted)',
-  '  }',
-  '',
-].join('\n')
-patched = patched.replace(stage01LifecycleManualQueueNormalizeAnchor, stage01LifecycleManualQueueNormalizeBlock + stage01LifecycleManualQueueNormalizeAnchor)
-
 const stage01PendingLifecycleNormalizeAnchor = '  const removedNames = Object.keys(removed)\n'
 if (!patched.includes(stage01PendingLifecycleNormalizeAnchor)) throw new Error('Stage01 pending lifecycle R11 declaration-normalization anchor missing')
 const stage01PendingLifecycleNormalizeBlock = [
@@ -592,6 +577,22 @@ const stage01PendingLifecycleNormalizeBlock = [
   '',
 ].join('\n')
 patched = patched.replace(stage01PendingLifecycleNormalizeAnchor, stage01PendingLifecycleNormalizeBlock + stage01PendingLifecycleNormalizeAnchor)
+
+const stage01LifecycleManualQueueNormalizeAnchor = '  for (const [name, change] of Object.entries(stage01PendingLifecycleR11Changes)) {'
+if (!patched.includes(stage01LifecycleManualQueueNormalizeAnchor)) throw new Error('Stage01 lifecycle manual queue R21 predecessor anchor missing')
+const stage01LifecycleManualQueueNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01LifecycleManualQueueR21Changes)) {',
+  "    check(declarations.has(name), 'Stage01 lifecycle manual queue R21 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 lifecycle manual queue R21 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 lifecycle manual queue R21 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01LifecycleManualQueueNormalizeAnchor, stage01LifecycleManualQueueNormalizeBlock + stage01LifecycleManualQueueNormalizeAnchor)
+
 
 const stage01ResolverActiveReservationR12 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-resolver-active-reservation-r12-worker-manifest.json'), 'utf8'))
 if (stage01ResolverActiveReservationR12.version !== 1 || stage01ResolverActiveReservationR12.revision !== 'stage01-resolver-active-reservation-r12') throw new Error('Stage01 Resolver active reservation R12 Worker manifest invalid')
