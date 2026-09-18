@@ -10,6 +10,7 @@ This file is the current continuation pointer for the Orders-app foundation clea
 - Production D1 has not been changed by the Stage 0+1 work.
 - Branch2 is a separate environment and must not be casually folded into Production work.
 - Branch2 is reserved for interactive UI/end-to-end proving of coherent Stage01 groups before Production. Feature-branch static/CI work should remain isolated until it is ready for that test.
+- Branch2 current proving head: `de3eb0fc6cd439cdfa8fadb193ddf807c924373c` (R1–R10 green).
 - `Приход` remains a frozen/high-risk surface unless a separate approved task explicitly requires changing it.
 
 ## Why Stage 0+1 exists
