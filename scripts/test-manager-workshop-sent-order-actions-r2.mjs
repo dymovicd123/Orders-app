@@ -12,7 +12,7 @@ check(workshop.includes('onClick={() => void openWorkshopOrderEditor(task)}'), '
 check(workshop.includes('onClick={() => void openWorkshopExchange(task)}'), 'Workshop exchange action disappeared')
 check(workshop.includes("task.status === 'active'"), 'Workshop ready/done action flow changed unexpectedly')
 check(editor.includes('projection?.canEdit'), 'Order editor is not guarded by the shared operational projection')
-check(projection.includes('canEdit: mutableWorkingOrder && !hasActiveReturnOperation && (simpleAdmin || !sent)'), 'Sent-order manager edit protection was weakened')
+check(projection.includes('canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation && (simpleAdmin || !sent)'), 'Sent-order manager edit protection was weakened')
 check(editor.includes("editorReturnSector === 'workshop' ? 'Назад в цех'"), 'Workshop editor return path changed unexpectedly')
 
 const editGuard = workshop.indexOf("task.shippingStatus !== 'sent' ? (")
