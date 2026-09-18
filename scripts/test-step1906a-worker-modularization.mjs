@@ -404,6 +404,19 @@ patched = patched.replace(stage01FinanceA5AddedAnchor, [
   '',
 ].join('\n'))
 
+const stage01ReturnExchangeWorkshopCacheR5 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-return-exchange-workshop-cache-reliability-r5-worker-manifest.json'), 'utf8'))
+if (stage01ReturnExchangeWorkshopCacheR5.version !== 1 || stage01ReturnExchangeWorkshopCacheR5.revision !== 'stage01-return-exchange-workshop-cache-reliability-r5') throw new Error('Stage01 Return/Exchange Workshop cache R5 Worker manifest invalid')
+if (Object.keys(stage01ReturnExchangeWorkshopCacheR5.changes || {}).sort().join(',') !== 'cancelExchange,cancelReturn,createExchange,createReturn') throw new Error('Stage01 Return/Exchange Workshop cache R5 Worker allow-list widened')
+patched = 'const stage01ReturnExchangeWorkshopCacheR5Changes = ' + JSON.stringify(stage01ReturnExchangeWorkshopCacheR5.changes || {}) + '\n' + patched
+const stage01ReturnExchangeHashAnchor = '        return sha(declarations.get(name)) === (stage01WorkshopTruthChanged ? stage01WorkshopTruthChanged.after : acceptedPostStage01CanonicalItemHash)'
+if (!patched.includes(stage01ReturnExchangeHashAnchor)) throw new Error('Stage01 Return/Exchange Workshop cache R5 predecessor hash anchor missing')
+patched = patched.replace(stage01ReturnExchangeHashAnchor, [
+  '        const acceptedPostStage01WorkshopHash = stage01WorkshopTruthChanged ? stage01WorkshopTruthChanged.after : acceptedPostStage01CanonicalItemHash',
+  '        const stage01ReturnExchangeWorkshopCacheChanged = stage01ReturnExchangeWorkshopCacheR5Changes[name]',
+  "        if (stage01ReturnExchangeWorkshopCacheChanged) check(stage01ReturnExchangeWorkshopCacheChanged.before === acceptedPostStage01WorkshopHash, 'Stage01 Return/Exchange Workshop cache R5 predecessor drifted: ' + name)",
+  '        return sha(declarations.get(name)) === (stage01ReturnExchangeWorkshopCacheChanged ? stage01ReturnExchangeWorkshopCacheChanged.after : acceptedPostStage01WorkshopHash)',
+].join('\n'))
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
