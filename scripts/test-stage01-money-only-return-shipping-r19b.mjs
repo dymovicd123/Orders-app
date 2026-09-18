@@ -48,6 +48,7 @@ const baseOrder = {
   committed_return_count: 1,
   committed_exchange_count: 0,
   returns: [{ id: 1, status: 'completed' }],
+  stock_handover_review_needed: true,
   items: [{ id: 1, isWorkshop: false, quantity: 1 }],
 }
 const moneyOnly = project({ ...baseOrder, has_committed_item_return: false }, false)
