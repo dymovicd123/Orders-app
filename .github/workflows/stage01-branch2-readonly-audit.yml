@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - w-stage01-branch2-readonly-audit-20260918
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
