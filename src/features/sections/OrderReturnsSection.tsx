@@ -223,7 +223,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                             <thead>
                               <tr>
                                 <th>Позиция</th>
-                                <th>Кол-во в заказе</th>
+                                <th>Доступно к возврату</th>
                                 <th>Вернуть</th>
                                 <th>Товар физически</th>
                               </tr>
