@@ -79,7 +79,7 @@ export async function resolveWorkshopCatalogExactCandidate(
         .first<{ id: number; category?: string }>()
     : null;
   if (!product?.id) {
-    product = await findCatalogProductByIdentity(db, normalized.productName, 0, { activeOnly: true }) as { id: number; category?: string } | null;
+    product = await findCatalogProductByIdentity(db, normalized.productName, 0, { activeOnly: true }) as { id: number; category: string } | null;
   }
   if (!product?.id) return { productId: null, variantId: null, matchStatus: 'unresolved_product', inputKey };
 
