@@ -1,4 +1,5 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
+import { projectOrderOperationalState } from '../../app/orderOperationalProjection'
 type SectionContext = Record<string, any>
 
 export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
@@ -35,19 +36,20 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
     setEditorDraft,
     SmartPickerInput,
     sourceLabel,
-    statusLabelByState,
     suggestionValues,
     updateEditorDraft,
     updateEditorItem,
     updateEditorPayment,
   } = ctx
 
+  const projection = selectedOrder ? projectOrderOperationalState(selectedOrder, { isAdmin }) : null
+
   return (
     <article
               className="card wide sector-orders"
               id="editor"
               ref={editorFormRef}
-              style={{ ...sectorStyle('orders'), ...orderPanelStyle('edit'), display: selectedOrder && !isArchivedOrderRecord(selectedOrder) && editorDraft && editorOpen && (isAdmin || (!['deleted', 'archived'].includes(selectedOrder.order_status) && selectedOrder.shipping_status !== 'sent')) ? undefined : 'none' }}
+              style={{ ...sectorStyle('orders'), ...orderPanelStyle('edit'), display: selectedOrder && projection?.canEdit && editorDraft && editorOpen ? undefined : 'none' }}
             >
               <div className="card-label">Редактирование заказа</div>
               <div className="actions form-top-actions">
@@ -72,15 +74,10 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                         <strong>{selectedOrder.external_id}</strong>
                         <span>{selectedOrder.order_date} · {selectedOrder.manager_name || '—'} · {sourceLabel(selectedOrder.source_type)}</span>
                       </div>
-                      <span className={`status-pill status-${selectedOrder.order_status}-${selectedOrder.workshop_status}`}>
-                        {statusLabelByState(
-                          selectedOrder.order_status,
-                          selectedOrder.workshop_status,
-                          selectedOrder.debt_amount,
-                          selectedOrder.received_amount,
-                          selectedOrder.return_amount,
-                        )}
-                      </span>
+                      <div className="order-status-stack">
+                        <span className="status-pill status-neutral">{projection?.lifecycleLabel || 'Активен'}</span>
+                        {projection?.workshopLabel ? <small>{projection.workshopLabel}</small> : null}
+                      </div>
                     </div>
                     <div className="editor-summary-grid">
                       <div>
@@ -93,11 +90,19 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                       </div>
                       <div>
                         <span>Получено</span>
-                        <strong>{formatMoney(selectedOrder.received_amount)}</strong>
+                        <strong>{formatMoney(projection?.receivedAmount || 0)}</strong>
+                      </div>
+                      <div>
+                        <span>Возвращено</span>
+                        <strong>{formatMoney(projection?.refundAmount || 0)}</strong>
+                      </div>
+                      <div>
+                        <span>Осталось денег</span>
+                        <strong>{formatMoney(projection?.netRetainedAmount || 0)}</strong>
                       </div>
                       <div>
                         <span>Долг</span>
-                        <strong>{formatMoney(selectedOrder.debt_amount)}</strong>
+                        <strong>{formatMoney(projection?.debtAmount || 0)}</strong>
                       </div>
                     </div>
                   </div>
@@ -162,24 +167,13 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                         placeholder="Общая сумма заказа"
                       />
                     </label>
-                    <label>
-                      <span>Цех</span>
-                      <select
-                        value={editorDraft.workshopStatus}
-                        disabled={!isAdmin || savingOrder}
-                        onChange={(event) =>
-                          updateEditorDraft(
-                            'workshopStatus',
-                            event.target.value as EditorDraft['workshopStatus'],
-                          )
-                        }
-                      >
-                        <option value="in_workshop">В работе</option>
-                        <option value="ready">Готово</option>
-                        <option value="shipped">Отгружен</option>
-                        <option value="cancelled">Отменён</option>
-                      </select>
-                    </label>
+                    {projection?.hasWorkshopItems ? (
+                      <div className="field-block">
+                        <span>Цех</span>
+                        <strong>{projection.workshopLabel || 'Цех: нет активной работы'}</strong>
+                        <small>Состояние меняется по конкретным позициям в разделе «Цех».</small>
+                      </div>
+                    ) : null}
                     <label>
                       <span>Статус</span>
                       <select
