@@ -6,11 +6,11 @@ This file is the current continuation pointer for the Orders-app foundation clea
 
 - GitHub repository: `dymovicd123/Orders-app`.
 - Current Stage 0+1 implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green Stage 0+1 head: `de3eb0fc6cd439cdfa8fadb193ddf807c924373c`.
+- Current green Stage 0+1 head: `fc797f5da88ddb5eaa409b2101583c8910529b7f`.
 - Production D1 has not been changed by the Stage 0+1 work.
 - Branch2 is a separate environment and must not be casually folded into Production work.
 - Branch2 is reserved for interactive UI/end-to-end proving of coherent Stage01 groups before Production. Feature-branch static/CI work should remain isolated until it is ready for that test.
-- Branch2 current proving head: `de3eb0fc6cd439cdfa8fadb193ddf807c924373c` (R1–R10 green).
+- Branch2 current proving head: `fc797f5da88ddb5eaa409b2101583c8910529b7f` (R1–R11 green).
 - `Приход` remains a frozen/high-risk surface unless a separate approved task explicitly requires changing it.
 
 ## Why Stage 0+1 exists
@@ -157,6 +157,20 @@ Focused regression:
 
 Validation: GitHub Actions run `35337039333` passed the cumulative release gate, dependency audits and production build. Temporary PR #80 was closed without merge.
 
+
+## Completed slice K — Pending lifecycle current-link truth
+
+Pending physical lifecycle rows remain immutable historical evidence, but their live reconciliation/context now follows repaired canonical links from the linked order item when those links exist.
+
+This closes the post-Resolver contradiction where an order line could already be canonically repaired while its pending intake still behaved as unknown because the lifecycle snapshot was older.
+
+No lifecycle snapshot text is rewritten. Current `product_id` / `variant_id` are used only as live operational identity, with snapshot evidence retained as fallback/history.
+
+Focused regression:
+- `scripts/test-stage01-pending-lifecycle-current-links-r11.mjs`
+
+Validation: GitHub Actions run `35339510564` passed the cumulative release gate, dependency audits and production build. Temporary PR #81 was closed without merge. Branch2 was fast-forwarded to `fc797f5da88ddb5eaa409b2101583c8910529b7f`.
+
 ## Validation state
 
 R2 passed the cumulative release gate and production build on GitHub Actions run `35327687377`.
@@ -176,6 +190,8 @@ R8 passed the same full gate on GitHub Actions run `35335232585`. Temporary PR #
 R9 passed the same full gate on GitHub Actions run `35336256637`. Temporary PR #79 was closed without merge.
 
 R10 passed the same full gate on GitHub Actions run `35337039333`. Temporary PR #80 was closed without merge.
+
+R11 passed the same full gate on GitHub Actions run `35339510564`. Temporary PR #81 was closed without merge, and Branch2 was fast-forwarded to the same green head.
 
 R6 passed the same full gate on GitHub Actions run `35332881155`. Temporary PR #76 was closed without merge.
 
