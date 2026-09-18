@@ -56,12 +56,13 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
   const paymentsByOrderId = new Map<number, unknown[]>();
   const returnsByOrderId = new Map<number, unknown[]>();
   const committedExchangeCountByOrderId = new Map<number, number>();
+  const hasCommittedItemReturnByOrderId = new Map<number, boolean>();
   const workshopTasksByOrderId = new Map<number, unknown[]>();
   const handoverReviewByOrderId = new Map<number, unknown[]>();
   const activeStockHandoverByOrderId = new Map<number, unknown[]>();
 
   if (!orderIds.length) {
-    return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, committedExchangeCountByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
+    return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, committedExchangeCountByOrderId, hasCommittedItemReturnByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
   }
 
   const appendRows = (target: Map<number, unknown[]>, rows: unknown[]) => {
@@ -145,8 +146,10 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
       const orderId = toInt(row.order_id, 0);
       if (orderId) committedExchangeCountByOrderId.set(orderId, Math.max(0, toInt(row.committed_exchange_count, 0)));
       const orderItemId = toInt(row.order_item_id, 0);
+      const returnedQuantity = Math.max(0, toInt(row.returned_quantity, 0));
       if (!orderItemId) continue;
-      activeStandaloneReturnedByItem.set(orderItemId, Math.max(0, toInt(row.returned_quantity, 0)));
+      if (returnedQuantity > 0) hasCommittedItemReturnByOrderId.set(orderId, true);
+      activeStandaloneReturnedByItem.set(orderItemId, returnedQuantity);
     }
     for (const rawItem of itemsResult.results || []) {
       const item = rawItem as Record<string, unknown>;
@@ -174,7 +177,7 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
     }
   }
 
-  return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, committedExchangeCountByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
+  return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, committedExchangeCountByOrderId, hasCommittedItemReturnByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
 }
 
 
