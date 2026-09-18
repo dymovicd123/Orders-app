@@ -4,6 +4,7 @@ const read = (p) => fs.readFileSync(p, 'utf8')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 const worker = read('worker/index.ts')
 const app = read('src/App.tsx')
+const projection = read('src/app/orderOperationalProjection.ts')
 const section = read('src/features/sections/InventorySection.tsx')
 const attention = read('src/features/inventory/views/renderInventoryAttentionPanel.tsx')
 const history = read('src/features/inventory/views/renderInventoryHistoryPanel.tsx')
@@ -50,7 +51,8 @@ check(!app.includes("Ручные операции склада доступны
 check(app.includes("if (!isAdmin && inventoryPanel === 'catalog') setInventoryPanel('overview')"), 'working-mode inventory navigation must block only master-data catalog')
 check(app.includes("if (!isAdmin && inventoryDraft.movementType === 'arrival' && cleanItems.some((item) => !item.variantId))"), 'known-only Arrival boundary missing in frontend')
 check(app.includes("Новый товар или новая характеристика требуют админ-режима"), 'ordinary user needs a clear master-data boundary message')
-check(app.includes("if (!isAdmin && (['deleted', 'archived'].includes(order.order_status) || order.shipping_status === 'sent'))"), 'sent/deleted/archived order edit protection must remain')
+check(projection.includes('const mutableWorkingOrder = !retainedOnly && !archived && !deleted'), 'deleted/archived order edit protection must remain in shared projection')
+check(projection.includes('canEdit: mutableWorkingOrder && !hasActiveReturnOperation && (simpleAdmin || !sent)'), 'sent order manager edit protection must remain in shared projection')
 check(!app.includes("order.order_status !== 'active' || order.shipping_status === 'sent'"), 'closed unshipped orders must remain editable in working mode')
 
 check(section.includes("{ value: 'movement' as const, label: 'Операции'"), 'manager-safe operations tab missing')
