@@ -746,11 +746,11 @@ export function createReturnDraft(order?: OrderRecord | null): ReturnDraft {
       orderItemId: Number(item.id || 0),
       productName: item.productName || 'Позиция',
       quantity: 0,
-      maxQuantity: Math.max(1, Number(item.quantity || 1)),
+      maxQuantity: Math.max(0, Number(item.availableOperationQuantity ?? item.quantity ?? 0)),
       sourceType: (item.sourceType === 'workshop' ? 'workshop' : item.sourceType === 'boutique' ? 'boutique' : 'warehouse') as 'warehouse' | 'boutique' | 'workshop',
       restock: false,
       physicalState: 'pending' as const,
-    })).filter((item) => item.orderItemId > 0),
+    })).filter((item) => item.orderItemId > 0 && item.maxQuantity > 0),
   }
 }
 
@@ -762,7 +762,7 @@ function createExchangePairDraftKey() {
 }
 
 export function createExchangeDraft(order?: OrderRecord | null): ExchangeDraft {
-  const firstItem = (order?.items || []).find((item) => Number(item.id || 0) > 0 && Number(item.quantity || 0) > 0)
+  const firstItem = (order?.items || []).find((item) => Number(item.id || 0) > 0 && Number(item.availableOperationQuantity ?? item.quantity ?? 0) > 0)
   const inheritedSource = firstItem?.sourceType === 'workshop'
     ? 'workshop'
     : firstItem?.sourceType === 'boutique'
