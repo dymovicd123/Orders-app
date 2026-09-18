@@ -1,12 +1,12 @@
 # Stage 0+1 — implementation checkpoint (2026-09-18)
 
-Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
+Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
 
 ## Source of truth
 
 - Production/main baseline at the beginning of this slice: `main`.
 - Implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green implementation head: `94eb3927c1fd4a5005023e2b379f358c24b9a5a2`.
+- Current green implementation head: `de3eb0fc6cd439cdfa8fadb193ddf807c924373c`.
 - Branch2 remains separate; its head observed during this work: `fb43e8d709b57b67cc080bb9bd64246bb036aede`.
 - No Production D1 migration/write was performed.
 
@@ -346,6 +346,33 @@ Validation:
 - production build: SUCCESS;
 - dependency audits: SUCCESS.
 
+## R10 — Workshop lifecycle canonical links
+
+The Return/Exchange lifecycle audit found a deeper Workshop contradiction after R9.
+
+A Workshop order line could already have a repaired exact `variant_id` / `product_id`, but new physical lifecycle work still re-resolved Workshop identity from old text snapshots first. That could turn a repaired exact line back into unresolved/pending inventory work or resolve against an obsolete product name.
+
+R10 changes the resolution order:
+- a valid explicit `order_items.variant_id` is trusted first for both ordinary and Workshop lines via `loadCanonicalVariantSnapshot()`;
+- if Workshop has only a repaired base `product_id`, that product id is preferred over old free-text product name while exact combination matching still uses recorded SKU facts;
+- if the explicit link is stale/invalid, the old independent snapshot-based fallback remains available;
+- freshness/full-stocktake guards and one-shot lifecycle application are unchanged.
+
+Focused regression:
+`scripts/test-stage01-workshop-lifecycle-canonical-link-r10.mjs`
+
+Exact Worker preservation layer:
+`scripts/stage01-workshop-lifecycle-canonical-link-r10-worker-manifest.json`
+
+Validation:
+- first CI run exposed the structural 192A1-added-declaration gate; the manifest wrapper was corrected without weakening the baseline;
+- second CI run exposed one TypeScript narrowing issue; typing and exact manifest were corrected;
+- final temporary draft PR #80 was closed without merge;
+- GitHub Actions Quality check run `35337039333`: SUCCESS;
+- cumulative release gate: SUCCESS;
+- production build: SUCCESS;
+- dependency audits: SUCCESS.
+
 ## Current safety boundary
 
 Do not touch Production D1 while Stage 0+1 is still being assembled.
@@ -360,7 +387,7 @@ Do not collapse return money, return workflow, shipping, Workshop, and catalog i
 
 ## Next work
 
-R1–R9 are green. Continue auditing the remaining Return/Exchange, Finance and historical surfaces by purpose. Do not mechanically convert historical/audit views to canonical-first.
+R1–R10 are green. Continue auditing the remaining Return/Exchange, Finance and historical surfaces by purpose. Do not mechanically convert historical/audit views to canonical-first.
 
 Priority targets:
 
