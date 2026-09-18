@@ -53,3 +53,11 @@ jobs:
           set -euo pipefail
           npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "SELECT name FROM sqlite_master WHERE type='trigger' AND name IN ('trg_order_search_items_ai','trg_order_search_items_ad','trg_order_search_items_au','trg_order_search_catalog_products_au','trg_order_search_catalog_variants_au') ORDER BY name;"
           npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS order_items_count FROM order_items; SELECT COUNT(*) AS fts_rows_count FROM order_search_items_fts;"
+
+      - name: Verify later schema prerequisites read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('inventory_stocktake_sessions','inventory_lifecycle_events','critical_operations','catalog_executions','inventory_stock_checks') ORDER BY name;"
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "SELECT name FROM pragma_table_info('catalog_products') WHERE name='gender_scope'; SELECT name FROM pragma_table_info('return_items') WHERE name IN ('physical_tracking','physical_received_at') ORDER BY name; SELECT name FROM pragma_table_info('exchange_items') WHERE name IN ('physical_tracking','physical_received_at') ORDER BY name;"
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "SELECT name FROM d1_migrations ORDER BY id DESC LIMIT 8;"
