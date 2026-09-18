@@ -5241,7 +5241,7 @@ function removeDebtPayment(index: number) {
 
   async function getOrderOperationalProjection(order: OrderRecord) {
     const { projectOrderOperationalState } = await import('./app/orderOperationalProjection')
-    return await getOrderOperationalProjection(order)
+    return projectOrderOperationalState(order, { isAdmin })
   }
 
   async function handleOpenDebt(order: OrderRecord) {
