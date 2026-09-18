@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "revision": "stage01-canonical-item-projection-r2",
+  "files": {
+    "src/app/types.ts": {
+      "beforeGitBlob": "f1596007f41045da814246fa6bdec647c11c3153",
+      "beforeLines": 1702,
+      "afterGitBlob": "9b0de22a7d6a53f25598a99779fdd58c62ab9b33",
+      "afterLines": 1714
+    },
+    "src/features/sections/OrderDetailsSection.tsx": {
+      "beforeGitBlob": "9d98bc0cf6f5e2743562091e073ef09041da3baa",
+      "beforeLines": 117,
+      "afterGitBlob": "b2c0de6932081a364e752d5159bf30fd779bd3e8",
+      "afterLines": 123
+    }
+  }
+}
