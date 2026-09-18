@@ -37,8 +37,9 @@ check(fn.includes('toInt(committedReservation?.variant_id, 0) === variantId'), '
 check(fn.includes('normalizeSourceType(committedReservation?.inventory_source) === targetSource'), 'Committed reservation source is not verified')
 check(publishPos > committedProofPos, 'Current order canonical identity is published before physical reservation truth is proven')
 
-const activePart = fn.slice(fn.indexOf('const item = catalogReviewRowToOrderItem(row);'))
-check(!activePart.slice(0, reservePos - fn.indexOf('const item = catalogReviewRowToOrderItem(row);')).includes('UPDATE order_items SET product_id = ?, variant_id = ? WHERE id = ?'), 'Active unsent Resolver publishes canonical identity before reservation alignment')
+const activeReservationStart = fn.indexOf("if (existingReservation?.id && existingStatus === 'active')")
+check(activeReservationStart >= 0 && activeReservationStart < reservePos, 'Active-reservation alignment branch missing')
+check(!fn.slice(activeReservationStart, reservePos).includes('UPDATE order_items SET product_id = ?, variant_id = ? WHERE id = ?'), 'Active unsent Resolver publishes canonical identity before reservation alignment')
 
 check(reservations.includes('if (existingReservation?.id) {'), 'reserveOrderItemV2 retry-safe existing-reservation contract unexpectedly changed')
 check(!fn.includes('UPDATE inventory_movements'), 'Resolver reservation repair unexpectedly rewrites immutable physical movement history')
