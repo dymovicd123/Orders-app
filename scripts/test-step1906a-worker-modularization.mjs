@@ -512,6 +512,31 @@ patched = patched.replace(stage01WorkshopLifecycleCanonicalHashAnchor, [
   '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash',
 ].join('\n'))
 
+const stage01WorkshopLifecycleCanonicalAddedAnchor = [
+  '    check(',
+  '      sha(declarations.get(name)) === acceptedPostW3NaturalRecoveryHash,',
+  '      w3NaturalRecoveryWorkerChanged',
+  '        ? `192A1-added declaration changed beyond exact W3.2 allow-list: ${name}`',
+  '        : `192A1 added Worker declaration changed beyond accepted deltas: ${name}`,',
+  '    )',
+].join('\n')
+if (!patched.includes(stage01WorkshopLifecycleCanonicalAddedAnchor)) throw new Error('Stage01 Workshop lifecycle canonical link R10 192A1-added anchor missing')
+patched = patched.replace(stage01WorkshopLifecycleCanonicalAddedAnchor, [
+  '    const stage01WorkshopLifecycleCanonicalAddedChanged = stage01WorkshopLifecycleCanonicalR10Changes[name]',
+  '    if (stage01WorkshopLifecycleCanonicalAddedChanged) {',
+  "      check(declarations.get(name).includes(stage01WorkshopLifecycleCanonicalAddedChanged.afterBlock), 'Stage01 Workshop lifecycle canonical link R10 added exact replacement missing: ' + name)",
+  '      const revertedStage01WorkshopLifecycleCanonicalAdded = declarations.get(name).replace(stage01WorkshopLifecycleCanonicalAddedChanged.afterBlock, stage01WorkshopLifecycleCanonicalAddedChanged.beforeBlock)',
+  "      check(sha(revertedStage01WorkshopLifecycleCanonicalAdded) === acceptedPostW3NaturalRecoveryHash, 'Stage01 Workshop lifecycle canonical link R10 changed 192A1-added declaration beyond exact replacement: ' + name)",
+  '    } else {',
+  '      check(',
+  '        sha(declarations.get(name)) === acceptedPostW3NaturalRecoveryHash,',
+  '        w3NaturalRecoveryWorkerChanged',
+  '          ? `192A1-added declaration changed beyond exact W3.2 allow-list: ${name}`',
+  '          : `192A1 added Worker declaration changed beyond accepted deltas: ${name}`,',
+  '      )',
+  '    }',
+].join('\n'))
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
