@@ -6,7 +6,7 @@ This file is the current continuation pointer for the Orders-app foundation clea
 
 - GitHub repository: `dymovicd123/Orders-app`.
 - Current Stage 0+1 implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green Stage 0+1 head: `43d79e3fd6638014bf3101a05d63cf1a592ba056`.
+- Current green Stage 0+1 head: `8f1a0046b3b42f146001bb863b4bb814f935351f`.
 - Production D1 has not been changed by the Stage 0+1 work.
 - Branch2 is a separate environment and must not be casually folded into Production work.
 - `Приход` remains a frozen/high-risk surface unless a separate approved task explicitly requires changing it.
@@ -71,6 +71,17 @@ Focused regression:
 
 Validation: GitHub Actions run `35331323128` passed the cumulative release gate, dependency audits and production build. Temporary PR #74 was closed without merge.
 
+## Completed slice E — Return/Exchange Workshop cache reliability
+
+Return creation, exchange creation, return cancellation and exchange cancellation no longer false-fail because the secondary coarse Workshop order cache could not refresh.
+
+`workshop_tasks` and the concrete lifecycle records remain authoritative. `orders.workshop_status` is compatibility/cache only and is refreshed best-effort after the real mutation.
+
+Focused regression:
+- `scripts/test-stage01-return-exchange-workshop-cache-r5.mjs`
+
+Validation: GitHub Actions run `35332084525` passed the cumulative release gate, dependency audits and production build. Temporary PR #75 was closed without merge.
+
 ## Validation state
 
 R2 passed the cumulative release gate and production build on GitHub Actions run `35327687377`.
@@ -78,6 +89,8 @@ R2 passed the cumulative release gate and production build on GitHub Actions run
 R3 passed the full cumulative release gate, dependency audits and production build on GitHub Actions run `35330539221`. Temporary PR #73 existed only to trigger CI and was closed without merge.
 
 R4 passed the same full gate on GitHub Actions run `35331323128`. Temporary PR #74 was closed without merge.
+
+R5 passed the same full gate on GitHub Actions run `35332084525`. Temporary PR #75 was closed without merge.
 
 ## Important distinction for the next audit
 
