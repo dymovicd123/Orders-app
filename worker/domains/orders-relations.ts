@@ -55,12 +55,13 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
   const itemsByOrderId = new Map<number, unknown[]>();
   const paymentsByOrderId = new Map<number, unknown[]>();
   const returnsByOrderId = new Map<number, unknown[]>();
+  const exchangesByOrderId = new Map<number, unknown[]>();
   const workshopTasksByOrderId = new Map<number, unknown[]>();
   const handoverReviewByOrderId = new Map<number, unknown[]>();
   const activeStockHandoverByOrderId = new Map<number, unknown[]>();
 
   if (!orderIds.length) {
-    return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
+    return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, exchangesByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
   }
 
   const appendRows = (target: Map<number, unknown[]>, rows: unknown[]) => {
@@ -81,7 +82,7 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
     const chunk = orderIds.slice(index, index + chunkSize);
     const placeholders = chunk.map(() => '?').join(',');
 
-    const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverStateResult, standaloneReturnedResult] = await Promise.all([
+    const [itemsResult, paymentsResult, returnsResult, exchangesResult, workshopTasksResult, handoverStateResult, standaloneReturnedResult] = await Promise.all([
       db.prepare(
         `SELECT oi.*,
                 p.name AS canonical_product_name,
@@ -102,6 +103,9 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
       ).bind(...chunk).all(),
       db.prepare(
         `SELECT * FROM returns WHERE order_id IN (${placeholders}) ORDER BY return_date DESC, id DESC`
+      ).bind(...chunk).all(),
+      db.prepare(
+        `SELECT id, order_id, status FROM exchanges WHERE order_id IN (${placeholders}) ORDER BY id DESC`
       ).bind(...chunk).all(),
       db.prepare(
         `SELECT * FROM workshop_tasks WHERE order_id IN (${placeholders}) ORDER BY id ASC`
@@ -137,6 +141,7 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
     appendRows(itemsByOrderId, itemsResult.results || []);
     appendRows(paymentsByOrderId, paymentsResult.results || []);
     appendRows(returnsByOrderId, returnsResult.results || []);
+    appendRows(exchangesByOrderId, exchangesResult.results || []);
     appendRows(workshopTasksByOrderId, workshopTasksResult.results || []);
     appendRows(activeStockHandoverByOrderId, handoverStateResult || []);
     appendRows(handoverReviewByOrderId, (handoverStateResult || []).filter((row) => toInt((row as Record<string, unknown>).review_needed, 0) === 1));
@@ -155,7 +160,7 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
     }
   }
 
-  return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
+  return { itemsByOrderId, paymentsByOrderId, returnsByOrderId, exchangesByOrderId, workshopTasksByOrderId, handoverReviewByOrderId, activeStockHandoverByOrderId };
 }
 
 
