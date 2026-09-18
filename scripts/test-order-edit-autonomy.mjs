@@ -28,7 +28,11 @@ check(orders.includes('assertCreateOrderShortageDecisions'), 'inventory shortage
 
 check(!app.includes('Редактирование заказа доступно только администратору.'), 'frontend still blocks ordinary edit at open')
 check(!app.includes('Сохранение редактирования заказа доступно только администратору.'), 'frontend still blocks ordinary edit at save')
-check((app.match(/!isAdmin && \(\['deleted', 'archived'\]\.includes\(order\.order_status\) \|\| order\.shipping_status === 'sent'\)/g) || []).length === 2, 'controller safe-scope guard missing at open/save')
+check(app.includes("import { projectOrderOperationalState } from './app/orderOperationalProjection'"), 'controller does not import the shared operational projection')
+const openEditHandler = app.slice(app.indexOf('function handleEditOrder('), app.indexOf('function upsertOrderInState'))
+const persistEditHandler = app.slice(app.indexOf('async function persistOrder('), app.indexOf('async function archiveOrderAsAdmin'))
+check(openEditHandler.includes('projectOrderOperationalState(order, { isAdmin })') && openEditHandler.includes('!projection.canEdit'), 'controller safe-scope guard missing at edit open')
+check(persistEditHandler.includes('projectOrderOperationalState(order, { isAdmin })') && persistEditHandler.includes('!projection.canEdit'), 'controller safe-scope guard missing at edit save')
 check(!app.includes("order.order_status !== 'active' || order.shipping_status === 'sent'"), 'controller still blocks closed unshipped orders')
 check(table.includes('projectOrderOperationalState(order, { isAdmin })'), 'table must derive edit/action visibility from the shared operational projection')
 check(table.includes('projection.canEdit'), 'table lost projection-based safe edit action')
