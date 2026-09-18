@@ -636,25 +636,6 @@ export function isArchivedOrderRecord(order?: OrderRecord | null) {
 
 
 
-export function isReturnedOrderRecord(order?: Pick<OrderRecord, 'return_amount'> | null) {
-  return Number(order?.return_amount || 0) > 0
-}
-
-
-
-export function statusLabelByState(orderStatus: string, workshopStatus: string, debtAmount: number, receivedAmount: number, returnAmount: number) {
-  if (orderStatus === 'archived') return 'Архив'
-  if (orderStatus === 'deleted') return 'Удалён'
-  if (returnAmount > 0) return 'Возврат'
-  if (workshopStatus === 'ready') return 'Готово'
-  if (workshopStatus === 'shipped') return 'Отгружен'
-  if (debtAmount <= 0) return 'Оплачено'
-  if (receivedAmount > 0) return 'Частично'
-  return 'Долг'
-}
-
-
-
 export function paymentStatusLabel(order: Pick<OrderRecord, 'debt_amount' | 'received_amount' | 'total_amount'>) {
   const debt = Number(order.debt_amount || 0)
   const received = Number(order.received_amount || 0)
@@ -697,10 +678,9 @@ export function waitingDaysLabel(order: Pick<OrderRecord, 'order_date' | 'shippi
 
 
 
-export function orderLifecycleLabel(order: Pick<OrderRecord, 'order_status' | 'return_amount'>) {
+export function orderLifecycleLabel(order: Pick<OrderRecord, 'order_status'>) {
   if (order.order_status === 'archived') return 'Архив'
   if (order.order_status === 'deleted') return 'Удалён'
-  if (Number(order.return_amount || 0) > 0) return 'Возвращён'
   if (order.order_status === 'closed') return 'Закрыт'
   return 'Активен'
 }
