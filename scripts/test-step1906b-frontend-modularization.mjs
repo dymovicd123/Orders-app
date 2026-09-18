@@ -62,7 +62,7 @@ const newO1Block = [
   "    check(shortageDelta?.version === 1 && shortageDelta?.revision === 'order-shortage-nonblocking-r1' && shortageDelta?.file === relative, 'Order shortage frontend manifest invalid')",
   "    const apiClientGitBlobSha = (value) => {",
   "      const bytes = Buffer.from(value)",
-  "      return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\\0`)).update(bytes).digest('hex')",
+  "      return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')",
   "    }",
   "    check(apiClientGitBlobSha(text) === shortageDelta.afterGitBlob, 'Order shortage API client changed beyond exact non-blocking delta')",
   "    text = fs.readFileSync(path.join(root, 'scripts/fixtures/order-shortage-nonblocking-api-client-baseline.ts'), 'utf8')",
@@ -114,7 +114,7 @@ if (!process.env.STAGE01_R19_FRONTEND_NORMALIZED) {
       const delta = stage01R19FrontendManifest.files[relative]
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (stage01R19GitBlobSha(actual) !== delta.afterGitBlob || actual.split(/\\r?\\n/).length !== delta.afterLines) {
+      if (stage01R19GitBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
         throw new Error('Stage01 Return/Exchange downstream R19 frontend changed beyond exact manifest: ' + relative)
       }
       let reverted = actual
@@ -122,7 +122,7 @@ if (!process.env.STAGE01_R19_FRONTEND_NORMALIZED) {
         if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage01 Return/Exchange downstream R19 exact after-block missing: ' + relative)
         reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
       }
-      if (stage01R19GitBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\\r?\\n/).length !== delta.beforeLines) {
+      if (stage01R19GitBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
         throw new Error('Stage01 Return/Exchange downstream R19 frontend predecessor reconstruction failed: ' + relative)
       }
       originals.set(relative, actual)
