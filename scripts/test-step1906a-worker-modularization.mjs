@@ -703,6 +703,11 @@ const stage01KnownIntakeCurrentCanonicalNormalizeBlock = [
 ].join('\n')
 patched = patched.replace(stage01KnownIntakeCurrentCanonicalNormalizeAnchor, stage01KnownIntakeCurrentCanonicalNormalizeBlock + stage01KnownIntakeCurrentCanonicalNormalizeAnchor)
 
+const stage01MoneyOnlyReturnShippingR19B = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-money-only-return-shipping-r19b-worker-manifest.json'), 'utf8'))
+if (stage01MoneyOnlyReturnShippingR19B.version !== 1 || stage01MoneyOnlyReturnShippingR19B.revision !== 'stage01-money-only-return-shipping-r19b') throw new Error('Stage01 money-only Return shipping R19B Worker manifest invalid')
+if (Object.keys(stage01MoneyOnlyReturnShippingR19B.changes || {}).sort().join(',') !== 'fetchOrderRelations,getOrder,listOrders') throw new Error('Stage01 money-only Return shipping R19B Worker allow-list widened')
+patched = 'const stage01MoneyOnlyReturnShippingR19BChanges = ' + JSON.stringify(stage01MoneyOnlyReturnShippingR19B.changes || {}) + '\n' + patched
+
 const stage01ReturnExchangeDownstreamR19 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-return-exchange-downstream-semantics-r19-worker-manifest.json'), 'utf8'))
 if (stage01ReturnExchangeDownstreamR19.version !== 1 || stage01ReturnExchangeDownstreamR19.revision !== 'stage01-return-exchange-downstream-semantics-r19') throw new Error('Stage01 Return/Exchange downstream R19 Worker manifest invalid')
 if (Object.keys(stage01ReturnExchangeDownstreamR19.changes || {}).sort().join(',') !== 'fetchOrderRelations,getOrder,listOrders') throw new Error('Stage01 Return/Exchange downstream R19 Worker allow-list widened')
@@ -746,6 +751,22 @@ const stage01ReturnExchangeDownstreamNormalizeBlock = [
   '',
 ].join('\n')
 patched = patched.replace(stage01ReturnExchangeDownstreamNormalizeAnchor, stage01ReturnExchangeDownstreamNormalizeBlock + stage01ReturnExchangeDownstreamNormalizeAnchor)
+
+// R19B is newer than R19 on the same order relation/readback declarations.
+const stage01MoneyOnlyReturnShippingNormalizeAnchor = '  for (const [name, change] of Object.entries(stage01ReturnExchangeDownstreamR19Changes)) {'
+if (!patched.includes(stage01MoneyOnlyReturnShippingNormalizeAnchor)) throw new Error('Stage01 money-only Return shipping R19B predecessor anchor missing')
+const stage01MoneyOnlyReturnShippingNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01MoneyOnlyReturnShippingR19BChanges)) {',
+  "    check(declarations.has(name), 'Stage01 money-only Return shipping R19B declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 money-only Return shipping R19B exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 money-only Return shipping R19B exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01MoneyOnlyReturnShippingNormalizeAnchor, stage01MoneyOnlyReturnShippingNormalizeBlock + stage01MoneyOnlyReturnShippingNormalizeAnchor)
 
 
 fs.writeFileSync(legacyPath, patched)
