@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "revision": "stage01-return-exchange-item-availability-r15",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "41c66bea3566cf836f38eff8b8b0eda0eaec803b",
+      "afterGitBlob": "d60abecb3ff32e4c614637948198eb77bc091810",
+      "beforeLines": 7312,
+      "afterLines": 7313
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "9b0de22a7d6a53f25598a99779fdd58c62ab9b33",
+      "afterGitBlob": "b101b56b1ad1bd1bb76924ee14d6d901fc5610c3",
+      "beforeLines": 1714,
+      "afterLines": 1715
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "d81c880229139909715c0ec68ea70908493f80eb",
+      "afterGitBlob": "dd6280e3e61b9e352de4ca258c341386ed7f99d9",
+      "beforeLines": 965,
+      "afterLines": 965
+    },
+    "src/features/sections/OrderReturnsSection.tsx": {
+      "beforeGitBlob": "730bc9fa3cb7a7a126a948d180380bc4e23dfb2f",
+      "afterGitBlob": "428c78fb48ebcd9d344c82d3544f38268334a7b1",
+      "beforeLines": 420,
+      "afterLines": 420
+    },
+    "src/features/sections/OrderExchangeSection.tsx": {
+      "beforeGitBlob": "0dbe78e1055e821c42c93ee755730de468860d72",
+      "afterGitBlob": "ab31d0b30e1d31272a095360ced46919e43e08f5",
+      "beforeLines": 584,
+      "afterLines": 604
+    }
+  }
+}
