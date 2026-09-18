@@ -424,12 +424,16 @@ export default {
       if (url.pathname === '/api/workshop/bulk' && request.method === 'PATCH') {
         const input = await readJson<{ ids?: unknown; status?: unknown; urgent?: unknown; dueDate?: unknown; comment?: unknown }>(request);
         const result = await bulkUpdateWorkshopTasks(env.DB, input);
-        await writeActivityLog(env.DB, {
-          eventType: 'workshop_bulk_updated',
-          entityType: 'workshop_task',
-          title: 'Массовое изменение цеха',
-          details: `Позиций: ${(result as any).updated || 0}; статус: ${cleanText(input.status) || 'без изменения'}; срочно: ${input.urgent === undefined ? 'без изменения' : (input.urgent ? 'да' : 'нет')}`,
-        });
+        try {
+          await writeActivityLog(env.DB, {
+            eventType: 'workshop_bulk_updated',
+            entityType: 'workshop_task',
+            title: 'Массовое изменение цеха',
+            details: `Позиций: ${(result as any).updated || 0}; статус: ${cleanText(input.status) || 'без изменения'}; срочно: ${input.urgent === undefined ? 'без изменения' : (input.urgent ? 'да' : 'нет')}`,
+          });
+        } catch (error) {
+          console.warn('Workshop bulk activity log after committed update failed', error);
+        }
         return json(result);
       }
 
@@ -438,18 +442,35 @@ export default {
         const input = await readJson<{ status?: unknown; urgent?: unknown; dueDate?: unknown; comment?: unknown; orderItemId?: unknown }>(request);
         const taskId = toInt(workshopMatch[1], 0);
         const result = await updateWorkshopTask(env.DB, taskId, input);
+        const orderId = toInt((result as any).task?.order_id, 0);
         if ((result as any).changed) {
-          await writeActivityLog(env.DB, {
-            eventType: 'workshop_updated',
-            entityType: 'workshop_task',
-            entityId: taskId,
-            orderId: toInt((result as any).task?.order_id, 0) || null,
-            externalOrderId: cleanText((result as any).task?.external_order_id),
-            title: `Изменена позиция цеха #${taskId}`,
-            details: `Статус: ${cleanText((result as any).previousStatus)} → ${cleanText((result as any).task?.status)}; позиция заказа: ${toInt((result as any).task?.order_item_id, 0) || 'не связана'}; товар: ${cleanText((result as any).task?.product_name_snapshot)}; срочно: ${toInt((result as any).task?.urgent, 0) ? 'да' : 'нет'}`,
-          });
+          try {
+            await writeActivityLog(env.DB, {
+              eventType: 'workshop_updated',
+              entityType: 'workshop_task',
+              entityId: taskId,
+              orderId: orderId || null,
+              externalOrderId: cleanText((result as any).task?.external_order_id),
+              title: `Изменена позиция цеха #${taskId}`,
+              details: `Статус: ${cleanText((result as any).previousStatus)} → ${cleanText((result as any).task?.status)}; позиция заказа: ${toInt((result as any).task?.order_item_id, 0) || 'не связана'}; товар: ${cleanText((result as any).task?.product_name_snapshot)}; срочно: ${toInt((result as any).task?.urgent, 0) ? 'да' : 'нет'}`,
+            });
+          } catch (error) {
+            console.warn('Workshop activity log after committed task mutation failed', error);
+          }
         }
-        return json(result);
+        let updatedOrder = null;
+        if ((result as any).changed && orderId > 0) {
+          try {
+            updatedOrder = await getOrder(env.DB, orderId);
+          } catch (error) {
+            console.warn('Workshop order readback after committed task mutation failed', error);
+          }
+        }
+        return json({
+          ...result,
+          ...(updatedOrder ? { order: updatedOrder } : {}),
+          refreshRequired: Boolean((result as any).changed && !updatedOrder),
+        });
       }
 
 
