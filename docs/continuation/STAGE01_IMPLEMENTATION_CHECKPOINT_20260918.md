@@ -1,12 +1,12 @@
 # Stage 0+1 — implementation checkpoint (2026-09-18)
 
-Status: R1 + R2 + R3 + R4 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
+Status: R1 + R2 + R3 + R4 + R5 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
 
 ## Source of truth
 
 - Production/main baseline at the beginning of this slice: `main`.
 - Implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green implementation head: `43d79e3fd6638014bf3101a05d63cf1a592ba056`.
+- Current green implementation head: `8f1a0046b3b42f146001bb863b4bb814f935351f`.
 - Branch2 remains separate; its head observed during this work: `fb43e8d709b57b67cc080bb9bd64246bb036aede`.
 - No Production D1 migration/write was performed.
 
@@ -170,6 +170,32 @@ Exact Worker preservation layer:
 Final validation:
 - temporary draft PR #74, closed without merge;
 - GitHub Actions Quality check run `35331323128`: SUCCESS;
+- cumulative release gate: SUCCESS;
+- production build: SUCCESS;
+- dependency audits: SUCCESS.
+
+## R5 — Return/Exchange Workshop cache reliability
+
+The follow-up lifecycle audit found the same commit-boundary hazard around the legacy coarse Workshop cache in Return/Exchange operations.
+
+Concrete Return/Exchange mutations already update the real lifecycle/task truth first. R5 makes the later `refreshOrderWorkshopStatusFromTasks()` call best-effort in:
+
+- return creation;
+- exchange creation;
+- return cancellation;
+- exchange cancellation.
+
+A transient failure while refreshing `orders.workshop_status` can therefore no longer turn already-committed lifecycle work into an API failure. The authoritative records remain the concrete Return/Exchange rows, inventory lifecycle records, and `workshop_tasks`; the coarse order field remains compatibility/cache only.
+
+Focused regression:
+`scripts/test-stage01-return-exchange-workshop-cache-r5.mjs`
+
+Exact Worker preservation layer:
+`scripts/stage01-return-exchange-workshop-cache-reliability-r5-worker-manifest.json`
+
+Final validation:
+- temporary draft PR #75, closed without merge;
+- GitHub Actions Quality check run `35332084525`: SUCCESS;
 - cumulative release gate: SUCCESS;
 - production build: SUCCESS;
 - dependency audits: SUCCESS.
