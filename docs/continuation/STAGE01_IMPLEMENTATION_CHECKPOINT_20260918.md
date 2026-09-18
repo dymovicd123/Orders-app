@@ -1,13 +1,13 @@
 # Stage 0+1 — implementation checkpoint (2026-09-18)
 
-Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 + R11 + R12 + R13 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
+Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 + R11 + R12 + R13 + R14 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
 
 ## Source of truth
 
 - Production/main baseline at the beginning of this slice: `main`.
 - Implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green implementation head: `d8af03c492db9b44629578ecfcd94c72b4177aef`.
-- Branch2 is the isolated UI/integration proving environment. After R13 passed the full gate it was fast-forwarded to the same green head: `d8af03c492db9b44629578ecfcd94c72b4177aef`.
+- Current green implementation head: `a12c9c5307f7d147a17881ff6e846b08ff92ebbc`.
+- Branch2 is the isolated UI/integration proving environment. After R14 passed the full gate it was fast-forwarded to the same green head: `a12c9c5307f7d147a17881ff6e846b08ff92ebbc`.
 - No Production D1 migration/write was performed.
 
 ## R1 — OrderOperationalProjection
@@ -468,6 +468,41 @@ Validation:
 - dependency audits: SUCCESS;
 - Branch2 fast-forwarded to `d8af03c492db9b44629578ecfcd94c72b4177aef`.
 
+
+## R14 — Order search follows canonical item identity
+
+The working Orders list already rendered repaired canonical product/SKU identity, but its search index still contained only immutable order-time item snapshots. After Resolver repair, an operator could therefore see a corrected product name in the row and still fail to find that same order by the corrected name/SKU.
+
+R14 aligns working search with the same truth model without erasing history:
+
+- short (<3 Unicode character) item search joins current `catalog_products` / `catalog_variants` and searches canonical identity plus historical snapshots;
+- the bounded >=3-character trigram FTS path remains in place for D1 read-budget safety;
+- additive migration `0070_v72_stage01_canonical_order_search.sql` rebuilds only the derived `order_search_items_fts` index with canonical + snapshot vocabulary;
+- order-item FTS triggers now refresh on `product_id` / `variant_id` repair as well as snapshot changes;
+- catalog product-name and variant-detail edits refresh linked order search rows;
+- old snapshot vocabulary remains searchable after Resolver/catalog repair;
+- no order, item, payment, catalog or historical business row is rewritten by the migration.
+
+Focused regression:
+`scripts/test-stage01-canonical-order-search-r14.mjs`
+
+Exact Worker preservation layer:
+`scripts/stage01-canonical-order-search-r14-worker-manifest.json`
+
+Validation:
+- the first CI run correctly rejected the new migration until it was registered as an accepted additive migration; its filename was also corrected from the tentative `0073` to the actual next sequence `0070`;
+- later focused-test failures were test-coordinate/FTS-trigram fixture issues only; the cumulative gate and build preceding them were green;
+- final temporary draft PR #84 was closed without merge;
+- GitHub Actions Quality check run `35345556890`: SUCCESS;
+- cumulative release gate: SUCCESS;
+- production build: SUCCESS;
+- dependency audits: SUCCESS;
+- database safety reports 73 preserved migration files;
+- Branch2 fast-forwarded to `a12c9c5307f7d147a17881ff6e846b08ff92ebbc`.
+
+Important Branch2 proving note:
+the migration file is now present in Branch2 source, but this Stage01 work did **not** execute D1 migrations. Before interactive R14 canonical-search testing in Branch2, apply the normal Branch2 migration path so `0070_v72_stage01_canonical_order_search.sql` reaches `orders_db_branch2`. Production D1 remains untouched.
+
 ## Current safety boundary
 
 Do not touch Production D1 while Stage 0+1 is still being assembled.
@@ -482,7 +517,7 @@ Do not collapse return money, return workflow, shipping, Workshop, and catalog i
 
 ## Next work
 
-R1–R13 are green. Continue auditing the remaining Return/Exchange, Finance and historical surfaces by purpose. Do not mechanically convert historical/audit views to canonical-first.
+R1–R14 are green. Continue auditing the remaining Return/Exchange, Finance and historical surfaces by purpose. Do not mechanically convert historical/audit views to canonical-first.
 
 Priority targets:
 
