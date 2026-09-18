@@ -20,7 +20,7 @@ Production code branch currently audited:
 
 Documentation/audit branch:
 - `audit/system-ux-walkthrough-20260917`
-- audit head immediately before this context update: `5e8343cb6bae01178b08c80068c49b41bc1f7bf6`
+- audit head immediately before this context update: `826454fb43247870baffa11ec3a7a54a52bd4272`
 
 Rules:
 - do not mutate Production D1 for exploratory work;
@@ -80,6 +80,7 @@ Read these before continuing:
 - `docs/audits/FOUNDATION_TRUTH_MAP_01_ORDER_LIFECYCLE_20260918.md`
 - `docs/audits/FOUNDATION_TRUTH_MAP_02_PRODUCT_IDENTITY_20260918.md`
 - `docs/audits/FOUNDATION_TRUTH_MAP_03_PHYSICAL_STOCK_20260918.md`
+- `docs/audits/FOUNDATION_TRUTH_MAP_04_WORKSHOP_PRODUCTION_20260918.md`
 
 Astra lifecycle Phase 1 report is also preserved in the audit branch. It should not be re-run unless a specific missing scenario becomes necessary.
 
@@ -179,6 +180,30 @@ Current strongest root diagnosis:
 
 Do not rewrite Revision/Return/Reservation safety machinery. Most of it should be preserved.
 
+## Completed foundation truth-map slice: Workshop / production boundary
+
+The fourth full truth-map slice is complete.
+
+Strong findings:
+- per-item `workshop_tasks` linked to `order_items` are the strongest current Workshop workflow truth;
+- Workshop read paths intentionally use tasks for workflow/status and order items for product/history facts;
+- Workshop order creation intentionally resolves only base product, not exact SKU; this is valid for made-to-order work and should not be “fixed” by forcing variants early;
+- the main `Готово` action only changes task workflow state; it does not add stock, create inventory movement/lifecycle, record physical warehouse receipt, create cost or create a Workshop payable;
+- this is largely correct: Workshop-only orders can go directly from production readiness to customer handover without entering sellable warehouse stock;
+- Return/Exchange already treats later physical receipt of Workshop goods as a separate explicit inventory lifecycle event;
+- **confirmed ownership defect:** `orders.workshop_status` is a second coarse lifecycle representation beside per-item task status; it is partly derived from tasks and also independently editable;
+- `refreshOrderWorkshopStatusFromTasks()` collapses every “no active tasks” state to `ready`, losing distinctions between done/ready/cancelled mixtures;
+- every new order draft defaults coarse `workshop_status='in_workshop'`, including orders with no Workshop items; shipping code compensates by also checking actual Workshop item/task counts;
+- old `orders.ready_at` and `warehouse_received_at` fields appear unused in current domain code and should be treated as schema sediment, not revived automatically;
+- current “Накладная цеха” is generated from active requested work and has no money/cost/payable facts; it is operationally a production work sheet, not the future financial Workshop invoice/payable requested by the client;
+- **critical future-accounting gap:** production completion has no immutable domain event/timestamp/cost snapshot. Mutable task status + `updated_at` cannot be the historical production ledger;
+- once cost/payable exists, `Вернуть` must reverse/supersede a completion fact rather than erase historical production;
+- future boundaries must remain separate: work instruction, production completion, physical warehouse receipt, and Workshop financial liability/payable;
+- historical production cost must be snapshotted at the agreed production/accounting boundary rather than inferred from a later mutable default cost;
+- cost granularity (product vs execution vs exact SKU vs custom) remains a real business decision and must not be guessed.
+
+Preserve the strong per-item Workshop linking and Workshop-aware Return/Exchange safety. Do not auto-stock on `Готово`.
+
 ## Warehouse/client requirements that must influence later design, but are NOT yet an approved plan
 
 Client asks for:
@@ -253,19 +278,19 @@ The output should distinguish:
 
 ## Immediate next step
 
-Next full slice: **Workshop lifecycle / finished-goods intake / production boundary**.
+Next full slice: **Money / Finance source of truth**.
 
 Questions:
-- What is authoritative per-item Workshop lifecycle?
-- What does the current “Готово” action actually mean?
-- Does production completion imply physical receipt, stock creation, or only task completion?
-- How do Workshop tasks and coarse orders.workshop_status interact?
-- How are produced items linked to product identity/SKU?
-- Where should a future historical production cost be captured?
-- What real business event should create the client's production invoice/payable entry: each item completion, physical batch receipt, a grouped document, or another explicit boundary?
-- What must remain separate between production completion, physical acceptance, inventory addition and Workshop payment liability?
+- Which source is authoritative for received money, refunds and net cash: payments, returns, financial_events, cash entries, or order aggregates?
+- Which order totals are immutable historical facts and which are caches/derived values?
+- Where are payment rows and financial_events deliberately duplicated, and how is drift prevented/repaired?
+- What should “выручка”, “получено”, “долг”, “возврат”, “чистые деньги” and future “прибыль” each mean?
+- Can current per-item unit_price/line_total be trusted for product profitability, especially because create flow currently sends unitPrice=0 while orderTotal is separate?
+- Where should default selling price and auto-pricing attach, and when must a historical price snapshot be frozen?
+- How should future Workshop production completion/cost/payable enter Finance without becoming order revenue?
+- Which existing finance/report surfaces consume incompatible interpretations of the same money?
 
-After the Workshop slice, STOP, save its audit document, update this continuation file, and report before Money/Finance.
+After the Money/Finance slice, STOP, save its audit document, update this continuation file, and report before moving to report/UI redesign.
 
 ## Working discipline
 
