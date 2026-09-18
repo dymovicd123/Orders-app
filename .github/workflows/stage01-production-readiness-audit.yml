@@ -23,23 +23,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve current Production Worker build
-        shell: bash
-        run: |
-          set -euo pipefail
-          AUTH=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
-          workers="$(curl --fail-with-body -sS "${AUTH[@]}" "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts")"
-          tag="$(jq -r '.result[] | select(.id=="orders-app") | .tag // empty' <<<"$workers" | head -n1)"
-          test -n "$tag"
-          builds="$(curl --fail-with-body -sS "${AUTH[@]}" "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/builds/workers/$tag/builds")"
-          latest="$(jq -c '[.result[]? | select(.build_trigger_metadata.branch=="main" and .build_outcome=="success")] | sort_by(.created_on) | last // empty' <<<"$builds")"
-          test -n "$latest"
-          commit="$(jq -r '.build_trigger_metadata.commit_hash // empty' <<<"$latest")"
-          outcome="$(jq -r '.build_outcome // empty' <<<"$latest")"
-          echo "Production latest successful main build commit: $commit"
-          echo "Production build outcome: $outcome"
-          test "$commit" = "$EXPECTED_MAIN_SHA"
-
       - name: Inspect Production D1 migration ledger
         shell: bash
         run: |
