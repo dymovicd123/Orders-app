@@ -1,12 +1,12 @@
 # Stage 0+1 — implementation checkpoint (2026-09-18)
 
-Status: R1 + R2 + R3 + R4 + R5 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
+Status: R1 + R2 + R3 + R4 + R5 + R6 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
 
 ## Source of truth
 
 - Production/main baseline at the beginning of this slice: `main`.
 - Implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green implementation head: `8f1a0046b3b42f146001bb863b4bb814f935351f`.
+- Current green implementation head: `ce4dbadf9e55c341311d858839bc44ccd26223e0`.
 - Branch2 remains separate; its head observed during this work: `fb43e8d709b57b67cc080bb9bd64246bb036aede`.
 - No Production D1 migration/write was performed.
 
@@ -196,6 +196,29 @@ Exact Worker preservation layer:
 Final validation:
 - temporary draft PR #75, closed without merge;
 - GitHub Actions Quality check run `35332084525`: SUCCESS;
+- cumulative release gate: SUCCESS;
+- production build: SUCCESS;
+- dependency audits: SUCCESS.
+
+## R6 — Unshipped queue no longer depends on refund history
+
+The remaining Orders read path still had one old lifecycle shortcut: `shippingStatus=not_sent` excluded every order with `return_amount > 0`.
+
+That contradicted the shared Stage 0+1 contract. A partial or historical refund is a money fact and must not make an otherwise active, physically unshipped order disappear from the ordinary `Не отправлено` work queue.
+
+R6 removes that dependency. The visible shipping filter now follows `shipping_status` only.
+
+The legacy explicit `status=returned` API filter is intentionally left unchanged in this narrow slice; R6 fixes only the current user-facing shipping queue and does not broaden into API compatibility semantics.
+
+Focused regression:
+`scripts/test-stage01-unshipped-refund-decoupling-r6.mjs`
+
+Exact Worker preservation layer:
+`scripts/stage01-unshipped-refund-decoupling-r6-worker-manifest.json`
+
+Final validation:
+- temporary draft PR #76, closed without merge;
+- GitHub Actions Quality check run `35332881155`: SUCCESS;
 - cumulative release gate: SUCCESS;
 - production build: SUCCESS;
 - dependency audits: SUCCESS.
