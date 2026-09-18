@@ -6,7 +6,9 @@ export type OrderOperationalProjection = {
   retainedOnly: boolean
   hasCommittedReturn: boolean
   hasCommittedExchange: boolean
+  hasCommittedItemReturn: boolean
   hasCommittedDownstreamOperation: boolean
+  hasCommittedPhysicalDownstreamOperation: boolean
   committedReturnCount: number
   committedExchangeCount: number
   refundAmount: number
@@ -61,7 +63,11 @@ export function projectOrderOperationalState(
   const committedExchangeCount = Math.max(0, Number(order.committed_exchange_count || 0))
   const hasCommittedReturn = committedReturnCount > 0
   const hasCommittedExchange = committedExchangeCount > 0
+  const hasCommittedItemReturn = typeof order.has_committed_item_return === 'boolean'
+    ? order.has_committed_item_return
+    : hasCommittedReturn
   const hasCommittedDownstreamOperation = hasCommittedReturn || hasCommittedExchange
+  const hasCommittedPhysicalDownstreamOperation = hasCommittedItemReturn || hasCommittedExchange
 
   const refundAmount = Math.max(0, Number(order.return_amount || 0))
   const receivedAmount = Math.max(0, Number(order.received_amount || 0))
@@ -142,7 +148,9 @@ export function projectOrderOperationalState(
     retainedOnly,
     hasCommittedReturn,
     hasCommittedExchange,
+    hasCommittedItemReturn,
     hasCommittedDownstreamOperation,
+    hasCommittedPhysicalDownstreamOperation,
     committedReturnCount,
     committedExchangeCount,
     refundAmount,
@@ -166,12 +174,14 @@ export function projectOrderOperationalState(
     // Current backend blocks rewriting an order after a committed Return or Exchange
     // until that downstream operation is cancelled. Mirror that fact explicitly.
     canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation && (simpleAdmin || !sent),
-    // Preserve conservative shipping/correction behavior once a committed downstream
-    // Return/Exchange exists; this is an action guard, not a lifecycle label.
-    canShip: mutableWorkingOrder && !hasCommittedDownstreamOperation && !sent && !workshopPending,
+    // Money-only refunds do not change the physical outbound obligation. Item-linked
+    // Returns and Exchanges do, so they remain the shipping/handover blocker.
+    canShip: mutableWorkingOrder && !hasCommittedPhysicalDownstreamOperation && !sent && !workshopPending,
+    // Shipping correction rewrites prior physical history and stays blocked by any
+    // committed downstream financial/physical operation, matching the backend guard.
     canCorrectShipping: mutableWorkingOrder && !hasCommittedDownstreamOperation && sent,
     canOpenStockHandover: mutableWorkingOrder
-      && !hasCommittedDownstreamOperation
+      && !hasCommittedPhysicalDownstreamOperation
       && !sent
       && Boolean(order.stock_handover_review_needed || (mixedOrder && workshopPending && order.stock_handover_has_active_items)),
   }
