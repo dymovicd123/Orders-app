@@ -1,4 +1,5 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
+import { projectOrderOperationalState } from '../../app/orderOperationalProjection'
 type SectionContext = Record<string, any>
 
 export function OrderDetailsSection({ ctx }: { ctx: SectionContext }) {
@@ -8,14 +9,11 @@ export function OrderDetailsSection({ ctx }: { ctx: SectionContext }) {
     formatOrderItemTitle,
     handleEditOrder,
     isAdmin,
-    isArchivedOrderRecord,
-    isReturnedOrderRecord,
     orderPanelStyle,
     restoreArchivedOrder,
     savingOrder,
     sectorStyle,
     selectedOrder,
-    setSelectedWorkshopStatus,
     sourceLabel,
   } = ctx
 
@@ -30,7 +28,9 @@ export function OrderDetailsSection({ ctx }: { ctx: SectionContext }) {
               }}
             >
               <div className="card-label">Детали заказа</div>
-              {selectedOrder ? (
+              {selectedOrder ? (() => {
+                const projection = projectOrderOperationalState(selectedOrder, { isAdmin })
+                return (
                 <div className="details">
                   <div className="details-head">
                     <div>
@@ -38,12 +38,13 @@ export function OrderDetailsSection({ ctx }: { ctx: SectionContext }) {
                       <p>{selectedOrder.order_date} · {selectedOrder.manager_name || '—'} · {sourceLabel(selectedOrder.source_type)}</p>
                     </div>
                     <div className="details-stats">
-                      <span>Получено: {formatMoney(selectedOrder.received_amount)}</span>
-                      <span>Долг: {formatMoney(selectedOrder.debt_amount)}</span>
-                      <span>Возврат: {formatMoney(selectedOrder.return_amount)}</span>
+                      <span>Получено: {formatMoney(projection.receivedAmount)}</span>
+                      <span>Возвращено: {formatMoney(projection.refundAmount)}</span>
+                      <span>Осталось денег: {formatMoney(projection.netRetainedAmount)}</span>
+                      <span>Долг: {formatMoney(projection.debtAmount)}</span>
+                      {projection.workshopLabel ? <span>{projection.workshopLabel}</span> : null}
                       <div className="details-actions">
-                        {!isArchivedOrderRecord(selectedOrder) && !isReturnedOrderRecord(selectedOrder)
-                          && (isAdmin || (!['deleted', 'archived'].includes(selectedOrder.order_status) && selectedOrder.shipping_status !== 'sent')) ? (
+                        {projection.canEdit ? (
                           <button
                             className="secondary compact"
                             type="button"
@@ -52,19 +53,11 @@ export function OrderDetailsSection({ ctx }: { ctx: SectionContext }) {
                             Редактировать заказ
                           </button>
                         ) : null}
-                        <button
-                          className="primary compact"
-                          type="button"
-                          onClick={() => void setSelectedWorkshopStatus('ready', selectedOrder)}
-                          disabled={savingOrder || selectedOrder.workshop_status === 'ready' || isArchivedOrderRecord(selectedOrder)}
-                        >
-                          Готово
-                        </button>
                       </div>
                     </div>
                   </div>
     
-                  {isArchivedOrderRecord(selectedOrder) ? (
+                  {projection.archived ? (
                     <div className="archive-readonly-note">
                       <strong>Архивный заказ · только просмотр.</strong>
                       <span>{selectedOrder.archive_reason || 'Заказ убран из активной работы, но участвует в истории и отчётах.'}</span>
@@ -114,7 +107,8 @@ export function OrderDetailsSection({ ctx }: { ctx: SectionContext }) {
                     </section>
                   </div>
                 </div>
-              ) : (
+                )
+              })() : (
                 <div className="empty-state">Выберите заказ в таблице выше, чтобы увидеть детали.</div>
               )}
             </article>
