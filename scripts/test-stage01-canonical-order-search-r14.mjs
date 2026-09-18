@@ -59,9 +59,9 @@ db.exec("UPDATE catalog_products SET name = 'НОВОЕ КАНОНИЧЕСКОЕ
 check(find('НОВОЕ КАНОНИЧЕСКОЕ ИМЯ').includes(1), 'Catalog product rename did not refresh linked order search')
 check(!find('КАНОНИЧЕСКОЕ ПАЛЬТО').includes(1), 'Old canonical product name stayed stale in the derived FTS row')
 
-db.exec("UPDATE catalog_variants SET color = 'ЗЕЛЁНЫЙ', size_label = '50' WHERE id = 201")
+db.exec("UPDATE catalog_variants SET color = 'ЗЕЛЁНЫЙ', size_label = '50-52' WHERE id = 201")
 check(find('ЗЕЛЁНЫЙ').includes(1), 'Catalog variant edit did not refresh linked SKU search')
-check(find('50').includes(1), 'Catalog variant size edit did not refresh linked SKU search')
+check(find('50-52').includes(1), 'Catalog variant size edit did not refresh linked SKU search')
 check(!find('СИНИЙ').includes(1), 'Old canonical SKU value stayed stale in the derived FTS row')
 
 db.exec('UPDATE order_items SET product_id = NULL, variant_id = NULL WHERE id = 11')
