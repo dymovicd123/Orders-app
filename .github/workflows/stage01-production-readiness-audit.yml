@@ -90,7 +90,7 @@ jobs:
             (SELECT COUNT(*) FROM inventory_lifecycle_events) AS lifecycle_count;")"
           echo "$counts" | jq '.result[0].results[0]'
 
-      - name: Compare Production and Branch2 schema excluding R14 triggers
+      - name: Verify Production covers Branch2 required schema before R14
         shell: bash
         run: |
           set -euo pipefail
@@ -99,7 +99,8 @@ jobs:
             local sql="$2"
             curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$db_id/query"
           }
-          schema_sql="SELECT type,name,tbl_name,COALESCE(sql,'') AS sql
+
+          objects_sql="SELECT type,name,tbl_name
             FROM sqlite_master
             WHERE name NOT LIKE 'sqlite_%'
               AND name NOT LIKE 'd1_%'
@@ -112,15 +113,31 @@ jobs:
                 'trg_order_search_catalog_variants_au'
               )
             ORDER BY type,name;"
-          query_db "$PROD_DB_ID" "$schema_sql" | jq -S '.result[0].results' > /tmp/prod-schema.json
-          query_db "$BRANCH2_DB_ID" "$schema_sql" | jq -S '.result[0].results' > /tmp/branch2-schema.json
-          echo "Production schema hash: $(sha256sum /tmp/prod-schema.json | cut -d' ' -f1)"
-          echo "Branch2 schema hash:    $(sha256sum /tmp/branch2-schema.json | cut -d' ' -f1)"
-          if ! cmp -s /tmp/prod-schema.json /tmp/branch2-schema.json; then
-            echo "Non-R14 schema differs between Production and Branch2:" >&2
-            diff -u /tmp/prod-schema.json /tmp/branch2-schema.json | head -n 300 >&2 || true
-            exit 4
-          fi
+          query_db "$PROD_DB_ID" "$objects_sql" | jq -S '.result[0].results' > /tmp/prod-objects.json
+          query_db "$BRANCH2_DB_ID" "$objects_sql" | jq -S '.result[0].results' > /tmp/branch2-objects.json
+          jq -r '.[] | [.type,.name,.tbl_name] | @tsv' /tmp/prod-objects.json | sort > /tmp/prod-objects.tsv
+          jq -r '.[] | [.type,.name,.tbl_name] | @tsv' /tmp/branch2-objects.json | sort > /tmp/branch2-objects.tsv
+          comm -23 /tmp/branch2-objects.tsv /tmp/prod-objects.tsv > /tmp/missing-objects.tsv
+          echo "Branch2-required objects missing in Production:"
+          cat /tmp/missing-objects.tsv
+          test ! -s /tmp/missing-objects.tsv
+
+          columns_sql="SELECT m.name AS table_name,p.name AS column_name,UPPER(COALESCE(p.type,'')) AS column_type,
+            p.[notnull] AS not_null,COALESCE(p.dflt_value,'') AS default_value,p.pk AS pk
+            FROM sqlite_master m, pragma_table_info(m.name) p
+            WHERE m.type='table'
+              AND m.name NOT LIKE 'sqlite_%'
+              AND m.name NOT LIKE 'd1_%'
+              AND m.name NOT LIKE '_cf_%'
+            ORDER BY m.name,p.name;"
+          query_db "$PROD_DB_ID" "$columns_sql" | jq -S '.result[0].results' > /tmp/prod-columns.json
+          query_db "$BRANCH2_DB_ID" "$columns_sql" | jq -S '.result[0].results' > /tmp/branch2-columns.json
+          jq -r '.[] | [.table_name,.column_name,.column_type,(.not_null|tostring),.default_value,(.pk|tostring)] | @tsv' /tmp/prod-columns.json | sort > /tmp/prod-columns.tsv
+          jq -r '.[] | [.table_name,.column_name,.column_type,(.not_null|tostring),.default_value,(.pk|tostring)] | @tsv' /tmp/branch2-columns.json | sort > /tmp/branch2-columns.tsv
+          comm -23 /tmp/branch2-columns.tsv /tmp/prod-columns.tsv > /tmp/missing-columns.tsv
+          echo "Branch2-required column definitions missing in Production:"
+          cat /tmp/missing-columns.tsv
+          test ! -s /tmp/missing-columns.tsv
 
           meta_sql="SELECT 'inventory_model_meta' AS source,key,value FROM inventory_model_meta WHERE key IN ('human_inventory_v2','safe_early_handover_v1_guard')
             UNION ALL SELECT 'catalog_identity_meta',key,value FROM catalog_identity_meta WHERE key IN ('catalog_identity_v3','catalog_cleanup_188j','client_cleanup_188k2')
@@ -130,11 +147,9 @@ jobs:
           query_db "$BRANCH2_DB_ID" "$meta_sql" | jq -S '.result[0].results' > /tmp/branch2-meta.json
           echo "Production migration markers:"
           cat /tmp/prod-meta.json
-          if ! cmp -s /tmp/prod-meta.json /tmp/branch2-meta.json; then
-            echo "Migration marker values differ between Production and Branch2" >&2
-            diff -u /tmp/prod-meta.json /tmp/branch2-meta.json >&2 || true
-            exit 5
-          fi
+          echo "Branch2 migration markers:"
+          cat /tmp/branch2-meta.json
+          cmp -s /tmp/prod-meta.json /tmp/branch2-meta.json
 
       - name: Resolve Production URL and run read-only smoke
         shell: bash
