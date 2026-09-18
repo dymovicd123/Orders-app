@@ -1,6 +1,7 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
 import { useState } from 'react'
 import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
+import { projectOrderOperationalState } from '../../app/orderOperationalProjection'
 type SectionContext = Record<string, any>
 
 export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
@@ -17,19 +18,14 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     handleOpenExchange,
     handleOpenReturn,
     isAdmin,
-    isArchivedOrderRecord,
-    isReturnedOrderRecord,
     ManagerBadge,
     markOrderSentToClient,
     openOrderStockHandover,
     normalizeSuggestion,
     orderFinanceBusy,
     orderFinanceReport,
-    orderLifecycleLabel,
     orderPanelStyle,
     orders,
-    paymentStatusClass,
-    paymentStatusLabel,
     restoreArchivedOrder,
     savingOrder,
     sectorStyle,
@@ -119,24 +115,22 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                   </thead>
                   <tbody>
                     {orders.length ? orders.map((order) => {
+                      const projection = projectOrderOperationalState(order, { isAdmin })
                       const visibleItemCount = Math.max(3, expandedOrderItemCounts[order.id] || 3)
-                      const itemSummary = summarizeOrderItemLines(order.items, visibleItemCount, order.workshop_status)
+                      const itemSummary = summarizeOrderItemLines(
+                        order.items,
+                        visibleItemCount,
+                        projection.workshopPending ? 'in_workshop' : 'ready',
+                      )
                       const visiblePaymentCount = Math.max(2, expandedOrderPaymentCounts[order.id] || 2)
                       const paymentSummary = summarizeOrderPaymentLines(order.payments, visiblePaymentCount)
-                      const retainedOnly = Boolean(order.retained_only)
-                      const archived = retainedOnly || isArchivedOrderRecord(order)
-                      const hasWorkshopItems = Array.isArray(order.items) && order.items.some((item) => Boolean(item?.isWorkshop))
-                      const hasStockItems = Array.isArray(order.items) && order.items.some((item) => !item?.isWorkshop)
-                      const workshopPending = hasWorkshopItems && (
-                        String(order.workshop_status || '').toLowerCase() === 'in_workshop'
-                        || order.items.some((item) => Boolean(item?.isWorkshop) && String(item?.workshopTaskStatus || '').toLowerCase() === 'active')
-                      )
-                      const mixedOrder = hasWorkshopItems && hasStockItems
+                      const retainedOnly = projection.retainedOnly
+                      const archived = projection.archived
                       return (
                       <tr
                         key={order.id}
                         data-order-id={order.id}
-                        className={`${selectedOrderId === order.id ? 'row-active' : ''} ${archived ? 'row-archived' : ''} ${isReturnedOrderRecord(order) ? 'row-returned' : ''}`}
+                        className={`${selectedOrderId === order.id ? 'row-active' : ''} ${archived ? 'row-archived' : ''} ${projection.hasActiveReturnOperation ? 'row-returned' : ''}`}
                       >
                         <td>
                           <div className="order-cell-stack">
@@ -250,8 +244,15 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                           )}
                         </td>
                         <td>{formatMoney(order.total_amount)}</td>
-                        <td>{formatMoney(order.received_amount)}</td>
-                        <td>{formatMoney(order.debt_amount)}</td>
+                        <td>
+                          <div className="order-cell-stack">
+                            <strong>{formatMoney(projection.receivedAmount)}</strong>
+                            {projection.refundAmount > 0 ? (
+                              <small>Возвращено {formatMoney(projection.refundAmount)} · осталось {formatMoney(projection.netRetainedAmount)}</small>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td>{formatMoney(projection.debtAmount)}</td>
                         <td>
                           {retainedOnly ? (
                             <div className="order-status-stack">
@@ -260,17 +261,18 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             </div>
                           ) : (
                             <div className="order-status-stack">
-                              <span className={`status-pill ${paymentStatusClass(order)}`}>{paymentStatusLabel(order)}</span>
+                              <span className={`status-pill ${projection.paymentClass}`}>{projection.paymentLabel}</span>
                               <span className={`status-pill ${order.shipping_status === 'sent' ? 'status-online' : 'status-warning'}`}>{shippingStatusLabel(order)}</span>
+                              {projection.workshopLabel ? <small>{projection.workshopLabel}</small> : null}
                               <small>{waitingDaysLabel(order)}</small>
-                              <small>{orderLifecycleLabel(order)}</small>
+                              <small>{projection.lifecycleLabel}</small>
                             </div>
                           )}
                         </td>
                         <td>
                           <div className="order-table-actions">
                             {retainedOnly ? <span className="soft-badge">Только история</span> : null}
-                            {!retainedOnly && !archived && !isReturnedOrderRecord(order) && order.shipping_status !== 'sent' && (order.stock_handover_review_needed || (mixedOrder && workshopPending && order.stock_handover_has_active_items)) ? (
+                            {projection.canOpenStockHandover ? (
                               <button
                                 className="secondary compact order-stock-handover-trigger"
                                 type="button"
@@ -283,7 +285,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 {order.stock_handover_review_needed ? 'Уточнить выдачу' : 'Выдать готовые товары'}
                               </button>
                             ) : null}
-                            {!retainedOnly && !archived && !isReturnedOrderRecord(order) && order.shipping_status !== 'sent' && !workshopPending ? (
+                            {projection.canShip ? (
                               <button
                                 className="secondary compact"
                                 type="button"
@@ -296,10 +298,10 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 Отправить клиенту
                               </button>
                             ) : null}
-                            {!retainedOnly && !archived && !isReturnedOrderRecord(order) && order.shipping_status !== 'sent' && workshopPending ? (
+                            {!retainedOnly && !archived && !projection.hasActiveReturnOperation && order.shipping_status !== 'sent' && projection.workshopPending ? (
                               <span className="order-stock-handover-wait-note">Отправить весь заказ можно после готовности Цеха</span>
                             ) : null}
-                            {!retainedOnly && !archived && !isReturnedOrderRecord(order) && order.shipping_status === 'sent' ? (
+                            {projection.canCorrectShipping ? (
                               <button
                                 className="secondary compact"
                                 type="button"
@@ -312,46 +314,46 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 Исправить отправку
                               </button>
                             ) : null}
-                            {!retainedOnly && !archived && !isReturnedOrderRecord(order) ? (
-                              <>
-                                {Number(order.debt_amount || 0) > 0 ? (
-                                  <button
-                                    className="secondary compact debt-action-button"
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation()
-                                      handleOpenDebt(order)
-                                    }}
-                                  >
-                                    Закрыть долг
-                                  </button>
-                                ) : null}
-                                <button
-                                  className="secondary compact"
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    handleOpenReturn(order)
-                                  }}
-                                >
-                                  Возврат
-                                </button>
-                                <button
-                                  className="secondary compact"
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    handleOpenExchange(order)
-                                  }}
-                                >
-                                  Обмен
-                                </button>
-                              </>
-                            ) : isReturnedOrderRecord(order) ? (
-                              <span className="return-locked-note">Возвращён</span>
+                            {projection.canOpenDebt ? (
+                              <button
+                                className="secondary compact debt-action-button"
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  handleOpenDebt(order)
+                                }}
+                              >
+                                Закрыть долг
+                              </button>
                             ) : null}
-                            {!retainedOnly && !archived && !isReturnedOrderRecord(order)
-                              && (isAdmin || (!['deleted', 'archived'].includes(order.order_status) && order.shipping_status !== 'sent')) ? (
+                            {projection.canOpenReturn ? (
+                              <button
+                                className="secondary compact"
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  handleOpenReturn(order)
+                                }}
+                              >
+                                Возврат
+                              </button>
+                            ) : null}
+                            {projection.canOpenExchange ? (
+                              <button
+                                className="secondary compact"
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  handleOpenExchange(order)
+                                }}
+                              >
+                                Обмен
+                              </button>
+                            ) : null}
+                            {projection.hasActiveReturnOperation ? (
+                              <span className="soft-badge">Есть действующий возврат</span>
+                            ) : null}
+                            {projection.canEdit ? (
                               <button
                                 className="primary compact"
                                 type="button"
