@@ -86,15 +86,11 @@ jobs:
             FROM expected e
             LEFT JOIN sqlite_master sm ON sm.name=e.name
             ORDER BY e.name;"
-          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "
-            SELECT 'returns.payment_method' AS marker, EXISTS(SELECT 1 FROM pragma_table_info('returns') WHERE name='payment_method') AS present
-            UNION ALL SELECT 'order_items.inventory_obligation_key', EXISTS(SELECT 1 FROM pragma_table_info('order_items') WHERE name='inventory_obligation_key')
-            UNION ALL SELECT 'order_items.inventory_obligation_origin_at', EXISTS(SELECT 1 FROM pragma_table_info('order_items') WHERE name='inventory_obligation_origin_at')
-            UNION ALL SELECT 'catalog_products.gender_scope', EXISTS(SELECT 1 FROM pragma_table_info('catalog_products') WHERE name='gender_scope')
-            UNION ALL SELECT 'return_items.physical_tracking', EXISTS(SELECT 1 FROM pragma_table_info('return_items') WHERE name='physical_tracking')
-            UNION ALL SELECT 'return_items.physical_received_at', EXISTS(SELECT 1 FROM pragma_table_info('return_items') WHERE name='physical_received_at')
-            UNION ALL SELECT 'exchange_items.physical_tracking', EXISTS(SELECT 1 FROM pragma_table_info('exchange_items') WHERE name='physical_tracking')
-            UNION ALL SELECT 'exchange_items.physical_received_at', EXISTS(SELECT 1 FROM pragma_table_info('exchange_items') WHERE name='physical_received_at');"
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "SELECT name FROM pragma_table_info('returns') WHERE name='payment_method';"
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "SELECT name FROM pragma_table_info('order_items') WHERE name IN ('inventory_obligation_key','inventory_obligation_origin_at') ORDER BY name;"
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "SELECT name FROM pragma_table_info('catalog_products') WHERE name='gender_scope';"
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "SELECT name FROM pragma_table_info('return_items') WHERE name IN ('physical_tracking','physical_received_at') ORDER BY name;"
+          npx wrangler d1 execute DB --remote --config wrangler.jsonc --command "SELECT name FROM pragma_table_info('exchange_items') WHERE name IN ('physical_tracking','physical_received_at') ORDER BY name;"
 
       - name: Check migration audit/meta evidence
         shell: bash
