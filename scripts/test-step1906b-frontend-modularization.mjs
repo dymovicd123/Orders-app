@@ -103,6 +103,7 @@ const clientFixesManifestPath = path.join(root, 'scripts/client-fixes-20260912-r
 const contextualCatalogResolutionManifestPath = path.join(root, 'scripts/contextual-catalog-resolution-r1-frontend-manifest.json')
 const stage01TruthProjectionManifestPath = path.join(root, 'scripts/stage01-order-truth-projection-frontend-manifest.json')
 const stage01CanonicalItemProjectionManifestPath = path.join(root, 'scripts/stage01-canonical-item-projection-r2-frontend-manifest.json')
+const stage01OrderActionEntryManifestPath = path.join(root, 'scripts/stage01-order-action-entry-r3-frontend-manifest.json')
 const resolverUx = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-resolver-ux-manifest.json'), 'utf8'))
 if (resolverUx.revision !== 'catalog-resolver-ux-r1' || Object.keys(resolverUx.files).join(',') !== 'src/App.tsx,src/features/orders/OrderCatalogResolutionModal.tsx,src/features/orders/OrderCatalogResolutionModal.css,shared/api-contracts.ts' || Object.keys(resolverUx.addedFiles).join(',') !== 'src/features/orders/catalogResolutionFlow.ts') throw new Error('Resolver UX frontend allow-list changed')
 const financeDayManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/finance-day-transparency-manifest.json'), 'utf8'))
@@ -155,10 +156,14 @@ const stage01CanonicalItemProjectionManifest = JSON.parse(fs.readFileSync(stage0
 if (stage01CanonicalItemProjectionManifest?.version !== 1 || stage01CanonicalItemProjectionManifest?.revision !== 'stage01-canonical-item-projection-r2') throw new Error('Stage01 canonical item projection frontend manifest invalid')
 const stage01CanonicalItemProjectionExpectedFiles = ['src/app/types.ts','src/features/sections/OrderDetailsSection.tsx']
 if (JSON.stringify(Object.keys(stage01CanonicalItemProjectionManifest.files || {})) !== JSON.stringify(stage01CanonicalItemProjectionExpectedFiles)) throw new Error('Stage01 canonical item projection frontend allow-list widened unexpectedly')
+const stage01OrderActionEntryManifest = JSON.parse(fs.readFileSync(stage01OrderActionEntryManifestPath, 'utf8'))
+if (stage01OrderActionEntryManifest?.version !== 1 || stage01OrderActionEntryManifest?.revision !== 'stage01-order-action-entry-r3') throw new Error('Stage01 order action-entry frontend manifest invalid')
+if (Object.keys(stage01OrderActionEntryManifest.files || {}).join(',') !== 'src/App.tsx') throw new Error('Stage01 order action-entry frontend allow-list widened unexpectedly')
 const gitBlobSha = (text) => { const bytes = Buffer.from(text); return crypto.createHash('sha1').update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex') }
 for (const [file, delta] of Object.entries(stage01TruthProjectionManifest.files)) {
   const actual = fs.readFileSync(path.join(root, file), 'utf8')
   const successor = stage01CanonicalItemProjectionManifest.files?.[file]
+  const actionEntrySuccessor = stage01OrderActionEntryManifest.files?.[file]
   let acceptedGitBlob = delta.afterGitBlob
   let acceptedLines = delta.afterLines
   if (successor) {
@@ -166,11 +171,20 @@ for (const [file, delta] of Object.entries(stage01TruthProjectionManifest.files)
     acceptedGitBlob = successor.afterGitBlob
     acceptedLines = successor.afterLines
   }
-  if (gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) throw new Error(successor ? 'Stage01 canonical item projection frontend file changed beyond exact manifest: ' + file : 'Stage 01 truth projection frontend file changed beyond exact manifest: ' + file)
+  if (actionEntrySuccessor) {
+    if (actionEntrySuccessor.beforeGitBlob !== acceptedGitBlob || actionEntrySuccessor.beforeLines !== acceptedLines) throw new Error('Stage01 order action-entry predecessor drifted: ' + file)
+    acceptedGitBlob = actionEntrySuccessor.afterGitBlob
+    acceptedLines = actionEntrySuccessor.afterLines
+  }
+  if (gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) throw new Error(actionEntrySuccessor ? 'Stage01 order action-entry frontend file changed beyond exact manifest: ' + file : successor ? 'Stage01 canonical item projection frontend file changed beyond exact manifest: ' + file : 'Stage 01 truth projection frontend file changed beyond exact manifest: ' + file)
 }
 for (const [file, delta] of Object.entries(stage01CanonicalItemProjectionManifest.files)) {
   const actual = fs.readFileSync(path.join(root, file), 'utf8')
   if (gitBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage01 canonical item projection frontend file changed beyond exact manifest: ' + file)
+}
+for (const [file, delta] of Object.entries(stage01OrderActionEntryManifest.files)) {
+  const actual = fs.readFileSync(path.join(root, file), 'utf8')
+  if (gitBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage01 order action-entry frontend file changed beyond exact manifest: ' + file)
 }
 for (const [file, delta] of Object.entries(stage01TruthProjectionManifest.addedFiles)) {
   const actual = fs.readFileSync(path.join(root, file), 'utf8')
@@ -238,6 +252,12 @@ for (const file of ['src/app/utils.ts', 'src/features/sections/OrderReturnsSecti
     if (stage01CanonicalItemProjectionDelta.beforeGitBlob !== acceptedGitBlob || stage01CanonicalItemProjectionDelta.beforeLines !== acceptedLines) throw new Error('Stage01 canonical item projection frontend predecessor drifted: ' + file)
     acceptedGitBlob = stage01CanonicalItemProjectionDelta.afterGitBlob
     acceptedLines = stage01CanonicalItemProjectionDelta.afterLines
+  }
+  const stage01OrderActionEntryDelta = stage01OrderActionEntryManifest.files?.[file]
+  if (stage01OrderActionEntryDelta) {
+    if (stage01OrderActionEntryDelta.beforeGitBlob !== acceptedGitBlob || stage01OrderActionEntryDelta.beforeLines !== acceptedLines) throw new Error('Stage01 order action-entry frontend predecessor drifted: ' + file)
+    acceptedGitBlob = stage01OrderActionEntryDelta.afterGitBlob
+    acceptedLines = stage01OrderActionEntryDelta.afterLines
   }
   if (!delta || gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) throw new Error(contextualCatalogResolutionDelta ? 'Contextual catalog resolution frontend file changed beyond exact manifest: ' + file : clientFixesDelta ? 'Client fixes frontend file changed beyond exact manifest: ' + file : businessDateBoundaryDelta ? 'Business date boundary frontend file changed beyond exact manifest: ' + file : stabilizationDelta ? 'September 12 stabilization frontend file changed beyond exact manifest: ' + file : 'Returns physical intake R1 frontend file changed beyond exact manifest: ' + file)
 }
@@ -343,6 +363,12 @@ try {
       if (stage01CanonicalItemProjectionDelta.beforeGitBlob !== acceptedGitBlob || stage01CanonicalItemProjectionDelta.beforeLines !== acceptedLines) throw new Error('Stage01 canonical item projection frontend predecessor drifted: ' + file)
       acceptedGitBlob = stage01CanonicalItemProjectionDelta.afterGitBlob
       acceptedLines = stage01CanonicalItemProjectionDelta.afterLines
+    }
+    const stage01OrderActionEntryDelta = stage01OrderActionEntryManifest.files?.[file]
+    if (stage01OrderActionEntryDelta) {
+      if (stage01OrderActionEntryDelta.beforeGitBlob !== acceptedGitBlob || stage01OrderActionEntryDelta.beforeLines !== acceptedLines) throw new Error('Stage01 order action-entry frontend predecessor drifted: ' + file)
+      acceptedGitBlob = stage01OrderActionEntryDelta.afterGitBlob
+      acceptedLines = stage01OrderActionEntryDelta.afterLines
     }
     if (gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) {
       throw new Error(contextualCatalogResolutionDelta
