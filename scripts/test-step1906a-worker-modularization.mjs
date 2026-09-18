@@ -613,6 +613,34 @@ const stage01HandoverPhysicalIdentityNormalizeBlock = [
 ].join('\n')
 patched = patched.replace(stage01HandoverPhysicalIdentityNormalizeAnchor, stage01HandoverPhysicalIdentityNormalizeBlock + stage01HandoverPhysicalIdentityNormalizeAnchor)
 
+const stage01ReturnExchangeAvailabilityR15 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-return-exchange-item-availability-r15-worker-manifest.json'), 'utf8'))
+if (stage01ReturnExchangeAvailabilityR15.version !== 1 || stage01ReturnExchangeAvailabilityR15.revision !== 'stage01-return-exchange-item-availability-r15') throw new Error('Stage01 Return/Exchange item availability R15 Worker manifest invalid')
+if (Object.keys(stage01ReturnExchangeAvailabilityR15.changes || {}).sort().join(',') !== 'fetchOrderRelations,getOrder,listOrders') throw new Error('Stage01 Return/Exchange item availability R15 Worker change allow-list widened')
+if (Object.keys(stage01ReturnExchangeAvailabilityR15.added || {}).join(',') !== 'orderItemAvailableOperationQuantity') throw new Error('Stage01 Return/Exchange item availability R15 Worker added allow-list widened')
+patched = 'const stage01ReturnExchangeAvailabilityR15Changes = ' + JSON.stringify(stage01ReturnExchangeAvailabilityR15.changes || {}) + '\n'
+  + 'const stage01ReturnExchangeAvailabilityR15Added = ' + JSON.stringify(stage01ReturnExchangeAvailabilityR15.added || {}) + '\n'
+  + patched
+
+const stage01ReturnExchangeAvailabilityNormalizeAnchor = '  const removedNames = Object.keys(removed)\n'
+if (!patched.includes(stage01ReturnExchangeAvailabilityNormalizeAnchor)) throw new Error('Stage01 Return/Exchange item availability R15 normalization anchor missing')
+const stage01ReturnExchangeAvailabilityNormalizeBlock = [
+  '  for (const [name, change] of Object.entries(stage01ReturnExchangeAvailabilityR15Changes)) {',
+  "    check(declarations.has(name), 'Stage01 Return/Exchange item availability R15 declaration missing: ' + name)",
+  '    const current = declarations.get(name)',
+  "    check(current.includes(change.afterBlock), 'Stage01 Return/Exchange item availability R15 exact after-block missing: ' + name)",
+  '    const reverted = current.replace(change.afterBlock, change.beforeBlock)',
+  "    check(reverted !== current, 'Stage01 Return/Exchange item availability R15 exact replacement did not apply: ' + name)",
+  '    declarations.set(name, reverted)',
+  '  }',
+  '  for (const [name, change] of Object.entries(stage01ReturnExchangeAvailabilityR15Added)) {',
+  "    check(declarations.has(name), 'Stage01 Return/Exchange item availability R15 added declaration missing: ' + name)",
+  "    check(declarations.get(name) === change.afterBlock, 'Stage01 Return/Exchange item availability R15 added declaration changed: ' + name)",
+  '    declarations.delete(name)',
+  '  }',
+  '',
+].join('\n')
+patched = patched.replace(stage01ReturnExchangeAvailabilityNormalizeAnchor, stage01ReturnExchangeAvailabilityNormalizeBlock + stage01ReturnExchangeAvailabilityNormalizeAnchor)
+
 const stage01CanonicalOrderSearchR14 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-canonical-order-search-r14-worker-manifest.json'), 'utf8'))
 if (stage01CanonicalOrderSearchR14.version !== 1 || stage01CanonicalOrderSearchR14.revision !== 'stage01-canonical-order-search-r14') throw new Error('Stage01 canonical order search R14 Worker manifest invalid')
 if (Object.keys(stage01CanonicalOrderSearchR14.changes || {}).join(',') !== 'listOrders') throw new Error('Stage01 canonical order search R14 Worker allow-list widened')
