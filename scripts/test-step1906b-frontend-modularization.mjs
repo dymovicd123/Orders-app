@@ -150,6 +150,7 @@ if (stage01TruthProjectionManifest?.version !== 1 || stage01TruthProjectionManif
 const stage01TruthProjectionExpectedFiles = ['src/App.tsx','src/app/controllers/useOperationalViewModel.ts','src/app/utils.ts','src/features/sections/OrderDetailsSection.tsx','src/features/sections/OrderEditorSection.tsx','src/features/sections/OrdersTableSection.tsx']
 if (JSON.stringify(Object.keys(stage01TruthProjectionManifest.files || {})) !== JSON.stringify(stage01TruthProjectionExpectedFiles)) throw new Error('Stage 01 truth projection frontend allow-list widened unexpectedly')
 if (Object.keys(stage01TruthProjectionManifest.addedFiles || {}).join(',') !== 'src/app/orderOperationalProjection.ts') throw new Error('Stage 01 truth projection added-file allow-list changed')
+const gitBlobSha = (text) => { const bytes = Buffer.from(text); return crypto.createHash('sha1').update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex') }
 for (const [file, delta] of Object.entries(stage01TruthProjectionManifest.files)) {
   const actual = fs.readFileSync(path.join(root, file), 'utf8')
   if (gitBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage 01 truth projection frontend file changed beyond exact manifest: ' + file)
@@ -158,7 +159,6 @@ for (const [file, delta] of Object.entries(stage01TruthProjectionManifest.addedF
   const actual = fs.readFileSync(path.join(root, file), 'utf8')
   if (gitBlobSha(actual) !== delta.gitBlob || actual.split(/\r?\n/).length !== delta.lines) throw new Error('Stage 01 truth projection added file changed beyond exact manifest: ' + file)
 }
-const gitBlobSha = (text) => { const bytes = Buffer.from(text); return crypto.createHash('sha1').update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex') }
 
 for (const file of ['src/features/sections/FinanceSection.tsx', 'src/features/renderers/FinanceDashboardRenderer.tsx']) {
   const actual = fs.readFileSync(path.join(root, file), 'utf8')
