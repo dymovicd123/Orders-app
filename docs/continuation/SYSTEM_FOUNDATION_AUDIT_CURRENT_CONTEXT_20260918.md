@@ -20,7 +20,7 @@ Production code branch currently audited:
 
 Documentation/audit branch:
 - `audit/system-ux-walkthrough-20260917`
-- audit head immediately before this context update: `900292c45c67a9a2ff02a53fe4f361d21323b9a7`
+- audit head immediately before this context update: `eda112e27be7a9b957c2dc28e9415a439f98918d`
 
 Rules:
 - do not mutate Production D1 for exploratory work;
@@ -82,6 +82,7 @@ Read these before continuing:
 - `docs/audits/FOUNDATION_TRUTH_MAP_03_PHYSICAL_STOCK_20260918.md`
 - `docs/audits/FOUNDATION_TRUTH_MAP_04_WORKSHOP_PRODUCTION_20260918.md`
 - `docs/audits/FOUNDATION_TRUTH_MAP_05_MONEY_FINANCE_PRICING_20260918.md`
+- `docs/audits/FOUNDATION_SYNTHESIS_TARGET_CONTRACTS_AND_FINITE_PLAN_20260918.md`
 
 Astra lifecycle Phase 1 report is also preserved in the audit branch. It should not be re-run unless a specific missing scenario becomes necessary.
 
@@ -238,6 +239,75 @@ The repeated root cause after five slices is now strong enough to state:
 
 Do not rewrite the money ledger. Preserve the strong event/reversal/cash separation and fix ownership/projections plus the genuinely missing economic facts.
 
+## Completed cross-domain synthesis
+
+The five foundation truth maps have now been consolidated into:
+
+`docs/audits/FOUNDATION_SYNTHESIS_TARGET_CONTRACTS_AND_FINITE_PLAN_20260918.md`
+
+Main conclusion:
+
+> Do not rewrite the strong transactional core. Give each fact one explicit owner, classify historical snapshots / current canonical truth / cache / compatibility fields, add only the missing line-economics and payable facts, then make all screens consume shared projections.
+
+Target classifications now fixed for planning:
+
+- `orders.order_status`: administrative record state, not universal operational lifecycle;
+- `shipping_status`: whole-order shipping milestone;
+- `orders.workshop_status`: compatibility/lossy cache beside stronger per-item `workshop_tasks`;
+- `orders.received_amount / return_amount / debt_amount`: derived financial caches;
+- `order_items.*_snapshot`: immutable historical/raw wording;
+- `order_items.product_id / variant_id`: current canonical identity links when resolved;
+- `catalog_products / catalog_stock_positions / catalog_variants`: canonical current identity hierarchy;
+- active `inventory_reservations`: reservation authority; `inventory_stock.reserved_quantity`: cache;
+- `inventory_stock.quantity`: current physical quantity authority;
+- `inventory_movements`, checks, stocktakes and lifecycle events: provenance/history/physical-boundary facts with existing safety rules preserved;
+- `workshop_tasks`: Workshop workflow authority;
+- `payments` + active `returns`: current money-operation authority;
+- `financial_events`: immutable money history;
+- `cash_register_entries`: physical cash ledger.
+
+Shared projections required:
+- OrderOperationalProjection;
+- CanonicalItemProjection;
+- StockAvailabilityProjection;
+- later CommercialLineProjection after price/cost facts exist;
+- FinancePeriodProjection with explicit business-date semantics.
+
+Confirmed duplicated mutation ownership to remove:
+- Warehouse Arrival and Catalog/Resolver both create reusable catalog/master data through separate implementations;
+- coarse order Workshop status competes with task-level lifecycle;
+- reservation ledger/cache are consumed as equal truth even though one should only be an optimization.
+
+Important non-duplication:
+- Arrival, handover, Return receipt, Exchange, transfer, stocktake and manual physical correction remain distinct stock domain commands. Do not collapse them into a generic “set quantity” operation.
+
+The finite proposed repair sequence is now:
+
+1. Stage 0 — freeze truth contracts/regression baseline.
+2. Stage 1 — shared operational projections + Orders/Resolver cleanup.
+3. Stage 2 — Warehouse simplification + one catalog/master-data writer.
+4. Stage 3 — actual line sale price + autopricing + discount/refund line attribution.
+5. Stage 4 — historical cost + immutable Workshop production/accounting event + Workshop payable.
+6. Stage 5 — Finance/Reports/assortment analytics rebuilt on those facts.
+7. Stage 6 — retire compatibility UI/legacy shortcuts after consumers migrate.
+8. Stage 7 — final Manager/Admin operational acceptance + scope freeze.
+
+“Done” is explicitly finite: one owner per fact; no cache/snapshot pretending to be another kind of truth; one contextual Resolver; Warehouse understandable by product/color/size; truthful line sale values and Return/Exchange deltas; historical cost where margin requires it; Finance definitions/date clocks fixed; no HIGH workflow dead ends; ordinary operation works without owner babysitting.
+
+Remaining real business decisions before Stage 3/4:
+- sale-price granularity;
+- allowed manual override/discount model;
+- allocation of whole-order discount to lines;
+- cost granularity;
+- inventory valuation method if costs change;
+- Workshop liability recognition moment;
+- Workshop partial/multi-document payment behavior;
+- sell-through policy for retired goods with remaining stock.
+
+Important Admin evidence limitation:
+- the repository contains a RUN-2 Admin walkthrough specification, but no completed Admin-results report. Do not claim the live Admin GUI was fully tested.
+- this does not block architecture synthesis; final Stage 7 must include a short real Admin pass.
+
 ## Warehouse/client requirements that must influence later design, but are NOT yet an approved plan
 
 Client asks for:
@@ -312,28 +382,30 @@ The output should distinguish:
 
 ## Immediate next step
 
-The five planned foundation truth-map domains are now complete:
-- Order;
-- Product identity;
-- Physical Stock;
-- Workshop;
-- Money / Finance.
+The architecture audit and cross-domain synthesis are complete.
 
-Next block: **cross-domain synthesis / target truth contracts + finite repair sequence**.
+**Do not implement yet until the owner reviews/accepts the finite sequence.**
 
-Do not start implementation yet.
+If the owner approves the synthesis, next implementation block is only:
 
-The synthesis must:
-- classify every important field/table as authoritative fact, immutable historical snapshot, derived/cache projection, or legacy compatibility;
-- identify duplicated mutation ownership that should collapse to one domain command;
-- identify the genuinely missing facts required before prices/profitability/Workshop payable;
-- reuse Astra's Manager/Admin/Return-Exchange GUI evidence instead of repeating expensive walkthroughs unless one unresolved question truly needs it;
-- define how Resolver, Warehouse, Finance, Reports and Returns/Exchange should consume shared read projections instead of rebuilding meaning locally;
-- produce a finite staged repair plan and explicit “done” acceptance criteria so this project can end.
+### Stage 0 + Stage 1
 
-A separate full Return/Exchange re-audit is not automatically required. Astra's lifecycle report plus the Stock/Workshop/Money code slices already cover the major physical and financial boundaries. Perform only a focused code check if the synthesis exposes a remaining unresolved Return/Exchange dependency.
+- freeze truth contracts with focused tests;
+- introduce shared operational/canonical projections;
+- remove `return_amount > 0` whole-order lifecycle shortcut;
+- derive Workshop order summary from per-item task truth;
+- display current canonical identity for active work while keeping historical raw snapshot available;
+- make Resolver one contextual flow;
+- allow ordinary mode to link existing canonical facts;
+- require simple Admin mode only at the exact reusable master-data mutation;
+- make local resolver choices clearly unsaved until committed.
 
-After that synthesis, STOP and report before any implementation.
+Use an isolated Branch2-derived feature branch.
+Production D1 remains untouched.
+Do not start Warehouse/pricing/payables in the same implementation block.
+After Stage 0+1 build/regression/deploy-to-Branch2 acceptance, STOP and review.
+
+The remaining pricing/cost/Workshop business choices should be asked when approaching Stage 3/4, not invented now.
 
 ## Working discipline
 
