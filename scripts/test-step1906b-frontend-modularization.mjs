@@ -101,6 +101,7 @@ const stabilizationManifestPath = path.join(root, 'scripts/stabilization-2026091
 const businessDateBoundaryManifestPath = path.join(root, 'scripts/business-date-boundaries-r1-frontend-manifest.json')
 const clientFixesManifestPath = path.join(root, 'scripts/client-fixes-20260912-r1-frontend-manifest.json')
 const contextualCatalogResolutionManifestPath = path.join(root, 'scripts/contextual-catalog-resolution-r1-frontend-manifest.json')
+const stage01TruthProjectionManifestPath = path.join(root, 'scripts/stage01-order-truth-projection-frontend-manifest.json')
 const resolverUx = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-resolver-ux-manifest.json'), 'utf8'))
 if (resolverUx.revision !== 'catalog-resolver-ux-r1' || Object.keys(resolverUx.files).join(',') !== 'src/App.tsx,src/features/orders/OrderCatalogResolutionModal.tsx,src/features/orders/OrderCatalogResolutionModal.css,shared/api-contracts.ts' || Object.keys(resolverUx.addedFiles).join(',') !== 'src/features/orders/catalogResolutionFlow.ts') throw new Error('Resolver UX frontend allow-list changed')
 const financeDayManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/finance-day-transparency-manifest.json'), 'utf8'))
@@ -144,6 +145,19 @@ const contextualCatalogResolutionManifest = JSON.parse(fs.readFileSync(contextua
 if (contextualCatalogResolutionManifest?.version !== 1 || contextualCatalogResolutionManifest?.revision !== 'contextual-catalog-resolution-r1') throw new Error('Contextual catalog resolution frontend manifest invalid')
 const contextualCatalogResolutionExpectedFiles = ['src/App.tsx','src/app/utils.ts','src/features/orders/OrderCatalogResolutionModal.tsx','src/features/orders/OrderCatalogResolutionModal.css']
 if (JSON.stringify(Object.keys(contextualCatalogResolutionManifest.files || {})) !== JSON.stringify(contextualCatalogResolutionExpectedFiles)) throw new Error('Contextual catalog resolution frontend allow-list widened unexpectedly')
+const stage01TruthProjectionManifest = JSON.parse(fs.readFileSync(stage01TruthProjectionManifestPath, 'utf8'))
+if (stage01TruthProjectionManifest?.version !== 1 || stage01TruthProjectionManifest?.revision !== 'stage01-order-truth-projection-r1') throw new Error('Stage 01 truth projection frontend manifest invalid')
+const stage01TruthProjectionExpectedFiles = ['src/App.tsx','src/app/controllers/useOperationalViewModel.ts','src/app/utils.ts','src/features/sections/OrderDetailsSection.tsx','src/features/sections/OrderEditorSection.tsx','src/features/sections/OrdersTableSection.tsx']
+if (JSON.stringify(Object.keys(stage01TruthProjectionManifest.files || {})) !== JSON.stringify(stage01TruthProjectionExpectedFiles)) throw new Error('Stage 01 truth projection frontend allow-list widened unexpectedly')
+if (Object.keys(stage01TruthProjectionManifest.addedFiles || {}).join(',') !== 'src/app/orderOperationalProjection.ts') throw new Error('Stage 01 truth projection added-file allow-list changed')
+for (const [file, delta] of Object.entries(stage01TruthProjectionManifest.files)) {
+  const actual = fs.readFileSync(path.join(root, file), 'utf8')
+  if (gitBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage 01 truth projection frontend file changed beyond exact manifest: ' + file)
+}
+for (const [file, delta] of Object.entries(stage01TruthProjectionManifest.addedFiles)) {
+  const actual = fs.readFileSync(path.join(root, file), 'utf8')
+  if (gitBlobSha(actual) !== delta.gitBlob || actual.split(/\r?\n/).length !== delta.lines) throw new Error('Stage 01 truth projection added file changed beyond exact manifest: ' + file)
+}
 const gitBlobSha = (text) => { const bytes = Buffer.from(text); return crypto.createHash('sha1').update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex') }
 
 for (const file of ['src/features/sections/FinanceSection.tsx', 'src/features/renderers/FinanceDashboardRenderer.tsx']) {
@@ -195,6 +209,12 @@ for (const file of ['src/app/utils.ts', 'src/features/sections/OrderReturnsSecti
     if (contextualCatalogResolutionDelta.beforeGitBlob !== acceptedGitBlob || contextualCatalogResolutionDelta.beforeLines !== acceptedLines) throw new Error('Contextual catalog resolution frontend predecessor drifted: ' + file)
     acceptedGitBlob = contextualCatalogResolutionDelta.afterGitBlob
     acceptedLines = contextualCatalogResolutionDelta.afterLines
+  }
+  const stage01TruthProjectionDelta = stage01TruthProjectionManifest.files?.[file]
+  if (stage01TruthProjectionDelta) {
+    if (stage01TruthProjectionDelta.beforeGitBlob !== acceptedGitBlob || stage01TruthProjectionDelta.beforeLines !== acceptedLines) throw new Error('Stage 01 truth projection frontend predecessor drifted: ' + file)
+    acceptedGitBlob = stage01TruthProjectionDelta.afterGitBlob
+    acceptedLines = stage01TruthProjectionDelta.afterLines
   }
   if (!delta || gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) throw new Error(contextualCatalogResolutionDelta ? 'Contextual catalog resolution frontend file changed beyond exact manifest: ' + file : clientFixesDelta ? 'Client fixes frontend file changed beyond exact manifest: ' + file : businessDateBoundaryDelta ? 'Business date boundary frontend file changed beyond exact manifest: ' + file : stabilizationDelta ? 'September 12 stabilization frontend file changed beyond exact manifest: ' + file : 'Returns physical intake R1 frontend file changed beyond exact manifest: ' + file)
 }
@@ -288,6 +308,12 @@ try {
       if (resolverUxDelta.beforeGitBlob !== acceptedGitBlob || resolverUxDelta.beforeLines !== acceptedLines) throw new Error('Resolver UX frontend predecessor drifted: ' + file)
       acceptedGitBlob = resolverUxDelta.afterGitBlob
       acceptedLines = resolverUxDelta.afterLines
+    }
+    const stage01TruthProjectionDelta = stage01TruthProjectionManifest.files?.[file]
+    if (stage01TruthProjectionDelta) {
+      if (stage01TruthProjectionDelta.beforeGitBlob !== acceptedGitBlob || stage01TruthProjectionDelta.beforeLines !== acceptedLines) throw new Error('Stage 01 truth projection frontend predecessor drifted: ' + file)
+      acceptedGitBlob = stage01TruthProjectionDelta.afterGitBlob
+      acceptedLines = stage01TruthProjectionDelta.afterLines
     }
     if (gitBlobSha(actual) !== acceptedGitBlob || actual.split(/\r?\n/).length !== acceptedLines) {
       throw new Error(contextualCatalogResolutionDelta
