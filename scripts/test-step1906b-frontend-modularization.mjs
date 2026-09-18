@@ -91,6 +91,59 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage01R15FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-return-exchange-item-availability-r15-frontend-manifest.json'), 'utf8'))
+if (stage01R15FrontendManifest?.version !== 1 || stage01R15FrontendManifest?.revision !== 'stage01-return-exchange-item-availability-r15') throw new Error('Stage01 Return/Exchange item availability R15 frontend manifest invalid')
+const stage01R15FrontendFiles = [
+  'src/App.tsx',
+  'src/app/types.ts',
+  'src/app/utils.ts',
+  'src/features/sections/OrderReturnsSection.tsx',
+  'src/features/sections/OrderExchangeSection.tsx',
+]
+if (Object.keys(stage01R15FrontendManifest.files || {}).join(',') !== stage01R15FrontendFiles.join(',')) throw new Error('Stage01 Return/Exchange item availability R15 frontend allow-list widened')
+const stage01R15GitBlobSha = (text) => {
+  const bytes = Buffer.from(text)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+
+if (!process.env.STAGE01_R15_FRONTEND_NORMALIZED) {
+  const stage01R15Originals = new Map()
+  let stage01R15ChildStatus = 0
+  try {
+    for (const relative of stage01R15FrontendFiles) {
+      const delta = stage01R15FrontendManifest.files[relative]
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage01R15GitBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Stage01 Return/Exchange item availability R15 frontend changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of delta.replacements || []) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage01 Return/Exchange item availability R15 exact after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (stage01R15GitBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Stage01 Return/Exchange item availability R15 frontend predecessor reconstruction failed: ' + relative)
+      }
+      stage01R15Originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, STAGE01_R15_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    stage01R15ChildStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of stage01R15Originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (stage01R15ChildStatus !== 0) process.exit(stage01R15ChildStatus)
+  console.log('STAGE01 R15 FRONTEND STRUCTURAL LAYER PASSED — exact Return/Exchange availability delta accepted over preserved R14 frontend')
+  process.exit(0)
+}
 const manifestPath = path.join(root, 'scripts/catalog-gender-scope-r1-frontend-manifest.json')
 const unisexGenderInplaceManifestPath = path.join(root, 'scripts/catalog-unisex-gender-inplace-r1-frontend-manifest.json')
 const unisexMergeManifestPath = path.join(root, 'scripts/catalog-unisex-merge-r1-frontend-manifest.json')
