@@ -6,9 +6,10 @@ This file is the current continuation pointer for the Orders-app foundation clea
 
 - GitHub repository: `dymovicd123/Orders-app`.
 - Current Stage 0+1 implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green Stage 0+1 head: `839bb98015830efd36cdad5f41aa997b265e8abb`.
+- Current green Stage 0+1 head: `94eb3927c1fd4a5005023e2b379f358c24b9a5a2`.
 - Production D1 has not been changed by the Stage 0+1 work.
 - Branch2 is a separate environment and must not be casually folded into Production work.
+- Branch2 is reserved for interactive UI/end-to-end proving of coherent Stage01 groups before Production. Feature-branch static/CI work should remain isolated until it is ready for that test.
 - `Приход` remains a frozen/high-risk surface unless a separate approved task explicitly requires changing it.
 
 ## Why Stage 0+1 exists
@@ -133,6 +134,17 @@ Focused regression:
 
 Validation: GitHub Actions run `35335232585` passed the cumulative release gate, dependency audits and production build. Temporary PR #78 was closed without merge.
 
+## Completed slice I — Workshop canonical item truth
+
+Live Workshop task identity now follows the same shared `canonicalItemProjection()` used by Orders and Debt. Exact linked catalog identity is current truth; immutable snapshots remain fallback/matching evidence.
+
+Legacy inferred fallback variants are deliberately not promoted to exact canonical SKU identity.
+
+Focused regression:
+- `scripts/test-stage01-workshop-canonical-item-r9.mjs`
+
+Validation: GitHub Actions run `35336256637` passed the cumulative release gate, dependency audits and production build. Temporary PR #79 was closed without merge.
+
 ## Validation state
 
 R2 passed the cumulative release gate and production build on GitHub Actions run `35327687377`.
@@ -148,6 +160,8 @@ R6 passed the same full gate on GitHub Actions run `35332881155`. Temporary PR #
 R7 passed the same full gate on GitHub Actions run `35333766883`. Temporary PR #77 was closed without merge.
 
 R8 passed the same full gate on GitHub Actions run `35335232585`. Temporary PR #78 was closed without merge.
+
+R9 passed the same full gate on GitHub Actions run `35336256637`. Temporary PR #79 was closed without merge.
 
 R6 passed the same full gate on GitHub Actions run `35332881155`. Temporary PR #76 was closed without merge.
 
@@ -165,7 +179,7 @@ The next audit must classify each remaining read surface by purpose before chang
 
 ## Immediate next checkpoint
 
-Continue the money/finance truth audit. Current-state order aggregates, immutable transaction history, correction/reversal lineage, cash state and report-period semantics must remain distinct. Preserve the already-green Finance F2–F9 behavior unless another concrete contradiction is proven.
+Audit remaining Return/Exchange and Finance read surfaces by purpose. Live operational views may use canonical current identity; historical/audit/transaction views must preserve order-time evidence. Keep F2–F9 money semantics unchanged unless a concrete contradiction is proven.
 
 See:
 `docs/continuation/STAGE01_IMPLEMENTATION_CHECKPOINT_20260918.md`
