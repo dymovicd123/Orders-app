@@ -30,7 +30,7 @@ const edit = between(app, 'async function handleEditOrder(', 'function upsertOrd
 check(edit.includes('!projection.canEdit'), 'Edit open bypasses projection eligibility')
 check(edit.includes('projection.hasActiveReturnOperation'), 'Edit open does not explain active Return protection')
 
-const persist = between(app, 'async function persistOrder(', 'async function archiveOrderAsAdmin')
+const persist = between(app, 'async function persistOrder(', 'async function loadArchivePreview')
 check(persist.includes('!projection.canEdit'), 'Edit save bypasses projection eligibility')
 check(!persist.includes("!isAdmin && (['deleted', 'archived'].includes(order.order_status) || order.shipping_status === 'sent')"), 'Edit save still duplicates raw lifecycle truth')
 
