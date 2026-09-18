@@ -242,14 +242,30 @@ export async function reconcileKnownPendingInventoryInbound(
   db: D1Database,
   eventId: number,
 ) {
-  const event = await db.prepare(`SELECT * FROM inventory_lifecycle_events WHERE id = ? LIMIT 1`).bind(eventId).first<InventoryLifecycleEventRow>();
+  const event = await db.prepare(
+    `SELECT e.*,
+            oi.product_id AS current_order_product_id,
+            oi.variant_id AS current_order_variant_id
+     FROM inventory_lifecycle_events e
+     LEFT JOIN order_items oi ON oi.id = e.order_item_id AND oi.order_id = e.order_id
+     WHERE e.id = ?
+     LIMIT 1`
+  ).bind(eventId).first<InventoryLifecycleEventRow>();
   if (!event?.id) throw new Error('Складская задача не найдена.');
   const status = cleanText(event.status);
   if (status === 'applied' || status === 'cancelled') return { ok: true, applied: status === 'applied', already: true, eventId: event.id, message: 'Эта складская задача уже завершена.' };
   if (status !== 'pending') throw new Error('Складская задача уже не ожидает решения.');
   if (cleanText(event.direction) !== 'in') throw new Error('Автоматическое завершение доступно только для приёмки товара.');
 
-  const resolved = await resolveInventoryLifecycleCandidate(db, event, Boolean(toInt(event.is_workshop, 0)));
+  // A pending lifecycle row is historical evidence from the moment the physical event
+  // was recorded. Resolver may legitimately repair the linked order_item later. Use
+  // those current canonical FKs for live reconciliation without rewriting snapshots.
+  const resolutionEvent = {
+    ...event,
+    product_id: toInt(event.current_order_product_id, 0) || event.product_id,
+    variant_id: toInt(event.current_order_variant_id, 0) || event.variant_id,
+  };
+  const resolved = await resolveInventoryLifecycleCandidate(db, resolutionEvent, Boolean(toInt(event.is_workshop, 0)));
   const variantId = toInt(resolved.variantId, 0);
   if (!variantId) throw new Error('Точный существующий вариант не найден. Нужно определить товар вручную.');
 
@@ -845,9 +861,12 @@ export async function cancelInventoryLifecycleEvent(
 export async function listInventoryLifecyclePending(db: D1Database, url: URL) {
   const limit = Math.min(100, Math.max(10, toInt(url.searchParams.get('limit'), 40)));
   const result = await db.prepare(
-    `SELECT e.*, o.external_id, o.order_date
+    `SELECT e.*, o.external_id, o.order_date,
+            oi.product_id AS current_order_product_id,
+            oi.variant_id AS current_order_variant_id
      FROM inventory_lifecycle_events e
      JOIN orders o ON o.id = e.order_id
+     LEFT JOIN order_items oi ON oi.id = e.order_item_id AND oi.order_id = e.order_id
      WHERE e.status = 'pending'
      ORDER BY e.created_at ASC, e.id ASC
      LIMIT ?`
@@ -869,8 +888,10 @@ export async function listInventoryLifecyclePending(db: D1Database, url: URL) {
       orderDate: cleanText(row.order_date),
       inventorySource: cleanText(row.inventory_source),
       quantity: Math.max(1, toInt(row.quantity, 1)),
-      productId: toInt(row.product_id, 0) || null,
-      variantId: toInt(row.variant_id, 0) || null,
+      productId: toInt(row.current_order_product_id, 0) || toInt(row.product_id, 0) || null,
+      variantId: toInt(row.current_order_variant_id, 0) || toInt(row.variant_id, 0) || null,
+      // Keep event-time text facts visible as evidence. Only live canonical FK identity
+      // is refreshed here; immutable lifecycle snapshots are never rewritten.
       productName: cleanText(row.product_name_snapshot),
       category: normalizeAudienceCategory(row.audience_type, row.size_snapshot),
       gender: cleanText(row.gender_snapshot),
@@ -887,12 +908,38 @@ export async function listInventoryLifecyclePending(db: D1Database, url: URL) {
 
 
 export async function getInventoryLifecycleContext(db: D1Database, eventId: number): Promise<CatalogResolutionContext> {
-  const event = await db.prepare(`SELECT * FROM inventory_lifecycle_events WHERE id = ? LIMIT 1`).bind(eventId).first<InventoryLifecycleEventRow>();
+  const event = await db.prepare(
+    `SELECT e.*,
+            oi.product_id AS current_order_product_id,
+            oi.variant_id AS current_order_variant_id
+     FROM inventory_lifecycle_events e
+     LEFT JOIN order_items oi ON oi.id = e.order_item_id AND oi.order_id = e.order_id
+     WHERE e.id = ?
+     LIMIT 1`
+  ).bind(eventId).first<InventoryLifecycleEventRow>();
   if (!event?.id) throw new Error('Складская задача не найдена.');
   if (cleanText(event.status) !== 'pending') return { ok: true, eventId, status: cleanText(event.status), completed: true };
 
-  const category = normalizeAudienceCategory(event.audience_type, event.size_snapshot);
-  const facts = {
+  const currentVariantId = toInt(event.current_order_variant_id, 0);
+  let currentCanonical = null;
+  if (currentVariantId) {
+    try {
+      currentCanonical = await loadCanonicalVariantSnapshot(db, currentVariantId);
+    } catch {
+      // Broken current FK is ignored here; the lifecycle snapshot remains safe fallback evidence.
+    }
+  }
+
+  const category = currentCanonical?.category || normalizeAudienceCategory(event.audience_type, event.size_snapshot);
+  const facts = currentCanonical ? {
+    productName: currentCanonical.productName,
+    material: canonicalStockPositionValue(currentCanonical.material),
+    length: canonicalStockPositionValue(currentCanonical.length),
+    category,
+    gender: normalizeCatalogCombinationGender(currentCanonical.gender),
+    color: normalizeCatalogCombinationColor(currentCanonical.color),
+    size: normalizeCatalogCombinationSize(currentCanonical.size),
+  } : {
     productName: cleanText(event.product_name_snapshot),
     material: canonicalStockPositionValue(event.material_snapshot),
     length: canonicalStockPositionValue(event.length_snapshot),
@@ -901,8 +948,11 @@ export async function getInventoryLifecycleContext(db: D1Database, eventId: numb
     color: normalizeCatalogCombinationColor(event.color_snapshot),
     size: normalizeCatalogCombinationSize(event.size_snapshot),
   };
-  const product = toInt(event.product_id, 0)
-    ? await db.prepare(`SELECT id, name, category FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1`).bind(toInt(event.product_id, 0)).first<{ id: number; name: string; category: string }>()
+  const effectiveProductId = toInt(currentCanonical?.productId, 0)
+    || toInt(event.current_order_product_id, 0)
+    || toInt(event.product_id, 0);
+  const product = effectiveProductId
+    ? await db.prepare(`SELECT id, name, category FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1`).bind(effectiveProductId).first<{ id: number; name: string; category: string }>()
     : await findCatalogProductByIdentity(db, facts.productName, 0, { activeOnly: true }) as { id: number; name: string; category: string } | null;
   const productGenderScope = product?.id ? await getCatalogProductGenderScope(db, product.id) : 'unisex';
   if (product?.id) facts.gender = facts.gender || catalogGenderForProductScope(productGenderScope);
@@ -925,11 +975,11 @@ export async function getInventoryLifecycleContext(db: D1Database, eventId: numb
   }
 
   let execution: { id: number; material: string; length: string } | null = null;
-  let existingVariant: { id: number } | null = null;
+  let existingVariant: { id: number } | null = currentCanonical?.variantId ? { id: currentCanonical.variantId } : null;
   const unknownFields: string[] = [];
   if (product?.id) {
     execution = await findCatalogExecutionV3(db, product.id, facts.material, facts.length);
-    if (execution?.id) existingVariant = await findCatalogCombinationV3(db, execution.id, facts.category, facts.gender, facts.color, facts.size);
+    if (!existingVariant?.id && execution?.id) existingVariant = await findCatalogCombinationV3(db, execution.id, facts.category, facts.gender, facts.color, facts.size);
   }
   if (!existingVariant?.id) {
     if (!await catalogReferenceDbValueExists(db, 'material', facts.material)) unknownFields.push('material');
