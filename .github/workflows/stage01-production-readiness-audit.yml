@@ -1,0 +1,135 @@
+name: Stage01 Production readiness read-only audit
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: production-readiness-readonly
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_API: https://api.cloudflare.com/client/v4
+      PROD_DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      EXPECTED_MAIN_SHA: 412ba8b4f2a72873232103944e2a3a777a6dbcd9
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve current Production Worker build
+        shell: bash
+        run: |
+          set -euo pipefail
+          AUTH=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+          workers="$(curl --fail-with-body -sS "${AUTH[@]}" "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts")"
+          tag="$(jq -r '.result[] | select(.id=="orders-app") | .tag // empty' <<<"$workers" | head -n1)"
+          test -n "$tag"
+          builds="$(curl --fail-with-body -sS "${AUTH[@]}" "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/builds/workers/$tag/builds")"
+          latest="$(jq -c '[.result[]? | select(.build_trigger_metadata.branch=="main" and .build_outcome=="success")] | sort_by(.created_on) | last // empty' <<<"$builds")"
+          test -n "$latest"
+          commit="$(jq -r '.build_trigger_metadata.commit_hash // empty' <<<"$latest")"
+          outcome="$(jq -r '.build_outcome // empty' <<<"$latest")"
+          echo "Production latest successful main build commit: $commit"
+          echo "Production build outcome: $outcome"
+          test "$commit" = "$EXPECTED_MAIN_SHA"
+
+      - name: Inspect Production D1 migration ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            local sql="$1"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/query"
+          }
+          ledger="$(query "SELECT id,name,applied_at FROM d1_migrations ORDER BY id;")"
+          jq -e '.success == true and .result[0].success == true' <<<"$ledger" >/dev/null
+          echo "$ledger" | jq '.result[0].results'
+          summary="$(query "SELECT COUNT(*) AS migration_rows, MAX(id) AS max_id, MAX(name) AS max_name FROM d1_migrations;")"
+          echo "$summary" | jq '.result[0].results[0]'
+
+      - name: Inspect Production schema markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            local sql="$1"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/query"
+          }
+          objects="$(query "WITH expected(name) AS (VALUES
+            ('inventory_stocktake_sessions'),
+            ('inventory_lifecycle_events'),
+            ('inventory_handover_reviews'),
+            ('financial_events'),
+            ('critical_operations'),
+            ('order_search_items_fts'),
+            ('idx_catalog_products_gender_scope'),
+            ('idx_return_items_physical_receipt'),
+            ('idx_exchange_items_physical_receipt'),
+            ('trg_order_search_catalog_products_au'),
+            ('trg_order_search_catalog_variants_au')
+          )
+          SELECT e.name, CASE WHEN sm.name IS NULL THEN 0 ELSE 1 END AS present, COALESCE(sm.type,'') AS type
+          FROM expected e LEFT JOIN sqlite_master sm ON sm.name=e.name ORDER BY e.name;")"
+          echo "$objects" | jq '.result[0].results'
+
+          columns="$(query "SELECT
+            EXISTS(SELECT 1 FROM pragma_table_info('catalog_products') WHERE name='gender_scope') AS gender_scope,
+            EXISTS(SELECT 1 FROM pragma_table_info('return_items') WHERE name='physical_tracking') AS return_physical_tracking,
+            EXISTS(SELECT 1 FROM pragma_table_info('exchange_items') WHERE name='physical_tracking') AS exchange_physical_tracking,
+            EXISTS(SELECT 1 FROM pragma_table_info('order_items') WHERE name='inventory_obligation_key') AS inventory_obligation_key;")"
+          echo "$columns" | jq '.result[0].results[0]'
+
+      - name: Capture Production row-count baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            local sql="$1"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/query"
+          }
+          counts="$(query "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM payments) AS payments_count,
+            (SELECT COUNT(*) FROM returns) AS returns_count,
+            (SELECT COUNT(*) FROM exchanges) AS exchanges_count,
+            (SELECT COUNT(*) FROM workshop_tasks) AS workshop_tasks_count,
+            (SELECT COUNT(*) FROM inventory_stock) AS inventory_stock_count,
+            (SELECT COUNT(*) FROM inventory_reservations) AS inventory_reservations_count,
+            (SELECT COUNT(*) FROM inventory_lifecycle_events) AS lifecycle_count;")"
+          echo "$counts" | jq '.result[0].results[0]'
+
+      - name: Resolve Production URL and run read-only smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          subdomain="$(curl --fail-with-body -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain // empty')"
+          test -n "$subdomain"
+          base="https://orders-app.$subdomain.workers.dev"
+          echo "Production endpoint: $base"
+          endpoints=(
+            "/api/admin-mode/status"
+            "/api/auth/me"
+            "/api/dashboard"
+            "/api/reference-data"
+            "/api/orders?limit=5"
+            "/api/workshop/counts"
+            "/api/inventory/attention?details=0&limit=5"
+            "/api/catalog"
+          )
+          for path in "${endpoints[@]}"; do
+            code="$(curl -sS -o /tmp/prod-smoke.json -w '%{http_code}' "$base$path")"
+            echo "$code $path"
+            if [[ "$code" -lt 200 || "$code" -ge 300 ]]; then
+              cat /tmp/prod-smoke.json >&2 || true
+              exit 3
+            fi
+            jq -e 'type=="object" or type=="array"' /tmp/prod-smoke.json >/dev/null
+          done
