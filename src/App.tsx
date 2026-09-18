@@ -6155,7 +6155,7 @@ function removeDebtPayment(index: number) {
       return
     }
 
-    const exchangeableOldItems = exchangeSelectedOrder.items.filter((item) => Number(item.id || 0) > 0 && Number(item.quantity || 0) > 0)
+    const exchangeableOldItems = exchangeSelectedOrder.items.filter((item) => Number(item.id || 0) > 0 && Number(item.availableOperationQuantity ?? item.quantity ?? 0) > 0)
     const queuedPairs = exchangeDraft.queuedPairs || []
     const requestedCurrentOldItem = exchangeableOldItems.find((item) => Number(item.id || 0) === Number(exchangeDraft.oldItemId || 0)) || null
     const visibleCurrentOldItem = requestedCurrentOldItem || exchangeableOldItems[0] || null
@@ -6209,8 +6209,9 @@ function removeDebtPayment(index: number) {
       const oldItemId = Number(selectedOldItem.id || 0)
       const accumulated = (requestedByOldItem.get(oldItemId) || 0) + oldQuantity
       requestedByOldItem.set(oldItemId, accumulated)
-      if (accumulated > Number(selectedOldItem.quantity || 0)) {
-        setError(`Позиция обмена ${index + 1}: суммарно выбрано ${accumulated} шт., доступно ${Number(selectedOldItem.quantity || 0)} шт.`)
+      const availableOldQuantity = Math.max(0, Number(selectedOldItem.availableOperationQuantity ?? selectedOldItem.quantity ?? 0))
+      if (accumulated > availableOldQuantity) {
+        setError(`Позиция обмена ${index + 1}: суммарно выбрано ${accumulated} шт., доступно ${availableOldQuantity} шт.`)
         return
       }
       if (!String(pair.newItem?.productName || '').trim()) {
