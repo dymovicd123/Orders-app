@@ -475,6 +475,25 @@ patched = patched.replace(stage01DebtCanonicalHashAnchor, [
   '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash',
 ].join('\n'))
 
+const stage01WorkshopCanonicalItemR9 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-workshop-canonical-item-r9-worker-manifest.json'), 'utf8'))
+if (stage01WorkshopCanonicalItemR9.version !== 1 || stage01WorkshopCanonicalItemR9.revision !== 'stage01-workshop-canonical-item-r9') throw new Error('Stage01 Workshop canonical item R9 Worker manifest invalid')
+if (Object.keys(stage01WorkshopCanonicalItemR9.changes || {}).join(',') !== 'enrichWorkshopTaskRowsFromOrderItems') throw new Error('Stage01 Workshop canonical item R9 Worker allow-list widened')
+patched = 'const stage01WorkshopCanonicalItemR9Changes = ' + JSON.stringify(stage01WorkshopCanonicalItemR9.changes || {}) + '\n' + patched
+
+const stage01WorkshopCanonicalHashAnchor = '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash'
+if (!patched.includes(stage01WorkshopCanonicalHashAnchor)) throw new Error('Stage01 Workshop canonical item R9 predecessor hash anchor missing')
+patched = patched.replace(stage01WorkshopCanonicalHashAnchor, [
+  '        const stage01WorkshopCanonicalItemChanged = stage01WorkshopCanonicalItemR9Changes[name]',
+  '        if (stage01WorkshopCanonicalItemChanged) {',
+  "          check(stage01WorkshopCanonicalItemChanged.before === acceptedPostStage01ReturnExchangeHash, 'Stage01 Workshop canonical item R9 predecessor drifted: ' + name)",
+  "          check(declarations.get(name).includes(stage01WorkshopCanonicalItemChanged.afterBlock), 'Stage01 Workshop canonical item R9 exact replacement missing: ' + name)",
+  '          const revertedStage01WorkshopCanonicalItem = declarations.get(name).replace(stage01WorkshopCanonicalItemChanged.afterBlock, stage01WorkshopCanonicalItemChanged.beforeBlock)',
+  "          check(sha(revertedStage01WorkshopCanonicalItem) === stage01WorkshopCanonicalItemChanged.before, 'Stage01 Workshop canonical item R9 changed beyond exact replacement: ' + name)",
+  '          return true',
+  '        }',
+  '        return sha(declarations.get(name)) === acceptedPostStage01ReturnExchangeHash',
+].join('\n'))
+
 fs.writeFileSync(legacyPath, patched)
 try {
   await import('./test-step1906a-worker-modularization-w6-layer.mjs')
