@@ -6,11 +6,11 @@ This file is the current continuation pointer for the Orders-app foundation clea
 
 - GitHub repository: `dymovicd123/Orders-app`.
 - Current Stage 0+1 implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green Stage 0+1 head: `867fdaae5d15a66a38da195d05d47eca62ccbd2b`.
+- Current green Stage 0+1 head: `00385e30547edafba4cc798115dee8897f3f2dd3`.
 - Production D1 has not been changed by the Stage 0+1 work.
 - Branch2 is a separate environment and must not be casually folded into Production work.
 - Branch2 is reserved for interactive UI/end-to-end proving of coherent Stage01 groups before Production. Feature-branch static/CI work should remain isolated until it is ready for that test.
-- Branch2 current proving head: `867fdaae5d15a66a38da195d05d47eca62ccbd2b` (R1–R16 green).
+- Branch2 current proving head: `00385e30547edafba4cc798115dee8897f3f2dd3` (R1–R17 green).
 - `Приход` remains a frozen/high-risk surface unless a separate approved task explicitly requires changing it.
 
 ## Why Stage 0+1 exists
@@ -246,6 +246,22 @@ Focused regression:
 
 Validation: the first two CI attempts failed only in the cumulative 190.6A wrapper because the newly generated structural manifest included declaration-boundary whitespace/export text that the AST-normalized gate does not retain. The manifest boundary was corrected without changing business code. Final GitHub Actions run `35351019907` passed the cumulative release gate, dependency audits and production build. Temporary PR #86 was closed without merge. Branch2 was fast-forwarded to `867fdaae5d15a66a38da195d05d47eca62ccbd2b`.
 
+## Completed slice Q — Known-intake current identity
+
+Warehouse Attention has a direct receive action for pending inbound lifecycle events once an exact current catalog variant is known. Before R17, the action targeted that exact variant but the card still rendered event-time snapshot labels first.
+
+R17 keeps lifecycle events immutable while making only that live action surface canonical-first:
+
+- exact known inbound rows load the current catalog product and SKU behind the resolved variant;
+- the direct known-intake card publishes that current identity before the operator receives the item;
+- unresolved lifecycle review remains snapshot/evidence-first;
+- no historical rows are rewritten.
+
+Focused regression:
+- `scripts/test-stage01-known-intake-current-canonical-identity-r17.mjs`
+
+Validation: the first CI attempt failed only because the structural replay order had the older R11 Warehouse Attention delta normalized before the newer R17 whole-declaration layer. Reordering the replay fixed the guard without changing business code. Final GitHub Actions run `35352382922` passed the cumulative release gate, dependency audits and production build. Temporary PR #87 was closed without merge. Branch2 was fast-forwarded to `00385e30547edafba4cc798115dee8897f3f2dd3`.
+
 ## Validation state
 
 R2 passed the cumulative release gate and production build on GitHub Actions run `35327687377`.
@@ -278,6 +294,8 @@ R15 passed the same full gate on GitHub Actions run `35347157116`. Temporary PR 
 
 R16 passed the same full gate on GitHub Actions run `35351019907`. Temporary PR #86 was closed without merge, and Branch2 was fast-forwarded to `867fdaae5d15a66a38da195d05d47eca62ccbd2b`.
 
+R17 passed the same full gate on GitHub Actions run `35352382922`. Temporary PR #87 was closed without merge, and Branch2 was fast-forwarded to `00385e30547edafba4cc798115dee8897f3f2dd3`.
+
 R6 passed the same full gate on GitHub Actions run `35332881155`. Temporary PR #76 was closed without merge.
 
 R7 passed the same full gate on GitHub Actions run `35333766883`. Temporary PR #77 was closed without merge.
@@ -294,7 +312,7 @@ The next audit must classify each remaining read surface by purpose before chang
 
 ## Immediate next checkpoint
 
-Continue the purpose-based audit. The next concrete live surface to inspect is Warehouse Attention known-intake: it can now act directly on a repaired exact lifecycle variant, so verify that the operator-facing identity shown before that action follows the exact current variant while the lifecycle event snapshot stays available only as historical evidence. Finance product/return reporting and movement/history surfaces should remain snapshot-based unless a real operational contradiction is proven. Keep F2–F9 money semantics unchanged.
+Continue the purpose-based audit. The next concrete live action to inspect is Warehouse Attention “Найдено при проверке”: when an unresolved stock row already has an exact canonical variant candidate, the operator can bind it directly, so the card shown immediately before that action should be checked for the same current-identity mismatch. Finance product/return reporting and movement/history surfaces remain snapshot-based unless a concrete operational contradiction is proven. Keep F2–F9 money semantics unchanged.
 
 See:
 `docs/continuation/STAGE01_IMPLEMENTATION_CHECKPOINT_20260918.md`
