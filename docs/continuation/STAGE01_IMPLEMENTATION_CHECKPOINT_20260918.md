@@ -1,13 +1,13 @@
 # Stage 0+1 — implementation checkpoint (2026-09-18)
 
-Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
+Status: R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9 + R10 + R11 are implemented and green on the isolated feature branch. Production D1 was not touched. Do not merge/deploy this branch yet; continue Stage 0+1 in small guarded slices.
 
 ## Source of truth
 
 - Production/main baseline at the beginning of this slice: `main`.
 - Implementation branch: `feature/stage01-truth-projections-20260918`.
-- Current green implementation head: `de3eb0fc6cd439cdfa8fadb193ddf807c924373c`.
-- Branch2 is the isolated UI/integration proving environment. After R10 passed the full gate it was fast-forwarded to the same green head: `de3eb0fc6cd439cdfa8fadb193ddf807c924373c`.
+- Current green implementation head: `fc797f5da88ddb5eaa409b2101583c8910529b7f`.
+- Branch2 is the isolated UI/integration proving environment. After R11 passed the full gate it was fast-forwarded to the same green head: `fc797f5da88ddb5eaa409b2101583c8910529b7f`.
 - No Production D1 migration/write was performed.
 
 ## R1 — OrderOperationalProjection
@@ -373,6 +373,38 @@ Validation:
 - production build: SUCCESS;
 - dependency audits: SUCCESS.
 
+
+## R11 — Pending lifecycle follows repaired current links
+
+The post-R10 audit found one remaining split between repaired order truth and already-created pending physical lifecycle rows.
+
+A pending `inventory_lifecycle_events` row intentionally keeps immutable event-time snapshots. After Resolver later repairs the linked `order_items.product_id` / `variant_id`, however, the live pending intake workflow was still trying to resolve only from the old lifecycle row first. That could leave a physically pending item in manual clarification even though its linked order item already had an exact canonical identity.
+
+R11 keeps the historical event snapshot immutable but makes live pending-work views/actions consult the current linked order item first:
+
+- known-intake reconciliation prefers current linked `order_items.product_id` / `variant_id`, then falls back to the event snapshot/link;
+- lifecycle context pre-fills current canonical variant facts when a repaired exact link exists;
+- the pending lifecycle list exposes current canonical FKs while keeping event-time text snapshots as evidence;
+- Warehouse Attention classifies such repaired pending inbound rows as known intake, so the ordinary “accept known item” action is available;
+- no lifecycle snapshot column is rewritten.
+
+Focused regression:
+`scripts/test-stage01-pending-lifecycle-current-links-r11.mjs`
+
+Exact Worker preservation layer:
+`scripts/stage01-pending-lifecycle-current-links-r11-worker-manifest.json`
+
+Structural-gate note:
+the first R11 CI attempts exposed only integration problems in the cumulative 190.6A preservation wrapper. The final solution validates the exact R11 after-blocks, temporarily normalizes only those exact deltas back to their predecessors, and then runs the complete legacy structural hash chain. This avoids weakening or guessing historical baselines.
+
+Validation:
+- temporary draft PR #81, closed without merge;
+- GitHub Actions Quality check run `35339510564`: SUCCESS;
+- cumulative release gate: SUCCESS;
+- production build: SUCCESS;
+- dependency audits: SUCCESS;
+- Branch2 fast-forwarded to the same green R11 head `fc797f5da88ddb5eaa409b2101583c8910529b7f`.
+
 ## Current safety boundary
 
 Do not touch Production D1 while Stage 0+1 is still being assembled.
@@ -387,7 +419,7 @@ Do not collapse return money, return workflow, shipping, Workshop, and catalog i
 
 ## Next work
 
-R1–R10 are green. Continue auditing the remaining Return/Exchange, Finance and historical surfaces by purpose. Do not mechanically convert historical/audit views to canonical-first.
+R1–R11 are green. Continue auditing the remaining Return/Exchange, Finance and historical surfaces by purpose. Do not mechanically convert historical/audit views to canonical-first.
 
 Priority targets:
 
