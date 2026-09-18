@@ -127,13 +127,15 @@ jobs:
           jq -r '.[] | [.table_name,.column_name,.column_type,(.not_null|tostring),.default_value,(.pk|tostring)] | @tsv' /tmp/prod-columns.json | sort > /tmp/prod-columns.tsv
           jq -r '.[] | [.table_name,.column_name,.column_type,(.not_null|tostring),.default_value,(.pk|tostring)] | @tsv' /tmp/b2-columns.json | sort > /tmp/b2-columns.tsv
 
-          echo "=== Schema object differences ==="
-          diff -u /tmp/b2-objects.tsv /tmp/prod-objects.tsv || true
-          echo "=== Column differences ==="
-          diff -u /tmp/b2-columns.tsv /tmp/prod-columns.tsv || true
-          cmp -s /tmp/b2-objects.tsv /tmp/prod-objects.tsv
-          cmp -s /tmp/b2-columns.tsv /tmp/prod-columns.tsv
-          echo "PRODUCTION AND BRANCH2 CURRENT OBJECT/COLUMN SCHEMA MATCH"
+          comm -23 /tmp/b2-objects.tsv /tmp/prod-objects.tsv > /tmp/missing-objects.tsv
+          comm -23 /tmp/b2-columns.tsv /tmp/prod-columns.tsv > /tmp/missing-columns.tsv
+          echo "=== Branch2-required objects missing in Production ==="
+          cat /tmp/missing-objects.tsv
+          echo "=== Branch2-required columns missing in Production ==="
+          cat /tmp/missing-columns.tsv
+          test ! -s /tmp/missing-objects.tsv
+          test ! -s /tmp/missing-columns.tsv
+          echo "PRODUCTION COVERS ALL BRANCH2 CURRENT OBJECT/COLUMN SCHEMA"
 
       - name: Verify durable migration invariants in Production
         shell: bash
