@@ -115,6 +115,24 @@ Focused regression:
 
 Validation: GitHub Actions run `35332881155` passed the cumulative release gate, dependency audits and production build. Temporary PR #76 was closed without merge.
 
+## Completed slice G — Workshop bulk cache reliability
+
+Bulk Workshop writes now commit concrete task/item truth first. The coarse `orders.workshop_status` cache refresh is a bounded best-effort follow-up and cannot invalidate a successful bulk mutation.
+
+Focused regression:
+- `scripts/test-stage01-workshop-bulk-cache-r7.mjs`
+
+Validation: GitHub Actions run `35333766883` passed the cumulative release gate, dependency audits and production build. Temporary PR #77 was closed without merge.
+
+## Completed slice H — Debt canonical item truth
+
+The live Debt workspace now uses the shared canonical item projection rather than a separate snapshot-first item identity path. Historical order-time snapshots remain preserved as fallback/history.
+
+Focused regression:
+- `scripts/test-stage01-debt-canonical-item-r8.mjs`
+
+Validation: GitHub Actions run `35335232585` passed the cumulative release gate, dependency audits and production build. Temporary PR #78 was closed without merge.
+
 ## Validation state
 
 R2 passed the cumulative release gate and production build on GitHub Actions run `35327687377`.
@@ -126,6 +144,10 @@ R4 passed the same full gate on GitHub Actions run `35331323128`. Temporary PR #
 R5 passed the same full gate on GitHub Actions run `35332084525`. Temporary PR #75 was closed without merge.
 
 R6 passed the same full gate on GitHub Actions run `35332881155`. Temporary PR #76 was closed without merge.
+
+R7 passed the same full gate on GitHub Actions run `35333766883`. Temporary PR #77 was closed without merge.
+
+R8 passed the same full gate on GitHub Actions run `35335232585`. Temporary PR #78 was closed without merge.
 
 R6 passed the same full gate on GitHub Actions run `35332881155`. Temporary PR #76 was closed without merge.
 
