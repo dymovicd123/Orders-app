@@ -6921,13 +6921,13 @@ function removeDebtPayment(index: number) {
       ) : null}
 
       {adminModeOpen ? (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAdminModeOpen(false) }}>
+        <div className="modal-backdrop" style={orderCatalogResolutionOrder ? { zIndex: 1301 } : undefined} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAdminModeOpen(false) }}>
           <form className="modal-card auth-users-modal" role="dialog" aria-modal="true" aria-label="Админ режим" onSubmit={submitAdminMode}>
             <div className="modal-head">
               <div>
                 <div className="card-label">Админ режим</div>
                 <h3>Войти в админ режим</h3>
-                <p>Обычная работа доступна без входа. Пароль нужен только для удаления, настроек и служебных действий.</p>
+                <p>{orderCatalogResolutionOrder ? 'Введите пароль администратора. После входа вы вернётесь к уточнению этого заказа.' : 'Обычная работа доступна без входа. Пароль нужен только для удаления, настроек и служебных действий.'}</p>
               </div>
               <button className="secondary compact" type="button" onClick={() => { setAdminModeOpen(false); setAdminModeDraft({ login: 'admin', password: '' }) }}>Закрыть</button>
             </div>
@@ -6948,6 +6948,7 @@ function removeDebtPayment(index: number) {
         order={orderCatalogResolutionOrder}
         apiFetch={apiFetch}
         isAdmin={isAdmin}
+        onRequestAdminMode={() => setAdminModeOpen(true)}
         onClose={() => setOrderCatalogResolutionOrder(null)}
         onCompleted={async (resolvedOrder: OrderRecord) => {
           setOrderCatalogResolutionOrder(null)

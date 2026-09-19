@@ -91,6 +91,93 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const orderSendAdminResumeFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-send-admin-resume-r2-frontend-manifest.json'), 'utf8'))
+if (orderSendAdminResumeFrontendManifest?.version !== 1 || orderSendAdminResumeFrontendManifest?.revision !== 'order-send-admin-resume-r2') throw new Error('Order send admin resume R2 frontend manifest invalid')
+const orderSendAdminResumeGitBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+
+if (!process.env.ORDER_SEND_ADMIN_RESUME_R2_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(orderSendAdminResumeFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (orderSendAdminResumeGitBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Order send admin resume R2 frontend changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Order send admin resume R2 after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (orderSendAdminResumeGitBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Order send admin resume R2 predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, ORDER_SEND_ADMIN_RESUME_R2_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ORDER SEND ADMIN RESUME R2 FRONTEND STRUCTURAL LAYER PASSED — admin login overlay preserves the exact order clarification state')
+  process.exit(0)
+}
+
+const orderSendResolutionFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-send-catalog-resolution-r1-frontend-manifest.json'), 'utf8'))
+if (orderSendResolutionFrontendManifest?.version !== 1 || orderSendResolutionFrontendManifest?.revision !== 'order-send-catalog-resolution-r1') throw new Error('Order send catalog resolution R1 frontend manifest invalid')
+const orderSendFrontendGitBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+
+if (!process.env.ORDER_SEND_CATALOG_RESOLUTION_R1_FRONTEND_NORMALIZED) {
+  const relative = orderSendResolutionFrontendManifest.file
+  const absolute = path.join(root, relative)
+  const actual = fs.readFileSync(absolute, 'utf8')
+  if (orderSendFrontendGitBlobSha(actual) !== orderSendResolutionFrontendManifest.afterGitBlob || actual.split(/\r?\n/).length !== orderSendResolutionFrontendManifest.afterLines) {
+    throw new Error('Order send catalog resolution R1 frontend changed beyond exact manifest')
+  }
+  let reverted = actual
+  for (const replacement of [...(orderSendResolutionFrontendManifest.replacements || [])].reverse()) {
+    if (!reverted.includes(replacement.afterBlock)) throw new Error('Order send catalog resolution R1 frontend after-block missing')
+    reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+  }
+  if (orderSendFrontendGitBlobSha(reverted) !== orderSendResolutionFrontendManifest.beforeGitBlob || reverted.split(/\r?\n/).length !== orderSendResolutionFrontendManifest.beforeLines) {
+    throw new Error('Order send catalog resolution R1 frontend predecessor reconstruction failed')
+  }
+
+  let childStatus = 1
+  fs.writeFileSync(absolute, reverted)
+  try {
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, ORDER_SEND_CATALOG_RESOLUTION_R1_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    fs.writeFileSync(absolute, actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ORDER SEND CATALOG RESOLUTION R1 FRONTEND STRUCTURAL LAYER PASSED — inline order resolver accepted over exact Branch2 predecessor')
+  process.exit(0)
+}
 
 const stage01R19BFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage01-money-only-return-shipping-r19b-frontend-manifest.json'), 'utf8'))
 if (stage01R19BFrontendManifest?.version !== 1 || stage01R19BFrontendManifest?.revision !== 'stage01-money-only-return-shipping-r19b') throw new Error('Stage01 money-only Return shipping R19B frontend manifest invalid')

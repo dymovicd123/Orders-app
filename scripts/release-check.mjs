@@ -202,6 +202,7 @@ try {
   verifySource()
   console.log('Source invariants: OK')
   run('Catalog resolver human UX focused regression', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-ux.mjs')])
+  run('Order send Admin-resume R2 tests', process.execPath, [path.join(root, 'scripts/test-order-send-admin-resume-r2.mjs')])
   run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])
