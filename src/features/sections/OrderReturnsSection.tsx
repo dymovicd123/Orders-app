@@ -76,7 +76,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
   }
   const returnPhysicalStatus = (item: any) => {
     if (!item.physicalTracking) return 'Старая запись — физическое получение не отслеживалось'
-    if (!item.physicalReceivedAt) return 'Ещё не пришёл'
+    if (!item.physicalReceivedAt) return 'Ожидает приёмки'
     if (!item.inventorySource) return 'Получен, в остаток не добавляли'
     const destination = inventorySourceLabel(item.inventorySource)
     if (!item.lifecycleStatus) return `Получен → ${destination}; складской учёт не завершён`
@@ -110,11 +110,17 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                     <strong>{returnHistorySummary.cancelledCount}</strong>
                   </div>
                   <div>
-                    <span>Ещё физически не пришло</span>
+                    <span>Ожидают приёмки</span>
                     <strong>{returnHistorySummary.pendingPhysicalQuantity} шт.</strong>
                   </div>
                 </div>
               </div>
+              {Number(returnHistorySummary.pendingPhysicalQuantity || 0) > 0 ? (
+                <div className="history-load-state is-warning">
+                  <strong>Ожидают приёмки: {returnHistorySummary.pendingPhysicalQuantity} шт.</strong>
+                  <span>Когда вещь физически приехала, откройте нужный возврат в истории ниже и нажмите «Принять товар». Если товар не распознан, уточнение откроется сразу.</span>
+                </div>
+              ) : null}
     
               {!returnSelectedOrder ? (
                 <section className="mini-panel debt-table-panel">
