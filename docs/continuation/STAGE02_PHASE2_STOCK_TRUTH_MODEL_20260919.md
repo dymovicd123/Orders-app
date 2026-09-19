@@ -1,0 +1,219 @@
+# Stage02 Phase2 — Stock Truth Model
+
+Date: 2026-09-19
+
+## Why Phase2 changed
+
+The previous idea treated frequent small stock checks as the main way to keep Warehouse/Boutique truth healthy. That assumes employees will actually count a complete SKU position and report the total honestly while doing unrelated work.
+
+We no longer assume that.
+
+A user who only needs one or two units to finish an operation has a strong incentive to enter the number required by that operation instead of performing a real count. Therefore an operational resolver must never convert such an answer into an absolute physical stock count.
+
+Phase2 is redesigned around **truth classes** and **bounded operational evidence**.
+
+## Truth hierarchy
+
+### A. Exact physical count — may replace Physical
+
+Only an explicit counting workflow may authoritatively set the absolute physical quantity for a SKU/source:
+
+- full stocktake;
+- selective stocktake;
+- quick/exact stock check where the employee was explicitly asked to count the whole SKU position;
+- explicit admin physical correction that is itself presented as a count/correction workflow.
+
+These actions may write an absolute `inventory_stock.quantity` because the user task is specifically to determine the total physical quantity.
+
+### B. Exact transaction delta — may change Physical by the proven delta
+
+When the employee's direct job is itself the physical movement, that movement is reliable evidence of the delta:
+
+- explicit return intake into Warehouse/Boutique => known inbound +Q;
+- transfer => known outbound Q from source and known inbound +Q to target;
+- customer issue/shipping => known outbound Q;
+- writeoff => known outbound Q.
+
+The system may apply the proven movement, but it must not infer an unknown starting total from it.
+
+### C. Operational possession evidence — may unblock the operation, but may NOT replace Physical
+
+If the system believes there are fewer units than the operation requires, the only safe contextual question is about the units being handled now, for example:
+
+> Для операции нужно 2 шт. Эти 2 вещи сейчас физически у вас?
+
+A positive answer proves only that at least those units exist and are being handled. It does **not** prove how many total units were on the shelf.
+
+Therefore this answer must never be stored as `counted_quantity` in `inventory_stock_checks` and must never set an absolute stock quantity.
+
+For an outbound operation with current system Physical=P and confirmed operation quantity=Q:
+
+- apply only the known outbound against tracked stock, never below zero;
+- track the portion that could not be explained by the tracked Physical as operation evidence/discrepancy;
+- complete the business operation only once;
+- never synthesize a full pre-operation quantity.
+
+For transfer, the target may still receive +Q because the arrival of Q units at the target is directly observed by the transfer itself.
+
+### D. System inference — may signal risk, never mutate Physical
+
+Examples:
+
+- Physical < Reserved;
+- old unresolved lifecycle evidence;
+- stale/contradictory history;
+- a previous operation handled more units than tracked stock explained;
+- no exact count for a long time.
+
+These may help prioritize a real revision or explain a contextual blocker. They are not physical truth and must not rewrite stock.
+
+## What Stock Resolver is now
+
+Stock Resolver is **not** a mini-stocktake.
+
+It is a narrow operational resolver used only when the current physical operation cannot be completed from tracked stock truth.
+
+It asks about the concrete units involved in the current action, not the total SKU count.
+
+Approved insertion points:
+
+1. **Final order shipping**
+   - Client: `src/App.tsx -> markOrderSentToClient()`
+   - Server: `PATCH /api/orders/:id/shipping`
+   - Fulfillment: `worker/domains/order-reservations.ts`
+   - Trigger only when required outbound quantity exceeds tracked physical truth.
+   - Answer: confirm whether the required units are physically present for this shipment.
+   - Do not ask for total shelf quantity.
+   - Successful answer resumes the same shipping action automatically.
+
+2. **Early stock handover / issue_now**
+   - Server route: `/api/orders/:id/stock-handover`
+   - Existing lineage question (`still_here` / `issued_before_checkpoint`) remains a separate concept.
+   - Stock Resolver appears only when the actual issue requires more outbound units than tracked physical truth.
+   - Successful answer resumes the same `issue_now`.
+
+3. **Warehouse <-> Boutique transfer**
+   - Client: `src/App.tsx -> saveInventoryMovement()`
+   - Server: `worker/domains/inventory-movement.ts -> applyInventoryTransfer()`
+   - If Q to move exceeds tracked source Physical, ask only whether those Q units are physically being transferred now.
+   - Source must never be forced negative.
+   - Target receives +Q because the transfer proves the inbound quantity.
+   - The unexplained source difference is recorded as operation evidence, not as a fake stocktake.
+   - A warning that the transfer will leave reservations short is a separate business warning, not a Stock Resolver question.
+
+4. **Manual writeoff**
+   - Same operational principle as transfer.
+   - If Q to write off exceeds tracked Physical, require concrete confirmation that Q physical units are being written off now.
+   - Do not replace the whole SKU count.
+
+Not approved as Stock Resolver insertion points:
+
+- return/exchange intake: explicit destination +Q is already a known transaction fact; identity ambiguity belongs to the existing catalog/lifecycle resolver;
+- quick/full/selective stocktake: these are already exact counting workflows;
+- manual_set/admin physical correction: this is already an explicit absolute correction;
+- Arrival: frozen and out of Stage02 scope;
+- routine proactive prompts merely because an SKU is old/unverified.
+
+## Operation evidence record
+
+Phase2 should not abuse `inventory_stock_checks` for contextual confirmations because those rows mean an actual count of the SKU.
+
+Introduce a small append-only operation-evidence record only when an operation exceeds tracked Physical. Exact schema may be finalized in implementation, but the semantic minimum is:
+
+- inventory source;
+- variant id;
+- operation type/reference/id;
+- tracked Physical before the operation;
+- operation quantity confirmed physically present;
+- quantity not explained by tracked Physical;
+- actor;
+- timestamp;
+- idempotency/evidence key.
+
+This is **not an Attention ticket**. It is audit evidence.
+
+A later exact stock check for the same source+variant supersedes older operation evidence naturally. No employee must manually "resolve" the evidence row.
+
+## Physical mutation rule for unexplained outbound
+
+If current tracked Physical is P and an outbound operation of Q units is explicitly confirmed:
+
+- tracked source Physical after the operation = `max(0, P - Q)`;
+- unexplained handled quantity = `max(0, Q - P)`;
+- never write a negative Physical;
+- never set Physical to Q before subtracting;
+- never pretend the employee counted the full SKU.
+
+For transfer:
+- source follows the bounded rule above;
+- target gets +Q exactly;
+- if `Q > P`, the system has learned that previously untracked stock physically existed at the source and is now tracked at the target. The discrepancy remains auditable instead of being hidden by a fabricated source count.
+
+## Reservations and Available
+
+Reservations remain promises, not Physical.
+
+- `Physical` never becomes negative merely to satisfy a reservation.
+- `Available = Physical - Reserved` may be negative and may signal shortage.
+- A resolver-confirmed outbound may fulfill the concrete reservation even when tracked Physical was insufficient, while the unexplained portion is recorded as evidence.
+- This must not silently make unrelated reservations look physically satisfied.
+
+## Attention
+
+Warehouse Attention is no longer a required work inbox.
+
+Every current Attention class must be treated as one of:
+
+- actionable in the current workflow => move/keep the resolver at the point of action;
+- exact-count work => revision/stocktake;
+- identity ambiguity => Catalog Resolver / lifecycle resolver;
+- derived diagnostic => admin diagnostic only.
+
+No ordinary business operation may depend on a user voluntarily opening Attention.
+
+Do not delete the diagnostic endpoint/UI until all signal classes have been mapped and their operational dependencies removed.
+
+## Phase2 implementation order
+
+### 2A — Truth primitives + evidence model
+- define one shared server-side result contract for `stock_resolution_required`;
+- add append-only operation evidence;
+- add bounded outbound helper semantics;
+- no user-facing proactive prompts yet.
+
+### 2B — Shipping
+- replace the current "enter total physical count" shortage prompt with possession confirmation;
+- never write it as an exact stock check;
+- automatically resume the original shipping action;
+- preserve replay/idempotency guarantees from Catalog Resolver R9/R10.
+
+### 2C — Early handover
+- reuse the same resolver contract for `issue_now`;
+- keep historical checkpoint/lineage questions separate.
+
+### 2D — Transfer and writeoff
+- reuse the same possession-confirmation resolver;
+- transfer target receives exact +Q;
+- source uses bounded outbound;
+- reservation-shortage warning remains separate.
+
+### 2E — Attention dependency removal + acceptance
+- prove no daily flow depends on Attention;
+- retain only useful admin diagnostics;
+- verify no operational confirmation is recorded as an exact count;
+- verify exact stocktake remains authoritative over older operation evidence.
+
+## Acceptance invariants
+
+1. Operational confirmation never overwrites the full SKU Physical.
+2. Only explicit counting/correction workflows may set an absolute Physical.
+3. Physical never goes below zero merely because an operation exceeds tracked stock.
+4. Confirmed transfer still adds the exact transferred quantity to the target.
+5. Shipping/handover/writeoff may complete only for the concrete quantity explicitly confirmed present.
+6. Unexplained outbound quantity is durably auditable and idempotent.
+7. Replay/lost response cannot duplicate either the business operation or its evidence.
+8. A newer exact physical count supersedes older operation evidence.
+9. Attention is not required to finish normal Warehouse/Boutique work.
+10. Return/exchange explicit intake remains transaction truth, not a stock-count prompt.
+11. Catalog/identity ambiguity stays separate from physical-quantity ambiguity.
+12. Arrival remains untouched.

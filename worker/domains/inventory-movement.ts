@@ -13,6 +13,7 @@ import { inventoryMergeKey, inventoryWhereKey, mergeInventoryItems, normalizeInv
 import { applyOrderStockWriteOff } from './orders-write.ts'
 import { getPendingInventoryWriteoffCount } from './references.ts'
 import { isInventoryAutoWriteoffEnabled } from './storage.ts'
+import { boundedOutboundStock } from './stock-resolution.ts'
 
 export function inventoryManualRequestFingerprint(
   inventorySource: SourceType,
@@ -1113,10 +1114,11 @@ export async function applyInventoryTransfer(
       }
       effectiveSourceBefore = entry.observedPhysicalQuantity;
     }
-    if (entry.quantity > effectiveSourceBefore) {
+    const boundedOutbound = boundedOutboundStock(effectiveSourceBefore, entry.quantity);
+    if (boundedOutbound.requiresResolution) {
       throw new Error(`По учёту в точке «${fromSource === 'warehouse' ? 'Склад' : 'Бутик'}» у «${item.productName}» на месте ${effectiveSourceBefore} шт., а переместить нужно ${entry.quantity}. Если товар физически есть, укажите фактическое количество прямо в строке перемещения.`);
     }
-    const shortageAfter = Math.max(0, reservedAtSource - (effectiveSourceBefore - entry.quantity));
+    const shortageAfter = Math.max(0, reservedAtSource - boundedOutbound.trackedPhysicalAfter);
     prepared.push({
       item,
       variantId,
