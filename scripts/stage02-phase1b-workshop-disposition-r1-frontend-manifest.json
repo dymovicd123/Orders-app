@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "revision": "stage02-phase1b-workshop-disposition-r1",
+  "baseCommit": "1df36ae862254f22ee54b40bfdf9398c4e919688",
+  "files": {
+    "src/app/utils.ts": {
+      "beforeGitBlob": "dd6280e3e61b9e352de4ca258c341386ed7f99d9",
+      "afterGitBlob": "0531b3fcf8856acae7078b3ec501a78dbdec8e0a",
+      "beforeLines": 965,
+      "afterLines": 965,
+      "replacements": [
+        {
+          "beforeBlock": "      maxQuantity: Math.max(0, Number(item.availableOperationQuantity ?? item.quantity ?? 0)),\n      sourceType: (item.sourceType === 'workshop' ? 'workshop' : item.sourceType === 'boutique' ? 'boutique' : 'warehouse') as 'warehouse' | 'boutique' | 'workshop',\n      restock: false,\n      physicalState: 'pending' as const,\n    })).filter((item) => item.orderItemId > 0 && item.maxQuantity > 0),\n  }\n}",
+          "afterBlock": "      maxQuantity: Math.max(0, Number(item.availableOperationQuantity ?? item.quantity ?? 0)),\n      sourceType: (item.sourceType === 'workshop' ? 'workshop' : item.sourceType === 'boutique' ? 'boutique' : 'warehouse') as 'warehouse' | 'boutique' | 'workshop',\n      restock: false,\n      physicalState: (item.sourceType === 'workshop' ? 'no_stock' : 'pending') as 'pending' | 'no_stock',\n    })).filter((item) => item.orderItemId > 0 && item.maxQuantity > 0),\n  }\n}"
+        },
+        {
+          "beforeBlock": "    oldItemId: Number(firstItem?.id || 0),\n    oldQuantity: 1,\n    oldReturnSource: 'none',\n    oldPhysicalState: 'pending',\n    newItem: {\n      ...createEmptyEditorItem(),\n      sourceType: inheritedSource,",
+          "afterBlock": "    oldItemId: Number(firstItem?.id || 0),\n    oldQuantity: 1,\n    oldReturnSource: 'none',\n    oldPhysicalState: firstItem?.sourceType === 'workshop' ? 'no_stock' : 'pending',\n    newItem: {\n      ...createEmptyEditorItem(),\n      sourceType: inheritedSource,"
+        }
+      ]
+    },
+    "src/features/sections/OrderReturnsSection.tsx": {
+      "beforeGitBlob": "428c78fb48ebcd9d344c82d3544f38268334a7b1",
+      "afterGitBlob": "4e4668037e7e5ced4c734075e366ef77610c7655",
+      "beforeLines": 420,
+      "afterLines": 421,
+      "replacements": [
+        {
+          "beforeBlock": "                                      {item.sourceType !== 'workshop' ? <option value=\"boutique\">Пришёл → Бутик</option> : null}\n                                      <option value=\"no_stock\">Пришёл, в остаток не добавлять</option>\n                                    </select>\n                                  </td>\n                                </tr>\n                              )) : (",
+          "afterBlock": "                                      {item.sourceType !== 'workshop' ? <option value=\"boutique\">Пришёл → Бутик</option> : null}\n                                      <option value=\"no_stock\">Пришёл, в остаток не добавлять</option>\n                                    </select>\n                                    {item.sourceType === 'workshop' ? <small className=\"field-hint\">Для вещи из Цеха по умолчанию остаток не создаётся. «Склад» выбирайте только при явном решении принять её туда.</small> : null}\n                                  </td>\n                                </tr>\n                              )) : ("
+        }
+      ]
+    },
+    "src/features/sections/OrderExchangeSection.tsx": {
+      "beforeGitBlob": "ab31d0b30e1d31272a095360ced46919e43e08f5",
+      "afterGitBlob": "2c75a54178303ce71925b0054484f053c8eeca24",
+      "beforeLines": 604,
+      "afterLines": 604,
+      "replacements": [
+        {
+          "beforeBlock": "                                  oldItemId,\n                                  oldQuantity: 1,\n                                  oldReturnSource: 'none',\n                                  oldPhysicalState: selectedItem?.sourceType === 'workshop' && current.oldPhysicalState === 'boutique' ? 'pending' : current.oldPhysicalState,\n                                  newSourceWasManuallyChanged: false,\n                                  newItem: resetObservedStock(current.newItem, {\n                                    sourceType: replacementSourceForItem(selectedItem),",
+          "afterBlock": "                                  oldItemId,\n                                  oldQuantity: 1,\n                                  oldReturnSource: 'none',\n                                  oldPhysicalState: selectedItem?.sourceType === 'workshop' ? 'no_stock' : 'pending',\n                                  newSourceWasManuallyChanged: false,\n                                  newItem: resetObservedStock(current.newItem, {\n                                    sourceType: replacementSourceForItem(selectedItem),"
+        },
+        {
+          "beforeBlock": "                              {!effectiveOldItemIsWorkshop ? <option value=\"boutique\">Пришла → Бутик</option> : null}\n                              <option value=\"no_stock\">Пришла, в остаток не добавлять</option>\n                            </select>\n                            {effectiveOldItemIsWorkshop ? <small className=\"field-hint\">Для вещи из Цеха Бутик недоступен. Если вещь ещё едет, оставьте «Ещё не пришла».</small> : null}\n                          </label>\n                          <label>\n                            <span>Дата обмена</span>",
+          "afterBlock": "                              {!effectiveOldItemIsWorkshop ? <option value=\"boutique\">Пришла → Бутик</option> : null}\n                              <option value=\"no_stock\">Пришла, в остаток не добавлять</option>\n                            </select>\n                            {effectiveOldItemIsWorkshop ? <small className=\"field-hint\">Для вещи из Цеха Бутик недоступен. По умолчанию остаток не создаётся. «Склад» выбирайте только если вещь действительно принимают туда; если она ещё едет — выберите «Ещё не пришла».</small> : null}\n                          </label>\n                          <label>\n                            <span>Дата обмена</span>"
+        }
+      ]
+    }
+  }
+}

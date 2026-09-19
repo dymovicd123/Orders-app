@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "revision": "stage02-phase1b-r2-workshop-boutique-disposition",
+  "baseCommit": "7a57a99f302f189215c86245c1abf785d42f025e",
+  "files": {
+    "src/features/sections/OrderReturnsSection.tsx": {
+      "beforeGitBlob": "4e4668037e7e5ced4c734075e366ef77610c7655",
+      "afterGitBlob": "2bb6ee06c48bcba23aefac7cd5e6fbb05bba3bc8",
+      "beforeLines": 421,
+      "afterLines": 421,
+      "replacements": [
+        {
+          "beforeBlock": "{item.sourceType !== 'workshop' ? <option value=\"boutique\">Пришёл → Бутик</option> : null}",
+          "afterBlock": "<option value=\"boutique\">Пришёл → Бутик</option>"
+        },
+        {
+          "beforeBlock": "{item.sourceType === 'workshop' ? <small className=\"field-hint\">Для вещи из Цеха по умолчанию остаток не создаётся. «Склад» выбирайте только при явном решении принять её туда.</small> : null}",
+          "afterBlock": "{item.sourceType === 'workshop' ? <small className=\"field-hint\">Для вещи из Цеха по умолчанию остаток не создаётся. Если товар физически принимают в остатки, явно выберите «Склад» или «Бутик».</small> : null}"
+        },
+        {
+          "beforeBlock": "{!item.isWorkshop ? <option value=\"boutique\">Бутик</option> : null}",
+          "afterBlock": "<option value=\"boutique\">Бутик</option>"
+        }
+      ]
+    },
+    "src/features/sections/OrderExchangeSection.tsx": {
+      "beforeGitBlob": "2c75a54178303ce71925b0054484f053c8eeca24",
+      "afterGitBlob": "cab31f5a4aa2b6a2bfc935d9ba5cf56a210c6c81",
+      "beforeLines": 604,
+      "afterLines": 604,
+      "replacements": [
+        {
+          "beforeBlock": "{!effectiveOldItemIsWorkshop ? <option value=\"boutique\">Пришла → Бутик</option> : null}",
+          "afterBlock": "<option value=\"boutique\">Пришла → Бутик</option>"
+        },
+        {
+          "beforeBlock": "{effectiveOldItemIsWorkshop ? <small className=\"field-hint\">Для вещи из Цеха Бутик недоступен. По умолчанию остаток не создаётся. «Склад» выбирайте только если вещь действительно принимают туда; если она ещё едет — выберите «Ещё не пришла».</small> : null}",
+          "afterBlock": "{effectiveOldItemIsWorkshop ? <small className=\"field-hint\">Для вещи из Цеха по умолчанию остаток не создаётся. Если вещь физически принимают в остатки, явно выберите «Склад» или «Бутик»; если она ещё едет — «Ещё не пришла».</small> : null}"
+        },
+        {
+          "beforeBlock": "                                    <option value=\"warehouse\">Склад</option>\n                                    {!entry.oldIsWorkshop ? <option value=\"boutique\">Бутик</option> : null}\n                                    <option value=\"no_stock\">Без добавления в остаток</option>",
+          "afterBlock": "                                    <option value=\"warehouse\">Склад</option>\n                                    <option value=\"boutique\">Бутик</option>\n                                    <option value=\"no_stock\">Без добавления в остаток</option>"
+        }
+      ]
+    }
+  }
+}
