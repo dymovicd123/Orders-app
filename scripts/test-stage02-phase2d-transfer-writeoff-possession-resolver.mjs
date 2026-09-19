@@ -109,6 +109,7 @@ try {
   check(routes.includes('stockConfirmations?: unknown'), 'Phase2D routes do not accept possession confirmations')
   check((routes.match(/result\.code === 'stock_resolution_required'/g) || []).length === 2, 'Phase2D routes do not return both resolver conflicts as 409')
   check(routes.includes("inventory_movement_activity_failed") && routes.includes("inventory_transfer_activity_failed"), 'Phase2D secondary activity logging can still make a committed movement look failed')
+  check((routes.match(/if \(!result\.duplicate\)/g) || []).length >= 2, 'Phase2D duplicate retry can emit duplicate movement/transfer activity')
 
   console.log('STAGE02 PHASE2D TRANSFER/WRITEOFF POSSESSION RESOLVER TESTS PASSED')
 } catch (error) {
