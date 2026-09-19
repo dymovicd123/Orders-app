@@ -659,7 +659,9 @@ export async function listOrders(db: D1Database, url: URL) {
         return !toInt(item.is_workshop, 0)
           && orderItemAvailableOperationQuantity(item) > 0
           && !['fulfilled', 'written_off', 'negative', 'catalog_excluded', 'catalog_excluded_history', 'workshop_no_catalog', 'legacy_unknown_gender'].includes(status)
-          && (!toInt(item.product_id, 0) || !toInt(item.variant_id, 0) || status === 'catalog_unresolved');
+          // A linked exact variant is already canonical identity. Any stale reservation/status
+          // is repaired automatically during shipping and must not summon the human resolver.
+          && !toInt(item.variant_id, 0);
       }),
       items: (relations.itemsByOrderId.get(order.id) || []).map(item => ({
         id: (item as any).id,
