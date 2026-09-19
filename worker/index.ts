@@ -862,17 +862,17 @@ export default {
              AND COALESCE(o.archived_at, '') = '' AND COALESCE(o.shipping_status, 'not_sent') <> 'sent' LIMIT 1`
         ).bind(orderItemId, orderId).first<{ id: number }>();
         if (!scoped?.id) return json({ ok: false, message: 'Позиция не найдена среди активных товаров этого заказа.' }, { status: 404 });
-        if (Boolean(input.createProduct)) return json({ ok: false, message: 'Новый базовый товар можно добавить только в Админ режиме.' }, { status: 403 });
         const createFields = Array.isArray(input.createFields) ? input.createFields.map(cleanText).filter(Boolean) : [];
-        if (createFields.length) return json({ ok: false, message: 'Новое значение справочника можно добавить только в Админ режиме.' }, { status: 403 });
-        if (Boolean(input.legacyUnknownGender)) return json({ ok: false, message: 'Историческое исключение доступно только в Админ режиме.' }, { status: 403 });
-        if (!toInt(input.productId, 0)) return json({ ok: false, message: 'Выберите существующий товар.' }, { status: 400 });
+        const needsAdminCatalogMutation = Boolean(input.createProduct) || createFields.length > 0 || Boolean(input.legacyUnknownGender);
+        if (needsAdminCatalogMutation) {
+          const denied = requireAdminAccess(request);
+          if (denied) return denied;
+        }
+        if (!Boolean(input.createProduct) && !toInt(input.productId, 0)) return json({ ok: false, message: 'Выберите существующий товар.' }, { status: 400 });
         const result = await resolveCatalogReviewFacts(env.DB, orderItemId, {
           ...input,
-          createProduct: false,
-          createFields: [],
-          legacyUnknownGender: false,
-        });
+          createFields,
+        }, { singleItem: true });
         await writeActivityLog(env.DB, {
           eventType: 'order_catalog_resolved',
           entityType: 'order',

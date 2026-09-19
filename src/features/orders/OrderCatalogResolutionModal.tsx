@@ -161,9 +161,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         const needsAdminCatalogMutation = !variantId && Boolean(next.createProduct || next.createFields?.length || legacy)
         if (needsAdminCatalogMutation && !isAdmin) throw new Error('Нужно добавить новый товар или новое значение справочника. Для этого требуется Админ режим; переходить на Склад не нужно.')
         const path = variantId ? `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-existing`
-          : needsAdminCatalogMutation
-            ? `/api/catalog/review/${item.orderItemId}/resolve-facts`
-            : `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-facts`
+          : `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-facts`
         await read<CatalogResolutionResponse>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(variantId ? { variantId } : { ...next, legacyUnknownGender: legacy }) })
         if (ticket === generation.current) { setNeedsRecheck(true); setNotice('Товар уточнён ✓ Проверяю остальные позиции…') }
       }, async () => ticket === generation.current ? load() : false, async () => { if (owner === session.current) await onCompleted(order) })
@@ -253,7 +251,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     {error ? <div role="alert" className="resolution-error"><p>{error}</p><button type="button" className="secondary-button" disabled={busy || resolving} onClick={() => void retry()}>{needsRecheck ? 'Проверить оставшиеся позиции' : 'Повторить проверку'}</button></div> : null}
     {busy ? <p role="status">Проверяю товар…</p> : null}
     {!advancedOpen ? <fieldset disabled={disabled || Boolean(error)} className="resolution-question" aria-busy={disabled}>{!needsRecheck ? renderQuestion() : <p>Товар сохранён. Проверяем, остались ли ещё вопросы.</p>}</fieldset> : draft && context ? <section className="resolution-advanced">
-      <h4>Расширенное исправление</h4><p>Создание товара и новых характеристик изменяет каталог для следующих заказов. Уточнение связывает также совпадающие неразобранные позиции.</p>
+      <h4>Расширенное исправление</h4><p>Создание товара и новых характеристик изменяет каталог для следующих заказов. Само уточнение применяется только к этой позиции заказа.</p>
       <fieldset disabled={disabled}>
         <label>Товар<select value={draft.createProduct ? '' : draft.productId} onChange={e => { const product = catalog?.products.find(p => p.id === Number(e.target.value)); if (product) chooseProduct(product) }}><option value="">Выберите товар</option>{catalog?.products.filter(p => p.isActive).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
         <button type="button" className="resolution-link" onClick={() => { editDraft('createProduct', !draft.createProduct); if (!draft.createProduct) { editDraft('productId', 0); editDraft('genderScope', '') } }}>{draft.createProduct ? 'Выбрать существующий товар' : 'Создать новый товар'}</button>

@@ -207,6 +207,7 @@ try {
   run('Catalog resolver R4 session reliability tests', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-r4-session.mjs')])
   run('Catalog resolver R5 canonical truth tests', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-r5-canonical-truth.mjs')])
   run('Catalog resolver R6 deterministic auto-resolution tests', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-r6-deterministic-auto.mjs')])
+  run('Catalog resolver R7 human-scope tests', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-r7-human-scope.mjs')])
   run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])

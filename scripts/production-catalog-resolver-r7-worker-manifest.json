@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "revision": "production-catalog-resolver-r7",
+  "baseCommit": "0a530441c9b4b63d62d440e7352d551572db17a8",
+  "files": {
+    "worker/domains/catalog-review.ts": {
+      "beforeGitBlob": "9cbc5e4bbcbf541c2736e6bb3b43b69b1c84d077",
+      "afterGitBlob": "cefc369597103e6d3756fe1b35beff4c3cb2aacc",
+      "beforeLines": 1050,
+      "afterLines": 1059,
+      "replacements": [
+        {
+          "beforeBlock": "}\n\n\nexport async function resolveCatalogReviewFacts(db: D1Database, orderItemId: number, input: CatalogReviewFactsInput): Promise<CatalogResolutionResponse> {\n  const anchor = await db.prepare(\n    `SELECT oi.*, o.external_id, o.shipping_status, o.shipping_date, o.order_status, o.archived_at\n     FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.id = ? LIMIT 1`\n  ).bind(orderItemId).first<Record<string, unknown>>();\n  if (!anchor?.id) throw new Error('Позиция заказа для разбора не найдена.');\n  const inputKey = normalizedCatalogReviewKey(anchor);\n  const candidates = await fetchCatalogReviewResolutionCandidates(db, toInt(anchor.order_id, 0));\n  const matching = (candidates.results || []).filter((row) => normalizedCatalogReviewKey(row) === inputKey);\n  if (!matching.length) throw new Error('Эта задача уже разобрана. Обновите список.');\n\n  const workshopRows = matching.filter((row) => toInt(row.is_workshop, 0) === 1);",
+          "afterBlock": "}\n\n\nexport async function resolveCatalogReviewFacts(\n  db: D1Database,\n  orderItemId: number,\n  input: CatalogReviewFactsInput,\n  options: { singleItem?: boolean } = {},\n): Promise<CatalogResolutionResponse> {\n  const anchor = await db.prepare(\n    `SELECT oi.*, o.external_id, o.shipping_status, o.shipping_date, o.order_status, o.archived_at\n     FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.id = ? LIMIT 1`\n  ).bind(orderItemId).first<Record<string, unknown>>();\n  if (!anchor?.id) throw new Error('Позиция заказа для разбора не найдена.');\n  const inputKey = normalizedCatalogReviewKey(anchor);\n  const candidates = await fetchCatalogReviewResolutionCandidates(db, toInt(anchor.order_id, 0));\n  const matching = options.singleItem\n    ? (candidates.results || []).filter((row) => toInt(row.id ?? row.order_item_id, 0) === orderItemId)\n    : (candidates.results || []).filter((row) => normalizedCatalogReviewKey(row) === inputKey);\n  if (!matching.length) throw new Error('Эта задача уже разобрана. Обновите список.');\n\n  const workshopRows = matching.filter((row) => toInt(row.is_workshop, 0) === 1);"
+        },
+        {
+          "beforeBlock": "\n  const inputKey = normalizedCatalogReviewKey(anchor);\n  const rowsResult = await fetchCatalogReviewRows(db, 160, orderId);\n  const matching = (rowsResult.results || []).filter((row) => normalizedCatalogReviewKey(row) === inputKey);\n  if (!matching.length) throw new Error('Эта позиция уже разобрана. Обновите заказ.');\n  return await resolveCatalogReviewRows(db, matching, selected, inputKey);\n}\n\n",
+          "afterBlock": "\n  const inputKey = normalizedCatalogReviewKey(anchor);\n  const rowsResult = await fetchCatalogReviewRows(db, 160, orderId);\n  const matching = (rowsResult.results || []).filter((row) => toInt(row.id ?? row.order_item_id, 0) === orderItemId);\n  if (!matching.length) throw new Error('Эта позиция уже разобрана. Обновите заказ.');\n  // A human chose this variant for one order line. Never propagate that decision to\n  // another raw-identical line: blank gender/size/color may hide a real difference.\n  return await resolveCatalogReviewRows(db, matching, selected, inputKey, new Date().toISOString(), { writeAlias: false });\n}\n\n"
+        }
+      ]
+    },
+    "worker/index.ts": {
+      "beforeGitBlob": "bfeb19fcf0390ce58fcc3064ccb217c642892adf",
+      "afterGitBlob": "f656df9afac6b560ebbb8ad885691cf176f6bf38",
+      "beforeLines": 1468,
+      "afterLines": 1468,
+      "replacements": [
+        {
+          "beforeBlock": "             AND COALESCE(o.archived_at, '') = '' AND COALESCE(o.shipping_status, 'not_sent') <> 'sent' LIMIT 1`\n        ).bind(orderItemId, orderId).first<{ id: number }>();\n        if (!scoped?.id) return json({ ok: false, message: 'Позиция не найдена среди активных товаров этого заказа.' }, { status: 404 });\n        if (Boolean(input.createProduct)) return json({ ok: false, message: 'Новый базовый товар можно добавить только в Админ режиме.' }, { status: 403 });\n        const createFields = Array.isArray(input.createFields) ? input.createFields.map(cleanText).filter(Boolean) : [];\n        if (createFields.length) return json({ ok: false, message: 'Новое значение справочника можно добавить только в Админ режиме.' }, { status: 403 });\n        if (Boolean(input.legacyUnknownGender)) return json({ ok: false, message: 'Историческое исключение доступно только в Админ режиме.' }, { status: 403 });\n        if (!toInt(input.productId, 0)) return json({ ok: false, message: 'Выберите существующий товар.' }, { status: 400 });\n        const result = await resolveCatalogReviewFacts(env.DB, orderItemId, {\n          ...input,\n          createProduct: false,\n          createFields: [],\n          legacyUnknownGender: false,\n        });\n        await writeActivityLog(env.DB, {\n          eventType: 'order_catalog_resolved',\n          entityType: 'order',",
+          "afterBlock": "             AND COALESCE(o.archived_at, '') = '' AND COALESCE(o.shipping_status, 'not_sent') <> 'sent' LIMIT 1`\n        ).bind(orderItemId, orderId).first<{ id: number }>();\n        if (!scoped?.id) return json({ ok: false, message: 'Позиция не найдена среди активных товаров этого заказа.' }, { status: 404 });\n        const createFields = Array.isArray(input.createFields) ? input.createFields.map(cleanText).filter(Boolean) : [];\n        const needsAdminCatalogMutation = Boolean(input.createProduct) || createFields.length > 0 || Boolean(input.legacyUnknownGender);\n        if (needsAdminCatalogMutation) {\n          const denied = requireAdminAccess(request);\n          if (denied) return denied;\n        }\n        if (!Boolean(input.createProduct) && !toInt(input.productId, 0)) return json({ ok: false, message: 'Выберите существующий товар.' }, { status: 400 });\n        const result = await resolveCatalogReviewFacts(env.DB, orderItemId, {\n          ...input,\n          createFields,\n        }, { singleItem: true });\n        await writeActivityLog(env.DB, {\n          eventType: 'order_catalog_resolved',\n          entityType: 'order',"
+        }
+      ]
+    }
+  }
+}
