@@ -846,35 +846,6 @@ export async function reconcileCatalogReviewOrder(db: D1Database, orderId: numbe
 }
 
 
-export async function resolveOrderCatalogReviewFacts(db: D1Database, orderId: number, orderItemId: number, input: CatalogReviewFactsInput) {
-  if (!orderId || !orderItemId) throw new Error('Выберите проблемную позицию этого заказа.');
-  const anchor = await db.prepare(
-    `SELECT oi.id, oi.order_id, o.shipping_status, o.order_status, o.archived_at
-     FROM order_items oi JOIN orders o ON o.id = oi.order_id
-     WHERE oi.id = ? AND oi.order_id = ? LIMIT 1`
-  ).bind(orderItemId, orderId).first<Record<string, unknown>>();
-  if (!anchor?.id) throw new Error('Позиция не найдена в этом заказе.');
-  if (normalizeShippingStatus(anchor.shipping_status) === 'sent') throw new Error('Заказ уже отправлен. Уточнение товара здесь больше недоступно.');
-  if (normalizeOrderStatus(anchor.order_status) !== 'active' || cleanText(anchor.archived_at)) throw new Error('Этот заказ уже не активен.');
-
-  // Routine shipping clarification may create only a missing exact combination from
-  // an existing product and already-approved reference values. Creating a new base
-  // product, extending dictionaries, or using a legacy exception remains admin-only.
-  if (Boolean(input.createProduct)) throw new Error('Новый базовый товар можно добавить только в Админ режиме.');
-  const createFields = Array.isArray(input.createFields) ? input.createFields.map(cleanText).filter(Boolean) : [];
-  if (createFields.length) throw new Error('Новое значение справочника можно добавить только в Админ режиме.');
-  if (Boolean(input.legacyUnknownGender)) throw new Error('Историческое исключение доступно только в Админ режиме.');
-  if (!toInt(input.productId, 0)) throw new Error('Выберите существующий товар.');
-
-  return await resolveCatalogReviewFacts(db, orderItemId, {
-    ...input,
-    createProduct: false,
-    createFields: [],
-    legacyUnknownGender: false,
-  });
-}
-
-
 export async function resolveOrderCatalogReviewExistingVariant(db: D1Database, orderId: number, orderItemId: number, variantId: number) {
   if (!orderId || !orderItemId || !variantId) throw new Error('Выберите проблемную позицию и существующий вариант каталога.');
   const anchor = await db.prepare(
