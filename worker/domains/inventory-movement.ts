@@ -1205,8 +1205,11 @@ export async function applyInventoryTransfer(
     const sourceStock = stockBySourceVariant.get(`${fromSource}:${variantId}`);
     const targetStock = stockBySourceVariant.get(`${toSource}:${variantId}`);
     const sourceRowExisted = Boolean(sourceStock?.id);
-    const sourceCurrent = toInt(sourceStock?.quantity, 0);
-    const targetCurrent = toInt(targetStock?.quantity, 0);
+    // Phase2D: legacy negative Physical is not a real quantity. Treat it as zero at the
+    // operation boundary so a possession confirmation returned as expectedQuantity=0 can
+    // actually be replayed, and so new transfers never propagate negative stock forward.
+    const sourceCurrent = Math.max(0, toInt(sourceStock?.quantity, 0));
+    const targetCurrent = Math.max(0, toInt(targetStock?.quantity, 0));
     const reservedAtSource = reservationsBySourceVariant.get(`${fromSource}:${variantId}`) || 0;
     const targetReservedQuantity = reservationsBySourceVariant.get(`${toSource}:${variantId}`) || 0;
 
@@ -1299,7 +1302,7 @@ export async function applyInventoryTransfer(
        SELECT 1 FROM x
        LEFT JOIN inventory_stock s ON s.inventory_source = ? AND s.variant_id = x.variant_id
        LEFT JOIN inventory_stock t ON t.inventory_source = ? AND t.variant_id = x.variant_id
-       WHERE s.id IS NULL OR COALESCE(s.quantity, 0) <> x.source_current OR COALESCE(t.quantity, 0) <> x.target_current
+       WHERE s.id IS NULL OR MAX(0, COALESCE(s.quantity, 0)) <> x.source_current OR MAX(0, COALESCE(t.quantity, 0)) <> x.target_current
      )
      OR EXISTS (
        SELECT 1 FROM inventory_stocktake_sessions
@@ -1350,7 +1353,7 @@ export async function applyInventoryTransfer(
   const updateTarget = db.prepare(
     `WITH ${transferRowsSql}
      UPDATE inventory_stock
-     SET quantity = quantity + (SELECT move_qty FROM x WHERE x.variant_id = inventory_stock.variant_id),
+     SET quantity = MAX(0, quantity) + (SELECT move_qty FROM x WHERE x.variant_id = inventory_stock.variant_id),
          last_action = 'Перемещение', last_source_ref = ?, updated_at = ?
      WHERE inventory_source = ? AND EXISTS (SELECT 1 FROM x WHERE x.variant_id = inventory_stock.variant_id)`
   ).bind(...transferRowBindings, externalId, now, toSource);
@@ -1436,7 +1439,7 @@ export async function applyInventoryTransfer(
        WHERE inventory_source IN (?, ?)
          AND variant_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
     ).bind(fromSource, toSource, variantIdsJson).all<Record<string, unknown>>();
-    const currentMap = new Map((currentRows.results || []).map(row => [`${cleanText(row.inventory_source)}:${toInt(row.variant_id, 0)}`, toInt(row.quantity, 0)]));
+    const currentMap = new Map((currentRows.results || []).map(row => [`${cleanText(row.inventory_source)}:${toInt(row.variant_id, 0)}`, Math.max(0, toInt(row.quantity, 0))]));
     const changed = prepared.filter(row => {
       const sourceKey = `${fromSource}:${row.variantId}`;
       const targetKey = `${toSource}:${row.variantId}`;
