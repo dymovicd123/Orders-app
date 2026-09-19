@@ -207,12 +207,14 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                           </label>
                           <label>
                             <span>Способ возврата денег</span>
-                            <SmartPickerInput
-                              value={returnDraft.paymentMethod}
-                              options={suggestionValues.paymentMethods}
-                              onChange={(value) => setReturnDraft((current) => ({ ...current, paymentMethod: value }))}
-                              placeholder="Например, НАЛИЧКА"
-                            />
+                            {Number(returnDraft.amount || 0) > 0 ? (
+                              <SmartPickerInput
+                                value={returnDraft.paymentMethod}
+                                options={suggestionValues.paymentMethods}
+                                onChange={(value) => setReturnDraft((current) => ({ ...current, paymentMethod: value }))}
+                                placeholder="Например, НАЛИЧКА"
+                              />
+                            ) : <span className="muted-small">Не требуется: возврат товара без возврата денег.</span>}
                           </label>
                           <label className="wide-field">
                             <span>Причина / комментарий</span>
@@ -311,6 +313,12 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
               </section>
     
               <section className="mini-panel debt-history-panel history-cards-panel">
+                {returnHistorySummary.pendingPhysicalQuantity > 0 ? (
+                  <div className="return-intake-alert">
+                    <strong>Ожидают физической приёмки: {returnHistorySummary.pendingPhysicalQuantity} шт.</strong>
+                    <span>Когда вещь реально вернулась, откройте нужный возврат ниже и нажмите «Принять товар». Система сразу спросит Склад / Бутик и, если нужно, поможет уточнить сам товар.</span>
+                  </div>
+                ) : null}
                 <div className="mini-panel-head history-section-head">
                   <div>
                     <h3>История возвратов</h3>
@@ -364,7 +372,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                 <span>{formatReturnItemCharacteristics(item)}</span>
                                 {entry.operationType === 'order_return' ? <em>{returnPhysicalStatus(item)}</em> : null}
                                 {entry.operationType === 'order_return' && entry.status !== 'cancelled' && item.physicalTracking && !item.physicalReceivedAt ? (
-                                  <div className="mini-panel-actions">
+                                  <div className="mini-panel-actions return-intake-actions">
                                     <select
                                       value={receiptDestinations[`return:${entry.id}:${item.id}`] || 'warehouse'}
                                       onChange={(event) => setReceiptDestinations((current) => ({ ...current, [`return:${entry.id}:${item.id}`]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
@@ -387,7 +395,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                         externalId: entry.externalId,
                                       })}
                                     >
-                                      Товар пришёл
+                                      Принять товар
                                     </button>
                                   </div>
                                 ) : null}
@@ -399,7 +407,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                       disabled={returnBusy || returnHistoryBusy}
                                       onClick={() => void finishKnownReturnIntake(item)}
                                     >
-                                      Завершить приёмку
+                                      Завершить приёмку в остаток
                                     </button>
                                   </div>
                                 ) : null}
