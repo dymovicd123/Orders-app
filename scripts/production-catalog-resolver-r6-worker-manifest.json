@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "revision": "production-catalog-resolver-r6",
+  "baseCommit": "bc8d1eb06c0bbbd75a91ac0756884fe87d3a16b0",
+  "files": {
+    "worker/domains/order-reservations.ts": {
+      "beforeGitBlob": "b2d21ec665d89175833568a5c0366085f18aea02",
+      "afterGitBlob": "f6375119020854d5eaa23907fedbb86d35a698c5",
+      "beforeLines": 2393,
+      "afterLines": 2406,
+      "replacements": [
+        {
+          "beforeBlock": "    }\n  }\n  const rawColor = upperText(item.color);\n  const color = await resolveCatalogValueAlias(db, 'color', normalizeCatalogCombinationColor(item.color));\n  const size = await resolveCatalogValueAlias(db, category === 'child' ? 'child_age' : 'size', normalizeCatalogCombinationSize(item.size));\n",
+          "afterBlock": "    }\n  }\n  const rawColor = upperText(item.color);\n  const rawSize = upperText(item.size);\n  const color = await resolveCatalogValueAlias(db, 'color', normalizeCatalogCombinationColor(item.color));\n  const size = await resolveCatalogValueAlias(db, category === 'child' ? 'child_age' : 'size', normalizeCatalogCombinationSize(item.size));\n"
+        },
+        {
+          "beforeBlock": "        ).bind(product.id, existingExecution.id, category).first<{ has_color: number }>();\n        omittedColorConflictsWithConcreteSibling = toInt(profile?.has_color, 0) > 0;\n      }\n      if (!omittedColorConflictsWithConcreteSibling) {\n        return { productId: toInt(product.id, 0) || null, variantId: toInt(existing.id, 0) || null, matchStatus: 'matched', inputKey };\n      }\n      return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };",
+          "afterBlock": "        ).bind(product.id, existingExecution.id, category).first<{ has_color: number }>();\n        omittedColorConflictsWithConcreteSibling = toInt(profile?.has_color, 0) > 0;\n      }\n      let omittedSizeConflictsWithConcreteSibling = false;\n      if (!rawSize) {\n        const sizeProfile = await db.prepare(\n          `SELECT MAX(CASE WHEN TRIM(COALESCE(size_label,'')) <> '' AND UPPER(TRIM(size_label)) NOT IN ('БЕЗ РАЗМЕРА','БЕЗРАЗМЕРА','Б/Р','НЕ УКАЗАН') THEN 1 ELSE 0 END) AS has_size\n           FROM catalog_variants\n           WHERE product_id = ? AND stock_position_id = ? AND is_active = 1\n             AND COALESCE(category,'adult') = ?\n             AND COALESCE(gender,'') = COALESCE(?, '')\n             AND COALESCE(color,'') = COALESCE(?, '')`\n        ).bind(product.id, existingExecution.id, category, gender || null, color || null).first<{ has_size: number }>();\n        omittedSizeConflictsWithConcreteSibling = toInt(sizeProfile?.has_size, 0) > 0;\n      }\n      if (!omittedColorConflictsWithConcreteSibling && !omittedSizeConflictsWithConcreteSibling) {\n        return { productId: toInt(product.id, 0) || null, variantId: toInt(existing.id, 0) || null, matchStatus: 'matched', inputKey };\n      }\n      return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };"
+        },
+        {
+          "beforeBlock": "  // Never synthesize a new БЕЗ ЦВЕТА SKU merely because the manager left color empty.\n  // One-size/unisex cases are intentionally not guessed here; their UI semantics are handled\n  // separately so existing legitimate dimensionless variants are not broken by this cleanup.\n  if (!rawColor) {\n    return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };\n  }\n",
+          "afterBlock": "  // Never synthesize a new БЕЗ ЦВЕТА SKU merely because the manager left color empty.\n  // One-size/unisex cases are intentionally not guessed here; their UI semantics are handled\n  // separately so existing legitimate dimensionless variants are not broken by this cleanup.\n  if (!rawColor || !rawSize) {\n    return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };\n  }\n"
+        }
+      ]
+    }
+  }
+}
