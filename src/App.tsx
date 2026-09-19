@@ -92,6 +92,7 @@ type OrderStockHandoverItemView = {
   productName: string
   itemDetails: string
   source: InventorySourceKey
+  variantId: number
   quantity: number
   reservationId: number | null
   reservationStatus: string
@@ -126,6 +127,21 @@ type OrderStockHandoverResponse = {
   state?: OrderStockHandoverResponse
   order?: OrderRecord
   refreshRequired?: boolean
+}
+
+type StockResolutionRequiredItemView = {
+  source?: InventorySourceKey
+  variantId?: number
+  productName?: string
+  trackedPhysicalQuantity?: number
+  operationQuantity?: number
+  unexplainedQuantity?: number
+}
+
+type OrderStockHandoverActionResponse = Omit<OrderStockHandoverResponse, 'items'> & {
+  code?: string
+  operationType?: string
+  items?: Array<OrderStockHandoverItemView | StockResolutionRequiredItemView>
 }
 
 
@@ -5720,7 +5736,7 @@ function removeDebtPayment(index: number) {
     const sourceName = handoverSourceLabel(item.source)
     let confirmText = ''
     if (action === 'issue_now') {
-      confirmText = `Выдать клиенту сейчас: «${item.productName}» × ${item.quantity} (${sourceName})?\n\nФизический остаток уменьшится на ${item.quantity}. Сам заказ останется «Не отправлен», пока остальные товары не готовы.`
+      confirmText = `Выдать клиенту сейчас: «${item.productName}» × ${item.quantity} (${sourceName})?\n\nСистема зафиксирует выдачу ${item.quantity} шт. и обновит остаток. Если по учёту товара окажется меньше, система отдельно попросит подтвердить только выдаваемые вещи. Сам заказ останется «Не отправлен», пока остальные товары не готовы.`
     } else if (action === 'issued_before_checkpoint') {
       confirmText = `На момент ${item.checkpointKind === 'revision' ? 'ревизии' : 'сверки'} ${checkpointDate} клиент уже получил «${item.productName}»?\n\nЕсли да, физический остаток не изменится и повторного списания не будет.`
     } else {
@@ -5732,17 +5748,47 @@ function removeDebtPayment(index: number) {
     setError(null)
     setMessage(null)
     try {
-      const response = await apiFetch(`/api/orders/${stockHandoverOrder.id}/stock-handover`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action,
-          orderItemId: item.orderItemId,
-          checkpointId: item.checkpointId || undefined,
-          checkpointAt: item.checkpointAt || undefined,
-        }),
-      })
-      const result = await readJsonResponse<OrderStockHandoverResponse>(response, 'Товары со склада')
+      const submitHandoverAction = async (stockConfirmations?: Array<{ source: InventorySourceKey; variantId: number; expectedQuantity: number; operationQuantity: number }>) => {
+        const response = await apiFetch(`/api/orders/${stockHandoverOrder.id}/stock-handover`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action,
+            orderItemId: item.orderItemId,
+            checkpointId: item.checkpointId || undefined,
+            checkpointAt: item.checkpointAt || undefined,
+            stockConfirmations,
+          }),
+        })
+        const result = await readJsonResponse<OrderStockHandoverActionResponse>(response, 'Товары со склада', { allowHttpError: true })
+        return { response, result }
+      }
+
+      let { response, result } = await submitHandoverAction()
+      if (!response.ok && action === 'issue_now' && result.code === 'stock_resolution_required' && result.operationType === 'handover' && Array.isArray(result.items) && result.items.length) {
+        const resolutionItems = result.items as StockResolutionRequiredItemView[]
+        const lines = resolutionItems.map((resolutionItem) => {
+          const name = resolutionItem.productName || item.productName
+          const tracked = Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0))
+          const needed = Math.max(1, Number(resolutionItem.operationQuantity || item.quantity || 1))
+          return `• ${name}: по учёту ${tracked} шт., сейчас клиенту выдаётся ${needed} шт.`
+        })
+        const confirmed = window.confirm(
+          `По учёту товара меньше, чем нужно для этой выдачи.\n\n${lines.join('\n')}\n\nПодтвердите только если указанные вещи прямо сейчас физически у вас и действительно передаются клиенту. Это НЕ пересчёт всего остатка.`
+        )
+        if (!confirmed) {
+          setMessage('Выдача остановлена. Остатки не изменялись.')
+          return
+        }
+        const stockConfirmations = resolutionItems.map((resolutionItem) => ({
+          source: resolutionItem.source === 'boutique' ? 'boutique' as const : 'warehouse' as const,
+          variantId: Number(resolutionItem.variantId || 0),
+          expectedQuantity: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
+          operationQuantity: Math.max(1, Number(resolutionItem.operationQuantity || 1)),
+        }))
+        ;({ response, result } = await submitHandoverAction(stockConfirmations))
+      }
+
       if (!response.ok || !result.ok) throw new Error(result.message || `Stock handover failed: ${response.status}`)
       if (result.order) {
         upsertOrderInState(result.order)
