@@ -136,6 +136,27 @@ export type CatalogReviewSelectedVariant = {
 };
 
 
+export function catalogReviewExactSignatureMatchesSelected(row: Record<string, unknown>, selected: CatalogReviewSelectedVariant) {
+  const rawProduct = cleanText(row.product_name_snapshot);
+  const rawAudience = cleanText(row.audience_type);
+  const rawGender = upperText(row.gender_snapshot);
+  const rawColor = upperText(row.color_snapshot);
+  const rawMaterialText = cleanText(row.material_snapshot);
+  const rawLengthText = cleanText(row.length_snapshot);
+  const rawSize = upperText(row.size_snapshot);
+  if (!rawProduct || !rawAudience || !rawGender || !rawColor || !rawMaterialText || !rawLengthText || !rawSize) return false;
+
+  const rowCategory = normalizeAudienceCategory(row.audience_type, row.size_snapshot);
+  const selectedCategory = normalizeAudienceCategory(selected.category, selected.size_label);
+  return rowCategory === selectedCategory
+    && rawGender === upperText(selected.gender)
+    && rawColor === upperText(selected.color)
+    && canonicalStockPositionValue(row.material_snapshot) === canonicalStockPositionValue(selected.material)
+    && canonicalStockPositionValue(row.length_snapshot) === canonicalStockPositionValue(selected.length)
+    && rawSize === upperText(selected.size_label);
+}
+
+
 export function catalogReviewRowToOrderItem(row: Record<string, unknown>) {
   return {
     productName: cleanText(row.product_name_snapshot),
@@ -946,11 +967,24 @@ export async function resolveOrderCatalogReviewExistingVariant(db: D1Database, o
 
   const inputKey = normalizedCatalogReviewKey(anchor);
   const rowsResult = await fetchCatalogReviewRows(db, 160, orderId);
-  const matching = (rowsResult.results || []).filter((row) => toInt(row.id ?? row.order_item_id, 0) === orderItemId);
-  if (!matching.length) throw new Error('Эта позиция уже разобрана. Обновите заказ.');
-  // A human chose this variant for one order line. Never propagate that decision to
-  // another raw-identical line: blank gender/size/color may hide a real difference.
-  return await resolveCatalogReviewRows(db, matching, selected, inputKey, new Date().toISOString(), { writeAlias: false });
+  const selectedRow = (rowsResult.results || []).find((row) => toInt(row.id ?? row.order_item_id, 0) === orderItemId);
+  if (!selectedRow) throw new Error('Эта позиция уже разобрана. Обновите заказ.');
+
+  const timestamp = new Date().toISOString();
+  const safeToLearnExactSignature = catalogReviewExactSignatureMatchesSelected(anchor, selected);
+  if (!safeToLearnExactSignature) {
+    // Incomplete rows stay strictly row-scoped: the same blank gender/color/size can still
+    // represent different physical SKUs.
+    return await resolveCatalogReviewRows(db, [selectedRow], selected, inputKey, timestamp, { writeAlias: false });
+  }
+
+  // A complete raw signature plus an explicit human SKU choice is reusable knowledge.
+  // Learn both the base-product spelling and the exact signature, then reconcile already-open
+  // identical tasks so the employee is not asked the same fully-specified question again.
+  await rememberCatalogProductAlias(db, anchor.product_name_snapshot, toInt(selected.product_id, 0), timestamp);
+  const candidates = await fetchCatalogReviewResolutionCandidates(db, orderId);
+  const matching = (candidates.results || []).filter((row) => normalizedCatalogReviewKey(row) === inputKey);
+  return await resolveCatalogReviewRows(db, matching.length ? matching : [selectedRow], selected, inputKey, timestamp, { writeAlias: true });
 }
 
 
