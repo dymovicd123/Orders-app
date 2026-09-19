@@ -4823,7 +4823,7 @@ function App() {
           size: item.size,
           quantity: Number(item.quantity || 0),
           expectedQuantity: item.expectedQuantity,
-          observedPhysicalQuantity: item.observedPhysicalQuantity,
+          observedPhysicalQuantity: inventoryDraft.movementType === 'manual_set' ? item.observedPhysicalQuantity : undefined,
         }))
 
       if (!cleanItems.length) {
@@ -4864,41 +4864,74 @@ function App() {
       }
 
       const isTransfer = inventoryDraft.movementType === 'transfer'
-      if (isTransfer || inventoryDraft.movementType === 'writeoff') {
-        for (const item of cleanItems) {
-          const row = inventoryOperationSourceRows.find((entry) => String(entry.variantId || '') === String(item.variantId || ''))
-          const physical = Number(row?.quantity || 0)
-          const requested = Math.max(0, Number(item.quantity || 0))
-          if (requested <= Math.max(0, physical)) continue
-          const observed = item.observedPhysicalQuantity === null || item.observedPhysicalQuantity === undefined
-            ? null
-            : Math.max(0, Math.trunc(Number(item.observedPhysicalQuantity || 0)))
-          if (observed === null) {
-            throw new Error(`По учёту «${item.productName}» на месте ${physical} шт., а ${isTransfer ? 'переместить' : 'списать'} нужно ${requested}. Если товар физически есть, укажите «Фактически на месте» прямо в этой строке.`)
-          }
-          if (observed < requested) {
-            throw new Error(`Для «${item.productName}» подтверждено ${observed} шт., а ${isTransfer ? 'переместить' : 'списать'} нужно ${requested}. Исправьте фактическое количество или количество операции.`)
-          }
-        }
+      const isWriteoff = inventoryDraft.movementType === 'writeoff'
+      type InventoryMovementSaveResponse = {
+        ok?: boolean
+        message?: string
+        externalId?: string
+        warnings?: Array<{ shortageAfter?: number }>
+        code?: string
+        operationType?: string
+        items?: StockResolutionRequiredItemView[]
       }
-      const response = await apiFetch(isTransfer ? '/api/inventory/transfer?returnInventory=0' : '/api/inventory/movements?returnInventory=0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(isTransfer ? {
-          requestId: inventoryTransferRequestId,
-          fromSource: inventoryDraft.source,
-          toSource: inventoryDraft.targetSource,
-          comment: inventoryDraft.comment,
-          items: cleanItems,
-        } : {
-          requestId: inventoryManualRequestId,
-          inventorySource: inventoryDraft.source,
-          movementType: inventoryDraft.movementType,
-          comment: inventoryDraft.comment,
-          items: cleanItems,
-        }),
-      })
-      const result = await readJsonResponse<{ message?: string; externalId?: string; warnings?: Array<{ shortageAfter?: number }> }>(response, 'Сохранение движения склада')
+      const submitMovement = async (stockConfirmations?: Array<{ source: InventorySourceKey; variantId: number; expectedQuantity: number; operationQuantity: number }>) => {
+        const response = await apiFetch(isTransfer ? '/api/inventory/transfer?returnInventory=0' : '/api/inventory/movements?returnInventory=0', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(isTransfer ? {
+            requestId: inventoryTransferRequestId,
+            fromSource: inventoryDraft.source,
+            toSource: inventoryDraft.targetSource,
+            comment: inventoryDraft.comment,
+            items: cleanItems,
+            stockConfirmations,
+          } : {
+            requestId: inventoryManualRequestId,
+            inventorySource: inventoryDraft.source,
+            movementType: inventoryDraft.movementType,
+            comment: inventoryDraft.comment,
+            items: cleanItems,
+            stockConfirmations,
+          }),
+        })
+        const result = await readJsonResponse<InventoryMovementSaveResponse>(response, 'Сохранение движения склада', { allowHttpError: true })
+        return { response, result }
+      }
+
+      let { response, result } = await submitMovement()
+      const resolverOperation = isTransfer ? 'transfer' : isWriteoff ? 'writeoff' : ''
+      if (
+        !response.ok
+        && resolverOperation
+        && result.code === 'stock_resolution_required'
+        && result.operationType === resolverOperation
+        && Array.isArray(result.items)
+        && result.items.length
+      ) {
+        const lines = result.items.map((resolutionItem) => {
+          const tracked = Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0))
+          const needed = Math.max(1, Number(resolutionItem.operationQuantity || 1))
+          return `• ${resolutionItem.productName || 'Товар'}: по учёту ${tracked} шт., в этой операции ${needed} шт.`
+        })
+        const actionText = isTransfer
+          ? `эти вещи прямо сейчас физически переносятся из «${sourceLabel(inventoryDraft.source)}» в «${sourceLabel(inventoryDraft.targetSource)}»`
+          : 'эти вещи прямо сейчас физически находятся у вас и действительно списываются'
+        const confirmed = window.confirm(
+          `По учёту товара меньше, чем указано в операции.\n\n${lines.join('\n')}\n\nПодтвердите только если ${actionText}. Это НЕ пересчёт всего остатка.`
+        )
+        if (!confirmed) {
+          setMessage(isTransfer ? 'Перемещение остановлено. Остатки не изменялись.' : 'Списание остановлено. Остатки не изменялись.')
+          return
+        }
+        const stockConfirmations = result.items.map((resolutionItem) => ({
+          source: resolutionItem.source === 'boutique' ? 'boutique' as const : 'warehouse' as const,
+          variantId: Number(resolutionItem.variantId || 0),
+          expectedQuantity: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
+          operationQuantity: Math.max(1, Number(resolutionItem.operationQuantity || 1)),
+        }))
+        ;({ response, result } = await submitMovement(stockConfirmations))
+      }
+
       if (!response.ok) throw new Error(result.message || `Inventory save failed: ${response.status}`)
 
       const refreshes: Array<Promise<unknown>> = isTransfer
@@ -4914,9 +4947,8 @@ function App() {
           : [
               loadInventoryData(inventoryDraft.source, true, '', false),
             ]
-      // Arrival/manual inventory write is already committed once the POST above returned 2xx.
-      // Follow-up reads are best-effort: a failed refresh must never turn a committed arrival
-      // into a red 'operation failed' state that invites the employee to submit it again.
+      // The mutation is already committed once the POST returned 2xx. Follow-up reads are
+      // best-effort so a refresh failure cannot invite the employee to submit the operation again.
       await Promise.allSettled(refreshes)
       const transferShortage = isTransfer ? (result.warnings || []).reduce((sum, row) => sum + Math.max(0, Number(row.shortageAfter || 0)), 0) : 0
       setMessage(isTransfer
