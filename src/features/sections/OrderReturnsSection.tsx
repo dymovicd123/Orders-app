@@ -269,6 +269,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                       {item.sourceType !== 'workshop' ? <option value="boutique">Пришёл → Бутик</option> : null}
                                       <option value="no_stock">Пришёл, в остаток не добавлять</option>
                                     </select>
+                                    {item.sourceType === 'workshop' ? <small className="field-hint">Для вещи из Цеха по умолчанию остаток не создаётся. «Склад» выбирайте только при явном решении принять её туда.</small> : null}
                                   </td>
                                 </tr>
                               )) : (
