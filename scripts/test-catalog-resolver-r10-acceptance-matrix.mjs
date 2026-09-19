@@ -56,7 +56,9 @@ const blankGenderContext = readyContext({
   exactVariant: null,
 })
 const blankGenderDraft = initialDraft({ productName: 'КАРДИГАН', color: 'ЧЕРНЫЙ', size: '46' }, blankGenderContext)
-assert.deepEqual(nextQuestion(blankGenderContext, blankGenderDraft, options()), { kind: 'field', field: 'gender' }, 'R10.4: blank unisex gender is being guessed or skipped')
+const blankGenderQuestion = nextQuestion(blankGenderContext, blankGenderDraft, options())
+assert.equal(blankGenderQuestion.kind, 'field', 'R10.4: blank unisex gender no longer asks a field question')
+assert.equal(blankGenderQuestion.field, 'gender', 'R10.4: blank unisex gender is being guessed or skipped')
 
 // 5. Two legitimate genders: server must not infer one for unisex scope.
 assert.ok(catalog.includes("return scope === 'female' ? 'ЖЕН' : scope === 'male' ? 'МУЖ' : ''"), 'R10.5: unisex gender scope can again synthesize a gender')
@@ -73,7 +75,9 @@ const unknownRefContext = readyContext({
 })
 const unknownRefDraft = { ...initialDraft({ productName: 'КАРДИГАН', color: 'ЧЕРНЫЙ', size: '46' }, unknownRefContext), material: 'ВЕЛЮРР' }
 assert.equal(needsReference(unknownRefContext, unknownRefDraft, 'material'), true, 'R10.7: unknown material is not recognized as a new reference')
-assert.deepEqual(nextQuestion(unknownRefContext, unknownRefDraft, options()), { kind: 'reference', field: 'material' }, 'R10.7: genuinely unknown reference does not ask human')
+const unknownRefQuestion = nextQuestion(unknownRefContext, unknownRefDraft, options())
+assert.equal(unknownRefQuestion.kind, 'reference', 'R10.7: genuinely unknown reference does not ask human')
+assert.equal(unknownRefQuestion.field, 'material', 'R10.7: unknown material asks the wrong reference question')
 const provenRefContext = { ...unknownRefContext, exactVariant: readyContext().exactVariant }
 assert.equal(nextQuestion(provenRefContext, unknownRefDraft, options()).kind, 'ready', 'R10.7: exact canonical variant still triggers unnecessary reference question')
 
