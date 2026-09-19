@@ -653,6 +653,14 @@ export async function listOrders(db: D1Database, url: URL) {
       committed_return_count: (relations.returnsByOrderId.get(order.id) || []).filter(ret => cleanText((ret as any).status || 'completed').toLowerCase() !== 'cancelled').length,
       committed_exchange_count: relations.committedExchangeCountByOrderId.get(order.id) || 0,
       has_committed_item_return: relations.hasCommittedItemReturnByOrderId.get(order.id) || false,
+      catalog_review_required: (relations.itemsByOrderId.get(order.id) || []).some(raw => {
+        const item = raw as Record<string, unknown>;
+        const status = cleanText(item.stock_writeoff_status);
+        return !toInt(item.is_workshop, 0)
+          && orderItemAvailableOperationQuantity(item) > 0
+          && !['fulfilled', 'written_off', 'negative', 'catalog_excluded', 'catalog_excluded_history', 'workshop_no_catalog', 'legacy_unknown_gender'].includes(status)
+          && (!toInt(item.product_id, 0) || !toInt(item.variant_id, 0) || status === 'catalog_unresolved');
+      }),
       items: (relations.itemsByOrderId.get(order.id) || []).map(item => ({
         id: (item as any).id,
         ...canonicalItemProjection(item as Record<string, unknown>),
