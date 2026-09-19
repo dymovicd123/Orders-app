@@ -86,6 +86,11 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   useEffect(() => {
     const owner = createResolutionSession()
     session.current = owner
+    // Every order owns its own resolver activity. Never inherit a pending click/request
+    // from the previously opened order; stale async work is already fenced by generation/session.
+    previewPending.current = false
+    mutationPending.current = false
+    setResolving(false)
     setItem(null); setDraft(null); setContext(null); setProgress({ total: 0, remaining: 0 }); setNotice('')
     setNeedsRecheck(false); setCatalog(null); catalogPromise.current = null
     void load().catch(value => { if (owner === session.current) setError(value instanceof Error ? value.message : 'Не удалось загрузить товар.') })
@@ -148,7 +153,6 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   }
   const finish = async (variantId?: number, next = draft) => {
     if (!order || !item || !next || resolving || busy || error || previewPending.current || mutationPending.current) return
-    if (!variantId && !isAdmin) return
     mutationPending.current = true
     const owner = session.current, ticket = generation.current
     setResolving(true); setError('')
