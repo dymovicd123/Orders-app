@@ -246,7 +246,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                               </div>
                             ) : inventoryOperationAllProductGroups.length === 0 ? (
                               <div className="inventory-movement-source-status is-empty">
-                                <span>Список точки «{sourceLabel(inventoryDraft.source)}» пуст по текущим данным.{inventoryDraft.movementType === 'writeoff' ? ' Для списания показываются только позиции, где «На месте» больше нуля.' : ''}</span>
+                                <span>Список точки «{sourceLabel(inventoryDraft.source)}» пуст по текущим данным.</span>
                                 <button className="ghost compact" type="button" onClick={() => setMovementSourceRefreshToken((current) => current + 1)}>Обновить список</button>
                               </div>
                             ) : null}
