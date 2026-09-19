@@ -14,6 +14,19 @@ if (!process.env.STAGE02_PHASE2A_WORKER_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
+    for (const [relative, delta] of Object.entries(stage02Phase2AWorkerManifest.changedFiles || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage02Phase2ABlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage02 Phase2A Worker changed file changed beyond exact manifest: ' + relative)
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage02 Phase2A Worker after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (stage02Phase2ABlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage02 Phase2A Worker predecessor reconstruction failed: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
     for (const [relative, expected] of Object.entries(stage02Phase2AWorkerManifest.addedFiles || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
