@@ -560,3 +560,27 @@
     justify-self: start;
   }
 }
+
+
+/* Post-review intake visibility: pending physical returns/exchanges must look actionable. */
+.history-load-state.is-warning {
+  border-style: solid;
+  border-color: rgba(202, 138, 4, .28);
+  background: #fffbeb;
+  color: #713f12;
+}
+
+.order-tab-attention {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #b45309;
+  color: #fff;
+  font-size: .72rem;
+  line-height: 1;
+}
