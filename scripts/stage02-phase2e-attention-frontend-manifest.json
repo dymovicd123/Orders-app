@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "revision": "stage02-phase2e-attention-dependency-removal",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "76da83a1e0b06f1bc13e3ca028dd8e589427aad1",
+      "afterGitBlob": "3eebbc8ec6ce1f8439627f20ec390639717bad14",
+      "beforeLines": 7391,
+      "afterLines": 7391,
+      "replacements": [
+        {
+          "beforeBlock": "        </DeferredSection>\n\n        <DeferredSection active={activeSector === 'orders' && orderPanel === 'returns'} label=\"Возврат\">\n        <OrderReturnsSection ctx={{ cancelReturnEntry, closeReturnForm, createReturnDraft, formatMoney, FriendlyNumberInput, isAdmin, loadReturnHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, returnBusy, returnDraft, returnFormRef, returnHistory, returnHistoryBusy, returnHistoryError, returnHistoryFilters, returnHistoryHasMore, returnHistorySummary, returnSelectedOrder, saveReturn, sectorStyle, setOrderPanel, setReturnDraft, setReturnHistoryFilters, SmartPickerInput, suggestionValues }} />\n        </DeferredSection>\n\n        <DeferredSection active={activeSector === 'orders' && orderPanel === 'exchange'} label=\"Обмен размера\">\n        <OrderExchangeSection ctx={{ applyExchangeProductPick, cancelExchangeEntry, closeExchangeForm, correctExchangeFinancialEntry, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />\n        </DeferredSection>\n\n        <DeferredSection active={activeSector === 'team'} label=\"Команда\">",
+          "afterBlock": "        </DeferredSection>\n\n        <DeferredSection active={activeSector === 'orders' && orderPanel === 'returns'} label=\"Возврат\">\n        <OrderReturnsSection ctx={{ cancelReturnEntry, closeReturnForm, createReturnDraft, formatMoney, FriendlyNumberInput, isAdmin, loadReturnHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, returnBusy, returnDraft, returnFormRef, returnHistory, returnHistoryBusy, returnHistoryError, returnHistoryFilters, returnHistoryHasMore, returnHistorySummary, returnSelectedOrder, saveReturn, sectorStyle, setOrderPanel, setReturnDraft, setReturnHistoryFilters, SmartPickerInput, suggestionValues }} />\n        </DeferredSection>\n\n        <DeferredSection active={activeSector === 'orders' && orderPanel === 'exchange'} label=\"Обмен размера\">\n        <OrderExchangeSection ctx={{ applyExchangeProductPick, cancelExchangeEntry, closeExchangeForm, correctExchangeFinancialEntry, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />\n        </DeferredSection>\n\n        <DeferredSection active={activeSector === 'team'} label=\"Команда\">"
+        }
+      ]
+    },
+    "src/features/sections/OrderReturnsSection.tsx": {
+      "beforeGitBlob": "2bb6ee06c48bcba23aefac7cd5e6fbb05bba3bc8",
+      "afterGitBlob": "32ab7814512323cbce619d574794c8de85b6b872",
+      "beforeLines": 421,
+      "afterLines": 445,
+      "replacements": [
+        {
+          "beforeBlock": "    loadReturnHistory,\n    returnSelectedOrder,\n    receiveReturnedItemAction,\n    saveReturn,\n    sectorStyle,\n    setOrderPanel,",
+          "afterBlock": "    loadReturnHistory,\n    returnSelectedOrder,\n    receiveReturnedItemAction,\n    reconcileKnownInventoryLifecycle,\n    saveReturn,\n    sectorStyle,\n    setOrderPanel,"
+        },
+        {
+          "beforeBlock": "    && (item.inventorySource === 'warehouse' || item.inventorySource === 'boutique')\n    && !item.lifecycleStatus\n  )\n  const returnPhysicalStatus = (item: any) => {\n    if (!item.physicalTracking) return 'Старая запись — физическое получение не отслеживалось'\n    if (!item.physicalReceivedAt) return 'Ещё не пришёл'",
+          "afterBlock": "    && (item.inventorySource === 'warehouse' || item.inventorySource === 'boutique')\n    && !item.lifecycleStatus\n  )\n  const returnKnownIntakePending = (item: any) => Boolean(\n    item.physicalTracking\n    && item.physicalReceivedAt\n    && item.lifecycleId\n    && item.lifecycleStatus === 'pending'\n    && (item.inventorySource === 'warehouse' || item.inventorySource === 'boutique')\n  )\n  const finishKnownReturnIntake = async (item: any) => {\n    const result = await reconcileKnownInventoryLifecycle(Number(item.lifecycleId || 0))\n    if (result?.ok) await loadReturnHistory()\n  }\n  const returnPhysicalStatus = (item: any) => {\n    if (!item.physicalTracking) return 'Старая запись — физическое получение не отслеживалось'\n    if (!item.physicalReceivedAt) return 'Ещё не пришёл'"
+        },
+        {
+          "beforeBlock": "                                    </button>\n                                  </div>\n                                ) : null}\n                                {entry.operationType === 'order_return' && entry.status !== 'cancelled' && returnReceiptNeedsRecovery(item) ? (\n                                  <div className=\"mini-panel-actions\">\n                                    <button",
+          "afterBlock": "                                    </button>\n                                  </div>\n                                ) : null}\n                                {entry.operationType === 'order_return' && entry.status !== 'cancelled' && returnKnownIntakePending(item) ? (\n                                  <div className=\"mini-panel-actions\">\n                                    <button\n                                      className=\"primary compact\"\n                                      type=\"button\"\n                                      disabled={returnBusy || returnHistoryBusy}\n                                      onClick={() => void finishKnownReturnIntake(item)}\n                                    >\n                                      Завершить приёмку\n                                    </button>\n                                  </div>\n                                ) : null}\n                                {entry.operationType === 'order_return' && entry.status !== 'cancelled' && returnReceiptNeedsRecovery(item) ? (\n                                  <div className=\"mini-panel-actions\">\n                                    <button"
+        }
+      ]
+    },
+    "src/features/sections/OrderExchangeSection.tsx": {
+      "beforeGitBlob": "cab31f5a4aa2b6a2bfc935d9ba5cf56a210c6c81",
+      "afterGitBlob": "c20083d3befa9b6035fd578107f93293d26ee143",
+      "beforeLines": 604,
+      "afterLines": 628,
+      "replacements": [
+        {
+          "beforeBlock": "    managerColorFor,\n    orderPanelStyle,\n    receiveReturnedItemAction,\n    saveExchange,\n    sectorStyle,\n    setExchangeDraft,",
+          "afterBlock": "    managerColorFor,\n    orderPanelStyle,\n    receiveReturnedItemAction,\n    reconcileKnownInventoryLifecycle,\n    saveExchange,\n    sectorStyle,\n    setExchangeDraft,"
+        },
+        {
+          "beforeBlock": "    && (entry.oldReturnSource === 'warehouse' || entry.oldReturnSource === 'boutique')\n    && !entry.oldLifecycleStatus\n  )\n  const oldReturnLabel = (entry: any) => {\n    if (!entry.oldPhysicalTracking) return 'Старая запись — физическое получение не отслеживалось'\n    if (!entry.oldPhysicalReceivedAt) return 'Ещё не пришла'",
+          "afterBlock": "    && (entry.oldReturnSource === 'warehouse' || entry.oldReturnSource === 'boutique')\n    && !entry.oldLifecycleStatus\n  )\n  const oldKnownIntakePending = (entry: any) => Boolean(\n    entry.oldPhysicalTracking\n    && entry.oldPhysicalReceivedAt\n    && entry.oldLifecycleId\n    && entry.oldLifecycleStatus === 'pending'\n    && (entry.oldReturnSource === 'warehouse' || entry.oldReturnSource === 'boutique')\n  )\n  const finishKnownExchangeIntake = async (entry: any) => {\n    const result = await reconcileKnownInventoryLifecycle(Number(entry.oldLifecycleId || 0))\n    if (result?.ok) await loadExchangeHistory()\n  }\n  const oldReturnLabel = (entry: any) => {\n    if (!entry.oldPhysicalTracking) return 'Старая запись — физическое получение не отслеживалось'\n    if (!entry.oldPhysicalReceivedAt) return 'Ещё не пришла'"
+        },
+        {
+          "beforeBlock": "                                  </button>\n                                </div>\n                              ) : null}\n                              {entry.status !== 'cancelled' && entry.oldOperationItemId && oldReceiptNeedsRecovery(entry) ? (\n                                <div className=\"mini-panel-actions\">\n                                  <button",
+          "afterBlock": "                                  </button>\n                                </div>\n                              ) : null}\n                              {entry.status !== 'cancelled' && entry.oldOperationItemId && oldKnownIntakePending(entry) ? (\n                                <div className=\"mini-panel-actions\">\n                                  <button\n                                    className=\"primary compact\"\n                                    type=\"button\"\n                                    disabled={exchangeBusy || exchangeHistoryBusy}\n                                    onClick={() => void finishKnownExchangeIntake(entry)}\n                                  >\n                                    Завершить приёмку\n                                  </button>\n                                </div>\n                              ) : null}\n                              {entry.status !== 'cancelled' && entry.oldOperationItemId && oldReceiptNeedsRecovery(entry) ? (\n                                <div className=\"mini-panel-actions\">\n                                  <button"
+        }
+      ]
+    }
+  }
+}
