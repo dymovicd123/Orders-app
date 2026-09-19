@@ -33,7 +33,7 @@
     },
     "src/features/sections/OrderExchangeSection.tsx": {
       "beforeGitBlob": "ab31d0b30e1d31272a095360ced46919e43e08f5",
-      "afterGitBlob": "99c7dae128a7a2e8aa43328170fdbdf7a321dc38",
+      "afterGitBlob": "2c75a54178303ce71925b0054484f053c8eeca24",
       "beforeLines": 604,
       "afterLines": 604,
       "replacements": [
@@ -43,7 +43,7 @@
         },
         {
           "beforeBlock": "                              {!effectiveOldItemIsWorkshop ? <option value=\"boutique\">Пришла → Бутик</option> : null}\n                              <option value=\"no_stock\">Пришла, в остаток не добавлять</option>\n                            </select>\n                            {effectiveOldItemIsWorkshop ? <small className=\"field-hint\">Для вещи из Цеха Бутик недоступен. Если вещь ещё едет, оставьте «Ещё не пришла».</small> : null}\n                          </label>\n                          <label>\n                            <span>Дата обмена</span>",
-          "afterBlock": "                              {!effectiveOldItemIsWorkshop ? <option value=\"boutique\">Пришла → Бутик</option> : null}\n                              <option value=\"no_stock\">Пришла, в остаток не добавлять</option>\n                            </select>\n                            {effectiveOldItemIsWorkshop ? <small className=\"field-hint\">Для вещи из Цеха по умолчанию остаток не создаётся. «Склад» выбирайте только если вещь действительно принимают туда; если она ещё едет — выберите «Ещё не пришла».</small> : null}\n                          </label>\n                          <label>\n                            <span>Дата обмена</span>"
+          "afterBlock": "                              {!effectiveOldItemIsWorkshop ? <option value=\"boutique\">Пришла → Бутик</option> : null}\n                              <option value=\"no_stock\">Пришла, в остаток не добавлять</option>\n                            </select>\n                            {effectiveOldItemIsWorkshop ? <small className=\"field-hint\">Для вещи из Цеха Бутик недоступен. По умолчанию остаток не создаётся. «Склад» выбирайте только если вещь действительно принимают туда; если она ещё едет — выберите «Ещё не пришла».</small> : null}\n                          </label>\n                          <label>\n                            <span>Дата обмена</span>"
         }
       ]
     }
