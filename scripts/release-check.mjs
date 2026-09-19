@@ -223,6 +223,7 @@ try {
   run('Stage02 Phase2D transfer/writeoff possession resolver', process.execPath, [path.join(root, 'scripts/test-stage02-phase2d-transfer-writeoff-possession-resolver.mjs')])
   run('Stage02 Phase2E Attention dependency removal', process.execPath, [path.join(root, 'scripts/test-stage02-phase2e-attention-dependency-removal.mjs')])
   run('Stage02 Phase2 final acceptance', process.execPath, [path.join(root, 'scripts/test-stage02-phase2-final-acceptance.mjs')])
+  run('Stage02 resolver/return UX fixes', process.execPath, [path.join(root, 'scripts/test-stage02-resolver-return-ux-fixes.mjs')])
   run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])
