@@ -140,7 +140,7 @@ assert.ok(!b.text().includes('Не нашли правильный вариан�
 assert.ok(!b.text().includes('Расширенное исправление'))
 assert.ok(!b.text().includes('Админ'))
 await b.click('Не удалось выяснить')
-assert.ok(b.text().includes('Цвет в заказе не указан'))
+assert.ok(b.text().includes('Не указан цвет'))
 assert.ok(!/SKU|legacy_unknown_gender|каноническ|складская комбинация/.test(b.text()))
 const manager = mount(resolveFixture([{ ...cleanItem, gender: '' }], compoundContext), false)
 await manager.flush(); assert.ok(manager.text().includes('Не указан пол')); assert.ok(!manager.text().includes('Не удалось выяснить')); assert.ok(!manager.text().includes('Расширенное исправление'))
