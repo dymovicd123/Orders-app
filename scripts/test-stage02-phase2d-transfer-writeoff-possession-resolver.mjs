@@ -19,7 +19,7 @@ try {
   check(save.includes("result.code === 'stock_resolution_required'"), 'Phase2D client does not consume stock_resolution_required')
   check(save.includes("result.operationType === resolverOperation"), 'Phase2D client does not scope resolver to current operation')
   check(save.includes("resolverOperation = isTransfer ? 'transfer' : isWriteoff ? 'writeoff'"), 'Phase2D resolver is not limited to transfer/writeoff')
-  check(save.includes('Это НЕ пересчёт всего остатка'), 'Phase2D possession wording missing')
+  check(save.includes('askStockResolution') && save.includes('Да, перемещаю эти вещи') && save.includes('Да, списываю эти вещи') && save.includes('не пересчитывается'), 'Phase2D human possession resolver wording missing')
   check(save.includes('submitMovement(stockConfirmations)'), 'Phase2D does not resume the same movement after confirmation')
   check(save.includes('requestId: inventoryTransferRequestId') && save.includes('requestId: inventoryManualRequestId'), 'Phase2D retry does not preserve operation request id')
   check(save.includes("observedPhysicalQuantity: inventoryDraft.movementType === 'manual_set' ? item.observedPhysicalQuantity : undefined"), 'Phase2D still submits full physical observations for transfer/writeoff')
