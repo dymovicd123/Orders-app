@@ -14,9 +14,9 @@ try {
   check(types.includes('catalog_review_required?: boolean'), 'Order API type lost the catalog-review flag')
   check(
     ordersRead.includes('catalog_review_required:') &&
-      ordersRead.includes("status === 'catalog_unresolved'") &&
-      ordersRead.includes("'legacy_unknown_gender'"),
-    'Orders read model no longer derives the known human catalog-clarification state safely',
+      ordersRead.includes("'legacy_unknown_gender'") &&
+      ordersRead.includes("&& !toInt(item.variant_id, 0);"),
+    'Orders read model no longer derives human clarification only when exact SKU identity is still unknown',
   )
   check(
     projection.includes('needsCatalogClarification: mutableWorkingOrder && !sent && Boolean(order.catalog_review_required)'),
