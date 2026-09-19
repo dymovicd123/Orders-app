@@ -41,11 +41,11 @@ check(!/stockConfirmation[\s\S]{0,500}INSERT OR IGNORE INTO inventory_stock_chec
 check(manual.includes("const stockConfirmations = movementType === 'writeoff'") && manual.includes(": [];"), '8. Manual resolver leaked into Arrival/manual exact-count workflows')
 check(manual.includes('Списание больше не принимает полный фактический остаток'), '9. Writeoff still accepts operation-time full-stock observations')
 check(manual.includes('targetQuantity = boundedOutbound.trackedPhysicalAfter') && manual.includes('delta = -boundedOutbound.explainedQuantity'), '10. Writeoff does not use bounded source truth')
-check(manual.includes("evidenceKey: `writeoff:${requestId}:${inventorySource}:${entry.item.variantId}`"), '11. Writeoff unexplained outbound evidence is missing')
+check(manual.includes("SELECT 'writeoff:' || ? || ':' || ? || ':' || x.variant_id") && manual.includes("x.variant_id, 'writeoff', ?, x.current_quantity, x.operation_quantity"), '11. Writeoff unexplained outbound evidence is missing')
 
 check(transfer.includes('Перемещение больше не принимает полный фактический остаток'), '12. Transfer still accepts operation-time full-stock observations')
 check(transfer.includes('SET quantity = MAX(0, quantity) + (SELECT move_qty'), '13. Transfer destination does not receive exact +Q from a nonnegative baseline')
-check(transfer.includes("evidenceKey: `transfer:${requestId}:${fromSource}:${row.variantId}`"), '14. Transfer unexplained outbound evidence is missing')
+check(transfer.includes("SELECT 'transfer:' || ? || ':' || ? || ':' || x.variant_id") && transfer.includes("x.variant_id, 'transfer', ?, x.source_current, x.move_qty"), '14. Transfer unexplained outbound evidence is missing')
 check(reversal.includes('const sourceRestoreQuantity = Math.max(0, fromQuantityBefore - fromQuantityAfter)'), '15. Transfer reversal can inflate source by unexplained Q')
 check(reversal.includes('quantity = quantity - (SELECT move_qty'), '16. Transfer reversal no longer removes exact moved Q from destination')
 
