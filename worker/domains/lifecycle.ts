@@ -1170,15 +1170,60 @@ export async function resolveInventoryLifecycleFacts(db: D1Database, eventId: nu
     event.id,
     combination.id,
     timestamp,
-    `Администратор подтвердил физическую позицию: ${cleanText(product.name)}`,
+    `Подтверждена физическая позиция: ${cleanText(product.name)}`,
   );
+
+  let autoResolvedMatching = 0;
+  const completeRawIdentity = Boolean(
+    cleanText(event.product_name_snapshot)
+    && ['ЖЕН', 'МУЖ'].includes(upperText(event.gender_snapshot))
+    && cleanText(event.color_snapshot)
+    && cleanText(event.material_snapshot)
+    && cleanText(event.length_snapshot)
+    && cleanText(event.size_snapshot)
+  );
+  if (completeRawIdentity && cleanText(event.direction) === 'in') {
+    const siblings = await db.prepare(
+      `SELECT id
+       FROM inventory_lifecycle_events
+       WHERE id <> ?
+         AND status = 'pending'
+         AND direction = 'in'
+         AND UPPER(TRIM(COALESCE(product_name_snapshot, ''))) = UPPER(TRIM(?))
+         AND UPPER(TRIM(COALESCE(gender_snapshot, ''))) = UPPER(TRIM(?))
+         AND UPPER(TRIM(COALESCE(color_snapshot, ''))) = UPPER(TRIM(?))
+         AND UPPER(TRIM(COALESCE(material_snapshot, ''))) = UPPER(TRIM(?))
+         AND UPPER(TRIM(COALESCE(length_snapshot, ''))) = UPPER(TRIM(?))
+         AND UPPER(TRIM(COALESCE(size_snapshot, ''))) = UPPER(TRIM(?))
+       ORDER BY id ASC
+       LIMIT 80`
+    ).bind(
+      event.id,
+      cleanText(event.product_name_snapshot),
+      cleanText(event.gender_snapshot),
+      cleanText(event.color_snapshot),
+      cleanText(event.material_snapshot),
+      cleanText(event.length_snapshot),
+      cleanText(event.size_snapshot),
+    ).all<{ id: number }>();
+    for (const sibling of siblings.results || []) {
+      try {
+        const result = await reconcileKnownPendingInventoryInbound(db, toInt(sibling.id, 0));
+        if (result?.ok) autoResolvedMatching += 1;
+      } catch (error) {
+        console.warn('Matching returned-item intake stayed pending after learned identity', error);
+      }
+    }
+  }
+
   return {
     ok: true,
     applied: Boolean(applied.applied || applied.already),
     eventId: event.id,
     createdCombination: Boolean(combination.created),
+    autoResolvedMatching,
     message: cleanText(event.direction) === 'in'
-      ? `Позиция принята в ${normalizeSourceType(event.inventory_source) === 'warehouse' ? 'Склад' : 'Бутик'} и учтена в фактическом остатке.`
+      ? `Позиция принята в ${normalizeSourceType(event.inventory_source) === 'warehouse' ? 'Склад' : 'Бутик'} и учтена в фактическом остатке.${autoResolvedMatching ? ` Ещё автоматически закрыто похожих приёмок: ${autoResolvedMatching}.` : ''}`
       : `Выданная позиция определена и физическое списание применено к правильной комбинации.`,
   };
 }
