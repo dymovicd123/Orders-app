@@ -2482,9 +2482,9 @@ export async function getOrderShipmentInventoryBlockers(db: D1Database, orderId:
      LIMIT 20`
   ).bind(orderId).all<Record<string, unknown>>();
 
-  // Keep computing shortages for diagnostics/attention, but they no longer hard-block shipping.
-  void shortageResult;
-  return [...(unresolvedResult.results || [])];
+  // A physical shortage is not a full-stocktake request, but shipping must pause until the
+  // concrete units being handed to the client are explicitly confirmed present.
+  return [...(unresolvedResult.results || []), ...(shortageResult.results || [])];
 }
 
 
@@ -2494,7 +2494,7 @@ export function orderShipmentInventoryBlockerMessage(blockers: Record<string, un
     const name = cleanText(shortage.product_name_snapshot) || `позиция #${toInt(shortage.id, 0)}`;
     const physical = Math.max(0, toInt(shortage.physical_quantity, 0));
     const required = Math.max(1, toInt(shortage.required_quantity, 1));
-    return `Нельзя отправить заказ целиком: «${name}» — на месте ${physical} шт., требуется ${required}. Если товар физически есть, сначала уточните фактический остаток.`;
+    return `Для отправки «${name}» по учёту не хватает товара: на месте ${physical} шт., передать клиенту нужно ${required}. Подтвердите только эти конкретные вещи, если они физически у вас.`;
   }
   const names = blockers.slice(0, 3).map((row) => cleanText(row.product_name_snapshot) || `позиция #${toInt(row.id, 0)}`).join(', ');
   return `Нельзя отметить заказ отправленным: ${blockers.length} складск${blockers.length === 1 ? 'ая позиция ещё не распознана' : 'их позиции ещё не распознаны'} (${names}). Сначала разберите их в «Склад → Товары → Требуют разбора», чтобы физическое списание не потерялось.`;
