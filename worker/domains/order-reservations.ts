@@ -8,6 +8,7 @@ import type { CanonicalVariantSnapshot } from './catalog.ts'
 import { catalogGenderForProductScope, catalogReferenceDbValueExists, catalogReferenceValueExists, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
 import { inventoryPhysicalCheckStatement } from './inventory-primitives.ts'
 import { normalizeOrderItems } from './order-core.ts'
+import { boundedOutboundStock } from './stock-resolution.ts'
 
 export async function resolveCatalogProductAndVariantLegacy(
   db: D1Database,
@@ -1678,38 +1679,43 @@ export async function orderHandoverReviewBlockers(db: D1Database, orderId: numbe
 }
 
 
-export type ShipmentInventoryObservation = {
+export type ShipmentPossessionConfirmation = {
   source: SourceType;
   variantId: number;
-  expectedQuantity: number;
-  countedQuantity: number;
+  expectedPhysicalQuantity: number;
+  operationQuantity: number;
 };
 
 
 export type ShipmentFulfillmentOptions = {
-  observations?: ShipmentInventoryObservation[];
+  stockConfirmations?: ShipmentPossessionConfirmation[];
   shippingDate?: string | null;
-  checkedBy?: string | null;
+  confirmedBy?: string | null;
   orderItemIds?: number[];
 };
 
 
-export function normalizeShipmentObservations(input: unknown): ShipmentInventoryObservation[] {
+export function normalizeShipmentPossessionConfirmations(input: unknown): ShipmentPossessionConfirmation[] {
   if (!Array.isArray(input)) return [];
-  const map = new Map<string, ShipmentInventoryObservation>();
+  const map = new Map<string, ShipmentPossessionConfirmation>();
   for (const raw of input) {
     if (!raw || typeof raw !== 'object') continue;
     const row = raw as Record<string, unknown>;
     const source = normalizeSourceType(row.source);
     const variantId = toInt(row.variantId, 0);
-    const expectedQuantity = toInt(row.expectedQuantity, 0);
-    const countedQuantity = toInt(row.countedQuantity, -1);
-    if (!variantId || countedQuantity < 0) throw new Error('Некорректные данные фактической сверки перед отправкой. Обновите заказ и повторите.');
+    const expectedPhysicalQuantity = toInt(row.expectedPhysicalQuantity, -1);
+    const operationQuantity = toInt(row.operationQuantity, 0);
+    if (!variantId || expectedPhysicalQuantity < 0 || operationQuantity <= 0) {
+      throw new Error('Некорректное подтверждение физического наличия перед отправкой. Обновите заказ и повторите.');
+    }
     const key = `${source}:${variantId}`;
-    const next = { source, variantId, expectedQuantity, countedQuantity };
+    const next = { source, variantId, expectedPhysicalQuantity, operationQuantity };
     const existing = map.get(key);
-    if (existing && (existing.expectedQuantity !== next.expectedQuantity || existing.countedQuantity !== next.countedQuantity)) {
-      throw new Error('Для одной позиции переданы разные фактические количества. Обновите заказ и повторите отправку.');
+    if (existing && (
+      existing.expectedPhysicalQuantity !== next.expectedPhysicalQuantity
+      || existing.operationQuantity !== next.operationQuantity
+    )) {
+      throw new Error('Для одной позиции переданы разные подтверждения физического наличия. Обновите заказ и повторите отправку.');
     }
     map.set(key, next);
   }
@@ -1748,8 +1754,8 @@ export async function fulfillOrderReservationsV2(
     return { fulfilled: 0, unresolved: unresolved.length };
   }
 
-  const observations = normalizeShipmentObservations(options.observations);
-  const observationsByKey = new Map(observations.map((row) => [`${row.source}:${row.variantId}`, row]));
+  const stockConfirmations = normalizeShipmentPossessionConfirmations(options.stockConfirmations);
+  const confirmationsByKey = new Map(stockConfirmations.map((row) => [`${row.source}:${row.variantId}`, row]));
   if (!reservations.length) {
     // Workshop-only orders may legitimately have no warehouse reservation. Status still belongs in
     // the same commit API so a retry cannot create a split brain between the order and inventory.
@@ -1760,7 +1766,7 @@ export async function fulfillOrderReservationsV2(
       ).bind(options.shippingDate, timestamp, orderId).run();
       shippingCommitted = toInt(shippingUpdate.meta?.changes, 0) > 0;
     }
-    return { fulfilled: 0, unresolved: 0, observationsApplied: 0, shippingCommitted };
+    return { fulfilled: 0, unresolved: 0, confirmationsApplied: 0, shippingCommitted };
   }
 
   const physicalRequirements = new Map<string, {
@@ -1789,8 +1795,9 @@ export async function fulfillOrderReservationsV2(
     variantId: number;
     quantity: number;
     reservedQuantity: number;
-    effectiveQuantity: number;
+    quantityAfter: number;
     required: number;
+    unexplainedQuantity: number;
     canonical: {
       productId: number;
       variantId: number;
@@ -1801,7 +1808,7 @@ export async function fulfillOrderReservationsV2(
       length: string | null;
       size: string | null;
     };
-    observation: ShipmentInventoryObservation | null;
+    confirmation: ShipmentPossessionConfirmation | null;
   };
   const stockByKey = new Map<string, ShipmentStockState>();
 
@@ -1837,22 +1844,27 @@ export async function fulfillOrderReservationsV2(
     if (!toInt(loaded.product_id, 0) || !cleanText(loaded.product_name)) {
       throw new Error(`Не удалось загрузить каталог для отправки «${requirement.productName}». Обновите заказ.`);
     }
-    const quantity = toInt(loaded.quantity, 0);
-    const observation = observationsByKey.get(key) || null;
-    if (observation && observation.expectedQuantity !== quantity) {
-      throw new Error(`Остаток «${requirement.productName}» изменился после открытия формы: было ${observation.expectedQuantity}, сейчас ${quantity}. Обновите заказ и пересчитайте товар.`);
+    const quantity = Math.max(0, toInt(loaded.quantity, 0));
+    const bounded = boundedOutboundStock(quantity, requirement.required);
+    const confirmation = confirmationsByKey.get(key) || null;
+    if (bounded.requiresResolution && (
+      !confirmation
+      || confirmation.expectedPhysicalQuantity !== quantity
+      || confirmation.operationQuantity !== requirement.required
+    )) {
+      throw new Error(`Физическое наличие «${requirement.productName}» не подтверждено для текущей отправки. Обновите заказ и повторите действие.`);
     }
-    const effectiveQuantity = observation ? observation.countedQuantity : quantity;
-    // A physical shortage is an inventory discrepancy, not a reason to block customer handover.
-    // Shipping consumes only the stock that is actually present and never drives physical quantity below zero.
+    // A contextual confirmation proves only the concrete units being shipped now. It never becomes
+    // an absolute SKU count: tracked Physical is only decremented by the bounded amount and stays >= 0.
     stockByKey.set(key, {
       id: toInt(loaded.stock_id, 0),
       source: requirement.source,
       variantId: requirement.variantId,
       quantity,
       reservedQuantity: Math.max(0, toInt(loaded.reserved_quantity, 0)),
-      effectiveQuantity,
+      quantityAfter: bounded.trackedPhysicalAfter,
       required: requirement.required,
+      unexplainedQuantity: bounded.unexplainedQuantity,
       canonical: {
         productId: toInt(loaded.product_id, 0),
         variantId: requirement.variantId,
@@ -1863,15 +1875,15 @@ export async function fulfillOrderReservationsV2(
         length: canonicalStockPositionValue(loaded.length) || null,
         size: cleanText(loaded.size_label) || null,
       },
-      observation,
+      confirmation: bounded.requiresResolution ? confirmation : null,
     });
   }
 
-  // Reject observations for SKU that are not part of this shipment. A stale/forged UI must never
-  // be able to use the shipping endpoint as a generic stock editor.
-  for (const observation of observations) {
-    if (!physicalRequirements.has(`${observation.source}:${observation.variantId}`)) {
-      throw new Error('Фактическая сверка относится к позиции, которой нет в текущей отправке. Обновите заказ.');
+  // Reject confirmations for SKU that are not part of this shipment. The shipping endpoint may
+  // confirm possession only for its own concrete outbound operation; it is never a generic stock editor.
+  for (const confirmation of stockConfirmations) {
+    if (!physicalRequirements.has(`${confirmation.source}:${confirmation.variantId}`)) {
+      throw new Error('Подтверждение физического наличия относится к позиции, которой нет в текущей отправке. Обновите заказ.');
     }
   }
 
@@ -1880,8 +1892,9 @@ export async function fulfillOrderReservationsV2(
     source: state.source,
     variantId: state.variantId,
     currentQuantity: state.quantity,
-    effectiveQuantity: state.effectiveQuantity,
+    quantityAfter: state.quantityAfter,
     required: state.required,
+    unexplainedQuantity: state.unexplainedQuantity,
     reservedQuantity: state.reservedQuantity,
     productId: state.canonical.productId,
     productName: state.canonical.productName,
@@ -1890,11 +1903,11 @@ export async function fulfillOrderReservationsV2(
     material: state.canonical.material,
     length: state.canonical.length,
     size: state.canonical.size,
-    observed: state.observation ? state.observation.countedQuantity : null,
+    possessionConfirmed: state.confirmation ? 1 : 0,
   }));
 
   const activeReservationPayloads: string[] = [];
-  const remainingByKey = new Map(Array.from(stockByKey.entries()).map(([key, state]) => [key, state.effectiveQuantity]));
+  const remainingByKey = new Map(Array.from(stockByKey.entries()).map(([key, state]) => [key, state.quantity]));
   for (const reservation of reservations) {
     if (cleanText(reservation.status) !== 'active') continue;
     const source = normalizeSourceType(reservation.inventory_source);
@@ -1903,7 +1916,7 @@ export async function fulfillOrderReservationsV2(
     const state = stockByKey.get(key);
     if (!state) throw new Error('Не удалось подготовить складскую позицию для отправки. Обновите заказ.');
     const quantity = Math.max(1, toInt(reservation.quantity, 1));
-    const quantityBefore = remainingByKey.get(key) ?? state.effectiveQuantity;
+    const quantityBefore = remainingByKey.get(key) ?? state.quantity;
     const quantityAfter = Math.max(0, quantityBefore - quantity);
     remainingByKey.set(key, quantityAfter);
     activeReservationPayloads.push(JSON.stringify({
@@ -1940,8 +1953,9 @@ export async function fulfillOrderReservationsV2(
                CAST(json_extract(payload, '$.source') AS TEXT) AS source,
                CAST(json_extract(payload, '$.variantId') AS INTEGER) AS variant_id,
                CAST(json_extract(payload, '$.currentQuantity') AS INTEGER) AS current_quantity,
-               CAST(json_extract(payload, '$.effectiveQuantity') AS INTEGER) AS effective_quantity,
+               CAST(json_extract(payload, '$.quantityAfter') AS INTEGER) AS quantity_after,
                CAST(json_extract(payload, '$.required') AS INTEGER) AS required,
+               CAST(json_extract(payload, '$.unexplainedQuantity') AS INTEGER) AS unexplained_quantity,
                CAST(json_extract(payload, '$.reservedQuantity') AS INTEGER) AS reserved_quantity,
                CAST(json_extract(payload, '$.productId') AS INTEGER) AS product_id,
                CAST(json_extract(payload, '$.productName') AS TEXT) AS product_name,
@@ -1950,8 +1964,7 @@ export async function fulfillOrderReservationsV2(
                json_extract(payload, '$.material') AS material,
                json_extract(payload, '$.length') AS length,
                json_extract(payload, '$.size') AS size,
-               CASE WHEN json_type(payload, '$.observed') = 'null' THEN NULL
-                    ELSE CAST(json_extract(payload, '$.observed') AS INTEGER) END AS observed
+               CAST(json_extract(payload, '$.possessionConfirmed') AS INTEGER) AS possession_confirmed
         FROM input
       )`;
     statements.push(db.prepare(
@@ -1966,59 +1979,29 @@ export async function fulfillOrderReservationsV2(
          AND ${orderStillUnsentSql}`
     ).bind(...payloadChunk, timestamp, orderId));
 
-    if (payloadChunk.some(payload => JSON.parse(payload).observed !== null)) {
-      statements.push(
-        db.prepare(
-          `WITH ${cte}
-           UPDATE inventory_stock
-           SET quantity = (SELECT x.effective_quantity FROM x WHERE x.stock_id = inventory_stock.id),
-               product_id = (SELECT x.product_id FROM x WHERE x.stock_id = inventory_stock.id),
-               variant_id = (SELECT x.variant_id FROM x WHERE x.stock_id = inventory_stock.id),
-               product_name_snapshot = (SELECT x.product_name FROM x WHERE x.stock_id = inventory_stock.id),
-               gender_snapshot = (SELECT x.gender FROM x WHERE x.stock_id = inventory_stock.id),
-               color_snapshot = (SELECT x.color FROM x WHERE x.stock_id = inventory_stock.id),
-               material_snapshot = (SELECT x.material FROM x WHERE x.stock_id = inventory_stock.id),
-               length_snapshot = (SELECT x.length FROM x WHERE x.stock_id = inventory_stock.id),
-               size_snapshot = (SELECT x.size FROM x WHERE x.stock_id = inventory_stock.id),
-               last_action = 'Сверено перед отправкой', last_source_ref = ?, updated_at = ?
-           WHERE EXISTS (SELECT 1 FROM x WHERE x.stock_id = inventory_stock.id AND x.observed IS NOT NULL)
-             AND ${orderStillUnsentSql}`
-        ).bind(...payloadChunk, `order:${externalId}`, timestamp, orderId),
-        db.prepare(
-          `WITH ${cte}
-           INSERT INTO inventory_movements (
-             inventory_source, movement_type, product_id, variant_id, product_name_snapshot, gender_snapshot,
-             color_snapshot, material_snapshot, length_snapshot, size_snapshot, quantity_delta, quantity_after,
-             reference_type, reference_id, comment, created_at
-           )
-           SELECT x.source, 'revision', x.product_id, x.variant_id, x.product_name, x.gender,
-                  x.color, x.material, x.length, x.size, x.effective_quantity - x.current_quantity, x.effective_quantity,
-                  'shipping_observation', ?,
-                  'Фактическая сверка перед отправкой заказа ' || ? || ': ' || x.effective_quantity || ' шт. По учёту до сверки: ' || x.current_quantity || ' шт. Резервы сохранены.', ?
-           FROM x WHERE x.observed IS NOT NULL
-             AND ${orderStillUnsentSql}`
-        ).bind(...payloadChunk, externalId, externalId, timestamp, orderId),
-        db.prepare(
-          `WITH ${cte}
-           INSERT OR IGNORE INTO inventory_stock_checks (
-             check_key, inventory_source, product_id, variant_id,
-             expected_quantity, counted_quantity, difference_quantity, reserved_quantity,
-             check_type, reference_type, reference_id, checked_by, checked_at, created_at
-           )
-           SELECT 'shipping:' || ? || ':' || x.source || ':' || x.variant_id,
-                  x.source, x.product_id, x.variant_id, x.current_quantity, x.effective_quantity,
-                  x.effective_quantity - x.current_quantity, x.reserved_quantity,
-                  'shipping_observation', 'order', ?, ?, ?, ?
-           FROM x WHERE x.observed IS NOT NULL
-             AND ${orderStillUnsentSql}`
-        ).bind(...payloadChunk, orderId, externalId, cleanText(options.checkedBy) || null, timestamp, timestamp, orderId),
-      );
+    if (payloadChunk.some(payload => Number(JSON.parse(payload).unexplainedQuantity || 0) > 0)) {
+      statements.push(db.prepare(
+        `WITH ${cte}
+         INSERT OR IGNORE INTO inventory_operation_evidence (
+           evidence_key, inventory_source, variant_id, operation_type, operation_reference,
+           tracked_physical_before, confirmed_operation_quantity, explained_quantity, unexplained_quantity,
+           confirmed_by, occurred_at, created_at
+         )
+         SELECT 'shipping:' || ? || ':' || x.source || ':' || x.variant_id,
+                x.source, x.variant_id, 'shipping', ?,
+                x.current_quantity, x.required, x.required - x.unexplained_quantity, x.unexplained_quantity,
+                ?, ?, ?
+         FROM x
+         WHERE x.unexplained_quantity > 0
+           AND x.possession_confirmed = 1
+           AND ${orderStillUnsentSql}`
+      ).bind(...payloadChunk, orderId, externalId, cleanText(options.confirmedBy) || null, timestamp, timestamp, orderId));
     }
 
     statements.push(db.prepare(
       `WITH ${cte}
        UPDATE inventory_stock
-       SET quantity = MAX(0, (SELECT x.effective_quantity - x.required FROM x WHERE x.stock_id = inventory_stock.id)),
+       SET quantity = (SELECT x.quantity_after FROM x WHERE x.stock_id = inventory_stock.id),
            reserved_quantity = MAX(0, COALESCE(reserved_quantity, 0) - (SELECT x.required FROM x WHERE x.stock_id = inventory_stock.id)),
            last_action = 'Выдано / отправлено', last_source_ref = ?, updated_at = ?
        WHERE EXISTS (SELECT 1 FROM x WHERE x.stock_id = inventory_stock.id)
@@ -2097,7 +2080,7 @@ export async function fulfillOrderReservationsV2(
   return {
     fulfilled: options.shippingDate && !shippingCommitted ? 0 : activeReservationPayloads.length,
     unresolved: 0,
-    observationsApplied: options.shippingDate && !shippingCommitted ? 0 : observations.length,
+    confirmationsApplied: options.shippingDate && !shippingCommitted ? 0 : stockConfirmations.length,
     shippingCommitted,
   };
 }
