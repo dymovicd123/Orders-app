@@ -157,7 +157,7 @@ try {
   check(returnView.includes("item.lifecycleStatus === 'cancelled'"), 'History UI lost cancelled/superseded intake state')
   check(returnView.includes("if (!item.physicalReceivedAt) return 'Ещё не пришёл'"), 'History UI lost physical-receipt distinction')
   check(returnView.includes("if (!item.inventorySource) return 'Получен, в остаток не добавляли'"), 'History UI lost actual stock-intake distinction')
-  check(exchangeView.includes('Для вещи из Цеха Бутик недоступен.'), 'Exchange UI lost Workshop disposition guidance')
+  check(exchangeView.includes('Для вещи из Цеха по умолчанию остаток не создаётся.') && exchangeView.includes('явно выберите «Склад» или «Бутик»'), 'Exchange UI lost Workshop explicit-disposition guidance')
 
   const stale = await inventoryLifecycleDeferredInboundDisposition(new FakeD1(trustedBoundary()), inboundEvent('2026-08-26T07:59:59.000Z'), 11)
   check(stale.action === 'supersede' && stale.reason === 'stale_before_full_stocktake', 'Later full stocktake does not supersede older inbound')
