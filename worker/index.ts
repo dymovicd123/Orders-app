@@ -7,7 +7,7 @@ import { authUserPayload, createAuthUser, deleteAuthUser, ensureAuthSchema, hand
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
 import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
 import type { CatalogReviewFactsInput } from './domains/catalog-review.ts'
-import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant } from './domains/catalog-review.ts'
+import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant, resolveOrderCatalogReviewFacts } from './domains/catalog-review.ts'
 import { getClientDetails, listClients } from './domains/clients.ts'
 import { criticalOperationErrorResponse } from './domains/critical.ts'
 import { listFinanceReports } from './domains/finance-reports.ts'
@@ -849,6 +849,24 @@ export default {
         const preview = Object.fromEntries(['productId', 'category', 'gender', 'material', 'length', 'color', 'size']
           .filter((key) => url.searchParams.has(key)).map((key) => [key, url.searchParams.get(key)]));
         return json(await getCatalogReviewContext(env.DB, orderItemId, preview));
+      }
+
+      const orderCatalogReviewFactsMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/catalog-review\/(\d+)\/resolve-facts$/);
+      if (orderCatalogReviewFactsMatch && request.method === 'POST') {
+        const orderId = toInt(orderCatalogReviewFactsMatch[1], 0);
+        const orderItemId = toInt(orderCatalogReviewFactsMatch[2], 0);
+        const input = await readJson<CatalogReviewFactsInput>(request);
+        const result = await resolveOrderCatalogReviewFacts(env.DB, orderId, orderItemId, input);
+        await writeActivityLog(env.DB, {
+          eventType: 'order_catalog_resolved',
+          entityType: 'order',
+          entityId: orderId,
+          orderId,
+          externalOrderId: '',
+          title: 'Уточнён товар перед отправкой',
+          details: `Связано позиций: ${result.linked}; создана комбинация: ${result.createdCombination ? 'да' : 'нет'}`,
+        });
+        return json(result);
       }
 
       const orderCatalogReviewResolveMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/catalog-review\/(\d+)\/resolve-existing$/);
