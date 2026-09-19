@@ -148,10 +148,16 @@ export async function createReturn(
     // Legacy payloads keep the old restock semantics. New UI payloads are explicit:
     // pending = not physically received yet; no_stock = received but intentionally not stocked.
     const itemRestockRequested = isWorkshop ? selected.restock === true : selected.restock !== false;
-    const inventorySource = physicalTracking ? trackedInventorySource : (restockSource !== 'none' && itemRestockRequested ? restockSource : null);
-    if (isWorkshop && inventorySource === 'boutique') {
+    if (isWorkshop && physicalState === 'boutique') {
       throw new Error(`Товар из Цеха «${cleanText(orderItem.product_name_snapshot)}» нельзя возвращать в остаток Бутика. Выберите «Ещё не пришёл», «Получен без остатка» или «Склад».`);
     }
+    // Workshop-origin stock intake is valid only after an explicit Warehouse
+    // disposition from the physical-state workflow. Legacy restock flags or a
+    // legacy global return source must never turn exact catalog identity into
+    // an implicit Warehouse receipt.
+    const inventorySource = isWorkshop
+      ? (physicalState === 'warehouse' ? 'warehouse' : null)
+      : (physicalTracking ? trackedInventorySource : (restockSource !== 'none' && itemRestockRequested ? restockSource : null));
     const wantsRestock = inventorySource !== null;
     if (humanInventoryModelEnabled && wantsRestock && !isWorkshop && !orderItemWasPhysicallyIssued(orderItem)) {
       throw new Error(`Позиция «${cleanText(orderItem.product_name_snapshot)}» по учёту ещё не была физически выдана / отправлена. Возвращать её в остаток нельзя — это удвоит товар. Для неотправленного заказа используйте редактирование/удаление заказа либо выберите возврат денег без приёма вещи.`);
@@ -801,10 +807,15 @@ export async function createExchange(
   if (rawOldPhysicalState && !oldPhysicalState) throw new Error('Неизвестный физический статус старой вещи обмена.');
   const oldPhysicalTracking = oldPhysicalState !== null;
   const trackedOldReturnSource = oldPhysicalState === 'warehouse' || oldPhysicalState === 'boutique' ? oldPhysicalState : 'none';
-  const oldReturnSource = oldPhysicalTracking ? trackedOldReturnSource : normalizeExchangeReturnSource(input.oldReturnSource);
-  if (oldItemIsWorkshop && oldReturnSource === 'boutique') {
+  if (oldItemIsWorkshop && oldPhysicalState === 'boutique') {
     throw new Error(`Старую вещь из Цеха «${cleanText(oldItem.product_name_snapshot)}» нельзя принимать в остаток Бутика. Для цеховой вещи доступны только «Ещё не пришла», «Получена без остатка» или явный приём на Склад.`);
   }
+  // Same rule as Return: only the explicit physical-state choice Warehouse can
+  // create stock for a Workshop-origin old item. Legacy oldReturnSource payloads
+  // remain financial/history compatible but cannot silently create inventory.
+  const oldReturnSource = oldItemIsWorkshop
+    ? (oldPhysicalState === 'warehouse' ? 'warehouse' : 'none')
+    : (oldPhysicalTracking ? trackedOldReturnSource : normalizeExchangeReturnSource(input.oldReturnSource));
   const rawExchangeDate = cleanText(input.exchangeDate);
   if (!rawExchangeDate) throw new Error('Укажите дату обмена.');
   const exchangeDate = normalizeDate(rawExchangeDate);
