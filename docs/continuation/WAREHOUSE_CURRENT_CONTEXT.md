@@ -112,11 +112,11 @@ Latest known Production stocktake acceptance product checkpoint remains:
 3. Workshop completion/status changes must not write `inventory_stock`, create Warehouse/Boutique reservations or masquerade as intake.
 4. Warehouse becomes relevant only after a client return **and an explicit business decision to send that returned item to Warehouse**.
 5. Return itself does not imply inventory intake.
-6. If the returned Workshop item is not explicitly sent to Warehouse, it enters neither Warehouse nor Boutique inventory.
+6. A returned Workshop item enters neither Warehouse nor Boutique inventory unless one of those destinations is explicitly chosen.
 7. Exact-known identity does not justify automatic intake.
 8. Identity resolution is required only when an actual stock-affecting disposition needs a canonical SKU.
 9. A no-stock Workshop return must not create pointless catalog/Attention work.
-10. No implicit Boutique intake. The same rule applies to the old item in an exchange.
+10. No implicit Warehouse or Boutique intake. Both are valid only through an explicit disposition. The same rule applies to the old item in an exchange.
 
 ### Warehouse Attention
 
@@ -167,8 +167,8 @@ Therefore Phase 2 is no longer just “make cycle count prettier”. It becomes 
 
 1. Current return backend still contains the old exact-known Workshop auto-intake path: a returned Workshop line chosen for restock can pass `canAutoApplyFreshWorkshopInbound(...)` and then `applyCanonicalInventoryLifecycleEvent(...)`.
 2. This conflicts with the corrected rule if Warehouse disposition was not an explicit Warehouse-only decision.
-3. Return UI currently offers no-stock / Warehouse / Boutique broadly; Workshop-origin return must not offer Boutique as a stock destination under the corrected rule.
-4. Exchange old-item draft correctly defaults to no-stock, but its UI also offers Warehouse/Boutique/none regardless of Workshop origin; Workshop old item must follow the same none-or-explicit-Warehouse rule.
+3. Return UI may offer no-stock / Warehouse / Boutique. For Workshop-origin returns, no-stock is the default; Warehouse or Boutique are valid only as explicit stock destinations.
+4. Exchange old-item draft correctly defaults to no-stock. A Workshop old item follows the same explicit-disposition rule: no-stock by default, with Warehouse or Boutique only when deliberately selected.
 5. Cancellation/reversal already goes through lifecycle cancellation. Preserve that mechanism rather than inventing parallel reversal logic.
 6. Ordinary order reservation code explicitly skips `item.isWorkshop`, so the standard reservation path does not currently treat Workshop production as Warehouse/Boutique stock.
 7. No-stock Workshop return should bypass canonical inventory identity resolution entirely; otherwise it creates false catalog/Attention work.
@@ -203,15 +203,15 @@ Confirmed defects and invariants are recorded above.
 
 Required semantics:
 
-`Workshop complete -> customer/order flow -> possible return -> explicit disposition -> Warehouse only if explicitly chosen`
+`Workshop complete -> customer/order flow -> possible return -> explicit disposition -> Warehouse/Boutique only if explicitly chosen`
 
 For Workshop-origin return/exchange old item:
 - default = no stock;
 - return/history record independent from inventory intake;
 - no-stock => no inventory mutation and no forced SKU identity resolution;
-- Workshop-origin UI offers only no-stock or explicit Warehouse destination, not Boutique;
-- explicit Warehouse + exact identity may use the existing freshness-safe lifecycle intake;
-- explicit Warehouse + unknown/conflicting identity => one narrow resolution action before stock mutation;
+- Workshop-origin UI offers no-stock by default plus explicit Warehouse or Boutique destinations;
+- explicit Warehouse/Boutique + exact identity may use the existing freshness-safe lifecycle intake;
+- explicit Warehouse/Boutique + unknown/conflicting identity => one narrow resolution action before stock mutation;
 - exact-known by itself never triggers intake;
 - Workshop production/completion itself remains non-inventory.
 
@@ -220,10 +220,10 @@ For Workshop-origin return/exchange old item:
 Must cover:
 - completion/shipment no stock mutation;
 - known no-stock return, retry and cancel;
-- exact Warehouse disposition exactly once;
+- exact Warehouse/Boutique disposition exactly once;
 - lost-response replay no duplicate intake;
 - unknown no-stock no identity task;
-- unknown Warehouse disposition one identity-resolution path;
+- unknown Warehouse/Boutique disposition one identity-resolution path;
 - exchange old-item same semantics;
 - cancellation/reversal exactly once;
 - later exact check/stocktake supersedes older lifecycle event;
@@ -233,7 +233,22 @@ Must cover:
 
 Technical gate first. Primary mutation acceptance only with an intentionally selected real safe scenario if necessary.
 
-### Phase 2 — Smart Daily Stock Truth / cycle-count adoption
+### Phase 2 — Contextual Stock Resolver — mandatory design audit before implementation
+
+**Direction changed on 2026-09-19 after user review. Do not implement the old voluntary recommendation-batch model as written below.**
+
+Current product assumptions:
+- users are too passive for stock accuracy to depend on voluntarily opening Warehouse maintenance screens;
+- ordinary actionable problems should appear where the user is already performing the relevant operation, following the successful Catalog Resolver pattern;
+- the system may ask one narrow physical-stock question only when there is a concrete evidence-based reason, then continue the original action automatically;
+- untouched/rarely handled stock still requires deliberate revision; there is no software-only way to learn unseen physical truth;
+- Warehouse Attention must not be a required operational inbox. Before removing it, audit every signal and move genuinely actionable cases to their natural workflow; retain diagnostics only where useful.
+
+**Mandatory gate before any Phase 2 code:** perform a read-only map of all candidate insertion points (order shipping/handover, transfer, return/exchange intake, exact stock check and other stock-affecting actions), the available risk signals, blocking/non-blocking behavior, and false-positive risk. Present the exact proposed Stock Resolver placements to the user for approval before implementation.
+
+The previous Smart Daily Stock Truth proposal is retained below only as historical design evidence, not as an approved implementation plan.
+
+### Phase 2 — Previous Smart Daily Stock Truth proposal (superseded; reference only)
 
 Goal: maintain accuracy through tiny contextual checks that normal staff actually perform. This is **not** a new task system and not a rewrite of stocktake mathematics.
 
@@ -365,7 +380,7 @@ Final invariants:
 - retry never duplicates stock/business mutation;
 - older event never overwrites newer physical truth;
 - ordinary Workshop production never becomes Warehouse stock;
-- returned Workshop product enters Warehouse only by explicit Warehouse disposition;
+- returned Workshop product enters Warehouse or Boutique only by explicit destination;
 - routine stock accuracy does not depend on an employee voluntarily opening an admin maintenance screen;
 - ordinary staff can maintain day-to-day stock truth without reconstructing system history or waiting for admin.
 

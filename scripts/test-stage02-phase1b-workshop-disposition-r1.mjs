@@ -23,18 +23,12 @@ try {
     'Changing the Exchange old item can preserve an unsafe stock disposition',
   )
   check(
-    returns.includes("item.sourceType !== 'workshop' ? <option value=\"boutique\">") &&
-      exchange.includes("!effectiveOldItemIsWorkshop ? <option value=\"boutique\">"),
-    'Workshop-origin old items can again be routed to Boutique in the UI',
-  )
-  check(
     returns.includes('Для вещи из Цеха по умолчанию остаток не создаётся') &&
-      exchange.includes('По умолчанию остаток не создаётся') &&
-      exchange.includes('Для вещи из Цеха Бутик недоступен.'),
+      exchange.includes('Для вещи из Цеха по умолчанию остаток не создаётся'),
     'Workshop no-stock default is not explained in Return/Exchange UI',
   )
 
-  console.log('STAGE02 PHASE1B WORKSHOP DISPOSITION R1 TESTS PASSED — Workshop-origin old items default to no-stock and Boutique remains unavailable.')
+  console.log('STAGE02 PHASE1B WORKSHOP DISPOSITION R1 TESTS PASSED — Workshop-origin old items still default to no-stock; later revisions may expand explicit destinations without changing that default.')
 } catch (error) {
   console.error(`STAGE02 PHASE1B WORKSHOP DISPOSITION R1 TESTS FAILED: ${error?.message || error}`)
   process.exit(1)

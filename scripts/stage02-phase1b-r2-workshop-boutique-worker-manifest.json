@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "revision": "stage02-phase1b-r2-workshop-boutique-disposition",
+  "baseCommit": "7a57a99f302f189215c86245c1abf785d42f025e",
+  "files": {
+    "worker/domains/returns-exchanges.ts": {
+      "beforeGitBlob": "a727b6f15a25b7f0da7ee165f42d2faf44204b32",
+      "afterGitBlob": "b319359050847090b327348fe4c35c2f8221ac91",
+      "beforeLines": 2070,
+      "afterLines": 2061,
+      "replacements": [
+        {
+          "beforeBlock": "    if (isWorkshop && inventorySource === 'boutique') {\n      throw new Error(`Товар из Цеха «${cleanText(orderItem.product_name_snapshot)}» нельзя возвращать в остаток Бутика. Выберите «Ещё не пришёл», «Получен без остатка» или «Склад».`);\n    }\n    const wantsRestock = inventorySource !== null;",
+          "afterBlock": "    const wantsRestock = inventorySource !== null;"
+        },
+        {
+          "beforeBlock": "  if (oldItemIsWorkshop && oldReturnSource === 'boutique') {\n    throw new Error(`Старую вещь из Цеха «${cleanText(oldItem.product_name_snapshot)}» нельзя принимать в остаток Бутика. Для цеховой вещи доступны только «Ещё не пришла», «Получена без остатка» или явный приём на Склад.`);\n  }\n  const rawExchangeDate = cleanText(input.exchangeDate);",
+          "afterBlock": "  const rawExchangeDate = cleanText(input.exchangeDate);"
+        },
+        {
+          "beforeBlock": "    if (isWorkshop && destination === 'boutique') {\n      throw new Error('Возвращённую вещь из Цеха нельзя принять в остаток Бутика. Выберите Склад или «Без возврата в остаток».');\n    }\n    const persistedDestination = () => {",
+          "afterBlock": "    const persistedDestination = () => {"
+        }
+      ]
+    }
+  }
+}
