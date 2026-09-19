@@ -2,6 +2,17 @@
 
 Date: 2026-09-19
 
+
+## Execution checkpoint — 2026-09-19
+
+- Phase2A truth primitives + `inventory_operation_evidence` are complete in both `branch2` and Production.
+- Phase2B final-shipping possession resolver is complete in both `branch2` and Production.
+- Phase2C is the current implementation step on `w-stage02-phase2c-early-handover-20260919`: reuse the same `stock_resolution_required` contract for `issue_now`, keep `still_here / issued_before_checkpoint` lineage separate, bound source Physical at zero, and record shortage evidence as `operation_type='handover'`.
+- After Phase2C, continue in `branch2` with Phase2D transfer/writeoff and Phase2E Attention-dependency removal + Stage02 acceptance.
+- **User review gate:** finish the remaining Stage02 work in `branch2` first. The user will inspect all Stage02 updates there and report product/UI objections before any further Production promotion of Phase2C+.
+- Continuation protocol: after every meaningful Stage02 implementation/CI/merge/deploy finding, update this document plus `WAREHOUSE_CURRENT_CONTEXT.md` and the root `PROJECT_CONTINUATION.md`.
+
+
 ## Why Phase2 changed
 
 The previous idea treated frequent small stock checks as the main way to keep Warehouse/Boutique truth healthy. That assumes employees will actually count a complete SKU position and report the total honestly while doing unrelated work.
