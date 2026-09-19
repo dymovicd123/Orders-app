@@ -5,6 +5,23 @@ Repository: `dymovicd123/Orders-app`
 
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
+
+## Checkpoint 2026-09-19 — Stage02 transactional stock truth resumed
+
+The active Warehouse work is now Stage02 Phase2 under the redesigned transactional truth model in `STAGE02_PHASE2_STOCK_TRUTH_MODEL_20260919.md`. The older Smart Daily Stock / self-healing framing is superseded where it conflicts with that design.
+
+Current verified baseline before the Phase2C candidate:
+- `branch2`: `d7ef267a3581dcb8a2781b16b82ae2889b5698fd` (Phase2B shipping possession resolver);
+- `main`: `f7a6f7240bcaf3c73e7568d7b9b33d98d87b8ac5` (Production Phase2B);
+- migration 0071 `inventory_operation_evidence` has already been applied to both Branch2 and Production D1.
+
+Completed: Phase2A primitives/evidence model and Phase2B final shipping. Current code step: **Phase2C early handover / `issue_now`** on branch `w-stage02-phase2c-early-handover-20260919`. Historical checkpoint answers `still_here` / `issued_before_checkpoint` remain separate lineage truth and must not be repurposed as stock-quantity confirmation.
+
+After 2C: Phase2D transfer + writeoff, then Phase2E remove normal-operation dependency on Attention and run Stage02 acceptance.
+
+**Release gate requested by user:** complete the remaining Stage02 work in `branch2`, then stop for the user's full inspection/complaints before promoting Phase2C+ to Production. Do not skip this review gate.
+
+
 ## Checkpoint 2026-09-10 — W paused, not completed; O1 prioritized
 
 User explicitly postponed further Warehouse implementation to think through the audit and real usage. W remains open. Historical W8 completion means only that UI delivery package, not acceptance of the Warehouse product goal or completion of W9 discussion.
