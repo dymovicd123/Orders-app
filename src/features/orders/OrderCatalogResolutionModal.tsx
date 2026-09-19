@@ -160,8 +160,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       await owner.run(async () => {
         const needsAdminCatalogMutation = !variantId && Boolean(next.createProduct || next.createFields?.length || legacy)
         if (needsAdminCatalogMutation && !isAdmin) throw new Error('Нужно добавить новый товар или новое значение справочника. Для этого требуется Админ режим; переходить на Склад не нужно.')
-        const path = variantId
-          ? `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-existing`
+        const path = variantId ? `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-existing`
           : `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-facts`
         await read<CatalogResolutionResponse>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(variantId ? { variantId } : { ...next, legacyUnknownGender: legacy }) })
         if (ticket === generation.current) { setNeedsRecheck(true); setNotice('Товар уточнён ✓ Проверяю остальные позиции…') }
