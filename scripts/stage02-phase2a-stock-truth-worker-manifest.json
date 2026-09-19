@@ -6,5 +6,23 @@
       "gitBlob": "4daa0065f021ddd8c5d368860d333180869bab9d",
       "lines": 216
     }
+  },
+  "changedFiles": {
+    "worker/domains/inventory-movement.ts": {
+      "beforeGitBlob": "1bb73b8fa4a7db66596264185db0d8db8120d468",
+      "afterGitBlob": "2e2b2668fd9a64086a39bd6ce7b0436efe91e332",
+      "beforeLines": 1910,
+      "afterLines": 1912,
+      "replacements": [
+        {
+          "beforeBlock": "import { isInventoryAutoWriteoffEnabled } from './storage.ts'\n",
+          "afterBlock": "import { isInventoryAutoWriteoffEnabled } from './storage.ts'\nimport { boundedOutboundStock } from './stock-resolution.ts'\n"
+        },
+        {
+          "beforeBlock": "    if (entry.quantity > effectiveSourceBefore) {\n      throw new Error(`По учёту в точке «${fromSource === 'warehouse' ? 'Склад' : 'Бутик'}» у «${item.productName}» на месте ${effectiveSourceBefore} шт., а переместить нужно ${entry.quantity}. Если товар физически есть, укажите фактическое количество прямо в строке перемещения.`);\n    }\n    const shortageAfter = Math.max(0, reservedAtSource - (effectiveSourceBefore - entry.quantity));",
+          "afterBlock": "    const boundedOutbound = boundedOutboundStock(effectiveSourceBefore, entry.quantity);\n    if (boundedOutbound.requiresResolution) {\n      throw new Error(`По учёту в точке «${fromSource === 'warehouse' ? 'Склад' : 'Бутик'}» у «${item.productName}» на месте ${effectiveSourceBefore} шт., а переместить нужно ${entry.quantity}. Если товар физически есть, укажите фактическое количество прямо в строке перемещения.`);\n    }\n    const shortageAfter = Math.max(0, reservedAtSource - boundedOutbound.trackedPhysicalAfter);"
+        }
+      ]
+    }
   }
 }
