@@ -12,6 +12,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     FriendlyNumberInput,
     ManagerBadge,
     managerColorFor,
+    openReturnedItemResolution,
     orderPanelStyle,
     returnBusy,
     returnDraft,
@@ -67,6 +68,15 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     && item.physicalReceivedAt
     && item.lifecycleId
     && (item.lifecycleVariantId || item.currentVariantId)
+    && item.lifecycleStatus === 'pending'
+    && (item.inventorySource === 'warehouse' || item.inventorySource === 'boutique')
+  )
+  const returnUnknownIntakePending = (item: any) => Boolean(
+    item.physicalTracking
+    && item.physicalReceivedAt
+    && item.lifecycleId
+    && !item.lifecycleVariantId
+    && !item.currentVariantId
     && item.lifecycleStatus === 'pending'
     && (item.inventorySource === 'warehouse' || item.inventorySource === 'boutique')
   )
@@ -335,6 +345,13 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                   {returnHistorySummary.cancelledCount ? <span>Отменено: <strong>{returnHistorySummary.cancelledCount}</strong></span> : null}
                 </div>
 
+                {returnHistorySummary.pendingPhysicalQuantity > 0 ? (
+                  <div className="history-load-state is-warning">
+                    <strong>Есть товары, которые ещё нужно принять: {returnHistorySummary.pendingPhysicalQuantity} шт.</strong>
+                    <span>Откройте нужный возврат ниже и нажмите «Принять товар». Если товар не распознан, уточнение откроется сразу.</span>
+                  </div>
+                ) : null}
+
                 {returnHistoryError ? (
                   <div className="history-load-state is-error"><strong>Не удалось загрузить историю возвратов.</strong><span>{returnHistoryError}</span><button className="secondary compact" type="button" onClick={() => void loadReturnHistory()}>Повторить</button></div>
                 ) : returnHistoryBusy && !returnHistory.length ? (
@@ -387,7 +404,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                         externalId: entry.externalId,
                                       })}
                                     >
-                                      Товар пришёл
+                                      Принять товар
                                     </button>
                                   </div>
                                 ) : null}
@@ -399,7 +416,19 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                       disabled={returnBusy || returnHistoryBusy}
                                       onClick={() => void finishKnownReturnIntake(item)}
                                     >
-                                      Завершить приёмку
+                                      Завершить приёмку известного товара
+                                    </button>
+                                  </div>
+                                ) : null}
+                                {entry.operationType === 'order_return' && entry.status !== 'cancelled' && returnUnknownIntakePending(item) ? (
+                                  <div className="mini-panel-actions">
+                                    <button
+                                      className="primary compact"
+                                      type="button"
+                                      disabled={returnBusy || returnHistoryBusy}
+                                      onClick={() => openReturnedItemResolution(Number(item.lifecycleId), item.productName, entry.externalId)}
+                                    >
+                                      Определить товар и завершить приёмку
                                     </button>
                                   </div>
                                 ) : null}
