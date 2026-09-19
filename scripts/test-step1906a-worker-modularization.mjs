@@ -4,6 +4,42 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const catalogResolverR7WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-resolver-r7-human-scope-worker-manifest.json'), 'utf8'))
+if (catalogResolverR7WorkerManifest?.version !== 1 || catalogResolverR7WorkerManifest?.revision !== 'catalog-resolver-r7-human-scope') throw new Error('Catalog resolver R7 Worker manifest invalid')
+const catalogResolverR7BlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.CATALOG_RESOLVER_R7_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(catalogResolverR7WorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (catalogResolverR7BlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Catalog resolver R7 Worker changed beyond exact manifest: ' + relative)
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Catalog resolver R7 after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (catalogResolverR7BlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Catalog resolver R7 predecessor reconstruction failed: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, CATALOG_RESOLVER_R7_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('CATALOG RESOLVER R7 WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const catalogResolverR6WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-resolver-r6-deterministic-auto-worker-manifest.json'), 'utf8'))
 if (catalogResolverR6WorkerManifest?.version !== 1 || catalogResolverR6WorkerManifest?.revision !== 'catalog-resolver-r6-deterministic-auto') throw new Error('Catalog resolver R6 Worker manifest invalid')
 const catalogResolverR6BlobSha = (value) => {
