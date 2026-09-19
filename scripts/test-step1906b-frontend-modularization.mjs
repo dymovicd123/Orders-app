@@ -91,6 +91,42 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage02Phase2BFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage02-phase2b-shipping-frontend-manifest.json'), 'utf8'))
+if (stage02Phase2BFrontendManifest?.version !== 1 || stage02Phase2BFrontendManifest?.revision !== 'stage02-phase2b-shipping-possession-resolver') throw new Error('Stage02 Phase2B frontend manifest invalid')
+const stage02Phase2BFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE02_PHASE2B_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stage02Phase2BFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage02Phase2BFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage02 Phase2B frontend changed beyond exact manifest: ' + relative)
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage02 Phase2B frontend after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (stage02Phase2BFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage02 Phase2B frontend predecessor reconstruction failed: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, STAGE02_PHASE2B_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE02 PHASE2B FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const stage02Phase1BR2FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage02-phase1b-r2-workshop-boutique-frontend-manifest.json'), 'utf8'))
 if (stage02Phase1BR2FrontendManifest?.version !== 1 || stage02Phase1BR2FrontendManifest?.revision !== 'stage02-phase1b-r2-workshop-boutique-disposition') throw new Error('Stage02 Phase1B R2 frontend manifest invalid')
 const stage02Phase1BR2FrontendBlobSha = (value) => {
