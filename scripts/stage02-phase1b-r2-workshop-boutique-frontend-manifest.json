@@ -38,8 +38,8 @@
           "afterBlock": "{effectiveOldItemIsWorkshop ? <small className=\"field-hint\">Для вещи из Цеха по умолчанию остаток не создаётся. Если вещь физически принимают в остатки, явно выберите «Склад» или «Бутик»; если она ещё едет — «Ещё не пришла».</small> : null}"
         },
         {
-          "beforeBlock": "{!entry.oldIsWorkshop ? <option value=\"boutique\">Бутик</option> : null}",
-          "afterBlock": "<option value=\"boutique\">Бутик</option>"
+          "beforeBlock": "                                    <option value=\"warehouse\">Склад</option>\n                                    {!entry.oldIsWorkshop ? <option value=\"boutique\">Бутик</option> : null}\n                                    <option value=\"no_stock\">Без добавления в остаток</option>",
+          "afterBlock": "                                    <option value=\"warehouse\">Склад</option>\n                                    <option value=\"boutique\">Бутик</option>\n                                    <option value=\"no_stock\">Без добавления в остаток</option>"
         }
       ]
     }
