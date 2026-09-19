@@ -43,6 +43,7 @@ import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft }
 import { downloadBlobFile, makeExportHtml } from './features/export/documentExport'
 import './styles/1905-small-screen-acceptance.css'
 import './styles/192b1-warehouse-attention.css'
+import './styles/193-resolver-intake-review.css'
 
 
 
