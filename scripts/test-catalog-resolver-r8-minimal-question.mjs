@@ -15,7 +15,7 @@ try {
   check(modal.includes("[['ЖЕН', 'Жен'], ['МУЖ', 'Муж']]"), 'Gender choice regressed to verbose catalog wording')
   check(modal.includes('>Не удалось выяснить</button>') && !modal.includes("'Какой здесь пол?'"), 'Gender question is no longer the short human wording')
   check(flow.includes("return { kind: 'field', field }"), 'Resolver no longer advances one unresolved field at a time')
-  check(ux.includes("assert.ok(b.text().includes('Не указан пол'))") && ux.includes("assert.ok(!b.text().includes('Менеджер записал'))") && ux.includes("assert.ok(!b.text().includes('Админ'))"), 'Actual component regression no longer proves the minimal R8 surface')
+  check(ux.includes("assert.ok(b.text().includes('Не указан пол'))") && ux.includes("assert.ok(!b.text().includes('В заказе записано'))") && ux.includes("assert.ok(!b.text().includes('Админ'))"), 'Actual component regression no longer proves the minimal R8 surface')
 
   console.log('CATALOG RESOLVER R8 MINIMAL QUESTION TESTS PASSED — an ordinary ambiguity shows one human question without replaying known catalog facts or admin machinery.')
 } catch (error) {
