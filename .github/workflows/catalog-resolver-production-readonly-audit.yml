@@ -1,0 +1,37 @@
+name: Catalog resolver production read-only audit
+
+on:
+  push:
+    branches:
+      - w-catalog-resolver-readonly-audit-20260919
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PROD_DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      CF_API: https://api.cloudflare.com/client/v4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only catalog resolver facts
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            local sql="$1"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/query" |
+              jq -c '.result[0].results'
+          }
+          echo '=== PRODUCTS ==='
+          query "SELECT id,name,category,gender_scope,is_active FROM catalog_products WHERE UPPER(name) LIKE '%КАРДИГАН%' ORDER BY id;"
+          echo '=== VARIANTS ==='
+          query "SELECT v.id,v.product_id,p.name,p.gender_scope,v.category,v.gender,v.color,v.material,v.length,v.size_label,v.is_active FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE UPPER(p.name) LIKE '%КАРДИГАН%' ORDER BY p.name,v.material,v.color,v.size_label,v.gender,v.id;"
+          echo '=== RECENT ORDER ITEMS ==='
+          query "SELECT oi.id,oi.order_id,o.external_id,o.order_date,o.shipping_status,oi.product_name_snapshot,oi.audience_type,oi.gender_snapshot,oi.color_snapshot,oi.material_snapshot,oi.length_snapshot,oi.size_snapshot,oi.product_id,oi.variant_id,oi.stock_writeoff_status FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE UPPER(oi.product_name_snapshot) LIKE '%КАРДИГАН%' ORDER BY oi.id DESC LIMIT 40;"
+          echo '=== CARDIGAN INPUT ALIASES ==='
+          query "SELECT a.input_key,a.variant_id,v.product_id,p.name,v.gender,v.color,v.material,v.length,v.size_label,a.updated_at FROM catalog_input_aliases a JOIN catalog_variants v ON v.id=a.variant_id JOIN catalog_products p ON p.id=v.product_id WHERE UPPER(p.name) LIKE '%КАРДИГАН%' ORDER BY a.updated_at DESC LIMIT 40;"
