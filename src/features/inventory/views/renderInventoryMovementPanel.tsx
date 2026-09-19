@@ -367,9 +367,9 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                               {inventoryDraft.movementType === 'manual_set' ? (
                                                 correctionDelta === null ? <span>—</span> : <span className={shortageAfter > 0 ? 'inventory-operation-shortage' : ''}><strong className={correctionDelta === 0 ? '' : correctionDelta < 0 ? 'text-danger' : 'text-success'}>{correctionDelta > 0 ? '+' : ''}{correctionDelta}</strong>{shortageAfter > 0 ? <small>После сверки не хватит {shortageAfter} шт. для заказов</small> : null}</span>
                                               ) : inventoryDraft.movementType === 'transfer' ? (
-                                                <span className={shortageAfter > 0 ? 'inventory-transfer-after has-shortage' : 'inventory-transfer-after'}>
+                                                <span className={operationQuantity > 0 && shortageAfter > 0 ? 'inventory-transfer-after has-shortage' : 'inventory-transfer-after'}>
                                                   <b>{afterPhysical}</b> останется здесь · <b>{destinationQuantity + operationQuantity}</b> будет в «{sourceLabel(inventoryDraft.targetSource)}»
-                                                  {shortageAfter > 0 ? <small>После перемещения для заказов не хватит {shortageAfter} шт. Само физическое перемещение не блокируется.</small> : null}
+                                                  {operationQuantity > 0 && shortageAfter > 0 ? <small>После перемещения для заказов не хватит {shortageAfter} шт. Само физическое перемещение не блокируется.</small> : null}
                                                 </span>
                                               ) : (
                                                 <span className={shortageAfter > 0 ? 'inventory-operation-shortage' : ''}><strong>{Math.max(0, afterPhysical)}</strong>{shortageAfter > 0 ? <small>Не хватит {shortageAfter} шт. для заказов</small> : null}</span>

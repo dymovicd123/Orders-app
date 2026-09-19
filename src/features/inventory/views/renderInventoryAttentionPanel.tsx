@@ -16,6 +16,7 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'openAttentionIntake'
   | 'openAttentionLifecycle'
   | 'openAttentionFoundCatalog'
+  | 'openOrderFromFinance'
   | 'reconcileFoundInventoryStock'
   | 'refreshWarehouseAttention'
   | 'setAttentionCategory'
@@ -50,6 +51,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
     openAttentionIntake,
     openAttentionLifecycle,
     openAttentionFoundCatalog,
+    openOrderFromFinance,
     reconcileFoundInventoryStock,
     refreshWarehouseAttention,
     setAttentionCategory,
@@ -174,7 +176,8 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
             {(items.lifecycle || []).map((item: any) => (
               <article key={`attention-lifecycle-${item.id}`}>
                 <div className="inventory-attention-main"><strong>{item.productName || 'Неизвестный товар'}</strong><span>{detailLine(item) || 'Характеристики не определены'} · {sourceLabel(item.source)}</span><small>{item.externalId ? `Заказ ${item.externalId} · от ${formatDateShort(item.orderDate)}` : ''}</small></div>
-                {isAdmin ? <button className="secondary compact" type="button" onClick={() => void openAttentionLifecycle(item)}>Разобрать</button> : <span className="inventory-attention-admin-note">Требуется администратор</span>}
+                {item.orderId ? <button className="secondary compact" type="button" onClick={() => openOrderFromFinance({ orderId: item.orderId, externalId: item.externalId, orderDate: item.orderDate })}>Открыть заказ</button> : null}
+                {isAdmin ? <button className="secondary compact" type="button" onClick={() => void openAttentionLifecycle(item)}>Разобрать</button> : <span className="inventory-attention-admin-note">Для исправления нужен администратор</span>}
               </article>
             ))}
               </div>
@@ -185,7 +188,8 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
             {(items.catalog || []).map((item: any) => (
               <article key={`attention-catalog-${item.orderItemId}`}>
                 <div className="inventory-attention-main"><strong>{item.productName || 'Неизвестный товар'}</strong><span>{detailLine(item) || 'Характеристики не определены'}</span><small>{item.externalId ? `Заказ ${item.externalId} · от ${formatDateShort(item.orderDate)}` : ''}{item.affectedCount > 1 ? ` · похожих позиций: ${item.affectedCount}` : ''}</small></div>
-                {isAdmin ? <button className="secondary compact" type="button" onClick={() => void openAttentionCatalog(item)}>Разобрать</button> : <span className="inventory-attention-admin-note">Требуется администратор</span>}
+                {item.orderId ? <button className="secondary compact" type="button" onClick={() => openOrderFromFinance({ orderId: item.orderId, externalId: item.externalId, orderDate: item.orderDate })}>Открыть заказ</button> : null}
+                {isAdmin ? <button className="secondary compact" type="button" onClick={() => void openAttentionCatalog(item)}>Разобрать</button> : <span className="inventory-attention-admin-note">Для исправления нужен администратор</span>}
               </article>
             ))}
               </div>

@@ -226,9 +226,9 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                         <SmartPickerInput
                           value={inventoryQuery}
                           options={inventoryPickerOptions.products}
-                          placeholder="Найти товар"
+                          placeholder="Товар, цвет, размер, материал…"
                           onChange={setInventoryQuery}
-                          ariaLabel="Поиск товара"
+                          ariaLabel="Поиск товара по названию и характеристикам"
                         />
                         {inventoryQuery ? <button className="secondary compact" type="button" onClick={() => setInventoryQuery('')}>Очистить</button> : null}
                       </div>
@@ -246,10 +246,10 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                     <div className="inventory-calm-summary" aria-label="Краткая сводка остатков">
                       <div className="is-primary"><span>Свободно</span><strong>{formatMoney(simpleStockSource === 'warehouse' ? simpleStockStats.warehouse : simpleStockStats.boutique)}</strong><small>можно использовать сейчас</small></div>
                       <div><span>На месте</span><strong>{formatMoney(simpleStockSource === 'warehouse' ? simpleStockStats.warehousePhysical : simpleStockStats.boutiquePhysical)}</strong><small>должно находиться в точке</small></div>
-                      <div><span>В заказах</span><strong>{formatMoney(simpleStockSource === 'warehouse' ? simpleStockStats.warehouseReserved : simpleStockStats.boutiqueReserved)}</strong><small>уже отложено клиентам</small></div>
+                      <div><span>В заказах</span><strong>{formatMoney(simpleStockSource === 'warehouse' ? simpleStockStats.warehouseReserved : simpleStockStats.boutiqueReserved)}</strong><small>уже обещано заказам</small></div>
                       <details>
                         <summary>Что означают эти числа?</summary>
-                        <p><b>На месте</b> включает и свободные вещи, и ещё не отправленные заказы. <b>В заказах</b> — уже обещанное клиентам. <b>Свободно</b> = на месте минус в заказах.</p>
+                        <p><b>На месте</b> — физический остаток по учёту. <b>В заказах</b> — количество, обещанное заказам; оно не означает, что вещь физически отложена отдельно. <b>Свободно</b> = на месте минус в заказах.</p>
                       </details>
                     </div>
 
@@ -445,7 +445,7 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                           ) : (<>
                             {simpleStockDetail.physical < 0 ? <div className="inventory-calm-warning"><strong>Учёт ниже нуля — нужна сверка</strong><span>Отрицательное число не доказывает, что забыли приход. Проверьте фактическое количество и источник товара; система исправит учёт по реальному факту.</span></div> : simpleStockDetail.free < 0 ? <div className="inventory-calm-warning"><strong>Товара не хватает для текущих заказов</strong><span>Нужно ещё {Math.abs(simpleStockDetail.free)} шт. либо требуется сверка фактического количества.</span></div> : null}
                             <section className="inventory-calm-reservations">
-                              <div className="inventory-calm-reservations-head"><strong>{simpleStockDetail.reserved > 0 ? 'Товар отложен для этих заказов' : 'Товар сейчас не зарезервирован'}</strong>{simpleStockDetail.reserved > 0 ? <span>Всего: {simpleStockDetail.reserved} шт.</span> : null}</div>
+                              <div className="inventory-calm-reservations-head"><strong>{simpleStockDetail.reserved > 0 ? 'Эта позиция нужна этим заказам' : 'Товар сейчас не зарезервирован'}</strong>{simpleStockDetail.reserved > 0 ? <span>Всего: {simpleStockDetail.reserved} шт.</span> : null}</div>
                               {simpleStockReservationsBusy ? <div className="empty-state compact-empty">Загружаю заказы…</div> : simpleStockDetail.reserved > 0 && !simpleStockReservations.length ? <div className="empty-state compact-empty">Не удалось получить список заказов. Обновите остатки и попробуйте ещё раз.</div> : simpleStockReservations.map((reservation: any) => (
                                 <div className="inventory-calm-reservation" key={`reservation-${reservation.id}`}>
                                   <div className="inventory-calm-reservation-main">

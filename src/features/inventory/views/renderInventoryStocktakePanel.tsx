@@ -310,7 +310,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                                     })}</div> : null}
                                   </div>
                                   <div className="stocktake-selective-head">
-                                    <label><span>Найдите товар</span><input value={stocktakeStartSearch} onChange={(event) => setStocktakeStartSearch(event.target.value)} placeholder="Название товара…" /></label>
+                                    <label><span>Найдите товар</span><input value={stocktakeStartSearch} onChange={(event) => setStocktakeStartSearch(event.target.value)} placeholder="Название товара…" /><small className="muted-small">На старте показаны только товары, где сейчас есть физический остаток или резерв. Если нашли вещь, которой по учёту здесь нет, начните доступную проверку и используйте «Нашли ещё позицию».</small></label>
                                     <div className="stocktake-selective-count"><strong>{stocktakeSelectedProductIds.length ? `${stocktakeSelectedProductIds.length} товаров выбрано` : 'Соберите проверку'}</strong><span>{stocktakeSelectedProductIds.length ? `${selectedStocktakePositionCount} позиций нужно будет пересчитать` : 'Можно выбрать один или несколько товаров'}</span></div>
                                   </div>
                                   {selectedStocktakeProducts.length ? <div className={`stocktake-selective-queue ${selectiveQueueIsLarge ? 'is-large' : ''}`}>
@@ -322,7 +322,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                                     {visibleStocktakeSelectableProducts.length ? visibleStocktakeSelectableProducts.map((product: any) => {
                                       const checked = stocktakeSelectedProductIds.includes(Number(product.productId))
                                       return <label className={`stocktake-selective-product ${checked ? 'is-selected' : ''}`} key={`stocktake-select-${product.productId}`}><input type="checkbox" checked={checked} onChange={() => setStocktakeSelectedProductIds((current) => checked ? current.filter((id) => id !== Number(product.productId)) : [...current, Number(product.productId)])} /><span><strong>{product.productName}</strong><small>{product.positionCount} поз. {checked ? '· выбрано' : ''}</small></span></label>
-                                    }) : <div className="stocktake-product-list-empty">По поиску ничего не найдено. Уже выбранные товары остаются в очереди выше.</div>}
+                                    }) : <div className="stocktake-product-list-empty">По поиску ничего не найдено. Уже выбранные товары остаются в очереди выше. В стартовом списке показываются только позиции с текущим остатком или резервом. Если вещь физически нашлась при нуле учёта, добавьте её через «Нашли ещё позицию» внутри начатой проверки.</div>}
                                   </div>
                                 </div>
                               ) : (
