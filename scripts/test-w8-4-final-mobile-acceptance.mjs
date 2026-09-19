@@ -24,7 +24,7 @@ try {
 
   check(movement.includes('inventory-operation-card-${inventoryDraft.movementType}'), 'Operation mode card hook changed')
   check(movement.includes("['arrival', 'Приход']") && movement.includes("['writeoff', 'Списание']") && movement.includes("['manual_set', 'Исправить количество']"), 'Operation mode choices changed unexpectedly')
-  check(movement.includes('saveInventoryMovement()') && !movement.includes('setInventoryTransferObservedQuantity') && app.includes("result.code === 'stock_resolution_required'") && app.includes('Это НЕ пересчёт всего остатка'), 'Warehouse mutation path no longer uses the accepted bounded possession resolver')
+  check(movement.includes('saveInventoryMovement()') && !movement.includes('setInventoryTransferObservedQuantity') && app.includes("result.code === 'stock_resolution_required'") && app.includes('await askStockResolution({') && app.includes('не заменяет ревизию'), 'Warehouse mutation path no longer uses the accepted bounded possession resolver')
 
   check(mobile.includes('.inventory-operation-card-writeoff .inventory-operation-variants-table'), 'Writeoff phone card layout missing')
   check(mobile.includes('.inventory-operation-card-manual_set .inventory-operation-variants-table'), 'Manual-set phone card layout missing')
