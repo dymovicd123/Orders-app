@@ -11,7 +11,7 @@ type Props = {
   apiFetch: (path: string, init?: RequestInit) => Promise<Response>
   isAdmin: boolean
   onClose: () => void
-  onCompleted: (order: OrderRecord) => void | Promise<void>
+  onCompleted: (order: OrderRecord) => boolean | void | Promise<boolean | void>
   onRequestAdminMode?: () => void
   onOpenFullReview?: (order: OrderRecord) => void | Promise<void>
 }
@@ -165,7 +165,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
           : `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-facts`
         await read<CatalogResolutionResponse>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(variantId ? { variantId } : { ...next, legacyUnknownGender: legacy }) })
         if (ticket === generation.current) { setNeedsRecheck(true); setNotice('Товар уточнён ✓ Проверяю остальные позиции…') }
-      }, async () => ticket === generation.current ? load() : false, async () => { if (owner === session.current) await onCompleted(order) })
+      }, async () => ticket === generation.current ? load() : false, async () => owner === session.current ? await onCompleted(order) : false)
     } catch (value) { if (owner === session.current) setError(value instanceof Error ? value.message : 'Не удалось сохранить товар.') }
     finally { mutationPending.current = false; if (owner === session.current) setResolving(false) }
   }
@@ -173,7 +173,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     setError('')
     const owner = session.current
     try {
-      if (needsRecheck) await owner.run(null, load, async () => { if (order && owner === session.current) await onCompleted(order) })
+      if (needsRecheck) await owner.run(null, load, async () => order && owner === session.current ? await onCompleted(order) : false)
       else if (item && draft) await preview(draft)
       else await load()
     } catch (value) { if (owner === session.current) setError(value instanceof Error ? value.message : 'Не удалось проверить товар.') }

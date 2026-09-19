@@ -64,7 +64,7 @@ assert.ok(modal.includes('Исправить / выбрать существую
 assert.ok(modal.includes('Добавить как новое значение'))
 const app = fs.readFileSync('src/App.tsx', 'utf8')
 const completion = app.split('onCompleted={async (resolvedOrder: OrderRecord) => {')[1].split('}}')[0]
-assert.ok(completion.includes('await markOrderSentToClient(resolvedOrder)'))
+assert.ok(completion.includes('await markOrderSentToClient(freshResult.order)'))
 assert.ok(!completion.includes('ещё раз'))
 // Run the actual component and its event handlers with deterministic hook scheduling.
 const require = createRequire(import.meta.url)
