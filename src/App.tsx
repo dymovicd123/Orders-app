@@ -803,6 +803,13 @@ function App() {
   }, [activeSector, authReady, orderPanel])
 
   useEffect(() => {
+    if (!authReady || activeSector !== 'orders') return
+    // Pending physical returns/exchanges are operational work, not buried history.
+    // Load their summaries as soon as Orders opens so the tabs can show an attention badge.
+    void Promise.allSettled([loadReturnHistory(), loadExchangeHistory()])
+  }, [activeSector, authReady])
+
+  useEffect(() => {
     if (!authReady || activeSector !== 'orders' || orderPanel !== 'returns') return
     void loadReturnHistory()
   }, [activeSector, authReady, orderPanel])
