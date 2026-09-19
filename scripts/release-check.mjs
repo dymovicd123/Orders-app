@@ -212,6 +212,7 @@ try {
   run('Catalog resolver R8.1A safe-product-correction tests', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-r8-1a-safe-product-correction.mjs')])
   run('Catalog resolver R8.1B typo-safety tests', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-r8-1b-typo-safety.mjs')])
   run('Catalog resolver R9.2A clean-completion tests', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-r9-2a-clean-completion.mjs')])
+  run('Catalog resolver R9.2B shipping replay safety tests', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-r9-2b-shipping-replay-safety.mjs')])
   run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])
