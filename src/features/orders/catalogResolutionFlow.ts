@@ -39,15 +39,29 @@ export function rankedProducts(products: CatalogResolutionProduct[], source: str
   const rawTokens = raw.split(' ').filter(Boolean)
   return products.map(product => {
     const name = identity(product.name)
-    const embedded = (` ${raw} `).includes(` ${name} `)
-    const overlap = name.split(' ').filter(token => token.length > 2 && rawTokens.includes(token)).length
+    const nameTokens = name.split(' ').filter(Boolean)
+    const embedded = raw && (` ${raw} `).includes(` ${name} `)
+    const exactTokenOverlap = nameTokens.filter(token => token.length > 1 && rawTokens.includes(token)).length
+    const tokenPrefixOverlap = rawTokens.reduce((sum, queryToken) => sum + (nameTokens.some(token => token.startsWith(queryToken) || queryToken.startsWith(token)) ? 1 : 0), 0)
+    const nameStartsWithQuery = Boolean(raw && name.startsWith(raw))
+    const anyTokenStartsWithQuery = Boolean(raw && nameTokens.some(token => token.startsWith(raw)))
+    const containsQuery = Boolean(raw.length >= 2 && name.includes(raw))
+    const queryStartsWithName = Boolean(raw && raw.startsWith(name))
     const fuzzyLimit = Math.max(raw.length, name.length) >= 8 ? 2 : 1
-    const distance = Math.min(
-      typoDistance(raw, name, fuzzyLimit),
-      ...rawTokens.map(token => typoDistance(token, name, fuzzyLimit)),
-    )
-    const fuzzy = raw.length >= 4 && name.length >= 4 && distance <= fuzzyLimit
-    return { product, score: raw === name ? 10000 : embedded ? 5000 + name.length : overlap ? overlap * 100 : fuzzy ? 1000 - distance * 100 : 0 }
+    const tokenDistances = rawTokens.flatMap(queryToken => nameTokens.map(nameToken => typoDistance(queryToken, nameToken, fuzzyLimit)))
+    const distance = Math.min(typoDistance(raw, name, fuzzyLimit), ...(tokenDistances.length ? tokenDistances : [99]))
+    const fuzzy = raw.length >= 3 && name.length >= 3 && distance <= fuzzyLimit
+    const score = raw === name ? 10000
+      : embedded ? 7000 + name.length
+      : nameStartsWithQuery ? 6200 - Math.max(0, name.length - raw.length)
+      : anyTokenStartsWithQuery ? 5800 - Math.max(0, name.length - raw.length)
+      : containsQuery ? 5200 - Math.max(0, name.length - raw.length)
+      : queryStartsWithName ? 4800 + name.length
+      : exactTokenOverlap ? 3000 + exactTokenOverlap * 250
+      : tokenPrefixOverlap ? 2200 + tokenPrefixOverlap * 180
+      : fuzzy ? 1200 - distance * 120
+      : 0
+    return { product, score }
   }).sort((a, b) => b.score - a.score || a.product.name.localeCompare(b.product.name, 'ru'))
 }
 export function initialDraft(source: Partial<Record<Field, string>> & { productName: string }, context: CatalogResolutionContext): Draft {
