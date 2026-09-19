@@ -752,6 +752,7 @@ export default {
         if ('code' in result && result.code === 'stock_resolution_required') {
           return json(result, { status: 409 });
         }
+        if (!('duplicate' in result)) throw new Error('Некорректный ответ складской операции.');
         try {
           await writeActivityLog(env.DB, {
             eventType: 'inventory_movement',
@@ -772,6 +773,7 @@ export default {
         if ('code' in result && result.code === 'stock_resolution_required') {
           return json(result, { status: 409 });
         }
+        if (!('duplicate' in result)) throw new Error('Некорректный ответ перемещения.');
         if (!result.duplicate) {
           try {
             await writeActivityLog(env.DB, {
