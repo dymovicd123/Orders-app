@@ -218,6 +218,7 @@ try {
   run('Stage02 Phase1B Workshop disposition R1 tests', process.execPath, [path.join(root, 'scripts/test-stage02-phase1b-workshop-disposition-r1.mjs')])
   run('Stage02 Phase1B R2 Workshop Boutique disposition tests', process.execPath, [path.join(root, 'scripts/test-stage02-phase1b-r2-workshop-boutique-disposition.mjs')])
   run('Stage02 Phase2A stock truth primitives', process.execPath, [path.join(root, 'scripts/test-stage02-phase2a-stock-truth-primitives.mjs')])
+  run('Stage02 Phase2B shipping possession resolver', process.execPath, [path.join(root, 'scripts/test-stage02-phase2b-shipping-possession-resolver.mjs')])
   run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])

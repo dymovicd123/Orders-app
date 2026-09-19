@@ -7,6 +7,7 @@ import { writeActivityLog } from './activity.ts'
 import type { CanonicalVariantSnapshot } from './catalog.ts'
 import { catalogGenderForProductScope, catalogReferenceDbValueExists, catalogReferenceValueExists, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
 import { inventoryPhysicalCheckStatement } from './inventory-primitives.ts'
+import { boundedOutboundStock } from './stock-resolution.ts'
 import { normalizeOrderItems } from './order-core.ts'
 
 export async function resolveCatalogProductAndVariantLegacy(
@@ -1686,12 +1687,46 @@ export type ShipmentInventoryObservation = {
 };
 
 
+export type ShipmentStockConfirmation = {
+  source: SourceType;
+  variantId: number;
+  expectedQuantity: number;
+  operationQuantity: number;
+};
+
+
 export type ShipmentFulfillmentOptions = {
   observations?: ShipmentInventoryObservation[];
+  stockConfirmations?: ShipmentStockConfirmation[];
   shippingDate?: string | null;
   checkedBy?: string | null;
   orderItemIds?: number[];
 };
+
+
+export function normalizeShipmentStockConfirmations(input: unknown): ShipmentStockConfirmation[] {
+  if (!Array.isArray(input)) return [];
+  const map = new Map<string, ShipmentStockConfirmation>();
+  for (const raw of input) {
+    if (!raw || typeof raw !== 'object') continue;
+    const row = raw as Record<string, unknown>;
+    const source = normalizeSourceType(row.source);
+    const variantId = toInt(row.variantId, 0);
+    const expectedQuantity = Math.max(0, toInt(row.expectedQuantity, -1));
+    const operationQuantity = Math.max(0, toInt(row.operationQuantity, 0));
+    if (!variantId || expectedQuantity < 0 || operationQuantity <= 0) {
+      throw new Error('Некорректное подтверждение физического наличия перед отправкой. Обновите заказ и повторите.');
+    }
+    const key = `${source}:${variantId}`;
+    const next = { source, variantId, expectedQuantity, operationQuantity };
+    const existing = map.get(key);
+    if (existing && (existing.expectedQuantity !== next.expectedQuantity || existing.operationQuantity !== next.operationQuantity)) {
+      throw new Error('Для одной позиции переданы разные подтверждения физического наличия. Обновите заказ и повторите отправку.');
+    }
+    map.set(key, next);
+  }
+  return Array.from(map.values());
+}
 
 
 export function normalizeShipmentObservations(input: unknown): ShipmentInventoryObservation[] {
@@ -1750,6 +1785,8 @@ export async function fulfillOrderReservationsV2(
 
   const observations = normalizeShipmentObservations(options.observations);
   const observationsByKey = new Map(observations.map((row) => [`${row.source}:${row.variantId}`, row]));
+  const stockConfirmations = normalizeShipmentStockConfirmations(options.stockConfirmations);
+  const stockConfirmationsByKey = new Map(stockConfirmations.map((row) => [`${row.source}:${row.variantId}`, row]));
   if (!reservations.length) {
     // Workshop-only orders may legitimately have no warehouse reservation. Status still belongs in
     // the same commit API so a retry cannot create a split brain between the order and inventory.
@@ -1802,6 +1839,7 @@ export async function fulfillOrderReservationsV2(
       size: string | null;
     };
     observation: ShipmentInventoryObservation | null;
+    stockConfirmation: ShipmentStockConfirmation | null;
   };
   const stockByKey = new Map<string, ShipmentStockState>();
 
@@ -1842,9 +1880,17 @@ export async function fulfillOrderReservationsV2(
     if (observation && observation.expectedQuantity !== quantity) {
       throw new Error(`Остаток «${requirement.productName}» изменился после открытия формы: было ${observation.expectedQuantity}, сейчас ${quantity}. Обновите заказ и пересчитайте товар.`);
     }
+    const stockConfirmation = stockConfirmationsByKey.get(key) || null;
+    if (stockConfirmation && (stockConfirmation.expectedQuantity !== quantity || stockConfirmation.operationQuantity !== requirement.required)) {
+      throw new Error(`Остаток или количество «${requirement.productName}» изменились после подтверждения. Обновите заказ и повторите отправку.`);
+    }
+    const bounded = boundedOutboundStock(quantity, requirement.required);
+    if (bounded.requiresResolution && !stockConfirmation) {
+      throw new Error(`Для отправки «${requirement.productName}» нужно отдельно подтвердить, что ${requirement.required} шт. физически находятся у сотрудника.`);
+    }
     const effectiveQuantity = observation ? observation.countedQuantity : quantity;
-    // A physical shortage is an inventory discrepancy, not a reason to block customer handover.
-    // Shipping consumes only the stock that is actually present and never drives physical quantity below zero.
+    // Shortage confirmation proves possession only of the concrete units being shipped.
+    // It never becomes a full SKU count; tracked Physical is still bounded at zero.
     stockByKey.set(key, {
       id: toInt(loaded.stock_id, 0),
       source: requirement.source,
@@ -1864,6 +1910,7 @@ export async function fulfillOrderReservationsV2(
         size: cleanText(loaded.size_label) || null,
       },
       observation,
+      stockConfirmation,
     });
   }
 
@@ -1872,6 +1919,11 @@ export async function fulfillOrderReservationsV2(
   for (const observation of observations) {
     if (!physicalRequirements.has(`${observation.source}:${observation.variantId}`)) {
       throw new Error('Фактическая сверка относится к позиции, которой нет в текущей отправке. Обновите заказ.');
+    }
+  }
+  for (const confirmation of stockConfirmations) {
+    if (!physicalRequirements.has(`${confirmation.source}:${confirmation.variantId}`)) {
+      throw new Error('Подтверждение физического наличия относится к позиции, которой нет в текущей отправке. Обновите заказ.');
     }
   }
 
@@ -1891,6 +1943,7 @@ export async function fulfillOrderReservationsV2(
     length: state.canonical.length,
     size: state.canonical.size,
     observed: state.observation ? state.observation.countedQuantity : null,
+    confirmedOperationQuantity: state.stockConfirmation ? state.stockConfirmation.operationQuantity : null,
   }));
 
   const activeReservationPayloads: string[] = [];
@@ -1951,7 +2004,9 @@ export async function fulfillOrderReservationsV2(
                json_extract(payload, '$.length') AS length,
                json_extract(payload, '$.size') AS size,
                CASE WHEN json_type(payload, '$.observed') = 'null' THEN NULL
-                    ELSE CAST(json_extract(payload, '$.observed') AS INTEGER) END AS observed
+                    ELSE CAST(json_extract(payload, '$.observed') AS INTEGER) END AS observed,
+               CASE WHEN json_type(payload, '$.confirmedOperationQuantity') = 'null' THEN NULL
+                    ELSE CAST(json_extract(payload, '$.confirmedOperationQuantity') AS INTEGER) END AS confirmed_operation_quantity
         FROM input
       )`;
     statements.push(db.prepare(
@@ -2014,6 +2069,24 @@ export async function fulfillOrderReservationsV2(
         ).bind(...payloadChunk, orderId, externalId, cleanText(options.checkedBy) || null, timestamp, timestamp, orderId),
       );
     }
+
+    statements.push(db.prepare(
+      `WITH ${cte}
+       INSERT OR IGNORE INTO inventory_operation_evidence (
+         evidence_key, inventory_source, variant_id, operation_type, operation_reference,
+         tracked_physical_before, confirmed_operation_quantity, explained_quantity, unexplained_quantity,
+         confirmed_by, occurred_at, created_at
+       )
+       SELECT 'shipping:' || ? || ':' || x.source || ':' || x.variant_id,
+              x.source, x.variant_id, 'shipping', ?, x.current_quantity, x.confirmed_operation_quantity,
+              MIN(x.current_quantity, x.confirmed_operation_quantity),
+              MAX(0, x.confirmed_operation_quantity - x.current_quantity),
+              ?, ?, ?
+       FROM x
+       WHERE x.confirmed_operation_quantity IS NOT NULL
+         AND x.confirmed_operation_quantity > x.current_quantity
+         AND ${orderStillUnsentSql}`
+    ).bind(...payloadChunk, timestamp, externalId, cleanText(options.checkedBy) || null, timestamp, timestamp, orderId));
 
     statements.push(db.prepare(
       `WITH ${cte}
@@ -2098,6 +2171,7 @@ export async function fulfillOrderReservationsV2(
     fulfilled: options.shippingDate && !shippingCommitted ? 0 : activeReservationPayloads.length,
     unresolved: 0,
     observationsApplied: options.shippingDate && !shippingCommitted ? 0 : observations.length,
+    stockConfirmationsApplied: options.shippingDate && !shippingCommitted ? 0 : stockConfirmations.length,
     shippingCommitted,
   };
 }
@@ -2408,9 +2482,9 @@ export async function getOrderShipmentInventoryBlockers(db: D1Database, orderId:
      LIMIT 20`
   ).bind(orderId).all<Record<string, unknown>>();
 
-  // Keep computing shortages for diagnostics/attention, but they no longer hard-block shipping.
-  void shortageResult;
-  return [...(unresolvedResult.results || [])];
+  // A physical shortage is not a full-stocktake request, but shipping must pause until the
+  // concrete units being handed to the client are explicitly confirmed present.
+  return [...(unresolvedResult.results || []), ...(shortageResult.results || [])];
 }
 
 
@@ -2420,7 +2494,7 @@ export function orderShipmentInventoryBlockerMessage(blockers: Record<string, un
     const name = cleanText(shortage.product_name_snapshot) || `позиция #${toInt(shortage.id, 0)}`;
     const physical = Math.max(0, toInt(shortage.physical_quantity, 0));
     const required = Math.max(1, toInt(shortage.required_quantity, 1));
-    return `Нельзя отправить заказ целиком: «${name}» — на месте ${physical} шт., требуется ${required}. Если товар физически есть, сначала уточните фактический остаток.`;
+    return `Для отправки «${name}» по учёту не хватает товара: на месте ${physical} шт., передать клиенту нужно ${required}. Подтвердите только эти конкретные вещи, если они физически у вас.`;
   }
   const names = blockers.slice(0, 3).map((row) => cleanText(row.product_name_snapshot) || `позиция #${toInt(row.id, 0)}`).join(', ');
   return `Нельзя отметить заказ отправленным: ${blockers.length} складск${blockers.length === 1 ? 'ая позиция ещё не распознана' : 'их позиции ещё не распознаны'} (${names}). Сначала разберите их в «Склад → Товары → Требуют разбора», чтобы физическое списание не потерялось.`;
