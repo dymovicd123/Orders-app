@@ -2004,7 +2004,9 @@ export async function fulfillOrderReservationsV2(
                json_extract(payload, '$.length') AS length,
                json_extract(payload, '$.size') AS size,
                CASE WHEN json_type(payload, '$.observed') = 'null' THEN NULL
-                    ELSE CAST(json_extract(payload, '$.observed') AS INTEGER) END AS observed
+                    ELSE CAST(json_extract(payload, '$.observed') AS INTEGER) END AS observed,
+               CASE WHEN json_type(payload, '$.confirmedOperationQuantity') = 'null' THEN NULL
+                    ELSE CAST(json_extract(payload, '$.confirmedOperationQuantity') AS INTEGER) END AS confirmed_operation_quantity
         FROM input
       )`;
     statements.push(db.prepare(
@@ -2067,6 +2069,24 @@ export async function fulfillOrderReservationsV2(
         ).bind(...payloadChunk, orderId, externalId, cleanText(options.checkedBy) || null, timestamp, timestamp, orderId),
       );
     }
+
+    statements.push(db.prepare(
+      `WITH ${cte}
+       INSERT OR IGNORE INTO inventory_operation_evidence (
+         evidence_key, inventory_source, variant_id, operation_type, operation_reference,
+         tracked_physical_before, confirmed_operation_quantity, explained_quantity, unexplained_quantity,
+         confirmed_by, occurred_at, created_at
+       )
+       SELECT 'shipping:' || ? || ':' || x.source || ':' || x.variant_id,
+              x.source, x.variant_id, 'shipping', ?, x.current_quantity, x.confirmed_operation_quantity,
+              MIN(x.current_quantity, x.confirmed_operation_quantity),
+              MAX(0, x.confirmed_operation_quantity - x.current_quantity),
+              ?, ?, ?
+       FROM x
+       WHERE x.confirmed_operation_quantity IS NOT NULL
+         AND x.confirmed_operation_quantity > x.current_quantity
+         AND ${orderStillUnsentSql}`
+    ).bind(...payloadChunk, timestamp, externalId, cleanText(options.checkedBy) || null, timestamp, timestamp, orderId));
 
     statements.push(db.prepare(
       `WITH ${cte}
