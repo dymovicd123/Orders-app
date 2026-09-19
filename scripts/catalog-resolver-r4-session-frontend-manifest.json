@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "revision": "catalog-resolver-r4-session-reliability",
+  "baseCommit": "679d7b6f8601b06b623f6772802c13a35f7605f9",
+  "files": {
+    "src/features/orders/OrderCatalogResolutionModal.tsx": {
+      "beforeGitBlob": "6d12ffdab2c61fb55f157d68bf5cdb1d50e7a20a",
+      "afterGitBlob": "5a86ef77ab0c3d77dcd3a6d8b56eb9f59c5ba4f5",
+      "beforeLines": 266,
+      "afterLines": 270,
+      "replacements": [
+        {
+          "beforeBlock": "  useEffect(() => {\n    const owner = createResolutionSession()\n    session.current = owner\n    setItem(null); setDraft(null); setContext(null); setProgress({ total: 0, remaining: 0 }); setNotice('')\n    setNeedsRecheck(false); setCatalog(null); catalogPromise.current = null\n    void load().catch(value => { if (owner === session.current) setError(value instanceof Error ? value.message : 'Не удалось загрузить товар.') })",
+          "afterBlock": "  useEffect(() => {\n    const owner = createResolutionSession()\n    session.current = owner\n    // Every order owns its own resolver activity. Never inherit a pending click/request\n    // from the previously opened order; stale async work is already fenced by generation/session.\n    previewPending.current = false\n    mutationPending.current = false\n    setResolving(false)\n    setItem(null); setDraft(null); setContext(null); setProgress({ total: 0, remaining: 0 }); setNotice('')\n    setNeedsRecheck(false); setCatalog(null); catalogPromise.current = null\n    void load().catch(value => { if (owner === session.current) setError(value instanceof Error ? value.message : 'Не удалось загрузить товар.') })"
+        },
+        {
+          "beforeBlock": "  }\n  const finish = async (variantId?: number, next = draft) => {\n    if (!order || !item || !next || resolving || busy || error || previewPending.current || mutationPending.current) return\n    if (!variantId && !isAdmin) return\n    mutationPending.current = true\n    const owner = session.current, ticket = generation.current\n    setResolving(true); setError('')",
+          "afterBlock": "  }\n  const finish = async (variantId?: number, next = draft) => {\n    if (!order || !item || !next || resolving || busy || error || previewPending.current || mutationPending.current) return\n    mutationPending.current = true\n    const owner = session.current, ticket = generation.current\n    setResolving(true); setError('')"
+        }
+      ]
+    }
+  }
+}
