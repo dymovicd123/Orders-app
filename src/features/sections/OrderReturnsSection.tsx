@@ -266,10 +266,10 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                     >
                                       <option value="pending">Ещё не пришёл</option>
                                       <option value="warehouse">Пришёл → Склад</option>
-                                      {item.sourceType !== 'workshop' ? <option value="boutique">Пришёл → Бутик</option> : null}
+                                      <option value="boutique">Пришёл → Бутик</option>
                                       <option value="no_stock">Пришёл, в остаток не добавлять</option>
                                     </select>
-                                    {item.sourceType === 'workshop' ? <small className="field-hint">Для вещи из Цеха по умолчанию остаток не создаётся. «Склад» выбирайте только при явном решении принять её туда.</small> : null}
+                                    {item.sourceType === 'workshop' ? <small className="field-hint">Для вещи из Цеха по умолчанию остаток не создаётся. Если товар физически принимают в остатки, явно выберите «Склад» или «Бутик».</small> : null}
                                   </td>
                                 </tr>
                               )) : (
@@ -358,7 +358,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                       disabled={returnBusy}
                                     >
                                       <option value="warehouse">Склад</option>
-                                      {!item.isWorkshop ? <option value="boutique">Бутик</option> : null}
+                                      <option value="boutique">Бутик</option>
                                       <option value="no_stock">Без добавления в остаток</option>
                                     </select>
                                     <button

@@ -149,9 +149,6 @@ export async function createReturn(
     // pending = not physically received yet; no_stock = received but intentionally not stocked.
     const itemRestockRequested = isWorkshop ? selected.restock === true : selected.restock !== false;
     const inventorySource = physicalTracking ? trackedInventorySource : (restockSource !== 'none' && itemRestockRequested ? restockSource : null);
-    if (isWorkshop && inventorySource === 'boutique') {
-      throw new Error(`Товар из Цеха «${cleanText(orderItem.product_name_snapshot)}» нельзя возвращать в остаток Бутика. Выберите «Ещё не пришёл», «Получен без остатка» или «Склад».`);
-    }
     const wantsRestock = inventorySource !== null;
     if (humanInventoryModelEnabled && wantsRestock && !isWorkshop && !orderItemWasPhysicallyIssued(orderItem)) {
       throw new Error(`Позиция «${cleanText(orderItem.product_name_snapshot)}» по учёту ещё не была физически выдана / отправлена. Возвращать её в остаток нельзя — это удвоит товар. Для неотправленного заказа используйте редактирование/удаление заказа либо выберите возврат денег без приёма вещи.`);
@@ -456,9 +453,6 @@ export async function receiveReturnedItem(
       throw new CriticalOperationConflictError('Это старая запись: физическое получение по ней раньше не отслеживалось. Автоматически менять остаток нельзя.');
     }
     const isWorkshop = Boolean(toInt(item.is_workshop, 0));
-    if (isWorkshop && destination === 'boutique') {
-      throw new Error('Возвращённую вещь из Цеха нельзя принять в остаток Бутика. Выберите Склад или «Без возврата в остаток».');
-    }
 
     const persistedDestination = () => {
       const source = cleanText(item?.inventory_source);
@@ -802,9 +796,6 @@ export async function createExchange(
   const oldPhysicalTracking = oldPhysicalState !== null;
   const trackedOldReturnSource = oldPhysicalState === 'warehouse' || oldPhysicalState === 'boutique' ? oldPhysicalState : 'none';
   const oldReturnSource = oldPhysicalTracking ? trackedOldReturnSource : normalizeExchangeReturnSource(input.oldReturnSource);
-  if (oldItemIsWorkshop && oldReturnSource === 'boutique') {
-    throw new Error(`Старую вещь из Цеха «${cleanText(oldItem.product_name_snapshot)}» нельзя принимать в остаток Бутика. Для цеховой вещи доступны только «Ещё не пришла», «Получена без остатка» или явный приём на Склад.`);
-  }
   const rawExchangeDate = cleanText(input.exchangeDate);
   if (!rawExchangeDate) throw new Error('Укажите дату обмена.');
   const exchangeDate = normalizeDate(rawExchangeDate);
