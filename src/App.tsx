@@ -205,6 +205,14 @@ function App() {
     lifecycleEventId?: number | null
     operationType?: 'return' | 'exchange'
   } | null>(null)
+  const [stockResolutionPrompt, setStockResolutionPrompt] = useState<{
+    title: string
+    context: string
+    items: Array<{ productName: string; tracked: number; quantity: number; source?: string }>
+    confirmLabel: string
+    note: string
+  } | null>(null)
+  const stockResolutionPromptResolver = useRef<((confirmed: boolean) => void) | null>(null)
   const [references, setReferences] = useState<ReferenceData | null>(null)
   const [inventoryData, setInventoryData] = useState<{
     warehouse: InventoryResponse | null
@@ -4906,9 +4914,18 @@ function App() {
         const actionText = isTransfer
           ? `эти вещи прямо сейчас физически переносятся из «${sourceLabel(inventoryDraft.source)}» в «${sourceLabel(inventoryDraft.targetSource)}»`
           : 'эти вещи прямо сейчас физически находятся у вас и действительно списываются'
-        const confirmed = window.confirm(
-          `По учёту товара меньше, чем указано в операции.\n\n${lines.join('\n')}\n\nПодтвердите только если ${actionText}. Это НЕ пересчёт всего остатка.`
-        )
+        const confirmed = await askStockResolution({
+          title: isTransfer ? 'Проверьте товар перед перемещением' : 'Проверьте товар перед списанием',
+          context: 'По учёту товара меньше, чем указано в операции.',
+          items: result.items.map((resolutionItem) => ({
+            productName: resolutionItem.productName || 'Товар',
+            tracked: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
+            quantity: Math.max(1, Number(resolutionItem.operationQuantity || 1)),
+            source: sourceLabel(resolutionItem.source === 'boutique' ? 'boutique' : 'warehouse'),
+          })),
+          confirmLabel: isTransfer ? 'Да, перемещаю эти вещи' : 'Да, списываю эти вещи',
+          note: `Подтверждайте только если ${actionText}. Общий остаток этим не пересчитывается.`,
+        })
         if (!confirmed) {
           setMessage(isTransfer ? 'Перемещение остановлено. Остатки не изменялись.' : 'Списание остановлено. Остатки не изменялись.')
           return
@@ -5795,9 +5812,17 @@ function removeDebtPayment(index: number) {
           const needed = Math.max(1, Number(resolutionItem.operationQuantity || item.quantity || 1))
           return `• ${name}: по учёту ${tracked} шт., сейчас клиенту выдаётся ${needed} шт.`
         })
-        const confirmed = window.confirm(
-          `По учёту товара меньше, чем нужно для этой выдачи.\n\n${lines.join('\n')}\n\nПодтвердите только если указанные вещи прямо сейчас физически у вас и действительно передаются клиенту. Это НЕ пересчёт всего остатка.`
-        )
+        const confirmed = await askStockResolution({
+          title: 'Проверьте товар перед выдачей',
+          context: 'По учёту товара меньше, чем нужно для этой выдачи.',
+          items: resolutionItems.map((resolutionItem) => ({
+            productName: resolutionItem.productName || item.productName,
+            tracked: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
+            quantity: Math.max(1, Number(resolutionItem.operationQuantity || item.quantity || 1)),
+          })),
+          confirmLabel: 'Да, выдаю клиенту',
+          note: 'Подтверждайте только если эти конкретные вещи сейчас физически у вас. Общий остаток этим не пересчитывается.',
+        })
         if (!confirmed) {
           setMessage('Выдача остановлена. Остатки не изменялись.')
           return
@@ -5898,9 +5923,17 @@ function removeDebtPayment(index: number) {
           const needed = Math.max(1, Number(item.operationQuantity || 1))
           return `• ${name}: по учёту ${tracked} шт., сейчас отправляется ${needed} шт.`
         })
-        const confirmed = window.confirm(
-          `По учёту товара меньше, чем нужно для этой отправки.\n\n${lines.join('\n')}\n\nПодтвердите только если указанные вещи прямо сейчас физически у вас и действительно передаются клиенту. Это НЕ пересчёт всего остатка.`
-        )
+        const confirmed = await askStockResolution({
+          title: 'Проверьте товар перед отправкой',
+          context: 'По учёту товара меньше, чем нужно для этой отправки.',
+          items: result.items.map((resolutionItem) => ({
+            productName: resolutionItem.productName || `Товар #${resolutionItem.variantId || ''}`,
+            tracked: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
+            quantity: Math.max(1, Number(resolutionItem.operationQuantity || 1)),
+          })),
+          confirmLabel: 'Да, передаю клиенту',
+          note: 'Подтверждайте только фактическую передачу этих вещей. Это не пересчёт всего остатка.',
+        })
         if (!confirmed) {
           setMessage('Отправка остановлена. Остатки не изменялись.')
           return false
@@ -6421,6 +6454,26 @@ function removeDebtPayment(index: number) {
   }
 
 
+  function askStockResolution(prompt: {
+    title: string
+    context: string
+    items: Array<{ productName: string; tracked: number; quantity: number; source?: string }>
+    confirmLabel: string
+    note: string
+  }) {
+    if (stockResolutionPromptResolver.current) stockResolutionPromptResolver.current(false)
+    setStockResolutionPrompt(prompt)
+    return new Promise<boolean>((resolve) => { stockResolutionPromptResolver.current = resolve })
+  }
+
+  function answerStockResolution(confirmed: boolean) {
+    const resolve = stockResolutionPromptResolver.current
+    stockResolutionPromptResolver.current = null
+    setStockResolutionPrompt(null)
+    resolve?.(confirmed)
+  }
+
+
   async function receiveReturnedItemAction(input: {
     operationType: 'return' | 'exchange'
     operationId: number
@@ -6898,6 +6951,37 @@ function removeDebtPayment(index: number) {
         tabIndex={mobileNavOpen ? 0 : -1}
         onClick={() => setMobileNavOpen(false)}
       />
+
+      {stockResolutionPrompt ? (
+        <div className="modal-backdrop stock-resolution-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) answerStockResolution(false) }}>
+          <section className="modal-card stock-resolution-modal" role="dialog" aria-modal="true" aria-label={stockResolutionPrompt.title}>
+            <div className="modal-head">
+              <div>
+                <div className="card-label">Проверка фактического товара</div>
+                <h3>{stockResolutionPrompt.title}</h3>
+                <p>{stockResolutionPrompt.context}</p>
+              </div>
+              <button className="secondary compact" type="button" onClick={() => answerStockResolution(false)}>Закрыть</button>
+            </div>
+            <div className="stock-resolution-items">
+              {stockResolutionPrompt.items.map((entry, index) => (
+                <div className="stock-resolution-item" key={`${entry.productName}:${index}`}>
+                  <div><strong>{entry.productName}</strong>{entry.source ? <small>{entry.source}</small> : null}</div>
+                  <div className="stock-resolution-numbers">
+                    <span><small>По учёту</small><strong>{entry.tracked} шт.</strong></span>
+                    <span><small>В операции</small><strong>{entry.quantity} шт.</strong></span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="stock-resolution-note">{stockResolutionPrompt.note}</p>
+            <div className="modal-actions">
+              <button className="primary" type="button" onClick={() => answerStockResolution(true)}>{stockResolutionPrompt.confirmLabel}</button>
+              <button className="secondary" type="button" onClick={() => answerStockResolution(false)}>Нет, остановить операцию</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {stockHandoverOrder ? (
         <div className="modal-backdrop order-stock-handover-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeOrderStockHandover() }}>
