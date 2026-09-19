@@ -1,6 +1,18 @@
 # Система заказов — continuation context
 
-Updated: 2026-09-10 (Asia/Qyzylorda)
+Updated: 2026-09-19 (Asia/Qyzylorda)
+
+## Current priority — Stage02 transactional stock truth
+
+- Canonical design: `docs/continuation/STAGE02_PHASE2_STOCK_TRUTH_MODEL_20260919.md`; canonical Warehouse continuation: `docs/continuation/WAREHOUSE_CURRENT_CONTEXT.md`.
+- The old “self-healing / Smart Daily Stock” assumption is superseded for Stage02. Operational possession proves only the concrete units being handled; it never becomes an absolute SKU count. Only explicit counting/correction workflows may replace Physical.
+- Phase2A is complete: shared `stock_resolution_required`, bounded outbound semantics, append-only `inventory_operation_evidence`, migration 0071.
+- Phase2B is complete in Branch2 and Production: final shipping shortage asks only whether the concrete shipped units are physically present; Physical is bounded at zero and unexplained outbound is evidence, not a fake stock check.
+- Baseline before current Phase2C: Branch2 `d7ef267a3581dcb8a2781b16b82ae2889b5698fd`; Production/main `f7a6f7240bcaf3c73e7568d7b9b33d98d87b8ac5`. Migration 0071 is already applied to both D1 environments.
+- Current implementation branch: `w-stage02-phase2c-early-handover-20260919`. Goal: apply the same bounded possession resolver to early `issue_now` while keeping `still_here / issued_before_checkpoint` lineage questions separate.
+- Next: Phase2D transfer/writeoff, then Phase2E Attention dependency removal + Stage02 acceptance.
+- **User release gate:** finish remaining Stage02 in `branch2`; then the user will inspect all Stage02 changes and send objections. Do not promote Phase2C+ to Production before that inspection.
+- Arrival remains frozen. Never mix Primary and Branch2 D1. Update all continuation context after every meaningful Stage02 code/CI/merge/deploy step.
 
 ## Current priority — Operational Autonomy R3
 
