@@ -35,6 +35,7 @@ import { DatabaseStorageModal, DatabaseStorageWarning, useDatabaseStorageMainten
 import { DashboardSection, ClientsSection, ReferencesSection, InventorySection, WorkshopSection, OrdersHeaderSection, OrderFiltersSection, CreateOrderSection, OrderEditorSection, OrdersTableSection, OrderDetailsSection, OrderDebtSection, OrderReturnsSection, OrderExchangeSection, TeamSection, LeadsSection, PlanSection, FinanceSection, ReportsSection, OrderActivitySection, OrderCatalogResolutionModal, DeferredSection } from './app/lazySections'
 import { InventoryStockGroupsRenderer } from './features/renderers/InventoryStockGroupsRenderer'
 import { StockResolutionConfirmModal, type StockResolutionPrompt } from './features/orders/StockResolutionConfirmModal'
+import { ReturnedItemResolutionModal } from './features/orders/ReturnedItemResolutionModal'
 import { useFinanceReportReads } from './features/finance/useFinanceReportReads'
 import { useWorkshopReads } from './features/workshop/useWorkshopReads'
 import { useApiClient } from './app/controllers/useApiClient'
@@ -234,6 +235,7 @@ function App() {
   const [adminModeOpen, setAdminModeOpen] = useState(false)
   const [stockResolutionPrompt, setStockResolutionPrompt] = useState<StockResolutionPrompt | null>(null)
   const stockResolutionDecisionRef = useRef<((value: boolean) => void) | null>(null)
+  const [returnedItemResolutionEventId, setReturnedItemResolutionEventId] = useState<number | null>(null)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [adminModeBusy, setAdminModeBusy] = useState(false)
   const [adminModeDraft, setAdminModeDraft] = useState({ login: 'admin', password: '' })
@@ -6487,6 +6489,7 @@ function removeDebtPayment(index: number) {
         ok?: boolean
         message?: string
         pendingInventoryCount?: number
+        pendingInventory?: { eventId?: number; reason?: string; productName?: string } | null
         stockApplied?: boolean
         stockAlreadyApplied?: boolean
       }>(response, 'Получение возвращённого товара')
@@ -6503,7 +6506,11 @@ function removeDebtPayment(index: number) {
       if (input.destination === 'no_stock') {
         setMessage(`«${input.productName}» отмечен как полученный. В остаток товар не добавлялся.`)
       } else if (Number(result.pendingInventoryCount || 0) > 0) {
-        setMessage(`«${input.productName}» физически получен. Для остатка требуется уточнение товара — система ничего не прибавляла наугад.`)
+        const eventId = Number(result.pendingInventory?.eventId || 0)
+        if (eventId) setReturnedItemResolutionEventId(eventId)
+        setMessage(eventId
+          ? `«${input.productName}» получен. Открылось уточнение товара — после подтверждения он сразу попадёт в выбранный остаток.`
+          : `«${input.productName}» физически получен. Для остатка требуется уточнение товара — система ничего не прибавляла наугад.`)
       } else {
         setMessage(`«${input.productName}» получен и учтён: ${destinationLabel}.`)
       }
@@ -7029,14 +7036,32 @@ function removeDebtPayment(index: number) {
 
       <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />
 
+      <ReturnedItemResolutionModal
+        eventId={returnedItemResolutionEventId}
+        apiFetch={apiFetch}
+        isAdmin={isAdmin}
+        onRequestAdminMode={() => setAdminModeOpen(true)}
+        onClose={() => setReturnedItemResolutionEventId(null)}
+        onCompleted={async () => {
+          await Promise.allSettled([
+            loadReturnHistory(),
+            loadExchangeHistory(),
+            loadInventoryData('warehouse', true, '', false),
+            loadInventoryData('boutique', true, '', false),
+            loadDashboard(false),
+          ])
+          setMessage('Товар определён и приёмка завершена.')
+        }}
+      />
+
       {adminModeOpen ? (
-        <div className="modal-backdrop" style={orderCatalogResolutionOrder ? { zIndex: 1301 } : undefined} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAdminModeOpen(false) }}>
+        <div className="modal-backdrop" style={orderCatalogResolutionOrder || returnedItemResolutionEventId ? { zIndex: 1501 } : undefined} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAdminModeOpen(false) }}>
           <form className="modal-card auth-users-modal" role="dialog" aria-modal="true" aria-label="Админ режим" onSubmit={submitAdminMode}>
             <div className="modal-head">
               <div>
                 <div className="card-label">Админ режим</div>
                 <h3>Войти в админ режим</h3>
-                <p>{orderCatalogResolutionOrder ? 'Введите пароль администратора. После входа вы вернётесь к уточнению этого заказа.' : 'Обычная работа доступна без входа. Пароль нужен только для удаления, настроек и служебных действий.'}</p>
+                <p>{orderCatalogResolutionOrder ? 'Введите пароль администратора. После входа вы вернётесь к уточнению этого заказа.' : returnedItemResolutionEventId ? 'Введите пароль администратора. После входа вы вернётесь к приёмке этого товара.' : 'Обычная работа доступна без входа. Пароль нужен только для удаления, настроек и служебных действий.'}</p>
               </div>
               <button className="secondary compact" type="button" onClick={() => { setAdminModeOpen(false); setAdminModeDraft({ login: 'admin', password: '' }) }}>Закрыть</button>
             </div>
