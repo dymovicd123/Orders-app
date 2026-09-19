@@ -1,0 +1,39 @@
+name: Seed branch2 resolver manual orders
+
+on:
+  push:
+    branches:
+      - w-branch2-resolver-e2e-20260919
+    paths:
+      - scripts/branch2-seed-resolver-manual-orders.mjs
+      - .github/workflows/branch2-seed-resolver-manual-orders.yml
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve deployed branch2 Worker URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          json="$(curl --fail-with-body -sS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
+          subdomain="$(jq -r '.result.subdomain // empty' <<<"$json")"
+          if [[ -z "$subdomain" ]]; then
+            echo "Could not resolve Cloudflare workers.dev subdomain" >&2
+            exit 2
+          fi
+          echo "BASE_URL=https://orders-app-branch2.$subdomain.workers.dev" >> "$GITHUB_ENV"
+
+      - name: Seed manual resolver test orders
+        env:
+          RUN_TAG: ${{ github.run_id }}
+        run: node scripts/branch2-seed-resolver-manual-orders.mjs
