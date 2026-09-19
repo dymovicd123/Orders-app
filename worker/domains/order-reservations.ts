@@ -734,6 +734,10 @@ export async function releaseOrderReservationV2(db: D1Database, orderItemId: num
   const status = cleanText(reservation.status);
   if (status === 'released' || status === 'fulfilled') return false;
 
+  // Every physical mutation in the fulfillment batch is guarded by current order truth.
+  // Two overlapping send requests may both prepare from the same pre-send snapshot, but D1 batch
+  // serialization means only the transaction that still sees the order as unsent may change stock.
+  const orderStillUnsentSql = "EXISTS (SELECT 1 FROM orders shipping_order WHERE shipping_order.id = ? AND COALESCE(shipping_order.shipping_status, 'not_sent') <> 'sent')";
   const statements: D1PreparedStatement[] = [];
   if (status === 'active' && toInt(reservation.variant_id, 0)) {
     statements.push(db.prepare(
@@ -847,8 +851,9 @@ export async function releaseOrderReservationsV2(db: D1Database, orderId: number
         `WITH ${cte}
          UPDATE order_items
          SET stock_writeoff_status = 'reservation_released', stock_quantity_before = NULL, stock_quantity_after = NULL
-         WHERE EXISTS (SELECT 1 FROM x WHERE x.order_item_id = order_items.id)`
-      ).bind(...payloadChunk),
+         WHERE EXISTS (SELECT 1 FROM x WHERE x.order_item_id = order_items.id)
+           AND ${orderStillUnsentSql}`
+      ).bind(...payloadChunk, orderId),
     );
   }
 
@@ -1753,12 +1758,14 @@ export async function fulfillOrderReservationsV2(
   if (!reservations.length) {
     // Workshop-only orders may legitimately have no warehouse reservation. Status still belongs in
     // the same commit API so a retry cannot create a split brain between the order and inventory.
+    let shippingCommitted = false;
     if (options.shippingDate) {
-      await db.prepare(
+      const shippingUpdate = await db.prepare(
         `UPDATE orders SET shipping_status = 'sent', shipping_date = ?, updated_at = ? WHERE id = ? AND COALESCE(shipping_status, 'not_sent') <> 'sent'`
       ).bind(options.shippingDate, timestamp, orderId).run();
+      shippingCommitted = toInt(shippingUpdate.meta?.changes, 0) > 0;
     }
-    return { fulfilled: 0, unresolved: 0, observationsApplied: 0 };
+    return { fulfilled: 0, unresolved: 0, observationsApplied: 0, shippingCommitted };
   }
 
   const physicalRequirements = new Map<string, {
@@ -1956,8 +1963,9 @@ export async function fulfillOrderReservationsV2(
          SELECT 1 FROM x
          LEFT JOIN inventory_stock s ON s.id = x.stock_id
          WHERE s.id IS NULL OR COALESCE(s.quantity, 0) <> x.current_quantity
-       )`
-    ).bind(...payloadChunk, timestamp));
+       )
+         AND ${orderStillUnsentSql}`
+    ).bind(...payloadChunk, timestamp, orderId));
 
     if (payloadChunk.some(payload => JSON.parse(payload).observed !== null)) {
       statements.push(
@@ -1974,8 +1982,9 @@ export async function fulfillOrderReservationsV2(
                length_snapshot = (SELECT x.length FROM x WHERE x.stock_id = inventory_stock.id),
                size_snapshot = (SELECT x.size FROM x WHERE x.stock_id = inventory_stock.id),
                last_action = 'Сверено перед отправкой', last_source_ref = ?, updated_at = ?
-           WHERE EXISTS (SELECT 1 FROM x WHERE x.stock_id = inventory_stock.id AND x.observed IS NOT NULL)`
-        ).bind(...payloadChunk, `order:${externalId}`, timestamp),
+           WHERE EXISTS (SELECT 1 FROM x WHERE x.stock_id = inventory_stock.id AND x.observed IS NOT NULL)
+             AND ${orderStillUnsentSql}`
+        ).bind(...payloadChunk, `order:${externalId}`, timestamp, orderId),
         db.prepare(
           `WITH ${cte}
            INSERT INTO inventory_movements (
@@ -1987,8 +1996,9 @@ export async function fulfillOrderReservationsV2(
                   x.color, x.material, x.length, x.size, x.effective_quantity - x.current_quantity, x.effective_quantity,
                   'shipping_observation', ?,
                   'Фактическая сверка перед отправкой заказа ' || ? || ': ' || x.effective_quantity || ' шт. По учёту до сверки: ' || x.current_quantity || ' шт. Резервы сохранены.', ?
-           FROM x WHERE x.observed IS NOT NULL`
-        ).bind(...payloadChunk, externalId, externalId, timestamp),
+           FROM x WHERE x.observed IS NOT NULL
+             AND ${orderStillUnsentSql}`
+        ).bind(...payloadChunk, externalId, externalId, timestamp, orderId),
         db.prepare(
           `WITH ${cte}
            INSERT OR IGNORE INTO inventory_stock_checks (
@@ -2000,8 +2010,9 @@ export async function fulfillOrderReservationsV2(
                   x.source, x.product_id, x.variant_id, x.current_quantity, x.effective_quantity,
                   x.effective_quantity - x.current_quantity, x.reserved_quantity,
                   'shipping_observation', 'order', ?, ?, ?, ?
-           FROM x WHERE x.observed IS NOT NULL`
-        ).bind(...payloadChunk, orderId, externalId, cleanText(options.checkedBy) || null, timestamp, timestamp),
+           FROM x WHERE x.observed IS NOT NULL
+             AND ${orderStillUnsentSql}`
+        ).bind(...payloadChunk, orderId, externalId, cleanText(options.checkedBy) || null, timestamp, timestamp, orderId),
       );
     }
 
@@ -2011,8 +2022,9 @@ export async function fulfillOrderReservationsV2(
        SET quantity = MAX(0, (SELECT x.effective_quantity - x.required FROM x WHERE x.stock_id = inventory_stock.id)),
            reserved_quantity = MAX(0, COALESCE(reserved_quantity, 0) - (SELECT x.required FROM x WHERE x.stock_id = inventory_stock.id)),
            last_action = 'Выдано / отправлено', last_source_ref = ?, updated_at = ?
-       WHERE EXISTS (SELECT 1 FROM x WHERE x.stock_id = inventory_stock.id)`
-    ).bind(...payloadChunk, `order:${externalId}`, timestamp));
+       WHERE EXISTS (SELECT 1 FROM x WHERE x.stock_id = inventory_stock.id)
+         AND ${orderStillUnsentSql}`
+    ).bind(...payloadChunk, `order:${externalId}`, timestamp, orderId));
   }
 
   for (const payloadChunk of chunksOf(activeReservationPayloads, 70)) {
@@ -2049,8 +2061,9 @@ export async function fulfillOrderReservationsV2(
          SELECT x.source, 'sale', x.product_id, x.variant_id, x.product_name, x.gender,
                 x.color, x.material, x.length, x.size, x.quantity_after - x.quantity_before, x.quantity_after,
                 x.reference_type, x.reference_id, ?, ?
-         FROM x`
-      ).bind(...payloadChunk, `Физическое списание при выдаче / отправке заказа ${externalId}`, timestamp),
+         FROM x
+         WHERE ${orderStillUnsentSql}`
+      ).bind(...payloadChunk, `Физическое списание при выдаче / отправке заказа ${externalId}`, timestamp, orderId),
       db.prepare(
         `WITH ${cte}
          UPDATE order_items
@@ -2063,12 +2076,15 @@ export async function fulfillOrderReservationsV2(
         `WITH ${cte}
          UPDATE inventory_reservations
          SET status = 'fulfilled', fulfilled_at = ?, updated_at = ?
-         WHERE status = 'active' AND EXISTS (SELECT 1 FROM x WHERE x.reservation_id = inventory_reservations.id)`
-      ).bind(...payloadChunk, timestamp, timestamp),
+         WHERE status = 'active' AND EXISTS (SELECT 1 FROM x WHERE x.reservation_id = inventory_reservations.id)
+           AND ${orderStillUnsentSql}`
+      ).bind(...payloadChunk, timestamp, timestamp, orderId),
     );
   }
 
+  let shippingStatementIndex = -1;
   if (options.shippingDate) {
+    shippingStatementIndex = statements.length;
     statements.push(db.prepare(
       `UPDATE orders
        SET shipping_status = 'sent', shipping_date = ?, updated_at = ?
@@ -2076,8 +2092,14 @@ export async function fulfillOrderReservationsV2(
     ).bind(options.shippingDate, timestamp, orderId));
   }
 
-  if (statements.length) await db.batch(statements);
-  return { fulfilled: activeReservationPayloads.length, unresolved: 0, observationsApplied: observations.length };
+  const results = statements.length ? await db.batch(statements) : [];
+  const shippingCommitted = shippingStatementIndex >= 0 && toInt(results[shippingStatementIndex]?.meta?.changes, 0) > 0;
+  return {
+    fulfilled: options.shippingDate && !shippingCommitted ? 0 : activeReservationPayloads.length,
+    unresolved: 0,
+    observationsApplied: options.shippingDate && !shippingCommitted ? 0 : observations.length,
+    shippingCommitted,
+  };
 }
 
 
