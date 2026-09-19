@@ -87,7 +87,6 @@ export interface InventoryRenderContext {
   setInventoryMatrixSizeToAdd: LooseSetter
   setInventoryCorrectionValue: (...args: any[]) => any
   setInventoryExistingVariantSearch: LooseSetter
-  setInventoryTransferObservedQuantity: (...args: any[]) => any
   setInventoryVariantOperationQuantity: (...args: any[]) => any
   setMovementSourceRefreshToken: LooseSetter
   setQuickStocktakeNotice: LooseSetter
