@@ -26,6 +26,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     loadExchangeHistory,
     ManagerBadge,
     managerColorFor,
+    openReturnedItemResolution,
     orderPanelStyle,
     receiveReturnedItemAction,
     reconcileKnownInventoryLifecycle,
@@ -77,6 +78,15 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     && entry.oldPhysicalReceivedAt
     && entry.oldLifecycleId
     && (entry.oldLifecycleVariantId || entry.oldCurrentVariantId)
+    && entry.oldLifecycleStatus === 'pending'
+    && (entry.oldReturnSource === 'warehouse' || entry.oldReturnSource === 'boutique')
+  )
+  const oldUnknownIntakePending = (entry: any) => Boolean(
+    entry.oldPhysicalTracking
+    && entry.oldPhysicalReceivedAt
+    && entry.oldLifecycleId
+    && !entry.oldLifecycleVariantId
+    && !entry.oldCurrentVariantId
     && entry.oldLifecycleStatus === 'pending'
     && (entry.oldReturnSource === 'warehouse' || entry.oldReturnSource === 'boutique')
   )
@@ -502,6 +512,12 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                   <button className="primary compact history-filter-submit" type="button" disabled={exchangeHistoryBusy} onClick={() => void loadExchangeHistory({ filters: exchangeHistoryFilters })}>Показать</button>
                 </div>
                 <div className="history-summary-line"><span><strong>{exchangeHistorySummary.count}</strong> операций</span><span>Проведено: <strong>{exchangeHistorySummary.activeCount}</strong></span><span>Старых вещей ещё не пришло: <strong>{exchangeHistorySummary.pendingPhysicalQuantity} шт.</strong></span>{exchangeHistorySummary.cancelledCount ? <span>Отменено: <strong>{exchangeHistorySummary.cancelledCount}</strong></span> : null}</div>
+                {exchangeHistorySummary.pendingPhysicalQuantity > 0 ? (
+                  <div className="history-load-state is-warning">
+                    <strong>Ожидается приём старых вещей: {exchangeHistorySummary.pendingPhysicalQuantity} шт.</strong>
+                    <span>Откройте нужный обмен ниже и нажмите «Принять товар». Если товар не распознан, уточнение откроется сразу.</span>
+                  </div>
+                ) : null}
 
                 {exchangeHistoryError ? (
                   <div className="history-load-state is-error"><strong>Не удалось загрузить историю обменов.</strong><span>{exchangeHistoryError}</span><button className="secondary compact" type="button" onClick={() => void loadExchangeHistory()}>Повторить</button></div>
@@ -546,7 +562,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                       externalId: entry.externalId,
                                     })}
                                   >
-                                    Товар пришёл
+                                    Принять товар
                                   </button>
                                 </div>
                               ) : null}
@@ -558,7 +574,19 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                     disabled={exchangeBusy || exchangeHistoryBusy}
                                     onClick={() => void finishKnownExchangeIntake(entry)}
                                   >
-                                    Завершить приёмку
+                                    Завершить приёмку известного товара
+                                  </button>
+                                </div>
+                              ) : null}
+                              {entry.status !== 'cancelled' && entry.oldOperationItemId && oldUnknownIntakePending(entry) ? (
+                                <div className="mini-panel-actions">
+                                  <button
+                                    className="primary compact"
+                                    type="button"
+                                    disabled={exchangeBusy || exchangeHistoryBusy}
+                                    onClick={() => openReturnedItemResolution(Number(entry.oldLifecycleId), entry.oldProductName, entry.externalId)}
+                                  >
+                                    Определить товар и завершить приёмку
                                   </button>
                                 </div>
                               ) : null}
