@@ -269,6 +269,6 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       </fieldset>
     </section> : null}
     {isAdmin && item && !advancedOpen && !minimalFieldQuestion ? <footer>{fallbackOpen ? <button type="button" className="resolution-link" disabled={disabled} onClick={() => void openAdvanced()}>Расширенное исправление</button> : <button type="button" className="resolution-link" disabled={disabled} onClick={() => setFallbackOpen(true)}>Не нашли правильный вариант?</button>}</footer> : null}
-    {!minimalFieldQuestion ? <small className="resolution-guard">После однозначного подтверждения система запомнит сопоставление и не должна спрашивать его снова.</small> : null}
+    {!minimalFieldQuestion ? <small className="resolution-guard">Без уточнения продолжить нельзя. После однозначного подтверждения система запомнит сопоставление и не должна спрашивать его снова.</small> : null}
   </div></div>
 }
