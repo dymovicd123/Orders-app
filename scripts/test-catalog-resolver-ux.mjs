@@ -84,7 +84,7 @@ function mount(respond, admin = true) {
   const props = { order: { id: 12, external_id: 'TEST' }, apiFetch: fetcher, isAdmin: admin, onClose() {}, onCompleted: async () => { completed++ } }
   const render = () => { cursor = 0; dirty = false; tree = componentModule.exports.OrderCatalogResolutionModal(props); for (const effect of effects.splice(0)) effect() }
   const flush = async () => { for (let i = 0; i < 45; i++) { if (dirty) render(); await new Promise(resolve => setImmediate(resolve)) } }
-  const nodes = (node = tree, result = []) => { if (Array.isArray(node)) node.forEach(n => nodes(n, result)); else if (node && typeof node === 'object') { result.push(node); nodes(node.props?.children, result) } return result }
+  const nodes = (node = tree, result = [], seen = new Set()) => { if (Array.isArray(node)) node.forEach(n => nodes(n, result, seen)); else if (node && typeof node === 'object' && !seen.has(node)) { seen.add(node); result.push(node); nodes(node.props?.children, result, seen) } return result }
   const text = node => Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props?.children) : node == null || typeof node === 'boolean' ? '' : String(node)
   const button = name => { const found = nodes().find(node => node.type === 'button' && text(node) === name); assert.ok(found, `button missing: ${name}\n${text(tree)}`); assert.ok(!found.props.disabled); return found }
   return { flush, requests, button, click: async name => { button(name).props.onClick(); await flush() }, text: () => text(tree), html: () => renderToStaticMarkup(tree), count: type => nodes().filter(n => n.type === type).length, completed: () => completed, unmount: () => cleanups.forEach(fn => fn?.()), nodes }
