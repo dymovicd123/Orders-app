@@ -49,21 +49,21 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onRequ
           onClose()
           return
         }
-        const facts = data.facts || {}
+        const facts: (CatalogResolutionContext['facts'] & { productName?: string }) | undefined = data.facts
         setContext(data)
         setDraft({
           productId: Number(data.product?.id || 0),
-          productName: data.product?.name || facts.productName || '',
+          productName: data.product?.name || facts?.productName || '',
           createProduct: false,
           genderScope: data.product?.genderScope || '',
-          category: facts.category || 'adult',
-          gender: facts.gender || '',
-          material: facts.material || 'СТАНДАРТ',
-          length: facts.length || 'СТАНДАРТ',
-          color: facts.color || '',
-          size: facts.size || '',
+          category: facts?.category || 'adult',
+          gender: facts?.gender || '',
+          material: facts?.material || 'СТАНДАРТ',
+          length: facts?.length || 'СТАНДАРТ',
+          color: facts?.color || '',
+          size: facts?.size || '',
         })
-        setSearch(facts.productName || '')
+        setSearch(facts?.productName || '')
       })
       .catch((value) => { if (!cancelled) setError(value instanceof Error ? value.message : 'Не удалось открыть уточнение товара.') })
       .finally(() => { if (!cancelled) setBusy(false) })
