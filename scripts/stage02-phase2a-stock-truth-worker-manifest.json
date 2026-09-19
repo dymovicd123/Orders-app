@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "revision": "stage02-phase2a-stock-truth-primitives",
+  "addedFiles": {
+    "worker/domains/stock-resolution.ts": {
+      "gitBlob": "4daa0065f021ddd8c5d368860d333180869bab9d",
+      "lines": 216
+    }
+  }
+}
