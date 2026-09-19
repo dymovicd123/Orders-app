@@ -178,11 +178,39 @@ export type CatalogReviewFactsInput = {
 
 
 export async function getCatalogReviewContext(db: D1Database, orderItemId: number, preview: CatalogReviewFactsInput = {}): Promise<CatalogResolutionContext> {
-  const anchor = await db.prepare(
+  let anchor = await db.prepare(
     `SELECT oi.*, o.external_id, o.shipping_status, o.shipping_date, o.order_status, o.archived_at
      FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.id = ? LIMIT 1`
   ).bind(orderItemId).first<Record<string, unknown>>();
   if (!anchor?.id) throw new Error('Позиция заказа для разбора не найдена.');
+
+  // An already-linked active SKU is stronger current identity than old manager-entered
+  // snapshots. On the initial resolver load, hydrate facts from that canonical variant so
+  // the form never asks again for a gender/color/size that the Orders table already knows.
+  if (!Object.keys(preview).length && toInt(anchor.variant_id, 0)) {
+    const linked = await db.prepare(
+      `SELECT v.id AS variant_id, v.product_id, p.name AS product_name,
+              COALESCE(v.category, p.category, 'adult') AS category,
+              v.gender, v.color, v.material, v.length, v.size_label
+       FROM catalog_variants v
+       JOIN catalog_products p ON p.id = v.product_id
+       WHERE v.id = ? AND v.is_active = 1 AND p.is_active = 1
+       LIMIT 1`
+    ).bind(toInt(anchor.variant_id, 0)).first<CatalogReviewSelectedVariant>();
+    if (linked?.variant_id && linked.product_id) {
+      anchor = {
+        ...anchor,
+        product_id: linked.product_id,
+        product_name_snapshot: cleanText(linked.product_name) || anchor.product_name_snapshot,
+        audience_type: cleanText(linked.category) || anchor.audience_type,
+        gender_snapshot: cleanText(linked.gender),
+        color_snapshot: cleanText(linked.color),
+        material_snapshot: canonicalStockPositionValue(linked.material),
+        length_snapshot: canonicalStockPositionValue(linked.length),
+        size_snapshot: cleanText(linked.size_label),
+      };
+    }
+  }
 
   const category = normalizeAudienceCategory(preview.category ?? anchor.audience_type, preview.size ?? anchor.size_snapshot);
   const facts = {
@@ -810,7 +838,47 @@ export async function reconcileCatalogReviewOrder(db: D1Database, orderId: numbe
   let resolvedGroups = 0;
   let linkedItems = 0;
   let reserved = 0;
-  for (const [inputKey, matching] of groups) {
+
+  // Repair rows that already carry an exact SKU one-by-one before grouping any unresolved
+  // snapshots. This is intentionally per-row: two blank-gender snapshots may legitimately
+  // point to different male/female variants, so a known variant must never be propagated
+  // from one order line to another merely because their raw snapshots look the same.
+  const remainingRows: Record<string, unknown>[] = [];
+  for (const row of rows) {
+    if (toInt(row.is_workshop, 0) === 1 || !toInt(row.variant_id, 0)) {
+      remainingRows.push(row);
+      continue;
+    }
+    try {
+      const selected = await db.prepare(
+        `SELECT v.id AS variant_id, v.product_id, p.name AS product_name, COALESCE(v.category, p.category, 'adult') AS category,
+                v.gender, v.color, v.material, v.length, v.size_label
+         FROM catalog_variants v JOIN catalog_products p ON p.id = v.product_id
+         WHERE v.id = ? AND v.is_active = 1 AND p.is_active = 1 LIMIT 1`
+      ).bind(toInt(row.variant_id, 0)).first<CatalogReviewSelectedVariant>();
+      if (!selected?.variant_id || !selected.product_id) {
+        remainingRows.push(row);
+        continue;
+      }
+      const result = await resolveCatalogReviewRows(db, [row], selected, normalizedCatalogReviewKey(row), new Date().toISOString(), { writeAlias: false });
+      resolvedGroups += 1;
+      linkedItems += result.linked;
+      reserved += result.reserved;
+    } catch (error) {
+      console.warn('Order-scoped canonical variant repair skipped one row', error);
+      remainingRows.push(row);
+    }
+  }
+
+  const unresolvedGroups = new Map<string, Record<string, unknown>[]>();
+  for (const row of remainingRows) {
+    const key = normalizedCatalogReviewKey(row);
+    const list = unresolvedGroups.get(key) || [];
+    list.push(row);
+    unresolvedGroups.set(key, list);
+  }
+
+  for (const [inputKey, matching] of unresolvedGroups) {
     const sample = matching.find((row) => toInt(row.is_workshop, 0) !== 1) || null;
     if (!sample) continue;
     try {
