@@ -233,98 +233,40 @@ Must cover:
 
 Technical gate first. Primary mutation acceptance only with an intentionally selected real safe scenario if necessary.
 
-### Phase 2 — Contextual Stock Resolver — mandatory design audit before implementation
+### Phase 2 — Transactional Stock Truth + bounded Stock Resolver
 
-**Direction changed on 2026-09-19 after user review. Do not implement the old voluntary recommendation-batch model as written below.**
+**Redesigned on 2026-09-19 after user review. The previous proactive/self-healing stock-check concept is superseded.**
 
-Current product assumptions:
-- users are too passive for stock accuracy to depend on voluntarily opening Warehouse maintenance screens;
-- ordinary actionable problems should appear where the user is already performing the relevant operation, following the successful Catalog Resolver pattern;
-- the system may ask one narrow physical-stock question only when there is a concrete evidence-based reason, then continue the original action automatically;
-- untouched/rarely handled stock still requires deliberate revision; there is no software-only way to learn unseen physical truth;
-- Warehouse Attention must not be a required operational inbox. Before removing it, audit every signal and move genuinely actionable cases to their natural workflow; retain diagnostics only where useful.
+Canonical design: `docs/continuation/STAGE02_PHASE2_STOCK_TRUTH_MODEL_20260919.md`.
 
-**Mandatory gate before any Phase 2 code:** perform a read-only map of all candidate insertion points (order shipping/handover, transfer, return/exchange intake, exact stock check and other stock-affecting actions), the available risk signals, blocking/non-blocking behavior, and false-positive risk. Present the exact proposed Stock Resolver placements to the user for approval before implementation.
+Core rule:
+- normal operations may prove **a movement/delta** or that the concrete units involved are physically present;
+- only an explicit stock-count/correction workflow may claim the **absolute total** Physical for a SKU;
+- contextual resolver answers must never be disguised as full physical counts;
+- outbound conflicts use bounded stock semantics and durable operation evidence instead of driving Physical negative or inventing a pre-operation count;
+- Warehouse Attention is not a required work inbox.
 
-The previous Smart Daily Stock Truth proposal is retained below only as historical design evidence, not as an approved implementation plan.
+Approved resolver surfaces:
+- final shipping shortage;
+- early handover `issue_now` shortage;
+- Warehouse/Boutique transfer shortage at source;
+- manual writeoff shortage at source.
 
-### Phase 2 — Previous Smart Daily Stock Truth proposal (superseded; reference only)
+Not resolver surfaces:
+- return/exchange intake;
+- full/selective/quick stocktake;
+- manual absolute correction;
+- Arrival;
+- proactive prompts solely because stock is old.
 
-Goal: maintain accuracy through tiny contextual checks that normal staff actually perform. This is **not** a new task system and not a rewrite of stocktake mathematics.
+Implementation order:
+1. Phase2A truth primitives + operation-evidence model;
+2. Phase2B shipping;
+3. Phase2C early handover;
+4. Phase2D transfer/writeoff;
+5. Phase2E remove normal-work dependency on Attention and run final acceptance.
 
-#### 2A. Put routine checks in the natural workflow
-
-- Keep full/selective `Ревизия` admin-only.
-- Make safe cycle suggestions available to ordinary Warehouse users.
-- Surface a compact cue/batch in `Остатки`, not only inside `Ревизия`.
-- Reuse the same exact-count mutation semantics already used by normal-user `Сверить количество`.
-- Do not grant ordinary users transfer/manual correction/catalog administration merely to enable counting.
-
-#### 2B. Use an attention budget, not a backlog
-
-- Routine user sees only a small batch, initially target 3–5 useful SKUs.
-- Do not lead with the total number overdue.
-- One dominant reason per SKU by default; detail only on demand.
-- Negative stock/real shortage may remain urgent; “not checked for 30 days” is neutral maintenance, not a warning.
-- After finishing a batch, another batch is optional rather than an endless queue.
-
-#### 2C. One-tap matching count
-
-Target interaction after physically locating a SKU:
-- `Совпадает: X` / `На месте X` => one tap;
-- mismatch => enter actual physical number;
-- save and automatically advance;
-- stale `expectedQuantity` conflict remains authoritative and asks to recount instead of overwriting newer truth.
-
-#### 2D. Smarter prioritization without employee surveillance
-
-Start with existing score and improve only where useful:
-- negative Physical / negative Available / current shortage;
-- never/long-unchecked;
-- movement volume since check;
-- prior discrepancy;
-- add a small daily cap and rotation so the same skipped low-urgency item does not nag forever;
-- prefer grouping nearby logical product/execution variants where it reduces mental/physical switching;
-- optionally favor an SKU already being handled in the current workflow if this can be derived cheaply and safely.
-
-Do not create worker scores, compliance dashboards, SLAs or nagging notifications.
-
-#### 2E. Active-revision blocker must be understandable
-
-Because one active stocktake blocks cycle checks for the entire source:
-- show a clear calm reason: `Незавершённая ревизия блокирует короткие сверки`;
-- for admin, make resume/cancel easy;
-- distinguish an old/abandoned session by age/updated_at from a revision actively being worked on;
-- do not silently remove chronology protection;
-- investigate scope-aware overlap only as a separate safety change if real usage proves it necessary.
-
-#### 2F. Cover the system-zero blind spot carefully
-
-- Do not cycle-count all zero catalog variants.
-- Consider a small risk-based sample only for recently-zeroed/high-movement/prior-discrepancy positions if evidence shows hidden extras are common.
-- Full stocktake `found on shelf` remains the broad safety net.
-
-#### 2G. Fresh recommendations without wasteful D1 reads
-
-- Recommendation disappears immediately after successful exact confirmation.
-- Refresh risk after relevant stock-affecting actions and when entering Warehouse/`Остатки`.
-- Avoid polling/noisy reloads.
-- Before frequent automatic refresh, inspect D1 query plan for the movements-since-check correlated count; add a composite source+variant+time index only if justified.
-
-#### 2H. Acceptance is behavioral, not merely technical
-
-Must prove:
-1. a non-admin worker can complete a recommended batch;
-2. matching SKU takes ~1–2 UI actions after finding it;
-3. mismatch records actual physical once and updates truth safely;
-4. stale race returns conflict rather than overwriting;
-5. confirmed SKU disappears from the current batch immediately;
-6. no routine prompt when nothing is meaningfully due;
-7. abandoned active revision is visibly explained and recoverable by admin;
-8. mobile completion of 3–5 checks is fast and readable;
-9. recommendations do not create an intimidating backlog UI.
-
-If effectiveness telemetry is ever added, measure feature outcomes such as recommendation -> check and match vs correction, not employee performance.
+The old Smart Daily Stock Truth proposal is intentionally removed from the active plan. It relied on a user performing a real full-SKU count during unrelated work, which is not a safe assumption.
 
 ### Phase 3 — Catalog redesign + optional physical findability decision
 
