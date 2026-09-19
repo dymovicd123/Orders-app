@@ -19,7 +19,8 @@ import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileK
 import { createManualOrderPaymentCritical } from './domains/money.ts'
 import { OrderInputValidationError } from './domains/order-core.ts'
 import { deleteOrderSafely } from './domains/order-delete.ts'
-import { activeStocktakeSessionForHandover, confirmItemStillHere, correctMistakenOrderHandover, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, getOrderStockHandoverState, normalizeShipmentObservations, OrderStockShortageError, orderShipmentInventoryBlockerMessage, orderWorkshopPendingForShipping, reconcileIssuedBeforeCheckpoint } from './domains/order-reservations.ts'
+import { activeStocktakeSessionForHandover, confirmItemStillHere, correctMistakenOrderHandover, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, getOrderStockHandoverState, normalizeShipmentPossessionConfirmations, OrderStockShortageError, orderShipmentInventoryBlockerMessage, orderWorkshopPendingForShipping, reconcileIssuedBeforeCheckpoint } from './domains/order-reservations.ts'
+import { buildStockResolutionRequired } from './domains/stock-resolution.ts'
 import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
@@ -1129,7 +1130,7 @@ export default {
       const orderShippingMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping$/);
       if (orderShippingMatch && request.method === 'PATCH') {
         const id = toInt(orderShippingMatch[1], 0);
-        const input = await readJson<{ shippingStatus?: unknown; shippingDate?: unknown; observations?: unknown }>(request);
+        const input = await readJson<{ shippingStatus?: unknown; shippingDate?: unknown; stockConfirmations?: unknown; observations?: unknown }>(request);
         const existing = await env.DB.prepare(
           `SELECT id, external_id, manager_id, order_status, archived_at, shipping_status, shipping_date
            FROM orders WHERE id = ?`
@@ -1166,7 +1167,16 @@ export default {
           }, { status: 409 });
         }
         const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(env.DB);
-        const normalizedObservations = humanInventoryModelEnabled ? normalizeShipmentObservations(input.observations) : [];
+        if (humanInventoryModelEnabled && input.observations !== undefined) {
+          return json({
+            ok: false,
+            code: 'stock_resolution_client_refresh_required',
+            message: 'Эта форма отправки устарела. Обновите страницу: подтверждение наличия больше не является пересчётом всего остатка.',
+          }, { status: 409 });
+        }
+        const normalizedStockConfirmations = humanInventoryModelEnabled
+          ? normalizeShipmentPossessionConfirmations(input.stockConfirmations)
+          : [];
         if (humanInventoryModelEnabled) {
           let blockers = await getOrderShipmentInventoryBlockers(env.DB, id);
           let unresolvedBlockers = blockers.filter((row) => cleanText(row.blocker_reason) !== 'insufficient_physical');
@@ -1187,26 +1197,29 @@ export default {
             const source = normalizeSourceType(row.inventory_source);
             const variantId = toInt(row.reservation_variant_id, 0);
             const required = Math.max(1, toInt(row.required_quantity, 1));
-            const physical = toInt(row.physical_quantity, 0);
-            const observation = normalizedObservations.find((candidate) => candidate.source === source && candidate.variantId === variantId);
-            return !observation || observation.expectedQuantity !== physical || observation.countedQuantity < required;
+            const physical = Math.max(0, toInt(row.physical_quantity, 0));
+            const confirmation = normalizedStockConfirmations.find((candidate) => candidate.source === source && candidate.variantId === variantId);
+            return !confirmation
+              || confirmation.expectedPhysicalQuantity !== physical
+              || confirmation.operationQuantity !== required;
           });
           if (uncoveredShortages.length) {
-            return json({
-              ok: false,
-              code: 'inventory_physical_shortage',
-              message: orderShipmentInventoryBlockerMessage(uncoveredShortages),
-              blockers: uncoveredShortages,
-            }, { status: 409 });
+            return json(buildStockResolutionRequired('shipping', uncoveredShortages.map((row) => ({
+              source: normalizeSourceType(row.inventory_source),
+              variantId: toInt(row.reservation_variant_id, 0),
+              productName: cleanText(row.product_name_snapshot),
+              trackedPhysicalQuantity: Math.max(0, toInt(row.physical_quantity, 0)),
+              operationQuantity: Math.max(1, toInt(row.required_quantity, 1)),
+            }))), { status: 409 });
           }
         }
         const timestamp = new Date().toISOString();
         const nextShippingDate = normalizeDate(input.shippingDate || timestamp);
         const inventoryDelivery = humanInventoryModelEnabled
           ? await fulfillOrderReservationsV2(env.DB, id, cleanText(existing.external_id), timestamp, {
-              observations: normalizedObservations,
+              stockConfirmations: normalizedStockConfirmations,
               shippingDate: nextShippingDate,
-              checkedBy: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
+              confirmedBy: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
             })
           : null;
         if (inventoryDelivery?.unresolved) {
