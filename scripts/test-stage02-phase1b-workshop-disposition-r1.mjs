@@ -29,7 +29,8 @@ try {
   )
   check(
     returns.includes('Для вещи из Цеха по умолчанию остаток не создаётся') &&
-      exchange.includes('Для вещи из Цеха по умолчанию остаток не создаётся'),
+      exchange.includes('По умолчанию остаток не создаётся') &&
+      exchange.includes('Для вещи из Цеха Бутик недоступен.'),
     'Workshop no-stock default is not explained in Return/Exchange UI',
   )
 
