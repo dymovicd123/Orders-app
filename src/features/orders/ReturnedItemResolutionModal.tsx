@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { readJsonResponse } from '../../app/utils'
+import type { CatalogResolutionContext, CatalogResolutionResponse } from '../../../shared/api-contracts'
 import { rankedProducts } from './catalogResolutionFlow'
 import './ReturnedItemResolutionModal.css'
 
@@ -40,7 +41,7 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onRequ
     setCreateFields({})
     void apiFetch(`/api/inventory/lifecycle/${eventId}/context`, { cache: 'no-store' })
       .then(async (response) => {
-        const data = await readJsonResponse<any>(response, 'Уточнение принятого товара')
+        const data = await readJsonResponse<CatalogResolutionContext>(response, 'Уточнение принятого товара')
         if (!response.ok || data?.ok === false) throw new Error(data?.message || 'Не удалось открыть уточнение товара.')
         if (cancelled) return
         if (data.completed) {
@@ -118,7 +119,7 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onRequ
           createFields: Object.entries(createFields).filter(([, enabled]) => enabled).map(([field]) => field),
         }),
       })
-      const data = await readJsonResponse<any>(response, 'Уточнение принятого товара')
+      const data = await readJsonResponse<CatalogResolutionResponse>(response, 'Уточнение принятого товара')
       if (!response.ok || data?.ok === false) throw new Error(data?.message || 'Не удалось сохранить товар.')
       await onCompleted()
       onClose()
