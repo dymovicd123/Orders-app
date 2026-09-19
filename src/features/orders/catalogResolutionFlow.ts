@@ -109,12 +109,15 @@ export function createResolutionSession() {
   let locked = false, completed = false, changed = false
   return {
     get changed() { return changed },
-    async run(write: (() => Promise<void>) | null, recheck: () => Promise<boolean>, complete: () => Promise<void>) {
+    async run(write: (() => Promise<void>) | null, recheck: () => Promise<boolean>, complete: () => Promise<void | boolean>) {
       if (locked || completed) return
       locked = true
       try {
         if (write) { await write(); changed = true }
-        if (await recheck() && changed && !completed) { completed = true; await complete() }
+        if (await recheck() && changed && !completed) {
+          const completion = await complete()
+          if (completion !== false) completed = true
+        }
       } finally { locked = false }
     },
   }

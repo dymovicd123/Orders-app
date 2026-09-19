@@ -5784,7 +5784,7 @@ function removeDebtPayment(index: number) {
     }
   }
 
-  async function markOrderSentToClient(order: OrderRecord) {
+  async function markOrderSentToClient(order: OrderRecord): Promise<boolean> {
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canShip) {
       setMessage(projection.workshopPending
@@ -5792,7 +5792,7 @@ function removeDebtPayment(index: number) {
         : projection.hasCommittedPhysicalDownstreamOperation
           ? 'Отправка недоступна: по заказу уже проведён товарный возврат или обмен. Сначала отмените или исправьте эту последующую операцию.'
           : 'Этот заказ сейчас нельзя отметить как отправленный.')
-      return
+      return false
     }
     setSavingOrder(true)
     setError(null)
@@ -5816,12 +5816,12 @@ function removeDebtPayment(index: number) {
       if (!response.ok && (result.code === 'workshop_not_ready' || result.code === 'stock_handover_review_required')) {
         setMessage(result.message || 'Перед отправкой проверьте товары со склада.')
         await openOrderStockHandover(order)
-        return
+        return false
       }
       if (!response.ok && result.code === 'catalog_review_required') {
         setOrderCatalogResolutionOrder(order)
         setMessage(result.message || 'Перед отправкой нужно уточнить складской товар. Окно уточнения открыто прямо в заказах.')
-        return
+        return false
       }
       if (!response.ok && result.code === 'inventory_physical_shortage' && Array.isArray(result.blockers) && result.blockers.length) {
         const observations: Array<{ source: InventorySourceKey; variantId: number; expectedQuantity: number; countedQuantity: number }> = []
@@ -5857,8 +5857,10 @@ function removeDebtPayment(index: number) {
       // Shipping is now the physical stock event. Invalidate cached physical/reserved/available values.
       invalidateInventoryStockCaches(true)
       setMessage(`Заказ ${order.external_id} отмечен как отправленный клиенту.`)
+      return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
+      return false
     } finally {
       setSavingOrder(false)
     }
@@ -6951,8 +6953,18 @@ function removeDebtPayment(index: number) {
         onRequestAdminMode={() => setAdminModeOpen(true)}
         onClose={() => setOrderCatalogResolutionOrder(null)}
         onCompleted={async (resolvedOrder: OrderRecord) => {
+          const freshResponse = await apiFetch(`/api/orders/${resolvedOrder.id}`, { cache: 'no-store' })
+          if (freshResponse.headers.get('X-Orders-App-Stale') === '1') {
+            throw new Error('Не удалось подтвердить свежий заказ после уточнения товара. Повторите продолжение отправки.')
+          }
+          const freshResult = await readJsonResponse<{ ok?: boolean; order?: OrderRecord; message?: string }>(freshResponse, 'Обновление заказа после уточнения товара')
+          if (!freshResponse.ok || freshResult.ok === false || !freshResult.order || freshResult.order.id !== resolvedOrder.id) {
+            throw new Error(freshResult.message || 'Не удалось получить свежий заказ после уточнения товара.')
+          }
+          const sent = await markOrderSentToClient(freshResult.order)
+          if (!sent) return false
           setOrderCatalogResolutionOrder(null)
-          await markOrderSentToClient(resolvedOrder)
+          return true
         }}
         onOpenFullReview={async (blockedOrder: OrderRecord) => {
           setOrderCatalogResolutionOrder(null)
