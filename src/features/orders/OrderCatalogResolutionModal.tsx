@@ -203,7 +203,8 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     if (!question || !draft || !context || !item) return null
     if (question.kind === 'product') {
       const sorted = rankedProducts(choices, item.productName)
-      const shown = searchOpen ? sorted.filter(({ product }) => normalize(product.name).includes(normalize(search))).slice(0, 5) : sorted.filter(entry => entry.score > 0).slice(0, 4)
+      const searchRanked = rankedProducts(choices, search || item.productName)
+      const shown = (searchOpen ? searchRanked : sorted).filter(entry => entry.score > 0).slice(0, searchOpen ? 5 : 4)
       return <><h4 ref={questionHeading} tabIndex={-1}>Какой это товар?</h4>
         {searchOpen ? <label>Найти товар<input autoFocus value={search} onChange={e => setSearch(e.target.value)} /></label> : null}
         <div className="resolution-choices">{shown.map(({ product }) => <button type="button" key={product.id} onClick={() => chooseProduct(product)}>{product.name}</button>)}</div>
@@ -220,9 +221,9 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       <button type="button" className="primary-button" onClick={() => { const next = { ...draft, color: 'БЕЗ ЦВЕТА', size: 'БЕЗ РАЗМЕРА' }; setDraft(next); setNotice('Без цвета и без размера ✓'); void finish(exactDraftVariant?.id, next) }}>Да, всё верно</button>
       <button type="button" onClick={() => { setEditing('color'); setAnswer('') }}>Нет, исправить</button>
     </div></>
-    if (question.kind === 'reference') return <><h4 ref={questionHeading} tabIndex={-1}>Значение «{draft[question.field]}» ещё не использовалось. Добавить?</h4><p>{labels[question.field]}: это значение станет доступно в следующих заказах. Добавление произойдёт при сохранении товара.</p>
-      {isAdmin ? <button type="button" className="primary-button" onClick={() => approveReference(question.field)}>Добавить</button> : <div className="resolution-admin-required"><p>Добавить новое значение можно в Админ режиме. После входа это окно останется открытым.</p>{onRequestAdminMode ? <button type="button" className="primary-button" onClick={onRequestAdminMode}>Войти в Админ режим и продолжить</button> : null}</div>}
-      <button type="button" className="secondary-button" onClick={() => { setEditing(question.field); setAnswer(draft[question.field]) }}>Исправить название</button></>
+    if (question.kind === 'reference') return <><h4 ref={questionHeading} tabIndex={-1}>Значение «{draft[question.field]}» не найдено в справочнике</h4><p>Сначала проверьте, не опечатка ли это. Новое значение попадёт в справочник только после отдельного подтверждения.</p>
+      <button type="button" className="primary-button" onClick={() => { setEditing(question.field); setAnswer(draft[question.field]) }}>Исправить / выбрать существующее</button>
+      {isAdmin ? <button type="button" className="secondary-button" onClick={() => approveReference(question.field)}>Добавить как новое значение</button> : <div className="resolution-admin-required"><p>Добавить действительно новое значение можно в Админ режиме. После входа это окно останется открытым.</p>{onRequestAdminMode ? <button type="button" className="secondary-button" onClick={onRequestAdminMode}>Войти в Админ режим и продолжить</button> : null}</div>}</>
     if (question.kind === 'field') {
       const field = question.field
       const small = field === 'gender' ? [['ЖЕН', 'Жен'], ['МУЖ', 'Муж']] : field === 'category' ? [['adult', 'Взрослый'], ['child', 'Детский']] : []
