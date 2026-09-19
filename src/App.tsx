@@ -6446,7 +6446,6 @@ function removeDebtPayment(index: number) {
     externalId: string
   }) {
     const destinationLabel = input.destination === 'warehouse' ? 'Склад' : input.destination === 'boutique' ? 'Бутик' : 'без добавления в остаток'
-    if (!window.confirm(`Подтвердить получение «${input.productName}» по ${input.externalId}? Решение: ${destinationLabel}.`)) return false
     const setBusy = input.operationType === 'return' ? setReturnBusy : setExchangeBusy
     setBusy(true)
     setError(null)
