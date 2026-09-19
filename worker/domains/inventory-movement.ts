@@ -1526,8 +1526,14 @@ export async function reverseInventoryTransferDocument(db: D1Database, externalI
     const quantity = Math.max(0, toInt(row.quantity, 0));
     const sourceCurrent = stockMap.get(`${fromSource}:${variantId}`) ?? 0;
     const targetCurrent = stockMap.get(`${toSource}:${variantId}`) ?? 0;
+    const fromQuantityBefore = Math.max(0, toInt(row.from_quantity_before, 0));
+    const fromQuantityAfter = Math.max(0, toInt(row.from_quantity_after, 0));
+    // A resolver-confirmed transfer may have moved more units than tracked Physical could
+    // explain. Forward transfer only deducted the explained part from source Physical, so a
+    // reversal must restore exactly that deducted part rather than the full moved quantity.
+    const sourceRestoreQuantity = Math.max(0, fromQuantityBefore - fromQuantityAfter);
     if (targetCurrent < quantity) throw new Error(`Нельзя безопасно отменить перемещение «${cleanText(row.product_name)}»: в точке «${toSource === 'warehouse' ? 'Склад' : 'Бутик'}» сейчас ${targetCurrent} шт., для возврата нужно ${quantity}. Сначала разберите фактический остаток.`);
-    return { variantId, quantity, sourceCurrent, targetCurrent };
+    return { variantId, quantity, sourceRestoreQuantity, sourceCurrent, targetCurrent };
   });
 
   const now = new Date().toISOString();
@@ -1541,6 +1547,7 @@ export async function reverseInventoryTransferDocument(db: D1Database, externalI
     sourceCurrent: row.sourceCurrent,
     targetCurrent: row.targetCurrent,
     moveQty: row.quantity,
+    sourceRestoreQty: row.sourceRestoreQuantity,
   }));
   const reversalValuesSql = reversalRowBindings.map(() => '(?)').join(', ');
   const reversalRowsSql = `input(payload) AS (VALUES ${reversalValuesSql}),
@@ -1549,7 +1556,8 @@ export async function reverseInventoryTransferDocument(db: D1Database, externalI
         CAST(json_extract(payload, '$.variantId') AS INTEGER) AS variant_id,
         CAST(json_extract(payload, '$.sourceCurrent') AS INTEGER) AS source_current,
         CAST(json_extract(payload, '$.targetCurrent') AS INTEGER) AS target_current,
-        CAST(json_extract(payload, '$.moveQty') AS INTEGER) AS move_qty
+        CAST(json_extract(payload, '$.moveQty') AS INTEGER) AS move_qty,
+        CAST(json_extract(payload, '$.sourceRestoreQty') AS INTEGER) AS source_restore_qty
       FROM input
     )`;
 
@@ -1574,7 +1582,7 @@ export async function reverseInventoryTransferDocument(db: D1Database, externalI
   const sourceUpdate = db.prepare(
     `WITH ${reversalRowsSql}
      UPDATE inventory_stock
-     SET quantity = quantity + (SELECT move_qty FROM x WHERE x.variant_id = inventory_stock.variant_id),
+     SET quantity = quantity + (SELECT source_restore_qty FROM x WHERE x.variant_id = inventory_stock.variant_id),
          last_action = 'Отмена перемещения', last_source_ref = ?, updated_at = ?
      WHERE inventory_source = ? AND EXISTS (SELECT 1 FROM x WHERE x.variant_id = inventory_stock.variant_id)`
   ).bind(...reversalRowBindings, externalId, now, fromSource);
@@ -1593,7 +1601,7 @@ export async function reverseInventoryTransferDocument(db: D1Database, externalI
      )
      SELECT ?, 'revision', v.product_id, v.id, p.name, NULLIF(v.gender,''), NULLIF(v.color,''),
             COALESCE(NULLIF(v.material,''),'СТАНДАРТ'), COALESCE(NULLIF(v.length,''),'СТАНДАРТ'), NULLIF(v.size_label,''),
-            x.move_qty, x.source_current + x.move_qty, 'movement_reversal', ?, ?, ?
+            x.source_restore_qty, x.source_current + x.source_restore_qty, 'movement_reversal', ?, ?, ?
      FROM x JOIN catalog_variants v ON v.id = x.variant_id JOIN catalog_products p ON p.id = v.product_id`
   ).bind(...reversalRowBindings, fromSource, reversalRef, reversalComment, now);
   const targetMovements = db.prepare(
