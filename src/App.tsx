@@ -7055,6 +7055,28 @@ function removeDebtPayment(index: number) {
         </div>
       ) : null}
 
+      <OperationalConfirmationDialog prompt={operationalConfirmationPrompt} onDecision={decideOperationalConfirmation} />
+      {returnedItemResolution ? (
+        <ReturnedItemResolutionModal
+          eventId={returnedItemResolution.eventId}
+          productName={returnedItemResolution.productName}
+          externalId={returnedItemResolution.externalId}
+          apiFetch={apiFetch}
+          isAdmin={isAdmin}
+          onRequestAdminMode={() => setAdminModeOpen(true)}
+          onClose={() => setReturnedItemResolution(null)}
+          onCompleted={async () => {
+            invalidateInventoryStockCaches(true)
+            await Promise.allSettled([
+              loadReturnHistory(),
+              loadExchangeHistory(),
+              loadInventoryData('warehouse', true, '', false),
+              loadInventoryData('boutique', true, '', false),
+            ])
+          }}
+        />
+      ) : null}
+
       <Suspense fallback={null}>
       <OrderCatalogResolutionModal
         order={orderCatalogResolutionOrder}
@@ -7278,11 +7300,11 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'returns'} label="Возврат">
-        <OrderReturnsSection ctx={{ cancelReturnEntry, closeReturnForm, createReturnDraft, formatMoney, FriendlyNumberInput, isAdmin, loadReturnHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, returnBusy, returnDraft, returnFormRef, returnHistory, returnHistoryBusy, returnHistoryError, returnHistoryFilters, returnHistoryHasMore, returnHistorySummary, returnSelectedOrder, saveReturn, sectorStyle, setOrderPanel, setReturnDraft, setReturnHistoryFilters, SmartPickerInput, suggestionValues }} />
+        <OrderReturnsSection ctx={{ cancelReturnEntry, closeReturnForm, createReturnDraft, formatMoney, FriendlyNumberInput, isAdmin, loadReturnHistory, ManagerBadge, managerColorFor, openReturnedItemResolution: (eventId: number, productName: string, externalId: string) => setReturnedItemResolution({ eventId, productName, externalId }), orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, returnBusy, returnDraft, returnFormRef, returnHistory, returnHistoryBusy, returnHistoryError, returnHistoryFilters, returnHistoryHasMore, returnHistorySummary, returnSelectedOrder, saveReturn, sectorStyle, setOrderPanel, setReturnDraft, setReturnHistoryFilters, SmartPickerInput, suggestionValues }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'exchange'} label="Обмен размера">
-        <OrderExchangeSection ctx={{ applyExchangeProductPick, cancelExchangeEntry, closeExchangeForm, correctExchangeFinancialEntry, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />
+        <OrderExchangeSection ctx={{ applyExchangeProductPick, cancelExchangeEntry, closeExchangeForm, correctExchangeFinancialEntry, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, openReturnedItemResolution: (eventId: number, productName: string, externalId: string) => setReturnedItemResolution({ eventId, productName, externalId }), orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'team'} label="Команда">
