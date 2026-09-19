@@ -952,7 +952,7 @@ export async function assertNoActiveStocktakeForTransfer(db: D1Database, fromSou
 
 export async function applyInventoryTransfer(
   db: D1Database,
-  input: { requestId?: unknown; fromSource?: unknown; toSource?: unknown; comment?: unknown; items?: InventoryItemInput[] },
+  input: { requestId?: unknown; fromSource?: unknown; toSource?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown },
   actor = '',
   returnInventory = true,
 ) {
@@ -1019,7 +1019,6 @@ export async function applyInventoryTransfer(
   const aggregatedInput = new Map<number, {
     quantity: number;
     expectedQuantity: number | null;
-    observedPhysicalQuantity: number | null;
   }>();
   for (const raw of rawItems) {
     const normalized = normalizeInventoryItem(raw);
@@ -1027,30 +1026,31 @@ export async function applyInventoryTransfer(
     const variantId = Math.max(0, toInt(normalized.variantId, 0));
     if (!variantId) throw new Error('Для перемещения нужна точная каноническая комбинация товара.');
     const rawObserved = raw?.observedPhysicalQuantity;
-    let observedPhysicalQuantity: number | null = null;
     if (rawObserved !== null && rawObserved !== undefined && cleanText(rawObserved) !== '') {
-      const observed = Number(rawObserved);
-      if (!Number.isFinite(observed) || observed < 0 || !Number.isInteger(observed)) {
-        throw new Error('Фактическое количество должно быть целым числом 0 или больше.');
-      }
-      observedPhysicalQuantity = observed;
+      throw new Error('Перемещение больше не принимает полный фактический остаток. Подтвердите только конкретные вещи текущего перемещения.');
     }
     const expectedQuantity = normalized.expectedQuantity;
     const previous = aggregatedInput.get(variantId);
     if (previous) {
-      if (previous.observedPhysicalQuantity !== observedPhysicalQuantity || previous.expectedQuantity !== expectedQuantity) {
-        throw new Error('Для одной комбинации переданы противоречивые данные фактической сверки. Оставьте одну строку этой комбинации.');
+      if (previous.expectedQuantity !== expectedQuantity) {
+        throw new Error('Для одной комбинации переданы противоречивые данные. Обновите остатки и оставьте одну строку этой комбинации.');
       }
       previous.quantity += Math.max(0, normalized.quantity);
     } else {
       aggregatedInput.set(variantId, {
         quantity: Math.max(0, normalized.quantity),
         expectedQuantity,
-        observedPhysicalQuantity,
       });
     }
   }
   if (!aggregatedInput.size) throw new Error('Укажите количество хотя бы для одной позиции.');
+
+  const stockConfirmations = normalizeInventoryOperationStockConfirmations(input.stockConfirmations);
+  for (const confirmation of stockConfirmations) {
+    if (confirmation.source !== fromSource || !aggregatedInput.has(confirmation.variantId)) {
+      throw new Error('Подтверждение физического наличия не относится к текущему перемещению. Обновите остатки и повторите.');
+    }
+  }
 
   const variantIds = Array.from(aggregatedInput.keys());
   const variantIdsJson = JSON.stringify(variantIds);
@@ -1109,6 +1109,13 @@ export async function applyInventoryTransfer(
   }
 
   const prepared: Array<PreparedInventoryTransferItem & { targetReservedQuantity: number }> = [];
+  const stockResolutionItems: Array<{
+    source: SourceType;
+    variantId: number;
+    productName: string;
+    trackedPhysicalQuantity: number;
+    operationQuantity: number;
+  }> = [];
   for (const variantId of variantIds) {
     const entry = aggregatedInput.get(variantId)!;
     const canonical = canonicalById.get(variantId)!;
@@ -1133,22 +1140,24 @@ export async function applyInventoryTransfer(
     const reservedAtSource = reservationsBySourceVariant.get(`${fromSource}:${variantId}`) || 0;
     const targetReservedQuantity = reservationsBySourceVariant.get(`${toSource}:${variantId}`) || 0;
 
-    let effectiveSourceBefore = sourceCurrent;
-    if (!sourceRowExisted && entry.observedPhysicalQuantity === null) {
-      throw new Error(`«${item.productName}» не числится в точке «${fromSource === 'warehouse' ? 'Склад' : 'Бутик'}». Если товар физически находится здесь, укажите фактическое количество прямо в строке перемещения.`);
-    }
-    if (entry.observedPhysicalQuantity !== null) {
-      if (entry.expectedQuantity === null || entry.expectedQuantity === undefined) {
-        throw new Error(`Перед фактической сверкой «${item.productName}» обновите остатки и повторите перемещение.`);
-      }
-      if (sourceCurrent !== entry.expectedQuantity) {
-        throw new Error(`Остаток «${item.productName}» изменился после открытия формы: было ${entry.expectedQuantity}, сейчас ${sourceCurrent}. Обновите данные и повторите.`);
-      }
-      effectiveSourceBefore = entry.observedPhysicalQuantity;
-    }
-    const boundedOutbound = boundedOutboundStock(effectiveSourceBefore, entry.quantity);
+    const effectiveSourceBefore = sourceCurrent;
+    const boundedOutbound = boundedOutboundStock(sourceCurrent, entry.quantity);
     if (boundedOutbound.requiresResolution) {
-      throw new Error(`По учёту в точке «${fromSource === 'warehouse' ? 'Склад' : 'Бутик'}» у «${item.productName}» на месте ${effectiveSourceBefore} шт., а переместить нужно ${entry.quantity}. Если товар физически есть, укажите фактическое количество прямо в строке перемещения.`);
+      const confirmation = stockConfirmations.find((candidate) =>
+        candidate.source === fromSource
+        && candidate.variantId === variantId
+        && candidate.expectedQuantity === sourceCurrent
+        && candidate.operationQuantity === entry.quantity
+      );
+      if (!confirmation) {
+        stockResolutionItems.push({
+          source: fromSource,
+          variantId,
+          productName: item.productName,
+          trackedPhysicalQuantity: Math.max(0, sourceCurrent),
+          operationQuantity: entry.quantity,
+        });
+      }
     }
     const shortageAfter = Math.max(0, reservedAtSource - boundedOutbound.trackedPhysicalAfter);
     prepared.push({
@@ -1161,10 +1170,10 @@ export async function applyInventoryTransfer(
       effectiveSourceBefore,
       reservedAtSource,
       shortageAfter,
-      observedPhysicalQuantity: entry.observedPhysicalQuantity,
       targetReservedQuantity,
     });
   }
+  if (stockResolutionItems.length) return buildStockResolutionRequired('transfer', stockResolutionItems);
 
   const now = new Date().toISOString();
   const externalId = inventoryTransferExternalId();
