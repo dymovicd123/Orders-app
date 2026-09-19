@@ -480,6 +480,11 @@ const summary = useMemo(() => {
     for (const variant of (catalogData?.variants || []).filter((entry) => entry.isActive)) {
       const warehouseRow = warehouseByVariant.get(Number(variant.id))
       const boutiqueRow = boutiqueByVariant.get(Number(variant.id))
+      // Warehouse views must describe tracked inventory positions, not expand into the
+      // whole active catalog merely because another screen happened to load Catalog.
+      // System-zero variants with no inventory row remain discoverable through the
+      // dedicated found-on-shelf flow inside stocktake.
+      if (!warehouseRow && !boutiqueRow) continue
       const warehouseQuantity = Number(warehouseRow?.quantity || 0)
       const warehouseReserved = Number(warehouseRow?.reservedQuantity || 0)
       const warehouseAvailable = Number(warehouseRow?.availableQuantity ?? (warehouseQuantity - warehouseReserved))
