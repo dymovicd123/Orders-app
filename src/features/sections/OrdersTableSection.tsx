@@ -295,7 +295,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                   void markOrderSentToClient(order)
                                 }}
                               >
-                                Отправить клиенту
+                                {projection.needsCatalogClarification ? 'Уточнить товар' : 'Отправить клиенту'}
                               </button>
                             ) : null}
                             {!retainedOnly && !archived && !projection.hasCommittedPhysicalDownstreamOperation && order.shipping_status !== 'sent' && projection.workshopPending ? (
