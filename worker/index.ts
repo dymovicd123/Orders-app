@@ -851,6 +851,40 @@ export default {
         return json(await getCatalogReviewContext(env.DB, orderItemId, preview));
       }
 
+      const orderCatalogReviewFactsMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/catalog-review\/(\d+)\/resolve-facts$/);
+      if (orderCatalogReviewFactsMatch && request.method === 'POST') {
+        const orderId = toInt(orderCatalogReviewFactsMatch[1], 0);
+        const orderItemId = toInt(orderCatalogReviewFactsMatch[2], 0);
+        const input = await readJson<CatalogReviewFactsInput>(request);
+        const scoped = await env.DB.prepare(
+          `SELECT oi.id FROM order_items oi JOIN orders o ON o.id = oi.order_id
+           WHERE oi.id = ? AND oi.order_id = ? AND COALESCE(o.order_status, 'active') = 'active'
+             AND COALESCE(o.archived_at, '') = '' AND COALESCE(o.shipping_status, 'not_sent') <> 'sent' LIMIT 1`
+        ).bind(orderItemId, orderId).first<{ id: number }>();
+        if (!scoped?.id) return json({ ok: false, message: 'Позиция не найдена среди активных товаров этого заказа.' }, { status: 404 });
+        if (Boolean(input.createProduct)) return json({ ok: false, message: 'Новый базовый товар можно добавить только в Админ режиме.' }, { status: 403 });
+        const createFields = Array.isArray(input.createFields) ? input.createFields.map(cleanText).filter(Boolean) : [];
+        if (createFields.length) return json({ ok: false, message: 'Новое значение справочника можно добавить только в Админ режиме.' }, { status: 403 });
+        if (Boolean(input.legacyUnknownGender)) return json({ ok: false, message: 'Историческое исключение доступно только в Админ режиме.' }, { status: 403 });
+        if (!toInt(input.productId, 0)) return json({ ok: false, message: 'Выберите существующий товар.' }, { status: 400 });
+        const result = await resolveCatalogReviewFacts(env.DB, orderItemId, {
+          ...input,
+          createProduct: false,
+          createFields: [],
+          legacyUnknownGender: false,
+        });
+        await writeActivityLog(env.DB, {
+          eventType: 'order_catalog_resolved',
+          entityType: 'order',
+          entityId: orderId,
+          orderId,
+          externalOrderId: '',
+          title: 'Уточнён товар перед отправкой',
+          details: `Связано позиций: ${result.linked}; создана комбинация: ${result.createdCombination ? 'да' : 'нет'}`,
+        });
+        return json(result);
+      }
+
       const orderCatalogReviewResolveMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/catalog-review\/(\d+)\/resolve-existing$/);
       if (orderCatalogReviewResolveMatch && request.method === 'POST') {
         const orderId = toInt(orderCatalogReviewResolveMatch[1], 0);
