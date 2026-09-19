@@ -306,7 +306,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                               {!effectiveOldItemIsWorkshop ? <option value="boutique">Пришла → Бутик</option> : null}
                               <option value="no_stock">Пришла, в остаток не добавлять</option>
                             </select>
-                            {effectiveOldItemIsWorkshop ? <small className="field-hint">Для вещи из Цеха по умолчанию остаток не создаётся. «Склад» выбирайте только если вещь действительно принимают туда; если она ещё едет — выберите «Ещё не пришла».</small> : null}
+                            {effectiveOldItemIsWorkshop ? <small className="field-hint">Для вещи из Цеха Бутик недоступен. По умолчанию остаток не создаётся. «Склад» выбирайте только если вещь действительно принимают туда; если она ещё едет — выберите «Ещё не пришла».</small> : null}
                           </label>
                           <label>
                             <span>Дата обмена</span>
