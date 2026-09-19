@@ -11,7 +11,7 @@ try {
 
   check(modal.includes('onRequestAdminMode?: () => void'), 'Resolver does not expose an inline Admin-mode continuation callback')
   check((modal.match(/Войти в Админ режим и продолжить/g) || []).length >= 2, 'Admin-required resolver states do not offer an in-place continuation action')
-  check(modal.includes('Такого товара нет — войти в Админ режим'), 'Missing-product path still hides the Admin continuation action')
+  check(modal.includes('Не нашли товар — войти в Админ режим'), 'Missing-product path still hides the Admin continuation action')
   check(modal.includes('После входа это окно останется открытым'), 'Reference-value escalation does not explain that resolver state is preserved')
 
   check(app.includes('onRequestAdminMode={() => setAdminModeOpen(true)}'), 'Orders resolver is not wired to open Admin mode in place')
