@@ -1,7 +1,47 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const orderSendResolutionManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-send-catalog-resolution-r1-worker-manifest.json'), 'utf8'))
+if (orderSendResolutionManifest?.version !== 1 || orderSendResolutionManifest?.revision !== 'order-send-catalog-resolution-r1') throw new Error('Order send catalog resolution R1 Worker manifest invalid')
+const orderSendGitBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+
+if (!process.env.ORDER_SEND_CATALOG_RESOLUTION_R1_NORMALIZED) {
+  const workerPath = path.join(root, orderSendResolutionManifest.file)
+  const actual = fs.readFileSync(workerPath, 'utf8')
+  if (orderSendGitBlobSha(actual) !== orderSendResolutionManifest.afterGitBlob || actual.split(/\r?\n/).length !== orderSendResolutionManifest.afterLines) {
+    throw new Error('Order send catalog resolution R1 Worker changed beyond exact manifest')
+  }
+  if (!actual.includes(orderSendResolutionManifest.routeBlock)) throw new Error('Order send catalog resolution R1 route block missing')
+  const reverted = actual.replace(orderSendResolutionManifest.routeBlock, '')
+  if (orderSendGitBlobSha(reverted) !== orderSendResolutionManifest.beforeGitBlob || reverted.split(/\r?\n/).length !== orderSendResolutionManifest.beforeLines) {
+    throw new Error('Order send catalog resolution R1 Worker predecessor reconstruction failed')
+  }
+
+  let childStatus = 1
+  fs.writeFileSync(workerPath, reverted)
+  try {
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, ORDER_SEND_CATALOG_RESOLUTION_R1_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    fs.writeFileSync(workerPath, actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ORDER SEND CATALOG RESOLUTION R1 WORKER STRUCTURAL LAYER PASSED — exact order-scoped route accepted over Branch2 predecessor')
+  process.exit(0)
+}
 const legacyPath = path.join(root, 'scripts/test-step1906a-worker-modularization-legacy.mjs')
 const manifestPath = path.join(root, 'scripts/order-edit-safe-payment-corrections-worker-manifest.json')
 const catalogGenderManifestPath = path.join(root, 'scripts/catalog-gender-scope-r1-worker-manifest.json')
