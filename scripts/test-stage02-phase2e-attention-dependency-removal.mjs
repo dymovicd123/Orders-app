@@ -5,6 +5,7 @@ const check = (condition, message) => { if (!condition) throw new Error(message)
 const app = fs.readFileSync('src/App.tsx', 'utf8')
 const returnsView = fs.readFileSync('src/features/sections/OrderReturnsSection.tsx', 'utf8')
 const exchangeView = fs.readFileSync('src/features/sections/OrderExchangeSection.tsx', 'utf8')
+const inventorySection = fs.readFileSync('src/features/sections/InventorySection.tsx', 'utf8')
 const activity = fs.readFileSync('worker/domains/activity.ts', 'utf8')
 const returnsExchange = fs.readFileSync('worker/domains/returns-exchanges.ts', 'utf8')
 const lifecycle = fs.readFileSync('worker/domains/lifecycle.ts', 'utf8')
@@ -29,6 +30,8 @@ const returnCtx = app.match(/<OrderReturnsSection ctx=\{\{([^\n]+)\}\} \/>/)?.[1
 const exchangeCtx = app.match(/<OrderExchangeSection ctx=\{\{([^\n]+)\}\} \/>/)?.[1] || ''
 check(returnCtx.includes('reconcileKnownInventoryLifecycle'), 'Phase2E App does not wire direct return intake reconciliation')
 check(exchangeCtx.includes('reconcileKnownInventoryLifecycle'), 'Phase2E App does not wire direct exchange intake reconciliation')
+check(inventorySection.includes("{warehouseClarificationCount > 0 ? <button") && inventorySection.includes("<span>Нужно уточнить</span><b>{warehouseClarificationCount}</b>"), 'Phase2E still presents an empty Attention inbox as a normal Warehouse destination')
+check(inventorySection.includes("openStocktakeOutcomeIssues: () =>") && inventorySection.includes("setAttentionCategory('identify')"), 'Phase2E exceptional stocktake recovery path disappeared instead of remaining available as a secondary recovery surface')
 
 const routeStart = routes.indexOf('const inventoryLifecycleKnownMatch')
 const routeEnd = routes.indexOf("if (url.pathname === '/api/catalog/review/reconcile'", routeStart)
