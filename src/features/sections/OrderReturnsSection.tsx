@@ -66,6 +66,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     item.physicalTracking
     && item.physicalReceivedAt
     && item.lifecycleId
+    && (item.lifecycleVariantId || item.currentVariantId)
     && item.lifecycleStatus === 'pending'
     && (item.inventorySource === 'warehouse' || item.inventorySource === 'boutique')
   )
