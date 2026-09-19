@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "revision": "order-send-clarify-label-r3",
+  "baseCommit": "a8c3a1a4b57e5e0ebf8f4231c1efe316ff74fef4",
+  "files": {
+    "worker/domains/orders-read.ts": {
+      "beforeGitBlob": "270eb13381acbbe4711fa93f017f4f9c19715faa",
+      "afterGitBlob": "509f8c20cc83cc7d7ae7a7a224121becbc45999b",
+      "beforeLines": 794,
+      "afterLines": 802,
+      "replacements": [
+        {
+          "beforeBlock": "      committed_return_count: (relations.returnsByOrderId.get(order.id) || []).filter(ret => cleanText((ret as any).status || 'completed').toLowerCase() !== 'cancelled').length,\n      committed_exchange_count: relations.committedExchangeCountByOrderId.get(order.id) || 0,\n      has_committed_item_return: relations.hasCommittedItemReturnByOrderId.get(order.id) || false,\n      items: (relations.itemsByOrderId.get(order.id) || []).map(item => ({\n        id: (item as any).id,\n        ...canonicalItemProjection(item as Record<string, unknown>),",
+          "afterBlock": "      committed_return_count: (relations.returnsByOrderId.get(order.id) || []).filter(ret => cleanText((ret as any).status || 'completed').toLowerCase() !== 'cancelled').length,\n      committed_exchange_count: relations.committedExchangeCountByOrderId.get(order.id) || 0,\n      has_committed_item_return: relations.hasCommittedItemReturnByOrderId.get(order.id) || false,\n      catalog_review_required: (relations.itemsByOrderId.get(order.id) || []).some(raw => {\n        const item = raw as Record<string, unknown>;\n        const status = cleanText(item.stock_writeoff_status);\n        return !toInt(item.is_workshop, 0)\n          && orderItemAvailableOperationQuantity(item) > 0\n          && !['fulfilled', 'written_off', 'negative', 'catalog_excluded', 'catalog_excluded_history', 'workshop_no_catalog', 'legacy_unknown_gender'].includes(status)\n          && (!toInt(item.product_id, 0) || !toInt(item.variant_id, 0) || status === 'catalog_unresolved');\n      }),\n      items: (relations.itemsByOrderId.get(order.id) || []).map(item => ({\n        id: (item as any).id,\n        ...canonicalItemProjection(item as Record<string, unknown>),"
+        }
+      ]
+    }
+  }
+}

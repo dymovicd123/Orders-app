@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "revision": "order-send-clarify-label-r3",
+  "baseCommit": "a8c3a1a4b57e5e0ebf8f4231c1efe316ff74fef4",
+  "files": {
+    "src/app/types.ts": {
+      "beforeGitBlob": "7790d3ef2a9e35c703852f6a3c4e14cbd67d3614",
+      "afterGitBlob": "8b54f09222770a1de3e28437f1d2ae17bad361c8",
+      "beforeLines": 1718,
+      "afterLines": 1719,
+      "replacements": [
+        {
+          "beforeBlock": "  shipping_date?: string | null\n  stock_handover_review_needed?: boolean\n  stock_handover_has_active_items?: boolean\n  total_amount: number\n  received_amount: number\n  debt_amount: number",
+          "afterBlock": "  shipping_date?: string | null\n  stock_handover_review_needed?: boolean\n  stock_handover_has_active_items?: boolean\n  catalog_review_required?: boolean\n  total_amount: number\n  received_amount: number\n  debt_amount: number"
+        }
+      ]
+    },
+    "src/app/orderOperationalProjection.ts": {
+      "beforeGitBlob": "484b66096f38d4364a115ac3299cda85594aa3a7",
+      "afterGitBlob": "80c389ddead47a60f64c076a9288a6baf927685e",
+      "beforeLines": 189,
+      "afterLines": 191,
+      "replacements": [
+        {
+          "beforeBlock": "  canOpenExchange: boolean\n  canEdit: boolean\n  canShip: boolean\n  canCorrectShipping: boolean\n  canOpenStockHandover: boolean\n}",
+          "afterBlock": "  canOpenExchange: boolean\n  canEdit: boolean\n  canShip: boolean\n  needsCatalogClarification: boolean\n  canCorrectShipping: boolean\n  canOpenStockHandover: boolean\n}"
+        },
+        {
+          "beforeBlock": "    // Money-only refunds do not change the physical outbound obligation. Item-linked\n    // Returns and Exchanges do, so they remain the shipping/handover blocker.\n    canShip: mutableWorkingOrder && !hasCommittedPhysicalDownstreamOperation && !sent && !workshopPending,\n    // Shipping correction rewrites prior physical history and stays blocked by any\n    // committed downstream financial/physical operation, matching the backend guard.\n    canCorrectShipping: mutableWorkingOrder && !hasCommittedDownstreamOperation && sent,",
+          "afterBlock": "    // Money-only refunds do not change the physical outbound obligation. Item-linked\n    // Returns and Exchanges do, so they remain the shipping/handover blocker.\n    canShip: mutableWorkingOrder && !hasCommittedPhysicalDownstreamOperation && !sent && !workshopPending,\n    needsCatalogClarification: mutableWorkingOrder && !sent && Boolean(order.catalog_review_required),\n    // Shipping correction rewrites prior physical history and stays blocked by any\n    // committed downstream financial/physical operation, matching the backend guard.\n    canCorrectShipping: mutableWorkingOrder && !hasCommittedDownstreamOperation && sent,"
+        }
+      ]
+    },
+    "src/features/sections/OrdersTableSection.tsx": {
+      "beforeGitBlob": "89d8ee7d8576d394e266b6f30f3a8cbc6121c5b1",
+      "afterGitBlob": "8ed787107c77a8bfd4de13ca72f29ea26723e72f",
+      "beforeLines": 427,
+      "afterLines": 427,
+      "replacements": [
+        {
+          "beforeBlock": "                                  void markOrderSentToClient(order)\n                                }}\n                              >\n                                Отправить клиенту\n                              </button>\n                            ) : null}\n                            {!retainedOnly && !archived && !projection.hasCommittedPhysicalDownstreamOperation && order.shipping_status !== 'sent' && projection.workshopPending ? (",
+          "afterBlock": "                                  void markOrderSentToClient(order)\n                                }}\n                              >\n                                {projection.needsCatalogClarification ? 'Уточнить товар' : 'Отправить клиенту'}\n                              </button>\n                            ) : null}\n                            {!retainedOnly && !archived && !projection.hasCommittedPhysicalDownstreamOperation && order.shipping_status !== 'sent' && projection.workshopPending ? ("
+        }
+      ]
+    }
+  }
+}

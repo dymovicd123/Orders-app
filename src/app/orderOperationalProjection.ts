@@ -29,6 +29,7 @@ export type OrderOperationalProjection = {
   canOpenExchange: boolean
   canEdit: boolean
   canShip: boolean
+  needsCatalogClarification: boolean
   canCorrectShipping: boolean
   canOpenStockHandover: boolean
 }
@@ -177,6 +178,7 @@ export function projectOrderOperationalState(
     // Money-only refunds do not change the physical outbound obligation. Item-linked
     // Returns and Exchanges do, so they remain the shipping/handover blocker.
     canShip: mutableWorkingOrder && !hasCommittedPhysicalDownstreamOperation && !sent && !workshopPending,
+    needsCatalogClarification: mutableWorkingOrder && !sent && Boolean(order.catalog_review_required),
     // Shipping correction rewrites prior physical history and stays blocked by any
     // committed downstream financial/physical operation, matching the backend guard.
     canCorrectShipping: mutableWorkingOrder && !hasCommittedDownstreamOperation && sent,
