@@ -14,10 +14,12 @@ type Props = {
   onCompleted: (order: OrderRecord) => boolean | void | Promise<boolean | void>
   onRequestAdminMode?: () => void
   onOpenFullReview?: (order: OrderRecord) => void | Promise<void>
+  purpose?: 'shipping' | 'intake'
+  preferredOrderItemId?: number | null
 }
 const displayFact = (field: Field, value: string) => field === 'category' ? (value === 'child' ? 'Детский' : 'Взрослый') : field === 'gender' ? (value === 'ЖЕН' ? 'Женский' : value === 'МУЖ' ? 'Мужской' : value) : value
 
-export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose, onCompleted, onRequestAdminMode }: Props) {
+export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose, onCompleted, onRequestAdminMode, purpose = 'shipping', preferredOrderItemId = null }: Props) {
   const [item, setItem] = useState<CatalogReviewItem | null>(null)
   const [context, setContext] = useState<CatalogResolutionContext | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -64,22 +66,61 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     const ticket = ++generation.current
     setBusy(true); setError('')
     try {
-      const review = await read<CatalogReviewResponse>(`/api/orders/${order.id}/catalog-review`)
-      if (ticket !== generation.current) return false
-      if (!Array.isArray(review.items) || !Number.isInteger(review.count) || review.count < 0) throw new Error('Список позиций не подтверждён. Повторите проверку.')
-      const first = review.items?.[0]
-      if (!first) {
-        if (review.count !== 0 || review.truncated) throw new Error('Не удалось получить все позиции. Повторите проверку.')
-        setItem(null); setDraft(null); setContext(null)
-        if (!session.current.changed) setError('Список уточнений пуст. Отправка не продолжена. Закройте окно и проверьте заказ.')
-        return true
+      let first: CatalogReviewItem | null = null
+      let total = 0
+
+      if (preferredOrderItemId) {
+        const sourceItem = (order.items || []).find(entry => Number(entry.id || 0) === Number(preferredOrderItemId))
+        if (!sourceItem?.id) throw new Error('Возвращаемая позиция не найдена в заказе. Обновите страницу и повторите.')
+        first = {
+          orderItemId: Number(sourceItem.id),
+          orderId: order.id,
+          externalId: order.external_id,
+          orderDate: order.order_date,
+          shippingStatus: String(order.shipping_status || ''),
+          shippingDate: String(order.shipping_date || ''),
+          productId: Number(sourceItem.productId || 0) || null,
+          variantId: Number(sourceItem.variantId || 0) || null,
+          productName: sourceItem.originalSnapshot?.productName || sourceItem.productName,
+          category: String(sourceItem.audienceType || '').toLowerCase().includes('дет') ? 'child' : 'adult',
+          gender: sourceItem.originalSnapshot?.gender || sourceItem.gender || '',
+          color: sourceItem.originalSnapshot?.color || sourceItem.color || '',
+          material: sourceItem.originalSnapshot?.material || sourceItem.material || '',
+          length: sourceItem.originalSnapshot?.length || sourceItem.length || '',
+          size: sourceItem.originalSnapshot?.size || sourceItem.size || '',
+          quantity: Math.max(1, Number(sourceItem.quantity || 1)),
+          sourceType: sourceItem.sourceType || order.source_type,
+          inputKey: '',
+          affectedCount: 1,
+        }
+        total = 1
+      } else {
+        const review = await read<CatalogReviewResponse>(`/api/orders/${order.id}/catalog-review`)
+        if (ticket !== generation.current) return false
+        if (!Array.isArray(review.items) || !Number.isInteger(review.count) || review.count < 0) throw new Error('Список позиций не подтверждён. Повторите проверку.')
+        first = review.items?.[0] || null
+        total = Number(review.count || review.items.length)
+        if (!first) {
+          if (review.count !== 0 || review.truncated) throw new Error('Не удалось получить все позиции. Повторите проверку.')
+          setItem(null); setDraft(null); setContext(null)
+          if (!session.current.changed) setError(purpose === 'intake' ? 'Товар уже уточнён. Закройте окно и обновите приёмку.' : 'Список уточнений пуст. Отправка не продолжена. Закройте окно и проверьте заказ.')
+          return true
+        }
       }
+
       const data = await readContext(first.orderItemId)
       if (ticket !== generation.current) return false
+      const preferredResolved = Boolean(preferredOrderItemId && (data.isWorkshop ? data.product?.id : data.exactVariant?.id || data.existingVariantId))
+      if (preferredResolved && session.current.changed) {
+        setItem(null); setDraft(null); setContext(null)
+        setProgress({ total: 1, remaining: 0 })
+        return true
+      }
+
       setItem(first); setContext(data); setDraft(initialDraft(first, data)); setChoices(data.products || [])
-      setProgress(previous => ({ total: previous.total || Number(review.count || review.items.length), remaining: Number(review.count || review.items.length) }))
+      setProgress(previous => ({ total: previous.total || Math.max(1, total), remaining: Math.max(1, total) }))
       setConfirmed({}); setClassified(false); setLegacy(false); setEditing(null); setAnswer('')
-      setSearchOpen(false); setSearch(''); setAdvancedOpen(false); setFallbackOpen(false); setVariantQuery(''); setNeedsRecheck(false)
+      setSearchOpen(true); setSearch(''); setAdvancedOpen(false); setFallbackOpen(false); setVariantQuery(''); setNeedsRecheck(false)
       return false
     } finally { if (ticket === generation.current) setBusy(false) }
   }
@@ -97,7 +138,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     return () => { generation.current++; session.current = createResolutionSession() }
     // Every order owns a separate completion latch; passive loading cannot complete.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [order?.id])
+  }, [order?.id, preferredOrderItemId, purpose])
 
   const remainder = item && context?.product ? compoundRemainder(item.productName, context.product.name) : ''
   const alreadyClassified = Boolean(remainder && [draft?.material, draft?.color].some(v => normalize(v) === remainder))
@@ -196,21 +237,25 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     if (!draft || !context) return null
     const needsAdminCatalogMutation = Boolean(draft.createProduct || draft.createFields?.length || legacy)
     if (!isAdmin && needsAdminCatalogMutation) return <div className="resolution-admin-required"><p>Нужно изменить каталог для этого заказа. Войдите в Админ режим — после входа вы останетесь в этом же уточнении.</p>{onRequestAdminMode ? <button type="button" className="primary-button" onClick={onRequestAdminMode}>Войти в Админ режим и продолжить</button> : null}</div>
-    return <><p>{legacy ? 'Пол останется неизвестным только у этой позиции. Сам товар в каталоге от этого не изменится.' : exactDraftVariant || context.isWorkshop ? 'Будет уточнён товар в заказе. Затем система автоматически продолжит отправку.' : 'Все факты уже известны. Система создаст недостающую комбинацию этого товара и автоматически продолжит отправку.'}</p>
-      <button type="button" className="primary-button" disabled={disabled || Boolean(error)} onClick={() => void finish(legacy ? undefined : exactDraftVariant?.id)}>{resolving ? 'Сохраняю…' : legacy ? 'Сохранить и продолжить' : exactDraftVariant || context.isWorkshop ? 'Подтвердить товар' : 'Создать комбинацию и отправить'}</button></>
+    const completionText = purpose === 'intake'
+      ? (exactDraftVariant || context.isWorkshop ? 'После подтверждения система сразу попробует завершить приёмку в выбранное место.' : 'После сохранения система создаст недостающую комбинацию и продолжит приёмку.')
+      : (exactDraftVariant || context.isWorkshop ? 'После подтверждения система продолжит отправку заказа.' : 'После сохранения система создаст недостающую комбинацию и продолжит отправку.')
+    return <><p>{legacy ? 'Пол останется неизвестным только у этой позиции. Сам товар в каталоге от этого не изменится.' : completionText}</p>
+      <button type="button" className="primary-button" disabled={disabled || Boolean(error)} onClick={() => void finish(legacy ? undefined : exactDraftVariant?.id)}>{resolving ? 'Сохраняю…' : legacy ? 'Сохранить и продолжить' : exactDraftVariant || context.isWorkshop ? 'Подтвердить товар' : purpose === 'intake' ? 'Сохранить и принять товар' : 'Создать комбинацию и отправить'}</button></>
   }
   const renderQuestion = () => {
     if (!question || !draft || !context || !item) return null
     if (question.kind === 'product') {
-      const sorted = rankedProducts(choices, item.productName)
-      const searchRanked = rankedProducts(choices, search || item.productName)
-      const shown = (searchOpen ? searchRanked : sorted).filter(entry => entry.score > 0).slice(0, searchOpen ? 5 : 4)
+      const query = search || item.productName
+      const ranked = rankedProducts(choices, query)
+      const positive = ranked.filter(entry => entry.score > 0)
+      const shown = (positive.length ? positive : ranked).slice(0, 8)
       return <><h4 ref={questionHeading} tabIndex={-1}>Какой это товар?</h4>
-        {searchOpen ? <label>Найти товар<input autoFocus value={search} onChange={e => setSearch(e.target.value)} /></label> : null}
-        <div className="resolution-choices">{shown.map(({ product }) => <button type="button" key={product.id} onClick={() => chooseProduct(product)}>{product.name}</button>)}</div>
-        {searchOpen && !shown.length ? <p>Совпадений нет. Проверьте название или попросите администратора уточнить товар.</p> : null}
-        {!searchOpen ? <button type="button" className="secondary-button" onClick={() => setSearchOpen(true)}>Найти другой товар</button> : null}
-        {isAdmin ? <button type="button" className="resolution-link" onClick={() => void openAdvanced()}>Проверить весь каталог</button> : onRequestAdminMode ? <button type="button" className="resolution-link" onClick={onRequestAdminMode}>Не нашли товар — войти в Админ режим</button> : null}</>
+        <p className="resolution-question-hint">Введите название целиком или только часть. Подходящие товары появляются сразу.</p>
+        <label>Поиск по каталогу<input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder={item.productName || 'Например, ДАРА или ШАПАН'} /></label>
+        <div className="resolution-choices resolution-product-results">{shown.map(({ product, score }) => <button type="button" key={product.id} className="resolution-product-choice" onClick={() => chooseProduct(product)}><strong>{product.name}</strong>{score > 0 ? <small>Похоже на запись в заказе</small> : <small>Другой товар из каталога</small>}</button>)}</div>
+        {!positive.length && clean(query) ? <p className="resolution-question-hint">Точного совпадения нет — показаны ближайшие товары. Можно изменить запрос.</p> : null}
+        {isAdmin ? <button type="button" className="resolution-link" onClick={() => void openAdvanced()}>Нужного товара нет в каталоге</button> : onRequestAdminMode ? <button type="button" className="resolution-link" onClick={onRequestAdminMode}>Нужного товара нет — войти в Админ режим</button> : null}</>
     }
     if (question.kind === 'compound') return <><h4 ref={questionHeading} tabIndex={-1}>Что означает часть названия «{remainder}»?</h4><div className="resolution-choices">
       <button type="button" onClick={() => { setClassified(true); answerField('material', remainder) }}>Материал</button>
@@ -221,9 +266,9 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       <button type="button" className="primary-button" onClick={() => { const next = { ...draft, color: 'БЕЗ ЦВЕТА', size: 'БЕЗ РАЗМЕРА' }; setDraft(next); setNotice('Без цвета и без размера ✓'); void finish(exactDraftVariant?.id, next) }}>Да, всё верно</button>
       <button type="button" onClick={() => { setEditing('color'); setAnswer('') }}>Нет, исправить</button>
     </div></>
-    if (question.kind === 'reference') return <><h4 ref={questionHeading} tabIndex={-1}>Значение «{draft[question.field]}» не найдено в справочнике</h4><p>Сначала проверьте, не опечатка ли это. Новое значение попадёт в справочник только после отдельного подтверждения.</p>
-      <button type="button" className="primary-button" onClick={() => { setEditing(question.field); setAnswer(draft[question.field]) }}>Исправить / выбрать существующее</button>
-      {isAdmin ? <button type="button" className="secondary-button" onClick={() => approveReference(question.field)}>Добавить как новое значение</button> : <div className="resolution-admin-required"><p>Добавить действительно новое значение можно в Админ режиме. После входа это окно останется открытым.</p>{onRequestAdminMode ? <button type="button" className="secondary-button" onClick={onRequestAdminMode}>Войти в Админ режим и продолжить</button> : null}</div>}</>
+    if (question.kind === 'reference') return <><h4 ref={questionHeading} tabIndex={-1}>Уточните: {labels[question.field].toLowerCase()}</h4><p>В заказе записано «{draft[question.field]}». Выберите существующее значение, если это опечатка, или добавьте новое только если такого варианта действительно ещё нет.</p>
+      <button type="button" className="primary-button" onClick={() => { setEditing(question.field); setAnswer(draft[question.field]) }}>Выбрать существующее значение</button>
+      {isAdmin ? <button type="button" className="secondary-button" onClick={() => approveReference(question.field)}>Это действительно новое значение</button> : <div className="resolution-admin-required"><p>Добавить действительно новое значение можно в Админ режиме. После входа это окно останется открытым.</p>{onRequestAdminMode ? <button type="button" className="secondary-button" onClick={onRequestAdminMode}>Войти в Админ режим и продолжить</button> : null}</div>}</>
     if (question.kind === 'field') {
       const field = question.field
       const small = field === 'gender' ? [['ЖЕН', 'Жен'], ['МУЖ', 'Муж']] : field === 'category' ? [['adult', 'Взрослый'], ['child', 'Детский']] : []
@@ -249,10 +294,10 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
     }
   }}>
-    <header><div><h3 id="resolution-title">Уточним товар перед отправкой</h3><small>{order.external_id || `Заказ #${order.id}`}{progress.total > 1 ? ` · Товар ${progress.total - progress.remaining + 1} из ${progress.total}` : ''}</small></div><button type="button" className="secondary-button" disabled={resolving} onClick={onClose}>Закрыть</button></header>
-    {item && !minimalFieldQuestion ? <section className="resolution-source"><small>Менеджер записал</small><strong>{item.productName}</strong><span>{[item.gender, item.material, normalize(item.length) !== 'СТАНДАРТ' ? item.length : '', context?.isWorkshop ? '' : item.color || 'Цвет не указан', context?.isWorkshop ? '' : item.size || 'Размер не указан'].filter(Boolean).join(' · ')}</span></section> : null}
-    {draft && context && !minimalFieldQuestion ? <section className="resolution-understanding"><strong>{draft.createProduct ? `Новый товар: ${draft.productName}` : context.product ? `Мы нашли: ${context.product.name}` : 'Товар пока не определён'}</strong>
-      {!context.isWorkshop ? <p>{fields.filter(field => clean(draft[field]) && (field !== 'length' || normalize(draft.length) !== 'СТАНДАРТ')).map(field => <span key={field}>{labels[field]}: {displayFact(field, draft[field])}{confirmed[field] ? ' ✓' : ''}</span>)}</p> : <p>Для Цеха нужно уточнить только сам товар.</p>}
+    <header><div><h3 id="resolution-title">{purpose === 'intake' ? 'Принять и уточнить товар' : 'Уточнить товар'}</h3><small>{order.external_id || `Заказ #${order.id}`}{progress.total > 1 ? ` · Товар ${progress.total - progress.remaining + 1} из ${progress.total}` : ''}</small></div><button type="button" className="secondary-button" disabled={resolving} onClick={onClose}>Закрыть</button></header>
+    {item && !minimalFieldQuestion ? <section className="resolution-source"><small>{purpose === 'intake' ? 'В возврате записано' : 'В заказе записано'}</small><strong>{item.productName}</strong><span>{[item.gender, item.material, normalize(item.length) !== 'СТАНДАРТ' ? item.length : '', context?.isWorkshop ? '' : item.color || 'Цвет не указан', context?.isWorkshop ? '' : item.size || 'Размер не указан'].filter(Boolean).join(' · ')}</span></section> : null}
+    {draft && context && !minimalFieldQuestion ? <section className="resolution-understanding"><strong>{draft.createProduct ? `Новый товар: ${draft.productName}` : context.product ? `Похоже, это: ${context.product.name}` : 'Нужно выбрать товар'}</strong>
+      {!context.isWorkshop ? <p>{fields.filter(field => clean(draft[field]) && (field !== 'length' || normalize(draft.length) !== 'СТАНДАРТ')).map(field => <span key={field}>{labels[field]}: {displayFact(field, draft[field])}{confirmed[field] ? ' ✓' : ''}</span>)}</p> : <p>{purpose === 'intake' ? 'Сначала уточним, какой товар физически вернулся. После этого система проверит, можно ли сразу поставить его в остаток.' : 'Для позиции Цеха нужно уточнить базовый товар.'}</p>}
     </section> : null}
     {!minimalFieldQuestion ? <div role="status" aria-live="polite" className="resolution-feedback">{notice}</div> : null}
     {error ? <div role="alert" className="resolution-error"><p>{error}</p><button type="button" className="secondary-button" disabled={busy || resolving} onClick={() => void retry()}>{needsRecheck ? 'Проверить оставшиеся позиции' : 'Повторить проверку'}</button></div> : null}
