@@ -102,6 +102,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   const remainder = item && context?.product ? compoundRemainder(item.productName, context.product.name) : ''
   const alreadyClassified = Boolean(remainder && [draft?.material, draft?.color].some(v => normalize(v) === remainder))
   const question = context && draft ? nextQuestion(context, draft, { remainder, classified: classified || alreadyClassified, confirmed, legacy, editing }) : null
+  const minimalFieldQuestion = question?.kind === 'field' && !editing && Boolean(context?.product)
   const questionKey = question ? `${item?.orderItemId}:${question.kind}:${'field' in question ? question.field : ''}` : ''
   useEffect(() => { if (!busy) questionHeading.current?.focus() }, [questionKey, busy])
 
@@ -224,12 +225,17 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       <button type="button" className="secondary-button" onClick={() => { setEditing(question.field); setAnswer(draft[question.field]) }}>Исправить название</button></>
     if (question.kind === 'field') {
       const field = question.field
-      const small = field === 'gender' ? [['ЖЕН', 'Женский'], ['МУЖ', 'Мужской']] : field === 'category' ? [['adult', 'Взрослый'], ['child', 'Детский']] : []
-      return <><h4 ref={questionHeading} tabIndex={-1}>{field === 'gender' ? 'Какой здесь пол?' : field === 'category' ? 'Это взрослый или детский товар?' : `${labels[field]} ${clean(draft[field]) ? 'нужно уточнить' : 'в заказе не указан'}.`}</h4>
+      const small = field === 'gender' ? [['ЖЕН', 'Жен'], ['МУЖ', 'Муж']] : field === 'category' ? [['adult', 'Взрослый'], ['child', 'Детский']] : []
+      const heading = clean(draft[field])
+        ? `Уточните: ${labels[field].toLowerCase()}`
+        : field === 'category' ? 'Это взрослый или детский товар?'
+          : field === 'length' ? 'Не указана длина'
+            : `Не указан ${labels[field].toLowerCase()}`
+      return <>{minimalFieldQuestion && context.product ? <strong>{context.product.name}</strong> : null}<h4 ref={questionHeading} tabIndex={-1}>{heading}</h4>
         {small.length ? <div className="resolution-choices">{small.map(([value, label]) => <button type="button" key={value} onClick={() => answerField(field, value)}>{label}</button>)}</div> : <>
           {!editing && (field === 'color' || field === 'size') ? <div className="resolution-choices"><button type="button" onClick={() => answerField(field, field === 'color' ? 'БЕЗ ЦВЕТА' : 'БЕЗ РАЗМЕРА')}>{field === 'color' ? 'Без цвета' : 'Без размера'}</button><button type="button" onClick={() => { setEditing(field); setAnswer('') }}>{field === 'color' ? 'Выбрать цвет' : 'Выбрать размер / возраст'}</button></div> : <form onSubmit={event => { event.preventDefault(); answerField(field, answer) }}><label>{labels[field]}<input autoFocus list="resolution-answers" value={answer} onChange={event => setAnswer(event.target.value)} /></label><datalist id="resolution-answers">{referenceValues(context, draft, field).map(value => <option key={value} value={value} />)}</datalist><button type="submit" className="primary-button" disabled={!clean(answer)}>Подтвердить</button>{!clean(answer) ? <small>Введите или выберите {labels[field].toLowerCase()}.</small> : null}</form>}
         </>}
-        {field === 'gender' && canLegacy ? <div className="resolution-exception"><p>Пол в старом заказе не удалось выяснить? Можно оставить его неизвестным только для этой позиции. Сам товар в каталоге от этого не изменится.</p><button type="button" onClick={() => { setLegacy(true); setNotice('Пол останется неизвестным для этой позиции ✓') }}>Оставить неизвестным</button></div> : null}</>
+        {field === 'gender' && canLegacy ? <button type="button" className="resolution-link" onClick={() => { setLegacy(true); setNotice('Пол останется неизвестным для этой позиции ✓') }}>Не удалось выяснить</button> : null}</>
     }
     return <><h4 ref={questionHeading} tabIndex={-1}>{question.kind === 'workshop' ? 'Подтвердите товар для Цеха' : 'Всё необходимое уточнено'}</h4>{finalAction()}</>
   }
@@ -243,11 +249,11 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     }
   }}>
     <header><div><h3 id="resolution-title">Уточним товар перед отправкой</h3><small>{order.external_id || `Заказ #${order.id}`}{progress.total > 1 ? ` · Товар ${progress.total - progress.remaining + 1} из ${progress.total}` : ''}</small></div><button type="button" className="secondary-button" disabled={resolving} onClick={onClose}>Закрыть</button></header>
-    {item ? <section className="resolution-source"><small>Менеджер записал</small><strong>{item.productName}</strong><span>{[item.gender, item.material, normalize(item.length) !== 'СТАНДАРТ' ? item.length : '', context?.isWorkshop ? '' : item.color || 'Цвет не указан', context?.isWorkshop ? '' : item.size || 'Размер не указан'].filter(Boolean).join(' · ')}</span></section> : null}
-    {draft && context ? <section className="resolution-understanding"><strong>{draft.createProduct ? `Новый товар: ${draft.productName}` : context.product ? `Мы нашли: ${context.product.name}` : 'Товар пока не определён'}</strong>
+    {item && !minimalFieldQuestion ? <section className="resolution-source"><small>Менеджер записал</small><strong>{item.productName}</strong><span>{[item.gender, item.material, normalize(item.length) !== 'СТАНДАРТ' ? item.length : '', context?.isWorkshop ? '' : item.color || 'Цвет не указан', context?.isWorkshop ? '' : item.size || 'Размер не указан'].filter(Boolean).join(' · ')}</span></section> : null}
+    {draft && context && !minimalFieldQuestion ? <section className="resolution-understanding"><strong>{draft.createProduct ? `Новый товар: ${draft.productName}` : context.product ? `Мы нашли: ${context.product.name}` : 'Товар пока не определён'}</strong>
       {!context.isWorkshop ? <p>{fields.filter(field => clean(draft[field]) && (field !== 'length' || normalize(draft.length) !== 'СТАНДАРТ')).map(field => <span key={field}>{labels[field]}: {displayFact(field, draft[field])}{confirmed[field] ? ' ✓' : ''}</span>)}</p> : <p>Для Цеха нужно уточнить только сам товар.</p>}
     </section> : null}
-    <div role="status" aria-live="polite" className="resolution-feedback">{notice}</div>
+    {!minimalFieldQuestion ? <div role="status" aria-live="polite" className="resolution-feedback">{notice}</div> : null}
     {error ? <div role="alert" className="resolution-error"><p>{error}</p><button type="button" className="secondary-button" disabled={busy || resolving} onClick={() => void retry()}>{needsRecheck ? 'Проверить оставшиеся позиции' : 'Повторить проверку'}</button></div> : null}
     {busy ? <p role="status">Проверяю товар…</p> : null}
     {!advancedOpen ? <fieldset disabled={disabled || Boolean(error)} className="resolution-question" aria-busy={disabled}>{!needsRecheck ? renderQuestion() : <p>Товар сохранён. Проверяем, остались ли ещё вопросы.</p>}</fieldset> : draft && context ? <section className="resolution-advanced">
@@ -261,7 +267,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         {draft.createProduct && (!clean(draft.productName) || !draft.genderScope) ? <p>Укажите название нового товара и для кого он предназначен.</p> : null}
       </fieldset>
     </section> : null}
-    {isAdmin && item && !advancedOpen ? <footer>{fallbackOpen ? <button type="button" className="resolution-link" disabled={disabled} onClick={() => void openAdvanced()}>Расширенное исправление</button> : <button type="button" className="resolution-link" disabled={disabled} onClick={() => setFallbackOpen(true)}>Не нашли правильный вариант?</button>}</footer> : null}
-    <small className="resolution-guard">Без уточнения отправить заказ нельзя.</small>
+    {isAdmin && item && !advancedOpen && !minimalFieldQuestion ? <footer>{fallbackOpen ? <button type="button" className="resolution-link" disabled={disabled} onClick={() => void openAdvanced()}>Расширенное исправление</button> : <button type="button" className="resolution-link" disabled={disabled} onClick={() => setFallbackOpen(true)}>Не нашли правильный вариант?</button>}</footer> : null}
+    {!minimalFieldQuestion ? <small className="resolution-guard">Без уточнения отправить заказ нельзя.</small> : null}
   </div></div>
 }
