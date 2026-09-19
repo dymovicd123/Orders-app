@@ -1013,7 +1013,7 @@ export default {
           return json({ ok: false, message: 'Этот заказ уже отправлен клиенту. Повторная выдача товаров запрещена.' }, { status: 409 });
         }
 
-        const input = await readJson<{ action?: unknown; orderItemId?: unknown; checkpointId?: unknown; checkpointAt?: unknown }>(request);
+        const input = await readJson<{ action?: unknown; orderItemId?: unknown; checkpointId?: unknown; checkpointAt?: unknown; stockConfirmations?: unknown }>(request);
         const action = cleanText(input.action);
         const orderItemId = toInt(input.orderItemId, 0);
         const checkpointId = toInt(input.checkpointId, 0);
@@ -1063,9 +1063,29 @@ export default {
             if (!item.reservationId || item.reservationStatus !== 'active') {
               return json({ ok: false, message: `«${item.productName}» нельзя выдать сейчас: складская привязка требует проверки.` }, { status: 409 });
             }
+            const normalizedStockConfirmations = normalizeShipmentStockConfirmations(input.stockConfirmations);
+            const trackedPhysicalQuantity = Math.max(0, toInt(item.physicalQuantity, 0));
+            const operationQuantity = Math.max(1, toInt(item.quantity, 1));
+            const matchingConfirmation = normalizedStockConfirmations.find((candidate) =>
+              candidate.source === item.source
+              && candidate.variantId === item.variantId
+              && candidate.expectedQuantity === trackedPhysicalQuantity
+              && candidate.operationQuantity === operationQuantity
+            );
+            if (trackedPhysicalQuantity < operationQuantity && !matchingConfirmation) {
+              return json(buildStockResolutionRequired('handover', [{
+                source: item.source,
+                variantId: item.variantId,
+                productName: item.productName,
+                trackedPhysicalQuantity,
+                operationQuantity,
+              }]), { status: 409 });
+            }
             const inventoryDelivery = await fulfillOrderReservationsV2(env.DB, id, state.externalId, new Date().toISOString(), {
               checkedBy: actor,
               orderItemIds: [orderItemId],
+              stockConfirmations: trackedPhysicalQuantity < operationQuantity ? normalizedStockConfirmations : [],
+              stockConfirmationOperation: 'handover',
             });
             if (inventoryDelivery.unresolved) {
               return json({ ok: false, message: `«${item.productName}» нельзя выдать: позиция требует разбора на Складе.` }, { status: 409 });
