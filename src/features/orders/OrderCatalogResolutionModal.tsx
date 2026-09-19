@@ -221,7 +221,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       <button type="button" className="primary-button" onClick={() => { const next = { ...draft, color: 'БЕЗ ЦВЕТА', size: 'БЕЗ РАЗМЕРА' }; setDraft(next); setNotice('Без цвета и без размера ✓'); void finish(exactDraftVariant?.id, next) }}>Да, всё верно</button>
       <button type="button" onClick={() => { setEditing('color'); setAnswer('') }}>Нет, исправить</button>
     </div></>
-    if (question.kind === 'reference') return <><h4 ref={questionHeading} tabIndex={-1}>Значение «{draft[question.field]}» не найдено в справочнике</h4><p>В заказе это значение записано иначе, чем в справочнике. Выберите существующее значение или подтвердите, что это действительно новое.</p>
+    if (question.kind === 'reference') return <><h4 ref={questionHeading} tabIndex={-1}>Уточним: {labels[question.field].toLowerCase()}</h4><p>В заказе указано <strong>«{draft[question.field]}»</strong>. Выберите существующее значение или подтвердите, что это действительно новое.</p>
       <button type="button" className="primary-button" onClick={() => { setEditing(question.field); setAnswer(draft[question.field]) }}>Выбрать из справочника</button>
       {isAdmin ? <button type="button" className="secondary-button" onClick={() => approveReference(question.field)}>Это новое значение</button> : <div className="resolution-admin-required"><p>Добавить действительно новое значение можно в Админ режиме. После входа это окно останется открытым.</p>{onRequestAdminMode ? <button type="button" className="secondary-button" onClick={onRequestAdminMode}>Войти в Админ режим и продолжить</button> : null}</div>}</>
     if (question.kind === 'field') {
