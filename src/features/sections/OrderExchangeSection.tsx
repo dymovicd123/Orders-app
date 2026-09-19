@@ -76,6 +76,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     entry.oldPhysicalTracking
     && entry.oldPhysicalReceivedAt
     && entry.oldLifecycleId
+    && (entry.oldLifecycleVariantId || entry.oldCurrentVariantId)
     && entry.oldLifecycleStatus === 'pending'
     && (entry.oldReturnSource === 'warehouse' || entry.oldReturnSource === 'boutique')
   )
