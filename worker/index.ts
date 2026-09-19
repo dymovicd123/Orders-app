@@ -803,17 +803,35 @@ export default {
 
       const inventoryLifecycleContextMatch = url.pathname.match(/^\/api\/inventory\/lifecycle\/(\d+)\/context$/);
       if (inventoryLifecycleContextMatch && request.method === 'GET') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
-        return json(await getInventoryLifecycleContext(env.DB, toInt(inventoryLifecycleContextMatch[1], 0)));
+        const eventId = toInt(inventoryLifecycleContextMatch[1], 0);
+        const operationalInbound = await env.DB.prepare(
+          `SELECT id FROM inventory_lifecycle_events
+           WHERE id = ? AND status = 'pending' AND direction = 'in'
+             AND operation_type IN ('return','exchange')
+           LIMIT 1`
+        ).bind(eventId).first<{ id: number }>();
+        if (!operationalInbound?.id) {
+          const denied = requireAdminAccess(request);
+          if (denied) return denied;
+        }
+        return json(await getInventoryLifecycleContext(env.DB, eventId));
       }
 
       const inventoryLifecycleResolveMatch = url.pathname.match(/^\/api\/inventory\/lifecycle\/(\d+)\/resolve-facts$/);
       if (inventoryLifecycleResolveMatch && request.method === 'POST') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         const eventId = toInt(inventoryLifecycleResolveMatch[1], 0);
         const input = await readJson<CatalogReviewFactsInput>(request);
+        const operationalInbound = await env.DB.prepare(
+          `SELECT id FROM inventory_lifecycle_events
+           WHERE id = ? AND status = 'pending' AND direction = 'in'
+             AND operation_type IN ('return','exchange')
+           LIMIT 1`
+        ).bind(eventId).first<{ id: number }>();
+        const createFields = Array.isArray(input.createFields) ? input.createFields.filter(Boolean) : [];
+        if (!operationalInbound?.id || Boolean(input.createProduct) || createFields.length > 0) {
+          const denied = requireAdminAccess(request);
+          if (denied) return denied;
+        }
         const result = await resolveInventoryLifecycleFacts(env.DB, eventId, input);
         await writeActivityLog(env.DB, {
           eventType: 'inventory_lifecycle_resolved',

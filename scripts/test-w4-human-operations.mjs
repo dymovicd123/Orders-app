@@ -17,7 +17,7 @@ for (const label of ['Приход', 'Списание', 'Исправить к�
 check(panel.includes('selectedInventoryOperationGroup.rows.length > 6'), 'large variant sets are not collapsed early enough')
 check(panel.includes('Ещё {transferPartition.extra.length} вариантов'), 'overflow variants are not retained behind a calm disclosure')
 check(panel.includes('Нулевые, отрицательные и старые варианты остаются доступны'), 'zero/negative variant discoverability promise missing')
-check(app.includes("result.code === 'stock_resolution_required'") && app.includes('Это НЕ пересчёт всего остатка'), 'zero/negative transfer recovery is not explained through the bounded possession resolver')
+check(app.includes("result.code === 'stock_resolution_required'") && app.includes('await askStockResolution({') && app.includes('Подтверждение относится только к этой операции и не заменяет ревизию.'), 'zero/negative transfer recovery is not explained through the bounded possession resolver')
 check(!panel.includes('Сколько здесь сейчас') && !panel.includes('Фактически на месте'), 'Operations still asks for a fake full physical count during transfer/writeoff')
 check(!panel.includes('<th>Свободно</th>') && !panel.includes('<th>{sourceLabel(inventoryDraft.targetSource)}</th>'), 'transfer table still exposes the old six-column cognitive load')
 check(panel.includes('<th>По системе</th>'), 'compact transfer system-state column missing')

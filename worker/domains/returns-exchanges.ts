@@ -69,13 +69,6 @@ export async function createReturn(
   const availableAmount = Math.max(0, Number(existing.received_amount || 0) - Number(existing.return_amount || 0) + ownOperationReturnAmount);
   const restockSource = normalizeReturnRestockSource(input.restockSource);
 
-  if (amount <= 0) {
-    throw new Error('Return amount must be greater than zero.');
-  }
-  if (!paymentMethod) {
-    throw new Error('Выберите способ возврата денег. Это нужно для корректного учёта наличных и финансов.');
-  }
-
   if (amount > availableAmount) {
     throw new Error(`Return amount exceeds available received funds: ${availableAmount}.`);
   }
@@ -108,6 +101,12 @@ export async function createReturn(
     });
   }
   const selectedItems = Array.from(selectedItemMap.values());
+  if (amount <= 0 && selectedItems.length === 0) {
+    throw new Error('Для возврата без денег выберите хотя бы одну возвращаемую позицию.');
+  }
+  if (amount > 0 && !paymentMethod) {
+    throw new Error('Выберите способ возврата денег. Это нужно для корректного учёта наличных и финансов.');
+  }
   const validatedSelectedItems: Array<{
     selected: { orderItemId: number; quantity: number; amount: number; restock: boolean | null; physicalState: 'pending' | 'warehouse' | 'boutique' | 'no_stock' | null };
     orderItem: Record<string, unknown>;
@@ -175,18 +174,20 @@ export async function createReturn(
   let returnId = toInt(criticalOperation.row.target_id, 0);
   if (!returnId) {
     const leaseUntil = Date.now() + 45_000;
-    const [insertReturn] = await db.batch([
+    const createStatements: D1PreparedStatement[] = [
       db.prepare(
         `INSERT INTO returns (order_id, manager_id, return_date, amount, payment_method, comment, status, created_at)
          VALUES (?, ?, ?, ?, ?, ?, 'completed', ?)`
-      ).bind(orderId, managerRow?.manager_id ?? null, returnDate, amount, paymentMethod, comment || null, createdAt),
+      ).bind(orderId, managerRow?.manager_id ?? null, returnDate, amount, amount > 0 ? paymentMethod : null, comment || null, createdAt),
       db.prepare(
         `UPDATE critical_operations
          SET target_type = 'return', target_id = last_insert_rowid(), target_ref = ?, step = 'return_created',
              lease_until_ms = ?, updated_at = ?, last_error = NULL
          WHERE request_id = ? AND status = 'started' AND lease_token = ?`
       ).bind(cleanText((existing as any).external_id), leaseUntil, createdAt, criticalOperation.requestId, criticalOperation.leaseToken),
-      refundMoneyEventStatement(db, {
+    ];
+    if (amount > 0) {
+      createStatements.push(refundMoneyEventStatement(db, {
         eventKey: returnEventKey,
         orderId,
         externalOrderId: cleanText((existing as any).external_id),
@@ -197,8 +198,9 @@ export async function createReturn(
         eventType: 'order_refund',
         sourceRef: `critical-operation:${criticalOperation.requestId}`,
         comment: comment || null,
-      }),
-    ]);
+      }));
+    }
+    const [insertReturn] = await db.batch(createStatements);
     returnId = toInt(insertReturn.meta?.last_row_id, 0);
     await refreshCriticalOperation(db, criticalOperation);
     returnId = toInt(criticalOperation.row.target_id, 0) || returnId;
@@ -1720,13 +1722,15 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
     ).run();
   }
 
-  await db.batch([
+  const cancelStatements: D1PreparedStatement[] = [
     db.prepare(
       `UPDATE returns
        SET status = 'cancelled', cancelled_at = ?, cancellation_comment = ?
        WHERE id = ? AND COALESCE(status, 'completed') <> 'cancelled'`
     ).bind(timestamp, comment, returnId),
-    refundReversalMoneyEventStatement(db, {
+  ];
+  if (toInt(ret.amount, 0) > 0) {
+    cancelStatements.push(refundReversalMoneyEventStatement(db, {
       eventKey: `189c:return:${returnId}:cancelled`,
       orderId: toInt(ret.order_id, 0),
       externalOrderId: cleanText(ret.external_id),
@@ -1738,8 +1742,9 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
       sourceRef: `returns:${returnId}`,
       reason: 'return_cancel',
       comment,
-    }),
-  ]);
+    }));
+  }
+  await db.batch(cancelStatements);
 
   await syncOrderFinancialLedger(db, toInt(ret.order_id, 0), timestamp);
   try {

@@ -32,8 +32,9 @@ import { calculateTotals, createDebtClosePayment, createEditorDraft, createEmpty
 import { ChoicePills, FriendlyNumberInput, ManagerBadge, ManagerPicker, SmartPickerInput, resolveManagerDisplayColor } from './components'
 import { TableDragScrollManager } from './components/tables/TableDragScrollManager'
 import { DatabaseStorageModal, DatabaseStorageWarning, useDatabaseStorageMaintenance } from './features/storage/DatabaseStorageMaintenance'
-import { DashboardSection, ClientsSection, ReferencesSection, InventorySection, WorkshopSection, OrdersHeaderSection, OrderFiltersSection, CreateOrderSection, OrderEditorSection, OrdersTableSection, OrderDetailsSection, OrderDebtSection, OrderReturnsSection, OrderExchangeSection, TeamSection, LeadsSection, PlanSection, FinanceSection, ReportsSection, OrderActivitySection, OrderCatalogResolutionModal, DeferredSection } from './app/lazySections'
+import { DashboardSection, ClientsSection, ReferencesSection, InventorySection, WorkshopSection, OrdersHeaderSection, OrderFiltersSection, CreateOrderSection, OrderEditorSection, OrdersTableSection, OrderDetailsSection, OrderDebtSection, OrderReturnsSection, OrderExchangeSection, TeamSection, LeadsSection, PlanSection, FinanceSection, ReportsSection, OrderActivitySection, OrderCatalogResolutionModal, StockResolutionConfirmModal, ReturnedItemResolutionModal, DeferredSection } from './app/lazySections'
 import { InventoryStockGroupsRenderer } from './features/renderers/InventoryStockGroupsRenderer'
+import type { StockResolutionPrompt } from './features/orders/StockResolutionConfirmModal'
 import { useFinanceReportReads } from './features/finance/useFinanceReportReads'
 import { useWorkshopReads } from './features/workshop/useWorkshopReads'
 import { useApiClient } from './app/controllers/useApiClient'
@@ -231,6 +232,9 @@ function App() {
   const [authChecking, setAuthChecking] = useState(true)
   const [simpleAdminMode, setSimpleAdminMode] = useState(false)
   const [adminModeOpen, setAdminModeOpen] = useState(false)
+  const [stockResolutionPrompt, setStockResolutionPrompt] = useState<StockResolutionPrompt | null>(null)
+  const stockResolutionDecisionRef = useRef<((value: boolean) => void) | null>(null)
+  const [returnedItemResolutionEventId, setReturnedItemResolutionEventId] = useState<number | null>(null)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [adminModeBusy, setAdminModeBusy] = useState(false)
   const [adminModeDraft, setAdminModeDraft] = useState({ login: 'admin', password: '' })
@@ -246,6 +250,18 @@ function App() {
   const [authUsersBusy, setAuthUsersBusy] = useState(false)
   const [authUsers, setAuthUsers] = useState<ManagedAuthUser[]>([])
   const [authUserDraft, setAuthUserDraft] = useState({ id: 0, email: '', password: '', role: 'manager' as AccessRole, managerId: 0, displayName: '', isActive: true, mustChangePassword: true })
+  const askStockResolution = (prompt: StockResolutionPrompt) => new Promise<boolean>((resolve) => {
+    if (stockResolutionDecisionRef.current) stockResolutionDecisionRef.current(false)
+    stockResolutionDecisionRef.current = resolve
+    setStockResolutionPrompt(prompt)
+  })
+  const answerStockResolution = (confirmed: boolean) => {
+    const resolve = stockResolutionDecisionRef.current
+    stockResolutionDecisionRef.current = null
+    setStockResolutionPrompt(null)
+    resolve?.(confirmed)
+  }
+
   const accessRole: AccessRole = simpleAdminMode ? 'admin' : 'manager'
   const isAdmin = accessRole === 'admin'
   const authReady = !authChecking
@@ -784,6 +800,13 @@ function App() {
     if (!authReady || activeSector !== 'orders' || orderPanel !== 'debt') return
     void loadAllOpenDebtOrders()
   }, [activeSector, authReady, orderPanel])
+
+  useEffect(() => {
+    if (!authReady || activeSector !== 'orders') return
+    // Pending physical returns/exchanges are operational work, not buried history.
+    // Load their summaries as soon as Orders opens so the tabs can show an attention badge.
+    void Promise.allSettled([loadReturnHistory(), loadExchangeHistory()])
+  }, [activeSector, authReady])
 
   useEffect(() => {
     if (!authReady || activeSector !== 'orders' || orderPanel !== 'returns') return
@@ -4892,17 +4915,17 @@ function App() {
         && Array.isArray(result.items)
         && result.items.length
       ) {
-        const lines = result.items.map((resolutionItem) => {
-          const tracked = Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0))
-          const needed = Math.max(1, Number(resolutionItem.operationQuantity || 1))
-          return `• ${resolutionItem.productName || 'Товар'}: по учёту ${tracked} шт., в этой операции ${needed} шт.`
+        const confirmed = await askStockResolution({
+          title: isTransfer ? 'Для перемещения не хватает учтённого остатка' : 'Для списания не хватает учтённого остатка',
+          intro: isTransfer ? 'Подтвердите, что эти вещи действительно сейчас переносятся между точками.' : 'Подтвердите, что эти вещи действительно сейчас физически списываются.',
+          actionLabel: isTransfer ? 'Да, перемещаю' : 'Да, списываю',
+          items: result.items.map((resolutionItem) => ({
+            productName: resolutionItem.productName || 'Товар',
+            tracked: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
+            needed: Math.max(1, Number(resolutionItem.operationQuantity || 1)),
+          })),
+          note: 'Подтверждение относится только к этой операции и не заменяет ревизию.',
         })
-        const actionText = isTransfer
-          ? `эти вещи прямо сейчас физически переносятся из «${sourceLabel(inventoryDraft.source)}» в «${sourceLabel(inventoryDraft.targetSource)}»`
-          : 'эти вещи прямо сейчас физически находятся у вас и действительно списываются'
-        const confirmed = window.confirm(
-          `По учёту товара меньше, чем указано в операции.\n\n${lines.join('\n')}\n\nПодтвердите только если ${actionText}. Это НЕ пересчёт всего остатка.`
-        )
         if (!confirmed) {
           setMessage(isTransfer ? 'Перемещение остановлено. Остатки не изменялись.' : 'Списание остановлено. Остатки не изменялись.')
           return
@@ -5783,15 +5806,17 @@ function removeDebtPayment(index: number) {
       let { response, result } = await submitHandoverAction()
       if (!response.ok && action === 'issue_now' && result.code === 'stock_resolution_required' && result.operationType === 'handover' && Array.isArray(result.items) && result.items.length) {
         const resolutionItems = result.items as StockResolutionRequiredItemView[]
-        const lines = resolutionItems.map((resolutionItem) => {
-          const name = resolutionItem.productName || item.productName
-          const tracked = Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0))
-          const needed = Math.max(1, Number(resolutionItem.operationQuantity || item.quantity || 1))
-          return `• ${name}: по учёту ${tracked} шт., сейчас клиенту выдаётся ${needed} шт.`
+        const confirmed = await askStockResolution({
+          title: 'Товара по учёту меньше, чем нужно для выдачи',
+          intro: 'Перед продолжением подтвердите фактическую ситуацию с этими вещами.',
+          actionLabel: 'Да, выдаю клиенту',
+          items: resolutionItems.map((resolutionItem) => ({
+            productName: resolutionItem.productName || item.productName,
+            tracked: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
+            needed: Math.max(1, Number(resolutionItem.operationQuantity || item.quantity || 1)),
+          })),
+          note: 'Подтверждение относится только к этой выдаче. Общий остаток товара этим не пересчитывается.',
         })
-        const confirmed = window.confirm(
-          `По учёту товара меньше, чем нужно для этой выдачи.\n\n${lines.join('\n')}\n\nПодтвердите только если указанные вещи прямо сейчас физически у вас и действительно передаются клиенту. Это НЕ пересчёт всего остатка.`
-        )
         if (!confirmed) {
           setMessage('Выдача остановлена. Остатки не изменялись.')
           return
@@ -5886,15 +5911,17 @@ function removeDebtPayment(index: number) {
         return false
       }
       if (!response.ok && result.code === 'stock_resolution_required' && result.operationType === 'shipping' && Array.isArray(result.items) && result.items.length) {
-        const lines = result.items.map((item) => {
-          const name = item.productName || `variant #${item.variantId || ''}`
-          const tracked = Math.max(0, Number(item.trackedPhysicalQuantity || 0))
-          const needed = Math.max(1, Number(item.operationQuantity || 1))
-          return `• ${name}: по учёту ${tracked} шт., сейчас отправляется ${needed} шт.`
+        const confirmed = await askStockResolution({
+          title: 'Товара по учёту меньше, чем нужно для отправки',
+          intro: 'Система не меняет общий остаток наугад. Подтвердите только фактическую передачу этих вещей.',
+          actionLabel: 'Да, отправляю клиенту',
+          items: result.items.map((resolutionItem) => ({
+            productName: resolutionItem.productName || `variant #${resolutionItem.variantId || ''}`,
+            tracked: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
+            needed: Math.max(1, Number(resolutionItem.operationQuantity || 1)),
+          })),
+          note: 'Это подтверждение одной отправки, а не пересчёт всего склада или бутика.',
         })
-        const confirmed = window.confirm(
-          `По учёту товара меньше, чем нужно для этой отправки.\n\n${lines.join('\n')}\n\nПодтвердите только если указанные вещи прямо сейчас физически у вас и действительно передаются клиенту. Это НЕ пересчёт всего остатка.`
-        )
         if (!confirmed) {
           setMessage('Отправка остановлена. Остатки не изменялись.')
           return false
@@ -6137,16 +6164,24 @@ function removeDebtPayment(index: number) {
       Number(returnSelectedOrder.received_amount || 0) - Number(returnSelectedOrder.return_amount || 0),
     )
 
-    if (amount <= 0) {
-      setError('Укажите сумму возврата больше нуля.')
+    const selectedReturnItems = returnDraft.items
+      .filter((item) => Number(item.orderItemId || 0) > 0 && Number(item.quantity || 0) > 0)
+      .map((item) => ({
+        orderItemId: item.orderItemId,
+        quantity: item.quantity,
+        restock: item.physicalState === 'warehouse' || item.physicalState === 'boutique',
+        physicalState: item.physicalState,
+      }))
+
+    if (amount <= 0 && selectedReturnItems.length === 0) {
+      setError('Для возврата без денег выберите хотя бы один возвращаемый товар.')
       return
     }
-
     if (amount > availableAmount) {
       setError(`Сумма возврата ${formatMoney(amount)} больше доступной суммы ${formatMoney(availableAmount)}.`)
       return
     }
-    if (!returnDraft.paymentMethod.trim()) {
+    if (amount > 0 && !returnDraft.paymentMethod.trim()) {
       setError('Выберите способ возврата денег. Это нужно для правильного учёта наличных и финансов.')
       return
     }
@@ -6163,14 +6198,7 @@ function removeDebtPayment(index: number) {
         paymentMethod: returnDraft.paymentMethod,
         comment: returnDraft.comment,
         restockSource: returnDraft.restockSource,
-        items: returnDraft.items
-          .filter((item) => Number(item.orderItemId || 0) > 0 && Number(item.quantity || 0) > 0)
-          .map((item) => ({
-            orderItemId: item.orderItemId,
-            quantity: item.quantity,
-            restock: item.physicalState === 'warehouse' || item.physicalState === 'boutique',
-            physicalState: item.physicalState,
-          })),
+        items: selectedReturnItems,
       }
       const criticalKey = `return-create:${returnSelectedOrder.id}`
       const critical = prepareCriticalRequest(criticalKey, payload)
@@ -6424,7 +6452,6 @@ function removeDebtPayment(index: number) {
     externalId: string
   }) {
     const destinationLabel = input.destination === 'warehouse' ? 'Склад' : input.destination === 'boutique' ? 'Бутик' : 'без добавления в остаток'
-    if (!window.confirm(`Подтвердить получение «${input.productName}» по ${input.externalId}? Решение: ${destinationLabel}.`)) return false
     const setBusy = input.operationType === 'return' ? setReturnBusy : setExchangeBusy
     setBusy(true)
     setError(null)
@@ -6447,6 +6474,7 @@ function removeDebtPayment(index: number) {
         ok?: boolean
         message?: string
         pendingInventoryCount?: number
+        pendingInventory?: { eventId?: number; reason?: string; productName?: string } | null
         stockApplied?: boolean
         stockAlreadyApplied?: boolean
       }>(response, 'Получение возвращённого товара')
@@ -6463,7 +6491,11 @@ function removeDebtPayment(index: number) {
       if (input.destination === 'no_stock') {
         setMessage(`«${input.productName}» отмечен как полученный. В остаток товар не добавлялся.`)
       } else if (Number(result.pendingInventoryCount || 0) > 0) {
-        setMessage(`«${input.productName}» физически получен. Для остатка требуется уточнение товара — система ничего не прибавляла наугад.`)
+        const eventId = Number(result.pendingInventory?.eventId || 0)
+        if (eventId) setReturnedItemResolutionEventId(eventId)
+        setMessage(eventId
+          ? `«${input.productName}» получен. Открылось уточнение товара — после подтверждения он сразу попадёт в выбранный остаток.`
+          : `«${input.productName}» физически получен. Для остатка требуется уточнение товара — система ничего не прибавляла наугад.`)
       } else {
         setMessage(`«${input.productName}» получен и учтён: ${destinationLabel}.`)
       }
@@ -6987,14 +7019,34 @@ function removeDebtPayment(index: number) {
         </div>
       ) : null}
 
+      <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />
+
+      <ReturnedItemResolutionModal
+        eventId={returnedItemResolutionEventId}
+        apiFetch={apiFetch}
+        isAdmin={isAdmin}
+        onRequestAdminMode={() => setAdminModeOpen(true)}
+        onClose={() => setReturnedItemResolutionEventId(null)}
+        onCompleted={async () => {
+          await Promise.allSettled([
+            loadReturnHistory(),
+            loadExchangeHistory(),
+            loadInventoryData('warehouse', true, '', false),
+            loadInventoryData('boutique', true, '', false),
+            loadDashboard(false),
+          ])
+          setMessage('Товар определён и приёмка завершена.')
+        }}
+      />
+
       {adminModeOpen ? (
-        <div className="modal-backdrop" style={orderCatalogResolutionOrder ? { zIndex: 1301 } : undefined} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAdminModeOpen(false) }}>
+        <div className="modal-backdrop" style={orderCatalogResolutionOrder || returnedItemResolutionEventId ? { zIndex: 1501 } : undefined} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAdminModeOpen(false) }}>
           <form className="modal-card auth-users-modal" role="dialog" aria-modal="true" aria-label="Админ режим" onSubmit={submitAdminMode}>
             <div className="modal-head">
               <div>
                 <div className="card-label">Админ режим</div>
                 <h3>Войти в админ режим</h3>
-                <p>{orderCatalogResolutionOrder ? 'Введите пароль администратора. После входа вы вернётесь к уточнению этого заказа.' : 'Обычная работа доступна без входа. Пароль нужен только для удаления, настроек и служебных действий.'}</p>
+                <p>{orderCatalogResolutionOrder ? 'Введите пароль администратора. После входа вы вернётесь к уточнению этого заказа.' : returnedItemResolutionEventId ? 'Введите пароль администратора. После входа вы вернётесь к приёмке этого товара.' : 'Обычная работа доступна без входа. Пароль нужен только для удаления, настроек и служебных действий.'}</p>
               </div>
               <button className="secondary compact" type="button" onClick={() => { setAdminModeOpen(false); setAdminModeDraft({ login: 'admin', password: '' }) }}>Закрыть</button>
             </div>
@@ -7205,7 +7257,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders'} label="Заказы">
-        <OrdersHeaderSection ctx={{ orderPanel, orderPanelOptions, sectorStyle, setEditorOpen, setOrderPanel }} />
+        <OrdersHeaderSection ctx={{ orderPanel, orderPanelOptions, returnHistorySummary, exchangeHistorySummary, sectorStyle, setEditorOpen, setOrderPanel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Заказы">
