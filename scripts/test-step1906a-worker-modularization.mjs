@@ -123,32 +123,32 @@ if (!process.env.CATALOG_RESOLVER_R92B_WORKER_NORMALIZED) {
   console.log('CATALOG RESOLVER R9.2B WORKER STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
-const catalogResolverR7WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-resolver-r7-human-scope-worker-manifest.json'), 'utf8'))
-if (catalogResolverR7WorkerManifest?.version !== 1 || catalogResolverR7WorkerManifest?.revision !== 'catalog-resolver-r7-human-scope') throw new Error('Catalog resolver R7 Worker manifest invalid')
-const catalogResolverR7BlobSha = (value) => {
+const productionResolverR7WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/production-catalog-resolver-r7-worker-manifest.json'), 'utf8'))
+if (productionResolverR7WorkerManifest?.version !== 1 || productionResolverR7WorkerManifest?.revision !== 'production-catalog-resolver-r7') throw new Error('Production catalog resolver R7 Worker manifest invalid')
+const productionResolverR7BlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.CATALOG_RESOLVER_R7_WORKER_NORMALIZED) {
+if (!process.env.PRODUCTION_CATALOG_RESOLVER_R7_WORKER_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(catalogResolverR7WorkerManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(productionResolverR7WorkerManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogResolverR7BlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Catalog resolver R7 Worker changed beyond exact manifest: ' + relative)
+      if (productionResolverR7BlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Production resolver R7 Worker changed beyond exact manifest: ' + relative)
       let reverted = actual
       for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Catalog resolver R7 after-block missing: ' + relative)
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Production resolver R7 after-block missing: ' + relative)
         reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
       }
-      if (catalogResolverR7BlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Catalog resolver R7 predecessor reconstruction failed: ' + relative)
+      if (productionResolverR7BlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Production resolver R7 predecessor reconstruction failed: ' + relative)
       originals.set(relative, actual)
       fs.writeFileSync(absolute, reverted)
     }
     const child = spawnSync(process.execPath, [process.argv[1]], {
       cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, CATALOG_RESOLVER_R7_WORKER_NORMALIZED: '1' },
+      env: { ...process.env, PRODUCTION_CATALOG_RESOLVER_R7_WORKER_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -156,35 +156,35 @@ if (!process.env.CATALOG_RESOLVER_R7_WORKER_NORMALIZED) {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG RESOLVER R7 WORKER STRUCTURAL LAYER PASSED')
+  console.log('PRODUCTION CATALOG RESOLVER R7 WORKER STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
-const catalogResolverR6WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-resolver-r6-deterministic-auto-worker-manifest.json'), 'utf8'))
-if (catalogResolverR6WorkerManifest?.version !== 1 || catalogResolverR6WorkerManifest?.revision !== 'catalog-resolver-r6-deterministic-auto') throw new Error('Catalog resolver R6 Worker manifest invalid')
-const catalogResolverR6BlobSha = (value) => {
+const productionResolverR6WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/production-catalog-resolver-r6-worker-manifest.json'), 'utf8'))
+if (productionResolverR6WorkerManifest?.version !== 1 || productionResolverR6WorkerManifest?.revision !== 'production-catalog-resolver-r6') throw new Error('Production catalog resolver R6 Worker manifest invalid')
+const productionResolverR6BlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.CATALOG_RESOLVER_R6_WORKER_NORMALIZED) {
+if (!process.env.PRODUCTION_CATALOG_RESOLVER_R6_WORKER_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(catalogResolverR6WorkerManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(productionResolverR6WorkerManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogResolverR6BlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Catalog resolver R6 Worker changed beyond exact manifest: ' + relative)
+      if (productionResolverR6BlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Production resolver R6 Worker changed beyond exact manifest: ' + relative)
       let reverted = actual
       for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Catalog resolver R6 after-block missing: ' + relative)
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Production resolver R6 after-block missing: ' + relative)
         reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
       }
-      if (catalogResolverR6BlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Catalog resolver R6 predecessor reconstruction failed: ' + relative)
+      if (productionResolverR6BlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Production resolver R6 predecessor reconstruction failed: ' + relative)
       originals.set(relative, actual)
       fs.writeFileSync(absolute, reverted)
     }
     const child = spawnSync(process.execPath, [process.argv[1]], {
       cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, CATALOG_RESOLVER_R6_WORKER_NORMALIZED: '1' },
+      env: { ...process.env, PRODUCTION_CATALOG_RESOLVER_R6_WORKER_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -192,35 +192,35 @@ if (!process.env.CATALOG_RESOLVER_R6_WORKER_NORMALIZED) {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG RESOLVER R6 WORKER STRUCTURAL LAYER PASSED')
+  console.log('PRODUCTION CATALOG RESOLVER R6 WORKER STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
-const catalogResolverR5WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-resolver-r5-canonical-truth-worker-manifest.json'), 'utf8'))
-if (catalogResolverR5WorkerManifest?.version !== 1 || catalogResolverR5WorkerManifest?.revision !== 'catalog-resolver-r5-canonical-truth') throw new Error('Catalog resolver R5 Worker manifest invalid')
-const catalogResolverR5BlobSha = (value) => {
+const productionResolverR5WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/production-catalog-resolver-r5-worker-manifest.json'), 'utf8'))
+if (productionResolverR5WorkerManifest?.version !== 1 || productionResolverR5WorkerManifest?.revision !== 'production-catalog-resolver-r5') throw new Error('Production catalog resolver R5 Worker manifest invalid')
+const productionResolverR5BlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.CATALOG_RESOLVER_R5_WORKER_NORMALIZED) {
+if (!process.env.PRODUCTION_CATALOG_RESOLVER_R5_WORKER_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(catalogResolverR5WorkerManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(productionResolverR5WorkerManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogResolverR5BlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Catalog resolver R5 Worker changed beyond exact manifest: ' + relative)
+      if (productionResolverR5BlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Production resolver R5 Worker changed beyond exact manifest: ' + relative)
       let reverted = actual
       for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Catalog resolver R5 after-block missing: ' + relative)
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Production resolver R5 after-block missing: ' + relative)
         reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
       }
-      if (catalogResolverR5BlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Catalog resolver R5 predecessor reconstruction failed: ' + relative)
+      if (productionResolverR5BlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Production resolver R5 predecessor reconstruction failed: ' + relative)
       originals.set(relative, actual)
       fs.writeFileSync(absolute, reverted)
     }
     const child = spawnSync(process.execPath, [process.argv[1]], {
       cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
-      env: { ...process.env, CATALOG_RESOLVER_R5_WORKER_NORMALIZED: '1' },
+      env: { ...process.env, PRODUCTION_CATALOG_RESOLVER_R5_WORKER_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -228,42 +228,35 @@ if (!process.env.CATALOG_RESOLVER_R5_WORKER_NORMALIZED) {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG RESOLVER R5 WORKER STRUCTURAL LAYER PASSED')
+  console.log('PRODUCTION CATALOG RESOLVER R5 WORKER STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
-const orderSendClarifyLabelWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-send-clarify-label-r3-worker-manifest.json'), 'utf8'))
-if (orderSendClarifyLabelWorkerManifest?.version !== 1 || orderSendClarifyLabelWorkerManifest?.revision !== 'order-send-clarify-label-r3') throw new Error('Order send clarify label R3 Worker manifest invalid')
-const orderSendClarifyLabelGitBlobSha = (value) => {
+const productionResolverWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/production-catalog-resolver-r3-r4-worker-manifest.json'), 'utf8'))
+if (productionResolverWorkerManifest?.version !== 1 || productionResolverWorkerManifest?.revision !== 'production-catalog-resolver-r3-r4') throw new Error('Production catalog resolver R3/R4 Worker manifest invalid')
+const productionResolverWorkerBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.ORDER_SEND_CLARIFY_LABEL_R3_WORKER_NORMALIZED) {
+if (!process.env.PRODUCTION_CATALOG_RESOLVER_R3_R4_WORKER_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(orderSendClarifyLabelWorkerManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(productionResolverWorkerManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (orderSendClarifyLabelGitBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Order send clarify label R3 Worker changed beyond exact manifest: ' + relative)
-      }
+      if (productionResolverWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Production resolver Worker changed beyond exact manifest: ' + relative)
       let reverted = actual
       for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Order send clarify label R3 Worker after-block missing: ' + relative)
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Production resolver Worker after-block missing: ' + relative)
         reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
       }
-      if (orderSendClarifyLabelGitBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Order send clarify label R3 Worker predecessor reconstruction failed: ' + relative)
-      }
+      if (productionResolverWorkerBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Production resolver Worker predecessor reconstruction failed: ' + relative)
       originals.set(relative, actual)
       fs.writeFileSync(absolute, reverted)
     }
     const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, ORDER_SEND_CLARIFY_LABEL_R3_WORKER_NORMALIZED: '1' },
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, PRODUCTION_CATALOG_RESOLVER_R3_R4_WORKER_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
@@ -271,7 +264,7 @@ if (!process.env.ORDER_SEND_CLARIFY_LABEL_R3_WORKER_NORMALIZED) {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('ORDER SEND CLARIFY LABEL R3 WORKER STRUCTURAL LAYER PASSED')
+  console.log('PRODUCTION CATALOG RESOLVER R3/R4 WORKER STRUCTURAL LAYER PASSED')
   process.exit(0)
 }
 const orderSendResolutionManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-send-catalog-resolution-r1-worker-manifest.json'), 'utf8'))
