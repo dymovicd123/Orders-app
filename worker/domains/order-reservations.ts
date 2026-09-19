@@ -734,10 +734,6 @@ export async function releaseOrderReservationV2(db: D1Database, orderItemId: num
   const status = cleanText(reservation.status);
   if (status === 'released' || status === 'fulfilled') return false;
 
-  // Every physical mutation in the fulfillment batch is guarded by current order truth.
-  // Two overlapping send requests may both prepare from the same pre-send snapshot, but D1 batch
-  // serialization means only the transaction that still sees the order as unsent may change stock.
-  const orderStillUnsentSql = "EXISTS (SELECT 1 FROM orders shipping_order WHERE shipping_order.id = ? AND COALESCE(shipping_order.shipping_status, 'not_sent') <> 'sent')";
   const statements: D1PreparedStatement[] = [];
   if (status === 'active' && toInt(reservation.variant_id, 0)) {
     statements.push(db.prepare(
@@ -851,9 +847,8 @@ export async function releaseOrderReservationsV2(db: D1Database, orderId: number
         `WITH ${cte}
          UPDATE order_items
          SET stock_writeoff_status = 'reservation_released', stock_quantity_before = NULL, stock_quantity_after = NULL
-         WHERE EXISTS (SELECT 1 FROM x WHERE x.order_item_id = order_items.id)
-           AND ${orderStillUnsentSql}`
-      ).bind(...payloadChunk, orderId),
+         WHERE EXISTS (SELECT 1 FROM x WHERE x.order_item_id = order_items.id)`
+      ).bind(...payloadChunk),
     );
   }
 
@@ -1932,6 +1927,10 @@ export async function fulfillOrderReservationsV2(
     }));
   }
 
+  // Every physical mutation in the fulfillment batch is guarded by current order truth.
+  // Two overlapping send requests may both prepare from the same pre-send snapshot, but D1 batch
+  // serialization means only the transaction that still sees the order as unsent may change stock.
+  const orderStillUnsentSql = "EXISTS (SELECT 1 FROM orders shipping_order WHERE shipping_order.id = ? AND COALESCE(shipping_order.shipping_status, 'not_sent') <> 'sent')";
   const statements: D1PreparedStatement[] = [];
   for (const payloadChunk of chunksOf(stockPayloads, 70)) {
     const valuesSql = payloadChunk.map(() => '(?)').join(', ');
@@ -2070,8 +2069,9 @@ export async function fulfillOrderReservationsV2(
          SET stock_writeoff_status = 'fulfilled',
              stock_quantity_before = (SELECT x.quantity_before FROM x WHERE x.order_item_id = order_items.id),
              stock_quantity_after = (SELECT x.quantity_after FROM x WHERE x.order_item_id = order_items.id)
-         WHERE EXISTS (SELECT 1 FROM x WHERE x.order_item_id = order_items.id)`
-      ).bind(...payloadChunk),
+         WHERE EXISTS (SELECT 1 FROM x WHERE x.order_item_id = order_items.id)
+           AND ${orderStillUnsentSql}`
+      ).bind(...payloadChunk, orderId),
       db.prepare(
         `WITH ${cte}
          UPDATE inventory_reservations
