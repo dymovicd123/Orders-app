@@ -199,6 +199,12 @@ function App() {
   const [stockHandoverBusy, setStockHandoverBusy] = useState(false)
   const [stockHandoverActionItemId, setStockHandoverActionItemId] = useState<number | null>(null)
   const [orderCatalogResolutionOrder, setOrderCatalogResolutionOrder] = useState<OrderRecord | null>(null)
+  const [orderCatalogResolutionContinuation, setOrderCatalogResolutionContinuation] = useState<{
+    purpose: 'shipping' | 'intake'
+    preferredOrderItemId?: number | null
+    lifecycleEventId?: number | null
+    operationType?: 'return' | 'exchange'
+  } | null>(null)
   const [references, setReferences] = useState<ReferenceData | null>(null)
   const [inventoryData, setInventoryData] = useState<{
     warehouse: InventoryResponse | null
@@ -6446,9 +6452,19 @@ function removeDebtPayment(index: number) {
       const result = await readJsonResponse<{
         ok?: boolean
         message?: string
+        orderId?: number
+        orderItemId?: number | null
         pendingInventoryCount?: number
         stockApplied?: boolean
         stockAlreadyApplied?: boolean
+        pendingInventory?: {
+          eventId?: number
+          orderId?: number
+          orderItemId?: number | null
+          reason?: string
+          needsCatalogResolution?: boolean
+          variantId?: number | null
+        } | null
       }>(response, 'Получение возвращённого товара')
       if (!response.ok) throw new Error(result.message || `Receive returned item failed: ${response.status}`)
       completeCriticalRequest(criticalKey, critical.requestId)
@@ -6462,8 +6478,28 @@ function removeDebtPayment(index: number) {
       ])
       if (input.destination === 'no_stock') {
         setMessage(`«${input.productName}» отмечен как полученный. В остаток товар не добавлялся.`)
+      } else if (Number(result.pendingInventoryCount || 0) > 0 && result.pendingInventory?.needsCatalogResolution) {
+        const orderId = Number(result.pendingInventory.orderId || result.orderId || 0)
+        const orderItemId = Number(result.pendingInventory.orderItemId || result.orderItemId || 0)
+        const eventId = Number(result.pendingInventory.eventId || 0)
+        if (orderId && orderItemId && eventId) {
+          const orderResponse = await apiFetch(`/api/orders/${orderId}`, { cache: 'no-store' })
+          const orderData = await readJsonResponse<{ ok?: boolean; order?: OrderRecord; message?: string }>(orderResponse, 'Заказ для приёмки')
+          if (orderResponse.ok && orderData.order) {
+            setOrderCatalogResolutionContinuation({
+              purpose: 'intake',
+              preferredOrderItemId: orderItemId,
+              lifecycleEventId: eventId,
+              operationType: input.operationType,
+            })
+            setOrderCatalogResolutionOrder(orderData.order)
+            setMessage(`«${input.productName}» получен. Сначала уточните товар — затем приёмка в «${destinationLabel}» завершится автоматически.`)
+            return true
+          }
+        }
+        setMessage(`«${input.productName}» физически получен. Нужно уточнить товар перед добавлением в остаток.`)
       } else if (Number(result.pendingInventoryCount || 0) > 0) {
-        setMessage(`«${input.productName}» физически получен. Для остатка требуется уточнение товара — система ничего не прибавляла наугад.`)
+        setMessage(`«${input.productName}» физически получен. Складская приёмка ожидает безопасного завершения.`)
       } else {
         setMessage(`«${input.productName}» получен и учтён: ${destinationLabel}.`)
       }
@@ -7015,9 +7051,24 @@ function removeDebtPayment(index: number) {
         order={orderCatalogResolutionOrder}
         apiFetch={apiFetch}
         isAdmin={isAdmin}
+        purpose={orderCatalogResolutionContinuation?.purpose || 'shipping'}
+        preferredOrderItemId={orderCatalogResolutionContinuation?.preferredOrderItemId || null}
         onRequestAdminMode={() => setAdminModeOpen(true)}
-        onClose={() => setOrderCatalogResolutionOrder(null)}
+        onClose={() => { setOrderCatalogResolutionOrder(null); setOrderCatalogResolutionContinuation(null) }}
         onCompleted={async (resolvedOrder: OrderRecord) => {
+          if (orderCatalogResolutionContinuation?.purpose === 'intake' && orderCatalogResolutionContinuation.lifecycleEventId) {
+            const intakeResult = await reconcileKnownInventoryLifecycle(orderCatalogResolutionContinuation.lifecycleEventId)
+            if (!intakeResult?.ok) return false
+            await Promise.allSettled([
+              orderCatalogResolutionContinuation.operationType === 'exchange' ? loadExchangeHistory() : loadReturnHistory(),
+              loadInventoryData('warehouse', true, '', false),
+              loadInventoryData('boutique', true, '', false),
+            ])
+            setOrderCatalogResolutionOrder(null)
+            setOrderCatalogResolutionContinuation(null)
+            setMessage('Товар уточнён и приёмка завершена.')
+            return true
+          }
           const freshResponse = await apiFetch(`/api/orders/${resolvedOrder.id}`, { cache: 'no-store' })
           if (freshResponse.headers.get('X-Orders-App-Stale') === '1') {
             throw new Error('Не удалось подтвердить свежий заказ после уточнения товара. Повторите продолжение отправки.')
@@ -7029,6 +7080,7 @@ function removeDebtPayment(index: number) {
           const sent = await markOrderSentToClient(freshResult.order)
           if (!sent) return false
           setOrderCatalogResolutionOrder(null)
+          setOrderCatalogResolutionContinuation(null)
           return true
         }}
         onOpenFullReview={async (blockedOrder: OrderRecord) => {
