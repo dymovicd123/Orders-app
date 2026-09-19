@@ -774,6 +774,7 @@ export type OrderRecord = {
   shipping_date?: string | null
   stock_handover_review_needed?: boolean
   stock_handover_has_active_items?: boolean
+  catalog_review_required?: boolean
   total_amount: number
   received_amount: number
   debt_amount: number
