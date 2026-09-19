@@ -206,7 +206,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                             />
                           </label>
                           <label>
-                            <span>Способ возврата денег</span>
+                            <span>Способ возврата денег {Number(returnDraft.amount || 0) > 0 ? '' : '(не нужен при 0 ₸)'}</span>
                             <SmartPickerInput
                               value={returnDraft.paymentMethod}
                               options={suggestionValues.paymentMethods}
