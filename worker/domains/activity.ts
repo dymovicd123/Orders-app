@@ -180,6 +180,7 @@ export async function listReturnHistory(db: D1Database, url: URL) {
             ri.physical_tracking AS return_item_physical_tracking,
             ri.physical_received_at AS return_item_physical_received_at,
             COALESCE((SELECT oi.is_workshop FROM order_items oi WHERE oi.id = ri.order_item_id), 0) AS return_item_is_workshop,
+            lifecycle.id AS return_item_lifecycle_id,
             lifecycle.status AS return_item_lifecycle_status,
             lifecycle.pending_reason AS return_item_pending_reason
      FROM selected_returns selected
@@ -217,6 +218,7 @@ export async function listReturnHistory(db: D1Database, url: URL) {
       physicalTracking: Boolean(toInt(row.return_item_physical_tracking, 0)),
       physicalReceivedAt: cleanText(row.return_item_physical_received_at) || null,
       isWorkshop: Boolean(toInt(row.return_item_is_workshop, 0)),
+      lifecycleId: toInt(row.return_item_lifecycle_id, 0) || null,
       lifecycleStatus: cleanText(row.return_item_lifecycle_status) || null, pendingReason: cleanText(row.return_item_pending_reason) || null,
     });
   }
