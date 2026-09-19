@@ -54,7 +54,7 @@ try {
   check(!modal.includes('Нужна новая характеристика'), 'R2 must not send the operator to the old lossy full-review detour')
   check(modal.includes('Без уточнения отправить заказ нельзя'), 'Resolver must keep the no-bypass safety rule in human language')
   check(contracts.includes('legacyUnknownGender?: boolean'), 'API contract must model the explicit legacy unknown-gender action')
-  check(modal.includes('Оставить неизвестным') && modal.includes('legacyUnknownGender: legacy') && modal.includes('isAdmin && Boolean(context?.canLeaveGenderUnknown)'), 'Historical unknown gender must be explicit, server-eligible and admin-only')
+  check(modal.includes('Не удалось выяснить') && modal.includes('legacyUnknownGender: legacy') && modal.includes('isAdmin && Boolean(context?.canLeaveGenderUnknown)'), 'Historical unknown gender must be explicit, server-eligible and admin-only')
   check(review.includes("stock_writeoff_status = 'legacy_unknown_gender'"), 'Backend must persist a dedicated legacy unknown-gender status instead of a genderless SKU')
   check(review.includes('if (legacyGenderException)') && review.indexOf('if (legacyGenderException)') < review.indexOf('const execution = await ensureCatalogExecutionV3'), 'Legacy unknown gender must exit before execution/SKU creation')
   check(reservations.includes("'legacy_unknown_gender'"), 'Shipment blocker must intentionally recognize the explicit historical exception')
