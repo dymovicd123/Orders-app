@@ -735,7 +735,7 @@ export default {
       }
 
       if (url.pathname === '/api/inventory/movements' && request.method === 'POST') {
-        const input = await readJson<{ requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[] }>(request);
+        const input = await readJson<{ requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown }>(request);
         const movementType = cleanText(input.movementType).toLowerCase();
         const routineExistingStockOperation = movementType === 'manual_set' || movementType === 'writeoff';
         const knownArrival = movementType === 'arrival'
@@ -749,26 +749,40 @@ export default {
         const returnInventory = url.searchParams.get('returnInventory') !== '0';
         const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const result = await applyInventoryMovement(env.DB, input, returnInventory, actor);
-        await writeActivityLog(env.DB, {
-          eventType: 'inventory_movement',
-          entityType: 'inventory',
-          title: `Движение остатков: ${cleanText(input.movementType) || 'операция'}`,
-          details: `${cleanText(input.inventorySource) || 'источник не указан'}; позиций: ${Array.isArray(input.items) ? input.items.length : 0}${cleanText(input.comment) ? `; ${cleanText(input.comment)}` : ''}`,
-        });
-        return json(result, { status: 201 });
+        if ('code' in result && result.code === 'stock_resolution_required') {
+          return json(result, { status: 409 });
+        }
+        try {
+          await writeActivityLog(env.DB, {
+            eventType: 'inventory_movement',
+            entityType: 'inventory',
+            title: `Движение остатков: ${cleanText(input.movementType) || 'операция'}`,
+            details: `${cleanText(input.inventorySource) || 'источник не указан'}; позиций: ${Array.isArray(input.items) ? input.items.length : 0}${cleanText(input.comment) ? `; ${cleanText(input.comment)}` : ''}`,
+          });
+        } catch (activityError) {
+          console.error(JSON.stringify({ event: 'inventory_movement_activity_failed', requestId: cleanText(input.requestId), message: cleanText(activityError instanceof Error ? activityError.message : activityError).slice(0, 800) }));
+        }
+        return json(result, { status: result.duplicate ? 200 : 201 });
       }
 
       if (url.pathname === '/api/inventory/transfer' && request.method === 'POST') {
-        const input = await readJson<{ requestId?: unknown; fromSource?: unknown; toSource?: unknown; comment?: unknown; items?: InventoryItemInput[] }>(request);
+        const input = await readJson<{ requestId?: unknown; fromSource?: unknown; toSource?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown }>(request);
         const returnInventory = url.searchParams.get('returnInventory') !== '0';
         const result = await applyInventoryTransfer(env.DB, input, authUser?.displayName || '', returnInventory);
+        if ('code' in result && result.code === 'stock_resolution_required') {
+          return json(result, { status: 409 });
+        }
         if (!result.duplicate) {
-          await writeActivityLog(env.DB, {
-            eventType: 'inventory_transfer',
-            entityType: 'inventory',
-            title: 'Перемещение остатков',
-            details: `${cleanText(result.externalId) || 'перемещение'}; ${cleanText(input.fromSource) || 'источник'} → ${cleanText(input.toSource) || 'назначение'}; позиций: ${toInt(result.applied, Array.isArray(input.items) ? input.items.length : 0)}; количество: ${toInt(result.totalQuantity, 0)}${cleanText(input.comment) ? `; ${cleanText(input.comment)}` : ''}`,
-          });
+          try {
+            await writeActivityLog(env.DB, {
+              eventType: 'inventory_transfer',
+              entityType: 'inventory',
+              title: 'Перемещение остатков',
+              details: `${cleanText(result.externalId) || 'перемещение'}; ${cleanText(input.fromSource) || 'источник'} → ${cleanText(input.toSource) || 'назначение'}; позиций: ${toInt(result.applied, Array.isArray(input.items) ? input.items.length : 0)}; количество: ${toInt(result.totalQuantity, 0)}${cleanText(input.comment) ? `; ${cleanText(input.comment)}` : ''}`,
+            });
+          } catch (activityError) {
+            console.error(JSON.stringify({ event: 'inventory_transfer_activity_failed', requestId: cleanText(input.requestId), message: cleanText(activityError instanceof Error ? activityError.message : activityError).slice(0, 800) }));
+          }
         }
         return json(result, { status: result.duplicate ? 200 : 201 });
       }
