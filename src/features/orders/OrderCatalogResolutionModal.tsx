@@ -155,8 +155,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       await owner.run(async () => {
         const needsAdminCatalogMutation = !variantId && Boolean(next.createProduct || next.createFields?.length || legacy)
         if (needsAdminCatalogMutation && !isAdmin) throw new Error('Нужно добавить новый товар или новое значение справочника. Для этого требуется Админ режим; переходить на Склад не нужно.')
-        const path = variantId
-          ? `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-existing`
+        const path = variantId ? `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-existing`
           : needsAdminCatalogMutation
             ? `/api/catalog/review/${item.orderItemId}/resolve-facts`
             : `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-facts`
