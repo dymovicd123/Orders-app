@@ -30,6 +30,8 @@ import type { CatalogResolutionContext, CatalogResolutionInput, CatalogResolutio
 import { MANAGER_COLOR_OPTIONS, SIMPLE_ADMIN_USER, SIMPLE_MANAGER_USER, orderPanelOptions, workspaceModules } from './app/constants'
 import { calculateTotals, createDebtClosePayment, createEditorDraft, createEmptyEditorItem, createEmptyEditorPayment, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, deriveOrderSourceType, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, htmlEscape, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, resolvePaymentKind, sectorFromHash, shippingStatusLabel, sortSizeLikeValues, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
 import { ChoicePills, FriendlyNumberInput, ManagerBadge, ManagerPicker, SmartPickerInput, resolveManagerDisplayColor } from './components'
+import { OperationalConfirmationDialog, type OperationalConfirmationPrompt } from './components/OperationalConfirmationDialog'
+import { ReturnedItemResolutionModal } from './features/orders/ReturnedItemResolutionModal'
 import { TableDragScrollManager } from './components/tables/TableDragScrollManager'
 import { DatabaseStorageModal, DatabaseStorageWarning, useDatabaseStorageMaintenance } from './features/storage/DatabaseStorageMaintenance'
 import { DashboardSection, ClientsSection, ReferencesSection, InventorySection, WorkshopSection, OrdersHeaderSection, OrderFiltersSection, CreateOrderSection, OrderEditorSection, OrdersTableSection, OrderDetailsSection, OrderDebtSection, OrderReturnsSection, OrderExchangeSection, TeamSection, LeadsSection, PlanSection, FinanceSection, ReportsSection, OrderActivitySection, OrderCatalogResolutionModal, DeferredSection } from './app/lazySections'
@@ -199,6 +201,19 @@ function App() {
   const [stockHandoverBusy, setStockHandoverBusy] = useState(false)
   const [stockHandoverActionItemId, setStockHandoverActionItemId] = useState<number | null>(null)
   const [orderCatalogResolutionOrder, setOrderCatalogResolutionOrder] = useState<OrderRecord | null>(null)
+  const [returnedItemResolution, setReturnedItemResolution] = useState<{ eventId: number; productName: string; externalId: string } | null>(null)
+  const [operationalConfirmationPrompt, setOperationalConfirmationPrompt] = useState<OperationalConfirmationPrompt | null>(null)
+  const operationalConfirmationResolver = useRef<((confirmed: boolean) => void) | null>(null)
+  const askOperationalConfirmation = useCallback((prompt: OperationalConfirmationPrompt) => new Promise<boolean>((resolve) => {
+    operationalConfirmationResolver.current = resolve
+    setOperationalConfirmationPrompt(prompt)
+  }), [])
+  const decideOperationalConfirmation = useCallback((confirmed: boolean) => {
+    const resolve = operationalConfirmationResolver.current
+    operationalConfirmationResolver.current = null
+    setOperationalConfirmationPrompt(null)
+    resolve?.(confirmed)
+  }, [])
   const [references, setReferences] = useState<ReferenceData | null>(null)
   const [inventoryData, setInventoryData] = useState<{
     warehouse: InventoryResponse | null
@@ -6425,7 +6440,16 @@ function removeDebtPayment(index: number) {
     externalId: string
   }) {
     const destinationLabel = input.destination === 'warehouse' ? 'Склад' : input.destination === 'boutique' ? 'Бутик' : 'без добавления в остаток'
-    if (!window.confirm(`Подтвердить получение «${input.productName}» по ${input.externalId}? Решение: ${destinationLabel}.`)) return false
+    const receiveConfirmed = await askOperationalConfirmation({
+      title: 'Подтвердите приём товара',
+      intro: `Заказ ${input.externalId}`,
+      rows: [{ name: input.productName, primary: `Куда принять: ${destinationLabel}` }],
+      note: input.destination === 'no_stock'
+        ? 'Товар будет отмечен как физически полученный, но остаток Склада/Бутика не изменится.'
+        : 'Если система не сможет точно определить товар, уточнение откроется сразу после подтверждения.',
+      confirmLabel: input.destination === 'no_stock' ? 'Да, товар получен' : 'Да, принять товар',
+    })
+    if (!receiveConfirmed) return false
     const setBusy = input.operationType === 'return' ? setReturnBusy : setExchangeBusy
     setBusy(true)
     setError(null)
@@ -6450,6 +6474,7 @@ function removeDebtPayment(index: number) {
         pendingInventoryCount?: number
         stockApplied?: boolean
         stockAlreadyApplied?: boolean
+        pendingInventory?: { eventId?: number; reason?: string; productName?: string; source?: string } | null
       }>(response, 'Получение возвращённого товара')
       if (!response.ok) throw new Error(result.message || `Receive returned item failed: ${response.status}`)
       completeCriticalRequest(criticalKey, critical.requestId)
@@ -6464,7 +6489,9 @@ function removeDebtPayment(index: number) {
       if (input.destination === 'no_stock') {
         setMessage(`«${input.productName}» отмечен как полученный. В остаток товар не добавлялся.`)
       } else if (Number(result.pendingInventoryCount || 0) > 0) {
-        setMessage(`«${input.productName}» физически получен. Для остатка требуется уточнение товара — система ничего не прибавляла наугад.`)
+        const eventId = Number(result.pendingInventory?.eventId || 0)
+        setMessage(`«${input.productName}» физически получен. Осталось определить товар перед добавлением в ${destinationLabel}.`)
+        if (eventId > 0) setReturnedItemResolution({ eventId, productName: input.productName, externalId: input.externalId })
       } else {
         setMessage(`«${input.productName}» получен и учтён: ${destinationLabel}.`)
       }
