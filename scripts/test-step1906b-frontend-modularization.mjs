@@ -91,6 +91,55 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const postReviewResolverIntakeFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/post-review-resolver-intake-frontend-manifest.json'), 'utf8'))
+if (postReviewResolverIntakeFrontendManifest?.version !== 1 || postReviewResolverIntakeFrontendManifest?.revision !== 'post-review-resolver-intake-ux-20260920') throw new Error('Post-review resolver/intake frontend manifest invalid')
+const postReviewResolverIntakeFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.POST_REVIEW_RESOLVER_INTAKE_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  const addedOriginals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(postReviewResolverIntakeFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (postReviewResolverIntakeFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Post-review resolver/intake frontend changed beyond exact manifest: ' + relative)
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Post-review resolver/intake frontend after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (postReviewResolverIntakeFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Post-review resolver/intake frontend predecessor reconstruction failed: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    for (const [relative, delta] of Object.entries(postReviewResolverIntakeFrontendManifest.addedFiles || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (postReviewResolverIntakeFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Post-review resolver/intake added frontend file changed beyond exact manifest: ' + relative)
+      addedOriginals.set(relative, actual)
+      fs.unlinkSync(absolute)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, POST_REVIEW_RESOLVER_INTAKE_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+    for (const [relative, actual] of addedOriginals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('POST-REVIEW RESOLVER/INTAKE FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const stage02Phase2EFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage02-phase2e-attention-frontend-manifest.json'), 'utf8'))
 if (stage02Phase2EFrontendManifest?.version !== 1 || stage02Phase2EFrontendManifest?.revision !== 'stage02-phase2e-attention-dependency-removal') throw new Error('Stage02 Phase2E frontend manifest invalid')
 const stage02Phase2EFrontendBlobSha = (value) => {
