@@ -865,6 +865,7 @@ export type OrderStockHandoverItem = {
   productName: string;
   itemDetails: string;
   source: SourceType;
+  variantId: number;
   quantity: number;
   reservationId: number | null;
   reservationStatus: string;
@@ -1279,6 +1280,7 @@ export function stockHandoverItemFromRow(row: Record<string, unknown>): OrderSto
     productName: cleanText(row.working_product_name) || cleanText(row.product_name_snapshot) || `Позиция #${orderItemId}`,
     itemDetails: details,
     source: normalizeSourceType(row.inventory_source || row.item_source_type),
+    variantId: Math.max(0, toInt(row.variant_id, 0)),
     quantity: Math.max(1, toInt(row.item_quantity, toInt(row.reservation_quantity, 1))),
     reservationId,
     reservationStatus,
@@ -1698,6 +1700,7 @@ export type ShipmentStockConfirmation = {
 export type ShipmentFulfillmentOptions = {
   observations?: ShipmentInventoryObservation[];
   stockConfirmations?: ShipmentStockConfirmation[];
+  stockConfirmationOperation?: 'shipping' | 'handover';
   shippingDate?: string | null;
   checkedBy?: string | null;
   orderItemIds?: number[];
@@ -1760,6 +1763,11 @@ export async function fulfillOrderReservationsV2(
   options: ShipmentFulfillmentOptions = {},
 ) {
   const scopedOrderItemIds = Array.from(new Set((options.orderItemIds || []).map((value) => toInt(value, 0)).filter((value) => value > 0)));
+  const stockConfirmationOperation = options.stockConfirmationOperation === 'handover' ? 'handover' : 'shipping';
+  if (stockConfirmationOperation === 'handover' && scopedOrderItemIds.length !== 1) {
+    throw new Error('Ранняя выдача должна быть привязана ровно к одной позиции заказа.');
+  }
+  const handoverOrderItemId = stockConfirmationOperation === 'handover' ? scopedOrderItemIds[0] : 0;
   const scopeSql = scopedOrderItemIds.length
     ? ` AND r.order_item_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
     : '';
@@ -1882,11 +1890,11 @@ export async function fulfillOrderReservationsV2(
     }
     const stockConfirmation = stockConfirmationsByKey.get(key) || null;
     if (stockConfirmation && (stockConfirmation.expectedQuantity !== quantity || stockConfirmation.operationQuantity !== requirement.required)) {
-      throw new Error(`Остаток или количество «${requirement.productName}» изменились после подтверждения. Обновите заказ и повторите отправку.`);
+      throw new Error(`Остаток или количество «${requirement.productName}» изменились после подтверждения. Обновите заказ и повторите операцию.`);
     }
     const bounded = boundedOutboundStock(quantity, requirement.required);
     if (bounded.requiresResolution && !stockConfirmation) {
-      throw new Error(`Для отправки «${requirement.productName}» нужно отдельно подтвердить, что ${requirement.required} шт. физически находятся у сотрудника.`);
+      throw new Error(`Для операции с «${requirement.productName}» нужно отдельно подтвердить, что ${requirement.required} шт. физически находятся у сотрудника.`);
     }
     const effectiveQuantity = observation ? observation.countedQuantity : quantity;
     // Shortage confirmation proves possession only of the concrete units being shipped.
@@ -2070,23 +2078,53 @@ export async function fulfillOrderReservationsV2(
       );
     }
 
-    statements.push(db.prepare(
-      `WITH ${cte}
-       INSERT OR IGNORE INTO inventory_operation_evidence (
-         evidence_key, inventory_source, variant_id, operation_type, operation_reference,
-         tracked_physical_before, confirmed_operation_quantity, explained_quantity, unexplained_quantity,
-         confirmed_by, occurred_at, created_at
-       )
-       SELECT 'shipping:' || ? || ':' || x.source || ':' || x.variant_id,
-              x.source, x.variant_id, 'shipping', ?, x.current_quantity, x.confirmed_operation_quantity,
-              MIN(x.current_quantity, x.confirmed_operation_quantity),
-              MAX(0, x.confirmed_operation_quantity - x.current_quantity),
-              ?, ?, ?
-       FROM x
-       WHERE x.confirmed_operation_quantity IS NOT NULL
-         AND x.confirmed_operation_quantity > x.current_quantity
-         AND ${orderStillUnsentSql}`
-    ).bind(...payloadChunk, timestamp, externalId, cleanText(options.checkedBy) || null, timestamp, timestamp, orderId));
+    if (stockConfirmationOperation === 'handover') {
+      statements.push(db.prepare(
+        `WITH ${cte}
+         INSERT OR IGNORE INTO inventory_operation_evidence (
+           evidence_key, inventory_source, variant_id, operation_type, operation_reference,
+           tracked_physical_before, confirmed_operation_quantity, explained_quantity, unexplained_quantity,
+           confirmed_by, occurred_at, created_at
+         )
+         SELECT 'handover:' || ? || ':' || ? || ':' || x.source || ':' || x.variant_id,
+                x.source, x.variant_id, 'handover', ?, x.current_quantity, x.confirmed_operation_quantity,
+                MIN(x.current_quantity, x.confirmed_operation_quantity),
+                MAX(0, x.confirmed_operation_quantity - x.current_quantity),
+                ?, ?, ?
+         FROM x
+         WHERE x.confirmed_operation_quantity IS NOT NULL
+           AND x.confirmed_operation_quantity > x.current_quantity
+           AND ${orderStillUnsentSql}`
+      ).bind(
+        ...payloadChunk,
+        timestamp,
+        orderId,
+        handoverOrderItemId,
+        `${externalId}:item:${handoverOrderItemId}`,
+        cleanText(options.checkedBy) || null,
+        timestamp,
+        timestamp,
+        orderId,
+      ));
+    } else {
+      statements.push(db.prepare(
+        `WITH ${cte}
+         INSERT OR IGNORE INTO inventory_operation_evidence (
+           evidence_key, inventory_source, variant_id, operation_type, operation_reference,
+           tracked_physical_before, confirmed_operation_quantity, explained_quantity, unexplained_quantity,
+           confirmed_by, occurred_at, created_at
+         )
+         SELECT 'shipping:' || ? || ':' || x.source || ':' || x.variant_id,
+                x.source, x.variant_id, 'shipping', ?, x.current_quantity, x.confirmed_operation_quantity,
+                MIN(x.current_quantity, x.confirmed_operation_quantity),
+                MAX(0, x.confirmed_operation_quantity - x.current_quantity),
+                ?, ?, ?
+         FROM x
+         WHERE x.confirmed_operation_quantity IS NOT NULL
+           AND x.confirmed_operation_quantity > x.current_quantity
+           AND ${orderStillUnsentSql}`
+      ).bind(...payloadChunk, timestamp, externalId, cleanText(options.checkedBy) || null, timestamp, timestamp, orderId));
+    }
 
     statements.push(db.prepare(
       `WITH ${cte}
