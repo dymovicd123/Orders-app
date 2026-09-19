@@ -2145,9 +2145,9 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                   {warehousePendingIntakeCount > 0 ? <button type="button" className={`warehouse-w2-recovery warehouse-w3-intake ${inventoryPanel === 'attention' && attentionCategory === 'intake' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory('intake'); openInventoryPanel('attention') }} title="Известные вещи, которые ещё не приняты в физический остаток">
                     <span>Ожидают приёма</span><b>{warehousePendingIntakeCount}</b>
                   </button> : null}
-                  <button type="button" className={`warehouse-w2-recovery ${inventoryPanel === 'attention' && attentionCategory !== 'intake' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory(Number(warehouseAttention?.counts?.handover || 0) > 0 ? 'handover' : 'identify'); openInventoryPanel('attention') }} title="Только вопросы, где системе действительно не хватает факта">
-                    <span>Нужно уточнить</span>{warehouseClarificationCount > 0 ? <b>{warehouseClarificationCount}</b> : null}
-                  </button>
+                  {warehouseClarificationCount > 0 ? <button type="button" className={`warehouse-w2-recovery ${inventoryPanel === 'attention' && attentionCategory !== 'intake' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory(Number(warehouseAttention?.counts?.handover || 0) > 0 ? 'handover' : 'identify'); openInventoryPanel('attention') }} title="Только вопросы, где системе действительно не хватает факта">
+                    <span>Нужно уточнить</span><b>{warehouseClarificationCount}</b>
+                  </button> : null}
                   {isAdmin ? <button type="button" className={inventoryPanel === 'catalog' ? 'is-active' : ''} onClick={() => openInventoryPanel('catalog')} title="Товары и характеристики">Товары</button> : null}
                 </div>
               </div>

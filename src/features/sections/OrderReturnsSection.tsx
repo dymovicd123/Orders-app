@@ -25,6 +25,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     loadReturnHistory,
     returnSelectedOrder,
     receiveReturnedItemAction,
+    reconcileKnownInventoryLifecycle,
     saveReturn,
     sectorStyle,
     setOrderPanel,
@@ -61,6 +62,18 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     && (item.inventorySource === 'warehouse' || item.inventorySource === 'boutique')
     && !item.lifecycleStatus
   )
+  const returnKnownIntakePending = (item: any) => Boolean(
+    item.physicalTracking
+    && item.physicalReceivedAt
+    && item.lifecycleId
+    && (item.lifecycleVariantId || item.currentVariantId)
+    && item.lifecycleStatus === 'pending'
+    && (item.inventorySource === 'warehouse' || item.inventorySource === 'boutique')
+  )
+  const finishKnownReturnIntake = async (item: any) => {
+    const result = await reconcileKnownInventoryLifecycle(Number(item.lifecycleId || 0))
+    if (result?.ok) await loadReturnHistory()
+  }
   const returnPhysicalStatus = (item: any) => {
     if (!item.physicalTracking) return 'Старая запись — физическое получение не отслеживалось'
     if (!item.physicalReceivedAt) return 'Ещё не пришёл'
@@ -375,6 +388,18 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                       })}
                                     >
                                       Товар пришёл
+                                    </button>
+                                  </div>
+                                ) : null}
+                                {entry.operationType === 'order_return' && entry.status !== 'cancelled' && returnKnownIntakePending(item) ? (
+                                  <div className="mini-panel-actions">
+                                    <button
+                                      className="primary compact"
+                                      type="button"
+                                      disabled={returnBusy || returnHistoryBusy}
+                                      onClick={() => void finishKnownReturnIntake(item)}
+                                    >
+                                      Завершить приёмку
                                     </button>
                                   </div>
                                 ) : null}
