@@ -241,6 +241,7 @@ export async function canAutoApplyFreshWorkshopInbound(
 export async function reconcileKnownPendingInventoryInbound(
   db: D1Database,
   eventId: number,
+  options: { fanOut?: boolean } = {},
 ) {
   const event = await db.prepare(
     `SELECT e.*,
@@ -286,9 +287,53 @@ export async function reconcileKnownPendingInventoryInbound(
   await db.prepare(`UPDATE inventory_lifecycle_events SET product_id = COALESCE(product_id, ?), variant_id = ?, pending_reason = NULL, updated_at = ? WHERE id = ? AND status = 'pending'`)
     .bind(toInt(resolved.productId, 0) || null, variantId, timestamp, event.id).run();
   const applied = await applyCanonicalInventoryLifecycleEvent(db, event.id, variantId, timestamp, 'Точный существующий вариант подтверждён автоматически.');
+
+  let autoReconciled = 0;
+  if (options.fanOut !== false && Boolean(applied.applied || applied.already)) {
+    // If the employee has just confirmed one fully identical raw item, catalog resolution
+    // may already have linked the same raw signature in other open orders. Finish those
+    // inbound tasks too so the same exact question is not repeated in another return/exchange.
+    const siblings = await db.prepare(
+      `SELECT e.id
+       FROM inventory_lifecycle_events e
+       JOIN order_items oi ON oi.id = e.order_item_id AND oi.order_id = e.order_id
+       WHERE e.id <> ?
+         AND e.status = 'pending'
+         AND e.direction = 'in'
+         AND oi.variant_id = ?
+         AND UPPER(TRIM(COALESCE(e.product_name_snapshot, ''))) = UPPER(TRIM(COALESCE(?, '')))
+         AND UPPER(TRIM(COALESCE(e.gender_snapshot, ''))) = UPPER(TRIM(COALESCE(?, '')))
+         AND UPPER(TRIM(COALESCE(e.color_snapshot, ''))) = UPPER(TRIM(COALESCE(?, '')))
+         AND UPPER(TRIM(COALESCE(e.material_snapshot, ''))) = UPPER(TRIM(COALESCE(?, '')))
+         AND UPPER(TRIM(COALESCE(e.length_snapshot, ''))) = UPPER(TRIM(COALESCE(?, '')))
+         AND UPPER(TRIM(COALESCE(e.size_snapshot, ''))) = UPPER(TRIM(COALESCE(?, '')))
+       ORDER BY e.id ASC
+       LIMIT 50`
+    ).bind(
+      event.id,
+      variantId,
+      event.product_name_snapshot,
+      event.gender_snapshot,
+      event.color_snapshot,
+      event.material_snapshot,
+      event.length_snapshot,
+      event.size_snapshot,
+    ).all<{ id: number }>();
+    for (const sibling of siblings.results || []) {
+      try {
+        const siblingResult = await reconcileKnownPendingInventoryInbound(db, toInt(sibling.id, 0), { fanOut: false });
+        if (siblingResult?.ok && (siblingResult as any).applied) autoReconciled += 1;
+      } catch (error) {
+        console.warn('Sibling inbound auto-reconciliation skipped', sibling.id, error);
+      }
+    }
+  }
+
   return {
-    ok: true, applied: Boolean(applied.applied || applied.already), eventId: event.id,
-    message: `Позиция принята в ${normalizeSourceType(event.inventory_source) === 'warehouse' ? 'Склад' : 'Бутик'} и учтена в фактическом остатке.`,
+    ok: true, applied: Boolean(applied.applied || applied.already), eventId: event.id, autoReconciled,
+    message: autoReconciled > 0
+      ? `Позиция принята в ${normalizeSourceType(event.inventory_source) === 'warehouse' ? 'Склад' : 'Бутик'}; ещё автоматически завершено таких же приёмок: ${autoReconciled}.`
+      : `Позиция принята в ${normalizeSourceType(event.inventory_source) === 'warehouse' ? 'Склад' : 'Бутик'} и учтена в фактическом остатке.`,
   };
 }
 
