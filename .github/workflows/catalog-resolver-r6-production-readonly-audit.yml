@@ -1,0 +1,52 @@
+name: Catalog resolver R6 production read-only audit
+
+on:
+  push:
+    branches:
+      - w-catalog-resolver-r6-readonly-audit-20260919
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PROD_DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      CF_API: https://api.cloudflare.com/client/v4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Classify unresolved active order items
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            local sql="$1"
+            curl --fail-with-body -sS               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"               "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$PROD_DB_ID/query" |
+              jq -c '.result[0].results'
+          }
+          echo '=== ACTIVE UNRESOLVED SUMMARY ==='
+          query "SELECT COUNT(*) AS total,
+            SUM(CASE WHEN oi.variant_id IS NOT NULL THEN 1 ELSE 0 END) AS already_linked,
+            SUM(CASE WHEN oi.variant_id IS NULL AND (oi.gender_snapshot IS NULL OR TRIM(oi.gender_snapshot)='') THEN 1 ELSE 0 END) AS missing_gender,
+            SUM(CASE WHEN oi.variant_id IS NULL AND TRIM(COALESCE(oi.color_snapshot,''))='' THEN 1 ELSE 0 END) AS missing_color,
+            SUM(CASE WHEN oi.variant_id IS NULL AND TRIM(COALESCE(oi.size_snapshot,''))='' THEN 1 ELSE 0 END) AS missing_size
+            FROM order_items oi JOIN orders o ON o.id=oi.order_id
+            WHERE COALESCE(oi.is_workshop,0)=0 AND COALESCE(oi.stock_writeoff_status,'')='catalog_unresolved'
+              AND COALESCE(o.order_status,'active')='active' AND COALESCE(o.archived_at,'')=''
+              AND COALESCE(o.shipping_status,'not_sent')<>'sent';"
+          echo '=== UNRESOLVED DETAILS ==='
+          query "SELECT oi.id,oi.order_id,o.external_id,oi.product_name_snapshot,oi.gender_snapshot,oi.color_snapshot,oi.material_snapshot,oi.length_snapshot,oi.size_snapshot,oi.product_id,oi.variant_id,
+            p.id AS matched_product_id,p.gender_scope,
+            (SELECT COUNT(*) FROM reference_values r WHERE r.is_active=1 AND r.kind='color' AND UPPER(TRIM(r.value))=UPPER(TRIM(oi.color_snapshot))) AS color_ref,
+            (SELECT COUNT(*) FROM reference_values r WHERE r.is_active=1 AND r.kind='size' AND UPPER(TRIM(r.value))=UPPER(TRIM(oi.size_snapshot))) AS size_ref,
+            (SELECT COUNT(*) FROM reference_values r WHERE r.is_active=1 AND r.kind='material' AND UPPER(TRIM(r.value))=UPPER(TRIM(CASE WHEN TRIM(COALESCE(oi.material_snapshot,''))='' THEN 'СТАНДАРТ' ELSE oi.material_snapshot END))) AS material_ref,
+            (SELECT COUNT(*) FROM reference_values r WHERE r.is_active=1 AND r.kind='length' AND UPPER(TRIM(r.value))=UPPER(TRIM(CASE WHEN TRIM(COALESCE(oi.length_snapshot,''))='' THEN 'СТАНДАРТ' ELSE oi.length_snapshot END))) AS length_ref
+            FROM order_items oi JOIN orders o ON o.id=oi.order_id
+            LEFT JOIN catalog_products p ON p.id=oi.product_id
+            WHERE COALESCE(oi.is_workshop,0)=0 AND COALESCE(oi.stock_writeoff_status,'')='catalog_unresolved'
+              AND COALESCE(o.order_status,'active')='active' AND COALESCE(o.archived_at,'')=''
+              AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+            ORDER BY oi.id DESC LIMIT 80;"
