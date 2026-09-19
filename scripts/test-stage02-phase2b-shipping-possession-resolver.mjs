@@ -14,7 +14,7 @@ try {
 
   check(shippingClient.includes("result.code === 'stock_resolution_required'"), 'Phase2B client does not consume stock_resolution_required')
   check(shippingClient.includes("result.operationType === 'shipping'"), 'Phase2B client does not scope resolver to shipping')
-  check(shippingClient.includes('прямо сейчас физически у вас') && shippingClient.includes('Это НЕ пересчёт всего остатка'), 'Phase2B possession wording is missing')
+  check(shippingClient.includes('await askStockResolution({') && shippingClient.includes('Это подтверждение одной отправки, а не пересчёт всего склада или бутика.'), 'Phase2B friendly possession confirmation is missing')
   check(shippingClient.includes('operationQuantity') && shippingClient.includes('expectedQuantity'), 'Phase2B client does not echo the exact operation/current-stock snapshot')
   check(!shippingClient.includes('window.prompt('), 'Phase2B shipping still asks the employee to invent a total stock count')
   check(!shippingClient.includes('countedQuantity'), 'Phase2B shipping still submits a fake full-SKU count')
