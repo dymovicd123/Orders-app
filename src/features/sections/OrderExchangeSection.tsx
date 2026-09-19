@@ -28,6 +28,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     managerColorFor,
     orderPanelStyle,
     receiveReturnedItemAction,
+    reconcileKnownInventoryLifecycle,
     saveExchange,
     sectorStyle,
     setExchangeDraft,
@@ -71,6 +72,17 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     && (entry.oldReturnSource === 'warehouse' || entry.oldReturnSource === 'boutique')
     && !entry.oldLifecycleStatus
   )
+  const oldKnownIntakePending = (entry: any) => Boolean(
+    entry.oldPhysicalTracking
+    && entry.oldPhysicalReceivedAt
+    && entry.oldLifecycleId
+    && entry.oldLifecycleStatus === 'pending'
+    && (entry.oldReturnSource === 'warehouse' || entry.oldReturnSource === 'boutique')
+  )
+  const finishKnownExchangeIntake = async (entry: any) => {
+    const result = await reconcileKnownInventoryLifecycle(Number(entry.oldLifecycleId || 0))
+    if (result?.ok) await loadExchangeHistory()
+  }
   const oldReturnLabel = (entry: any) => {
     if (!entry.oldPhysicalTracking) return 'Старая запись — физическое получение не отслеживалось'
     if (!entry.oldPhysicalReceivedAt) return 'Ещё не пришла'
@@ -534,6 +546,18 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                     })}
                                   >
                                     Товар пришёл
+                                  </button>
+                                </div>
+                              ) : null}
+                              {entry.status !== 'cancelled' && entry.oldOperationItemId && oldKnownIntakePending(entry) ? (
+                                <div className="mini-panel-actions">
+                                  <button
+                                    className="primary compact"
+                                    type="button"
+                                    disabled={exchangeBusy || exchangeHistoryBusy}
+                                    onClick={() => void finishKnownExchangeIntake(entry)}
+                                  >
+                                    Завершить приёмку
                                   </button>
                                 </div>
                               ) : null}
