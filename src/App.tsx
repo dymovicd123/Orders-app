@@ -4907,17 +4907,24 @@ function App() {
         && Array.isArray(result.items)
         && result.items.length
       ) {
-        const lines = result.items.map((resolutionItem) => {
-          const tracked = Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0))
-          const needed = Math.max(1, Number(resolutionItem.operationQuantity || 1))
-          return `• ${resolutionItem.productName || 'Товар'}: по учёту ${tracked} шт., в этой операции ${needed} шт.`
+        const confirmed = await askOperationalConfirmation({
+          title: isTransfer ? 'Подтвердите перемещение товара' : 'Подтвердите списание товара',
+          intro: isTransfer
+            ? `${sourceLabel(inventoryDraft.source)} → ${sourceLabel(inventoryDraft.targetSource)}`
+            : sourceLabel(inventoryDraft.source),
+          rows: result.items.map((resolutionItem) => {
+            const tracked = Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0))
+            const needed = Math.max(1, Number(resolutionItem.operationQuantity || 1))
+            return {
+              name: resolutionItem.productName || 'Товар',
+              primary: `По учёту: ${tracked} шт. · В операции: ${needed} шт.`,
+            }
+          }),
+          note: isTransfer
+            ? 'Подтверждайте только если эти конкретные вещи сейчас физически переносятся между точками. Это не пересчёт всего остатка.'
+            : 'Подтверждайте только если эти конкретные вещи сейчас физически находятся у вас и действительно списываются. Это не пересчёт всего остатка.',
+          confirmLabel: isTransfer ? 'Да, перемещаю' : 'Да, списываю',
         })
-        const actionText = isTransfer
-          ? `эти вещи прямо сейчас физически переносятся из «${sourceLabel(inventoryDraft.source)}» в «${sourceLabel(inventoryDraft.targetSource)}»`
-          : 'эти вещи прямо сейчас физически находятся у вас и действительно списываются'
-        const confirmed = window.confirm(
-          `По учёту товара меньше, чем указано в операции.\n\n${lines.join('\n')}\n\nПодтвердите только если ${actionText}. Это НЕ пересчёт всего остатка.`
-        )
         if (!confirmed) {
           setMessage(isTransfer ? 'Перемещение остановлено. Остатки не изменялись.' : 'Списание остановлено. Остатки не изменялись.')
           return
@@ -5798,15 +5805,20 @@ function removeDebtPayment(index: number) {
       let { response, result } = await submitHandoverAction()
       if (!response.ok && action === 'issue_now' && result.code === 'stock_resolution_required' && result.operationType === 'handover' && Array.isArray(result.items) && result.items.length) {
         const resolutionItems = result.items as StockResolutionRequiredItemView[]
-        const lines = resolutionItems.map((resolutionItem) => {
-          const name = resolutionItem.productName || item.productName
-          const tracked = Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0))
-          const needed = Math.max(1, Number(resolutionItem.operationQuantity || item.quantity || 1))
-          return `• ${name}: по учёту ${tracked} шт., сейчас клиенту выдаётся ${needed} шт.`
+        const confirmed = await askOperationalConfirmation({
+          title: 'Подтвердите выдачу товара',
+          intro: 'По учёту товара меньше, чем выдаётся клиенту.',
+          rows: resolutionItems.map((resolutionItem) => {
+            const tracked = Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0))
+            const needed = Math.max(1, Number(resolutionItem.operationQuantity || item.quantity || 1))
+            return {
+              name: resolutionItem.productName || item.productName,
+              primary: `По учёту: ${tracked} шт. · Передаётся клиенту: ${needed} шт.`,
+            }
+          }),
+          note: 'Подтверждайте только если эти конкретные вещи сейчас физически у вас и действительно передаются клиенту. Это не пересчёт всего остатка.',
+          confirmLabel: 'Да, передаю клиенту',
         })
-        const confirmed = window.confirm(
-          `По учёту товара меньше, чем нужно для этой выдачи.\n\n${lines.join('\n')}\n\nПодтвердите только если указанные вещи прямо сейчас физически у вас и действительно передаются клиенту. Это НЕ пересчёт всего остатка.`
-        )
         if (!confirmed) {
           setMessage('Выдача остановлена. Остатки не изменялись.')
           return
@@ -5901,15 +5913,20 @@ function removeDebtPayment(index: number) {
         return false
       }
       if (!response.ok && result.code === 'stock_resolution_required' && result.operationType === 'shipping' && Array.isArray(result.items) && result.items.length) {
-        const lines = result.items.map((item) => {
-          const name = item.productName || `variant #${item.variantId || ''}`
-          const tracked = Math.max(0, Number(item.trackedPhysicalQuantity || 0))
-          const needed = Math.max(1, Number(item.operationQuantity || 1))
-          return `• ${name}: по учёту ${tracked} шт., сейчас отправляется ${needed} шт.`
+        const confirmed = await askOperationalConfirmation({
+          title: 'Подтвердите отправку товара',
+          intro: 'По учёту товара меньше, чем сейчас отправляется клиенту.',
+          rows: result.items.map((resolutionItem) => {
+            const tracked = Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0))
+            const needed = Math.max(1, Number(resolutionItem.operationQuantity || 1))
+            return {
+              name: resolutionItem.productName || `Товар #${resolutionItem.variantId || ''}`,
+              primary: `По учёту: ${tracked} шт. · Отправляется: ${needed} шт.`,
+            }
+          }),
+          note: 'Подтверждайте только если эти конкретные вещи сейчас физически у вас и действительно передаются клиенту. Это не пересчёт всего остатка.',
+          confirmLabel: 'Да, отправляю клиенту',
         })
-        const confirmed = window.confirm(
-          `По учёту товара меньше, чем нужно для этой отправки.\n\n${lines.join('\n')}\n\nПодтвердите только если указанные вещи прямо сейчас физически у вас и действительно передаются клиенту. Это НЕ пересчёт всего остатка.`
-        )
         if (!confirmed) {
           setMessage('Отправка остановлена. Остатки не изменялись.')
           return false
