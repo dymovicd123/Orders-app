@@ -240,6 +240,7 @@ try {
   run('Step 192B2A3 handover SQL alias safety tests', process.execPath, [path.join(root, 'scripts/test-step192b2a3-handover-sql-alias-safety.mjs')])
   run('Step 192B2A4 order create/save integrity tests', process.execPath, [path.join(root, 'scripts/test-step192b2a4-order-create-save-integrity.mjs')])
   run('Step 192B2B movement picker UX tests', process.execPath, [path.join(root, 'scripts/test-step192b2b-movement-picker.mjs')])
+  run('Stage02 Warehouse UX R1 tests', process.execPath, [path.join(root, 'scripts/test-stage02-warehouse-ux-r1.mjs')])
   run('O1 read-budget behavior and SQL parity', process.execPath, [path.join(root, 'scripts/test-o1-read-budget.mjs')])
   run('O1 selected-report parity and index plans', process.execPath, [path.join(root, 'scripts/test-o1-report-scopes.mjs')])
   run('O1 finance read race regressions', process.execPath, [path.join(root, 'scripts/test-o1-finance-read-races.mjs')])
