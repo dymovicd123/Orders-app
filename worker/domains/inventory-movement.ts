@@ -13,7 +13,7 @@ import { inventoryMergeKey, inventoryWhereKey, mergeInventoryItems, normalizeInv
 import { applyOrderStockWriteOff } from './orders-write.ts'
 import { getPendingInventoryWriteoffCount } from './references.ts'
 import { isInventoryAutoWriteoffEnabled } from './storage.ts'
-import { boundedOutboundStock } from './stock-resolution.ts'
+import { boundedOutboundStock, buildStockResolutionRequired } from './stock-resolution.ts'
 
 export function inventoryManualRequestFingerprint(
   inventorySource: SourceType,
@@ -41,6 +41,38 @@ export function inventoryManualRequestFingerprint(
     || JSON.stringify(a).localeCompare(JSON.stringify(b))
   ));
   return JSON.stringify({ inventorySource, movementType, comment, items: rows });
+}
+
+
+export type InventoryOperationStockConfirmation = {
+  source: SourceType;
+  variantId: number;
+  expectedQuantity: number;
+  operationQuantity: number;
+};
+
+export function normalizeInventoryOperationStockConfirmations(input: unknown): InventoryOperationStockConfirmation[] {
+  if (!Array.isArray(input)) return [];
+  const map = new Map<string, InventoryOperationStockConfirmation>();
+  for (const raw of input) {
+    if (!raw || typeof raw !== 'object') continue;
+    const row = raw as Record<string, unknown>;
+    const source = normalizeSourceType(row.source);
+    const variantId = Math.max(0, toInt(row.variantId, 0));
+    const expectedQuantity = Math.max(0, toInt(row.expectedQuantity, -1));
+    const operationQuantity = Math.max(0, toInt(row.operationQuantity, 0));
+    if (!variantId || expectedQuantity < 0 || operationQuantity <= 0) {
+      throw new Error('Некорректное подтверждение физического наличия. Обновите остатки и повторите операцию.');
+    }
+    const key = `${source}:${variantId}`;
+    const next = { source, variantId, expectedQuantity, operationQuantity };
+    const existing = map.get(key);
+    if (existing && (existing.expectedQuantity !== expectedQuantity || existing.operationQuantity !== operationQuantity)) {
+      throw new Error('Для одной позиции переданы разные подтверждения физического наличия. Обновите остатки и повторите операцию.');
+    }
+    map.set(key, next);
+  }
+  return Array.from(map.values());
 }
 
 
@@ -320,7 +352,7 @@ export async function resolveInventoryCreatableItemsBulk(
 
 export async function applyInventoryMovement(
   db: D1Database,
-  input: { requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[] },
+  input: { requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown },
   returnInventory = true,
   actor = '',
 ) {
@@ -365,6 +397,21 @@ export async function applyInventoryMovement(
     const duplicate = { ok: true, duplicate: true, source: inventorySource, applied: toInt(existingOperation.item_count, 0), operationId: requestId };
     if (!returnInventory) return duplicate;
     return { ...duplicate, inventory: await listInventory(db, new URL(`https://dummy.local/api/inventory?source=${inventorySource}`)) };
+  }
+
+  const stockConfirmations = movementType === 'writeoff'
+    ? normalizeInventoryOperationStockConfirmations(input.stockConfirmations)
+    : [];
+  if (movementType === 'writeoff') {
+    const writeoffVariantIds = new Set(normalizedItems.map((item) => Math.max(0, toInt(item.variantId, 0))).filter(Boolean));
+    for (const confirmation of stockConfirmations) {
+      if (confirmation.source !== inventorySource || !writeoffVariantIds.has(confirmation.variantId)) {
+        throw new Error('Подтверждение физического наличия не относится к текущему списанию. Обновите остатки и повторите.');
+      }
+    }
+    if (normalizedItems.some((item) => item.observedPhysicalQuantity !== null)) {
+      throw new Error('Списание больше не принимает полный фактический остаток. Подтвердите только конкретные вещи текущего списания.');
+    }
   }
 
   const now = new Date().toISOString();
@@ -590,11 +637,19 @@ export async function applyInventoryMovement(
     effectiveBefore: number;
     targetQuantity: number;
     delta: number;
+    operationQuantity: number;
     expectedQuantity: number | null;
     observedPhysicalQuantity: number | null;
     reservedQuantity: number;
   };
   const prepared: PreparedManual[] = [];
+  const stockResolutionItems: Array<{
+    source: SourceType;
+    variantId: number;
+    productName: string;
+    trackedPhysicalQuantity: number;
+    operationQuantity: number;
+  }> = [];
 
   for (const entry of canonicalEntries) {
     const rawItem = entry.raw;
@@ -604,7 +659,10 @@ export async function applyInventoryMovement(
       throw new Error(`${movementType === 'manual_set' ? 'Корректировка' : 'Списание'}: выбранной позиции больше нет на выбранной точке. Обновите остатки.`);
     }
 
-    const currentQuantity = existingStock?.id ? toInt(existingStock.quantity, 0) : 0;
+    const rawCurrentQuantity = existingStock?.id ? toInt(existingStock.quantity, 0) : 0;
+    // Phase2D: resolver truth is bounded. Legacy negative Physical must be treated as zero
+    // for writeoff confirmation/replay, without changing exact-count semantics of manual_set.
+    const currentQuantity = movementType === 'writeoff' ? Math.max(0, rawCurrentQuantity) : rawCurrentQuantity;
     const reservedQuantity = existingStock?.id ? Math.max(0, toInt(existingStock.reserved_quantity, 0)) : 0;
     const expectedQuantity = rawItem.expectedQuantity;
     const observedPhysicalQuantity = rawItem.observedPhysicalQuantity;
@@ -621,7 +679,30 @@ export async function applyInventoryMovement(
       }
       targetQuantity = Math.max(0, item.quantity);
       delta = targetQuantity - currentQuantity;
-    } else if (movementType === 'writeoff' || movementType === 'delete') {
+    } else if (movementType === 'writeoff') {
+      const requested = Math.max(0, item.quantity);
+      const boundedOutbound = boundedOutboundStock(currentQuantity, requested);
+      if (boundedOutbound.requiresResolution) {
+        const variantId = Math.max(0, toInt(item.variantId, 0));
+        const confirmation = stockConfirmations.find((candidate) =>
+          candidate.source === inventorySource
+          && candidate.variantId === variantId
+          && candidate.expectedQuantity === currentQuantity
+          && candidate.operationQuantity === requested
+        );
+        if (!confirmation) {
+          stockResolutionItems.push({
+            source: inventorySource,
+            variantId,
+            productName: item.productName,
+            trackedPhysicalQuantity: Math.max(0, currentQuantity),
+            operationQuantity: requested,
+          });
+        }
+      }
+      targetQuantity = boundedOutbound.trackedPhysicalAfter;
+      delta = -boundedOutbound.explainedQuantity;
+    } else if (movementType === 'delete') {
       const requested = Math.max(0, item.quantity);
       if (observedPhysicalQuantity !== null) {
         if (expectedQuantity === null) throw new Error(`Перед фактической сверкой «${item.productName}» обновите остатки и повторите списание.`);
@@ -629,7 +710,7 @@ export async function applyInventoryMovement(
         effectiveBefore = observedPhysicalQuantity;
       }
       if (requested > Math.max(0, effectiveBefore)) {
-        throw new Error(`По учёту «${item.productName}» на месте ${effectiveBefore} шт., а списать нужно ${requested}. Если товар физически есть, укажите фактическое количество прямо в строке списания.`);
+        throw new Error(`По учёту «${item.productName}» на месте ${effectiveBefore} шт., а списать нужно ${requested}. Сначала выполните точную корректировку остатка.`);
       }
       targetQuantity = effectiveBefore - requested;
       delta = -requested;
@@ -649,10 +730,14 @@ export async function applyInventoryMovement(
       effectiveBefore,
       targetQuantity,
       delta,
+      operationQuantity: Math.max(0, item.quantity),
       expectedQuantity,
       observedPhysicalQuantity,
       reservedQuantity,
     });
+  }
+  if (movementType === 'writeoff' && stockResolutionItems.length) {
+    return buildStockResolutionRequired('writeoff', stockResolutionItems);
   }
 
   const referenceId = requestId;
@@ -676,6 +761,7 @@ export async function applyInventoryMovement(
       effectiveBefore: row.effectiveBefore,
       targetQuantity: row.targetQuantity,
       delta: row.delta,
+      operationQuantity: row.operationQuantity,
       reservedQuantity: row.reservedQuantity,
       observedPhysical: row.observedPhysicalQuantity,
       inventorySource,
@@ -698,6 +784,7 @@ export async function applyInventoryMovement(
           CAST(json_extract(payload, '$.effectiveBefore') AS INTEGER) AS effective_before,
           CAST(json_extract(payload, '$.targetQuantity') AS INTEGER) AS target_quantity,
           CAST(json_extract(payload, '$.delta') AS INTEGER) AS delta,
+          CAST(json_extract(payload, '$.operationQuantity') AS INTEGER) AS operation_quantity,
           CAST(json_extract(payload, '$.reservedQuantity') AS INTEGER) AS reserved_quantity,
           CASE WHEN json_type(payload, '$.observedPhysical') = 'null' THEN NULL
                ELSE CAST(json_extract(payload, '$.observedPhysical') AS INTEGER) END AS observed_physical,
@@ -708,6 +795,9 @@ export async function applyInventoryMovement(
   });
   const rowMatchSql = `((x.stock_existed = 1 AND x.stock_id = inventory_stock.id)
                     OR (x.stock_existed = 0 AND inventory_stock.inventory_source = x.inventory_source AND x.variant_id = inventory_stock.variant_id))`;
+  const guardedStockQuantitySql = movementType === 'writeoff'
+    ? 'MAX(0, COALESCE(s.quantity, 0))'
+    : 'COALESCE(s.quantity, 0)';
 
   const statements: D1PreparedStatement[] = [];
   for (const chunk of preparedChunks) {
@@ -721,7 +811,7 @@ export async function applyInventoryMovement(
          LEFT JOIN inventory_stock s
            ON (x.stock_existed = 1 AND s.id = x.stock_id)
            OR (x.stock_existed = 0 AND s.inventory_source = ? AND s.variant_id = x.variant_id)
-         WHERE (x.stock_existed = 1 AND (s.id IS NULL OR COALESCE(s.quantity, 0) <> x.current_quantity))
+         WHERE (x.stock_existed = 1 AND (s.id IS NULL OR ${guardedStockQuantitySql} <> x.current_quantity))
             OR (x.stock_existed = 0 AND s.id IS NOT NULL)
        )`
     ).bind(...chunk.rowBindings, now, inventorySource));
@@ -752,7 +842,7 @@ export async function applyInventoryMovement(
     ).bind(requestId, requestFingerprint, now),
   );
 
-  if ((movementType === 'writeoff' || movementType === 'delete') && prepared.some(row => row.observedPhysicalQuantity !== null)) {
+  if (movementType === 'delete' && prepared.some(row => row.observedPhysicalQuantity !== null)) {
     for (const chunk of preparedChunks) {
       statements.push(
         db.prepare(
@@ -781,6 +871,25 @@ export async function applyInventoryMovement(
            FROM x WHERE x.observed_physical IS NOT NULL`
         ).bind(...chunk.rowBindings, requestId, inventorySource, requestId, cleanText(actor) || null, now, now),
       );
+    }
+  }
+
+  if (movementType === 'writeoff') {
+    for (const chunk of preparedChunks) {
+      statements.push(db.prepare(
+        `WITH ${chunk.rowsSql}
+         INSERT OR IGNORE INTO inventory_operation_evidence (
+           evidence_key, inventory_source, variant_id, operation_type, operation_reference,
+           tracked_physical_before, confirmed_operation_quantity, explained_quantity, unexplained_quantity,
+           confirmed_by, occurred_at, created_at
+         )
+         SELECT 'writeoff:' || ? || ':' || ? || ':' || x.variant_id,
+                ?, x.variant_id, 'writeoff', ?, x.current_quantity, x.operation_quantity,
+                MIN(x.current_quantity, x.operation_quantity), MAX(0, x.operation_quantity - x.current_quantity),
+                ?, ?, ?
+         FROM x
+         WHERE x.operation_quantity > x.current_quantity`
+      ).bind(...chunk.rowBindings, requestId, inventorySource, inventorySource, requestId, cleanText(actor) || null, now, now));
     }
   }
 
@@ -865,7 +974,6 @@ export type PreparedInventoryTransferItem = {
   effectiveSourceBefore: number;
   reservedAtSource: number;
   shortageAfter: number;
-  observedPhysicalQuantity: number | null;
 };
 
 
@@ -920,7 +1028,7 @@ export async function assertNoActiveStocktakeForTransfer(db: D1Database, fromSou
 
 export async function applyInventoryTransfer(
   db: D1Database,
-  input: { requestId?: unknown; fromSource?: unknown; toSource?: unknown; comment?: unknown; items?: InventoryItemInput[] },
+  input: { requestId?: unknown; fromSource?: unknown; toSource?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown },
   actor = '',
   returnInventory = true,
 ) {
@@ -987,7 +1095,6 @@ export async function applyInventoryTransfer(
   const aggregatedInput = new Map<number, {
     quantity: number;
     expectedQuantity: number | null;
-    observedPhysicalQuantity: number | null;
   }>();
   for (const raw of rawItems) {
     const normalized = normalizeInventoryItem(raw);
@@ -995,30 +1102,31 @@ export async function applyInventoryTransfer(
     const variantId = Math.max(0, toInt(normalized.variantId, 0));
     if (!variantId) throw new Error('Для перемещения нужна точная каноническая комбинация товара.');
     const rawObserved = raw?.observedPhysicalQuantity;
-    let observedPhysicalQuantity: number | null = null;
     if (rawObserved !== null && rawObserved !== undefined && cleanText(rawObserved) !== '') {
-      const observed = Number(rawObserved);
-      if (!Number.isFinite(observed) || observed < 0 || !Number.isInteger(observed)) {
-        throw new Error('Фактическое количество должно быть целым числом 0 или больше.');
-      }
-      observedPhysicalQuantity = observed;
+      throw new Error('Перемещение больше не принимает полный фактический остаток. Подтвердите только конкретные вещи текущего перемещения.');
     }
     const expectedQuantity = normalized.expectedQuantity;
     const previous = aggregatedInput.get(variantId);
     if (previous) {
-      if (previous.observedPhysicalQuantity !== observedPhysicalQuantity || previous.expectedQuantity !== expectedQuantity) {
-        throw new Error('Для одной комбинации переданы противоречивые данные фактической сверки. Оставьте одну строку этой комбинации.');
+      if (previous.expectedQuantity !== expectedQuantity) {
+        throw new Error('Для одной комбинации переданы противоречивые данные. Обновите остатки и оставьте одну строку этой комбинации.');
       }
       previous.quantity += Math.max(0, normalized.quantity);
     } else {
       aggregatedInput.set(variantId, {
         quantity: Math.max(0, normalized.quantity),
         expectedQuantity,
-        observedPhysicalQuantity,
       });
     }
   }
   if (!aggregatedInput.size) throw new Error('Укажите количество хотя бы для одной позиции.');
+
+  const stockConfirmations = normalizeInventoryOperationStockConfirmations(input.stockConfirmations);
+  for (const confirmation of stockConfirmations) {
+    if (confirmation.source !== fromSource || !aggregatedInput.has(confirmation.variantId)) {
+      throw new Error('Подтверждение физического наличия не относится к текущему перемещению. Обновите остатки и повторите.');
+    }
+  }
 
   const variantIds = Array.from(aggregatedInput.keys());
   const variantIdsJson = JSON.stringify(variantIds);
@@ -1077,6 +1185,13 @@ export async function applyInventoryTransfer(
   }
 
   const prepared: Array<PreparedInventoryTransferItem & { targetReservedQuantity: number }> = [];
+  const stockResolutionItems: Array<{
+    source: SourceType;
+    variantId: number;
+    productName: string;
+    trackedPhysicalQuantity: number;
+    operationQuantity: number;
+  }> = [];
   for (const variantId of variantIds) {
     const entry = aggregatedInput.get(variantId)!;
     const canonical = canonicalById.get(variantId)!;
@@ -1096,27 +1211,32 @@ export async function applyInventoryTransfer(
     const sourceStock = stockBySourceVariant.get(`${fromSource}:${variantId}`);
     const targetStock = stockBySourceVariant.get(`${toSource}:${variantId}`);
     const sourceRowExisted = Boolean(sourceStock?.id);
-    const sourceCurrent = toInt(sourceStock?.quantity, 0);
-    const targetCurrent = toInt(targetStock?.quantity, 0);
+    // Phase2D: legacy negative Physical is not a real quantity. Treat it as zero at the
+    // operation boundary so a possession confirmation returned as expectedQuantity=0 can
+    // actually be replayed, and so new transfers never propagate negative stock forward.
+    const sourceCurrent = Math.max(0, toInt(sourceStock?.quantity, 0));
+    const targetCurrent = Math.max(0, toInt(targetStock?.quantity, 0));
     const reservedAtSource = reservationsBySourceVariant.get(`${fromSource}:${variantId}`) || 0;
     const targetReservedQuantity = reservationsBySourceVariant.get(`${toSource}:${variantId}`) || 0;
 
-    let effectiveSourceBefore = sourceCurrent;
-    if (!sourceRowExisted && entry.observedPhysicalQuantity === null) {
-      throw new Error(`«${item.productName}» не числится в точке «${fromSource === 'warehouse' ? 'Склад' : 'Бутик'}». Если товар физически находится здесь, укажите фактическое количество прямо в строке перемещения.`);
-    }
-    if (entry.observedPhysicalQuantity !== null) {
-      if (entry.expectedQuantity === null || entry.expectedQuantity === undefined) {
-        throw new Error(`Перед фактической сверкой «${item.productName}» обновите остатки и повторите перемещение.`);
-      }
-      if (sourceCurrent !== entry.expectedQuantity) {
-        throw new Error(`Остаток «${item.productName}» изменился после открытия формы: было ${entry.expectedQuantity}, сейчас ${sourceCurrent}. Обновите данные и повторите.`);
-      }
-      effectiveSourceBefore = entry.observedPhysicalQuantity;
-    }
-    const boundedOutbound = boundedOutboundStock(effectiveSourceBefore, entry.quantity);
+    const effectiveSourceBefore = sourceCurrent;
+    const boundedOutbound = boundedOutboundStock(sourceCurrent, entry.quantity);
     if (boundedOutbound.requiresResolution) {
-      throw new Error(`По учёту в точке «${fromSource === 'warehouse' ? 'Склад' : 'Бутик'}» у «${item.productName}» на месте ${effectiveSourceBefore} шт., а переместить нужно ${entry.quantity}. Если товар физически есть, укажите фактическое количество прямо в строке перемещения.`);
+      const confirmation = stockConfirmations.find((candidate) =>
+        candidate.source === fromSource
+        && candidate.variantId === variantId
+        && candidate.expectedQuantity === sourceCurrent
+        && candidate.operationQuantity === entry.quantity
+      );
+      if (!confirmation) {
+        stockResolutionItems.push({
+          source: fromSource,
+          variantId,
+          productName: item.productName,
+          trackedPhysicalQuantity: Math.max(0, sourceCurrent),
+          operationQuantity: entry.quantity,
+        });
+      }
     }
     const shortageAfter = Math.max(0, reservedAtSource - boundedOutbound.trackedPhysicalAfter);
     prepared.push({
@@ -1129,10 +1249,10 @@ export async function applyInventoryTransfer(
       effectiveSourceBefore,
       reservedAtSource,
       shortageAfter,
-      observedPhysicalQuantity: entry.observedPhysicalQuantity,
       targetReservedQuantity,
     });
   }
+  if (stockResolutionItems.length) return buildStockResolutionRequired('transfer', stockResolutionItems);
 
   const now = new Date().toISOString();
   const externalId = inventoryTransferExternalId();
@@ -1150,7 +1270,6 @@ export async function applyInventoryTransfer(
     reservedQty: row.reservedAtSource,
     targetReservedQty: row.targetReservedQuantity,
     shortageAfter: row.shortageAfter,
-    observedPhysical: row.observedPhysicalQuantity,
   }));
   const transferInputValuesSql = transferRowBindings.map(() => '(?)').join(', ');
   const transferRowsSql = `input(payload) AS (VALUES ${transferInputValuesSql}),
@@ -1164,9 +1283,7 @@ export async function applyInventoryTransfer(
         CAST(json_extract(payload, '$.moveQty') AS INTEGER) AS move_qty,
         CAST(json_extract(payload, '$.reservedQty') AS INTEGER) AS reserved_qty,
         CAST(json_extract(payload, '$.targetReservedQty') AS INTEGER) AS target_reserved_qty,
-        CAST(json_extract(payload, '$.shortageAfter') AS INTEGER) AS shortage_after,
-        CASE WHEN json_type(payload, '$.observedPhysical') = 'null' THEN NULL
-             ELSE CAST(json_extract(payload, '$.observedPhysical') AS INTEGER) END AS observed_physical
+        CAST(json_extract(payload, '$.shortageAfter') AS INTEGER) AS shortage_after
       FROM input
     )`;
 
@@ -1179,7 +1296,7 @@ export async function applyInventoryTransfer(
      )
      SELECT ?, v.product_id, v.id, p.name, NULLIF(v.gender,''), NULLIF(v.color,''),
             COALESCE(NULLIF(v.material,''),'СТАНДАРТ'), COALESCE(NULLIF(v.length,''),'СТАНДАРТ'), NULLIF(v.size_label,''),
-            0, x.reserved_qty, 'Фактическая сверка', ?, ?, ?
+            0, x.reserved_qty, 'Перемещение', ?, ?, ?
      FROM x JOIN catalog_variants v ON v.id = x.variant_id JOIN catalog_products p ON p.id = v.product_id`
   ).bind(...transferRowBindings, fromSource, externalId, now, now);
 
@@ -1191,7 +1308,7 @@ export async function applyInventoryTransfer(
        SELECT 1 FROM x
        LEFT JOIN inventory_stock s ON s.inventory_source = ? AND s.variant_id = x.variant_id
        LEFT JOIN inventory_stock t ON t.inventory_source = ? AND t.variant_id = x.variant_id
-       WHERE s.id IS NULL OR COALESCE(s.quantity, 0) <> x.source_current OR COALESCE(t.quantity, 0) <> x.target_current
+       WHERE s.id IS NULL OR MAX(0, COALESCE(s.quantity, 0)) <> x.source_current OR MAX(0, COALESCE(t.quantity, 0)) <> x.target_current
      )
      OR EXISTS (
        SELECT 1 FROM inventory_stocktake_sessions
@@ -1231,48 +1348,10 @@ export async function applyInventoryTransfer(
      WHERE inventory_source IN (?, ?) AND EXISTS (SELECT 1 FROM x WHERE x.variant_id = inventory_stock.variant_id)`
   ).bind(...transferRowBindings, fromSource, toSource);
 
-  const applyObservation = db.prepare(
-    `WITH ${transferRowsSql}
-     UPDATE inventory_stock
-     SET quantity = (SELECT effective_before FROM x WHERE x.variant_id = inventory_stock.variant_id),
-         last_action = 'Быстрая сверка', last_source_ref = ?, updated_at = ?
-     WHERE inventory_source = ?
-       AND EXISTS (SELECT 1 FROM x WHERE x.variant_id = inventory_stock.variant_id)
-       AND quantity <> (SELECT effective_before FROM x WHERE x.variant_id = inventory_stock.variant_id)`
-  ).bind(...transferRowBindings, externalId, now, fromSource);
-
-  const observationMovements = db.prepare(
-    `WITH ${transferRowsSql}
-     INSERT INTO inventory_movements (
-       inventory_source, movement_type, product_id, variant_id, product_name_snapshot, gender_snapshot, color_snapshot,
-       material_snapshot, length_snapshot, size_snapshot, quantity_delta, quantity_after, reference_type, reference_id, comment, created_at
-     )
-     SELECT ?, 'revision', v.product_id, v.id, p.name, NULLIF(v.gender,''), NULLIF(v.color,''),
-            COALESCE(NULLIF(v.material,''),'СТАНДАРТ'), COALESCE(NULLIF(v.length,''),'СТАНДАРТ'), NULLIF(v.size_label,''),
-            x.effective_before - x.source_current, x.effective_before,
-            'transfer_stocktake', ? || ':' || v.id, 'Фактическая сверка перед перемещением', ?
-     FROM x JOIN catalog_variants v ON v.id = x.variant_id JOIN catalog_products p ON p.id = v.product_id
-     WHERE x.effective_before <> x.source_current`
-  ).bind(...transferRowBindings, fromSource, externalId, now);
-
-  const observationChecks = db.prepare(
-    `WITH ${transferRowsSql}
-     INSERT OR IGNORE INTO inventory_stock_checks (
-       check_key, inventory_source, product_id, variant_id,
-       expected_quantity, counted_quantity, difference_quantity, reserved_quantity,
-       check_type, reference_type, reference_id, checked_by, checked_at, created_at
-     )
-     SELECT 'transfer:' || ? || ':' || x.variant_id, ?, x.product_id, x.variant_id,
-            x.source_current, x.effective_before, x.effective_before - x.source_current, x.reserved_qty,
-            'transfer_observation', 'transfer', ?, ?, ?, ?
-     FROM x
-     WHERE x.observed_physical IS NOT NULL`
-  ).bind(...transferRowBindings, externalId, fromSource, externalId, cleanText(actor) || null, now, now);
-
   const updateSource = db.prepare(
     `WITH ${transferRowsSql}
      UPDATE inventory_stock
-     SET quantity = (SELECT effective_before - move_qty FROM x WHERE x.variant_id = inventory_stock.variant_id),
+     SET quantity = MAX(0, (SELECT effective_before - move_qty FROM x WHERE x.variant_id = inventory_stock.variant_id)),
          last_action = 'Перемещение', last_source_ref = ?, updated_at = ?
      WHERE inventory_source = ? AND EXISTS (SELECT 1 FROM x WHERE x.variant_id = inventory_stock.variant_id)`
   ).bind(...transferRowBindings, externalId, now, fromSource);
@@ -1280,7 +1359,7 @@ export async function applyInventoryTransfer(
   const updateTarget = db.prepare(
     `WITH ${transferRowsSql}
      UPDATE inventory_stock
-     SET quantity = quantity + (SELECT move_qty FROM x WHERE x.variant_id = inventory_stock.variant_id),
+     SET quantity = MAX(0, quantity) + (SELECT move_qty FROM x WHERE x.variant_id = inventory_stock.variant_id),
          last_action = 'Перемещение', last_source_ref = ?, updated_at = ?
      WHERE inventory_source = ? AND EXISTS (SELECT 1 FROM x WHERE x.variant_id = inventory_stock.variant_id)`
   ).bind(...transferRowBindings, externalId, now, toSource);
@@ -1293,7 +1372,7 @@ export async function applyInventoryTransfer(
      )
      SELECT ?, 'writeoff', v.product_id, v.id, p.name, NULLIF(v.gender,''), NULLIF(v.color,''),
             COALESCE(NULLIF(v.material,''),'СТАНДАРТ'), COALESCE(NULLIF(v.length,''),'СТАНДАРТ'), NULLIF(v.size_label,''),
-            -x.move_qty, x.effective_before - x.move_qty, 'transfer_out', ?, ?, ?
+            -MIN(x.effective_before, x.move_qty), MAX(0, x.effective_before - x.move_qty), 'transfer_out', ?, ?, ?
      FROM x JOIN catalog_variants v ON v.id = x.variant_id JOIN catalog_products p ON p.id = v.product_id`
   ).bind(...transferRowBindings, fromSource, externalId, comment || `Перемещение в ${toSource === 'warehouse' ? 'Склад' : 'Бутик'}`, now);
 
@@ -1317,10 +1396,25 @@ export async function applyInventoryTransfer(
        source_reserved_quantity, source_shortage_after, created_at
      )
      SELECT (SELECT id FROM inventory_transfer_documents WHERE request_id = ?), v.product_id, v.id, x.move_qty,
-            x.effective_before, x.effective_before - x.move_qty, x.target_current, x.target_current + x.move_qty,
+            x.effective_before, MAX(0, x.effective_before - x.move_qty), x.target_current, x.target_current + x.move_qty,
             x.reserved_qty, x.shortage_after, ?
      FROM x JOIN catalog_variants v ON v.id = x.variant_id`
   ).bind(...transferRowBindings, requestId, now);
+
+  const operationEvidence = db.prepare(
+    `WITH ${transferRowsSql}
+     INSERT OR IGNORE INTO inventory_operation_evidence (
+       evidence_key, inventory_source, variant_id, operation_type, operation_reference,
+       tracked_physical_before, confirmed_operation_quantity, explained_quantity, unexplained_quantity,
+       confirmed_by, occurred_at, created_at
+     )
+     SELECT 'transfer:' || ? || ':' || ? || ':' || x.variant_id,
+            ?, x.variant_id, 'transfer', ?, x.source_current, x.move_qty,
+            MIN(x.source_current, x.move_qty), MAX(0, x.move_qty - x.source_current),
+            ?, ?, ?
+     FROM x
+     WHERE x.move_qty > x.source_current`
+  ).bind(...transferRowBindings, requestId, fromSource, fromSource, externalId, cleanText(actor) || null, now, now);
 
   try {
     await db.batch([
@@ -1329,9 +1423,7 @@ export async function applyInventoryTransfer(
       insertDocument,
       ensureTargetStock,
       canonicalizeStockSnapshots,
-      applyObservation,
-      observationMovements,
-      observationChecks,
+      operationEvidence,
       updateSource,
       updateTarget,
       transferOutMovements,
@@ -1353,7 +1445,7 @@ export async function applyInventoryTransfer(
        WHERE inventory_source IN (?, ?)
          AND variant_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
     ).bind(fromSource, toSource, variantIdsJson).all<Record<string, unknown>>();
-    const currentMap = new Map((currentRows.results || []).map(row => [`${cleanText(row.inventory_source)}:${toInt(row.variant_id, 0)}`, toInt(row.quantity, 0)]));
+    const currentMap = new Map((currentRows.results || []).map(row => [`${cleanText(row.inventory_source)}:${toInt(row.variant_id, 0)}`, Math.max(0, toInt(row.quantity, 0))]));
     const changed = prepared.filter(row => {
       const sourceKey = `${fromSource}:${row.variantId}`;
       const targetKey = `${toSource}:${row.variantId}`;
@@ -1434,8 +1526,14 @@ export async function reverseInventoryTransferDocument(db: D1Database, externalI
     const quantity = Math.max(0, toInt(row.quantity, 0));
     const sourceCurrent = stockMap.get(`${fromSource}:${variantId}`) ?? 0;
     const targetCurrent = stockMap.get(`${toSource}:${variantId}`) ?? 0;
+    const fromQuantityBefore = Math.max(0, toInt(row.from_quantity_before, 0));
+    const fromQuantityAfter = Math.max(0, toInt(row.from_quantity_after, 0));
+    // A resolver-confirmed transfer may have moved more units than tracked Physical could
+    // explain. Forward transfer only deducted the explained part from source Physical, so a
+    // reversal must restore exactly that deducted part rather than the full moved quantity.
+    const sourceRestoreQuantity = Math.max(0, fromQuantityBefore - fromQuantityAfter);
     if (targetCurrent < quantity) throw new Error(`Нельзя безопасно отменить перемещение «${cleanText(row.product_name)}»: в точке «${toSource === 'warehouse' ? 'Склад' : 'Бутик'}» сейчас ${targetCurrent} шт., для возврата нужно ${quantity}. Сначала разберите фактический остаток.`);
-    return { variantId, quantity, sourceCurrent, targetCurrent };
+    return { variantId, quantity, sourceRestoreQuantity, sourceCurrent, targetCurrent };
   });
 
   const now = new Date().toISOString();
@@ -1449,6 +1547,7 @@ export async function reverseInventoryTransferDocument(db: D1Database, externalI
     sourceCurrent: row.sourceCurrent,
     targetCurrent: row.targetCurrent,
     moveQty: row.quantity,
+    sourceRestoreQty: row.sourceRestoreQuantity,
   }));
   const reversalValuesSql = reversalRowBindings.map(() => '(?)').join(', ');
   const reversalRowsSql = `input(payload) AS (VALUES ${reversalValuesSql}),
@@ -1457,7 +1556,8 @@ export async function reverseInventoryTransferDocument(db: D1Database, externalI
         CAST(json_extract(payload, '$.variantId') AS INTEGER) AS variant_id,
         CAST(json_extract(payload, '$.sourceCurrent') AS INTEGER) AS source_current,
         CAST(json_extract(payload, '$.targetCurrent') AS INTEGER) AS target_current,
-        CAST(json_extract(payload, '$.moveQty') AS INTEGER) AS move_qty
+        CAST(json_extract(payload, '$.moveQty') AS INTEGER) AS move_qty,
+        CAST(json_extract(payload, '$.sourceRestoreQty') AS INTEGER) AS source_restore_qty
       FROM input
     )`;
 
@@ -1482,7 +1582,7 @@ export async function reverseInventoryTransferDocument(db: D1Database, externalI
   const sourceUpdate = db.prepare(
     `WITH ${reversalRowsSql}
      UPDATE inventory_stock
-     SET quantity = quantity + (SELECT move_qty FROM x WHERE x.variant_id = inventory_stock.variant_id),
+     SET quantity = quantity + (SELECT source_restore_qty FROM x WHERE x.variant_id = inventory_stock.variant_id),
          last_action = 'Отмена перемещения', last_source_ref = ?, updated_at = ?
      WHERE inventory_source = ? AND EXISTS (SELECT 1 FROM x WHERE x.variant_id = inventory_stock.variant_id)`
   ).bind(...reversalRowBindings, externalId, now, fromSource);
@@ -1501,7 +1601,7 @@ export async function reverseInventoryTransferDocument(db: D1Database, externalI
      )
      SELECT ?, 'revision', v.product_id, v.id, p.name, NULLIF(v.gender,''), NULLIF(v.color,''),
             COALESCE(NULLIF(v.material,''),'СТАНДАРТ'), COALESCE(NULLIF(v.length,''),'СТАНДАРТ'), NULLIF(v.size_label,''),
-            x.move_qty, x.source_current + x.move_qty, 'movement_reversal', ?, ?, ?
+            x.source_restore_qty, x.source_current + x.source_restore_qty, 'movement_reversal', ?, ?, ?
      FROM x JOIN catalog_variants v ON v.id = x.variant_id JOIN catalog_products p ON p.id = v.product_id`
   ).bind(...reversalRowBindings, fromSource, reversalRef, reversalComment, now);
   const targetMovements = db.prepare(

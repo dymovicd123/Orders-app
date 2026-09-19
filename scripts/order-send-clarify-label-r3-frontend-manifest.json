@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "revision": "production-catalog-resolver-r3-r4",
-  "baseCommit": "bd34beda7ff0bf3707afb9f609d8712d1dbab580",
+  "revision": "order-send-clarify-label-r3",
+  "baseCommit": "a8c3a1a4b57e5e0ebf8f4231c1efe316ff74fef4",
   "files": {
     "src/app/types.ts": {
       "beforeGitBlob": "7790d3ef2a9e35c703852f6a3c4e14cbd67d3614",
@@ -40,22 +40,6 @@
         {
           "beforeBlock": "                                  void markOrderSentToClient(order)\n                                }}\n                              >\n                                Отправить клиенту\n                              </button>\n                            ) : null}\n                            {!retainedOnly && !archived && !projection.hasCommittedPhysicalDownstreamOperation && order.shipping_status !== 'sent' && projection.workshopPending ? (",
           "afterBlock": "                                  void markOrderSentToClient(order)\n                                }}\n                              >\n                                {projection.needsCatalogClarification ? 'Уточнить товар' : 'Отправить клиенту'}\n                              </button>\n                            ) : null}\n                            {!retainedOnly && !archived && !projection.hasCommittedPhysicalDownstreamOperation && order.shipping_status !== 'sent' && projection.workshopPending ? ("
-        }
-      ]
-    },
-    "src/features/orders/OrderCatalogResolutionModal.tsx": {
-      "beforeGitBlob": "6d12ffdab2c61fb55f157d68bf5cdb1d50e7a20a",
-      "afterGitBlob": "5a86ef77ab0c3d77dcd3a6d8b56eb9f59c5ba4f5",
-      "beforeLines": 266,
-      "afterLines": 270,
-      "replacements": [
-        {
-          "beforeBlock": "  useEffect(() => {\n    const owner = createResolutionSession()\n    session.current = owner\n    setItem(null); setDraft(null); setContext(null); setProgress({ total: 0, remaining: 0 }); setNotice('')\n    setNeedsRecheck(false); setCatalog(null); catalogPromise.current = null\n    void load().catch(value => { if (owner === session.current) setError(value instanceof Error ? value.message : 'Не удалось загрузить товар.') })",
-          "afterBlock": "  useEffect(() => {\n    const owner = createResolutionSession()\n    session.current = owner\n    // Every order owns its own resolver activity. Never inherit a pending click/request\n    // from the previously opened order; stale async work is already fenced by generation/session.\n    previewPending.current = false\n    mutationPending.current = false\n    setResolving(false)\n    setItem(null); setDraft(null); setContext(null); setProgress({ total: 0, remaining: 0 }); setNotice('')\n    setNeedsRecheck(false); setCatalog(null); catalogPromise.current = null\n    void load().catch(value => { if (owner === session.current) setError(value instanceof Error ? value.message : 'Не удалось загрузить товар.') })"
-        },
-        {
-          "beforeBlock": "  }\n  const finish = async (variantId?: number, next = draft) => {\n    if (!order || !item || !next || resolving || busy || error || previewPending.current || mutationPending.current) return\n    if (!variantId && !isAdmin) return\n    mutationPending.current = true\n    const owner = session.current, ticket = generation.current\n    setResolving(true); setError('')",
-          "afterBlock": "  }\n  const finish = async (variantId?: number, next = draft) => {\n    if (!order || !item || !next || resolving || busy || error || previewPending.current || mutationPending.current) return\n    mutationPending.current = true\n    const owner = session.current, ticket = generation.current\n    setResolving(true); setError('')"
         }
       ]
     }

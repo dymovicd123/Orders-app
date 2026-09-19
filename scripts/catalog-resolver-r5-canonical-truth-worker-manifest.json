@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "revision": "production-catalog-resolver-r5",
-  "baseCommit": "b50189889ade01058e17e5f93a0ff4d9297f92db",
+  "revision": "catalog-resolver-r5-canonical-truth",
+  "baseCommit": "470b9f562766c05df2eeae0c87a301975fc02949",
   "files": {
     "worker/domains/catalog-review.ts": {
       "beforeGitBlob": "301ad556f428b17e4c37606279bf78c27c67f166",

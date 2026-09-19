@@ -6,6 +6,7 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8')
 const check = (value, message) => { if (!value) throw new Error(message) }
 
 try {
+  const app = read('src/App.tsx')
   const movement = read('src/features/inventory/views/renderInventoryMovementPanel.tsx')
   const overview = read('src/features/inventory/views/renderInventoryOverviewPanel.tsx')
   const stocktake = read('src/features/inventory/views/renderInventoryStocktakePanel.tsx')
@@ -23,7 +24,7 @@ try {
 
   check(movement.includes('inventory-operation-card-${inventoryDraft.movementType}'), 'Operation mode card hook changed')
   check(movement.includes("['arrival', 'Приход']") && movement.includes("['writeoff', 'Списание']") && movement.includes("['manual_set', 'Исправить количество']"), 'Operation mode choices changed unexpectedly')
-  check(movement.includes('saveInventoryMovement()') && movement.includes('setInventoryTransferObservedQuantity'), 'Existing Warehouse mutation/check path changed unexpectedly')
+  check(movement.includes('saveInventoryMovement()') && !movement.includes('setInventoryTransferObservedQuantity') && app.includes("result.code === 'stock_resolution_required'") && app.includes('await askStockResolution({') && app.includes('не заменяет ревизию'), 'Warehouse mutation path no longer uses the accepted bounded possession resolver')
 
   check(mobile.includes('.inventory-operation-card-writeoff .inventory-operation-variants-table'), 'Writeoff phone card layout missing')
   check(mobile.includes('.inventory-operation-card-manual_set .inventory-operation-variants-table'), 'Manual-set phone card layout missing')

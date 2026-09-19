@@ -32,8 +32,9 @@ import { calculateTotals, createDebtClosePayment, createEditorDraft, createEmpty
 import { ChoicePills, FriendlyNumberInput, ManagerBadge, ManagerPicker, SmartPickerInput, resolveManagerDisplayColor } from './components'
 import { TableDragScrollManager } from './components/tables/TableDragScrollManager'
 import { DatabaseStorageModal, DatabaseStorageWarning, useDatabaseStorageMaintenance } from './features/storage/DatabaseStorageMaintenance'
-import { DashboardSection, ClientsSection, ReferencesSection, InventorySection, WorkshopSection, OrdersHeaderSection, OrderFiltersSection, CreateOrderSection, OrderEditorSection, OrdersTableSection, OrderDetailsSection, OrderDebtSection, OrderReturnsSection, OrderExchangeSection, TeamSection, LeadsSection, PlanSection, FinanceSection, ReportsSection, OrderActivitySection, OrderCatalogResolutionModal, DeferredSection } from './app/lazySections'
+import { DashboardSection, ClientsSection, ReferencesSection, InventorySection, WorkshopSection, OrdersHeaderSection, OrderFiltersSection, CreateOrderSection, OrderEditorSection, OrdersTableSection, OrderDetailsSection, OrderDebtSection, OrderReturnsSection, OrderExchangeSection, TeamSection, LeadsSection, PlanSection, FinanceSection, ReportsSection, OrderActivitySection, OrderCatalogResolutionModal, StockResolutionConfirmModal, ReturnedItemResolutionModal, DeferredSection } from './app/lazySections'
 import { InventoryStockGroupsRenderer } from './features/renderers/InventoryStockGroupsRenderer'
+import type { StockResolutionPrompt } from './features/orders/StockResolutionConfirmModal'
 import { useFinanceReportReads } from './features/finance/useFinanceReportReads'
 import { useWorkshopReads } from './features/workshop/useWorkshopReads'
 import { useApiClient } from './app/controllers/useApiClient'
@@ -92,6 +93,7 @@ type OrderStockHandoverItemView = {
   productName: string
   itemDetails: string
   source: InventorySourceKey
+  variantId: number
   quantity: number
   reservationId: number | null
   reservationStatus: string
@@ -126,6 +128,21 @@ type OrderStockHandoverResponse = {
   state?: OrderStockHandoverResponse
   order?: OrderRecord
   refreshRequired?: boolean
+}
+
+type StockResolutionRequiredItemView = {
+  source?: InventorySourceKey
+  variantId?: number
+  productName?: string
+  trackedPhysicalQuantity?: number
+  operationQuantity?: number
+  unexplainedQuantity?: number
+}
+
+type OrderStockHandoverActionResponse = Omit<OrderStockHandoverResponse, 'items'> & {
+  code?: string
+  operationType?: string
+  items?: Array<OrderStockHandoverItemView | StockResolutionRequiredItemView>
 }
 
 
@@ -215,6 +232,9 @@ function App() {
   const [authChecking, setAuthChecking] = useState(true)
   const [simpleAdminMode, setSimpleAdminMode] = useState(false)
   const [adminModeOpen, setAdminModeOpen] = useState(false)
+  const [stockResolutionPrompt, setStockResolutionPrompt] = useState<StockResolutionPrompt | null>(null)
+  const stockResolutionDecisionRef = useRef<((value: boolean) => void) | null>(null)
+  const [returnedItemResolutionEventId, setReturnedItemResolutionEventId] = useState<number | null>(null)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [adminModeBusy, setAdminModeBusy] = useState(false)
   const [adminModeDraft, setAdminModeDraft] = useState({ login: 'admin', password: '' })
@@ -230,6 +250,18 @@ function App() {
   const [authUsersBusy, setAuthUsersBusy] = useState(false)
   const [authUsers, setAuthUsers] = useState<ManagedAuthUser[]>([])
   const [authUserDraft, setAuthUserDraft] = useState({ id: 0, email: '', password: '', role: 'manager' as AccessRole, managerId: 0, displayName: '', isActive: true, mustChangePassword: true })
+  const askStockResolution = (prompt: StockResolutionPrompt) => new Promise<boolean>((resolve) => {
+    if (stockResolutionDecisionRef.current) stockResolutionDecisionRef.current(false)
+    stockResolutionDecisionRef.current = resolve
+    setStockResolutionPrompt(prompt)
+  })
+  const answerStockResolution = (confirmed: boolean) => {
+    const resolve = stockResolutionDecisionRef.current
+    stockResolutionDecisionRef.current = null
+    setStockResolutionPrompt(null)
+    resolve?.(confirmed)
+  }
+
   const accessRole: AccessRole = simpleAdminMode ? 'admin' : 'manager'
   const isAdmin = accessRole === 'admin'
   const authReady = !authChecking
@@ -768,6 +800,13 @@ function App() {
     if (!authReady || activeSector !== 'orders' || orderPanel !== 'debt') return
     void loadAllOpenDebtOrders()
   }, [activeSector, authReady, orderPanel])
+
+  useEffect(() => {
+    if (!authReady || activeSector !== 'orders') return
+    // Pending physical returns/exchanges are operational work, not buried history.
+    // Load their summaries as soon as Orders opens so the tabs can show an attention badge.
+    void Promise.allSettled([loadReturnHistory(), loadExchangeHistory()])
+  }, [activeSector, authReady])
 
   useEffect(() => {
     if (!authReady || activeSector !== 'orders' || orderPanel !== 'returns') return
@@ -4614,7 +4653,6 @@ function App() {
       && same(row.material, nextVariant.material)
       && same(row.length, nextVariant.length)
       && same(row.size, nextVariant.size)
-      && (inventoryDraft.movementType !== 'writeoff' || Number(row.quantity || 0) > 0)
     )) || null
 
     setInventoryOperationVariant(nextVariant)
@@ -4669,28 +4707,13 @@ function App() {
           ? {
               ...item,
               quantity: nextQuantity,
-              observedPhysicalQuantity: (current.movementType === 'transfer' || current.movementType === 'writeoff') && nextQuantity <= physical ? null : item.observedPhysicalQuantity,
+              observedPhysicalQuantity: current.movementType === 'manual_set' ? item.observedPhysicalQuantity : null,
             }
           : item)
         : [...withoutEmpty, createInventoryItemFromStockRow(row, nextQuantity)]
       nextItems = nextItems.filter((item) => item.quantity > 0 || String(item.variantId || '') !== variantId)
       return { ...current, items: nextItems.length ? nextItems : [createEmptyInventoryItem()] }
     })
-  }
-
-  function setInventoryTransferObservedQuantity(row: InventoryStockRecord, rawValue: string) {
-    const variantId = String(row.variantId || '')
-    if (!variantId) return
-    setInventoryDraft((current) => ({
-      ...current,
-      items: current.items.map((item) => String(item.variantId || '') === variantId
-        ? {
-            ...item,
-            expectedQuantity: Number(row.quantity || 0),
-            observedPhysicalQuantity: rawValue === '' ? null : Math.max(0, Math.trunc(Number(rawValue || 0))),
-          }
-        : item),
-    }))
   }
 
   function startInventoryTransferFromStockRow(source: InventorySourceKey, row: InventoryStockRecord) {
@@ -4807,7 +4830,7 @@ function App() {
           size: item.size,
           quantity: Number(item.quantity || 0),
           expectedQuantity: item.expectedQuantity,
-          observedPhysicalQuantity: item.observedPhysicalQuantity,
+          observedPhysicalQuantity: inventoryDraft.movementType === 'manual_set' ? item.observedPhysicalQuantity : undefined,
         }))
 
       if (!cleanItems.length) {
@@ -4848,41 +4871,74 @@ function App() {
       }
 
       const isTransfer = inventoryDraft.movementType === 'transfer'
-      if (isTransfer || inventoryDraft.movementType === 'writeoff') {
-        for (const item of cleanItems) {
-          const row = inventoryOperationSourceRows.find((entry) => String(entry.variantId || '') === String(item.variantId || ''))
-          const physical = Number(row?.quantity || 0)
-          const requested = Math.max(0, Number(item.quantity || 0))
-          if (requested <= Math.max(0, physical)) continue
-          const observed = item.observedPhysicalQuantity === null || item.observedPhysicalQuantity === undefined
-            ? null
-            : Math.max(0, Math.trunc(Number(item.observedPhysicalQuantity || 0)))
-          if (observed === null) {
-            throw new Error(`По учёту «${item.productName}» на месте ${physical} шт., а ${isTransfer ? 'переместить' : 'списать'} нужно ${requested}. Если товар физически есть, укажите «Фактически на месте» прямо в этой строке.`)
-          }
-          if (observed < requested) {
-            throw new Error(`Для «${item.productName}» подтверждено ${observed} шт., а ${isTransfer ? 'переместить' : 'списать'} нужно ${requested}. Исправьте фактическое количество или количество операции.`)
-          }
-        }
+      const isWriteoff = inventoryDraft.movementType === 'writeoff'
+      type InventoryMovementSaveResponse = {
+        ok?: boolean
+        message?: string
+        externalId?: string
+        warnings?: Array<{ shortageAfter?: number }>
+        code?: string
+        operationType?: string
+        items?: StockResolutionRequiredItemView[]
       }
-      const response = await apiFetch(isTransfer ? '/api/inventory/transfer?returnInventory=0' : '/api/inventory/movements?returnInventory=0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(isTransfer ? {
-          requestId: inventoryTransferRequestId,
-          fromSource: inventoryDraft.source,
-          toSource: inventoryDraft.targetSource,
-          comment: inventoryDraft.comment,
-          items: cleanItems,
-        } : {
-          requestId: inventoryManualRequestId,
-          inventorySource: inventoryDraft.source,
-          movementType: inventoryDraft.movementType,
-          comment: inventoryDraft.comment,
-          items: cleanItems,
-        }),
-      })
-      const result = await readJsonResponse<{ message?: string; externalId?: string; warnings?: Array<{ shortageAfter?: number }> }>(response, 'Сохранение движения склада')
+      const submitMovement = async (stockConfirmations?: Array<{ source: InventorySourceKey; variantId: number; expectedQuantity: number; operationQuantity: number }>) => {
+        const response = await apiFetch(isTransfer ? '/api/inventory/transfer?returnInventory=0' : '/api/inventory/movements?returnInventory=0', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(isTransfer ? {
+            requestId: inventoryTransferRequestId,
+            fromSource: inventoryDraft.source,
+            toSource: inventoryDraft.targetSource,
+            comment: inventoryDraft.comment,
+            items: cleanItems,
+            stockConfirmations,
+          } : {
+            requestId: inventoryManualRequestId,
+            inventorySource: inventoryDraft.source,
+            movementType: inventoryDraft.movementType,
+            comment: inventoryDraft.comment,
+            items: cleanItems,
+            stockConfirmations,
+          }),
+        })
+        const result = await readJsonResponse<InventoryMovementSaveResponse>(response, 'Сохранение движения склада', { allowHttpError: true })
+        return { response, result }
+      }
+
+      let { response, result } = await submitMovement()
+      const resolverOperation = isTransfer ? 'transfer' : isWriteoff ? 'writeoff' : ''
+      if (
+        !response.ok
+        && resolverOperation
+        && result.code === 'stock_resolution_required'
+        && result.operationType === resolverOperation
+        && Array.isArray(result.items)
+        && result.items.length
+      ) {
+        const confirmed = await askStockResolution({
+          title: isTransfer ? 'Для перемещения не хватает учтённого остатка' : 'Для списания не хватает учтённого остатка',
+          intro: isTransfer ? 'Подтвердите, что эти вещи действительно сейчас переносятся между точками.' : 'Подтвердите, что эти вещи действительно сейчас физически списываются.',
+          actionLabel: isTransfer ? 'Да, перемещаю' : 'Да, списываю',
+          items: result.items.map((resolutionItem) => ({
+            productName: resolutionItem.productName || 'Товар',
+            tracked: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
+            needed: Math.max(1, Number(resolutionItem.operationQuantity || 1)),
+          })),
+          note: 'Подтверждение относится только к этой операции и не заменяет ревизию.',
+        })
+        if (!confirmed) {
+          setMessage(isTransfer ? 'Перемещение остановлено. Остатки не изменялись.' : 'Списание остановлено. Остатки не изменялись.')
+          return
+        }
+        const stockConfirmations = result.items.map((resolutionItem) => ({
+          source: resolutionItem.source === 'boutique' ? 'boutique' as const : 'warehouse' as const,
+          variantId: Number(resolutionItem.variantId || 0),
+          expectedQuantity: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
+          operationQuantity: Math.max(1, Number(resolutionItem.operationQuantity || 1)),
+        }))
+        ;({ response, result } = await submitMovement(stockConfirmations))
+      }
+
       if (!response.ok) throw new Error(result.message || `Inventory save failed: ${response.status}`)
 
       const refreshes: Array<Promise<unknown>> = isTransfer
@@ -4898,9 +4954,8 @@ function App() {
           : [
               loadInventoryData(inventoryDraft.source, true, '', false),
             ]
-      // Arrival/manual inventory write is already committed once the POST above returned 2xx.
-      // Follow-up reads are best-effort: a failed refresh must never turn a committed arrival
-      // into a red 'operation failed' state that invites the employee to submit it again.
+      // The mutation is already committed once the POST returned 2xx. Follow-up reads are
+      // best-effort so a refresh failure cannot invite the employee to submit the operation again.
       await Promise.allSettled(refreshes)
       const transferShortage = isTransfer ? (result.warnings || []).reduce((sum, row) => sum + Math.max(0, Number(row.shortageAfter || 0)), 0) : 0
       setMessage(isTransfer
@@ -5720,7 +5775,7 @@ function removeDebtPayment(index: number) {
     const sourceName = handoverSourceLabel(item.source)
     let confirmText = ''
     if (action === 'issue_now') {
-      confirmText = `Выдать клиенту сейчас: «${item.productName}» × ${item.quantity} (${sourceName})?\n\nФизический остаток уменьшится на ${item.quantity}. Сам заказ останется «Не отправлен», пока остальные товары не готовы.`
+      confirmText = `Выдать клиенту сейчас: «${item.productName}» × ${item.quantity} (${sourceName})?\n\nСистема зафиксирует выдачу ${item.quantity} шт. и обновит остаток. Если по учёту товара окажется меньше, система отдельно попросит подтвердить только выдаваемые вещи. Сам заказ останется «Не отправлен», пока остальные товары не готовы.`
     } else if (action === 'issued_before_checkpoint') {
       confirmText = `На момент ${item.checkpointKind === 'revision' ? 'ревизии' : 'сверки'} ${checkpointDate} клиент уже получил «${item.productName}»?\n\nЕсли да, физический остаток не изменится и повторного списания не будет.`
     } else {
@@ -5732,17 +5787,49 @@ function removeDebtPayment(index: number) {
     setError(null)
     setMessage(null)
     try {
-      const response = await apiFetch(`/api/orders/${stockHandoverOrder.id}/stock-handover`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action,
-          orderItemId: item.orderItemId,
-          checkpointId: item.checkpointId || undefined,
-          checkpointAt: item.checkpointAt || undefined,
-        }),
-      })
-      const result = await readJsonResponse<OrderStockHandoverResponse>(response, 'Товары со склада')
+      const submitHandoverAction = async (stockConfirmations?: Array<{ source: InventorySourceKey; variantId: number; expectedQuantity: number; operationQuantity: number }>) => {
+        const response = await apiFetch(`/api/orders/${stockHandoverOrder.id}/stock-handover`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action,
+            orderItemId: item.orderItemId,
+            checkpointId: item.checkpointId || undefined,
+            checkpointAt: item.checkpointAt || undefined,
+            stockConfirmations,
+          }),
+        })
+        const result = await readJsonResponse<OrderStockHandoverActionResponse>(response, 'Товары со склада', { allowHttpError: true })
+        return { response, result }
+      }
+
+      let { response, result } = await submitHandoverAction()
+      if (!response.ok && action === 'issue_now' && result.code === 'stock_resolution_required' && result.operationType === 'handover' && Array.isArray(result.items) && result.items.length) {
+        const resolutionItems = result.items as StockResolutionRequiredItemView[]
+        const confirmed = await askStockResolution({
+          title: 'Товара по учёту меньше, чем нужно для выдачи',
+          intro: 'Перед продолжением подтвердите фактическую ситуацию с этими вещами.',
+          actionLabel: 'Да, выдаю клиенту',
+          items: resolutionItems.map((resolutionItem) => ({
+            productName: resolutionItem.productName || item.productName,
+            tracked: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
+            needed: Math.max(1, Number(resolutionItem.operationQuantity || item.quantity || 1)),
+          })),
+          note: 'Подтверждение относится только к этой выдаче. Общий остаток товара этим не пересчитывается.',
+        })
+        if (!confirmed) {
+          setMessage('Выдача остановлена. Остатки не изменялись.')
+          return
+        }
+        const stockConfirmations = resolutionItems.map((resolutionItem) => ({
+          source: resolutionItem.source === 'boutique' ? 'boutique' as const : 'warehouse' as const,
+          variantId: Number(resolutionItem.variantId || 0),
+          expectedQuantity: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
+          operationQuantity: Math.max(1, Number(resolutionItem.operationQuantity || 1)),
+        }))
+        ;({ response, result } = await submitHandoverAction(stockConfirmations))
+      }
+
       if (!response.ok || !result.ok) throw new Error(result.message || `Stock handover failed: ${response.status}`)
       if (result.order) {
         upsertOrderInState(result.order)
@@ -5824,15 +5911,17 @@ function removeDebtPayment(index: number) {
         return false
       }
       if (!response.ok && result.code === 'stock_resolution_required' && result.operationType === 'shipping' && Array.isArray(result.items) && result.items.length) {
-        const lines = result.items.map((item) => {
-          const name = item.productName || `variant #${item.variantId || ''}`
-          const tracked = Math.max(0, Number(item.trackedPhysicalQuantity || 0))
-          const needed = Math.max(1, Number(item.operationQuantity || 1))
-          return `• ${name}: по учёту ${tracked} шт., сейчас отправляется ${needed} шт.`
+        const confirmed = await askStockResolution({
+          title: 'Товара по учёту меньше, чем нужно для отправки',
+          intro: 'Система не меняет общий остаток наугад. Подтвердите только фактическую передачу этих вещей.',
+          actionLabel: 'Да, отправляю клиенту',
+          items: result.items.map((resolutionItem) => ({
+            productName: resolutionItem.productName || `variant #${resolutionItem.variantId || ''}`,
+            tracked: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
+            needed: Math.max(1, Number(resolutionItem.operationQuantity || 1)),
+          })),
+          note: 'Это подтверждение одной отправки, а не пересчёт всего склада или бутика.',
         })
-        const confirmed = window.confirm(
-          `По учёту товара меньше, чем нужно для этой отправки.\n\n${lines.join('\n')}\n\nПодтвердите только если указанные вещи прямо сейчас физически у вас и действительно передаются клиенту. Это НЕ пересчёт всего остатка.`
-        )
         if (!confirmed) {
           setMessage('Отправка остановлена. Остатки не изменялись.')
           return false
@@ -6075,16 +6164,24 @@ function removeDebtPayment(index: number) {
       Number(returnSelectedOrder.received_amount || 0) - Number(returnSelectedOrder.return_amount || 0),
     )
 
-    if (amount <= 0) {
-      setError('Укажите сумму возврата больше нуля.')
+    const selectedReturnItems = returnDraft.items
+      .filter((item) => Number(item.orderItemId || 0) > 0 && Number(item.quantity || 0) > 0)
+      .map((item) => ({
+        orderItemId: item.orderItemId,
+        quantity: item.quantity,
+        restock: item.physicalState === 'warehouse' || item.physicalState === 'boutique',
+        physicalState: item.physicalState,
+      }))
+
+    if (amount <= 0 && selectedReturnItems.length === 0) {
+      setError('Для возврата без денег выберите хотя бы один возвращаемый товар.')
       return
     }
-
     if (amount > availableAmount) {
       setError(`Сумма возврата ${formatMoney(amount)} больше доступной суммы ${formatMoney(availableAmount)}.`)
       return
     }
-    if (!returnDraft.paymentMethod.trim()) {
+    if (amount > 0 && !returnDraft.paymentMethod.trim()) {
       setError('Выберите способ возврата денег. Это нужно для правильного учёта наличных и финансов.')
       return
     }
@@ -6101,14 +6198,7 @@ function removeDebtPayment(index: number) {
         paymentMethod: returnDraft.paymentMethod,
         comment: returnDraft.comment,
         restockSource: returnDraft.restockSource,
-        items: returnDraft.items
-          .filter((item) => Number(item.orderItemId || 0) > 0 && Number(item.quantity || 0) > 0)
-          .map((item) => ({
-            orderItemId: item.orderItemId,
-            quantity: item.quantity,
-            restock: item.physicalState === 'warehouse' || item.physicalState === 'boutique',
-            physicalState: item.physicalState,
-          })),
+        items: selectedReturnItems,
       }
       const criticalKey = `return-create:${returnSelectedOrder.id}`
       const critical = prepareCriticalRequest(criticalKey, payload)
@@ -6362,7 +6452,6 @@ function removeDebtPayment(index: number) {
     externalId: string
   }) {
     const destinationLabel = input.destination === 'warehouse' ? 'Склад' : input.destination === 'boutique' ? 'Бутик' : 'без добавления в остаток'
-    if (!window.confirm(`Подтвердить получение «${input.productName}» по ${input.externalId}? Решение: ${destinationLabel}.`)) return false
     const setBusy = input.operationType === 'return' ? setReturnBusy : setExchangeBusy
     setBusy(true)
     setError(null)
@@ -6385,6 +6474,7 @@ function removeDebtPayment(index: number) {
         ok?: boolean
         message?: string
         pendingInventoryCount?: number
+        pendingInventory?: { eventId?: number; reason?: string; productName?: string } | null
         stockApplied?: boolean
         stockAlreadyApplied?: boolean
       }>(response, 'Получение возвращённого товара')
@@ -6401,7 +6491,11 @@ function removeDebtPayment(index: number) {
       if (input.destination === 'no_stock') {
         setMessage(`«${input.productName}» отмечен как полученный. В остаток товар не добавлялся.`)
       } else if (Number(result.pendingInventoryCount || 0) > 0) {
-        setMessage(`«${input.productName}» физически получен. Для остатка требуется уточнение товара — система ничего не прибавляла наугад.`)
+        const eventId = Number(result.pendingInventory?.eventId || 0)
+        if (eventId) setReturnedItemResolutionEventId(eventId)
+        setMessage(eventId
+          ? `«${input.productName}» получен. Открылось уточнение товара — после подтверждения он сразу попадёт в выбранный остаток.`
+          : `«${input.productName}» физически получен. Для остатка требуется уточнение товара — система ничего не прибавляла наугад.`)
       } else {
         setMessage(`«${input.productName}» получен и учтён: ${destinationLabel}.`)
       }
@@ -6925,14 +7019,34 @@ function removeDebtPayment(index: number) {
         </div>
       ) : null}
 
+      <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />
+
+      <ReturnedItemResolutionModal
+        eventId={returnedItemResolutionEventId}
+        apiFetch={apiFetch}
+        isAdmin={isAdmin}
+        onRequestAdminMode={() => setAdminModeOpen(true)}
+        onClose={() => setReturnedItemResolutionEventId(null)}
+        onCompleted={async () => {
+          await Promise.allSettled([
+            loadReturnHistory(),
+            loadExchangeHistory(),
+            loadInventoryData('warehouse', true, '', false),
+            loadInventoryData('boutique', true, '', false),
+            loadDashboard(false),
+          ])
+          setMessage('Товар определён и приёмка завершена.')
+        }}
+      />
+
       {adminModeOpen ? (
-        <div className="modal-backdrop" style={orderCatalogResolutionOrder ? { zIndex: 1301 } : undefined} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAdminModeOpen(false) }}>
+        <div className="modal-backdrop" style={orderCatalogResolutionOrder || returnedItemResolutionEventId ? { zIndex: 1501 } : undefined} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAdminModeOpen(false) }}>
           <form className="modal-card auth-users-modal" role="dialog" aria-modal="true" aria-label="Админ режим" onSubmit={submitAdminMode}>
             <div className="modal-head">
               <div>
                 <div className="card-label">Админ режим</div>
                 <h3>Войти в админ режим</h3>
-                <p>{orderCatalogResolutionOrder ? 'Введите пароль администратора. После входа вы вернётесь к уточнению этого заказа.' : 'Обычная работа доступна без входа. Пароль нужен только для удаления, настроек и служебных действий.'}</p>
+                <p>{orderCatalogResolutionOrder ? 'Введите пароль администратора. После входа вы вернётесь к уточнению этого заказа.' : returnedItemResolutionEventId ? 'Введите пароль администратора. После входа вы вернётесь к приёмке этого товара.' : 'Обычная работа доступна без входа. Пароль нужен только для удаления, настроек и служебных действий.'}</p>
               </div>
               <button className="secondary compact" type="button" onClick={() => { setAdminModeOpen(false); setAdminModeDraft({ login: 'admin', password: '' }) }}>Закрыть</button>
             </div>
@@ -7104,7 +7218,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'inventory'} label="Склад">
-        <InventorySection ctx={{ activeSector, addInventoryMatrixColor, addInventoryMatrixSize, applyPendingInventoryWriteoffs, buildInventoryMatrix, catalogCategoryFilter, catalogOnlyWithoutVariants, setCatalogOnlyWithoutVariants, catalogData, catalogReview, catalogReviewBusy, catalogIssueStats, catalogProductDraft, catalogProductStockSummary, catalogVariantDraft, catalogVariantsByProductId, ChoicePills, clearInventoryMatrixValues, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, expandedCatalogProducts, filteredInventoryRows, formatMoney, FriendlyNumberInput, filteredReferenceItems, formatDateShort, getCatalogProductEffectiveCategory, getCatalogVariantCategory, getInventoryRowCategory, getStockQuantityForVariant, groupedInventoryRows, handleInventoryMatrixKeyDown, inventoryArrivalProductChoices, inventoryArrivalPositions, inventoryArrivalSummary, inventoryArrivalVariantOpen, inventoryArrivalReadyVariants, selectInventoryArrivalVariant, selectInventoryArrivalProduct, updateInventoryArrivalPosition, addInventoryArrivalSize, updateInventoryArrivalSize, removeInventoryArrivalSize, addInventoryArrivalPosition, removeInventoryArrivalPosition, resetInventoryArrivalForm, setInventoryArrivalVariantOpen, inventoryAudit, inventoryAuditBusy, resolveInventoryAuditIssue, inventoryCategoryFilter, inventoryControlBusy, inventoryControlSettings, inventoryMovementBusy, inventoryDraft, inventoryDraftSummary, inventoryHistoryRows, inventoryMatrix, inventoryMatrixActiveGroupKey, inventoryMatrixAxisLabel, inventoryMatrixBatchGroups, inventoryMatrixCellKey, inventoryMatrixCellMap, inventoryMatrixColors, inventoryMatrixColorToAdd, inventoryMatrixDraftItem, inventoryMatrixSizes, inventoryMatrixSizeToAdd, inventoryMatrixSummary, inventoryModelVersion, inventoryMovementText, matchedInventoryOperationVariant, activeInventoryOperationItem, selectedInventoryOperationItems, inventoryOperationAllProductGroups, inventoryOperationProductGroups, inventoryOperationSearch, inventoryOperationVariant, inventoryOperationActiveVariantId, inventoryExistingVariantOpen, inventoryExistingVariantSearch, inventoryExistingVariantRows, inventoryPanel, inventoryPanelStyle, inventoryPickerOptions, inventoryProblemRows, inventoryQuery, inventoryQuickFilters, inventorySortMode, inventorySourceRows, inventoryStats, inventoryStocktakeAllGroups, inventoryStocktakeGroups, inventoryStocktakeStats, printInventoryStocktakePdf, applyInventoryStocktakeChanges, inventoryStatusFilter, isAdmin, latestManualMovements, latestReturnExchangeMovements, latestSaleMovements, loadCatalogData, loadCatalogReview, reconcileCatalogReview, loadCatalogReviewContext, resolveCatalogReviewFacts, excludeCatalogReviewItem, inventoryLifecycle, inventoryLifecycleBusy, warehouseAttention, loadInventoryLifecycle, loadInventoryLifecycleContext, resolveInventoryLifecycleFacts, reconcileKnownInventoryLifecycle, reconcileFoundInventoryStock, loadWarehouseAttention, loadInventoryAudit, loadInventoryData, loadInventoryHistory, loadInventoryCheckHistory, loadInventoryReservations, loadInventoryStocktakeSessions, loadInventoryStocktakeSession, createInventoryStocktakeSession, saveInventoryStocktakeCount, addInventoryStocktakeVariant, addInventoryStocktakeCombination, loadInventoryCycleCounts, applyInventoryCycleCounts, quickInventoryStocktake, quickInventoryStocktakeBatch, completeInventoryStocktakeSession, cancelInventoryStocktakeSession, loadReferenceItems, loadReferencesData, references, normalizeSuggestion, openInventoryPanel, openOrderFromFinance, openOrderStockHandoverById, operationVariantOptions, inventoryProductReferenceGroups, inventoryWriteoffReferenceGroups, referenceBusy, referenceDraft, referenceItems, referenceKind, referenceSearch, referenceStatusFilter, removeReferenceEntry, resolveCatalogReviewItem, resetReferenceDraft, saveReferenceEntry, selectedReferenceKindConfig, selectReferenceKind, setReferenceDraft, setReferenceSearch, setReferenceStatusFilter, productCategoryLabel, productHasVariantCategory, refreshInventoryModule, renderInventoryStockGroups, resetInventoryOperationSelection, removeInventoryVariantOperationItem, reverseInventoryMovement, reversingInventoryMovementId, saveCatalogProduct, saveCatalogVariant, saveInventoryMovement, sectorStyle, startNextInventoryMatrixProduct, openInventoryMatrixBatchGroup, removeInventoryMatrixBatchGroup, selectedCatalogProduct, selectedInventoryOperationGroup, selectInventoryOperationVariant, setCatalogCategoryFilter, setCatalogProductDraft, setCatalogVariantDraft, setExpandedCatalogProducts, setInventoryCategoryFilter, setInventoryDraft, setInventoryMatrix, setInventoryMatrixCell, setInventoryMatrixColorToAdd, setInventoryMatrixSizeToAdd, setInventoryExistingVariantOpen, setInventoryExistingVariantSearch, setInventoryQuery, setInventoryQuickFilters, setInventorySortMode, setInventoryStatusFilter, setInventoryTransferObservedQuantity, setInventoryVariantOperationQuantity, SmartPickerInput, sourceLabel, suggestionValues, arrivalSuggestionValues, toggleInventoryAutoWriteoff, updateInventoryMatrixCategory, updateInventoryMatrixGender, updateInventoryMatrixLength, updateInventoryMatrixMaterial, updateInventoryMatrixProductInput, updateInventoryDirectProductInput, updateInventoryOperationVariantField, visibleCatalogProducts }} />
+        <InventorySection ctx={{ activeSector, addInventoryMatrixColor, addInventoryMatrixSize, applyPendingInventoryWriteoffs, buildInventoryMatrix, catalogCategoryFilter, catalogOnlyWithoutVariants, setCatalogOnlyWithoutVariants, catalogData, catalogReview, catalogReviewBusy, catalogIssueStats, catalogProductDraft, catalogProductStockSummary, catalogVariantDraft, catalogVariantsByProductId, ChoicePills, clearInventoryMatrixValues, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, expandedCatalogProducts, filteredInventoryRows, formatMoney, FriendlyNumberInput, filteredReferenceItems, formatDateShort, getCatalogProductEffectiveCategory, getCatalogVariantCategory, getInventoryRowCategory, getStockQuantityForVariant, groupedInventoryRows, handleInventoryMatrixKeyDown, inventoryArrivalProductChoices, inventoryArrivalPositions, inventoryArrivalSummary, inventoryArrivalVariantOpen, inventoryArrivalReadyVariants, selectInventoryArrivalVariant, selectInventoryArrivalProduct, updateInventoryArrivalPosition, addInventoryArrivalSize, updateInventoryArrivalSize, removeInventoryArrivalSize, addInventoryArrivalPosition, removeInventoryArrivalPosition, resetInventoryArrivalForm, setInventoryArrivalVariantOpen, inventoryAudit, inventoryAuditBusy, resolveInventoryAuditIssue, inventoryCategoryFilter, inventoryControlBusy, inventoryControlSettings, inventoryMovementBusy, inventoryDraft, inventoryDraftSummary, inventoryHistoryRows, inventoryMatrix, inventoryMatrixActiveGroupKey, inventoryMatrixAxisLabel, inventoryMatrixBatchGroups, inventoryMatrixCellKey, inventoryMatrixCellMap, inventoryMatrixColors, inventoryMatrixColorToAdd, inventoryMatrixDraftItem, inventoryMatrixSizes, inventoryMatrixSizeToAdd, inventoryMatrixSummary, inventoryModelVersion, inventoryMovementText, matchedInventoryOperationVariant, activeInventoryOperationItem, selectedInventoryOperationItems, inventoryOperationAllProductGroups, inventoryOperationProductGroups, inventoryOperationSearch, inventoryOperationVariant, inventoryOperationActiveVariantId, inventoryExistingVariantOpen, inventoryExistingVariantSearch, inventoryExistingVariantRows, inventoryPanel, inventoryPanelStyle, inventoryPickerOptions, inventoryProblemRows, inventoryQuery, inventoryQuickFilters, inventorySortMode, inventorySourceRows, inventoryStats, inventoryStocktakeAllGroups, inventoryStocktakeGroups, inventoryStocktakeStats, printInventoryStocktakePdf, applyInventoryStocktakeChanges, inventoryStatusFilter, isAdmin, latestManualMovements, latestReturnExchangeMovements, latestSaleMovements, loadCatalogData, loadCatalogReview, reconcileCatalogReview, loadCatalogReviewContext, resolveCatalogReviewFacts, excludeCatalogReviewItem, inventoryLifecycle, inventoryLifecycleBusy, warehouseAttention, loadInventoryLifecycle, loadInventoryLifecycleContext, resolveInventoryLifecycleFacts, reconcileKnownInventoryLifecycle, reconcileFoundInventoryStock, loadWarehouseAttention, loadInventoryAudit, loadInventoryData, loadInventoryHistory, loadInventoryCheckHistory, loadInventoryReservations, loadInventoryStocktakeSessions, loadInventoryStocktakeSession, createInventoryStocktakeSession, saveInventoryStocktakeCount, addInventoryStocktakeVariant, addInventoryStocktakeCombination, loadInventoryCycleCounts, applyInventoryCycleCounts, quickInventoryStocktake, quickInventoryStocktakeBatch, completeInventoryStocktakeSession, cancelInventoryStocktakeSession, loadReferenceItems, loadReferencesData, references, normalizeSuggestion, openInventoryPanel, openOrderFromFinance, openOrderStockHandoverById, operationVariantOptions, inventoryProductReferenceGroups, inventoryWriteoffReferenceGroups, referenceBusy, referenceDraft, referenceItems, referenceKind, referenceSearch, referenceStatusFilter, removeReferenceEntry, resolveCatalogReviewItem, resetReferenceDraft, saveReferenceEntry, selectedReferenceKindConfig, selectReferenceKind, setReferenceDraft, setReferenceSearch, setReferenceStatusFilter, productCategoryLabel, productHasVariantCategory, refreshInventoryModule, renderInventoryStockGroups, resetInventoryOperationSelection, removeInventoryVariantOperationItem, reverseInventoryMovement, reversingInventoryMovementId, saveCatalogProduct, saveCatalogVariant, saveInventoryMovement, sectorStyle, startNextInventoryMatrixProduct, openInventoryMatrixBatchGroup, removeInventoryMatrixBatchGroup, selectedCatalogProduct, selectedInventoryOperationGroup, selectInventoryOperationVariant, setCatalogCategoryFilter, setCatalogProductDraft, setCatalogVariantDraft, setExpandedCatalogProducts, setInventoryCategoryFilter, setInventoryDraft, setInventoryMatrix, setInventoryMatrixCell, setInventoryMatrixColorToAdd, setInventoryMatrixSizeToAdd, setInventoryExistingVariantOpen, setInventoryExistingVariantSearch, setInventoryQuery, setInventoryQuickFilters, setInventorySortMode, setInventoryStatusFilter, setInventoryVariantOperationQuantity, SmartPickerInput, sourceLabel, suggestionValues, arrivalSuggestionValues, toggleInventoryAutoWriteoff, updateInventoryMatrixCategory, updateInventoryMatrixGender, updateInventoryMatrixLength, updateInventoryMatrixMaterial, updateInventoryMatrixProductInput, updateInventoryDirectProductInput, updateInventoryOperationVariantField, visibleCatalogProducts }} />
         </DeferredSection>
 
         <section className="grid" style={sectorStyle('overview')}>
@@ -7143,7 +7257,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders'} label="Заказы">
-        <OrdersHeaderSection ctx={{ orderPanel, orderPanelOptions, sectorStyle, setEditorOpen, setOrderPanel }} />
+        <OrdersHeaderSection ctx={{ orderPanel, orderPanelOptions, returnHistorySummary, exchangeHistorySummary, sectorStyle, setEditorOpen, setOrderPanel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Заказы">
@@ -7171,11 +7285,11 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'returns'} label="Возврат">
-        <OrderReturnsSection ctx={{ cancelReturnEntry, closeReturnForm, createReturnDraft, formatMoney, FriendlyNumberInput, isAdmin, loadReturnHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, returnBusy, returnDraft, returnFormRef, returnHistory, returnHistoryBusy, returnHistoryError, returnHistoryFilters, returnHistoryHasMore, returnHistorySummary, returnSelectedOrder, saveReturn, sectorStyle, setOrderPanel, setReturnDraft, setReturnHistoryFilters, SmartPickerInput, suggestionValues }} />
+        <OrderReturnsSection ctx={{ cancelReturnEntry, closeReturnForm, createReturnDraft, formatMoney, FriendlyNumberInput, isAdmin, loadReturnHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, returnBusy, returnDraft, returnFormRef, returnHistory, returnHistoryBusy, returnHistoryError, returnHistoryFilters, returnHistoryHasMore, returnHistorySummary, returnSelectedOrder, saveReturn, sectorStyle, setOrderPanel, setReturnDraft, setReturnHistoryFilters, SmartPickerInput, suggestionValues }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'exchange'} label="Обмен размера">
-        <OrderExchangeSection ctx={{ applyExchangeProductPick, cancelExchangeEntry, closeExchangeForm, correctExchangeFinancialEntry, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />
+        <OrderExchangeSection ctx={{ applyExchangeProductPick, cancelExchangeEntry, closeExchangeForm, correctExchangeFinancialEntry, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'team'} label="Команда">

@@ -15,7 +15,7 @@ try {
   check(modal.includes('После входа это окно останется открытым'), 'Reference-value escalation does not explain that resolver state is preserved')
 
   check(app.includes('onRequestAdminMode={() => setAdminModeOpen(true)}'), 'Orders resolver is not wired to open Admin mode in place')
-  check(app.includes('style={orderCatalogResolutionOrder ? { zIndex: 1301 } : undefined}'), 'Admin login cannot reliably appear above the active order resolver')
+  check(app.includes('style={orderCatalogResolutionOrder || returnedItemResolutionEventId ? { zIndex: 1501 } : undefined}'), 'Admin login cannot reliably appear above the active order or returned-item resolver')
   check(app.includes('После входа вы вернётесь к уточнению этого заказа.'), 'Admin login does not explain the return-to-order behavior')
   check(app.includes('setSimpleAdminMode(true)') && app.includes('setAdminModeOpen(false)'), 'Successful Admin login no longer promotes the current resolver session')
 

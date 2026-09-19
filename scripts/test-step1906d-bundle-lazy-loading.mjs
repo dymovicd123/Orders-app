@@ -54,7 +54,7 @@ try {
     'OrderDetailsSection','OrderDebtSection','OrderReturnsSection','OrderExchangeSection','TeamSection','LeadsSection',
     'PlanSection','FinanceSection','ReportsSection','OrderActivitySection',
   ]
-  const contextualLazyFeatures = ['OrderCatalogResolutionModal']
+  const contextualLazyFeatures = ['OrderCatalogResolutionModal','StockResolutionConfirmModal','ReturnedItemResolutionModal']
   const allLazyFeatures = [...lazySections, ...contextualLazyFeatures]
   for (const name of lazySections) {
     check(lazy.includes(`export const ${name} = namedLazy(`), `Lazy feature boundary missing: ${name}`)
@@ -75,6 +75,7 @@ try {
     check(!new RegExp(`from ['\"][^'\"]*features/sections/${name}['\"]`).test(app), `App statically imports ${name}`)
   }
   check(!app.includes("from './features/orders/OrderCatalogResolutionModal'"), 'Contextual resolver still leaks into initial App graph')
+  check(!app.includes("import { StockResolutionConfirmModal") && !app.includes("import { ReturnedItemResolutionModal"), 'Post-review resolver modals leak into initial App graph')
   check(!app.includes("from './features/renderers/FinanceDashboardRenderer'"), 'Finance dashboard renderer still leaks into initial App graph')
   check(!app.includes("from './features/renderers/FinanceReportContentRenderer'"), 'Finance report renderer still leaks into initial App graph')
   check(app.includes("useState<AppSector>(() => sectorFromHash(window.location.hash))"), 'Direct hash routes still mount the default Orders chunk before the requested sector')
@@ -91,6 +92,8 @@ try {
     check(!graphRelative.includes(`src/features/sections/${name}.tsx`), `Lazy section is still initial-static: ${name}`)
   }
   check(!graphRelative.includes('src/features/orders/OrderCatalogResolutionModal.tsx'), 'Contextual resolver remains initial-static')
+  check(!graphRelative.includes('src/features/orders/StockResolutionConfirmModal.tsx'), 'Stock confirmation modal remains initial-static')
+  check(!graphRelative.includes('src/features/orders/ReturnedItemResolutionModal.tsx'), 'Returned-item resolver remains initial-static')
   check(!graphRelative.includes('src/features/renderers/FinanceDashboardRenderer.tsx'), 'Finance dashboard renderer remains initial-static')
   check(!graphRelative.includes('src/features/renderers/FinanceReportContentRenderer.tsx'), 'Finance report renderer remains initial-static')
 

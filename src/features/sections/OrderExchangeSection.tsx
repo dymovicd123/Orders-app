@@ -28,6 +28,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     managerColorFor,
     orderPanelStyle,
     receiveReturnedItemAction,
+    reconcileKnownInventoryLifecycle,
     saveExchange,
     sectorStyle,
     setExchangeDraft,
@@ -71,6 +72,18 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     && (entry.oldReturnSource === 'warehouse' || entry.oldReturnSource === 'boutique')
     && !entry.oldLifecycleStatus
   )
+  const oldKnownIntakePending = (entry: any) => Boolean(
+    entry.oldPhysicalTracking
+    && entry.oldPhysicalReceivedAt
+    && entry.oldLifecycleId
+    && (entry.oldLifecycleVariantId || entry.oldCurrentVariantId)
+    && entry.oldLifecycleStatus === 'pending'
+    && (entry.oldReturnSource === 'warehouse' || entry.oldReturnSource === 'boutique')
+  )
+  const finishKnownExchangeIntake = async (entry: any) => {
+    const result = await reconcileKnownInventoryLifecycle(Number(entry.oldLifecycleId || 0))
+    if (result?.ok) await loadExchangeHistory()
+  }
   const oldReturnLabel = (entry: any) => {
     if (!entry.oldPhysicalTracking) return 'Старая запись — физическое получение не отслеживалось'
     if (!entry.oldPhysicalReceivedAt) return 'Ещё не пришла'
@@ -488,7 +501,14 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                   <label><span>Статус</span><select value={exchangeHistoryFilters.status} onChange={(event) => setExchangeHistoryFilters((current: any) => ({ ...current, status: event.target.value }))}><option value="all">Все</option><option value="completed">Проведённые</option><option value="cancelled">Отменённые</option></select></label>
                   <button className="primary compact history-filter-submit" type="button" disabled={exchangeHistoryBusy} onClick={() => void loadExchangeHistory({ filters: exchangeHistoryFilters })}>Показать</button>
                 </div>
-                <div className="history-summary-line"><span><strong>{exchangeHistorySummary.count}</strong> операций</span><span>Проведено: <strong>{exchangeHistorySummary.activeCount}</strong></span><span>Старых вещей ещё не пришло: <strong>{exchangeHistorySummary.pendingPhysicalQuantity} шт.</strong></span>{exchangeHistorySummary.cancelledCount ? <span>Отменено: <strong>{exchangeHistorySummary.cancelledCount}</strong></span> : null}</div>
+                <div className="history-summary-line"><span><strong>{exchangeHistorySummary.count}</strong> операций</span><span>Проведено: <strong>{exchangeHistorySummary.activeCount}</strong></span><span>Ожидают приёмки: <strong>{exchangeHistorySummary.pendingPhysicalQuantity} шт.</strong></span>{exchangeHistorySummary.cancelledCount ? <span>Отменено: <strong>{exchangeHistorySummary.cancelledCount}</strong></span> : null}</div>
+
+                {Number(exchangeHistorySummary.pendingPhysicalQuantity || 0) > 0 ? (
+                  <div className="history-load-state is-warning">
+                    <strong>Ожидают приёмки: {exchangeHistorySummary.pendingPhysicalQuantity} шт.</strong>
+                    <span>Когда старая вещь приехала, откройте обмен ниже и нажмите «Принять товар». Если запись мусорная или неполная, уточнение товара откроется сразу.</span>
+                  </div>
+                ) : null}
 
                 {exchangeHistoryError ? (
                   <div className="history-load-state is-error"><strong>Не удалось загрузить историю обменов.</strong><span>{exchangeHistoryError}</span><button className="secondary compact" type="button" onClick={() => void loadExchangeHistory()}>Повторить</button></div>
@@ -534,6 +554,18 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                     })}
                                   >
                                     Товар пришёл
+                                  </button>
+                                </div>
+                              ) : null}
+                              {entry.status !== 'cancelled' && entry.oldOperationItemId && oldKnownIntakePending(entry) ? (
+                                <div className="mini-panel-actions">
+                                  <button
+                                    className="primary compact"
+                                    type="button"
+                                    disabled={exchangeBusy || exchangeHistoryBusy}
+                                    onClick={() => void finishKnownExchangeIntake(entry)}
+                                  >
+                                    Завершить приёмку
                                   </button>
                                 </div>
                               ) : null}

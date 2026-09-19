@@ -735,7 +735,7 @@ export default {
       }
 
       if (url.pathname === '/api/inventory/movements' && request.method === 'POST') {
-        const input = await readJson<{ requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[] }>(request);
+        const input = await readJson<{ requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown }>(request);
         const movementType = cleanText(input.movementType).toLowerCase();
         const routineExistingStockOperation = movementType === 'manual_set' || movementType === 'writeoff';
         const knownArrival = movementType === 'arrival'
@@ -749,26 +749,44 @@ export default {
         const returnInventory = url.searchParams.get('returnInventory') !== '0';
         const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const result = await applyInventoryMovement(env.DB, input, returnInventory, actor);
-        await writeActivityLog(env.DB, {
-          eventType: 'inventory_movement',
-          entityType: 'inventory',
-          title: `Движение остатков: ${cleanText(input.movementType) || 'операция'}`,
-          details: `${cleanText(input.inventorySource) || 'источник не указан'}; позиций: ${Array.isArray(input.items) ? input.items.length : 0}${cleanText(input.comment) ? `; ${cleanText(input.comment)}` : ''}`,
-        });
-        return json(result, { status: 201 });
+        if ('code' in result && result.code === 'stock_resolution_required') {
+          return json(result, { status: 409 });
+        }
+        if (!('duplicate' in result)) throw new Error('Некорректный ответ складской операции.');
+        if (!result.duplicate) {
+          try {
+            await writeActivityLog(env.DB, {
+              eventType: 'inventory_movement',
+              entityType: 'inventory',
+              title: `Движение остатков: ${cleanText(input.movementType) || 'операция'}`,
+              details: `${cleanText(input.inventorySource) || 'источник не указан'}; позиций: ${Array.isArray(input.items) ? input.items.length : 0}${cleanText(input.comment) ? `; ${cleanText(input.comment)}` : ''}`,
+            });
+          } catch (activityError) {
+            console.error(JSON.stringify({ event: 'inventory_movement_activity_failed', requestId: cleanText(input.requestId), message: cleanText(activityError instanceof Error ? activityError.message : activityError).slice(0, 800) }));
+          }
+        }
+        return json(result, { status: result.duplicate ? 200 : 201 });
       }
 
       if (url.pathname === '/api/inventory/transfer' && request.method === 'POST') {
-        const input = await readJson<{ requestId?: unknown; fromSource?: unknown; toSource?: unknown; comment?: unknown; items?: InventoryItemInput[] }>(request);
+        const input = await readJson<{ requestId?: unknown; fromSource?: unknown; toSource?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown }>(request);
         const returnInventory = url.searchParams.get('returnInventory') !== '0';
         const result = await applyInventoryTransfer(env.DB, input, authUser?.displayName || '', returnInventory);
+        if ('code' in result && result.code === 'stock_resolution_required') {
+          return json(result, { status: 409 });
+        }
+        if (!('duplicate' in result)) throw new Error('Некорректный ответ перемещения.');
         if (!result.duplicate) {
-          await writeActivityLog(env.DB, {
-            eventType: 'inventory_transfer',
-            entityType: 'inventory',
-            title: 'Перемещение остатков',
-            details: `${cleanText(result.externalId) || 'перемещение'}; ${cleanText(input.fromSource) || 'источник'} → ${cleanText(input.toSource) || 'назначение'}; позиций: ${toInt(result.applied, Array.isArray(input.items) ? input.items.length : 0)}; количество: ${toInt(result.totalQuantity, 0)}${cleanText(input.comment) ? `; ${cleanText(input.comment)}` : ''}`,
-          });
+          try {
+            await writeActivityLog(env.DB, {
+              eventType: 'inventory_transfer',
+              entityType: 'inventory',
+              title: 'Перемещение остатков',
+              details: `${cleanText(result.externalId) || 'перемещение'}; ${cleanText(input.fromSource) || 'источник'} → ${cleanText(input.toSource) || 'назначение'}; позиций: ${toInt(result.applied, Array.isArray(input.items) ? input.items.length : 0)}; количество: ${toInt(result.totalQuantity, 0)}${cleanText(input.comment) ? `; ${cleanText(input.comment)}` : ''}`,
+            });
+          } catch (activityError) {
+            console.error(JSON.stringify({ event: 'inventory_transfer_activity_failed', requestId: cleanText(input.requestId), message: cleanText(activityError instanceof Error ? activityError.message : activityError).slice(0, 800) }));
+          }
         }
         return json(result, { status: result.duplicate ? 200 : 201 });
       }
@@ -785,17 +803,35 @@ export default {
 
       const inventoryLifecycleContextMatch = url.pathname.match(/^\/api\/inventory\/lifecycle\/(\d+)\/context$/);
       if (inventoryLifecycleContextMatch && request.method === 'GET') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
-        return json(await getInventoryLifecycleContext(env.DB, toInt(inventoryLifecycleContextMatch[1], 0)));
+        const eventId = toInt(inventoryLifecycleContextMatch[1], 0);
+        const operationalInbound = await env.DB.prepare(
+          `SELECT id FROM inventory_lifecycle_events
+           WHERE id = ? AND status = 'pending' AND direction = 'in'
+             AND operation_type IN ('return','exchange')
+           LIMIT 1`
+        ).bind(eventId).first<{ id: number }>();
+        if (!operationalInbound?.id) {
+          const denied = requireAdminAccess(request);
+          if (denied) return denied;
+        }
+        return json(await getInventoryLifecycleContext(env.DB, eventId));
       }
 
       const inventoryLifecycleResolveMatch = url.pathname.match(/^\/api\/inventory\/lifecycle\/(\d+)\/resolve-facts$/);
       if (inventoryLifecycleResolveMatch && request.method === 'POST') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         const eventId = toInt(inventoryLifecycleResolveMatch[1], 0);
         const input = await readJson<CatalogReviewFactsInput>(request);
+        const operationalInbound = await env.DB.prepare(
+          `SELECT id FROM inventory_lifecycle_events
+           WHERE id = ? AND status = 'pending' AND direction = 'in'
+             AND operation_type IN ('return','exchange')
+           LIMIT 1`
+        ).bind(eventId).first<{ id: number }>();
+        const createFields = Array.isArray(input.createFields) ? input.createFields.filter(Boolean) : [];
+        if (!operationalInbound?.id || Boolean(input.createProduct) || createFields.length > 0) {
+          const denied = requireAdminAccess(request);
+          if (denied) return denied;
+        }
         const result = await resolveInventoryLifecycleFacts(env.DB, eventId, input);
         await writeActivityLog(env.DB, {
           eventType: 'inventory_lifecycle_resolved',
@@ -1013,7 +1049,7 @@ export default {
           return json({ ok: false, message: 'Этот заказ уже отправлен клиенту. Повторная выдача товаров запрещена.' }, { status: 409 });
         }
 
-        const input = await readJson<{ action?: unknown; orderItemId?: unknown; checkpointId?: unknown; checkpointAt?: unknown }>(request);
+        const input = await readJson<{ action?: unknown; orderItemId?: unknown; checkpointId?: unknown; checkpointAt?: unknown; stockConfirmations?: unknown }>(request);
         const action = cleanText(input.action);
         const orderItemId = toInt(input.orderItemId, 0);
         const checkpointId = toInt(input.checkpointId, 0);
@@ -1063,9 +1099,29 @@ export default {
             if (!item.reservationId || item.reservationStatus !== 'active') {
               return json({ ok: false, message: `«${item.productName}» нельзя выдать сейчас: складская привязка требует проверки.` }, { status: 409 });
             }
+            const normalizedStockConfirmations = normalizeShipmentStockConfirmations(input.stockConfirmations);
+            const trackedPhysicalQuantity = Math.max(0, toInt(item.physicalQuantity, 0));
+            const operationQuantity = Math.max(1, toInt(item.quantity, 1));
+            const matchingConfirmation = normalizedStockConfirmations.find((candidate) =>
+              candidate.source === item.source
+              && candidate.variantId === item.variantId
+              && candidate.expectedQuantity === trackedPhysicalQuantity
+              && candidate.operationQuantity === operationQuantity
+            );
+            if (trackedPhysicalQuantity < operationQuantity && !matchingConfirmation) {
+              return json(buildStockResolutionRequired('handover', [{
+                source: item.source,
+                variantId: item.variantId,
+                productName: item.productName,
+                trackedPhysicalQuantity,
+                operationQuantity,
+              }]), { status: 409 });
+            }
             const inventoryDelivery = await fulfillOrderReservationsV2(env.DB, id, state.externalId, new Date().toISOString(), {
               checkedBy: actor,
               orderItemIds: [orderItemId],
+              stockConfirmations: trackedPhysicalQuantity < operationQuantity ? normalizedStockConfirmations : [],
+              stockConfirmationOperation: 'handover',
             });
             if (inventoryDelivery.unresolved) {
               return json({ ok: false, message: `«${item.productName}» нельзя выдать: позиция требует разбора на Складе.` }, { status: 409 });

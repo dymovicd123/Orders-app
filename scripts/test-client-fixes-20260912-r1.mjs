@@ -14,7 +14,7 @@ const financeUi = fs.readFileSync('src/features/renderers/FinanceReportContentRe
 
 try {
   // Returns were already genuinely multi-item; keep that working instead of rewriting it.
-  check(app.includes('items: returnDraft.items') && app.includes('.filter((item) => Number(item.orderItemId || 0) > 0 && Number(item.quantity || 0) > 0)'), 'Return save must continue sending all selected positive-quantity item rows')
+  check(app.includes('const selectedReturnItems = returnDraft.items') && app.includes('.filter((item) => Number(item.orderItemId || 0) > 0 && Number(item.quantity || 0) > 0)') && app.includes('items: selectedReturnItems'), 'Return save must continue sending all selected positive-quantity item rows')
   check(returnsUi.includes('returnDraft.items.map'), 'Return UI must continue rendering every returnable order item')
 
   // Exchanges: one visit may queue multiple old→new pairs, while each child keeps the proven exchange path.

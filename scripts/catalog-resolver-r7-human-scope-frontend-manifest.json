@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "revision": "production-catalog-resolver-r7",
-  "baseCommit": "0a530441c9b4b63d62d440e7352d551572db17a8",
+  "revision": "catalog-resolver-r7-human-scope",
+  "baseCommit": "1af498e27281c648a60f6b7647a6f5afc247f56d",
   "files": {
     "src/features/orders/OrderCatalogResolutionModal.tsx": {
       "beforeGitBlob": "5a86ef77ab0c3d77dcd3a6d8b56eb9f59c5ba4f5",

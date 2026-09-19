@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "revision": "production-catalog-resolver-r6",
-  "baseCommit": "bc8d1eb06c0bbbd75a91ac0756884fe87d3a16b0",
+  "revision": "catalog-resolver-r6-deterministic-auto",
+  "baseCommit": "2339e2a769833295d1917327325d7addd6e17dae",
   "files": {
     "worker/domains/order-reservations.ts": {
       "beforeGitBlob": "b2d21ec665d89175833568a5c0366085f18aea02",

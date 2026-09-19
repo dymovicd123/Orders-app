@@ -155,7 +155,7 @@ try {
   check(types.includes("lifecycleStatus?: 'pending' | 'applied' | 'cancelled'"), 'Frontend history type lost lifecycle state')
   check(returnView.includes("item.lifecycleStatus === 'pending'"), 'History UI lost pending intake state')
   check(returnView.includes("item.lifecycleStatus === 'cancelled'"), 'History UI lost cancelled/superseded intake state')
-  check(returnView.includes("if (!item.physicalReceivedAt) return 'Ещё не пришёл'"), 'History UI lost physical-receipt distinction')
+  check(returnView.includes("if (!item.physicalReceivedAt) return 'Ожидает приёмки'"), 'History UI lost physical-receipt distinction')
   check(returnView.includes("if (!item.inventorySource) return 'Получен, в остаток не добавляли'"), 'History UI lost actual stock-intake distinction')
   check(exchangeView.includes('Для вещи из Цеха по умолчанию остаток не создаётся.') && exchangeView.includes('явно выберите «Склад» или «Бутик»'), 'Exchange UI lost Workshop explicit-disposition guidance')
 

@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "revision": "production-catalog-resolver-r3-r4",
-  "baseCommit": "bd34beda7ff0bf3707afb9f609d8712d1dbab580",
+  "revision": "order-send-clarify-label-r3",
+  "baseCommit": "a8c3a1a4b57e5e0ebf8f4231c1efe316ff74fef4",
   "files": {
     "worker/domains/orders-read.ts": {
       "beforeGitBlob": "270eb13381acbbe4711fa93f017f4f9c19715faa",

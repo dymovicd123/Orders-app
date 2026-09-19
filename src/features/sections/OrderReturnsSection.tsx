@@ -25,6 +25,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     loadReturnHistory,
     returnSelectedOrder,
     receiveReturnedItemAction,
+    reconcileKnownInventoryLifecycle,
     saveReturn,
     sectorStyle,
     setOrderPanel,
@@ -61,9 +62,21 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     && (item.inventorySource === 'warehouse' || item.inventorySource === 'boutique')
     && !item.lifecycleStatus
   )
+  const returnKnownIntakePending = (item: any) => Boolean(
+    item.physicalTracking
+    && item.physicalReceivedAt
+    && item.lifecycleId
+    && (item.lifecycleVariantId || item.currentVariantId)
+    && item.lifecycleStatus === 'pending'
+    && (item.inventorySource === 'warehouse' || item.inventorySource === 'boutique')
+  )
+  const finishKnownReturnIntake = async (item: any) => {
+    const result = await reconcileKnownInventoryLifecycle(Number(item.lifecycleId || 0))
+    if (result?.ok) await loadReturnHistory()
+  }
   const returnPhysicalStatus = (item: any) => {
     if (!item.physicalTracking) return 'Старая запись — физическое получение не отслеживалось'
-    if (!item.physicalReceivedAt) return 'Ещё не пришёл'
+    if (!item.physicalReceivedAt) return 'Ожидает приёмки'
     if (!item.inventorySource) return 'Получен, в остаток не добавляли'
     const destination = inventorySourceLabel(item.inventorySource)
     if (!item.lifecycleStatus) return `Получен → ${destination}; складской учёт не завершён`
@@ -97,11 +110,17 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                     <strong>{returnHistorySummary.cancelledCount}</strong>
                   </div>
                   <div>
-                    <span>Ещё физически не пришло</span>
+                    <span>Ожидают приёмки</span>
                     <strong>{returnHistorySummary.pendingPhysicalQuantity} шт.</strong>
                   </div>
                 </div>
               </div>
+              {Number(returnHistorySummary.pendingPhysicalQuantity || 0) > 0 ? (
+                <div className="history-load-state is-warning">
+                  <strong>Ожидают приёмки: {returnHistorySummary.pendingPhysicalQuantity} шт.</strong>
+                  <span>Когда вещь физически приехала, откройте нужный возврат в истории ниже и нажмите «Принять товар». Если товар не распознан, уточнение откроется сразу.</span>
+                </div>
+              ) : null}
     
               {!returnSelectedOrder ? (
                 <section className="mini-panel debt-table-panel">
@@ -193,7 +212,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                             />
                           </label>
                           <label>
-                            <span>Способ возврата денег</span>
+                            <span>Способ возврата денег {Number(returnDraft.amount || 0) > 0 ? '' : '(не нужен при 0 ₸)'}</span>
                             <SmartPickerInput
                               value={returnDraft.paymentMethod}
                               options={suggestionValues.paymentMethods}
@@ -375,6 +394,18 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                       })}
                                     >
                                       Товар пришёл
+                                    </button>
+                                  </div>
+                                ) : null}
+                                {entry.operationType === 'order_return' && entry.status !== 'cancelled' && returnKnownIntakePending(item) ? (
+                                  <div className="mini-panel-actions">
+                                    <button
+                                      className="primary compact"
+                                      type="button"
+                                      disabled={returnBusy || returnHistoryBusy}
+                                      onClick={() => void finishKnownReturnIntake(item)}
+                                    >
+                                      Завершить приёмку
                                     </button>
                                   </div>
                                 ) : null}

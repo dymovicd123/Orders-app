@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "revision": "production-catalog-resolver-r7",
-  "baseCommit": "0a530441c9b4b63d62d440e7352d551572db17a8",
+  "revision": "catalog-resolver-r7-human-scope",
+  "baseCommit": "1af498e27281c648a60f6b7647a6f5afc247f56d",
   "files": {
     "worker/domains/catalog-review.ts": {
       "beforeGitBlob": "9cbc5e4bbcbf541c2736e6bb3b43b69b1c84d077",

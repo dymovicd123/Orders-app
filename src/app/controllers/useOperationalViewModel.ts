@@ -855,7 +855,6 @@ const summary = useMemo(() => {
   const inventoryOperationAllProductGroups = useMemo(() => {
     const groups = new Map<string, { key: string; productId: number; productName: string; category: 'adult' | 'child'; adultVariantCount: number; childVariantCount: number; variantsCount: number; totalQuantity: number; rows: InventoryStockRecord[] }>()
     inventoryOperationSourceRows.forEach((row) => {
-      if (inventoryDraft.movementType === 'writeoff' && Number(row.quantity || 0) <= 0) return
       const rowCategory = getInventoryRowCategory(row)
       const key = row.productId ? `id:${row.productId}` : `name:${normalizeSuggestion(row.productName)}`
       const group = groups.get(key) || { key, productId: Number(row.productId || 0), productName: row.productName || 'Без названия', category: rowCategory, adultVariantCount: 0, childVariantCount: 0, variantsCount: 0, totalQuantity: 0, rows: [] }
@@ -954,7 +953,6 @@ const summary = useMemo(() => {
       && same(row.material, inventoryOperationVariant.material)
       && same(row.length, inventoryOperationVariant.length)
       && same(row.size, inventoryOperationVariant.size)
-      && (inventoryDraft.movementType !== 'writeoff' || Number(row.quantity || 0) > 0)
     )) || null
   }, [selectedInventoryOperationGroup, inventoryOperationVariant, catalogVariantCategoryById, inventoryDraft.movementType])
 
@@ -962,7 +960,6 @@ const summary = useMemo(() => {
     const tokens = normalizeSearchText(inventoryExistingVariantSearch).split(/\s+/).filter(Boolean)
     const rows = selectedInventoryOperationGroup?.rows || []
     return rows
-      .filter((row) => inventoryDraft.movementType !== 'writeoff' || Number(row.quantity || 0) > 0)
       .filter((row) => {
         if (!tokens.length) return true
         const haystack = [productCategoryLabel(getInventoryRowCategory(row)), row.gender, row.color, row.material, row.length, row.size, String(row.quantity)].map(normalizeSearchText).join(' ')

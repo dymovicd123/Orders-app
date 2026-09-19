@@ -28,6 +28,22 @@ export function normalizedCatalogReviewKey(row: Record<string, unknown>) {
   ].join('¦');
 }
 
+// A human-confirmed mapping is reusable only when the raw row already identifies one exact
+// physical SKU. Incomplete rows (blank gender/color/size, Workshop product-only tasks) remain
+// intentionally scoped to the one row so a confirmation cannot leak across genuinely different items.
+export function catalogReviewInputCanLearnExact(row: Record<string, unknown>) {
+  if (toInt(row.is_workshop, 0)) return false;
+  const gender = normalizeCatalogCombinationGender(row.gender_snapshot);
+  return Boolean(
+    cleanText(row.product_name_snapshot)
+    && (gender === 'ЖЕН' || gender === 'МУЖ')
+    && cleanText(row.color_snapshot)
+    && cleanText(row.material_snapshot)
+    && cleanText(row.length_snapshot)
+    && cleanText(row.size_snapshot)
+  );
+}
+
 
 
 export const CATALOG_REVIEW_RECENT_DAYS = 30;
@@ -509,8 +525,15 @@ export async function resolveCatalogReviewFacts(
   await rememberCatalogValueAlias(db, 'length', anchor.length_snapshot, length, timestamp);
   await rememberCatalogValueAlias(db, 'color', anchor.color_snapshot, color, timestamp);
   await rememberCatalogValueAlias(db, category === 'child' ? 'child_age' : 'size', anchor.size_snapshot, size, timestamp);
-  const result = await resolveCatalogReviewRows(db, matching, selected, inputKey, timestamp, { writeAlias: false });
-  const workshopLinked = matching.filter((row) => toInt(row.is_workshop, 0) === 1 && toInt(row.id ?? row.order_item_id, 0) > 0 && toInt(row.order_id, 0) > 0).length;
+  const reusableExactInput = Boolean(options.singleItem && catalogReviewInputCanLearnExact(anchor));
+  let resolutionRows = matching;
+  if (reusableExactInput) {
+    const fanoutCandidates = await fetchCatalogReviewResolutionCandidates(db, toInt(anchor.order_id, 0));
+    const identicalOpenRows = (fanoutCandidates.results || []).filter((row) => normalizedCatalogReviewKey(row) === inputKey);
+    if (identicalOpenRows.length) resolutionRows = identicalOpenRows;
+  }
+  const result = await resolveCatalogReviewRows(db, resolutionRows, selected, inputKey, timestamp, { writeAlias: reusableExactInput });
+  const workshopLinked = resolutionRows.filter((row) => toInt(row.is_workshop, 0) === 1 && toInt(row.id ?? row.order_item_id, 0) > 0 && toInt(row.order_id, 0) > 0).length;
   return {
     ...result,
     workshopLinked,
@@ -945,12 +968,17 @@ export async function resolveOrderCatalogReviewExistingVariant(db: D1Database, o
   }
 
   const inputKey = normalizedCatalogReviewKey(anchor);
-  const rowsResult = await fetchCatalogReviewRows(db, 160, orderId);
-  const matching = (rowsResult.results || []).filter((row) => toInt(row.id ?? row.order_item_id, 0) === orderItemId);
+  const reusableExactInput = catalogReviewInputCanLearnExact(anchor);
+  const rowsResult = reusableExactInput
+    ? await fetchCatalogReviewResolutionCandidates(db, orderId)
+    : await fetchCatalogReviewRows(db, 160, orderId);
+  const matching = reusableExactInput
+    ? (rowsResult.results || []).filter((row) => normalizedCatalogReviewKey(row) === inputKey)
+    : (rowsResult.results || []).filter((row) => toInt(row.id ?? row.order_item_id, 0) === orderItemId);
   if (!matching.length) throw new Error('Эта позиция уже разобрана. Обновите заказ.');
-  // A human chose this variant for one order line. Never propagate that decision to
-  // another raw-identical line: blank gender/size/color may hide a real difference.
-  return await resolveCatalogReviewRows(db, matching, selected, inputKey, new Date().toISOString(), { writeAlias: false });
+  // Complete exact raw facts are reusable evidence: remember the full input signature and
+  // resolve already-open identical rows now. Incomplete rows stay strictly row-scoped.
+  return await resolveCatalogReviewRows(db, matching, selected, inputKey, new Date().toISOString(), { writeAlias: reusableExactInput });
 }
 
 
