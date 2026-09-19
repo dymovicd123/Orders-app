@@ -12,17 +12,17 @@ const returnsExchange = fs.readFileSync('worker/domains/returns-exchanges.ts', '
 const lifecycle = fs.readFileSync('worker/domains/lifecycle.ts', 'utf8')
 const routes = fs.readFileSync('worker/index.ts', 'utf8')
 
-check(activity.includes('lifecycle.id AS return_item_lifecycle_id'), 'Phase2E return history does not expose lifecycle id')
+check(activity.includes('lifecycle.id AS return_item_lifecycle_id') && activity.includes('lifecycle.variant_id AS return_item_lifecycle_variant_id') && activity.includes('return_item_current_variant_id'), 'Phase2E return history does not expose enough canonical identity for safe direct intake')
 check(activity.includes('lifecycleId: toInt(row.return_item_lifecycle_id, 0) || null'), 'Phase2E return history does not map lifecycle id')
-check(returnsExchange.includes('old_lifecycle.id AS old_lifecycle_id') && returnsExchange.includes('new_lifecycle.id AS new_lifecycle_id'), 'Phase2E exchange history does not expose lifecycle ids')
+check(returnsExchange.includes('old_lifecycle.id AS old_lifecycle_id') && returnsExchange.includes('old_lifecycle.variant_id AS old_lifecycle_variant_id') && returnsExchange.includes('old_item.variant_id AS old_current_variant_id') && returnsExchange.includes('new_lifecycle.id AS new_lifecycle_id'), 'Phase2E exchange history does not expose enough canonical identity for safe direct intake')
 check(returnsExchange.includes('oldLifecycleId: toInt(row.old_lifecycle_id, 0) || null'), 'Phase2E exchange history does not map lifecycle ids')
 
-check(returnsView.includes("item.lifecycleStatus === 'pending'") && returnsView.includes('item.lifecycleId'), 'Phase2E return history cannot identify known pending intake')
+check(returnsView.includes("item.lifecycleStatus === 'pending'") && returnsView.includes('item.lifecycleId') && returnsView.includes('item.lifecycleVariantId || item.currentVariantId'), 'Phase2E return history cannot distinguish known pending intake from unresolved identity')
 check(returnsView.includes('reconcileKnownInventoryLifecycle(Number(item.lifecycleId || 0))'), 'Phase2E return history still depends on Warehouse Attention to finish known intake')
 check(returnsView.includes("if (result?.ok) await loadReturnHistory()"), 'Phase2E return history does not refresh after direct intake reconciliation')
 check(returnsView.includes('Завершить приёмку'), 'Phase2E return history lacks direct known-intake action')
 
-check(exchangeView.includes("entry.oldLifecycleStatus === 'pending'") && exchangeView.includes('entry.oldLifecycleId'), 'Phase2E exchange history cannot identify known pending intake')
+check(exchangeView.includes("entry.oldLifecycleStatus === 'pending'") && exchangeView.includes('entry.oldLifecycleId') && exchangeView.includes('entry.oldLifecycleVariantId || entry.oldCurrentVariantId'), 'Phase2E exchange history cannot distinguish known pending intake from unresolved identity')
 check(exchangeView.includes('reconcileKnownInventoryLifecycle(Number(entry.oldLifecycleId || 0))'), 'Phase2E exchange history still depends on Warehouse Attention to finish known intake')
 check(exchangeView.includes("if (result?.ok) await loadExchangeHistory()"), 'Phase2E exchange history does not refresh after direct intake reconciliation')
 check(exchangeView.includes('Завершить приёмку'), 'Phase2E exchange history lacks direct known-intake action')
