@@ -897,7 +897,6 @@ export type PreparedInventoryTransferItem = {
   effectiveSourceBefore: number;
   reservedAtSource: number;
   shortageAfter: number;
-  observedPhysicalQuantity: number | null;
 };
 
 
@@ -1191,7 +1190,6 @@ export async function applyInventoryTransfer(
     reservedQty: row.reservedAtSource,
     targetReservedQty: row.targetReservedQuantity,
     shortageAfter: row.shortageAfter,
-    observedPhysical: row.observedPhysicalQuantity,
   }));
   const transferInputValuesSql = transferRowBindings.map(() => '(?)').join(', ');
   const transferRowsSql = `input(payload) AS (VALUES ${transferInputValuesSql}),
@@ -1205,9 +1203,7 @@ export async function applyInventoryTransfer(
         CAST(json_extract(payload, '$.moveQty') AS INTEGER) AS move_qty,
         CAST(json_extract(payload, '$.reservedQty') AS INTEGER) AS reserved_qty,
         CAST(json_extract(payload, '$.targetReservedQty') AS INTEGER) AS target_reserved_qty,
-        CAST(json_extract(payload, '$.shortageAfter') AS INTEGER) AS shortage_after,
-        CASE WHEN json_type(payload, '$.observedPhysical') = 'null' THEN NULL
-             ELSE CAST(json_extract(payload, '$.observedPhysical') AS INTEGER) END AS observed_physical
+        CAST(json_extract(payload, '$.shortageAfter') AS INTEGER) AS shortage_after
       FROM input
     )`;
 
@@ -1220,7 +1216,7 @@ export async function applyInventoryTransfer(
      )
      SELECT ?, v.product_id, v.id, p.name, NULLIF(v.gender,''), NULLIF(v.color,''),
             COALESCE(NULLIF(v.material,''),'СТАНДАРТ'), COALESCE(NULLIF(v.length,''),'СТАНДАРТ'), NULLIF(v.size_label,''),
-            0, x.reserved_qty, 'Фактическая сверка', ?, ?, ?
+            0, x.reserved_qty, 'Перемещение', ?, ?, ?
      FROM x JOIN catalog_variants v ON v.id = x.variant_id JOIN catalog_products p ON p.id = v.product_id`
   ).bind(...transferRowBindings, fromSource, externalId, now, now);
 
@@ -1272,48 +1268,10 @@ export async function applyInventoryTransfer(
      WHERE inventory_source IN (?, ?) AND EXISTS (SELECT 1 FROM x WHERE x.variant_id = inventory_stock.variant_id)`
   ).bind(...transferRowBindings, fromSource, toSource);
 
-  const applyObservation = db.prepare(
-    `WITH ${transferRowsSql}
-     UPDATE inventory_stock
-     SET quantity = (SELECT effective_before FROM x WHERE x.variant_id = inventory_stock.variant_id),
-         last_action = 'Быстрая сверка', last_source_ref = ?, updated_at = ?
-     WHERE inventory_source = ?
-       AND EXISTS (SELECT 1 FROM x WHERE x.variant_id = inventory_stock.variant_id)
-       AND quantity <> (SELECT effective_before FROM x WHERE x.variant_id = inventory_stock.variant_id)`
-  ).bind(...transferRowBindings, externalId, now, fromSource);
-
-  const observationMovements = db.prepare(
-    `WITH ${transferRowsSql}
-     INSERT INTO inventory_movements (
-       inventory_source, movement_type, product_id, variant_id, product_name_snapshot, gender_snapshot, color_snapshot,
-       material_snapshot, length_snapshot, size_snapshot, quantity_delta, quantity_after, reference_type, reference_id, comment, created_at
-     )
-     SELECT ?, 'revision', v.product_id, v.id, p.name, NULLIF(v.gender,''), NULLIF(v.color,''),
-            COALESCE(NULLIF(v.material,''),'СТАНДАРТ'), COALESCE(NULLIF(v.length,''),'СТАНДАРТ'), NULLIF(v.size_label,''),
-            x.effective_before - x.source_current, x.effective_before,
-            'transfer_stocktake', ? || ':' || v.id, 'Фактическая сверка перед перемещением', ?
-     FROM x JOIN catalog_variants v ON v.id = x.variant_id JOIN catalog_products p ON p.id = v.product_id
-     WHERE x.effective_before <> x.source_current`
-  ).bind(...transferRowBindings, fromSource, externalId, now);
-
-  const observationChecks = db.prepare(
-    `WITH ${transferRowsSql}
-     INSERT OR IGNORE INTO inventory_stock_checks (
-       check_key, inventory_source, product_id, variant_id,
-       expected_quantity, counted_quantity, difference_quantity, reserved_quantity,
-       check_type, reference_type, reference_id, checked_by, checked_at, created_at
-     )
-     SELECT 'transfer:' || ? || ':' || x.variant_id, ?, x.product_id, x.variant_id,
-            x.source_current, x.effective_before, x.effective_before - x.source_current, x.reserved_qty,
-            'transfer_observation', 'transfer', ?, ?, ?, ?
-     FROM x
-     WHERE x.observed_physical IS NOT NULL`
-  ).bind(...transferRowBindings, externalId, fromSource, externalId, cleanText(actor) || null, now, now);
-
   const updateSource = db.prepare(
     `WITH ${transferRowsSql}
      UPDATE inventory_stock
-     SET quantity = (SELECT effective_before - move_qty FROM x WHERE x.variant_id = inventory_stock.variant_id),
+     SET quantity = MAX(0, (SELECT effective_before - move_qty FROM x WHERE x.variant_id = inventory_stock.variant_id)),
          last_action = 'Перемещение', last_source_ref = ?, updated_at = ?
      WHERE inventory_source = ? AND EXISTS (SELECT 1 FROM x WHERE x.variant_id = inventory_stock.variant_id)`
   ).bind(...transferRowBindings, externalId, now, fromSource);
@@ -1334,7 +1292,7 @@ export async function applyInventoryTransfer(
      )
      SELECT ?, 'writeoff', v.product_id, v.id, p.name, NULLIF(v.gender,''), NULLIF(v.color,''),
             COALESCE(NULLIF(v.material,''),'СТАНДАРТ'), COALESCE(NULLIF(v.length,''),'СТАНДАРТ'), NULLIF(v.size_label,''),
-            -x.move_qty, x.effective_before - x.move_qty, 'transfer_out', ?, ?, ?
+            -MIN(x.effective_before, x.move_qty), MAX(0, x.effective_before - x.move_qty), 'transfer_out', ?, ?, ?
      FROM x JOIN catalog_variants v ON v.id = x.variant_id JOIN catalog_products p ON p.id = v.product_id`
   ).bind(...transferRowBindings, fromSource, externalId, comment || `Перемещение в ${toSource === 'warehouse' ? 'Склад' : 'Бутик'}`, now);
 
@@ -1358,10 +1316,25 @@ export async function applyInventoryTransfer(
        source_reserved_quantity, source_shortage_after, created_at
      )
      SELECT (SELECT id FROM inventory_transfer_documents WHERE request_id = ?), v.product_id, v.id, x.move_qty,
-            x.effective_before, x.effective_before - x.move_qty, x.target_current, x.target_current + x.move_qty,
+            x.effective_before, MAX(0, x.effective_before - x.move_qty), x.target_current, x.target_current + x.move_qty,
             x.reserved_qty, x.shortage_after, ?
      FROM x JOIN catalog_variants v ON v.id = x.variant_id`
   ).bind(...transferRowBindings, requestId, now);
+
+  const operationEvidence = db.prepare(
+    `WITH ${transferRowsSql}
+     INSERT OR IGNORE INTO inventory_operation_evidence (
+       evidence_key, inventory_source, variant_id, operation_type, operation_reference,
+       tracked_physical_before, confirmed_operation_quantity, explained_quantity, unexplained_quantity,
+       confirmed_by, occurred_at, created_at
+     )
+     SELECT 'transfer:' || ? || ':' || ? || ':' || x.variant_id,
+            ?, x.variant_id, 'transfer', ?, x.source_current, x.move_qty,
+            MIN(x.source_current, x.move_qty), MAX(0, x.move_qty - x.source_current),
+            ?, ?, ?
+     FROM x
+     WHERE x.move_qty > x.source_current`
+  ).bind(...transferRowBindings, requestId, fromSource, fromSource, externalId, cleanText(actor) || null, now, now);
 
   try {
     await db.batch([
@@ -1370,9 +1343,7 @@ export async function applyInventoryTransfer(
       insertDocument,
       ensureTargetStock,
       canonicalizeStockSnapshots,
-      applyObservation,
-      observationMovements,
-      observationChecks,
+      operationEvidence,
       updateSource,
       updateTarget,
       transferOutMovements,
