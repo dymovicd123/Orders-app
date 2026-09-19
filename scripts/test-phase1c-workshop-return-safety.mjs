@@ -93,7 +93,7 @@ try {
 
   check(createReturn.includes("const explicitRestock = typeof rawItem?.restock === 'boolean' ? rawItem.restock : null"), 'Return transport lost explicit per-line disposition')
   check(createReturn.includes("const itemRestockRequested = isWorkshop ? selected.restock === true : selected.restock !== false"), 'Workshop omission no longer means no-stock')
-  check(createReturn.includes("isWorkshop && inventorySource === 'boutique'"), 'Workshop -> Boutique return guard missing')
+  check(!createReturn.includes("isWorkshop && inventorySource === 'boutique'"), 'Workshop -> Boutique remains incorrectly blocked')
   const returnRestockGate = createReturn.indexOf('if (wantsRestock) {')
   const returnResolve = createReturn.indexOf('resolveInventoryLifecycleCandidate(db, orderItem, isWorkshop)')
   check(returnRestockGate >= 0 && returnResolve > returnRestockGate, 'No-stock return can resolve/mutate inventory')
@@ -118,7 +118,7 @@ try {
   const exchangeOldGate = createExchange.indexOf("if (oldReturnSource !== 'none') {")
   const exchangeOldResolve = createExchange.indexOf('resolveInventoryLifecycleCandidate(db, oldItem, oldIsWorkshop)')
   check(exchangeOldGate >= 0 && exchangeOldResolve > exchangeOldGate, 'No-stock exchange old item can create identity/lifecycle work')
-  check(createExchange.includes("oldItemIsWorkshop && oldReturnSource === 'boutique'"), 'Exchange Workshop -> Boutique guard missing')
+  check(!createExchange.includes("oldItemIsWorkshop && oldReturnSource === 'boutique'"), 'Exchange Workshop -> Boutique remains incorrectly blocked')
   check(createExchange.includes('oldItemNeedsHandoverReconciliation'), 'Exchange still hard-blocks stale unfulfilled customer handover')
   check(createExchange.includes('fulfillOrderReservationsV2('), 'Exchange does not reconcile the missing old-item outbound movement')
   check(createExchange.includes("{ orderItemIds: [oldItemId], checkedBy: 'exchange_reconciliation' }"), 'Exchange reconciliation is not scoped to the exact old order line')
@@ -170,7 +170,7 @@ try {
   const active = await inventoryLifecycleDeferredInboundDisposition(new FakeD1(trustedBoundary({ active_session_id: 'REV-ACTIVE' })), inboundEvent('2026-08-26T08:11:00.000Z'), 11)
   check(active.action === 'hold' && active.reason === 'active_stocktake', 'Active stocktake no longer blocks inbound')
 
-  console.log('PHASE 1C WORKSHOP RETURN SAFETY PASSED — no-stock Workshop returns stay non-inventory, explicit Warehouse intake is one-shot/freshness-gated, cancellation is lifecycle-backed, and history preserves client-return vs stock-intake truth')
+  console.log('PHASE 1C WORKSHOP RETURN SAFETY PASSED — no-stock Workshop returns stay non-inventory, explicit Warehouse/Boutique intake is one-shot/freshness-gated, cancellation is lifecycle-backed, and history preserves client-return vs stock-intake truth')
 } catch (error) {
   console.error(`PHASE 1C WORKSHOP RETURN SAFETY FAILED: ${error?.message || error}`)
   process.exit(1)
