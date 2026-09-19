@@ -24,10 +24,13 @@ assert.equal(writes, 1, 'R9 final: resolver write replayed during continuation r
 assert.equal(completions, 2, 'R9 final: completion did not retry exactly until proven success')
 
 // R9 contract 2: empty review after a changed session is success, not a dead-end message.
-const changedEmptyIndex = modal.indexOf('if (!items.length && session.current.changed) return true')
-const emptyDeadEndIndex = modal.indexOf('Список уточнений пуст. Отправка не продолжена')
-assert.ok(changedEmptyIndex >= 0, 'R9 final: changed session no longer treats zero remaining questions as completion')
-assert.ok(emptyDeadEndIndex < 0 || changedEmptyIndex < emptyDeadEndIndex, 'R9 final: stale empty-list dead end wins before successful completion')
+const emptyBlockStart = modal.indexOf('if (!first) {')
+const emptyBlockEnd = modal.indexOf('      const data = await readContext', emptyBlockStart)
+assert.ok(emptyBlockStart >= 0 && emptyBlockEnd > emptyBlockStart, 'R9 final: zero-review completion block missing')
+const emptyBlock = modal.slice(emptyBlockStart, emptyBlockEnd)
+assert.ok(emptyBlock.includes("if (!session.current.changed) setError('Список уточнений пуст. Отправка не продолжена. Закройте окно и проверьте заказ.')"), 'R9 final: unchanged empty review no longer stays fail-closed')
+assert.ok(emptyBlock.includes('return true'), 'R9 final: changed session no longer treats zero remaining questions as completion')
+assert.ok(emptyBlock.indexOf("if (!session.current.changed) setError(") < emptyBlock.indexOf('return true'), 'R9 final: zero-review completion ordering changed unexpectedly')
 
 // R9 contract 3: completion reads fresh order truth, resumes the original send, and only then closes.
 const completionStart = app.indexOf('onCompleted={async (resolvedOrder: OrderRecord) => {')
