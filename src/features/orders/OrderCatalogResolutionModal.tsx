@@ -209,7 +209,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         <div className="resolution-choices">{shown.map(({ product }) => <button type="button" key={product.id} onClick={() => chooseProduct(product)}>{product.name}</button>)}</div>
         {searchOpen && !shown.length ? <p>Совпадений нет. Проверьте название или попросите администратора уточнить товар.</p> : null}
         {!searchOpen ? <button type="button" className="secondary-button" onClick={() => setSearchOpen(true)}>Найти другой товар</button> : null}
-        {isAdmin ? <button type="button" className="resolution-link" onClick={() => void openAdvanced(true)}>Такого товара нет</button> : onRequestAdminMode ? <button type="button" className="resolution-link" onClick={onRequestAdminMode}>Такого товара нет — войти в Админ режим</button> : null}</>
+        {isAdmin ? <button type="button" className="resolution-link" onClick={() => void openAdvanced()}>Проверить весь каталог</button> : onRequestAdminMode ? <button type="button" className="resolution-link" onClick={onRequestAdminMode}>Не нашли товар — войти в Админ режим</button> : null}</>
     }
     if (question.kind === 'compound') return <><h4 ref={questionHeading} tabIndex={-1}>Что означает часть названия «{remainder}»?</h4><div className="resolution-choices">
       <button type="button" onClick={() => { setClassified(true); answerField('material', remainder) }}>Материал</button>
