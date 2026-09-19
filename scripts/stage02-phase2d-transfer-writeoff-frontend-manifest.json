@@ -4,10 +4,14 @@
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "56b2e9bd978bd9745a9d61a5a1471acd06c81bb4",
-      "afterGitBlob": "8010f889fbcd824564bf347cc177e8a89075b38e",
+      "afterGitBlob": "76da83a1e0b06f1bc13e3ca028dd8e589427aad1",
       "beforeLines": 7375,
-      "afterLines": 7392,
+      "afterLines": 7391,
       "replacements": [
+        {
+          "beforeBlock": "      && same(row.material, nextVariant.material)\n      && same(row.length, nextVariant.length)\n      && same(row.size, nextVariant.size)\n      && (inventoryDraft.movementType !== 'writeoff' || Number(row.quantity || 0) > 0)\n    )) || null\n\n    setInventoryOperationVariant(nextVariant)",
+          "afterBlock": "      && same(row.material, nextVariant.material)\n      && same(row.length, nextVariant.length)\n      && same(row.size, nextVariant.size)\n    )) || null\n\n    setInventoryOperationVariant(nextVariant)"
+        },
         {
           "beforeBlock": "          ? {\n              ...item,\n              quantity: nextQuantity,\n              observedPhysicalQuantity: (current.movementType === 'transfer' || current.movementType === 'writeoff') && nextQuantity <= physical ? null : item.observedPhysicalQuantity,\n            }\n          : item)\n        : [...withoutEmpty, createInventoryItemFromStockRow(row, nextQuantity)]",
           "afterBlock": "          ? {\n              ...item,\n              quantity: nextQuantity,\n              observedPhysicalQuantity: current.movementType === 'manual_set' ? item.observedPhysicalQuantity : null,\n            }\n          : item)\n        : [...withoutEmpty, createInventoryItemFromStockRow(row, nextQuantity)]"
@@ -34,9 +38,25 @@
         }
       ]
     },
+    "src/app/controllers/useOperationalViewModel.ts": {
+      "beforeGitBlob": "c2dce61dcf0e5b3e981cdf1455c59b1768bbf54d",
+      "afterGitBlob": "ccdb1966e725f4fa80fe438af5c2135f74b8cfa6",
+      "beforeLines": 1262,
+      "afterLines": 1259,
+      "replacements": [
+        {
+          "beforeBlock": "  const inventoryOperationAllProductGroups = useMemo(() => {\n    const groups = new Map<string, { key: string; productId: number; productName: string; category: 'adult' | 'child'; adultVariantCount: number; childVariantCount: number; variantsCount: number; totalQuantity: number; rows: InventoryStockRecord[] }>()\n    inventoryOperationSourceRows.forEach((row) => {\n      if (inventoryDraft.movementType === 'writeoff' && Number(row.quantity || 0) <= 0) return\n      const rowCategory = getInventoryRowCategory(row)\n      const key = row.productId ? `id:${row.productId}` : `name:${normalizeSuggestion(row.productName)}`\n      const group = groups.get(key) || { key, productId: Number(row.productId || 0), productName: row.productName || 'Без названия', category: rowCategory, adultVariantCount: 0, childVariantCount: 0, variantsCount: 0, totalQuantity: 0, rows: [] }",
+          "afterBlock": "  const inventoryOperationAllProductGroups = useMemo(() => {\n    const groups = new Map<string, { key: string; productId: number; productName: string; category: 'adult' | 'child'; adultVariantCount: number; childVariantCount: number; variantsCount: number; totalQuantity: number; rows: InventoryStockRecord[] }>()\n    inventoryOperationSourceRows.forEach((row) => {\n      const rowCategory = getInventoryRowCategory(row)\n      const key = row.productId ? `id:${row.productId}` : `name:${normalizeSuggestion(row.productName)}`\n      const group = groups.get(key) || { key, productId: Number(row.productId || 0), productName: row.productName || 'Без названия', category: rowCategory, adultVariantCount: 0, childVariantCount: 0, variantsCount: 0, totalQuantity: 0, rows: [] }"
+        },
+        {
+          "beforeBlock": "      && same(row.material, inventoryOperationVariant.material)\n      && same(row.length, inventoryOperationVariant.length)\n      && same(row.size, inventoryOperationVariant.size)\n      && (inventoryDraft.movementType !== 'writeoff' || Number(row.quantity || 0) > 0)\n    )) || null\n  }, [selectedInventoryOperationGroup, inventoryOperationVariant, catalogVariantCategoryById, inventoryDraft.movementType])\n\n  const inventoryExistingVariantRows = useMemo(() => {\n    const tokens = normalizeSearchText(inventoryExistingVariantSearch).split(/\\s+/).filter(Boolean)\n    const rows = selectedInventoryOperationGroup?.rows || []\n    return rows\n      .filter((row) => inventoryDraft.movementType !== 'writeoff' || Number(row.quantity || 0) > 0)\n      .filter((row) => {\n        if (!tokens.length) return true\n        const haystack = [productCategoryLabel(getInventoryRowCategory(row)), row.gender, row.color, row.material, row.length, row.size, String(row.quantity)].map(normalizeSearchText).join(' ')",
+          "afterBlock": "      && same(row.material, inventoryOperationVariant.material)\n      && same(row.length, inventoryOperationVariant.length)\n      && same(row.size, inventoryOperationVariant.size)\n    )) || null\n  }, [selectedInventoryOperationGroup, inventoryOperationVariant, catalogVariantCategoryById, inventoryDraft.movementType])\n\n  const inventoryExistingVariantRows = useMemo(() => {\n    const tokens = normalizeSearchText(inventoryExistingVariantSearch).split(/\\s+/).filter(Boolean)\n    const rows = selectedInventoryOperationGroup?.rows || []\n    return rows\n      .filter((row) => {\n        if (!tokens.length) return true\n        const haystack = [productCategoryLabel(getInventoryRowCategory(row)), row.gender, row.color, row.material, row.length, row.size, String(row.quantity)].map(normalizeSearchText).join(' ')"
+        }
+      ]
+    },
     "src/features/inventory/views/renderInventoryMovementPanel.tsx": {
       "beforeGitBlob": "fc2a59a00924201f440f00ea68014d515445aabd",
-      "afterGitBlob": "5fa980bd61aebbcd50d0f2c14c75b43b8c9b62bc",
+      "afterGitBlob": "16925e91b69ae1b3ad3bef6e941964d95cdfa007",
       "beforeLines": 522,
       "afterLines": 497,
       "replacements": [
@@ -47,6 +67,10 @@
         {
           "beforeBlock": "    setInventoryMatrix,\n    setInventoryMatrixColorToAdd,\n    setInventoryMatrixSizeToAdd,\n    setInventoryTransferObservedQuantity,\n    setInventoryVariantOperationQuantity,\n    setMovementSourceRefreshToken,\n    sourceLabel,",
           "afterBlock": "    setInventoryMatrix,\n    setInventoryMatrixColorToAdd,\n    setInventoryMatrixSizeToAdd,\n    setInventoryVariantOperationQuantity,\n    setMovementSourceRefreshToken,\n    sourceLabel,"
+        },
+        {
+          "beforeBlock": "                              </div>\n                            ) : inventoryOperationAllProductGroups.length === 0 ? (\n                              <div className=\"inventory-movement-source-status is-empty\">\n                                <span>Список точки «{sourceLabel(inventoryDraft.source)}» пуст по текущим данным.{inventoryDraft.movementType === 'writeoff' ? ' Для списания показываются только позиции, где «На месте» больше нуля.' : ''}</span>\n                                <button className=\"ghost compact\" type=\"button\" onClick={() => setMovementSourceRefreshToken((current) => current + 1)}>Обновить список</button>\n                              </div>\n                            ) : null}",
+          "afterBlock": "                              </div>\n                            ) : inventoryOperationAllProductGroups.length === 0 ? (\n                              <div className=\"inventory-movement-source-status is-empty\">\n                                <span>Список точки «{sourceLabel(inventoryDraft.source)}» пуст по текущим данным.</span>\n                                <button className=\"ghost compact\" type=\"button\" onClick={() => setMovementSourceRefreshToken((current) => current + 1)}>Обновить список</button>\n                              </div>\n                            ) : null}"
         },
         {
           "beforeBlock": "                                        const destinationQuantity = inventoryDraft.movementType === 'transfer'\n                                          ? Number(getStockQuantityForVariant(inventoryDraft.targetSource, row.variantId) || 0)\n                                          : 0\n                                        const observedPhysical = draftItem?.observedPhysicalQuantity === null || draftItem?.observedPhysicalQuantity === undefined\n                                          ? null\n                                          : Math.max(0, Number(draftItem.observedPhysicalQuantity || 0))\n                                        const physicalBeforeOperation = (inventoryDraft.movementType === 'transfer' || inventoryDraft.movementType === 'writeoff') && observedPhysical !== null ? observedPhysical : currentQuantity\n                                        const needsPhysicalObservation = (inventoryDraft.movementType === 'transfer' || inventoryDraft.movementType === 'writeoff') && operationQuantity > Math.max(0, currentQuantity)\n                                        const physicalObservationValid = observedPhysical !== null && observedPhysical >= operationQuantity\n                                        const correctionDelta = draftItem?.touched ? Number(draftItem.quantity || 0) - currentQuantity : null\n                                        const afterPhysical = inventoryDraft.movementType === 'manual_set'\n                                          ? Number(draftItem?.quantity || 0)\n                                          : inventoryDraft.movementType === 'transfer' || inventoryDraft.movementType === 'writeoff'\n                                            ? physicalBeforeOperation - operationQuantity\n                                            : currentQuantity - operationQuantity\n                                        const shortageAfter = Math.max(0, reservedQuantity - afterPhysical)\n                                        return (\n                                          <tr data-transfer-variant={inventoryDraft.movementType === 'transfer' ? row.variantId : undefined} key={`operation-v182-${inventoryDraft.movementType}-${row.variantId}`} className={`${draftItem?.touched || operationQuantity > 0 ? 'is-edited' : ''}${needsPhysicalObservation && !physicalObservationValid ? ' needs-transfer-observation' : ''}`}>\n                                            <td>\n                                              <strong>{inventoryOperationRowPrimary(row)}</strong>\n                                              <span>{inventoryOperationRowSecondary(row)}</span>",
