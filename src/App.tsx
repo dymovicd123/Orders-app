@@ -4907,11 +4907,6 @@ function App() {
         && Array.isArray(result.items)
         && result.items.length
       ) {
-        const lines = result.items.map((resolutionItem) => {
-          const tracked = Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0))
-          const needed = Math.max(1, Number(resolutionItem.operationQuantity || 1))
-          return `• ${resolutionItem.productName || 'Товар'}: по учёту ${tracked} шт., в этой операции ${needed} шт.`
-        })
         const actionText = isTransfer
           ? `эти вещи прямо сейчас физически переносятся из «${sourceLabel(inventoryDraft.source)}» в «${sourceLabel(inventoryDraft.targetSource)}»`
           : 'эти вещи прямо сейчас физически находятся у вас и действительно списываются'
@@ -5807,12 +5802,6 @@ function removeDebtPayment(index: number) {
       let { response, result } = await submitHandoverAction()
       if (!response.ok && action === 'issue_now' && result.code === 'stock_resolution_required' && result.operationType === 'handover' && Array.isArray(result.items) && result.items.length) {
         const resolutionItems = result.items as StockResolutionRequiredItemView[]
-        const lines = resolutionItems.map((resolutionItem) => {
-          const name = resolutionItem.productName || item.productName
-          const tracked = Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0))
-          const needed = Math.max(1, Number(resolutionItem.operationQuantity || item.quantity || 1))
-          return `• ${name}: по учёту ${tracked} шт., сейчас клиенту выдаётся ${needed} шт.`
-        })
         const confirmed = await askStockResolution({
           title: 'Проверьте товар перед выдачей',
           context: 'По учёту товара меньше, чем нужно для этой выдачи.',
@@ -5918,12 +5907,6 @@ function removeDebtPayment(index: number) {
         return false
       }
       if (!response.ok && result.code === 'stock_resolution_required' && result.operationType === 'shipping' && Array.isArray(result.items) && result.items.length) {
-        const lines = result.items.map((item) => {
-          const name = item.productName || `variant #${item.variantId || ''}`
-          const tracked = Math.max(0, Number(item.trackedPhysicalQuantity || 0))
-          const needed = Math.max(1, Number(item.operationQuantity || 1))
-          return `• ${name}: по учёту ${tracked} шт., сейчас отправляется ${needed} шт.`
-        })
         const confirmed = await askStockResolution({
           title: 'Проверьте товар перед отправкой',
           context: 'По учёту товара меньше, чем нужно для этой отправки.',
