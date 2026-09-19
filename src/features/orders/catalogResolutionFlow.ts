@@ -18,13 +18,36 @@ export function compoundRemainder(rawName: string, productName: string) {
   }
   return ''
 }
+const typoDistance = (left: string, right: string, limit = 2) => {
+  if (left === right) return 0
+  if (!left || !right || Math.abs(left.length - right.length) > limit) return limit + 1
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index)
+  for (let i = 1; i <= left.length; i++) {
+    const current = [i]
+    let rowMin = current[0]
+    for (let j = 1; j <= right.length; j++) {
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1))
+      rowMin = Math.min(rowMin, current[j])
+    }
+    if (rowMin > limit) return limit + 1
+    previous = current
+  }
+  return previous[right.length]
+}
 export function rankedProducts(products: CatalogResolutionProduct[], source: string) {
   const raw = identity(source)
+  const rawTokens = raw.split(' ').filter(Boolean)
   return products.map(product => {
     const name = identity(product.name)
     const embedded = (` ${raw} `).includes(` ${name} `)
-    const overlap = name.split(' ').filter(token => token.length > 2 && raw.split(' ').includes(token)).length
-    return { product, score: raw === name ? 10000 : embedded ? 5000 + name.length : overlap * 100 }
+    const overlap = name.split(' ').filter(token => token.length > 2 && rawTokens.includes(token)).length
+    const fuzzyLimit = Math.max(raw.length, name.length) >= 8 ? 2 : 1
+    const distance = Math.min(
+      typoDistance(raw, name, fuzzyLimit),
+      ...rawTokens.map(token => typoDistance(token, name, fuzzyLimit)),
+    )
+    const fuzzy = raw.length >= 4 && name.length >= 4 && distance <= fuzzyLimit
+    return { product, score: raw === name ? 10000 : embedded ? 5000 + name.length : overlap ? overlap * 100 : fuzzy ? 1000 - distance * 100 : 0 }
   }).sort((a, b) => b.score - a.score || a.product.name.localeCompare(b.product.name, 'ru'))
 }
 export function initialDraft(source: Partial<Record<Field, string>> & { productName: string }, context: CatalogResolutionContext): Draft {
