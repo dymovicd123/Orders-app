@@ -62,6 +62,8 @@ export async function createReturn(
   const amount = Math.max(0, toInt(input.amount, 0));
   const paymentMethod = upperText(input.paymentMethod);
   const comment = cleanText(input.comment);
+  const rawItems = Array.isArray(input.items) ? input.items : [];
+  const hasReturnedItems = rawItems.some((rawItem) => toInt(rawItem?.orderItemId, 0) > 0 && toInt(rawItem?.quantity, 0) > 0);
   // On a retry the return created by this same operation is already included in
   // order.return_amount. Add only that operation-owned amount back so the request
   // can resume without treating its own already-recorded refund as unavailable.
@@ -69,10 +71,10 @@ export async function createReturn(
   const availableAmount = Math.max(0, Number(existing.received_amount || 0) - Number(existing.return_amount || 0) + ownOperationReturnAmount);
   const restockSource = normalizeReturnRestockSource(input.restockSource);
 
-  if (amount <= 0) {
-    throw new Error('Return amount must be greater than zero.');
+  if (amount <= 0 && !hasReturnedItems) {
+    throw new Error('Укажите сумму возврата больше нуля или выберите хотя бы один возвращаемый товар.');
   }
-  if (!paymentMethod) {
+  if (amount > 0 && !paymentMethod) {
     throw new Error('Выберите способ возврата денег. Это нужно для корректного учёта наличных и финансов.');
   }
 
@@ -80,7 +82,6 @@ export async function createReturn(
     throw new Error(`Return amount exceeds available received funds: ${availableAmount}.`);
   }
 
-  const rawItems = Array.isArray(input.items) ? input.items : [];
   const selectedItemMap = new Map<number, { orderItemId: number; quantity: number; amount: number; restock: boolean | null; physicalState: 'pending' | 'warehouse' | 'boutique' | 'no_stock' | null }>();
   for (const rawItem of rawItems) {
     const orderItemId = toInt(rawItem?.orderItemId, 0);
@@ -175,18 +176,20 @@ export async function createReturn(
   let returnId = toInt(criticalOperation.row.target_id, 0);
   if (!returnId) {
     const leaseUntil = Date.now() + 45_000;
-    const [insertReturn] = await db.batch([
+    const returnCreateStatements: D1PreparedStatement[] = [
       db.prepare(
         `INSERT INTO returns (order_id, manager_id, return_date, amount, payment_method, comment, status, created_at)
          VALUES (?, ?, ?, ?, ?, ?, 'completed', ?)`
-      ).bind(orderId, managerRow?.manager_id ?? null, returnDate, amount, paymentMethod, comment || null, createdAt),
+      ).bind(orderId, managerRow?.manager_id ?? null, returnDate, amount, paymentMethod || null, comment || null, createdAt),
       db.prepare(
         `UPDATE critical_operations
          SET target_type = 'return', target_id = last_insert_rowid(), target_ref = ?, step = 'return_created',
              lease_until_ms = ?, updated_at = ?, last_error = NULL
          WHERE request_id = ? AND status = 'started' AND lease_token = ?`
       ).bind(cleanText((existing as any).external_id), leaseUntil, createdAt, criticalOperation.requestId, criticalOperation.leaseToken),
-      refundMoneyEventStatement(db, {
+    ];
+    if (amount > 0) {
+      returnCreateStatements.push(refundMoneyEventStatement(db, {
         eventKey: returnEventKey,
         orderId,
         externalOrderId: cleanText((existing as any).external_id),
@@ -197,8 +200,9 @@ export async function createReturn(
         eventType: 'order_refund',
         sourceRef: `critical-operation:${criticalOperation.requestId}`,
         comment: comment || null,
-      }),
-    ]);
+      }));
+    }
+    const [insertReturn] = await db.batch(returnCreateStatements);
     returnId = toInt(insertReturn.meta?.last_row_id, 0);
     await refreshCriticalOperation(db, criticalOperation);
     returnId = toInt(criticalOperation.row.target_id, 0) || returnId;
@@ -537,9 +541,14 @@ export async function receiveReturnedItem(
           pendingInventory = {
             eventId: event.id,
             eventType: event.event_type,
+            orderId: toInt(item.order_id, 0),
+            orderItemId: toInt(item.order_item_id, 0) || null,
             productName: cleanText(item.product_name_snapshot),
             source: destination,
             reason: cleanText(event.pending_reason),
+            productId: resolved.productId,
+            variantId: resolved.variantId,
+            needsCatalogResolution: !resolved.variantId,
           };
         }
       }
@@ -551,6 +560,8 @@ export async function receiveReturnedItem(
       operationId,
       operationItemId,
       destination,
+      orderId: toInt(item.order_id, 0),
+      orderItemId: toInt(item.order_item_id, 0) || null,
       receivedAt: cleanText(item.physical_received_at) || timestamp,
       stockApplied,
       stockAlreadyApplied,
@@ -1720,13 +1731,15 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
     ).run();
   }
 
-  await db.batch([
+  const cancelReturnStatements: D1PreparedStatement[] = [
     db.prepare(
       `UPDATE returns
        SET status = 'cancelled', cancelled_at = ?, cancellation_comment = ?
        WHERE id = ? AND COALESCE(status, 'completed') <> 'cancelled'`
     ).bind(timestamp, comment, returnId),
-    refundReversalMoneyEventStatement(db, {
+  ];
+  if (toInt(ret.amount, 0) > 0) {
+    cancelReturnStatements.push(refundReversalMoneyEventStatement(db, {
       eventKey: `189c:return:${returnId}:cancelled`,
       orderId: toInt(ret.order_id, 0),
       externalOrderId: cleanText(ret.external_id),
@@ -1738,8 +1751,9 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
       sourceRef: `returns:${returnId}`,
       reason: 'return_cancel',
       comment,
-    }),
-  ]);
+    }));
+  }
+  await db.batch(cancelReturnStatements);
 
   await syncOrderFinancialLedger(db, toInt(ret.order_id, 0), timestamp);
   try {
