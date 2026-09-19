@@ -1,6 +1,3 @@
-import fs from 'node:fs'
-import ts from 'typescript'
-
 const BASE_URL = String(process.env.BASE_URL || '').replace(/\/$/, '')
 const RUN_TAG = String(process.env.RUN_TAG || Date.now()).replace(/[^0-9A-Za-z]/g, '').slice(-10)
 if (!BASE_URL) throw new Error('BASE_URL is required')
