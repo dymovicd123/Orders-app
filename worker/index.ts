@@ -753,15 +753,17 @@ export default {
           return json(result, { status: 409 });
         }
         if (!('duplicate' in result)) throw new Error('Некорректный ответ складской операции.');
-        try {
-          await writeActivityLog(env.DB, {
-            eventType: 'inventory_movement',
-            entityType: 'inventory',
-            title: `Движение остатков: ${cleanText(input.movementType) || 'операция'}`,
-            details: `${cleanText(input.inventorySource) || 'источник не указан'}; позиций: ${Array.isArray(input.items) ? input.items.length : 0}${cleanText(input.comment) ? `; ${cleanText(input.comment)}` : ''}`,
-          });
-        } catch (activityError) {
-          console.error(JSON.stringify({ event: 'inventory_movement_activity_failed', requestId: cleanText(input.requestId), message: cleanText(activityError instanceof Error ? activityError.message : activityError).slice(0, 800) }));
+        if (!result.duplicate) {
+          try {
+            await writeActivityLog(env.DB, {
+              eventType: 'inventory_movement',
+              entityType: 'inventory',
+              title: `Движение остатков: ${cleanText(input.movementType) || 'операция'}`,
+              details: `${cleanText(input.inventorySource) || 'источник не указан'}; позиций: ${Array.isArray(input.items) ? input.items.length : 0}${cleanText(input.comment) ? `; ${cleanText(input.comment)}` : ''}`,
+            });
+          } catch (activityError) {
+            console.error(JSON.stringify({ event: 'inventory_movement_activity_failed', requestId: cleanText(input.requestId), message: cleanText(activityError instanceof Error ? activityError.message : activityError).slice(0, 800) }));
+          }
         }
         return json(result, { status: result.duplicate ? 200 : 201 });
       }
