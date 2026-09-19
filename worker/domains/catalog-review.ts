@@ -306,7 +306,12 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
 }
 
 
-export async function resolveCatalogReviewFacts(db: D1Database, orderItemId: number, input: CatalogReviewFactsInput): Promise<CatalogResolutionResponse> {
+export async function resolveCatalogReviewFacts(
+  db: D1Database,
+  orderItemId: number,
+  input: CatalogReviewFactsInput,
+  options: { singleItem?: boolean } = {},
+): Promise<CatalogResolutionResponse> {
   const anchor = await db.prepare(
     `SELECT oi.*, o.external_id, o.shipping_status, o.shipping_date, o.order_status, o.archived_at
      FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.id = ? LIMIT 1`
@@ -314,7 +319,9 @@ export async function resolveCatalogReviewFacts(db: D1Database, orderItemId: num
   if (!anchor?.id) throw new Error('Позиция заказа для разбора не найдена.');
   const inputKey = normalizedCatalogReviewKey(anchor);
   const candidates = await fetchCatalogReviewResolutionCandidates(db, toInt(anchor.order_id, 0));
-  const matching = (candidates.results || []).filter((row) => normalizedCatalogReviewKey(row) === inputKey);
+  const matching = options.singleItem
+    ? (candidates.results || []).filter((row) => toInt(row.id ?? row.order_item_id, 0) === orderItemId)
+    : (candidates.results || []).filter((row) => normalizedCatalogReviewKey(row) === inputKey);
   if (!matching.length) throw new Error('Эта задача уже разобрана. Обновите список.');
 
   const workshopRows = matching.filter((row) => toInt(row.is_workshop, 0) === 1);
@@ -939,9 +946,11 @@ export async function resolveOrderCatalogReviewExistingVariant(db: D1Database, o
 
   const inputKey = normalizedCatalogReviewKey(anchor);
   const rowsResult = await fetchCatalogReviewRows(db, 160, orderId);
-  const matching = (rowsResult.results || []).filter((row) => normalizedCatalogReviewKey(row) === inputKey);
+  const matching = (rowsResult.results || []).filter((row) => toInt(row.id ?? row.order_item_id, 0) === orderItemId);
   if (!matching.length) throw new Error('Эта позиция уже разобрана. Обновите заказ.');
-  return await resolveCatalogReviewRows(db, matching, selected, inputKey);
+  // A human chose this variant for one order line. Never propagate that decision to
+  // another raw-identical line: blank gender/size/color may hide a real difference.
+  return await resolveCatalogReviewRows(db, matching, selected, inputKey, new Date().toISOString(), { writeAlias: false });
 }
 
 
