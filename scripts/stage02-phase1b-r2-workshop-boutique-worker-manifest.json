@@ -10,16 +10,16 @@
       "afterLines": 2061,
       "replacements": [
         {
-          "beforeBlock": "    if (isWorkshop && inventorySource === 'boutique') {\n      throw new Error(`Товар из Цеха «${cleanText(orderItem.product_name_snapshot)}» нельзя возвращать в остаток Бутика. Выберите «Ещё не пришёл», «Получен без остатка» или «Склад».`);\n    }\n    const wantsRestock = inventorySource !== null;",
-          "afterBlock": "    const wantsRestock = inventorySource !== null;"
+          "beforeBlock": "    const inventorySource = physicalTracking ? trackedInventorySource : (restockSource !== 'none' && itemRestockRequested ? restockSource : null);\n    if (isWorkshop && inventorySource === 'boutique') {\n      throw new Error(`Товар из Цеха «${cleanText(orderItem.product_name_snapshot)}» нельзя возвращать в остаток Бутика. Выберите «Ещё не пришёл», «Получен без остатка» или «Склад».`);\n    }\n    const wantsRestock = inventorySource !== null;",
+          "afterBlock": "    const inventorySource = physicalTracking ? trackedInventorySource : (restockSource !== 'none' && itemRestockRequested ? restockSource : null);\n    const wantsRestock = inventorySource !== null;"
         },
         {
-          "beforeBlock": "  if (oldItemIsWorkshop && oldReturnSource === 'boutique') {\n    throw new Error(`Старую вещь из Цеха «${cleanText(oldItem.product_name_snapshot)}» нельзя принимать в остаток Бутика. Для цеховой вещи доступны только «Ещё не пришла», «Получена без остатка» или явный приём на Склад.`);\n  }\n  const rawExchangeDate = cleanText(input.exchangeDate);",
-          "afterBlock": "  const rawExchangeDate = cleanText(input.exchangeDate);"
+          "beforeBlock": "  const oldReturnSource = oldPhysicalTracking ? trackedOldReturnSource : normalizeExchangeReturnSource(input.oldReturnSource);\n  if (oldItemIsWorkshop && oldReturnSource === 'boutique') {\n    throw new Error(`Старую вещь из Цеха «${cleanText(oldItem.product_name_snapshot)}» нельзя принимать в остаток Бутика. Для цеховой вещи доступны только «Ещё не пришла», «Получена без остатка» или явный приём на Склад.`);\n  }\n  const rawExchangeDate = cleanText(input.exchangeDate);",
+          "afterBlock": "  const oldReturnSource = oldPhysicalTracking ? trackedOldReturnSource : normalizeExchangeReturnSource(input.oldReturnSource);\n  const rawExchangeDate = cleanText(input.exchangeDate);"
         },
         {
-          "beforeBlock": "    if (isWorkshop && destination === 'boutique') {\n      throw new Error('Возвращённую вещь из Цеха нельзя принять в остаток Бутика. Выберите Склад или «Без возврата в остаток».');\n    }\n    const persistedDestination = () => {",
-          "afterBlock": "    const persistedDestination = () => {"
+          "beforeBlock": "    const isWorkshop = Boolean(toInt(item.is_workshop, 0));\n    if (isWorkshop && destination === 'boutique') {\n      throw new Error('Возвращённую вещь из Цеха нельзя принять в остаток Бутика. Выберите Склад или «Без возврата в остаток».');\n    }\n\n    const persistedDestination = () => {",
+          "afterBlock": "    const isWorkshop = Boolean(toInt(item.is_workshop, 0));\n\n    const persistedDestination = () => {"
         }
       ]
     }
