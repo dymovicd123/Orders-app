@@ -194,7 +194,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     const needsAdminCatalogMutation = Boolean(draft.createProduct || draft.createFields?.length || legacy)
     if (!isAdmin && needsAdminCatalogMutation) return <p>Нужно добавить новый товар или новое значение в справочник. Это делается в Админ режиме, но разбирать заказ на Складе не нужно.</p>
     return <><p>{legacy ? 'Пол останется неизвестным только у этой позиции. Сам товар в каталоге от этого не изменится.' : exactDraftVariant || context.isWorkshop ? 'Будет уточнён товар в заказе. Затем система автоматически продолжит отправку.' : 'Все факты уже известны. Система создаст недостающую комбинацию этого товара и автоматически продолжит отправку.'}</p>
-      <button type="button" className="primary-button" disabled={disabled || Boolean(error)} onClick={() => void finish(legacy ? undefined : exactDraftVariant?.id)}>{resolving ? 'Сохраняю…' : legacy ? 'Сохранить и продолжить' : exactDraftVariant || context.isWorkshop ? 'Подтвердить и отправить' : 'Создать комбинацию и отправить'}</button></>
+      <button type="button" className="primary-button" disabled={disabled || Boolean(error)} onClick={() => void finish(legacy ? undefined : exactDraftVariant?.id)}>{resolving ? 'Сохраняю…' : legacy ? 'Сохранить и продолжить' : exactDraftVariant || context.isWorkshop ? 'Подтвердить товар' : 'Создать комбинацию и отправить'}</button></>
   }
   const renderQuestion = () => {
     if (!question || !draft || !context || !item) return null
