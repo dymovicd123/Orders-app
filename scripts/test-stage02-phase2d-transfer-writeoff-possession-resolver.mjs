@@ -6,6 +6,7 @@ const movement = fs.readFileSync('worker/domains/inventory-movement.ts', 'utf8')
 const panel = fs.readFileSync('src/features/inventory/views/renderInventoryMovementPanel.tsx', 'utf8')
 const transferMigration = fs.readFileSync('migrations/0052_v72_inventory_transfer_documents.sql', 'utf8')
 const evidenceMigration = fs.readFileSync('migrations/0071_v72_inventory_operation_evidence.sql', 'utf8')
+const inventoryOperationsMigration = fs.readFileSync('migrations/0034_v72_guided_inventory_workspace.sql', 'utf8')
 const check = (ok, message) => { if (!ok) throw new Error(message) }
 
 try {
@@ -43,7 +44,7 @@ try {
   check(transfer.includes('MAX(0, COALESCE(s.quantity, 0)) <> x.source_current') && transfer.includes('MAX(0, COALESCE(t.quantity, 0)) <> x.target_current'), 'Phase2D transfer stale guard disagrees with normalized Physical semantics')
   check(transfer.includes('SET quantity = MAX(0, quantity) + (SELECT move_qty'), 'Phase2D transfer can propagate legacy negative target Physical')
   check(transfer.includes('MAX(0, (SELECT effective_before - move_qty'), 'Phase2D transfer source can go below zero')
-  check(transfer.includes('quantity = quantity + (SELECT move_qty'), 'Phase2D transfer target does not receive exact +Q')
+  check(transfer.includes('SET quantity = MAX(0, quantity) + (SELECT move_qty') && transfer.includes('x.move_qty, x.target_current + x.move_qty'), 'Phase2D transfer target does not receive exact +Q')
   check(transfer.includes("x.source_current, x.move_qty") && transfer.includes("x.move_qty - x.source_current"), 'Phase2D transfer evidence does not preserve unexplained outbound')
   check(transfer.includes("x.source, x.variant_id") === false || true, 'noop')
   check(transfer.includes("'transfer', ?, x.source_current, x.move_qty"), 'Phase2D transfer evidence is not classified as transfer')
@@ -74,6 +75,16 @@ try {
   check(manual.includes("if (movementType === 'manual_set')") && manual.includes("'manual_set', 'manual'"), 'Phase2D damaged explicit absolute correction stock checks')
   check(manual.includes("if (movementType === 'delete' && prepared.some"), 'Phase2D accidentally reclassified legacy delete observation as resolver truth')
   check(manual.includes('Списание больше не принимает полный фактический остаток'), 'Phase2D server does not reject legacy writeoff full-count input')
+  check(manual.includes("const currentQuantity = movementType === 'writeoff' ? Math.max(0, rawCurrentQuantity) : rawCurrentQuantity"), 'Phase2D writeoff does not normalize legacy negative Physical to zero')
+  check(manual.includes("const guardedStockQuantitySql = movementType === 'writeoff'") && manual.includes("'MAX(0, COALESCE(s.quantity, 0))'"), 'Phase2D writeoff stale guard disagrees with bounded Physical semantics')
+  const existingOperationGate = manual.indexOf('const existingOperation = await db.prepare')
+  const writeoffConfirmationNormalize = manual.indexOf("const stockConfirmations = movementType === 'writeoff'")
+  check(existingOperationGate >= 0 && writeoffConfirmationNormalize > existingOperationGate, 'Phase2D writeoff retry does not short-circuit on committed request before resolver validation')
+  check(manual.includes('const requestFingerprint = inventoryManualRequestFingerprint(inventorySource, movementType, comment, items)'), 'Phase2D writeoff request fingerprint unexpectedly depends on resolver confirmation payload')
+  check(manual.includes('if (existingOperation?.operation_id)') && manual.includes('duplicate: true'), 'Phase2D committed writeoff retry can fall through into a second stock mutation')
+  check(manual.includes('if (raced?.operation_id && cleanText(raced.request_fingerprint) === requestFingerprint)'), 'Phase2D concurrent identical writeoff retries do not recover as duplicate success')
+  check(inventoryOperationsMigration.includes('operation_id TEXT PRIMARY KEY'), 'Phase2D writeoff operation id is not database-unique')
+  check(evidenceMigration.includes('evidence_key TEXT NOT NULL UNIQUE'), 'Phase2D writeoff evidence key is not database-unique')
 
   const movementRouteStart = router.indexOf("if (url.pathname === '/api/inventory/movements' && request.method === 'POST')")
   const transferRouteStart = router.indexOf("if (url.pathname === '/api/inventory/transfer' && request.method === 'POST')")
