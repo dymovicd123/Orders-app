@@ -37,3 +37,14 @@
 .resolution-guard { display: block; margin-top: 10px; font-size: 11px; }
 .order-catalog-resolution-modal button:focus-visible, .order-catalog-resolution-modal input:focus-visible, .order-catalog-resolution-modal select:focus-visible { outline: 2px solid #2459a9; outline-offset: 3px; }
 @media (max-width: 640px) { .order-catalog-resolution-modal { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 16px; } .order-catalog-resolution-modal h3 { font-size: 19px; } .resolution-question { padding: 14px; } .resolution-fields { grid-template-columns: 1fr; } .resolution-choices { flex-direction: column; align-items: stretch; } .resolution-question > .secondary-button { margin: 8px 0 0; } }
+
+.resolution-question-hint { color: #66758a; font-size: 13px; margin-top: -4px !important; }
+.resolution-product-results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.resolution-product-choice { display: grid; gap: 3px; text-align: left; align-content: start; }
+.resolution-product-choice strong { font-size: 14px; }
+.resolution-product-choice small { font-size: 11px; color: #718096; }
+.resolution-product-choice:hover { border-color: #6b91c9; background: #f8fbff; }
+.resolution-source { padding: 12px 14px; border-radius: 12px; background: #f8fafc; }
+.resolution-understanding { padding: 14px; border: 1px solid #dce6f2; border-radius: 12px; background: #fff; }
+.resolution-question { border: 1px solid #e1e8f1; background: #f8fafc; }
+@media (max-width: 640px) { .resolution-product-results { grid-template-columns: 1fr; } }
