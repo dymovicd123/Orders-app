@@ -948,9 +948,41 @@ export async function resolveOrderCatalogReviewExistingVariant(db: D1Database, o
   const rowsResult = await fetchCatalogReviewRows(db, 160, orderId);
   const matching = (rowsResult.results || []).filter((row) => toInt(row.id ?? row.order_item_id, 0) === orderItemId);
   if (!matching.length) throw new Error('Эта позиция уже разобрана. Обновите заказ.');
-  // A human chose this variant for one order line. Never propagate that decision to
-  // another raw-identical line: blank gender/size/color may hide a real difference.
-  return await resolveCatalogReviewRows(db, matching, selected, inputKey, new Date().toISOString(), { writeAlias: false });
+
+  const hasCompleteRawIdentity = Boolean(
+    cleanText(anchor.product_name_snapshot)
+    && ['ЖЕН', 'МУЖ'].includes(upperText(anchor.gender_snapshot))
+    && cleanText(anchor.color_snapshot)
+    && cleanText(anchor.material_snapshot)
+    && cleanText(anchor.length_snapshot)
+    && cleanText(anchor.size_snapshot)
+  );
+  const timestamp = new Date().toISOString();
+  if (!hasCompleteRawIdentity) {
+    // Incomplete rows may hide a real difference (for example blank gender/size/color),
+    // so a human answer stays scoped to this one line.
+    return await resolveCatalogReviewRows(db, matching, selected, inputKey, timestamp, { writeAlias: false });
+  }
+
+  // A full raw signature plus an explicit human-selected exact SKU is strong enough to learn.
+  // Remember the spelling and immediately reuse it for other currently unresolved rows with
+  // the exact same complete signature, not only for orders created in the future.
+  await rememberCatalogProductAlias(db, anchor.product_name_snapshot, toInt(selected.product_id, 0), timestamp);
+  await rememberCatalogValueAlias(db, 'material', anchor.material_snapshot, selected.material || 'СТАНДАРТ', timestamp);
+  await rememberCatalogValueAlias(db, 'length', anchor.length_snapshot, selected.length || 'СТАНДАРТ', timestamp);
+  await rememberCatalogValueAlias(db, 'color', anchor.color_snapshot, selected.color || 'БЕЗ ЦВЕТА', timestamp);
+  await rememberCatalogValueAlias(
+    db,
+    cleanText(selected.category) === 'child' ? 'child_age' : 'size',
+    anchor.size_snapshot,
+    selected.size_label || 'БЕЗ РАЗМЕРА',
+    timestamp,
+  );
+
+  const candidates = await fetchCatalogReviewResolutionCandidates(db, orderId);
+  const identical = (candidates.results || []).filter((row) => normalizedCatalogReviewKey(row) === inputKey);
+  const targetRows = identical.length ? identical : matching;
+  return await resolveCatalogReviewRows(db, targetRows, selected, inputKey, timestamp, { writeAlias: true });
 }
 
 
