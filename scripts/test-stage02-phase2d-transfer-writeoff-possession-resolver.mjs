@@ -4,6 +4,8 @@ const app = fs.readFileSync('src/App.tsx', 'utf8')
 const router = fs.readFileSync('worker/index.ts', 'utf8')
 const movement = fs.readFileSync('worker/domains/inventory-movement.ts', 'utf8')
 const panel = fs.readFileSync('src/features/inventory/views/renderInventoryMovementPanel.tsx', 'utf8')
+const transferMigration = fs.readFileSync('migrations/0052_v72_inventory_transfer_documents.sql', 'utf8')
+const evidenceMigration = fs.readFileSync('migrations/0071_v72_inventory_operation_evidence.sql', 'utf8')
 const check = (ok, message) => { if (!ok) throw new Error(message) }
 
 try {
@@ -48,6 +50,15 @@ try {
   check(!transfer.includes('inventory_stock_checks'), 'Phase2D transfer possession confirmation is still recorded as exact stock check')
   check(!transfer.includes('transfer_observation'), 'Phase2D transfer still writes legacy transfer observation')
   check(transfer.includes('Перемещение больше не принимает полный фактический остаток'), 'Phase2D server does not reject legacy transfer full-count input')
+  const existingDocumentGate = transfer.indexOf('const existingDocument = await db.prepare')
+  const confirmationNormalize = transfer.indexOf('normalizeInventoryOperationStockConfirmations(input.stockConfirmations)')
+  check(existingDocumentGate >= 0 && confirmationNormalize > existingDocumentGate, 'Phase2D transfer retry does not short-circuit on the committed request before resolver validation')
+  check(transfer.includes('const requestFingerprint = inventoryTransferRequestFingerprint(fromSource, toSource, comment, rawItems)'), 'Phase2D transfer request fingerprint unexpectedly depends on resolver confirmation payload')
+  check(transfer.includes('if (existingDocument) return await duplicateResponse(existingDocument)'), 'Phase2D committed transfer retry can fall through into a second stock mutation')
+  check(transfer.includes('if (racedDocument) return await duplicateResponse(racedDocument)'), 'Phase2D concurrent identical transfer retries do not recover through the committed document')
+  check(transferMigration.includes('request_id TEXT NOT NULL UNIQUE'), 'Phase2D transfer request id is not database-unique')
+  check(transferMigration.includes('UNIQUE (transfer_id, variant_id)'), 'Phase2D transfer items lack per-document variant uniqueness')
+  check(evidenceMigration.includes('evidence_key TEXT NOT NULL UNIQUE'), 'Phase2D operation evidence key is not database-unique')
 
   const manualStart = movement.indexOf('export async function applyInventoryMovement')
   const manualEnd = movement.indexOf('export type PreparedInventoryTransferItem', manualStart)
