@@ -153,7 +153,13 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     setResolving(true); setError('')
     try {
       await owner.run(async () => {
-        const path = variantId ? `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-existing` : `/api/catalog/review/${item.orderItemId}/resolve-facts`
+        const needsAdminCatalogMutation = !variantId && Boolean(next.createProduct || next.createFields?.length || legacy)
+        if (needsAdminCatalogMutation && !isAdmin) throw new Error('Нужно добавить новый товар или новое значение справочника. Для этого требуется Админ режим; переходить на Склад не нужно.')
+        const path = variantId
+          ? `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-existing`
+          : needsAdminCatalogMutation
+            ? `/api/catalog/review/${item.orderItemId}/resolve-facts`
+            : `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-facts`
         await read<CatalogResolutionResponse>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(variantId ? { variantId } : { ...next, legacyUnknownGender: legacy }) })
         if (ticket === generation.current) { setNeedsRecheck(true); setNotice('Товар уточнён ✓ Проверяю остальные позиции…') }
       }, async () => ticket === generation.current ? load() : false, async () => { if (owner === session.current) await onCompleted(order) })
@@ -185,9 +191,10 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   const approveReference = (field: Field) => { setDraft(current => current ? { ...current, createFields: [...(current.createFields || []), field] } : current); setNotice(`«${draft?.[field]}» будет добавлено при сохранении ✓`) }
   const finalAction = () => {
     if (!draft || !context) return null
-    if (!isAdmin && !exactDraftVariant) return <p>Для добавления или исправления товара нужен администратор. Ваш заказ пока не отправлен.</p>
-    return <><p>{legacy ? 'Пол останется неизвестным только у этой позиции. Сам товар в каталоге от этого не изменится.' : exactDraftVariant || context.isWorkshop ? 'Будет уточнён товар в заказе. Затем система продолжит проверку отправки.' : 'Такой комбинации ещё нет. Она станет доступна для следующих заказов.'}</p>
-      <button type="button" className="primary-button" disabled={disabled || Boolean(error)} onClick={() => void finish(legacy ? undefined : exactDraftVariant?.id)}>{resolving ? 'Сохраняю…' : legacy ? 'Сохранить и продолжить' : exactDraftVariant || context.isWorkshop ? 'Подтвердить товар' : 'Создать и использовать'}</button></>
+    const needsAdminCatalogMutation = Boolean(draft.createProduct || draft.createFields?.length || legacy)
+    if (!isAdmin && needsAdminCatalogMutation) return <p>Нужно добавить новый товар или новое значение в справочник. Это делается в Админ режиме, но разбирать заказ на Складе не нужно.</p>
+    return <><p>{legacy ? 'Пол останется неизвестным только у этой позиции. Сам товар в каталоге от этого не изменится.' : exactDraftVariant || context.isWorkshop ? 'Будет уточнён товар в заказе. Затем система автоматически продолжит отправку.' : 'Все факты уже известны. Система создаст недостающую комбинацию этого товара и автоматически продолжит отправку.'}</p>
+      <button type="button" className="primary-button" disabled={disabled || Boolean(error)} onClick={() => void finish(legacy ? undefined : exactDraftVariant?.id)}>{resolving ? 'Сохраняю…' : legacy ? 'Сохранить и продолжить' : exactDraftVariant || context.isWorkshop ? 'Подтвердить и отправить' : 'Создать комбинацию и отправить'}</button></>
   }
   const renderQuestion = () => {
     if (!question || !draft || !context || !item) return null
