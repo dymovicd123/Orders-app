@@ -204,13 +204,13 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     if (question.kind === 'product') {
       const sorted = rankedProducts(choices, item.productName)
       const searchRanked = rankedProducts(choices, search || item.productName)
-      const shown = (searchOpen ? searchRanked : sorted).filter(entry => entry.score > 0).slice(0, searchOpen ? 5 : 4)
-      return <><h4 ref={questionHeading} tabIndex={-1}>Какой это товар?</h4>
-        {searchOpen ? <label>Найти товар<input autoFocus value={search} onChange={e => setSearch(e.target.value)} /></label> : null}
+      const shown = (searchOpen ? searchRanked : sorted).filter(entry => entry.score > 0).slice(0, searchOpen ? 8 : 5)
+      return <><h4 ref={questionHeading} tabIndex={-1}>Выберите товар</h4>
+        {searchOpen ? <label>Поиск по каталогу<input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Начните вводить название" /></label> : null}
         <div className="resolution-choices">{shown.map(({ product }) => <button type="button" key={product.id} onClick={() => chooseProduct(product)}>{product.name}</button>)}</div>
-        {searchOpen && !shown.length ? <p>Совпадений нет. Проверьте название или попросите администратора уточнить товар.</p> : null}
-        {!searchOpen ? <button type="button" className="secondary-button" onClick={() => setSearchOpen(true)}>Найти другой товар</button> : null}
-        {isAdmin ? <button type="button" className="resolution-link" onClick={() => void openAdvanced()}>Проверить весь каталог</button> : onRequestAdminMode ? <button type="button" className="resolution-link" onClick={onRequestAdminMode}>Не нашли товар — войти в Админ режим</button> : null}</>
+        {searchOpen && !shown.length ? <p>Похожих товаров не нашли. Попробуйте другое слово из названия или откройте полный каталог.</p> : null}
+        {!searchOpen ? <button type="button" className="secondary-button" onClick={() => setSearchOpen(true)}>Поиск по каталогу</button> : null}
+        {isAdmin ? <button type="button" className="resolution-link" onClick={() => void openAdvanced()}>Открыть полный каталог</button> : onRequestAdminMode ? <button type="button" className="resolution-link" onClick={onRequestAdminMode}>Не нашли товар — войти в Админ режим</button> : null}</>
     }
     if (question.kind === 'compound') return <><h4 ref={questionHeading} tabIndex={-1}>Что означает часть названия «{remainder}»?</h4><div className="resolution-choices">
       <button type="button" onClick={() => { setClassified(true); answerField('material', remainder) }}>Материал</button>
@@ -221,9 +221,9 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       <button type="button" className="primary-button" onClick={() => { const next = { ...draft, color: 'БЕЗ ЦВЕТА', size: 'БЕЗ РАЗМЕРА' }; setDraft(next); setNotice('Без цвета и без размера ✓'); void finish(exactDraftVariant?.id, next) }}>Да, всё верно</button>
       <button type="button" onClick={() => { setEditing('color'); setAnswer('') }}>Нет, исправить</button>
     </div></>
-    if (question.kind === 'reference') return <><h4 ref={questionHeading} tabIndex={-1}>Значение «{draft[question.field]}» не найдено в справочнике</h4><p>Сначала проверьте, не опечатка ли это. Новое значение попадёт в справочник только после отдельного подтверждения.</p>
-      <button type="button" className="primary-button" onClick={() => { setEditing(question.field); setAnswer(draft[question.field]) }}>Исправить / выбрать существующее</button>
-      {isAdmin ? <button type="button" className="secondary-button" onClick={() => approveReference(question.field)}>Добавить как новое значение</button> : <div className="resolution-admin-required"><p>Добавить действительно новое значение можно в Админ режиме. После входа это окно останется открытым.</p>{onRequestAdminMode ? <button type="button" className="secondary-button" onClick={onRequestAdminMode}>Войти в Админ режим и продолжить</button> : null}</div>}</>
+    if (question.kind === 'reference') return <><h4 ref={questionHeading} tabIndex={-1}>Уточните {labels[question.field].toLowerCase()}: «{draft[question.field]}»</h4><p>Такого значения ещё нет среди известных. Если это другое написание существующего значения — выберите его. Если значение действительно новое, добавьте его отдельно.</p>
+      <button type="button" className="primary-button" onClick={() => { setEditing(question.field); setAnswer(draft[question.field]) }}>Выбрать существующее значение</button>
+      {isAdmin ? <button type="button" className="secondary-button" onClick={() => approveReference(question.field)}>Это новое значение</button> : <div className="resolution-admin-required"><p>Добавить действительно новое значение можно в Админ режиме. После входа это окно останется открытым.</p>{onRequestAdminMode ? <button type="button" className="secondary-button" onClick={onRequestAdminMode}>Войти в Админ режим и продолжить</button> : null}</div>}</>
     if (question.kind === 'field') {
       const field = question.field
       const small = field === 'gender' ? [['ЖЕН', 'Жен'], ['МУЖ', 'Муж']] : field === 'category' ? [['adult', 'Взрослый'], ['child', 'Детский']] : []
@@ -249,9 +249,9 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
     }
   }}>
-    <header><div><h3 id="resolution-title">Уточним товар перед отправкой</h3><small>{order.external_id || `Заказ #${order.id}`}{progress.total > 1 ? ` · Товар ${progress.total - progress.remaining + 1} из ${progress.total}` : ''}</small></div><button type="button" className="secondary-button" disabled={resolving} onClick={onClose}>Закрыть</button></header>
-    {item && !minimalFieldQuestion ? <section className="resolution-source"><small>Менеджер записал</small><strong>{item.productName}</strong><span>{[item.gender, item.material, normalize(item.length) !== 'СТАНДАРТ' ? item.length : '', context?.isWorkshop ? '' : item.color || 'Цвет не указан', context?.isWorkshop ? '' : item.size || 'Размер не указан'].filter(Boolean).join(' · ')}</span></section> : null}
-    {draft && context && !minimalFieldQuestion ? <section className="resolution-understanding"><strong>{draft.createProduct ? `Новый товар: ${draft.productName}` : context.product ? `Мы нашли: ${context.product.name}` : 'Товар пока не определён'}</strong>
+    <header><div><h3 id="resolution-title">Уточнение товара</h3><small>{order.external_id || `Заказ #${order.id}`}{progress.total > 1 ? ` · Товар ${progress.total - progress.remaining + 1} из ${progress.total}` : ''}</small></div><button type="button" className="secondary-button" disabled={resolving} onClick={onClose}>Закрыть</button></header>
+    {item && !minimalFieldQuestion ? <section className="resolution-source"><small>В заказе указано</small><strong>{item.productName}</strong><span>{[item.gender, item.material, normalize(item.length) !== 'СТАНДАРТ' ? item.length : '', context?.isWorkshop ? '' : item.color || 'Цвет не указан', context?.isWorkshop ? '' : item.size || 'Размер не указан'].filter(Boolean).join(' · ')}</span></section> : null}
+    {draft && context && !minimalFieldQuestion ? <section className="resolution-understanding"><strong>{draft.createProduct ? `Новый товар: ${draft.productName}` : context.product ? `Определили товар: ${context.product.name}` : 'Нужно выбрать товар'}</strong>
       {!context.isWorkshop ? <p>{fields.filter(field => clean(draft[field]) && (field !== 'length' || normalize(draft.length) !== 'СТАНДАРТ')).map(field => <span key={field}>{labels[field]}: {displayFact(field, draft[field])}{confirmed[field] ? ' ✓' : ''}</span>)}</p> : <p>Для Цеха нужно уточнить только сам товар.</p>}
     </section> : null}
     {!minimalFieldQuestion ? <div role="status" aria-live="polite" className="resolution-feedback">{notice}</div> : null}
@@ -269,6 +269,6 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       </fieldset>
     </section> : null}
     {isAdmin && item && !advancedOpen && !minimalFieldQuestion ? <footer>{fallbackOpen ? <button type="button" className="resolution-link" disabled={disabled} onClick={() => void openAdvanced()}>Расширенное исправление</button> : <button type="button" className="resolution-link" disabled={disabled} onClick={() => setFallbackOpen(true)}>Не нашли правильный вариант?</button>}</footer> : null}
-    {!minimalFieldQuestion ? <small className="resolution-guard">Без уточнения отправить заказ нельзя.</small> : null}
+    {!minimalFieldQuestion ? <small className="resolution-guard">Пока товар не уточнён, операция останется на паузе.</small> : null}
   </div></div>
 }
