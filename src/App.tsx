@@ -6176,9 +6176,11 @@ function removeDebtPayment(index: number) {
       0,
       Number(returnSelectedOrder.received_amount || 0) - Number(returnSelectedOrder.return_amount || 0),
     )
+    const selectedReturnItems = returnDraft.items
+      .filter((item) => Number(item.orderItemId || 0) > 0 && Number(item.quantity || 0) > 0)
 
-    if (amount <= 0) {
-      setError('Укажите сумму возврата больше нуля.')
+    if (amount <= 0 && selectedReturnItems.length === 0) {
+      setError('Укажите сумму возврата или выберите хотя бы один возвращаемый товар.')
       return
     }
 
@@ -6186,7 +6188,7 @@ function removeDebtPayment(index: number) {
       setError(`Сумма возврата ${formatMoney(amount)} больше доступной суммы ${formatMoney(availableAmount)}.`)
       return
     }
-    if (!returnDraft.paymentMethod.trim()) {
+    if (amount > 0 && !returnDraft.paymentMethod.trim()) {
       setError('Выберите способ возврата денег. Это нужно для правильного учёта наличных и финансов.')
       return
     }
@@ -6200,11 +6202,10 @@ function removeDebtPayment(index: number) {
         orderId: returnSelectedOrder.id,
         returnDate: returnDraft.returnDate,
         amount,
-        paymentMethod: returnDraft.paymentMethod,
+        paymentMethod: amount > 0 ? returnDraft.paymentMethod : '',
         comment: returnDraft.comment,
         restockSource: returnDraft.restockSource,
-        items: returnDraft.items
-          .filter((item) => Number(item.orderItemId || 0) > 0 && Number(item.quantity || 0) > 0)
+        items: selectedReturnItems
           .map((item) => ({
             orderItemId: item.orderItemId,
             quantity: item.quantity,
