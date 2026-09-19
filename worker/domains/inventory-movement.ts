@@ -659,7 +659,10 @@ export async function applyInventoryMovement(
       throw new Error(`${movementType === 'manual_set' ? 'Корректировка' : 'Списание'}: выбранной позиции больше нет на выбранной точке. Обновите остатки.`);
     }
 
-    const currentQuantity = existingStock?.id ? toInt(existingStock.quantity, 0) : 0;
+    const rawCurrentQuantity = existingStock?.id ? toInt(existingStock.quantity, 0) : 0;
+    // Phase2D: resolver truth is bounded. Legacy negative Physical must be treated as zero
+    // for writeoff confirmation/replay, without changing exact-count semantics of manual_set.
+    const currentQuantity = movementType === 'writeoff' ? Math.max(0, rawCurrentQuantity) : rawCurrentQuantity;
     const reservedQuantity = existingStock?.id ? Math.max(0, toInt(existingStock.reserved_quantity, 0)) : 0;
     const expectedQuantity = rawItem.expectedQuantity;
     const observedPhysicalQuantity = rawItem.observedPhysicalQuantity;
@@ -792,6 +795,9 @@ export async function applyInventoryMovement(
   });
   const rowMatchSql = `((x.stock_existed = 1 AND x.stock_id = inventory_stock.id)
                     OR (x.stock_existed = 0 AND inventory_stock.inventory_source = x.inventory_source AND x.variant_id = inventory_stock.variant_id))`;
+  const guardedStockQuantitySql = movementType === 'writeoff'
+    ? 'MAX(0, COALESCE(s.quantity, 0))'
+    : 'COALESCE(s.quantity, 0)';
 
   const statements: D1PreparedStatement[] = [];
   for (const chunk of preparedChunks) {
@@ -805,7 +811,7 @@ export async function applyInventoryMovement(
          LEFT JOIN inventory_stock s
            ON (x.stock_existed = 1 AND s.id = x.stock_id)
            OR (x.stock_existed = 0 AND s.inventory_source = ? AND s.variant_id = x.variant_id)
-         WHERE (x.stock_existed = 1 AND (s.id IS NULL OR COALESCE(s.quantity, 0) <> x.current_quantity))
+         WHERE (x.stock_existed = 1 AND (s.id IS NULL OR ${guardedStockQuantitySql} <> x.current_quantity))
             OR (x.stock_existed = 0 AND s.id IS NOT NULL)
        )`
     ).bind(...chunk.rowBindings, now, inventorySource));
