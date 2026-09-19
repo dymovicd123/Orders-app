@@ -1212,12 +1212,14 @@ export default {
         if (inventoryDelivery?.unresolved) {
           return json({ ok: false, message: 'Отправка остановлена: в заказе остались неразобранные складские позиции.' }, { status: 409 });
         }
+        let shippingCommitted = humanInventoryModelEnabled ? Boolean(inventoryDelivery?.shippingCommitted) : false;
         if (!humanInventoryModelEnabled) {
-          await env.DB.prepare(
+          const shippingUpdate = await env.DB.prepare(
             `UPDATE orders
              SET shipping_status = 'sent', shipping_date = ?, updated_at = ?
-             WHERE id = ?`
+             WHERE id = ? AND COALESCE(shipping_status, 'not_sent') <> 'sent'`
           ).bind(nextShippingDate, timestamp, id).run();
+          shippingCommitted = toInt(shippingUpdate.meta?.changes, 0) > 0;
         }
         // Physical fulfillment + shipping_status above are the critical commit. A secondary readback
         // must never turn an already-sent order into a false failure response and invite a retry.
@@ -1227,22 +1229,25 @@ export default {
         } catch (error) {
           console.warn('Order shipping readback after committed send failed', error);
         }
-        try {
-          await writeActivityLog(env.DB, {
-            eventType: 'order_shipping_updated',
-            entityType: 'order',
-            entityId: id,
-            orderId: id,
-            externalOrderId: cleanText(existing.external_id),
-            title: `Заказ ${cleanText(existing.external_id)} отмечен отправленным`,
-            details: `Дата отправки: ${nextShippingDate}; менеджер сохранён: ${toInt(existing.manager_id, 0) || 'не указан'}`,
-            createdAt: timestamp,
-          });
-        } catch (error) {
-          console.warn('Order shipping activity log after committed send failed', error);
+        if (shippingCommitted) {
+          try {
+            await writeActivityLog(env.DB, {
+              eventType: 'order_shipping_updated',
+              entityType: 'order',
+              entityId: id,
+              orderId: id,
+              externalOrderId: cleanText(existing.external_id),
+              title: `Заказ ${cleanText(existing.external_id)} отмечен отправленным`,
+              details: `Дата отправки: ${nextShippingDate}; менеджер сохранён: ${toInt(existing.manager_id, 0) || 'не указан'}`,
+              createdAt: timestamp,
+            });
+          } catch (error) {
+            console.warn('Order shipping activity log after committed send failed', error);
+          }
         }
         return json({
           ok: true,
+          ...(!shippingCommitted ? { alreadySent: true } : {}),
           ...(updatedOrder ? { order: updatedOrder } : {}),
           refreshRequired: !updatedOrder,
           inventoryDelivery,
