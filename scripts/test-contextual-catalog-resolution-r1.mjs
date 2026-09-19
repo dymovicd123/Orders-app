@@ -52,7 +52,7 @@ try {
   check(reservations.includes('item.observedPhysicalQuantity == null ? null : item.observedPhysicalQuantity'), 'Reservation code must never bind undefined as an observed physical quantity')
   check(modal.includes('rankedProducts(choices, item.productName)'), 'Contextual product suggestions must remain in the same modal')
   check(!modal.includes('Нужна новая характеристика'), 'R2 must not send the operator to the old lossy full-review detour')
-  check(modal.includes('Без уточнения отправить заказ нельзя'), 'Resolver must keep the no-bypass safety rule in human language')
+  check(modal.includes('Без уточнения продолжить нельзя') && modal.includes('система запомнит сопоставление'), 'Resolver must keep the no-bypass safety rule in human language')
   check(contracts.includes('legacyUnknownGender?: boolean'), 'API contract must model the explicit legacy unknown-gender action')
   check(modal.includes('Не удалось выяснить') && modal.includes('legacyUnknownGender: legacy') && modal.includes('isAdmin && Boolean(context?.canLeaveGenderUnknown)'), 'Historical unknown gender must be explicit, server-eligible and admin-only')
   check(review.includes("stock_writeoff_status = 'legacy_unknown_gender'"), 'Backend must persist a dedicated legacy unknown-gender status instead of a genderless SKU')
