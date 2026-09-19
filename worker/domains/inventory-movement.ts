@@ -352,7 +352,7 @@ export async function resolveInventoryCreatableItemsBulk(
 
 export async function applyInventoryMovement(
   db: D1Database,
-  input: { requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[] },
+  input: { requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown },
   returnInventory = true,
   actor = '',
 ) {
@@ -397,6 +397,20 @@ export async function applyInventoryMovement(
     const duplicate = { ok: true, duplicate: true, source: inventorySource, applied: toInt(existingOperation.item_count, 0), operationId: requestId };
     if (!returnInventory) return duplicate;
     return { ...duplicate, inventory: await listInventory(db, new URL(`https://dummy.local/api/inventory?source=${inventorySource}`)) };
+  }
+
+  const stockConfirmations = movementType === 'writeoff'
+    ? normalizeInventoryOperationStockConfirmations(input.stockConfirmations)
+    : [];
+  if (movementType === 'writeoff') {
+    for (const confirmation of stockConfirmations) {
+      if (confirmation.source !== inventorySource) {
+        throw new Error('Подтверждение физического наличия относится к другой точке. Обновите остатки и повторите списание.');
+      }
+    }
+    if (normalizedItems.some((item) => item.observedPhysicalQuantity !== null)) {
+      throw new Error('Списание больше не принимает полный фактический остаток. Подтвердите только конкретные вещи текущего списания.');
+    }
   }
 
   const now = new Date().toISOString();
@@ -622,11 +636,19 @@ export async function applyInventoryMovement(
     effectiveBefore: number;
     targetQuantity: number;
     delta: number;
+    operationQuantity: number;
     expectedQuantity: number | null;
     observedPhysicalQuantity: number | null;
     reservedQuantity: number;
   };
   const prepared: PreparedManual[] = [];
+  const stockResolutionItems: Array<{
+    source: SourceType;
+    variantId: number;
+    productName: string;
+    trackedPhysicalQuantity: number;
+    operationQuantity: number;
+  }> = [];
 
   for (const entry of canonicalEntries) {
     const rawItem = entry.raw;
@@ -653,7 +675,30 @@ export async function applyInventoryMovement(
       }
       targetQuantity = Math.max(0, item.quantity);
       delta = targetQuantity - currentQuantity;
-    } else if (movementType === 'writeoff' || movementType === 'delete') {
+    } else if (movementType === 'writeoff') {
+      const requested = Math.max(0, item.quantity);
+      const boundedOutbound = boundedOutboundStock(currentQuantity, requested);
+      if (boundedOutbound.requiresResolution) {
+        const variantId = Math.max(0, toInt(item.variantId, 0));
+        const confirmation = stockConfirmations.find((candidate) =>
+          candidate.source === inventorySource
+          && candidate.variantId === variantId
+          && candidate.expectedQuantity === currentQuantity
+          && candidate.operationQuantity === requested
+        );
+        if (!confirmation) {
+          stockResolutionItems.push({
+            source: inventorySource,
+            variantId,
+            productName: item.productName,
+            trackedPhysicalQuantity: Math.max(0, currentQuantity),
+            operationQuantity: requested,
+          });
+        }
+      }
+      targetQuantity = boundedOutbound.trackedPhysicalAfter;
+      delta = -boundedOutbound.explainedQuantity;
+    } else if (movementType === 'delete') {
       const requested = Math.max(0, item.quantity);
       if (observedPhysicalQuantity !== null) {
         if (expectedQuantity === null) throw new Error(`Перед фактической сверкой «${item.productName}» обновите остатки и повторите списание.`);
@@ -661,7 +706,7 @@ export async function applyInventoryMovement(
         effectiveBefore = observedPhysicalQuantity;
       }
       if (requested > Math.max(0, effectiveBefore)) {
-        throw new Error(`По учёту «${item.productName}» на месте ${effectiveBefore} шт., а списать нужно ${requested}. Если товар физически есть, укажите фактическое количество прямо в строке списания.`);
+        throw new Error(`По учёту «${item.productName}» на месте ${effectiveBefore} шт., а списать нужно ${requested}. Сначала выполните точную корректировку остатка.`);
       }
       targetQuantity = effectiveBefore - requested;
       delta = -requested;
@@ -681,10 +726,14 @@ export async function applyInventoryMovement(
       effectiveBefore,
       targetQuantity,
       delta,
+      operationQuantity: Math.max(0, item.quantity),
       expectedQuantity,
       observedPhysicalQuantity,
       reservedQuantity,
     });
+  }
+  if (movementType === 'writeoff' && stockResolutionItems.length) {
+    return buildStockResolutionRequired('writeoff', stockResolutionItems);
   }
 
   const referenceId = requestId;
@@ -708,6 +757,7 @@ export async function applyInventoryMovement(
       effectiveBefore: row.effectiveBefore,
       targetQuantity: row.targetQuantity,
       delta: row.delta,
+      operationQuantity: row.operationQuantity,
       reservedQuantity: row.reservedQuantity,
       observedPhysical: row.observedPhysicalQuantity,
       inventorySource,
@@ -730,6 +780,7 @@ export async function applyInventoryMovement(
           CAST(json_extract(payload, '$.effectiveBefore') AS INTEGER) AS effective_before,
           CAST(json_extract(payload, '$.targetQuantity') AS INTEGER) AS target_quantity,
           CAST(json_extract(payload, '$.delta') AS INTEGER) AS delta,
+          CAST(json_extract(payload, '$.operationQuantity') AS INTEGER) AS operation_quantity,
           CAST(json_extract(payload, '$.reservedQuantity') AS INTEGER) AS reserved_quantity,
           CASE WHEN json_type(payload, '$.observedPhysical') = 'null' THEN NULL
                ELSE CAST(json_extract(payload, '$.observedPhysical') AS INTEGER) END AS observed_physical,
@@ -784,7 +835,7 @@ export async function applyInventoryMovement(
     ).bind(requestId, requestFingerprint, now),
   );
 
-  if ((movementType === 'writeoff' || movementType === 'delete') && prepared.some(row => row.observedPhysicalQuantity !== null)) {
+  if (movementType === 'delete' && prepared.some(row => row.observedPhysicalQuantity !== null)) {
     for (const chunk of preparedChunks) {
       statements.push(
         db.prepare(
@@ -813,6 +864,25 @@ export async function applyInventoryMovement(
            FROM x WHERE x.observed_physical IS NOT NULL`
         ).bind(...chunk.rowBindings, requestId, inventorySource, requestId, cleanText(actor) || null, now, now),
       );
+    }
+  }
+
+  if (movementType === 'writeoff') {
+    for (const chunk of preparedChunks) {
+      statements.push(db.prepare(
+        `WITH ${chunk.rowsSql}
+         INSERT OR IGNORE INTO inventory_operation_evidence (
+           evidence_key, inventory_source, variant_id, operation_type, operation_reference,
+           tracked_physical_before, confirmed_operation_quantity, explained_quantity, unexplained_quantity,
+           confirmed_by, occurred_at, created_at
+         )
+         SELECT 'writeoff:' || ? || ':' || ? || ':' || x.variant_id,
+                ?, x.variant_id, 'writeoff', ?, x.current_quantity, x.operation_quantity,
+                MIN(x.current_quantity, x.operation_quantity), MAX(0, x.operation_quantity - x.current_quantity),
+                ?, ?, ?
+         FROM x
+         WHERE x.operation_quantity > x.current_quantity`
+      ).bind(...chunk.rowBindings, requestId, inventorySource, inventorySource, requestId, cleanText(actor) || null, now, now));
     }
   }
 
