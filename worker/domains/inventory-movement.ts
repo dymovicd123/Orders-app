@@ -13,7 +13,7 @@ import { inventoryMergeKey, inventoryWhereKey, mergeInventoryItems, normalizeInv
 import { applyOrderStockWriteOff } from './orders-write.ts'
 import { getPendingInventoryWriteoffCount } from './references.ts'
 import { isInventoryAutoWriteoffEnabled } from './storage.ts'
-import { boundedOutboundStock } from './stock-resolution.ts'
+import { boundedOutboundStock, buildStockResolutionRequired } from './stock-resolution.ts'
 
 export function inventoryManualRequestFingerprint(
   inventorySource: SourceType,
@@ -41,6 +41,38 @@ export function inventoryManualRequestFingerprint(
     || JSON.stringify(a).localeCompare(JSON.stringify(b))
   ));
   return JSON.stringify({ inventorySource, movementType, comment, items: rows });
+}
+
+
+export type InventoryOperationStockConfirmation = {
+  source: SourceType;
+  variantId: number;
+  expectedQuantity: number;
+  operationQuantity: number;
+};
+
+export function normalizeInventoryOperationStockConfirmations(input: unknown): InventoryOperationStockConfirmation[] {
+  if (!Array.isArray(input)) return [];
+  const map = new Map<string, InventoryOperationStockConfirmation>();
+  for (const raw of input) {
+    if (!raw || typeof raw !== 'object') continue;
+    const row = raw as Record<string, unknown>;
+    const source = normalizeSourceType(row.source);
+    const variantId = Math.max(0, toInt(row.variantId, 0));
+    const expectedQuantity = Math.max(0, toInt(row.expectedQuantity, -1));
+    const operationQuantity = Math.max(0, toInt(row.operationQuantity, 0));
+    if (!variantId || expectedQuantity < 0 || operationQuantity <= 0) {
+      throw new Error('Некорректное подтверждение физического наличия. Обновите остатки и повторите операцию.');
+    }
+    const key = `${source}:${variantId}`;
+    const next = { source, variantId, expectedQuantity, operationQuantity };
+    const existing = map.get(key);
+    if (existing && (existing.expectedQuantity !== expectedQuantity || existing.operationQuantity !== operationQuantity)) {
+      throw new Error('Для одной позиции переданы разные подтверждения физического наличия. Обновите остатки и повторите операцию.');
+    }
+    map.set(key, next);
+  }
+  return Array.from(map.values());
 }
 
 
