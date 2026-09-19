@@ -4630,7 +4630,6 @@ function App() {
       && same(row.material, nextVariant.material)
       && same(row.length, nextVariant.length)
       && same(row.size, nextVariant.size)
-      && (inventoryDraft.movementType !== 'writeoff' || Number(row.quantity || 0) > 0)
     )) || null
 
     setInventoryOperationVariant(nextVariant)
