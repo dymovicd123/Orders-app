@@ -17,8 +17,8 @@ for (const label of ['Приход', 'Списание', 'Исправить к�
 check(panel.includes('selectedInventoryOperationGroup.rows.length > 6'), 'large variant sets are not collapsed early enough')
 check(panel.includes('Ещё {transferPartition.extra.length} вариантов'), 'overflow variants are not retained behind a calm disclosure')
 check(panel.includes('Нулевые, отрицательные и старые варианты остаются доступны'), 'zero/negative variant discoverability promise missing')
-check(panel.includes('По системе здесь {currentQuantity}. Чтобы провести это перемещение без путаницы'), 'zero/negative transfer recovery is not explained in human terms')
-check(panel.includes('Сколько здесь сейчас'), 'physical reconciliation input is not human-labelled')
+check(app.includes("result.code === 'stock_resolution_required'") && app.includes('Это НЕ пересчёт всего остатка'), 'zero/negative transfer recovery is not explained through the bounded possession resolver')
+check(!panel.includes('Сколько здесь сейчас') && !panel.includes('Фактически на месте'), 'Operations still asks for a fake full physical count during transfer/writeoff')
 check(!panel.includes('<th>Свободно</th>') && !panel.includes('<th>{sourceLabel(inventoryDraft.targetSource)}</th>'), 'transfer table still exposes the old six-column cognitive load')
 check(panel.includes('<th>По системе</th>'), 'compact transfer system-state column missing')
 check(panel.includes("import '../../../styles/w4-human-operations.css'"), 'W4 Operations stylesheet is not scoped from the renderer')
@@ -39,4 +39,4 @@ check(manifest.frontend?.panelReturnChanges?.renderInventoryMovementPanel?.befor
 check(manifest.frontend?.panelReturnChanges?.renderInventoryMovementPanel?.after, 'W4 movement after hash missing')
 check(preservation.includes('w4HumanOperationsPath') && preservation.includes('W4 human operations panel baseline hash mismatch'), '1906B preservation gate is not chained through W4')
 
-console.log('W4 HUMAN OPERATIONS PASSED — transfer is task-first, variant noise is bounded, zero/negative variants stay discoverable, and Arrival stays frozen')
+console.log('W4 HUMAN OPERATIONS PASSED — transfer is task-first, shortage recovery uses bounded possession confirmation, variant noise is bounded, and Arrival stays frozen')
