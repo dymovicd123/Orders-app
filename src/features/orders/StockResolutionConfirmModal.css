@@ -1,0 +1,17 @@
+.stock-resolution-backdrop { z-index: 1400; }
+.stock-resolution-modal { width: min(620px, calc(100vw - 28px)); padding: 24px; }
+.stock-resolution-head h3 { margin: 4px 0 8px; font-size: 22px; }
+.stock-resolution-head p { margin: 0; color: #526173; line-height: 1.5; }
+.stock-resolution-items { display: grid; gap: 10px; margin: 20px 0; }
+.stock-resolution-item { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 12px 18px; align-items: center; padding: 14px; border: 1px solid #d9e2ec; border-radius: 12px; background: #f8fafc; }
+.stock-resolution-item strong { overflow-wrap: anywhere; }
+.stock-resolution-item span { color: #526173; white-space: nowrap; }
+.stock-resolution-question { padding: 16px; border-radius: 12px; background: #eef6ff; border: 1px solid #cddff5; }
+.stock-resolution-question p { margin: 6px 0 0; color: #526173; line-height: 1.45; }
+.stock-resolution-modal .modal-actions { margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .stock-resolution-modal { width: calc(100vw - 16px); padding: 16px; }
+  .stock-resolution-item { grid-template-columns: 1fr; gap: 6px; }
+  .stock-resolution-item span { white-space: normal; }
+  .stock-resolution-modal .modal-actions { flex-direction: column; }
+}
