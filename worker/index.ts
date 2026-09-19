@@ -7,7 +7,7 @@ import { authUserPayload, createAuthUser, deleteAuthUser, ensureAuthSchema, hand
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
 import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
 import type { CatalogReviewFactsInput } from './domains/catalog-review.ts'
-import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant, resolveOrderCatalogReviewFacts } from './domains/catalog-review.ts'
+import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant } from './domains/catalog-review.ts'
 import { getClientDetails, listClients } from './domains/clients.ts'
 import { criticalOperationErrorResponse } from './domains/critical.ts'
 import { listFinanceReports } from './domains/finance-reports.ts'
@@ -856,7 +856,23 @@ export default {
         const orderId = toInt(orderCatalogReviewFactsMatch[1], 0);
         const orderItemId = toInt(orderCatalogReviewFactsMatch[2], 0);
         const input = await readJson<CatalogReviewFactsInput>(request);
-        const result = await resolveOrderCatalogReviewFacts(env.DB, orderId, orderItemId, input);
+        const scoped = await env.DB.prepare(
+          `SELECT oi.id FROM order_items oi JOIN orders o ON o.id = oi.order_id
+           WHERE oi.id = ? AND oi.order_id = ? AND COALESCE(o.order_status, 'active') = 'active'
+             AND COALESCE(o.archived_at, '') = '' AND COALESCE(o.shipping_status, 'not_sent') <> 'sent' LIMIT 1`
+        ).bind(orderItemId, orderId).first<{ id: number }>();
+        if (!scoped?.id) return json({ ok: false, message: 'Позиция не найдена среди активных товаров этого заказа.' }, { status: 404 });
+        if (Boolean(input.createProduct)) return json({ ok: false, message: 'Новый базовый товар можно добавить только в Админ режиме.' }, { status: 403 });
+        const createFields = Array.isArray(input.createFields) ? input.createFields.map(cleanText).filter(Boolean) : [];
+        if (createFields.length) return json({ ok: false, message: 'Новое значение справочника можно добавить только в Админ режиме.' }, { status: 403 });
+        if (Boolean(input.legacyUnknownGender)) return json({ ok: false, message: 'Историческое исключение доступно только в Админ режиме.' }, { status: 403 });
+        if (!toInt(input.productId, 0)) return json({ ok: false, message: 'Выберите существующий товар.' }, { status: 400 });
+        const result = await resolveCatalogReviewFacts(env.DB, orderItemId, {
+          ...input,
+          createProduct: false,
+          createFields: [],
+          legacyUnknownGender: false,
+        });
         await writeActivityLog(env.DB, {
           eventType: 'order_catalog_resolved',
           entityType: 'order',
