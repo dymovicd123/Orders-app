@@ -16,9 +16,9 @@
     },
     "src/features/sections/OrderReturnsSection.tsx": {
       "beforeGitBlob": "2bb6ee06c48bcba23aefac7cd5e6fbb05bba3bc8",
-      "afterGitBlob": "32ab7814512323cbce619d574794c8de85b6b872",
+      "afterGitBlob": "77e979a5f4f0abe3d163ddb4254e425883a2a486",
       "beforeLines": 421,
-      "afterLines": 445,
+      "afterLines": 446,
       "replacements": [
         {
           "beforeBlock": "    loadReturnHistory,\n    returnSelectedOrder,\n    receiveReturnedItemAction,\n    saveReturn,\n    sectorStyle,\n    setOrderPanel,",
@@ -26,7 +26,7 @@
         },
         {
           "beforeBlock": "    && (item.inventorySource === 'warehouse' || item.inventorySource === 'boutique')\n    && !item.lifecycleStatus\n  )\n  const returnPhysicalStatus = (item: any) => {\n    if (!item.physicalTracking) return 'Старая запись — физическое получение не отслеживалось'\n    if (!item.physicalReceivedAt) return 'Ещё не пришёл'",
-          "afterBlock": "    && (item.inventorySource === 'warehouse' || item.inventorySource === 'boutique')\n    && !item.lifecycleStatus\n  )\n  const returnKnownIntakePending = (item: any) => Boolean(\n    item.physicalTracking\n    && item.physicalReceivedAt\n    && item.lifecycleId\n    && item.lifecycleStatus === 'pending'\n    && (item.inventorySource === 'warehouse' || item.inventorySource === 'boutique')\n  )\n  const finishKnownReturnIntake = async (item: any) => {\n    const result = await reconcileKnownInventoryLifecycle(Number(item.lifecycleId || 0))\n    if (result?.ok) await loadReturnHistory()\n  }\n  const returnPhysicalStatus = (item: any) => {\n    if (!item.physicalTracking) return 'Старая запись — физическое получение не отслеживалось'\n    if (!item.physicalReceivedAt) return 'Ещё не пришёл'"
+          "afterBlock": "    && (item.inventorySource === 'warehouse' || item.inventorySource === 'boutique')\n    && !item.lifecycleStatus\n  )\n  const returnKnownIntakePending = (item: any) => Boolean(\n    item.physicalTracking\n    && item.physicalReceivedAt\n    && item.lifecycleId\n    && (item.lifecycleVariantId || item.currentVariantId)\n    && item.lifecycleStatus === 'pending'\n    && (item.inventorySource === 'warehouse' || item.inventorySource === 'boutique')\n  )\n  const finishKnownReturnIntake = async (item: any) => {\n    const result = await reconcileKnownInventoryLifecycle(Number(item.lifecycleId || 0))\n    if (result?.ok) await loadReturnHistory()\n  }\n  const returnPhysicalStatus = (item: any) => {\n    if (!item.physicalTracking) return 'Старая запись — физическое получение не отслеживалось'\n    if (!item.physicalReceivedAt) return 'Ещё не пришёл'"
         },
         {
           "beforeBlock": "                                    </button>\n                                  </div>\n                                ) : null}\n                                {entry.operationType === 'order_return' && entry.status !== 'cancelled' && returnReceiptNeedsRecovery(item) ? (\n                                  <div className=\"mini-panel-actions\">\n                                    <button",
@@ -36,9 +36,9 @@
     },
     "src/features/sections/OrderExchangeSection.tsx": {
       "beforeGitBlob": "cab31f5a4aa2b6a2bfc935d9ba5cf56a210c6c81",
-      "afterGitBlob": "c20083d3befa9b6035fd578107f93293d26ee143",
+      "afterGitBlob": "4ebdc62ed2a8d895dcf5ca61a6ef5eb707e08eb1",
       "beforeLines": 604,
-      "afterLines": 628,
+      "afterLines": 629,
       "replacements": [
         {
           "beforeBlock": "    managerColorFor,\n    orderPanelStyle,\n    receiveReturnedItemAction,\n    saveExchange,\n    sectorStyle,\n    setExchangeDraft,",
@@ -46,7 +46,7 @@
         },
         {
           "beforeBlock": "    && (entry.oldReturnSource === 'warehouse' || entry.oldReturnSource === 'boutique')\n    && !entry.oldLifecycleStatus\n  )\n  const oldReturnLabel = (entry: any) => {\n    if (!entry.oldPhysicalTracking) return 'Старая запись — физическое получение не отслеживалось'\n    if (!entry.oldPhysicalReceivedAt) return 'Ещё не пришла'",
-          "afterBlock": "    && (entry.oldReturnSource === 'warehouse' || entry.oldReturnSource === 'boutique')\n    && !entry.oldLifecycleStatus\n  )\n  const oldKnownIntakePending = (entry: any) => Boolean(\n    entry.oldPhysicalTracking\n    && entry.oldPhysicalReceivedAt\n    && entry.oldLifecycleId\n    && entry.oldLifecycleStatus === 'pending'\n    && (entry.oldReturnSource === 'warehouse' || entry.oldReturnSource === 'boutique')\n  )\n  const finishKnownExchangeIntake = async (entry: any) => {\n    const result = await reconcileKnownInventoryLifecycle(Number(entry.oldLifecycleId || 0))\n    if (result?.ok) await loadExchangeHistory()\n  }\n  const oldReturnLabel = (entry: any) => {\n    if (!entry.oldPhysicalTracking) return 'Старая запись — физическое получение не отслеживалось'\n    if (!entry.oldPhysicalReceivedAt) return 'Ещё не пришла'"
+          "afterBlock": "    && (entry.oldReturnSource === 'warehouse' || entry.oldReturnSource === 'boutique')\n    && !entry.oldLifecycleStatus\n  )\n  const oldKnownIntakePending = (entry: any) => Boolean(\n    entry.oldPhysicalTracking\n    && entry.oldPhysicalReceivedAt\n    && entry.oldLifecycleId\n    && (entry.oldLifecycleVariantId || entry.oldCurrentVariantId)\n    && entry.oldLifecycleStatus === 'pending'\n    && (entry.oldReturnSource === 'warehouse' || entry.oldReturnSource === 'boutique')\n  )\n  const finishKnownExchangeIntake = async (entry: any) => {\n    const result = await reconcileKnownInventoryLifecycle(Number(entry.oldLifecycleId || 0))\n    if (result?.ok) await loadExchangeHistory()\n  }\n  const oldReturnLabel = (entry: any) => {\n    if (!entry.oldPhysicalTracking) return 'Старая запись — физическое получение не отслеживалось'\n    if (!entry.oldPhysicalReceivedAt) return 'Ещё не пришла'"
         },
         {
           "beforeBlock": "                                  </button>\n                                </div>\n                              ) : null}\n                              {entry.status !== 'cancelled' && entry.oldOperationItemId && oldReceiptNeedsRecovery(entry) ? (\n                                <div className=\"mini-panel-actions\">\n                                  <button",
