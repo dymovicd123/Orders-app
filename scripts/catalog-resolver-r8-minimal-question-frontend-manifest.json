@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "revision": "catalog-resolver-r8-minimal-human-question",
+  "baseCommit": "c19b785f3e511018d0bca9e82ae757750aababe9",
+  "files": {
+    "src/features/orders/OrderCatalogResolutionModal.tsx": {
+      "beforeGitBlob": "9907bee072c88064e4c7e5a214a4e002e63db066",
+      "afterGitBlob": "883ef1195f4af6f6553d518b5d13471603910895",
+      "beforeLines": 268,
+      "afterLines": 274,
+      "replacements": [
+        {
+          "beforeBlock": "  const questionKey = question ? `${item?.orderItemId}:${question.kind}:${'field' in question ? question.field : ''}` : ''",
+          "afterBlock": "  const minimalFieldQuestion = question?.kind === 'field' && !editing && Boolean(context?.product)\n  const questionKey = question ? `${item?.orderItemId}:${question.kind}:${'field' in question ? question.field : ''}` : ''"
+        },
+        {
+          "beforeBlock": "      const small = field === 'gender' ? [['ЖЕН', 'Женский'], ['МУЖ', 'Мужской']] : field === 'category' ? [['adult', 'Взрослый'], ['child', 'Детский']] : []\n      return <><h4 ref={questionHeading} tabIndex={-1}>{field === 'gender' ? 'Какой здесь пол?' : field === 'category' ? 'Это взрослый или детский товар?' : `${labels[field]} ${clean(draft[field]) ? 'нужно уточнить' : 'в заказе не указан'}.`}</h4>",
+          "afterBlock": "      const small = field === 'gender' ? [['ЖЕН', 'Жен'], ['МУЖ', 'Муж']] : field === 'category' ? [['adult', 'Взрослый'], ['child', 'Детский']] : []\n      const heading = clean(draft[field])\n        ? `Уточните: ${labels[field].toLowerCase()}`\n        : field === 'category' ? 'Это взрослый или детский товар?'\n          : field === 'length' ? 'Не указана длина'\n            : `Не указан ${labels[field].toLowerCase()}`\n      return <>{minimalFieldQuestion && context.product ? <strong>{context.product.name}</strong> : null}<h4 ref={questionHeading} tabIndex={-1}>{heading}</h4>"
+        },
+        {
+          "beforeBlock": "        {field === 'gender' && canLegacy ? <div className=\"resolution-exception\"><p>Пол в старом заказе не удалось выяснить? Можно оставить его неизвестным только для этой позиции. Сам товар в каталоге от этого не изменится.</p><button type=\"button\" onClick={() => { setLegacy(true); setNotice('Пол останется неизвестным для этой позиции ✓') }}>Оставить неизвестным</button></div> : null}</>",
+          "afterBlock": "        {field === 'gender' && canLegacy ? <button type=\"button\" className=\"resolution-link\" onClick={() => { setLegacy(true); setNotice('Пол останется неизвестным для этой позиции ✓') }}>Не удалось выяснить</button> : null}</>"
+        },
+        {
+          "beforeBlock": "    {item ? <section className=\"resolution-source\"><small>Менеджер записал</small><strong>{item.productName}</strong><span>{[item.gender, item.material, normalize(item.length) !== 'СТАНДАРТ' ? item.length : '', context?.isWorkshop ? '' : item.color || 'Цвет не указан', context?.isWorkshop ? '' : item.size || 'Размер не указан'].filter(Boolean).join(' · ')}</span></section> : null}",
+          "afterBlock": "    {item && !minimalFieldQuestion ? <section className=\"resolution-source\"><small>Менеджер записал</small><strong>{item.productName}</strong><span>{[item.gender, item.material, normalize(item.length) !== 'СТАНДАРТ' ? item.length : '', context?.isWorkshop ? '' : item.color || 'Цвет не указан', context?.isWorkshop ? '' : item.size || 'Размер не указан'].filter(Boolean).join(' · ')}</span></section> : null}"
+        },
+        {
+          "beforeBlock": "    {draft && context ? <section className=\"resolution-understanding\"><strong>{draft.createProduct ? `Новый товар: ${draft.productName}` : context.product ? `Мы нашли: ${context.product.name}` : 'Товар пока не определён'}</strong>",
+          "afterBlock": "    {draft && context && !minimalFieldQuestion ? <section className=\"resolution-understanding\"><strong>{draft.createProduct ? `Новый товар: ${draft.productName}` : context.product ? `Мы нашли: ${context.product.name}` : 'Товар пока не определён'}</strong>"
+        },
+        {
+          "beforeBlock": "    <div role=\"status\" aria-live=\"polite\" className=\"resolution-feedback\">{notice}</div>",
+          "afterBlock": "    {!minimalFieldQuestion ? <div role=\"status\" aria-live=\"polite\" className=\"resolution-feedback\">{notice}</div> : null}"
+        },
+        {
+          "beforeBlock": "    {isAdmin && item && !advancedOpen ? <footer>{fallbackOpen ? <button type=\"button\" className=\"resolution-link\" disabled={disabled} onClick={() => void openAdvanced()}>Расширенное исправление</button> : <button type=\"button\" className=\"resolution-link\" disabled={disabled} onClick={() => setFallbackOpen(true)}>Не нашли правильный вариант?</button>}</footer> : null}",
+          "afterBlock": "    {isAdmin && item && !advancedOpen && !minimalFieldQuestion ? <footer>{fallbackOpen ? <button type=\"button\" className=\"resolution-link\" disabled={disabled} onClick={() => void openAdvanced()}>Расширенное исправление</button> : <button type=\"button\" className=\"resolution-link\" disabled={disabled} onClick={() => setFallbackOpen(true)}>Не нашли правильный вариант?</button>}</footer> : null}"
+        },
+        {
+          "beforeBlock": "    <small className=\"resolution-guard\">Без уточнения отправить заказ нельзя.</small>",
+          "afterBlock": "    {!minimalFieldQuestion ? <small className=\"resolution-guard\">Без уточнения отправить заказ нельзя.</small> : null}"
+        }
+      ]
+    }
+  }
+}
