@@ -1,6 +1,18 @@
 # Система заказов — continuation context
 
-Updated: 2026-09-10 (Asia/Qyzylorda)
+Updated: 2026-09-19 (Asia/Qyzylorda)
+
+## Current priority — Stage02 transactional stock truth
+
+- Canonical design: `docs/continuation/STAGE02_PHASE2_STOCK_TRUTH_MODEL_20260919.md`; canonical Warehouse continuation: `docs/continuation/WAREHOUSE_CURRENT_CONTEXT.md`.
+- The old “self-healing / Smart Daily Stock” assumption is superseded for Stage02. Operational possession proves only the concrete units being handled; it never becomes an absolute SKU count. Only explicit counting/correction workflows may replace Physical.
+- Phase2A is complete: shared `stock_resolution_required`, bounded outbound semantics, append-only `inventory_operation_evidence`, migration 0071.
+- Phase2B is complete in Branch2 and Production: final shipping shortage asks only whether the concrete shipped units are physically present; Physical is bounded at zero and unexplained outbound is evidence, not a fake stock check.
+- Baseline before current Phase2C: Branch2 `d7ef267a3581dcb8a2781b16b82ae2889b5698fd`; Production/main `f7a6f7240bcaf3c73e7568d7b9b33d98d87b8ac5`. Migration 0071 is already applied to both D1 environments.
+- Current implementation branch: `w-stage02-phase2c-early-handover-20260919`. Goal: apply the same bounded possession resolver to early `issue_now` while keeping `still_here / issued_before_checkpoint` lineage questions separate.
+- Next: Phase2D transfer/writeoff, then Phase2E Attention dependency removal + Stage02 acceptance.
+- **User release gate:** finish remaining Stage02 in `branch2`; then the user will inspect all Stage02 changes and send objections. Do not promote Phase2C+ to Production before that inspection.
+- Arrival remains frozen. Never mix Primary and Branch2 D1. Update all continuation context after every meaningful Stage02 code/CI/merge/deploy step.
 
 ## Current priority — Operational Autonomy R3
 
@@ -205,3 +217,21 @@ A likely next candidate is the Reports section: it still obtains a broad full fi
 - Production safety, exact environment isolation and idempotency take precedence over cosmetic convenience.
 - Never mix Primary and Branch2 D1 bindings/data.
 - Do not claim a deployment until the exact matching Cloudflare monitor succeeds.
+
+
+## Checkpoint 2026-09-19 — Phase2D micro-step mode
+
+- User requested that Stage02 continue in small, bounded steps rather than large bursts, to avoid losing progress to response/tool time limits.
+- Current working branch: `w-stage02-phase2d-transfer-writeoff-20260919`.
+- Current branch head when this checkpoint was written: `4e8e9103199ef6a01b5934eb4bc41b5e670fcbda`.
+- Phase2C changes are already included in this branch; current work is Phase2D transfer/writeoff transactional possession handling.
+- The latest GitHub Actions attempt is blocked before project checks by an external npm registry audit HTTP 503, so that failure is not yet evidence of a project regression.
+- Continue with one narrow verification/fix at a time, report it, then proceed to the next micro-step.
+
+- Phase2D micro-step: fixed legacy negative Physical handling in transfer. Source/target quantities are normalized to >= 0 at the transaction boundary; stale guards and retry diagnostics use the same semantics; transfer-in applies exact +Q from a non-negative baseline. This prevents an infinite resolver loop where the UI confirms expectedQuantity=0 but the server compares it to a legacy negative value. Regression assertions were added in `scripts/test-stage02-phase2d-transfer-writeoff-possession-resolver.mjs`. Commits: `c9e05d981be22ece8fda70aedf3d8d6edec2e06e`, `6a0cdd6d234cb234b6dd5f62cb41fbdf9bed9c52`.
+
+- Phase2D micro-step: verified transfer resolver idempotency. A committed `request_id` is checked before stock-confirmation/resolver validation; resolver confirmations are not part of the transfer fingerprint; `inventory_transfer_documents.request_id` is UNIQUE; concurrent identical retries recover through the winning document; transfer items and operation evidence also have uniqueness guards. Added regression assertions and registered the Phase2D test in `scripts/release-check.mjs`. Commits: `d191ad47e7978682a22809997f52b7ee2c8bea59`, `e9da8aef051b2b9acc4129c1cef03e9ff0d9d42f`.
+
+- Phase2D balanced checkpoint: writeoff resolver now uses the same bounded legacy-negative semantics as transfer, so old negative Physical is treated as 0 only for writeoff operation confirmation/replay while exact manual correction semantics stay unchanged. Writeoff retry/idempotency invariants are covered: committed `operation_id` short-circuits before resolver validation, confirmations are excluded from the request fingerprint, concurrent identical retries converge on duplicate success, and evidence keys remain unique. The Phase2D regression itself is green. CI then exposed the expected structural-preservation layer mismatch from Phase2D edits; added exact Phase2D Worker/frontend manifests and outer normalization layers for Step 190.6A/190.6B. Relevant commits: `25d6eb160c2f348dc652201bc30409686beaea33`, `01c3d517234a63d19a7321e8cb5cf0681ff0c1c0`, `1d9ed76857ae8d7892b4a693c917599091c2f3b9`, `f05ecdb5ee8aa358495e4af48caaec18044860f1`, `2dd0562500653ba87eb337bf317d85012ad3b126`, `aa10952a4c09f53616cc3f05af2b16299a23f117`. Latest full Quality run for the final structural-layer commit is still in progress at this checkpoint.
+
+- Phase2D completion checkpoint: combined transfer + manual writeoff resolver audit is green. Additional correctness fixes found during final review: transfer reversal now restores only the source Physical delta that the forward transfer actually deducted (the explained portion), while destination reversal still removes exact Q; zero/negative tracked writeoff rows remain selectable so the possession resolver is reachable instead of being hidden by the UI; duplicate manual-movement retries no longer emit duplicate activity-log events; Worker route result narrowing is explicit and TypeScript-safe. W4/W8.4 legacy acceptance assertions were updated to protect the new bounded-possession flow instead of the retired full-count prompt. Full Quality run `35459453380` succeeded on code head `106a0dc9e849b1643d12a5f499e797f6beb694b4`. Phase2C is still stacked underneath Phase2D and neither is in production. Next repository action is to merge the combined Phase2C+Phase2D branch into `branch2`; production remains blocked until the user's full Stage02 review.

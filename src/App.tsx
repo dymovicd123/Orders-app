@@ -92,6 +92,7 @@ type OrderStockHandoverItemView = {
   productName: string
   itemDetails: string
   source: InventorySourceKey
+  variantId: number
   quantity: number
   reservationId: number | null
   reservationStatus: string
@@ -126,6 +127,21 @@ type OrderStockHandoverResponse = {
   state?: OrderStockHandoverResponse
   order?: OrderRecord
   refreshRequired?: boolean
+}
+
+type StockResolutionRequiredItemView = {
+  source?: InventorySourceKey
+  variantId?: number
+  productName?: string
+  trackedPhysicalQuantity?: number
+  operationQuantity?: number
+  unexplainedQuantity?: number
+}
+
+type OrderStockHandoverActionResponse = Omit<OrderStockHandoverResponse, 'items'> & {
+  code?: string
+  operationType?: string
+  items?: Array<OrderStockHandoverItemView | StockResolutionRequiredItemView>
 }
 
 
@@ -4614,7 +4630,6 @@ function App() {
       && same(row.material, nextVariant.material)
       && same(row.length, nextVariant.length)
       && same(row.size, nextVariant.size)
-      && (inventoryDraft.movementType !== 'writeoff' || Number(row.quantity || 0) > 0)
     )) || null
 
     setInventoryOperationVariant(nextVariant)
@@ -4669,28 +4684,13 @@ function App() {
           ? {
               ...item,
               quantity: nextQuantity,
-              observedPhysicalQuantity: (current.movementType === 'transfer' || current.movementType === 'writeoff') && nextQuantity <= physical ? null : item.observedPhysicalQuantity,
+              observedPhysicalQuantity: current.movementType === 'manual_set' ? item.observedPhysicalQuantity : null,
             }
           : item)
         : [...withoutEmpty, createInventoryItemFromStockRow(row, nextQuantity)]
       nextItems = nextItems.filter((item) => item.quantity > 0 || String(item.variantId || '') !== variantId)
       return { ...current, items: nextItems.length ? nextItems : [createEmptyInventoryItem()] }
     })
-  }
-
-  function setInventoryTransferObservedQuantity(row: InventoryStockRecord, rawValue: string) {
-    const variantId = String(row.variantId || '')
-    if (!variantId) return
-    setInventoryDraft((current) => ({
-      ...current,
-      items: current.items.map((item) => String(item.variantId || '') === variantId
-        ? {
-            ...item,
-            expectedQuantity: Number(row.quantity || 0),
-            observedPhysicalQuantity: rawValue === '' ? null : Math.max(0, Math.trunc(Number(rawValue || 0))),
-          }
-        : item),
-    }))
   }
 
   function startInventoryTransferFromStockRow(source: InventorySourceKey, row: InventoryStockRecord) {
@@ -4807,7 +4807,7 @@ function App() {
           size: item.size,
           quantity: Number(item.quantity || 0),
           expectedQuantity: item.expectedQuantity,
-          observedPhysicalQuantity: item.observedPhysicalQuantity,
+          observedPhysicalQuantity: inventoryDraft.movementType === 'manual_set' ? item.observedPhysicalQuantity : undefined,
         }))
 
       if (!cleanItems.length) {
@@ -4848,41 +4848,74 @@ function App() {
       }
 
       const isTransfer = inventoryDraft.movementType === 'transfer'
-      if (isTransfer || inventoryDraft.movementType === 'writeoff') {
-        for (const item of cleanItems) {
-          const row = inventoryOperationSourceRows.find((entry) => String(entry.variantId || '') === String(item.variantId || ''))
-          const physical = Number(row?.quantity || 0)
-          const requested = Math.max(0, Number(item.quantity || 0))
-          if (requested <= Math.max(0, physical)) continue
-          const observed = item.observedPhysicalQuantity === null || item.observedPhysicalQuantity === undefined
-            ? null
-            : Math.max(0, Math.trunc(Number(item.observedPhysicalQuantity || 0)))
-          if (observed === null) {
-            throw new Error(`По учёту «${item.productName}» на месте ${physical} шт., а ${isTransfer ? 'переместить' : 'списать'} нужно ${requested}. Если товар физически есть, укажите «Фактически на месте» прямо в этой строке.`)
-          }
-          if (observed < requested) {
-            throw new Error(`Для «${item.productName}» подтверждено ${observed} шт., а ${isTransfer ? 'переместить' : 'списать'} нужно ${requested}. Исправьте фактическое количество или количество операции.`)
-          }
-        }
+      const isWriteoff = inventoryDraft.movementType === 'writeoff'
+      type InventoryMovementSaveResponse = {
+        ok?: boolean
+        message?: string
+        externalId?: string
+        warnings?: Array<{ shortageAfter?: number }>
+        code?: string
+        operationType?: string
+        items?: StockResolutionRequiredItemView[]
       }
-      const response = await apiFetch(isTransfer ? '/api/inventory/transfer?returnInventory=0' : '/api/inventory/movements?returnInventory=0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(isTransfer ? {
-          requestId: inventoryTransferRequestId,
-          fromSource: inventoryDraft.source,
-          toSource: inventoryDraft.targetSource,
-          comment: inventoryDraft.comment,
-          items: cleanItems,
-        } : {
-          requestId: inventoryManualRequestId,
-          inventorySource: inventoryDraft.source,
-          movementType: inventoryDraft.movementType,
-          comment: inventoryDraft.comment,
-          items: cleanItems,
-        }),
-      })
-      const result = await readJsonResponse<{ message?: string; externalId?: string; warnings?: Array<{ shortageAfter?: number }> }>(response, 'Сохранение движения склада')
+      const submitMovement = async (stockConfirmations?: Array<{ source: InventorySourceKey; variantId: number; expectedQuantity: number; operationQuantity: number }>) => {
+        const response = await apiFetch(isTransfer ? '/api/inventory/transfer?returnInventory=0' : '/api/inventory/movements?returnInventory=0', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(isTransfer ? {
+            requestId: inventoryTransferRequestId,
+            fromSource: inventoryDraft.source,
+            toSource: inventoryDraft.targetSource,
+            comment: inventoryDraft.comment,
+            items: cleanItems,
+            stockConfirmations,
+          } : {
+            requestId: inventoryManualRequestId,
+            inventorySource: inventoryDraft.source,
+            movementType: inventoryDraft.movementType,
+            comment: inventoryDraft.comment,
+            items: cleanItems,
+            stockConfirmations,
+          }),
+        })
+        const result = await readJsonResponse<InventoryMovementSaveResponse>(response, 'Сохранение движения склада', { allowHttpError: true })
+        return { response, result }
+      }
+
+      let { response, result } = await submitMovement()
+      const resolverOperation = isTransfer ? 'transfer' : isWriteoff ? 'writeoff' : ''
+      if (
+        !response.ok
+        && resolverOperation
+        && result.code === 'stock_resolution_required'
+        && result.operationType === resolverOperation
+        && Array.isArray(result.items)
+        && result.items.length
+      ) {
+        const lines = result.items.map((resolutionItem) => {
+          const tracked = Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0))
+          const needed = Math.max(1, Number(resolutionItem.operationQuantity || 1))
+          return `• ${resolutionItem.productName || 'Товар'}: по учёту ${tracked} шт., в этой операции ${needed} шт.`
+        })
+        const actionText = isTransfer
+          ? `эти вещи прямо сейчас физически переносятся из «${sourceLabel(inventoryDraft.source)}» в «${sourceLabel(inventoryDraft.targetSource)}»`
+          : 'эти вещи прямо сейчас физически находятся у вас и действительно списываются'
+        const confirmed = window.confirm(
+          `По учёту товара меньше, чем указано в операции.\n\n${lines.join('\n')}\n\nПодтвердите только если ${actionText}. Это НЕ пересчёт всего остатка.`
+        )
+        if (!confirmed) {
+          setMessage(isTransfer ? 'Перемещение остановлено. Остатки не изменялись.' : 'Списание остановлено. Остатки не изменялись.')
+          return
+        }
+        const stockConfirmations = result.items.map((resolutionItem) => ({
+          source: resolutionItem.source === 'boutique' ? 'boutique' as const : 'warehouse' as const,
+          variantId: Number(resolutionItem.variantId || 0),
+          expectedQuantity: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
+          operationQuantity: Math.max(1, Number(resolutionItem.operationQuantity || 1)),
+        }))
+        ;({ response, result } = await submitMovement(stockConfirmations))
+      }
+
       if (!response.ok) throw new Error(result.message || `Inventory save failed: ${response.status}`)
 
       const refreshes: Array<Promise<unknown>> = isTransfer
@@ -4898,9 +4931,8 @@ function App() {
           : [
               loadInventoryData(inventoryDraft.source, true, '', false),
             ]
-      // Arrival/manual inventory write is already committed once the POST above returned 2xx.
-      // Follow-up reads are best-effort: a failed refresh must never turn a committed arrival
-      // into a red 'operation failed' state that invites the employee to submit it again.
+      // The mutation is already committed once the POST returned 2xx. Follow-up reads are
+      // best-effort so a refresh failure cannot invite the employee to submit the operation again.
       await Promise.allSettled(refreshes)
       const transferShortage = isTransfer ? (result.warnings || []).reduce((sum, row) => sum + Math.max(0, Number(row.shortageAfter || 0)), 0) : 0
       setMessage(isTransfer
@@ -5720,7 +5752,7 @@ function removeDebtPayment(index: number) {
     const sourceName = handoverSourceLabel(item.source)
     let confirmText = ''
     if (action === 'issue_now') {
-      confirmText = `Выдать клиенту сейчас: «${item.productName}» × ${item.quantity} (${sourceName})?\n\nФизический остаток уменьшится на ${item.quantity}. Сам заказ останется «Не отправлен», пока остальные товары не готовы.`
+      confirmText = `Выдать клиенту сейчас: «${item.productName}» × ${item.quantity} (${sourceName})?\n\nСистема зафиксирует выдачу ${item.quantity} шт. и обновит остаток. Если по учёту товара окажется меньше, система отдельно попросит подтвердить только выдаваемые вещи. Сам заказ останется «Не отправлен», пока остальные товары не готовы.`
     } else if (action === 'issued_before_checkpoint') {
       confirmText = `На момент ${item.checkpointKind === 'revision' ? 'ревизии' : 'сверки'} ${checkpointDate} клиент уже получил «${item.productName}»?\n\nЕсли да, физический остаток не изменится и повторного списания не будет.`
     } else {
@@ -5732,17 +5764,47 @@ function removeDebtPayment(index: number) {
     setError(null)
     setMessage(null)
     try {
-      const response = await apiFetch(`/api/orders/${stockHandoverOrder.id}/stock-handover`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action,
-          orderItemId: item.orderItemId,
-          checkpointId: item.checkpointId || undefined,
-          checkpointAt: item.checkpointAt || undefined,
-        }),
-      })
-      const result = await readJsonResponse<OrderStockHandoverResponse>(response, 'Товары со склада')
+      const submitHandoverAction = async (stockConfirmations?: Array<{ source: InventorySourceKey; variantId: number; expectedQuantity: number; operationQuantity: number }>) => {
+        const response = await apiFetch(`/api/orders/${stockHandoverOrder.id}/stock-handover`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action,
+            orderItemId: item.orderItemId,
+            checkpointId: item.checkpointId || undefined,
+            checkpointAt: item.checkpointAt || undefined,
+            stockConfirmations,
+          }),
+        })
+        const result = await readJsonResponse<OrderStockHandoverActionResponse>(response, 'Товары со склада', { allowHttpError: true })
+        return { response, result }
+      }
+
+      let { response, result } = await submitHandoverAction()
+      if (!response.ok && action === 'issue_now' && result.code === 'stock_resolution_required' && result.operationType === 'handover' && Array.isArray(result.items) && result.items.length) {
+        const resolutionItems = result.items as StockResolutionRequiredItemView[]
+        const lines = resolutionItems.map((resolutionItem) => {
+          const name = resolutionItem.productName || item.productName
+          const tracked = Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0))
+          const needed = Math.max(1, Number(resolutionItem.operationQuantity || item.quantity || 1))
+          return `• ${name}: по учёту ${tracked} шт., сейчас клиенту выдаётся ${needed} шт.`
+        })
+        const confirmed = window.confirm(
+          `По учёту товара меньше, чем нужно для этой выдачи.\n\n${lines.join('\n')}\n\nПодтвердите только если указанные вещи прямо сейчас физически у вас и действительно передаются клиенту. Это НЕ пересчёт всего остатка.`
+        )
+        if (!confirmed) {
+          setMessage('Выдача остановлена. Остатки не изменялись.')
+          return
+        }
+        const stockConfirmations = resolutionItems.map((resolutionItem) => ({
+          source: resolutionItem.source === 'boutique' ? 'boutique' as const : 'warehouse' as const,
+          variantId: Number(resolutionItem.variantId || 0),
+          expectedQuantity: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
+          operationQuantity: Math.max(1, Number(resolutionItem.operationQuantity || 1)),
+        }))
+        ;({ response, result } = await submitHandoverAction(stockConfirmations))
+      }
+
       if (!response.ok || !result.ok) throw new Error(result.message || `Stock handover failed: ${response.status}`)
       if (result.order) {
         upsertOrderInState(result.order)
@@ -7104,7 +7166,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'inventory'} label="Склад">
-        <InventorySection ctx={{ activeSector, addInventoryMatrixColor, addInventoryMatrixSize, applyPendingInventoryWriteoffs, buildInventoryMatrix, catalogCategoryFilter, catalogOnlyWithoutVariants, setCatalogOnlyWithoutVariants, catalogData, catalogReview, catalogReviewBusy, catalogIssueStats, catalogProductDraft, catalogProductStockSummary, catalogVariantDraft, catalogVariantsByProductId, ChoicePills, clearInventoryMatrixValues, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, expandedCatalogProducts, filteredInventoryRows, formatMoney, FriendlyNumberInput, filteredReferenceItems, formatDateShort, getCatalogProductEffectiveCategory, getCatalogVariantCategory, getInventoryRowCategory, getStockQuantityForVariant, groupedInventoryRows, handleInventoryMatrixKeyDown, inventoryArrivalProductChoices, inventoryArrivalPositions, inventoryArrivalSummary, inventoryArrivalVariantOpen, inventoryArrivalReadyVariants, selectInventoryArrivalVariant, selectInventoryArrivalProduct, updateInventoryArrivalPosition, addInventoryArrivalSize, updateInventoryArrivalSize, removeInventoryArrivalSize, addInventoryArrivalPosition, removeInventoryArrivalPosition, resetInventoryArrivalForm, setInventoryArrivalVariantOpen, inventoryAudit, inventoryAuditBusy, resolveInventoryAuditIssue, inventoryCategoryFilter, inventoryControlBusy, inventoryControlSettings, inventoryMovementBusy, inventoryDraft, inventoryDraftSummary, inventoryHistoryRows, inventoryMatrix, inventoryMatrixActiveGroupKey, inventoryMatrixAxisLabel, inventoryMatrixBatchGroups, inventoryMatrixCellKey, inventoryMatrixCellMap, inventoryMatrixColors, inventoryMatrixColorToAdd, inventoryMatrixDraftItem, inventoryMatrixSizes, inventoryMatrixSizeToAdd, inventoryMatrixSummary, inventoryModelVersion, inventoryMovementText, matchedInventoryOperationVariant, activeInventoryOperationItem, selectedInventoryOperationItems, inventoryOperationAllProductGroups, inventoryOperationProductGroups, inventoryOperationSearch, inventoryOperationVariant, inventoryOperationActiveVariantId, inventoryExistingVariantOpen, inventoryExistingVariantSearch, inventoryExistingVariantRows, inventoryPanel, inventoryPanelStyle, inventoryPickerOptions, inventoryProblemRows, inventoryQuery, inventoryQuickFilters, inventorySortMode, inventorySourceRows, inventoryStats, inventoryStocktakeAllGroups, inventoryStocktakeGroups, inventoryStocktakeStats, printInventoryStocktakePdf, applyInventoryStocktakeChanges, inventoryStatusFilter, isAdmin, latestManualMovements, latestReturnExchangeMovements, latestSaleMovements, loadCatalogData, loadCatalogReview, reconcileCatalogReview, loadCatalogReviewContext, resolveCatalogReviewFacts, excludeCatalogReviewItem, inventoryLifecycle, inventoryLifecycleBusy, warehouseAttention, loadInventoryLifecycle, loadInventoryLifecycleContext, resolveInventoryLifecycleFacts, reconcileKnownInventoryLifecycle, reconcileFoundInventoryStock, loadWarehouseAttention, loadInventoryAudit, loadInventoryData, loadInventoryHistory, loadInventoryCheckHistory, loadInventoryReservations, loadInventoryStocktakeSessions, loadInventoryStocktakeSession, createInventoryStocktakeSession, saveInventoryStocktakeCount, addInventoryStocktakeVariant, addInventoryStocktakeCombination, loadInventoryCycleCounts, applyInventoryCycleCounts, quickInventoryStocktake, quickInventoryStocktakeBatch, completeInventoryStocktakeSession, cancelInventoryStocktakeSession, loadReferenceItems, loadReferencesData, references, normalizeSuggestion, openInventoryPanel, openOrderFromFinance, openOrderStockHandoverById, operationVariantOptions, inventoryProductReferenceGroups, inventoryWriteoffReferenceGroups, referenceBusy, referenceDraft, referenceItems, referenceKind, referenceSearch, referenceStatusFilter, removeReferenceEntry, resolveCatalogReviewItem, resetReferenceDraft, saveReferenceEntry, selectedReferenceKindConfig, selectReferenceKind, setReferenceDraft, setReferenceSearch, setReferenceStatusFilter, productCategoryLabel, productHasVariantCategory, refreshInventoryModule, renderInventoryStockGroups, resetInventoryOperationSelection, removeInventoryVariantOperationItem, reverseInventoryMovement, reversingInventoryMovementId, saveCatalogProduct, saveCatalogVariant, saveInventoryMovement, sectorStyle, startNextInventoryMatrixProduct, openInventoryMatrixBatchGroup, removeInventoryMatrixBatchGroup, selectedCatalogProduct, selectedInventoryOperationGroup, selectInventoryOperationVariant, setCatalogCategoryFilter, setCatalogProductDraft, setCatalogVariantDraft, setExpandedCatalogProducts, setInventoryCategoryFilter, setInventoryDraft, setInventoryMatrix, setInventoryMatrixCell, setInventoryMatrixColorToAdd, setInventoryMatrixSizeToAdd, setInventoryExistingVariantOpen, setInventoryExistingVariantSearch, setInventoryQuery, setInventoryQuickFilters, setInventorySortMode, setInventoryStatusFilter, setInventoryTransferObservedQuantity, setInventoryVariantOperationQuantity, SmartPickerInput, sourceLabel, suggestionValues, arrivalSuggestionValues, toggleInventoryAutoWriteoff, updateInventoryMatrixCategory, updateInventoryMatrixGender, updateInventoryMatrixLength, updateInventoryMatrixMaterial, updateInventoryMatrixProductInput, updateInventoryDirectProductInput, updateInventoryOperationVariantField, visibleCatalogProducts }} />
+        <InventorySection ctx={{ activeSector, addInventoryMatrixColor, addInventoryMatrixSize, applyPendingInventoryWriteoffs, buildInventoryMatrix, catalogCategoryFilter, catalogOnlyWithoutVariants, setCatalogOnlyWithoutVariants, catalogData, catalogReview, catalogReviewBusy, catalogIssueStats, catalogProductDraft, catalogProductStockSummary, catalogVariantDraft, catalogVariantsByProductId, ChoicePills, clearInventoryMatrixValues, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, expandedCatalogProducts, filteredInventoryRows, formatMoney, FriendlyNumberInput, filteredReferenceItems, formatDateShort, getCatalogProductEffectiveCategory, getCatalogVariantCategory, getInventoryRowCategory, getStockQuantityForVariant, groupedInventoryRows, handleInventoryMatrixKeyDown, inventoryArrivalProductChoices, inventoryArrivalPositions, inventoryArrivalSummary, inventoryArrivalVariantOpen, inventoryArrivalReadyVariants, selectInventoryArrivalVariant, selectInventoryArrivalProduct, updateInventoryArrivalPosition, addInventoryArrivalSize, updateInventoryArrivalSize, removeInventoryArrivalSize, addInventoryArrivalPosition, removeInventoryArrivalPosition, resetInventoryArrivalForm, setInventoryArrivalVariantOpen, inventoryAudit, inventoryAuditBusy, resolveInventoryAuditIssue, inventoryCategoryFilter, inventoryControlBusy, inventoryControlSettings, inventoryMovementBusy, inventoryDraft, inventoryDraftSummary, inventoryHistoryRows, inventoryMatrix, inventoryMatrixActiveGroupKey, inventoryMatrixAxisLabel, inventoryMatrixBatchGroups, inventoryMatrixCellKey, inventoryMatrixCellMap, inventoryMatrixColors, inventoryMatrixColorToAdd, inventoryMatrixDraftItem, inventoryMatrixSizes, inventoryMatrixSizeToAdd, inventoryMatrixSummary, inventoryModelVersion, inventoryMovementText, matchedInventoryOperationVariant, activeInventoryOperationItem, selectedInventoryOperationItems, inventoryOperationAllProductGroups, inventoryOperationProductGroups, inventoryOperationSearch, inventoryOperationVariant, inventoryOperationActiveVariantId, inventoryExistingVariantOpen, inventoryExistingVariantSearch, inventoryExistingVariantRows, inventoryPanel, inventoryPanelStyle, inventoryPickerOptions, inventoryProblemRows, inventoryQuery, inventoryQuickFilters, inventorySortMode, inventorySourceRows, inventoryStats, inventoryStocktakeAllGroups, inventoryStocktakeGroups, inventoryStocktakeStats, printInventoryStocktakePdf, applyInventoryStocktakeChanges, inventoryStatusFilter, isAdmin, latestManualMovements, latestReturnExchangeMovements, latestSaleMovements, loadCatalogData, loadCatalogReview, reconcileCatalogReview, loadCatalogReviewContext, resolveCatalogReviewFacts, excludeCatalogReviewItem, inventoryLifecycle, inventoryLifecycleBusy, warehouseAttention, loadInventoryLifecycle, loadInventoryLifecycleContext, resolveInventoryLifecycleFacts, reconcileKnownInventoryLifecycle, reconcileFoundInventoryStock, loadWarehouseAttention, loadInventoryAudit, loadInventoryData, loadInventoryHistory, loadInventoryCheckHistory, loadInventoryReservations, loadInventoryStocktakeSessions, loadInventoryStocktakeSession, createInventoryStocktakeSession, saveInventoryStocktakeCount, addInventoryStocktakeVariant, addInventoryStocktakeCombination, loadInventoryCycleCounts, applyInventoryCycleCounts, quickInventoryStocktake, quickInventoryStocktakeBatch, completeInventoryStocktakeSession, cancelInventoryStocktakeSession, loadReferenceItems, loadReferencesData, references, normalizeSuggestion, openInventoryPanel, openOrderFromFinance, openOrderStockHandoverById, operationVariantOptions, inventoryProductReferenceGroups, inventoryWriteoffReferenceGroups, referenceBusy, referenceDraft, referenceItems, referenceKind, referenceSearch, referenceStatusFilter, removeReferenceEntry, resolveCatalogReviewItem, resetReferenceDraft, saveReferenceEntry, selectedReferenceKindConfig, selectReferenceKind, setReferenceDraft, setReferenceSearch, setReferenceStatusFilter, productCategoryLabel, productHasVariantCategory, refreshInventoryModule, renderInventoryStockGroups, resetInventoryOperationSelection, removeInventoryVariantOperationItem, reverseInventoryMovement, reversingInventoryMovementId, saveCatalogProduct, saveCatalogVariant, saveInventoryMovement, sectorStyle, startNextInventoryMatrixProduct, openInventoryMatrixBatchGroup, removeInventoryMatrixBatchGroup, selectedCatalogProduct, selectedInventoryOperationGroup, selectInventoryOperationVariant, setCatalogCategoryFilter, setCatalogProductDraft, setCatalogVariantDraft, setExpandedCatalogProducts, setInventoryCategoryFilter, setInventoryDraft, setInventoryMatrix, setInventoryMatrixCell, setInventoryMatrixColorToAdd, setInventoryMatrixSizeToAdd, setInventoryExistingVariantOpen, setInventoryExistingVariantSearch, setInventoryQuery, setInventoryQuickFilters, setInventorySortMode, setInventoryStatusFilter, setInventoryVariantOperationQuantity, SmartPickerInput, sourceLabel, suggestionValues, arrivalSuggestionValues, toggleInventoryAutoWriteoff, updateInventoryMatrixCategory, updateInventoryMatrixGender, updateInventoryMatrixLength, updateInventoryMatrixMaterial, updateInventoryMatrixProductInput, updateInventoryDirectProductInput, updateInventoryOperationVariantField, visibleCatalogProducts }} />
         </DeferredSection>
 
         <section className="grid" style={sectorStyle('overview')}>

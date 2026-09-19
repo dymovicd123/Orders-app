@@ -40,7 +40,6 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'setInventoryMatrix'
   | 'setInventoryMatrixColorToAdd'
   | 'setInventoryMatrixSizeToAdd'
-  | 'setInventoryTransferObservedQuantity'
   | 'setInventoryVariantOperationQuantity'
   | 'setMovementSourceRefreshToken'
   | 'sourceLabel'
@@ -90,7 +89,6 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
     setInventoryMatrix,
     setInventoryMatrixColorToAdd,
     setInventoryMatrixSizeToAdd,
-    setInventoryTransferObservedQuantity,
     setInventoryVariantOperationQuantity,
     setMovementSourceRefreshToken,
     sourceLabel,
@@ -248,7 +246,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                               </div>
                             ) : inventoryOperationAllProductGroups.length === 0 ? (
                               <div className="inventory-movement-source-status is-empty">
-                                <span>Список точки «{sourceLabel(inventoryDraft.source)}» пуст по текущим данным.{inventoryDraft.movementType === 'writeoff' ? ' Для списания показываются только позиции, где «На месте» больше нуля.' : ''}</span>
+                                <span>Список точки «{sourceLabel(inventoryDraft.source)}» пуст по текущим данным.</span>
                                 <button className="ghost compact" type="button" onClick={() => setMovementSourceRefreshToken((current) => current + 1)}>Обновить список</button>
                               </div>
                             ) : null}
@@ -303,21 +301,15 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                         const destinationQuantity = inventoryDraft.movementType === 'transfer'
                                           ? Number(getStockQuantityForVariant(inventoryDraft.targetSource, row.variantId) || 0)
                                           : 0
-                                        const observedPhysical = draftItem?.observedPhysicalQuantity === null || draftItem?.observedPhysicalQuantity === undefined
-                                          ? null
-                                          : Math.max(0, Number(draftItem.observedPhysicalQuantity || 0))
-                                        const physicalBeforeOperation = (inventoryDraft.movementType === 'transfer' || inventoryDraft.movementType === 'writeoff') && observedPhysical !== null ? observedPhysical : currentQuantity
-                                        const needsPhysicalObservation = (inventoryDraft.movementType === 'transfer' || inventoryDraft.movementType === 'writeoff') && operationQuantity > Math.max(0, currentQuantity)
-                                        const physicalObservationValid = observedPhysical !== null && observedPhysical >= operationQuantity
                                         const correctionDelta = draftItem?.touched ? Number(draftItem.quantity || 0) - currentQuantity : null
                                         const afterPhysical = inventoryDraft.movementType === 'manual_set'
                                           ? Number(draftItem?.quantity || 0)
                                           : inventoryDraft.movementType === 'transfer' || inventoryDraft.movementType === 'writeoff'
-                                            ? physicalBeforeOperation - operationQuantity
+                                            ? Math.max(0, currentQuantity - operationQuantity)
                                             : currentQuantity - operationQuantity
                                         const shortageAfter = Math.max(0, reservedQuantity - afterPhysical)
                                         return (
-                                          <tr data-transfer-variant={inventoryDraft.movementType === 'transfer' ? row.variantId : undefined} key={`operation-v182-${inventoryDraft.movementType}-${row.variantId}`} className={`${draftItem?.touched || operationQuantity > 0 ? 'is-edited' : ''}${needsPhysicalObservation && !physicalObservationValid ? ' needs-transfer-observation' : ''}`}>
+                                          <tr data-transfer-variant={inventoryDraft.movementType === 'transfer' ? row.variantId : undefined} key={`operation-v182-${inventoryDraft.movementType}-${row.variantId}`} className={draftItem?.touched || operationQuantity > 0 ? 'is-edited' : ''}>
                                             <td>
                                               <strong>{inventoryOperationRowPrimary(row)}</strong>
                                               <span>{inventoryOperationRowSecondary(row)}</span>
@@ -346,22 +338,6 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                                   else setInventoryVariantOperationQuantity(row, Number(event.target.value || 0))
                                                 }}
                                               />
-                                              {needsPhysicalObservation ? (
-                                                <div className={`inventory-transfer-observation ${physicalObservationValid ? 'is-valid' : ''}`}>
-                                                  <span>По системе здесь {currentQuantity}. Чтобы провести это перемещение без путаницы, посчитайте только этот вариант в этой точке. Полную ревизию делать не нужно.</span>
-                                                  <label>
-                                                    <em>Сколько здесь сейчас</em>
-                                                    <FriendlyNumberInput
-                                                      type="number"
-                                                      min="0"
-                                                      value={observedPhysical ?? ''}
-                                                      onChange={(event) => setInventoryTransferObservedQuantity(row, event.target.value)}
-                                                    />
-                                                  </label>
-                                                  {observedPhysical !== null && observedPhysical < operationQuantity ? <small>Для {inventoryDraft.movementType === 'transfer' ? 'перемещения' : 'списания'} нужно минимум {operationQuantity} шт.</small> : null}
-                                                  {inventoryDraft.movementType === 'writeoff' ? <small>Сверка и списание сохранятся одной операцией; резервы заказов не переписываются.</small> : null}
-                                                </div>
-                                              ) : null}
                                             </td>
                                             <td className="inventory-operation-after-cell">
                                               {inventoryDraft.movementType === 'manual_set' ? (
@@ -438,8 +414,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                     {selectedOperationDraftItems.map(({ item, row }: any) => {
                                       const physical = Number(row?.quantity ?? item.expectedQuantity ?? 0)
                                       const reserved = Math.max(0, Number(row?.reservedQuantity || 0))
-                                      const observed = item.observedPhysicalQuantity === null || item.observedPhysicalQuantity === undefined ? physical : Number(item.observedPhysicalQuantity || 0)
-                                      const shortage = Math.max(0, reserved - (observed - Number(item.quantity || 0)))
+                                      const shortage = Math.max(0, reserved - Math.max(0, physical - Number(item.quantity || 0)))
                                       return <div className="inventory-transfer-cart-row" key={`transfer-cart-${item.variantId}`}>
                                         <button
                                           className="inventory-transfer-cart-open"
