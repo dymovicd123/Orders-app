@@ -322,7 +322,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                                     {visibleStocktakeSelectableProducts.length ? visibleStocktakeSelectableProducts.map((product: any) => {
                                       const checked = stocktakeSelectedProductIds.includes(Number(product.productId))
                                       return <label className={`stocktake-selective-product ${checked ? 'is-selected' : ''}`} key={`stocktake-select-${product.productId}`}><input type="checkbox" checked={checked} onChange={() => setStocktakeSelectedProductIds((current) => checked ? current.filter((id) => id !== Number(product.productId)) : [...current, Number(product.productId)])} /><span><strong>{product.productName}</strong><small>{product.positionCount} поз. {checked ? '· выбрано' : ''}</small></span></label>
-                                    }) : <div className="stocktake-product-list-empty">В стартовом списке такого товара нет: здесь показываются только позиции с текущим остатком или резервом. Уже выбранные товары остаются выше. Если вещь физически нашлась при нуле учёта, добавьте её через «Нашли ещё позицию» внутри начатой проверки.</div>}
+                                    }) : <div className="stocktake-product-list-empty">По поиску ничего не найдено. Уже выбранные товары остаются в очереди выше. В стартовом списке показываются только позиции с текущим остатком или резервом. Если вещь физически нашлась при нуле учёта, добавьте её через «Нашли ещё позицию» внутри начатой проверки.</div>}
                                   </div>
                                 </div>
                               ) : (
