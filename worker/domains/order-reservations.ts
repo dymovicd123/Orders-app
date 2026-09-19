@@ -219,6 +219,7 @@ export async function resolveCatalogProductAndVariantV2(
     }
   }
   const rawColor = upperText(item.color);
+  const rawSize = upperText(item.size);
   const color = await resolveCatalogValueAlias(db, 'color', normalizeCatalogCombinationColor(item.color));
   const size = await resolveCatalogValueAlias(db, category === 'child' ? 'child_age' : 'size', normalizeCatalogCombinationSize(item.size));
 
@@ -240,7 +241,19 @@ export async function resolveCatalogProductAndVariantV2(
         ).bind(product.id, existingExecution.id, category).first<{ has_color: number }>();
         omittedColorConflictsWithConcreteSibling = toInt(profile?.has_color, 0) > 0;
       }
-      if (!omittedColorConflictsWithConcreteSibling) {
+      let omittedSizeConflictsWithConcreteSibling = false;
+      if (!rawSize) {
+        const sizeProfile = await db.prepare(
+          `SELECT MAX(CASE WHEN TRIM(COALESCE(size_label,'')) <> '' AND UPPER(TRIM(size_label)) NOT IN ('БЕЗ РАЗМЕРА','БЕЗРАЗМЕРА','Б/Р','НЕ УКАЗАН') THEN 1 ELSE 0 END) AS has_size
+           FROM catalog_variants
+           WHERE product_id = ? AND stock_position_id = ? AND is_active = 1
+             AND COALESCE(category,'adult') = ?
+             AND COALESCE(gender,'') = COALESCE(?, '')
+             AND COALESCE(color,'') = COALESCE(?, '')`
+        ).bind(product.id, existingExecution.id, category, gender || null, color || null).first<{ has_size: number }>();
+        omittedSizeConflictsWithConcreteSibling = toInt(sizeProfile?.has_size, 0) > 0;
+      }
+      if (!omittedColorConflictsWithConcreteSibling && !omittedSizeConflictsWithConcreteSibling) {
         return { productId: toInt(product.id, 0) || null, variantId: toInt(existing.id, 0) || null, matchStatus: 'matched', inputKey };
       }
       return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
@@ -250,7 +263,7 @@ export async function resolveCatalogProductAndVariantV2(
   // Never synthesize a new БЕЗ ЦВЕТА SKU merely because the manager left color empty.
   // One-size/unisex cases are intentionally not guessed here; their UI semantics are handled
   // separately so existing legitimate dimensionless variants are not broken by this cleanup.
-  if (!rawColor) {
+  if (!rawColor || !rawSize) {
     return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
   }
 
