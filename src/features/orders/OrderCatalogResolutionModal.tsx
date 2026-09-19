@@ -12,11 +12,12 @@ type Props = {
   isAdmin: boolean
   onClose: () => void
   onCompleted: (order: OrderRecord) => void | Promise<void>
+  onRequestAdminMode?: () => void
   onOpenFullReview?: (order: OrderRecord) => void | Promise<void>
 }
 const displayFact = (field: Field, value: string) => field === 'category' ? (value === 'child' ? 'Детский' : 'Взрослый') : field === 'gender' ? (value === 'ЖЕН' ? 'Женский' : value === 'МУЖ' ? 'Мужской' : value) : value
 
-export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose, onCompleted }: Props) {
+export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose, onCompleted, onRequestAdminMode }: Props) {
   const [item, setItem] = useState<CatalogReviewItem | null>(null)
   const [context, setContext] = useState<CatalogResolutionContext | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -191,7 +192,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   const finalAction = () => {
     if (!draft || !context) return null
     const needsAdminCatalogMutation = Boolean(draft.createProduct || draft.createFields?.length || legacy)
-    if (!isAdmin && needsAdminCatalogMutation) return <p>Нужно добавить новый товар или новое значение в справочник. Это делается в Админ режиме, но разбирать заказ на Складе не нужно.</p>
+    if (!isAdmin && needsAdminCatalogMutation) return <div className="resolution-admin-required"><p>Нужно изменить каталог для этого заказа. Войдите в Админ режим — после входа вы останетесь в этом же уточнении.</p>{onRequestAdminMode ? <button type="button" className="primary-button" onClick={onRequestAdminMode}>Войти в Админ режим и продолжить</button> : null}</div>
     return <><p>{legacy ? 'Пол останется неизвестным только у этой позиции. Сам товар в каталоге от этого не изменится.' : exactDraftVariant || context.isWorkshop ? 'Будет уточнён товар в заказе. Затем система автоматически продолжит отправку.' : 'Все факты уже известны. Система создаст недостающую комбинацию этого товара и автоматически продолжит отправку.'}</p>
       <button type="button" className="primary-button" disabled={disabled || Boolean(error)} onClick={() => void finish(legacy ? undefined : exactDraftVariant?.id)}>{resolving ? 'Сохраняю…' : legacy ? 'Сохранить и продолжить' : exactDraftVariant || context.isWorkshop ? 'Подтвердить товар' : 'Создать комбинацию и отправить'}</button></>
   }
@@ -205,7 +206,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         <div className="resolution-choices">{shown.map(({ product }) => <button type="button" key={product.id} onClick={() => chooseProduct(product)}>{product.name}</button>)}</div>
         {searchOpen && !shown.length ? <p>Совпадений нет. Проверьте название или попросите администратора уточнить товар.</p> : null}
         {!searchOpen ? <button type="button" className="secondary-button" onClick={() => setSearchOpen(true)}>Найти другой товар</button> : null}
-        {isAdmin ? <button type="button" className="resolution-link" onClick={() => void openAdvanced(true)}>Такого товара нет</button> : null}</>
+        {isAdmin ? <button type="button" className="resolution-link" onClick={() => void openAdvanced(true)}>Такого товара нет</button> : onRequestAdminMode ? <button type="button" className="resolution-link" onClick={onRequestAdminMode}>Такого товара нет — войти в Админ режим</button> : null}</>
     }
     if (question.kind === 'compound') return <><h4 ref={questionHeading} tabIndex={-1}>Что означает часть названия «{remainder}»?</h4><div className="resolution-choices">
       <button type="button" onClick={() => { setClassified(true); answerField('material', remainder) }}>Материал</button>
@@ -217,7 +218,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       <button type="button" onClick={() => { setEditing('color'); setAnswer('') }}>Нет, исправить</button>
     </div></>
     if (question.kind === 'reference') return <><h4 ref={questionHeading} tabIndex={-1}>Значение «{draft[question.field]}» ещё не использовалось. Добавить?</h4><p>{labels[question.field]}: это значение станет доступно в следующих заказах. Добавление произойдёт при сохранении товара.</p>
-      {isAdmin ? <button type="button" className="primary-button" onClick={() => approveReference(question.field)}>Добавить</button> : <p>Добавить новое значение может администратор.</p>}
+      {isAdmin ? <button type="button" className="primary-button" onClick={() => approveReference(question.field)}>Добавить</button> : <div className="resolution-admin-required"><p>Добавить новое значение можно в Админ режиме. После входа это окно останется открытым.</p>{onRequestAdminMode ? <button type="button" className="primary-button" onClick={onRequestAdminMode}>Войти в Админ режим и продолжить</button> : null}</div>}
       <button type="button" className="secondary-button" onClick={() => { setEditing(question.field); setAnswer(draft[question.field]) }}>Исправить название</button></>
     if (question.kind === 'field') {
       const field = question.field
