@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "revision": "catalog-resolver-r8-1a-safe-product-correction",
+  "baseCommit": "821e9cc3a7edb99f349e86e5b7251d1dc4dcbf53",
+  "files": {
+    "src/features/orders/OrderCatalogResolutionModal.tsx": {
+      "beforeGitBlob": "883ef1195f4af6f6553d518b5d13471603910895",
+      "afterGitBlob": "76bce18d67906a5c3a0cf4c16019749a3965eee8",
+      "beforeLines": 274,
+      "afterLines": 274,
+      "replacements": [
+        {
+          "beforeBlock": "        {isAdmin ? <button type=\"button\" className=\"resolution-link\" onClick={() => void openAdvanced(true)}>Такого товара нет</button> : onRequestAdminMode ? <button type=\"button\" className=\"resolution-link\" onClick={onRequestAdminMode}>Такого товара нет — войти в Админ режим</button> : null}</>",
+          "afterBlock": "        {isAdmin ? <button type=\"button\" className=\"resolution-link\" onClick={() => void openAdvanced()}>Проверить весь каталог</button> : onRequestAdminMode ? <button type=\"button\" className=\"resolution-link\" onClick={onRequestAdminMode}>Не нашли товар — войти в Админ режим</button> : null}</>"
+        }
+      ]
+    }
+  }
+}
