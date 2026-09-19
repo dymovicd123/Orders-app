@@ -403,9 +403,10 @@ export async function applyInventoryMovement(
     ? normalizeInventoryOperationStockConfirmations(input.stockConfirmations)
     : [];
   if (movementType === 'writeoff') {
+    const writeoffVariantIds = new Set(normalizedItems.map((item) => Math.max(0, toInt(item.variantId, 0))).filter(Boolean));
     for (const confirmation of stockConfirmations) {
-      if (confirmation.source !== inventorySource) {
-        throw new Error('Подтверждение физического наличия относится к другой точке. Обновите остатки и повторите списание.');
+      if (confirmation.source !== inventorySource || !writeoffVariantIds.has(confirmation.variantId)) {
+        throw new Error('Подтверждение физического наличия не относится к текущему списанию. Обновите остатки и повторите.');
       }
     }
     if (normalizedItems.some((item) => item.observedPhysicalQuantity !== null)) {
