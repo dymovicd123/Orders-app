@@ -803,18 +803,21 @@ export default {
 
       const inventoryLifecycleContextMatch = url.pathname.match(/^\/api\/inventory\/lifecycle\/(\d+)\/context$/);
       if (inventoryLifecycleContextMatch && request.method === 'GET') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         return json(await getInventoryLifecycleContext(env.DB, toInt(inventoryLifecycleContextMatch[1], 0)));
       }
 
       const inventoryLifecycleResolveMatch = url.pathname.match(/^\/api\/inventory\/lifecycle\/(\d+)\/resolve-facts$/);
       if (inventoryLifecycleResolveMatch && request.method === 'POST') {
-        const denied = requireAdminAccess(request);
-        if (denied) return denied;
         const eventId = toInt(inventoryLifecycleResolveMatch[1], 0);
         const input = await readJson<CatalogReviewFactsInput>(request);
-        const result = await resolveInventoryLifecycleFacts(env.DB, eventId, input);
+        const createFields = Array.isArray(input.createFields) ? input.createFields.map(cleanText).filter(Boolean) : [];
+        const needsAdminCatalogMutation = Boolean(input.createProduct) || createFields.length > 0 || Boolean(input.legacyUnknownGender);
+        if (needsAdminCatalogMutation) {
+          const denied = requireAdminAccess(request);
+          if (denied) return denied;
+        }
+        if (!Boolean(input.createProduct) && !toInt(input.productId, 0)) return json({ ok: false, message: 'Выберите существующий товар.' }, { status: 400 });
+        const result = await resolveInventoryLifecycleFacts(env.DB, eventId, { ...input, createFields });
         await writeActivityLog(env.DB, {
           eventType: 'inventory_lifecycle_resolved',
           entityType: 'inventory',
