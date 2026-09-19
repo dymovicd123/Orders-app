@@ -29,11 +29,11 @@ try {
   const missingGuardIndex = body.indexOf('if (!rawColor)')
   check(exactIndex >= 0 && profileIndex > exactIndex, 'Omitted-color profile must be checked only after exact identity lookup')
   check(missingGuardIndex > profileIndex && creationIndex > missingGuardIndex, 'Blank-color guard must run before automatic combination creation')
-  check(body.includes('if (!omittedColorConflictsWithConcreteSibling)'), 'Exact no-color placeholder may not bypass concrete-color sibling check')
-  check(body.includes('stock_position_id = ? AND is_active = 1'), 'Color profile is not scoped to the exact execution')
-  check(!body.includes('rawGender') && !body.includes('explicitNoSize'), '192A2 must not overreach into one-size/unisex semantics')
+  check(body.includes('if (!omittedColorConflictsWithConcreteSibling && !omittedSizeConflictsWithConcreteSibling)'), 'Exact placeholder identity may not bypass concrete color/size sibling checks')
+  check(body.includes('stock_position_id = ? AND is_active = 1'), 'Color/size profile is not scoped to the exact execution')
+  check(!body.includes('rawGender'), '192A2/R6 must not guess an omitted unisex gender')
 
-  console.log('STEP 192A2 CATALOG TRUTH FINALIZER TESTS PASSED — blank manager color cannot synthesize/select a conflicting БЕЗ ЦВЕТА SKU; legitimate explicit/colorless identities remain supported')
+  console.log('STEP 192A2 CATALOG TRUTH FINALIZER TESTS PASSED — blank manager color/size cannot synthesize or select a conflicting placeholder SKU; legitimate dimensionless identities remain supported')
 } catch (error) {
   console.error(`STEP 192A2 CATALOG TRUTH FINALIZER TESTS FAILED: ${error?.message || error}`)
   process.exit(1)
