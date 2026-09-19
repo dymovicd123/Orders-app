@@ -228,3 +228,13 @@ Do not delete the diagnostic endpoint/UI until all signal classes have been mapp
 10. Return/exchange explicit intake remains transaction truth, not a stock-count prompt.
 11. Catalog/identity ambiguity stays separate from physical-quantity ambiguity.
 12. Arrival remains untouched.
+
+
+## Checkpoint 2026-09-19 — Phase2D micro-step mode
+
+- User requested that Stage02 continue in small, bounded steps rather than large bursts, to avoid losing progress to response/tool time limits.
+- Current working branch: `w-stage02-phase2d-transfer-writeoff-20260919`.
+- Current branch head when this checkpoint was written: `4e8e9103199ef6a01b5934eb4bc41b5e670fcbda`.
+- Phase2C changes are already included in this branch; current work is Phase2D transfer/writeoff transactional possession handling.
+- The latest GitHub Actions attempt is blocked before project checks by an external npm registry audit HTTP 503, so that failure is not yet evidence of a project regression.
+- Continue with one narrow verification/fix at a time, report it, then proceed to the next micro-step.
