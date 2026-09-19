@@ -20,9 +20,9 @@
     },
     "worker/domains/inventory-movement.ts": {
       "beforeGitBlob": "2e2b2668fd9a64086a39bd6ce7b0436efe91e332",
-      "afterGitBlob": "2a505b0a62586a9333ac479aa1ceb62753a63964",
+      "afterGitBlob": "730334dd5dfb7691598237a7ac86180bf5fd1995",
       "beforeLines": 1912,
-      "afterLines": 2004,
+      "afterLines": 2012,
       "replacements": [
         {
           "beforeBlock": "import { applyOrderStockWriteOff } from './orders-write.ts'\nimport { getPendingInventoryWriteoffCount } from './references.ts'\nimport { isInventoryAutoWriteoffEnabled } from './storage.ts'\nimport { boundedOutboundStock } from './stock-resolution.ts'\n\nexport function inventoryManualRequestFingerprint(\n  inventorySource: SourceType,",
@@ -135,6 +135,26 @@
         {
           "beforeBlock": "       WHERE inventory_source IN (?, ?)\n         AND variant_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`\n    ).bind(fromSource, toSource, variantIdsJson).all<Record<string, unknown>>();\n    const currentMap = new Map((currentRows.results || []).map(row => [`${cleanText(row.inventory_source)}:${toInt(row.variant_id, 0)}`, toInt(row.quantity, 0)]));\n    const changed = prepared.filter(row => {\n      const sourceKey = `${fromSource}:${row.variantId}`;\n      const targetKey = `${toSource}:${row.variantId}`;",
           "afterBlock": "       WHERE inventory_source IN (?, ?)\n         AND variant_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`\n    ).bind(fromSource, toSource, variantIdsJson).all<Record<string, unknown>>();\n    const currentMap = new Map((currentRows.results || []).map(row => [`${cleanText(row.inventory_source)}:${toInt(row.variant_id, 0)}`, Math.max(0, toInt(row.quantity, 0))]));\n    const changed = prepared.filter(row => {\n      const sourceKey = `${fromSource}:${row.variantId}`;\n      const targetKey = `${toSource}:${row.variantId}`;"
+        },
+        {
+          "beforeBlock": "    const quantity = Math.max(0, toInt(row.quantity, 0));\n    const sourceCurrent = stockMap.get(`${fromSource}:${variantId}`) ?? 0;\n    const targetCurrent = stockMap.get(`${toSource}:${variantId}`) ?? 0;\n    if (targetCurrent < quantity) throw new Error(`Нельзя безопасно отменить перемещение «${cleanText(row.product_name)}»: в точке «${toSource === 'warehouse' ? 'Склад' : 'Бутик'}» сейчас ${targetCurrent} шт., для возврата нужно ${quantity}. Сначала разберите фактический остаток.`);\n    return { variantId, quantity, sourceCurrent, targetCurrent };\n  });\n\n  const now = new Date().toISOString();",
+          "afterBlock": "    const quantity = Math.max(0, toInt(row.quantity, 0));\n    const sourceCurrent = stockMap.get(`${fromSource}:${variantId}`) ?? 0;\n    const targetCurrent = stockMap.get(`${toSource}:${variantId}`) ?? 0;\n    const fromQuantityBefore = Math.max(0, toInt(row.from_quantity_before, 0));\n    const fromQuantityAfter = Math.max(0, toInt(row.from_quantity_after, 0));\n    // A resolver-confirmed transfer may have moved more units than tracked Physical could\n    // explain. Forward transfer only deducted the explained part from source Physical, so a\n    // reversal must restore exactly that deducted part rather than the full moved quantity.\n    const sourceRestoreQuantity = Math.max(0, fromQuantityBefore - fromQuantityAfter);\n    if (targetCurrent < quantity) throw new Error(`Нельзя безопасно отменить перемещение «${cleanText(row.product_name)}»: в точке «${toSource === 'warehouse' ? 'Склад' : 'Бутик'}» сейчас ${targetCurrent} шт., для возврата нужно ${quantity}. Сначала разберите фактический остаток.`);\n    return { variantId, quantity, sourceRestoreQuantity, sourceCurrent, targetCurrent };\n  });\n\n  const now = new Date().toISOString();"
+        },
+        {
+          "beforeBlock": "    sourceCurrent: row.sourceCurrent,\n    targetCurrent: row.targetCurrent,\n    moveQty: row.quantity,\n  }));\n  const reversalValuesSql = reversalRowBindings.map(() => '(?)').join(', ');\n  const reversalRowsSql = `input(payload) AS (VALUES ${reversalValuesSql}),",
+          "afterBlock": "    sourceCurrent: row.sourceCurrent,\n    targetCurrent: row.targetCurrent,\n    moveQty: row.quantity,\n    sourceRestoreQty: row.sourceRestoreQuantity,\n  }));\n  const reversalValuesSql = reversalRowBindings.map(() => '(?)').join(', ');\n  const reversalRowsSql = `input(payload) AS (VALUES ${reversalValuesSql}),"
+        },
+        {
+          "beforeBlock": "        CAST(json_extract(payload, '$.variantId') AS INTEGER) AS variant_id,\n        CAST(json_extract(payload, '$.sourceCurrent') AS INTEGER) AS source_current,\n        CAST(json_extract(payload, '$.targetCurrent') AS INTEGER) AS target_current,\n        CAST(json_extract(payload, '$.moveQty') AS INTEGER) AS move_qty\n      FROM input\n    )`;\n",
+          "afterBlock": "        CAST(json_extract(payload, '$.variantId') AS INTEGER) AS variant_id,\n        CAST(json_extract(payload, '$.sourceCurrent') AS INTEGER) AS source_current,\n        CAST(json_extract(payload, '$.targetCurrent') AS INTEGER) AS target_current,\n        CAST(json_extract(payload, '$.moveQty') AS INTEGER) AS move_qty,\n        CAST(json_extract(payload, '$.sourceRestoreQty') AS INTEGER) AS source_restore_qty\n      FROM input\n    )`;\n"
+        },
+        {
+          "beforeBlock": "  const sourceUpdate = db.prepare(\n    `WITH ${reversalRowsSql}\n     UPDATE inventory_stock\n     SET quantity = quantity + (SELECT move_qty FROM x WHERE x.variant_id = inventory_stock.variant_id),\n         last_action = 'Отмена перемещения', last_source_ref = ?, updated_at = ?\n     WHERE inventory_source = ? AND EXISTS (SELECT 1 FROM x WHERE x.variant_id = inventory_stock.variant_id)`\n  ).bind(...reversalRowBindings, externalId, now, fromSource);",
+          "afterBlock": "  const sourceUpdate = db.prepare(\n    `WITH ${reversalRowsSql}\n     UPDATE inventory_stock\n     SET quantity = quantity + (SELECT source_restore_qty FROM x WHERE x.variant_id = inventory_stock.variant_id),\n         last_action = 'Отмена перемещения', last_source_ref = ?, updated_at = ?\n     WHERE inventory_source = ? AND EXISTS (SELECT 1 FROM x WHERE x.variant_id = inventory_stock.variant_id)`\n  ).bind(...reversalRowBindings, externalId, now, fromSource);"
+        },
+        {
+          "beforeBlock": "     )\n     SELECT ?, 'revision', v.product_id, v.id, p.name, NULLIF(v.gender,''), NULLIF(v.color,''),\n            COALESCE(NULLIF(v.material,''),'СТАНДАРТ'), COALESCE(NULLIF(v.length,''),'СТАНДАРТ'), NULLIF(v.size_label,''),\n            x.move_qty, x.source_current + x.move_qty, 'movement_reversal', ?, ?, ?\n     FROM x JOIN catalog_variants v ON v.id = x.variant_id JOIN catalog_products p ON p.id = v.product_id`\n  ).bind(...reversalRowBindings, fromSource, reversalRef, reversalComment, now);\n  const targetMovements = db.prepare(",
+          "afterBlock": "     )\n     SELECT ?, 'revision', v.product_id, v.id, p.name, NULLIF(v.gender,''), NULLIF(v.color,''),\n            COALESCE(NULLIF(v.material,''),'СТАНДАРТ'), COALESCE(NULLIF(v.length,''),'СТАНДАРТ'), NULLIF(v.size_label,''),\n            x.source_restore_qty, x.source_current + x.source_restore_qty, 'movement_reversal', ?, ?, ?\n     FROM x JOIN catalog_variants v ON v.id = x.variant_id JOIN catalog_products p ON p.id = v.product_id`\n  ).bind(...reversalRowBindings, fromSource, reversalRef, reversalComment, now);\n  const targetMovements = db.prepare("
         }
       ]
     }
