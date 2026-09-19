@@ -489,6 +489,12 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
               </section>
     
               <section className="mini-panel debt-history-panel history-cards-panel">
+                {exchangeHistorySummary.pendingPhysicalQuantity > 0 ? (
+                  <div className="return-intake-alert">
+                    <strong>Ожидают возврата старых вещей: {exchangeHistorySummary.pendingPhysicalQuantity} шт.</strong>
+                    <span>Когда старая вещь физически вернётся, откройте нужный обмен ниже и нажмите «Принять товар». Система спросит, куда положить вещь, и при необходимости сразу уточнит её через resolver.</span>
+                  </div>
+                ) : null}
                 <div className="mini-panel-head history-section-head">
                   <div><h3>История обменов</h3><p className="mini-panel-note">Старая и новая вещь показаны одной операцией. Если загрузка не удалась, система покажет ошибку вместо пустой таблицы.</p></div>
                   <button className="secondary compact" type="button" onClick={() => void loadExchangeHistory()} disabled={exchangeHistoryBusy}>Обновить</button>
@@ -523,7 +529,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                             <div className="history-product-card">
                               <span>Вернули</span><strong>{entry.oldProductName} × {entry.oldQuantity}</strong><em>{formatHistoryCharacteristics(entry, 'old')}</em><b>{oldReturnLabel(entry)}</b>
                               {entry.status !== 'cancelled' && entry.oldPhysicalTracking && !entry.oldPhysicalReceivedAt && entry.oldOperationItemId ? (
-                                <div className="mini-panel-actions">
+                                <div className="mini-panel-actions return-intake-actions">
                                   <select
                                     value={receiptDestinations[`exchange:${entry.id}:${entry.oldOperationItemId}`] || 'warehouse'}
                                     onChange={(event) => setReceiptDestinations((current) => ({ ...current, [`exchange:${entry.id}:${entry.oldOperationItemId}`]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
@@ -546,7 +552,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                       externalId: entry.externalId,
                                     })}
                                   >
-                                    Товар пришёл
+                                    Принять товар
                                   </button>
                                 </div>
                               ) : null}
@@ -558,7 +564,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                     disabled={exchangeBusy || exchangeHistoryBusy}
                                     onClick={() => void finishKnownExchangeIntake(entry)}
                                   >
-                                    Завершить приёмку
+                                    Завершить приёмку в остаток
                                   </button>
                                 </div>
                               ) : null}
