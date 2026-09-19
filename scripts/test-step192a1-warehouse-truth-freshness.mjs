@@ -98,7 +98,7 @@ try {
   check(app.includes("restock: item.physicalState === 'warehouse' || item.physicalState === 'boutique'"), 'Return frontend no longer derives stock disposition from physical state')
   check(app.includes('physicalState: item.physicalState'), 'Return frontend no longer transmits physical receipt state')
   check(returnUtils.includes('restock: false,'), 'New return draft must not pre-credit inventory before physical receipt')
-  check(returnUtils.includes("physicalState: 'pending' as const"), 'New return draft no longer defaults to waiting for physical receipt')
+  check(returnUtils.includes("physicalState: (item.sourceType === 'workshop' ? 'no_stock' : 'pending')"), 'Return draft must default ordinary items to pending and Workshop-origin items to no-stock')
   check(returnView.includes('Пришёл → Склад'), 'Return UI lost the explicit physical Workshop-to-Warehouse decision')
   check(returnView.includes("item.sourceType !== 'workshop' ? <option value=\"boutique\">Пришёл → Бутик</option> : null"), 'Return form can again offer Boutique for Workshop items')
   check(returnView.includes("!item.isWorkshop ? <option value=\"boutique\">Бутик</option> : null"), 'Delayed return receipt can again offer Boutique for Workshop items')
