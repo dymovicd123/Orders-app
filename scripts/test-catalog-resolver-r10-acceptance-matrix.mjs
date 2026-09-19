@@ -33,7 +33,7 @@ await sessionA.run(async () => { aWrites++ }, async () => true, async () => { aD
 const sessionB = createResolutionSession()
 await sessionB.run(async () => { bWrites++ }, async () => true, async () => { bDone++; return true })
 assert.deepEqual([aWrites, aDone, bWrites, bDone], [1, 1, 1, 1], 'R10.1: second order inherited previous resolver latch')
-assert.ok(modal.includes("return () => { generation.current++; session.current = createResolutionSession() }") && modal.includes("}, [order?.id])"), 'R10.1: modal no longer resets resolver ownership per order')
+assert.ok(modal.includes("return () => { generation.current++; session.current = createResolutionSession() }") && modal.includes("}, [order?.id, preferredOrderItemId, purpose])"), 'R10.1: modal no longer resets resolver ownership per order/intake target')
 
 // 2. Canonical gender already known: no gender question may be shown.
 const canonicalContext = readyContext()
