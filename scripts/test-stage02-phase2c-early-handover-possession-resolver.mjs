@@ -14,7 +14,7 @@ try {
   check(client.includes("action === 'issue_now'"), 'Phase2C issue_now branch missing')
   check(client.includes("result.code === 'stock_resolution_required'"), 'Phase2C client does not consume stock_resolution_required')
   check(client.includes("result.operationType === 'handover'"), 'Phase2C client does not scope resolver to handover')
-  check(client.includes('прямо сейчас физически у вас') && client.includes('Это НЕ пересчёт всего остатка'), 'Phase2C possession wording missing')
+  check(client.includes('askStockResolution') && client.includes('Да, выдаю клиенту') && client.includes('не пересчитывается'), 'Phase2C human possession resolver wording missing')
   check(client.includes('stockConfirmations') && client.includes('expectedQuantity') && client.includes('operationQuantity'), 'Phase2C confirmation replay payload missing')
   check(client.includes('submitHandoverAction(stockConfirmations)'), 'Phase2C does not resume the same early handover action after confirmation')
   check(!client.includes('window.prompt('), 'Phase2C early handover asks for an invented total stock count')
