@@ -5799,8 +5799,8 @@ function removeDebtPayment(index: number) {
     setMessage(null)
     try {
       const today = formatLocalDateInput()
-      const submitShipping = async (observations?: Array<{ source: InventorySourceKey; variantId: number; expectedQuantity: number; countedQuantity: number }>) => {
-        const shippingPayload = { shippingStatus: 'sent', shippingDate: today, observations }
+      const submitShipping = async (stockConfirmations?: Array<{ source: InventorySourceKey; variantId: number; expectedQuantity: number; operationQuantity: number }>) => {
+        const shippingPayload = { shippingStatus: 'sent', shippingDate: today, stockConfirmations }
         const criticalKey = `order-shipping:${order.id}`
         const critical = prepareCriticalRequest(criticalKey, shippingPayload)
         const response = await apiFetch(`/api/orders/${order.id}/shipping`, {
@@ -5808,7 +5808,7 @@ function removeDebtPayment(index: number) {
           headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
           body: JSON.stringify(critical.payload),
         })
-        const result = await readJsonResponse<{ message?: string; order?: OrderRecord; refreshRequired?: boolean; code?: string; reviewOrderId?: number; blockers?: Array<{ blocker_reason?: string; product_name_snapshot?: string; inventory_source?: string; reservation_variant_id?: number; required_quantity?: number; physical_quantity?: number }> }>(response, 'Отправка клиенту', { allowHttpError: true })
+        const result = await readJsonResponse<{ message?: string; order?: OrderRecord; refreshRequired?: boolean; code?: string; reviewOrderId?: number; operationType?: string; items?: Array<{ source?: InventorySourceKey; variantId?: number; productName?: string; trackedPhysicalQuantity?: number; operationQuantity?: number; unexplainedQuantity?: number }> }>(response, 'Отправка клиенту', { allowHttpError: true })
         if (response.ok) completeCriticalRequest(criticalKey, critical.requestId)
         return { response, result }
       }
@@ -5823,24 +5823,27 @@ function removeDebtPayment(index: number) {
         setMessage(result.message || 'Перед отправкой нужно уточнить складской товар. Окно уточнения открыто прямо в заказах.')
         return false
       }
-      if (!response.ok && result.code === 'inventory_physical_shortage' && Array.isArray(result.blockers) && result.blockers.length) {
-        const observations: Array<{ source: InventorySourceKey; variantId: number; expectedQuantity: number; countedQuantity: number }> = []
-        for (const blocker of result.blockers.filter((row) => row.blocker_reason === 'insufficient_physical')) {
-          const physical = Number(blocker.physical_quantity || 0)
-          const required = Math.max(1, Number(blocker.required_quantity || 1))
-          const name = blocker.product_name_snapshot || `variant #${blocker.reservation_variant_id || ''}`
-          const raw = window.prompt(`По учёту «${name}» на месте ${physical} шт., для отправки нужно ${required}. Если товар физически перед вами, укажите сколько всего реально находится на месте. Отмена — ничего не менять.`, String(Math.max(required, physical)))
-          if (raw === null) throw new Error('Отправка отменена. Остатки не изменялись.')
-          const counted = Number(raw)
-          if (!Number.isInteger(counted) || counted < required) throw new Error(`Для «${name}» нужно подтвердить целое фактическое количество не меньше ${required}.`)
-          observations.push({
-            source: blocker.inventory_source === 'boutique' ? 'boutique' : 'warehouse',
-            variantId: Number(blocker.reservation_variant_id || 0),
-            expectedQuantity: physical,
-            countedQuantity: counted,
-          })
+      if (!response.ok && result.code === 'stock_resolution_required' && result.operationType === 'shipping' && Array.isArray(result.items) && result.items.length) {
+        const lines = result.items.map((item) => {
+          const name = item.productName || `variant #${item.variantId || ''}`
+          const tracked = Math.max(0, Number(item.trackedPhysicalQuantity || 0))
+          const needed = Math.max(1, Number(item.operationQuantity || 1))
+          return `• ${name}: по учёту ${tracked} шт., сейчас отправляется ${needed} шт.`
+        })
+        const confirmed = window.confirm(
+          `По учёту товара меньше, чем нужно для этой отправки.\n\n${lines.join('\n')}\n\nПодтвердите только если указанные вещи прямо сейчас физически у вас и действительно передаются клиенту. Это НЕ пересчёт всего остатка.`
+        )
+        if (!confirmed) {
+          setMessage('Отправка остановлена. Остатки не изменялись.')
+          return false
         }
-        ;({ response, result } = await submitShipping(observations))
+        const stockConfirmations = result.items.map((item) => ({
+          source: item.source === 'boutique' ? 'boutique' as const : 'warehouse' as const,
+          variantId: Number(item.variantId || 0),
+          expectedQuantity: Math.max(0, Number(item.trackedPhysicalQuantity || 0)),
+          operationQuantity: Math.max(1, Number(item.operationQuantity || 1)),
+        }))
+        ;({ response, result } = await submitShipping(stockConfirmations))
       }
       if (!response.ok) {
         throw new Error(result.message || `Shipping failed: ${response.status}`)
