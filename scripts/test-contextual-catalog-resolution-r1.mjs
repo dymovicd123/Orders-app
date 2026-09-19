@@ -38,7 +38,7 @@ try {
   check(modal.includes('Не нашли правильный вариант?') && modal.includes('Расширенное исправление'), 'Advanced correction must remain explicit fallback')
   check(modal.includes('/resolve-existing'), 'Orders UI must retain the narrow existing-variant resolver')
   check(modal.includes('/resolve-facts'), 'R3 must resolve new/corrected characteristics without leaving Orders')
-  check(modal.includes('Уточним:') && modal.includes('Это новое значение') && modal.includes('В заказе указано <strong>«{draft[question.field]}»</strong>'), 'New reusable values need explicit user-facing global-scope confirmation')
+  check(modal.includes('Уточним:') && modal.includes('Это новое значение') && modal.includes('В заказе указано') && modal.includes('Добавить действительно новое значение можно в Админ режиме'), 'New reusable values need explicit user-facing global-scope confirmation')
   check(modal.includes('Этот товар действительно без цвета и без размера?'), 'Missing color/size require a combined explicit decision')
   check(modal.includes('Что означает часть названия'), 'Compound-name residue must be classified, not silently asserted')
   check(flow.includes('productTokens.every'), 'Compound extraction must stay generic and token-based')
