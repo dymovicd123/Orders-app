@@ -4,6 +4,42 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage02Phase2BWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage02-phase2b-shipping-possession-worker-manifest.json'), 'utf8'))
+if (stage02Phase2BWorkerManifest?.version !== 1 || stage02Phase2BWorkerManifest?.revision !== 'stage02-phase2b-shipping-possession') throw new Error('Stage02 Phase2B Worker manifest invalid')
+const stage02Phase2BBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE02_PHASE2B_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stage02Phase2BWorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage02Phase2BBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage02 Phase2B Worker changed beyond exact manifest: ' + relative)
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage02 Phase2B Worker after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (stage02Phase2BBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage02 Phase2B Worker predecessor reconstruction failed: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, STAGE02_PHASE2B_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE02 PHASE2B WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const stage02Phase2AWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage02-phase2a-stock-truth-worker-manifest.json'), 'utf8'))
 if (stage02Phase2AWorkerManifest?.version !== 1 || stage02Phase2AWorkerManifest?.revision !== 'stage02-phase2a-stock-truth-primitives') throw new Error('Stage02 Phase2A Worker manifest invalid')
 const stage02Phase2ABlobSha = (value) => {
