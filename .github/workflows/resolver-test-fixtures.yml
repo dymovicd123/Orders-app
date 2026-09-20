@@ -37,6 +37,10 @@ jobs:
           query "SELECT p.id,p.name,COALESCE(p.gender_scope,'unisex') AS gender_scope,COUNT(v.id) AS variants,COUNT(DISTINCT COALESCE(v.gender,'')) AS genders,COUNT(DISTINCT COALESCE(v.color,'')) AS colors,COUNT(DISTINCT COALESCE(v.size_label,'')) AS sizes FROM catalog_products p JOIN catalog_variants v ON v.product_id=p.id AND v.is_active=1 WHERE p.is_active=1 GROUP BY p.id,p.name,p.gender_scope HAVING COUNT(v.id)>=2 ORDER BY variants DESC,p.id LIMIT 30"
           echo '=== REFERENCES ==='
           query "SELECT kind,value FROM reference_values WHERE is_active=1 AND kind IN ('material','length','color','size','child_age') ORDER BY kind,sort_order,value LIMIT 200"
+          echo '=== SELECTED PRODUCT VARIANTS ==='
+          query "SELECT v.id AS variant_id,v.product_id,p.name AS product_name,COALESCE(v.category,p.category,'adult') AS category,v.gender,v.color,v.material,v.length,v.size_label,COALESCE(p.gender_scope,'unisex') AS gender_scope FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE p.id IN (1,4,27,30,39) AND v.is_active=1 ORDER BY p.id,v.id LIMIT 250"
+          echo '=== MISSING COMBINATION CHECK ==='
+          query "SELECT p.id,p.name, SUM(CASE WHEN v.gender='ЖЕН' AND v.color='ИЗУМРУД' AND COALESCE(v.material,'СТАНДАРТ')='КОСТЮМНЫЙ МАТЕРИАЛ' AND COALESCE(v.length,'СТАНДАРТ')='СТАНДАРТ' AND v.size_label='42' THEN 1 ELSE 0 END) AS exact_count FROM catalog_products p LEFT JOIN catalog_variants v ON v.product_id=p.id AND v.is_active=1 WHERE p.id=1 GROUP BY p.id,p.name"
           echo '=== EXISTING RES T02-T14 ITEMS ==='
           query "SELECT o.id AS order_id,o.external_id,o.comment,oi.id AS item_id,oi.product_id,oi.variant_id,oi.product_name_snapshot,oi.audience_type,oi.gender_snapshot,oi.color_snapshot,oi.material_snapshot,oi.length_snapshot,oi.size_snapshot,oi.quantity,oi.is_workshop,oi.source_type,oi.stock_writeoff_status FROM orders o JOIN order_items oi ON oi.order_id=o.id WHERE o.id BETWEEN 29 AND 43 ORDER BY o.id,oi.id"
           echo '=== EXISTING RES T02-T14 WORKSHOP TASKS ==='
