@@ -254,7 +254,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                 externalId: entry.externalId,
                               })}
                             >
-                              Товар приехал
+                              Принять товар
                             </button>
                           </div>
                         )
