@@ -1,0 +1,44 @@
+name: Audit Branch2 test residue against Production
+
+on:
+  push:
+    branches: [branch2]
+    paths: [.github/workflows/audit-branch2-residue.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_API: https://api.cloudflare.com/client/v4
+      PROD_DB_ID: 17e68a41-1d58-4a36-8a63-47c3e32443c4
+      B2_DB_ID: 40065052-854e-44b8-bcd5-251bdd488301
+    steps:
+      - name: Compare recent catalog artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          q() {
+            local db="$1"; shift
+            local sql="$1"
+            curl --fail-with-body -sS -X POST               -H "Authorization: Bearer $CF_API_TOKEN"               -H "Content-Type: application/json"               "$CF_API/accounts/$CF_ACCOUNT_ID/d1/database/$db/query"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')" | jq -c '.result[]?.results // []'
+          }
+          for DB in PROD B2; do
+            if [[ "$DB" == "PROD" ]]; then ID="$PROD_DB_ID"; else ID="$B2_DB_ID"; fi
+            echo "=== $DB VARIANTS >= 626 ==="
+            q "$ID" "SELECT v.id,v.product_id,p.name AS product_name,v.category,v.gender,v.color,v.material,v.length,v.size_label,v.stock_position_id,v.created_at,v.updated_at FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE v.id>=626 ORDER BY v.id"
+            echo "=== $DB POSITIONS >= 100 ==="
+            q "$ID" "SELECT sp.id,sp.product_id,p.name AS product_name,sp.material,sp.length,sp.created_at,sp.updated_at FROM catalog_stock_positions sp JOIN catalog_products p ON p.id=sp.product_id WHERE sp.id>=100 ORDER BY sp.id"
+            echo "=== $DB REFERENCES RECENT/TESTISH ==="
+            q "$ID" "SELECT id,kind,value,is_active,created_at,updated_at FROM reference_values WHERE id>=48800 OR UPPER(value) LIKE '%TEST%' OR UPPER(value) LIKE '%ТЕСТ%' OR UPPER(value) LIKE '%МУСОР%' OR UPPER(value) LIKE '%ДУБАЙ%' ORDER BY id"
+            echo "=== $DB PRODUCT ALIASES ==="
+            q "$ID" "SELECT id,alias_key,raw_value,product_id,created_at,updated_at FROM catalog_product_aliases ORDER BY id"
+            echo "=== $DB VALUE ALIASES ==="
+            q "$ID" "SELECT id,kind,alias_key,raw_value,canonical_value,created_at,updated_at FROM catalog_value_aliases ORDER BY id"
+            echo "=== $DB INPUT ALIASES ==="
+            q "$ID" "SELECT id,input_key,variant_id,created_at,updated_at FROM catalog_input_aliases ORDER BY id"
+          done
