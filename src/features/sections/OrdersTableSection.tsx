@@ -311,8 +311,20 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                   void correctMistakenOrderShipping(order)
                                 }}
                               >
-                                Исправить отправку
+                                Снять «Отправлен»
                               </button>
+                            ) : !retainedOnly && !archived && order.shipping_status === 'sent' && projection.hasCommittedItemReturn ? (
+                              <div className="order-correction-blocked">
+                                <button
+                                  className="secondary compact"
+                                  type="button"
+                                  disabled
+                                  title="Сначала исправьте возврат товара."
+                                >
+                                  Снять «Отправлен»
+                                </button>
+                                <small>Сначала исправьте возврат товара</small>
+                              </div>
                             ) : null}
                             {projection.canOpenDebt ? (
                               <button
