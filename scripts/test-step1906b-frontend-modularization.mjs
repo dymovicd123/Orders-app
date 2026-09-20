@@ -95,7 +95,7 @@ const resolverHumanFinishFrontendManifest = JSON.parse(fs.readFileSync(path.join
 if (resolverHumanFinishFrontendManifest?.version !== 1 || resolverHumanFinishFrontendManifest?.revision !== 'resolver-human-finish-r1') throw new Error('Resolver human-finish frontend manifest invalid')
 const resolverHumanFinishBlobSha = (value) => {
   const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\\0`)).update(bytes).digest('hex')
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 if (!process.env.RESOLVER_HUMAN_FINISH_FRONTEND_NORMALIZED) {
   const originals = new Map()
@@ -104,7 +104,7 @@ if (!process.env.RESOLVER_HUMAN_FINISH_FRONTEND_NORMALIZED) {
     for (const [relative, delta] of Object.entries(resolverHumanFinishFrontendManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (resolverHumanFinishBlobSha(actual) !== delta.afterGitBlob || actual.split(/\\r?\\n/).length !== delta.afterLines) throw new Error('Resolver human-finish frontend changed beyond exact manifest: ' + relative)
+      if (resolverHumanFinishBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Resolver human-finish frontend changed beyond exact manifest: ' + relative)
       let reverted = actual
       if (delta.beforeFixture) {
         reverted = fs.readFileSync(path.join(root, delta.beforeFixture), 'utf8')
@@ -114,7 +114,7 @@ if (!process.env.RESOLVER_HUMAN_FINISH_FRONTEND_NORMALIZED) {
           reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
         }
       }
-      if (resolverHumanFinishBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\\r?\\n/).length !== delta.beforeLines) throw new Error('Resolver human-finish frontend predecessor reconstruction failed: ' + relative)
+      if (resolverHumanFinishBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Resolver human-finish frontend predecessor reconstruction failed: ' + relative)
       originals.set(relative, actual)
       fs.writeFileSync(absolute, reverted)
     }
