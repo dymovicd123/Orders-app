@@ -641,30 +641,83 @@
 
 .intake-queue-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(180px, .55fr) auto;
-  gap: 12px;
+  grid-template-columns: minmax(420px, 1fr) minmax(180px, .38fr) auto;
+  gap: 14px;
   align-items: center;
-  padding: 12px;
+  padding: 14px;
   border: 1px solid rgba(15, 23, 42, .08);
-  border-radius: 13px;
+  border-radius: 14px;
   background: #fff;
 }
 
 .intake-queue-item {
   display: grid;
-  gap: 3px;
+  gap: 9px;
   min-width: 0;
 }
 
-.intake-queue-item strong {
+.intake-queue-product-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.intake-queue-product-head > strong {
   color: #0f172a;
+  font-size: .96rem;
   overflow-wrap: anywhere;
 }
 
-.intake-queue-item span,
-.intake-queue-item small {
+.intake-queue-operation {
+  display: inline-flex;
+  align-items: center;
+  min-height: 23px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #315d9b;
+  font-size: .7rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.intake-queue-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.intake-queue-context > div {
+  display: grid;
+  gap: 2px;
+  min-width: 125px;
+  padding: 7px 9px;
+  border: 1px solid #e4eaf2;
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.intake-queue-context span {
+  color: #7a899c;
+  font-size: .66rem;
+  font-weight: 800;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.intake-queue-context strong {
+  color: #22344b;
+  font-size: .77rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.intake-queue-characteristics {
+  display: block;
   color: #64748b;
-  font-size: .78rem;
+  font-size: .76rem;
+  line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
@@ -780,6 +833,15 @@
 
   .intake-queue-row {
     grid-template-columns: 1fr;
+  }
+
+  .intake-queue-context {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .intake-queue-context > div {
+    min-width: 0;
   }
 
   .intake-queue-action {
