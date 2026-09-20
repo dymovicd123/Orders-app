@@ -33,7 +33,8 @@ try {
   check(app.includes('async function correctMistakenOrderShipping(order: OrderRecord)'), 'frontend correction handler missing')
   check(app.includes("physicalOutcome: 'not_issued' as const"), 'frontend correction does not explicitly confirm physical outcome')
   check(app.includes('/shipping/correct'), 'frontend does not use dedicated correction endpoint')
-  check(table.includes('Исправить отправку'), 'sent-order correction action not visible in Orders table')
+  check(table.includes('Снять ошибочную отметку «Отправлен»'), 'sent-order correction action not visible in Orders table')
+  check(table.includes('После проведённого обмена текущая физическая история задаётся обменом') && table.includes('После проведённого возврата текущая физическая история уже включает возврат товара'), 'blocked sent-order correction does not explain the downstream operation that owns physical truth')
   check(table.includes("order.shipping_status === 'sent'"), 'correction action is not scoped to sent orders')
 
   console.log('Operational Autonomy A4 handover correction checks passed.')
