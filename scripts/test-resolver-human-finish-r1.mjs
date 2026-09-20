@@ -62,15 +62,14 @@ assert.equal(JSON.stringify(partial.segments.map(entry => [entry.field, entry.va
 
 const modal = fs.readFileSync('src/features/orders/OrderCatalogResolutionModal.tsx', 'utf8')
 for (const marker of [
-  'Это новый товар',
-  'Название нового значения',
-  'Добавить и продолжить',
-  'Администратор уже добавил — проверить снова',
-  'попросите администратора добавить его',
-  'Похоже, имелось в виду',
+  'Новый товар',
+  '<label>Название<input autoFocus',
+  '>Добавить</button>',
+  '>Проверить снова</button>',
+  'Попросите администратора добавить его',
+  '<small>Возможно</small>',
   'resolution-combobox',
-  'Ничего из предложенного не подходит',
-  'После ответа система проверит остальные позиции и продолжит исходное действие автоматически',
+  '>Исправить вручную</button>',
 ]) assert.ok(modal.includes(marker), `resolver human-finish marker missing: ${marker}`)
 assert.ok(!modal.includes('list="resolution-answers"'), 'normal resolver picker must not depend on browser datalist filtering')
 assert.ok(modal.includes("fieldLabel(field, draft.category)"), 'dynamic adult/child label must drive visible resolver labels')
@@ -82,13 +81,12 @@ for (const marker of ['Готово в цехе', 'Цех: готово', "За�
 }
 const app = fs.readFileSync('src/App.tsx', 'utf8')
 assert.ok(app.includes('Это не отправка клиенту: заказ остаётся «Не отправлен»'), 'Workshop done action must explicitly say it does not ship the order')
-assert.ok(app.includes('Снять ошибочную отметку «Отправлен»'), 'shipping correction wording must describe the actual operation')
+assert.ok(app.includes('Снять отметку «Отправлен»'), 'shipping correction confirmation must describe the actual operation')
 
 const orders = fs.readFileSync('src/features/sections/OrdersTableSection.tsx', 'utf8')
-assert.ok(orders.includes('Снять ошибочную отметку «Отправлен»'))
-assert.ok(orders.includes('Обмен останется проведённым'))
-assert.ok(orders.includes('активная обменённая позиция'))
-assert.ok(orders.includes('После проведённого возврата товара сначала исправьте сам возврат'))
+assert.ok(orders.includes('Снять «Отправлен»'))
+assert.ok(!orders.includes('активная обменённая позиция'), 'ordinary Orders UI must not expose implementation detail about exchange truth')
+assert.ok(orders.includes('Сначала исправьте возврат товара'))
 
 const projection = fs.readFileSync('src/app/orderOperationalProjection.ts', 'utf8')
 assert.ok(
@@ -111,7 +109,7 @@ for (const marker of [
 ]) assert.ok(exchangeWorker.includes(marker), `exchange-aware false-shipping marker missing: ${marker}`)
 
 assert.ok(modal.includes('Название нового товара'))
-assert.ok(modal.includes('Уже известно из заказа'))
+assert.ok(modal.includes('Характеристики из заказа'))
 assert.ok(modal.includes('Нет, это существующий товар'))
 assert.ok(modal.includes('Длина</button>'))
 assert.ok(modal.includes("draft.category === 'child' ? 'Возраст' : 'Размер'"))
