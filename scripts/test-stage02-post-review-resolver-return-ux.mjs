@@ -36,6 +36,9 @@ assert.ok(returnsWorker.includes('if (amount <= 0 && selectedItems.length === 0)
 assert.ok(returnsWorker.includes('if (amount > 0 && !paymentMethod)'), 'Payment method must only be required when money is actually refunded')
 assert.ok(returnsWorker.includes('if (amount > 0) {\n      createStatements.push(refundMoneyEventStatement'), 'Zero-money item return must not manufacture a money event')
 assert.ok(returnsWorker.includes('if (toInt(ret.amount, 0) > 0)'), 'Cancelling a zero-money return must not manufacture a refund reversal')
+assert.ok(returnsWorker.includes("code: 'intake_freshness_confirmation_required'"), 'Delayed intake does not stop on a newer physical count')
+assert.ok(returnsWorker.includes("freshnessDecision === 'already_counted'"), 'Delayed intake cannot preserve a newer count when the returned unit was already included')
+assert.ok(returnsWorker.includes('freshnessProtected = true'), 'Fresh-count intake protection is not recorded in the response')
 
 const app = read('src/App.tsx')
 assert.ok(app.includes('selectedReturnItems.length === 0'), 'Frontend zero-money return item guard is missing')
@@ -46,6 +49,8 @@ assert.ok(!app.includes('По учёту товара меньше, чем ну�
 assert.ok(app.includes('setReturnedItemResolutionEventId(eventId)'), 'Pending returned item does not open in-flow item resolver')
 assert.ok(app.includes('<ReturnedItemResolutionModal'), 'Returned-item resolver is not mounted')
 assert.ok(app.includes('Promise.allSettled([loadReturnHistory(), loadExchangeHistory()])'), 'Orders workspace does not proactively load pending intake counts')
+assert.ok(app.includes("result.code === 'intake_freshness_confirmation_required'"), 'Frontend does not ask what a newer physical count already included')
+assert.ok(app.includes("'already_counted' : 'arrived_after_check'"), 'Frontend does not preserve the operator freshness decision')
 
 const index = read('worker/index.ts')
 assert.ok(index.includes("operation_type IN ('return','exchange')"), 'Manager lifecycle exception is not restricted to return/exchange intake')
@@ -59,9 +64,18 @@ assert.ok(receiptModal.includes('Товара нет в каталоге — н�
 assert.ok(receiptModal.includes('Подтвердить и принять в остаток'))
 
 const stockModal = read('src/features/orders/StockResolutionConfirmModal.tsx')
-assert.ok(stockModal.includes('По учёту:'))
-assert.ok(stockModal.includes('В этой операции:'))
+assert.ok(stockModal.includes("prompt.trackedLabel || 'По учёту'"))
+assert.ok(stockModal.includes("prompt.neededLabel || 'В этой операции'"))
 assert.ok(stockModal.includes('Эти вещи прямо сейчас физически у вас?'))
+assert.ok(stockModal.includes('prompt.question ||') && stockModal.includes('prompt.cancelLabel ||'), 'Shared confirmation modal cannot express intake freshness choices')
+
+const returnSection = read('src/features/sections/OrderReturnsSection.tsx')
+const exchangeSection = read('src/features/sections/OrderExchangeSection.tsx')
+assert.ok(returnSection.includes("item.isWorkshop ? 'no_stock' : 'warehouse'"), 'Return intake queue loses Workshop no-stock default')
+assert.ok(exchangeSection.includes("entry.oldIsWorkshop ? 'no_stock' : 'warehouse'"), 'Exchange intake queue loses Workshop no-stock default')
+
+const historyPanel = read('src/features/inventory/views/renderInventoryHistoryPanel.tsx')
+assert.ok(historyPanel.includes('Физическая операция') && historyPanel.includes('transferLineQuantity'), 'Inventory history still hides physical operation quantity behind stock delta')
 
 const header = read('src/features/sections/OrdersHeaderSection.tsx')
 assert.ok(header.includes('order-tab-attention'))
