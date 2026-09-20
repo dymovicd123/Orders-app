@@ -2097,7 +2097,6 @@ export async function fulfillOrderReservationsV2(
            AND ${orderStillUnsentSql}`
       ).bind(
         ...payloadChunk,
-        timestamp,
         orderId,
         handoverOrderItemId,
         `${externalId}:item:${handoverOrderItemId}`,
@@ -2218,7 +2217,13 @@ export async function fulfillOrderReservationsV2(
 export async function correctMistakenOrderHandover(
   db: D1Database,
   orderId: number,
-  input: { physicalOutcome?: unknown; actor?: string } = {},
+  input: {
+    physicalOutcome?: unknown;
+    actor?: string;
+    allowCommittedExchangeCurrentTruth?: boolean;
+    excludeOrderItemIds?: number[];
+    preflightOnly?: boolean;
+  } = {},
 ) {
   if (!orderId) throw new Error('Заказ не найден.');
   if (cleanText(input.physicalOutcome).toLowerCase() !== 'not_issued') {
@@ -2260,24 +2265,46 @@ export async function correctMistakenOrderHandover(
 
   const downstream = await db.prepare(
     `SELECT
-       EXISTS(SELECT 1 FROM returns r WHERE r.order_id = ? AND COALESCE(r.status, 'completed') <> 'cancelled') AS has_return,
+       EXISTS(
+         SELECT 1
+         FROM returns r
+         JOIN return_items ri ON ri.return_id = r.id AND COALESCE(ri.quantity, 0) > 0
+         WHERE r.order_id = ?
+           AND COALESCE(r.status, 'completed') <> 'cancelled'
+           AND NOT EXISTS (
+             SELECT 1 FROM exchanges linked_exchange
+             WHERE linked_exchange.refund_return_id = r.id
+               AND COALESCE(linked_exchange.status, 'completed') <> 'cancelled'
+           )
+       ) AS has_item_return,
        EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id = ? AND COALESCE(e.status, 'completed') <> 'cancelled') AS has_exchange`
-  ).bind(orderId, orderId).first<{ has_return: number; has_exchange: number }>();
-  if (toInt(downstream?.has_return, 0) || toInt(downstream?.has_exchange, 0)) {
-    throw new Error('Исправление отправки остановлено: по заказу уже есть действующий возврат или обмен. Сначала исправьте/отмените эту последующую операцию, чтобы не переписать физическую историю задним числом.');
+  ).bind(orderId, orderId).first<{ has_item_return: number; has_exchange: number }>();
+  if (toInt(downstream?.has_item_return, 0)) {
+    throw new Error('Снять ошибочную отметку «Отправлен» нельзя автоматически: по текущим позициям уже проведён отдельный возврат товара. Сначала нужно исправить именно этот возврат, иначе физическая история станет противоречивой.');
+  }
+  if (toInt(downstream?.has_exchange, 0) && !input.allowCommittedExchangeCurrentTruth) {
+    throw new Error('У заказа есть проведённый обмен. Для безопасного снятия отметки нужно опереться на текущую обменённую позицию, а не откатывать исходный товар.');
   }
 
+  const excludedIds = Array.from(new Set((input.excludeOrderItemIds || []).map((value) => toInt(value, 0)).filter((value) => value > 0)));
+  const exclusionSql = excludedIds.length ? ' AND oi.id NOT IN (SELECT CAST(value AS INTEGER) FROM json_each(?))' : '';
+  const fulfilledBindings: Array<number | string> = [orderId];
+  if (excludedIds.length) fulfilledBindings.push(JSON.stringify(excludedIds));
   const fulfilledRows = await db.prepare(
     `SELECT r.id, r.order_item_id, r.inventory_source, r.variant_id, r.quantity, r.fulfilled_at,
             oi.stock_quantity_before, oi.stock_quantity_after
      FROM inventory_reservations r
      JOIN order_items oi ON oi.id = r.order_item_id AND oi.order_id = r.order_id
      WHERE r.order_id = ? AND r.status = 'fulfilled'
+       AND oi.quantity > 0${exclusionSql}
      ORDER BY r.id ASC`
-  ).bind(orderId).all<Record<string, unknown>>();
+  ).bind(...fulfilledBindings).all<Record<string, unknown>>();
   const fulfilled = fulfilledRows.results || [];
 
   if (!fulfilled.length) {
+    if (input.preflightOnly) {
+      return { ok: true, preflightOnly: true, restoredPhysicalQuantity: 0, freshnessProtectedQuantity: 0, reactivatedReservations: 0 };
+    }
     if (!shippingWasSent) return { ok: true, alreadyCorrected: true, restoredPhysicalQuantity: 0, freshnessProtectedQuantity: 0, reactivatedReservations: 0 };
     await db.prepare(
       `UPDATE orders SET shipping_status = 'not_sent', shipping_date = NULL, updated_at = ?
@@ -2356,6 +2383,16 @@ export async function correctMistakenOrderHandover(
     if (newerPhysicalTruth?.found) freshnessProtectedQuantity += physicalDelta;
     else restoredPhysicalQuantity += restoreQuantity;
     payloadRows.push({ reservationId, orderItemId, source, variantId, restoreQuantity });
+  }
+
+  if (input.preflightOnly) {
+    return {
+      ok: true,
+      preflightOnly: true,
+      restoredPhysicalQuantity,
+      freshnessProtectedQuantity,
+      reactivatedReservations: payloadRows.length,
+    };
   }
 
   const payload = JSON.stringify(payloadRows);
