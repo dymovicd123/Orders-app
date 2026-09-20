@@ -133,7 +133,7 @@ const empty = mount(async () => json({ ok: true, count: 0, items: [] }))
 await empty.flush(); assert.equal(empty.completed(), 0); assert.ok(empty.text().includes('Отправка не продолжена'))
 const compoundContext = { ...ambiguous, product: { id: 3, name: 'ДВОЙКА', genderScope: 'unisex' }, canLeaveGenderUnknown: true, facts: { ...facts, gender: '' } }
 const b = mount(resolveFixture([{ ...sourceItem, productName: 'ДУБАЙСКИЙ ВЕЛЮР — ДВОЙКА', gender: '' }], compoundContext))
-await b.flush(); assert.ok(b.text().includes('Что означает часть названия')); await b.click('Это материал')
+await b.flush(); assert.ok(b.text().includes('Что означает часть названия')); assert.ok(b.button('Длина')); assert.ok(b.button('Размер')); await b.click('Материал')
 assert.ok(b.text().includes('Материал: ДУБАЙСКИЙ ВЕЛЮР ✓'))
 assert.ok(b.text().includes('Уточним: материал')); assert.ok(b.text().includes('В заказе указано')); assert.equal(b.count('h4'), 1)
 assert.ok(b.button('Выбрать из справочника')); await b.click('Это новый материал'); assert.ok(b.text().includes('Добавить новый материал')); await b.click('Добавить и продолжить'); assert.ok(b.text().includes('Не указан пол'))
