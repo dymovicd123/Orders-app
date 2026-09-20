@@ -3296,7 +3296,10 @@ function App() {
       else applyWorkshopTaskStatusChange(task, 'done', result.previousStatus || task.status)
       if (result.order) upsertOrderInState(result.order)
       else if (result.refreshRequired) void loadDashboard(false)
-      setMessage(`Позиция цеха по заказу ${task.externalOrderId} отмечена как готовая.`)
+      const orderAlreadySent = String(result.order?.shipping_status || task.shippingStatus || '').trim().toLowerCase() === 'sent'
+      setMessage(orderAlreadySent
+        ? `Позиция цеха по заказу ${task.externalOrderId} готова. Сам заказ уже был отмечен отправленным ранее.`
+        : `Позиция цеха по заказу ${task.externalOrderId} готова. Это не отправка клиенту: заказ остаётся «Не отправлен».`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка обновления цеха')
     } finally {
@@ -5963,7 +5966,7 @@ function removeDebtPayment(index: number) {
     const projection = await getOrderOperationalProjection(order)
     if (savingOrder || !projection.canCorrectShipping) return
     const confirmed = window.confirm(
-      `Исправить ошибочную отправку заказа ${order.external_id}?\n\nПодтверждайте только если товар ФАКТИЧЕСКИ НЕ передавался клиенту. Система вернёт проведённые складские позиции в резерв заказа и восстановит только тот физический остаток, который действительно был списан.\n\nЕсли клиент получал товар, а затем вернул его — используйте «Возврат», а не это исправление.`
+      `Снять ошибочную отметку «Отправлен» у заказа ${order.external_id}?\n\nПодтверждайте только если товар ФАКТИЧЕСКИ НЕ передавался клиенту. Система вернёт складские позиции в резерв заказа и восстановит только тот физический остаток, который действительно был списан.\n\nЭто действие не исправляет возврат или обмен. Если товар реально передавался клиенту, используйте соответствующую операцию возврата/обмена.`
     )
     if (!confirmed) return
 
@@ -5988,17 +5991,17 @@ function removeDebtPayment(index: number) {
         restoredPhysicalQuantity?: number
         freshnessProtectedQuantity?: number
         reactivatedReservations?: number
-      }>(response, 'Исправление отправки')
-      if (!response.ok) throw new Error(result.message || 'Не удалось исправить ошибочную отправку.')
+      }>(response, 'Снятие ошибочной отметки отправки')
+      if (!response.ok) throw new Error(result.message || 'Не удалось снять ошибочную отметку «Отправлен».')
       completeCriticalRequest(criticalKey, critical.requestId)
       if (result.order) upsertOrderInState(result.order)
       invalidateInventoryStockCaches(true)
       setMessage(result.alreadyCorrected
         ? `Заказ ${order.external_id} уже находится в состоянии «не отправлено».`
-        : `Ошибочная отправка заказа ${order.external_id} исправлена. Позиции снова зарезервированы; физический остаток восстановлен только там, где не было более новой сверки.`)
+        : `У заказа ${order.external_id} снята ошибочная отметка «Отправлен». Позиции снова зарезервированы; физический остаток восстановлен только там, где не было более новой сверки.`)
       void loadDashboard()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось исправить ошибочную отправку.')
+      setError(err instanceof Error ? err.message : 'Не удалось снять ошибочную отметку «Отправлен».')
     } finally {
       setSavingOrder(false)
     }
