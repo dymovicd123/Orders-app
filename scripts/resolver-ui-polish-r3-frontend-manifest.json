@@ -13,15 +13,15 @@
     "src/features/orders/OrderCatalogResolutionModal.tsx": {
       "beforeGitBlob": "b58e4db21e19e01b15b7254fbc77e9b22a03dd08",
       "beforeLines": 390,
-      "afterGitBlob": "44c98b01255f572a30b2b3557ecfcdd3d5983e0e",
-      "afterLines": 382,
+      "afterGitBlob": "c41d84db1810fa646be698ede7e7c873ffa0df15",
+      "afterLines": 393,
       "beforeFixture": "scripts/fixtures/resolver-ui-polish-r3/OrderCatalogResolutionModal.tsx"
     },
     "src/features/orders/OrderCatalogResolutionModal.css": {
       "beforeGitBlob": "2c3652fbf52871dc4843375b2ffbb0a0f8a7bdf0",
       "beforeLines": 57,
-      "afterGitBlob": "2bd20b0acd9ac69019a41c73cee153aef2590db5",
-      "afterLines": 291,
+      "afterGitBlob": "dfd6e782f85ca92d3828ddfb713b82bf2d79486e",
+      "afterLines": 563,
       "beforeFixture": "scripts/fixtures/resolver-ui-polish-r3/OrderCatalogResolutionModal.css"
     },
     "src/features/sections/OrdersTableSection.tsx": {
