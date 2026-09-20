@@ -34,9 +34,9 @@ try {
   check(app.includes('async function correctMistakenOrderShipping(order: OrderRecord)'), 'frontend correction handler missing')
   check(app.includes("physicalOutcome: 'not_issued' as const"), 'frontend correction does not explicitly confirm physical outcome')
   check(app.includes('/shipping/correct'), 'frontend does not use dedicated correction endpoint')
-  check(table.includes('Снять ошибочную отметку «Отправлен»'), 'sent-order correction action not visible in Orders table')
-  check(table.includes('Обмен останется проведённым') && table.includes('активная обменённая позиция'), 'completed exchange is not explained as current order truth during false-shipping correction')
-  check(table.includes('После проведённого возврата товара сначала исправьте сам возврат'), 'standalone item return blocker is not explained')
+  check(table.includes('Снять «Отправлен»'), 'sent-order correction action not visible in Orders table')
+  check(!table.includes('активная обменённая позиция'), 'ordinary Orders UI exposes exchange implementation detail')
+  check(table.includes('Сначала исправьте возврат товара'), 'standalone item return blocker is not explained')
   check(table.includes("order.shipping_status === 'sent'"), 'correction action is not scoped to sent orders')
 
   console.log('Operational Autonomy A4 handover correction checks passed.')
