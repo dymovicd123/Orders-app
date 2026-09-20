@@ -5966,7 +5966,7 @@ function removeDebtPayment(index: number) {
     const projection = await getOrderOperationalProjection(order)
     if (savingOrder || !projection.canCorrectShipping) return
     const confirmed = window.confirm(
-      `Снять ошибочную отметку «Отправлен» у заказа ${order.external_id}?\n\nПодтверждайте только если ТЕКУЩИЙ товар фактически НЕ передавался клиенту. Система вернёт текущие складские позиции в резерв и восстановит только безопасно определяемый физический остаток.\n\nЕсли по заказу был обмен, сам обмен НЕ отменяется: текущим товаром считается активная обменённая позиция, и она снова будет ожидать выдачи. Отдельный возврат товара исправляется через операцию возврата.`
+      `Снять отметку «Отправлен» у заказа ${order.external_id}?\n\nПодтвердите только если текущий товар клиенту не передавался. Заказ вернётся в состояние «Не отправлен». Если был обмен, он сохранится.`
     )
     if (!confirmed) return
 
@@ -6000,10 +6000,10 @@ function removeDebtPayment(index: number) {
       if (result.order) upsertOrderInState(result.order)
       invalidateInventoryStockCaches(true)
       setMessage(result.alreadyCorrected
-        ? `Заказ ${order.external_id} уже находится в состоянии «не отправлено».`
+        ? `Заказ ${order.external_id} уже отмечен как «Не отправлен».`
         : result.exchangeCurrentTruth
-          ? `У заказа ${order.external_id} снята ошибочная отметка «Отправлен». Обмен сохранён; текущая обменённая позиция снова ожидает выдачи. Позиции зарезервированы, а более свежая физическая сверка не переписывалась.`
-          : `У заказа ${order.external_id} снята ошибочная отметка «Отправлен». Позиции снова зарезервированы; физический остаток восстановлен только там, где не было более новой сверки.`)
+          ? `Заказ ${order.external_id} снова «Не отправлен». Обмен сохранён.`
+          : `Заказ ${order.external_id} снова «Не отправлен».`)
       void loadDashboard()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось снять ошибочную отметку «Отправлен».')
