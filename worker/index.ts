@@ -19,12 +19,12 @@ import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileK
 import { createManualOrderPaymentCritical } from './domains/money.ts'
 import { OrderInputValidationError } from './domains/order-core.ts'
 import { deleteOrderSafely } from './domains/order-delete.ts'
-import { activeStocktakeSessionForHandover, confirmItemStillHere, correctMistakenOrderHandover, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, getOrderStockHandoverState, normalizeShipmentStockConfirmations, OrderStockShortageError, orderShipmentInventoryBlockerMessage, orderWorkshopPendingForShipping, reconcileIssuedBeforeCheckpoint } from './domains/order-reservations.ts'
+import { activeStocktakeSessionForHandover, confirmItemStillHere, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, getOrderStockHandoverState, normalizeShipmentStockConfirmations, OrderStockShortageError, orderShipmentInventoryBlockerMessage, orderWorkshopPendingForShipping, reconcileIssuedBeforeCheckpoint } from './domains/order-reservations.ts'
 import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
 import { createReferenceValue, deleteReferenceValue, getReferenceData, getReferenceValueCounts, listReferenceValues, normalizeReferenceKind, updateReferenceValue } from './domains/references.ts'
-import { cancelExchange, cancelReturn, correctExchangeFinancials, createExchange, createReturn, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
+import { cancelExchange, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createReturn, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { continueDatabaseStorageCleanup, getDatabaseStorageStatus, startDatabaseStorageCleanup, updateDatabaseStorageCapacity } from './domains/storage.ts'
 import { buildStockResolutionRequired } from './domains/stock-resolution.ts'
 import type { CallCentreInput, DepartmentPlanInput, EmployeeInput, LeadInput, PlanInput, TimesheetInput } from './domains/team.ts'
@@ -1166,7 +1166,7 @@ export default {
         const id = toInt(orderShippingCorrectionMatch[1], 0);
         const input = await readJson<{ physicalOutcome?: unknown }>(request);
         try {
-          const result = await correctMistakenOrderHandover(env.DB, id, {
+          const result = await correctMistakenOrderHandoverWithCurrentExchange(env.DB, id, {
             physicalOutcome: input.physicalOutcome,
             actor: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
           });
