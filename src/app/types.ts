@@ -1107,6 +1107,10 @@ export type InventoryHistoryResponse = {
     transferComment?: string | null
     transferItemCount?: number
     transferTotalQuantity?: number
+    transferLineQuantity?: number
+    confirmedOperationQuantity?: number
+    explainedQuantity?: number
+    unexplainedQuantity?: number
   }>
 }
 
