@@ -1423,7 +1423,7 @@ export default {
       }
 
       if (url.pathname === '/api/returned-items/receive' && request.method === 'POST') {
-        const input = await readJson<{ requestId?: string; operationType?: 'return' | 'exchange'; operationId?: number; operationItemId?: number; destination?: 'warehouse' | 'boutique' | 'no_stock' }>(request);
+        const input = await readJson<{ requestId?: string; operationType?: 'return' | 'exchange'; operationId?: number; operationItemId?: number; destination?: 'warehouse' | 'boutique' | 'no_stock'; freshnessDecision?: 'already_counted' | 'arrived_after_check' }>(request);
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
         try {
           return json(await receiveReturnedItem(env.DB, input));
