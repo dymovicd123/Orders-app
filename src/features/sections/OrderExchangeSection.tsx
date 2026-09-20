@@ -240,7 +240,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                             <label className="intake-queue-destination">
                               <span>Куда принять</span>
                               <select
-                                value={receiptDestinations[receiptKey] || 'warehouse'}
+                                value={receiptDestinations[receiptKey] || (entry.oldIsWorkshop ? 'no_stock' : 'warehouse')}
                                 onChange={(event) => setReceiptDestinations((current) => ({ ...current, [receiptKey]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
                                 disabled={exchangeBusy}
                               >
@@ -257,7 +257,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                 operationType: 'exchange',
                                 operationId: entry.id,
                                 operationItemId: entry.oldOperationItemId,
-                                destination: receiptDestinations[receiptKey] || 'warehouse',
+                                destination: receiptDestinations[receiptKey] || (entry.oldIsWorkshop ? 'no_stock' : 'warehouse'),
                                 productName: entry.oldProductName,
                                 externalId: entry.externalId,
                               })}
