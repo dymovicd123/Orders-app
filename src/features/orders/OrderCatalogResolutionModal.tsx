@@ -345,11 +345,22 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
     }
   }}>
-    <header><div><h3 id="resolution-title">Уточнить товар</h3><small>{order.external_id || `Заказ #${order.id}`}{progress.total > 1 ? ` · Товар ${progress.total - progress.remaining + 1} из ${progress.total}` : ''}</small></div><button type="button" className="secondary-button" disabled={resolving} onClick={onClose}>Закрыть</button></header>
-    {item && !minimalFieldQuestion ? <section className="resolution-source"><small>В заказе</small><strong>{item.productName}</strong><span>{[item.gender, item.material, normalize(item.length) !== 'СТАНДАРТ' ? item.length : '', context?.isWorkshop ? '' : item.color || 'Цвет не указан', context?.isWorkshop ? '' : item.size || (draft?.category === 'child' ? 'Возраст не указан' : 'Размер не указан')].filter(Boolean).join(' · ')}</span></section> : null}
-    {draft && context && !minimalFieldQuestion ? <section className="resolution-understanding"><small className="resolution-eyebrow">{draft.createProduct ? 'Новый товар' : context.product ? 'В каталоге' : 'Товар'}</small><strong>{draft.createProduct ? draft.productName : context.product ? context.product.name : 'Не выбран'}</strong>
-      {!context.isWorkshop ? <p>{fields.filter(field => clean(draft[field]) && (field !== 'length' || normalize(draft.length) !== 'СТАНДАРТ')).map(field => <span key={field}>{fieldLabel(field, draft.category)}: {displayFact(field, draft[field])}{confirmed[field] ? ' ✓' : ''}</span>)}</p> : <p>Для Цеха нужно уточнить только сам товар.</p>}
-    </section> : null}
+    <header>
+      <div className="resolution-title-block">
+        <div className="resolution-title-row">
+          <h3 id="resolution-title">Уточнить товар</h3>
+          {progress.total > 1 ? <span className="resolution-progress">Товар {progress.total - progress.remaining + 1} из {progress.total}</span> : null}
+        </div>
+        <small>{order.external_id || `Заказ #${order.id}`}</small>
+      </div>
+      <button type="button" className="secondary-button" disabled={resolving} onClick={onClose}>Закрыть</button>
+    </header>
+    {!minimalFieldQuestion ? <div className="resolution-context">
+      {item ? <section className="resolution-source"><small>В заказе</small><strong>{item.productName}</strong><span>{[item.gender, item.material, normalize(item.length) !== 'СТАНДАРТ' ? item.length : '', context?.isWorkshop ? '' : item.color || 'Цвет не указан', context?.isWorkshop ? '' : item.size || (draft?.category === 'child' ? 'Возраст не указан' : 'Размер не указан')].filter(Boolean).join(' · ')}</span></section> : null}
+      {draft && context ? <section className="resolution-understanding"><small className="resolution-eyebrow">{draft.createProduct ? 'Новый товар' : context.product ? 'В каталоге' : 'Товар'}</small><strong>{draft.createProduct ? draft.productName : context.product ? context.product.name : 'Не выбран'}</strong>
+        {!context.isWorkshop ? <p>{fields.filter(field => clean(draft[field]) && (field !== 'length' || normalize(draft.length) !== 'СТАНДАРТ')).map(field => <span key={field}>{fieldLabel(field, draft.category)}: {displayFact(field, draft[field])}{confirmed[field] ? ' ✓' : ''}</span>)}</p> : <p>Для Цеха нужно уточнить только сам товар.</p>}
+      </section> : null}
+    </div> : null}
     {!minimalFieldQuestion && notice ? <div role="status" aria-live="polite" className="resolution-feedback">{notice}</div> : null}
     {error ? <div role="alert" className="resolution-error"><p>{error}</p><button type="button" className="secondary-button" disabled={busy || resolving} onClick={() => void retry()}>{needsRecheck ? 'Проверить оставшиеся позиции' : 'Повторить проверку'}</button></div> : null}
     {busy ? <p role="status">Проверяю товар…</p> : null}
