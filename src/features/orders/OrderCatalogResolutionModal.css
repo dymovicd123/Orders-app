@@ -24,6 +24,19 @@
 .order-catalog-resolution-modal .primary-button { background: #2459a9; border: 1px solid #2459a9; color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 650; }
 .resolution-question > .secondary-button { margin-left: 8px; }
 .resolution-question form small { display: block; margin-top: 6px; }
+.resolution-inline-actions, .resolution-new-value-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; }
+.resolution-admin-required { margin-top: 12px; padding: 12px 14px; border: 1px solid #d5deea; border-radius: 10px; background: #fff; }
+.resolution-admin-required p { margin: 0 0 8px; }
+.resolution-suggestion { margin: 10px 0 14px; padding: 12px 14px; border: 1px solid #b9cce7; border-radius: 10px; background: #eef5ff; }
+.resolution-suggestion > small { display: block; margin-bottom: 8px; font-weight: 650; color: #345a91; }
+.resolution-segment-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+.resolution-segment-list > span { display: grid; gap: 2px; min-width: 120px; padding: 9px 11px; border: 1px solid #cbd6e4; border-radius: 9px; background: #fff; }
+.resolution-segment-list > span small { font-size: 11px; }
+.resolution-combobox { margin: 0 0 12px; padding: 10px; border: 1px solid #cbd6e4; border-radius: 10px; background: #fff; }
+.resolution-combobox > small { display: block; margin-bottom: 8px; }
+.resolution-combobox-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; max-height: 220px; overflow-y: auto; }
+.resolution-combobox-list button { width: 100%; min-height: 34px; padding: 7px 9px; border: 1px solid #d5deea; border-radius: 7px; background: #f8fafc; color: #203047; text-align: left; cursor: pointer; }
+.resolution-combobox-list button:hover { background: #eef3f9; }
 .resolution-exception { margin-top: 14px; font-size: 13px; }
 .resolution-exception button { font-size: 13px; }
 .resolution-link { border: 0; padding: 8px 0; background: transparent; color: #345a91; text-decoration: underline; cursor: pointer; font: inherit; font-size: 13px; }
@@ -36,4 +49,4 @@
 .resolution-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 12px 0; }
 .resolution-guard { display: block; margin-top: 10px; font-size: 11px; }
 .order-catalog-resolution-modal button:focus-visible, .order-catalog-resolution-modal input:focus-visible, .order-catalog-resolution-modal select:focus-visible { outline: 2px solid #2459a9; outline-offset: 3px; }
-@media (max-width: 640px) { .order-catalog-resolution-modal { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 16px; } .order-catalog-resolution-modal h3 { font-size: 19px; } .resolution-question { padding: 14px; } .resolution-fields { grid-template-columns: 1fr; } .resolution-choices { flex-direction: column; align-items: stretch; } .resolution-question > .secondary-button { margin: 8px 0 0; } }
+@media (max-width: 640px) { .order-catalog-resolution-modal { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 16px; } .order-catalog-resolution-modal h3 { font-size: 19px; } .resolution-question { padding: 14px; } .resolution-fields { grid-template-columns: 1fr; } .resolution-choices, .resolution-inline-actions, .resolution-new-value-actions { flex-direction: column; align-items: stretch; } .resolution-combobox-list { grid-template-columns: 1fr; } .resolution-question > .secondary-button { margin: 8px 0 0; } }
