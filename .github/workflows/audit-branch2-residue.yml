@@ -27,6 +27,14 @@ jobs:
             local sql="$1"
             curl --fail-with-body -sS -X POST               -H "Authorization: Bearer $CF_API_TOKEN"               -H "Content-Type: application/json"               "$CF_API/accounts/$CF_ACCOUNT_ID/d1/database/$db/query"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')" | jq -c '.result[]?.results // []'
           }
+          echo '=== B2 ALL TEST-LIKE ORDERS ==='
+          q "$B2_DB_ID" "SELECT id,external_id,order_date,manager_id,shipping_status,order_status,comment,created_at,updated_at FROM orders WHERE external_id LIKE 'TEST-%' OR external_id LIKE 'RES-%' OR external_id LIKE 'AUTO-RES-%' OR UPPER(COALESCE(comment,'')) LIKE '%TEST%' OR UPPER(COALESCE(comment,'')) LIKE '%ТЕСТ%' ORDER BY id"
+          echo '=== B2 REFERENCES TO VARIANTS 626-635 ==='
+          q "$B2_DB_ID" "SELECT 'order_items' AS src,COUNT(*) AS cnt FROM order_items WHERE variant_id BETWEEN 626 AND 635 UNION ALL SELECT 'inventory_stock',COUNT(*) FROM inventory_stock WHERE variant_id BETWEEN 626 AND 635 UNION ALL SELECT 'inventory_movements',COUNT(*) FROM inventory_movements WHERE variant_id BETWEEN 626 AND 635 UNION ALL SELECT 'inventory_reservations',COUNT(*) FROM inventory_reservations WHERE variant_id BETWEEN 626 AND 635 UNION ALL SELECT 'inventory_lifecycle_events',COUNT(*) FROM inventory_lifecycle_events WHERE variant_id BETWEEN 626 AND 635 UNION ALL SELECT 'inventory_operation_evidence',COUNT(*) FROM inventory_operation_evidence WHERE variant_id BETWEEN 626 AND 635 UNION ALL SELECT 'inventory_stock_checks',COUNT(*) FROM inventory_stock_checks WHERE variant_id BETWEEN 626 AND 635 UNION ALL SELECT 'inventory_stocktake_items',COUNT(*) FROM inventory_stocktake_items WHERE variant_id BETWEEN 626 AND 635 UNION ALL SELECT 'inventory_transfer_items',COUNT(*) FROM inventory_transfer_items WHERE variant_id BETWEEN 626 AND 635 UNION ALL SELECT 'workshop_tasks',COUNT(*) FROM workshop_tasks WHERE variant_id BETWEEN 626 AND 635"
+          echo '=== B2 ORDER ITEMS VARIANTS 626-635 ==='
+          q "$B2_DB_ID" "SELECT o.id AS order_id,o.external_id,o.comment,oi.id AS item_id,oi.variant_id,oi.product_id,oi.product_name_snapshot,oi.created_at FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.variant_id BETWEEN 626 AND 635 ORDER BY o.id,oi.id"
+          echo '=== B2 MOVEMENTS VARIANTS 626-635 ==='
+          q "$B2_DB_ID" "SELECT id,inventory_source,movement_type,product_id,variant_id,quantity_delta,quantity_after,reference_type,reference_id,comment,created_at FROM inventory_movements WHERE variant_id BETWEEN 626 AND 635 ORDER BY id"
           for DB in PROD B2; do
             if [[ "$DB" == "PROD" ]]; then ID="$PROD_DB_ID"; else ID="$B2_DB_ID"; fi
             echo "=== $DB VARIANTS >= 626 ==="
