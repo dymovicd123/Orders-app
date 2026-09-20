@@ -225,9 +225,17 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                         return (
                           <div className="intake-queue-row" key={receiptKey}>
                             <div className="intake-queue-item">
-                              <strong>{entry.oldProductName} × {entry.oldQuantity}</strong>
-                              <span>{entry.externalId} · {entry.customer || 'Клиент не указан'} · {entry.exchangeDate || 'Без даты'}</span>
-                              <small>{formatHistoryCharacteristics(entry, 'old')}</small>
+                              <div className="intake-queue-product-head">
+                                <strong>{entry.oldProductName} × {entry.oldQuantity}</strong>
+                                <span className="intake-queue-operation">Обмен #{entry.id}</span>
+                              </div>
+                              <div className="intake-queue-context">
+                                <div><span>Заказ</span><strong>{entry.externalId}</strong></div>
+                                <div><span>Клиент</span><strong>{entry.customer || 'Не указан'}</strong></div>
+                                <div><span>Менеджер</span><strong>{entry.manager || 'Не указан'}</strong></div>
+                                <div><span>Дата обмена</span><strong>{entry.exchangeDate || 'Не указана'}</strong></div>
+                              </div>
+                              <small className="intake-queue-characteristics">{formatHistoryCharacteristics(entry, 'old')}</small>
                             </div>
                             <label className="intake-queue-destination">
                               <span>Куда принять</span>
