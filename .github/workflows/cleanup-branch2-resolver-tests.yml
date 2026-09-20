@@ -50,15 +50,16 @@ jobs:
           q "SELECT id,input_key,variant_id FROM catalog_input_aliases WHERE id BETWEEN 1 AND 6"
           q "SELECT id,product_id,gender,color,material,length,size_label,created_at FROM catalog_variants WHERE id BETWEEN 626 AND 635 ORDER BY id"
 
-          # Exact IDs audited immediately before cleanup. Keeping this explicit avoids broad deletes.
-          exec_sql "DELETE FROM inventory_movements WHERE id BETWEEN 1 AND 28"
-          exec_sql "DELETE FROM inventory_operation_evidence WHERE id BETWEEN 1 AND 15"
-
           # Remove explicit history rows that would otherwise survive ON DELETE SET NULL.
           exec_sql "DELETE FROM activity_log WHERE order_id IN (SELECT o.id FROM orders o WHERE $TEST_COND) OR (entity_type='order' AND entity_id IN (SELECT o.id FROM orders o WHERE $TEST_COND)) OR external_order_id IN (SELECT o.external_id FROM orders o WHERE $TEST_COND)"
 
-          # Delete test orders. Child order data cascades through FK relations.
+          # Delete test orders first. Their lifecycle rows reference inventory movements,
+          # so cascades must release those foreign keys before movement history is removed.
           exec_sql "DELETE FROM orders WHERE id IN (SELECT o.id FROM orders o WHERE $TEST_COND)"
+
+          # Exact IDs audited immediately before cleanup. Keeping this explicit avoids broad deletes.
+          exec_sql "DELETE FROM inventory_movements WHERE id BETWEEN 1 AND 28"
+          exec_sql "DELETE FROM inventory_operation_evidence WHERE id BETWEEN 1 AND 15"
 
           # Remove stock/evidence created only for the manual test fixtures.
           exec_sql "DELETE FROM inventory_handover_reviews WHERE order_item_id NOT IN (SELECT id FROM order_items)"
