@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+// Astra T4 runtime regression: keep the handover evidence bindings aligned with the SQL placeholders.
 
 const app = fs.readFileSync('src/App.tsx', 'utf8')
 const router = fs.readFileSync('worker/index.ts', 'utf8')
@@ -47,6 +48,8 @@ try {
   check(fulfill.includes("SELECT 'handover:' || ? || ':' || ? || ':' || x.source || ':' || x.variant_id"), 'Phase2C handover evidence key is not item/SKU scoped')
   check(fulfill.includes("x.source, x.variant_id, 'handover'"), 'Phase2C evidence is not classified as handover')
   check(fulfill.includes('${externalId}:item:${handoverOrderItemId}'), 'Phase2C evidence reference does not preserve order-item identity')
+  check(fulfill.includes(").bind(\n        ...payloadChunk,\n        orderId,\n        handoverOrderItemId,"), 'Phase2C handover evidence SQL bindings are misaligned with placeholders')
+  check(!fulfill.includes(").bind(\n        ...payloadChunk,\n        timestamp,\n        orderId,\n        handoverOrderItemId,"), 'Phase2C stale extra evidence binding would fail at runtime')
   check(fulfill.includes("SELECT 'shipping:' || ? || ':' || x.source || ':' || x.variant_id"), 'Phase2C broke Phase2B shipping evidence path')
   check(fulfill.includes('SET quantity = MAX(0, (SELECT x.effective_quantity - x.required'), 'Phase2C tracked Physical can go below zero')
   check(!/stockConfirmationOperation === 'handover'[\s\S]{0,1800}inventory_stock_checks/.test(fulfill), 'Phase2C handover possession confirmation is being stored as an exact stock check')
