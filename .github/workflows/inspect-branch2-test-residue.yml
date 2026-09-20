@@ -25,6 +25,8 @@ jobs:
             local sql="$1"
             curl --fail-with-body -sS -X POST               -H "Authorization: Bearer $CF_API_TOKEN"               -H "Content-Type: application/json"               "$CF_API/accounts/$CF_ACCOUNT_ID/d1/database/$DB_ID/query"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')" | jq -c '.result[]?.results // []'
           }
+          echo '=== ORDER FK TABLES ==='
+          q "SELECT name,sql FROM sqlite_master WHERE type='table' AND UPPER(sql) LIKE '%REFERENCES ORDERS%' ORDER BY name"
           echo '=== TEST ORDERS ==='
           q "SELECT id,external_id,order_date,shipping_status,workshop_status,order_status,comment,created_at,updated_at FROM orders WHERE external_id LIKE 'TEST-%' OR external_id LIKE 'RES-%' OR external_id LIKE 'AUTO-RES-%' ORDER BY id"
           echo '=== TEST PRODUCTS ==='
