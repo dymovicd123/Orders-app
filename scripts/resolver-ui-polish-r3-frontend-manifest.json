@@ -6,8 +6,8 @@
     "src/App.tsx": {
       "beforeGitBlob": "e4b493d952ad697672ca92eb579cd6e6e8a57375",
       "beforeLines": 7451,
-      "afterGitBlob": "58a88b909eef32f06fdbf815dfbf6f26f0514147",
-      "afterLines": 7490,
+      "afterGitBlob": "9b04f4ede45c97dbeeb078677883b1e0c83cab4c",
+      "afterLines": 7451,
       "beforeFixture": "scripts/fixtures/resolver-ui-polish-r3/App.tsx"
     },
     "src/features/orders/OrderCatalogResolutionModal.tsx": {
