@@ -311,8 +311,26 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                   void correctMistakenOrderShipping(order)
                                 }}
                               >
-                                Исправить отправку
+                                Снять ошибочную отметку «Отправлен»
                               </button>
+                            ) : !retainedOnly && !archived && order.shipping_status === 'sent' && projection.hasCommittedDownstreamOperation ? (
+                              <div className="order-correction-blocked">
+                                <button
+                                  className="secondary compact"
+                                  type="button"
+                                  disabled
+                                  title="После последующей операции нельзя переписывать исходную физическую историю заказа."
+                                >
+                                  Снять ошибочную отметку «Отправлен»
+                                </button>
+                                <small>
+                                  {projection.hasCommittedExchange
+                                    ? 'После проведённого обмена текущая физическая история задаётся обменом. Если выдача нового товара была проведена ошибочно, исправляйте сам обмен, а не исходную отправку.'
+                                    : projection.hasCommittedItemReturn
+                                      ? 'После проведённого возврата текущая физическая история уже включает возврат товара. Исправляйте сам возврат, а не исходную отправку.'
+                                      : 'После проведённой финансовой операции исходную отправку нельзя переписывать отдельно. Сначала нужно исправить или отменить связанную операцию.'}
+                                </small>
+                              </div>
                             ) : null}
                             {projection.canOpenDebt ? (
                               <button
