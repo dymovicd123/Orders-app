@@ -295,7 +295,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         <form onSubmit={event => { event.preventDefault(); approveReference(field, answer) }}>
           <label>Название нового значения<input autoFocus value={answer} onChange={event => setAnswer(event.target.value)} /></label>
           <div className="resolution-inline-actions">
-            <button type="submit" className="primary-button" disabled={!clean(answer)}>Добавить и продолжить</button>
+            <button type="button" className="primary-button" disabled={!clean(answer)} onClick={() => approveReference(field, answer)}>Добавить и продолжить</button>
             <button type="button" className="secondary-button" onClick={() => { setCreatingReference(null); setAnswer('') }}>Назад</button>
           </div>
         </form></>
