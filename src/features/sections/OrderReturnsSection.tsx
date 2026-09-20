@@ -85,6 +85,14 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     if (item.lifecycleStatus === 'applied') return `Получен → ${destination}`
     return `Получен → ${destination}; статус учёта: ${item.lifecycleStatus}`
   }
+  const pendingReturnIntake = returnHistory.flatMap((entry: any) => (
+    entry.operationType === 'order_return' && entry.status !== 'cancelled'
+      ? (entry.items || [])
+          .filter((item: any) => item.physicalTracking && !item.physicalReceivedAt)
+          .map((item: any) => ({ entry, item }))
+      : []
+  ))
+  const loadedPendingReturnQuantity = pendingReturnIntake.reduce((sum: number, row: any) => sum + Math.max(0, Number(row.item.quantity || 0)), 0)
 
   return (
     <article className="card wide sector-orders" id="order-returns" style={{ ...sectorStyle('orders'), ...orderPanelStyle('returns') }}>
@@ -116,10 +124,67 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                 </div>
               </div>
               {Number(returnHistorySummary.pendingPhysicalQuantity || 0) > 0 ? (
-                <div className="history-load-state is-warning">
-                  <strong>Ожидают приёмки: {returnHistorySummary.pendingPhysicalQuantity} шт.</strong>
-                  <span>Когда вещь физически приехала, откройте нужный возврат в истории ниже и нажмите «Принять товар». Если товар не распознан, уточнение откроется сразу.</span>
-                </div>
+                <section className="intake-queue" aria-label="Товары, ожидающие приёмки по возвратам">
+                  <div className="intake-queue-head">
+                    <div>
+                      <span className="intake-queue-kicker">Нужно принять</span>
+                      <h3>Товары едут обратно</h3>
+                      <p>Когда вещь приехала, отметьте это здесь. Искать нужный возврат в истории не нужно.</p>
+                    </div>
+                    <strong className="intake-queue-count">{returnHistorySummary.pendingPhysicalQuantity} шт.</strong>
+                  </div>
+                  {pendingReturnIntake.length ? (
+                    <div className="intake-queue-list">
+                      {pendingReturnIntake.map(({ entry, item }: any) => {
+                        const receiptKey = `return:${entry.id}:${item.id}`
+                        return (
+                          <div className="intake-queue-row" key={receiptKey}>
+                            <div className="intake-queue-item">
+                              <strong>{item.productName} × {item.quantity}</strong>
+                              <span>{entry.externalId} · {entry.customer || 'Клиент не указан'} · {entry.returnDate || 'Без даты'}</span>
+                              <small>{formatReturnItemCharacteristics(item)}</small>
+                            </div>
+                            <label className="intake-queue-destination">
+                              <span>Куда принять</span>
+                              <select
+                                value={receiptDestinations[receiptKey] || 'warehouse'}
+                                onChange={(event) => setReceiptDestinations((current) => ({ ...current, [receiptKey]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
+                                disabled={returnBusy}
+                              >
+                                <option value="warehouse">Склад</option>
+                                <option value="boutique">Бутик</option>
+                                <option value="no_stock">Не добавлять в остаток</option>
+                              </select>
+                            </label>
+                            <button
+                              className="primary intake-queue-action"
+                              type="button"
+                              disabled={returnBusy}
+                              onClick={() => void receiveReturnedItemAction({
+                                operationType: 'return',
+                                operationId: entry.id,
+                                operationItemId: item.id,
+                                destination: receiptDestinations[receiptKey] || 'warehouse',
+                                productName: item.productName,
+                                externalId: entry.externalId,
+                              })}
+                            >
+                              Товар приехал
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="intake-queue-missing">
+                      <span>Счётчик показывает ожидающие вещи, но они не попали в загруженные последние операции.</span>
+                      <button className="secondary compact" type="button" disabled={returnHistoryBusy} onClick={() => void loadReturnHistory({ append: true })}>Загрузить ещё</button>
+                    </div>
+                  )}
+                  {returnHistoryHasMore && loadedPendingReturnQuantity < Number(returnHistorySummary.pendingPhysicalQuantity || 0) ? (
+                    <button className="secondary compact intake-queue-more" type="button" disabled={returnHistoryBusy} onClick={() => void loadReturnHistory({ append: true })}>Показать ещё ожидающие</button>
+                  ) : null}
+                </section>
               ) : null}
     
               {!returnSelectedOrder ? (
@@ -243,7 +308,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                               <tr>
                                 <th>Позиция</th>
                                 <th>Доступно к возврату</th>
-                                <th>Вернуть</th>
+                                <th>Сколько вернуть</th>
                                 <th>Товар физически</th>
                               </tr>
                             </thead>
@@ -256,18 +321,68 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                   </td>
                                   <td>{item.maxQuantity}</td>
                                   <td>
-                                    <FriendlyNumberInput
-                                      type="number"
-                                      min="0"
-                                      max={item.maxQuantity}
-                                      value={item.quantity}
-                                      onChange={(event) => setReturnDraft((current) => {
-                                        const nextItems = current.items.map((entry, itemIndex) => itemIndex === index
-                                          ? { ...entry, quantity: Math.min(entry.maxQuantity, Math.max(0, Number(event.target.value || 0))) }
-                                          : entry)
-                                        return { ...current, items: nextItems }
-                                      })}
-                                    />
+                                    {Number(item.maxQuantity || 0) === 1 ? (
+                                      <button
+                                        type="button"
+                                        className={`return-quantity-choice ${Number(item.quantity || 0) > 0 ? 'is-selected' : ''}`}
+                                        onClick={() => setReturnDraft((current) => ({
+                                          ...current,
+                                          items: current.items.map((entry, itemIndex) => itemIndex === index
+                                            ? { ...entry, quantity: Number(entry.quantity || 0) > 0 ? 0 : 1 }
+                                            : entry),
+                                        }))}
+                                      >
+                                        {Number(item.quantity || 0) > 0 ? '✓ Возвращаем 1 шт.' : 'Вернуть 1 шт.'}
+                                      </button>
+                                    ) : (
+                                      <div className="return-quantity-stepper">
+                                        <button
+                                          type="button"
+                                          aria-label="Уменьшить количество"
+                                          disabled={Number(item.quantity || 0) <= 0}
+                                          onClick={() => setReturnDraft((current) => ({
+                                            ...current,
+                                            items: current.items.map((entry, itemIndex) => itemIndex === index
+                                              ? { ...entry, quantity: Math.max(0, Number(entry.quantity || 0) - 1) }
+                                              : entry),
+                                          }))}
+                                        >−</button>
+                                        <FriendlyNumberInput
+                                          type="number"
+                                          min="0"
+                                          max={item.maxQuantity}
+                                          value={item.quantity}
+                                          onChange={(event) => setReturnDraft((current) => {
+                                            const nextItems = current.items.map((entry, itemIndex) => itemIndex === index
+                                              ? { ...entry, quantity: Math.min(entry.maxQuantity, Math.max(0, Number(event.target.value || 0))) }
+                                              : entry)
+                                            return { ...current, items: nextItems }
+                                          })}
+                                        />
+                                        <button
+                                          type="button"
+                                          aria-label="Увеличить количество"
+                                          disabled={Number(item.quantity || 0) >= Number(item.maxQuantity || 0)}
+                                          onClick={() => setReturnDraft((current) => ({
+                                            ...current,
+                                            items: current.items.map((entry, itemIndex) => itemIndex === index
+                                              ? { ...entry, quantity: Math.min(Number(entry.maxQuantity || 0), Number(entry.quantity || 0) + 1) }
+                                              : entry),
+                                          }))}
+                                        >+</button>
+                                        <button
+                                          type="button"
+                                          className="return-quantity-all"
+                                          disabled={Number(item.quantity || 0) === Number(item.maxQuantity || 0)}
+                                          onClick={() => setReturnDraft((current) => ({
+                                            ...current,
+                                            items: current.items.map((entry, itemIndex) => itemIndex === index
+                                              ? { ...entry, quantity: Number(entry.maxQuantity || 0) }
+                                              : entry),
+                                          }))}
+                                        >Все {item.maxQuantity}</button>
+                                      </div>
+                                    )}
                                   </td>
                                   <td>
                                     <select
