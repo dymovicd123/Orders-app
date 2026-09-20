@@ -35,6 +35,12 @@ jobs:
           q "SELECT id,name,category,gender_scope,is_active,created_at,updated_at FROM catalog_products WHERE UPPER(name) LIKE '%TEST%' OR UPPER(name) LIKE '%ТЕСТ%' OR UPPER(name) LIKE '%МУСОР%' OR UPPER(name) LIKE '%ЛЮКС%' ORDER BY id"
           echo '=== SUSPICIOUS REFERENCES ==='
           q "SELECT id,kind,value,is_active,sort_order,created_at,updated_at FROM reference_values WHERE UPPER(value) LIKE '%TEST%' OR UPPER(value) LIKE '%ТЕСТ%' OR UPPER(value) LIKE '%МУСОР%' OR UPPER(value) LIKE '%ВЕЛЮРР%' OR UPPER(value) LIKE '%ЛЮКС%' ORDER BY id"
+          echo '=== ALL PRODUCT ALIASES ==='
+          q "SELECT id,alias_key,raw_value,product_id,created_at,updated_at FROM catalog_product_aliases ORDER BY id"
+          echo '=== ALL VALUE ALIASES ==='
+          q "SELECT id,kind,alias_key,raw_value,canonical_value,created_at,updated_at FROM catalog_value_aliases ORDER BY id"
+          echo '=== ALL INPUT ALIASES ==='
+          q "SELECT id,input_key,variant_id,created_at,updated_at FROM catalog_input_aliases ORDER BY id"
           echo '=== PRODUCT ALIASES ==='
           q "SELECT id,alias_key,raw_value,product_id,created_at,updated_at FROM catalog_product_aliases WHERE UPPER(raw_value) LIKE '%TEST%' OR UPPER(raw_value) LIKE '%ТЕСТ%' OR UPPER(raw_value) LIKE '%МУСОР%' OR UPPER(raw_value) LIKE '%ШПАН%' OR UPPER(raw_value) LIKE '%ДУБАЙ%' ORDER BY id"
           echo '=== VALUE ALIASES ==='
