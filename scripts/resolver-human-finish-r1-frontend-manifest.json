@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "revision": "resolver-human-finish-r1",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "8950a8a7eb1d368eb3c531576a5e4ddc03bd4c21",
+      "afterGitBlob": "77cdf74532ee0468c6d22c14331bff2171ee9c25",
+      "beforeLines": 7443,
+      "afterLines": 7446,
+      "replacements": [
+        {
+          "beforeBlock": "  async function markWorkshopTaskDone(task: WorkshopTaskRecord) {\n    setWorkshopBusy(true)\n    setError(null)\n    setMessage(null)\n    try {\n      const response = await apiFetch(`/api/workshop/${task.id}`, {\n        method: 'PATCH',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ status: 'done', orderItemId: task.orderItemId || null }),\n      })\n      const result = await readJsonResponse<{ ok?: boolean; message?: string; changed?: boolean; previousStatus?: string; order?: OrderRecord; refreshRequired?: boolean }>(response, 'Цех')\n      if (!response.ok) {\n        throw new Error(result.message || 'Не удалось отметить позицию готовой.')\n      }\n      if (result.changed === false) await loadWorkshopData(workshopFilters, { force: true, refreshCounts: true })\n      else applyWorkshopTaskStatusChange(task, 'done', result.previousStatus || task.status)\n      if (result.order) upsertOrderInState(result.order)\n      else if (result.refreshRequired) void loadDashboard(false)\n      setMessage(`Позиция цеха по заказу ${task.externalOrderId} отмечена как готовая.`)\n    } catch (err) {\n      setError(err instanceof Error ? err.message : 'Ошибка обновления цеха')\n    } finally {\n      setWorkshopBusy(false)\n    }\n  }\n\n",
+          "afterBlock": "  async function markWorkshopTaskDone(task: WorkshopTaskRecord) {\n    setWorkshopBusy(true)\n    setError(null)\n    setMessage(null)\n    try {\n      const response = await apiFetch(`/api/workshop/${task.id}`, {\n        method: 'PATCH',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ status: 'done', orderItemId: task.orderItemId || null }),\n      })\n      const result = await readJsonResponse<{ ok?: boolean; message?: string; changed?: boolean; previousStatus?: string; order?: OrderRecord; refreshRequired?: boolean }>(response, 'Цех')\n      if (!response.ok) {\n        throw new Error(result.message || 'Не удалось отметить позицию готовой.')\n      }\n      if (result.changed === false) await loadWorkshopData(workshopFilters, { force: true, refreshCounts: true })\n      else applyWorkshopTaskStatusChange(task, 'done', result.previousStatus || task.status)\n      if (result.order) upsertOrderInState(result.order)\n      else if (result.refreshRequired) void loadDashboard(false)\n      const orderAlreadySent = String(result.order?.shipping_status || task.shippingStatus || '').trim().toLowerCase() === 'sent'\n      setMessage(orderAlreadySent\n        ? `Позиция цеха по заказу ${task.externalOrderId} готова. Сам заказ уже был отмечен отправленным ранее.`\n        : `Позиция цеха по заказу ${task.externalOrderId} готова. Это не отправка клиенту: заказ остаётся «Не отправлен».`)\n    } catch (err) {\n      setError(err instanceof Error ? err.message : 'Ошибка обновления цеха')\n    } finally {\n      setWorkshopBusy(false)\n    }\n  }\n\n"
+        },
+        {
+          "beforeBlock": "  async function correctMistakenOrderShipping(order: OrderRecord) {\n    const projection = await getOrderOperationalProjection(order)\n    if (savingOrder || !projection.canCorrectShipping) return\n    const confirmed = window.confirm(\n      `Исправить ошибочную отправку заказа ${order.external_id}?\\n\\nПодтверждайте только если товар ФАКТИЧЕСКИ НЕ передавался клиенту. Система вернёт проведённые складские позиции в резерв заказа и восстановит только тот физический остаток, который действительно был списан.\\n\\nЕсли клиент получал товар, а затем вернул его — используйте «Возврат», а не это исправление.`\n    )\n    if (!confirmed) return\n\n    setSavingOrder(true)\n    setError(null)\n    setMessage(null)\n    try {\n      const payload = { physicalOutcome: 'not_issued' as const }\n      const criticalKey = `order-handover-correction:${order.id}`\n      const critical = prepareCriticalRequest(criticalKey, payload)\n      const response = await apiFetch(`/api/orders/${order.id}/shipping/correct`, {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },\n        body: JSON.stringify(critical.payload),\n      })\n      const result = await readJsonResponse<{\n        ok?: boolean\n        message?: string\n        order?: OrderRecord\n        refreshRequired?: boolean\n        alreadyCorrected?: boolean\n        restoredPhysicalQuantity?: number\n        freshnessProtectedQuantity?: number\n        reactivatedReservations?: number\n      }>(response, 'Исправление отправки')\n      if (!response.ok) throw new Error(result.message || 'Не удалось исправить ошибочную отправку.')\n      completeCriticalRequest(criticalKey, critical.requestId)\n      if (result.order) upsertOrderInState(result.order)\n      invalidateInventoryStockCaches(true)\n      setMessage(result.alreadyCorrected\n        ? `Заказ ${order.external_id} уже находится в состоянии «не отправлено».`\n        : `Ошибочная отправка заказа ${order.external_id} исправлена. Позиции снова зарезервированы; физический остаток восстановлен только там, где не было более новой сверки.`)\n      void loadDashboard()\n    } catch (err) {\n      setError(err instanceof Error ? err.message : 'Не удалось исправить ошибочную отправку.')\n    } finally {\n      setSavingOrder(false)\n    }\n  }\n\n",
+          "afterBlock": "  async function correctMistakenOrderShipping(order: OrderRecord) {\n    const projection = await getOrderOperationalProjection(order)\n    if (savingOrder || !projection.canCorrectShipping) return\n    const confirmed = window.confirm(\n      `Снять ошибочную отметку «Отправлен» у заказа ${order.external_id}?\\n\\nПодтверждайте только если товар ФАКТИЧЕСКИ НЕ передавался клиенту. Система вернёт складские позиции в резерв заказа и восстановит только тот физический остаток, который действительно был списан.\\n\\nЭто действие не исправляет возврат или обмен. Если товар реально передавался клиенту, используйте соответствующую операцию возврата/обмена.`\n    )\n    if (!confirmed) return\n\n    setSavingOrder(true)\n    setError(null)\n    setMessage(null)\n    try {\n      const payload = { physicalOutcome: 'not_issued' as const }\n      const criticalKey = `order-handover-correction:${order.id}`\n      const critical = prepareCriticalRequest(criticalKey, payload)\n      const response = await apiFetch(`/api/orders/${order.id}/shipping/correct`, {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },\n        body: JSON.stringify(critical.payload),\n      })\n      const result = await readJsonResponse<{\n        ok?: boolean\n        message?: string\n        order?: OrderRecord\n        refreshRequired?: boolean\n        alreadyCorrected?: boolean\n        restoredPhysicalQuantity?: number\n        freshnessProtectedQuantity?: number\n        reactivatedReservations?: number\n      }>(response, 'Снятие ошибочной отметки отправки')\n      if (!response.ok) throw new Error(result.message || 'Не удалось снять ошибочную отметку «Отправлен».')\n      completeCriticalRequest(criticalKey, critical.requestId)\n      if (result.order) upsertOrderInState(result.order)\n      invalidateInventoryStockCaches(true)\n      setMessage(result.alreadyCorrected\n        ? `Заказ ${order.external_id} уже находится в состоянии «не отправлено».`\n        : `У заказа ${order.external_id} снята ошибочная отметка «Отправлен». Позиции снова зарезервированы; физический остаток восстановлен только там, где не было более новой сверки.`)\n      void loadDashboard()\n    } catch (err) {\n      setError(err instanceof Error ? err.message : 'Не удалось снять ошибочную отметку «Отправлен».')\n    } finally {\n      setSavingOrder(false)\n    }\n  }\n\n"
+        }
+      ]
+    },
+    "src/features/orders/OrderCatalogResolutionModal.tsx": {
+      "beforeGitBlob": "b995a92f4e3bb055e868509290878e7706abaaa0",
+      "afterGitBlob": "8b1534f4c379f97d6083b8b18eb3916fa541de0b",
+      "beforeLines": 275,
+      "afterLines": 368,
+      "beforeFixture": "scripts/fixtures/resolver-human-finish-r1/OrderCatalogResolutionModal.tsx"
+    },
+    "src/features/orders/catalogResolutionFlow.ts": {
+      "beforeGitBlob": "b391ce486601fdacab78919669f17a30e6849f82",
+      "afterGitBlob": "a3d0801137f23c0ddf8a3aaf75eb313146dc2140",
+      "beforeLines": 145,
+      "afterLines": 217,
+      "beforeFixture": "scripts/fixtures/resolver-human-finish-r1/catalogResolutionFlow.ts"
+    },
+    "src/features/orders/OrderCatalogResolutionModal.css": {
+      "beforeGitBlob": "9dab84a9b2693977f4f26b5ef895fa04885715f6",
+      "afterGitBlob": "a06bbdf25851583b0529e07d61dc4dbf960df809",
+      "beforeLines": 40,
+      "afterLines": 53,
+      "beforeFixture": "scripts/fixtures/resolver-human-finish-r1/OrderCatalogResolutionModal.css"
+    },
+    "src/features/sections/WorkshopSection.tsx": {
+      "beforeGitBlob": "e2d0096a0fa73bd225842cbdb8d32cd7a75b6f5b",
+      "afterGitBlob": "d3dc46f1539c43fab3343d82993ab37147851215",
+      "beforeLines": 333,
+      "afterLines": 336,
+      "beforeFixture": "scripts/fixtures/resolver-human-finish-r1/WorkshopSection.tsx"
+    },
+    "src/features/sections/OrdersTableSection.tsx": {
+      "beforeGitBlob": "8ed787107c77a8bfd4de13ca72f29ea26723e72f",
+      "afterGitBlob": "0ac1f220b158f75a68ed3dbedfa099ac8f1a5f8a",
+      "beforeLines": 427,
+      "afterLines": 445,
+      "beforeFixture": "scripts/fixtures/resolver-human-finish-r1/OrdersTableSection.tsx"
+    },
+    "src/styles/90-balanced-operator.css": {
+      "beforeGitBlob": "5b6f6b0851a58b758abe8f79c66c4fdfb3518d1f",
+      "afterGitBlob": "29a4772a53eb66687525a707df8887614e8c46c4",
+      "beforeLines": 485,
+      "afterLines": 502,
+      "beforeFixture": "scripts/fixtures/resolver-human-finish-r1/90-balanced-operator.css"
+    }
+  }
+}
