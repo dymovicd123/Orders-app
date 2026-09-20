@@ -5879,8 +5879,8 @@ function removeDebtPayment(index: number) {
     if (!projection.canShip) {
       setMessage(projection.workshopPending
         ? 'Отправить весь заказ можно после готовности позиций Цеха.'
-        : projection.hasCommittedPhysicalDownstreamOperation
-          ? 'Отправка недоступна: по заказу уже проведён товарный возврат или обмен. Сначала отмените или исправьте эту последующую операцию.'
+        : projection.hasCommittedItemReturn
+          ? 'Отправка недоступна: по текущему товару уже проведён возврат. Сначала исправьте сам возврат.'
           : 'Этот заказ сейчас нельзя отметить как отправленный.')
       return false
     }
