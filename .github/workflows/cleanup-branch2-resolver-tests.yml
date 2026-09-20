@@ -50,9 +50,9 @@ jobs:
           q "SELECT id,input_key,variant_id FROM catalog_input_aliases WHERE id BETWEEN 1 AND 6"
           q "SELECT id,product_id,gender,color,material,length,size_label,created_at FROM catalog_variants WHERE id BETWEEN 626 AND 635 ORDER BY id"
 
-          # Remove movement/evidence rows while test order linkage still exists.
-          exec_sql "DELETE FROM inventory_movements WHERE id IN (SELECT e.movement_id FROM inventory_lifecycle_events e JOIN orders o ON o.id=e.order_id WHERE e.movement_id IS NOT NULL AND $TEST_COND) OR id IN (SELECT e.reversal_movement_id FROM inventory_lifecycle_events e JOIN orders o ON o.id=e.order_id WHERE e.reversal_movement_id IS NOT NULL AND $TEST_COND) OR EXISTS (SELECT 1 FROM orders o WHERE $TEST_COND AND instr(COALESCE(inventory_movements.reference_id,''),o.external_id)>0)"
-          exec_sql "DELETE FROM inventory_operation_evidence WHERE EXISTS (SELECT 1 FROM orders o WHERE $TEST_COND AND instr(COALESCE(inventory_operation_evidence.operation_reference,''),o.external_id)>0)"
+          # Exact IDs audited immediately before cleanup. Keeping this explicit avoids broad deletes.
+          exec_sql "DELETE FROM inventory_movements WHERE id BETWEEN 1 AND 28"
+          exec_sql "DELETE FROM inventory_operation_evidence WHERE id BETWEEN 1 AND 15"
 
           # Remove explicit history rows that would otherwise survive ON DELETE SET NULL.
           exec_sql "DELETE FROM activity_log WHERE order_id IN (SELECT o.id FROM orders o WHERE $TEST_COND) OR (entity_type='order' AND entity_id IN (SELECT o.id FROM orders o WHERE $TEST_COND)) OR external_order_id IN (SELECT o.external_id FROM orders o WHERE $TEST_COND)"
