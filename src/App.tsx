@@ -5991,6 +5991,9 @@ function removeDebtPayment(index: number) {
         restoredPhysicalQuantity?: number
         freshnessProtectedQuantity?: number
         reactivatedReservations?: number
+        exchangeCurrentTruth?: boolean
+        reopenedExchangeItems?: number
+        protectedExchangePhysicalTruth?: number
       }>(response, 'Снятие ошибочной отметки отправки')
       if (!response.ok) throw new Error(result.message || 'Не удалось снять ошибочную отметку «Отправлен».')
       completeCriticalRequest(criticalKey, critical.requestId)
