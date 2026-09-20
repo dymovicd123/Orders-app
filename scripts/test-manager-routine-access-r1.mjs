@@ -20,7 +20,7 @@ const sendAt = orders.indexOf('Отправить клиенту')
 check(sendAt >= 0, 'Send-to-client action missing')
 const sendContext = orders.slice(Math.max(0, sendAt - 900), sendAt + 250)
 check(sendContext.includes('projection.canShip ? ('), 'Ordinary send action is not driven by the shared operational projection')
-check(projection.includes("canShip: mutableWorkingOrder && !hasCommittedPhysicalDownstreamOperation && !sent && !workshopPending"), 'Ordinary send eligibility missing from shared operational projection')
+check(projection.includes("canShip: mutableWorkingOrder && !hasCommittedItemReturn && !sent && !workshopPending"), 'Ordinary send eligibility must follow the current item truth while completed Exchange remains shippable')
 check(!projection.includes('stock_handover_review_needed') || projection.includes('canOpenStockHandover'), 'Historical handover review must not become a final-send blocker')
 check(orders.includes("order.stock_handover_review_needed ? 'Уточнить выдачу' : 'Выдать готовые товары'"), 'Handover review action must remain available')
 
