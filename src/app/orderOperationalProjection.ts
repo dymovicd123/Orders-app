@@ -185,7 +185,7 @@ export function projectOrderOperationalState(
     // return still changes current physical truth and must be corrected in its own domain.
     canCorrectShipping: mutableWorkingOrder && !hasCommittedItemReturn && sent,
     canOpenStockHandover: mutableWorkingOrder
-      && !hasCommittedPhysicalDownstreamOperation
+      && !hasCommittedItemReturn
       && !sent
       && Boolean(order.stock_handover_review_needed || (mixedOrder && workshopPending && order.stock_handover_has_active_items)),
   }
