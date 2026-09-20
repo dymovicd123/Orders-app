@@ -86,14 +86,34 @@ assert.ok(app.includes('Снять ошибочную отметку «Отпр�
 
 const orders = fs.readFileSync('src/features/sections/OrdersTableSection.tsx', 'utf8')
 assert.ok(orders.includes('Снять ошибочную отметку «Отправлен»'))
-assert.ok(orders.includes('После проведённого обмена текущая физическая история задаётся обменом'))
-assert.ok(orders.includes('исправляйте сам обмен, а не исходную отправку'))
-assert.ok(orders.includes('После проведённого возврата текущая физическая история уже включает возврат товара'))
+assert.ok(orders.includes('Обмен останется проведённым'))
+assert.ok(orders.includes('активная обменённая позиция'))
+assert.ok(orders.includes('После проведённого возврата товара сначала исправьте сам возврат'))
 
 const projection = fs.readFileSync('src/app/orderOperationalProjection.ts', 'utf8')
 assert.ok(
-  projection.includes('canCorrectShipping: mutableWorkingOrder && !hasCommittedDownstreamOperation && sent'),
-  'downstream operations must continue blocking false-shipping history rewrite',
+  projection.includes('canCorrectShipping: mutableWorkingOrder && !hasCommittedItemReturn && sent'),
+  'completed exchange must not block false-shipping correction; standalone item return still must',
+)
+assert.ok(
+  projection.includes('canShip: mutableWorkingOrder && !hasCommittedItemReturn && !sent && !workshopPending'),
+  'current exchanged replacement must be shippable after correction',
 )
 
-console.log('RESOLVER HUMAN FINISH R1 GREEN — explicit new values, fuzzy refs, compound segmentation, Workshop clarity and shipping-correction guard')
+const exchangeWorker = fs.readFileSync('worker/domains/returns-exchanges.ts', 'utf8')
+for (const marker of [
+  'correctMistakenOrderHandoverWithCurrentExchange',
+  'allowCommittedExchangeCurrentTruth: true',
+  'excludeOrderItemIds: currentExchangeItemIds',
+  'exchangeCurrentTruth: true',
+  'Резерв восстановлен после снятия ошибочной отправки',
+  'Резерв отменён вместе с обменом',
+]) assert.ok(exchangeWorker.includes(marker), `exchange-aware false-shipping marker missing: ${marker}`)
+
+assert.ok(modal.includes('Название нового товара'))
+assert.ok(modal.includes('Уже известно из заказа'))
+assert.ok(modal.includes('Нет, это существующий товар'))
+assert.ok(modal.includes('Длина</button>'))
+assert.ok(modal.includes("draft.category === 'child' ? 'Возраст' : 'Размер'"))
+
+console.log('RESOLVER HUMAN FINISH R1 GREEN — explicit new values, fuzzy refs, compound classification, Workshop clarity and exchange-aware shipping correction')
