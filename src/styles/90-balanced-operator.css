@@ -334,6 +334,23 @@ button.manager-picker-trigger {
   font-size: 11px;
 }
 
+.order-correction-blocked {
+  display: grid;
+  gap: 5px;
+  max-width: 240px;
+}
+
+.order-correction-blocked > small {
+  color: #66758a;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.order-correction-blocked > button:disabled {
+  opacity: .62;
+  cursor: not-allowed;
+}
+
 /* Keep actions reachable without making the rest of the table narrow. */
 .order-list-table th:last-child,
 .order-list-table td:last-child {
