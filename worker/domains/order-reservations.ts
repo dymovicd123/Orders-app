@@ -2097,7 +2097,6 @@ export async function fulfillOrderReservationsV2(
            AND ${orderStillUnsentSql}`
       ).bind(
         ...payloadChunk,
-        timestamp,
         orderId,
         handoverOrderItemId,
         `${externalId}:item:${handoverOrderItemId}`,
