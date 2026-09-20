@@ -11,7 +11,7 @@ try {
 
   check(reservations.includes('export async function correctMistakenOrderHandover'), 'dedicated handover correction domain action missing')
   check(reservations.includes("physicalOutcome).toLowerCase() !== 'not_issued'"), 'explicit physical-not-issued confirmation missing')
-  check(reservations.includes("COALESCE(r.status, 'completed') <> 'cancelled') AS has_return"), 'active return conflict guard missing')
+  check(reservations.includes("COALESCE(r.status, 'completed') <> 'cancelled'") && reservations.includes('AS has_item_return'), 'standalone item return conflict guard missing')
   check(reservations.includes('allowCommittedExchangeCurrentTruth'), 'exchange-aware correction escape hatch missing')
   check(reservations.includes("COALESCE(e.status, 'completed') <> 'cancelled') AS has_exchange"), 'active exchange detection missing')
   check(reservations.includes("SET status = 'active', fulfilled_at = NULL"), 'fulfilled reservation reactivation missing')
@@ -28,7 +28,7 @@ try {
 
   check(ordersWrite.includes("existingShippingStatus === 'sent' && nextShippingStatus !== 'sent'"), 'ordinary sent -> not_sent edit guard was weakened')
   check(worker.includes('orderShippingCorrectionMatch'), 'dedicated correction route missing')
-  check(worker.includes('correctMistakenOrderHandover(env.DB, id'), 'correction route is not wired to domain action')
+  check(worker.includes('correctMistakenOrderHandoverWithCurrentExchange(env.DB, id'), 'correction route is not wired to exchange-aware domain action')
   check(worker.includes("nextShippingStatus !== 'sent'"), 'ordinary shipping route no longer remains send-only')
 
   check(app.includes('async function correctMistakenOrderShipping(order: OrderRecord)'), 'frontend correction handler missing')
