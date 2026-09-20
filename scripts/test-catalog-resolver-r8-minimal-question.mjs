@@ -10,8 +10,8 @@ const check = (ok, message) => { if (!ok) throw new Error(message) }
 try {
   check(modal.includes("const minimalFieldQuestion = question?.kind === 'field' && !editing && Boolean(context?.product)"), 'R8 no longer identifies the ordinary one-field human question')
   check(modal.includes('item && !minimalFieldQuestion') && modal.includes('draft && context && !minimalFieldQuestion'), 'Known source/canonical fact summaries can again crowd the one-field question')
-  check(modal.includes('!minimalFieldQuestion ? <div role="status"') && modal.includes('!advancedOpen && !minimalFieldQuestion'), 'Status/admin fallback can again crowd the one-field question')
-  check(modal.includes('!minimalFieldQuestion ? <small className="resolution-guard"'), 'Blocking guard copy can again crowd the one-field question')
+  check(modal.includes('!minimalFieldQuestion && notice ? <div role="status"') && modal.includes('!advancedOpen && !minimalFieldQuestion'), 'Status/admin fallback can again crowd the one-field question')
+  check(!modal.includes('resolution-guard'), 'Persistent implementation/help copy should not crowd the one-field question')
   check(modal.includes("[['ЖЕН', 'Жен'], ['МУЖ', 'Муж']]"), 'Gender choice regressed to verbose catalog wording')
   check(modal.includes('>Не удалось выяснить</button>') && !modal.includes("'Какой здесь пол?'"), 'Gender question is no longer the short human wording')
   check(flow.includes("return { kind: 'field', field }"), 'Resolver no longer advances one unresolved field at a time')
