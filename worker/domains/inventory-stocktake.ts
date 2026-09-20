@@ -1515,7 +1515,26 @@ export async function listInventoryHistory(db: D1Database, url: URL) {
        td.from_source AS transfer_from_source, td.to_source AS transfer_to_source,
        td.status AS transfer_status, td.comment AS transfer_comment,
        (SELECT COUNT(*) FROM inventory_transfer_items ti WHERE ti.transfer_id = td.id) AS transfer_item_count,
-       (SELECT COALESCE(SUM(ti.quantity), 0) FROM inventory_transfer_items ti WHERE ti.transfer_id = td.id) AS transfer_total_quantity
+       (SELECT COALESCE(SUM(ti.quantity), 0) FROM inventory_transfer_items ti WHERE ti.transfer_id = td.id) AS transfer_total_quantity,
+       (SELECT ti.quantity FROM inventory_transfer_items ti WHERE ti.transfer_id = td.id AND ti.variant_id = m.variant_id ORDER BY ti.id ASC LIMIT 1) AS transfer_line_quantity,
+       (SELECT e.confirmed_operation_quantity
+          FROM inventory_operation_evidence e
+         WHERE e.inventory_source = m.inventory_source
+           AND e.variant_id = m.variant_id
+           AND e.operation_reference = m.reference_id
+         ORDER BY e.id DESC LIMIT 1) AS confirmed_operation_quantity,
+       (SELECT e.explained_quantity
+          FROM inventory_operation_evidence e
+         WHERE e.inventory_source = m.inventory_source
+           AND e.variant_id = m.variant_id
+           AND e.operation_reference = m.reference_id
+         ORDER BY e.id DESC LIMIT 1) AS explained_quantity,
+       (SELECT e.unexplained_quantity
+          FROM inventory_operation_evidence e
+         WHERE e.inventory_source = m.inventory_source
+           AND e.variant_id = m.variant_id
+           AND e.operation_reference = m.reference_id
+         ORDER BY e.id DESC LIMIT 1) AS unexplained_quantity
      FROM inventory_movements m
      LEFT JOIN inventory_movement_reversals r ON r.original_movement_id = m.id
      LEFT JOIN inventory_movement_reversals rr ON rr.reversal_movement_id = m.id
@@ -1562,6 +1581,10 @@ export async function listInventoryHistory(db: D1Database, url: URL) {
       transferComment: cleanText(row.transfer_comment) || null,
       transferItemCount: Math.max(0, toInt(row.transfer_item_count, 0)),
       transferTotalQuantity: Math.max(0, toInt(row.transfer_total_quantity, 0)),
+      transferLineQuantity: Math.max(0, toInt(row.transfer_line_quantity, 0)),
+      confirmedOperationQuantity: Math.max(0, toInt(row.confirmed_operation_quantity, 0)),
+      explainedQuantity: Math.max(0, toInt(row.explained_quantity, 0)),
+      unexplainedQuantity: Math.max(0, toInt(row.unexplained_quantity, 0)),
     })),
   };
 }
