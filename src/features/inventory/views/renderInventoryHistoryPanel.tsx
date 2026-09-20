@@ -117,6 +117,8 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
                               </summary>
                               <div className="history-card-body">
                                 <div className="history-product-card"><strong>{entry.row.productName}</strong><span>{[entry.row.color, entry.row.size, entry.row.material, entry.row.length, entry.row.gender].filter(Boolean).join(' · ') || 'Без характеристик'}</span></div>
+                                {entry.row.referenceType === 'return_cancel' ? <div className="history-note"><span>Причина движения</span><strong>Отменён складской эффект возврата{entry.row.referenceId ? ` #${entry.row.referenceId}` : ''}.</strong></div> : null}
+                                {entry.row.referenceType === 'exchange_cancel' ? <div className="history-note"><span>Причина движения</span><strong>Отменён складской эффект обмена{entry.row.referenceId ? ` #${entry.row.referenceId}` : ''}.</strong></div> : null}
                                 {entry.row.comment ? <div className="history-note"><span>Комментарий</span><strong>{entry.row.comment}</strong></div> : null}
                                 <div className="history-card-actions">{entry.row.canReverse && isAdmin ? <button className="secondary compact danger-outline" type="button" disabled={reversingInventoryMovementId !== null} onClick={() => void reverseInventoryMovement(entry.row)}>{reversingInventoryMovementId === entry.row.id ? 'Отменяю…' : 'Отменить операцию'}</button> : null}</div>
                               </div>

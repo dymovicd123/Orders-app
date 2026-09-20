@@ -1845,6 +1845,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   const inventoryMovementHumanLabel = (movement: any) => {
+    if (movement.referenceType === 'return_cancel') return 'Отмена возврата'
+    if (movement.referenceType === 'exchange_cancel') return 'Отмена обмена'
     if (movement.referenceType === 'transfer_out') return 'Перемещение из точки'
     if (movement.referenceType === 'transfer_in') return 'Перемещение в точку'
     if (movement.movementType === 'arrival') return 'Приход'
@@ -2165,6 +2167,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         openAttentionIntake,
         openAttentionLifecycle,
         openAttentionFoundCatalog: openFoundInventoryCatalog,
+        openOrderFromFinance,
         reconcileFoundInventoryStock: resolveFoundInventoryStock,
         refreshWarehouseAttention,
         setAttentionCategory,
