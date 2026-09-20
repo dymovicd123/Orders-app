@@ -28,7 +28,6 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [advancedOpen, setAdvancedOpen] = useState(false)
-  const [fallbackOpen, setFallbackOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [variantQuery, setVariantQuery] = useState('')
@@ -81,7 +80,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       setItem(first); setContext(data); setDraft(initialDraft(first, data)); setChoices(data.products || [])
       setProgress(previous => ({ total: previous.total || Number(review.count || review.items.length), remaining: Number(review.count || review.items.length) }))
       setConfirmed({}); setClassified(false); setLegacy(false); setEditing(null); setAnswer(''); setCreatingReference(null); setCompoundOverride(null)
-      setSearchOpen(false); setSearch(''); setAdvancedOpen(false); setFallbackOpen(false); setVariantQuery(''); setNeedsRecheck(false)
+      setSearchOpen(false); setSearch(''); setAdvancedOpen(false); setVariantQuery(''); setNeedsRecheck(false)
       return false
     } finally { if (ticket === generation.current) setBusy(false) }
   }
@@ -236,9 +235,8 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   const finalAction = () => {
     if (!draft || !context) return null
     const needsAdminCatalogMutation = Boolean(draft.createProduct || draft.createFields?.length || legacy)
-    if (!isAdmin && needsAdminCatalogMutation) return <div className="resolution-admin-required"><p>Нужно изменить каталог для этого заказа. Войдите в Админ режим — после входа вы останетесь в этом же уточнении.</p>{onRequestAdminMode ? <button type="button" className="primary-button" onClick={onRequestAdminMode}>Войти в Админ режим и продолжить</button> : null}</div>
-    return <><p>{legacy ? 'Пол останется неизвестным только у этой позиции. Сам товар в каталоге от этого не изменится.' : exactDraftVariant || context.isWorkshop ? 'Будет уточнён товар в заказе. Затем система автоматически продолжит отправку.' : 'Все факты уже известны. Система создаст недостающую комбинацию этого товара и автоматически продолжит отправку.'}</p>
-      <button type="button" className="primary-button" disabled={disabled || Boolean(error)} onClick={() => void finish(legacy ? undefined : exactDraftVariant?.id)}>{resolving ? 'Сохраняю…' : legacy ? 'Сохранить и продолжить' : exactDraftVariant || context.isWorkshop ? 'Подтвердить товар' : 'Создать комбинацию и отправить'}</button></>
+    if (!isAdmin && needsAdminCatalogMutation) return <div className="resolution-admin-required"><p>Нужно изменить каталог для этого заказа. Войдите в Админ режим — после входа вы останетесь в этом же уточнении.</p>{onRequestAdminMode ? <button type="button" className="primary-button" onClick={onRequestAdminMode}>Войти как администратор</button> : null}</div>
+    return <button type="button" className="primary-button" disabled={disabled || Boolean(error)} onClick={() => void finish(legacy ? undefined : exactDraftVariant?.id)}>{resolving ? 'Сохраняю…' : 'Сохранить и продолжить'}</button>
   }
   const renderQuestion = () => {
     if (!question || !draft || !context || !item) return null
@@ -246,53 +244,50 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       const sorted = rankedProducts(choices, item.productName)
       const searchRanked = rankedProducts(choices, search || item.productName)
       const shown = (searchOpen ? searchRanked : sorted).filter(entry => entry.score > 0).slice(0, searchOpen ? 10 : 6)
-      return <><h4 ref={questionHeading} tabIndex={-1}>Какой это товар?</h4>
-        {searchOpen ? <label>Поиск по каталогу<input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Начните вводить название — например, ДАРА или ШАПАН" /></label> : null}
+      return <><h4 ref={questionHeading} tabIndex={-1}>Выберите товар</h4>
+        {searchOpen ? <label>Поиск по каталогу<input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Название товара" /></label> : null}
         <div className="resolution-choices">{shown.map(({ product }) => <button type="button" key={product.id} onClick={() => chooseProduct(product)}>{product.name}</button>)}</div>
         {searchOpen && !shown.length ? <p>Пока ничего подходящего не видно. Попробуйте часть названия.</p> : null}
-        {!searchOpen ? <button type="button" className="secondary-button" onClick={() => setSearchOpen(true)}>Найти другой товар</button> : null}
+        {!searchOpen ? <button type="button" className="secondary-button" onClick={() => setSearchOpen(true)}>Другой товар</button> : null}
         {isAdmin ? <div className="resolution-new-value-actions">
-          <button type="button" className="secondary-button" onClick={() => void openAdvanced(true)}>Это новый товар</button>
-          <button type="button" className="resolution-link" onClick={() => void openAdvanced()}>Проверить весь каталог</button>
+          <button type="button" className="secondary-button" onClick={() => void openAdvanced(true)}>Новый товар</button>
+          <button type="button" className="resolution-link" onClick={() => void openAdvanced()}>Весь каталог</button>
         </div> : <div className="resolution-admin-required">
-          <p>Если это действительно новый товар и его нет в каталоге, попросите администратора добавить его. Можно подождать здесь: заказ и уже выбранные ответы не потеряются.</p>
+          <p>Нет такого товара? Попросите администратора добавить его.</p>
           <div className="resolution-inline-actions">
             {onRequestAdminMode ? <button type="button" className="secondary-button" onClick={onRequestAdminMode}>Войти в Админ режим и продолжить</button> : null}
-            <button type="button" className="resolution-link" onClick={() => void load()}>Администратор уже добавил — проверить снова</button>
+            <button type="button" className="resolution-link" onClick={() => void load()}>Проверить снова</button>
           </div>
         </div>}</>
     }
     if (question.kind === 'compound') {
       const wholeFragment = compoundOverride === null ? sourceRemainder : remainder
-      if (compoundParts.complete) return <><h4 ref={questionHeading} tabIndex={-1}>Мы смогли разобрать часть названия</h4>
-        <p>Фрагмент <strong>«{remainder}»</strong> совпал с уже известными значениями. Проверьте разбор перед продолжением.</p>
+      if (compoundParts.complete) return <><h4 ref={questionHeading} tabIndex={-1}>Проверьте характеристики</h4>
         <div className="resolution-segment-list">{compoundParts.segments.map(segment => <span key={`${segment.field}-${segment.start}-${segment.value}`}><small>{fieldLabel(segment.field, draft.category)}</small><strong>{segment.value}</strong></span>)}</div>
         <div className="resolution-choices">
-          <button type="button" className="primary-button" onClick={() => applyCompoundSegments(compoundParts.segments)}>Да, применить этот разбор</button>
-          <button type="button" onClick={() => { setClassified(true); setCompoundOverride(''); answerField('material', wholeFragment) }}>Нет, весь фрагмент — один материал</button>
-          <button type="button" onClick={() => { setSearchOpen(true); setCompoundOverride(null); setNotice('Выберите правильный товар'); void preview({ ...draft, productId: 0 }) }}>Товар определён неверно</button>
+          <button type="button" className="primary-button" onClick={() => applyCompoundSegments(compoundParts.segments)}>Всё верно</button>
+          <button type="button" onClick={() => { setClassified(true); setCompoundOverride(''); answerField('material', wholeFragment) }}>Это один материал</button>
+          <button type="button" onClick={() => { setSearchOpen(true); setCompoundOverride(null); setNotice('Выберите правильный товар'); void preview({ ...draft, productId: 0 }) }}>Другой товар</button>
         </div></>
-      if (compoundParts.segments.length && compoundParts.unknown) return <><h4 ref={questionHeading} tabIndex={-1}>Часть названия понятна, но остался неизвестный фрагмент</h4>
-        <div className="resolution-segment-list">{compoundParts.segments.map(segment => <span key={`${segment.field}-${segment.start}-${segment.value}`}><small>{fieldLabel(segment.field, draft.category)}</small><strong>{segment.value}</strong></span>)}</div>
-        <p>Не удалось однозначно определить <strong>«{compoundParts.unknown}»</strong>. Это может быть отдельное значение, а может быть частью нового материала.</p>
+      if (compoundParts.segments.length && compoundParts.unknown) return <><h4 ref={questionHeading} tabIndex={-1}>Что означает «{compoundParts.unknown}»?</h4>
+        <small className="resolution-eyebrow">Уже распознано</small><div className="resolution-segment-list">{compoundParts.segments.map(segment => <span key={`${segment.field}-${segment.start}-${segment.value}`}><small>{fieldLabel(segment.field, draft.category)}</small><strong>{segment.value}</strong></span>)}</div>
         <div className="resolution-choices">
-          <button type="button" className="primary-button" onClick={() => applyCompoundSegments(compoundParts.segments, compoundParts.unknown)}>Применить найденное и уточнить «{compoundParts.unknown}»</button>
-          <button type="button" onClick={() => { setClassified(true); setCompoundOverride(''); answerField('material', wholeFragment) }}>Весь фрагмент — один материал</button>
-          <button type="button" onClick={() => { setSearchOpen(true); setCompoundOverride(null); setNotice('Выберите правильный товар'); void preview({ ...draft, productId: 0 }) }}>Товар определён неверно</button>
+          <button type="button" className="primary-button" onClick={() => applyCompoundSegments(compoundParts.segments, compoundParts.unknown)}>Уточнить «{compoundParts.unknown}»</button>
+          <button type="button" onClick={() => { setClassified(true); setCompoundOverride(''); answerField('material', wholeFragment) }}>Вся фраза — материал</button>
+          <button type="button" onClick={() => { setSearchOpen(true); setCompoundOverride(null); setNotice('Выберите правильный товар'); void preview({ ...draft, productId: 0 }) }}>Другой товар</button>
         </div></>
-      return <><h4 ref={questionHeading} tabIndex={-1}>Что означает часть названия «{remainder}»?</h4>
-        <p>Выберите характеристику, к которой относится этот фрагмент. Если значение новое или написано с ошибкой, следующим шагом можно выбрать справочник или добавить новое значение.</p>
+      return <><h4 ref={questionHeading} tabIndex={-1}>Что означает «{remainder}»?</h4>
         <div className="resolution-choices">
           <button type="button" onClick={() => { setClassified(true); setCompoundOverride(''); answerField('material', remainder) }}>Материал</button>
           <button type="button" onClick={() => { setClassified(true); setCompoundOverride(''); answerField('color', remainder) }}>Цвет</button>
           <button type="button" onClick={() => { setClassified(true); setCompoundOverride(''); answerField('length', remainder) }}>Длина</button>
           <button type="button" onClick={() => { setClassified(true); setCompoundOverride(''); answerField('size', remainder) }}>{draft.category === 'child' ? 'Возраст' : 'Размер'}</button>
-          <button type="button" onClick={() => { setSearchOpen(true); setCompoundOverride(null); setNotice('Выберите правильный товар'); void preview({ ...draft, productId: 0 }) }}>Это часть названия товара / товар определён неверно</button>
+          <button type="button" onClick={() => { setSearchOpen(true); setCompoundOverride(null); setNotice('Выберите правильный товар'); void preview({ ...draft, productId: 0 }) }}>Часть названия товара</button>
         </div></>
     }
-    if (question.kind === 'combined') return <><h4 ref={questionHeading} tabIndex={-1}>В заказе не указаны цвет и {draft.category === 'child' ? 'возраст' : 'размер'}. Этот товар действительно без цвета и без {draft.category === 'child' ? 'возраста' : 'размера'}?</h4><div className="resolution-choices">
-      <button type="button" className="primary-button" onClick={() => { const next = { ...draft, color: 'БЕЗ ЦВЕТА', size: 'БЕЗ РАЗМЕРА' }; setDraft(next); setNotice(`Без цвета и без ${draft.category === 'child' ? 'возраста' : 'размера'} ✓`); void finish(exactDraftVariant?.id, next) }}>Да, всё верно</button>
-      <button type="button" onClick={() => { setEditing('color'); setAnswer('') }}>Нет, исправить</button>
+    if (question.kind === 'combined') return <><h4 ref={questionHeading} tabIndex={-1}>Цвет и {draft.category === 'child' ? 'возраст' : 'размер'} не указаны</h4><p>Они действительно не нужны для этого товара?</p><div className="resolution-choices">
+      <button type="button" className="primary-button" onClick={() => { const next = { ...draft, color: 'БЕЗ ЦВЕТА', size: 'БЕЗ РАЗМЕРА' }; setDraft(next); setNotice(`Без цвета и без ${draft.category === 'child' ? 'возраста' : 'размера'} ✓`); void finish(exactDraftVariant?.id, next) }}>Да, не нужны</button>
+      <button type="button" onClick={() => { setEditing('color'); setAnswer('') }}>Указать</button>
     </div></>
     if (question.kind === 'reference') {
       const field = question.field
@@ -300,22 +295,21 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       const suggestions = rankedReferenceValues(referenceValues(context, draft, field), draft[field], field)
         .filter(entry => entry.score >= 5000 && normalize(entry.value) !== normalize(draft[field]))
         .slice(0, 3)
-      if (creatingReference === field) return <><h4 ref={questionHeading} tabIndex={-1}>Добавить новый {label.toLowerCase()}</h4>
-        <p>Проверьте название перед добавлением. Оно станет доступно в следующих заказах.</p>
+      if (creatingReference === field) return <><h4 ref={questionHeading} tabIndex={-1}>Новый {label.toLowerCase()}</h4>
         <form onSubmit={event => { event.preventDefault(); approveReference(field, answer) }}>
-          <label>Название нового значения<input autoFocus value={answer} onChange={event => setAnswer(event.target.value)} /></label>
+          <label>Название<input autoFocus value={answer} onChange={event => setAnswer(event.target.value)} /></label>
           <div className="resolution-inline-actions">
-            <button type="button" className="primary-button" disabled={!clean(answer)} onClick={() => approveReference(field, answer)}>Добавить и продолжить</button>
+            <button type="button" className="primary-button" disabled={!clean(answer)} onClick={() => approveReference(field, answer)}>Добавить</button>
             <button type="button" className="secondary-button" onClick={() => { setCreatingReference(null); setAnswer('') }}>Назад</button>
           </div>
         </form></>
-      return <><h4 ref={questionHeading} tabIndex={-1}>Уточним: {label.toLowerCase()}</h4><p>В заказе указано <strong>«{draft[field]}»</strong>.</p>
-        {suggestions.length ? <div className="resolution-suggestion"><small>Похоже, имелось в виду</small><div className="resolution-choices">{suggestions.map(entry => <button type="button" className={entry === suggestions[0] ? 'primary-button' : ''} key={entry.value} onClick={() => answerField(field, entry.value)}>{entry.value}</button>)}</div></div> : null}
+      return <><h4 ref={questionHeading} tabIndex={-1}>Проверьте {label.toLowerCase()}</h4><p className="resolution-current-value">В заказе: <strong>{draft[field]}</strong></p>
+        {suggestions.length ? <div className="resolution-suggestion"><small>Возможно</small><div className="resolution-choices">{suggestions.map(entry => <button type="button" className={entry === suggestions[0] ? 'primary-button' : ''} key={entry.value} onClick={() => answerField(field, entry.value)}>{entry.value}</button>)}</div></div> : null}
         <div className="resolution-inline-actions">
-          <button type="button" className="secondary-button" onClick={() => { setEditing(field); setCreatingReference(null); setAnswer('') }}>Выбрать из справочника</button>
-          {isAdmin ? <button type="button" className="secondary-button" onClick={() => { setCreatingReference(field); setAnswer(draft[field]) }}>Это новый {label.toLowerCase()}</button> : null}
+          <button type="button" className="secondary-button" onClick={() => { setEditing(field); setCreatingReference(null); setAnswer('') }}>Другой вариант</button>
+          {isAdmin ? <button type="button" className="secondary-button" onClick={() => { setCreatingReference(field); setAnswer(draft[field]) }}>Новый {label.toLowerCase()}</button> : null}
         </div>
-        {!isAdmin ? <div className="resolution-admin-required"><p>Если «{draft[field]}» — действительно новый {label.toLowerCase()} и такого значения нет в справочнике, попросите администратора добавить его. После добавления можно сразу перепроверить заказ.</p><div className="resolution-inline-actions">{onRequestAdminMode ? <button type="button" className="secondary-button" onClick={onRequestAdminMode}>Войти в Админ режим и продолжить</button> : null}<button type="button" className="resolution-link" onClick={() => void preview(draft)}>Администратор уже добавил — проверить снова</button></div></div> : null}</>
+        {!isAdmin ? <div className="resolution-admin-required"><p>Нет такого значения? Попросите администратора добавить его.</p><div className="resolution-inline-actions">{onRequestAdminMode ? <button type="button" className="secondary-button" onClick={onRequestAdminMode}>Войти в Админ режим и продолжить</button> : null}<button type="button" className="resolution-link" onClick={() => void preview(draft)}>Проверить снова</button></div></div> : null}</>
     }
     if (question.kind === 'field') {
       const field = question.field
@@ -334,9 +328,8 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         {small.length ? <div className="resolution-choices">{small.map(([value, text]) => <button type="button" key={value} onClick={() => answerField(field, value)}>{text}</button>)}</div> : <>
           {!editing && (field === 'color' || field === 'size') ? <div className="resolution-choices"><button type="button" onClick={() => answerField(field, field === 'color' ? 'БЕЗ ЦВЕТА' : 'БЕЗ РАЗМЕРА')}>{field === 'color' ? 'Без цвета' : draft.category === 'child' ? 'Без возраста' : 'Без размера'}</button><button type="button" onClick={() => { setEditing(field); setCreatingReference(null); setAnswer('') }}>{field === 'color' ? 'Выбрать цвет' : `Выбрать ${label.toLowerCase()}`}</button></div> : <form onSubmit={event => { event.preventDefault(); answerField(field, answer) }}>
             <label>{label}<input autoFocus value={answer} onChange={event => setAnswer(event.target.value)} placeholder={`Введите или выберите ${label.toLowerCase()}`} /></label>
-            {values.length ? <div className="resolution-combobox" role="listbox" aria-label={`Справочник: ${label}`}><small>{clean(answer) && matched.length ? 'Подходящие значения' : clean(answer) ? 'Совпадений нет — показываем справочник' : 'Выберите из справочника'}</small><div className="resolution-combobox-list">{visibleValues.map(value => <button type="button" key={value} onClick={() => answerField(field, value)}>{value}</button>)}</div></div> : null}
-            <button type="submit" className="primary-button" disabled={!clean(answer)}>Подтвердить введённое</button>
-            {!clean(answer) ? <small>Введите значение или выберите его из списка выше.</small> : null}
+            {values.length ? <div className="resolution-combobox" role="listbox" aria-label={`Справочник: ${label}`}><small>{clean(answer) && matched.length ? 'Подходящие варианты' : 'Все варианты'}</small><div className="resolution-combobox-list">{visibleValues.map(value => <button type="button" key={value} onClick={() => answerField(field, value)}>{value}</button>)}</div></div> : null}
+            <button type="submit" className="primary-button" disabled={!clean(answer)}>Подтвердить</button>
           </form>}
         </>}
         {field === 'gender' && canLegacy ? <button type="button" className="resolution-link" onClick={() => { setLegacy(true); setNotice('Пол останется неизвестным для этой позиции ✓') }}>Не удалось выяснить</button> : null}</>
@@ -352,38 +345,37 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
     }
   }}>
-    <header><div><h3 id="resolution-title">Уточним товар</h3><small>{order.external_id || `Заказ #${order.id}`}{progress.total > 1 ? ` · Товар ${progress.total - progress.remaining + 1} из ${progress.total}` : ''}</small></div><button type="button" className="secondary-button" disabled={resolving} onClick={onClose}>Закрыть</button></header>
-    {item && !minimalFieldQuestion ? <section className="resolution-source"><small>В заказе написано</small><strong>{item.productName}</strong><span>{[item.gender, item.material, normalize(item.length) !== 'СТАНДАРТ' ? item.length : '', context?.isWorkshop ? '' : item.color || 'Цвет не указан', context?.isWorkshop ? '' : item.size || (draft?.category === 'child' ? 'Возраст не указан' : 'Размер не указан')].filter(Boolean).join(' · ')}</span></section> : null}
-    {draft && context && !minimalFieldQuestion ? <section className="resolution-understanding"><strong>{draft.createProduct ? `Новый товар: ${draft.productName}` : context.product ? `Мы нашли: ${context.product.name}` : 'Выберите товар из каталога'}</strong>
+    <header><div><h3 id="resolution-title">Уточнить товар</h3><small>{order.external_id || `Заказ #${order.id}`}{progress.total > 1 ? ` · Товар ${progress.total - progress.remaining + 1} из ${progress.total}` : ''}</small></div><button type="button" className="secondary-button" disabled={resolving} onClick={onClose}>Закрыть</button></header>
+    {item && !minimalFieldQuestion ? <section className="resolution-source"><small>В заказе</small><strong>{item.productName}</strong><span>{[item.gender, item.material, normalize(item.length) !== 'СТАНДАРТ' ? item.length : '', context?.isWorkshop ? '' : item.color || 'Цвет не указан', context?.isWorkshop ? '' : item.size || (draft?.category === 'child' ? 'Возраст не указан' : 'Размер не указан')].filter(Boolean).join(' · ')}</span></section> : null}
+    {draft && context && !minimalFieldQuestion ? <section className="resolution-understanding"><small className="resolution-eyebrow">{draft.createProduct ? 'Новый товар' : context.product ? 'В каталоге' : 'Товар'}</small><strong>{draft.createProduct ? draft.productName : context.product ? context.product.name : 'Не выбран'}</strong>
       {!context.isWorkshop ? <p>{fields.filter(field => clean(draft[field]) && (field !== 'length' || normalize(draft.length) !== 'СТАНДАРТ')).map(field => <span key={field}>{fieldLabel(field, draft.category)}: {displayFact(field, draft[field])}{confirmed[field] ? ' ✓' : ''}</span>)}</p> : <p>Для Цеха нужно уточнить только сам товар.</p>}
     </section> : null}
-    {!minimalFieldQuestion ? <div role="status" aria-live="polite" className="resolution-feedback">{notice}</div> : null}
+    {!minimalFieldQuestion && notice ? <div role="status" aria-live="polite" className="resolution-feedback">{notice}</div> : null}
     {error ? <div role="alert" className="resolution-error"><p>{error}</p><button type="button" className="secondary-button" disabled={busy || resolving} onClick={() => void retry()}>{needsRecheck ? 'Проверить оставшиеся позиции' : 'Повторить проверку'}</button></div> : null}
     {busy ? <p role="status">Проверяю товар…</p> : null}
     {!advancedOpen ? <fieldset disabled={disabled || Boolean(error)} className="resolution-question" aria-busy={disabled}>{!needsRecheck ? renderQuestion() : <p>Товар сохранён. Проверяем, остались ли ещё вопросы.</p>}</fieldset> : draft && context ? <section className="resolution-advanced">
-      <h4>{draft.createProduct ? 'Добавить новый товар' : 'Исправить вручную'}</h4><p>{draft.createProduct ? 'Проверьте название и назначение товара. После сохранения он станет доступен в следующих заказах.' : 'Создание новых характеристик изменяет каталог для следующих заказов. Само уточнение применяется только к этой позиции заказа.'}</p>
+      <h4>{draft.createProduct ? 'Новый товар' : 'Исправить товар вручную'}</h4>
       <fieldset disabled={disabled}>
         {draft.createProduct ? <>
           <label>Название нового товара<input autoFocus value={draft.productName} onChange={e => editDraft('productName', e.target.value)} /></label>
           <label>Для кого<select value={draft.genderScope} onChange={e => { editDraft('genderScope', e.target.value); editDraft('gender', e.target.value === 'female' ? 'ЖЕН' : e.target.value === 'male' ? 'МУЖ' : '') }}><option value="">Выберите</option><option value="female">Женский</option><option value="male">Мужской</option><option value="unisex">Для обоих полов</option></select></label>
           <div className="resolution-known-facts">
-            <small>Уже известно из заказа</small>
+            <small>Характеристики из заказа</small>
             <p>{fields.filter(field => field !== 'gender' && clean(draft[field])).map(field => <span key={field}>{fieldLabel(field, draft.category)}: <strong>{displayFact(field, draft[field])}</strong></span>)}</p>
           </div>
           <button type="button" className="resolution-link" onClick={() => { setAdvancedOpen(false); setDraft({ ...draft, productId: 0, createProduct: false, genderScope: '' }); setContext(current => current ? { ...current, product: null, exactVariant: null, existingVariantId: null } : current); setNotice('Выберите существующий товар из каталога') }}>Нет, это существующий товар</button>
           <button type="button" className="primary-button" disabled={!clean(draft.productName) || !draft.genderScope} onClick={() => { setAdvancedOpen(false); setClassified(true); setEditing(null); void preview(draft) }}>Продолжить уточнение</button>
-          {!clean(draft.productName) || !draft.genderScope ? <p>Укажите только название нового товара и для кого он предназначен. Остальные характеристики система проверит отдельными шагами.</p> : null}
+          {!clean(draft.productName) || !draft.genderScope ? <small className="resolution-form-hint">Заполните название и поле «Для кого».</small> : null}
         </> : <>
           <label>Товар<select value={draft.productId} onChange={e => { const product = catalog?.products.find(p => p.id === Number(e.target.value)); if (product) chooseProduct(product) }}><option value="">Выберите товар</option>{catalog?.products.filter(p => p.isActive).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
           <button type="button" className="resolution-link" onClick={() => { setAdvancedOpen(false); void openAdvanced(true) }}>Это действительно новый товар</button>
           <label>Найти существующий товар с нужными характеристиками<input value={variantQuery} onChange={e => setVariantQuery(e.target.value)} /></label>
           <div className="resolution-choices">{(catalog?.variants || []).filter(v => v.isActive && v.productId === draft.productId && normalize([v.gender, v.material, v.length, v.color, v.sizeLabel].join(' ')).includes(normalize(variantQuery))).slice(0, 12).map(v => <button type="button" key={v.id} onClick={() => chooseVariant(v)}>{[v.gender, v.material, v.length, v.color || 'БЕЗ ЦВЕТА', v.sizeLabel || 'БЕЗ РАЗМЕРА'].join(' · ')}</button>)}</div>
           {!context.isWorkshop ? <div className="resolution-fields">{fields.map(field => <label key={field}>{fieldLabel(field, draft.category)}{field === 'category' || field === 'gender' ? <select value={draft[field]} onChange={e => editDraft(field, e.target.value)}>{field === 'gender' ? <><option value="">Не указан</option><option value="ЖЕН">Женский</option><option value="МУЖ">Мужской</option></> : <><option value="adult">Взрослый</option><option value="child">Детский</option></>}</select> : <><input list={`advanced-${field}`} value={draft[field]} onChange={e => editDraft(field, e.target.value)} /><datalist id={`advanced-${field}`}>{referenceValues(context, draft, field).map(v => <option key={v} value={v} />)}</datalist></>}{needsReference(context, draft, field) && !draft.createFields?.includes(field) ? <button type="button" onClick={() => approveReference(field)}>Добавить «{draft[field]}» для следующих заказов</button> : null}</label>)}</div> : null}
-          <button type="button" className="primary-button" onClick={() => { setAdvancedOpen(false); setClassified(true); setEditing(null); void preview(draft) }}>Проверить и продолжить</button>
+          <button type="button" className="primary-button" onClick={() => { setAdvancedOpen(false); setClassified(true); setEditing(null); void preview(draft) }}>Продолжить</button>
         </>}
       </fieldset>
     </section> : null}
-    {isAdmin && item && !advancedOpen && !minimalFieldQuestion ? <footer>{fallbackOpen ? <button type="button" className="resolution-link" disabled={disabled} onClick={() => void openAdvanced()}>Открыть ручное исправление</button> : <button type="button" className="resolution-link" disabled={disabled} onClick={() => setFallbackOpen(true)}>Ничего из предложенного не подходит</button>}</footer> : null}
-    {!minimalFieldQuestion ? <small className="resolution-guard">После ответа система проверит остальные позиции и продолжит исходное действие автоматически. Подтверждённые однозначные сопоставления запоминаются.</small> : null}
+    {isAdmin && item && !advancedOpen && !minimalFieldQuestion ? <footer><button type="button" className="resolution-link" disabled={disabled} onClick={() => void openAdvanced()}>Исправить вручную</button></footer> : null}
   </div></div>
 }
