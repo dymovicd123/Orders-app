@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "revision": "astra-stage02-manual-acceptance-r1",
+  "files": {
+    "worker/domains/inventory-stocktake.ts": {
+      "beforeGitBlob": "7c53b4475ae0b96c29bc9aceed6f39f9fee2343d",
+      "afterGitBlob": "5aa4fdde25c20d3e3707ef93085b6765ce19bc36",
+      "beforeLines": 1648,
+      "afterLines": 1671,
+      "replacements": [
+        {
+          "beforeBlock": "       td.status AS transfer_status, td.comment AS transfer_comment,\n       (SELECT COUNT(*) FROM inventory_transfer_items ti WHERE ti.transfer_id = td.id) AS transfer_item_count,\n       (SELECT COALESCE(SUM(ti.quantity), 0) FROM inventory_transfer_items ti WHERE ti.transfer_id = td.id) AS transfer_total_quantity\n     FROM inventory_movements m",
+          "afterBlock": "       td.status AS transfer_status, td.comment AS transfer_comment,\n       (SELECT COUNT(*) FROM inventory_transfer_items ti WHERE ti.transfer_id = td.id) AS transfer_item_count,\n       (SELECT COALESCE(SUM(ti.quantity), 0) FROM inventory_transfer_items ti WHERE ti.transfer_id = td.id) AS transfer_total_quantity,\n       (SELECT ti.quantity FROM inventory_transfer_items ti WHERE ti.transfer_id = td.id AND ti.variant_id = m.variant_id ORDER BY ti.id ASC LIMIT 1) AS transfer_line_quantity,\n       (SELECT e.confirmed_operation_quantity\n          FROM inventory_operation_evidence e\n         WHERE e.inventory_source = m.inventory_source\n           AND e.variant_id = m.variant_id\n           AND e.operation_reference = m.reference_id\n         ORDER BY e.id DESC LIMIT 1) AS confirmed_operation_quantity,\n       (SELECT e.explained_quantity\n          FROM inventory_operation_evidence e\n         WHERE e.inventory_source = m.inventory_source\n           AND e.variant_id = m.variant_id\n           AND e.operation_reference = m.reference_id\n         ORDER BY e.id DESC LIMIT 1) AS explained_quantity,\n       (SELECT e.unexplained_quantity\n          FROM inventory_operation_evidence e\n         WHERE e.inventory_source = m.inventory_source\n           AND e.variant_id = m.variant_id\n           AND e.operation_reference = m.reference_id\n         ORDER BY e.id DESC LIMIT 1) AS unexplained_quantity\n     FROM inventory_movements m"
+        },
+        {
+          "beforeBlock": "      transferItemCount: Math.max(0, toInt(row.transfer_item_count, 0)),\n      transferTotalQuantity: Math.max(0, toInt(row.transfer_total_quantity, 0)),\n    })),",
+          "afterBlock": "      transferItemCount: Math.max(0, toInt(row.transfer_item_count, 0)),\n      transferTotalQuantity: Math.max(0, toInt(row.transfer_total_quantity, 0)),\n      transferLineQuantity: Math.max(0, toInt(row.transfer_line_quantity, 0)),\n      confirmedOperationQuantity: Math.max(0, toInt(row.confirmed_operation_quantity, 0)),\n      explainedQuantity: Math.max(0, toInt(row.explained_quantity, 0)),\n      unexplainedQuantity: Math.max(0, toInt(row.unexplained_quantity, 0)),\n    })),"
+        }
+      ]
+    }
+  }
+}
