@@ -334,6 +334,18 @@ button.manager-picker-trigger {
   font-size: 11px;
 }
 
+.order-correction-action {
+  display: grid;
+  gap: 5px;
+  max-width: 260px;
+}
+
+.order-correction-action > small {
+  color: #66758a;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 .order-correction-blocked {
   display: grid;
   gap: 5px;
