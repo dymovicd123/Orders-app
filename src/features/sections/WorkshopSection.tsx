@@ -306,15 +306,18 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
                             >
                               Обмен
                             </button>
+                            <span className={`status-pill ${task.shippingStatus === 'sent' ? 'status-online' : 'status-warning'}`}>
+                              Заказ: {task.shippingStatus === 'sent' ? 'отправлен' : 'не отправлен'}
+                            </span>
                             {task.status === 'active' ? (
                               <button className="primary compact" type="button" onClick={() => void markWorkshopTaskDone(task)} disabled={workshopBusy}>
-                                Готово
+                                Готово в цехе
                               </button>
                             ) : (
                               <>
-                                <span className="status-pill status-online">Готово</span>
+                                <span className="status-pill status-online">Цех: готово</span>
                                 <button className="primary compact" type="button" onClick={() => void restoreWorkshopTaskActive(task)} disabled={workshopBusy}>
-                                  Вернуть
+                                  Вернуть в работу
                                 </button>
                               </>
                             )}
