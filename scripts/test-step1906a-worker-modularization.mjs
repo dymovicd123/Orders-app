@@ -4,6 +4,42 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const resolverFollowupWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/resolver-followup-r2-worker-manifest.json'), 'utf8'))
+if (resolverFollowupWorkerManifest?.version !== 1 || resolverFollowupWorkerManifest?.revision !== 'resolver-followup-r2-worker') throw new Error('Resolver follow-up R2 Worker manifest invalid')
+const resolverFollowupWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.RESOLVER_FOLLOWUP_R2_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(resolverFollowupWorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (resolverFollowupWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Resolver follow-up R2 Worker changed beyond exact manifest: ' + relative)
+      }
+      const reverted = fs.readFileSync(path.join(root, delta.beforeFixture), 'utf8')
+      if (resolverFollowupWorkerBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Resolver follow-up R2 Worker predecessor fixture drifted: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, RESOLVER_FOLLOWUP_R2_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('RESOLVER FOLLOW-UP R2 WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const stage02PostReviewWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage02-post-review-worker-manifest.json'), 'utf8'))
 if (stage02PostReviewWorkerManifest?.version !== 1 || stage02PostReviewWorkerManifest?.revision !== 'stage02-post-review-resolver-return-ux') throw new Error('Stage02 post-review Worker manifest invalid')
 const stage02PostReviewWorkerBlobSha = (value) => {
