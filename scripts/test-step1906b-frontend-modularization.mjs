@@ -91,6 +91,46 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const astraStage02FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/astra-stage02-manual-acceptance-r1-frontend-manifest.json'), 'utf8'))
+if (astraStage02FrontendManifest?.version !== 1 || astraStage02FrontendManifest?.revision !== 'astra-stage02-manual-acceptance-r1') throw new Error('Astra Stage02 frontend manifest invalid')
+const astraStage02FrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.ASTRA_STAGE02_MANUAL_ACCEPTANCE_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(astraStage02FrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (astraStage02FrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Astra Stage02 frontend changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Astra Stage02 frontend after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (astraStage02FrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Astra Stage02 frontend predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, ASTRA_STAGE02_MANUAL_ACCEPTANCE_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ASTRA STAGE02 MANUAL ACCEPTANCE FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const resolverUiPolishFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/resolver-ui-polish-r3-frontend-manifest.json'), 'utf8'))
 if (resolverUiPolishFrontendManifest?.version !== 1 || resolverUiPolishFrontendManifest?.revision !== 'resolver-ui-polish-r3') throw new Error('Resolver UI polish R3 frontend manifest invalid')
 const resolverUiPolishBlobSha = (value) => {
