@@ -4,9 +4,16 @@ export type Draft = CatalogResolutionInput & { productName: string; genderScope:
 export type Field = 'category' | 'gender' | 'material' | 'length' | 'color' | 'size'
 export const fields: Field[] = ['category', 'gender', 'material', 'length', 'color', 'size']
 export const labels: Record<Field, string> = { category: 'Тип', gender: 'Пол', material: 'Материал', length: 'Длина', color: 'Цвет', size: 'Размер / возраст' }
+export function fieldLabel(field: Field, category?: string) {
+  if (field !== 'size') return labels[field]
+  if (category === 'child') return 'Возраст'
+  if (category === 'adult') return 'Размер'
+  return labels[field]
+}
 export const clean = (v: unknown) => String(v ?? '').trim()
 export const normalize = (v: unknown) => clean(v).toUpperCase().replace(/\s+/g, ' ')
 const identity = (v: unknown) => normalize(v).replace(/[^0-9A-ZА-ЯЁӘҒҚҢӨҰҮҺІ]+/g, ' ').trim()
+
 export function compoundRemainder(rawName: string, productName: string) {
   const rawTokens = identity(rawName).split(' ')
   const productTokens = identity(productName).split(' ')
@@ -18,6 +25,7 @@ export function compoundRemainder(rawName: string, productName: string) {
   }
   return ''
 }
+
 const typoDistance = (left: string, right: string, limit = 2) => {
   if (left === right) return 0
   if (!left || !right || Math.abs(left.length - right.length) > limit) return limit + 1
@@ -34,6 +42,7 @@ const typoDistance = (left: string, right: string, limit = 2) => {
   }
   return previous[right.length]
 }
+
 export function rankedProducts(products: CatalogResolutionProduct[], source: string) {
   const raw = identity(source)
   const rawTokens = raw.split(' ').filter(Boolean)
@@ -70,6 +79,32 @@ export function rankedProducts(products: CatalogResolutionProduct[], source: str
     return { product, score }
   }).sort((a, b) => b.score - a.score || a.product.name.localeCompare(b.product.name, 'ru'))
 }
+
+export type RankedReferenceValue = { value: string; score: number; distance: number | null; fuzzy: boolean }
+export function rankedReferenceValues(values: string[], source: string, field: Field): RankedReferenceValue[] {
+  const raw = identity(source)
+  const compactRaw = raw.replace(/\s+/g, '')
+  const fuzzyAllowed = field === 'material' || field === 'color' || field === 'length'
+  return values.map(value => {
+    const candidate = identity(value)
+    const compactCandidate = candidate.replace(/\s+/g, '')
+    const exact = Boolean(raw) && raw === candidate
+    const starts = Boolean(raw) && candidate.startsWith(raw)
+    const contains = compactRaw.length >= 2 && compactCandidate.includes(compactRaw)
+    const reverseContains = compactCandidate.length >= 2 && compactRaw.includes(compactCandidate)
+    const fuzzyLimit = Math.max(raw.length, candidate.length) >= 9 ? 2 : 1
+    const distance = fuzzyAllowed && raw.length >= 4 && candidate.length >= 4 ? typoDistance(raw, candidate, fuzzyLimit) : fuzzyLimit + 1
+    const fuzzy = fuzzyAllowed && distance <= fuzzyLimit
+    const score = exact ? 10000
+      : starts ? 8200 + Math.min(raw.length, 500)
+        : contains ? 7200 + Math.min(compactRaw.length, 500)
+          : reverseContains ? 6500 + Math.min(compactCandidate.length, 500)
+            : fuzzy ? 5600 - distance * 300
+              : 0
+    return { value, score, distance: fuzzyAllowed ? distance : null, fuzzy }
+  }).sort((a, b) => b.score - a.score || a.value.localeCompare(b.value, 'ru'))
+}
+
 export function initialDraft(source: Partial<Record<Field, string>> & { productName: string }, context: CatalogResolutionContext): Draft {
   const f = context.facts
   return {
@@ -82,6 +117,7 @@ export function initialDraft(source: Partial<Record<Field, string>> & { productN
     size: clean(source.size) ? f?.size || source.size! : '',
   }
 }
+
 export function referenceValues(context: CatalogResolutionContext, draft: Draft, field: Field) {
   const refs = context.references
   if (field === 'material') return refs?.materials || []
@@ -90,12 +126,48 @@ export function referenceValues(context: CatalogResolutionContext, draft: Draft,
   if (field === 'size') return (draft.category === 'child' ? refs?.childAges : refs?.sizes) || []
   return []
 }
+
+export type CompoundSegment = { field: Exclude<Field, 'category' | 'gender'>; value: string; start: number; end: number }
+export function segmentCompoundRemainder(remainder: string, context: CatalogResolutionContext, draft: Draft) {
+  const tokens = identity(remainder).split(' ').filter(Boolean)
+  if (!tokens.length) return { segments: [] as CompoundSegment[], unknown: '', complete: false }
+  const candidates: CompoundSegment[] = []
+  const segmentFields: Array<Exclude<Field, 'category' | 'gender'>> = ['material', 'color', 'length', 'size']
+  for (const field of segmentFields) {
+    for (const value of referenceValues(context, draft, field)) {
+      const normalized = identity(value)
+      if (!normalized || normalized === 'СТАНДАРТ' || normalized === 'БЕЗ ЦВЕТА' || normalized === 'БЕЗ РАЗМЕРА') continue
+      const valueTokens = normalized.split(' ').filter(Boolean)
+      if (!valueTokens.length) continue
+      for (let start = 0; start <= tokens.length - valueTokens.length; start++) {
+        if (valueTokens.every((token, offset) => tokens[start + offset] === token)) {
+          candidates.push({ field, value, start, end: start + valueTokens.length })
+        }
+      }
+    }
+  }
+  candidates.sort((a, b) => (b.end - b.start) - (a.end - a.start) || a.start - b.start || segmentFields.indexOf(a.field) - segmentFields.indexOf(b.field))
+  const used = new Set<number>()
+  const segments: CompoundSegment[] = []
+  for (const candidate of candidates) {
+    let overlaps = false
+    for (let index = candidate.start; index < candidate.end; index++) if (used.has(index)) overlaps = true
+    if (overlaps) continue
+    segments.push(candidate)
+    for (let index = candidate.start; index < candidate.end; index++) used.add(index)
+  }
+  segments.sort((a, b) => a.start - b.start)
+  const unknown = tokens.filter((_, index) => !used.has(index)).join(' ')
+  return { segments, unknown, complete: segments.length > 0 && !unknown }
+}
+
 export function needsReference(context: CatalogResolutionContext, draft: Draft, field: Field) {
   if (field === 'category' || field === 'gender' || !clean(draft[field])) return false
   if ((field === 'material' || field === 'length') && normalize(draft[field]) === 'СТАНДАРТ') return false
   if (field === 'size' && ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р'].includes(normalize(draft[field]))) return false
   return !referenceValues(context, draft, field).some(v => normalize(v) === normalize(draft[field]))
 }
+
 export type Question = { kind: 'product' | 'compound' | 'combined' | 'ready' | 'workshop' | 'legacy' } | { kind: 'field' | 'reference'; field: Field }
 export function nextQuestion(context: CatalogResolutionContext, draft: Draft, options: {
   remainder: string; classified: boolean; confirmed: Partial<Record<Field, boolean>>; legacy: boolean; editing?: Field | null
