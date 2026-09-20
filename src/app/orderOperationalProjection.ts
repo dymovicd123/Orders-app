@@ -175,15 +175,17 @@ export function projectOrderOperationalState(
     // Current backend blocks rewriting an order after a committed Return or Exchange
     // until that downstream operation is cancelled. Mirror that fact explicitly.
     canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation && (simpleAdmin || !sent),
-    // Money-only refunds do not change the physical outbound obligation. Item-linked
-    // Returns and Exchanges do, so they remain the shipping/handover blocker.
-    canShip: mutableWorkingOrder && !hasCommittedPhysicalDownstreamOperation && !sent && !workshopPending,
+    // A completed exchange replaces the active order item; it does not permanently block
+    // future shipping. If a false "sent" mark is corrected, the current replacement can be
+    // reserved and handed over normally. A real item return still blocks this path.
+    canShip: mutableWorkingOrder && !hasCommittedItemReturn && !sent && !workshopPending,
     needsCatalogClarification: mutableWorkingOrder && !sent && Boolean(order.catalog_review_required),
-    // Shipping correction rewrites prior physical history and stays blocked by any
-    // committed downstream financial/physical operation, matching the backend guard.
-    canCorrectShipping: mutableWorkingOrder && !hasCommittedDownstreamOperation && sent,
+    // A completed exchange is current order truth, not a reason to roll the exchange back.
+    // False shipping correction follows the active replacement item. A standalone item
+    // return still changes current physical truth and must be corrected in its own domain.
+    canCorrectShipping: mutableWorkingOrder && !hasCommittedItemReturn && sent,
     canOpenStockHandover: mutableWorkingOrder
-      && !hasCommittedPhysicalDownstreamOperation
+      && !hasCommittedItemReturn
       && !sent
       && Boolean(order.stock_handover_review_needed || (mixedOrder && workshopPending && order.stock_handover_has_active_items)),
   }
