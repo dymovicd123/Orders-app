@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "revision": "resolver-followup-r2",
+  "predecessor": "825c100e6cf010d027cc5adcbc97ee3d2febec1a",
+  "files": {
+    "src/App.tsx": {
+      "afterGitBlob": "e4b493d952ad697672ca92eb579cd6e6e8a57375",
+      "afterLines": 7451,
+      "beforeGitBlob": "77cdf74532ee0468c6d22c14331bff2171ee9c25",
+      "beforeLines": 7446,
+      "beforeFixture": "scripts/fixtures/resolver-followup-r2/App.tsx"
+    },
+    "src/features/orders/OrderCatalogResolutionModal.tsx": {
+      "afterGitBlob": "b58e4db21e19e01b15b7254fbc77e9b22a03dd08",
+      "afterLines": 390,
+      "beforeGitBlob": "8b1534f4c379f97d6083b8b18eb3916fa541de0b",
+      "beforeLines": 368,
+      "beforeFixture": "scripts/fixtures/resolver-followup-r2/OrderCatalogResolutionModal.tsx"
+    },
+    "src/features/orders/OrderCatalogResolutionModal.css": {
+      "afterGitBlob": "2c3652fbf52871dc4843375b2ffbb0a0f8a7bdf0",
+      "afterLines": 57,
+      "beforeGitBlob": "a06bbdf25851583b0529e07d61dc4dbf960df809",
+      "beforeLines": 53,
+      "beforeFixture": "scripts/fixtures/resolver-followup-r2/OrderCatalogResolutionModal.css"
+    },
+    "src/features/sections/OrdersTableSection.tsx": {
+      "afterGitBlob": "5aef75b71978fb8593eacb1cf5de27e7117f684a",
+      "afterLines": 444,
+      "beforeGitBlob": "0ac1f220b158f75a68ed3dbedfa099ac8f1a5f8a",
+      "beforeLines": 445,
+      "beforeFixture": "scripts/fixtures/resolver-followup-r2/OrdersTableSection.tsx"
+    },
+    "src/app/orderOperationalProjection.ts": {
+      "afterGitBlob": "bda4f3ea71bc07c0801817ad582d8dbd659a645b",
+      "afterLines": 193,
+      "beforeGitBlob": "80c389ddead47a60f64c076a9288a6baf927685e",
+      "beforeLines": 191,
+      "beforeFixture": "scripts/fixtures/resolver-followup-r2/orderOperationalProjection.ts"
+    },
+    "src/styles/90-balanced-operator.css": {
+      "afterGitBlob": "98ea63321ee138410f49fcdcfaa763655e47650f",
+      "afterLines": 514,
+      "beforeGitBlob": "29a4772a53eb66687525a707df8887614e8c46c4",
+      "beforeLines": 502,
+      "beforeFixture": "scripts/fixtures/resolver-followup-r2/90-balanced-operator.css"
+    }
+  }
+}
