@@ -39,7 +39,7 @@ try {
   check(modal.includes('/resolve-existing'), 'Orders UI must retain the narrow existing-variant resolver')
   check(modal.includes('/resolve-facts'), 'R3 must resolve new/corrected characteristics without leaving Orders')
   check(modal.includes('Уточним:') && modal.includes('Название нового значения') && modal.includes('В заказе указано') && modal.includes('попросите администратора добавить его') && modal.includes('Администратор уже добавил — проверить снова'), 'New reusable values need explicit user-facing creation/escalation flow')
-  check(modal.includes('Этот товар действительно без цвета и без размера?'), 'Missing color/size require a combined explicit decision')
+  check(modal.includes('Этот товар действительно без цвета и без') && modal.includes("draft.category === 'child' ? 'возраста' : 'размера'"), 'Missing color/size-or-age require one combined explicit decision with the correct adult/child label')
   check(modal.includes('Что означает часть названия'), 'Compound-name residue must be classified, not silently asserted')
   check(flow.includes('productTokens.every'), 'Compound extraction must stay generic and token-based')
   check(modal.includes('resolution-understanding') && modal.includes('nextQuestion'), 'Current understanding and next unresolved decision must remain visible')
