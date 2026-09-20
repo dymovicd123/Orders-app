@@ -67,8 +67,9 @@ const exchange = project({
   ...baseOrder,
   committed_exchange_count: 1,
 }, { isAdmin: false })
-check(exchange.hasCommittedExchange && exchange.hasCommittedPhysicalDownstreamOperation, 'Exchange lost physical downstream classification')
-check(!exchange.canEdit && !exchange.canShip && !exchange.canOpenStockHandover, 'Exchange no longer protects the replaced physical obligation')
+check(exchange.hasCommittedExchange && exchange.hasCommittedPhysicalDownstreamOperation, 'Exchange lost historical physical downstream classification')
+check(!exchange.canEdit, 'Completed Exchange unexpectedly reopened structural editing')
+check(exchange.canShip && exchange.canOpenStockHandover, 'Completed Exchange no longer exposes its current replacement item to outbound/handover flow')
 check(exchange.canOpenReturn && exchange.canOpenExchange, 'Exchange incorrectly made the whole order terminal')
 
 const cancelledHistory = project({
@@ -88,7 +89,16 @@ const sentAfterRefund = project({
   returns: [{ id: 4, status: 'completed' }],
 }, { isAdmin: true })
 check(!sentAfterRefund.canShip, 'Already-sent order became shippable')
-check(!sentAfterRefund.canCorrectShipping, 'Downstream refund incorrectly allows rewriting prior shipping history')
+check(sentAfterRefund.canCorrectShipping, 'Money-only refund incorrectly blocks correction of a false physical handover mark')
+
+const sentAfterExchange = project({
+  ...baseOrder,
+  shipping_status: 'sent',
+  committed_exchange_count: 1,
+  has_committed_item_return: false,
+}, { isAdmin: true })
+check(!sentAfterExchange.canShip, 'Already-sent exchanged order became directly shippable')
+check(sentAfterExchange.canCorrectShipping, 'Completed Exchange still forces cancellation before correcting a false shipping mark')
 
 const workshopAfterRefund = project({
   ...baseOrder,
