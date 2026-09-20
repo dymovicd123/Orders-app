@@ -64,8 +64,8 @@ assert.ok(receiptModal.includes('Товара нет в каталоге — н�
 assert.ok(receiptModal.includes('Подтвердить и принять в остаток'))
 
 const stockModal = read('src/features/orders/StockResolutionConfirmModal.tsx')
-assert.ok(stockModal.includes('По учёту:'))
-assert.ok(stockModal.includes('В этой операции:'))
+assert.ok(stockModal.includes("prompt.trackedLabel || 'По учёту'"))
+assert.ok(stockModal.includes("prompt.neededLabel || 'В этой операции'"))
 assert.ok(stockModal.includes('Эти вещи прямо сейчас физически у вас?'))
 assert.ok(stockModal.includes('prompt.question ||') && stockModal.includes('prompt.cancelLabel ||'), 'Shared confirmation modal cannot express intake freshness choices')
 
