@@ -1,0 +1,47 @@
+name: Inspect Branch2 test residue
+
+on:
+  push:
+    branches: [branch2]
+    paths: [.github/workflows/inspect-branch2-test-residue.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_API: https://api.cloudflare.com/client/v4
+      DB_ID: 40065052-854e-44b8-bcd5-251bdd488301
+    steps:
+      - name: Inspect
+        shell: bash
+        run: |
+          set -euo pipefail
+          q() {
+            local sql="$1"
+            curl --fail-with-body -sS -X POST               -H "Authorization: Bearer $CF_API_TOKEN"               -H "Content-Type: application/json"               "$CF_API/accounts/$CF_ACCOUNT_ID/d1/database/$DB_ID/query"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')" | jq -c '.result[]?.results // []'
+          }
+          echo '=== TEST ORDERS ==='
+          q "SELECT id,external_id,order_date,shipping_status,workshop_status,order_status,comment,created_at,updated_at FROM orders WHERE external_id LIKE 'TEST-%' OR external_id LIKE 'RES-%' OR external_id LIKE 'AUTO-RES-%' ORDER BY id"
+          echo '=== TEST PRODUCTS ==='
+          q "SELECT id,name,category,gender_scope,is_active,created_at,updated_at FROM catalog_products WHERE UPPER(name) LIKE '%TEST%' OR UPPER(name) LIKE '%ТЕСТ%' OR UPPER(name) LIKE '%МУСОР%' OR UPPER(name) LIKE '%ЛЮКС%' ORDER BY id"
+          echo '=== SUSPICIOUS REFERENCES ==='
+          q "SELECT id,kind,value,is_active,sort_order,created_at,updated_at FROM reference_values WHERE UPPER(value) LIKE '%TEST%' OR UPPER(value) LIKE '%ТЕСТ%' OR UPPER(value) LIKE '%МУСОР%' OR UPPER(value) LIKE '%ВЕЛЮРР%' OR UPPER(value) LIKE '%ЛЮКС%' ORDER BY id"
+          echo '=== PRODUCT ALIASES ==='
+          q "SELECT id,alias_key,raw_value,product_id,created_at,updated_at FROM catalog_product_aliases WHERE UPPER(raw_value) LIKE '%TEST%' OR UPPER(raw_value) LIKE '%ТЕСТ%' OR UPPER(raw_value) LIKE '%МУСОР%' OR UPPER(raw_value) LIKE '%ШПАН%' OR UPPER(raw_value) LIKE '%ДУБАЙ%' ORDER BY id"
+          echo '=== VALUE ALIASES ==='
+          q "SELECT id,kind,alias_key,raw_value,canonical_value,created_at,updated_at FROM catalog_value_aliases WHERE UPPER(raw_value) LIKE '%TEST%' OR UPPER(raw_value) LIKE '%ТЕСТ%' OR UPPER(raw_value) LIKE '%МУСОР%' OR UPPER(raw_value) LIKE '%ВЕЛЮРР%' OR UPPER(raw_value) LIKE '%ЛЮКС%' ORDER BY id"
+          echo '=== INPUT ALIASES TESTISH ==='
+          q "SELECT id,input_key,variant_id,created_at,updated_at FROM catalog_input_aliases WHERE UPPER(input_key) LIKE '%TEST%' OR UPPER(input_key) LIKE '%ТЕСТ%' OR UPPER(input_key) LIKE '%МУСОР%' OR UPPER(input_key) LIKE '%ВЕЛЮРР%' OR UPPER(input_key) LIKE '%ДУБАЙ%' ORDER BY id"
+          echo '=== STOCK TEST MARKERS ==='
+          q "SELECT id,inventory_source,product_id,variant_id,quantity,reserved_quantity,last_action,last_source_ref,created_at,updated_at FROM inventory_stock WHERE last_source_ref LIKE '%resolver-manual-20260920%' OR last_action LIKE '%Тестовый%' ORDER BY id"
+          echo '=== TEST RETURNS ==='
+          q "SELECT r.id,r.order_id,r.status,r.amount,r.created_at FROM returns r JOIN orders o ON o.id=r.order_id WHERE o.external_id LIKE 'TEST-%' OR o.external_id LIKE 'RES-%' OR o.external_id LIKE 'AUTO-RES-%' ORDER BY r.id"
+          echo '=== TEST EXCHANGES ==='
+          q "SELECT e.id,e.order_id,e.status,e.old_order_item_id,e.new_order_item_id,e.created_at FROM exchanges e JOIN orders o ON o.id=e.order_id WHERE o.external_id LIKE 'TEST-%' OR o.external_id LIKE 'RES-%' OR o.external_id LIKE 'AUTO-RES-%' ORDER BY e.id"
+          echo '=== TEST LIFECYCLE ==='
+          q "SELECT e.id,e.order_id,e.operation_type,e.operation_id,e.event_type,e.status,e.variant_id,e.quantity,e.created_at FROM inventory_lifecycle_events e JOIN orders o ON o.id=e.order_id WHERE o.external_id LIKE 'TEST-%' OR o.external_id LIKE 'RES-%' OR o.external_id LIKE 'AUTO-RES-%' ORDER BY e.id"
