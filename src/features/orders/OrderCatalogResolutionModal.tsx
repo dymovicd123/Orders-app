@@ -213,7 +213,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     setContext(current => current ? { ...current, exactVariant: null, existingVariantId: null } : current)
     setConfirmed(current => ({ ...current, [field]: true }))
     setCreatingReference(null); setEditing(null); setAnswer('')
-    setNotice(`Новое значение «${clean(value)}» будет добавлено в ${fieldLabel(field, next.category).toLowerCase()} при завершении ✓`)
+    setNotice(`Новое значение: «${clean(value)}» ✓`)
   }
   const applyCompoundSegments = (segments: typeof compoundParts.segments, unknown = '') => {
     if (!draft || !segments.length) return
@@ -235,7 +235,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   const finalAction = () => {
     if (!draft || !context) return null
     const needsAdminCatalogMutation = Boolean(draft.createProduct || draft.createFields?.length || legacy)
-    if (!isAdmin && needsAdminCatalogMutation) return <div className="resolution-admin-required"><p>Нужно изменить каталог для этого заказа. Войдите в Админ режим — после входа вы останетесь в этом же уточнении.</p>{onRequestAdminMode ? <button type="button" className="primary-button" onClick={onRequestAdminMode}>Войти как администратор</button> : null}</div>
+    if (!isAdmin && needsAdminCatalogMutation) return <div className="resolution-admin-required"><p>Нужен администратор, чтобы добавить это в каталог.</p>{onRequestAdminMode ? <button type="button" className="primary-button" onClick={onRequestAdminMode}>Войти как администратор</button> : null}</div>
     return <button type="button" className="primary-button" disabled={disabled || Boolean(error)} onClick={() => void finish(legacy ? undefined : exactDraftVariant?.id)}>{resolving ? 'Сохраняю…' : 'Сохранить и продолжить'}</button>
   }
   const renderQuestion = () => {
@@ -255,7 +255,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         </div> : <div className="resolution-admin-required">
           <p>Нет такого товара? Попросите администратора добавить его.</p>
           <div className="resolution-inline-actions">
-            {onRequestAdminMode ? <button type="button" className="secondary-button" onClick={onRequestAdminMode}>Войти в Админ режим и продолжить</button> : null}
+            {onRequestAdminMode ? <button type="button" className="secondary-button" onClick={onRequestAdminMode}>Войти как администратор</button> : null}
             <button type="button" className="resolution-link" onClick={() => void load()}>Проверить снова</button>
           </div>
         </div>}</>
@@ -309,7 +309,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
           <button type="button" className="secondary-button" onClick={() => { setEditing(field); setCreatingReference(null); setAnswer('') }}>Другой вариант</button>
           {isAdmin ? <button type="button" className="secondary-button" onClick={() => { setCreatingReference(field); setAnswer(draft[field]) }}>Новый {label.toLowerCase()}</button> : null}
         </div>
-        {!isAdmin ? <div className="resolution-admin-required"><p>Нет такого значения? Попросите администратора добавить его.</p><div className="resolution-inline-actions">{onRequestAdminMode ? <button type="button" className="secondary-button" onClick={onRequestAdminMode}>Войти в Админ режим и продолжить</button> : null}<button type="button" className="resolution-link" onClick={() => void preview(draft)}>Проверить снова</button></div></div> : null}</>
+        {!isAdmin ? <div className="resolution-admin-required"><p>Нет такого значения? Попросите администратора добавить его.</p><div className="resolution-inline-actions">{onRequestAdminMode ? <button type="button" className="secondary-button" onClick={onRequestAdminMode}>Войти как администратор</button> : null}<button type="button" className="resolution-link" onClick={() => void preview(draft)}>Проверить снова</button></div></div> : null}</>
     }
     if (question.kind === 'field') {
       const field = question.field
