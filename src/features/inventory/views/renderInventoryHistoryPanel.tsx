@@ -103,7 +103,15 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
                               </summary>
                               <div className="history-card-body">
                                 {entry.row.transferComment || entry.row.comment ? <div className="history-note"><span>Комментарий</span><strong>{entry.row.transferComment || entry.row.comment}</strong></div> : null}
-                                <div className="history-product-stack">{entry.rows.filter((row: any) => row.referenceType === 'transfer_out').map((row: any) => <div className="history-product-card" key={`tr-line-${row.id}`}><strong>{row.productName} · {Math.abs(Number(row.quantityDelta || 0))} шт.</strong><span>{[row.color, row.size, row.material, row.length, row.gender].filter(Boolean).join(' · ') || 'Без характеристик'}</span></div>)}</div>
+                                <div className="history-product-stack">{entry.rows.filter((row: any) => row.referenceType === 'transfer_out').map((row: any) => {
+                                  const actualQuantity = Math.max(0, Number(row.transferLineQuantity || 0)) || Math.abs(Number(row.quantityDelta || 0))
+                                  const trackedDelta = Math.abs(Number(row.quantityDelta || 0))
+                                  return <div className="history-product-card" key={`tr-line-${row.id}`}>
+                                    <strong>{row.productName} · {actualQuantity} шт.</strong>
+                                    <span>{[row.color, row.size, row.material, row.length, row.gender].filter(Boolean).join(' · ') || 'Без характеристик'}</span>
+                                    {actualQuantity !== trackedDelta ? <em>Фактически перенесено {actualQuantity} шт. · учёт источника уменьшился на {trackedDelta} шт.</em> : null}
+                                  </div>
+                                })}</div>
                               </div>
                             </details>
                           ) : (
@@ -111,12 +119,24 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
                               <summary>
                                 <div className="history-card-date"><strong>{formatHistoryMoment(entry.row.createdAt)}</strong><span>{sourceLabel(entry.row.inventorySource)}</span></div>
                                 <div className="history-card-main"><strong>{inventoryMovementHumanLabel(entry.row)}</strong><span>{entry.row.productName}</span></div>
-                                <div className="history-card-amount"><strong className={entry.row.quantityDelta < 0 ? 'text-danger' : 'text-success'}>{entry.row.quantityDelta >= 0 ? '+' : ''}{entry.row.quantityDelta}</strong><span>После: {entry.row.quantityAfter}</span></div>
+                                <div className="history-card-amount">
+                                  {Number(entry.row.confirmedOperationQuantity || 0) > Math.abs(Number(entry.row.quantityDelta || 0)) ? (
+                                    <><strong>{entry.row.confirmedOperationQuantity} шт.</strong><span>Фактически · учёт {entry.row.quantityDelta >= 0 ? '+' : ''}{entry.row.quantityDelta}</span></>
+                                  ) : (
+                                    <><strong className={entry.row.quantityDelta < 0 ? 'text-danger' : 'text-success'}>{entry.row.quantityDelta >= 0 ? '+' : ''}{entry.row.quantityDelta}</strong><span>После: {entry.row.quantityAfter}</span></>
+                                  )}
+                                </div>
                                 {entry.row.reversedAt ? <span className="status-pill status-offline">Отменено</span> : <span className="status-pill status-online">Проведено</span>}
                                 <span className="history-card-open">Подробнее</span>
                               </summary>
                               <div className="history-card-body">
                                 <div className="history-product-card"><strong>{entry.row.productName}</strong><span>{[entry.row.color, entry.row.size, entry.row.material, entry.row.length, entry.row.gender].filter(Boolean).join(' · ') || 'Без характеристик'}</span></div>
+                                {Number(entry.row.confirmedOperationQuantity || 0) > Math.abs(Number(entry.row.quantityDelta || 0)) ? (
+                                  <div className="history-note">
+                                    <span>Физическая операция</span>
+                                    <strong>Фактически: {entry.row.confirmedOperationQuantity} шт. · учётный остаток изменился на {entry.row.quantityDelta >= 0 ? '+' : ''}{entry.row.quantityDelta} шт.{Number(entry.row.unexplainedQuantity || 0) > 0 ? ` Сверх учтённого остатка подтверждено ${entry.row.unexplainedQuantity} шт.` : ''}</strong>
+                                  </div>
+                                ) : null}
                                 {entry.row.comment ? <div className="history-note"><span>Комментарий</span><strong>{entry.row.comment}</strong></div> : null}
                                 <div className="history-card-actions">{entry.row.canReverse && isAdmin ? <button className="secondary compact danger-outline" type="button" disabled={reversingInventoryMovementId !== null} onClick={() => void reverseInventoryMovement(entry.row)}>{reversingInventoryMovementId === entry.row.id ? 'Отменяю…' : 'Отменить операцию'}</button> : null}</div>
                               </div>
