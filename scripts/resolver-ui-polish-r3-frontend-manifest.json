@@ -13,7 +13,7 @@
     "src/features/orders/OrderCatalogResolutionModal.tsx": {
       "beforeGitBlob": "b58e4db21e19e01b15b7254fbc77e9b22a03dd08",
       "beforeLines": 390,
-      "afterGitBlob": "529b1892695c36ca4936c6c774b02d3aca137966",
+      "afterGitBlob": "6de63cab6fce59c1d560f22c6bb142bb4eac7ace",
       "afterLines": 382,
       "beforeFixture": "scripts/fixtures/resolver-ui-polish-r3/OrderCatalogResolutionModal.tsx"
     },
