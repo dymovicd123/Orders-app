@@ -1,0 +1,94 @@
+name: Cleanup Branch2 resolver test residue
+
+on:
+  push:
+    branches: [branch2]
+    paths: [.github/workflows/cleanup-branch2-resolver-tests.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_API: https://api.cloudflare.com/client/v4
+      B2_DB_ID: 40065052-854e-44b8-bcd5-251bdd488301
+    steps:
+      - name: Guard, clean and verify Branch2 only
+        shell: bash
+        run: |
+          set -euo pipefail
+          qraw() {
+            local sql="$1"
+            curl --fail-with-body -sS -X POST               -H "Authorization: Bearer $CF_API_TOKEN"               -H "Content-Type: application/json"               "$CF_API/accounts/$CF_ACCOUNT_ID/d1/database/$B2_DB_ID/query"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"
+          }
+          q() { qraw "$1" | jq -c '.result[]?.results // []'; }
+          exec_sql() {
+            local sql="$1"
+            local response
+            response="$(qraw "$sql")"
+            if [[ "$(jq -r '.success // false' <<<"$response")" != "true" ]]; then
+              echo "$response" | jq .
+              exit 1
+            fi
+          }
+          TEST_COND="(o.external_id LIKE 'TEST-%' OR o.external_id LIKE 'RES-%' OR o.external_id LIKE 'AUTO-RES-%' OR UPPER(COALESCE(o.comment,'')) LIKE '%TEST%' OR UPPER(COALESCE(o.comment,'')) LIKE '%ТЕСТ%')"
+
+          echo '=== GUARD: non-test orders using test-created variants must be zero ==='
+          guard="$(q "SELECT COUNT(*) AS cnt FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.variant_id BETWEEN 626 AND 635 AND NOT $TEST_COND" | jq -r '.[0].cnt')"
+          echo "non_test_variant_refs=$guard"
+          [[ "$guard" == "0" ]] || { echo "ABORT: non-test order references a test-created variant."; exit 20; }
+
+          echo '=== BEFORE ==='
+          q "SELECT COUNT(*) AS test_orders FROM orders o WHERE $TEST_COND"
+          q "SELECT id,kind,value FROM reference_values WHERE id IN (48804,48805) OR value IN ('ДУБАЙСКИЙ ВЕЛЮР','ТЕСТОВЫЙ ЦВЕТ T08')"
+          q "SELECT id,raw_value,product_id FROM catalog_product_aliases WHERE id IN (8,11,12,13)"
+          q "SELECT id,kind,raw_value,canonical_value FROM catalog_value_aliases WHERE id IN (6,7,8)"
+          q "SELECT id,input_key,variant_id FROM catalog_input_aliases WHERE id BETWEEN 1 AND 6"
+          q "SELECT id,product_id,gender,color,material,length,size_label,created_at FROM catalog_variants WHERE id BETWEEN 626 AND 635 ORDER BY id"
+
+          # Remove movement/evidence rows while test order linkage still exists.
+          exec_sql "DELETE FROM inventory_movements WHERE id IN (SELECT e.movement_id FROM inventory_lifecycle_events e JOIN orders o ON o.id=e.order_id WHERE e.movement_id IS NOT NULL AND $TEST_COND) OR id IN (SELECT e.reversal_movement_id FROM inventory_lifecycle_events e JOIN orders o ON o.id=e.order_id WHERE e.reversal_movement_id IS NOT NULL AND $TEST_COND) OR EXISTS (SELECT 1 FROM orders o WHERE $TEST_COND AND instr(COALESCE(inventory_movements.reference_id,''),o.external_id)>0)"
+          exec_sql "DELETE FROM inventory_operation_evidence WHERE EXISTS (SELECT 1 FROM orders o WHERE $TEST_COND AND instr(COALESCE(inventory_operation_evidence.operation_reference,''),o.external_id)>0)"
+
+          # Remove explicit history rows that would otherwise survive ON DELETE SET NULL.
+          exec_sql "DELETE FROM activity_log WHERE order_id IN (SELECT o.id FROM orders o WHERE $TEST_COND) OR (entity_type='order' AND entity_id IN (SELECT o.id FROM orders o WHERE $TEST_COND)) OR external_order_id IN (SELECT o.external_id FROM orders o WHERE $TEST_COND)"
+
+          # Delete test orders. Child order data cascades through FK relations.
+          exec_sql "DELETE FROM orders WHERE id IN (SELECT o.id FROM orders o WHERE $TEST_COND)"
+
+          # Remove stock/evidence created only for the manual test fixtures.
+          exec_sql "DELETE FROM inventory_handover_reviews WHERE order_item_id NOT IN (SELECT id FROM order_items)"
+          exec_sql "DELETE FROM inventory_operation_evidence WHERE variant_id BETWEEN 626 AND 635 OR operation_reference LIKE 'TEST-%' OR operation_reference LIKE 'RES-%' OR operation_reference LIKE 'AUTO-RES-%'"
+          exec_sql "DELETE FROM inventory_movements WHERE variant_id BETWEEN 626 AND 635 OR reference_id LIKE 'TEST-%' OR reference_id LIKE 'RES-%' OR reference_id LIKE 'AUTO-RES-%' OR comment LIKE '%TEST-%' OR comment LIKE '%RES-%'"
+          exec_sql "DELETE FROM inventory_stock_checks WHERE variant_id BETWEEN 626 AND 635"
+          exec_sql "DELETE FROM inventory_stocktake_items WHERE variant_id BETWEEN 626 AND 635"
+          exec_sql "DELETE FROM inventory_transfer_items WHERE variant_id BETWEEN 626 AND 635"
+          exec_sql "DELETE FROM inventory_stock WHERE variant_id BETWEEN 626 AND 635"
+          exec_sql "DELETE FROM inventory_stock WHERE variant_id IN (44,45) AND last_source_ref='order:TEST-T14-ДВА-ПОХОЖИХ-SKU'"
+
+          # Remove learned aliases and catalog values created by resolver tests.
+          exec_sql "DELETE FROM catalog_input_aliases WHERE (id BETWEEN 1 AND 6 AND datetime(created_at)>=datetime('2026-09-20T00:00:00Z')) OR UPPER(input_key) LIKE '%МУСОР 5462446607%' OR UPPER(input_key) LIKE '%TEST MULTI%' OR UPPER(input_key) LIKE '%ТЕСТОВЫЙ ЦВЕТ T08%'"
+          exec_sql "DELETE FROM catalog_product_aliases WHERE id IN (8,11,12,13) AND datetime(created_at)>=datetime('2026-09-16T00:00:00Z')"
+          exec_sql "DELETE FROM catalog_value_aliases WHERE id IN (6,7,8) AND datetime(created_at)>=datetime('2026-09-19T00:00:00Z')"
+          exec_sql "DELETE FROM reference_values WHERE (id IN (48804,48805) OR value IN ('ДУБАЙСКИЙ ВЕЛЮР','ТЕСТОВЫЙ ЦВЕТ T08')) AND datetime(created_at)>=datetime('2026-09-20T00:00:00Z')"
+
+          # Remove catalog variants created by the resolver test series.
+          exec_sql "DELETE FROM catalog_variants WHERE id BETWEEN 626 AND 635 AND datetime(created_at)>=datetime('2026-09-16T00:00:00Z')"
+          exec_sql "DELETE FROM catalog_stock_positions WHERE id IN (103,104,105,106,107,108) AND datetime(created_at)>=datetime('2026-09-16T00:00:00Z') AND NOT EXISTS (SELECT 1 FROM catalog_variants v WHERE v.stock_position_id=catalog_stock_positions.id)"
+
+          # Recompute derived reservation counters after fixture removal.
+          exec_sql "UPDATE inventory_stock SET reserved_quantity=COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.status='active' AND r.inventory_source=inventory_stock.inventory_source AND r.variant_id=inventory_stock.variant_id),0), updated_at=datetime('now')"
+
+          echo '=== AFTER ==='
+          q "SELECT COUNT(*) AS test_orders FROM orders o WHERE $TEST_COND"
+          q "SELECT COUNT(*) AS test_refs FROM reference_values WHERE id IN (48804,48805) OR value IN ('ДУБАЙСКИЙ ВЕЛЮР','ТЕСТОВЫЙ ЦВЕТ T08')"
+          q "SELECT COUNT(*) AS test_product_aliases FROM catalog_product_aliases WHERE id IN (8,11,12,13)"
+          q "SELECT COUNT(*) AS test_value_aliases FROM catalog_value_aliases WHERE id IN (6,7,8)"
+          q "SELECT COUNT(*) AS test_input_aliases FROM catalog_input_aliases WHERE id BETWEEN 1 AND 6 OR UPPER(input_key) LIKE '%МУСОР 5462446607%' OR UPPER(input_key) LIKE '%TEST MULTI%'"
+          q "SELECT COUNT(*) AS test_variants FROM catalog_variants WHERE id BETWEEN 626 AND 635"
+          q "SELECT COUNT(*) AS test_stock_rows FROM inventory_stock WHERE variant_id BETWEEN 626 AND 635 OR (variant_id IN (44,45) AND last_source_ref='order:TEST-T14-ДВА-ПОХОЖИХ-SKU')"
+          q "SELECT COUNT(*) AS reservation_counter_mismatches FROM inventory_stock s WHERE COALESCE(s.reserved_quantity,0) <> COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.status='active' AND r.inventory_source=s.inventory_source AND r.variant_id=s.variant_id),0)"
