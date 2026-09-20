@@ -156,7 +156,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                             <label className="intake-queue-destination">
                               <span>Куда принять</span>
                               <select
-                                value={receiptDestinations[receiptKey] || 'warehouse'}
+                                value={receiptDestinations[receiptKey] || (item.isWorkshop ? 'no_stock' : 'warehouse')}
                                 onChange={(event) => setReceiptDestinations((current) => ({ ...current, [receiptKey]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
                                 disabled={returnBusy}
                               >
@@ -173,7 +173,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                 operationType: 'return',
                                 operationId: entry.id,
                                 operationItemId: item.id,
-                                destination: receiptDestinations[receiptKey] || 'warehouse',
+                                destination: receiptDestinations[receiptKey] || (item.isWorkshop ? 'no_stock' : 'warehouse'),
                                 productName: item.productName,
                                 externalId: entry.externalId,
                               })}
