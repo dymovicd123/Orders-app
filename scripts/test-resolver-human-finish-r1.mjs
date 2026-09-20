@@ -41,24 +41,24 @@ const draft = { category: 'adult' }
 const full = segmentCompoundRemainder('ЗАМША ВЕЛЮР КРАСНЫЙ', context, draft)
 assert.equal(full.complete, true)
 assert.equal(full.unknown, '')
-assert.deepEqual(
-  full.segments.map(entry => [entry.field, entry.value]),
-  [['material', 'ЗАМША ВЕЛЮР'], ['color', 'КРАСНЫЙ']],
+assert.equal(
+  JSON.stringify(full.segments.map(entry => [entry.field, entry.value])),
+  JSON.stringify([['material', 'ЗАМША ВЕЛЮР'], ['color', 'КРАСНЫЙ']]),
   'compound material + color must be split instead of becoming one new material',
 )
 
 const reverse = segmentCompoundRemainder('КРАСНЫЙ ЗАМША ВЕЛЮР', context, draft)
 assert.equal(reverse.complete, true)
-assert.deepEqual(
-  reverse.segments.map(entry => [entry.field, entry.value]).sort(),
-  [['color', 'КРАСНЫЙ'], ['material', 'ЗАМША ВЕЛЮР']].sort(),
+assert.equal(
+  JSON.stringify(reverse.segments.map(entry => [entry.field, entry.value]).sort()),
+  JSON.stringify([['color', 'КРАСНЫЙ'], ['material', 'ЗАМША ВЕЛЮР']].sort()),
   'known segments must be recognized regardless of their order',
 )
 
 const partial = segmentCompoundRemainder('ЗАМША ВЕЛЮР ЛЮКС', context, draft)
 assert.equal(partial.complete, false)
 assert.equal(partial.unknown, 'ЛЮКС')
-assert.deepEqual(partial.segments.map(entry => [entry.field, entry.value]), [['material', 'ЗАМША ВЕЛЮР']])
+assert.equal(JSON.stringify(partial.segments.map(entry => [entry.field, entry.value])), JSON.stringify([['material', 'ЗАМША ВЕЛЮР']]))
 
 const modal = fs.readFileSync('src/features/orders/OrderCatalogResolutionModal.tsx', 'utf8')
 for (const marker of [
