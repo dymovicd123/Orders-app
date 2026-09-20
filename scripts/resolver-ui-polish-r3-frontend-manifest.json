@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "revision": "resolver-ui-polish-r3",
+  "predecessor": "2b2b6f4790cf610fef2cb1dbc49b7d014eec138d",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "e4b493d952ad697672ca92eb579cd6e6e8a57375",
+      "beforeLines": 7451,
+      "afterGitBlob": "9b04f4ede45c97dbeeb078677883b1e0c83cab4c",
+      "afterLines": 7451,
+      "beforeFixture": "scripts/fixtures/resolver-ui-polish-r3/App.tsx"
+    },
+    "src/features/orders/OrderCatalogResolutionModal.tsx": {
+      "beforeGitBlob": "b58e4db21e19e01b15b7254fbc77e9b22a03dd08",
+      "beforeLines": 390,
+      "afterGitBlob": "529b1892695c36ca4936c6c774b02d3aca137966",
+      "afterLines": 382,
+      "beforeFixture": "scripts/fixtures/resolver-ui-polish-r3/OrderCatalogResolutionModal.tsx"
+    },
+    "src/features/orders/OrderCatalogResolutionModal.css": {
+      "beforeGitBlob": "2c3652fbf52871dc4843375b2ffbb0a0f8a7bdf0",
+      "beforeLines": 57,
+      "afterGitBlob": "2bd20b0acd9ac69019a41c73cee153aef2590db5",
+      "afterLines": 291,
+      "beforeFixture": "scripts/fixtures/resolver-ui-polish-r3/OrderCatalogResolutionModal.css"
+    },
+    "src/features/sections/OrdersTableSection.tsx": {
+      "beforeGitBlob": "5aef75b71978fb8593eacb1cf5de27e7117f684a",
+      "beforeLines": 444,
+      "afterGitBlob": "0b0b0ad22c2c4cf1ec37ff573ca0bca22e0e5078",
+      "afterLines": 439,
+      "beforeFixture": "scripts/fixtures/resolver-ui-polish-r3/OrdersTableSection.tsx"
+    },
+    "src/styles/90-balanced-operator.css": {
+      "beforeGitBlob": "98ea63321ee138410f49fcdcfaa763655e47650f",
+      "beforeLines": 514,
+      "afterGitBlob": "29a4772a53eb66687525a707df8887614e8c46c4",
+      "afterLines": 502,
+      "beforeFixture": "scripts/fixtures/resolver-ui-polish-r3/90-balanced-operator.css"
+    }
+  }
+}
