@@ -6458,6 +6458,7 @@ function removeDebtPayment(index: number) {
     destination: 'warehouse' | 'boutique' | 'no_stock'
     productName: string
     externalId: string
+    freshnessDecision?: 'already_counted' | 'arrived_after_check'
   }) {
     const destinationLabel = input.destination === 'warehouse' ? 'Склад' : input.destination === 'boutique' ? 'Бутик' : 'без добавления в остаток'
     const setBusy = input.operationType === 'return' ? setReturnBusy : setExchangeBusy
@@ -6465,29 +6466,65 @@ function removeDebtPayment(index: number) {
     setError(null)
     setMessage(null)
     try {
-      const payload = {
-        operationType: input.operationType,
-        operationId: input.operationId,
-        operationItemId: input.operationItemId,
-        destination: input.destination,
-      }
-      const criticalKey = `returned-item-receive:${input.operationType}:${input.operationId}:${input.operationItemId}:${input.destination}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch('/api/returned-items/receive', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-      const result = await readJsonResponse<{
+      let freshnessDecision = input.freshnessDecision
+      let result: {
         ok?: boolean
+        code?: string
         message?: string
+        productName?: string
+        quantity?: number
+        latestCheck?: { id?: number; checkedAt?: string; expectedQuantity?: number; countedQuantity?: number } | null
         pendingInventoryCount?: number
         pendingInventory?: { eventId?: number; reason?: string; productName?: string } | null
         stockApplied?: boolean
         stockAlreadyApplied?: boolean
-      }>(response, 'Получение возвращённого товара')
-      if (!response.ok) throw new Error(result.message || `Receive returned item failed: ${response.status}`)
-      completeCriticalRequest(criticalKey, critical.requestId)
+        freshnessProtected?: boolean
+      } = {}
+
+      while (true) {
+        const payload = {
+          operationType: input.operationType,
+          operationId: input.operationId,
+          operationItemId: input.operationItemId,
+          destination: input.destination,
+          ...(freshnessDecision ? { freshnessDecision } : {}),
+        }
+        const criticalKey = `returned-item-receive:${input.operationType}:${input.operationId}:${input.operationItemId}:${input.destination}:${freshnessDecision || 'preflight'}`
+        const critical = prepareCriticalRequest(criticalKey, payload)
+        const response = await apiFetch('/api/returned-items/receive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
+          body: JSON.stringify(critical.payload),
+        })
+        result = await readJsonResponse<typeof result>(response, 'Получение возвращённого товара')
+
+        if (result.code === 'intake_freshness_confirmation_required' && !freshnessDecision) {
+          completeCriticalRequest(criticalKey, critical.requestId)
+          const check = result.latestCheck
+          const alreadyCounted = await askStockResolution({
+            title: 'После оформления возврата товар уже пересчитывали',
+            intro: `Последняя физическая сверка этой позиции была ${check?.checkedAt ? formatDateShort(check.checkedAt) : 'после оформления возврата'}. Нужно понять, вошла ли возвращённая вещь в тот пересчёт.`,
+            question: 'Эта возвращённая вещь уже была включена в последнюю сверку?',
+            actionLabel: 'Да, уже учтена',
+            cancelLabel: 'Нет, приехала позже',
+            trackedLabel: 'В последней сверке',
+            neededLabel: 'Сейчас принимаем',
+            items: [{
+              productName: result.productName || input.productName,
+              tracked: Math.max(0, Number(check?.countedQuantity || 0)),
+              needed: Math.max(1, Number(result.quantity || 1)),
+            }],
+            note: 'Если вещь уже была в пересчёте, система не прибавит её второй раз. Если она приехала позже — добавит как новое физическое поступление.',
+          })
+          freshnessDecision = alreadyCounted ? 'already_counted' : 'arrived_after_check'
+          continue
+        }
+
+        if (!response.ok || result.ok === false) throw new Error(result.message || `Receive returned item failed: ${response.status}`)
+        completeCriticalRequest(criticalKey, critical.requestId)
+        break
+      }
+
       invalidateInventoryStockCaches(true)
       await Promise.allSettled([
         input.operationType === 'return' ? loadReturnHistory() : loadExchangeHistory(),
@@ -6498,6 +6535,8 @@ function removeDebtPayment(index: number) {
       ])
       if (input.destination === 'no_stock') {
         setMessage(`«${input.productName}» отмечен как полученный. В остаток товар не добавлялся.`)
+      } else if (result.freshnessProtected) {
+        setMessage(`«${input.productName}» отмечен как полученный. Повторно в ${destinationLabel} не добавляли: вы подтвердили, что вещь уже была учтена в более свежей сверке.`)
       } else if (Number(result.pendingInventoryCount || 0) > 0) {
         const eventId = Number(result.pendingInventory?.eventId || 0)
         if (eventId) setReturnedItemResolutionEventId(eventId)
