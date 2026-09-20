@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "revision": "resolver-followup-r2-worker",
+  "predecessor": "825c100e6cf010d027cc5adcbc97ee3d2febec1a",
+  "files": {
+    "worker/index.ts": {
+      "afterGitBlob": "eef02d76feb958b3988c28bb61ce4f7f55862d0c",
+      "afterLines": 1531,
+      "beforeGitBlob": "376f136e2482c08de7c3397c17d9cf7af2b3e73e",
+      "beforeLines": 1531,
+      "beforeFixture": "scripts/fixtures/resolver-followup-r2/worker-index.ts"
+    },
+    "worker/domains/order-reservations.ts": {
+      "afterGitBlob": "c4d7066bd73771c6f5610be1ff11c22f5bd98da4",
+      "afterLines": 2577,
+      "beforeGitBlob": "5dfa158455ab1f42848fe4e7391c3da8db360501",
+      "beforeLines": 2540,
+      "beforeFixture": "scripts/fixtures/resolver-followup-r2/order-reservations.ts"
+    },
+    "worker/domains/returns-exchanges.ts": {
+      "afterGitBlob": "01d717af4e4eafb44d967c9f5830fa2cf25bb448",
+      "afterLines": 2424,
+      "beforeGitBlob": "696a232eab1eb2899eea2a9264370d09582ff8df",
+      "beforeLines": 2070,
+      "beforeFixture": "scripts/fixtures/resolver-followup-r2/returns-exchanges.ts"
+    }
+  }
+}
