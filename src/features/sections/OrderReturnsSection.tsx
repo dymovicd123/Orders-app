@@ -140,9 +140,18 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                         return (
                           <div className="intake-queue-row" key={receiptKey}>
                             <div className="intake-queue-item">
-                              <strong>{item.productName} × {item.quantity}</strong>
-                              <span>{entry.externalId} · {entry.customer || 'Клиент не указан'} · {entry.returnDate || 'Без даты'}</span>
-                              <small>{formatReturnItemCharacteristics(item)}</small>
+                              <div className="intake-queue-product-head">
+                                <strong>{item.productName} × {item.quantity}</strong>
+                                <span className="intake-queue-operation">Возврат #{entry.id}</span>
+                              </div>
+                              <div className="intake-queue-context">
+                                <div><span>Заказ</span><strong>{entry.externalId}</strong></div>
+                                <div><span>Клиент</span><strong>{entry.customer || 'Не указан'}</strong></div>
+                                <div><span>Менеджер</span><strong>{entry.manager || 'Не указан'}</strong></div>
+                                <div><span>Дата возврата</span><strong>{entry.returnDate || 'Не указана'}</strong></div>
+                                {entry.city ? <div><span>Город</span><strong>{entry.city}</strong></div> : null}
+                              </div>
+                              <small className="intake-queue-characteristics">{formatReturnItemCharacteristics(item)}</small>
                             </div>
                             <label className="intake-queue-destination">
                               <span>Куда принять</span>
