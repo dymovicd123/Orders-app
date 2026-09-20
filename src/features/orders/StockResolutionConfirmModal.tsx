@@ -4,6 +4,10 @@ export type StockResolutionPrompt = {
   title: string
   intro: string
   actionLabel: string
+  cancelLabel?: string
+  question?: string
+  trackedLabel?: string
+  neededLabel?: string
   items: Array<{ productName: string; tracked: number; needed: number }>
   note?: string
 }
@@ -29,18 +33,18 @@ export function StockResolutionConfirmModal({ prompt, onDecision }: Props) {
           {prompt.items.map((item, index) => (
             <div className="stock-resolution-item" key={`${item.productName}:${index}`}>
               <strong>{item.productName}</strong>
-              <span>По учёту: <b>{item.tracked} шт.</b></span>
-              <span>В этой операции: <b>{item.needed} шт.</b></span>
+              <span>{prompt.trackedLabel || 'По учёту'}: <b>{item.tracked} шт.</b></span>
+              <span>{prompt.neededLabel || 'В этой операции'}: <b>{item.needed} шт.</b></span>
             </div>
           ))}
         </div>
         <div className="stock-resolution-question">
-          <strong>Эти вещи прямо сейчас физически у вас?</strong>
+          <strong>{prompt.question || 'Эти вещи прямо сейчас физически у вас?'}</strong>
           <p>{prompt.note || 'Подтверждение относится только к этой операции и не заменяет пересчёт всего остатка.'}</p>
         </div>
         <div className="modal-actions">
           <button type="button" className="primary" onClick={() => onDecision(true)}>{prompt.actionLabel}</button>
-          <button type="button" className="secondary" onClick={() => onDecision(false)}>Нет, остановить</button>
+          <button type="button" className="secondary" onClick={() => onDecision(false)}>{prompt.cancelLabel || 'Нет, остановить'}</button>
         </div>
       </section>
     </div>
