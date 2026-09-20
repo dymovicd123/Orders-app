@@ -37,5 +37,9 @@ jobs:
           query "SELECT p.id,p.name,COALESCE(p.gender_scope,'unisex') AS gender_scope,COUNT(v.id) AS variants,COUNT(DISTINCT COALESCE(v.gender,'')) AS genders,COUNT(DISTINCT COALESCE(v.color,'')) AS colors,COUNT(DISTINCT COALESCE(v.size_label,'')) AS sizes FROM catalog_products p JOIN catalog_variants v ON v.product_id=p.id AND v.is_active=1 WHERE p.is_active=1 GROUP BY p.id,p.name,p.gender_scope HAVING COUNT(v.id)>=2 ORDER BY variants DESC,p.id LIMIT 30"
           echo '=== REFERENCES ==='
           query "SELECT kind,value FROM reference_values WHERE is_active=1 AND kind IN ('material','length','color','size','child_age') ORDER BY kind,sort_order,value LIMIT 200"
+          echo '=== EXISTING RES T02-T14 ITEMS ==='
+          query "SELECT o.id AS order_id,o.external_id,o.comment,oi.id AS item_id,oi.product_id,oi.variant_id,oi.product_name_snapshot,oi.audience_type,oi.gender_snapshot,oi.color_snapshot,oi.material_snapshot,oi.length_snapshot,oi.size_snapshot,oi.quantity,oi.is_workshop,oi.source_type,oi.stock_writeoff_status FROM orders o JOIN order_items oi ON oi.order_id=o.id WHERE o.id BETWEEN 29 AND 43 ORDER BY o.id,oi.id"
+          echo '=== EXISTING RES T02-T14 WORKSHOP TASKS ==='
+          query "SELECT wt.* FROM workshop_tasks wt WHERE wt.order_id BETWEEN 29 AND 43 ORDER BY wt.order_id,wt.id"
           echo '=== RECENT TEST-LIKE ORDERS ==='
           query "SELECT id,external_id,order_date,comment,created_at FROM orders WHERE comment LIKE '%RESOLVER%' OR external_id LIKE 'RESOLVER-%' ORDER BY id DESC LIMIT 50"
