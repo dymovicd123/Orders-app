@@ -1,0 +1,37 @@
+name: Prepare reviewed resolver manual tests
+
+on:
+  push:
+    branches: [branch2]
+    paths: [.github/workflows/prepare-reviewed-resolver-tests.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CF_API: https://api.cloudflare.com/client/v4
+      B2_DB_ID: 40065052-854e-44b8-bcd5-251bdd488301
+    steps:
+      - name: Inspect Branch2 catalog for reviewed manual tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          q() {
+            local sql="$1"
+            curl --fail-with-body -sS -X POST               -H "Authorization: Bearer $CF_API_TOKEN"               -H "Content-Type: application/json"               "$CF_API/accounts/$CF_ACCOUNT_ID/d1/database/$B2_DB_ID/query"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')" | jq -c '.result[]?.results // []'
+          }
+          echo '=== MANAGERS ==='
+          q "SELECT id,name,is_active FROM managers ORDER BY is_active DESC,id LIMIT 30"
+          echo '=== PRODUCT 1 VARIANTS ==='
+          q "SELECT v.id AS variant_id,v.product_id,p.name AS product_name,COALESCE(v.category,p.category,'adult') AS category,v.gender,v.color,v.material,v.length,v.size_label,COALESCE(p.gender_scope,'unisex') AS gender_scope FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE p.id=1 AND v.is_active=1 ORDER BY v.id LIMIT 200"
+          echo '=== UNISEX PRODUCTS ==='
+          q "SELECT p.id,p.name,p.category,p.gender_scope,COUNT(v.id) AS variants FROM catalog_products p JOIN catalog_variants v ON v.product_id=p.id AND v.is_active=1 WHERE p.is_active=1 AND COALESCE(p.gender_scope,'unisex')='unisex' GROUP BY p.id,p.name,p.category,p.gender_scope ORDER BY variants DESC LIMIT 20"
+          echo '=== REFERENCES ==='
+          q "SELECT kind,value FROM reference_values WHERE is_active=1 AND kind IN ('material','length','color','size','child_age') ORDER BY kind,sort_order,value LIMIT 250"
+          echo '=== EXISTING REVIEW TESTS ==='
+          q "SELECT id,external_id,comment,created_at FROM orders WHERE external_id LIKE 'REVIEW-%' OR external_id LIKE 'UX-%' ORDER BY id DESC LIMIT 100"
