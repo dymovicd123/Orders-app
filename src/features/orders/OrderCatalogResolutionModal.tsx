@@ -357,14 +357,14 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     </header>
     {!minimalFieldQuestion ? <div className="resolution-context">
       {item ? <section className="resolution-source"><small>В заказе</small><strong>{item.productName}</strong><span>{[item.gender, item.material, normalize(item.length) !== 'СТАНДАРТ' ? item.length : '', context?.isWorkshop ? '' : item.color || 'Цвет не указан', context?.isWorkshop ? '' : item.size || (draft?.category === 'child' ? 'Возраст не указан' : 'Размер не указан')].filter(Boolean).join(' · ')}</span></section> : null}
-      {draft && context ? <section className="resolution-understanding"><small className="resolution-eyebrow">{draft.createProduct ? 'Новый товар' : context.product ? 'В каталоге' : 'Товар'}</small><strong>{draft.createProduct ? draft.productName : context.product ? context.product.name : 'Не выбран'}</strong>
+      {draft && context ? <section className="resolution-understanding"><small className="resolution-eyebrow">{draft.createProduct ? 'Новый товар' : context.product ? 'В каталоге' : 'Товар'}</small><strong>{draft.createProduct ? draft.productName : context.product ? context.product.name : 'Пока не выбран'}</strong>
         {!context.isWorkshop ? <p>{fields.filter(field => clean(draft[field]) && (field !== 'length' || normalize(draft.length) !== 'СТАНДАРТ')).map(field => <span key={field}>{fieldLabel(field, draft.category)}: {displayFact(field, draft[field])}{confirmed[field] ? ' ✓' : ''}</span>)}</p> : <p>Для Цеха нужно уточнить только сам товар.</p>}
       </section> : null}
     </div> : null}
     {!minimalFieldQuestion && notice ? <div role="status" aria-live="polite" className="resolution-feedback">{notice}</div> : null}
     {error ? <div role="alert" className="resolution-error"><p>{error}</p><button type="button" className="secondary-button" disabled={busy || resolving} onClick={() => void retry()}>{needsRecheck ? 'Проверить оставшиеся позиции' : 'Повторить проверку'}</button></div> : null}
     {busy ? <p role="status">Проверяю товар…</p> : null}
-    {!advancedOpen ? <fieldset disabled={disabled || Boolean(error)} className="resolution-question" aria-busy={disabled}>{!needsRecheck ? renderQuestion() : <p>Товар сохранён. Проверяем, остались ли ещё вопросы.</p>}</fieldset> : draft && context ? <section className="resolution-advanced">
+    {!advancedOpen ? <fieldset disabled={disabled || Boolean(error)} className="resolution-question" aria-busy={disabled}><div className="resolution-question-label">{needsRecheck ? 'Проверка' : 'Нужно уточнить'}</div>{!needsRecheck ? renderQuestion() : <p>Товар сохранён. Проверяем, остались ли ещё вопросы.</p>}</fieldset> : draft && context ? <section className="resolution-advanced">
       <h4>{draft.createProduct ? 'Новый товар' : 'Исправить товар вручную'}</h4>
       <fieldset disabled={disabled}>
         {draft.createProduct ? <>
