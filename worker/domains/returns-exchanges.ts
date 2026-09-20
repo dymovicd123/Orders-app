@@ -11,10 +11,223 @@ import type { InventoryLifecycleEventRow } from './lifecycle.ts'
 import { applyCanonicalInventoryLifecycleEvent, canAutoApplyFreshWorkshopInbound, cancelInventoryLifecycleEvent, getOrderItemForReturnOrExchange, insertInventoryLifecycleEvent, inventoryLifecyclePendingReason, resolveInventoryLifecycleCandidate } from './lifecycle.ts'
 import { buildPaymentAndMoneyEventStatements, financialEventStatement, readOrderFinancialLedger, refundMoneyEventStatement, refundReversalMoneyEventStatement, removeSinglePaymentWithMoneyEvent, syncOrderFinancialLedger } from './money.ts'
 import { normalizeOrderItems } from './order-core.ts'
-import { fulfillOrderReservationsV2, resolveCatalogProductAndVariantV2 } from './order-reservations.ts'
+import { correctMistakenOrderHandover, fulfillOrderReservationsV2, resolveCatalogProductAndVariantV2 } from './order-reservations.ts'
 import { getOrder, insertOrderContent } from './orders-write.ts'
 import { normalizeWorkshopTaskStatus, refreshOrderWorkshopStatusFromTasks } from './workshop.ts'
 import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'
+
+export async function correctMistakenOrderHandoverWithCurrentExchange(
+  db: D1Database,
+  orderId: number,
+  input: { physicalOutcome?: unknown; actor?: string } = {},
+) {
+  if (!orderId) throw new Error('Заказ не найден.');
+  if (cleanText(input.physicalOutcome).toLowerCase() !== 'not_issued') {
+    throw new Error('Снять отметку «Отправлен» можно только после подтверждения, что текущий товар фактически НЕ передавался клиенту.');
+  }
+
+  const downstream = await db.prepare(
+    `SELECT
+       EXISTS(
+         SELECT 1
+         FROM returns r
+         JOIN return_items ri ON ri.return_id = r.id AND COALESCE(ri.quantity, 0) > 0
+         WHERE r.order_id = ?
+           AND COALESCE(r.status, 'completed') <> 'cancelled'
+           AND NOT EXISTS (
+             SELECT 1 FROM exchanges linked_exchange
+             WHERE linked_exchange.refund_return_id = r.id
+               AND COALESCE(linked_exchange.status, 'completed') <> 'cancelled'
+           )
+       ) AS has_item_return,
+       EXISTS(
+         SELECT 1 FROM exchanges e
+         WHERE e.order_id = ? AND COALESCE(e.status, 'completed') <> 'cancelled'
+       ) AS has_exchange`
+  ).bind(orderId, orderId).first<{ has_item_return: number; has_exchange: number }>();
+
+  if (toInt(downstream?.has_item_return, 0)) {
+    throw new Error('По текущему товару уже проведён отдельный возврат. Сначала исправьте сам возврат: он изменил физическую историю и не должен переписываться снятием отметки отправки.');
+  }
+  if (!toInt(downstream?.has_exchange, 0)) {
+    return await correctMistakenOrderHandover(db, orderId, input);
+  }
+
+  const currentRows = await db.prepare(
+    `SELECT e.id AS exchange_id, e.new_order_item_id,
+            oi.quantity AS current_quantity, oi.is_workshop,
+            le.id AS lifecycle_id, le.status AS lifecycle_status,
+            le.variant_id AS lifecycle_variant_id, le.quantity AS lifecycle_quantity,
+            r.id AS reservation_id, r.status AS reservation_status,
+            r.inventory_source AS reservation_source, r.product_id AS reservation_product_id,
+            r.variant_id AS reservation_variant_id, r.quantity AS reservation_quantity
+     FROM exchanges e
+     JOIN order_items oi ON oi.id = e.new_order_item_id AND oi.order_id = e.order_id
+     LEFT JOIN inventory_lifecycle_events le ON le.id = (
+       SELECT candidate.id
+       FROM inventory_lifecycle_events candidate
+       WHERE candidate.operation_type = 'exchange'
+         AND candidate.operation_id = e.id
+         AND candidate.event_type = 'exchange_new_out'
+         AND candidate.order_item_id = e.new_order_item_id
+       ORDER BY candidate.id DESC
+       LIMIT 1
+     )
+     LEFT JOIN inventory_reservations r ON r.order_item_id = e.new_order_item_id
+     WHERE e.order_id = ?
+       AND COALESCE(e.status, 'completed') <> 'cancelled'
+       AND oi.quantity > 0
+     ORDER BY e.id ASC`
+  ).bind(orderId).all<Record<string, unknown>>();
+  const currentExchangeRows = currentRows.results || [];
+  const currentExchangeItemIds = Array.from(new Set(currentExchangeRows.map(row => toInt(row.new_order_item_id, 0)).filter(Boolean)));
+
+  // First validate every non-exchange current position. Nothing is mutated during this pass.
+  await correctMistakenOrderHandover(db, orderId, {
+    ...input,
+    allowCommittedExchangeCurrentTruth: true,
+    excludeOrderItemIds: currentExchangeItemIds,
+    preflightOnly: true,
+  });
+
+  // Then validate the current replacement positions. We intentionally reject partial/chained
+  // quantities here rather than guessing how much of an old exchange lifecycle event is still current.
+  for (const row of currentExchangeRows) {
+    if (toInt(row.is_workshop, 0)) continue;
+    const itemId = toInt(row.new_order_item_id, 0);
+    const currentQuantity = Math.max(0, toInt(row.current_quantity, 0));
+    const lifecycleId = toInt(row.lifecycle_id, 0);
+    const lifecycleStatus = cleanText(row.lifecycle_status);
+    const lifecycleQuantity = Math.max(0, toInt(row.lifecycle_quantity, 0));
+    const reservationId = toInt(row.reservation_id, 0);
+    const reservationQuantity = Math.max(0, toInt(row.reservation_quantity, 0));
+    if (!itemId || !currentQuantity || !lifecycleId || !reservationId) {
+      throw new Error('У текущей обменённой позиции нет полной безопасной связи со складским событием и резервом. Система ничего не изменила; нужна точечная проверка этой позиции.');
+    }
+    if (!['applied', 'pending', 'cancelled'].includes(lifecycleStatus)) {
+      throw new Error('У текущей обменённой позиции неизвестное состояние складского события. Система ничего не изменила.');
+    }
+    if (lifecycleQuantity !== currentQuantity || reservationQuantity !== currentQuantity) {
+      throw new Error('Текущая позиция участвует в частичной или цепочной замене. Автоматически снимать отправку нельзя: нужно сначала точно определить количество текущего товара, чтобы не задвоить остаток.');
+    }
+    if (lifecycleStatus === 'applied' && !toInt(row.lifecycle_variant_id, 0)) {
+      throw new Error('У проведённой выдачи обмена отсутствует каноническая складская комбинация. Система ничего не изменила.');
+    }
+    const reservationVariantId = toInt(row.reservation_variant_id, 0);
+    if (reservationVariantId) {
+      const stock = await db.prepare(
+        `SELECT id FROM inventory_stock
+         WHERE inventory_source = ? AND variant_id = ?
+         ORDER BY id ASC LIMIT 1`
+      ).bind(normalizeSourceType(row.reservation_source), reservationVariantId).first<{ id: number }>();
+      if (!stock?.id) {
+        throw new Error('Для текущей обменённой позиции больше нет строки физического остатка. Система ничего не изменила; нужна точечная сверка.');
+      }
+    }
+  }
+
+  const timestamp = new Date().toISOString();
+  let reopenedExchangeItems = 0;
+  let protectedExchangePhysicalTruth = 0;
+
+  for (const row of currentExchangeRows) {
+    if (toInt(row.is_workshop, 0)) continue;
+    const itemId = toInt(row.new_order_item_id, 0);
+    const lifecycleId = toInt(row.lifecycle_id, 0);
+    const lifecycleStatus = cleanText(row.lifecycle_status);
+    const reservationId = toInt(row.reservation_id, 0);
+    const reservationQuantity = Math.max(1, toInt(row.reservation_quantity, 1));
+    const reservationSource = normalizeSourceType(row.reservation_source);
+    const reservationProductId = toInt(row.reservation_product_id, 0) || null;
+    const reservationVariantId = toInt(row.reservation_variant_id, 0) || null;
+
+    if (lifecycleStatus !== 'cancelled') {
+      const reversed = await cancelInventoryLifecycleEvent(
+        db,
+        lifecycleId,
+        timestamp,
+        `Снята ошибочная отметка «Отправлен»: текущая позиция обмена #${toInt(row.exchange_id, 0)} остаётся товаром заказа и снова ожидает выдачи.`,
+      );
+      if (reversed?.physicalReversalSkipped) protectedExchangePhysicalTruth += reservationQuantity;
+    }
+
+    if (reservationVariantId) {
+      await db.batch([
+        db.prepare(
+          `UPDATE inventory_stock
+           SET reserved_quantity = COALESCE(reserved_quantity, 0) + ?,
+               last_action = 'Резерв восстановлен после снятия ошибочной отправки',
+               last_source_ref = ?, updated_at = ?
+           WHERE inventory_source = ? AND variant_id = ?
+             AND EXISTS (
+               SELECT 1 FROM inventory_reservations
+               WHERE id = ? AND status <> 'active'
+             )`
+        ).bind(
+          reservationQuantity,
+          `order-handover-correction:${orderId}:exchange-current`,
+          timestamp,
+          reservationSource,
+          reservationVariantId,
+          reservationId,
+        ),
+        db.prepare(
+          `UPDATE inventory_reservations
+           SET product_id = ?, variant_id = ?, status = 'active', unresolved_reason = NULL,
+               fulfilled_at = NULL, released_at = NULL, updated_at = ?
+           WHERE id = ? AND status <> 'active'`
+        ).bind(reservationProductId, reservationVariantId, timestamp, reservationId),
+        db.prepare(
+          `UPDATE order_items
+           SET stock_writeoff_status = 'reserved', stock_quantity_before = NULL, stock_quantity_after = NULL
+           WHERE id = ? AND order_id = ? AND quantity > 0`
+        ).bind(itemId, orderId),
+      ]);
+    } else {
+      await db.batch([
+        db.prepare(
+          `UPDATE inventory_reservations
+           SET status = 'unresolved', fulfilled_at = NULL, released_at = NULL, updated_at = ?
+           WHERE id = ? AND status <> 'unresolved'`
+        ).bind(timestamp, reservationId),
+        db.prepare(
+          `UPDATE order_items
+           SET stock_writeoff_status = 'catalog_unresolved', stock_quantity_before = NULL, stock_quantity_after = NULL
+           WHERE id = ? AND order_id = ? AND quantity > 0`
+        ).bind(itemId, orderId),
+      ]);
+    }
+    reopenedExchangeItems += 1;
+  }
+
+  const corrected = await correctMistakenOrderHandover(db, orderId, {
+    ...input,
+    allowCommittedExchangeCurrentTruth: true,
+    excludeOrderItemIds: currentExchangeItemIds,
+  });
+
+  try {
+    await writeActivityLog(db, {
+      eventType: 'order_false_handover_rebased_after_exchange',
+      entityType: 'order',
+      entityId: orderId,
+      orderId,
+      title: `Снята ошибочная отправка после обмена`,
+      details: `Обмен не отменялся. Текущими товарами остались активные заменённые позиции; снова ожидают выдачи: ${reopenedExchangeItems}. Более новая физическая сверка защищена для ${protectedExchangePhysicalTruth} шт.`,
+      createdAt: timestamp,
+    });
+  } catch (error) {
+    console.warn('Exchange-aware false handover activity log failed', error);
+  }
+
+  return {
+    ...corrected,
+    exchangeCurrentTruth: true,
+    reopenedExchangeItems,
+    protectedExchangePhysicalTruth,
+  };
+}
+
 
 export async function createReturn(
   db: D1Database,
@@ -399,6 +612,7 @@ export async function receiveReturnedItem(
     operationId?: number;
     operationItemId?: number;
     destination?: 'warehouse' | 'boutique' | 'no_stock';
+    freshnessDecision?: 'already_counted' | 'arrived_after_check';
   },
 ) {
   let criticalOperation: CriticalOperationHandle | null = null;
@@ -410,9 +624,93 @@ export async function receiveReturnedItem(
     if (!operationId || !operationItemId) throw new Error('Не выбрана возвращаемая позиция.');
     const destination = cleanText(input.destination).toLowerCase();
     if (!['warehouse', 'boutique', 'no_stock'].includes(destination)) throw new Error('Выберите, куда принять вернувшийся товар.');
+    const freshnessDecision = cleanText(input.freshnessDecision).toLowerCase();
+    if (freshnessDecision && !['already_counted', 'arrived_after_check'].includes(freshnessDecision)) {
+      throw new Error('Неизвестное решение по свежей сверке товара.');
+    }
+
+    // Delayed intake can cross a newer physical count. Before mutating anything, detect that
+    // ambiguity and ask the operator whether the returning unit was already included in the count.
+    // Never silently add or silently suppress a unit across a newer physical truth.
+    let intakeFreshnessCheck: { id: number; checkedAt: string; expectedQuantity: number; countedQuantity: number } | null = null;
+    if (destination === 'warehouse' || destination === 'boutique') {
+      const pendingItem = operationType === 'return'
+        ? await db.prepare(
+          `SELECT ri.id AS operation_item_id, ri.return_id AS operation_id, ri.order_item_id,
+                  ri.product_name_snapshot, ri.gender_snapshot, ri.color_snapshot, ri.material_snapshot,
+                  ri.length_snapshot, ri.size_snapshot, ri.quantity, ri.inventory_source,
+                  ri.physical_tracking, ri.physical_received_at, ri.created_at AS operation_item_created_at,
+                  r.order_id, COALESCE(r.status, 'completed') AS operation_status,
+                  o.external_id, oi.product_id, oi.variant_id, oi.audience_type, oi.is_workshop, oi.source_type
+           FROM return_items ri
+           JOIN returns r ON r.id = ri.return_id
+           JOIN orders o ON o.id = r.order_id
+           LEFT JOIN order_items oi ON oi.id = ri.order_item_id
+           WHERE ri.id = ? AND ri.return_id = ?
+           LIMIT 1`
+        ).bind(operationItemId, operationId).first<Record<string, unknown>>()
+        : await db.prepare(
+          `SELECT ei.id AS operation_item_id, ei.exchange_id AS operation_id, ei.order_item_id,
+                  ei.product_name_snapshot, ei.gender_snapshot, ei.color_snapshot, ei.material_snapshot,
+                  ei.length_snapshot, ei.size_snapshot, ei.quantity, ei.inventory_source,
+                  ei.physical_tracking, ei.physical_received_at, ei.created_at AS operation_item_created_at,
+                  e.order_id, COALESCE(e.status, 'completed') AS operation_status,
+                  o.external_id, oi.product_id, oi.variant_id, oi.audience_type, oi.is_workshop, oi.source_type
+           FROM exchange_items ei
+           JOIN exchanges e ON e.id = ei.exchange_id
+           JOIN orders o ON o.id = e.order_id
+           LEFT JOIN order_items oi ON oi.id = ei.order_item_id
+           WHERE ei.id = ? AND ei.exchange_id = ? AND ei.role = 'old'
+           LIMIT 1`
+        ).bind(operationItemId, operationId).first<Record<string, unknown>>();
+
+      if (pendingItem
+        && cleanText(pendingItem.operation_status) !== 'cancelled'
+        && toInt(pendingItem.physical_tracking, 0)
+        && !cleanText(pendingItem.physical_received_at)) {
+        const resolved = await resolveInventoryLifecycleCandidate(db, pendingItem, Boolean(toInt(pendingItem.is_workshop, 0)));
+        const variantId = toInt(resolved.variantId, 0);
+        const registeredAt = cleanText(pendingItem.operation_item_created_at);
+        if (variantId && registeredAt) {
+          const check = await db.prepare(
+            `SELECT id, checked_at, expected_quantity, counted_quantity
+             FROM inventory_stock_checks
+             WHERE inventory_source = ? AND variant_id = ? AND datetime(checked_at) >= datetime(?)
+             ORDER BY datetime(checked_at) DESC, id DESC
+             LIMIT 1`
+          ).bind(destination, variantId, registeredAt).first<Record<string, unknown>>();
+          if (check?.id) {
+            intakeFreshnessCheck = {
+              id: toInt(check.id, 0),
+              checkedAt: cleanText(check.checked_at),
+              expectedQuantity: Math.max(0, toInt(check.expected_quantity, 0)),
+              countedQuantity: Math.max(0, toInt(check.counted_quantity, 0)),
+            };
+          }
+        }
+
+        if (intakeFreshnessCheck && !freshnessDecision) {
+          return {
+            ok: false,
+            code: 'intake_freshness_confirmation_required',
+            message: 'После оформления возврата эту позицию уже пересчитывали. Нужно уточнить, была ли возвращённая вещь включена в ту сверку.',
+            operationType,
+            operationId,
+            operationItemId,
+            destination,
+            productName: cleanText(pendingItem.product_name_snapshot),
+            quantity: Math.max(1, toInt(pendingItem.quantity, 1)),
+            latestCheck: intakeFreshnessCheck,
+          };
+        }
+        if (freshnessDecision && !intakeFreshnessCheck) {
+          throw new CriticalOperationConflictError('Свежая сверка больше не подтверждается текущими данными. Обновите очередь приёмки и повторите действие.');
+        }
+      }
+    }
 
     const startedAt = new Date().toISOString();
-    const criticalPayload = { operationType, operationId, operationItemId, destination };
+    const criticalPayload = { operationType, operationId, operationItemId, destination, freshnessDecision: freshnessDecision || null };
     criticalOperation = await beginCriticalOperation(db, 'returned_item_receive', input.requestId, criticalPayload, { startedAt });
     if (criticalOperation.cachedResponse) return criticalOperation.cachedResponse;
     const operationContext = parseCriticalContext<{ startedAt?: string }>(criticalOperation.row);
@@ -423,7 +721,7 @@ export async function receiveReturnedItem(
         `SELECT ri.id AS operation_item_id, ri.return_id AS operation_id, ri.order_item_id,
                 ri.product_name_snapshot, ri.gender_snapshot, ri.color_snapshot, ri.material_snapshot,
                 ri.length_snapshot, ri.size_snapshot, ri.quantity, ri.inventory_source, ri.restocked,
-                ri.physical_tracking, ri.physical_received_at,
+                ri.physical_tracking, ri.physical_received_at, ri.created_at AS operation_item_created_at,
                 r.order_id, COALESCE(r.status, 'completed') AS operation_status,
                 o.external_id, oi.product_id, oi.variant_id, oi.audience_type, oi.is_workshop, oi.source_type
          FROM return_items ri
@@ -437,7 +735,7 @@ export async function receiveReturnedItem(
         `SELECT ei.id AS operation_item_id, ei.exchange_id AS operation_id, ei.order_item_id,
                 ei.product_name_snapshot, ei.gender_snapshot, ei.color_snapshot, ei.material_snapshot,
                 ei.length_snapshot, ei.size_snapshot, ei.quantity, ei.inventory_source, 0 AS restocked,
-                ei.physical_tracking, ei.physical_received_at,
+                ei.physical_tracking, ei.physical_received_at, ei.created_at AS operation_item_created_at,
                 e.order_id, COALESCE(e.status, 'completed') AS operation_status,
                 o.external_id, oi.product_id, oi.variant_id, oi.audience_type, oi.is_workshop, oi.source_type
          FROM exchange_items ei
@@ -497,6 +795,7 @@ export async function receiveReturnedItem(
 
     let stockApplied = false;
     let stockAlreadyApplied = false;
+    let freshnessProtected = false;
     let pendingInventory: Record<string, unknown> | null = null;
 
     if (destination !== 'no_stock') {
@@ -520,9 +819,27 @@ export async function receiveReturnedItem(
         timestamp,
       });
       const eventStatus = cleanText(event.status);
-      if (eventStatus === 'cancelled') throw new CriticalOperationConflictError('Складское событие этой позиции уже отменено. Автоматическое проведение остановлено.');
-      if (eventStatus === 'applied') {
+      if (eventStatus === 'cancelled') {
+        if (freshnessDecision === 'already_counted') {
+          freshnessProtected = true;
+        } else {
+          throw new CriticalOperationConflictError('Складское событие этой позиции уже отменено. Автоматическое проведение остановлено.');
+        }
+      } else if (eventStatus === 'applied') {
         stockAlreadyApplied = true;
+      } else if (freshnessDecision === 'already_counted') {
+        if (!resolved.variantId || !intakeFreshnessCheck) {
+          throw new CriticalOperationConflictError('Не удалось подтвердить более свежую физическую сверку для этой позиции. Обновите очередь и повторите действие.');
+        }
+        const protectedAt = new Date().toISOString();
+        const protectedComment = `При приёмке подтверждено: вещь уже была включена в физическую сверку ${intakeFreshnessCheck.checkedAt || ''}. Повторно в остаток не добавлялась.`;
+        await db.prepare(
+          `UPDATE inventory_lifecycle_events
+           SET product_id = COALESCE(product_id, ?), variant_id = ?, status = 'cancelled', pending_reason = NULL,
+               resolution_comment = ?, cancelled_at = ?, updated_at = ?
+           WHERE id = ? AND status = 'pending'`
+        ).bind(toInt(resolved.productId, 0) || null, resolved.variantId, protectedComment, protectedAt, protectedAt, event.id).run();
+        freshnessProtected = true;
       } else {
         const autoApplyWorkshop = Boolean(isWorkshop && resolved.variantId && await canAutoApplyFreshWorkshopInbound(db, event, resolved.variantId));
         if (resolved.variantId && (!isWorkshop || autoApplyWorkshop)) {
@@ -556,6 +873,7 @@ export async function receiveReturnedItem(
       receivedAt: cleanText(item.physical_received_at) || timestamp,
       stockApplied,
       stockAlreadyApplied,
+      freshnessProtected,
       pendingInventory,
       pendingInventoryCount: pendingInventory ? 1 : 0,
     };
@@ -1932,8 +2250,44 @@ export async function cancelExchange(db: D1Database, exchangeId: number, input: 
       }
     }
 
-    // A pending unresolved exchange reservation used to survive cancellation. Lifecycle cancel
-    // releases it; this final update removes the cancelled replacement line from the order.
+    // If a previous false-handover correction kept the exchange but reopened the current
+    // replacement as a reservation, cancelling the exchange must release that reservation too.
+    const reopenedReservation = await db.prepare(
+      `SELECT id, status, inventory_source, variant_id, quantity
+       FROM inventory_reservations
+       WHERE order_item_id = ?
+       LIMIT 1`
+    ).bind(newItemId).first<Record<string, unknown>>();
+    if (reopenedReservation?.id && ['active', 'unresolved'].includes(cleanText(reopenedReservation.status))) {
+      const reopenedVariantId = toInt(reopenedReservation.variant_id, 0);
+      const reopenedQuantity = Math.max(1, toInt(reopenedReservation.quantity, 1));
+      const reservationStatements: D1PreparedStatement[] = [];
+      if (cleanText(reopenedReservation.status) === 'active' && reopenedVariantId) {
+        reservationStatements.push(db.prepare(
+          `UPDATE inventory_stock
+           SET reserved_quantity = MAX(0, COALESCE(reserved_quantity, 0) - ?),
+               last_action = 'Резерв отменён вместе с обменом', last_source_ref = ?, updated_at = ?
+           WHERE inventory_source = ? AND variant_id = ?
+             AND EXISTS (SELECT 1 FROM inventory_reservations WHERE id = ? AND status = 'active')`
+        ).bind(
+          reopenedQuantity,
+          `exchange_cancel:${exchangeId}`,
+          timestamp,
+          normalizeSourceType(reopenedReservation.inventory_source),
+          reopenedVariantId,
+          toInt(reopenedReservation.id, 0),
+        ));
+      }
+      reservationStatements.push(db.prepare(
+        `UPDATE inventory_reservations
+         SET status = 'released', released_at = ?, updated_at = ?
+         WHERE id = ? AND status IN ('active', 'unresolved')`
+      ).bind(timestamp, timestamp, toInt(reopenedReservation.id, 0)));
+      await db.batch(reservationStatements);
+    }
+
+    // Lifecycle cancellation releases the ordinary pending/fulfilled reservation. This final
+    // update removes the cancelled replacement line from the active order view.
     await db.prepare(
       `UPDATE order_items
        SET quantity = 0, line_total = 0, stock_writeoff_status = 'cancelled'
