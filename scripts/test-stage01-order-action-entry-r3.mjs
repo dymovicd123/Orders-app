@@ -39,7 +39,7 @@ check(workshopEdit.includes('!projection.canEdit'), 'Workshop edit entry bypasse
 
 const ship = between(app, 'async function markOrderSentToClient(', 'async function correctMistakenOrderShipping(')
 check(ship.includes('!projection.canShip'), 'Shipping entry bypasses projection eligibility')
-check(ship.includes('projection.workshopPending') && ship.includes('projection.hasCommittedPhysicalDownstreamOperation'), 'Shipping entry lost human explanations for projection blockers')
+check(ship.includes('projection.workshopPending') && ship.includes('projection.hasCommittedItemReturn'), 'Shipping entry lost human explanations for current physical blockers')
 
 const correction = between(app, 'async function correctMistakenOrderShipping(', 'async function deleteOrderAsAdmin(')
 check(correction.includes('!projection.canCorrectShipping'), 'Shipping correction entry bypasses projection eligibility')
