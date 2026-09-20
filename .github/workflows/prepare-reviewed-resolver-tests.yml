@@ -1,4 +1,4 @@
-name: Diagnose reviewed resolver manual tests
+name: Seed reviewed resolver manual tests
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  inspect:
+  seed:
     runs-on: ubuntu-latest
     env:
       CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -17,18 +17,76 @@ jobs:
       CF_API: https://api.cloudflare.com/client/v4
       B2_DB_ID: 40065052-854e-44b8-bcd5-251bdd488301
     steps:
-      - name: Diagnose partial UXR1 seed
+      - name: Seed reviewed manual tests into Branch2 D1 only
         shell: bash
         run: |
           set -euo pipefail
-          q() {
+          [[ "$B2_DB_ID" == "40065052-854e-44b8-bcd5-251bdd488301" ]] || { echo "ABORT: not Branch2 DB"; exit 90; }
+          qraw() {
             local sql="$1"
-            curl -sS -X POST               -H "Authorization: Bearer $CF_API_TOKEN"               -H "Content-Type: application/json"               "$CF_API/accounts/$CF_ACCOUNT_ID/d1/database/$B2_DB_ID/query"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')" | jq .
+            curl --fail-with-body -sS -X POST               -H "Authorization: Bearer $CF_API_TOKEN"               -H "Content-Type: application/json"               "$CF_API/accounts/$CF_ACCOUNT_ID/d1/database/$B2_DB_ID/query"               --data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"
           }
-          echo '=== ORDERS ==='; q "SELECT id,external_id,shipping_status FROM orders WHERE external_id LIKE 'UXR1-%' ORDER BY id"
-          echo '=== ITEMS ==='; q "SELECT o.external_id,oi.id,oi.quantity,oi.is_workshop,oi.variant_id,oi.stock_writeoff_status FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE o.external_id LIKE 'UXR1-%' ORDER BY o.id,oi.id"
-          echo '=== WORKSHOP ==='; q "SELECT o.external_id,w.id,w.status,w.order_item_id FROM workshop_tasks w JOIN orders o ON o.id=w.order_id WHERE o.external_id LIKE 'UXR1-%'"
-          echo '=== EXCHANGES ==='; q "SELECT o.external_id,e.id,e.status,e.old_order_item_id,e.new_order_item_id FROM exchanges e JOIN orders o ON o.id=e.order_id WHERE o.external_id LIKE 'UXR1-%'"
-          echo '=== EXCHANGE ITEMS ==='; q "SELECT o.external_id,ei.id,ei.role,ei.order_item_id,ei.inventory_source FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id JOIN orders o ON o.id=e.order_id WHERE o.external_id LIKE 'UXR1-%'"
-          echo '=== RESERVATIONS ==='; q "SELECT o.external_id,r.id,r.status,r.variant_id,r.unresolved_reason FROM inventory_reservations r JOIN orders o ON o.id=r.order_id WHERE o.external_id LIKE 'UXR1-%'"
-          echo '=== STOCK ==='; q "SELECT id,variant_id,quantity,reserved_quantity,last_source_ref FROM inventory_stock WHERE last_source_ref='uxr1-manual-tests-20260920'"
+          q() { qraw "$1" | jq -c '.result[]?.results // []'; }
+          exec_sql() {
+            local response
+            response="$(qraw "$1")"
+            [[ "$(jq -r '.success // false' <<<"$response")" == "true" ]] || { echo "$response" | jq .; exit 1; }
+          }
+
+          # Idempotent cleanup: ONLY this new UXR1 review pack.
+          exec_sql "DELETE FROM inventory_reservations WHERE order_id IN (SELECT id FROM orders WHERE external_id LIKE 'UXR1-%')"
+          exec_sql "DELETE FROM workshop_tasks WHERE order_id IN (SELECT id FROM orders WHERE external_id LIKE 'UXR1-%')"
+          exec_sql "DELETE FROM exchange_items WHERE exchange_id IN (SELECT e.id FROM exchanges e JOIN orders o ON o.id=e.order_id WHERE o.external_id LIKE 'UXR1-%')"
+          exec_sql "DELETE FROM exchanges WHERE order_id IN (SELECT id FROM orders WHERE external_id LIKE 'UXR1-%')"
+          exec_sql "DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE external_id LIKE 'UXR1-%')"
+          exec_sql "DELETE FROM orders WHERE external_id LIKE 'UXR1-%'"
+          exec_sql "DELETE FROM inventory_stock WHERE last_source_ref='uxr1-manual-tests-20260920'"
+
+          # One controlled stock-backed canonical SKU for the tests that should finish cleanly.
+          exec_sql "INSERT INTO inventory_stock (inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity,last_action,last_source_ref,created_at,updated_at) SELECT 'warehouse',1,44,'БАЯН СҰЛУ ШАПАН','ЖЕН','ИЗУМРУД','ЗАМША ВЕЛЮР','СТАНДАРТ','44',20,0,'UXR1: безопасный тестовый остаток','uxr1-manual-tests-20260920',datetime('now'),datetime('now') WHERE NOT EXISTS (SELECT 1 FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=44)"
+          exec_sql "UPDATE inventory_stock SET quantity=20,reserved_quantity=0,last_action='UXR1: безопасный тестовый остаток',last_source_ref='uxr1-manual-tests-20260920',updated_at=datetime('now') WHERE inventory_source='warehouse' AND variant_id=44"
+
+          # Insert in reverse order so the Orders UI (same date, id DESC) shows 01 -> 09 from top to bottom.
+          exec_sql "INSERT INTO orders (external_id,order_date,manager_id,city,delivery_type,source_type,workshop_status,order_status,total_amount,received_amount,debt_amount,return_amount,shipping_status,shipping_date,comment,created_at,updated_at) VALUES ('UXR1-09-ОБМЕН-БЛОКИРУЕТ-ИСХОДНУЮ-ОТПРАВКУ','2026-09-20',8,'ТЕСТ UX','ТЕСТ','warehouse','in_workshop','active',0,0,0,0,'sent','2026-09-20','UX09 — После проведённого обмена исходную отметку отправки нельзя переписывать. Ожидание: кнопка видна заблокированной и объясняет, что физическую историю теперь задаёт обмен.',datetime('now'),datetime('now'))"
+          exec_sql "INSERT INTO orders (external_id,order_date,manager_id,city,delivery_type,source_type,workshop_status,order_status,total_amount,received_amount,debt_amount,return_amount,shipping_status,comment,created_at,updated_at) VALUES ('UXR1-08-ЦЕХ-ГОТОВО-НЕ-ОТПРАВКА','2026-09-20',8,'ТЕСТ UX','ТЕСТ','warehouse','in_workshop','active',0,0,0,0,'not_sent','UX08 — Цех. Ожидание: «Готово в цехе» не меняет отправку клиенту; отдельно видно «Заказ: не отправлен».',datetime('now'),datetime('now'))"
+          exec_sql "INSERT INTO orders (external_id,order_date,manager_id,city,delivery_type,source_type,workshop_status,order_status,total_amount,received_amount,debt_amount,return_amount,comment,created_at,updated_at) VALUES ('UXR1-07-СПРАВОЧНИК-ПРИ-МУСОРЕ','2026-09-20',8,'ТЕСТ UX','ТЕСТ','warehouse','in_workshop','active',0,0,0,0,'UX07 — Мусорное значение материала. Ожидание: «Выбрать из справочника» открывает полный список сразу; не нужно стирать исходный мусор, чтобы увидеть ЗАМША ВЕЛЮР.',datetime('now'),datetime('now'))"
+          exec_sql "INSERT INTO orders (external_id,order_date,manager_id,city,delivery_type,source_type,workshop_status,order_status,total_amount,received_amount,debt_amount,return_amount,comment,created_at,updated_at) VALUES ('UXR1-06-ЗАМША-ВЕЛЮР-ЛЮКС','2026-09-20',8,'ТЕСТ UX','ТЕСТ','warehouse','in_workshop','active',0,0,0,0,'UX06 — Фраза «ЗАМША ВЕЛЮР ЛЮКС». Ожидание: система узнаёт ЗАМША ВЕЛЮР, но не решает сама, что ЛЮКС — отдельное значение или часть нового материала.',datetime('now'),datetime('now'))"
+          exec_sql "INSERT INTO orders (external_id,order_date,manager_id,city,delivery_type,source_type,workshop_status,order_status,total_amount,received_amount,debt_amount,return_amount,comment,created_at,updated_at) VALUES ('UXR1-05-МАТЕРИАЛ-ПЛЮС-ЦВЕТ','2026-09-20',8,'ТЕСТ UX','ТЕСТ','warehouse','in_workshop','active',0,0,0,0,'UX05 — «БАЯН СҰЛУ ШАПАН ЗАМША ВЕЛЮР КРАСНЫЙ». Ожидание: разобрать остаток на материал ЗАМША ВЕЛЮР + цвет КРАСНЫЙ, не создавать материал «ЗАМША ВЕЛЮР КРАСНЫЙ».',datetime('now'),datetime('now'))"
+          exec_sql "INSERT INTO orders (external_id,order_date,manager_id,city,delivery_type,source_type,workshop_status,order_status,total_amount,received_amount,debt_amount,return_amount,comment,created_at,updated_at) VALUES ('UXR1-04-ВЗРОСЛЫЙ-ТОЛЬКО-РАЗМЕР','2026-09-20',8,'ТЕСТ UX','ТЕСТ','warehouse','in_workshop','active',0,0,0,0,'UX04 — Взрослая позиция без размера. Ожидание: resolver спрашивает «Размер», нигде не показывает «Возраст».',datetime('now'),datetime('now'))"
+          exec_sql "INSERT INTO orders (external_id,order_date,manager_id,city,delivery_type,source_type,workshop_status,order_status,total_amount,received_amount,debt_amount,return_amount,comment,created_at,updated_at) VALUES ('UXR1-03-ОПЕЧАТКА-ЗАМША-ВЕЛЮРР','2026-09-20',8,'ТЕСТ UX','ТЕСТ','warehouse','in_workshop','active',0,0,0,0,'UX03 — Материал «ЗАМША ВЕЛЮРР». Ожидание: первой рекомендацией будет ЗАМША ВЕЛЮР; система не создаёт новое значение автоматически.',datetime('now'),datetime('now'))"
+          exec_sql "INSERT INTO orders (external_id,order_date,manager_id,city,delivery_type,source_type,workshop_status,order_status,total_amount,received_amount,debt_amount,return_amount,comment,created_at,updated_at) VALUES ('UXR1-02-НОВЫЙ-МАТЕРИАЛ','2026-09-20',8,'ТЕСТ UX','ТЕСТ','warehouse','in_workshop','active',0,0,0,0,'UX02 — Действительно новый материал. Admin: явная кнопка «Это новый материал», редактирование имени перед добавлением. Manager: понятная инструкция обратиться к админу и кнопка перепроверки.',datetime('now'),datetime('now'))"
+          exec_sql "INSERT INTO orders (external_id,order_date,manager_id,city,delivery_type,source_type,workshop_status,order_status,total_amount,received_amount,debt_amount,return_amount,comment,created_at,updated_at) VALUES ('UXR1-01-НОВЫЙ-ТОВАР','2026-09-20',8,'ТЕСТ UX','ТЕСТ','warehouse','in_workshop','active',0,0,0,0,'UX01 — Действительно новый товар. Admin: явная кнопка «Это новый товар», имя можно отредактировать перед созданием. Manager: инструкция дождаться/позвать админа без потери заказа.',datetime('now'),datetime('now'))"
+
+          # Resolver rows 01-07.
+          exec_sql "INSERT INTO order_items (order_id,product_id,variant_id,product_name_snapshot,audience_type,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) SELECT id,NULL,NULL,'ТЕСТ НОВЫЙ ТОВАР UX01','ВЗРОСЛЫЙ','ЖЕН','ИЗУМРУД','ЗАМША ВЕЛЮР','СТАНДАРТ','44',1,0,0,0,'warehouse','catalog_unresolved',datetime('now') FROM orders WHERE external_id='UXR1-01-НОВЫЙ-ТОВАР'"
+          exec_sql "INSERT INTO order_items (order_id,product_id,variant_id,product_name_snapshot,audience_type,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) SELECT id,1,NULL,'БАЯН СҰЛУ ШАПАН','ВЗРОСЛЫЙ','ЖЕН','ИЗУМРУД','ТЕСТ НОВЫЙ МАТЕРИАЛ UX02','СТАНДАРТ','44',1,0,0,0,'warehouse','catalog_unresolved',datetime('now') FROM orders WHERE external_id='UXR1-02-НОВЫЙ-МАТЕРИАЛ'"
+          exec_sql "INSERT INTO order_items (order_id,product_id,variant_id,product_name_snapshot,audience_type,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) SELECT id,1,NULL,'БАЯН СҰЛУ ШАПАН','ВЗРОСЛЫЙ','ЖЕН','ИЗУМРУД','ЗАМША ВЕЛЮРР','СТАНДАРТ','44',1,0,0,0,'warehouse','catalog_unresolved',datetime('now') FROM orders WHERE external_id='UXR1-03-ОПЕЧАТКА-ЗАМША-ВЕЛЮРР'"
+          exec_sql "INSERT INTO order_items (order_id,product_id,variant_id,product_name_snapshot,audience_type,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) SELECT id,1,NULL,'БАЯН СҰЛУ ШАПАН','ВЗРОСЛЫЙ','ЖЕН','ИЗУМРУД','ЗАМША ВЕЛЮР','СТАНДАРТ',NULL,1,0,0,0,'warehouse','catalog_unresolved',datetime('now') FROM orders WHERE external_id='UXR1-04-ВЗРОСЛЫЙ-ТОЛЬКО-РАЗМЕР'"
+          exec_sql "INSERT INTO order_items (order_id,product_id,variant_id,product_name_snapshot,audience_type,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) SELECT id,1,NULL,'БАЯН СҰЛУ ШАПАН ЗАМША ВЕЛЮР КРАСНЫЙ','ВЗРОСЛЫЙ','ЖЕН',NULL,NULL,'СТАНДАРТ','44',1,0,0,0,'warehouse','catalog_unresolved',datetime('now') FROM orders WHERE external_id='UXR1-05-МАТЕРИАЛ-ПЛЮС-ЦВЕТ'"
+          exec_sql "INSERT INTO order_items (order_id,product_id,variant_id,product_name_snapshot,audience_type,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) SELECT id,1,NULL,'БАЯН СҰЛУ ШАПАН ЗАМША ВЕЛЮР ЛЮКС','ВЗРОСЛЫЙ','ЖЕН','ИЗУМРУД',NULL,'СТАНДАРТ','44',1,0,0,0,'warehouse','catalog_unresolved',datetime('now') FROM orders WHERE external_id='UXR1-06-ЗАМША-ВЕЛЮР-ЛЮКС'"
+          exec_sql "INSERT INTO order_items (order_id,product_id,variant_id,product_name_snapshot,audience_type,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) SELECT id,1,NULL,'БАЯН СҰЛУ ШАПАН','ВЗРОСЛЫЙ','ЖЕН','ИЗУМРУД','МУСОР 5462446607','СТАНДАРТ','44',1,0,0,0,'warehouse','catalog_unresolved',datetime('now') FROM orders WHERE external_id='UXR1-07-СПРАВОЧНИК-ПРИ-МУСОРЕ'"
+
+          # Workshop row 08.
+          exec_sql "INSERT INTO order_items (order_id,product_id,variant_id,product_name_snapshot,audience_type,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,workshop_comment,created_at) SELECT id,1,44,'БАЯН СҰЛУ ШАПАН','ВЗРОСЛЫЙ','ЖЕН','ИЗУМРУД','ЗАМША ВЕЛЮР','СТАНДАРТ','44',1,0,0,1,'workshop','workshop','UX08 — проверить только готовность Цеха, не отправку',datetime('now') FROM orders WHERE external_id='UXR1-08-ЦЕХ-ГОТОВО-НЕ-ОТПРАВКА'"
+          exec_sql "INSERT INTO workshop_tasks (order_id,external_order_id,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,comment,urgent,due_date,status,created_at,updated_at,order_item_id) SELECT o.id,o.external_id,1,44,oi.product_name_snapshot,oi.gender_snapshot,oi.color_snapshot,oi.material_snapshot,oi.length_snapshot,oi.size_snapshot,1,'UX08 — Готово в цехе ≠ отправлено клиенту',0,NULL,'active',datetime('now'),datetime('now'),oi.id FROM orders o JOIN order_items oi ON oi.order_id=o.id WHERE o.external_id='UXR1-08-ЦЕХ-ГОТОВО-НЕ-ОТПРАВКА'"
+
+          # Sent order with a committed exchange for UX09. Old item hidden, replacement is current.
+          exec_sql "INSERT INTO order_items (order_id,product_id,variant_id,product_name_snapshot,audience_type,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) SELECT id,1,44,'БАЯН СҰЛУ ШАПАН','ВЗРОСЛЫЙ','ЖЕН','ИЗУМРУД','ЗАМША ВЕЛЮР','СТАНДАРТ','44',0,0,0,0,'warehouse','written_off',datetime('now') FROM orders WHERE external_id='UXR1-09-ОБМЕН-БЛОКИРУЕТ-ИСХОДНУЮ-ОТПРАВКУ'"
+          exec_sql "INSERT INTO order_items (order_id,product_id,variant_id,product_name_snapshot,audience_type,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) SELECT id,1,45,'БАЯН СҰЛУ ШАПАН','ВЗРОСЛЫЙ','ЖЕН','ИЗУМРУД','ЗАМША ВЕЛЮР','СТАНДАРТ','46',1,0,0,0,'warehouse','written_off',datetime('now') FROM orders WHERE external_id='UXR1-09-ОБМЕН-БЛОКИРУЕТ-ИСХОДНУЮ-ОТПРАВКУ'"
+          exec_sql "INSERT INTO exchanges (order_id,manager_id,exchange_date,old_order_item_id,old_quantity,old_return_source,new_order_item_id,new_source_type,status,comment,financial_action,financial_amount,old_item_replaced_at,created_at) SELECT o.id,8,'2026-09-20',oldi.id,1,'none',newi.id,'warehouse','completed','UX09 — тест блокировки переписывания исходной отправки после обмена','none',0,datetime('now'),datetime('now') FROM orders o JOIN order_items oldi ON oldi.order_id=o.id AND oldi.quantity=0 JOIN order_items newi ON newi.order_id=o.id AND newi.quantity=1 WHERE o.external_id='UXR1-09-ОБМЕН-БЛОКИРУЕТ-ИСХОДНУЮ-ОТПРАВКУ'"
+          exec_sql "INSERT INTO exchange_items (exchange_id,role,order_item_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,inventory_source,physical_tracking,created_at) SELECT e.id,'old',e.old_order_item_id,'БАЯН СҰЛУ ШАПАН','ЖЕН','ИЗУМРУД','ЗАМША ВЕЛЮР','СТАНДАРТ','44',1,'none',0,datetime('now') FROM exchanges e JOIN orders o ON o.id=e.order_id WHERE o.external_id='UXR1-09-ОБМЕН-БЛОКИРУЕТ-ИСХОДНУЮ-ОТПРАВКУ'"
+          exec_sql "INSERT INTO exchange_items (exchange_id,role,order_item_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,inventory_source,physical_tracking,created_at) SELECT e.id,'new',e.new_order_item_id,'БАЯН СҰЛУ ШАПАН','ЖЕН','ИЗУМРУД','ЗАМША ВЕЛЮР','СТАНДАРТ','46',1,'warehouse',0,datetime('now') FROM exchanges e JOIN orders o ON o.id=e.order_id WHERE o.external_id='UXR1-09-ОБМЕН-БЛОКИРУЕТ-ИСХОДНУЮ-ОТПРАВКУ'"
+
+          # Unresolved reservations for ordinary resolver tests only.
+          exec_sql "INSERT INTO inventory_reservations (order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,reference_type,reference_id,unresolved_reason,created_at,updated_at) SELECT o.id,oi.id,'warehouse',oi.product_id,oi.variant_id,oi.quantity,'unresolved','order',o.external_id,CASE WHEN oi.product_id IS NULL THEN 'product' ELSE 'variant' END,datetime('now'),datetime('now') FROM orders o JOIN order_items oi ON oi.order_id=o.id WHERE o.external_id BETWEEN 'UXR1-01' AND 'UXR1-07-ZZZZ' AND oi.is_workshop=0"
+
+          echo '=== SEEDED REVIEW TESTS ==='
+          q "SELECT o.id,o.external_id,o.shipping_status,o.workshop_status,o.comment,COUNT(oi.id) AS item_count FROM orders o LEFT JOIN order_items oi ON oi.order_id=o.id WHERE o.external_id LIKE 'UXR1-%' GROUP BY o.id,o.external_id,o.shipping_status,o.workshop_status,o.comment ORDER BY o.order_date DESC,o.id DESC"
+          echo '=== REVIEW TEST ITEMS ==='
+          q "SELECT o.external_id,oi.id,oi.product_id,oi.variant_id,oi.product_name_snapshot,oi.audience_type,oi.gender_snapshot,oi.color_snapshot,oi.material_snapshot,oi.length_snapshot,oi.size_snapshot,oi.quantity,oi.is_workshop,oi.stock_writeoff_status FROM orders o JOIN order_items oi ON oi.order_id=o.id WHERE o.external_id LIKE 'UXR1-%' ORDER BY o.id DESC,oi.id"
+          echo '=== REVIEW WORKSHOP ==='
+          q "SELECT o.external_id,w.id,w.status,w.order_item_id,w.product_name_snapshot FROM workshop_tasks w JOIN orders o ON o.id=w.order_id WHERE o.external_id LIKE 'UXR1-%'"
+          echo '=== REVIEW EXCHANGE ==='
+          q "SELECT o.external_id,e.id,e.status,e.old_order_item_id,e.new_order_item_id,e.old_item_replaced_at,e.comment FROM exchanges e JOIN orders o ON o.id=e.order_id WHERE o.external_id LIKE 'UXR1-%'"
+          echo '=== REVIEW STOCK ==='
+          q "SELECT variant_id,quantity,reserved_quantity,last_source_ref FROM inventory_stock WHERE last_source_ref='uxr1-manual-tests-20260920'"
