@@ -29,6 +29,8 @@ jobs:
           q "SELECT id,name,is_active FROM managers ORDER BY is_active DESC,id LIMIT 30"
           echo '=== PRODUCT 1 VARIANTS ==='
           q "SELECT v.id AS variant_id,v.product_id,p.name AS product_name,COALESCE(v.category,p.category,'adult') AS category,v.gender,v.color,v.material,v.length,v.size_label,COALESCE(p.gender_scope,'unisex') AS gender_scope FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE p.id=1 AND v.is_active=1 ORDER BY v.id LIMIT 200"
+          echo '=== PRODUCT 1 STOCK ==='
+          q "SELECT s.variant_id,s.quantity,s.reserved_quantity,v.gender,v.color,v.material,v.length,v.size_label FROM inventory_stock s JOIN catalog_variants v ON v.id=s.variant_id WHERE s.inventory_source='warehouse' AND v.product_id=1 ORDER BY (s.quantity-COALESCE(s.reserved_quantity,0)) DESC,s.variant_id LIMIT 50"
           echo '=== UNISEX PRODUCTS ==='
           q "SELECT p.id,p.name,p.category,p.gender_scope,COUNT(v.id) AS variants FROM catalog_products p JOIN catalog_variants v ON v.product_id=p.id AND v.is_active=1 WHERE p.is_active=1 AND COALESCE(p.gender_scope,'unisex')='unisex' GROUP BY p.id,p.name,p.category,p.gender_scope ORDER BY variants DESC LIMIT 20"
           echo '=== REFERENCES ==='
