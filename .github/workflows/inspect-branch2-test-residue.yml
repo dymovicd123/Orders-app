@@ -43,6 +43,8 @@ jobs:
           q "SELECT v.id,v.product_id,p.name AS product_name,v.category,v.gender,v.color,v.material,v.length,v.size_label,v.created_at,v.updated_at FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE v.id>=630 OR datetime(v.created_at)>=datetime('2026-09-20T00:00:00Z') ORDER BY v.id"
           echo '=== RECENT POSITIONS ==='
           q "SELECT sp.id,sp.product_id,p.name AS product_name,sp.material,sp.length,sp.created_at,sp.updated_at FROM catalog_stock_positions sp JOIN catalog_products p ON p.id=sp.product_id WHERE datetime(sp.created_at)>=datetime('2026-09-20T00:00:00Z') OR UPPER(sp.material) LIKE '%TEST%' OR UPPER(sp.material) LIKE '%ТЕСТ%' ORDER BY sp.id"
+          echo '=== RECENT REFERENCES ALL ==='
+          q "SELECT id,kind,value,is_active,sort_order,created_at,updated_at FROM reference_values WHERE datetime(created_at)>=datetime('2026-09-20T00:00:00Z') ORDER BY id"
           echo '=== RECENT PRODUCT ALIASES ==='
           q "SELECT id,alias_key,raw_value,product_id,created_at,updated_at FROM catalog_product_aliases WHERE datetime(created_at)>=datetime('2026-09-20T00:00:00Z') ORDER BY id"
           echo '=== RECENT VALUE ALIASES ==='
