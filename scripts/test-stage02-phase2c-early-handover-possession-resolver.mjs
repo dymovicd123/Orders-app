@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+// Astra T4 runtime regression: keep the handover evidence bindings aligned with the SQL placeholders.
 
 const app = fs.readFileSync('src/App.tsx', 'utf8')
 const router = fs.readFileSync('worker/index.ts', 'utf8')
