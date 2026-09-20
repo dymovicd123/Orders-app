@@ -4,8 +4,8 @@
   "predecessor": "825c100e6cf010d027cc5adcbc97ee3d2febec1a",
   "files": {
     "src/App.tsx": {
-      "afterGitBlob": "d9d4d9ea38bedb96a06343ac9d75c0843b849638",
-      "afterLines": 7448,
+      "afterGitBlob": "e4b493d952ad697672ca92eb579cd6e6e8a57375",
+      "afterLines": 7451,
       "beforeGitBlob": "77cdf74532ee0468c6d22c14331bff2171ee9c25",
       "beforeLines": 7446,
       "beforeFixture": "scripts/fixtures/resolver-followup-r2/App.tsx"
