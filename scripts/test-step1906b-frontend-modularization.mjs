@@ -91,6 +91,42 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const resolverFollowupFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/resolver-followup-r2-frontend-manifest.json'), 'utf8'))
+if (resolverFollowupFrontendManifest?.version !== 1 || resolverFollowupFrontendManifest?.revision !== 'resolver-followup-r2') throw new Error('Resolver follow-up R2 frontend manifest invalid')
+const resolverFollowupBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.RESOLVER_FOLLOWUP_R2_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(resolverFollowupFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (resolverFollowupBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Resolver follow-up R2 frontend changed beyond exact manifest: ' + relative)
+      }
+      const reverted = fs.readFileSync(path.join(root, delta.beforeFixture), 'utf8')
+      if (resolverFollowupBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Resolver follow-up R2 predecessor fixture drifted: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, RESOLVER_FOLLOWUP_R2_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('RESOLVER FOLLOW-UP R2 FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const resolverHumanFinishFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/resolver-human-finish-r1-frontend-manifest.json'), 'utf8'))
 if (resolverHumanFinishFrontendManifest?.version !== 1 || resolverHumanFinishFrontendManifest?.revision !== 'resolver-human-finish-r1') throw new Error('Resolver human-finish frontend manifest invalid')
 const resolverHumanFinishBlobSha = (value) => {
