@@ -1,0 +1,52 @@
+.order-catalog-resolution-backdrop { z-index: 1200; }
+.order-catalog-resolution-modal { width: min(680px, calc(100vw - 28px)); max-height: calc(100dvh - 28px); overflow-y: auto; padding: 24px; color: #203047; }
+.order-catalog-resolution-modal * { box-sizing: border-box; }
+.order-catalog-resolution-modal header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.order-catalog-resolution-modal h3 { margin: 0 0 4px; font-size: 22px; }
+.order-catalog-resolution-modal h4 { margin: 0 0 14px; font-size: 19px; line-height: 1.35; }
+.order-catalog-resolution-modal h4:focus { outline: none; }
+.order-catalog-resolution-modal p { margin: 8px 0 14px; line-height: 1.5; }
+.order-catalog-resolution-modal small { color: #566578; }
+.resolution-source { display: grid; gap: 5px; margin: 20px 0 14px; color: #566578; font-size: 13px; overflow-wrap: anywhere; }
+.resolution-source strong { color: #203047; font-size: 16px; }
+.resolution-understanding { padding: 12px 0; border-top: 1px solid #dce3eb; overflow-wrap: anywhere; }
+.resolution-understanding > strong { font-size: 18px; }
+.resolution-understanding p { display: flex; flex-wrap: wrap; gap: 5px 16px; margin-bottom: 0; font-size: 13px; }
+.resolution-feedback { min-height: 20px; color: #17653b; font-size: 14px; margin: 4px 0 10px; overflow-wrap: anywhere; }
+.resolution-question { border: 0; border-radius: 10px; padding: 18px; margin: 0; min-width: 0; background: #f3f6fb; }
+.resolution-question:disabled { opacity: .65; }
+.resolution-question label, .resolution-advanced label { display: grid; gap: 6px; min-width: 0; font-size: 14px; }
+.resolution-question input, .resolution-advanced input, .resolution-advanced select { width: 100%; min-width: 0; margin: 4px 0 10px; }
+.resolution-choices { display: flex; flex-wrap: wrap; gap: 9px; margin-bottom: 12px; }
+.order-catalog-resolution-modal button { white-space: normal; overflow-wrap: anywhere; min-height: 38px; }
+.order-catalog-resolution-modal header > button { flex-shrink: 0; white-space: nowrap; }
+.resolution-choices button, .resolution-exception button { padding: 9px 13px; border: 1px solid #b8c6d8; border-radius: 8px; background: #fff; color: #203047; font: inherit; cursor: pointer; }
+.order-catalog-resolution-modal .primary-button { background: #2459a9; border: 1px solid #2459a9; color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 650; }
+.resolution-question > .secondary-button { margin-left: 8px; }
+.resolution-question form small { display: block; margin-top: 6px; }
+.resolution-inline-actions, .resolution-new-value-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; }
+.resolution-admin-required { margin-top: 12px; padding: 12px 14px; border: 1px solid #d5deea; border-radius: 10px; background: #fff; }
+.resolution-admin-required p { margin: 0 0 8px; }
+.resolution-suggestion { margin: 10px 0 14px; padding: 12px 14px; border: 1px solid #b9cce7; border-radius: 10px; background: #eef5ff; }
+.resolution-suggestion > small { display: block; margin-bottom: 8px; font-weight: 650; color: #345a91; }
+.resolution-segment-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+.resolution-segment-list > span { display: grid; gap: 2px; min-width: 120px; padding: 9px 11px; border: 1px solid #cbd6e4; border-radius: 9px; background: #fff; }
+.resolution-segment-list > span small { font-size: 11px; }
+.resolution-combobox { margin: 0 0 12px; padding: 10px; border: 1px solid #cbd6e4; border-radius: 10px; background: #fff; }
+.resolution-combobox > small { display: block; margin-bottom: 8px; }
+.resolution-combobox-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; max-height: 220px; overflow-y: auto; }
+.resolution-combobox-list button { width: 100%; min-height: 34px; padding: 7px 9px; border: 1px solid #d5deea; border-radius: 7px; background: #f8fafc; color: #203047; text-align: left; cursor: pointer; }
+.resolution-combobox-list button:hover { background: #eef3f9; }
+.resolution-exception { margin-top: 14px; font-size: 13px; }
+.resolution-exception button { font-size: 13px; }
+.resolution-link { border: 0; padding: 8px 0; background: transparent; color: #345a91; text-decoration: underline; cursor: pointer; font: inherit; font-size: 13px; }
+.resolution-question > .resolution-link { display: block; }
+.resolution-error { border-left: 3px solid #bd3b36; padding: 8px 12px; margin-bottom: 12px; color: #912824; background: #fff3f2; }
+.resolution-error p { margin-top: 0; }
+.resolution-advanced { border-top: 1px solid #dce3eb; padding-top: 16px; }
+.resolution-advanced fieldset { border: 0; padding: 0; min-width: 0; }
+.resolution-advanced p { font-size: 13px; }
+.resolution-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 12px 0; }
+.resolution-guard { display: block; margin-top: 10px; font-size: 11px; }
+.order-catalog-resolution-modal button:focus-visible, .order-catalog-resolution-modal input:focus-visible, .order-catalog-resolution-modal select:focus-visible { outline: 2px solid #2459a9; outline-offset: 3px; }
+@media (max-width: 640px) { .order-catalog-resolution-modal { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 16px; } .order-catalog-resolution-modal h3 { font-size: 19px; } .resolution-question { padding: 14px; } .resolution-fields { grid-template-columns: 1fr; } .resolution-choices, .resolution-inline-actions, .resolution-new-value-actions { flex-direction: column; align-items: stretch; } .resolution-combobox-list { grid-template-columns: 1fr; } .resolution-question > .secondary-button { margin: 8px 0 0; } }
