@@ -22,11 +22,11 @@ check(projectionSource.includes('hasCommittedPhysicalDownstreamOperation: boolea
 check(projectionSource.includes("typeof order.has_committed_item_return === 'boolean'"), 'Projection does not distinguish explicit money-only Return truth')
 check(projectionSource.includes('const hasCommittedPhysicalDownstreamOperation = hasCommittedItemReturn || hasCommittedExchange'), 'Physical downstream state does not combine item Returns and Exchanges')
 check(projectionSource.includes('canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation'), 'Money-only Return must still protect structural edit history')
-check(projectionSource.includes('canShip: mutableWorkingOrder && !hasCommittedPhysicalDownstreamOperation'), 'Shipping is not decoupled from money-only Return')
-check(projectionSource.includes('canCorrectShipping: mutableWorkingOrder && !hasCommittedDownstreamOperation'), 'Historical shipping correction must remain protected by any downstream operation')
-check(projectionSource.includes('&& !hasCommittedPhysicalDownstreamOperation'), 'Stock handover is not decoupled from money-only Return')
-check(app.includes('projection.hasCommittedPhysicalDownstreamOperation'), 'Shipping action explanation does not follow physical downstream truth')
-check(app.includes('товарный возврат или обмен'), 'Shipping blocker message does not distinguish physical Return/Exchange')
+check(projectionSource.includes('canShip: mutableWorkingOrder && !hasCommittedItemReturn'), 'Shipping must be driven by current returned-item truth, not historical Exchange presence')
+check(projectionSource.includes('canCorrectShipping: mutableWorkingOrder && !hasCommittedItemReturn'), 'False-shipping correction must preserve completed Exchange while standalone item Return remains protected')
+check(projectionSource.includes('&& !hasCommittedItemReturn'), 'Stock handover must use current returned-item truth')
+check(app.includes('projection.hasCommittedItemReturn'), 'Shipping action explanation does not follow current returned-item truth')
+check(app.includes('по текущему товару уже проведён возврат'), 'Shipping blocker message does not identify the current item Return')
 check(table.includes("'Есть возврат денег'"), 'Orders table does not distinguish money-only refund history')
 
 // Execute the real projection to protect behavior, not only source shape.
@@ -71,9 +71,9 @@ const exchange = project({
   has_committed_item_return: false,
 }, false)
 check(exchange.hasCommittedPhysicalDownstreamOperation, 'Exchange is not classified as physical downstream')
-check(!exchange.canShip, 'Exchange allows stale original shipping flow')
+check(exchange.canShip, 'Completed Exchange must leave the active replacement item shippable')
 
 const legacy = project({ ...baseOrder, has_committed_item_return: undefined }, false)
 check(!legacy.canShip, 'Missing new API fact must fail safe instead of silently unblocking legacy payloads')
 
-console.log('STAGE01 MONEY-ONLY RETURN SHIPPING R19B PASSED — financial-only refund keeps physical outbound flow, item Returns/Exchanges remain blocked, and structural history stays protected')
+console.log('STAGE01 MONEY-ONLY RETURN SHIPPING R19B PASSED — money-only refund and completed Exchange keep the current outbound flow, while item Return remains protected')
