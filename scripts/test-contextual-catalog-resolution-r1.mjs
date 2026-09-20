@@ -45,7 +45,7 @@ try {
   check(modal.includes('resolution-understanding') && modal.includes('nextQuestion'), 'Current understanding and next unresolved decision must remain visible')
   check(modal.includes('resolution-question') && modal.includes('questionHeading.current?.focus()'), 'Question and action must stay together with keyboard focus')
   check(modal.includes('setNotice(`${fieldLabel(field, field === \'category\' ? value : draft.category)}: ${displayFact(field, value)} ✓`)'), 'Answers must have immediate visible confirmation with the correct adult/child label')
-  check(modal.includes('Материал'), 'Compound-name residue must remain reusable as a material hypothesis')
+  check(modal.includes("answerField('material', remainder)") && modal.includes('segmentCompoundRemainder'), 'Compound-name residue must remain reusable as a material hypothesis and may be safely segmented first')
   check(!modal.includes('2. Быстрый путь') && !modal.includes('каноническую привязку'), 'R3 must remove developer-facing catalog jargon from the ordinary flow')
   check(modal.includes('exactDraftVariant?.id') && modal.includes('variantId ? `/api/orders/'), 'Exact matches must use the existing-variant mutation')
   check(review.includes('observedPhysicalQuantity: null'), 'Catalog resolver order items must explicitly say no physical count was supplied')
