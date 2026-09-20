@@ -302,33 +302,28 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                               <span className="order-stock-handover-wait-note">Отправить весь заказ можно после готовности Цеха</span>
                             ) : null}
                             {projection.canCorrectShipping ? (
-                              <div className="order-correction-action">
-                                <button
-                                  className="secondary compact"
-                                  type="button"
-                                  disabled={savingOrder}
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    void correctMistakenOrderShipping(order)
-                                  }}
-                                >
-                                  Снять ошибочную отметку «Отправлен»
-                                </button>
-                                {projection.hasCommittedExchange ? (
-                                  <small>Обмен останется проведённым. Текущим товаром считается активная обменённая позиция; она снова будет ожидать выдачи.</small>
-                                ) : null}
-                              </div>
+                              <button
+                                className="secondary compact"
+                                type="button"
+                                disabled={savingOrder}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void correctMistakenOrderShipping(order)
+                                }}
+                              >
+                                Снять «Отправлен»
+                              </button>
                             ) : !retainedOnly && !archived && order.shipping_status === 'sent' && projection.hasCommittedItemReturn ? (
                               <div className="order-correction-blocked">
                                 <button
                                   className="secondary compact"
                                   type="button"
                                   disabled
-                                  title="Текущая физическая история уже изменена отдельным возвратом товара."
+                                  title="Сначала исправьте возврат товара."
                                 >
-                                  Снять ошибочную отметку «Отправлен»
+                                  Снять «Отправлен»
                                 </button>
-                                <small>После проведённого возврата товара сначала исправьте сам возврат. Его нельзя безопасно переписать через отправку.</small>
+                                <small>Сначала исправьте возврат товара</small>
                               </div>
                             ) : null}
                             {projection.canOpenDebt ? (
