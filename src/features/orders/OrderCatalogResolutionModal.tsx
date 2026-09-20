@@ -67,10 +67,10 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     try {
       const review = await read<CatalogReviewResponse>(`/api/orders/${order.id}/catalog-review`)
       if (ticket !== generation.current) return false
-      if (!Array.isArray(review.items) || !Number.isInteger(review.count) || review.count < 0) throw new Error('Список позиций не подтверждён. Повторите проверку.')
+      if (!Array.isArray(review.items) || !Number.isInteger(review.count) || review.count < 0) throw new Error('Не удалось проверить все товары. Повторите.')
       const first = review.items?.[0]
       if (!first) {
-        if (review.count !== 0 || review.truncated) throw new Error('Не удалось получить все позиции. Повторите проверку.')
+        if (review.count !== 0 || review.truncated) throw new Error('Не удалось закончить проверку товаров. Повторите.')
         setItem(null); setDraft(null); setContext(null)
         if (!session.current.changed) setError('Список уточнений пуст. Отправка не продолжена. Закройте окно и проверьте заказ.')
         return true
@@ -171,7 +171,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     try {
       await owner.run(async () => {
         const needsAdminCatalogMutation = !variantId && Boolean(next.createProduct || next.createFields?.length || legacy)
-        if (needsAdminCatalogMutation && !isAdmin) throw new Error('Нужно добавить новый товар или новое значение справочника. Для этого требуется Админ режим; переходить на Склад не нужно.')
+        if (needsAdminCatalogMutation && !isAdmin) throw new Error('Нужен администратор, чтобы добавить это в каталог.')
         const path = variantId ? `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-existing`
           : `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-facts`
         await read<CatalogResolutionResponse>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(variantId ? { variantId } : { ...next, legacyUnknownGender: legacy }) })
