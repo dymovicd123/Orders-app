@@ -32,6 +32,52 @@ Permanent rule:
 
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
+## Checkpoint 2026-09-22 — Stage03-H3/H4/H5 itemized Create foundation GREEN
+
+Final green Branch2 baseline: `07718e7ad04ec00091e97be9f6a016fbbe01d333`.
+Cloudflare monitor: `35767177144` — **success**.
+
+H3 connected the pure H2 write plan to the real server Create path only when the request explicitly asks for `pricingMode: itemized_v1`:
+- omitted pricing mode still defaults to `legacy_manual_total`;
+- the current Create UI still sends no itemized mode;
+- itemized totals, received money and debt are server-derived from line prices + payment facts;
+- a separate manual `orderTotal` is rejected for itemized mode;
+- `orders.pricing_mode = itemized_v1` and nullable per-line `catalog_price_snapshot` are persisted only on the guarded itemized path;
+- migration/foundation capability is checked before itemized SQL is used, so legacy/pre-0073 compatibility remains intact;
+- retry/idempotency keeps the validated itemized write plan frozen in critical-operation context;
+- existing-order Edit, Return and Exchange semantics were not switched.
+
+H4 made exact product gross revenue possible for future itemized orders:
+- exact itemized product revenue = persisted `order_items.line_total`;
+- mutable current Catalog price and `catalog_price_snapshot` are not used as revenue;
+- legacy order allocation remains explicitly ambiguous and is not invented;
+- the old compatibility `order_sales = SUM(o.total_amount)` field remains untouched and hidden from UI;
+- pre-0073 report reads remain safe.
+Final H4 green checkpoint before H5: `13ed605ad3629f79f72cb59b001f0b3ad7695229`, monitor `35764445435` — **success**.
+
+H5 prepared deterministic Catalog recommendation lookup for the future Create UI without activating it:
+- frontend Catalog types now understand the existing backend `executionPrices` payload;
+- pure resolver key is the accepted Stage03 base key: product + material + length + adult/child;
+- active canonical product names and known product aliases are supported;
+- empty material/length reuse the existing `СТАНДАРТ` execution identity;
+- a single valid current sale price returns both recommendation and future Catalog snapshot value;
+- missing product/price returns no invented price;
+- conflicting recommendations fail closed;
+- the resolver performs no fetches and mutates no draft;
+- CreateOrderSection/App do not import or call it yet.
+
+H5 required two regression-boundary repairs:
+- Step 190.6B now has an exact H5 frontend normalization layer before replaying historical F1/C baselines;
+- Step 190.6C permits only the exact manifested inactive `src/app/order-pricing.ts` resolver while it is deliberately not connected to `src/main.tsx`; every other unexplained dormant frontend module still fails.
+
+No Production change, no Production D1 mutation, no current Create UI activation, no Catalog autofill and no client-policy decision in H3/H4/H5.
+
+Next technical work is intentionally deferred: prepare/activate the new-order UI only within the already accepted base pricing scope, harden itemized orders against legacy edit semantics, and add end-to-end coverage before any wider rollout. Open client decisions remain separate.
+
+Canonical note: `docs/continuation/STAGE03_H3_H5_ITEMIZED_CREATE_FOUNDATION_20260922.md`.
+
+---
+
 
 ## Checkpoint 2026-09-22 — Stage03-H1/H2 pure itemized pricing core GREEN
 
