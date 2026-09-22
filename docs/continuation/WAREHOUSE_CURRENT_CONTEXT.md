@@ -33,6 +33,31 @@ Permanent rule:
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
 
+## Checkpoint 2026-09-22 — Stage03-G2 price-only order edit isolation GREEN
+
+Green Branch2 baseline: `ef43358c71bc2fe688364b794b88cc69048a7586`.
+Cloudflare monitor: `35756878923` — **success**.
+
+Price-only correction of an existing order line is now separated from physical/content rewrite:
+- changing only `unitPrice` preserves the existing active `order_items.id`;
+- `unit_price` + `line_total` update in place together with order money totals in one D1 batch;
+- `catalog_price_snapshot` is preserved;
+- no stock reversal, reservation release/re-reservation, item retirement/reinsert or Workshop-task recreation occurs for a pure price-only edit.
+
+Safety policy was deliberately not widened: sent orders, fulfilled partial handovers and orders with completed returns/exchanges still use the existing edit guards because those guards key from any item change, including price.
+
+The first G2 deploy at `4ad7886e782a57aa4b3db42d892a0eb33ff18b65` / monitor `35756301567` failed only at the historical Step 190.6A exact structural manifest after the focused G2 gate had passed. A dedicated G2 structural normalization layer was added, and the final deploy is green.
+
+No migration, D1 data mutation/backfill, Production change, Catalog autofill, itemized-order activation or client-policy decision in G2.
+
+Focused regression: `scripts/test-stage03-g2-price-only-edit-isolation.mjs`.
+Structural layer: `scripts/stage03-g2-price-only-edit-worker-manifest.json`.
+Canonical note: `docs/continuation/STAGE03_G2_PRICE_ONLY_EDIT_ISOLATION_20260922.md`.
+
+Next bounded technical step: pure backend `itemized_v1` calculator/validator contract only; do not connect it to real Create/Edit UI yet.
+
+---
+
 ## Checkpoint 2026-09-22 — Stage03-G1 report / pricing isolation GREEN
 
 Green code baseline: `branch2` `f290648f8ffbc43eb2bebbcacafbaa26a568cef9`.
