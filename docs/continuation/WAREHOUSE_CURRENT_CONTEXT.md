@@ -33,6 +33,31 @@ Permanent rule:
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
 
+## Checkpoint 2026-09-22 — Stage03-F2 pricing metadata read compatibility GREEN
+
+Code baseline: `branch2` `c089ce43bc4ce079eaffb88af717cea3d601d80c`.
+Cloudflare monitor: `35742609404` — **success**.
+
+F2 adds pre-migration-safe read plumbing only:
+- narrow shared probe detects both candidate 0073 columns;
+- before 0073, ordinary order APIs explicitly expose `legacy_manual_total` and nullable Catalog snapshot without selecting missing columns;
+- after 0073, persisted pricing mode and item Catalog snapshot can surface through existing order reads;
+- retained historical summaries remain explicit legacy mode.
+
+No pricing metadata write path, no autofill, no Create/Edit behavior change, no report repricing, no Return/Exchange change.
+
+The cumulative gate passed after two regression-test compatibility repairs:
+- F2 focused guard was scoped so `catalog_price_snapshot == null` is not mistaken for SQL assignment;
+- old D1 R5.9 cursor test was made compile-time-type-agnostic while preserving its exact cursor/OFFSET semantic assertion.
+
+Migration 0073 is still **not applied to any D1**.
+
+Canonical F2 note: `docs/continuation/STAGE03_F2_PRICING_READ_COMPAT_20260922.md`.
+
+Next boundary: if continuing, use a separately guarded workflow to apply/verify 0073 on **Branch2 D1 only**, then stop before any item-price autofill/write activation.
+
+---
+
 ## Checkpoint 2026-09-22 — Stage03-F1 pricing compatibility foundation
 
 Baseline: `branch2` `63ce9bc1e4f922a256959d2f8667b8d61956fcab`.
