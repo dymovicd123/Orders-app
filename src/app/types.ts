@@ -1321,6 +1321,7 @@ export type CatalogProductRecord = {
 export type CatalogVariantRecord = {
   id: number
   productId: number
+  stockPositionId: number
   productName: string
   productCategory: string
   gender: string
@@ -1336,11 +1337,27 @@ export type CatalogVariantRecord = {
 
 
 
+export type CatalogExecutionPriceRecord = {
+  stockPositionId: number
+  productId: number
+  productName: string
+  material: string
+  length: string
+  category: 'adult' | 'child'
+  costPrice: number | null
+  salePrice: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+
+
 export type CatalogResponse = {
   ok: boolean
   products: CatalogProductRecord[]
   productAliases?: Array<{ rawValue: string; productId: number; productName: string }>
   valueAliases?: Array<{ kind: string; rawValue: string; canonicalValue: string }>
+  executionPrices?: CatalogExecutionPriceRecord[]
   variants: CatalogVariantRecord[]
 }
 
