@@ -1,0 +1,77 @@
+name: Stage03 Branch2 migration 0072
+
+on:
+  push:
+    branches:
+      - branch2
+    paths:
+      - '.github/workflows/stage03-branch2-migration-0072.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: Apply 0072 to Branch2 D1 only
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout exact Branch2 commit
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on environment drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "branch2" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo "Production D1 binding detected. Refusing migration." >&2
+            exit 20
+          fi
+          grep -Fq 'CREATE TABLE IF NOT EXISTS catalog_execution_prices' migrations/0072_v72_catalog_execution_prices.sql
+          grep -Fq 'PRIMARY KEY (stock_position_id, category)' migrations/0072_v72_catalog_execution_prices.sql
+          if grep -Eiq '\b(INSERT[[:space:]]+INTO|UPDATE|DELETE[[:space:]]+FROM|ALTER[[:space:]]+TABLE)\b' migrations/0072_v72_catalog_execution_prices.sql; then
+            echo "Migration 0072 is no longer additive/no-backfill. Refusing migration." >&2
+            exit 21
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Apply migration 0072 to Branch2 D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 \
+            --remote \
+            --config wrangler.jsonc \
+            --file migrations/0072_v72_catalog_execution_prices.sql
+
+      - name: Verify schema and zero backfill
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_branch2 \
+            --remote \
+            --config wrangler.jsonc \
+            --command "SELECT COUNT(*) AS price_rows FROM catalog_execution_prices" \
+            --json)"
+          echo "$result"
+          rows="$(jq -r '.[0].results[0].price_rows // empty' <<<"$result")"
+          [[ "$rows" == "0" ]] || {
+            echo "Expected zero price rows after no-backfill migration; got: ${rows:-unknown}" >&2
+            exit 22
+          }
+          echo "Stage03 migration 0072 verified on Branch2 D1 with zero backfilled price rows."
