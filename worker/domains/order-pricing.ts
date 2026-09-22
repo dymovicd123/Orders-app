@@ -90,3 +90,51 @@ export function assertItemizedOrderMoneyNotOverpaid(
   }
   return result;
 }
+
+
+export type ItemizedOrderWriteLineInput = ItemizedOrderLineMoneyInput & {
+  catalogPriceSnapshot?: unknown | null;
+};
+
+export type ItemizedOrderWriteLine = {
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  catalogPriceSnapshot: number | null;
+};
+
+export type ItemizedOrderWritePlan = {
+  pricingMode: 'itemized_v1';
+  lines: ItemizedOrderWriteLine[];
+  totalAmount: number;
+  receivedAmount: number;
+  debtAmount: number;
+};
+
+function optionalCatalogPriceSnapshot(value: unknown, index: number) {
+  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
+    return null;
+  }
+  return requiredSafeInteger(value, `Catalog snapshot позиции ${index + 1}`, 0);
+}
+
+export function buildItemizedOrderWritePlan(
+  lines: readonly ItemizedOrderWriteLineInput[],
+  payments: readonly ItemizedPaymentMoneyInput[],
+): ItemizedOrderWritePlan {
+  const money = assertItemizedOrderMoneyNotOverpaid(lines, payments);
+  const normalizedLines = lines.map((line, index) => ({
+    quantity: requiredSafeInteger(line?.quantity, `Количество в позиции ${index + 1}`, 1),
+    unitPrice: requiredSafeInteger(line?.unitPrice, `Цена позиции ${index + 1}`, 0),
+    lineTotal: money.lineTotals[index],
+    catalogPriceSnapshot: optionalCatalogPriceSnapshot(line?.catalogPriceSnapshot, index),
+  }));
+
+  return {
+    pricingMode: 'itemized_v1',
+    lines: normalizedLines,
+    totalAmount: money.totalAmount,
+    receivedAmount: money.receivedAmount,
+    debtAmount: money.debtAmount,
+  };
+}
