@@ -232,6 +232,7 @@ try {
   run('Stage03-C2 price UI polish', process.execPath, [path.join(root, 'scripts/test-stage03-c2-price-ui-polish.mjs')])
   run('Stage03-F1 pricing compatibility foundation', process.execPath, [path.join(root, 'scripts/test-stage03-f1-pricing-foundation.mjs')])
   run('Stage03-F2 pricing read compatibility', process.execPath, [path.join(root, 'scripts/test-stage03-f2-pricing-read-compat.mjs')])
+  run('Stage03-G1 report price isolation', process.execPath, [path.join(root, 'scripts/test-stage03-g1-report-price-isolation.mjs')])
   run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])
