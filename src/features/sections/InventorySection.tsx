@@ -2143,10 +2143,10 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                 {(warehousePendingIntakeCount > 0 || warehouseClarificationCount > 0) ? (
                   <div className="warehouse-w2-secondary warehouse-clean-queues" aria-label="Задачи склада">
                     {warehousePendingIntakeCount > 0 ? <button type="button" className={`warehouse-w2-recovery warehouse-w3-intake ${inventoryPanel === 'attention' && attentionCategory === 'intake' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory('intake'); openInventoryPanel('attention') }} title="Вещи, которые приехали или едут обратно и ждут приёмки">
-                      <span>Приёмка</span><b>{warehousePendingIntakeCount}</b>
+                      <span>Ожидают приёма</span><b>{warehousePendingIntakeCount}</b>
                     </button> : null}
                     {warehouseClarificationCount > 0 ? <button type="button" className={`warehouse-w2-recovery ${inventoryPanel === 'attention' && attentionCategory !== 'intake' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory(Number(warehouseAttention?.counts?.handover || 0) > 0 ? 'handover' : 'identify'); openInventoryPanel('attention') }} title="Позиции, где нужно уточнить товар или фактическое движение">
-                      <span>Уточнить</span><b>{warehouseClarificationCount}</b>
+                      <span>Нужно уточнить</span><b>{warehouseClarificationCount}</b>
                     </button> : null}
                   </div>
                 ) : null}
