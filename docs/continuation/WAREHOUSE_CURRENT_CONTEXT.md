@@ -33,6 +33,34 @@ Permanent rule:
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
 
+## Checkpoint 2026-09-22 — Stage03-D pricing/finance compatibility audit
+
+Baseline: `branch2` `3831c51e388e525323eff7fe5de040e7f6eb5153`.
+
+Read-only architecture audit completed and recorded in:
+`docs/continuation/STAGE03_D_PRICING_FINANCE_COMPATIBILITY_AUDIT_20260922.md`.
+
+User's proposed target is accepted as the working direction:
+- Catalog prefills a per-item price;
+- manager changes/discounts each item when needed;
+- order total derives from final item prices;
+- payment rows remain manual independent money facts;
+- debt is final order total minus received payments.
+
+Audit found mandatory protections before implementation:
+- old orders need explicit legacy/manual vs itemized pricing mode; never infer from zero unit prices;
+- new lines should likely preserve Catalog sale-price snapshot separately from actual sold `unit_price`;
+- high-level Finance/payment-method reports can remain based on order/payment snapshots and must never reprice from current Catalog;
+- current product report cannot be reused as exact product revenue because it groups items while summing whole-order totals;
+- price-only edits currently count as item rewrites and would churn inventory/reservations, so existing-order price correction needs a separate commercial path;
+- current exchange flow inserts replacement items at price 0 and manually changes order total by exchange difference, so exchange semantics must be redesigned before itemized pricing becomes universal;
+- current returns remain manually valued and can stay separate until client refund policy is decided;
+- gender/color/size-age influence on price is still unresolved.
+
+No code, UI, migration or D1 mutation in this audit step.
+
+---
+
 ## Checkpoint 2026-09-22 — Stage03-C2 price UI polish
 
 Baseline: `branch2` `abac6d232df69bb7c28c02f4203ada9ff3e672d7`.
