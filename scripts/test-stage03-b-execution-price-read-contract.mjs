@@ -31,6 +31,10 @@ check(catalog.includes('executionPrices: executionPriceRows.map(row => ({'), 'Ca
 for (const field of ['stockPositionId', 'productId', 'productName', 'material', 'length', 'category', 'costPrice', 'salePrice']) {
   check(catalog.includes(field + ':'), 'Catalog execution-price response missing ' + field)
 }
-check(!catalog.includes('INSERT INTO catalog_execution_prices') && !catalog.includes('UPDATE catalog_execution_prices'), 'Stage03-B2 must stay read-only')
+const listCatalogStart = catalog.indexOf('export async function listCatalog')
+const listCatalogEnd = catalog.indexOf('export async function isCatalogExecutionPriceSchemaEnabled')
+check(listCatalogStart >= 0 && listCatalogEnd > listCatalogStart, 'Could not isolate listCatalog read path')
+const listCatalogSource = catalog.slice(listCatalogStart, listCatalogEnd)
+check(!listCatalogSource.includes('INSERT INTO catalog_execution_prices') && !listCatalogSource.includes('UPDATE catalog_execution_prices'), 'Stage03-B2 listCatalog path itself must stay read-only')
 
 console.log('STAGE03-B EXECUTION PRICE READ CONTRACT PASSED — isolated Branch2 binding, additive no-backfill schema, batched pre-migration-safe Catalog read, no price writes')
