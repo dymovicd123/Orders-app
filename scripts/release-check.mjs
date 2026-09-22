@@ -237,6 +237,7 @@ try {
   run('Stage03-H1 itemized money calculator', process.execPath, [path.join(root, 'scripts/test-stage03-h1-itemized-money-calculator.mjs')])
   run('Stage03-H2 itemized write plan', process.execPath, [path.join(root, 'scripts/test-stage03-h2-itemized-write-plan.mjs')])
   run('Stage03-H3 explicit itemized create', process.execPath, [path.join(root, 'scripts/test-stage03-h3-explicit-itemized-create.mjs')])
+  run('Stage03-H4 itemized product revenue', process.execPath, [path.join(root, 'scripts/test-stage03-h4-itemized-product-revenue.mjs')])
   run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])
