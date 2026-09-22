@@ -77,7 +77,7 @@ export function calculateItemizedOrderMoney(
   };
 }
 
-export function validateItemizedOrderMoneyForSave(
+export function assertItemizedOrderMoneyNotOverpaid(
   lines: readonly ItemizedOrderLineMoneyInput[],
   payments: readonly ItemizedPaymentMoneyInput[],
 ): ItemizedOrderMoney {
