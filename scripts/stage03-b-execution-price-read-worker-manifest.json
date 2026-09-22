@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "revision": "stage03-b-execution-price-read-contract",
+  "files": {
+    "worker/domains/catalog.ts": {
+      "beforeGitBlob": "a3fb8ead437b0628b575a4cedc150b8d02eabfe0",
+      "afterGitBlob": "fdb3e915481050b0d4cd971ece9cd0af846b40a1",
+      "beforeLines": 1071,
+      "afterLines": 1099,
+      "replacements": [
+        {
+          "beforeBlock": "  let valueAliasRows: Record<string, unknown>[] = [];\n  try {\n    const aliasesResult = await db.prepare(\n      `SELECT kind, raw_value, canonical_value FROM catalog_value_aliases ORDER BY kind, id ASC`\n    ).all<Record<string, unknown>>();\n    valueAliasRows = aliasesResult.results || [];\n  } catch {\n    // Migration 0054 is additive; catalog reads remain compatible during deployment.\n  }\n",
+          "afterBlock": "  let valueAliasRows: Record<string, unknown>[] = [];\n  try {\n    const aliasesResult = await db.prepare(\n      `SELECT kind, raw_value, canonical_value FROM catalog_value_aliases ORDER BY kind, id ASC`\n    ).all<Record<string, unknown>>();\n    valueAliasRows = aliasesResult.results || [];\n  } catch {\n    // Migration 0054 is additive; catalog reads remain compatible during deployment.\n  }\n\n  let executionPriceRows: Record<string, unknown>[] = [];\n  try {\n    const pricesResult = await db.prepare(\n      `SELECT\n         ep.stock_position_id, ep.category, ep.cost_price, ep.sale_price, ep.created_at, ep.updated_at,\n         sp.product_id, sp.material, sp.length, p.name AS product_name\n       FROM catalog_execution_prices ep\n       JOIN catalog_stock_positions sp ON sp.id = ep.stock_position_id\n       JOIN catalog_products p ON p.id = sp.product_id\n       ORDER BY p.name, sp.material, sp.length, ep.category, ep.stock_position_id`\n    ).all<Record<string, unknown>>();\n    executionPriceRows = pricesResult.results || [];\n  } catch {\n    // Migration 0072 is additive; pre-migration Catalog reads remain fully usable with no current prices.\n  }\n"
+        },
+        {
+          "beforeBlock": "    valueAliases: valueAliasRows.map(row => ({\n      kind: cleanText(row.kind),\n      rawValue: cleanText(row.raw_value),\n      canonicalValue: cleanText(row.canonical_value),\n    })),\n    variants: sortedRawVariants.map(row => {\n",
+          "afterBlock": "    valueAliases: valueAliasRows.map(row => ({\n      kind: cleanText(row.kind),\n      rawValue: cleanText(row.raw_value),\n      canonicalValue: cleanText(row.canonical_value),\n    })),\n    executionPrices: executionPriceRows.map(row => ({\n      stockPositionId: toInt(row.stock_position_id, 0),\n      productId: toInt(row.product_id, 0),\n      productName: cleanText(row.product_name),\n      material: canonicalStockPositionValue(row.material),\n      length: canonicalStockPositionValue(row.length),\n      category: cleanText(row.category) === 'child' ? 'child' : 'adult',\n      costPrice: row.cost_price == null ? null : Math.max(0, toInt(row.cost_price, 0)),\n      salePrice: row.sale_price == null ? null : Math.max(0, toInt(row.sale_price, 0)),\n      createdAt: cleanText(row.created_at),\n      updatedAt: cleanText(row.updated_at),\n    })),\n    variants: sortedRawVariants.map(row => {\n"
+        }
+      ]
+    }
+  }
+}

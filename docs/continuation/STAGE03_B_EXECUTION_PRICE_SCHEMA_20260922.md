@@ -110,3 +110,26 @@ Still do not:
 - default order prices;
 - modify historical orders;
 - create historical cost snapshots.
+
+
+## Stage03-B2 — read-only Catalog contract
+
+Implemented on top of the schema-only B1 step.
+
+The existing `GET /api/catalog` response gains a top-level `executionPrices` array. Each row exposes:
+
+- `stockPositionId`;
+- `productId`;
+- `productName`;
+- `material`;
+- `length`;
+- `category` (`adult|child`);
+- `costPrice` (`number|null`);
+- `salePrice` (`number|null`);
+- timestamps.
+
+The read is one batched SELECT joining the price table to canonical execution/product identity. It is not performed per product or per SKU.
+
+Deployment compatibility is deliberate: until migration 0072 is actually applied, the SELECT is caught and the API returns `executionPrices: []`. Existing Catalog reads continue to work.
+
+No price-write function or route is introduced in B2.

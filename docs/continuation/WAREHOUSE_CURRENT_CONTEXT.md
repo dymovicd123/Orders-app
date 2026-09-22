@@ -33,6 +33,29 @@ Permanent rule:
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
 
+## Checkpoint 2026-09-22 — Stage03-B2 read-only Catalog price contract
+
+Baseline: `branch2` `c41ee03e92a0649f6b3bf5b5e0ae34aff89d5c84`.
+
+Before editing, Branch2 environment identity was re-verified as `orders-app-branch2` + `orders_db_branch2` (`40065052-854e-44b8-bcd5-251bdd488301`) with no Production binding.
+
+B1 Cloudflare build failed for a non-runtime reason: Step 190.6C correctly detected the newly added historical migration file as unregistered (`64/63`). B2 registers migration 0072 as an accepted additive migration rather than weakening migration-history protection.
+
+B2 adds a read-only `GET /api/catalog` contract:
+- top-level `executionPrices`;
+- one batched SELECT, no per-SKU/N+1 reads;
+- key/context: execution + adult/child;
+- nullable current cost/sale prices;
+- graceful pre-migration fallback to `executionPrices: []` if table 0072 does not yet exist.
+
+No D1 migration is executed by this source step. No price write endpoint, UI, order defaulting, historical order rewrite or cost snapshot is added.
+
+Focused regression: `scripts/test-stage03-b-execution-price-read-contract.mjs`.
+
+Next: wait for cumulative Branch2 build/deploy. If green, review B1+B2 together before adding the admin write path or applying migration 0072.
+
+---
+
 ## Checkpoint 2026-09-22 — Stage03-B1 price schema contract
 
 Baseline: `branch2` `693e0cba25ed3349f9b0e9ac6524055e97693846`.

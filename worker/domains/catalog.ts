@@ -580,6 +580,22 @@ export async function listCatalog(db: D1Database) {
     // Migration 0054 is additive; catalog reads remain compatible during deployment.
   }
 
+  let executionPriceRows: Record<string, unknown>[] = [];
+  try {
+    const pricesResult = await db.prepare(
+      `SELECT
+         ep.stock_position_id, ep.category, ep.cost_price, ep.sale_price, ep.created_at, ep.updated_at,
+         sp.product_id, sp.material, sp.length, p.name AS product_name
+       FROM catalog_execution_prices ep
+       JOIN catalog_stock_positions sp ON sp.id = ep.stock_position_id
+       JOIN catalog_products p ON p.id = sp.product_id
+       ORDER BY p.name, sp.material, sp.length, ep.category, ep.stock_position_id`
+    ).all<Record<string, unknown>>();
+    executionPriceRows = pricesResult.results || [];
+  } catch {
+    // Migration 0072 is additive; pre-migration Catalog reads remain fully usable with no current prices.
+  }
+
   const rawProducts = productsResult.results || [];
   const rawVariants = variantsResult.results || [];
   const productById = new Map<number, { name: string; category: string | null }>();
@@ -636,6 +652,18 @@ export async function listCatalog(db: D1Database) {
       kind: cleanText(row.kind),
       rawValue: cleanText(row.raw_value),
       canonicalValue: cleanText(row.canonical_value),
+    })),
+    executionPrices: executionPriceRows.map(row => ({
+      stockPositionId: toInt(row.stock_position_id, 0),
+      productId: toInt(row.product_id, 0),
+      productName: cleanText(row.product_name),
+      material: canonicalStockPositionValue(row.material),
+      length: canonicalStockPositionValue(row.length),
+      category: cleanText(row.category) === 'child' ? 'child' : 'adult',
+      costPrice: row.cost_price == null ? null : Math.max(0, toInt(row.cost_price, 0)),
+      salePrice: row.sale_price == null ? null : Math.max(0, toInt(row.sale_price, 0)),
+      createdAt: cleanText(row.created_at),
+      updatedAt: cleanText(row.updated_at),
     })),
     variants: sortedRawVariants.map(row => {
       const productId = toInt(row.product_id, 0);
