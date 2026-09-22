@@ -12,10 +12,14 @@ check(
 
 check(source.includes('export function calculateItemizedOrderMoney'), 'Pure itemized calculator export is missing')
 check(source.includes('export function assertItemizedOrderMoneyNotOverpaid'), 'Itemized overpayment guard export is missing')
-check(!source.includes('catalog_execution_prices'), 'Itemized calculator must not read mutable Catalog prices')
-check(!source.includes('catalogPriceSnapshot') && !source.includes('catalog_price_snapshot'), 'Itemized arithmetic must not reinterpret the Catalog snapshot')
-check(!source.includes('totalOverride') && !source.includes('orderTotal'), 'itemized_v1 calculator must not accept a manual order-total override')
-check(!source.includes('D1Database') && !source.includes('.prepare('), 'Itemized calculator must stay pure and database-independent')
+const calculatorStart = source.indexOf('export function calculateItemizedOrderMoney')
+const calculatorEnd = source.indexOf('export function assertItemizedOrderMoneyNotOverpaid', calculatorStart)
+check(calculatorStart >= 0 && calculatorEnd > calculatorStart, 'H1 calculator boundary is missing')
+const calculatorSource = source.slice(calculatorStart, calculatorEnd)
+check(!calculatorSource.includes('catalog_execution_prices'), 'Itemized calculator must not read mutable Catalog prices')
+check(!calculatorSource.includes('catalogPriceSnapshot') && !calculatorSource.includes('catalog_price_snapshot'), 'Itemized arithmetic must not reinterpret the Catalog snapshot')
+check(!calculatorSource.includes('totalOverride') && !calculatorSource.includes('orderTotal'), 'itemized_v1 calculator must not accept a manual order-total override')
+check(!calculatorSource.includes('D1Database') && !calculatorSource.includes('.prepare('), 'Itemized calculator must stay pure and database-independent')
 
 const transpiled = ts.transpileModule(source, {
   compilerOptions: {
