@@ -2,12 +2,26 @@ import fs from 'node:fs'
 import ts from 'typescript'
 
 const source = fs.readFileSync('worker/domains/order-pricing.ts', 'utf8')
+const orderCore = fs.readFileSync('worker/domains/order-core.ts', 'utf8')
+const ordersWrite = fs.readFileSync('worker/domains/orders-write.ts', 'utf8')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 const structuralManifest = JSON.parse(fs.readFileSync('scripts/stage03-h1-itemized-money-worker-manifest.json', 'utf8'))
 check(structuralManifest?.version === 1 && structuralManifest?.revision === 'stage03-h1-itemized-money-calculator', 'Stage03-H1 structural manifest is missing or has the wrong revision')
 check(
   Object.keys(structuralManifest.addedFiles || {}).join(',') === 'worker/domains/order-pricing.ts',
   'Stage03-H1 structural manifest must cover exactly the new pricing Worker module',
+)
+check(
+  Object.keys(structuralManifest.changedFiles || {}).join(',') === 'worker/domains/order-core.ts',
+  'Stage03-H1 structural manifest must cover exactly the order-core reachability delta',
+)
+check(
+  orderCore.includes("export { assertItemizedOrderMoneyNotOverpaid, calculateItemizedOrderMoney, ItemizedPricingValidationError } from './order-pricing.ts'"),
+  'Pure itemized pricing contract must be reachable from the Worker module graph',
+)
+check(
+  !ordersWrite.includes('calculateItemizedOrderMoney') && !ordersWrite.includes('assertItemizedOrderMoneyNotOverpaid'),
+  'Stage03-H1 must not activate itemized arithmetic in real order write paths',
 )
 
 check(source.includes('export function calculateItemizedOrderMoney'), 'Pure itemized calculator export is missing')
