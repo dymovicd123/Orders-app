@@ -8,10 +8,19 @@ const catalog = read('worker/domains/catalog.ts')
 const worker = read('worker/index.ts')
 const migration = read('migrations/0072_v72_catalog_execution_prices.sql')
 
-check(wrangler.includes('"name": "orders-app-branch2"'), 'Stage03-B3 must preserve Branch2 Worker identity')
-check(wrangler.includes('"database_name": "orders_db_branch2"'), 'Stage03-B3 must preserve Branch2 D1 binding')
-check(wrangler.includes('"database_id": "40065052-854e-44b8-bcd5-251bdd488301"'), 'Stage03-B3 must preserve Branch2 D1 id')
-check(!wrangler.includes('orders_db_prod') && !wrangler.includes('17e68a41-1d58-4a36-8a63-47c3e32443c4'), 'Production D1 must not leak into Branch2')
+const isBranch2Environment =
+  wrangler.includes('"name": "orders-app-branch2"') &&
+  wrangler.includes('"database_name": "orders_db_branch2"') &&
+  wrangler.includes('"database_id": "40065052-854e-44b8-bcd5-251bdd488301"') &&
+  !wrangler.includes('orders_db_prod') &&
+  !wrangler.includes('17e68a41-1d58-4a36-8a63-47c3e32443c4')
+const isProductionEnvironment =
+  wrangler.includes('"name": "orders-app"') &&
+  wrangler.includes('"database_name": "orders_db_prod"') &&
+  wrangler.includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"') &&
+  !wrangler.includes('orders_db_branch2') &&
+  !wrangler.includes('40065052-854e-44b8-bcd5-251bdd488301')
+check(isBranch2Environment || isProductionEnvironment, 'Stage03 requires one coherent known environment; Branch2 and Production bindings must never mix')
 
 check(catalog.includes('stock_position_id, category, gender, color, material, length'), 'Catalog variant read must expose canonical execution id without another query')
 check(catalog.includes('stockPositionId: toInt(row.stock_position_id, 0)'), 'Catalog variant response must expose stockPositionId')
