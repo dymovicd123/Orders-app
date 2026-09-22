@@ -4,6 +4,36 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage03H1ItemizedManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h1-itemized-money-worker-manifest.json'), 'utf8'))
+if (stage03H1ItemizedManifest?.version !== 1 || stage03H1ItemizedManifest?.revision !== 'stage03-h1-itemized-money-calculator') throw new Error('Stage03-H1 itemized money Worker manifest invalid')
+const stage03H1ItemizedBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE03_H1_ITEMIZED_MONEY_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, expected] of Object.entries(stage03H1ItemizedManifest.addedFiles || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage03H1ItemizedBlobSha(actual) !== expected.gitBlob || actual.split(/\r?\n/).length !== expected.lines) throw new Error('Stage03-H1 itemized money added Worker file changed beyond exact manifest: ' + relative)
+      originals.set(relative, actual)
+      fs.rmSync(absolute)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H1_ITEMIZED_MONEY_NORMALIZED: '1' }})
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true })
+      fs.writeFileSync(path.join(root, relative), actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03-H1 ITEMIZED MONEY WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const stage03G2PriceEditManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-g2-price-only-edit-worker-manifest.json'), 'utf8'))
 if (stage03G2PriceEditManifest?.version !== 1 || stage03G2PriceEditManifest?.revision !== 'stage03-g2-price-only-edit-isolation') throw new Error('Stage03-G2 price-only edit Worker manifest invalid')
 const stage03G2PriceEditBlobSha = (value) => {
