@@ -33,6 +33,30 @@ Permanent rule:
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
 
+## Checkpoint 2026-09-22 — Stage03-G1 report / pricing isolation GREEN
+
+Green code baseline: `branch2` `f290648f8ffbc43eb2bebbcacafbaa26a568cef9`.
+Cloudflare monitor: `35753441638` — **success**.
+
+Audited Finance, payment-method, manager, city, product, return, debt, Finance-day, cash, team plan/activity, dashboard and Orders debt/summary reporting paths.
+
+Locked result:
+- current Catalog price table is absent from all audited report/dashboard paths;
+- sales/average-check reporting remains on persisted `orders.total_amount`;
+- payment-method reporting remains on actual `payments`;
+- debt remains on persisted order debt;
+- returns/exchanges/cash/team-plan facts remain on their own historical ledgers;
+- future itemized pricing therefore does not require reports to read mutable Catalog prices.
+
+Existing pre-Stage03 product-report defect confirmed: backend `order_sales = SUM(o.total_amount)` grouped through order items is not exact product revenue for multi-product orders. Current UI does not display this unsafe field, and G1 now guards against silently exposing it as exact revenue.
+
+Focused regression: `scripts/test-stage03-g1-report-price-isolation.mjs`.
+Canonical audit: `docs/continuation/STAGE03_G1_REPORT_PRICE_ISOLATION_20260922.md`.
+
+No report arithmetic, order behavior, UI or D1 data changed in G1.
+
+---
+
 ## Checkpoint 2026-09-22 — Stage03-F3 Branch2 migration 0073 GREEN
 
 Migration source: `branch2` `5721d1d0151910f2c24bf17d94a44e5b5eeb807d`.
