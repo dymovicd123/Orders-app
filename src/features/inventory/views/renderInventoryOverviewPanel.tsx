@@ -25,7 +25,6 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'quickStocktakeOpen'
   | 'quickStocktakeValues'
   | 'refreshCycleCountSuggestions'
-  | 'refreshInventoryModule'
   | 'setInventoryQuery'
   | 'setQuickStocktakeNotice'
   | 'setQuickStocktakeOpen'
@@ -156,7 +155,6 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
     quickStocktakeBusy,
     quickStocktakeNotice,
     quickStocktakeValues,
-    refreshInventoryModule,
     setInventoryQuery,
     setQuickStocktakeNotice,
     setQuickStocktakeOpen,
