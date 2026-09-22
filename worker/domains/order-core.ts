@@ -143,7 +143,7 @@ export function normalizeOrderPayments(payments: OrderInput['payments'], fallbac
 }
 
 
-export function sameOrderItemForEdit(
+export function sameOrderItemExceptPriceForEdit(
   left: ReturnType<typeof normalizeOrderItems>[number],
   right: ReturnType<typeof normalizeOrderItems>[number],
 ) {
@@ -155,12 +155,20 @@ export function sameOrderItemForEdit(
     && left.length === right.length
     && left.size === right.size
     && left.quantity === right.quantity
-    && left.unitPrice === right.unitPrice
     && left.sourceType === right.sourceType
     && left.isWorkshop === right.isWorkshop
     && left.workshopComment === right.workshopComment
     && Boolean(left.workshopUrgent) === Boolean(right.workshopUrgent)
     && (left.workshopDueDate || '') === (right.workshopDueDate || '');
+}
+
+
+export function sameOrderItemForEdit(
+  left: ReturnType<typeof normalizeOrderItems>[number],
+  right: ReturnType<typeof normalizeOrderItems>[number],
+) {
+  return sameOrderItemExceptPriceForEdit(left, right)
+    && left.unitPrice === right.unitPrice;
 }
 
 
@@ -182,6 +190,15 @@ export function sameNormalizedOrderItemsForEdit(
 ) {
   if (left.length !== right.length) return false;
   return left.every((item, index) => sameOrderItemForEdit(item, right[index]));
+}
+
+
+export function sameNormalizedOrderItemsExceptPriceForEdit(
+  left: ReturnType<typeof normalizeOrderItems>,
+  right: ReturnType<typeof normalizeOrderItems>,
+) {
+  if (left.length !== right.length) return false;
+  return left.every((item, index) => sameOrderItemExceptPriceForEdit(item, right[index]));
 }
 
 
