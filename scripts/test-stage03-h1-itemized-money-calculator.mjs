@@ -2,13 +2,13 @@ import fs from 'node:fs'
 import ts from 'typescript'
 
 const source = fs.readFileSync('worker/domains/order-pricing.ts', 'utf8')
+const check = (condition, message) => { if (!condition) throw new Error(message) }
 const structuralManifest = JSON.parse(fs.readFileSync('scripts/stage03-h1-itemized-money-worker-manifest.json', 'utf8'))
 check(structuralManifest?.version === 1 && structuralManifest?.revision === 'stage03-h1-itemized-money-calculator', 'Stage03-H1 structural manifest is missing or has the wrong revision')
 check(
   Object.keys(structuralManifest.addedFiles || {}).join(',') === 'worker/domains/order-pricing.ts',
   'Stage03-H1 structural manifest must cover exactly the new pricing Worker module',
 )
-const check = (condition, message) => { if (!condition) throw new Error(message) }
 
 check(source.includes('export function calculateItemizedOrderMoney'), 'Pure itemized calculator export is missing')
 check(source.includes('export function assertItemizedOrderMoneyNotOverpaid'), 'Itemized overpayment guard export is missing')
