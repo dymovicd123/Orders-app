@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "revision": "stage03-h5-catalog-price-resolver",
+  "modifiedFiles": {
+    "src/app/types.ts": {
+      "beforeGitBlob": "c32fec77582ec59d51faaf62a6c93eb6e0c689f3",
+      "afterGitBlob": "d189e80ca97442a16a0535bc4ec3091db02fda12",
+      "beforeLines": 1726,
+      "afterLines": 1743,
+      "replacements": [
+        {
+          "beforeBlock": "export type CatalogVariantRecord = {\n  id: number\n  productId: number\n  productName: string\n  productCategory: string\n  gender: string\n  color: string\n  material: string\n  length: string\n  sizeLabel: string\n  isActive: boolean\n  sortOrder: number\n  createdAt: string\n  updatedAt: string\n}\n\n\n\nexport type CatalogResponse = {\n  ok: boolean\n  products: CatalogProductRecord[]\n  productAliases?: Array<{ rawValue: string; productId: number; productName: string }>\n  valueAliases?: Array<{ kind: string; rawValue: string; canonicalValue: string }>\n  variants: CatalogVariantRecord[]\n}",
+          "afterBlock": "export type CatalogVariantRecord = {\n  id: number\n  productId: number\n  stockPositionId: number\n  productName: string\n  productCategory: string\n  gender: string\n  color: string\n  material: string\n  length: string\n  sizeLabel: string\n  isActive: boolean\n  sortOrder: number\n  createdAt: string\n  updatedAt: string\n}\n\n\n\nexport type CatalogExecutionPriceRecord = {\n  stockPositionId: number\n  productId: number\n  productName: string\n  material: string\n  length: string\n  category: 'adult' | 'child'\n  costPrice: number | null\n  salePrice: number | null\n  createdAt: string\n  updatedAt: string\n}\n\n\n\nexport type CatalogResponse = {\n  ok: boolean\n  products: CatalogProductRecord[]\n  productAliases?: Array<{ rawValue: string; productId: number; productName: string }>\n  valueAliases?: Array<{ kind: string; rawValue: string; canonicalValue: string }>\n  executionPrices?: CatalogExecutionPriceRecord[]\n  variants: CatalogVariantRecord[]\n}"
+        }
+      ]
+    }
+  },
+  "addedFiles": {
+    "src/app/order-pricing.ts": {
+      "afterGitBlob": "65c028782cd373aea208f377fae9215ae6e4fdcf",
+      "afterLines": 84
+    }
+  }
+}
