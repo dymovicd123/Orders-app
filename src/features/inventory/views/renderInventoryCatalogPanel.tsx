@@ -467,8 +467,8 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
               <div className="catalog-detail-editor-head">
                 <div>
                   <span className="catalog-detail-eyebrow">Новый товар</span>
-                  <h3>Новый товар</h3>
-                  <p>Задайте базовое название и назначение по полу. Для женского/мужского товара пол дальше подставляется автоматически; у унисекс человек выбирает пол конкретной вещи.</p>
+                  <h3>Добавить товар</h3>
+                  <p>Укажите название и кому предназначен товар. Цвета, размеры и другие характеристики добавляются после создания.</p>
                 </div>
                 <button className="secondary compact" type="button" onClick={() => setExpandedCatalogProducts({})}>Отмена</button>
               </div>
@@ -607,7 +607,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                         <option value="МУЖ">МУЖ</option>
                         <option value="ЖЕН">ЖЕН</option>
                       </select>
-                      <small>{fixedGenderForProduct(selectedProduct) ? 'Подставлено по товару. Если каталог ошибся, пол этой комбинации можно изменить.' : 'Унисекс: выберите пол этой конкретной комбинации.'}</small>
+                      <small>{fixedGenderForProduct(selectedProduct) ? 'Подставлено по товару. При необходимости пол этой позиции можно исправить.' : 'Для унисекс выберите пол этой позиции.'}</small>
                     </label>
                     <label>
                       <span>Цвет</span>
