@@ -4,6 +4,7 @@ import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, norm
 import type { InventoryItemInput, OrderInput, PaymentKind, SourceType } from '../core/types.ts'
 import { createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogProductByIdentity, isCatalogIdentityV3Enabled, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize } from './catalog.ts'
 import { normalizePaymentKind } from './money.ts'
+export { assertItemizedOrderMoneyNotOverpaid, calculateItemizedOrderMoney, ItemizedPricingValidationError } from './order-pricing.ts'
 
 export function calculateTotals(items: OrderInput['items'], payments: OrderInput['payments'], totalOverride?: number | string) {
   const itemsTotal = (items || []).reduce((sum, item) => {
