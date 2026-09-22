@@ -234,6 +234,7 @@ try {
   run('Stage03-F2 pricing read compatibility', process.execPath, [path.join(root, 'scripts/test-stage03-f2-pricing-read-compat.mjs')])
   run('Stage03-G1 report price isolation', process.execPath, [path.join(root, 'scripts/test-stage03-g1-report-price-isolation.mjs')])
   run('Stage03-G2 price-only edit isolation', process.execPath, [path.join(root, 'scripts/test-stage03-g2-price-only-edit-isolation.mjs')])
+  run('Stage03-G3 itemized calculator contract', process.execPath, [path.join(root, 'scripts/test-stage03-g3-itemized-calculator.mjs')])
   run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])
