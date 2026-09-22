@@ -1,10 +1,32 @@
 # Warehouse current context — canonical continuation
 
-Updated: 2026-09-10
+Updated: 2026-09-22
 Repository: `dymovicd123/Orders-app`
 
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
+
+## Checkpoint 2026-09-22 — Stage03-A commercial price model fixed
+
+Baseline: `branch2` `0793274cc1f8e118f4d73e187eeb2a48e5cd1bb2` after the Warehouse/Catalog UX cleanup acceptance.
+
+Stage03-A is a docs/design-only step. No migration, API mutation, order logic, UI or Production D1 change is included.
+
+Decision:
+- current editable `Себестоимость` and `Цена продажи` belong to the **catalog product** (`catalog_products`), because the client rule is per товар and no rule for material/length/color/size-specific pricing has been supplied;
+- later schema fields should be nullable non-negative integer KZT values; `NULL` means “not set”, while zero remains a real explicit value;
+- do not add price columns to `catalog_variants` or execution identity now; W6/W7 commercial anchors remain presentation readiness only, not an inheritance model;
+- the existing `order_items.unit_price` is already the historical transaction sale-price snapshot and must never be rewritten when the current catalog sale price changes;
+- do **not** invent a cost snapshot from the mutable current catalog cost yet. Stage04 Workshop invoice/intake work must define the actual historical cost source/allocation for a received batch before profitability uses it;
+- no automatic price-change formula, inheritance, effective-date engine or per-SKU overrides are invented.
+
+Efficiency consequence: the later current-price read can ride on the existing `listCatalog` product SELECT, and writes can extend the existing admin-only catalog product PATCH. No extra background/read endpoint is required.
+
+Canonical design note: `docs/continuation/STAGE03_A_COMMERCIAL_PRICE_MODEL_20260922.md`.
+
+Next micro-step: Stage03-B schema/API foundation only — migration + catalog read/write contracts for the two current product prices. Keep order defaulting, historical cost allocation and UI out of that step.
+
+---
 
 ## Checkpoint 2026-09-19 — Stage02 transactional stock truth resumed
 
