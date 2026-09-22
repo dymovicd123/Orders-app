@@ -193,8 +193,15 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
 
   const hasExplicitStockSearch = Boolean(inventoryQuery.trim())
   const visibleVariantCount = simpleStockGroups.reduce((sum: number, group: any) => sum + Number((group.rows || []).length), 0)
+  const availabilityScopeLabel = simpleStockAvailabilityFilter === 'free'
+    ? 'есть свободный остаток'
+    : simpleStockAvailabilityFilter === 'reserved'
+      ? 'есть в заказах'
+      : simpleStockAvailabilityFilter === 'attention'
+        ? 'требуют внимания'
+        : hasExplicitStockSearch ? 'все найденные позиции' : 'все позиции с остатком'
   const resultScopeLabel = hasExplicitStockSearch
-    ? `Поиск: «${inventoryQuery.trim()}» · фильтр наличия не скрывает найденные позиции`
+    ? `Поиск: «${inventoryQuery.trim()}» · ${availabilityScopeLabel}`
     : simpleStockAvailabilityFilter === 'free'
       ? 'Только позиции со свободным остатком'
       : simpleStockAvailabilityFilter === 'reserved'
@@ -213,12 +220,11 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
 
   return (
     <div className="inventory-overview-panel inventory-calm-stock" style={inventoryPanelStyle('overview')}>
-                    <div className="inventory-calm-head">
+                    <div className="inventory-calm-head warehouse-clean-stock-head">
                       <div>
                         <h3>Остатки</h3>
-                        <p>Смотрите прежде всего на «Свободно» — это количество, которое можно использовать для нового заказа.</p>
+                        <p><b>Свободно</b> — сколько можно использовать для нового заказа.</p>
                       </div>
-                      <button className="secondary compact" type="button" onClick={() => void refreshInventoryModule(true)}>Обновить</button>
                     </div>
     
                     <div className="inventory-calm-toolbar">
@@ -253,7 +259,7 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                       </details>
                     </div>
 
-                    <div className={`inventory-calm-filters ${hasExplicitStockSearch ? 'is-search-override' : ''}`}>
+                    <div className="inventory-calm-filters">
                       {[
                         { value: 'free', label: `Есть свободные (${simpleStockStats.freeVariants})` },
                         { value: 'reserved', label: `В заказах (${simpleStockStats.reservedVariants})` },
@@ -275,9 +281,7 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                         </div>
                       </details>
                     </div>
-                    {hasExplicitStockSearch ? <p className="inventory-stock-filter-override">Поиск показывает найденные позиции независимо от фильтра наличия. После очистки поиска снова действует выбранный фильтр.</p> : null}
-    
-                    {simpleStockAvailabilityFilter === 'all' && !inventoryQuery.trim() ? <p className="inventory-calm-note">Пустые позиции каталога здесь не выводятся. Чтобы проверить товар с нулевым остатком, найдите его через поиск.</p> : null}
+                    {simpleStockAvailabilityFilter === 'all' && !inventoryQuery.trim() ? <p className="inventory-calm-note">Позиции без остатка можно найти через поиск по товару.</p> : null}
     
 
                     <div className="inventory-stock-result-meta" aria-live="polite">
