@@ -3,6 +3,33 @@
 Updated: 2026-09-22
 Repository: `dymovicd123/Orders-app`
 
+## CRITICAL environment invariant — Branch2 / Production D1 must never mix
+
+On 2026-09-22 Branch2 was found with the Production D1 binding. Repository forensics identified the lineage error:
+
+- reviewed Branch2 Stage02 state existed at `1984ff897a56cedb026278ff4cd7f503e06ee8c4` with the correct isolated binding:
+  - Worker `orders-app-branch2`;
+  - D1 `orders_db_branch2`;
+  - id `40065052-854e-44b8-bcd5-251bdd488301`;
+- Production candidate `1778c42701426a916a3b21a451156cece4e71b9a` merged that state into Production;
+- Production hotfix `186f9b58ecd8e188783dd6b1886c30e190393c4b` correctly restored Production identity:
+  - Worker `orders-app`;
+  - D1 `orders_db_prod`;
+  - id `17e68a41-1d58-4a36-8a63-47c3e32443c4`;
+- later Branch2 sync commits were started from that Production hotfix tree and copied business files back one-by-one, but did **not** restore Branch2 environment identity. That left `branch2` using the Production binding.
+
+Emergency repair: `0f38bf4f1c85ef124237abd952384b05513b946c` restores Branch2 `wrangler.jsonc`, visual title marker, Branch2 environment regression gate, and replaces the Production environment test in Branch2 `release:check`.
+
+Permanent rule:
+- Branch2 and Production D1 are separate physical databases and must never share bindings or data implicitly.
+- Never use a Production tree as a Branch2 baseline without explicitly restoring/verifying Branch2 environment identity before any deploy.
+- Never use a Branch2 tree as a Production release without explicitly restoring/verifying Production environment identity before any deploy.
+- Never copy D1 data between environments unless the user explicitly requests that exact data-copy operation.
+- Before any Branch2/Production D1 mutation, verify Worker name + D1 logical name + D1 id.
+- If the environments appear identical, stop mutations and verify binding first.
+
+---
+
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
 
