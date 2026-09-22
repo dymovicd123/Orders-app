@@ -566,6 +566,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
 
               <CatalogPolishExecutionGroups
                 executionGroups={executionGroups}
+                executionPrices={(catalogData as any)?.executionPrices || []}
                 selectedVariants={selectedVariants}
                 selectedProduct={selectedProduct}
                 getStockQuantityForVariant={getStockQuantityForVariant}

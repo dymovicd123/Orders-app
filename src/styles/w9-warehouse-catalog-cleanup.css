@@ -368,3 +368,133 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.catalog-execution-prices {
+  margin: 10px 12px 12px;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.78);
+}
+
+.catalog-execution-prices-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.catalog-execution-prices-head > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.catalog-execution-prices-head strong {
+  font-size: 13px;
+}
+
+.catalog-execution-prices-head span {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.catalog-execution-price-list {
+  display: grid;
+  gap: 7px;
+}
+
+.catalog-execution-price-row {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.55fr) minmax(130px, 1fr) minmax(130px, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  padding: 8px;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.catalog-execution-price-kind {
+  align-self: center;
+}
+
+.catalog-execution-price-kind strong {
+  font-size: 12px;
+}
+
+.catalog-execution-price-row label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.catalog-execution-price-row label > span {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.catalog-execution-price-row input {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+}
+
+.catalog-execution-price-row > button {
+  min-height: 36px;
+  white-space: nowrap;
+}
+
+.catalog-execution-price-status {
+  grid-column: 1 / -1;
+  padding: 5px 7px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.catalog-execution-price-status.is-success {
+  background: rgba(22, 163, 74, 0.08);
+  color: #166534;
+}
+
+.catalog-execution-price-status.is-error {
+  background: rgba(220, 38, 38, 0.08);
+  color: #991b1b;
+}
+
+@media (max-width: 760px) {
+  .catalog-execution-prices {
+    margin: 8px;
+    padding: 8px;
+  }
+
+  .catalog-execution-price-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .catalog-execution-price-kind,
+  .catalog-execution-price-row > button,
+  .catalog-execution-price-status {
+    grid-column: 1 / -1;
+  }
+
+  .catalog-execution-price-row > button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 440px) {
+  .catalog-execution-price-row {
+    grid-template-columns: 1fr;
+  }
+
+  .catalog-execution-price-kind,
+  .catalog-execution-price-row label,
+  .catalog-execution-price-row > button,
+  .catalog-execution-price-status {
+    grid-column: 1;
+  }
+}

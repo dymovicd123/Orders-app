@@ -68,6 +68,7 @@ async function readCatalogMutationResult(response: Response) {
 
 export function CatalogPolishExecutionGroups({
   executionGroups,
+  executionPrices,
   selectedVariants,
   selectedProduct,
   getStockQuantityForVariant,
@@ -87,6 +88,109 @@ export function CatalogPolishExecutionGroups({
   const [actionBusyVariantId, setActionBusyVariantId] = useState(0)
   const [actionMessage, setActionMessage] = useState('')
   const [actionError, setActionError] = useState('')
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, { costPrice: string; salePrice: string }>>({})
+  const [priceBusyKey, setPriceBusyKey] = useState('')
+  const [priceStatus, setPriceStatus] = useState<{ key: string; kind: 'success' | 'error'; message: string } | null>(null)
+
+  const priceKey = (stockPositionId: number, category: string) => `${stockPositionId}:${category}`
+
+  const currentExecutionPrice = (stockPositionId: number, category: string) =>
+    (executionPrices || []).find((row: any) =>
+      Number(row.stockPositionId || 0) === stockPositionId && String(row.category || '') === category)
+
+  const priceDraftFor = (stockPositionId: number, category: string) => {
+    const key = priceKey(stockPositionId, category)
+    const explicit = priceDrafts[key]
+    if (explicit) return explicit
+    const current = currentExecutionPrice(stockPositionId, category)
+    return {
+      costPrice: current?.costPrice == null ? '' : String(current.costPrice),
+      salePrice: current?.salePrice == null ? '' : String(current.salePrice),
+    }
+  }
+
+  const updatePriceDraft = (stockPositionId: number, category: string, field: 'costPrice' | 'salePrice', value: string) => {
+    const key = priceKey(stockPositionId, category)
+    setPriceDrafts((current) => ({
+      ...current,
+      [key]: {
+        ...priceDraftFor(stockPositionId, category),
+        ...(current[key] || {}),
+        [field]: value,
+      },
+    }))
+    if (priceStatus?.key === key) setPriceStatus(null)
+  }
+
+  const parsePriceValue = (value: string, label: string) => {
+    const text = value.trim()
+    if (!text) return null
+    if (!/^\d+$/.test(text)) throw new Error(`${label} должна быть целым числом тенге от 0.`)
+    const amount = Number(text)
+    if (!Number.isSafeInteger(amount) || amount < 0) throw new Error(`${label} указана некорректно.`)
+    return amount
+  }
+
+  const saveExecutionPrice = async (group: any, category: 'adult' | 'child') => {
+    if (!isAdmin || priceBusyKey) return
+    const stockPositionIds = Array.from(new Set(
+      (group.variants || []).map((variant: any) => Number(variant.stockPositionId || 0)).filter((value: number) => value > 0),
+    ))
+    if (stockPositionIds.length !== 1) {
+      setPriceStatus({ key: `${group.key}:${category}`, kind: 'error', message: 'Не удалось однозначно определить исполнение. Обновите каталог.' })
+      return
+    }
+
+    const stockPositionId = Number(stockPositionIds[0])
+    const key = priceKey(stockPositionId, category)
+    const draft = priceDraftFor(stockPositionId, category)
+
+    let costPrice: number | null
+    let salePrice: number | null
+    try {
+      costPrice = parsePriceValue(draft.costPrice, 'Себестоимость')
+      salePrice = parsePriceValue(draft.salePrice, 'Цена продажи')
+    } catch (error) {
+      setPriceStatus({ key, kind: 'error', message: error instanceof Error ? error.message : 'Проверьте введённые цены.' })
+      return
+    }
+
+    setPriceBusyKey(key)
+    setPriceStatus(null)
+    try {
+      const response = await fetch('/api/catalog/execution-prices', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stockPositionId, category, costPrice, salePrice }),
+      })
+      const result = await readCatalogMutationResult(response)
+      if (!response.ok || result.ok === false) {
+        setPriceStatus({ key, kind: 'error', message: result.message || 'Не удалось сохранить цены.' })
+        return
+      }
+
+      setPriceDrafts((current) => {
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
+      setPriceStatus({ key, kind: 'success', message: 'Цены сохранены.' })
+
+      try {
+        const refreshed = await loadCatalogData(true)
+        if (!refreshed) {
+          setPriceStatus({ key, kind: 'success', message: 'Цены сохранены, но список не обновился. Нажмите «Обновить»; повторять сохранение не нужно.' })
+        }
+      } catch {
+        setPriceStatus({ key, kind: 'success', message: 'Цены сохранены, но список не обновился. Нажмите «Обновить»; повторять сохранение не нужно.' })
+      }
+    } catch {
+      setPriceStatus({ key, kind: 'error', message: 'Не удалось подтвердить результат. Нажмите «Обновить» и проверьте цены перед повторным сохранением.' })
+    } finally {
+      setPriceBusyKey('')
+    }
+  }
 
   const openVariantCard = (variant: any, group: any, colorGroup: any, subgroup: any) => {
     setVariantCard({ variant, group, colorGroup, subgroup })
@@ -166,6 +270,82 @@ export function CatalogPolishExecutionGroups({
                 <span>физически в точках</span>
               </div>
             </div>
+
+            {isAdmin ? (() => {
+              const categories = (['adult', 'child'] as const).filter((category) =>
+                group.variants.some((variant: any) => getCatalogVariantCategory(variant) === category))
+              const stockPositionIds = Array.from(new Set(
+                (group.variants || []).map((variant: any) => Number(variant.stockPositionId || 0)).filter((value: number) => value > 0),
+              ))
+              const stockPositionId = stockPositionIds.length === 1 ? Number(stockPositionIds[0]) : 0
+              return (
+                <section className="catalog-execution-prices" aria-label={`Цены: ${group.label}`}>
+                  <div className="catalog-execution-prices-head">
+                    <div>
+                      <strong>Цены</strong>
+                      <span>Для этого материала и длины</span>
+                    </div>
+                  </div>
+                  {stockPositionId ? (
+                    <div className="catalog-execution-price-list">
+                      {categories.map((category) => {
+                        const key = priceKey(stockPositionId, category)
+                        const draft = priceDraftFor(stockPositionId, category)
+                        const busy = priceBusyKey === key
+                        return (
+                          <div key={key} className="catalog-execution-price-row" data-price-category={category}>
+                            <div className="catalog-execution-price-kind">
+                              <strong>{productCategoryLabel(category)}</strong>
+                            </div>
+                            <label>
+                              <span>Себестоимость, ₸</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                inputMode="numeric"
+                                value={draft.costPrice}
+                                disabled={Boolean(priceBusyKey)}
+                                placeholder="Не указана"
+                                onChange={(event) => updatePriceDraft(stockPositionId, category, 'costPrice', event.target.value)}
+                              />
+                            </label>
+                            <label>
+                              <span>Цена продажи, ₸</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                inputMode="numeric"
+                                value={draft.salePrice}
+                                disabled={Boolean(priceBusyKey)}
+                                placeholder="Не указана"
+                                onChange={(event) => updatePriceDraft(stockPositionId, category, 'salePrice', event.target.value)}
+                              />
+                            </label>
+                            <button
+                              className="primary compact"
+                              type="button"
+                              disabled={Boolean(priceBusyKey)}
+                              onClick={() => void saveExecutionPrice(group, category)}
+                            >
+                              {busy ? 'Сохраняю…' : 'Сохранить'}
+                            </button>
+                            {priceStatus?.key === key ? (
+                              <div className={`catalog-execution-price-status ${priceStatus.kind === 'error' ? 'is-error' : 'is-success'}`} role={priceStatus.kind === 'error' ? 'alert' : 'status'}>
+                                {priceStatus.message}
+                              </div>
+                            ) : null}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="catalog-execution-price-status is-error" role="alert">Не удалось определить исполнение товара. Обновите каталог.</div>
+                  )}
+                </section>
+              )
+            })() : null}
 
             <div className="catalog-color-list">
               {colorGroups.map((colorGroup: any) => {

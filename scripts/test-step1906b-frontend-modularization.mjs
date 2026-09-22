@@ -91,6 +91,46 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage03CFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-c-catalog-price-ui-frontend-manifest.json'), 'utf8'))
+if (stage03CFrontendManifest?.version !== 1 || stage03CFrontendManifest?.revision !== 'stage03-c-catalog-price-ui') throw new Error('Stage03-C Catalog price UI frontend manifest invalid')
+const stage03CFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE03_C_CATALOG_PRICE_UI_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stage03CFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage03CFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Stage03-C Catalog price UI changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-C Catalog price UI after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (stage03CFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Stage03-C Catalog price UI predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, STAGE03_C_CATALOG_PRICE_UI_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03-C CATALOG PRICE UI FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const warehouseCatalogCleanupManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/warehouse-catalog-cleanup-r1-frontend-manifest.json'), 'utf8'))
 if (warehouseCatalogCleanupManifest?.version !== 1 || warehouseCatalogCleanupManifest?.revision !== 'warehouse-catalog-cleanup-r1') throw new Error('Warehouse/Catalog cleanup frontend manifest invalid')
 const warehouseCatalogCleanupBlobSha = (value) => {

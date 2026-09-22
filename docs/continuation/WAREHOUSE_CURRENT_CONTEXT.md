@@ -33,6 +33,27 @@ Permanent rule:
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
 
+## Checkpoint 2026-09-22 — Stage03-C catalog price UI
+
+Baseline: `branch2` `29c1b7009242da884c74b8704ded159d508bcc79`. Branch2 Worker/D1 identity was verified before UI work; Production binding absent. Migration 0072 is already present only in Branch2 D1 and had zero backfilled price rows.
+
+Implemented in Branch2 UI:
+- price editing lives inside each execution card (product + material + length), above color/size details;
+- rows are shown only for adult/child categories actually present in that execution;
+- cost and sale price remain admin-only in Catalog;
+- blank input maps to `NULL`; zero remains an explicit zero;
+- save uses the existing full-pair admin `PUT /api/catalog/execution-prices`;
+- ambiguous lost-response handling tells the admin to refresh/check before retrying;
+- phone layout is included.
+
+No gender/color/size/age price rule is invented.
+
+Client requirement clarified by user: the catalog sale price must later prefill the order form, while managers need a way to apply a discount/price adjustment when necessary. That is **recorded but deliberately deferred** until after the base price-setting UI is accepted. Stage03-C does not touch order creation/editing, `unit_price`, or discount semantics.
+
+No D1 mutation is performed by this UI commit.
+
+---
+
 ## Checkpoint 2026-09-22 — Stage03-B3 admin price write contract
 
 Baseline: `branch2` `94695197141b496b96a1153ed6936f3502001fd4`. Branch2 Worker/D1 identity was re-verified before editing; no Production binding is present.
