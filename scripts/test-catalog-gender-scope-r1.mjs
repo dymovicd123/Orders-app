@@ -35,7 +35,7 @@ check(operational.includes("gender: automaticGender"), 'Arrival product pick mus
 check(exchange.includes('Выберите для унисекс'), 'Exchange gender must be a controlled choice')
 check(panel.includes('Назначение по полу'), 'Catalog product form must expose scope selector')
 check(!panel.includes('disabled={Boolean(fixedGenderForProduct(selectedProduct))}'), 'Product default must not lock the concrete gender field')
-check(panel.includes('можно изменить'), 'Catalog UI must explain that automatic gender remains editable')
+check(panel.includes('При необходимости пол этой позиции можно исправить.'), 'Catalog UI must explain that automatic gender remains editable')
 check(app.includes('genderScope: catalogProductDraft.genderScope'), 'Catalog save payload must send scope')
 
 
