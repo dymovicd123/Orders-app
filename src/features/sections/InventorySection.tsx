@@ -1460,11 +1460,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       const allRows = simpleStockCategory === 'all'
         ? productRows
         : productRows.filter((row: any) => (row.category || 'adult') === simpleStockCategory)
-      const visibleRows = hasExplicitStockSearch ? allRows : allRows.filter((row: any) => {
+      const visibleRows = allRows.filter((row: any) => {
         const free = simpleStockQuantity(row)
         const reserved = simpleStockReserved(row)
         const physical = simpleStockPhysical(row)
-        if (simpleStockAvailabilityFilter === 'all') return physical !== 0 || reserved !== 0
+        if (simpleStockAvailabilityFilter === 'all') return hasExplicitStockSearch ? true : physical !== 0 || reserved !== 0
         if (simpleStockAvailabilityFilter === 'free') return free > 0
         if (simpleStockAvailabilityFilter === 'reserved') return reserved > 0
         return free < 0 || physical < 0
@@ -1474,7 +1474,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         ...product,
         rows: visibleRows,
         allRows,
-        availabilityFilterApplied: !hasExplicitStockSearch,
+        availabilityFilterApplied: true,
       })
     }
     return result
