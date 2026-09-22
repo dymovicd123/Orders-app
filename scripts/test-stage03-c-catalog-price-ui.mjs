@@ -36,7 +36,7 @@ check(groups.includes("method: 'PUT'"), 'Price save must use full-pair PUT seman
 check(groups.includes('JSON.stringify({ stockPositionId, category, costPrice, salePrice })'), 'Price save must submit the complete pair')
 check(groups.includes("credentials: 'include'"), 'Price save must preserve authenticated admin session')
 check(groups.includes('type="number"') && groups.includes('min="0"') && groups.includes('step="1"'), 'Price inputs must constrain whole non-negative KZT')
-check(groups.includes("placeholder="Не указана""), 'Unset price must stay visibly distinct from zero')
+check(groups.includes('placeholder="Не указана"'), 'Unset price must stay visibly distinct from zero')
 check(groups.includes('Обновите» и проверьте цены перед повторным сохранением'), 'Ambiguous network results must not invite blind repeat writes')
 
 check(!groups.includes('/api/orders') && !groups.includes('unitPrice'), 'Stage03-C must not add order-price autofill yet')
