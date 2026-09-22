@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "revision": "stage03-h2-itemized-write-plan",
+  "files": {
+    "worker/domains/order-pricing.ts": {
+      "beforeGitBlob": "98268fa72f8cdf7c6edd0b960c54ca9248f7fc1e",
+      "afterGitBlob": "aea8ee7483c2da8a8dd6ae62ededd56a0c26bdc4",
+      "beforeLines": 93,
+      "afterLines": 144,
+      "replacements": [
+        {
+          "beforeBlock": "",
+          "afterBlock": "\n\nexport type ItemizedOrderWriteLineInput = ItemizedOrderLineMoneyInput & {\n  catalogPriceSnapshot?: unknown | null;\n};\n\nexport type ItemizedOrderWriteLine = {\n  quantity: number;\n  unitPrice: number;\n  lineTotal: number;\n  catalogPriceSnapshot: number | null;\n};\n\nexport type ItemizedOrderWritePlan = {\n  pricingMode: 'itemized_v1';\n  lines: ItemizedOrderWriteLine[];\n  totalAmount: number;\n  receivedAmount: number;\n  debtAmount: number;\n};\n\nfunction optionalCatalogPriceSnapshot(value: unknown, index: number) {\n  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {\n    return null;\n  }\n  return requiredSafeInteger(value, `Catalog snapshot позиции ${index + 1}`, 0);\n}\n\nexport function buildItemizedOrderWritePlan(\n  lines: readonly ItemizedOrderWriteLineInput[],\n  payments: readonly ItemizedPaymentMoneyInput[],\n): ItemizedOrderWritePlan {\n  if (!lines.length) {\n    throw new ItemizedPricingValidationError('Для itemized_v1 нужна хотя бы одна товарная позиция.');\n  }\n  const money = assertItemizedOrderMoneyNotOverpaid(lines, payments);\n  const normalizedLines = lines.map((line, index) => ({\n    quantity: requiredSafeInteger(line?.quantity, `Количество в позиции ${index + 1}`, 1),\n    unitPrice: requiredSafeInteger(line?.unitPrice, `Цена позиции ${index + 1}`, 0),\n    lineTotal: money.lineTotals[index],\n    catalogPriceSnapshot: optionalCatalogPriceSnapshot(line?.catalogPriceSnapshot, index),\n  }));\n\n  return {\n    pricingMode: 'itemized_v1',\n    lines: normalizedLines,\n    totalAmount: money.totalAmount,\n    receivedAmount: money.receivedAmount,\n    debtAmount: money.debtAmount,\n  };\n}\n"
+        }
+      ]
+    }
+  }
+}
