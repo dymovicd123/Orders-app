@@ -34,7 +34,7 @@ try {
   check(nav.includes('warehouse-w2-secondary'), 'W2 secondary navigation missing')
   check(nav.includes('warehouse-w2-recovery') && nav.includes('Нужно уточнить'), 'Recovery inbox is not a clear secondary action')
   check(nav.includes('Ожидают приёма') && nav.includes('warehousePendingIntakeCount'), 'Known intake is not a distinct secondary action')
-  check(nav.includes("inventoryPanel === 'catalog'") && nav.includes('isAdmin ? <button'), 'Catalog is not an explicit admin-only secondary action')
+  check(nav.includes("...(isAdmin ? [{ value: 'catalog' as const, label: 'Товары'") && nav.includes("openInventoryPanel(entry.value)"), 'Catalog is not an admin-only primary navigation entry')
   check(!nav.includes("label: `Внимание"), 'Legacy Attention main tab returned')
   check(!nav.includes("label: 'Движение товара'"), 'Legacy technical movement label returned')
   check(!nav.includes("label: 'Ревизия'"), 'Legacy technical stocktake label returned')
@@ -77,7 +77,7 @@ try {
     check(!visibleW2.includes(forbidden), `Developer-only W2 terminology leaked into user UI: ${forbidden}`)
   }
 
-  console.log('W2 HUMAN WAREHOUSE TESTS PASSED — four task-first Warehouse actions, secondary recovery inbox/admin catalog, lazy quick-check reads, blind-first risky counts, responsive navigation, frozen Arrival')
+  console.log('W2 HUMAN WAREHOUSE TESTS PASSED — task-first Warehouse navigation with admin Catalog, secondary recovery inbox, lazy quick-check reads, blind-first risky counts, responsive navigation, frozen Arrival')
 } catch (error) {
   console.error(`W2 HUMAN WAREHOUSE TESTS FAILED: ${error?.message || error}`)
   process.exit(1)
