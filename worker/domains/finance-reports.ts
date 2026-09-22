@@ -3,6 +3,7 @@
 import { mapSqlRows } from '../core/sql.ts'
 import { canonicalPaymentMethodName, cleanText, toInt } from '../core/text.ts'
 import { normalizeManagerColor, parseReportDateRange } from './activity.ts'
+import { isOrderPricingFoundationEnabled } from './orders-relations.ts'
 import { listCallCentreRecords, listLeadRecords, listPlans, listTeamEmployees } from './team.ts'
 
 export async function listFinanceReports(db: D1Database, url: URL) {
@@ -21,6 +22,16 @@ export async function listFinanceReports(db: D1Database, url: URL) {
     ? requestedReport : '';
   const needsReport = (...types: string[]) => !reportType || types.includes(reportType);
   const emptyRowsResult = () => Promise.resolve({ results: [] } as any);
+  const productPricingFoundationEnabled = !financeWorkspaceOnly && needsReport('products')
+    ? await isOrderPricingFoundationEnabled(db)
+    : false;
+  const productExactPricingProjection = productPricingFoundationEnabled
+    ? `COALESCE(SUM(CASE WHEN o.pricing_mode = 'itemized_v1' THEN oi.line_total ELSE 0 END), 0) AS itemized_gross_sales,
+              COUNT(DISTINCT CASE WHEN o.pricing_mode = 'itemized_v1' THEN oi.order_id END) AS itemized_order_count,
+              COUNT(DISTINCT CASE WHEN COALESCE(o.pricing_mode, 'legacy_manual_total') <> 'itemized_v1' THEN oi.order_id END) AS legacy_order_count`
+    : `0 AS itemized_gross_sales,
+              0 AS itemized_order_count,
+              COUNT(DISTINCT oi.order_id) AS legacy_order_count`;
 
   const { startDate, endDate } = parseReportDateRange(url);
   const startAt = `${startDate}T00:00:00.000Z`;
@@ -56,6 +67,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       `SELECT oi.product_name_snapshot AS product,
               COALESCE(SUM(oi.quantity), 0) AS quantity,
               COUNT(DISTINCT oi.order_id) AS order_count,
+              ${productExactPricingProjection},
               COALESCE(SUM(o.total_amount), 0) AS order_sales
        FROM order_items oi
        JOIN orders o ON o.id = oi.order_id
