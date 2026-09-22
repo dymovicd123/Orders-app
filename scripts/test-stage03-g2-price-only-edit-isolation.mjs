@@ -11,6 +11,12 @@ const sliceBetween = (source, startMarker, endMarker) => {
 
 const core = read('worker/domains/order-core.ts')
 const write = read('worker/domains/orders-write.ts')
+const structuralManifest = JSON.parse(read('scripts/stage03-g2-price-only-edit-worker-manifest.json'))
+check(structuralManifest?.version === 1 && structuralManifest?.revision === 'stage03-g2-price-only-edit-isolation', 'Stage03-G2 structural manifest is missing or has the wrong revision')
+check(
+  Object.keys(structuralManifest.files || {}).sort().join(',') === 'worker/domains/order-core.ts,worker/domains/orders-write.ts',
+  'Stage03-G2 structural manifest must normalize exactly the two Worker files changed by G2',
+)
 
 const exceptPriceComparator = sliceBetween(
   core,
