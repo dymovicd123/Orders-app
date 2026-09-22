@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "revision": "stage03-h4-itemized-product-revenue",
+  "files": {
+    "worker/domains/finance-reports.ts": {
+      "beforeGitBlob": "0a495b70e884c34e4a92ae395ae7a87b020343c3",
+      "afterGitBlob": "2e36e850c9e17f3135731ecaba9a3514b77bede2",
+      "beforeLines": 1237,
+      "afterLines": 1249,
+      "replacements": [
+        {
+          "beforeBlock": "import { normalizeManagerColor, parseReportDateRange } from './activity.ts'\n",
+          "afterBlock": "import { normalizeManagerColor, parseReportDateRange } from './activity.ts'\nimport { isOrderPricingFoundationEnabled } from './orders-relations.ts'\n"
+        },
+        {
+          "beforeBlock": "  const needsReport = (...types: string[]) => !reportType || types.includes(reportType);\n  const emptyRowsResult = () => Promise.resolve({ results: [] } as any);\n\n  const { startDate, endDate } = parseReportDateRange(url);",
+          "afterBlock": "  const needsReport = (...types: string[]) => !reportType || types.includes(reportType);\n  const emptyRowsResult = () => Promise.resolve({ results: [] } as any);\n  const productPricingFoundationEnabled = !financeWorkspaceOnly && needsReport('products')\n    ? await isOrderPricingFoundationEnabled(db)\n    : false;\n  const productExactPricingProjection = productPricingFoundationEnabled\n    ? `COALESCE(SUM(CASE WHEN o.pricing_mode = 'itemized_v1' THEN oi.line_total ELSE 0 END), 0) AS itemized_gross_sales,\n              COUNT(DISTINCT CASE WHEN o.pricing_mode = 'itemized_v1' THEN oi.order_id END) AS itemized_order_count,\n              COUNT(DISTINCT CASE WHEN COALESCE(o.pricing_mode, 'legacy_manual_total') <> 'itemized_v1' THEN oi.order_id END) AS legacy_order_count`\n    : `0 AS itemized_gross_sales,\n              0 AS itemized_order_count,\n              COUNT(DISTINCT oi.order_id) AS legacy_order_count`;\n\n  const { startDate, endDate } = parseReportDateRange(url);"
+        },
+        {
+          "beforeBlock": "      `SELECT oi.product_name_snapshot AS product,\n              COALESCE(SUM(oi.quantity), 0) AS quantity,\n              COUNT(DISTINCT oi.order_id) AS order_count,\n              COALESCE(SUM(o.total_amount), 0) AS order_sales\n       FROM order_items oi",
+          "afterBlock": "      `SELECT oi.product_name_snapshot AS product,\n              COALESCE(SUM(oi.quantity), 0) AS quantity,\n              COUNT(DISTINCT oi.order_id) AS order_count,\n              ${productExactPricingProjection},\n              COALESCE(SUM(o.total_amount), 0) AS order_sales\n       FROM order_items oi"
+        }
+      ]
+    }
+  }
+}
