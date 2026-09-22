@@ -2,119 +2,132 @@
 
 Date: 2026-09-22  
 Repository: `dymovicd123/Orders-app`  
-Baseline: `branch2` `0793274cc1f8e118f4d73e187eeb2a48e5cd1bb2`
+Baseline before correction: `branch2` `be8371b440dd249cbb0c9118913e96cf24efa7db`
 
 ## Scope
 
-This step fixes only the data semantics for the client's two product prices:
+This step fixes only the known pricing dimensions for the client's two current prices:
 
 - `Себестоимость`;
 - `Цена продажи`.
 
 It intentionally makes **no** migration, API, UI, order-write or Production D1 change.
 
-## Existing facts
+## Existing catalog identity
 
-The current catalog has three stable identity levels:
+The current catalog has:
 
 1. product — `catalog_products`;
-2. execution — product + material + length;
-3. exact SKU — execution + audience/type + gender + color + size, represented by `catalog_variants.id`.
+2. execution — `product + material + length`, represented by `catalog_stock_positions`;
+3. exact SKU — execution + audience/type + gender + color + size/age, represented by `catalog_variants.id`.
 
-The current client wording is per **товар**. No business rule has been supplied saying that cost or sale price differs by execution, color, size, gender or exact SKU.
-
-Historical order sale price already exists independently of catalog identity as:
+Historical order sale price already exists separately from catalog identity as:
 
 - `order_items.unit_price`;
 - `order_items.line_total`.
 
 W7 already established the invariant that later catalog-price changes must not rewrite old `order_items.unit_price`.
 
-## Decision
+## Confirmed pricing dimensions
 
-### 1. Current editable prices live on the product
+The current price is **not** merely product-level.
 
-Later Stage03 schema should add two current commercial fields to `catalog_products`:
+Confirmed:
 
-- `cost_price` — current manually maintained себестоимость;
-- `sale_price` — current manually maintained цена продажи.
+- material affects price;
+- length affects price;
+- adult vs child affects price.
 
-Both are product-level values.
+Therefore the minimum known current-price key is:
 
-Do **not** add the same fields to `catalog_variants` or execution identity now. Doing so would invent pricing inheritance/override rules that the client has not requested.
+`product + material + length + audience category (adult/child)`
 
-If the client later says that a specific material/length/color/size has a different price, that becomes a separate explicit override design instead of silently changing today's semantics.
+In the current identity model this means:
 
-### 2. Money representation
+`catalog_stock_positions.id + catalog_variants.category`
+
+The price cannot live only on `catalog_products`, and it also cannot live only on `catalog_stock_positions`, because one execution can have both adult and child variants with different prices.
+
+## Still unresolved
+
+There is no confirmed answer yet on whether price also changes by:
+
+- gender;
+- color;
+- exact size / child age.
+
+Do not assume either direction.
+
+Until the client answers, Stage03 must not bake in the claim that those dimensions definitely affect price or definitely never affect price.
+
+## Recommended schema direction
+
+Do **not** put the two prices directly on `catalog_products`.
+
+Do **not** duplicate the same current price across every `catalog_variants` row either.
+
+The clean base model is a separate commercial-price record for the confirmed scope:
+
+- execution / `stock_position_id`;
+- audience category `adult | child`;
+- current `cost_price`;
+- current `sale_price`.
+
+That gives one current price per product+material+length+adult/child combination without duplicating it for every gender/color/size.
+
+If the client later confirms that gender/color/size/age can change the price, add an explicit more-specific override layer after that rule is known. Do not invent the override precedence now.
+
+## Money representation
 
 Match the existing project convention:
 
 - SQLite/D1 `INTEGER`;
-- value is whole KZT, like current order/payment amounts;
+- whole KZT;
 - non-negative;
-- `NULL` means “price not set yet”.
+- `NULL` means “not set yet”.
 
-Do not use `0` as the default for “unknown”; zero must remain distinguishable from missing data.
+Do not use `0` as a substitute for unknown.
 
-### 3. Sale history uses the existing transaction snapshot
+## Historical sale price
 
-`order_items.unit_price` remains the historical sale transaction price.
+`order_items.unit_price` remains the historical actual transaction price.
 
-Changing `catalog_products.sale_price` tomorrow must never update old order rows.
+Changing the current catalog sale price later must never rewrite old order rows.
 
-Stage03 may later use the current product `sale_price` as a default when creating/editing an order line, but that behavior is **not** part of Stage03-A and must be designed separately so manual order pricing/discount behavior is not broken.
+A separate `sale_price_snapshot` is not justified yet unless the client later asks to preserve both:
 
-A new `sale_price_snapshot` column is therefore not justified at this point: it would duplicate `unit_price` unless the client later asks to preserve “catalog list price at sale time” separately from the actual transaction price.
+- catalog/list price at the moment of sale;
+- actual transaction price after a manual change/discount.
 
-### 4. Current cost is not yet historical sale cost
+## Historical cost
 
-`catalog_products.cost_price` is the current manual reference cost requested by the client.
+The current `cost_price` is not automatically the final historical cost of every past sale.
 
-It must **not** automatically be treated as the final historical cost of every past sale.
+Stage04 Workshop invoice/intake work must define the historical cost source/allocation for the received goods. Until that rule exists, Stage05 profitability must not retroactively price old sales using today's mutable current cost.
 
-The planned Stage04 Workshop financial invoice/intake model can establish actual historical cost for a concrete received batch. Until that source/allocation rule exists, adding `cost_price_snapshot` to order items would create false precision.
+## No speculative pricing engine
 
-Therefore Stage05 profitability must consume the historical cost model defined by Stage04, not retroactively apply today's mutable product cost to old sales.
+Stage03-A does not invent:
 
-### 5. No speculative pricing engine
-
-Stage03-A explicitly does not invent:
-
+- gender/color/size/age price effects;
 - automatic price changes;
-- product → execution → SKU inheritance;
-- per-SKU overrides;
+- override precedence;
 - effective-date pricing;
-- discount rules;
 - margin-based auto-pricing;
-- automatic recalculation of old orders.
-
-The only agreed behavior is manual current product cost + manual current product sale price.
+- automatic rewriting of old orders.
 
 ## D1 / Cloudflare implication
 
-This model is cheap:
+The confirmed scope suggests a small separate commercial-price table keyed by execution + audience category.
 
-- `listCatalog` already performs one product SELECT, so the two current fields can later be returned in that existing read;
-- catalog product create/update already use admin-only POST/PATCH routes, so later writes can extend the existing path;
-- ordinary SKU browsing needs no extra query;
-- no polling/background price read is required.
+Reads can be batched with the existing Catalog load rather than queried once per SKU. Do not introduce N+1 price reads.
 
 ## Next micro-step
 
-**Stage03-B — schema/API foundation only.**
+Do **not** start the old Stage03-B design that added prices to `catalog_products`.
 
-Expected scope:
+Before schema work, Stage03-B should now be a narrow schema-contract design for:
 
-- one additive migration for nullable product `cost_price` / `sale_price`;
-- catalog product read contract;
-- admin create/update validation and persistence;
-- focused regression tests.
+`execution + adult/child -> cost_price + sale_price`
 
-Explicitly still out of scope for Stage03-B:
-
-- Catalog UI;
-- automatic order price defaulting;
-- changing existing order rows;
-- historical cost allocation;
-- Workshop invoice/debt logic;
-- profitability analytics.
+while keeping gender/color/size/age price behavior explicitly unresolved and extensible.
