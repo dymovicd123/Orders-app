@@ -1,40 +1,40 @@
 /* Warehouse / Catalog cleanup before Stage03.
    Keeps inventory truth and catalog write rules unchanged; only improves hierarchy and copy. */
 
-.warehouse-clean-navigation {
+.warehouse-w2-navigation[data-cleanup-navigation="true"] {
   margin-top: 8px;
   margin-bottom: 14px;
 }
 
-.warehouse-clean-navigation .warehouse-w2-primary {
+.warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-primary {
   flex: 1 1 auto;
 }
 
-.warehouse-clean-navigation .warehouse-w2-primary > button {
+.warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-primary > button {
   min-width: 96px;
 }
 
-.warehouse-clean-navigation .warehouse-w2-primary > button.is-active {
+.warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-primary > button.is-active {
   background: #eef4ff;
   color: #214e8a;
   box-shadow: inset 0 0 0 1px #c5d7f1;
 }
 
-.warehouse-clean-navigation .warehouse-w2-secondary {
+.warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-secondary {
   flex: 0 0 auto;
 }
 
-.warehouse-clean-navigation .warehouse-w2-secondary > button {
+.warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-secondary > button {
   min-height: 38px;
   border: 1px solid #e0e6ee;
   background: #fafbfd;
 }
 
-.warehouse-clean-navigation .warehouse-w2-secondary > button:hover {
+.warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-secondary > button:hover {
   background: #f4f7fb;
 }
 
-.warehouse-clean-navigation .warehouse-w2-secondary > button.is-active {
+.warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-secondary > button.is-active {
   border-color: #b7cbea;
   background: #eef4ff;
 }
@@ -165,12 +165,12 @@
 
 /* Mobile stock should get to quantities quickly. */
 @media (max-width: 900px) {
-  .warehouse-clean-navigation {
+  .warehouse-w2-navigation[data-cleanup-navigation="true"] {
     gap: 7px;
     padding: 6px;
   }
 
-  .warehouse-clean-navigation .warehouse-w2-primary {
+  .warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-primary {
     display: flex;
     gap: 5px;
     overflow-x: auto;
@@ -178,12 +178,12 @@
     scrollbar-width: thin;
   }
 
-  .warehouse-clean-navigation .warehouse-w2-primary > button {
+  .warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-primary > button {
     flex: 0 0 auto;
     min-width: 94px;
   }
 
-  .warehouse-clean-navigation .warehouse-w2-secondary {
+  .warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-secondary {
     margin: 0;
     padding: 6px 0 0;
     border: 0;
@@ -192,7 +192,7 @@
     overflow-x: auto;
   }
 
-  .warehouse-clean-navigation .warehouse-w2-secondary > button {
+  .warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-secondary > button {
     flex: 0 0 auto;
   }
 
@@ -231,23 +231,23 @@
     margin-bottom: 2px;
   }
 
-  .warehouse-clean-navigation {
+  .warehouse-w2-navigation[data-cleanup-navigation="true"] {
     margin-top: 5px;
     margin-bottom: 9px;
     border-radius: 12px;
   }
 
-  .warehouse-clean-navigation .warehouse-w2-primary > button {
+  .warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-primary > button {
     min-width: 88px;
     min-height: 40px;
     padding: 7px 10px;
   }
 
-  .warehouse-clean-navigation .warehouse-w2-primary > button strong {
+  .warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-primary > button strong {
     font-size: 12px;
   }
 
-  .warehouse-clean-navigation .warehouse-w2-secondary > button {
+  .warehouse-w2-navigation[data-cleanup-navigation="true"] .warehouse-w2-secondary > button {
     min-height: 34px;
     padding: 5px 9px;
     font-size: 11px;
