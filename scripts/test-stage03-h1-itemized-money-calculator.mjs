@@ -5,7 +5,7 @@ const source = fs.readFileSync('worker/domains/order-pricing.ts', 'utf8')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 
 check(source.includes('export function calculateItemizedOrderMoney'), 'Pure itemized calculator export is missing')
-check(source.includes('export function validateItemizedOrderMoneyForSave'), 'Itemized save validator export is missing')
+check(source.includes('export function assertItemizedOrderMoneyNotOverpaid'), 'Itemized overpayment guard export is missing')
 check(!source.includes('catalog_execution_prices'), 'Itemized calculator must not read mutable Catalog prices')
 check(!source.includes('catalogPriceSnapshot') && !source.includes('catalog_price_snapshot'), 'Itemized arithmetic must not reinterpret the Catalog snapshot')
 check(!source.includes('totalOverride') && !source.includes('orderTotal'), 'itemized_v1 calculator must not accept a manual order-total override')
@@ -35,11 +35,11 @@ check(preview.receivedAmount === 40000, 'Received money must be the sum of payme
 check(preview.debtAmount === 43000, 'Debt must be final itemized total minus actual received money')
 check(preview.overpaymentAmount === 0, 'Normal partial payment must not report overpayment')
 
-const freeExplicit = mod.validateItemizedOrderMoneyForSave(
+const freeExplicit = mod.calculateItemizedOrderMoney(
   [{ quantity: 1, unitPrice: 0 }],
   [],
 )
-check(freeExplicit.totalAmount === 0 && freeExplicit.debtAmount === 0, 'Explicit zero price must remain distinguishable from a missing price; policy may decide later whether it is allowed')
+check(freeExplicit.totalAmount === 0 && freeExplicit.debtAmount === 0, 'Explicit zero price must remain mathematically distinguishable from a missing price; client policy still decides whether saving it is allowed')
 
 let missingPriceRejected = false
 try {
@@ -58,7 +58,7 @@ check(overpaid.debtAmount === 0 && overpaid.overpaymentAmount === 3000, 'Preview
 
 let overpaymentBlocked = false
 try {
-  mod.validateItemizedOrderMoneyForSave(
+  mod.assertItemizedOrderMoneyNotOverpaid(
     [{ quantity: 1, unitPrice: 47000 }],
     [{ amount: 30000 }, { amount: 20000 }],
   )
