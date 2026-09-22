@@ -8,6 +8,7 @@ import type { CriticalOperationHandle } from './critical.ts'
 import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, criticalOperationEntityId, failCriticalOperation, insertCriticalMappedEntity, parseCriticalContext, updateCriticalOperationTargetFromLastInsert } from './critical.ts'
 import { buildPaymentAndMoneyEventStatements, financialEventStatement, financialOperationTypeFromPaymentKind, removeOrderPaymentsWithMoneyEvents } from './money.ts'
 import { assertOrderItemInputs, assertOrderPaymentInputs, assertOrderTotalInput, calculateTotals, completedOrderOperationCounts, normalizeOrderItems, normalizeOrderPayments, OrderInputValidationError, sameNormalizedOrderItemsExceptPriceForEdit, sameNormalizedOrderItemsForEdit, sameNormalizedOrderPaymentsForEdit } from './order-core.ts'
+import { buildItemizedOrderWritePlan, ItemizedPricingValidationError, type ItemizedOrderWritePlan } from './order-pricing.ts'
 import { assertCreateOrderShortageDecisions, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, OrderStockShortageError, orderShipmentInventoryBlockerMessage, releaseOrderReservationsV2, reserveOrderItemV2, resolveCatalogProductAndVariant, resolveWorkshopCatalogProductOnly } from './order-reservations.ts'
 import { canonicalItemProjection, fetchOrderRelations, isOrderPricingFoundationEnabled, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
 import { upsertCustomerIdentityForOrderCreate } from './references.ts'
@@ -401,24 +402,20 @@ export async function insertOrderContent(
   criticalOperation?: CriticalOperationHandle | null,
   criticalEntityPrefix = 'order_content',
   inventoryObligationLineage?: Array<{ key: string; originAt: string } | null>,
+  itemizedWritePlan?: ItemizedOrderWritePlan | null,
 ) {
   const stockResults: Array<{ source: string; productName: string; variantId: number | null; quantityBefore: number; quantityAfter: number }> = [];
   let workshopCount = 0;
   const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
   const autoWriteoffEnabled = humanInventoryModelEnabled ? true : await isInventoryAutoWriteoffEnabled(db);
+  if (itemizedWritePlan && itemizedWritePlan.lines.length !== items.length) {
+    throw new CriticalOperationConflictError('Itemized-план заказа не совпадает с количеством сохраняемых позиций. Повторите сохранение после обновления страницы.');
+  }
 
   for (const [itemIndex, item] of items.entries()) {
     const resolved = preResolvedCatalog?.[itemIndex]
       || (item.isWorkshop ? await resolveWorkshopCatalogProductOnly(db, item) : await resolveCatalogProductAndVariant(db, item, timestamp));
-    const orderItemInsert = db.prepare(
-      `INSERT INTO order_items (
-        order_id, product_id, variant_id, product_name_snapshot, audience_type,
-        gender_snapshot, color_snapshot, material_snapshot, length_snapshot,
-        size_snapshot, quantity, unit_price, line_total, is_workshop,
-        source_type, workshop_comment, workshop_urgent, workshop_due_date, stock_writeoff_status, created_at,
-        inventory_obligation_key, inventory_obligation_origin_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(
+    const commonOrderItemValues = [
       orderId,
       resolved.productId,
       resolved.variantId,
@@ -432,16 +429,50 @@ export async function insertOrderContent(
       item.quantity,
       item.unitPrice,
       item.lineTotal,
-      item.isWorkshop ? 1 : 0,
-      item.isWorkshop ? 'warehouse' : item.inventorySource,
-      item.workshopComment || null,
-      item.isWorkshop && item.workshopUrgent ? 1 : 0,
-      item.isWorkshop && item.workshopUrgent ? item.workshopDueDate : null,
-      item.isWorkshop ? 'workshop' : (humanInventoryModelEnabled ? ((!resolved.productId || !resolved.variantId) ? 'catalog_unresolved' : 'pending_reservation') : (autoWriteoffEnabled ? 'pending_writeoff' : 'writeoff_disabled')),
-      timestamp,
-      inventoryObligationLineage?.[itemIndex]?.key || `${externalId}:${stockReferenceType}:${timestamp}:item:${itemIndex + 1}`,
-      inventoryObligationLineage?.[itemIndex]?.originAt || timestamp,
-    );
+    ];
+    const itemizedLine = itemizedWritePlan?.lines[itemIndex];
+    const orderItemInsert = itemizedWritePlan
+      ? db.prepare(
+        `INSERT INTO order_items (
+          order_id, product_id, variant_id, product_name_snapshot, audience_type,
+          gender_snapshot, color_snapshot, material_snapshot, length_snapshot,
+          size_snapshot, quantity, unit_price, line_total, catalog_price_snapshot, is_workshop,
+          source_type, workshop_comment, workshop_urgent, workshop_due_date, stock_writeoff_status, created_at,
+          inventory_obligation_key, inventory_obligation_origin_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        ...commonOrderItemValues,
+        itemizedLine?.catalogPriceSnapshot ?? null,
+        item.isWorkshop ? 1 : 0,
+        item.isWorkshop ? 'warehouse' : item.inventorySource,
+        item.workshopComment || null,
+        item.isWorkshop && item.workshopUrgent ? 1 : 0,
+        item.isWorkshop && item.workshopUrgent ? item.workshopDueDate : null,
+        item.isWorkshop ? 'workshop' : (humanInventoryModelEnabled ? ((!resolved.productId || !resolved.variantId) ? 'catalog_unresolved' : 'pending_reservation') : (autoWriteoffEnabled ? 'pending_writeoff' : 'writeoff_disabled')),
+        timestamp,
+        inventoryObligationLineage?.[itemIndex]?.key || `${externalId}:${stockReferenceType}:${timestamp}:item:${itemIndex + 1}`,
+        inventoryObligationLineage?.[itemIndex]?.originAt || timestamp,
+      )
+      : db.prepare(
+        `INSERT INTO order_items (
+          order_id, product_id, variant_id, product_name_snapshot, audience_type,
+          gender_snapshot, color_snapshot, material_snapshot, length_snapshot,
+          size_snapshot, quantity, unit_price, line_total, is_workshop,
+          source_type, workshop_comment, workshop_urgent, workshop_due_date, stock_writeoff_status, created_at,
+          inventory_obligation_key, inventory_obligation_origin_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        ...commonOrderItemValues,
+        item.isWorkshop ? 1 : 0,
+        item.isWorkshop ? 'warehouse' : item.inventorySource,
+        item.workshopComment || null,
+        item.isWorkshop && item.workshopUrgent ? 1 : 0,
+        item.isWorkshop && item.workshopUrgent ? item.workshopDueDate : null,
+        item.isWorkshop ? 'workshop' : (humanInventoryModelEnabled ? ((!resolved.productId || !resolved.variantId) ? 'catalog_unresolved' : 'pending_reservation') : (autoWriteoffEnabled ? 'pending_writeoff' : 'writeoff_disabled')),
+        timestamp,
+        inventoryObligationLineage?.[itemIndex]?.key || `${externalId}:${stockReferenceType}:${timestamp}:item:${itemIndex + 1}`,
+        inventoryObligationLineage?.[itemIndex]?.originAt || timestamp,
+      );
     let orderItemId: number | null = null;
     if (criticalOperation) {
       const mapped = await insertCriticalMappedEntity(
