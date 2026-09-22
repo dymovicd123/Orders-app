@@ -5,7 +5,7 @@ import type { AuthUser, Env, InventoryItemInput, OrderInput, ReferenceKind } fro
 import { listActivityLog, listOrdersFinanceSummary, listReturnHistory, writeActivityLog } from './domains/activity.ts'
 import { authUserPayload, createAuthUser, deleteAuthUser, ensureAuthSchema, handleAuthChangePassword, handleAuthLogin, handleAuthLogout, handleAuthSetup, handleAuthStatus, handleSimpleAdminLogin, handleSimpleAdminLogout, handleSimpleAdminPasswordChange, handleSimpleAdminStatus, isDiagnosticsEnabled, listAuthUsers, makeSimpleAccessUser, normalizeAccessRole, publicAuthPath, requireAdminAccess, requireAdminUser, updateAuthUser, withAuthenticatedHeaders } from './domains/auth.ts'
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
-import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
+import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, saveCatalogExecutionPrice, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
 import type { CatalogReviewFactsInput } from './domains/catalog-review.ts'
 import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant } from './domains/catalog-review.ts'
 import { getClientDetails, listClients } from './domains/clients.ts'
@@ -992,6 +992,13 @@ export default {
           details: `Связано позиций: ${result.linked}; зарезервировано: ${result.reserved}; исторически связано без изменения остатка: ${result.historicalLinked || 0}`,
         });
         return json(result);
+      }
+
+      if (url.pathname === '/api/catalog/execution-prices' && request.method === 'PUT') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        const input = await readJson<{ stockPositionId?: unknown; category?: unknown; costPrice?: unknown; salePrice?: unknown }>(request);
+        return json(await saveCatalogExecutionPrice(env.DB, input));
       }
 
       if (url.pathname === '/api/catalog/products' && request.method === 'POST') {

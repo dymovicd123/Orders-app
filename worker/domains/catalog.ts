@@ -551,7 +551,7 @@ export async function listCatalog(db: D1Database) {
 
   const variantsResult = await db.prepare(
     `SELECT
-      id, product_id, category, gender, color, material, length, size_label, is_active, sort_order,
+      id, product_id, stock_position_id, category, gender, color, material, length, size_label, is_active, sort_order,
       created_at, updated_at
      FROM catalog_variants`
   ).all<Record<string, unknown>>();
@@ -671,6 +671,7 @@ export async function listCatalog(db: D1Database) {
       return {
         id: toInt(row.id, 0),
         productId,
+        stockPositionId: toInt(row.stock_position_id, 0),
         productName: product?.name || '',
         productCategory: row.category == null
           ? (product?.category == null ? 'adult' : cleanText(product.category))
@@ -686,6 +687,89 @@ export async function listCatalog(db: D1Database) {
         updatedAt: cleanText(row.updated_at),
       };
     }),
+  };
+}
+
+export async function isCatalogExecutionPriceSchemaEnabled(db: D1Database) {
+  try {
+    await db.prepare('SELECT stock_position_id FROM catalog_execution_prices LIMIT 1').first();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeCatalogCurrentPrice(value: unknown, label: string) {
+  if (value === null || value === undefined || cleanText(value) === '') return null;
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < 0) {
+    throw new Error(`${label} должна быть целым числом тенге от 0 или пустым значением.`);
+  }
+  return amount;
+}
+
+export async function saveCatalogExecutionPrice(
+  db: D1Database,
+  input: {
+    stockPositionId?: unknown;
+    category?: unknown;
+    costPrice?: unknown;
+    salePrice?: unknown;
+  },
+) {
+  const stockPositionId = toInt(input.stockPositionId, 0);
+  if (!stockPositionId) throw new Error('Выберите исполнение товара.');
+
+  const categoryText = cleanText(input.category).toLowerCase();
+  if (categoryText !== 'adult' && categoryText !== 'child') {
+    throw new Error('Тип цены должен быть adult или child.');
+  }
+  const category = categoryText as 'adult' | 'child';
+
+  if (!Object.prototype.hasOwnProperty.call(input, 'costPrice') || !Object.prototype.hasOwnProperty.call(input, 'salePrice')) {
+    throw new Error('Передайте и себестоимость, и цену продажи. Пустое значение передаётся как null.');
+  }
+
+  const costPrice = normalizeCatalogCurrentPrice(input.costPrice, 'Себестоимость');
+  const salePrice = normalizeCatalogCurrentPrice(input.salePrice, 'Цена продажи');
+
+  if (!await isCatalogExecutionPriceSchemaEnabled(db)) {
+    throw new Error('Схема цен каталога ещё не применена. Примените миграцию 0072 и повторите действие.');
+  }
+
+  const execution = await db.prepare(
+    `SELECT sp.id, sp.product_id, sp.material, sp.length, sp.is_active, p.name AS product_name
+     FROM catalog_stock_positions sp
+     JOIN catalog_products p ON p.id = sp.product_id
+     WHERE sp.id = ? AND sp.is_active = 1
+     LIMIT 1`
+  ).bind(stockPositionId).first<Record<string, unknown>>();
+  if (!execution?.id) throw new Error('Исполнение товара не найдено или больше не активно.');
+
+  const timestamp = new Date().toISOString();
+  await db.prepare(
+    `INSERT INTO catalog_execution_prices (
+       stock_position_id, category, cost_price, sale_price, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(stock_position_id, category) DO UPDATE SET
+       cost_price = excluded.cost_price,
+       sale_price = excluded.sale_price,
+       updated_at = excluded.updated_at`
+  ).bind(stockPositionId, category, costPrice, salePrice, timestamp, timestamp).run();
+
+  return {
+    ok: true,
+    price: {
+      stockPositionId,
+      productId: toInt(execution.product_id, 0),
+      productName: cleanText(execution.product_name),
+      material: canonicalStockPositionValue(execution.material),
+      length: canonicalStockPositionValue(execution.length),
+      category,
+      costPrice,
+      salePrice,
+      updatedAt: timestamp,
+    },
   };
 }
 

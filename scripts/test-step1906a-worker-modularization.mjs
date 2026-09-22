@@ -4,6 +4,46 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage03B3WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-b3-execution-price-write-worker-manifest.json'), 'utf8'))
+if (stage03B3WorkerManifest?.version !== 1 || stage03B3WorkerManifest?.revision !== 'stage03-b3-execution-price-write-contract') throw new Error('Stage03-B3 execution-price Worker manifest invalid')
+const stage03B3WorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE03_B3_EXECUTION_PRICE_WRITE_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stage03B3WorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage03B3WorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Stage03-B3 execution-price Worker changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-B3 execution-price Worker after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (stage03B3WorkerBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Stage03-B3 execution-price Worker predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, STAGE03_B3_EXECUTION_PRICE_WRITE_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03-B3 EXECUTION PRICE WRITE WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const stage03BWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-b-execution-price-read-worker-manifest.json'), 'utf8'))
 if (stage03BWorkerManifest?.version !== 1 || stage03BWorkerManifest?.revision !== 'stage03-b-execution-price-read-contract') throw new Error('Stage03-B execution-price Worker manifest invalid')
 const stage03BWorkerBlobSha = (value) => {

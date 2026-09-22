@@ -33,6 +33,26 @@ Permanent rule:
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
 
+## Checkpoint 2026-09-22 — Stage03-B3 admin price write contract
+
+Baseline: `branch2` `94695197141b496b96a1153ed6936f3502001fd4`. Branch2 Worker/D1 identity was re-verified before editing; no Production binding is present.
+
+Backend contract now includes:
+- existing Catalog variant response exposes canonical `stockPositionId` with no extra query;
+- admin-only `PUT /api/catalog/execution-prices`;
+- request is an explicit full pair: `stockPositionId + adult|child + costPrice + salePrice`;
+- nullable values mean intentionally unset; non-null values must be whole non-negative KZT;
+- target execution must exist and be active;
+- one UPSERT keyed by `(stock_position_id, category)`;
+- write fails narrowly if migration 0072 is not actually applied;
+- current price mutation never rewrites `order_items.unit_price` or any historical order/inventory row.
+
+No D1 migration is executed by this source step and no UI is added.
+
+Next gate: cumulative Branch2 build/deploy. After green, the remaining backend step is controlled application/acceptance of migration 0072 in **Branch2 D1 only**. Production/main promotion remains after backend acceptance and before Stage03 UI, per user instruction.
+
+---
+
 ## Checkpoint 2026-09-22 — Stage03-B2 read-only Catalog price contract
 
 Baseline: `branch2` `c41ee03e92a0649f6b3bf5b5e0ae34aff89d5c84`.

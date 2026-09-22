@@ -133,3 +133,34 @@ The read is one batched SELECT joining the price table to canonical execution/pr
 Deployment compatibility is deliberate: until migration 0072 is actually applied, the SELECT is caught and the API returns `executionPrices: []`. Existing Catalog reads continue to work.
 
 No price-write function or route is introduced in B2.
+
+
+## Stage03-B3 — admin current-price write contract
+
+A single mutation contract is added:
+
+`PUT /api/catalog/execution-prices`
+
+Admin access is mandatory.
+
+Request body is a complete current-price pair:
+
+- `stockPositionId`;
+- `category: adult|child`;
+- `costPrice: integer|null`;
+- `salePrice: integer|null`.
+
+Both price keys must be present. `null` means intentionally not set. This avoids ambiguous PATCH semantics where omission could accidentally mean either “keep” or “clear”.
+
+Validation:
+
+- canonical execution id must exist and be active;
+- category is exactly `adult` or `child`;
+- each non-null amount is a whole, non-negative KZT integer;
+- migration 0072 must actually exist before a write is attempted.
+
+Persistence is one idempotent UPSERT keyed by `(stock_position_id, category)`.
+
+This mutation changes only the current commercial pair. It does not rewrite `order_items.unit_price`, orders, inventory quantities, Workshop rows or any historical cost.
+
+The existing Catalog variant payload now also exposes `stockPositionId`, so a later UI can target an execution even before that execution has a price row. This adds no extra D1 read.
