@@ -33,6 +33,32 @@ Permanent rule:
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
 
+## Checkpoint 2026-09-22 — Stage03-B1 price schema contract
+
+Baseline: `branch2` `693e0cba25ed3349f9b0e9ac6524055e97693846`.
+
+Branch2 environment identity was verified before work:
+- Worker `orders-app-branch2`;
+- D1 `orders_db_branch2`;
+- D1 id `40065052-854e-44b8-bcd5-251bdd488301`;
+- Production D1 binding absent.
+
+Added additive migration file `migrations/0072_v72_catalog_execution_prices.sql`, but **did not execute it on Branch2 or Production D1**.
+
+Schema decision:
+- base current-price key = `stock_position_id + category`;
+- table = `catalog_execution_prices`;
+- fields = nullable non-negative integer `cost_price` + `sale_price`;
+- one row per execution + `adult|child`;
+- no historical/current-price backfill;
+- gender/color/size/age remain unresolved and are not encoded as pricing dimensions.
+
+Canonical design note: `docs/continuation/STAGE03_B_EXECUTION_PRICE_SCHEMA_20260922.md`.
+
+Next micro-step: Stage03-B2 read-only Catalog API contract only. Do not apply migration 0072 until schema/API review is complete.
+
+---
+
 ## Checkpoint 2026-09-22 — Stage03-A commercial price model corrected
 
 Baseline before correction: `branch2` `be8371b440dd249cbb0c9118913e96cf24efa7db`.
