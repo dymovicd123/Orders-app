@@ -33,6 +33,33 @@ Permanent rule:
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
 
+## Checkpoint 2026-09-22 — Stage03-E Pricing Contract v1
+
+Baseline: `branch2` `b5b2744b20076c38f9c92276092060f6751079fe`.
+
+Design contract recorded in:
+`docs/continuation/STAGE03_E_PRICING_CONTRACT_V1_20260922.md`.
+
+Locked architecture for the next implementation phase:
+- four separate truths: current Catalog recommendation, actual sold line price, payments, debt;
+- explicit order pricing mode is mandatory; never infer from zero item prices;
+- proposed modes: `legacy_manual_total` and `itemized_v1`;
+- all existing orders remain legacy/manual and must never be repriced from current Catalog;
+- proposed new line snapshot: nullable `catalog_price_snapshot`;
+- existing `unit_price` remains actual sold unit price;
+- itemized total formula = sum of quantity × actual unit price;
+- `orders.total_amount` remains persisted for historical/report compatibility but becomes server-derived for itemized orders;
+- payments remain manual independent money facts and are never silently rewritten by price changes;
+- existing Finance/payment-method history continues from orders/payments/returns snapshots, not current Catalog;
+- new-order creation is the first eventual itemized UI target;
+- existing-order price correction, returns and exchanges remain separate later compatibility work.
+
+Proposed next bounded code step, only after this contract is accepted: additive schema/backend foundation for pricing mode + Catalog price snapshot, with no autofill/UI/report/return/exchange behavior change.
+
+No code, migration or D1 mutation in Stage03-E.
+
+---
+
 ## Checkpoint 2026-09-22 — Stage03-D pricing/finance compatibility audit
 
 Baseline: `branch2` `3831c51e388e525323eff7fe5de040e7f6eb5153`.
