@@ -91,6 +91,46 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage03C2PricePolishManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-c2-price-ui-polish-frontend-manifest.json'), 'utf8'))
+if (stage03C2PricePolishManifest?.version !== 1 || stage03C2PricePolishManifest?.revision !== 'stage03-c2-price-ui-polish') throw new Error('Stage03-C2 price UI polish manifest invalid')
+const stage03C2PricePolishBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE03_C2_PRICE_UI_POLISH_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stage03C2PricePolishManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage03C2PricePolishBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Stage03-C2 price UI polish changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-C2 price UI polish after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (stage03C2PricePolishBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Stage03-C2 price UI polish predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, STAGE03_C2_PRICE_UI_POLISH_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03-C2 PRICE UI POLISH FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const stage03C1LayoutManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-c1-sku-card-layout-frontend-manifest.json'), 'utf8'))
 if (stage03C1LayoutManifest?.version !== 1 || stage03C1LayoutManifest?.revision !== 'stage03-c1-sku-card-layout') throw new Error('Stage03-C1 SKU card layout manifest invalid')
 const stage03C1BlobSha = (value) => {

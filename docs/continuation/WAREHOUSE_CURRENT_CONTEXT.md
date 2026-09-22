@@ -33,6 +33,24 @@ Permanent rule:
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
 
+## Checkpoint 2026-09-22 — Stage03-C2 price UI polish
+
+Baseline: `branch2` `abac6d232df69bb7c28c02f4203ada9ff3e672d7`.
+
+Visual acceptance showed that the price editor worked but looked like a separate nested admin form inside the execution card.
+
+Polish is CSS-only:
+- price editor is now an integrated strip between execution header and color/size content;
+- nested rounded-card appearance removed;
+- input, audience marker and save-button sizing aligned with the surrounding Catalog controls;
+- existing labels and behavior are unchanged;
+- no extra explanatory copy or new business semantics added;
+- responsive behavior retained.
+
+No API, order, stock or D1 change. Branch2 only pending visual acceptance.
+
+---
+
 ## Checkpoint 2026-09-22 — Stage03-C1 SKU card layout repair
 
 Baseline: `branch2` `2b6337747dbffc51d630989481c7d4cab0c9e2a4`.
