@@ -1,10 +1,140 @@
 # Warehouse current context — canonical continuation
 
-Updated: 2026-09-10
+Updated: 2026-09-22
 Repository: `dymovicd123/Orders-app`
+
+## CRITICAL environment invariant — Branch2 / Production D1 must never mix
+
+On 2026-09-22 Branch2 was found with the Production D1 binding. Repository forensics identified the lineage error:
+
+- reviewed Branch2 Stage02 state existed at `1984ff897a56cedb026278ff4cd7f503e06ee8c4` with the correct isolated binding:
+  - Worker `orders-app-branch2`;
+  - D1 `orders_db_branch2`;
+  - id `40065052-854e-44b8-bcd5-251bdd488301`;
+- Production candidate `1778c42701426a916a3b21a451156cece4e71b9a` merged that state into Production;
+- Production hotfix `186f9b58ecd8e188783dd6b1886c30e190393c4b` correctly restored Production identity:
+  - Worker `orders-app`;
+  - D1 `orders_db_prod`;
+  - id `17e68a41-1d58-4a36-8a63-47c3e32443c4`;
+- later Branch2 sync commits were started from that Production hotfix tree and copied business files back one-by-one, but did **not** restore Branch2 environment identity. That left `branch2` using the Production binding.
+
+Emergency repair: `0f38bf4f1c85ef124237abd952384b05513b946c` restores Branch2 `wrangler.jsonc`, visual title marker, Branch2 environment regression gate, and replaces the Production environment test in Branch2 `release:check`.
+
+Permanent rule:
+- Branch2 and Production D1 are separate physical databases and must never share bindings or data implicitly.
+- Never use a Production tree as a Branch2 baseline without explicitly restoring/verifying Branch2 environment identity before any deploy.
+- Never use a Branch2 tree as a Production release without explicitly restoring/verifying Production environment identity before any deploy.
+- Never copy D1 data between environments unless the user explicitly requests that exact data-copy operation.
+- Before any Branch2/Production D1 mutation, verify Worker name + D1 logical name + D1 id.
+- If the environments appear identical, stop mutations and verify binding first.
+
+---
 
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
+
+## Checkpoint 2026-09-22 — Stage03-B3 admin price write contract
+
+Baseline: `branch2` `94695197141b496b96a1153ed6936f3502001fd4`. Branch2 Worker/D1 identity was re-verified before editing; no Production binding is present.
+
+Backend contract now includes:
+- existing Catalog variant response exposes canonical `stockPositionId` with no extra query;
+- admin-only `PUT /api/catalog/execution-prices`;
+- request is an explicit full pair: `stockPositionId + adult|child + costPrice + salePrice`;
+- nullable values mean intentionally unset; non-null values must be whole non-negative KZT;
+- target execution must exist and be active;
+- one UPSERT keyed by `(stock_position_id, category)`;
+- write fails narrowly if migration 0072 is not actually applied;
+- current price mutation never rewrites `order_items.unit_price` or any historical order/inventory row.
+
+No D1 migration is executed by this source step and no UI is added.
+
+Next gate: cumulative Branch2 build/deploy. After green, the remaining backend step is controlled application/acceptance of migration 0072 in **Branch2 D1 only**. Production/main promotion remains after backend acceptance and before Stage03 UI, per user instruction.
+
+---
+
+## Checkpoint 2026-09-22 — Stage03-B2 read-only Catalog price contract
+
+Baseline: `branch2` `c41ee03e92a0649f6b3bf5b5e0ae34aff89d5c84`.
+
+Before editing, Branch2 environment identity was re-verified as `orders-app-branch2` + `orders_db_branch2` (`40065052-854e-44b8-bcd5-251bdd488301`) with no Production binding.
+
+B1 Cloudflare build failed for a non-runtime reason: Step 190.6C correctly detected the newly added historical migration file as unregistered (`64/63`). B2 registers migration 0072 as an accepted additive migration rather than weakening migration-history protection.
+
+B2 adds a read-only `GET /api/catalog` contract:
+- top-level `executionPrices`;
+- one batched SELECT, no per-SKU/N+1 reads;
+- key/context: execution + adult/child;
+- nullable current cost/sale prices;
+- graceful pre-migration fallback to `executionPrices: []` if table 0072 does not yet exist.
+
+No D1 migration is executed by this source step. No price write endpoint, UI, order defaulting, historical order rewrite or cost snapshot is added.
+
+Focused regression: `scripts/test-stage03-b-execution-price-read-contract.mjs`.
+
+Branch2 cumulative Cloudflare build/deploy for code commit `e0de9e3c6e4612339e5afa20e07f06a779bb8cd6` completed successfully (GitHub Actions run `35720604755`). The environment-isolation gate passed before Cloudflare build monitoring, and the cumulative release/build checks passed with migration 0072 still unapplied.
+
+Next: review B1+B2 together, then add the admin write path as a separate bounded step. Do not apply migration 0072 to any D1 until that write contract is reviewed.
+
+---
+
+## Checkpoint 2026-09-22 — Stage03-B1 price schema contract
+
+Baseline: `branch2` `693e0cba25ed3349f9b0e9ac6524055e97693846`.
+
+Branch2 environment identity was verified before work:
+- Worker `orders-app-branch2`;
+- D1 `orders_db_branch2`;
+- D1 id `40065052-854e-44b8-bcd5-251bdd488301`;
+- Production D1 binding absent.
+
+Added additive migration file `migrations/0072_v72_catalog_execution_prices.sql`, but **did not execute it on Branch2 or Production D1**.
+
+Schema decision:
+- base current-price key = `stock_position_id + category`;
+- table = `catalog_execution_prices`;
+- fields = nullable non-negative integer `cost_price` + `sale_price`;
+- one row per execution + `adult|child`;
+- no historical/current-price backfill;
+- gender/color/size/age remain unresolved and are not encoded as pricing dimensions.
+
+Canonical design note: `docs/continuation/STAGE03_B_EXECUTION_PRICE_SCHEMA_20260922.md`.
+
+Next micro-step: Stage03-B2 read-only Catalog API contract only. Do not apply migration 0072 until schema/API review is complete.
+
+---
+
+## Checkpoint 2026-09-22 — Stage03-A commercial price model corrected
+
+Baseline before correction: `branch2` `be8371b440dd249cbb0c9118913e96cf24efa7db`.
+
+User clarified a previously missing business invariant:
+- material changes price;
+- length changes price;
+- adult vs child changes price;
+- effect of gender, color and exact size/child age is still unanswered by the client.
+
+Therefore the previous product-level pricing decision is superseded.
+
+Current minimum known price scope is:
+
+`product + material + length + adult/child`
+
+In the current canonical identity this maps naturally to execution (`catalog_stock_positions.id`) + audience category.
+
+Do not store the current two prices only on `catalog_products`, and do not duplicate them across every exact SKU. The preferred schema direction is a separate commercial-price record keyed by execution + audience category.
+
+Gender/color/size/age pricing stays explicitly unresolved. If later confirmed, add a more-specific override layer only after the precedence rule is known.
+
+Historical invariants remain unchanged:
+- `order_items.unit_price` is the actual historical sale transaction price and is never rewritten by later catalog changes;
+- historical cost still waits for Stage04 Workshop invoice/intake allocation instead of using today's mutable cost as false history.
+
+Canonical design note: `docs/continuation/STAGE03_A_COMMERCIAL_PRICE_MODEL_20260922.md`.
+
+Next micro-step: Stage03-B schema-contract design for execution + adult/child pricing only. No migration/UI/order defaulting yet.
+
+---
 
 ## Checkpoint 2026-09-19 — Stage02 transactional stock truth resumed
 

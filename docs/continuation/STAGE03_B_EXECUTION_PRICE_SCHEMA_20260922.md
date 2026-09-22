@@ -1,0 +1,166 @@
+# Stage03-B — execution + audience commercial price schema
+
+Date: 2026-09-22  
+Repository: `dymovicd123/Orders-app`  
+Baseline: `branch2` `693e0cba25ed3349f9b0e9ac6524055e97693846`
+
+## Safety status
+
+Before this step the Branch2 environment binding was re-verified:
+
+- Worker: `orders-app-branch2`;
+- D1: `orders_db_branch2`;
+- D1 id: `40065052-854e-44b8-bcd5-251bdd488301`;
+- no Production D1 name/id is present in Branch2 `wrangler.jsonc`.
+
+This step **does not execute a D1 migration**. It only adds the additive migration file and documents the contract. No Branch2 or Production database rows are touched by this commit.
+
+## Confirmed pricing key
+
+Current cost and sale price are known to depend on:
+
+`product + material + length + adult/child`
+
+Since migration 0048, `catalog_stock_positions` is the canonical execution identity:
+
+`product + material + length`
+
+and `catalog_variants.category` distinguishes `adult` / `child`.
+
+Therefore the base commercial key is:
+
+`stock_position_id + category`
+
+## Schema
+
+Migration file:
+
+`migrations/0072_v72_catalog_execution_prices.sql`
+
+New table:
+
+`catalog_execution_prices`
+
+Columns:
+
+- `stock_position_id` — FK to canonical execution;
+- `category` — `adult | child`;
+- `cost_price` — nullable non-negative whole KZT;
+- `sale_price` — nullable non-negative whole KZT;
+- `created_at`;
+- `updated_at`.
+
+Composite primary key:
+
+`(stock_position_id, category)`
+
+This prevents duplicate base-price rows for the same execution and audience category.
+
+## Why not catalog_products
+
+A product can have different material/length executions, and those prices are confirmed to differ. Product-level fields would therefore lose required information.
+
+## Why not catalog_variants
+
+Gender, color and size/age are still unresolved pricing dimensions. Writing the same base price into every exact SKU would duplicate data and prematurely assert that exact-SKU pricing is the canonical model.
+
+## Why not catalog_stock_positions columns
+
+One execution can contain both adult and child combinations after the catalog identity v3 redesign. Adult/child is confirmed to affect price, so one pair of price columns on the execution itself is insufficient.
+
+## Unresolved dimensions
+
+Still awaiting client confirmation:
+
+- gender;
+- color;
+- exact size / child age.
+
+Stage03-B does not decide their effect and does not create an override precedence rule.
+
+If later confirmed, a more-specific override model can be added above this base price without rewriting the base table.
+
+## Historical invariants
+
+- `order_items.unit_price` remains the actual historical transaction sale price.
+- Current catalog sale price never rewrites old orders.
+- No catalog-price backfill is derived from historical orders.
+- Current `cost_price` is not historical sale cost.
+- Stage04 must define historical Workshop invoice/batch cost before Stage05 profitability relies on cost history.
+
+## D1 characteristics
+
+The table is intentionally small and normalized:
+
+- at most one base-price row per execution + adult/child;
+- no per-color/per-size duplication;
+- no background reads;
+- no N+1 requirement.
+
+When API work is added, price rows should be fetched in one batched Catalog read, not one query per SKU.
+
+## Next micro-step
+
+Stage03-B2: add **read-only runtime contract** for these price rows to the existing Catalog load.
+
+Still do not:
+
+- execute migration 0072 on any D1;
+- add price-edit UI;
+- default order prices;
+- modify historical orders;
+- create historical cost snapshots.
+
+
+## Stage03-B2 — read-only Catalog contract
+
+Implemented on top of the schema-only B1 step.
+
+The existing `GET /api/catalog` response gains a top-level `executionPrices` array. Each row exposes:
+
+- `stockPositionId`;
+- `productId`;
+- `productName`;
+- `material`;
+- `length`;
+- `category` (`adult|child`);
+- `costPrice` (`number|null`);
+- `salePrice` (`number|null`);
+- timestamps.
+
+The read is one batched SELECT joining the price table to canonical execution/product identity. It is not performed per product or per SKU.
+
+Deployment compatibility is deliberate: until migration 0072 is actually applied, the SELECT is caught and the API returns `executionPrices: []`. Existing Catalog reads continue to work.
+
+No price-write function or route is introduced in B2.
+
+
+## Stage03-B3 — admin current-price write contract
+
+A single mutation contract is added:
+
+`PUT /api/catalog/execution-prices`
+
+Admin access is mandatory.
+
+Request body is a complete current-price pair:
+
+- `stockPositionId`;
+- `category: adult|child`;
+- `costPrice: integer|null`;
+- `salePrice: integer|null`.
+
+Both price keys must be present. `null` means intentionally not set. This avoids ambiguous PATCH semantics where omission could accidentally mean either “keep” or “clear”.
+
+Validation:
+
+- canonical execution id must exist and be active;
+- category is exactly `adult` or `child`;
+- each non-null amount is a whole, non-negative KZT integer;
+- migration 0072 must actually exist before a write is attempted.
+
+Persistence is one idempotent UPSERT keyed by `(stock_position_id, category)`.
+
+This mutation changes only the current commercial pair. It does not rewrite `order_items.unit_price`, orders, inventory quantities, Workshop rows or any historical cost.
+
+The existing Catalog variant payload now also exposes `stockPositionId`, so a later UI can target an execution even before that execution has a price row. This adds no extra D1 read.

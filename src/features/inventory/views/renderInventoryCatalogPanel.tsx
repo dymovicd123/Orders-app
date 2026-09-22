@@ -258,6 +258,14 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
     setCatalogVariantDraft(blankVariant(Number(product.id), category, product))
   }
 
+  const focusCatalogEditor = () => {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      const editor = document.getElementById('catalog-variant-editor')
+      editor?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      ;(editor as HTMLElement | null)?.focus({ preventScroll: true })
+    }))
+  }
+
   const openVariantEditor = (product: any, variant: any) => {
     setExpandedCatalogProducts({ [String(product.id)]: true, [W6_VARIANT_EDITOR]: true })
     setCatalogProductDraft({ id: product.id, name: product.name, category: getCatalogProductEffectiveCategory(product), genderScope: productGenderScope(product) })
@@ -272,9 +280,11 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
       sizeLabel: variant.sizeLabel,
       sortOrder: String(variant.sortOrder),
     })
+    focusCatalogEditor()
   }
 
   const closeEditor = () => {
+    const returnVariantId = Number(catalogVariantDraft.id || 0)
     if (!selectedProduct) {
       setExpandedCatalogProducts({})
       return
@@ -282,6 +292,13 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
     setExpandedCatalogProducts({ [String(selectedProduct.id)]: true })
     setCatalogProductDraft({ id: selectedProduct.id, name: selectedProduct.name, category: getCatalogProductEffectiveCategory(selectedProduct), genderScope: productGenderScope(selectedProduct) })
     setCatalogVariantDraft(blankVariant(Number(selectedProduct.id), getCatalogProductEffectiveCategory(selectedProduct), selectedProduct))
+    if (returnVariantId) {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+        const source = document.querySelector(`.catalog-size-tile[data-variant-id="${returnVariantId}"]`) as HTMLElement | null
+        source?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        source?.focus({ preventScroll: true })
+      }))
+    }
   }
 
   const selectedVariants = selectedProduct
@@ -330,50 +347,42 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
 
   const productListSummary = (product: any) => {
     const variants = activeVariantsFor(Number(product.id))
-    if (!variants.length) return 'Нет вариантов'
+    if (!variants.length) return 'Позиции ещё не добавлены'
     const adult = variants.filter((variant: any) => getCatalogVariantCategory(variant) === 'adult').length
     const child = variants.filter((variant: any) => getCatalogVariantCategory(variant) === 'child').length
     if (adult && child) return `${adult} взрослых · ${child} детских`
-    if (child) return `${child} детских ${pluralRu(child, 'вариант', 'варианта', 'вариантов')}`
-    return `${variants.length} ${pluralRu(variants.length, 'вариант', 'варианта', 'вариантов')}`
+    if (child) return `${child} детских ${pluralRu(child, 'позиция', 'позиции', 'позиций')}`
+    return `${variants.length} ${pluralRu(variants.length, 'позиция', 'позиции', 'позиций')}`
   }
 
   return (
     <div className="inventory-catalog-panel w6-catalog-panel" id="catalog" style={inventoryPanelStyle('catalog')}>
-      <div className="inventory-panel-headline w6-catalog-headline">
+      <div className="inventory-panel-headline w6-catalog-headline catalog-clean-headline">
         <div>
-          <h3>Каталог</h3>
-          <p>Товары и их реальные исполнения. Технические идентификаторы остаются внутри системы.</p>
+          <h3>Товары</h3>
+          <p>Каталог, цвета, размеры и другие характеристики.</p>
         </div>
         <div className="w6-catalog-head-actions">
           <button className="secondary compact" type="button" onClick={() => void loadCatalogData(true)}>Обновить</button>
         </div>
       </div>
 
-      <div className="inventory-products-subtabs human-catalog-subtabs" role="tablist" aria-label="Управление товарами">
-        <button type="button" className="is-active" onClick={() => setCatalogAdminMode('catalog')}>Каталог товаров</button>
-        <button type="button" className={(catalogReview?.count || 0) > 0 ? 'has-attention' : ''} onClick={() => { setCatalogAdminMode('review'); setCatalogReviewTaskIndex(0); void loadCatalogReview(true) }}>
-          Уточнить товары{catalogReview && (catalogReview.count || 0) > 0 ? ` (${catalogReview.count})` : ''}
-        </button>
-        <button type="button" className={(inventoryLifecycle?.count || 0) > 0 ? 'has-attention' : ''} onClick={() => { setCatalogAdminMode('lifecycle'); setInventoryLifecycleTaskIndex(0); void loadInventoryLifecycle(true) }}>
-          Ожидают движения{inventoryLifecycle && (inventoryLifecycle.count || 0) > 0 ? ` (${inventoryLifecycle.count})` : ''}
-        </button>
-        <button type="button" onClick={() => { setCatalogAdminMode('attributes'); const productKinds = ['colors', 'materials', 'lengths', 'sizes', 'childAges']; if (!productKinds.includes(referenceKind)) selectReferenceKind('colors'); else void loadReferenceItems(referenceKind, !referenceItems.length) }}>Характеристики одежды</button>
+      <div className="catalog-clean-taskbar" aria-label="Задачи и настройки каталога">
+        <div className="catalog-clean-taskbar-main">
+          {(catalogReview?.count || 0) > 0 || (inventoryLifecycle?.count || 0) > 0 ? <span className="catalog-clean-taskbar-label">Требуют разбора</span> : null}
+          {(catalogReview?.count || 0) > 0 ? (
+            <button type="button" className="catalog-clean-task" onClick={() => { setCatalogAdminMode('review'); setCatalogReviewTaskIndex(0); void loadCatalogReview(true) }}>
+              Уточнить в заказах <b>{catalogReview.count}</b>
+            </button>
+          ) : null}
+          {(inventoryLifecycle?.count || 0) > 0 ? (
+            <button type="button" className="catalog-clean-task" title="Ожидают движения" onClick={() => { setCatalogAdminMode('lifecycle'); setInventoryLifecycleTaskIndex(0); void loadInventoryLifecycle(true) }}>
+              Подтвердить движение <b>{inventoryLifecycle.count}</b>
+            </button>
+          ) : null}
+        </div>
+        <button type="button" className="catalog-clean-settings" onClick={() => { setCatalogAdminMode('attributes'); const productKinds = ['colors', 'materials', 'lengths', 'sizes', 'childAges']; if (!productKinds.includes(referenceKind)) selectReferenceKind('colors'); else void loadReferenceItems(referenceKind, !referenceItems.length) }}>Характеристики</button>
       </div>
-
-      {(catalogReview?.count || 0) > 0 ? (
-        <button className="catalog-review-callout w6-catalog-callout" type="button" onClick={() => { setCatalogAdminMode('review'); setCatalogReviewTaskIndex(0); void loadCatalogReview(true) }}>
-          <span><b>{catalogReview.count}</b> {catalogReview.count === 1 ? 'позиция заказа требует уточнения товара' : 'позиций заказов требуют уточнения товара'}</span>
-          <strong>Разобрать →</strong>
-        </button>
-      ) : null}
-
-      {(inventoryLifecycle?.count || 0) > 0 ? (
-        <button className="catalog-review-callout inventory-lifecycle-callout w6-catalog-callout" type="button" onClick={() => { setCatalogAdminMode('lifecycle'); setInventoryLifecycleTaskIndex(0); void loadInventoryLifecycle(true) }}>
-          <span><b>{inventoryLifecycle.count}</b> {inventoryLifecycle.count === 1 ? 'физическая позиция ждёт подтверждения движения' : 'физических позиций ждут подтверждения движения'}</span>
-          <strong>Проверить →</strong>
-        </button>
-      ) : null}
 
       <div className="w6-catalog-toolbar">
         <label className="w6-catalog-search">
@@ -405,18 +414,18 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
         </div>
         <div className="w6-catalog-stats" aria-label="Сводка каталога">
           <span>Всего: <b>{activeProductCount}</b> {pluralRu(activeProductCount, 'товар', 'товара', 'товаров')}</span>
-          <span><b>{activeVariantCount}</b> {pluralRu(activeVariantCount, 'вариант', 'варианта', 'вариантов')}</span>
+          <span><b>{activeVariantCount}</b> {pluralRu(activeVariantCount, 'позиция', 'позиции', 'позиций')}</span>
           {catalogIssueStats.productsWithoutVariants > 0 ? (
             <button type="button" className={`w6-catalog-issue-filter ${catalogOnlyWithoutVariants ? 'is-active' : ''}`} onClick={() => { setCatalogCategoryFilter('all'); setCatalogOnlyWithoutVariants(true); setInventoryQuery('') }}>
-              <b>{catalogIssueStats.productsWithoutVariants}</b> без вариантов
+              <b>{catalogIssueStats.productsWithoutVariants}</b> без позиций
             </button>
-          ) : <span className="is-ok">✓ все товары с вариантами</span>}
+          ) : <span className="is-ok">✓ все товары с позициями</span>}
         </div>
       </div>
 
       {catalogOnlyWithoutVariants ? (
         <div className="w6-catalog-filter-note" role="status">
-          <span>Показаны только товары без активных вариантов. Добавляйте вариант только если это реальная складская позиция.</span>
+          <span>Показаны товары, для которых ещё не добавлены складские позиции.</span>
           <button className="ghost compact" type="button" onClick={() => setCatalogOnlyWithoutVariants(false)}>Показать весь каталог</button>
         </div>
       ) : null}
@@ -457,9 +466,9 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
             <div className="catalog-detail-editor catalog-new-product-editor">
               <div className="catalog-detail-editor-head">
                 <div>
-                  <span className="catalog-detail-eyebrow">Master-data</span>
-                  <h3>Новый товар</h3>
-                  <p>Задайте базовое название и назначение по полу. Для женского/мужского товара пол дальше подставляется автоматически; у унисекс человек выбирает пол конкретной вещи.</p>
+                  <span className="catalog-detail-eyebrow">Новый товар</span>
+                  <h3>Добавить товар</h3>
+                  <p>Укажите название и кому предназначен товар. Цвета, размеры и другие характеристики добавляются после создания.</p>
                 </div>
                 <button className="secondary compact" type="button" onClick={() => setExpandedCatalogProducts({})}>Отмена</button>
               </div>
@@ -490,7 +499,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                     <option value="male">Мужской</option>
                     <option value="unisex">Унисекс</option>
                   </select>
-                  <small>У «Унисекс» пол не угадывается: в заказе, приходе или обмене человек выберет ЖЕН/МУЖ.</small>
+                  <small>Для унисекс пол конкретной вещи выбирается при добавлении позиции.</small>
                 </label>
                 <button className="primary" type="button" disabled={!catalogProductDraft.genderScope} onClick={() => void saveCatalogProduct()}>Добавить товар</button>
               </div>
@@ -502,7 +511,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                   <span className="catalog-detail-eyebrow">Товар</span>
                   <h2>{selectedProduct.name}</h2>
                   <div className="catalog-detail-meta catalog-product-commercial-anchor">
-                    <span><b>{selectedVariants.length}</b> {pluralRu(selectedVariants.length, 'вариант', 'варианта', 'вариантов')}</span>
+                    <span><b>{selectedVariants.length}</b> {pluralRu(selectedVariants.length, 'позиция', 'позиции', 'позиций')}</span>
                     <span><b>{selectedExecutionCount}</b> {pluralRu(selectedExecutionCount, 'исполнение', 'исполнения', 'исполнений')}</span>
                     {visibleSelectedVariants.length !== selectedVariants.length ? <span className="is-filtered"><b>{visibleSelectedVariants.length}</b> показано</span> : null}
                     {selectedAdultCount && selectedChildCount ? <span>{selectedAdultCount} взрослых · {selectedChildCount} детских</span> : selectedChildCount ? <span>Детский товар</span> : <span>Взрослый товар</span>}
@@ -513,7 +522,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                 <div className="catalog-detail-actions">
                   <button className="secondary compact" type="button" onClick={() => { setInventoryQuery(selectedProduct.name); ctx.openInventoryPanel('overview') }}>Найти в остатках</button>
                   <button className="secondary compact" type="button" onClick={() => openProductEditor(selectedProduct)}>Редактировать товар</button>
-                  <button className="primary compact" type="button" disabled={!stocktakeReferenceReady} title={!stocktakeReferenceReady ? 'Сначала загружаются справочники характеристик' : undefined} onClick={() => openNewVariant(selectedProduct)}>+ Вариант</button>
+                  <button className="primary compact" type="button" disabled={!stocktakeReferenceReady} title={!stocktakeReferenceReady ? 'Сначала загружаются справочники характеристик' : undefined} onClick={() => openNewVariant(selectedProduct)}>+ Позиция</button>
                 </div>
               </header>
 
@@ -573,12 +582,12 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
               />
 
               {showVariantEditor ? (
-                <section className="catalog-detail-editor catalog-variant-editor-v2 w6-variant-editor">
+                <section id="catalog-variant-editor" tabIndex={-1} className="catalog-detail-editor catalog-variant-editor-v2 w6-variant-editor catalog-clean-editor">
                   <div className="catalog-detail-editor-head">
                     <div>
-                      <span className="catalog-detail-eyebrow">{catalogVariantDraft.id ? 'Исправление новой позиции' : 'Новый вариант'}</span>
-                      <h3>{catalogVariantDraft.id ? 'Исправить ошибку в комбинации' : 'Добавить комбинацию'}</h3>
-                      <p>{catalogVariantDraft.id ? 'Старой унисекс-позиции без пола можно выбрать ЖЕН или МУЖ даже при наличии истории. Если такой комбинации ещё нет, система сохранит тот же SKU; если ЖЕН/МУЖ-дубль уже есть, система безопасно объединит позиции, не теряя текущий остаток и исторические подписи. Для остальных полей действует прежняя защита: использованную идентичность сервер не перепишет.' : 'Техническое значение «СТАНДАРТ» допустимо в данных; в обычном просмотре оно показывается как «Основное исполнение».'}</p>
+                      <span className="catalog-detail-eyebrow">{catalogVariantDraft.id ? 'Исправление позиции' : 'Новая позиция'}</span>
+                      <h3>{catalogVariantDraft.id ? 'Исправить позицию' : 'Добавить позицию'}</h3>
+                      <p>{catalogVariantDraft.id ? 'Исправляйте только ошибочно указанную характеристику. Если это другая вещь, создайте новую позицию.' : 'Выберите характеристики новой позиции. Для обычного материала или длины можно оставить «Основной».'}</p>
                     </div>
                     <button className="secondary compact" type="button" onClick={closeEditor}>Закрыть</button>
                   </div>
@@ -598,7 +607,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                         <option value="МУЖ">МУЖ</option>
                         <option value="ЖЕН">ЖЕН</option>
                       </select>
-                      <small>{fixedGenderForProduct(selectedProduct) ? 'Подставлено по товару. Если каталог ошибся, пол этой комбинации можно изменить.' : 'Унисекс: выберите пол этой конкретной комбинации.'}</small>
+                      <small>{fixedGenderForProduct(selectedProduct) ? 'Подставлено по товару. При необходимости пол этой позиции можно исправить.' : 'Для унисекс выберите пол этой позиции.'}</small>
                     </label>
                     <label>
                       <span>Цвет</span>
@@ -611,7 +620,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                     <label>
                       <span>Материал</span>
                       <select value={catalogVariantDraft.productId === String(selectedProduct.id) ? catalogVariantDraft.material : 'СТАНДАРТ'} onChange={(event) => setCatalogVariantDraft((current: any) => ({ ...current, productId: String(selectedProduct.id), material: event.target.value }))}>
-                        <option value="СТАНДАРТ">СТАНДАРТ</option>
+                        <option value="СТАНДАРТ">Основной</option>
                         {catalogVariantDraft.material && catalogVariantDraft.material !== 'СТАНДАРТ' && !suggestionValues.materials.includes(catalogVariantDraft.material) ? <option value={catalogVariantDraft.material}>{catalogVariantDraft.material}</option> : null}
                         {suggestionValues.materials.filter((value: string) => value !== 'СТАНДАРТ').map((value: string) => <option key={`w6-material-${value}`} value={value}>{value}</option>)}
                       </select>
@@ -619,7 +628,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                     <label>
                       <span>Длина</span>
                       <select value={catalogVariantDraft.productId === String(selectedProduct.id) ? catalogVariantDraft.length : 'СТАНДАРТ'} onChange={(event) => setCatalogVariantDraft((current: any) => ({ ...current, productId: String(selectedProduct.id), length: event.target.value }))}>
-                        <option value="СТАНДАРТ">СТАНДАРТ</option>
+                        <option value="СТАНДАРТ">Основной</option>
                         {catalogVariantDraft.length && catalogVariantDraft.length !== 'СТАНДАРТ' && !suggestionValues.lengths.includes(catalogVariantDraft.length) ? <option value={catalogVariantDraft.length}>{catalogVariantDraft.length}</option> : null}
                         {suggestionValues.lengths.filter((value: string) => value !== 'СТАНДАРТ').map((value: string) => <option key={`w6-length-${value}`} value={value}>{value}</option>)}
                       </select>
@@ -633,7 +642,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                       </select>
                     </label>
                     <button className="primary" type="button" disabled={!stocktakeReferenceReady} onClick={() => void saveCatalogVariant()}>
-                      {catalogVariantDraft.id && catalogVariantDraft.productId === String(selectedProduct.id) ? 'Сохранить исправление' : 'Добавить вариант'}
+                      {catalogVariantDraft.id && catalogVariantDraft.productId === String(selectedProduct.id) ? 'Сохранить исправление' : 'Добавить позицию'}
                     </button>
                   </div>
                 </section>
@@ -642,7 +651,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
           ) : (
             <div className="catalog-detail-empty">
               <strong>Выберите товар</strong>
-              <p>Слева находится компактный список каталога. Здесь появятся исполнения и варианты выбранного товара.</p>
+              <p>Выберите товар слева, чтобы увидеть цвета, размеры и остатки.</p>
               <button className="primary compact" type="button" onClick={openNewProduct}>+ Новый товар</button>
             </div>
           )}

@@ -11,6 +11,6 @@ check(worker.includes('UPDATE inventory_stock SET gender_snapshot = ?, updated_a
 check(worker.includes("VALUES (?, ?, ?, ?, 'in_place', ?)"),'repair is audited')
 check(worker.includes('return { ok: true, correctedGender: true, merged: false }'),'success is explicit')
 check(!worker.includes('UPDATE order_items SET gender_snapshot'),'historical order snapshots are not rewritten')
-check(ui.includes('Старой унисекс-позиции без пола можно выбрать ЖЕН или МУЖ даже при наличии истории'),'UI explains supported correction')
+check(ui.includes('Для унисекс выберите пол этой позиции.') && ui.includes('<option value="МУЖ">МУЖ</option>') && ui.includes('<option value="ЖЕН">ЖЕН</option>'),'UI keeps the supported unisex gender correction discoverable')
 if(failed)process.exit(1)
 console.log('Catalog unisex gender in-place R1: OK')

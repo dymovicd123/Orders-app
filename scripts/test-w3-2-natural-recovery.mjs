@@ -20,7 +20,7 @@ const between = (text, start, end) => {
 
 check(section.includes('const warehousePendingIntakeCount = Number(warehouseAttention?.counts?.intake || 0)'), 'known intake count is not separated')
 check(section.includes('const warehouseClarificationCount = Number(warehouseAttention?.counts?.handover || 0)') && section.includes('warehouseAttention?.counts?.lifecycle') && section.includes('warehouseAttention?.counts?.catalog'), 'clarification badge is not limited to true ambiguity')
-const nav = between(section, '<div className="warehouse-w2-secondary">', '</div>\n              </div>')
+const nav = between(section, '<div className="warehouse-w2-navigation"', '{renderInventoryAttentionPanel({')
 check(nav.includes('Ожидают приёма') && nav.includes("setAttentionCategory('intake')"), 'known intake has no separate secondary entry')
 check(nav.includes('Нужно уточнить') && nav.includes("? 'handover' : 'identify'"), 'clarification navigation does not select only true ambiguity')
 check(!nav.includes('warehouseAttention?.total'), 'legacy all-problem total still drives clarification badge')

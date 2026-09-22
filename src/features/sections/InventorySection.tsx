@@ -40,6 +40,7 @@ import '../../styles/w5-checking-ux.css'
 import '../../styles/w5-2-short-check.css'
 import '../../styles/w5-3-selective-queue.css'
 import '../../styles/w5-5-found-items.css'
+import '../../styles/w9-warehouse-catalog-cleanup.css'
 import '../../styles/192b2a-warehouse-attention-actions.css'
 
 type SimpleStockDetail = {
@@ -1459,11 +1460,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       const allRows = simpleStockCategory === 'all'
         ? productRows
         : productRows.filter((row: any) => (row.category || 'adult') === simpleStockCategory)
-      const visibleRows = hasExplicitStockSearch ? allRows : allRows.filter((row: any) => {
+      const visibleRows = allRows.filter((row: any) => {
         const free = simpleStockQuantity(row)
         const reserved = simpleStockReserved(row)
         const physical = simpleStockPhysical(row)
-        if (simpleStockAvailabilityFilter === 'all') return physical !== 0 || reserved !== 0
+        if (simpleStockAvailabilityFilter === 'all') return hasExplicitStockSearch ? true : physical !== 0 || reserved !== 0
         if (simpleStockAvailabilityFilter === 'free') return free > 0
         if (simpleStockAvailabilityFilter === 'reserved') return reserved > 0
         return free < 0 || physical < 0
@@ -1473,7 +1474,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         ...product,
         rows: visibleRows,
         allRows,
-        availabilityFilterApplied: !hasExplicitStockSearch,
+        availabilityFilterApplied: true,
       })
     }
     return result
@@ -2123,16 +2124,14 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     <section className="card wide sector-inventory unified-inventory" id="inventory" style={inventoryModuleVisible ? undefined : { display: 'none' }}>
               <div className="inventory-compact-title">
                 <div className="card-label">Склад</div>
-                <div className="inventory-compact-statuses human-inventory-rule">
-                  <span className="soft-badge">Склад показывает, сколько товара на месте, сколько уже обещано заказам и сколько ещё свободно</span>
-                </div>
               </div>
 
-              <div className="warehouse-w2-navigation" data-w2-human-warehouse="task-navigation">
-                <div className="warehouse-w2-primary" aria-label="Основные действия склада">
+              <div className="warehouse-w2-navigation" data-w2-human-warehouse="task-navigation" data-cleanup-navigation="true">
+                <div className="warehouse-w2-primary" aria-label="Разделы склада">
                   {[
                     { value: 'overview' as const, label: 'Остатки', hint: 'Что сейчас есть на складе и в бутике' },
-                    { value: 'movement' as const, label: 'Операции', hint: 'Приход, списание, перемещение и точечная корректировка' },
+                    ...(isAdmin ? [{ value: 'catalog' as const, label: 'Товары', hint: 'Каталог, цвета, размеры и характеристики' }] : []),
+                    { value: 'movement' as const, label: 'Операции', hint: 'Приход, списание и перемещение' },
                     { value: 'stocktake' as const, label: 'Проверка', hint: 'Физически пересчитать товар' },
                     { value: 'history' as const, label: 'История', hint: 'Что менялось на складе и в бутике' },
                   ].map((entry) => (
@@ -2141,15 +2140,16 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                     </button>
                   ))}
                 </div>
-                <div className="warehouse-w2-secondary">
-                  {warehousePendingIntakeCount > 0 ? <button type="button" className={`warehouse-w2-recovery warehouse-w3-intake ${inventoryPanel === 'attention' && attentionCategory === 'intake' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory('intake'); openInventoryPanel('attention') }} title="Известные вещи, которые ещё не приняты в физический остаток">
-                    <span>Ожидают приёма</span><b>{warehousePendingIntakeCount}</b>
-                  </button> : null}
-                  {warehouseClarificationCount > 0 ? <button type="button" className={`warehouse-w2-recovery ${inventoryPanel === 'attention' && attentionCategory !== 'intake' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory(Number(warehouseAttention?.counts?.handover || 0) > 0 ? 'handover' : 'identify'); openInventoryPanel('attention') }} title="Только вопросы, где системе действительно не хватает факта">
-                    <span>Нужно уточнить</span><b>{warehouseClarificationCount}</b>
-                  </button> : null}
-                  {isAdmin ? <button type="button" className={inventoryPanel === 'catalog' ? 'is-active' : ''} onClick={() => openInventoryPanel('catalog')} title="Товары и характеристики">Товары</button> : null}
-                </div>
+                {(warehousePendingIntakeCount > 0 || warehouseClarificationCount > 0) ? (
+                  <div className="warehouse-w2-secondary">
+                    {warehousePendingIntakeCount > 0 ? <button type="button" className={`warehouse-w2-recovery warehouse-w3-intake ${inventoryPanel === 'attention' && attentionCategory === 'intake' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory('intake'); openInventoryPanel('attention') }} title="Вещи, которые приехали или едут обратно и ждут приёмки">
+                      <span>Ожидают приёма</span><b>{warehousePendingIntakeCount}</b>
+                    </button> : null}
+                    {warehouseClarificationCount > 0 ? <button type="button" className={`warehouse-w2-recovery ${inventoryPanel === 'attention' && attentionCategory !== 'intake' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory(Number(warehouseAttention?.counts?.handover || 0) > 0 ? 'handover' : 'identify'); openInventoryPanel('attention') }} title="Позиции, где нужно уточнить товар или фактическое движение">
+                      <span>Нужно уточнить</span><b>{warehouseClarificationCount}</b>
+                    </button> : null}
+                  </div>
+                ) : null}
               </div>
 
               {renderInventoryAttentionPanel({

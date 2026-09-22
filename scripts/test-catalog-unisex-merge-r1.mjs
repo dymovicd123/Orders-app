@@ -35,7 +35,7 @@ check(worker.includes("SELECT SUM(r.quantity)\n                 FROM inventory_r
 check(worker.includes("VALUES (?, ?, ?, ?, 'merge', ?)"), 'merge is audited')
 check(worker.includes("return { ok: true, correctedGender: true, merged: true, keeperVariantId"), 'merge success is explicit')
 check(!worker.includes('UPDATE order_items SET gender_snapshot'), 'historical order text snapshots are not rewritten')
-check(ui.includes('если ЖЕН/МУЖ-дубль уже есть, система безопасно объединит позиции'), 'catalog UI explains safe merge behavior')
+check(ui.includes('Исправляйте только ошибочно указанную характеристику. Если это другая вещь, создайте новую позицию.') && !ui.includes('безопасно объединит позиции'), 'catalog UI keeps internal merge mechanics behind the human correction flow')
 
 if (failed) process.exit(1)
 console.log('Catalog unisex merge R1: OK')

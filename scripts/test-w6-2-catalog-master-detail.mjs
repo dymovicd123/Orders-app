@@ -20,8 +20,8 @@ check(catalog.includes('executionGroups') && (catalog.includes('CatalogPolishExe
 check(catalog.includes('variant.gender') && catalog.includes('variant.color') && catalog.includes('variant.material') && catalog.includes('variant.length') && catalog.includes('variant.sizeLabel'), 'Catalog search must include meaningful variant characteristics')
 check(catalog.includes('placeholder="Название, цвет, материал, размер…"'), 'human Catalog search affordance missing')
 check(catalog.includes('+ Новый товар') && catalog.includes('openNewProduct'), 'new product must be an explicit top-level action')
-check(catalog.includes('Редактировать товар') && catalog.includes('+ Вариант') && catalog.includes('openVariantEditor'), 'editing must remain explicit from the selected product sheet')
-check(catalog.includes('Нет вариантов') && !catalog.includes("'Взрослые: 0'"), 'compact product list must not repeat zero-heavy technical counters')
+check(catalog.includes('Редактировать товар') && catalog.includes('+ Позиция') && catalog.includes('openVariantEditor'), 'editing must remain explicit from the selected product sheet')
+check(catalog.includes("return 'Позиции ещё не добавлены'") && !catalog.includes("'Взрослые: 0'"), 'compact product list must use human empty-position copy without zero-heavy technical counters')
 check(catalog.includes("hasExplicitDetail ? 'has-explicit-selection'"), 'mobile detail mode must preserve an explicit selected/editor product context')
 
 check(css.includes('grid-template-columns: minmax(300px, 370px) minmax(0, 1fr)'), 'desktop master/detail width contract missing')
