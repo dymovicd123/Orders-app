@@ -218,7 +218,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                           </button>
                         ) : null}
                         {(inventoryLifecycle?.count || 0) > 0 && catalogAdminMode !== 'lifecycle' ? (
-                          <button type="button" className="catalog-clean-task" onClick={() => { setCatalogAdminMode('lifecycle'); setInventoryLifecycleTaskIndex(0); void loadInventoryLifecycle(true) }}>
+                          <button type="button" className="catalog-clean-task" title="Ожидают движения" onClick={() => { setCatalogAdminMode('lifecycle'); setInventoryLifecycleTaskIndex(0); void loadInventoryLifecycle(true) }}>
                             Подтвердить движение <b>{inventoryLifecycle.count}</b>
                           </button>
                         ) : null}
