@@ -12,7 +12,7 @@ check(loader.includes("@import './w6-4a-variant-editor-visibility.css';"), 'W6.4
 check(css.includes('.catalog-detail-pane:has(> .w6-variant-editor){display:flex;flex-direction:column}'), 'variant editor host is not reordered only while editor is open')
 check(css.includes('>.w6-variant-editor{order:3') && css.includes('>.catalog-execution-list{order:4}'), 'variant editor must render visually before the long execution list')
 check(css.includes('@media(max-width:760px)') && css.includes('margin:8px 8px 4px'), 'mobile editor placement polish missing')
-check(catalog.includes('onClick={() => openNewVariant(selectedProduct)}>+ Вариант</button>'), 'primary add-variant action changed unexpectedly')
+check(catalog.includes('onClick={() => openNewVariant(selectedProduct)}>+ Позиция</button>'), 'primary add-position action changed unexpectedly')
 check(catalog.includes('<CatalogPolishExecutionGroups') && catalog.includes('{showVariantEditor ? ('), 'catalog groups/editor contract changed unexpectedly')
 check(inventory.includes('<div className="inventory-arrival-legacy-workspace">'), 'frozen Arrival workspace changed')
 
