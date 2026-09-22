@@ -9,7 +9,7 @@ import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOpera
 import { buildPaymentAndMoneyEventStatements, financialEventStatement, financialOperationTypeFromPaymentKind, removeOrderPaymentsWithMoneyEvents } from './money.ts'
 import { assertOrderItemInputs, assertOrderPaymentInputs, assertOrderTotalInput, calculateTotals, completedOrderOperationCounts, normalizeOrderItems, normalizeOrderPayments, OrderInputValidationError, sameNormalizedOrderItemsForEdit, sameNormalizedOrderPaymentsForEdit } from './order-core.ts'
 import { assertCreateOrderShortageDecisions, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, OrderStockShortageError, orderShipmentInventoryBlockerMessage, releaseOrderReservationsV2, reserveOrderItemV2, resolveCatalogProductAndVariant, resolveWorkshopCatalogProductOnly } from './order-reservations.ts'
-import { canonicalItemProjection, fetchOrderRelations, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
+import { canonicalItemProjection, fetchOrderRelations, isOrderPricingFoundationEnabled, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
 import { upsertCustomerIdentityForOrderCreate } from './references.ts'
 import { isInventoryAutoWriteoffEnabled, recalculateCustomersAfterStorageCleanup } from './storage.ts'
 import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'
@@ -1566,6 +1566,10 @@ export async function updateOrderCritical(
 
 
 export async function getOrder(db: D1Database, id: number) {
+  const pricingFoundationEnabled = await isOrderPricingFoundationEnabled(db);
+  const pricingModeSelect = pricingFoundationEnabled
+    ? 'o.pricing_mode'
+    : "'legacy_manual_total' AS pricing_mode";
   const order = await db.prepare(
     `SELECT
       o.id, o.external_id, o.order_date, o.manager_id, o.customer_id,
@@ -1574,13 +1578,14 @@ export async function getOrder(db: D1Database, id: number) {
       COALESCE(m.color_key, '#64748B') AS manager_color,
       c.phone_normalized AS customer_phone, c.display_name AS customer_name,
       o.city, o.delivery_type, o.source_type, o.workshop_status, o.order_status,
+      ${pricingModeSelect},
       o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment, o.shipping_status, o.shipping_date,
       o.archived_at, o.archived_by, o.archive_reason, o.archive_batch_id, o.created_at, o.updated_at
      FROM orders o
      LEFT JOIN managers m ON m.id = o.manager_id
      LEFT JOIN customers c ON c.id = o.customer_id
      WHERE o.id = ?`
-  ).bind(id).first<OrderListRow & { created_at: string; updated_at: string }>();
+  ).bind(id).first<OrderListRow & { pricing_mode?: 'legacy_manual_total' | 'itemized_v1'; created_at: string; updated_at: string }>();
 
   if (!order) {
     return null;
@@ -1589,6 +1594,7 @@ export async function getOrder(db: D1Database, id: number) {
   const relations = await fetchOrderRelations(db, [id]);
   return {
     ...order,
+    pricing_mode: order.pricing_mode === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total',
     committed_return_count: (relations.returnsByOrderId.get(id) || []).filter(ret => cleanText((ret as any).status || 'completed').toLowerCase() !== 'cancelled').length,
     committed_exchange_count: relations.committedExchangeCountByOrderId.get(id) || 0,
     has_committed_item_return: relations.hasCommittedItemReturnByOrderId.get(id) || false,
@@ -1598,6 +1604,7 @@ export async function getOrder(db: D1Database, id: number) {
       quantity: (item as any).quantity,
       availableOperationQuantity: orderItemAvailableOperationQuantity(item as Record<string, unknown>),
       unitPrice: (item as any).unit_price,
+      catalogPriceSnapshot: (item as any).catalog_price_snapshot == null ? null : Math.max(0, toInt((item as any).catalog_price_snapshot, 0)),
       lineTotal: (item as any).line_total,
       sourceType: (item as any).is_workshop ? 'workshop' : (item as any).source_type,
       isWorkshop: Boolean((item as any).is_workshop),

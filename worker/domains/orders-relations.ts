@@ -4,6 +4,22 @@ import { cleanText, toInt } from '../core/text.ts'
 import { matchWorkshopTasksToOrderItems } from './workshop-matching.ts'
 import { fetchOrderStockHandoverRows } from './order-reservations.ts'
 
+export async function isOrderPricingFoundationEnabled(db: D1Database) {
+  try {
+    await db.prepare(
+      `SELECT
+         (SELECT pricing_mode FROM orders LIMIT 1) AS pricing_mode,
+         (SELECT catalog_price_snapshot FROM order_items LIMIT 1) AS catalog_price_snapshot`
+    ).first();
+    return true;
+  } catch {
+    // Migration 0073 is additive. Until it is applied, every existing order is legacy/manual
+    // and order reads must keep working without pricing metadata columns.
+    return false;
+  }
+}
+
+
 export function canonicalItemProjection(item: Record<string, unknown>) {
   const productId = toInt(item.product_id, 0) || null;
   const variantId = toInt(item.variant_id, 0) || null;

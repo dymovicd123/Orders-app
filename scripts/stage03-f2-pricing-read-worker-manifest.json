@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "revision": "stage03-f2-pricing-read-compat",
+  "files": {
+    "worker/domains/orders-relations.ts": {
+      "beforeGitBlob": "66e7c7acc571bd6531da9d09ed39082f5e4f2f6a",
+      "afterGitBlob": "8f4140cb9f93e586c0d5bd51e5ef68041f177051",
+      "beforeLines": 227,
+      "afterLines": 243,
+      "replacements": [
+        {
+          "beforeBlock": "import { fetchOrderStockHandoverRows } from './order-reservations.ts'\n\nexport function canonicalItemProjection",
+          "afterBlock": "import { fetchOrderStockHandoverRows } from './order-reservations.ts'\n\nexport async function isOrderPricingFoundationEnabled(db: D1Database) {\n  try {\n    await db.prepare(\n      `SELECT\n         (SELECT pricing_mode FROM orders LIMIT 1) AS pricing_mode,\n         (SELECT catalog_price_snapshot FROM order_items LIMIT 1) AS catalog_price_snapshot`\n    ).first();\n    return true;\n  } catch {\n    // Migration 0073 is additive. Until it is applied, every existing order is legacy/manual\n    // and order reads must keep working without pricing metadata columns.\n    return false;\n  }\n}\n\n\nexport function canonicalItemProjection"
+        }
+      ]
+    },
+    "worker/domains/orders-read.ts": {
+      "beforeGitBlob": "24456171fd21ab11df258ebcd03aa5ef08dba49d",
+      "afterGitBlob": "df888a63e65d22e30bbedc406d67af2f4fec97dc",
+      "beforeLines": 804,
+      "afterLines": 812,
+      "replacements": [
+        {
+          "beforeBlock": "import { canonicalItemProjection, fetchOrderRelations, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'",
+          "afterBlock": "import { canonicalItemProjection, fetchOrderRelations, isOrderPricingFoundationEnabled, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'"
+        },
+        {
+          "beforeBlock": "    shipping_status: cleanText(row.shipping_status) || 'not_sent',\n    shipping_date: cleanText(row.shipping_date) || null,\n    total_amount: toInt(row.total_amount, 0),",
+          "afterBlock": "    shipping_status: cleanText(row.shipping_status) || 'not_sent',\n    shipping_date: cleanText(row.shipping_date) || null,\n    pricing_mode: 'legacy_manual_total',\n    total_amount: toInt(row.total_amount, 0),"
+        },
+        {
+          "beforeBlock": "  const dateFrom = cleanText(url.searchParams.get('dateFrom'));\n  const dateTo = cleanText(url.searchParams.get('dateTo'));",
+          "afterBlock": "  const dateFrom = cleanText(url.searchParams.get('dateFrom'));\n  const dateTo = cleanText(url.searchParams.get('dateTo'));\n  const pricingFoundationEnabled = await isOrderPricingFoundationEnabled(db);\n  const pricingModeSelect = pricingFoundationEnabled\n    ? 'o.pricing_mode'\n    : \"'legacy_manual_total' AS pricing_mode\";"
+        },
+        {
+          "beforeBlock": "      o.city, o.delivery_type, o.source_type, o.workshop_status, o.order_status,\n      o.shipping_status, o.shipping_date,\n      o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment,",
+          "afterBlock": "      o.city, o.delivery_type, o.source_type, o.workshop_status, o.order_status,\n      o.shipping_status, o.shipping_date,\n      ${pricingModeSelect},\n      o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment,"
+        },
+        {
+          "beforeBlock": "  ).bind(...pageBindings, limit, hasPageCursor ? 0 : offset).all<OrderListRow>();",
+          "afterBlock": "  ).bind(...pageBindings, limit, hasPageCursor ? 0 : offset).all<OrderListRow & { pricing_mode?: 'legacy_manual_total' | 'itemized_v1' }>();"
+        },
+        {
+          "beforeBlock": "    orders: orders.map(order => ({\n      ...order,\n      stock_handover_review_needed:",
+          "afterBlock": "    orders: orders.map(order => ({\n      ...order,\n      pricing_mode: order.pricing_mode === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total',\n      stock_handover_review_needed:"
+        },
+        {
+          "beforeBlock": "        availableOperationQuantity: orderItemAvailableOperationQuantity(item as Record<string, unknown>),\n        unitPrice: (item as any).unit_price,\n        lineTotal: (item as any).line_total,",
+          "afterBlock": "        availableOperationQuantity: orderItemAvailableOperationQuantity(item as Record<string, unknown>),\n        unitPrice: (item as any).unit_price,\n        catalogPriceSnapshot: (item as any).catalog_price_snapshot == null ? null : Math.max(0, toInt((item as any).catalog_price_snapshot, 0)),\n        lineTotal: (item as any).line_total,"
+        }
+      ]
+    },
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "a76c48efd10830c1fff0bc7a05af868bd566db76",
+      "afterGitBlob": "02303bd9403bb8d2244b1948304ae59d7bcba674",
+      "beforeLines": 1631,
+      "afterLines": 1638,
+      "replacements": [
+        {
+          "beforeBlock": "import { canonicalItemProjection, fetchOrderRelations, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'",
+          "afterBlock": "import { canonicalItemProjection, fetchOrderRelations, isOrderPricingFoundationEnabled, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'"
+        },
+        {
+          "beforeBlock": "export async function getOrder(db: D1Database, id: number) {\n  const order = await db.prepare(",
+          "afterBlock": "export async function getOrder(db: D1Database, id: number) {\n  const pricingFoundationEnabled = await isOrderPricingFoundationEnabled(db);\n  const pricingModeSelect = pricingFoundationEnabled\n    ? 'o.pricing_mode'\n    : \"'legacy_manual_total' AS pricing_mode\";\n  const order = await db.prepare("
+        },
+        {
+          "beforeBlock": "      o.city, o.delivery_type, o.source_type, o.workshop_status, o.order_status,\n      o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment, o.shipping_status, o.shipping_date,",
+          "afterBlock": "      o.city, o.delivery_type, o.source_type, o.workshop_status, o.order_status,\n      ${pricingModeSelect},\n      o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment, o.shipping_status, o.shipping_date,"
+        },
+        {
+          "beforeBlock": "  ).bind(id).first<OrderListRow & { created_at: string; updated_at: string }>();",
+          "afterBlock": "  ).bind(id).first<OrderListRow & { pricing_mode?: 'legacy_manual_total' | 'itemized_v1'; created_at: string; updated_at: string }>();"
+        },
+        {
+          "beforeBlock": "  return {\n    ...order,\n    committed_return_count:",
+          "afterBlock": "  return {\n    ...order,\n    pricing_mode: order.pricing_mode === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total',\n    committed_return_count:"
+        },
+        {
+          "beforeBlock": "      availableOperationQuantity: orderItemAvailableOperationQuantity(item as Record<string, unknown>),\n      unitPrice: (item as any).unit_price,\n      lineTotal: (item as any).line_total,",
+          "afterBlock": "      availableOperationQuantity: orderItemAvailableOperationQuantity(item as Record<string, unknown>),\n      unitPrice: (item as any).unit_price,\n      catalogPriceSnapshot: (item as any).catalog_price_snapshot == null ? null : Math.max(0, toInt((item as any).catalog_price_snapshot, 0)),\n      lineTotal: (item as any).line_total,"
+        }
+      ]
+    }
+  }
+}
