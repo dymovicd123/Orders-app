@@ -9,6 +9,15 @@ const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex')
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8')
+const h1ItemizedManifest = JSON.parse(read('scripts/stage03-h1-itemized-money-worker-manifest.json'))
+check(h1ItemizedManifest?.version === 1 && h1ItemizedManifest?.revision === 'stage03-h1-itemized-money-calculator', 'H1 itemized structural manifest invalid in 1906C')
+const h1InactiveWorkerContracts = h1ItemizedManifest.addedFiles || {}
+check(Object.keys(h1InactiveWorkerContracts).join(',') === 'worker/domains/order-pricing.ts', '1906C H1 inactive Worker contract allow-list widened')
+const gitBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+
 
 function walk(dir, predicate = () => true) {
   const result = []
@@ -30,7 +39,7 @@ function resolveModule(fromFile, specifier, fileSet) {
   return candidates.map((candidate) => path.resolve(candidate)).find((candidate) => fileSet.has(candidate)) || null
 }
 
-function assertAllReachable(directory, entryRelative) {
+function assertAllReachable(directory, entryRelative, exactInactiveContracts = {}) {
   const files = walk(path.join(root, directory), (file) => /\.(ts|tsx)$/.test(file)).map((file) => path.resolve(file))
   const fileSet = new Set(files)
   const graph = new Map(files.map((file) => [file, []]))
@@ -61,7 +70,19 @@ function assertAllReachable(directory, entryRelative) {
   }
   visit(entry)
   const unreachable = files.filter((file) => !reachable.has(file)).map((file) => path.relative(root, file).replaceAll('\\', '/'))
-  check(unreachable.length === 0, `${directory}: unreachable runtime modules remain: ${unreachable.join(', ')}`)
+  const unexplained = []
+  for (const relative of unreachable) {
+    const expected = exactInactiveContracts[relative]
+    if (!expected) {
+      unexplained.push(relative)
+      continue
+    }
+    const absolute = path.join(root, relative)
+    const actual = fs.readFileSync(absolute, 'utf8')
+    check(gitBlobSha(actual) === expected.afterGitBlob, `Inactive Worker contract changed beyond exact manifest: ${relative}`)
+    check(actual.split(/\r?\n/).length === expected.afterLines, `Inactive Worker contract line count changed beyond exact manifest: ${relative}`)
+  }
+  check(unexplained.length === 0, `${directory}: unreachable runtime modules remain: ${unexplained.join(', ')}`)
   return files.length
 }
 
@@ -72,7 +93,7 @@ try {
 
   for (const relative of manifest.removedRuntimeFiles || []) check(!fs.existsSync(path.join(root, relative)), `Retired runtime file returned: ${relative}`)
   const srcFiles = assertAllReachable('src', 'src/main.tsx')
-  const workerFiles = assertAllReachable('worker', 'worker/index.ts')
+  const workerFiles = assertAllReachable('worker', 'worker/index.ts', h1InactiveWorkerContracts)
 
   const app = read('src/App.tsx')
   const types = read('src/app/types.ts')
