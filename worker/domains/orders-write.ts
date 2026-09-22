@@ -8,6 +8,7 @@ import type { CriticalOperationHandle } from './critical.ts'
 import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, criticalOperationEntityId, failCriticalOperation, insertCriticalMappedEntity, parseCriticalContext, updateCriticalOperationTargetFromLastInsert } from './critical.ts'
 import { buildPaymentAndMoneyEventStatements, financialEventStatement, financialOperationTypeFromPaymentKind, removeOrderPaymentsWithMoneyEvents } from './money.ts'
 import { assertOrderItemInputs, assertOrderPaymentInputs, assertOrderTotalInput, calculateTotals, completedOrderOperationCounts, normalizeOrderItems, normalizeOrderPayments, OrderInputValidationError, sameNormalizedOrderItemsExceptPriceForEdit, sameNormalizedOrderItemsForEdit, sameNormalizedOrderPaymentsForEdit } from './order-core.ts'
+import { buildItemizedOrderWritePlan, ItemizedPricingValidationError, type ItemizedOrderWritePlan } from './order-pricing.ts'
 import { assertCreateOrderShortageDecisions, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, OrderStockShortageError, orderShipmentInventoryBlockerMessage, releaseOrderReservationsV2, reserveOrderItemV2, resolveCatalogProductAndVariant, resolveWorkshopCatalogProductOnly } from './order-reservations.ts'
 import { canonicalItemProjection, fetchOrderRelations, isOrderPricingFoundationEnabled, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
 import { upsertCustomerIdentityForOrderCreate } from './references.ts'
@@ -401,24 +402,20 @@ export async function insertOrderContent(
   criticalOperation?: CriticalOperationHandle | null,
   criticalEntityPrefix = 'order_content',
   inventoryObligationLineage?: Array<{ key: string; originAt: string } | null>,
+  itemizedWritePlan?: ItemizedOrderWritePlan | null,
 ) {
   const stockResults: Array<{ source: string; productName: string; variantId: number | null; quantityBefore: number; quantityAfter: number }> = [];
   let workshopCount = 0;
   const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
   const autoWriteoffEnabled = humanInventoryModelEnabled ? true : await isInventoryAutoWriteoffEnabled(db);
+  if (itemizedWritePlan && itemizedWritePlan.lines.length !== items.length) {
+    throw new CriticalOperationConflictError('Itemized-план заказа не совпадает с количеством сохраняемых позиций. Повторите сохранение после обновления страницы.');
+  }
 
   for (const [itemIndex, item] of items.entries()) {
     const resolved = preResolvedCatalog?.[itemIndex]
       || (item.isWorkshop ? await resolveWorkshopCatalogProductOnly(db, item) : await resolveCatalogProductAndVariant(db, item, timestamp));
-    const orderItemInsert = db.prepare(
-      `INSERT INTO order_items (
-        order_id, product_id, variant_id, product_name_snapshot, audience_type,
-        gender_snapshot, color_snapshot, material_snapshot, length_snapshot,
-        size_snapshot, quantity, unit_price, line_total, is_workshop,
-        source_type, workshop_comment, workshop_urgent, workshop_due_date, stock_writeoff_status, created_at,
-        inventory_obligation_key, inventory_obligation_origin_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(
+    const commonOrderItemValues = [
       orderId,
       resolved.productId,
       resolved.variantId,
@@ -432,16 +429,50 @@ export async function insertOrderContent(
       item.quantity,
       item.unitPrice,
       item.lineTotal,
-      item.isWorkshop ? 1 : 0,
-      item.isWorkshop ? 'warehouse' : item.inventorySource,
-      item.workshopComment || null,
-      item.isWorkshop && item.workshopUrgent ? 1 : 0,
-      item.isWorkshop && item.workshopUrgent ? item.workshopDueDate : null,
-      item.isWorkshop ? 'workshop' : (humanInventoryModelEnabled ? ((!resolved.productId || !resolved.variantId) ? 'catalog_unresolved' : 'pending_reservation') : (autoWriteoffEnabled ? 'pending_writeoff' : 'writeoff_disabled')),
-      timestamp,
-      inventoryObligationLineage?.[itemIndex]?.key || `${externalId}:${stockReferenceType}:${timestamp}:item:${itemIndex + 1}`,
-      inventoryObligationLineage?.[itemIndex]?.originAt || timestamp,
-    );
+    ];
+    const itemizedLine = itemizedWritePlan?.lines[itemIndex];
+    const orderItemInsert = itemizedWritePlan
+      ? db.prepare(
+        `INSERT INTO order_items (
+          order_id, product_id, variant_id, product_name_snapshot, audience_type,
+          gender_snapshot, color_snapshot, material_snapshot, length_snapshot,
+          size_snapshot, quantity, unit_price, line_total, catalog_price_snapshot, is_workshop,
+          source_type, workshop_comment, workshop_urgent, workshop_due_date, stock_writeoff_status, created_at,
+          inventory_obligation_key, inventory_obligation_origin_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        ...commonOrderItemValues,
+        itemizedLine?.catalogPriceSnapshot ?? null,
+        item.isWorkshop ? 1 : 0,
+        item.isWorkshop ? 'warehouse' : item.inventorySource,
+        item.workshopComment || null,
+        item.isWorkshop && item.workshopUrgent ? 1 : 0,
+        item.isWorkshop && item.workshopUrgent ? item.workshopDueDate : null,
+        item.isWorkshop ? 'workshop' : (humanInventoryModelEnabled ? ((!resolved.productId || !resolved.variantId) ? 'catalog_unresolved' : 'pending_reservation') : (autoWriteoffEnabled ? 'pending_writeoff' : 'writeoff_disabled')),
+        timestamp,
+        inventoryObligationLineage?.[itemIndex]?.key || `${externalId}:${stockReferenceType}:${timestamp}:item:${itemIndex + 1}`,
+        inventoryObligationLineage?.[itemIndex]?.originAt || timestamp,
+      )
+      : db.prepare(
+        `INSERT INTO order_items (
+          order_id, product_id, variant_id, product_name_snapshot, audience_type,
+          gender_snapshot, color_snapshot, material_snapshot, length_snapshot,
+          size_snapshot, quantity, unit_price, line_total, is_workshop,
+          source_type, workshop_comment, workshop_urgent, workshop_due_date, stock_writeoff_status, created_at,
+          inventory_obligation_key, inventory_obligation_origin_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        ...commonOrderItemValues,
+        item.isWorkshop ? 1 : 0,
+        item.isWorkshop ? 'warehouse' : item.inventorySource,
+        item.workshopComment || null,
+        item.isWorkshop && item.workshopUrgent ? 1 : 0,
+        item.isWorkshop && item.workshopUrgent ? item.workshopDueDate : null,
+        item.isWorkshop ? 'workshop' : (humanInventoryModelEnabled ? ((!resolved.productId || !resolved.variantId) ? 'catalog_unresolved' : 'pending_reservation') : (autoWriteoffEnabled ? 'pending_writeoff' : 'writeoff_disabled')),
+        timestamp,
+        inventoryObligationLineage?.[itemIndex]?.key || `${externalId}:${stockReferenceType}:${timestamp}:item:${itemIndex + 1}`,
+        inventoryObligationLineage?.[itemIndex]?.originAt || timestamp,
+      );
     let orderItemId: number | null = null;
     if (criticalOperation) {
       const mapped = await insertCriticalMappedEntity(
@@ -752,6 +783,8 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
           normalizedPayments,
           totals: { totalAmount, receivedAmount, debtAmount },
           paymentStatus,
+          pricingMode: 'legacy_manual_total',
+          itemizedWritePlan: null,
           preResolvedCatalog,
         };
         // Pre-192B2A4 create incremented customers.orders_count before the order target was written.
@@ -794,8 +827,17 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
 
         assertOrderItemInputs(items);
         assertOrderPaymentInputs(payments);
-        assertOrderTotalInput(input.orderTotal);
-        const normalizedItems = normalizeOrderItems(items, sourceType);
+        const requestedPricingMode = cleanText(input.pricingMode);
+        if (requestedPricingMode && requestedPricingMode !== 'legacy_manual_total' && requestedPricingMode !== 'itemized_v1') {
+          throw new OrderInputValidationError('Неизвестный режим расчёта заказа.');
+        }
+        const pricingMode = requestedPricingMode === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total';
+        if (pricingMode === 'legacy_manual_total') {
+          assertOrderTotalInput(input.orderTotal);
+        } else if (input.orderTotal !== undefined && input.orderTotal !== null && cleanText(input.orderTotal) !== '') {
+          throw new OrderInputValidationError('Для itemized_v1 итог заказа рассчитывается сервером по позициям. Не передавайте отдельную цену заказа.');
+        }
+        let normalizedItems = normalizeOrderItems(items, sourceType);
         const normalizedPayments = normalizeOrderPayments(payments, orderDate).map(payment => (
           payment.paymentKind === 'primary'
             ? { ...payment, paymentDate: orderDate }
@@ -813,9 +855,45 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         }
         if (!normalizedItems.length) throw new OrderInputValidationError('Добавьте хотя бы один товар в заказ.');
 
-        const totals = calculateTotals(normalizedItems, normalizedPayments, input.orderTotal);
-        if (totals.receivedAmount > totals.totalAmount) {
-          throw new OrderInputValidationError(`Оплаты (${totals.receivedAmount}) больше цены заказа (${totals.totalAmount}). Исправьте цену или оплаты.`);
+        let itemizedWritePlan: ItemizedOrderWritePlan | null = null;
+        let totals: { totalAmount: number; receivedAmount: number; debtAmount: number };
+        if (pricingMode === 'itemized_v1') {
+          if (!await isOrderPricingFoundationEnabled(db)) {
+            throw new CriticalOperationConflictError('Itemized-расчёт пока недоступен: схема цен заказа не подготовлена.');
+          }
+          const itemizedLines = items
+            .filter(item => upperText(item?.productName))
+            .map(item => ({
+              quantity: item?.quantity ?? 1,
+              unitPrice: item?.unitPrice,
+              catalogPriceSnapshot: item?.catalogPriceSnapshot ?? null,
+            }));
+          try {
+            itemizedWritePlan = buildItemizedOrderWritePlan(itemizedLines, normalizedPayments);
+          } catch (error) {
+            if (error instanceof ItemizedPricingValidationError) {
+              throw new OrderInputValidationError(error.message);
+            }
+            throw error;
+          }
+          if (itemizedWritePlan.lines.length !== normalizedItems.length) {
+            throw new CriticalOperationConflictError('Itemized-план не совпадает с нормализованными позициями заказа.');
+          }
+          normalizedItems = normalizedItems.map((item, index) => ({
+            ...item,
+            unitPrice: itemizedWritePlan!.lines[index].unitPrice,
+            lineTotal: itemizedWritePlan!.lines[index].lineTotal,
+          }));
+          totals = {
+            totalAmount: itemizedWritePlan.totalAmount,
+            receivedAmount: itemizedWritePlan.receivedAmount,
+            debtAmount: itemizedWritePlan.debtAmount,
+          };
+        } else {
+          totals = calculateTotals(normalizedItems, normalizedPayments, input.orderTotal);
+          if (totals.receivedAmount > totals.totalAmount) {
+            throw new OrderInputValidationError(`Оплаты (${totals.receivedAmount}) больше цены заказа (${totals.totalAmount}). Исправьте цену или оплаты.`);
+          }
         }
         const paymentStatus = totals.debtAmount <= 0
           ? 'Оплачено'
@@ -865,6 +943,8 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
           comment,
           normalizedItems,
           normalizedPayments,
+          pricingMode,
+          itemizedWritePlan,
           totals,
           paymentStatus,
           preResolvedCatalog,
@@ -879,6 +959,8 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
     const createdAt = cleanText(plan.createdAt) || requestedAt;
     const normalizedItems = plan.normalizedItems as ReturnType<typeof normalizeOrderItems>;
     const normalizedPayments = plan.normalizedPayments as ReturnType<typeof normalizeOrderPayments>;
+    const pricingMode = cleanText(plan.pricingMode) === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total';
+    const itemizedWritePlan = pricingMode === 'itemized_v1' ? plan.itemizedWritePlan as ItemizedOrderWritePlan : null;
     const preResolvedCatalog = plan.preResolvedCatalog as Array<{ productId: number | null; variantId: number | null }>;
     const totals = plan.totals as { totalAmount: number; receivedAmount: number; debtAmount: number };
     const managerId = toInt(plan.managerId, 0) || null;
@@ -898,17 +980,29 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
       if (criticalOperation.row.step !== 'validated') {
         throw new CriticalOperationConflictError('Безопасное создание заказа остановилось на неожиданном этапе. Повторите сохранение после обновления страницы.');
       }
-      const orderStatement = db.prepare(
-        `INSERT INTO orders (
-          external_id, order_date, manager_id, manager_snapshot_name, customer_id, city,
-          delivery_type, source_type, workshop_status, order_status, total_amount,
-          received_amount, debt_amount, return_amount, comment, shipping_status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'not_sent', ?, ?)`
-      ).bind(
-        externalId, orderDate, managerId, managerName, customerId, city || null, deliveryType || null,
-        sourceType, workshopStatus, orderStatus, totals.totalAmount, totals.receivedAmount, totals.debtAmount,
-        comment || null, createdAt, createdAt,
-      );
+      const orderStatement = pricingMode === 'itemized_v1'
+        ? db.prepare(
+          `INSERT INTO orders (
+            external_id, order_date, manager_id, manager_snapshot_name, customer_id, city,
+            delivery_type, source_type, workshop_status, order_status, pricing_mode, total_amount,
+            received_amount, debt_amount, return_amount, comment, shipping_status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'itemized_v1', ?, ?, ?, 0, ?, 'not_sent', ?, ?)`
+        ).bind(
+          externalId, orderDate, managerId, managerName, customerId, city || null, deliveryType || null,
+          sourceType, workshopStatus, orderStatus, totals.totalAmount, totals.receivedAmount, totals.debtAmount,
+          comment || null, createdAt, createdAt,
+        )
+        : db.prepare(
+          `INSERT INTO orders (
+            external_id, order_date, manager_id, manager_snapshot_name, customer_id, city,
+            delivery_type, source_type, workshop_status, order_status, total_amount,
+            received_amount, debt_amount, return_amount, comment, shipping_status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'not_sent', ?, ?)`
+        ).bind(
+          externalId, orderDate, managerId, managerName, customerId, city || null, deliveryType || null,
+          sourceType, workshopStatus, orderStatus, totals.totalAmount, totals.receivedAmount, totals.debtAmount,
+          comment || null, createdAt, createdAt,
+        );
       orderId = await updateCriticalOperationTargetFromLastInsert(
         db, criticalOperation, 'order', externalId, orderStatement, 'order_created',
       );
@@ -931,6 +1025,8 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         preResolvedCatalog,
         criticalOperation,
         'order_create',
+        undefined,
+        itemizedWritePlan,
       );
       insertedContent = {
         stockResults: content.stockResults,
@@ -954,6 +1050,7 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
       receivedAmount: totals.receivedAmount,
       debtAmount: totals.debtAmount,
       paymentStatus,
+      pricingMode,
       stockWriteOff: stockResults,
       workshopCount,
     };
