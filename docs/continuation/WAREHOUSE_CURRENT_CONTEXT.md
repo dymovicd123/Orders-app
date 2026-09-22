@@ -33,6 +33,37 @@ Permanent rule:
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
 
+## Checkpoint 2026-09-22 — Production Catalog price editor release
+
+Production migration 0072 was applied first through guarded workflow `35749849349` against:
+- Worker `orders-app`;
+- D1 `orders_db_prod`;
+- id `17e68a41-1d58-4a36-8a63-47c3e32443c4`.
+
+Migration verification:
+- `catalog_execution_prices` started with 0 rows;
+- the pre/post Production finance fingerprint matched exactly;
+- historical orders, received money, debt, payments, returns, exchanges and old item financial fields were unchanged.
+
+This release promotes the accepted Branch2 Stage03-C/C1/C2 Catalog pricing UI only:
+- admin can set current cost and sale prices per canonical execution + adult/child;
+- current price editor is integrated into the execution card;
+- exact SKU card keeps the full-width layout repair;
+- blank means unset; zero remains an explicit zero;
+- write remains the existing admin-only full-pair PUT contract.
+
+Deliberately not included:
+- order price autofill;
+- itemized order creation;
+- discounts;
+- Production migration 0073;
+- report repricing;
+- return/exchange pricing changes.
+
+This gives Production users time to populate Catalog prices before order autofill is designed.
+
+---
+
 ## Checkpoint 2026-09-22 — Stage03-B3 admin price write contract
 
 Baseline: `branch2` `94695197141b496b96a1153ed6936f3502001fd4`. Branch2 Worker/D1 identity was re-verified before editing; no Production binding is present.
