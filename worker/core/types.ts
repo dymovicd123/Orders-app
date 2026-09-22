@@ -86,7 +86,7 @@ export type OrderListRow = {
   order_status: string;
   shipping_status?: string | null;
   shipping_date?: string | null;
-  pricing_mode?: PricingMode;
+  pricing_mode?: 'legacy_manual_total' | 'itemized_v1';
   total_amount: number;
   received_amount: number;
   debt_amount: number;
@@ -105,7 +105,6 @@ export type OrderListRow = {
 
 export type PaymentKind = 'primary' | 'debt_close' | 'extra';
 
-export type PricingMode = 'legacy_manual_total' | 'itemized_v1';
 
 export type SourceType = 'warehouse' | 'boutique';
 

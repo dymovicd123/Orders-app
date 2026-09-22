@@ -32,8 +32,7 @@ check(!/catalog_execution_prices/i.test(migration), 'Stage03-F1 must not copy cu
 check(!/unit_price\s*=|line_total\s*=/i.test(migration), 'Stage03-F1 must not rewrite historical item prices/totals')
 check(!/total_amount\s*=|received_amount\s*=|debt_amount\s*=/i.test(migration), 'Stage03-F1 must not recalculate historical order money')
 
-check(workerTypes.includes("export type PricingMode = 'legacy_manual_total' | 'itemized_v1'"), 'Worker pricing vocabulary missing')
-check(workerTypes.includes('pricing_mode?: PricingMode'), 'Worker order output type does not understand pricing mode')
+check(workerTypes.includes("pricing_mode?: 'legacy_manual_total' | 'itemized_v1'"), 'Worker order output type does not understand pricing mode')
 check(!/pricingMode\?:/.test(workerTypes.split('export type OrderInput = {')[1].split('export type OrderListRow')[0]), 'Stage03-F1 must not activate pricing mode through create/edit input yet')
 
 check(appTypes.includes("pricing_mode?: 'legacy_manual_total' | 'itemized_v1'"), 'Frontend order type does not understand optional pricing mode')
