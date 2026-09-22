@@ -52,7 +52,9 @@ No D1 migration is executed by this source step. No price write endpoint, UI, or
 
 Focused regression: `scripts/test-stage03-b-execution-price-read-contract.mjs`.
 
-Next: wait for cumulative Branch2 build/deploy. If green, review B1+B2 together before adding the admin write path or applying migration 0072.
+Branch2 cumulative Cloudflare build/deploy for code commit `e0de9e3c6e4612339e5afa20e07f06a779bb8cd6` completed successfully (GitHub Actions run `35720604755`). The environment-isolation gate passed before Cloudflare build monitoring, and the cumulative release/build checks passed with migration 0072 still unapplied.
+
+Next: review B1+B2 together, then add the admin write path as a separate bounded step. Do not apply migration 0072 to any D1 until that write contract is reviewed.
 
 ---
 
