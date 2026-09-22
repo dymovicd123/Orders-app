@@ -184,45 +184,49 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
     visibleCatalogProducts
   } = ctx
 
+  const modeTitle = catalogAdminMode === 'review'
+    ? 'Уточнить товары'
+    : catalogAdminMode === 'lifecycle'
+      ? 'Подтвердить движение'
+      : 'Характеристики'
+  const modeText = catalogAdminMode === 'review'
+    ? 'Позиции заказов, где нужно уточнить товар или характеристику.'
+    : catalogAdminMode === 'lifecycle'
+      ? 'Вещи, по которым нужно подтвердить, как они должны попасть в остаток.'
+      : 'Цвета, материалы, длины, размеры и возраст.'
+
   return (
-    <div className="inventory-catalog-panel" id="catalog" style={inventoryPanelStyle('catalog')}>
-                    <div className="inventory-panel-headline">
+    <div className="inventory-catalog-panel catalog-clean-subview" id="catalog" style={inventoryPanelStyle('catalog')}>
+                    <div className="inventory-panel-headline catalog-clean-headline">
                       <div>
-                        <h3>Товары</h3>
-                        <p>Здесь администратор управляет каталогом и характеристиками одежды. Остатки склада и бутика остаются отдельными от каталога.</p>
+                        <h3>{modeTitle}</h3>
+                        <p>{modeText}</p>
                       </div>
                       <button className="secondary compact" type="button" onClick={() => {
                         if (catalogAdminMode === 'review') void loadCatalogReview(true)
                         else if (catalogAdminMode === 'lifecycle') void loadInventoryLifecycle(true)
-                        else if (catalogAdminMode === 'catalog') void loadCatalogData(true)
                         else void loadReferenceItems(referenceKind, true)
                       }}>Обновить</button>
                     </div>
-    
-                    <div className="inventory-products-subtabs human-catalog-subtabs" role="tablist" aria-label="Управление товарами">
-                      <button type="button" className={catalogAdminMode === 'catalog' ? 'is-active' : ''} onClick={() => setCatalogAdminMode('catalog')}>Каталог товаров</button>
-                      <button type="button" className={`${catalogAdminMode === 'review' ? 'is-active' : ''} ${(catalogReview?.count || 0) > 0 ? 'has-attention' : ''}`} onClick={() => { setCatalogAdminMode('review'); setCatalogReviewTaskIndex(0); void loadCatalogReview(true) }}>
-                        Уточнить товары{catalogReview && (catalogReview.count || 0) > 0 ? ` (${catalogReview.count})` : ''}
-                      </button>
-                      <button type="button" className={`${catalogAdminMode === 'lifecycle' ? 'is-active' : ''} ${(inventoryLifecycle?.count || 0) > 0 ? 'has-attention' : ''}`} onClick={() => { setCatalogAdminMode('lifecycle'); setInventoryLifecycleTaskIndex(0); void loadInventoryLifecycle(true) }}>
-                        Ожидают движения{inventoryLifecycle && (inventoryLifecycle.count || 0) > 0 ? ` (${inventoryLifecycle.count})` : ''}
-                      </button>
-                      <button type="button" className={catalogAdminMode === 'attributes' ? 'is-active' : ''} onClick={() => { setCatalogAdminMode('attributes'); const productKinds = ['colors', 'materials', 'lengths', 'sizes', 'childAges']; if (!productKinds.includes(referenceKind)) selectReferenceKind('colors'); else void loadReferenceItems(referenceKind, !referenceItems.length) }}>Характеристики одежды</button>
+
+                    <div className="catalog-clean-taskbar is-subview" aria-label="Навигация каталога">
+                      <div className="catalog-clean-taskbar-main">
+                        <button type="button" className="catalog-clean-back" onClick={() => setCatalogAdminMode('catalog')}>← К товарам</button>
+                        {(catalogReview?.count || 0) > 0 && catalogAdminMode !== 'review' ? (
+                          <button type="button" className="catalog-clean-task" onClick={() => { setCatalogAdminMode('review'); setCatalogReviewTaskIndex(0); void loadCatalogReview(true) }}>
+                            Уточнить в заказах <b>{catalogReview.count}</b>
+                          </button>
+                        ) : null}
+                        {(inventoryLifecycle?.count || 0) > 0 && catalogAdminMode !== 'lifecycle' ? (
+                          <button type="button" className="catalog-clean-task" onClick={() => { setCatalogAdminMode('lifecycle'); setInventoryLifecycleTaskIndex(0); void loadInventoryLifecycle(true) }}>
+                            Подтвердить движение <b>{inventoryLifecycle.count}</b>
+                          </button>
+                        ) : null}
+                      </div>
+                      {catalogAdminMode !== 'attributes' ? (
+                        <button type="button" className="catalog-clean-settings" onClick={() => { setCatalogAdminMode('attributes'); const productKinds = ['colors', 'materials', 'lengths', 'sizes', 'childAges']; if (!productKinds.includes(referenceKind)) selectReferenceKind('colors'); else void loadReferenceItems(referenceKind, !referenceItems.length) }}>Характеристики</button>
+                      ) : null}
                     </div>
-    
-                    {(catalogReview?.count || 0) > 0 && catalogAdminMode !== 'review' ? (
-                      <button className="catalog-review-callout" type="button" onClick={() => { setCatalogAdminMode('review'); setCatalogReviewTaskIndex(0); void loadCatalogReview(true) }}>
-                        <span><b>{catalogReview.count}</b> {catalogReview.count === 1 ? 'позиция заказа не распознана каталогом' : 'позиций заказов не распознаны каталогом'}</span>
-                        <strong>Разобрать →</strong>
-                      </button>
-                    ) : null}
-    
-                    {(inventoryLifecycle?.count || 0) > 0 && catalogAdminMode !== 'lifecycle' ? (
-                      <button className="catalog-review-callout inventory-lifecycle-callout" type="button" onClick={() => { setCatalogAdminMode('lifecycle'); setInventoryLifecycleTaskIndex(0); void loadInventoryLifecycle(true) }}>
-                        <span><b>{inventoryLifecycle.count}</b> {inventoryLifecycle.count === 1 ? 'физическая позиция ждёт подтверждения перед движением остатка' : 'физических позиций ждут подтверждения перед движением остатка'}</span>
-                        <strong>Проверить →</strong>
-                      </button>
-                    ) : null}
     
                     {catalogAdminMode === 'catalog' ? (<>
                     <div className="human-catalog-summary">
