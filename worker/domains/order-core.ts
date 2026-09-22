@@ -52,6 +52,70 @@ export class OrderInputValidationError extends Error {
 }
 
 
+export type ItemizedV1PricingResult = {
+  pricingMode: 'itemized_v1';
+  totalAmount: number;
+  receivedAmount: number;
+  debtAmount: number;
+  paymentStatus: 'Оплачено' | 'Частично' | 'Не оплачено';
+};
+
+
+export function calculateItemizedV1Totals(
+  items: OrderInput['items'],
+  payments: OrderInput['payments'],
+): ItemizedV1PricingResult {
+  const pricedItems = (Array.isArray(items) ? items : []).filter(item => upperText(item?.productName));
+  if (!pricedItems.length) {
+    throw new OrderInputValidationError('Для itemized_v1 нужна хотя бы одна товарная позиция.');
+  }
+
+  let totalAmount = 0;
+  for (const [index, item] of pricedItems.entries()) {
+    const quantity = Number(item?.quantity ?? 1);
+    const unitPrice = Number(item?.unitPrice ?? 0);
+    if (!Number.isSafeInteger(quantity) || quantity < 1) {
+      throw new OrderInputValidationError(`Количество в позиции ${index + 1} должно быть целым числом от 1.`);
+    }
+    if (!Number.isSafeInteger(unitPrice) || unitPrice < 0) {
+      throw new OrderInputValidationError(`Цена позиции ${index + 1} должна быть целым числом от 0.`);
+    }
+    const lineTotal = quantity * unitPrice;
+    if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(totalAmount + lineTotal)) {
+      throw new OrderInputValidationError('Сумма itemized_v1 заказа выходит за безопасный диапазон.');
+    }
+    totalAmount += lineTotal;
+  }
+
+  let receivedAmount = 0;
+  for (const [index, payment] of (Array.isArray(payments) ? payments : []).entries()) {
+    const amount = payment?.amount === undefined || payment?.amount === null || cleanText(payment?.amount) === ''
+      ? 0
+      : Number(payment.amount);
+    if (!Number.isSafeInteger(amount) || amount < 0) {
+      throw new OrderInputValidationError(`Сумма оплаты ${index + 1} должна быть целым числом от 0.`);
+    }
+    if (!Number.isSafeInteger(receivedAmount + amount)) {
+      throw new OrderInputValidationError('Сумма оплат выходит за безопасный диапазон.');
+    }
+    receivedAmount += amount;
+  }
+
+  if (receivedAmount > totalAmount) {
+    throw new OrderInputValidationError(`Оплаты (${receivedAmount}) больше цены itemized_v1 заказа (${totalAmount}).`);
+  }
+
+  const debtAmount = totalAmount - receivedAmount;
+  return {
+    pricingMode: 'itemized_v1',
+    totalAmount,
+    receivedAmount,
+    debtAmount,
+    paymentStatus: debtAmount <= 0 ? 'Оплачено' : receivedAmount > 0 ? 'Частично' : 'Не оплачено',
+  };
+}
+
+
 export function assertOrderItemInputs(items: OrderInput['items']) {
   for (const [index, item] of (Array.isArray(items) ? items : []).entries()) {
     if (!upperText(item?.productName)) continue
