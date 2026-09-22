@@ -2126,7 +2126,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                 <div className="card-label">Склад</div>
               </div>
 
-              <div className="warehouse-w2-navigation warehouse-clean-navigation" data-w2-human-warehouse="task-navigation">
+              <div className="warehouse-w2-navigation" data-w2-human-warehouse="task-navigation" data-cleanup-navigation="true">
                 <div className="warehouse-w2-primary" aria-label="Разделы склада">
                   {[
                     { value: 'overview' as const, label: 'Остатки', hint: 'Что сейчас есть на складе и в бутике' },
