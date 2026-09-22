@@ -20,21 +20,21 @@
   box-shadow: inset 0 0 0 1px #c5d7f1;
 }
 
-.warehouse-clean-queues {
+.warehouse-clean-navigation .warehouse-w2-secondary {
   flex: 0 0 auto;
 }
 
-.warehouse-clean-queues > button {
+.warehouse-clean-navigation .warehouse-w2-secondary > button {
   min-height: 38px;
   border: 1px solid #e0e6ee;
   background: #fafbfd;
 }
 
-.warehouse-clean-queues > button:hover {
+.warehouse-clean-navigation .warehouse-w2-secondary > button:hover {
   background: #f4f7fb;
 }
 
-.warehouse-clean-queues > button.is-active {
+.warehouse-clean-navigation .warehouse-w2-secondary > button.is-active {
   border-color: #b7cbea;
   background: #eef4ff;
 }
@@ -183,7 +183,7 @@
     min-width: 94px;
   }
 
-  .warehouse-clean-queues {
+  .warehouse-clean-navigation .warehouse-w2-secondary {
     margin: 0;
     padding: 6px 0 0;
     border: 0;
@@ -192,7 +192,7 @@
     overflow-x: auto;
   }
 
-  .warehouse-clean-queues > button {
+  .warehouse-clean-navigation .warehouse-w2-secondary > button {
     flex: 0 0 auto;
   }
 
@@ -247,7 +247,7 @@
     font-size: 12px;
   }
 
-  .warehouse-clean-queues > button {
+  .warehouse-clean-navigation .warehouse-w2-secondary > button {
     min-height: 34px;
     padding: 5px 9px;
     font-size: 11px;
