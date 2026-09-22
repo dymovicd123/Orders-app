@@ -2141,7 +2141,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                   ))}
                 </div>
                 {(warehousePendingIntakeCount > 0 || warehouseClarificationCount > 0) ? (
-                  <div className="warehouse-w2-secondary warehouse-clean-queues" aria-label="Задачи склада">
+                  <div className="warehouse-w2-secondary" aria-label="Задачи склада">
                     {warehousePendingIntakeCount > 0 ? <button type="button" className={`warehouse-w2-recovery warehouse-w3-intake ${inventoryPanel === 'attention' && attentionCategory === 'intake' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory('intake'); openInventoryPanel('attention') }} title="Вещи, которые приехали или едут обратно и ждут приёмки">
                       <span>Ожидают приёма</span><b>{warehousePendingIntakeCount}</b>
                     </button> : null}
