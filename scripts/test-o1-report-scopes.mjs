@@ -84,6 +84,10 @@ const withoutClientReconciliation = result => {
   const reports = { ...(stableResult.reports || {}) }
   delete reports.paymentMethodReconciliation
   delete reports.paymentReconciliationByDay
+  reports.products = (reports.products || []).map(row => {
+    const { itemized_gross_sales, itemized_order_count, legacy_order_count, ...legacyProductRow } = row
+    return legacyProductRow
+  })
   return { ...stableResult, reports }
 }
 const canonicalMethod = value => {
