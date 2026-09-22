@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "revision": "stage03-g2-price-only-edit-isolation",
+  "files": {
+    "worker/domains/order-core.ts": {
+      "beforeGitBlob": "a83feda6408c3cc6e6121d937515a99f9b2cc7f1",
+      "afterGitBlob": "8bd55100934ea58bcfa4cfcc42a7e28da2d06d63",
+      "beforeLines": 424,
+      "afterLines": 441,
+      "replacements": [
+        {
+          "beforeBlock": "export function sameOrderItemForEdit(\n  left: ReturnType<typeof normalizeOrderItems>[number],\n  right: ReturnType<typeof normalizeOrderItems>[number],\n) {\n  return left.productName === right.productName\n    && left.audienceType === right.audienceType\n    && left.gender === right.gender\n    && left.color === right.color\n    && left.material === right.material\n    && left.length === right.length\n    && left.size === right.size\n    && left.quantity === right.quantity\n    && left.unitPrice === right.unitPrice\n    && left.sourceType === right.sourceType\n    && left.isWorkshop === right.isWorkshop\n    && left.workshopComment === right.workshopComment\n    && Boolean(left.workshopUrgent) === Boolean(right.workshopUrgent)\n    && (left.workshopDueDate || '') === (right.workshopDueDate || '');\n}\n\n\n",
+          "afterBlock": "export function sameOrderItemExceptPriceForEdit(\n  left: ReturnType<typeof normalizeOrderItems>[number],\n  right: ReturnType<typeof normalizeOrderItems>[number],\n) {\n  return left.productName === right.productName\n    && left.audienceType === right.audienceType\n    && left.gender === right.gender\n    && left.color === right.color\n    && left.material === right.material\n    && left.length === right.length\n    && left.size === right.size\n    && left.quantity === right.quantity\n    && left.sourceType === right.sourceType\n    && left.isWorkshop === right.isWorkshop\n    && left.workshopComment === right.workshopComment\n    && Boolean(left.workshopUrgent) === Boolean(right.workshopUrgent)\n    && (left.workshopDueDate || '') === (right.workshopDueDate || '');\n}\n\n\nexport function sameOrderItemForEdit(\n  left: ReturnType<typeof normalizeOrderItems>[number],\n  right: ReturnType<typeof normalizeOrderItems>[number],\n) {\n  return sameOrderItemExceptPriceForEdit(left, right)\n    && left.unitPrice === right.unitPrice;\n}\n\n\n"
+        },
+        {
+          "beforeBlock": "export function sameNormalizedOrderItemsForEdit(\n  left: ReturnType<typeof normalizeOrderItems>,\n  right: ReturnType<typeof normalizeOrderItems>,\n) {\n  if (left.length !== right.length) return false;\n  return left.every((item, index) => sameOrderItemForEdit(item, right[index]));\n}\n\n\n",
+          "afterBlock": "export function sameNormalizedOrderItemsForEdit(\n  left: ReturnType<typeof normalizeOrderItems>,\n  right: ReturnType<typeof normalizeOrderItems>,\n) {\n  if (left.length !== right.length) return false;\n  return left.every((item, index) => sameOrderItemForEdit(item, right[index]));\n}\n\n\nexport function sameNormalizedOrderItemsExceptPriceForEdit(\n  left: ReturnType<typeof normalizeOrderItems>,\n  right: ReturnType<typeof normalizeOrderItems>,\n) {\n  if (left.length !== right.length) return false;\n  return left.every((item, index) => sameOrderItemExceptPriceForEdit(item, right[index]));\n}\n\n\n"
+        }
+      ]
+    },
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "02303bd9403bb8d2244b1948304ae59d7bcba674",
+      "afterGitBlob": "a9067f3b32cc808d800ce47963423abe974100ca",
+      "beforeLines": 1638,
+      "afterLines": 1682,
+      "replacements": [
+        {
+          "beforeBlock": "import { assertOrderItemInputs, assertOrderPaymentInputs, assertOrderTotalInput, calculateTotals, completedOrderOperationCounts, normalizeOrderItems, normalizeOrderPayments, OrderInputValidationError, sameNormalizedOrderItemsForEdit, sameNormalizedOrderPaymentsForEdit } from './order-core.ts'\n",
+          "afterBlock": "import { assertOrderItemInputs, assertOrderPaymentInputs, assertOrderTotalInput, calculateTotals, completedOrderOperationCounts, normalizeOrderItems, normalizeOrderPayments, OrderInputValidationError, sameNormalizedOrderItemsExceptPriceForEdit, sameNormalizedOrderItemsForEdit, sameNormalizedOrderPaymentsForEdit } from './order-core.ts'\n"
+        },
+        {
+          "beforeBlock": "      const rewriteItems = Boolean(requestedItems && !sameNormalizedOrderItemsForEdit(existingItemsForEdit, requestedItems));\n",
+          "afterBlock": "      const itemContentChanged = Boolean(requestedItems && !sameNormalizedOrderItemsForEdit(existingItemsForEdit, requestedItems));\n      const rewriteItems = Boolean(requestedItems && !sameNormalizedOrderItemsExceptPriceForEdit(existingItemsForEdit, requestedItems));\n      const priceOnlyItemsEdit = itemContentChanged && !rewriteItems;\n      const priceOnlyItemUpdates: Array<{ orderItemId: number; unitPrice: number; lineTotal: number }> = [];\n      if (priceOnlyItemsEdit && requestedItems) {\n        const activeItemRows = await db.prepare(\n          `SELECT id, unit_price\n           FROM order_items\n           WHERE order_id = ? AND quantity > 0\n           ORDER BY id ASC`\n        ).bind(id).all<Record<string, unknown>>();\n        const activeRows = activeItemRows.results || [];\n        if (activeRows.length !== requestedItems.length) {\n          throw new CriticalOperationConflictError('Состав заказа изменился после открытия редактора. Обновите заказ и повторите исправление цены.');\n        }\n        for (const [index, item] of requestedItems.entries()) {\n          const row = activeRows[index];\n          const orderItemId = toInt(row?.id, 0);\n          if (!orderItemId) {\n            throw new CriticalOperationConflictError('Не удалось однозначно определить позицию заказа для исправления цены. Обновите заказ и повторите.');\n          }\n          if (toInt(row?.unit_price, 0) !== item.unitPrice) {\n            priceOnlyItemUpdates.push({ orderItemId, unitPrice: item.unitPrice, lineTotal: item.lineTotal });\n          }\n        }\n      }\n"
+        },
+        {
+          "beforeBlock": "      if (humanInventoryModelEnabled && existingShippingStatus === 'sent' && (rewriteItems || deletingOrder)) {\n",
+          "afterBlock": "      if (humanInventoryModelEnabled && existingShippingStatus === 'sent' && (itemContentChanged || deletingOrder)) {\n"
+        },
+        {
+          "beforeBlock": "      if (humanInventoryModelEnabled && existingShippingStatus !== 'sent' && (rewriteItems || deletingOrder)) {\n",
+          "afterBlock": "      if (humanInventoryModelEnabled && existingShippingStatus !== 'sent' && (itemContentChanged || deletingOrder)) {\n"
+        },
+        {
+          "beforeBlock": "      if (rewriteItems || rewritePayments || deletingOrder) {\n",
+          "afterBlock": "      if (itemContentChanged || rewritePayments || deletingOrder) {\n"
+        },
+        {
+          "beforeBlock": "        rewriteItems, rewritePayments, deletingOrder, deferShippingCommit,\n        paymentCorrections,\n",
+          "afterBlock": "        itemContentChanged, rewriteItems, priceOnlyItemsEdit, priceOnlyItemUpdates,\n        rewritePayments, deletingOrder, deferShippingCommit,\n        paymentCorrections,\n"
+        },
+        {
+          "beforeBlock": "    if (criticalOperation.row.step === 'old_content_retired') {\n      await db.prepare(\n        `UPDATE orders SET order_date = ?, manager_id = ?, manager_snapshot_name = ?, customer_id = ?, city = ?,\n            delivery_type = ?, source_type = ?, workshop_status = ?, order_status = ?, shipping_status = ?, shipping_date = ?,\n            total_amount = ?, received_amount = ?, debt_amount = ?, updated_at = ?, comment = ? WHERE id = ?`\n      ).bind(\n        p.nextOrderDate, p.nextManagerId, p.nextManager, p.nextCustomerId, p.nextCity || null, p.nextDelivery || null,\n        p.nextSource, p.finalWorkshopStatus, p.nextOrderStatus, p.persistedShippingStatus, p.persistedShippingDate,\n        p.totals.totalAmount, p.totals.receivedAmount, p.totals.debtAmount, p.timestamp, p.nextComment || null, id,\n      ).run();\n      await advanceCriticalOperation(db, criticalOperation, 'order_updated');\n    }\n\n",
+          "afterBlock": "    if (criticalOperation.row.step === 'old_content_retired') {\n      const orderUpdateStatement = db.prepare(\n        `UPDATE orders SET order_date = ?, manager_id = ?, manager_snapshot_name = ?, customer_id = ?, city = ?,\n            delivery_type = ?, source_type = ?, workshop_status = ?, order_status = ?, shipping_status = ?, shipping_date = ?,\n            total_amount = ?, received_amount = ?, debt_amount = ?, updated_at = ?, comment = ? WHERE id = ?`\n      ).bind(\n        p.nextOrderDate, p.nextManagerId, p.nextManager, p.nextCustomerId, p.nextCity || null, p.nextDelivery || null,\n        p.nextSource, p.finalWorkshopStatus, p.nextOrderStatus, p.persistedShippingStatus, p.persistedShippingDate,\n        p.totals.totalAmount, p.totals.receivedAmount, p.totals.debtAmount, p.timestamp, p.nextComment || null, id,\n      );\n      const priceOnlyItemUpdates = Array.isArray(p.priceOnlyItemUpdates) ? p.priceOnlyItemUpdates : [];\n      if (priceOnlyItemUpdates.length) {\n        await db.batch([\n          orderUpdateStatement,\n          ...priceOnlyItemUpdates.map((update: Record<string, any>) => db.prepare(\n            `UPDATE order_items\n             SET unit_price = ?, line_total = ?\n             WHERE id = ? AND order_id = ? AND quantity > 0`\n          ).bind(\n            Math.max(0, toInt(update.unitPrice, 0)),\n            Math.max(0, toInt(update.lineTotal, 0)),\n            toInt(update.orderItemId, 0),\n            id,\n          )),\n        ]);\n      } else {\n        await orderUpdateStatement.run();\n      }\n      await advanceCriticalOperation(db, criticalOperation, 'order_updated');\n    }\n\n"
+        },
+        {
+          "beforeBlock": "        details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}${paymentCorrectionCount ? `оплаты исправлены: ${paymentCorrectionCount}; ` : ''}статус отправки: ${p.nextShippingStatus}`,\n",
+          "afterBlock": "        details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.priceOnlyItemsEdit ? 'Цены позиций исправлены без движения склада; ' : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}${paymentCorrectionCount ? `оплаты исправлены: ${paymentCorrectionCount}; ` : ''}статус отправки: ${p.nextShippingStatus}`,\n"
+        }
+      ]
+    }
+  }
+}
