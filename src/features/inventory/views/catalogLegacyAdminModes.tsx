@@ -47,7 +47,6 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'lifecycleFactsMatchExactVariant'
   | 'lifecycleOptionsWithCurrent'
   | 'lifecycleValueNeedsCreation'
-  | 'loadCatalogData'
   | 'loadCatalogReview'
   | 'loadInventoryLifecycle'
   | 'loadReferenceItems'
@@ -140,7 +139,6 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
     lifecycleFactsMatchExactVariant,
     lifecycleOptionsWithCurrent,
     lifecycleValueNeedsCreation,
-    loadCatalogData,
     loadCatalogReview,
     loadInventoryLifecycle,
     loadReferenceItems,
