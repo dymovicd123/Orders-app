@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "revision": "stage03-h1-itemized-money-calculator",
+  "addedFiles": {
+    "worker/domains/order-pricing.ts": {
+      "afterGitBlob": "98268fa72f8cdf7c6edd0b960c54ca9248f7fc1e",
+      "afterLines": 93
+    }
+  }
+}
