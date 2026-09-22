@@ -53,7 +53,7 @@ function executionHumanSummary(
   if (categories.size === 1) {
     return sizes.length === 1 ? `${colorText} · размер ${sizes[0]}` : `${colorText} · размеры ${sizes[0]}–${sizes[sizes.length - 1]}`
   }
-  return `${colorText} · ${sizes.length} ${pluralRu(sizes.length, 'значение размера/возраста', 'значения размера/возраста', 'значений размера/возраста')}`
+  return `${colorText} · ${sizes.length} ${pluralRu(sizes.length, 'размер/возраст', 'размера/возраста', 'размеров/возрастов')}`
 }
 
 async function readCatalogMutationResult(response: Response) {
@@ -228,10 +228,10 @@ export function CatalogPolishExecutionGroups({
                             </div>
 
                             {cardVariant ? (
-                              <section className="catalog-sku-card" data-variant-id={cardVariant.id} aria-label="Карточка точной позиции">
+                              <section className="catalog-sku-card" data-variant-id={cardVariant.id} aria-label="Карточка позиции">
                                 <div className="catalog-sku-card-head">
                                   <div>
-                                    <span className="catalog-detail-eyebrow">Точная позиция</span>
+                                    <span className="catalog-detail-eyebrow">Позиция</span>
                                     <h4>{colorGroup.label} · {normalizedText(cardVariant.sizeLabel) || (subgroup.category === 'child' ? 'возраст не указан' : 'размер не указан')}</h4>
                                     <p>{selectedProduct?.name} · {group.label}</p>
                                   </div>
@@ -243,8 +243,8 @@ export function CatalogPolishExecutionGroups({
                                   <span><small>Пол</small><strong>{subgroup.gender}</strong></span>
                                   <span><small>Цвет</small><strong>{colorGroup.label}</strong></span>
                                   <span><small>{subgroup.category === 'child' ? 'Возраст' : 'Размер'}</small><strong>{normalizedText(cardVariant.sizeLabel) || 'Не указан'}</strong></span>
-                                  <span><small>Материал</small><strong>{normalizedText(cardVariant.material) || 'СТАНДАРТ'}</strong></span>
-                                  <span><small>Длина</small><strong>{normalizedText(cardVariant.length) || 'СТАНДАРТ'}</strong></span>
+                                  <span><small>Материал</small><strong>{normalizedKey(cardVariant.material) === 'СТАНДАРТ' ? 'Основной' : normalizedText(cardVariant.material)}</strong></span>
+                                  <span><small>Длина</small><strong>{normalizedKey(cardVariant.length) === 'СТАНДАРТ' ? 'Основная' : normalizedText(cardVariant.length)}</strong></span>
                                 </div>
 
                                 <div className="catalog-sku-stock" aria-label="Физический остаток позиции">
@@ -285,8 +285,8 @@ export function CatalogPolishExecutionGroups({
                                 </div>
 
                                 <div className="catalog-sku-safety-note">
-                                  <strong>Идентичность позиции защищается историей.</strong>
-                                  <span>Для другого цвета, размера или исполнения создавайте новую позицию. Исправление существующей допустимо только пока она ещё нигде не использовалась — сервер проверит это при сохранении.</span>
+                                  <strong>Другая вещь — новая позиция.</strong>
+                                  <span>«Исправить ошибку» используйте только если здесь неверно указан цвет, размер или другая характеристика.</span>
                                 </div>
 
                                 {isAdmin ? (
@@ -309,7 +309,7 @@ export function CatalogPolishExecutionGroups({
                                     </button>
                                     {retireConfirmVariantId === Number(cardVariant.id) ? (
                                       <div className="catalog-sku-retire-confirm" role="alert">
-                                        <span>Позиция исчезнет из рабочего каталога, но её история останется. Сервер дополнительно проверит остаток, резервы, активные заказы, Цех, приёмку и текущую ревизию.</span>
+                                        <span>Позиция исчезнет из рабочего каталога, но вся история останется. Вывести можно только позицию без действующих остатков и связей.</span>
                                         <div>
                                           <button className="danger compact" type="button" disabled={Boolean(actionBusyVariantId)} onClick={() => void retireVariant(cardVariant)}>
                                             {actionBusyVariantId === Number(cardVariant.id) ? 'Проверяю…' : 'Подтвердить вывод'}
@@ -322,7 +322,7 @@ export function CatalogPolishExecutionGroups({
                                         className="secondary compact catalog-sku-retire-action"
                                         type="button"
                                         disabled={Boolean(actionBusyVariantId) || cardTotalQty !== 0}
-                                        title={cardTotalQty !== 0 ? 'Сначала разберите физический остаток этой позиции' : 'Сервер проверит остальные связанные операции перед выводом'}
+                                        title={cardTotalQty !== 0 ? 'Сначала разберите физический остаток этой позиции' : 'Проверим, что позицию можно безопасно вывести'}
                                         onClick={() => { setRetireConfirmVariantId(Number(cardVariant.id)); setActionError('') }}
                                       >
                                         Вывести из каталога
@@ -348,8 +348,8 @@ export function CatalogPolishExecutionGroups({
       }) : (
         <div className="catalog-detail-empty">
           <strong>{selectedVariants.length ? 'Нет вариантов по текущему фильтру' : 'У товара пока нет вариантов'}</strong>
-          <p>{selectedVariants.length ? 'Измените поиск или фильтр, чтобы снова показать варианты этого товара.' : 'Создайте первый вариант только если это реальная комбинация характеристик, которая должна участвовать в заказах и остатках.'}</p>
-          {!selectedVariants.length && isAdmin ? <button className="primary compact" type="button" disabled={!stocktakeReferenceReady} onClick={() => openNewVariant(selectedProduct)}>+ Добавить первый вариант</button> : null}
+          <p>{selectedVariants.length ? 'Измените поиск или фильтр, чтобы снова показать варианты этого товара.' : 'Добавьте первую позицию с нужными цветом, размером и другими характеристиками.'}</p>
+          {!selectedVariants.length && isAdmin ? <button className="primary compact" type="button" disabled={!stocktakeReferenceReady} onClick={() => openNewVariant(selectedProduct)}>+ Добавить первую позицию</button> : null}
         </div>
       )}
     </div>
