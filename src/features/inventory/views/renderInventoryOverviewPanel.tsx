@@ -20,6 +20,7 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'openSimpleStockHistory'
   | 'openSimpleStockRowsDetail'
   | 'productCategoryLabel'
+  | 'refreshInventoryModule'
   | 'quickStocktakeBusy'
   | 'quickStocktakeNotice'
   | 'quickStocktakeOpen'
