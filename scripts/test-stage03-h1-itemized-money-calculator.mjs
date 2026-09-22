@@ -2,6 +2,9 @@ import fs from 'node:fs'
 import ts from 'typescript'
 
 const source = fs.readFileSync('worker/domains/order-pricing.ts', 'utf8')
+const structuralManifest = JSON.parse(fs.readFileSync('scripts/stage03-h1-itemized-money-worker-manifest.json', 'utf8'))
+check(structuralManifest?.version === 1 && structuralManifest?.revision === 'stage03-h1-itemized-money-calculator', 'H1 structural manifest missing')
+check(Object.keys(structuralManifest.addedFiles || {}).join(',') === 'worker/domains/order-pricing.ts', 'H1 structural manifest must cover only the new pure pricing module')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 
 check(source.includes('export function calculateItemizedOrderMoney'), 'Pure itemized calculator export is missing')
