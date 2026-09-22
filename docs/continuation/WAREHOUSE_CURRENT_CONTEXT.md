@@ -33,6 +33,38 @@ Permanent rule:
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
 
+## Checkpoint 2026-09-22 — Stage03-H1/H2 pure itemized pricing core GREEN
+
+Final green Branch2 baseline: `40e3d39d1fc3b13c00f6e10811279e712ca40ad4`.
+Cloudflare monitor: `35761143468` — **success**.
+
+H1 added a pure, database-independent `itemized_v1` money calculator:
+- total = Σ(quantity × actual sold unit price);
+- payment rows remain independent money facts;
+- debt/overpayment are derived from total vs received payments;
+- missing final unit price is rejected instead of silently becoming zero;
+- explicit zero remains technically representable until client policy decides whether free/zero-price sales are allowed;
+- mutable Catalog prices, manual order-total overrides and D1 access are absent from the arithmetic.
+
+H2 added a pure save-ready write plan on top of H1:
+- every line carries server-derived `lineTotal`;
+- the order carries server-derived `totalAmount`, `receivedAmount` and `debtAmount`;
+- `catalogPriceSnapshot` is kept separate from actual sold `unitPrice`;
+- missing Catalog recommendation stays `NULL`, never zero;
+- overpayment and empty itemized orders are rejected before a write plan can be produced.
+
+Both modules remain deliberately inactive from the real Create/Edit runtime. No UI autofill, order creation switch, D1 mutation, historical repricing, Return/Exchange behavior, or Production change was introduced.
+
+Regression hardening was required because these are intentionally inactive backend contracts:
+- Step 190.6A now normalizes exact H1/H2 pricing layers before historical Worker structural baselines;
+- Step 190.6C permits only the exact manifested inactive pricing module while continuing to reject every unexplained unreachable Worker module;
+- the first H2 deploy correctly exposed that the H1 focused gate was too broad and searched the whole shared module for Catalog snapshot vocabulary; the final fix scopes H1 isolation checks to the H1 arithmetic function itself, while H2 is allowed to carry the immutable snapshot separately.
+
+Next bounded technical step: audit and prepare the server-side **new-order** integration path that can consume the H2 write plan only when an explicit `itemized_v1` mode is requested. Keep current legacy Create UI/default behavior unchanged and do not enable Catalog autofill yet.
+
+---
+
+
 ## Checkpoint 2026-09-22 — Stage03-G2 price-only order edit isolation GREEN
 
 Green Branch2 baseline: `ef43358c71bc2fe688364b794b88cc69048a7586`.
