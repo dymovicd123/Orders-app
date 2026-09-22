@@ -33,6 +33,30 @@ Permanent rule:
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
 
+## Checkpoint 2026-09-22 — Stage03-F1 pricing compatibility foundation
+
+Baseline: `branch2` `63ce9bc1e4f922a256959d2f8667b8d61956fcab`.
+
+Added candidate migration `0073_v72_order_item_pricing_foundation.sql`:
+- explicit `orders.pricing_mode`, defaulting to `legacy_manual_total`;
+- nullable non-negative `order_items.catalog_price_snapshot`.
+
+Historical safety:
+- no INSERT/UPDATE/DELETE backfill;
+- no Catalog-to-history price copy;
+- no historical total/unit-price/payment/debt recalculation.
+
+Type vocabulary now understands the future fields, but Stage03-F1 deliberately does not activate them through Create/Edit inputs or runtime pricing behavior.
+
+No Create Order UI/autofill/report/return/exchange change.
+No D1 migration executed in this step.
+
+Focused regression: `scripts/test-stage03-f1-pricing-foundation.mjs`.
+
+Design/implementation note: `docs/continuation/STAGE03_F1_PRICING_FOUNDATION_20260922.md`.
+
+---
+
 ## Checkpoint 2026-09-22 — Stage03-E Pricing Contract v1
 
 Baseline: `branch2` `b5b2744b20076c38f9c92276092060f6751079fe`.

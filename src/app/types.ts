@@ -10,6 +10,7 @@ export type OrderItem = {
   size?: string
   quantity?: number
   unitPrice?: number
+  catalogPriceSnapshot?: number | null
   sourceType?: 'warehouse' | 'boutique' | 'workshop'
   workshopComment?: string
   workshopUrgent?: boolean
@@ -772,6 +773,7 @@ export type OrderRecord = {
   order_status: string
   shipping_status?: 'not_sent' | 'sent' | string | null
   shipping_date?: string | null
+  pricing_mode?: 'legacy_manual_total' | 'itemized_v1'
   stock_handover_review_needed?: boolean
   stock_handover_has_active_items?: boolean
   catalog_review_required?: boolean
@@ -806,6 +808,7 @@ export type OrderRecord = {
     quantity: number
     availableOperationQuantity?: number
     unitPrice: number
+    catalogPriceSnapshot?: number | null
     lineTotal: number
     sourceType: string
     workshopComment?: string | null
