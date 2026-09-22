@@ -17,6 +17,10 @@ const h2ItemizedManifest = JSON.parse(read('scripts/stage03-h2-itemized-write-pl
 check(h2ItemizedManifest?.version === 1 && h2ItemizedManifest?.revision === 'stage03-h2-itemized-write-plan', 'H2 itemized structural manifest invalid in 1906C')
 const h2InactiveWorkerContracts = h2ItemizedManifest.files || {}
 check(Object.keys(h2InactiveWorkerContracts).join(',') === 'worker/domains/order-pricing.ts', '1906C H2 inactive Worker contract allow-list widened')
+const h5CatalogPriceResolverManifest = JSON.parse(read('scripts/stage03-h5-catalog-price-resolver-frontend-manifest.json'))
+check(h5CatalogPriceResolverManifest?.version === 1 && h5CatalogPriceResolverManifest?.revision === 'stage03-h5-catalog-price-resolver', 'H5 Catalog price resolver frontend manifest invalid in 1906C')
+const h5InactiveFrontendContracts = h5CatalogPriceResolverManifest.addedFiles || {}
+check(Object.keys(h5InactiveFrontendContracts).join(',') === 'src/app/order-pricing.ts', '1906C H5 inactive frontend contract allow-list widened')
 const gitBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
@@ -96,7 +100,7 @@ try {
   check(manifest?.version === 1 && manifest?.baseline === '1906b', '1906C cleanup manifest invalid')
 
   for (const relative of manifest.removedRuntimeFiles || []) check(!fs.existsSync(path.join(root, relative)), `Retired runtime file returned: ${relative}`)
-  const srcFiles = assertAllReachable('src', 'src/main.tsx')
+  const srcFiles = assertAllReachable('src', 'src/main.tsx', h5InactiveFrontendContracts)
   const workerFiles = assertAllReachable('worker', 'worker/index.ts', h2InactiveWorkerContracts)
 
   const app = read('src/App.tsx')
