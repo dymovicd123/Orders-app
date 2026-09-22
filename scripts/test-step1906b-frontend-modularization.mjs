@@ -91,6 +91,41 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage03C1LayoutManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-c1-sku-card-layout-frontend-manifest.json'), 'utf8'))
+if (stage03C1LayoutManifest?.version !== 1 || stage03C1LayoutManifest?.revision !== 'stage03-c1-sku-card-layout') throw new Error('Stage03-C1 SKU card layout manifest invalid')
+const stage03C1BlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE03_C1_SKU_CARD_LAYOUT_NORMALIZED) {
+  const relative = 'src/styles/w9-warehouse-catalog-cleanup.css'
+  const delta = stage03C1LayoutManifest.files[relative]
+  const absolute = path.join(root, relative)
+  const actual = fs.readFileSync(absolute, 'utf8')
+  if (stage03C1BlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+    throw new Error('Stage03-C1 SKU card layout changed beyond exact manifest')
+  }
+  if (!actual.endsWith(delta.appendedBlock)) throw new Error('Stage03-C1 SKU card layout patch missing from CSS tail')
+  const predecessor = actual.slice(0, -delta.appendedBlock.length)
+  if (stage03C1BlobSha(predecessor) !== delta.beforeGitBlob || predecessor.split(/\r?\n/).length !== delta.beforeLines) {
+    throw new Error('Stage03-C1 SKU card layout predecessor reconstruction failed')
+  }
+  fs.writeFileSync(absolute, predecessor)
+  let childStatus = 1
+  try {
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, STAGE03_C1_SKU_CARD_LAYOUT_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    fs.writeFileSync(absolute, actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03-C1 SKU CARD LAYOUT FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const stage03CFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-c-catalog-price-ui-frontend-manifest.json'), 'utf8'))
 if (stage03CFrontendManifest?.version !== 1 || stage03CFrontendManifest?.revision !== 'stage03-c-catalog-price-ui') throw new Error('Stage03-C Catalog price UI frontend manifest invalid')
 const stage03CFrontendBlobSha = (value) => {

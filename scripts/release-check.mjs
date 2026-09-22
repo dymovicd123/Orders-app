@@ -228,6 +228,7 @@ try {
   run('Stage03-B execution price read contract', process.execPath, [path.join(root, 'scripts/test-stage03-b-execution-price-read-contract.mjs')])
   run('Stage03-B3 price write contract', process.execPath, [path.join(root, 'scripts/test-stage03-b3-price-write-contract.mjs')])
   run('Stage03-C catalog price UI', process.execPath, [path.join(root, 'scripts/test-stage03-c-catalog-price-ui.mjs')])
+  run('Stage03-C1 SKU card layout', process.execPath, [path.join(root, 'scripts/test-stage03-c1-sku-card-layout.mjs')])
   run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])

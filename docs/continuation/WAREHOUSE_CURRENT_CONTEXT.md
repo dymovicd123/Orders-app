@@ -33,6 +33,21 @@ Permanent rule:
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
 
+## Checkpoint 2026-09-22 — Stage03-C1 SKU card layout repair
+
+Baseline: `branch2` `2b6337747dbffc51d630989481c7d4cab0c9e2a4`.
+
+Visual acceptance found that opening an exact SKU card inside a color/gender subgroup collapsed the card into the narrow left label column, leaving most of the detail pane blank. Root cause: `.catalog-color-subgroup` is a two-column CSS Grid and the third child (`.catalog-sku-card`) had no explicit grid-column, so auto-placement put it in column 1 of the next row.
+
+Fix is CSS-only:
+- `.catalog-color-subgroup > .catalog-sku-card { grid-column: 1 / -1; width: 100%; min-width: 0; }`;
+- compact top spacing retained;
+- no catalog, price, stock, order or D1 semantics changed.
+
+This repair is Branch2-only pending visual acceptance.
+
+---
+
 ## Checkpoint 2026-09-22 — Stage03-C catalog price UI
 
 Baseline: `branch2` `29c1b7009242da884c74b8704ded159d508bcc79`. Branch2 Worker/D1 identity was verified before UI work; Production binding absent. Migration 0072 is already present only in Branch2 D1 and had zero backfilled price rows.

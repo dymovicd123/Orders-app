@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "revision": "stage03-c1-sku-card-layout",
+  "files": {
+    "src/styles/w9-warehouse-catalog-cleanup.css": {
+      "beforeGitBlob": "8ecf8f97555c9576f6079c9ef4ee9bdffb3b484a",
+      "afterGitBlob": "682c01a41e7bc6113f817dedabaca3933ba85ec0",
+      "beforeLines": 501,
+      "afterLines": 510,
+      "appendedBlock": "\n/* Stage03-C1 — exact-position card must span the whole subgroup row.\n   Without this, CSS Grid auto-placement puts the card back into the narrow label column. */\n.catalog-color-subgroup > .catalog-sku-card {\n  grid-column: 1 / -1;\n  width: 100%;\n  min-width: 0;\n  margin-top: 4px;\n}\n"
+    }
+  }
+}
