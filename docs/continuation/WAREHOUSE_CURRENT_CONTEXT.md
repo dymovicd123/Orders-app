@@ -33,6 +33,32 @@ Permanent rule:
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
 
 
+## Checkpoint 2026-09-22 — Stage03-F3 Branch2 migration 0073 GREEN
+
+Migration source: `branch2` `5721d1d0151910f2c24bf17d94a44e5b5eeb807d`.
+
+Branch2-only migration workflow `35744456098` completed **successfully** against:
+- Worker `orders-app-branch2`;
+- D1 `orders_db_branch2`;
+- id `40065052-854e-44b8-bcd5-251bdd488301`.
+
+Migration 0073 is now actually applied on Branch2 D1.
+
+Verification:
+- all 13 existing Branch2 orders are `legacy_manual_total`;
+- 0 existing orders are `itemized_v1`;
+- all 18 existing order items keep `catalog_price_snapshot = NULL`;
+- the pre/post aggregate fingerprint for orders, items, payments, returns and exchanges matched exactly;
+- therefore historical totals, received money, debt, payment-method facts and existing item financial values were not changed by the migration.
+
+Cloudflare deploy monitor `35744455130` for the same commit also passed.
+
+Production D1 remains untouched. No autofill/itemized write behavior is enabled.
+
+Canonical note: `docs/continuation/STAGE03_F3_BRANCH2_MIGRATION_0073_20260922.md`.
+
+---
+
 ## Checkpoint 2026-09-22 — Stage03-F2 pricing metadata read compatibility GREEN
 
 Code baseline: `branch2` `c089ce43bc4ce079eaffb88af717cea3d601d80c`.
