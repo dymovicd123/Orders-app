@@ -14,6 +14,23 @@ if (!process.env.STAGE03_H1_ITEMIZED_MONEY_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
+    const changedFiles = stage03H1ItemizedMoneyManifest.changedFiles || {}
+    if (Object.keys(changedFiles).join(',') !== 'worker/domains/order-core.ts') throw new Error('Stage03-H1 itemized money changed-file allow-list widened')
+    for (const [relative, delta] of Object.entries(changedFiles)) {
+      const absolute = path.join(root, relative)
+      if (!fs.existsSync(absolute)) throw new Error('Stage03-H1 itemized money changed Worker file missing: ' + relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage03H1ItemizedMoneyBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H1 itemized money changed Worker file drifted beyond exact manifest: ' + relative)
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-H1 itemized money changed-file after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (stage03H1ItemizedMoneyBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H1 itemized money changed-file predecessor reconstruction failed: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+
     const addedFiles = stage03H1ItemizedMoneyManifest.addedFiles || {}
     if (Object.keys(addedFiles).join(',') !== 'worker/domains/order-pricing.ts') throw new Error('Stage03-H1 itemized money added-file allow-list widened')
     for (const [relative, delta] of Object.entries(addedFiles)) {
