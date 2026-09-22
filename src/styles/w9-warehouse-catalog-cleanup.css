@@ -1,0 +1,370 @@
+/* Warehouse / Catalog cleanup before Stage03.
+   Keeps inventory truth and catalog write rules unchanged; only improves hierarchy and copy. */
+
+.warehouse-clean-navigation {
+  margin-top: 8px;
+  margin-bottom: 14px;
+}
+
+.warehouse-clean-navigation .warehouse-w2-primary {
+  flex: 1 1 auto;
+}
+
+.warehouse-clean-navigation .warehouse-w2-primary > button {
+  min-width: 96px;
+}
+
+.warehouse-clean-navigation .warehouse-w2-primary > button.is-active {
+  background: #eef4ff;
+  color: #214e8a;
+  box-shadow: inset 0 0 0 1px #c5d7f1;
+}
+
+.warehouse-clean-queues {
+  flex: 0 0 auto;
+}
+
+.warehouse-clean-queues > button {
+  min-height: 38px;
+  border: 1px solid #e0e6ee;
+  background: #fafbfd;
+}
+
+.warehouse-clean-queues > button:hover {
+  background: #f4f7fb;
+}
+
+.warehouse-clean-queues > button.is-active {
+  border-color: #b7cbea;
+  background: #eef4ff;
+}
+
+.catalog-clean-headline {
+  margin-bottom: 9px;
+}
+
+.catalog-clean-headline p {
+  max-width: 680px;
+}
+
+.catalog-clean-taskbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  margin: 0 0 12px;
+  padding: 6px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 13px;
+  background: #fafbfd;
+}
+
+.catalog-clean-taskbar-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.catalog-clean-taskbar-label {
+  padding: 0 4px;
+  color: #7a8797;
+  font-size: .72rem;
+  font-weight: 800;
+}
+
+.catalog-clean-task,
+.catalog-clean-settings,
+.catalog-clean-back {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  border: 1px solid #dbe3ec;
+  border-radius: 9px;
+  background: #fff;
+  color: #3e4d63;
+  font: inherit;
+  font-size: .75rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.catalog-clean-task:hover,
+.catalog-clean-settings:hover,
+.catalog-clean-back:hover {
+  border-color: #adc3df;
+  background: #f5f9ff;
+  color: #244f86;
+}
+
+.catalog-clean-task b {
+  display: inline-grid;
+  place-items: center;
+  min-width: 21px;
+  height: 21px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #fff2d8;
+  color: #87580d;
+  font-size: .68rem;
+}
+
+.catalog-clean-settings {
+  flex: 0 0 auto;
+  color: #64748b;
+  background: transparent;
+}
+
+.catalog-clean-back {
+  color: #315d98;
+}
+
+.catalog-clean-taskbar.is-subview {
+  margin-bottom: 14px;
+}
+
+.catalog-clean-subview .catalog-review-callout {
+  margin-top: 8px;
+}
+
+.catalog-clean-editor {
+  scroll-margin-top: 14px;
+  outline: none;
+}
+
+.catalog-clean-editor:focus {
+  border-color: #afc7e6;
+  box-shadow: 0 0 0 3px rgba(75, 126, 190, .08);
+}
+
+/* Keep the primary catalog action useful, not dominant. */
+.w6-toolbar-new-product {
+  height: auto;
+  align-self: end;
+  box-shadow: none;
+}
+
+/* Exact item card: compact enough for mobile while preserving all facts. */
+.catalog-sku-identity {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.catalog-sku-identity > span {
+  min-width: 0;
+}
+
+.catalog-sku-safety-note {
+  padding-block: 10px;
+}
+
+/* Mobile stock should get to quantities quickly. */
+@media (max-width: 900px) {
+  .warehouse-clean-navigation {
+    gap: 7px;
+    padding: 6px;
+  }
+
+  .warehouse-clean-navigation .warehouse-w2-primary {
+    display: flex;
+    gap: 5px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+  }
+
+  .warehouse-clean-navigation .warehouse-w2-primary > button {
+    flex: 0 0 auto;
+    min-width: 94px;
+  }
+
+  .warehouse-clean-queues {
+    margin: 0;
+    padding: 6px 0 0;
+    border: 0;
+    border-top: 1px solid #e5eaf0;
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+
+  .warehouse-clean-queues > button {
+    flex: 0 0 auto;
+  }
+
+  .w6-catalog-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+
+  .w6-catalog-search {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .w6-catalog-toolbar-actions {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+  }
+
+  .w6-toolbar-new-product {
+    min-height: 42px;
+  }
+
+  .w6-catalog-category-switcher {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+
+  .w6-catalog-stats {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .sector-inventory > .inventory-compact-title {
+    margin-bottom: 2px;
+  }
+
+  .warehouse-clean-navigation {
+    margin-top: 5px;
+    margin-bottom: 9px;
+    border-radius: 12px;
+  }
+
+  .warehouse-clean-navigation .warehouse-w2-primary > button {
+    min-width: 88px;
+    min-height: 40px;
+    padding: 7px 10px;
+  }
+
+  .warehouse-clean-navigation .warehouse-w2-primary > button strong {
+    font-size: 12px;
+  }
+
+  .warehouse-clean-queues > button {
+    min-height: 34px;
+    padding: 5px 9px;
+    font-size: 11px;
+  }
+
+  .warehouse-clean-stock-head {
+    padding-top: 9px;
+    padding-bottom: 6px;
+  }
+
+  .warehouse-clean-stock-head h3 {
+    font-size: 18px;
+  }
+
+  .warehouse-clean-stock-head p {
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
+  .inventory-calm-toolbar {
+    padding-top: 0;
+    padding-bottom: 7px;
+  }
+
+  .inventory-stock-summary-context {
+    margin-top: 0;
+  }
+
+  .inventory-calm-summary {
+    margin-bottom: 7px;
+  }
+
+  .catalog-clean-headline {
+    padding-bottom: 7px;
+  }
+
+  .catalog-clean-headline p {
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .catalog-clean-taskbar {
+    align-items: stretch;
+    margin: 0 8px 9px;
+    padding: 6px;
+  }
+
+  .catalog-clean-taskbar-main {
+    gap: 5px;
+  }
+
+  .catalog-clean-taskbar-label {
+    width: 100%;
+    padding-left: 2px;
+    font-size: 10px;
+  }
+
+  .catalog-clean-task,
+  .catalog-clean-settings,
+  .catalog-clean-back {
+    min-height: 36px;
+    font-size: 11px;
+  }
+
+  .catalog-clean-settings {
+    align-self: flex-end;
+  }
+
+  .w6-catalog-toolbar {
+    gap: 7px;
+    padding: 9px;
+  }
+
+  .w6-catalog-toolbar-actions {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .w6-toolbar-new-product {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .catalog-sku-identity {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .catalog-sku-identity > span {
+    padding: 7px 8px;
+  }
+
+  .catalog-sku-stock {
+    gap: 6px;
+  }
+
+  .catalog-sku-safety-note {
+    margin-top: 8px;
+  }
+
+  .catalog-sku-safety-note span {
+    font-size: 11px;
+    line-height: 1.35;
+  }
+}
+
+@media (max-width: 420px) {
+  .catalog-clean-taskbar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .catalog-clean-settings {
+    justify-self: start;
+  }
+
+  .catalog-sku-identity {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
