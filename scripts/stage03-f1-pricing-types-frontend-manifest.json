@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "revision": "stage03-f1-pricing-types",
+  "files": {
+    "src/app/types.ts": {
+      "beforeGitBlob": "6daed30b087a2e60dbc6eb501d5d78e800ed4263",
+      "afterGitBlob": "c32fec77582ec59d51faaf62a6c93eb6e0c689f3",
+      "beforeLines": 1723,
+      "afterLines": 1726,
+      "replacements": [
+        {
+          "beforeBlock": "  quantity?: number\n  unitPrice?: number\n  sourceType?: 'warehouse' | 'boutique' | 'workshop'",
+          "afterBlock": "  quantity?: number\n  unitPrice?: number\n  catalogPriceSnapshot?: number | null\n  sourceType?: 'warehouse' | 'boutique' | 'workshop'"
+        },
+        {
+          "beforeBlock": "  shipping_date?: string | null\n  stock_handover_review_needed?: boolean",
+          "afterBlock": "  shipping_date?: string | null\n  pricing_mode?: 'legacy_manual_total' | 'itemized_v1'\n  stock_handover_review_needed?: boolean"
+        },
+        {
+          "beforeBlock": "    quantity: number\n    availableOperationQuantity?: number\n    unitPrice: number\n    lineTotal: number",
+          "afterBlock": "    quantity: number\n    availableOperationQuantity?: number\n    unitPrice: number\n    catalogPriceSnapshot?: number | null\n    lineTotal: number"
+        }
+      ]
+    }
+  }
+}
