@@ -5,7 +5,6 @@ const check = (condition, message) => { if (!condition) throw new Error(message)
 
 const wrangler = read('wrangler.jsonc')
 const migration = read('migrations/0073_v72_order_item_pricing_foundation.sql')
-const workerTypes = read('worker/core/types.ts')
 const appTypes = read('src/app/types.ts')
 const createUi = read('src/features/sections/CreateOrderSection.tsx')
 const app = read('src/App.tsx')
@@ -31,9 +30,6 @@ check(!businessStatements.some((statement) => /^(INSERT|UPDATE|DELETE)\b/i.test(
 check(!/catalog_execution_prices/i.test(migration), 'Stage03-F1 must not copy current Catalog prices into historical orders')
 check(!/unit_price\s*=|line_total\s*=/i.test(migration), 'Stage03-F1 must not rewrite historical item prices/totals')
 check(!/total_amount\s*=|received_amount\s*=|debt_amount\s*=/i.test(migration), 'Stage03-F1 must not recalculate historical order money')
-
-check(workerTypes.includes("pricing_mode?: 'legacy_manual_total' | 'itemized_v1'"), 'Worker order output type does not understand pricing mode')
-check(!/pricingMode\?:/.test(workerTypes.split('export type OrderInput = {')[1].split('export type OrderListRow')[0]), 'Stage03-F1 must not activate pricing mode through create/edit input yet')
 
 check(appTypes.includes("pricing_mode?: 'legacy_manual_total' | 'itemized_v1'"), 'Frontend order type does not understand optional pricing mode')
 check(appTypes.includes('catalogPriceSnapshot?: number | null'), 'Frontend item type does not understand optional Catalog snapshot')

@@ -41,11 +41,12 @@ This step does not activate itemized behavior.
 - Create Order UI still uses the existing manual order total.
 - Normal create still sends item `unitPrice: 0`.
 - Pricing mode is not accepted as a create/edit API input yet.
+- Existing Worker order declarations are deliberately left unchanged in F1; runtime read/write plumbing is a later bounded step.
 - Catalog snapshot is not written by UI/backend yet.
 - Reports are untouched.
 - Returns/exchanges are untouched.
 
-Only optional read-side/type vocabulary is prepared for later bounded work.
+Only frontend-facing optional type vocabulary is prepared for later bounded work; Worker runtime declarations remain on the accepted structural baseline.
 
 ## D1 boundary
 
