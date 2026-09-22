@@ -13,6 +13,10 @@ const h1ItemizedManifest = JSON.parse(read('scripts/stage03-h1-itemized-money-wo
 check(h1ItemizedManifest?.version === 1 && h1ItemizedManifest?.revision === 'stage03-h1-itemized-money-calculator', 'H1 itemized structural manifest invalid in 1906C')
 const h1InactiveWorkerContracts = h1ItemizedManifest.addedFiles || {}
 check(Object.keys(h1InactiveWorkerContracts).join(',') === 'worker/domains/order-pricing.ts', '1906C H1 inactive Worker contract allow-list widened')
+const h2ItemizedManifest = JSON.parse(read('scripts/stage03-h2-itemized-write-plan-worker-manifest.json'))
+check(h2ItemizedManifest?.version === 1 && h2ItemizedManifest?.revision === 'stage03-h2-itemized-write-plan', 'H2 itemized structural manifest invalid in 1906C')
+const h2InactiveWorkerContracts = h2ItemizedManifest.files || {}
+check(Object.keys(h2InactiveWorkerContracts).join(',') === 'worker/domains/order-pricing.ts', '1906C H2 inactive Worker contract allow-list widened')
 const gitBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
@@ -93,7 +97,7 @@ try {
 
   for (const relative of manifest.removedRuntimeFiles || []) check(!fs.existsSync(path.join(root, relative)), `Retired runtime file returned: ${relative}`)
   const srcFiles = assertAllReachable('src', 'src/main.tsx')
-  const workerFiles = assertAllReachable('worker', 'worker/index.ts', h1InactiveWorkerContracts)
+  const workerFiles = assertAllReachable('worker', 'worker/index.ts', h2InactiveWorkerContracts)
 
   const app = read('src/App.tsx')
   const types = read('src/app/types.ts')
