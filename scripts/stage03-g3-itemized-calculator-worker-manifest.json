@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "revision": "stage03-g3-itemized-calculator-contract",
+  "files": {
+    "worker/domains/order-core.ts": {
+      "beforeGitBlob": "8bd55100934ea58bcfa4cfcc42a7e28da2d06d63",
+      "afterGitBlob": "bcd740d17854ca377abf63371c0081aacefafabb",
+      "beforeLines": 441,
+      "afterLines": 505,
+      "replacements": [
+        {
+          "beforeBlock": "export class OrderInputValidationError extends Error {\n  readonly status = 400\n  readonly code = 'order_input_invalid'\n\n  constructor(message: string) {\n    super(message)\n    this.name = 'OrderInputValidationError'\n  }\n}\n\n\nexport function assertOrderItemInputs(items: OrderInput['items']) {",
+          "afterBlock": "export class OrderInputValidationError extends Error {\n  readonly status = 400\n  readonly code = 'order_input_invalid'\n\n  constructor(message: string) {\n    super(message)\n    this.name = 'OrderInputValidationError'\n  }\n}\n\n\nexport type ItemizedV1PricingResult = {\n  pricingMode: 'itemized_v1';\n  totalAmount: number;\n  receivedAmount: number;\n  debtAmount: number;\n  paymentStatus: 'Оплачено' | 'Частично' | 'Не оплачено';\n};\n\n\nexport function calculateItemizedV1Totals(\n  items: OrderInput['items'],\n  payments: OrderInput['payments'],\n): ItemizedV1PricingResult {\n  const pricedItems = (Array.isArray(items) ? items : []).filter(item => upperText(item?.productName));\n  if (!pricedItems.length) {\n    throw new OrderInputValidationError('Для itemized_v1 нужна хотя бы одна товарная позиция.');\n  }\n\n  let totalAmount = 0;\n  for (const [index, item] of pricedItems.entries()) {\n    const quantity = Number(item?.quantity ?? 1);\n    const unitPrice = Number(item?.unitPrice ?? 0);\n    if (!Number.isSafeInteger(quantity) || quantity < 1) {\n      throw new OrderInputValidationError(`Количество в позиции ${index + 1} должно быть целым числом от 1.`);\n    }\n    if (!Number.isSafeInteger(unitPrice) || unitPrice < 0) {\n      throw new OrderInputValidationError(`Цена позиции ${index + 1} должна быть целым числом от 0.`);\n    }\n    const lineTotal = quantity * unitPrice;\n    if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(totalAmount + lineTotal)) {\n      throw new OrderInputValidationError('Сумма itemized_v1 заказа выходит за безопасный диапазон.');\n    }\n    totalAmount += lineTotal;\n  }\n\n  let receivedAmount = 0;\n  for (const [index, payment] of (Array.isArray(payments) ? payments : []).entries()) {\n    const amount = payment?.amount === undefined || payment?.amount === null || cleanText(payment?.amount) === ''\n      ? 0\n      : Number(payment.amount);\n    if (!Number.isSafeInteger(amount) || amount < 0) {\n      throw new OrderInputValidationError(`Сумма оплаты ${index + 1} должна быть целым числом от 0.`);\n    }\n    if (!Number.isSafeInteger(receivedAmount + amount)) {\n      throw new OrderInputValidationError('Сумма оплат выходит за безопасный диапазон.');\n    }\n    receivedAmount += amount;\n  }\n\n  if (receivedAmount > totalAmount) {\n    throw new OrderInputValidationError(`Оплаты (${receivedAmount}) больше цены itemized_v1 заказа (${totalAmount}).`);\n  }\n\n  const debtAmount = totalAmount - receivedAmount;\n  return {\n    pricingMode: 'itemized_v1',\n    totalAmount,\n    receivedAmount,\n    debtAmount,\n    paymentStatus: debtAmount <= 0 ? 'Оплачено' : receivedAmount > 0 ? 'Частично' : 'Не оплачено',\n  };\n}\n\n\nexport function assertOrderItemInputs(items: OrderInput['items']) {"
+        }
+      ]
+    }
+  }
+}
