@@ -32,6 +32,7 @@ import {
   sortSizeLikeValues,
   sourceLabel,
 } from '../utils'
+import { resolveCatalogOrderSalePrice } from '../order-pricing'
 
 type ReferenceGroupSummary = { kind: ReferenceKind; label: string; count: number; help: string }
 
@@ -369,9 +370,16 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
   function applyCreateProductPick(index: number, productName: string) {
     setCreateDraft((current) => ({
       ...current,
-      items: current.items.map((item, itemIndex) => (
-        itemIndex === index ? buildOrderItemFromCatalogPick(item, productName) : item
-      )),
+      items: current.items.map((item, itemIndex) => {
+        if (itemIndex !== index) return item
+        const pickedItem = buildOrderItemFromCatalogPick(item, productName)
+        const pricing = resolveCatalogOrderSalePrice(catalogData, pickedItem)
+        return {
+          ...pickedItem,
+          unitPrice: pricing.status === 'matched' ? pricing.salePrice : undefined,
+          catalogPriceSnapshot: pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null,
+        }
+      }),
     }))
   }
 
