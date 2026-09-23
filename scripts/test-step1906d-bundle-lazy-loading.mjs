@@ -85,8 +85,10 @@ try {
   const graph = staticSourceGraph(mainRelative)
   const graphRelative = [...graph].map((file) => path.relative(root, file).replace(/\\/g, '/')).sort()
   const sourceBytes = [...graph].reduce((sum, file) => sum + fs.statSync(file).size, 0)
-  // O1 adds one small transport helper; the byte budget below stays unchanged.
-  check(graph.size <= 25, `Initial static source graph regrew: ${graph.size} modules`)
+  // O1 added one small transport helper. Stage03-H6B intentionally makes the tiny pure
+  // order-pricing resolver reachable from the existing Create controller; byte budget stays unchanged.
+  check(graphRelative.includes('src/app/order-pricing.ts'), 'H6B Catalog price resolver is not reachable from the initial Create controller graph')
+  check(graph.size <= 26, `Initial static source graph regrew beyond the one accepted H6B resolver module: ${graph.size} modules`)
   check(sourceBytes <= 650_000, `Initial static source graph regrew: ${sourceBytes} bytes`)
   for (const name of lazySections) {
     check(!graphRelative.includes(`src/features/sections/${name}.tsx`), `Lazy section is still initial-static: ${name}`)
