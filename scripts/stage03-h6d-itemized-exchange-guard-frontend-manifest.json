@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "revision": "stage03-h6d-itemized-exchange-guard",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "ffc581e64eb20494a27fd46e545ddf8d200cb1d3",
+      "afterGitBlob": "781f42d2967d71c6f50e2599a7fe66d13a18431a",
+      "beforeLines": 7507,
+      "afterLines": 7517,
+      "replacements": [
+        {
+          "beforeBlock": "  async function handleOpenExchange(order: OrderRecord) {\n    const projection = await getOrderOperationalProjection(order)",
+          "afterBlock": "  async function handleOpenExchange(order: OrderRecord) {\n    if (order.pricing_mode === 'itemized_v1') {\n      setSelectedOrderId(order.id)\n      setMessage('Обмен для этого заказа пока отключён: заказ использует построчную цену, а текущая форма обмена работает по старой общей цене.')\n      return\n    }\n    const projection = await getOrderOperationalProjection(order)"
+        },
+        {
+          "beforeBlock": "    if (!order) {\n      setMessage('Заказ найден в цехе, но не загрузился для обмена. Откройте его через таблицу заказов.')\n      return\n    }\n\n    const exchangeDraftForTask = createExchangeDraft(order)",
+          "afterBlock": "    if (!order) {\n      setMessage('Заказ найден в цехе, но не загрузился для обмена. Откройте его через таблицу заказов.')\n      return\n    }\n    if (order.pricing_mode === 'itemized_v1') {\n      setSelectedOrderId(order.id)\n      setMessage('Обмен для этого заказа пока отключён: заказ использует построчную цену, а текущая форма обмена работает по старой общей цене.')\n      return\n    }\n\n    const exchangeDraftForTask = createExchangeDraft(order)"
+        }
+      ]
+    }
+  }
+}

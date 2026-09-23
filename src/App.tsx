@@ -4568,6 +4568,11 @@ function App() {
       setMessage('Заказ найден в цехе, но не загрузился для обмена. Откройте его через таблицу заказов.')
       return
     }
+    if (order.pricing_mode === 'itemized_v1') {
+      setSelectedOrderId(order.id)
+      setMessage('Обмен для этого заказа пока отключён: заказ использует построчную цену, а текущая форма обмена работает по старой общей цене.')
+      return
+    }
 
     const exchangeDraftForTask = createExchangeDraft(order)
     const exactWorkshopItem = (order.items || []).find((item) => (
@@ -5344,6 +5349,11 @@ function removeDebtPayment(index: number) {
   }
 
   async function handleOpenExchange(order: OrderRecord) {
+    if (order.pricing_mode === 'itemized_v1') {
+      setSelectedOrderId(order.id)
+      setMessage('Обмен для этого заказа пока отключён: заказ использует построчную цену, а текущая форма обмена работает по старой общей цене.')
+      return
+    }
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canOpenExchange) {
       setSelectedOrderId(order.id)

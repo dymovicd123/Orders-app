@@ -4,6 +4,39 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage03H6DItemizedExchangeGuardManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h6d-itemized-exchange-guard-worker-manifest.json'), 'utf8'))
+if (stage03H6DItemizedExchangeGuardManifest?.version !== 1 || stage03H6DItemizedExchangeGuardManifest?.revision !== 'stage03-h6d-itemized-exchange-guard') throw new Error('Stage03-H6D itemized exchange guard Worker manifest invalid')
+const stage03H6DBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE03_H6D_ITEMIZED_EXCHANGE_GUARD_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stage03H6DItemizedExchangeGuardManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage03H6DBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H6D Worker changed beyond exact manifest: ' + relative)
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-H6D Worker after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (stage03H6DBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H6D Worker predecessor reconstruction failed: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H6D_ITEMIZED_EXCHANGE_GUARD_NORMALIZED: '1' }})
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03-H6D ITEMIZED EXCHANGE GUARD WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const stage03H6AItemizedEditGuardManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h6a-itemized-edit-guard-worker-manifest.json'), 'utf8'))
 if (stage03H6AItemizedEditGuardManifest?.version !== 1 || stage03H6AItemizedEditGuardManifest?.revision !== 'stage03-h6a-itemized-edit-guard') throw new Error('Stage03-H6A itemized edit guard Worker manifest invalid')
 const stage03H6ABlobSha = (value) => {

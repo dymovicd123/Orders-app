@@ -1065,6 +1065,9 @@ export async function createExchange(
   await syncOrderFinancialLedger(db, orderId);
   const existing = await getOrder(db, orderId);
   if (!existing) throw new Error('Order not found.');
+  if (cleanText((existing as any).pricing_mode) === 'itemized_v1') {
+    throw new CriticalOperationConflictError('Обмен для заказа с построчной itemized-ценой пока отключён. Текущая логика обмена использует старую общую цену заказа и может повредить финансовую историю.');
+  }
   if (isArchivedOrder(existing)) throw new Error('Нельзя оформлять обмен по архивному заказу.');
   if (normalizeOrderStatus((existing as any).order_status) === 'deleted') throw new Error('Нельзя оформлять обмен по удалённому заказу.');
   const oldItemId = toInt(input.oldItemId, 0);

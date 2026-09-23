@@ -242,6 +242,7 @@ try {
   run('Stage03-H6A itemized edit guard', process.execPath, [path.join(root, 'scripts/test-stage03-h6a-itemized-edit-guard.mjs')])
   run('Stage03-H6B shadow Create pricing', process.execPath, [path.join(root, 'scripts/test-stage03-h6b-shadow-create-pricing.mjs')])
   run('Stage03-H6C itemized pipeline acceptance', process.execPath, [path.join(root, 'scripts/test-stage03-h6c-itemized-pipeline-acceptance.mjs')])
+  run('Stage03-H6D itemized exchange guard', process.execPath, [path.join(root, 'scripts/test-stage03-h6d-itemized-exchange-guard.mjs')])
   run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])

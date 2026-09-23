@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "revision": "stage03-h6d-itemized-exchange-guard",
+  "files": {
+    "worker/domains/returns-exchanges.ts": {
+      "beforeGitBlob": "01d717af4e4eafb44d967c9f5830fa2cf25bb448",
+      "afterGitBlob": "dbbe0f25733e1dd933502b7c374a16239ad341e7",
+      "beforeLines": 2424,
+      "afterLines": 2427,
+      "replacements": [
+        {
+          "beforeBlock": "  const existing = await getOrder(db, orderId);\n  if (!existing) throw new Error('Order not found.');\n  if (isArchivedOrder(existing)) throw new Error('Нельзя оформлять обмен по архивному заказу.');",
+          "afterBlock": "  const existing = await getOrder(db, orderId);\n  if (!existing) throw new Error('Order not found.');\n  if (cleanText((existing as any).pricing_mode) === 'itemized_v1') {\n    throw new CriticalOperationConflictError('Обмен для заказа с построчной itemized-ценой пока отключён. Текущая логика обмена использует старую общую цену заказа и может повредить финансовую историю.');\n  }\n  if (isArchivedOrder(existing)) throw new Error('Нельзя оформлять обмен по архивному заказу.');"
+        }
+      ]
+    }
+  }
+}
