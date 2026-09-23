@@ -91,6 +91,39 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage03H6BShadowCreatePricingManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h6b-shadow-create-pricing-frontend-manifest.json'), 'utf8'))
+if (stage03H6BShadowCreatePricingManifest?.version !== 1 || stage03H6BShadowCreatePricingManifest?.revision !== 'stage03-h6b-shadow-create-pricing') throw new Error('Stage03-H6B shadow Create pricing frontend manifest invalid')
+const stage03H6BBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE03_H6B_SHADOW_CREATE_PRICING_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stage03H6BShadowCreatePricingManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage03H6BBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H6B frontend changed beyond exact manifest: ' + relative)
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stage03-H6B frontend after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (stage03H6BBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H6B frontend predecessor reconstruction failed: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H6B_SHADOW_CREATE_PRICING_NORMALIZED: '1' }})
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03-H6B SHADOW CREATE PRICING FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const stage03H6AItemizedEditGuardFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h6a-itemized-edit-guard-frontend-manifest.json'), 'utf8'))
 if (stage03H6AItemizedEditGuardFrontendManifest?.version !== 1 || stage03H6AItemizedEditGuardFrontendManifest?.revision !== 'stage03-h6a-itemized-edit-guard') throw new Error('Stage03-H6A itemized edit guard frontend manifest invalid')
 const stage03H6AFrontendBlobSha = (value) => {
