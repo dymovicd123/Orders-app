@@ -15,7 +15,11 @@ check(typesSource.includes('executionPrices?: CatalogExecutionPriceRecord[]'), '
 check(resolverSource.includes('export function resolveCatalogOrderSalePrice'), 'Pure order price resolver missing')
 check(!resolverSource.includes('fetch(') && !resolverSource.includes('apiFetch('), 'H5 resolver must stay pure and make no network calls')
 check(!resolverSource.includes('unitPrice =') && !resolverSource.includes('catalogPriceSnapshot ='), 'H5 resolver must not mutate order items')
-check(!createUi.includes('resolveCatalogOrderSalePrice') && !app.includes('resolveCatalogOrderSalePrice'), 'H5 must remain UI-inactive')
+const createStart = app.indexOf('async function createOrderFromDraft')
+const createEnd = app.indexOf('\n  function ', createStart + 40)
+const createFlow = app.slice(createStart, createEnd > createStart ? createEnd : app.length)
+check(!createUi.includes('resolveCatalogOrderSalePrice'), 'H5 resolver must not be rendered/called by CreateOrderSection')
+check(!createFlow.includes('pricingMode:') && createFlow.includes('unitPrice: 0,'), 'H5/H6B may prepare shadow pricing, but itemized Create request must remain inactive')
 
 const utilsSource = read('src/app/utils.ts')
 const transpile = (source) => ts.transpileModule(source, {
