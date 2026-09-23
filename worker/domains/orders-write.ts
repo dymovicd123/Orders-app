@@ -1154,6 +1154,10 @@ export async function updateOrderCritical(
       if (isArchivedOrder(existing)) throw new CriticalOperationConflictError(`Заказ ${(existing as any).external_id} находится в архиве. Архивные заказы доступны только для просмотра.`);
 
       const existingAny = existing as any;
+      const existingPricingMode = cleanText(existingAny.pricing_mode) === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total';
+      if (existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete') {
+        throw new CriticalOperationConflictError('Этот заказ использует построчную itemized-цену. Старый редактор заказа для него отключён, чтобы не потерять цены позиций и снимки Каталога. Используйте отдельные штатные действия заказа.');
+      }
       const timestamp = new Date().toISOString();
       const nextOrderDate = normalizeDate(input.orderDate ?? existingAny.order_date);
       const nextManager = input.managerName !== undefined ? upperText(input.managerName) : cleanText(existingAny.manager_name);
