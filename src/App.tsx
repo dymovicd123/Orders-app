@@ -5368,6 +5368,12 @@ function removeDebtPayment(index: number) {
   }
 
   async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' = 'orders') {
+    if (order.pricing_mode === 'itemized_v1') {
+      setSelectedOrderId(order.id)
+      setEditorOpen(false)
+      setMessage('Этот заказ использует построчную цену. Старый редактор пока отключён для таких заказов, чтобы не повредить цены позиций и снимки Каталога.')
+      return
+    }
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
       setSelectedOrderId(order.id)
@@ -5403,6 +5409,11 @@ function removeDebtPayment(index: number) {
   async function persistOrder(nextDraft: EditorDraft, targetOrder?: OrderRecord | null) {
     const order = targetOrder || selectedOrder
     if (!order) return
+    if (order.pricing_mode === 'itemized_v1') {
+      setEditorOpen(false)
+      setMessage('Этот заказ использует построчную цену. Старый редактор пока отключён для таких заказов, чтобы не повредить цены позиций и снимки Каталога.')
+      return
+    }
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
       setMessage(projection.hasCommittedDownstreamOperation
