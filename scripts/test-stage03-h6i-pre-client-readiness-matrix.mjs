@@ -52,7 +52,9 @@ check(createReturn.includes('const amount = Math.max(0, toInt(input.amount, 0))'
 check(!createReturn.includes('catalog_execution_prices') && !createReturn.includes('catalog_price_snapshot'), 'Return flow unexpectedly reprices from Catalog')
 check(!createReturn.includes('unit_price') && !createReturn.includes('line_total'), 'Return flow unexpectedly auto-prices refund from sold line values')
 
-const manualPayment = between(money, 'export async function createManualOrderPaymentCritical', '\n\nexport async function')
+const manualPaymentStart = money.indexOf('export async function createManualOrderPaymentCritical')
+check(manualPaymentStart >= 0, 'Manual order payment function missing')
+const manualPayment = money.slice(manualPaymentStart)
 check(manualPayment.includes('const ledger = await readOrderFinancialLedger(db, orderId)'), 'Debt-close flow does not re-read persisted ledger')
 check(manualPayment.includes('if (amount > ledger.debtAmount)'), 'Debt-close overpayment protection missing')
 check(!manualPayment.includes('catalog_execution_prices') && !manualPayment.includes('catalog_price_snapshot'), 'Debt-close unexpectedly depends on Catalog')
