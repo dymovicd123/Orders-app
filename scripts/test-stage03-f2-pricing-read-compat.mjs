@@ -7,7 +7,10 @@ check(r.includes('isOrderPricingFoundationEnabled')&&r.includes('(SELECT pricing
 check(o.includes("'legacy_manual_total' AS pricing_mode")&&g.includes("'legacy_manual_total' AS pricing_mode"),'pre-0073 legacy fallback missing')
 check(o.includes("pricing_mode: order.pricing_mode === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total'")&&g.includes("pricing_mode: order.pricing_mode === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total'"),'pricing mode projection missing')
 check(o.includes('catalogPriceSnapshot: (item as any).catalog_price_snapshot == null ? null')&&g.includes('catalogPriceSnapshot: (item as any).catalog_price_snapshot == null ? null'),'snapshot projection missing')
-check(o.includes("pricing_mode: 'legacy_manual_total'"),'retained legacy marker missing')
+check(
+  o.includes("pricing_mode: cleanText(row.pricing_mode) === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total'"),
+  'retained pricing-mode projection/fallback missing'
+)
 check(!o.includes('catalog_execution_prices')&&!/UPDATE\s+orders\s+SET\s+pricing_mode/i.test(g)&&!/SET[\\s\\S]{0,240}catalog_price_snapshot\s*=/i.test(g),'read path widened into repricing/write')
 check(!a.includes('catalogPriceSnapshot:'),'UI write activated too early')
 check(!f.includes('catalog_execution_prices'),'Finance repricing introduced')
