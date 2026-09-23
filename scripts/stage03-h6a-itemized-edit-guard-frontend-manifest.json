@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "revision": "stage03-h6a-itemized-edit-guard",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "58a88b909eef32f06fdbf815dfbf6f26f0514147",
+      "afterGitBlob": "afaa235329e803ffebbb02f9db1b9cdfbff2d371",
+      "beforeLines": 7490,
+      "afterLines": 7501,
+      "replacements": [
+        {
+          "beforeBlock": "  async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' = 'orders') {\n    const projection = await getOrderOperationalProjection(order)",
+          "afterBlock": "  async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' = 'orders') {\n    if (order.pricing_mode === 'itemized_v1') {\n      setSelectedOrderId(order.id)\n      setEditorOpen(false)\n      setMessage('Этот заказ использует построчную цену. Старый редактор пока отключён для таких заказов, чтобы не повредить цены позиций и снимки Каталога.')\n      return\n    }\n    const projection = await getOrderOperationalProjection(order)"
+        },
+        {
+          "beforeBlock": "  async function persistOrder(nextDraft: EditorDraft, targetOrder?: OrderRecord | null) {\n    const order = targetOrder || selectedOrder\n    if (!order) return\n    const projection = await getOrderOperationalProjection(order)",
+          "afterBlock": "  async function persistOrder(nextDraft: EditorDraft, targetOrder?: OrderRecord | null) {\n    const order = targetOrder || selectedOrder\n    if (!order) return\n    if (order.pricing_mode === 'itemized_v1') {\n      setEditorOpen(false)\n      setMessage('Этот заказ использует построчную цену. Старый редактор пока отключён для таких заказов, чтобы не повредить цены позиций и снимки Каталога.')\n      return\n    }\n    const projection = await getOrderOperationalProjection(order)"
+        }
+      ]
+    }
+  }
+}
