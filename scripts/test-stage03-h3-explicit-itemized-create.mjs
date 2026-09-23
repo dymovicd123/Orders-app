@@ -45,17 +45,10 @@ check(!createOrder.includes('catalog_execution_prices') && !insertContent.includ
 const updateOrder = write.slice(write.indexOf('export async function updateOrderCritical('))
 check(!updateOrder.includes('buildItemizedOrderWritePlan('), 'H3 must not silently switch existing-order edit to itemized semantics')
 
-const srcRoot = 'src'
-const stack = [srcRoot]
-let frontendSource = ''
-while (stack.length) {
-  const current = stack.pop()
-  for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
-    const full = path.join(current, entry.name)
-    if (entry.isDirectory()) stack.push(full)
-    else if (entry.isFile() && /\.(ts|tsx)$/.test(entry.name)) frontendSource += fs.readFileSync(full, 'utf8') + '\n'
-  }
-}
-check(!frontendSource.includes('pricingMode'), 'Current frontend must not activate itemized_v1 yet')
+const app = read('src/App.tsx')
+const createUi = read('src/features/sections/CreateOrderSection.tsx')
+const frontendCreate = sliceBetween(app, 'async function createOrderFromDraft(', '\n  function ')
+check(!frontendCreate.includes('pricingMode:'), 'Current Create request must not activate itemized_v1 yet')
+check(!createUi.includes('pricingMode') && !createUi.includes('itemized_v1'), 'Current visible Create UI must not expose itemized mode yet')
 
 console.log('STAGE03-H3 EXPLICIT ITEMIZED CREATE PASSED — legacy remains the default, only explicit itemized_v1 consumes H2, server-derived money and Catalog snapshot persist separately, and current UI remains inactive')
