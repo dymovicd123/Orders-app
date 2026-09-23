@@ -1,0 +1,168 @@
+name: Stage03 Branch2 migration 0074
+
+on:
+  push:
+    branches:
+      - branch2
+    paths:
+      - '.github/workflows/stage03-branch2-migration-0074.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: Apply 0074 to Branch2 D1 only
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout exact Branch2 commit
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on environment or migration drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "branch2" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo "Production D1 binding detected. Refusing migration." >&2
+            exit 20
+          fi
+
+          migration='migrations/0074_v72_retained_order_pricing_mode.sql'
+          grep -Fq 'ALTER TABLE retained_order_summaries' "$migration"
+          grep -Fq "ADD COLUMN pricing_mode TEXT NOT NULL DEFAULT 'legacy_manual_total'" "$migration"
+          grep -Fq "CHECK (pricing_mode IN ('legacy_manual_total', 'itemized_v1'))" "$migration"
+          if grep -Eiq '\b(INSERT[[:space:]]+INTO|UPDATE|DELETE[[:space:]]+FROM)\b' "$migration"; then
+            echo "Migration 0074 contains a business-row write/backfill. Refusing migration." >&2
+            exit 21
+          fi
+          if grep -Fiq 'catalog_execution_prices' "$migration" || grep -Fiq 'catalog_price_snapshot' "$migration"; then
+            echo "Migration 0074 attempts to infer retained pricing from Catalog data. Refusing migration." >&2
+            exit 22
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Capture retained-history finance fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_branch2 \
+            --remote \
+            --config wrangler.jsonc \
+            --command "SELECT
+              (SELECT COUNT(*) FROM retained_order_summaries) AS retained_count,
+              (SELECT COALESCE(SUM(total_amount), 0) FROM retained_order_summaries) AS retained_total,
+              (SELECT COALESCE(SUM(received_amount), 0) FROM retained_order_summaries) AS retained_received,
+              (SELECT COALESCE(SUM(debt_amount), 0) FROM retained_order_summaries) AS retained_debt,
+              (SELECT COALESCE(SUM(return_amount), 0) FROM retained_order_summaries) AS retained_return,
+              (SELECT COALESCE(SUM(item_count), 0) FROM retained_order_summaries) AS retained_items,
+              (SELECT COALESCE(SUM(payment_count), 0) FROM retained_order_summaries) AS retained_payments,
+              (SELECT COALESCE(SUM(return_count), 0) FROM retained_order_summaries) AS retained_returns,
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount), 0) FROM orders) AS orders_total,
+              (SELECT COALESCE(SUM(received_amount), 0) FROM orders) AS orders_received,
+              (SELECT COALESCE(SUM(debt_amount), 0) FROM orders) AS orders_debt,
+              (SELECT COALESCE(SUM(return_amount), 0) FROM orders) AS orders_return" \
+            --json)"
+          echo "$result"
+          fingerprint="$(jq -cS '.[0].results[0]' <<<"$result")"
+          [[ -n "$fingerprint" && "$fingerprint" != "null" ]] || {
+            echo "Could not capture pre-migration retained-history fingerprint." >&2
+            exit 23
+          }
+          printf '%s' "$fingerprint" > /tmp/stage03-h6h-before.json
+
+      - name: Apply migration 0074 to Branch2 D1 if needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          schema="$(npx wrangler d1 execute orders_db_branch2 \
+            --remote \
+            --config wrangler.jsonc \
+            --command "SELECT COUNT(*) AS count FROM pragma_table_info('retained_order_summaries') WHERE name = 'pricing_mode'" \
+            --json)"
+          existing="$(jq -r '.[0].results[0].count // 0' <<<"$schema")"
+          if [[ "$existing" == "1" ]]; then
+            echo "0074 pricing_mode column already exists; verifying current schema instead of reapplying."
+          else
+            [[ "$existing" == "0" ]] || {
+              echo "Unexpected retained pricing_mode column count: $existing" >&2
+              exit 24
+            }
+            npx wrangler d1 execute orders_db_branch2 \
+              --remote \
+              --config wrangler.jsonc \
+              --file migrations/0074_v72_retained_order_pricing_mode.sql
+          fi
+
+      - name: Verify retained pricing classification
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_branch2 \
+            --remote \
+            --config wrangler.jsonc \
+            --command "SELECT
+              COUNT(*) AS retained_count,
+              SUM(CASE WHEN pricing_mode = 'legacy_manual_total' THEN 1 ELSE 0 END) AS legacy_count,
+              SUM(CASE WHEN pricing_mode = 'itemized_v1' THEN 1 ELSE 0 END) AS itemized_count,
+              SUM(CASE WHEN pricing_mode IS NULL OR pricing_mode NOT IN ('legacy_manual_total', 'itemized_v1') THEN 1 ELSE 0 END) AS invalid_count
+              FROM retained_order_summaries" \
+            --json)"
+          echo "$result"
+          retained_count="$(jq -r '.[0].results[0].retained_count // 0' <<<"$result")"
+          legacy_count="$(jq -r '.[0].results[0].legacy_count // 0' <<<"$result")"
+          itemized_count="$(jq -r '.[0].results[0].itemized_count // 0' <<<"$result")"
+          invalid_count="$(jq -r '.[0].results[0].invalid_count // 0' <<<"$result")"
+          [[ "$legacy_count" == "$retained_count" && "$itemized_count" == "0" && "$invalid_count" == "0" ]] || {
+            echo "Existing retained history was not classified purely as legacy/manual." >&2
+            exit 25
+          }
+
+      - name: Verify retained-history finance fingerprint unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_branch2 \
+            --remote \
+            --config wrangler.jsonc \
+            --command "SELECT
+              (SELECT COUNT(*) FROM retained_order_summaries) AS retained_count,
+              (SELECT COALESCE(SUM(total_amount), 0) FROM retained_order_summaries) AS retained_total,
+              (SELECT COALESCE(SUM(received_amount), 0) FROM retained_order_summaries) AS retained_received,
+              (SELECT COALESCE(SUM(debt_amount), 0) FROM retained_order_summaries) AS retained_debt,
+              (SELECT COALESCE(SUM(return_amount), 0) FROM retained_order_summaries) AS retained_return,
+              (SELECT COALESCE(SUM(item_count), 0) FROM retained_order_summaries) AS retained_items,
+              (SELECT COALESCE(SUM(payment_count), 0) FROM retained_order_summaries) AS retained_payments,
+              (SELECT COALESCE(SUM(return_count), 0) FROM retained_order_summaries) AS retained_returns,
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount), 0) FROM orders) AS orders_total,
+              (SELECT COALESCE(SUM(received_amount), 0) FROM orders) AS orders_received,
+              (SELECT COALESCE(SUM(debt_amount), 0) FROM orders) AS orders_debt,
+              (SELECT COALESCE(SUM(return_amount), 0) FROM orders) AS orders_return" \
+            --json)"
+          echo "$result"
+          after="$(jq -cS '.[0].results[0]' <<<"$result")"
+          before="$(cat /tmp/stage03-h6h-before.json)"
+          [[ "$after" == "$before" ]] || {
+            echo "Retained/live finance fingerprint changed during migration 0074." >&2
+            echo "Before: $before" >&2
+            echo "After:  $after" >&2
+            exit 26
+          }
+          echo "Stage03 migration 0074 verified on Branch2 D1: retained history stays legacy-classified, financial aggregates are unchanged, and future itemized summaries can preserve pricing_mode."
