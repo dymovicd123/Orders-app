@@ -95,7 +95,7 @@ check(createUi.includes('Цена заказа'), 'Current manual-total Create U
 check(!createUi.includes('itemized_v1') && !createUi.includes('catalogPriceSnapshot'), 'Itemized internals leaked into current visible Create UI')
 
 check(contract.includes('whether saving without any price is allowed is still a client/product decision'), 'Missing-price client boundary disappeared')
-check(contract.includes('whether explicit zero/free items are allowed commercially'), 'Zero-price client boundary disappeared')
+check(contract.includes('whether zero-price/free items are allowed'), 'Zero-price client boundary disappeared')
 check(contract.includes('exact refund defaults for itemized orders'), 'Return client boundary disappeared')
 check(contract.includes('exchange pricing rules'), 'Exchange client boundary disappeared')
 
