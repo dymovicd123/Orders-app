@@ -167,6 +167,7 @@ try {
   acceptedAdditiveMigrations.push('0071_v72_inventory_operation_evidence.sql')
   acceptedAdditiveMigrations.push('0072_v72_catalog_execution_prices.sql')
   acceptedAdditiveMigrations.push('0073_v72_order_item_pricing_foundation.sql')
+  acceptedAdditiveMigrations.push('0074_v72_retained_order_pricing_mode.sql')
   const historicalMigrationFiles = migrationFiles.filter((name) => !acceptedAdditiveMigrations.includes(name))
   const aggregate = historicalMigrationFiles.map((name) => `${sha(fs.readFileSync(path.join(migrationDir, name)))}  migrations/${name}\n`).join('')
   check(historicalMigrationFiles.length === manifest.migrationCount, `Historical migration count changed: ${historicalMigrationFiles.length}/${manifest.migrationCount}`)
