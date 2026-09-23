@@ -96,7 +96,7 @@ check(!createUi.includes('itemized_v1') && !createUi.includes('catalogPriceSnaps
 
 check(contract.includes('whether saving without any price is allowed is still a client/product decision'), 'Missing-price client boundary disappeared')
 check(contract.includes('whether zero-price/free items are allowed'), 'Zero-price client boundary disappeared')
-check(contract.includes('exact refund defaults for itemized orders'), 'Return client boundary disappeared')
-check(contract.includes('exchange pricing rules'), 'Exchange client boundary disappeared')
+check(contract.includes('return refund defaults'), 'Return client boundary disappeared')
+check(contract.includes('exchange price policy'), 'Exchange client boundary disappeared')
 
 console.log('STAGE03-H6I PRE-CLIENT READINESS MATRIX PASSED — server Create, pricing history, reports, debt, manual returns, lifecycle actions, long-term retention and fail-closed edit/exchange boundaries are technically prepared; visible itemized activation remains blocked only at documented client-policy decisions')
