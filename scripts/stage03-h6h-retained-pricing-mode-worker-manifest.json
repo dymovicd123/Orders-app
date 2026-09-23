@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "revision": "stage03-h6h-retained-pricing-mode",
+  "files": {
+    "worker/domains/storage.ts": {
+      "beforeGitBlob": "7f90f543878cc6854565c949bbd578cf57455b60",
+      "afterGitBlob": "4095ad56e7e91eb601f1b6483e903c0119213380",
+      "beforeLines": 961,
+      "afterLines": 975,
+      "replacements": [
+        {
+          "beforeBlock": "export async function retainOrderSummariesForStorageCleanup(db: D1Database, orderIds: number[]) {",
+          "afterBlock": "export async function isRetainedOrderPricingModeEnabled(db: D1Database) {\n  try {\n    await db.prepare('SELECT pricing_mode FROM retained_order_summaries LIMIT 1').first();\n    return true;\n  } catch {\n    return false;\n  }\n}\n\n\nexport async function retainOrderSummariesForStorageCleanup(db: D1Database, orderIds: number[]) {"
+        },
+        {
+          "beforeBlock": "  const now = new Date().toISOString();\n  for (const chunk of chunksOf(uniqueIds, 70)) {",
+          "afterBlock": "  const now = new Date().toISOString();\n  const retainedPricingModeEnabled = await isRetainedOrderPricingModeEnabled(db);\n  const pricingModeInsertColumn = retainedPricingModeEnabled ? ', pricing_mode' : '';\n  const pricingModeSelectValue = retainedPricingModeEnabled ? \", COALESCE(o.pricing_mode, 'legacy_manual_total')\" : '';\n  const pricingModeConflictUpdate = retainedPricingModeEnabled ? ', pricing_mode = excluded.pricing_mode' : '';\n  for (const chunk of chunksOf(uniqueIds, 70)) {"
+        },
+        {
+          "beforeBlock": "         manager_id, manager_name, city, delivery_type, source_type,\n         total_amount, received_amount, debt_amount, return_amount,",
+          "afterBlock": "         manager_id, manager_name, city, delivery_type, source_type${pricingModeInsertColumn},\n         total_amount, received_amount, debt_amount, return_amount,"
+        },
+        {
+          "beforeBlock": "         o.city, o.delivery_type, o.source_type,\n         o.total_amount, o.received_amount, o.debt_amount, o.return_amount,",
+          "afterBlock": "         o.city, o.delivery_type, o.source_type${pricingModeSelectValue},\n         o.total_amount, o.received_amount, o.debt_amount, o.return_amount,"
+        },
+        {
+          "beforeBlock": "         source_type = excluded.source_type,\n         total_amount = excluded.total_amount,",
+          "afterBlock": "         source_type = excluded.source_type${pricingModeConflictUpdate},\n         total_amount = excluded.total_amount,"
+        }
+      ]
+    },
+    "worker/domains/orders-read.ts": {
+      "beforeGitBlob": "df888a63e65d22e30bbedc406d67af2f4fec97dc",
+      "afterGitBlob": "8224d43aa81cfba5617e8f4fd399d804294dc5cc",
+      "beforeLines": 812,
+      "afterLines": 812,
+      "replacements": [
+        {
+          "beforeBlock": "    pricing_mode: 'legacy_manual_total',",
+          "afterBlock": "    pricing_mode: cleanText(row.pricing_mode) === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total',"
+        }
+      ]
+    }
+  }
+}
