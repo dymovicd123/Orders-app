@@ -238,7 +238,7 @@ export function retainedOrderSummaryPayload(row: Record<string, unknown>) {
     order_status: 'archived',
     shipping_status: cleanText(row.shipping_status) || 'not_sent',
     shipping_date: cleanText(row.shipping_date) || null,
-    pricing_mode: 'legacy_manual_total',
+    pricing_mode: cleanText(row.pricing_mode) === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total',
     total_amount: toInt(row.total_amount, 0),
     received_amount: toInt(row.received_amount, 0),
     debt_amount: toInt(row.debt_amount, 0),
