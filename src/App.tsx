@@ -40,6 +40,7 @@ import { useWorkshopReads } from './features/workshop/useWorkshopReads'
 import { useApiClient } from './app/controllers/useApiClient'
 import { useOperationalViewModel } from './app/controllers/useOperationalViewModel'
 import { useWorkspaceViewModel } from './app/controllers/useWorkspaceViewModel'
+import { resolveCatalogOrderSalePrice } from './app/order-pricing'
 import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft } from './features/inventory/inventoryDraftFactories'
 import { downloadBlobFile, makeExportHtml } from './features/export/documentExport'
 import './styles/1905-small-screen-acceptance.css'
@@ -3867,6 +3868,11 @@ function App() {
           if (nextItem.size && !nextOptions.some((option) => normalizeSuggestion(option) === normalizeSuggestion(nextItem.size))) {
             nextItem.size = ''
           }
+        }
+        if (['productName', 'audienceType', 'material', 'length'].includes(String(field))) {
+          const pricing = resolveCatalogOrderSalePrice(catalogData, nextItem)
+          nextItem.unitPrice = pricing.status === 'matched' ? pricing.salePrice : undefined
+          nextItem.catalogPriceSnapshot = pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null
         }
         return nextItem
       })
