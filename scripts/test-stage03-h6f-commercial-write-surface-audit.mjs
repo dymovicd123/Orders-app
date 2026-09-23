@@ -18,23 +18,27 @@ const workerFiles = listTs('worker')
 const commercialWriteFiles = []
 const commercialWriteSnippets = new Map()
 
+function writeWindowMentions(source, needle, fields, windowSize = 1800) {
+  let offset = -1
+  while ((offset = source.indexOf(needle, offset + 1)) >= 0) {
+    const window = source.slice(offset, offset + windowSize)
+    if (fields.some(field => window.includes(field))) return true
+  }
+  return false
+}
+
 for (const relative of workerFiles) {
   const source = read(relative)
-  const writes = []
-  const templates = [...source.matchAll(/`([sS]*?)`/g)].map(match => match[1])
-  for (const sql of templates) {
-    const normalized = sql.replace(/s+/g, ' ').trim()
-    const orderCommercialWrite =
-      (/\bINSERT\s+INTO\s+orders\b/i.test(normalized) && /\btotal_amount\b/i.test(normalized))
-      || (/\bUPDATE\s+orders\s+SET\b/i.test(normalized) && /\btotal_amount\b/i.test(normalized))
-    const itemCommercialWrite =
-      (/\bINSERT\s+INTO\s+order_items\b/i.test(normalized) && /\b(unit_price|line_total|catalog_price_snapshot)\b/i.test(normalized))
-      || (/\bUPDATE\s+order_items\s+SET\b/i.test(normalized) && /\b(unit_price|line_total|catalog_price_snapshot)\b/i.test(normalized))
-    if (orderCommercialWrite || itemCommercialWrite) writes.push(normalized)
-  }
-  if (writes.length) {
+  const orderCommercialWrite =
+    writeWindowMentions(source, 'INSERT INTO orders', ['total_amount'])
+    || writeWindowMentions(source, 'UPDATE orders SET', ['total_amount'])
+  const itemCommercialWrite =
+    writeWindowMentions(source, 'INSERT INTO order_items', ['unit_price', 'line_total', 'catalog_price_snapshot'])
+    || writeWindowMentions(source, 'UPDATE order_items', ['unit_price', 'line_total', 'catalog_price_snapshot'])
+
+  if (orderCommercialWrite || itemCommercialWrite) {
     commercialWriteFiles.push(relative)
-    commercialWriteSnippets.set(relative, writes)
+    commercialWriteSnippets.set(relative, { orderCommercialWrite, itemCommercialWrite })
   }
 }
 
