@@ -1,6 +1,6 @@
 # Warehouse current context — canonical continuation
 
-Updated: 2026-09-22
+Updated: 2026-09-23
 Repository: `dymovicd123/Orders-app`
 
 ## CRITICAL environment invariant — Branch2 / Production D1 must never mix
@@ -31,6 +31,62 @@ Permanent rule:
 ---
 
 This file is the canonical current continuation context for Warehouse work. It supersedes older roadmap wording where it conflicts with this file. Git history preserves earlier checkpoints.
+
+## Checkpoint 2026-09-23 — Stage03-H6 pre-client technical preparation COMPLETE on Branch2
+
+Final green code baseline: `f6906a2b6d28b30d1e3ce179b295e2e729b45a71`.
+Cloudflare monitor: `35843997644` — **success**.
+
+This checkpoint closes the technical preparation that can be completed without choosing unresolved client pricing policy.
+
+H6A-H6J establish and regress the following boundaries:
+- future `itemized_v1` orders cannot be opened/saved through the legacy full-order editor; backend PATCH and frontend entry/stale-save paths fail closed;
+- the current Catalog resolver is runtime-reachable and maintains hidden recommendation/snapshot state for accepted base price dimensions, while the visible Create UI and request still remain legacy;
+- end-to-end itemized Create/read/report contracts are covered without turning them on for users;
+- legacy exchange arithmetic is blocked for itemized orders until exchange policy is defined;
+- debt-close stays on persisted order/payment facts and manual returns remain manual; neither path reprices from Catalog;
+- all commercial order/item SQL write surfaces are constrained by regression to reviewed order-write and legacy exchange code;
+- frontend itemized readiness can derive line totals, order total, received money, debt and overpayment, while missing/invalid prices fail closed and explicit zero remains technically representable pending policy;
+- long-term storage cleanup now preserves `pricing_mode` in `retained_order_summaries`;
+- additive migration `0074_v72_retained_order_pricing_mode.sql` is applied and verified on **Branch2 D1 only**;
+- final H6I readiness matrix spans Create, Edit, Exchange, Returns, debt, delete, archive/restore, shipping, Finance, retained history and Branch2 environment identity;
+- H6J additionally locks Workshop, Clients, Cash/Finance-day and physical inventory lifecycle against hidden Catalog repricing or commercial price mutation.
+
+Branch2 migration 0074 workflow: `35841644818` — **success** against:
+- Worker `orders-app-branch2`;
+- D1 `orders_db_branch2`;
+- id `40065052-854e-44b8-bcd5-251bdd488301`.
+
+Verification at migration time:
+- retained compact-history rows: 0;
+- live orders: 13;
+- live order total aggregate: 20000;
+- live received aggregate: 20000;
+- live debt/return aggregates: 0;
+- before/after financial fingerprint matched exactly.
+Production D1 was not touched.
+
+### Deliberate stop boundary
+
+Do **not** activate visible itemized Create/autofill in Production or widen itemized Edit/Exchange/Return semantics until the remaining business decisions are answered.
+
+Still-open client decisions from Stage03-E:
+- whether gender/color/size/age affect price;
+- whether delivery has its own price;
+- whether a product with no Catalog recommendation may be sold with a manually entered price;
+- whether zero-price/free items are allowed;
+- exact discount UI model: final price / amount / percent;
+- whether manager override requires a reason;
+- what happens to a manual override after changing price-driving characteristics;
+- return refund defaults;
+- exchange price policy;
+- explicit discount reporting requirements.
+
+All reasonable preparatory engineering that does not decide those questions is complete at this checkpoint. Further Stage03 pricing activation is client-policy dependent.
+
+Canonical note: `docs/continuation/STAGE03_H6_PRE_CLIENT_READINESS_20260923.md`.
+
+---
 
 ## Checkpoint 2026-09-22 — Stage03-H3/H4/H5 itemized Create foundation GREEN
 
