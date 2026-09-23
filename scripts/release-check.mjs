@@ -240,6 +240,7 @@ try {
   run('Stage03-H4 itemized product revenue', process.execPath, [path.join(root, 'scripts/test-stage03-h4-itemized-product-revenue.mjs')])
   run('Stage03-H5 Catalog price resolver', process.execPath, [path.join(root, 'scripts/test-stage03-h5-catalog-price-resolver.mjs')])
   run('Stage03-H6A itemized edit guard', process.execPath, [path.join(root, 'scripts/test-stage03-h6a-itemized-edit-guard.mjs')])
+  run('Stage03-H6B shadow Create pricing', process.execPath, [path.join(root, 'scripts/test-stage03-h6b-shadow-create-pricing.mjs')])
   run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])
