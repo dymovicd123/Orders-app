@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "revision": "stage03-h6a-itemized-edit-guard",
+  "files": {
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "34f9048846ea9cf93eab9912a3823c6c1aed9390",
+      "afterGitBlob": "36f71e577b794a28c7b4bd622c1c2942c22e05df",
+      "beforeLines": 1779,
+      "afterLines": 1783,
+      "replacements": [
+        {
+          "beforeBlock": "      const existingAny = existing as any;\n      const timestamp = new Date().toISOString();",
+          "afterBlock": "      const existingAny = existing as any;\n      const existingPricingMode = cleanText(existingAny.pricing_mode) === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total';\n      if (existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete') {\n        throw new CriticalOperationConflictError('Этот заказ использует построчную itemized-цену. Старый редактор заказа для него отключён, чтобы не потерять цены позиций и снимки Каталога. Используйте отдельные штатные действия заказа.');\n      }\n      const timestamp = new Date().toISOString();"
+        }
+      ]
+    }
+  }
+}
