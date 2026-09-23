@@ -246,6 +246,7 @@ try {
   run('Stage03-H6E post-create finance isolation', process.execPath, [path.join(root, 'scripts/test-stage03-h6e-post-create-finance-isolation.mjs')])
   run('Stage03-H6F commercial write surface audit', process.execPath, [path.join(root, 'scripts/test-stage03-h6f-commercial-write-surface-audit.mjs')])
   run('Stage03-H6G itemized Create readiness', process.execPath, [path.join(root, 'scripts/test-stage03-h6g-itemized-create-readiness.mjs')])
+  run('Stage03-H6H retained pricing mode', process.execPath, [path.join(root, 'scripts/test-stage03-h6h-retained-pricing-mode.mjs')])
   run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])
