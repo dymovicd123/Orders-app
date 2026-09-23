@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "revision": "stage03-h6b-shadow-create-pricing",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "afaa235329e803ffebbb02f9db1b9cdfbff2d371",
+      "afterGitBlob": "ffc581e64eb20494a27fd46e545ddf8d200cb1d3",
+      "beforeLines": 7501,
+      "afterLines": 7507,
+      "replacements": [
+        {
+          "beforeBlock": "import { useWorkspaceViewModel } from './app/controllers/useWorkspaceViewModel'\nimport { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft } from './features/inventory/inventoryDraftFactories'",
+          "afterBlock": "import { useWorkspaceViewModel } from './app/controllers/useWorkspaceViewModel'\nimport { resolveCatalogOrderSalePrice } from './app/order-pricing'\nimport { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft } from './features/inventory/inventoryDraftFactories'"
+        },
+        {
+          "beforeBlock": "        if (field === 'audienceType') {\n          const nextOptions = getSizeOptions(nextItem.productName, nextItem.audienceType)\n          if (nextItem.size && !nextOptions.some((option) => normalizeSuggestion(option) === normalizeSuggestion(nextItem.size))) {\n            nextItem.size = ''\n          }\n        }\n        return nextItem",
+          "afterBlock": "        if (field === 'audienceType') {\n          const nextOptions = getSizeOptions(nextItem.productName, nextItem.audienceType)\n          if (nextItem.size && !nextOptions.some((option) => normalizeSuggestion(option) === normalizeSuggestion(nextItem.size))) {\n            nextItem.size = ''\n          }\n        }\n        if (['productName', 'audienceType', 'material', 'length'].includes(String(field))) {\n          const pricing = resolveCatalogOrderSalePrice(catalogData, nextItem)\n          nextItem.unitPrice = pricing.status === 'matched' ? pricing.salePrice : undefined\n          nextItem.catalogPriceSnapshot = pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null\n        }\n        return nextItem"
+        }
+      ]
+    },
+    "src/app/controllers/useWorkspaceViewModel.tsx": {
+      "beforeGitBlob": "d1eca03c2aca0f5302777779a68408171f2aef9c",
+      "afterGitBlob": "a7a61c16873121b3edb65d039859058aeb8dfa3e",
+      "beforeLines": 941,
+      "afterLines": 949,
+      "replacements": [
+        {
+          "beforeBlock": "} from '../utils'\n\ntype ReferenceGroupSummary",
+          "afterBlock": "} from '../utils'\nimport { resolveCatalogOrderSalePrice } from '../order-pricing'\n\ntype ReferenceGroupSummary"
+        },
+        {
+          "beforeBlock": "  function applyCreateProductPick(index: number, productName: string) {\n    setCreateDraft((current) => ({\n      ...current,\n      items: current.items.map((item, itemIndex) => (\n        itemIndex === index ? buildOrderItemFromCatalogPick(item, productName) : item\n      )),\n    }))\n  }",
+          "afterBlock": "  function applyCreateProductPick(index: number, productName: string) {\n    setCreateDraft((current) => ({\n      ...current,\n      items: current.items.map((item, itemIndex) => {\n        if (itemIndex !== index) return item\n        const pickedItem = buildOrderItemFromCatalogPick(item, productName)\n        const pricing = resolveCatalogOrderSalePrice(catalogData, pickedItem)\n        return {\n          ...pickedItem,\n          unitPrice: pricing.status === 'matched' ? pricing.salePrice : undefined,\n          catalogPriceSnapshot: pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null,\n        }\n      }),\n    }))\n  }"
+        }
+      ]
+    }
+  }
+}
