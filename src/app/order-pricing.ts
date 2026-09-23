@@ -1,4 +1,4 @@
-import type { CatalogResponse, OrderItem } from './types'
+import type { CatalogResponse, OrderItem, Payment } from './types'
 import { canonicalCatalogProductKey, canonicalStockPositionValue, normalizeSuggestion } from './utils'
 
 export type CatalogOrderPriceResolution =
@@ -79,5 +79,143 @@ export function resolveCatalogOrderSalePrice(
     category,
     salePrice,
     catalogPriceSnapshot: salePrice,
+  }
+}
+
+
+export type ItemizedCreatePricingBlocker = {
+  code:
+    | 'empty_items'
+    | 'invalid_quantity'
+    | 'missing_unit_price'
+    | 'invalid_unit_price'
+    | 'invalid_catalog_snapshot'
+    | 'invalid_payment'
+    | 'overpayment'
+  itemIndex?: number
+  paymentIndex?: number
+}
+
+export type ItemizedCreatePricingReadiness = {
+  status: 'ready' | 'blocked'
+  pricingMode: 'itemized_v1'
+  lines: Array<{
+    itemIndex: number
+    quantity: number
+    unitPrice: number
+    lineTotal: number
+    catalogPriceSnapshot: number | null
+  }>
+  totalAmount: number | null
+  receivedAmount: number
+  debtAmount: number | null
+  overpaymentAmount: number | null
+  blockers: ItemizedCreatePricingBlocker[]
+}
+
+export function evaluateItemizedCreatePricing(
+  items: readonly OrderItem[],
+  payments: readonly Pick<Payment, 'method' | 'amount'>[],
+): ItemizedCreatePricingReadiness {
+  const blockers: ItemizedCreatePricingBlocker[] = []
+  const activeItems = items
+    .map((item, itemIndex) => ({ item, itemIndex }))
+    .filter(({ item }) => String(item?.productName || '').trim())
+
+  if (!activeItems.length) blockers.push({ code: 'empty_items' })
+
+  const lines: ItemizedCreatePricingReadiness['lines'] = []
+  for (const { item, itemIndex } of activeItems) {
+    const quantity = Number(item?.quantity ?? 1)
+    if (!Number.isSafeInteger(quantity) || quantity < 1) {
+      blockers.push({ code: 'invalid_quantity', itemIndex })
+      continue
+    }
+
+    const rawFinalPrice = item?.unitPrice
+    if (rawFinalPrice === undefined || rawFinalPrice === null || String(rawFinalPrice).trim() === '') {
+      blockers.push({ code: 'missing_unit_price', itemIndex })
+      continue
+    }
+    const finalPrice = Number(rawFinalPrice)
+    if (!Number.isSafeInteger(finalPrice) || finalPrice < 0) {
+      blockers.push({ code: 'invalid_unit_price', itemIndex })
+      continue
+    }
+
+    const rawSnapshot = item?.catalogPriceSnapshot
+    const snapshot = rawSnapshot === undefined || rawSnapshot === null || String(rawSnapshot).trim() === ''
+      ? null
+      : Number(rawSnapshot)
+    if (snapshot !== null && (!Number.isSafeInteger(snapshot) || snapshot < 0)) {
+      blockers.push({ code: 'invalid_catalog_snapshot', itemIndex })
+      continue
+    }
+
+    const lineTotal = quantity * finalPrice
+    if (!Number.isSafeInteger(lineTotal) || lineTotal < 0) {
+      blockers.push({ code: 'invalid_unit_price', itemIndex })
+      continue
+    }
+
+    lines.push({
+      itemIndex,
+      quantity,
+      unitPrice: finalPrice,
+      lineTotal,
+      catalogPriceSnapshot: snapshot,
+    })
+  }
+
+  let receivedAmount = 0
+  payments.forEach((payment, paymentIndex) => {
+    const rawAmount = payment?.amount
+    const amount = Number(rawAmount || 0)
+    const method = String(payment?.method || '').trim()
+    if (!Number.isFinite(amount) || !Number.isSafeInteger(amount) || amount < 0 || (amount > 0 && !method) || (method && amount <= 0)) {
+      blockers.push({ code: 'invalid_payment', paymentIndex })
+      return
+    }
+    if (amount > 0 && method) {
+      const nextReceived = receivedAmount + amount
+      if (!Number.isSafeInteger(nextReceived)) {
+        blockers.push({ code: 'invalid_payment', paymentIndex })
+        return
+      }
+      receivedAmount = nextReceived
+    }
+  })
+
+  const itemPricingBlocked = blockers.some(blocker => blocker.code !== 'invalid_payment' && blocker.code !== 'overpayment')
+  let totalAmount: number | null = null
+  let debtAmount: number | null = null
+  let overpaymentAmount: number | null = null
+  if (!itemPricingBlocked && lines.length === activeItems.length && activeItems.length > 0) {
+    let sum = 0
+    for (const line of lines) {
+      sum += line.lineTotal
+      if (!Number.isSafeInteger(sum)) {
+        blockers.push({ code: 'invalid_unit_price', itemIndex: line.itemIndex })
+        sum = -1
+        break
+      }
+    }
+    if (sum >= 0) {
+      totalAmount = sum
+      debtAmount = Math.max(0, totalAmount - receivedAmount)
+      overpaymentAmount = Math.max(0, receivedAmount - totalAmount)
+      if (overpaymentAmount > 0) blockers.push({ code: 'overpayment' })
+    }
+  }
+
+  return {
+    status: blockers.length ? 'blocked' : 'ready',
+    pricingMode: 'itemized_v1',
+    lines,
+    totalAmount,
+    receivedAmount,
+    debtAmount,
+    overpaymentAmount,
+    blockers,
   }
 }
