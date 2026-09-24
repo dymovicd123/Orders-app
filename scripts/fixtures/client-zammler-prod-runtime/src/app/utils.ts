@@ -702,7 +702,6 @@ export function createEmptyEditorItem(): EditorItem {
     workshopComment: '',
     workshopUrgent: false,
     workshopDueDate: '',
-    workshopDueTime: '',
   }
 }
 
@@ -948,7 +947,6 @@ export function createEditorDraft(order: OrderRecord): EditorDraft {
           workshopComment: item.workshopComment || '',
           workshopUrgent: Boolean(item.workshopUrgent),
           workshopDueDate: item.workshopDueDate || '',
-          workshopDueTime: item.workshopDueTime || '',
         }))
       : [createEmptyEditorItem()],
     payments: order.payments.length

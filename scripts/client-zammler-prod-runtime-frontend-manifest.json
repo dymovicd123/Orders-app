@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "revision": "client-zammler-prod-runtime-20260924",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "58a88b909eef32f06fdbf815dfbf6f26f0514147",
+      "afterGitBlob": "0c372d5b2e174cf7c9346b84aab42cef375174fb",
+      "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/src/App.tsx"
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "6daed30b087a2e60dbc6eb501d5d78e800ed4263",
+      "afterGitBlob": "c876da8c3259549ac99f3b862e78c5877c2eb97a",
+      "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/src/app/types.ts"
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "0531b3fcf8856acae7078b3ec501a78dbdec8e0a",
+      "afterGitBlob": "3cf26215cade4a5f582fb6bcdc347c6363f9b351",
+      "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/src/app/utils.ts"
+    },
+    "src/app/constants.ts": {
+      "beforeGitBlob": "4ad1538773436c78ef1276849cfd9c34c7873bde",
+      "afterGitBlob": "af954cf37625b1640298c93e1259bb7596510be2",
+      "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/src/app/constants.ts"
+    },
+    "src/features/sections/CreateOrderSection.tsx": {
+      "beforeGitBlob": "6fa7c13467c3d6b2c94ddd9fb440aa165971d226",
+      "afterGitBlob": "42a7fbdd1b75b40849df61799a6f716e96eea62f",
+      "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/src/features/sections/CreateOrderSection.tsx"
+    },
+    "src/features/sections/OrderEditorSection.tsx": {
+      "beforeGitBlob": "b282772dd51890ef7d10284964e32e4ba2999558",
+      "afterGitBlob": "b4e931da6daea471ed7e926313e517e115567573",
+      "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/src/features/sections/OrderEditorSection.tsx"
+    },
+    "src/features/sections/OrderFiltersSection.tsx": {
+      "beforeGitBlob": "2268d227401f3871f384ab062a5f0d6c5722db49",
+      "afterGitBlob": "673d1358f8983656b73508a9f3ffcd968307660b",
+      "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/src/features/sections/OrderFiltersSection.tsx"
+    },
+    "src/features/sections/OrdersTableSection.tsx": {
+      "beforeGitBlob": "0b0b0ad22c2c4cf1ec37ff573ca0bca22e0e5078",
+      "afterGitBlob": "50d2badb2fc18dd69cad718356c9f69eec761e1b",
+      "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/src/features/sections/OrdersTableSection.tsx"
+    },
+    "src/features/sections/WorkshopSection.tsx": {
+      "beforeGitBlob": "d3dc46f1539c43fab3343d82993ab37147851215",
+      "afterGitBlob": "02a57347123f0f1da8074a07670fd78dcc839266",
+      "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/src/features/sections/WorkshopSection.tsx"
+    },
+    "src/app/controllers/useOperationalViewModel.ts": {
+      "beforeGitBlob": "ccdb1966e725f4fa80fe438af5c2135f74b8cfa6",
+      "afterGitBlob": "2e7764820527cac7ae826247617e3e40f9fdb06c",
+      "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/src/app/controllers/useOperationalViewModel.ts"
+    }
+  }
+}

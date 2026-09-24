@@ -42,7 +42,6 @@ export type OrderInput = {
     workshopComment?: string;
     workshopUrgent?: boolean;
     workshopDueDate?: string;
-    workshopDueTime?: string;
     observedPhysicalQuantity?: number | null;
     shortageAcknowledged?: boolean;
   }>;

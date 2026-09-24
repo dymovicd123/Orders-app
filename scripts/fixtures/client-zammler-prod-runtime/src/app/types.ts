@@ -14,7 +14,6 @@ export type OrderItem = {
   workshopComment?: string
   workshopUrgent?: boolean
   workshopDueDate?: string
-  workshopDueTime?: string
   stockObservationEnabled?: boolean
   observedPhysicalQuantity?: number | null
   shortageAcknowledged?: boolean
@@ -812,7 +811,6 @@ export type OrderRecord = {
     workshopComment?: string | null
     workshopUrgent?: boolean
     workshopDueDate?: string | null
-    workshopDueTime?: string | null
     isWorkshop?: boolean
     workshopTaskStatus?: string | null
     originalSnapshot?: {
@@ -1004,7 +1002,7 @@ export type ReferenceKind = 'cities' | 'deliveryTypes' | 'colors' | 'materials' 
 
 
 
-export type OrderPanel = 'create' | 'zammler' | 'list' | 'edit' | 'debt' | 'returns' | 'exchange' | 'activity'
+export type OrderPanel = 'create' | 'list' | 'edit' | 'debt' | 'returns' | 'exchange' | 'activity'
 
 
 export type FinanceReportType = 'payments' | 'managers' | 'products' | 'cities' | 'returns' | 'debts' | 'leads' | 'callCentre'
@@ -1361,7 +1359,6 @@ export type WorkshopTaskRecord = {
   comment: string
   urgent: boolean
   dueDate: string
-  dueTime: string
   status: 'active' | 'ready' | 'done' | 'cancelled' | string
   orderDate: string
   managerId: number
@@ -1505,7 +1502,6 @@ export type WorkshopInvoiceRow = {
   urgent: boolean
   hasComment: boolean
   isSpecialOrder: boolean
-  isZammler: boolean
   orderId: number
   orderDate: string
   productName: string
@@ -1514,7 +1510,6 @@ export type WorkshopInvoiceRow = {
   orderRef: string
   comment: string
   dueDate: string
-  dueTime: string
 }
 
 

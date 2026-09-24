@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "revision": "client-zammler-prod-runtime-20260924",
+  "files": {
+    "worker/core/types.ts": {
+      "beforeGitBlob": "e2d74bed59a1bcb2d5acbe4fccbf5f83d97fa323",
+      "afterGitBlob": "312bc1d727934eda47cc87e803f0bca7bb9e31dc",
+      "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/worker/core/types.ts"
+    },
+    "worker/domains/order-core.ts": {
+      "beforeGitBlob": "a83feda6408c3cc6e6121d937515a99f9b2cc7f1",
+      "afterGitBlob": "caead3a5af825baa003857c58912c46f82a843a1",
+      "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/worker/domains/order-core.ts"
+    },
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "a76c48efd10830c1fff0bc7a05af868bd566db76",
+      "afterGitBlob": "69e513b7b800f875b710553d898271bc198e90ac",
+      "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/worker/domains/orders-write.ts"
+    },
+    "worker/domains/workshop.ts": {
+      "beforeGitBlob": "e630158838d187d42369606f368cea15a8e965f2",
+      "afterGitBlob": "956298556063bf66786bddddff72b0a225e0cd06",
+      "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/worker/domains/workshop.ts"
+    },
+    "worker/domains/orders-read.ts": {
+      "beforeGitBlob": "24456171fd21ab11df258ebcd03aa5ef08dba49d",
+      "afterGitBlob": "5552336ea806cbb144bfc64de8991951eedee13e",
+      "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/worker/domains/orders-read.ts"
+    }
+  }
+}

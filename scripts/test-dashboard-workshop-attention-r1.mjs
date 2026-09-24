@@ -59,7 +59,7 @@ const urgentFilter = workshopWorker.slice(urgentFilterStart, workshopWorker.inde
 check(!urgentFilter.includes("whereParts.push('wt.urgent = 1')"), 'Urgent workshop view regressed to hiding sibling items from the same order')
 
 check(operationalViewModel.includes('const orderPriority = new Map<number, number>()'), 'Order-level workshop invoice priority missing')
-check(operationalViewModel.includes('const isSpecialOrder = priority < 2'), 'Urgent/comment order-level invoice grouping missing')
+check(operationalViewModel.includes('const isSpecialOrder = priority < 2') || operationalViewModel.includes('const isSpecialOrder = workshopInvoiceIsZammler || priority < 2'), 'Urgent/comment order-level invoice grouping missing')
 check(operationalViewModel.includes("orderRef: isSpecialOrder ? task.externalOrderId : ''"), 'Special workshop order rows must retain ORD on every row')
 check(operationalViewModel.includes("? `order|${task.orderId}|${task.id}`"), 'Special order rows must not be merged across item characteristics')
 check(operationalViewModel.includes("const byOrder = a.orderRef.localeCompare(b.orderRef, 'ru')"), 'Special order rows must remain adjacent by ORD')

@@ -86,7 +86,6 @@ type OperationalViewModelArgs = {
   setSelectedWorkshopTaskIds: Dispatch<SetStateAction<number[]>>
   workshopData: WorkshopResponse | null
   workshopFilters: { view: WorkshopView; period: WorkshopPeriodPreset; dateFrom: string; dateTo: string; urgentOnly: boolean; q: string }
-  workshopInvoiceMode: 'urgent' | 'period' | 'zammler'
   workshopSortDirection: 'oldest' | 'newest'
 }
 
@@ -135,7 +134,6 @@ export function useOperationalViewModel({
   setSelectedWorkshopTaskIds,
   workshopData,
   workshopFilters,
-  workshopInvoiceMode,
   workshopSortDirection,
 }: OperationalViewModelArgs) {
 const summary = useMemo(() => {
@@ -269,17 +267,7 @@ const summary = useMemo(() => {
     () => activeWorkshopTasks.filter((task) => selectedWorkshopTaskSet.has(task.id)),
     [activeWorkshopTasks, selectedWorkshopTaskSet],
   )
-  const workshopInvoiceIsZammler = workshopFilters.view === 'invoice' && workshopInvoiceMode === 'zammler'
-  const workshopBaseScopeTasks = selectedWorkshopTasks.length ? selectedWorkshopTasks : activeWorkshopTasks
-  const workshopScopeTasks = useMemo(() => {
-    if (workshopInvoiceIsZammler) {
-      return workshopBaseScopeTasks.filter((task) => normalizeSuggestion(task.deliveryType) === 'ЗАММЛЕР')
-    }
-    if (workshopFilters.view === 'invoice' || workshopFilters.view === 'urgent') {
-      return workshopBaseScopeTasks.filter((task) => normalizeSuggestion(task.deliveryType) !== 'ЗАММЛЕР')
-    }
-    return workshopBaseScopeTasks
-  }, [workshopBaseScopeTasks, workshopFilters.view, workshopInvoiceIsZammler])
+  const workshopScopeTasks = selectedWorkshopTasks.length ? selectedWorkshopTasks : activeWorkshopTasks
   const workshopInvoiceRows = useMemo<WorkshopInvoiceRow[]>(() => {
     // Step 72: в накладной важность считается на уровне всего заказа.
     // Если в заказе есть хотя бы одна срочная позиция — все позиции этого заказа идут сверху и не суммируются.
@@ -298,23 +286,20 @@ const summary = useMemo(() => {
     workshopScopeTasks.forEach((task) => {
       const comment = String(task.comment || '').trim()
       const priority = orderPriority.get(task.orderId) ?? 2
-      const isSpecialOrder = workshopInvoiceIsZammler || priority < 2
+      const isSpecialOrder = priority < 2
       const urgent = priority === 0
       const hasComment = priority === 1 || Boolean(comment)
       const productTitle = workshopInvoiceProductTitle(task)
       const characteristics = workshopInvoiceCharacteristics(task)
-      const key = workshopInvoiceIsZammler
-        ? `zammler|${task.orderId}|${task.id}`
-        : isSpecialOrder
-          ? `order|${task.orderId}|${task.id}`
-          : `normal|${productTitle}|${characteristics}`
+      const key = isSpecialOrder
+        ? `order|${task.orderId}|${task.id}`
+        : `normal|${productTitle}|${characteristics}`
       const current = grouped.get(key) || {
         key,
         priority,
         urgent,
         hasComment,
         isSpecialOrder,
-        isZammler: workshopInvoiceIsZammler,
         orderId: isSpecialOrder ? task.orderId : 0,
         orderDate: task.orderDate || '',
         productName: productTitle,
@@ -322,24 +307,16 @@ const summary = useMemo(() => {
         quantity: 0,
         orderRef: isSpecialOrder ? task.externalOrderId : '',
         comment,
-        dueDate: (workshopInvoiceIsZammler || task.urgent) ? (task.dueDate || '') : '',
-        dueTime: (workshopInvoiceIsZammler || task.urgent) ? (task.dueTime || '') : '',
+        dueDate: task.urgent ? (task.dueDate || '') : '',
       }
       current.quantity += Number(task.quantity || 0)
       if (!current.comment && comment) current.comment = comment
-      if (!current.dueDate && (workshopInvoiceIsZammler || task.urgent) && task.dueDate) current.dueDate = task.dueDate
-      if (!current.dueTime && (workshopInvoiceIsZammler || task.urgent) && task.dueTime) current.dueTime = task.dueTime
+      if (!current.dueDate && task.urgent && task.dueDate) current.dueDate = task.dueDate
       grouped.set(key, current)
     })
 
     const direction = workshopSortDirection === 'newest' ? -1 : 1
     return Array.from(grouped.values()).sort((a, b) => {
-      if (workshopInvoiceIsZammler) {
-        const aDue = a.dueDate ? `${a.dueDate}T${a.dueTime || '23:59'}` : '9999-12-31T23:59'
-        const bDue = b.dueDate ? `${b.dueDate}T${b.dueTime || '23:59'}` : '9999-12-31T23:59'
-        const byDue = aDue.localeCompare(bDue)
-        if (byDue) return byDue
-      }
       if (a.priority !== b.priority) return a.priority - b.priority
       if (a.isSpecialOrder && b.isSpecialOrder) {
         const byDate = a.orderDate.localeCompare(b.orderDate) * direction
@@ -353,25 +330,12 @@ const summary = useMemo(() => {
       if (byProduct) return byProduct
       return a.orderRef.localeCompare(b.orderRef, 'ru')
     })
-  }, [workshopScopeTasks, workshopSortDirection, workshopInvoiceIsZammler])
+  }, [workshopScopeTasks, workshopSortDirection])
 
   const getWorkshopInvoiceImportanceLabel = (row: WorkshopInvoiceRow) => {
     if (row.priority === 0) return `Срочный заказ${row.dueDate ? ` · до ${formatDateShort(row.dueDate)}` : ''}`
     if (row.priority === 1) return 'Заказ с комментарием'
     return 'Обычно'
-  }
-
-  const getWorkshopInvoiceDeadlineLabel = (row: WorkshopInvoiceRow) => {
-    const dateLabel = row.dueDate ? formatDateShort(row.dueDate) : ''
-    const timeLabel = String(row.dueTime || '').trim()
-    const deadline = [dateLabel, timeLabel].filter(Boolean).join(' · ')
-    if (!deadline) return 'Срок не указан'
-    if (!row.dueDate) return `до ${deadline}`
-    const now = new Date()
-    const pad = (value: number) => String(value).padStart(2, '0')
-    const nowKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`
-    const dueKey = `${row.dueDate}T${timeLabel || '23:59'}`
-    return dueKey < nowKey ? `Просрочено · ${deadline}` : `до ${deadline}`
   }
 
   const debtOrders = useMemo(() => {
@@ -1237,7 +1201,6 @@ const summary = useMemo(() => {
     getCatalogProductEffectiveCategory,
     getInventoryRowCategory,
     getStockQuantityForVariant,
-    getWorkshopInvoiceDeadlineLabel,
     getWorkshopInvoiceImportanceLabel,
     groupedInventoryRows,
     hasInventoryQuickFilters,
@@ -1289,7 +1252,6 @@ const summary = useMemo(() => {
     updateInventoryArrivalSize,
     variantsForProduct,
     visibleCatalogProducts,
-    workshopInvoiceIsZammler,
     workshopInvoiceRows,
     workshopScopeTasks,
   }

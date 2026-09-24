@@ -277,7 +277,6 @@ export async function listOrders(db: D1Database, url: URL) {
   const offset = Math.max(0, toInt(url.searchParams.get('offset'), 0));
   const q = cleanText(url.searchParams.get('q'));
   const source = cleanText(url.searchParams.get('source')).toLowerCase();
-  const deliveryType = cleanText(url.searchParams.get('deliveryType'));
   const manager = cleanText(url.searchParams.get('manager')).toUpperCase();
   const managerId = toInt(url.searchParams.get('managerId'), 0);
   const status = normalizeStatusFilter(url.searchParams.get('status'));
@@ -313,11 +312,6 @@ export async function listOrders(db: D1Database, url: URL) {
   if (source === 'warehouse' || source === 'boutique') {
     baseWhereParts.push('o.source_type = ?');
     baseBindings.push(source);
-  }
-
-  if (deliveryType) {
-    baseWhereParts.push("COALESCE(o.delivery_type, '') = ?");
-    baseBindings.push(deliveryType);
   }
 
   if (managerId > 0) {

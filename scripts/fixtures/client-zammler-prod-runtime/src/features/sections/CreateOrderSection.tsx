@@ -35,18 +35,15 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
     updateCreateDraft,
     updateCreateItem,
     updateCreatePayment,
-    zammlerMode = false,
   } = ctx
 
   return (
-    <article className="card wide sector-orders" id={zammlerMode ? 'zammler-create' : 'create'} style={{ ...sectorStyle('orders'), ...orderPanelStyle(zammlerMode ? 'zammler' : 'create') }}>
+    <article className="card wide sector-orders" id="create" style={{ ...sectorStyle('orders'), ...orderPanelStyle('create') }}>
               <div className="create-hero">
                 <div>
-                  <div className="card-label">{zammlerMode ? 'Новый заказ ЗАММЛЕР' : 'Новый заказ'}</div>
+                  <div className="card-label">Новый заказ</div>
                   <div className="card-meta">
-                    {zammlerMode
-                      ? 'Доставка — ЗАММЛЕР, оплата — КАСПИ МАГАЗИН. Для позиции Цеха срочность и срок сегодня до 20:00 подставляются автоматически, но дату и время можно изменить.'
-                      : 'Заполняйте заказ сверху вниз: клиент → товары → оплата → проверка. Лишних переключателей наверху нет, источник выбирается только внутри товарных позиций.'}
+                    Заполняйте заказ сверху вниз: клиент → товары → оплата → проверка. Лишних переключателей наверху нет, источник выбирается только внутри товарных позиций.
                   </div>
                 </div>
                 <div className="orders-workspace-kpis create-kpis">
@@ -110,16 +107,12 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                   </label>
                   <label>
                     <span>Доставка</span>
-                    {zammlerMode ? (
-                      <input value="ЗАММЛЕР" readOnly aria-label="Доставка ЗАММЛЕР" />
-                    ) : (
-                      <SmartPickerInput
-                        value={createDraft.deliveryType}
-                        onChange={(value) => updateCreateDraft('deliveryType', value)}
-                        placeholder="Выберите доставку"
-                        options={suggestionValues.deliveryTypes}
-                      />
-                    )}
+                    <SmartPickerInput
+                      value={createDraft.deliveryType}
+                      onChange={(value) => updateCreateDraft('deliveryType', value)}
+                      placeholder="Выберите доставку"
+                      options={suggestionValues.deliveryTypes}
+                    />
                   </label>
                   <label>
                     <span>Цена заказа</span>
@@ -274,24 +267,14 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                               <span>Срочно для цеха</span>
                             </label>
                             {item.workshopUrgent ? (
-                              <>
-                                <label>
-                                  <span>Нужно до</span>
-                                  <input
-                                    type="date"
-                                    value={item.workshopDueDate || ''}
-                                    onChange={(event) => updateCreateItem(index, 'workshopDueDate', event.target.value)}
-                                  />
-                                </label>
-                                <label>
-                                  <span>Время</span>
-                                  <input
-                                    type="time"
-                                    value={item.workshopDueTime || ''}
-                                    onChange={(event) => updateCreateItem(index, 'workshopDueTime', event.target.value)}
-                                  />
-                                </label>
-                              </>
+                              <label>
+                                <span>Нужно до</span>
+                                <input
+                                  type="date"
+                                  value={item.workshopDueDate || ''}
+                                  onChange={(event) => updateCreateItem(index, 'workshopDueDate', event.target.value)}
+                                />
+                              </label>
                             ) : null}
                           </>
                         ) : null}
@@ -340,16 +323,12 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                         </label>
                         <label>
                           <span>Способ оплаты</span>
-                          {zammlerMode && index === 0 ? (
-                            <input value="КАСПИ МАГАЗИН" readOnly aria-label="Способ оплаты КАСПИ МАГАЗИН" />
-                          ) : (
-                            <SmartPickerInput
-                              value={payment.method}
-                              onChange={(value) => updateCreatePayment(index, 'method', value)}
-                              placeholder="Выберите способ"
-                              options={suggestionValues.paymentMethods}
-                            />
-                          )}
+                          <SmartPickerInput
+                            value={payment.method}
+                            onChange={(value) => updateCreatePayment(index, 'method', value)}
+                            placeholder="Выберите способ"
+                            options={suggestionValues.paymentMethods}
+                          />
                         </label>
                         <label>
                           <span>Сумма</span>
