@@ -4,7 +4,7 @@
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "58a88b909eef32f06fdbf815dfbf6f26f0514147",
-      "afterGitBlob": "0c739d049c777c9559dbb82b270f5f4cbcd8e333",
+      "afterGitBlob": "0c372d5b2e174cf7c9346b84aab42cef375174fb",
       "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/src/App.tsx"
     },
     "src/app/types.ts": {

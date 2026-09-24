@@ -907,6 +907,7 @@ function App() {
     getCatalogProductEffectiveCategory,
     getInventoryRowCategory,
     getStockQuantityForVariant,
+    getWorkshopInvoiceDeadlineLabel,
     getWorkshopInvoiceImportanceLabel,
     groupedInventoryRows,
     hasInventoryQuickFilters,
