@@ -94,9 +94,9 @@ check(appCreate.includes('unitPrice: 0,'), 'Current legacy Create request unexpe
 check(createUi.includes('Цена заказа'), 'Current manual-total Create UI unexpectedly changed')
 check(!createUi.includes('itemized_v1') && !createUi.includes('catalogPriceSnapshot'), 'Itemized internals leaked into current visible Create UI')
 
-check(contract.includes('whether saving without any price is allowed is still a client/product decision'), 'Missing-price client boundary disappeared')
-check(contract.includes('whether zero-price/free items are allowed'), 'Zero-price client boundary disappeared')
-check(contract.includes('return refund defaults'), 'Return client boundary disappeared')
-check(contract.includes('exchange price policy'), 'Exchange client boundary disappeared')
+check(contract.includes('the manager may and must be able to supply an explicit final `unit_price` when Catalog has no applicable price'), 'Confirmed missing-Catalog manual-price policy disappeared')
+check(contract.includes('explicit final price `0` is valid'), 'Confirmed zero-price policy disappeared')
+check(contract.includes('delivery does not add or select a separate product sale price'), 'Confirmed delivery price boundary disappeared')
+check(contract.includes('whether returns should stay fully manual') && contract.includes('itemized exchange price semantics'), 'Remaining return/exchange client boundaries disappeared')
 
-console.log('STAGE03-H6I PRE-CLIENT READINESS MATRIX PASSED — server Create, pricing history, reports, debt, manual returns, lifecycle actions, long-term retention and fail-closed edit/exchange boundaries are technically prepared; visible itemized activation remains blocked only at documented client-policy decisions')
+console.log('STAGE03-H6I PRE-CLIENT READINESS MATRIX PASSED — confirmed Catalog/manual/zero-price policies are locked while pricing history, reports, debt, manual returns, lifecycle actions, retention and the remaining draft-override/discount/exchange boundaries stay explicit')
