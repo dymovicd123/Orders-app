@@ -7397,7 +7397,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders'} label="Заказы">
-        <OrdersHeaderSection ctx={{ orderPanel, orderPanelOptions, returnHistorySummary, exchangeHistorySummary, sectorStyle, setEditorOpen, setOrderPanel }} />
+        <OrdersHeaderSection ctx={{ orderPanel, orderPanelOptions, returnHistorySummary, exchangeHistorySummary, sectorStyle, setEditorOpen, setOrderPanel, zammlerView, setZammlerView }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Заказы">
@@ -7406,27 +7406,6 @@ function removeDebtPayment(index: number) {
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'create'} label="Создание заказа">
         <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment }} />
-        </DeferredSection>
-
-        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label="Раздел ЗАММЛЕР">
-        <article className="card wide sector-orders orders-workspace-header" id="zammler-tabs" style={sectorStyle('orders')}>
-          <div className="order-panel-tabs" role="tablist" aria-label="Разделы ЗАММЛЕР">
-            <button
-              className={`secondary compact ${zammlerView === 'create' ? 'is-active' : ''}`}
-              type="button"
-              onClick={() => setZammlerView('create')}
-            >
-              Новый заказ
-            </button>
-            <button
-              className={`secondary compact ${zammlerView === 'list' ? 'is-active' : ''}`}
-              type="button"
-              onClick={() => setZammlerView('list')}
-            >
-              Заказы ЗАММЛЕР
-            </button>
-          </div>
-        </article>
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler' && zammlerView === 'create'} label="Создание заказа ЗАММЛЕР">
