@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "revision": "stage04-zammler-b-due-time-plumbing",
+  "files": {
+    "worker/core/types.ts": {
+      "beforeGitBlob": "8e575681c0dd638bc31cb2b83b170913c94063f8",
+      "afterGitBlob": "380476d593008c0bbaeae3ce1e815ae60ec52c67",
+      "beforeLines": 179,
+      "afterLines": 180,
+      "replacements": [
+        {
+          "beforeBlock": "    workshopUrgent?: boolean;\n    workshopDueDate?: string;\n    observedPhysicalQuantity?: number | null;",
+          "afterBlock": "    workshopUrgent?: boolean;\n    workshopDueDate?: string;\n    workshopDueTime?: string;\n    observedPhysicalQuantity?: number | null;"
+        }
+      ]
+    },
+    "worker/domains/order-core.ts": {
+      "beforeGitBlob": "8bd55100934ea58bcfa4cfcc42a7e28da2d06d63",
+      "afterGitBlob": "265033a3b6654d49abad7b1ed0a00b8abb840ac5",
+      "beforeLines": 441,
+      "afterLines": 453,
+      "replacements": [
+        {
+          "beforeBlock": "export function normalizeOrderItems(items: OrderInput['items'], fallbackSource: SourceType) {",
+          "afterBlock": "export function normalizeWorkshopDueTimeInput(value: unknown) {\n  const time = cleanText(value);\n  if (!time) return '';\n  if (!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(time)) {\n    throw new OrderInputValidationError('Время готовности цеха должно быть в формате ЧЧ:ММ.');\n  }\n  return time;\n}\n\n\nexport function normalizeOrderItems(items: OrderInput['items'], fallbackSource: SourceType) {"
+        },
+        {
+          "beforeBlock": "        workshopUrgent: Boolean(item?.workshopUrgent),\n        workshopDueDate: cleanText(item?.workshopDueDate) ? normalizeDate(item?.workshopDueDate) : '',\n        observedPhysicalQuantity:",
+          "afterBlock": "        workshopUrgent: Boolean(item?.workshopUrgent),\n        workshopDueDate: cleanText(item?.workshopDueDate) ? normalizeDate(item?.workshopDueDate) : '',\n        workshopDueTime: Boolean(item?.workshopUrgent) ? normalizeWorkshopDueTimeInput(item?.workshopDueTime) : '',\n        observedPhysicalQuantity:"
+        },
+        {
+          "beforeBlock": "    && Boolean(left.workshopUrgent) === Boolean(right.workshopUrgent)\n    && (left.workshopDueDate || '') === (right.workshopDueDate || '');",
+          "afterBlock": "    && Boolean(left.workshopUrgent) === Boolean(right.workshopUrgent)\n    && (left.workshopDueDate || '') === (right.workshopDueDate || '')\n    && (left.workshopDueTime || '') === (right.workshopDueTime || '');"
+        }
+      ]
+    },
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "36f71e577b794a28c7b4bd622c1c2942c22e05df",
+      "afterGitBlob": "1f2620f680135326d2e22f6ca86df53139588ff0",
+      "beforeLines": 1783,
+      "afterLines": 1788,
+      "replacements": [
+        {
+          "beforeBlock": "         workshop_urgent = 0,\n         workshop_due_date = NULL,\n         stock_writeoff_status = CASE",
+          "afterBlock": "         workshop_urgent = 0,\n         workshop_due_date = NULL,\n         workshop_due_time = NULL,\n         stock_writeoff_status = CASE"
+        },
+        {
+          "beforeBlock": "          source_type, workshop_comment, workshop_urgent, workshop_due_date, stock_writeoff_status, created_at,\n          inventory_obligation_key, inventory_obligation_origin_at",
+          "afterBlock": "          source_type, workshop_comment, workshop_urgent, workshop_due_date, workshop_due_time, stock_writeoff_status, created_at,\n          inventory_obligation_key, inventory_obligation_origin_at"
+        },
+        {
+          "beforeBlock": "          source_type, workshop_comment, workshop_urgent, workshop_due_date, stock_writeoff_status, created_at,\n          inventory_obligation_key, inventory_obligation_origin_at",
+          "afterBlock": "          source_type, workshop_comment, workshop_urgent, workshop_due_date, workshop_due_time, stock_writeoff_status, created_at,\n          inventory_obligation_key, inventory_obligation_origin_at"
+        },
+        {
+          "beforeBlock": "        item.isWorkshop && item.workshopUrgent ? item.workshopDueDate : null,\n        item.isWorkshop ? 'workshop' :",
+          "afterBlock": "        item.isWorkshop && item.workshopUrgent ? item.workshopDueDate : null,\n        item.isWorkshop && item.workshopUrgent ? (item.workshopDueTime || null) : null,\n        item.isWorkshop ? 'workshop' :"
+        },
+        {
+          "beforeBlock": "        item.isWorkshop && item.workshopUrgent ? item.workshopDueDate : null,\n        item.isWorkshop ? 'workshop' :",
+          "afterBlock": "        item.isWorkshop && item.workshopUrgent ? item.workshopDueDate : null,\n        item.isWorkshop && item.workshopUrgent ? (item.workshopDueTime || null) : null,\n        item.isWorkshop ? 'workshop' :"
+        },
+        {
+          "beforeBlock": "      quantity, comment, urgent, due_date, status, created_at, updated_at\n    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)",
+          "afterBlock": "      quantity, comment, urgent, due_date, due_time, status, created_at, updated_at\n    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)"
+        },
+        {
+          "beforeBlock": "    item.workshopUrgent ? item.workshopDueDate : null,\n    timestamp,\n    timestamp,",
+          "afterBlock": "    item.workshopUrgent ? item.workshopDueDate : null,\n    item.workshopUrgent ? (item.workshopDueTime || null) : null,\n    timestamp,\n    timestamp,"
+        },
+        {
+          "beforeBlock": "      workshopUrgent: Boolean((item as any).workshop_urgent),\n      workshopDueDate: (item as any).workshop_due_date || '',\n      workshopTaskStatus:",
+          "afterBlock": "      workshopUrgent: Boolean((item as any).workshop_urgent),\n      workshopDueDate: (item as any).workshop_due_date || '',\n      workshopDueTime: (item as any).workshop_due_time || '',\n      workshopTaskStatus:"
+        }
+      ]
+    },
+    "worker/domains/workshop.ts": {
+      "beforeGitBlob": "e630158838d187d42369606f368cea15a8e965f2",
+      "afterGitBlob": "956298556063bf66786bddddff72b0a225e0cd06",
+      "beforeLines": 936,
+      "afterLines": 938,
+      "replacements": [
+        {
+          "beforeBlock": "      wt.urgent,\n      wt.due_date,\n      wt.status,",
+          "afterBlock": "      wt.urgent,\n      wt.due_date,\n      ${wtColumn('due_time')} AS due_time,\n      wt.status,"
+        },
+        {
+          "beforeBlock": "      urgent: Boolean(toInt(row.urgent, 0)),\n      dueDate: cleanText(row.due_date),\n      status: cleanText(row.status),",
+          "afterBlock": "      urgent: Boolean(toInt(row.urgent, 0)),\n      dueDate: cleanText(row.due_date),\n      dueTime: cleanText(row.due_time),\n      status: cleanText(row.status),"
+        }
+      ]
+    }
+  }
+}
