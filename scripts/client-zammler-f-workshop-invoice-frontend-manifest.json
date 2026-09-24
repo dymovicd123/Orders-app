@@ -4,9 +4,9 @@
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "be3e859383d863d14cf22fc3e7ac49a5f098593c",
-      "afterGitBlob": "0476dcd8647853bf13839a52683e4709aaaa8e02",
+      "afterGitBlob": "c79f58047b2c29a2696943044bc3634b316506b1",
       "beforeLines": 7565,
-      "afterLines": 7584,
+      "afterLines": 7583,
       "baselineFixture": "scripts/fixtures/client-zammler-f/App.tsx"
     },
     "src/app/controllers/useOperationalViewModel.ts": {

@@ -954,7 +954,6 @@ function App() {
     selectedInventoryOperationGroup,
     selectedInventoryOperationItems,
     selectedOrder,
-    selectedWorkshopTasks,
     summary,
     updateInventoryArrivalPosition,
     updateInventoryArrivalSize,
