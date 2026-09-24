@@ -11,7 +11,6 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
     exportWorkshopInvoiceWord,
     formatDateShort,
     getPeriodRange,
-    getWorkshopInvoiceDeadlineLabel,
     getWorkshopInvoiceImportanceLabel,
     markWorkshopTaskDone,
     openWorkshopExchange,
@@ -27,7 +26,6 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
     workshopData,
     workshopDetailRows,
     workshopFilters,
-    workshopInvoiceIsZammler,
     workshopInvoiceMode,
     workshopInvoiceRows,
     workshopScopeTasks,
@@ -128,8 +126,8 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
               </div>
     
               <div className={`workshop-mode-note workshop-mode-${workshopFilters.view}`}>
-                <strong>{workshopFilters.view === 'active' ? 'Активные позиции' : workshopFilters.view === 'urgent' ? 'Срочные активные позиции' : workshopFilters.view === 'done' ? 'Готовые позиции' : workshopInvoiceIsZammler ? 'Накладная ЗАММЛЕР' : 'Накладная цеха'}</strong>
-                <span>{workshopFilters.view === 'active' ? 'Список отсортирован только по дате: сначала ранние или сначала поздние. Срочные вынесены в отдельную вкладку.' : workshopFilters.view === 'urgent' ? 'Показываются только срочные и ещё не готовые позиции. В обычную срочную накладную ЗАММЛЕР не входит.' : workshopFilters.view === 'done' ? 'Здесь позиции, которые уже отмечены готовыми. Их можно вернуть обратно в активные.' : workshopInvoiceIsZammler ? 'Только активные позиции заказов с доставкой ЗАММЛЕР. Каждая строка остаётся привязана к своему заказу и сроку.' : 'Срочные заказы всегда сверху и целиком, затем заказы с комментариями, обычные одинаковые изделия объединяются. ЗАММЛЕР вынесен отдельно.'}</span>
+                <strong>{workshopFilters.view === 'active' ? 'Активные позиции' : workshopFilters.view === 'urgent' ? 'Срочные активные позиции' : workshopFilters.view === 'done' ? 'Готовые позиции' : 'Накладная цеха'}</strong>
+                <span>{workshopFilters.view === 'active' ? 'Список отсортирован только по дате: сначала ранние или сначала поздние. Срочные вынесены в отдельную вкладку.' : workshopFilters.view === 'urgent' ? 'Показываются только срочные и ещё не готовые позиции. Накладную можно скачать сразу из этой вкладки.' : workshopFilters.view === 'done' ? 'Здесь позиции, которые уже отмечены готовыми. Их можно вернуть обратно в активные.' : 'Срочные заказы всегда сверху и целиком, затем заказы с комментариями, обычные одинаковые изделия объединяются.'}</span>
               </div>
     
               <div className="workshop-kpis">
@@ -166,8 +164,8 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
                 <div className="workshop-invoice-summary">
                   <div className="workshop-invoice-summary-head">
                     <div>
-                      <strong>{workshopInvoiceIsZammler ? 'Накладная ЗАММЛЕР' : workshopFilters.view === 'urgent' ? 'Срочная накладная' : 'Накладная таблицей'}</strong>
-                      <span>{workshopInvoiceIsZammler ? 'Только активные ЗАММЛЕР-позиции: товар, характеристики, количество, срок, комментарий и заказ.' : workshopFilters.view === 'urgent' ? 'Только срочные активные позиции без ЗАММЛЕР за выбранный период.' : 'Сначала срочные заказы целиком, затем заказы с комментариями, затем обычные суммированные позиции. ЗАММЛЕР сюда не входит.'}</span>
+                      <strong>{workshopFilters.view === 'urgent' ? 'Срочная накладная' : 'Накладная таблицей'}</strong>
+                      <span>{workshopFilters.view === 'urgent' ? 'Только срочные активные позиции за выбранный период.' : 'Сначала срочные заказы целиком, затем заказы с комментариями, затем обычные суммированные позиции.'}</span>
                     </div>
                     <span>{workshopInvoiceRows.length} строк · {workshopScopeTasks.reduce((sum, task) => sum + Number(task.quantity || 0), 0)} шт.</span>
                   </div>
@@ -206,24 +204,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
                         setWorkshopFilters(next)
                       }}
                     >Срочные за период</button>
-                    <button
-                      className={`secondary compact ${workshopInvoiceIsZammler ? 'is-active' : ''}`}
-                      type="button"
-                      onClick={() => {
-                        setWorkshopInvoiceMode('zammler')
-                        const fallback = getPeriodRange('month')
-                        const next = {
-                          ...workshopFilters,
-                          view: 'invoice' as WorkshopView,
-                          urgentOnly: false,
-                          period: (!workshopFilters.dateFrom || !workshopFilters.dateTo) ? 'month' as WorkshopPeriodPreset : workshopFilters.period,
-                          dateFrom: workshopFilters.dateFrom || fallback.dateFrom,
-                          dateTo: workshopFilters.dateTo || fallback.dateTo,
-                        }
-                        setWorkshopFilters(next)
-                      }}
-                    >ЗАММЛЕР</button>
-                    <span>{workshopInvoiceIsZammler ? 'Только заказы ЗАММЛЕР. Срок берётся из даты и времени Цеха.' : workshopFilters.view === 'urgent' ? 'Берутся только срочные активные позиции без ЗАММЛЕР. Период можно выбрать сверху.' : 'Дата управляется кнопками Сегодня / Вчера / Месяц / Период. ЗАММЛЕР вынесен в отдельную накладную.'}</span>
+                    <span>{workshopFilters.view === 'urgent' ? 'Берутся только срочные активные позиции. Период можно выбрать сверху.' : 'Дата управляется кнопками Сегодня / Вчера / Месяц / Период.'}</span>
                   </div>
                   <div className="table-shell">
                     <table className="data-table workshop-simple-invoice-table">
@@ -232,7 +213,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
                           <th>Изделие</th>
                           <th>Характеристики</th>
                           <th>Кол-во</th>
-                          <th>{workshopInvoiceIsZammler ? 'Срок' : 'Срочность'}</th>
+                          <th>Срочность</th>
                           <th>Комментарий</th>
                           <th>Заказ</th>
                         </tr>
@@ -243,12 +224,12 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
                             <td><strong>{row.productName}</strong></td>
                             <td>{row.characteristics || '—'}</td>
                             <td>{row.quantity} шт.</td>
-                            <td>{workshopInvoiceIsZammler ? getWorkshopInvoiceDeadlineLabel(row) : getWorkshopInvoiceImportanceLabel(row)}</td>
+                            <td>{getWorkshopInvoiceImportanceLabel(row)}</td>
                             <td>{row.comment || '—'}</td>
                             <td>{row.orderRef || '—'}</td>
                           </tr>
                         )) : (
-                          <tr><td colSpan={6} className="empty-state">{workshopInvoiceIsZammler ? 'Нет активных позиций ЗАММЛЕР за выбранный период.' : 'Нет позиций для накладной.'}</td></tr>
+                          <tr><td colSpan={6} className="empty-state">Нет позиций для накладной.</td></tr>
                         )}
                       </tbody>
                     </table>

@@ -1,0 +1,46 @@
+import fs from 'node:fs'
+
+const read = (path) => fs.readFileSync(path, 'utf8')
+const check = (condition, message) => { if (!condition) throw new Error(message) }
+
+const app = read('src/App.tsx')
+const types = read('src/app/types.ts')
+const constants = read('src/app/constants.ts')
+const create = read('src/features/sections/CreateOrderSection.tsx')
+const filters = read('src/features/sections/OrderFiltersSection.tsx')
+const table = read('src/features/sections/OrdersTableSection.tsx')
+const workshopUi = read('src/features/sections/WorkshopSection.tsx')
+const operational = read('src/app/controllers/useOperationalViewModel.ts')
+const orderCore = read('worker/domains/order-core.ts')
+const ordersWrite = read('worker/domains/orders-write.ts')
+const ordersRead = read('worker/domains/orders-read.ts')
+const workshop = read('worker/domains/workshop.ts')
+const migration = read('migrations/0075_v72_zammler_workshop_due_time.sql')
+
+check(constants.includes("{ kind: 'zammler', label: 'ЗАММЛЕР'"), 'CLIENT-ZAMMLER PROD: Orders navigation entry missing')
+check(types.includes("export type OrderPanel = 'create' | 'zammler'"), 'CLIENT-ZAMMLER PROD: ZAMMLER order panel type missing')
+check(create.includes("zammlerMode = false") && create.includes('Новый заказ ЗАММЛЕР'), 'CLIENT-ZAMMLER PROD: dedicated create surface missing')
+check(create.includes('value="ЗАММЛЕР"') && create.includes('value="КАСПИ МАГАЗИН"'), 'CLIENT-ZAMMLER PROD: fixed delivery/payment controls missing')
+check(app.includes("nextItem.workshopDueTime = nextItem.workshopDueTime || '20:00'"), 'CLIENT-ZAMMLER PROD: Workshop default time 20:00 missing')
+check(app.includes("orderPanel === 'zammler' ? createZammlerOrderDraftWithDefaultManager()"), 'CLIENT-ZAMMLER PROD: dedicated draft reset missing')
+
+check(app.includes("!['list', 'zammler'].includes(orderPanel)"), 'CLIENT-ZAMMLER PROD: ZAMMLER list load path missing')
+check(app.includes("orderPanel === 'zammler') params.set('deliveryType', 'ЗАММЛЕР')"), 'CLIENT-ZAMMLER PROD: exact ZAMMLER delivery query missing')
+check(ordersRead.includes("const deliveryType = cleanText(url.searchParams.get('deliveryType'));"), 'CLIENT-ZAMMLER PROD: Worker delivery parameter missing')
+check(ordersRead.includes("baseWhereParts.push(\"COALESCE(o.delivery_type, '') = ?\")"), 'CLIENT-ZAMMLER PROD: exact delivery SQL filter missing')
+check(filters.includes("listPanel = 'list'") && table.includes("zammlerListMode = false"), 'CLIENT-ZAMMLER PROD: shared list UI did not retain ordinary Orders defaults')
+
+check(types.includes('workshopDueTime?: string') && types.includes('dueTime: string'), 'CLIENT-ZAMMLER PROD: due-time types missing')
+check(orderCore.includes('normalizeWorkshopDueTimeInput') && orderCore.includes('workshopDueTime:'), 'CLIENT-ZAMMLER PROD: due-time validation/normalization missing')
+check(ordersWrite.includes('workshop_due_time') && ordersWrite.includes('due_time'), 'CLIENT-ZAMMLER PROD: due time is not persisted end-to-end')
+check(workshop.includes("${wtColumn('due_time')} AS due_time") && workshop.includes('dueTime: cleanText(row.due_time)'), 'CLIENT-ZAMMLER PROD: Workshop read path missing due time')
+check(migration.includes('ALTER TABLE order_items ADD COLUMN workshop_due_time TEXT') && migration.includes('ALTER TABLE workshop_tasks ADD COLUMN due_time TEXT'), 'CLIENT-ZAMMLER PROD: additive Production schema missing')
+
+check(app.includes("useState<'urgent' | 'period' | 'zammler'>('period')"), 'CLIENT-ZAMMLER PROD: ZAMMLER invoice mode missing')
+check(operational.includes("normalizeSuggestion(task.deliveryType) === 'ЗАММЛЕР'"), 'CLIENT-ZAMMLER PROD: ZAMMLER invoice scope is not exact')
+check(operational.includes("normalizeSuggestion(task.deliveryType) !== 'ЗАММЛЕР'"), 'CLIENT-ZAMMLER PROD: ordinary invoice does not exclude ZAMMLER')
+check(operational.includes("return dueKey < nowKey ? `Просрочено · ${deadline}`"), 'CLIENT-ZAMMLER PROD: overdue deadline label missing')
+check(workshopUi.includes('>ЗАММЛЕР</button>') && workshopUi.includes("workshopInvoiceIsZammler ? 'Срок' : 'Срочность'"), 'CLIENT-ZAMMLER PROD: separate Workshop invoice UI missing')
+check(!app.includes('zammler_orders') && !ordersWrite.includes('zammler_orders') && !operational.includes('zammler_invoice_items'), 'CLIENT-ZAMMLER PROD: parallel ZAMMLER data model is forbidden')
+
+console.log('CLIENT-ZAMMLER PRODUCTION RUNTIME PASSED — dedicated create/list + Workshop invoice reuse the existing order model, exact delivery filter, editable due time, and ordinary Orders/Workshop defaults remain intact')

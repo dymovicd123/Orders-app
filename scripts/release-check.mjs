@@ -230,6 +230,7 @@ try {
   run('Stage03-C catalog price UI', process.execPath, [path.join(root, 'scripts/test-stage03-c-catalog-price-ui.mjs')])
   run('Stage03-C1 SKU card layout', process.execPath, [path.join(root, 'scripts/test-stage03-c1-sku-card-layout.mjs')])
   run('Stage03-C2 price UI polish', process.execPath, [path.join(root, 'scripts/test-stage03-c2-price-ui-polish.mjs')])
+  run('CLIENT-ZAMMLER Production runtime', process.execPath, [path.join(root, 'scripts/test-client-zammler-production-runtime.mjs')])
   run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])

@@ -41,7 +41,14 @@ try {
   check(orders.includes('<th>Дата / заказ</th>') && !orders.includes('<th>Дата / ID</th>'), 'Orders table still uses technical ID wording')
   check(debts.includes('<th>Дата / заказ</th>') && !debts.includes('<th>Дата / ID</th>'), 'Debt table still uses technical ID wording')
   check(filters.includes('placeholder="Заказ, клиент, менеджер, город, товар или комментарий"'), 'Order search placeholder was not humanized')
-  check(app.includes("'Изделие | Характеристики | Кол-во | Срочность | Комментарий | Заказ'"), 'Workshop text export header is not humanized')
+  check(
+    app.includes("'Изделие | Характеристики | Кол-во | Срочность | Комментарий | Заказ'")
+      || (
+        app.includes("return workshopInvoiceIsZammler ? 'Срок' : 'Срочность'")
+        && app.includes('`Изделие | Характеристики | Кол-во | ${workshopInvoiceTimingHeader()} | Комментарий | Заказ`')
+      ),
+    'Workshop text export header is not humanized',
+  )
 
   for (const forbidden of ['Показываю последние подходящие заказы из D1.', 'Фильтр работает через SQL.', '<div className="card-label">Worker</div>']) {
     check(!app.includes(forbidden), `overview still exposes developer wording: ${forbidden}`)
