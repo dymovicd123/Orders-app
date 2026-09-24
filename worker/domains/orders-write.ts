@@ -440,7 +440,7 @@ export async function insertOrderContent(
           size_snapshot, quantity, unit_price, line_total, catalog_price_snapshot, is_workshop,
           source_type, workshop_comment, workshop_urgent, workshop_due_date, workshop_due_time, stock_writeoff_status, created_at,
           inventory_obligation_key, inventory_obligation_origin_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         ...commonOrderItemValues,
         itemizedLine?.catalogPriceSnapshot ?? null,
@@ -462,7 +462,7 @@ export async function insertOrderContent(
           size_snapshot, quantity, unit_price, line_total, is_workshop,
           source_type, workshop_comment, workshop_urgent, workshop_due_date, workshop_due_time, stock_writeoff_status, created_at,
           inventory_obligation_key, inventory_obligation_origin_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         ...commonOrderItemValues,
         item.isWorkshop ? 1 : 0,

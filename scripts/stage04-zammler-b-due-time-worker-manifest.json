@@ -36,7 +36,7 @@
     },
     "worker/domains/orders-write.ts": {
       "beforeGitBlob": "36f71e577b794a28c7b4bd622c1c2942c22e05df",
-      "afterGitBlob": "1f2620f680135326d2e22f6ca86df53139588ff0",
+      "afterGitBlob": "fbf1cc3034fa3fe0d2982fda4ddc45c0fdbfa539",
       "beforeLines": 1783,
       "afterLines": 1788,
       "replacements": [
@@ -71,6 +71,14 @@
         {
           "beforeBlock": "      workshopUrgent: Boolean((item as any).workshop_urgent),\n      workshopDueDate: (item as any).workshop_due_date || '',\n      workshopTaskStatus:",
           "afterBlock": "      workshopUrgent: Boolean((item as any).workshop_urgent),\n      workshopDueDate: (item as any).workshop_due_date || '',\n      workshopDueTime: (item as any).workshop_due_time || '',\n      workshopTaskStatus:"
+        },
+        {
+          "beforeBlock": "        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`",
+          "afterBlock": "        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`"
+        },
+        {
+          "beforeBlock": "        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`",
+          "afterBlock": "        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`"
         }
       ]
     },
