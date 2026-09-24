@@ -4,7 +4,7 @@
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "58a88b909eef32f06fdbf815dfbf6f26f0514147",
-      "afterGitBlob": "0c372d5b2e174cf7c9346b84aab42cef375174fb",
+      "afterGitBlob": "d0496155439938875979a5c32d58582d41fa83f8",
       "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/src/App.tsx"
     },
     "src/app/types.ts": {
@@ -19,12 +19,12 @@
     },
     "src/app/constants.ts": {
       "beforeGitBlob": "4ad1538773436c78ef1276849cfd9c34c7873bde",
-      "afterGitBlob": "af954cf37625b1640298c93e1259bb7596510be2",
+      "afterGitBlob": "6a51f788ab93522c646afa75ea779d76d42252dc",
       "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/src/app/constants.ts"
     },
     "src/features/sections/CreateOrderSection.tsx": {
       "beforeGitBlob": "6fa7c13467c3d6b2c94ddd9fb440aa165971d226",
-      "afterGitBlob": "42a7fbdd1b75b40849df61799a6f716e96eea62f",
+      "afterGitBlob": "03f375c3015e29cb1644a926e63ed9dbffd52797",
       "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/src/features/sections/CreateOrderSection.tsx"
     },
     "src/features/sections/OrderEditorSection.tsx": {
@@ -34,12 +34,12 @@
     },
     "src/features/sections/OrderFiltersSection.tsx": {
       "beforeGitBlob": "2268d227401f3871f384ab062a5f0d6c5722db49",
-      "afterGitBlob": "673d1358f8983656b73508a9f3ffcd968307660b",
+      "afterGitBlob": "2b84790c152e114ab04df8f9566f00c987620509",
       "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/src/features/sections/OrderFiltersSection.tsx"
     },
     "src/features/sections/OrdersTableSection.tsx": {
       "beforeGitBlob": "0b0b0ad22c2c4cf1ec37ff573ca0bca22e0e5078",
-      "afterGitBlob": "50d2badb2fc18dd69cad718356c9f69eec761e1b",
+      "afterGitBlob": "9339d5474a905b34b4cfbf3e1e36702e78f18ae9",
       "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/src/features/sections/OrdersTableSection.tsx"
     },
     "src/features/sections/WorkshopSection.tsx": {
