@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "revision": "client-zammler-f-workshop-invoice",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "be3e859383d863d14cf22fc3e7ac49a5f098593c",
+      "afterGitBlob": "0476dcd8647853bf13839a52683e4709aaaa8e02",
+      "beforeLines": 7565,
+      "afterLines": 7584,
+      "baselineFixture": "scripts/fixtures/client-zammler-f/App.tsx"
+    },
+    "src/app/controllers/useOperationalViewModel.ts": {
+      "beforeGitBlob": "ccdb1966e725f4fa80fe438af5c2135f74b8cfa6",
+      "afterGitBlob": "2e7764820527cac7ae826247617e3e40f9fdb06c",
+      "beforeLines": 1259,
+      "afterLines": 1297,
+      "baselineFixture": "scripts/fixtures/client-zammler-f/useOperationalViewModel.ts"
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "c79f1b1e4c118ff7e1d4cd7e93576000a270b03a",
+      "afterGitBlob": "288d1964dfb3337f333451bc97eb08bb6002cf1b",
+      "beforeLines": 1746,
+      "afterLines": 1748,
+      "baselineFixture": "scripts/fixtures/client-zammler-f/types.ts"
+    },
+    "src/features/sections/WorkshopSection.tsx": {
+      "beforeGitBlob": "d3dc46f1539c43fab3343d82993ab37147851215",
+      "afterGitBlob": "02a57347123f0f1da8074a07670fd78dcc839266",
+      "beforeLines": 336,
+      "afterLines": 355,
+      "baselineFixture": "scripts/fixtures/client-zammler-f/WorkshopSection.tsx"
+    }
+  }
+}

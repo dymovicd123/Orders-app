@@ -225,7 +225,7 @@ function App() {
     q: '',
   })
   const [selectedWorkshopTaskIds, setSelectedWorkshopTaskIds] = useState<number[]>([])
-  const [workshopInvoiceMode, setWorkshopInvoiceMode] = useState<'urgent' | 'period' | 'zammler'>('period')
+  const [workshopInvoiceMode, setWorkshopInvoiceMode] = useState<'urgent' | 'period'>('period')
   const [workshopSortDirection, setWorkshopSortDirection] = useState<'oldest' | 'newest'>('oldest')
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -908,7 +908,6 @@ function App() {
     getCatalogProductEffectiveCategory,
     getInventoryRowCategory,
     getStockQuantityForVariant,
-    getWorkshopInvoiceDeadlineLabel,
     getWorkshopInvoiceImportanceLabel,
     groupedInventoryRows,
     hasInventoryQuickFilters,
@@ -960,7 +959,6 @@ function App() {
     updateInventoryArrivalSize,
     variantsForProduct,
     visibleCatalogProducts,
-    workshopInvoiceIsZammler,
     workshopInvoiceRows,
     workshopScopeTasks,
   } = useOperationalViewModel({
@@ -1008,7 +1006,6 @@ function App() {
     setSelectedWorkshopTaskIds,
     workshopData,
     workshopFilters,
-    workshopInvoiceMode,
     workshopSortDirection,
   })
   const openInventoryPanel = (panel: InventoryPanel) => {
@@ -3337,34 +3334,18 @@ function App() {
     }
   }
 
-  function workshopInvoiceDocumentTitle() {
-    return workshopInvoiceIsZammler ? 'Накладная ЗАММЛЕР' : 'Накладная цеха'
-  }
-
-  function workshopInvoiceTimingHeader() {
-    return workshopInvoiceIsZammler ? 'Срок' : 'Срочность'
-  }
-
-  function workshopInvoiceTimingLabel(row: WorkshopInvoiceRow) {
-    return workshopInvoiceIsZammler ? getWorkshopInvoiceDeadlineLabel(row) : getWorkshopInvoiceImportanceLabel(row)
-  }
-
-  function workshopInvoiceFileStem() {
-    return workshopInvoiceIsZammler ? 'workshop-zammler-invoice' : 'workshop-invoice'
-  }
-
   function buildWorkshopInvoiceText() {
     const lines = [
-      workshopInvoiceDocumentTitle(),
+      `Накладная цеха`,
       `Период: ${formatDateShort(workshopFilters.dateFrom)} — ${formatDateShort(workshopFilters.dateTo)}`,
-      `Позиций в накладной: ${workshopScopeTasks.length}`,
+      selectedWorkshopTasks.length ? `Выбрано позиций: ${selectedWorkshopTasks.length}` : `Позиций в фильтре: ${activeWorkshopTasks.length}`,
       '',
-      `Изделие | Характеристики | Кол-во | ${workshopInvoiceTimingHeader()} | Комментарий | Заказ`,
+      'Изделие | Характеристики | Кол-во | Срочность | Комментарий | Заказ',
       ...workshopInvoiceRows.map((row) => [
         row.productName,
         row.characteristics || '—',
         `${row.quantity} шт.`,
-        workshopInvoiceTimingLabel(row),
+        getWorkshopInvoiceImportanceLabel(row),
         row.comment || '—',
         row.orderRef || '—',
       ].join(' | ')),
@@ -3376,7 +3357,7 @@ function App() {
     const text = buildWorkshopInvoiceText()
     try {
       await navigator.clipboard.writeText(text)
-      setMessage(`${workshopInvoiceDocumentTitle()} скопирована в буфер обмена.`)
+      setMessage('Накладная скопирована в буфер обмена.')
     } catch {
       setError('Не удалось скопировать накладную. Используйте скачивание Word или PDF.')
     }
@@ -3388,16 +3369,16 @@ function App() {
         <td>${htmlEscape(row.productName)}</td>
         <td>${htmlEscape(row.characteristics || '—')}</td>
         <td>${row.quantity}</td>
-        <td>${htmlEscape(workshopInvoiceTimingLabel(row))}</td>
+        <td>${htmlEscape(getWorkshopInvoiceImportanceLabel(row))}</td>
         <td>${htmlEscape(row.comment || '—')}</td>
         <td>${htmlEscape(row.orderRef || '—')}</td>
       </tr>`).join('')
 
     return `
       <style>@page{size:A4 landscape;margin:8mm;}</style>
-      <p class="note"><strong>Период:</strong> ${htmlEscape(formatDateShort(workshopFilters.dateFrom))} — ${htmlEscape(formatDateShort(workshopFilters.dateTo))} · позиций в накладной ${workshopScopeTasks.length}${pageLabel ? ` · ${htmlEscape(pageLabel)}` : ''}</p>
+      <p class="note"><strong>Период:</strong> ${htmlEscape(formatDateShort(workshopFilters.dateFrom))} — ${htmlEscape(formatDateShort(workshopFilters.dateTo))} · ${selectedWorkshopTasks.length ? `выбрано ${selectedWorkshopTasks.length}` : `позиций в фильтре ${activeWorkshopTasks.length}`}${pageLabel ? ` · ${htmlEscape(pageLabel)}` : ''}</p>
       <table class="data-table strict-report-table">
-        <thead><tr><th>Изделие</th><th>Характеристики</th><th>Кол-во</th><th>${htmlEscape(workshopInvoiceTimingHeader())}</th><th>Комментарий</th><th>Заказ</th></tr></thead>
+        <thead><tr><th>Изделие</th><th>Характеристики</th><th>Кол-во</th><th>Срочность</th><th>Комментарий</th><th>Заказ</th></tr></thead>
         <tbody>${detailRows || '<tr><td colspan="6">Нет позиций</td></tr>'}</tbody>
       </table>`
   }
@@ -3429,14 +3410,14 @@ function App() {
       const rows = [
         new TableRow({
           tableHeader: true,
-          children: ['Изделие', 'Характеристики', 'Кол-во', workshopInvoiceTimingHeader(), 'Комментарий', 'Заказ'].map((text) => makeCell(text, true)),
+          children: ['Изделие', 'Характеристики', 'Кол-во', 'Срочность', 'Комментарий', 'Заказ'].map((text) => makeCell(text, true)),
         }),
         ...workshopInvoiceRows.map((row) => new TableRow({
           children: [
             makeCell(row.productName),
             makeCell(row.characteristics || '—'),
             makeCell(String(row.quantity)),
-            makeCell(workshopInvoiceTimingLabel(row)),
+            makeCell(getWorkshopInvoiceImportanceLabel(row)),
             makeCell(row.comment || '—'),
             makeCell(row.orderRef || '—'),
           ],
@@ -3452,13 +3433,13 @@ function App() {
           },
           children: [
             new Paragraph({
-              text: workshopInvoiceDocumentTitle(),
+              text: 'Накладная цеха',
               heading: HeadingLevel.HEADING_1,
               alignment: AlignmentType.CENTER,
               spacing: { after: 120 },
             }),
             new Paragraph({
-              text: `Период: ${formatDateShort(workshopFilters.dateFrom)} — ${formatDateShort(workshopFilters.dateTo)} · позиций в накладной ${workshopScopeTasks.length}`,
+              text: `Период: ${formatDateShort(workshopFilters.dateFrom)} — ${formatDateShort(workshopFilters.dateTo)} · ${selectedWorkshopTasks.length ? `выбрано ${selectedWorkshopTasks.length}` : `позиций в фильтре ${activeWorkshopTasks.length}`}`,
               spacing: { after: 160 },
             }),
             new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } }),
@@ -3466,8 +3447,8 @@ function App() {
         }],
       })
       const blob = await Packer.toBlob(documentFile)
-      downloadBlobFile(blob, `${workshopInvoiceFileStem()}-${workshopFilters.dateFrom}-${workshopFilters.dateTo}.docx`)
-      setMessage(`${workshopInvoiceDocumentTitle()} Word скачана в формате DOCX.`)
+      downloadBlobFile(blob, `workshop-invoice-${workshopFilters.dateFrom}-${workshopFilters.dateTo}.docx`)
+      setMessage('Накладная Word скачана в формате DOCX.')
     } catch (err) {
       setError(err instanceof Error ? `Не удалось создать Word: ${err.message}` : 'Не удалось создать файл Word.')
     }
@@ -3490,7 +3471,7 @@ function App() {
 
       for (let pageIndex = 0; pageIndex < chunks.length; pageIndex += 1) {
         const iframe = document.createElement('iframe')
-        iframe.title = `${workshopInvoiceDocumentTitle()} — страница ${pageIndex + 1}`
+        iframe.title = `Накладная цеха — страница ${pageIndex + 1}`
         iframe.style.position = 'fixed'
         iframe.style.left = '-20000px'
         iframe.style.top = '0'
@@ -3502,7 +3483,7 @@ function App() {
           const doc = iframe.contentWindow?.document
           if (!doc) throw new Error('браузер не подготовил страницу документа')
           doc.open()
-          doc.write(makeExportHtml(workshopInvoiceDocumentTitle(), buildWorkshopInvoiceHtmlTable(chunks[pageIndex], `страница ${pageIndex + 1} из ${chunks.length}`)))
+          doc.write(makeExportHtml('Накладная цеха', buildWorkshopInvoiceHtmlTable(chunks[pageIndex], `страница ${pageIndex + 1} из ${chunks.length}`)))
           doc.close()
           await new Promise((resolve) => window.setTimeout(resolve, 80))
           const fullHeight = Math.max(700, doc.documentElement.scrollHeight + 24)
@@ -3530,8 +3511,8 @@ function App() {
         }
       }
 
-      pdf.save(`${workshopInvoiceFileStem()}-${workshopFilters.dateFrom}-${workshopFilters.dateTo}.pdf`)
-      setMessage(`${workshopInvoiceDocumentTitle()} PDF скачана.`)
+      pdf.save(`workshop-invoice-${workshopFilters.dateFrom}-${workshopFilters.dateTo}.pdf`)
+      setMessage('Накладная PDF скачана.')
     } catch (err) {
       setError(err instanceof Error ? `Не удалось создать PDF: ${err.message}` : 'Не удалось создать PDF.')
     }
@@ -3539,7 +3520,7 @@ function App() {
 
   function printWorkshopInvoice() {
     const html = buildWorkshopInvoiceHtmlTable().replace(/<script/gi, '&lt;script')
-    printHtmlDocument(workshopInvoiceDocumentTitle(), html)
+    printHtmlDocument('Накладная цеха', html)
   }
 
   async function saveReferenceEntry() {
@@ -7382,7 +7363,7 @@ function removeDebtPayment(index: number) {
         </section>
 
         <DeferredSection active={activeSector === 'workshop'} label="Цех">
-        <WorkshopSection ctx={{ activeWorkshopTasks, applyWorkshopPeriodPreset, copyWorkshopInvoiceText, downloadWorkshopInvoicePdf, exportWorkshopInvoiceWord, formatDateShort, getPeriodRange, getWorkshopInvoiceDeadlineLabel, getWorkshopInvoiceImportanceLabel, isAdmin, markWorkshopTaskDone, openWorkshopExchange, openWorkshopOrderEditor, printWorkshopInvoice, restoreWorkshopTaskActive, sectorStyle, setWorkshopFilters, setWorkshopInvoiceMode, setWorkshopSortDirection, workshopBusy, workshopCustomerIdentity, workshopData, workshopDetailRows, workshopFilters, workshopInvoiceIsZammler, workshopInvoiceMode, workshopInvoiceRows, workshopScopeTasks, workshopSortDirection }} />
+        <WorkshopSection ctx={{ activeWorkshopTasks, applyWorkshopPeriodPreset, copyWorkshopInvoiceText, downloadWorkshopInvoicePdf, exportWorkshopInvoiceWord, formatDateShort, getPeriodRange, getWorkshopInvoiceImportanceLabel, isAdmin, markWorkshopTaskDone, openWorkshopExchange, openWorkshopOrderEditor, printWorkshopInvoice, restoreWorkshopTaskActive, sectorStyle, setWorkshopFilters, setWorkshopInvoiceMode, setWorkshopSortDirection, workshopBusy, workshopCustomerIdentity, workshopData, workshopDetailRows, workshopFilters, workshopInvoiceMode, workshopInvoiceRows, workshopScopeTasks, workshopSortDirection }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders'} label="Заказы">

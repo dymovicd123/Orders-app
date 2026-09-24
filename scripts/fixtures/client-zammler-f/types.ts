@@ -1525,7 +1525,6 @@ export type WorkshopInvoiceRow = {
   urgent: boolean
   hasComment: boolean
   isSpecialOrder: boolean
-  isZammler: boolean
   orderId: number
   orderDate: string
   productName: string
@@ -1534,7 +1533,6 @@ export type WorkshopInvoiceRow = {
   orderRef: string
   comment: string
   dueDate: string
-  dueTime: string
 }
 
 
