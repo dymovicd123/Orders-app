@@ -366,12 +366,7 @@ const summary = useMemo(() => {
     const timeLabel = String(row.dueTime || '').trim()
     const deadline = [dateLabel, timeLabel].filter(Boolean).join(' · ')
     if (!deadline) return 'Срок не указан'
-    if (!row.dueDate) return `до ${deadline}`
-    const now = new Date()
-    const pad = (value: number) => String(value).padStart(2, '0')
-    const nowKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`
-    const dueKey = `${row.dueDate}T${timeLabel || '23:59'}`
-    return dueKey < nowKey ? `Просрочено · ${deadline}` : `до ${deadline}`
+    return `до ${deadline}`
   }
 
   const debtOrders = useMemo(() => {
