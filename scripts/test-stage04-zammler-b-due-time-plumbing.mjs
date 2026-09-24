@@ -22,11 +22,16 @@ check(orderCore.includes("workshopDueTime: Boolean(item?.workshopUrgent) ? norma
 check(orderCore.includes("(left.workshopDueTime || '') === (right.workshopDueTime || '')"), 'Order edit comparison must include due time')
 
 check(ordersWrite.includes('workshop_due_date, workshop_due_time'), 'Order-item due time persistence missing')
-const orderItemInsertArities = [...ordersWrite.matchAll(/INSERT INTO order_items \\(([\\s\\S]*?)\\)\\s*VALUES \\(([^\`]*?)\\)\`/g)].map((match) => ({
-  columns: match[1].split(',').map((value) => value.trim()).filter(Boolean).length,
-  placeholders: (match[2].match(/\\?/g) || []).length,
-}))
-check(orderItemInsertArities.length === 2, 'Expected both itemized and legacy order_items INSERT statements')
+const orderItemInsertBlocks = ordersWrite.split('INSERT INTO order_items (').slice(1, 3)
+check(orderItemInsertBlocks.length === 2, 'Expected both itemized and legacy order_items INSERT statements')
+const orderItemInsertArities = orderItemInsertBlocks.map((block) => {
+  const parts = block.split(') VALUES (')
+  check(parts.length >= 2, 'order_items INSERT VALUES block missing')
+  const columns = parts[0].split(',').map((value) => value.trim()).filter(Boolean).length
+  const values = parts[1].split(')`')[0]
+  const placeholders = (values.match(/\?/g) || []).length
+  return { columns, placeholders }
+})
 check(orderItemInsertArities.every((entry) => entry.columns === entry.placeholders), 'order_items INSERT column/binding arity mismatch')
 check(ordersWrite.includes('due_date, due_time, status'), 'Workshop-task due time persistence missing')
 check(ordersWrite.includes("workshop_due_time = NULL"), 'Retired/replaced item must clear due time')
