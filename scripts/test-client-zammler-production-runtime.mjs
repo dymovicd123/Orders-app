@@ -41,7 +41,7 @@ check(migration.includes('ALTER TABLE order_items ADD COLUMN workshop_due_time T
 check(app.includes("useState<'urgent' | 'period' | 'zammler'>('period')"), 'CLIENT-ZAMMLER PROD: ZAMMLER invoice mode missing')
 check(operational.includes("normalizeSuggestion(task.deliveryType) === 'ЗАММЛЕР'"), 'CLIENT-ZAMMLER PROD: ZAMMLER invoice scope is not exact')
 check(operational.includes("normalizeSuggestion(task.deliveryType) !== 'ЗАММЛЕР'"), 'CLIENT-ZAMMLER PROD: ordinary invoice does not exclude ZAMMLER')
-check(operational.includes("return dueKey < nowKey ? `Просрочено · ${deadline}`"), 'CLIENT-ZAMMLER PROD: overdue deadline label missing')
+check(operational.includes("return `до ${deadline}`") && !operational.includes('Просрочено ·'), 'CLIENT-ZAMMLER PROD: ZAMMLER deadline must stay neutral without overdue blame wording')
 check(workshopUi.includes('>ЗАММЛЕР</button>') && workshopUi.includes("workshopInvoiceIsZammler ? 'Срок' : 'Срочность'"), 'CLIENT-ZAMMLER PROD: separate Workshop invoice UI missing')
 check(!app.includes('zammler_orders') && !ordersWrite.includes('zammler_orders') && !operational.includes('zammler_invoice_items'), 'CLIENT-ZAMMLER PROD: parallel ZAMMLER data model is forbidden')
 

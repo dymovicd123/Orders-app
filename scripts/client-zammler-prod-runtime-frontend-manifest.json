@@ -49,7 +49,7 @@
     },
     "src/app/controllers/useOperationalViewModel.ts": {
       "beforeGitBlob": "ccdb1966e725f4fa80fe438af5c2135f74b8cfa6",
-      "afterGitBlob": "2e7764820527cac7ae826247617e3e40f9fdb06c",
+      "afterGitBlob": "5461f2e1f6fc81956564b4be8dfbf0dbab2ad452",
       "baselineFixture": "scripts/fixtures/client-zammler-prod-runtime/src/app/controllers/useOperationalViewModel.ts"
     }
   }
