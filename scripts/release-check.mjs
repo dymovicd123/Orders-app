@@ -251,6 +251,7 @@ try {
   run('Stage03-H6J adjacent surfaces isolation', process.execPath, [path.join(root, 'scripts/test-stage03-h6j-adjacent-surfaces-isolation.mjs')])
   run('Stage04-ZAMMLER-A foundation', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-a-foundation.mjs')])
   run('Stage04-ZAMMLER-B due-time plumbing', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-b-due-time-plumbing.mjs')])
+  run('Stage04-ZAMMLER-C create form', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-c-create-form.mjs')])
   run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])
