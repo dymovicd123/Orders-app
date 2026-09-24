@@ -3912,7 +3912,12 @@ function App() {
   function removeCreatePayment(index: number) {
     setCreateDraft((current) => {
       const nextPayments = current.payments.filter((_, paymentIndex) => paymentIndex !== index)
-      return { ...current, payments: nextPayments.length ? nextPayments : [createEmptyEditorPayment(current.orderDate)] }
+      const fallback = createEmptyEditorPayment(current.orderDate)
+      const payments = nextPayments.length ? nextPayments : [fallback]
+      if (orderPanel === 'zammler') {
+        payments[0] = { ...payments[0], method: 'КАСПИ МАГАЗИН' }
+      }
+      return { ...current, payments }
     })
   }
 
