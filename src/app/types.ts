@@ -15,6 +15,7 @@ export type OrderItem = {
   workshopComment?: string
   workshopUrgent?: boolean
   workshopDueDate?: string
+  workshopDueTime?: string
   stockObservationEnabled?: boolean
   observedPhysicalQuantity?: number | null
   shortageAcknowledged?: boolean
@@ -814,6 +815,7 @@ export type OrderRecord = {
     workshopComment?: string | null
     workshopUrgent?: boolean
     workshopDueDate?: string | null
+    workshopDueTime?: string | null
     isWorkshop?: boolean
     workshopTaskStatus?: string | null
     originalSnapshot?: {
@@ -1379,6 +1381,7 @@ export type WorkshopTaskRecord = {
   comment: string
   urgent: boolean
   dueDate: string
+  dueTime: string
   status: 'active' | 'ready' | 'done' | 'cancelled' | string
   orderDate: string
   managerId: number
