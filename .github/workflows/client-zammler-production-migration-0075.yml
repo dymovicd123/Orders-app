@@ -1,0 +1,103 @@
+name: CLIENT-ZAMMLER Production migration 0075
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/client-zammler-production-migration-0075.yml'
+      - 'migrations/0075_v72_zammler_workshop_due_time.sql'
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: Apply CLIENT-ZAMMLER 0075 to Production D1
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout exact main commit
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on environment or migration drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "main" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders_db_branch2' wrangler.jsonc || grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc; then
+            echo "Branch2 D1 binding detected. Refusing Production migration." >&2
+            exit 20
+          fi
+          migration='migrations/0075_v72_zammler_workshop_due_time.sql'
+          grep -Fq 'ALTER TABLE order_items ADD COLUMN workshop_due_time TEXT' "$migration"
+          grep -Fq 'ALTER TABLE workshop_tasks ADD COLUMN due_time TEXT' "$migration"
+          if grep -Eiq '\b(INSERT|UPDATE|DELETE)\b' "$migration"; then
+            echo "0075 must remain schema-only." >&2
+            exit 21
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Apply missing columns and verify Production invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM workshop_tasks) AS workshop_tasks_count,
+            (SELECT COUNT(*) FROM reference_values WHERE kind = 'delivery_type' AND value = 'ЗАММЛЕР' AND is_active = 1) AS zammler_delivery,
+            (SELECT COUNT(*) FROM reference_values WHERE kind = 'delivery_type' AND value = 'ZAMMLER') AS latin_duplicate,
+            (SELECT COUNT(*) FROM orders WHERE delivery_type = 'ZAMMLER') AS latin_order_count,
+            (SELECT COUNT(*) FROM pragma_table_info('order_items') WHERE name = 'workshop_due_time') AS order_item_due_time,
+            (SELECT COUNT(*) FROM pragma_table_info('workshop_tasks') WHERE name = 'due_time') AS workshop_due_time" --json)"
+          echo "$before"
+
+          [[ "$(jq -r '.[0].results[0].zammler_delivery // 0' <<<"$before")" -ge 1 ]]
+          [[ "$(jq -r '.[0].results[0].latin_duplicate // 0' <<<"$before")" == "0" ]]
+          [[ "$(jq -r '.[0].results[0].latin_order_count // 0' <<<"$before")" == "0" ]]
+
+          oi="$(jq -r '.[0].results[0].order_item_due_time // 0' <<<"$before")"
+          wt="$(jq -r '.[0].results[0].workshop_due_time // 0' <<<"$before")"
+          [[ "$oi" == "0" || "$oi" == "1" ]]
+          [[ "$wt" == "0" || "$wt" == "1" ]]
+
+          if [[ "$oi" == "0" ]]; then
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "ALTER TABLE order_items ADD COLUMN workshop_due_time TEXT"
+          fi
+          if [[ "$wt" == "0" ]]; then
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "ALTER TABLE workshop_tasks ADD COLUMN due_time TEXT"
+          fi
+
+          after="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM workshop_tasks) AS workshop_tasks_count,
+            (SELECT COUNT(*) FROM reference_values WHERE kind = 'delivery_type' AND value = 'ЗАММЛЕР' AND is_active = 1) AS zammler_delivery,
+            (SELECT COUNT(*) FROM reference_values WHERE kind = 'delivery_type' AND value = 'ZAMMLER') AS latin_duplicate,
+            (SELECT COUNT(*) FROM pragma_table_info('order_items') WHERE name = 'workshop_due_time') AS order_item_due_time,
+            (SELECT COUNT(*) FROM pragma_table_info('workshop_tasks') WHERE name = 'due_time') AS workshop_due_time" --json)"
+          echo "$after"
+
+          for field in orders_count order_items_count workshop_tasks_count; do
+            [[ "$(jq -r ".[0].results[0].$field" <<<"$after")" == "$(jq -r ".[0].results[0].$field" <<<"$before")" ]]
+          done
+          [[ "$(jq -r '.[0].results[0].zammler_delivery // 0' <<<"$after")" -ge 1 ]]
+          [[ "$(jq -r '.[0].results[0].latin_duplicate // 0' <<<"$after")" == "0" ]]
+          [[ "$(jq -r '.[0].results[0].order_item_due_time // 0' <<<"$after")" == "1" ]]
+          [[ "$(jq -r '.[0].results[0].workshop_due_time // 0' <<<"$after")" == "1" ]]
+          echo "CLIENT-ZAMMLER 0075 verified on Production D1."
