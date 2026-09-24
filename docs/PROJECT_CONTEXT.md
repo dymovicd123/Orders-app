@@ -182,3 +182,15 @@
 - Step context: Context/CLOUDFLARE_CONTINUATION_CONTEXT_STEP1901_CRITICAL_OPERATION_RELIABILITY.md.
 - Next planned step after production verification: 190.2 Cloudflare bulk-limit corrections.
 <!-- STEP1901_CRITICAL_OPERATION_RELIABILITY_END -->
+
+<!-- CLIENT_ZAMMLER_COMPLETION_20260924_START -->
+## CLIENT-ZAMMLER — separate client request, completed 2026-09-24
+
+- CLIENT-ZAMMLER is **not** roadmap Stage04. Old `Stage04-ZAMMLER` names are historical labels only.
+- Scope completed: dedicated ZAMMLER create surface, exact ZAMMLER order list, editable Workshop due time, and separate operational ZAMMLER Workshop invoice.
+- Existing Orders / Workshop tables are reused; no parallel ZAMMLER order/finance model was added.
+- Production migration 0075 and runtime release are deployed and green.
+- Roadmap Stage04 remains paused; Stage03 client-policy questions are still unresolved and must not be guessed.
+- Canonical completion record: `docs/continuation/CLIENT_ZAMMLER_COMPLETION_20260924.md`.
+<!-- CLIENT_ZAMMLER_COMPLETION_20260924_END -->
+
