@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "revision": "stage04-zammler-c-create-form",
+  "files": {
+    "src/app/types.ts": {
+      "beforeGitBlob": "625411434d4a8272c96cb1fee7da0d3da1fa1803",
+      "afterGitBlob": "c79f1b1e4c118ff7e1d4cd7e93576000a270b03a",
+      "beforeLines": 1746,
+      "afterLines": 1746,
+      "replacements": [
+        {
+          "beforeBlock": "export type OrderPanel = 'create' | 'list' | 'edit' | 'debt' | 'returns' | 'exchange' | 'activity'",
+          "afterBlock": "export type OrderPanel = 'create' | 'zammler' | 'list' | 'edit' | 'debt' | 'returns' | 'exchange' | 'activity'"
+        }
+      ]
+    },
+    "src/app/constants.ts": {
+      "beforeGitBlob": "4ad1538773436c78ef1276849cfd9c34c7873bde",
+      "afterGitBlob": "af954cf37625b1640298c93e1259bb7596510be2",
+      "beforeLines": 265,
+      "afterLines": 266,
+      "replacements": [
+        {
+          "beforeBlock": "  { kind: 'create', label: 'Создать заказ', help: 'Отдельная форма ввода и сохранения заказа.' },\n  { kind: 'list', label: 'Все заказы', help: 'Таблица, фильтры и детали выбранного заказа.' },",
+          "afterBlock": "  { kind: 'create', label: 'Создать заказ', help: 'Отдельная форма ввода и сохранения заказа.' },\n  { kind: 'zammler', label: 'ЗАММЛЕР', help: 'Отдельная форма заказов ЗАММЛЕР / КАСПИ МАГАЗИН.' },\n  { kind: 'list', label: 'Все заказы', help: 'Таблица, фильтры и детали выбранного заказа.' },"
+        }
+      ]
+    },
+    "src/features/sections/CreateOrderSection.tsx": {
+      "beforeGitBlob": "430910e68928bec9cf8493052c84c622457d5062",
+      "afterGitBlob": "42a7fbdd1b75b40849df61799a6f716e96eea62f",
+      "beforeLines": 444,
+      "afterLines": 455,
+      "replacements": [
+        {
+          "beforeBlock": "    updateCreatePayment,\n  } = ctx\n\n  return (\n    <article className=\"card wide sector-orders\" id=\"create\" style={{ ...sectorStyle('orders'), ...orderPanelStyle('create') }}>\n              <div className=\"create-hero\">\n                <div>\n                  <div className=\"card-label\">Новый заказ</div>\n                  <div className=\"card-meta\">\n                    Заполняйте заказ сверху вниз: клиент → товары → оплата → проверка. Лишних переключателей наверху нет, источник выбирается только внутри товарных позиций.\n                  </div>",
+          "afterBlock": "    updateCreatePayment,\n    zammlerMode = false,\n  } = ctx\n\n  return (\n    <article className=\"card wide sector-orders\" id={zammlerMode ? 'zammler-create' : 'create'} style={{ ...sectorStyle('orders'), ...orderPanelStyle(zammlerMode ? 'zammler' : 'create') }}>\n              <div className=\"create-hero\">\n                <div>\n                  <div className=\"card-label\">{zammlerMode ? 'Новый заказ ЗАММЛЕР' : 'Новый заказ'}</div>\n                  <div className=\"card-meta\">\n                    {zammlerMode\n                      ? 'Доставка — ЗАММЛЕР, оплата — КАСПИ МАГАЗИН. Для позиции Цеха срочность и срок сегодня до 20:00 подставляются автоматически, но дату и время можно изменить.'\n                      : 'Заполняйте заказ сверху вниз: клиент → товары → оплата → проверка. Лишних переключателей наверху нет, источник выбирается только внутри товарных позиций.'}\n                  </div>"
+        },
+        {
+          "beforeBlock": "                  <label>\n                    <span>Доставка</span>\n                    <SmartPickerInput\n                      value={createDraft.deliveryType}\n                      onChange={(value) => updateCreateDraft('deliveryType', value)}\n                      placeholder=\"Выберите доставку\"\n                      options={suggestionValues.deliveryTypes}\n                    />\n                  </label>",
+          "afterBlock": "                  <label>\n                    <span>Доставка</span>\n                    {zammlerMode ? (\n                      <input value=\"ЗАММЛЕР\" readOnly aria-label=\"Доставка ЗАММЛЕР\" />\n                    ) : (\n                      <SmartPickerInput\n                        value={createDraft.deliveryType}\n                        onChange={(value) => updateCreateDraft('deliveryType', value)}\n                        placeholder=\"Выберите доставку\"\n                        options={suggestionValues.deliveryTypes}\n                      />\n                    )}\n                  </label>"
+        },
+        {
+          "beforeBlock": "                          <SmartPickerInput\n                            value={payment.method}\n                            onChange={(value) => updateCreatePayment(index, 'method', value)}\n                            placeholder=\"Выберите способ\"\n                            options={suggestionValues.paymentMethods}\n                          />",
+          "afterBlock": "                          {zammlerMode && index === 0 ? (\n                            <input value=\"КАСПИ МАГАЗИН\" readOnly aria-label=\"Способ оплаты КАСПИ МАГАЗИН\" />\n                          ) : (\n                            <SmartPickerInput\n                              value={payment.method}\n                              onChange={(value) => updateCreatePayment(index, 'method', value)}\n                              placeholder=\"Выберите способ\"\n                              options={suggestionValues.paymentMethods}\n                            />\n                          )}"
+        }
+      ]
+    },
+    "src/App.tsx": {
+      "beforeGitBlob": "4a86806a431a0c3b43ebd6d4969ae9b1e85db592",
+      "afterGitBlob": "4c5d320f996e81f4f7b18ed6df58c7171b47fcfc",
+      "beforeLines": 7520,
+      "afterLines": 7556,
+      "replacements": [
+        {
+          "beforeBlock": "  useEffect(() => {\n    if (orderPanel !== 'create' || authUser?.role !== 'manager' || Number(authUser.managerId || 0) <= 0) return",
+          "afterBlock": "  useEffect(() => {\n    if (!['create', 'zammler'].includes(orderPanel) || authUser?.role !== 'manager' || Number(authUser.managerId || 0) <= 0) return"
+        },
+        {
+          "beforeBlock": "        if (field === 'quantity') {\n          nextItem.shortageAcknowledged = false\n          nextItem.serverShortage = undefined\n        }\n        if (field === 'audienceType') {",
+          "afterBlock": "        if (field === 'quantity') {\n          nextItem.shortageAcknowledged = false\n          nextItem.serverShortage = undefined\n        }\n        if (orderPanel === 'zammler' && field === 'sourceType' && value === 'workshop') {\n          nextItem.workshopUrgent = true\n          nextItem.workshopDueDate = nextItem.workshopDueDate || current.orderDate\n          nextItem.workshopDueTime = nextItem.workshopDueTime || '20:00'\n        }\n        if (field === 'audienceType') {"
+        },
+        {
+          "beforeBlock": "  function removeCreatePayment(index: number) {\n    setCreateDraft((current) => {\n      const nextPayments = current.payments.filter((_, paymentIndex) => paymentIndex !== index)\n      return { ...current, payments: nextPayments.length ? nextPayments : [createEmptyEditorPayment(current.orderDate)] }\n    })\n  }",
+          "afterBlock": "  function removeCreatePayment(index: number) {\n    setCreateDraft((current) => {\n      const nextPayments = current.payments.filter((_, paymentIndex) => paymentIndex !== index)\n      const fallback = createEmptyEditorPayment(current.orderDate)\n      const payments = nextPayments.length ? nextPayments : [fallback]\n      if (orderPanel === 'zammler') {\n        payments[0] = { ...payments[0], method: 'КАСПИ МАГАЗИН' }\n      }\n      return { ...current, payments }\n    })\n  }"
+        },
+        {
+          "beforeBlock": "  function resetCreateOrderDraft() {\n    setCreateDraft(createOrderDraftWithDefaultManager())\n  }\n\n  async function createOrderFromDraft() {",
+          "afterBlock": "  function createZammlerOrderDraftWithDefaultManager() {\n    const draft = createOrderDraftWithDefaultManager()\n    return {\n      ...draft,\n      deliveryType: 'ЗАММЛЕР',\n      payments: [{\n        ...createEmptyEditorPayment(draft.orderDate),\n        method: 'КАСПИ МАГАЗИН',\n      }],\n    }\n  }\n\n  function resetCreateOrderDraft() {\n    setCreateDraft(orderPanel === 'zammler' ? createZammlerOrderDraftWithDefaultManager() : createOrderDraftWithDefaultManager())\n  }\n\n  useEffect(() => {\n    if (orderPanel === 'zammler') {\n      setCreateDraft(createZammlerOrderDraftWithDefaultManager())\n      return\n    }\n    if (orderPanel === 'create') {\n      setCreateDraft(createOrderDraftWithDefaultManager())\n    }\n  }, [orderPanel])\n\n  async function createOrderFromDraft() {"
+        },
+        {
+          "beforeBlock": "    if (activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'edit' || orderPanel === 'exchange')) {",
+          "afterBlock": "    if (activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'zammler' || orderPanel === 'edit' || orderPanel === 'exchange')) {"
+        },
+        {
+          "beforeBlock": "        <DeferredSection active={activeSector === 'orders' && orderPanel === 'create'} label=\"Создание заказа\">\n        <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment }} />\n        </DeferredSection>\n\n        <DeferredSection active={activeSector === 'orders' && orderPanel === 'edit'} label=\"Редактирование заказа\">",
+          "afterBlock": "        <DeferredSection active={activeSector === 'orders' && orderPanel === 'create'} label=\"Создание заказа\">\n        <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment }} />\n        </DeferredSection>\n\n        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label=\"Создание заказа ЗАММЛЕР\">\n        <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment, zammlerMode: true }} />\n        </DeferredSection>\n\n        <DeferredSection active={activeSector === 'orders' && orderPanel === 'edit'} label=\"Редактирование заказа\">"
+        }
+      ]
+    }
+  }
+}
