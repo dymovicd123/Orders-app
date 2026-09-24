@@ -1007,7 +1007,7 @@ export type ReferenceKind = 'cities' | 'deliveryTypes' | 'colors' | 'materials' 
 
 
 
-export type OrderPanel = 'create' | 'list' | 'edit' | 'debt' | 'returns' | 'exchange' | 'activity'
+export type OrderPanel = 'create' | 'zammler' | 'list' | 'edit' | 'debt' | 'returns' | 'exchange' | 'activity'
 
 
 export type FinanceReportType = 'payments' | 'managers' | 'products' | 'cities' | 'returns' | 'debts' | 'leads' | 'callCentre'

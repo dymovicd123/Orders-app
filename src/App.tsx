@@ -873,7 +873,7 @@ function App() {
   }, [authUser?.id, authUser?.mustChangePassword])
 
   useEffect(() => {
-    if (orderPanel !== 'create' || authUser?.role !== 'manager' || Number(authUser.managerId || 0) <= 0) return
+    if (!['create', 'zammler'].includes(orderPanel) || authUser?.role !== 'manager' || Number(authUser.managerId || 0) <= 0) return
     setCreateDraft((draft) => draft.managerId ? draft : {
       ...draft,
       managerId: Number(authUser.managerId || 0),
@@ -1316,7 +1316,7 @@ function App() {
       if (!isAdmin && inventoryPanel === 'catalog') setInventoryPanel('overview')
       if (isAdmin && !inventoryAdminPanels.includes(inventoryPanel)) setInventoryPanel('overview')
     }
-    if (activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'edit' || orderPanel === 'exchange')) {
+    if (activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'zammler' || orderPanel === 'edit' || orderPanel === 'exchange')) {
       // Форма заказа всегда получает свежие остатки обеих точек, но журнал движений ей не нужен.
       // Каталог остаётся полным: список товаров и все варианты по-прежнему доступны при создании/редактировании.
       void loadInventoryData('warehouse', true, '', false)
@@ -3860,6 +3860,11 @@ function App() {
           nextItem.shortageAcknowledged = false
           nextItem.serverShortage = undefined
         }
+        if (orderPanel === 'zammler' && field === 'sourceType' && value === 'workshop') {
+          nextItem.workshopUrgent = true
+          nextItem.workshopDueDate = nextItem.workshopDueDate || current.orderDate
+          nextItem.workshopDueTime = nextItem.workshopDueTime || '20:00'
+        }
         if (field === 'audienceType') {
           nextItem.audienceType = normalizeAudienceTypeValue(value)
         }
@@ -3907,7 +3912,12 @@ function App() {
   function removeCreatePayment(index: number) {
     setCreateDraft((current) => {
       const nextPayments = current.payments.filter((_, paymentIndex) => paymentIndex !== index)
-      return { ...current, payments: nextPayments.length ? nextPayments : [createEmptyEditorPayment(current.orderDate)] }
+      const fallback = createEmptyEditorPayment(current.orderDate)
+      const payments = nextPayments.length ? nextPayments : [fallback]
+      if (orderPanel === 'zammler') {
+        payments[0] = { ...payments[0], method: 'КАСПИ МАГАЗИН' }
+      }
+      return { ...current, payments }
     })
   }
 
@@ -3928,9 +3938,31 @@ function App() {
     return draft
   }
 
-  function resetCreateOrderDraft() {
-    setCreateDraft(createOrderDraftWithDefaultManager())
+  function createZammlerOrderDraftWithDefaultManager() {
+    const draft = createOrderDraftWithDefaultManager()
+    return {
+      ...draft,
+      deliveryType: 'ЗАММЛЕР',
+      payments: [{
+        ...createEmptyEditorPayment(draft.orderDate),
+        method: 'КАСПИ МАГАЗИН',
+      }],
+    }
   }
+
+  function resetCreateOrderDraft() {
+    setCreateDraft(orderPanel === 'zammler' ? createZammlerOrderDraftWithDefaultManager() : createOrderDraftWithDefaultManager())
+  }
+
+  useEffect(() => {
+    if (orderPanel === 'zammler') {
+      setCreateDraft(createZammlerOrderDraftWithDefaultManager())
+      return
+    }
+    if (orderPanel === 'create') {
+      setCreateDraft(createOrderDraftWithDefaultManager())
+    }
+  }, [orderPanel])
 
   async function createOrderFromDraft() {
     setOrderBusy(true)
@@ -7343,6 +7375,10 @@ function removeDebtPayment(index: number) {
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'create'} label="Создание заказа">
         <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment }} />
+        </DeferredSection>
+
+        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label="Создание заказа ЗАММЛЕР">
+        <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment, zammlerMode: true }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'edit'} label="Редактирование заказа">
