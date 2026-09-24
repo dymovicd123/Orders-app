@@ -557,7 +557,6 @@ function App() {
   const [referenceStatusFilter, setReferenceStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
   const [referenceBusy, setReferenceBusy] = useState(false)
   const [orderPanel, setOrderPanel] = useState<OrderPanel>('list')
-  const [zammlerView, setZammlerView] = useState<'create' | 'list'>('create')
   const [orderPeriodPreset, setOrderPeriodPreset] = useState<OrderPeriodPreset>('month')
   const defaultOrderRange = getPeriodRange('month')
   const [debtFilters, setDebtFilters] = useState({
@@ -790,15 +789,13 @@ function App() {
   }, [activeSector, authReady, clientMode, clientQuery])
 
   useEffect(() => {
-    if (!authReady || activeSector !== 'orders') return
-    const listVisible = orderPanel === 'list' || (orderPanel === 'zammler' && zammlerView === 'list')
-    if (!listVisible) return
+    if (!authReady || activeSector !== 'orders' || !['list', 'zammler'].includes(orderPanel)) return
     const timer = window.setTimeout(() => {
       setOrderPageOffset(0)
       void loadDashboard(false, filters, 0)
     }, filters.q.trim() ? 380 : 120)
     return () => window.clearTimeout(timer)
-  }, [activeSector, authReady, orderPanel, zammlerView, filters.q, filters.status, filters.shippingStatus, filters.archiveMode, filters.manager, filters.managerId, filters.dateFrom, filters.dateTo])
+  }, [activeSector, authReady, orderPanel, filters.q, filters.status, filters.shippingStatus, filters.archiveMode, filters.manager, filters.managerId, filters.dateFrom, filters.dateTo])
 
   useEffect(() => {
     if (!authReady || activeSector !== 'orders' || orderPanel !== 'debt') return
@@ -3978,7 +3975,6 @@ function App() {
 
   useEffect(() => {
     if (orderPanel === 'zammler') {
-      setZammlerView('create')
       setCreateDraft(createZammlerOrderDraftWithDefaultManager())
       return
     }
@@ -4115,11 +4111,7 @@ function App() {
         } else {
           setMessage('Заказ сохранён. Обновляю список заказов.')
         }
-        if (orderPanel === 'zammler') {
-          setZammlerView('list')
-        } else {
-          setOrderPanel('list')
-        }
+        setOrderPanel('list')
         resetCreateOrderDraft()
         void loadDashboard(false)
         void loadWorkshopData()
@@ -4191,11 +4183,7 @@ function App() {
       setSelectedOrderId(createdOrder.id)
       setEditorDraft(createEditorDraft(createdOrder))
       setEditorOpen(false)
-      if (orderPanel === 'zammler') {
-        setZammlerView('list')
-      } else {
-        setOrderPanel('list')
-      }
+      setOrderPanel('list')
       resetCreateOrderDraft()
       if (activeSector === 'orders' && orderPanel === 'list') void loadOrdersFinanceSummary(filters, true)
     } catch (err) {
@@ -7408,36 +7396,15 @@ function removeDebtPayment(index: number) {
         <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment }} />
         </DeferredSection>
 
-        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label="Раздел ЗАММЛЕР">
-        <article className="card wide sector-orders orders-workspace-header" id="zammler-tabs" style={sectorStyle('orders')}>
-          <div className="order-panel-tabs" role="tablist" aria-label="Разделы ЗАММЛЕР">
-            <button
-              className={`secondary compact ${zammlerView === 'create' ? 'is-active' : ''}`}
-              type="button"
-              onClick={() => setZammlerView('create')}
-            >
-              Новый заказ
-            </button>
-            <button
-              className={`secondary compact ${zammlerView === 'list' ? 'is-active' : ''}`}
-              type="button"
-              onClick={() => setZammlerView('list')}
-            >
-              Заказы ЗАММЛЕР
-            </button>
-          </div>
-        </article>
-        </DeferredSection>
-
-        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler' && zammlerView === 'create'} label="Создание заказа ЗАММЛЕР">
+        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label="Создание заказа ЗАММЛЕР">
         <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment, zammlerMode: true }} />
         </DeferredSection>
 
-        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler' && zammlerView === 'list'} label="Фильтры заказов ЗАММЛЕР">
+        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label="Фильтры заказов ЗАММЛЕР">
         <OrderFiltersSection ctx={{ applyOrderPeriodPreset, busy, ChoicePills, filters, ManagerPicker, orderPanelStyle, orderPeriodPreset, references, resetOrderFilters, sectorStyle, setFilters, listPanel: 'zammler' }} />
         </DeferredSection>
 
-        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler' && zammlerView === 'list'} label="Список заказов ЗАММЛЕР">
+        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label="Список заказов ЗАММЛЕР">
         <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel, listPanel: 'zammler', zammlerListMode: true }} />
         </DeferredSection>
 

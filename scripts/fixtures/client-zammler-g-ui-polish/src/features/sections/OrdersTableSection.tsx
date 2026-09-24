@@ -46,12 +46,10 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   return (
     <article className="card wide sector-orders" id="orders" style={{ ...sectorStyle('orders'), ...orderPanelStyle(listPanel) }}>
               <div className="card-label">{zammlerListMode ? 'Заказы ЗАММЛЕР' : 'Таблица заказов'}</div>
-              {!zammlerListMode ? (
-                <div className="card-meta">Строки таблицы меняются по поиску и менеджеру. Финансовая сводка ниже синхронизирована с разделом «Финансы» по выбранному периоду.</div>
-              ) : null}
+              <div className="card-meta">{zammlerListMode ? 'Здесь показываются только заказы с доставкой ЗАММЛЕР. Поиск, период, менеджер и статус отправки работают внутри этого списка.' : 'Строки таблицы меняются по поиску и менеджеру. Финансовая сводка ниже синхронизирована с разделом «Финансы» по выбранному периоду.'}</div>
               {zammlerListMode ? (
                 <div className="orders-current-filter-note">
-                  Найдено: <strong>{summary.count}</strong> · Сумма: <strong>{formatMoney(summary.total)}</strong>
+                  По текущим фильтрам ЗАММЛЕР: <strong>{summary.count}</strong> заказов · <strong>{formatMoney(summary.total)}</strong>.
                 </div>
               ) : orderFinanceReport && orderFinanceReport.startDate === filters.dateFrom && orderFinanceReport.endDate === filters.dateTo ? (() => {
                 const grossReceived = Number(orderFinanceReport.overview.grossReceived ?? orderFinanceReport.overview.totalReceived ?? 0)

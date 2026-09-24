@@ -43,9 +43,11 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
               <div className="create-hero">
                 <div>
                   <div className="card-label">{zammlerMode ? 'Новый заказ ЗАММЛЕР' : 'Новый заказ'}</div>
-                  {!zammlerMode ? (
-                    <div className="card-meta">Заполняйте заказ сверху вниз: клиент → товары → оплата → проверка. Лишних переключателей наверху нет, источник выбирается только внутри товарных позиций.</div>
-                  ) : null}
+                  <div className="card-meta">
+                    {zammlerMode
+                      ? 'Доставка — ЗАММЛЕР, оплата — КАСПИ МАГАЗИН. Для позиции Цеха срочность и срок сегодня до 20:00 подставляются автоматически, но дату и время можно изменить.'
+                      : 'Заполняйте заказ сверху вниз: клиент → товары → оплата → проверка. Лишних переключателей наверху нет, источник выбирается только внутри товарных позиций.'}
+                  </div>
                 </div>
                 <div className="orders-workspace-kpis create-kpis">
                   <div>

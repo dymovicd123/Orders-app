@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "revision": "client-zammler-g-ui-polish",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "c79f58047b2c29a2696943044bc3634b316506b1",
+      "afterGitBlob": "010a0e2e00c41accbc3906a4bf2f290e45667d2c",
+      "baselineFixture": "scripts/fixtures/client-zammler-g-ui-polish/src/App.tsx"
+    },
+    "src/features/sections/CreateOrderSection.tsx": {
+      "beforeGitBlob": "42a7fbdd1b75b40849df61799a6f716e96eea62f",
+      "afterGitBlob": "03f375c3015e29cb1644a926e63ed9dbffd52797",
+      "baselineFixture": "scripts/fixtures/client-zammler-g-ui-polish/src/features/sections/CreateOrderSection.tsx"
+    },
+    "src/features/sections/OrdersTableSection.tsx": {
+      "beforeGitBlob": "50d2badb2fc18dd69cad718356c9f69eec761e1b",
+      "afterGitBlob": "15748e95006d5138a2a453b896727968db1a3c1f",
+      "baselineFixture": "scripts/fixtures/client-zammler-g-ui-polish/src/features/sections/OrdersTableSection.tsx"
+    }
+  }
+}
