@@ -39,19 +39,15 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     busy,
     changeOrderPage,
     orderPageInfo,
-    listPanel = 'list',
-    zammlerListMode = false,
   } = ctx
 
   return (
-    <article className="card wide sector-orders" id="orders" style={{ ...sectorStyle('orders'), ...orderPanelStyle(listPanel) }}>
-              <div className="card-label">{zammlerListMode ? 'Заказы ЗАММЛЕР' : 'Таблица заказов'}</div>
-              {!zammlerListMode ? (
-                <div className="card-meta">Строки таблицы меняются по поиску и менеджеру. Финансовая сводка ниже синхронизирована с разделом «Финансы» по выбранному периоду.</div>
-              ) : null}
-              {zammlerListMode ? (
+    <article className="card wide sector-orders" id="orders" style={{ ...sectorStyle('orders'), ...orderPanelStyle('list') }}>
+              <div className="card-label">Таблица заказов</div>
+              <div className="card-meta">Строки таблицы меняются по поиску и менеджеру. Финансовая сводка ниже синхронизирована с разделом «Финансы» по выбранному периоду.</div>
+              {filters.deliveryType === 'zammler' ? (
                 <div className="orders-current-filter-note">
-                  Найдено: <strong>{summary.count}</strong> · Сумма: <strong>{formatMoney(summary.total)}</strong>
+                  Фильтр ЗАММЛЕР · найдено <strong>{summary.count}</strong> · сумма <strong>{formatMoney(summary.total)}</strong>
                 </div>
               ) : orderFinanceReport && orderFinanceReport.startDate === filters.dateFrom && orderFinanceReport.endDate === filters.dateTo ? (() => {
                 const grossReceived = Number(orderFinanceReport.overview.grossReceived ?? orderFinanceReport.overview.totalReceived ?? 0)
@@ -423,7 +419,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                     )}) : (
                       <tr>
                         <td colSpan={12} className="empty-state">
-                          {zammlerListMode ? 'Заказы ЗАММЛЕР не найдены по текущим фильтрам.' : 'Заказы не найдены. Попробуйте очистить фильтры или создать новый заказ.'}
+                          Заказы не найдены. Попробуйте очистить фильтры.
                         </td>
                       </tr>
                     )}

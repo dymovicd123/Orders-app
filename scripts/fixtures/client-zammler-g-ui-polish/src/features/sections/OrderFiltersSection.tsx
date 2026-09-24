@@ -10,6 +10,7 @@ export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
     ManagerPicker,
     orderPanelStyle,
     orderPeriodPreset,
+    listPanel = 'list',
     references,
     resetOrderFilters,
     sectorStyle,
@@ -17,7 +18,7 @@ export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
   } = ctx
 
   return (
-    <article className="card wide sector-orders order-filter-card" id="filters" style={{ ...sectorStyle('orders'), ...orderPanelStyle('list') }}>
+    <article className="card wide sector-orders order-filter-card" id="filters" style={{ ...sectorStyle('orders'), ...orderPanelStyle(listPanel) }}>
       <div className="orders-filter-panel">
         <div className="orders-period-row">
           <span className="orders-filter-title">Период:</span>
@@ -89,15 +90,6 @@ export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
         </div>
 
         <div className="actions orders-filter-actions">
-          <button
-            className={`secondary ${filters.deliveryType === 'zammler' ? 'is-active' : ''}`}
-            type="button"
-            aria-pressed={filters.deliveryType === 'zammler'}
-            onClick={() => setFilters((current) => ({ ...current, deliveryType: current.deliveryType === 'zammler' ? 'all' : 'zammler' }))}
-            disabled={busy}
-          >
-            Только ЗАММЛЕР
-          </button>
           <button className="secondary" type="button" onClick={resetOrderFilters} disabled={busy}>
             Сбросить фильтр
           </button>

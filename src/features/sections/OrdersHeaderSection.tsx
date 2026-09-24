@@ -10,8 +10,6 @@ export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
     sectorStyle,
     setEditorOpen,
     setOrderPanel,
-    zammlerView,
-    setZammlerView,
   } = ctx
 
   return (
@@ -34,12 +32,6 @@ export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
           </button>
         ))}
       </div>
-      {orderPanel === 'zammler' ? (
-        <div className="order-panel-tabs" role="tablist" aria-label="Разделы ЗАММЛЕР" style={{ marginTop: 8 }}>
-          <button className={`secondary compact ${zammlerView === 'create' ? 'is-active' : ''}`} type="button" onClick={() => setZammlerView('create')}>Новый заказ</button>
-          <button className={`secondary compact ${zammlerView === 'list' ? 'is-active' : ''}`} type="button" onClick={() => setZammlerView('list')}>Заказы ЗАММЛЕР</button>
-        </div>
-      ) : null}
     </article>
   )
 }

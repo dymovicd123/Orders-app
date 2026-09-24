@@ -4,7 +4,7 @@
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "c79f58047b2c29a2696943044bc3634b316506b1",
-      "afterGitBlob": "ad78d48934d0cf148016e4b0fc3975652f64e0e0",
+      "afterGitBlob": "c14399f54e7e889fbbe0dbe176d9148ad09eecc2",
       "baselineFixture": "scripts/fixtures/client-zammler-g-ui-polish/src/App.tsx"
     },
     "src/features/sections/CreateOrderSection.tsx": {
@@ -14,13 +14,13 @@
     },
     "src/features/sections/OrdersTableSection.tsx": {
       "beforeGitBlob": "50d2badb2fc18dd69cad718356c9f69eec761e1b",
-      "afterGitBlob": "15748e95006d5138a2a453b896727968db1a3c1f",
+      "afterGitBlob": "a347ebdc7b3a36c35b0610ad96d4a53fc8fb32e4",
       "baselineFixture": "scripts/fixtures/client-zammler-g-ui-polish/src/features/sections/OrdersTableSection.tsx"
     },
-    "src/features/sections/OrdersHeaderSection.tsx": {
-      "beforeGitBlob": "781223ef11d676ac179e99516cac6710bc45bdf0",
-      "afterGitBlob": "d0cd9945e102fedcf236df401926e521e36b4fc1",
-      "baselineFixture": "scripts/fixtures/client-zammler-g-ui-polish/src/features/sections/OrdersHeaderSection.tsx"
+    "src/features/sections/OrderFiltersSection.tsx": {
+      "beforeGitBlob": "673d1358f8983656b73508a9f3ffcd968307660b",
+      "afterGitBlob": "c5a13d27fb0fec0a710ab69e63e9379d1260745d",
+      "baselineFixture": "scripts/fixtures/client-zammler-g-ui-polish/src/features/sections/OrderFiltersSection.tsx"
     }
   }
 }
