@@ -15,8 +15,8 @@ expect(!dashboard.includes('loadCatalogData(forceReferences)'), 'R5.11: loadDash
 expect(dashboard.includes('loadReferencesData(forceReferences)'), 'R5.11: canonical order/reference dictionaries must still refresh')
 
 expect(
-  app.includes("activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'edit' || orderPanel === 'exchange')"),
-  'R5.11: create/edit/exchange must explicitly load product catalog data',
+  app.includes("activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'zammler' || orderPanel === 'edit' || orderPanel === 'exchange')"),
+  'R5.11: create/zammler/edit/exchange must explicitly load product catalog data',
 )
 expect(
   app.includes("inventoryPanel === 'movement' || inventoryPanel === 'stocktake' || inventoryPanel === 'catalog'"),
