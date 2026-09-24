@@ -10,7 +10,7 @@ const createUi = read('src/features/sections/CreateOrderSection.tsx')
 const migration = read('migrations/0075_v72_zammler_workshop_due_time.sql')
 
 check(types.includes("'create' | 'zammler' | 'list'"), 'Dedicated ZAMMLER order panel missing')
-check(constants.includes("{ kind: 'zammler', label: 'ЗАММЛЕР'"), 'ZAMMLER create tab missing')
+check(constants.includes("{ kind: 'zammler', label: 'Создать заказ ЗАММЛЕР'"), 'ZAMMLER create tab missing or unclear')
 check(createUi.includes("zammlerMode ? 'Новый заказ ЗАММЛЕР' : 'Новый заказ'"), 'Dedicated ZAMMLER form title missing')
 check(createUi.includes('value="ЗАММЛЕР" readOnly'), 'ZAMMLER delivery must be visibly fixed in the dedicated form')
 check(createUi.includes('value="КАСПИ МАГАЗИН" readOnly'), 'Primary payment method must be visibly fixed to KASPI MAGAZIN in the dedicated form')

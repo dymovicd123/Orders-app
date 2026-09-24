@@ -14,13 +14,18 @@
     },
     "src/features/sections/OrdersTableSection.tsx": {
       "beforeGitBlob": "50d2badb2fc18dd69cad718356c9f69eec761e1b",
-      "afterGitBlob": "a347ebdc7b3a36c35b0610ad96d4a53fc8fb32e4",
+      "afterGitBlob": "9339d5474a905b34b4cfbf3e1e36702e78f18ae9",
       "baselineFixture": "scripts/fixtures/client-zammler-g-ui-polish/src/features/sections/OrdersTableSection.tsx"
     },
     "src/features/sections/OrderFiltersSection.tsx": {
       "beforeGitBlob": "673d1358f8983656b73508a9f3ffcd968307660b",
-      "afterGitBlob": "c5a13d27fb0fec0a710ab69e63e9379d1260745d",
+      "afterGitBlob": "2b84790c152e114ab04df8f9566f00c987620509",
       "baselineFixture": "scripts/fixtures/client-zammler-g-ui-polish/src/features/sections/OrderFiltersSection.tsx"
+    },
+    "src/app/constants.ts": {
+      "beforeGitBlob": "af954cf37625b1640298c93e1259bb7596510be2",
+      "afterGitBlob": "6a51f788ab93522c646afa75ea779d76d42252dc",
+      "baselineFixture": "scripts/fixtures/client-zammler-g-ui-polish/src/app/constants.ts"
     }
   }
 }

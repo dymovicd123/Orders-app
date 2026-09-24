@@ -96,7 +96,7 @@ export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
             onClick={() => setFilters((current) => ({ ...current, deliveryType: current.deliveryType === 'zammler' ? 'all' : 'zammler' }))}
             disabled={busy}
           >
-            Только ЗАММЛЕР
+            Доставка: ЗАММЛЕР
           </button>
           <button className="secondary" type="button" onClick={resetOrderFilters} disabled={busy}>
             Сбросить фильтр
