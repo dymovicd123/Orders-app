@@ -3973,6 +3973,7 @@ function App() {
           workshopComment: item.workshopComment,
           workshopUrgent: Boolean(item.workshopUrgent),
           workshopDueDate: item.workshopUrgent ? item.workshopDueDate : '',
+          workshopDueTime: item.workshopUrgent ? item.workshopDueTime : '',
           observedPhysicalQuantity: item.sourceType !== 'workshop' && item.stockObservationEnabled ? item.observedPhysicalQuantity : undefined,
           shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
         })),
@@ -4100,6 +4101,7 @@ function App() {
           workshopComment: item.workshopComment || null,
           workshopUrgent: Boolean(item.workshopUrgent),
           workshopDueDate: item.workshopUrgent ? item.workshopDueDate || null : null,
+          workshopDueTime: item.workshopUrgent ? item.workshopDueTime || null : null,
           isWorkshop: item.sourceType === 'workshop',
         })),
         payments: createDraft.payments
@@ -5524,6 +5526,7 @@ function removeDebtPayment(index: number) {
           workshopComment: item.workshopComment,
           workshopUrgent: Boolean(item.workshopUrgent),
           workshopDueDate: item.workshopUrgent ? item.workshopDueDate : '',
+          workshopDueTime: item.workshopUrgent ? item.workshopDueTime : '',
           observedPhysicalQuantity: item.sourceType !== 'workshop' && item.stockObservationEnabled ? item.observedPhysicalQuantity : undefined,
           shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
         })),
