@@ -37,7 +37,10 @@ jobs:
           migration='migrations/0075_v72_zammler_workshop_due_time.sql'
           grep -Fq 'ALTER TABLE order_items ADD COLUMN workshop_due_time TEXT' "$migration"
           grep -Fq 'ALTER TABLE workshop_tasks ADD COLUMN due_time TEXT' "$migration"
-          grep -Fq "('delivery_type', 'ZAMMLER'" "$migration"
+          if grep -Fq "('delivery_type', 'ZAMMLER'" "$migration" || grep -Fq "'ЗАММЛЕР'" "$migration"; then
+            echo "0075 must not seed an already-existing delivery reference." >&2
+            exit 22
+          fi
           if grep -Eiq '\b(UPDATE[[:space:]]+orders|UPDATE[[:space:]]+order_items|DELETE[[:space:]]+FROM[[:space:]]+orders|DELETE[[:space:]]+FROM[[:space:]]+order_items)\b' "$migration"; then
             echo "0075 contains forbidden live-order rewrites." >&2
             exit 21
@@ -66,7 +69,19 @@ jobs:
           if [[ "$wt" == "0" ]]; then
             npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "ALTER TABLE workshop_tasks ADD COLUMN due_time TEXT"
           fi
-          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "INSERT INTO reference_values (kind, value, is_active, sort_order, created_at, updated_at) VALUES ('delivery_type', 'ZAMMLER', 1, 5, datetime('now'), datetime('now')) ON CONFLICT(kind, value) DO UPDATE SET is_active = 1, sort_order = excluded.sort_order, updated_at = excluded.updated_at"
+          refs="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM reference_values WHERE kind = 'delivery_type' AND value = 'ЗАММЛЕР') AS cyrillic_count,
+            (SELECT COUNT(*) FROM reference_values WHERE kind = 'delivery_type' AND value = 'ZAMMLER') AS latin_count,
+            (SELECT COUNT(*) FROM orders WHERE delivery_type = 'ZAMMLER') AS latin_order_count" --json)"
+          echo "$refs"
+          cyrillic_count="$(jq -r '.[0].results[0].cyrillic_count // 0' <<<"$refs")"
+          latin_count="$(jq -r '.[0].results[0].latin_count // 0' <<<"$refs")"
+          latin_order_count="$(jq -r '.[0].results[0].latin_order_count // 0' <<<"$refs")"
+          [[ "$cyrillic_count" -ge 1 ]]
+          [[ "$latin_order_count" == "0" ]]
+          if [[ "$latin_count" -gt 0 ]]; then
+            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "DELETE FROM reference_values WHERE kind = 'delivery_type' AND value = 'ZAMMLER'"
+          fi
 
       - name: Verify 0075 result
         shell: bash
@@ -75,12 +90,14 @@ jobs:
           result="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT
             (SELECT COUNT(*) FROM pragma_table_info('order_items') WHERE name = 'workshop_due_time') AS order_item_due_time,
             (SELECT COUNT(*) FROM pragma_table_info('workshop_tasks') WHERE name = 'due_time') AS workshop_due_time,
-            (SELECT COUNT(*) FROM reference_values WHERE kind = 'delivery_type' AND value = 'ZAMMLER' AND is_active = 1) AS zammler_delivery,
+            (SELECT COUNT(*) FROM reference_values WHERE kind = 'delivery_type' AND value = 'ЗАММЛЕР' AND is_active = 1) AS zammler_delivery,
+            (SELECT COUNT(*) FROM reference_values WHERE kind = 'delivery_type' AND value = 'ZAMMLER') AS latin_duplicate,
             (SELECT COUNT(*) FROM orders) AS orders_count,
             (SELECT COUNT(*) FROM order_items) AS order_items_count,
             (SELECT COUNT(*) FROM workshop_tasks) AS workshop_tasks_count" --json)"
           echo "$result"
           [[ "$(jq -r '.[0].results[0].order_item_due_time' <<<"$result")" == "1" ]]
           [[ "$(jq -r '.[0].results[0].workshop_due_time' <<<"$result")" == "1" ]]
-          [[ "$(jq -r '.[0].results[0].zammler_delivery' <<<"$result")" == "1" ]]
+          [[ "$(jq -r '.[0].results[0].zammler_delivery' <<<"$result")" -ge "1" ]]
+          [[ "$(jq -r '.[0].results[0].latin_duplicate' <<<"$result")" == "0" ]]
           echo "Stage04 migration 0075 verified on Branch2 D1 only."
