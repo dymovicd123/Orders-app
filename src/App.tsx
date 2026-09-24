@@ -789,7 +789,7 @@ function App() {
   }, [activeSector, authReady, clientMode, clientQuery])
 
   useEffect(() => {
-    if (!authReady || activeSector !== 'orders' || orderPanel !== 'list') return
+    if (!authReady || activeSector !== 'orders' || !['list', 'zammler'].includes(orderPanel)) return
     const timer = window.setTimeout(() => {
       setOrderPageOffset(0)
       void loadDashboard(false, filters, 0)
@@ -3682,6 +3682,7 @@ function App() {
         // a proven received_amount/payment-sum equivalence and no payment-date window.
         includePaymentCount: activeFilters.archiveMode === 'active' && !activeFilters.dateFrom && !activeFilters.dateTo ? '0' : '1',
       })
+      if (activeSector === 'orders' && orderPanel === 'zammler') params.set('deliveryType', 'ЗАММЛЕР')
       // R5.9: the visible pagination remains offset/page based, but sequential Next may provide
       // the last loaded row as an internal seek cursor. The Worker keeps offset as the logical page.
       if (overrideOffset > 0 && pageReadOptions?.afterOrderDate && Number(pageReadOptions.afterOrderId || 0) > 0) {
@@ -7379,6 +7380,14 @@ function removeDebtPayment(index: number) {
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label="Создание заказа ЗАММЛЕР">
         <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment, zammlerMode: true }} />
+        </DeferredSection>
+
+        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label="Фильтры заказов ЗАММЛЕР">
+        <OrderFiltersSection ctx={{ applyOrderPeriodPreset, busy, ChoicePills, filters, ManagerPicker, orderPanelStyle, orderPeriodPreset, references, resetOrderFilters, sectorStyle, setFilters, listPanel: 'zammler' }} />
+        </DeferredSection>
+
+        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label="Список заказов ЗАММЛЕР">
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel, listPanel: 'zammler', zammlerListMode: true }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'edit'} label="Редактирование заказа">

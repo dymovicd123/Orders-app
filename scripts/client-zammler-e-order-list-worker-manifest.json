@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "revision": "client-zammler-e-order-list",
+  "files": {
+    "worker/domains/orders-read.ts": {
+      "beforeGitBlob": "8224d43aa81cfba5617e8f4fd399d804294dc5cc",
+      "afterGitBlob": "73b1001a0985e49626f32a812edd5f9c95de5e4b",
+      "beforeLines": 812,
+      "afterLines": 818,
+      "replacements": [
+        {
+          "beforeBlock": "  const source = cleanText(url.searchParams.get('source')).toLowerCase();\n  const manager = cleanText(url.searchParams.get('manager')).toUpperCase();",
+          "afterBlock": "  const source = cleanText(url.searchParams.get('source')).toLowerCase();\n  const deliveryType = cleanText(url.searchParams.get('deliveryType'));\n  const manager = cleanText(url.searchParams.get('manager')).toUpperCase();"
+        },
+        {
+          "beforeBlock": "  if (source === 'warehouse' || source === 'boutique') {\n    baseWhereParts.push('o.source_type = ?');\n    baseBindings.push(source);\n  }\n\n  if (managerId > 0) {",
+          "afterBlock": "  if (source === 'warehouse' || source === 'boutique') {\n    baseWhereParts.push('o.source_type = ?');\n    baseBindings.push(source);\n  }\n\n  if (deliveryType) {\n    baseWhereParts.push(\"COALESCE(o.delivery_type, '') = ?\");\n    baseBindings.push(deliveryType);\n  }\n\n  if (managerId > 0) {"
+        }
+      ]
+    }
+  }
+}

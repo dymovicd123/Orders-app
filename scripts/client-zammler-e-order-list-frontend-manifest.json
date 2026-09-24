@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "revision": "client-zammler-e-order-list",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "4c5d320f996e81f4f7b18ed6df58c7171b47fcfc",
+      "afterGitBlob": "be3e859383d863d14cf22fc3e7ac49a5f098593c",
+      "beforeLines": 7556,
+      "afterLines": 7565,
+      "replacements": [
+        {
+          "beforeBlock": "    if (!authReady || activeSector !== 'orders' || orderPanel !== 'list') return",
+          "afterBlock": "    if (!authReady || activeSector !== 'orders' || !['list', 'zammler'].includes(orderPanel)) return"
+        },
+        {
+          "beforeBlock": "      // R5.9: the visible pagination remains offset/page based, but sequential Next may provide",
+          "afterBlock": "      if (activeSector === 'orders' && orderPanel === 'zammler') params.set('deliveryType', 'ЗАММЛЕР')\n      // R5.9: the visible pagination remains offset/page based, but sequential Next may provide"
+        },
+        {
+          "beforeBlock": "        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label=\"Создание заказа ЗАММЛЕР\">\n        <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment, zammlerMode: true }} />\n        </DeferredSection>",
+          "afterBlock": "        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label=\"Создание заказа ЗАММЛЕР\">\n        <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment, zammlerMode: true }} />\n        </DeferredSection>\n\n        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label=\"Фильтры заказов ЗАММЛЕР\">\n        <OrderFiltersSection ctx={{ applyOrderPeriodPreset, busy, ChoicePills, filters, ManagerPicker, orderPanelStyle, orderPeriodPreset, references, resetOrderFilters, sectorStyle, setFilters, listPanel: 'zammler' }} />\n        </DeferredSection>\n\n        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label=\"Список заказов ЗАММЛЕР\">\n        <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel, listPanel: 'zammler', zammlerListMode: true }} />\n        </DeferredSection>"
+        }
+      ]
+    },
+    "src/features/sections/OrderFiltersSection.tsx": {
+      "beforeGitBlob": "2268d227401f3871f384ab062a5f0d6c5722db49",
+      "afterGitBlob": "673d1358f8983656b73508a9f3ffcd968307660b",
+      "beforeLines": 100,
+      "afterLines": 101,
+      "replacements": [
+        {
+          "beforeBlock": "    orderPanelStyle,\n    orderPeriodPreset,",
+          "afterBlock": "    orderPanelStyle,\n    orderPeriodPreset,\n    listPanel = 'list',"
+        },
+        {
+          "beforeBlock": "...orderPanelStyle('list')",
+          "afterBlock": "...orderPanelStyle(listPanel)"
+        }
+      ]
+    },
+    "src/features/sections/OrdersTableSection.tsx": {
+      "beforeGitBlob": "0b0b0ad22c2c4cf1ec37ff573ca0bca22e0e5078",
+      "afterGitBlob": "50d2badb2fc18dd69cad718356c9f69eec761e1b",
+      "beforeLines": 439,
+      "afterLines": 445,
+      "replacements": [
+        {
+          "beforeBlock": "    orderPageInfo,\n  } = ctx",
+          "afterBlock": "    orderPageInfo,\n    listPanel = 'list',\n    zammlerListMode = false,\n  } = ctx"
+        },
+        {
+          "beforeBlock": "...orderPanelStyle('list')",
+          "afterBlock": "...orderPanelStyle(listPanel)"
+        },
+        {
+          "beforeBlock": "              <div className=\"card-label\">Таблица заказов</div>\n              <div className=\"card-meta\">Строки таблицы меняются по поиску и менеджеру. Финансовая сводка ниже синхронизирована с разделом «Финансы» по выбранному периоду.</div>\n              {orderFinanceReport &&",
+          "afterBlock": "              <div className=\"card-label\">{zammlerListMode ? 'Заказы ЗАММЛЕР' : 'Таблица заказов'}</div>\n              <div className=\"card-meta\">{zammlerListMode ? 'Здесь показываются только заказы с доставкой ЗАММЛЕР. Поиск, период, менеджер и статус отправки работают внутри этого списка.' : 'Строки таблицы меняются по поиску и менеджеру. Финансовая сводка ниже синхронизирована с разделом «Финансы» по выбранному периоду.'}</div>\n              {zammlerListMode ? (\n                <div className=\"orders-current-filter-note\">\n                  По текущим фильтрам ЗАММЛЕР: <strong>{summary.count}</strong> заказов · <strong>{formatMoney(summary.total)}</strong>.\n                </div>\n              ) : orderFinanceReport &&"
+        },
+        {
+          "beforeBlock": "                          Заказы не найдены. Попробуйте очистить фильтры или создать новый заказ.",
+          "afterBlock": "                          {zammlerListMode ? 'Заказы ЗАММЛЕР не найдены по текущим фильтрам.' : 'Заказы не найдены. Попробуйте очистить фильтры или создать новый заказ.'}"
+        }
+      ]
+    }
+  }
+}

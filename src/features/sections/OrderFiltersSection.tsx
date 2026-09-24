@@ -10,6 +10,7 @@ export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
     ManagerPicker,
     orderPanelStyle,
     orderPeriodPreset,
+    listPanel = 'list',
     references,
     resetOrderFilters,
     sectorStyle,
@@ -17,7 +18,7 @@ export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
   } = ctx
 
   return (
-    <article className="card wide sector-orders order-filter-card" id="filters" style={{ ...sectorStyle('orders'), ...orderPanelStyle('list') }}>
+    <article className="card wide sector-orders order-filter-card" id="filters" style={{ ...sectorStyle('orders'), ...orderPanelStyle(listPanel) }}>
       <div className="orders-filter-panel">
         <div className="orders-period-row">
           <span className="orders-filter-title">Период:</span>
