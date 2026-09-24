@@ -71,6 +71,16 @@ export function assertOrderTotalInput(value: unknown) {
 }
 
 
+export function normalizeWorkshopDueTimeInput(value: unknown) {
+  const time = cleanText(value);
+  if (!time) return '';
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+    throw new OrderInputValidationError('Время готовности цеха должно быть в формате ЧЧ:ММ.');
+  }
+  return time;
+}
+
+
 export function normalizeOrderItems(items: OrderInput['items'], fallbackSource: SourceType) {
   return (Array.isArray(items) ? items : [])
     .map((item, inputIndex) => {
@@ -97,6 +107,7 @@ export function normalizeOrderItems(items: OrderInput['items'], fallbackSource: 
         workshopComment: cleanText(item?.workshopComment),
         workshopUrgent: Boolean(item?.workshopUrgent),
         workshopDueDate: cleanText(item?.workshopDueDate) ? normalizeDate(item?.workshopDueDate) : '',
+        workshopDueTime: Boolean(item?.workshopUrgent) ? normalizeWorkshopDueTimeInput(item?.workshopDueTime) : '',
         observedPhysicalQuantity: item?.observedPhysicalQuantity === null || item?.observedPhysicalQuantity === undefined || cleanText(item?.observedPhysicalQuantity) === ''
           ? null
           : Number(item?.observedPhysicalQuantity),
@@ -159,7 +170,8 @@ export function sameOrderItemExceptPriceForEdit(
     && left.isWorkshop === right.isWorkshop
     && left.workshopComment === right.workshopComment
     && Boolean(left.workshopUrgent) === Boolean(right.workshopUrgent)
-    && (left.workshopDueDate || '') === (right.workshopDueDate || '');
+    && (left.workshopDueDate || '') === (right.workshopDueDate || '')
+    && (left.workshopDueTime || '') === (right.workshopDueTime || '');
 }
 
 

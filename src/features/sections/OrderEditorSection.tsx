@@ -324,14 +324,24 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                                     <span>Срочно для цеха</span>
                                   </label>
                                   {item.workshopUrgent ? (
-                                    <label>
-                                      <span>Нужно до</span>
-                                      <input
-                                        type="date"
-                                        value={item.workshopDueDate || ''}
-                                        onChange={(event) => updateEditorItem(index, 'workshopDueDate', event.target.value)}
-                                      />
-                                    </label>
+                                    <>
+                                      <label>
+                                        <span>Нужно до</span>
+                                        <input
+                                          type="date"
+                                          value={item.workshopDueDate || ''}
+                                          onChange={(event) => updateEditorItem(index, 'workshopDueDate', event.target.value)}
+                                        />
+                                      </label>
+                                      <label>
+                                        <span>Время</span>
+                                        <input
+                                          type="time"
+                                          value={item.workshopDueTime || ''}
+                                          onChange={(event) => updateEditorItem(index, 'workshopDueTime', event.target.value)}
+                                        />
+                                      </label>
+                                    </>
                                   ) : null}
                                 </>
                               ) : null}

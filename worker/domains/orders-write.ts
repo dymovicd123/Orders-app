@@ -372,6 +372,7 @@ export async function retireOrderItemsForRewrite(db: D1Database, orderId: number
          workshop_comment = NULL,
          workshop_urgent = 0,
          workshop_due_date = NULL,
+         workshop_due_time = NULL,
          stock_writeoff_status = CASE
            WHEN COALESCE(stock_writeoff_status, '') IN ('written_off', 'negative', 'pending_writeoff', 'reversed_edit', 'reserved', 'catalog_unresolved', 'reservation_released', 'pending_reservation') THEN 'replaced_edit'
            WHEN COALESCE(stock_writeoff_status, '') = 'workshop' THEN 'replaced_edit'
@@ -437,7 +438,7 @@ export async function insertOrderContent(
           order_id, product_id, variant_id, product_name_snapshot, audience_type,
           gender_snapshot, color_snapshot, material_snapshot, length_snapshot,
           size_snapshot, quantity, unit_price, line_total, catalog_price_snapshot, is_workshop,
-          source_type, workshop_comment, workshop_urgent, workshop_due_date, stock_writeoff_status, created_at,
+          source_type, workshop_comment, workshop_urgent, workshop_due_date, workshop_due_time, stock_writeoff_status, created_at,
           inventory_obligation_key, inventory_obligation_origin_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
@@ -448,6 +449,7 @@ export async function insertOrderContent(
         item.workshopComment || null,
         item.isWorkshop && item.workshopUrgent ? 1 : 0,
         item.isWorkshop && item.workshopUrgent ? item.workshopDueDate : null,
+        item.isWorkshop && item.workshopUrgent ? (item.workshopDueTime || null) : null,
         item.isWorkshop ? 'workshop' : (humanInventoryModelEnabled ? ((!resolved.productId || !resolved.variantId) ? 'catalog_unresolved' : 'pending_reservation') : (autoWriteoffEnabled ? 'pending_writeoff' : 'writeoff_disabled')),
         timestamp,
         inventoryObligationLineage?.[itemIndex]?.key || `${externalId}:${stockReferenceType}:${timestamp}:item:${itemIndex + 1}`,
@@ -458,7 +460,7 @@ export async function insertOrderContent(
           order_id, product_id, variant_id, product_name_snapshot, audience_type,
           gender_snapshot, color_snapshot, material_snapshot, length_snapshot,
           size_snapshot, quantity, unit_price, line_total, is_workshop,
-          source_type, workshop_comment, workshop_urgent, workshop_due_date, stock_writeoff_status, created_at,
+          source_type, workshop_comment, workshop_urgent, workshop_due_date, workshop_due_time, stock_writeoff_status, created_at,
           inventory_obligation_key, inventory_obligation_origin_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
@@ -468,6 +470,7 @@ export async function insertOrderContent(
         item.workshopComment || null,
         item.isWorkshop && item.workshopUrgent ? 1 : 0,
         item.isWorkshop && item.workshopUrgent ? item.workshopDueDate : null,
+        item.isWorkshop && item.workshopUrgent ? (item.workshopDueTime || null) : null,
         item.isWorkshop ? 'workshop' : (humanInventoryModelEnabled ? ((!resolved.productId || !resolved.variantId) ? 'catalog_unresolved' : 'pending_reservation') : (autoWriteoffEnabled ? 'pending_writeoff' : 'writeoff_disabled')),
         timestamp,
         inventoryObligationLineage?.[itemIndex]?.key || `${externalId}:${stockReferenceType}:${timestamp}:item:${itemIndex + 1}`,
@@ -581,8 +584,8 @@ export async function createWorkshopTaskForOrderItem(
     `INSERT INTO workshop_tasks (
       order_id, external_order_id, order_item_id, product_id, variant_id, product_name_snapshot,
       gender_snapshot, color_snapshot, material_snapshot, length_snapshot, size_snapshot,
-      quantity, comment, urgent, due_date, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`
+      quantity, comment, urgent, due_date, due_time, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`
   ).bind(
     orderId,
     externalId,
@@ -599,6 +602,7 @@ export async function createWorkshopTaskForOrderItem(
     item.workshopComment || null,
     item.workshopUrgent ? 1 : 0,
     item.workshopUrgent ? item.workshopDueDate : null,
+    item.workshopUrgent ? (item.workshopDueTime || null) : null,
     timestamp,
     timestamp,
   ).run();
@@ -1756,6 +1760,7 @@ export async function getOrder(db: D1Database, id: number) {
       workshopComment: (item as any).workshop_comment,
       workshopUrgent: Boolean((item as any).workshop_urgent),
       workshopDueDate: (item as any).workshop_due_date || '',
+      workshopDueTime: (item as any).workshop_due_time || '',
       workshopTaskStatus: workshopTaskStatusForOrderItem(
         item as Record<string, unknown>,
         relations.workshopTasksByOrderId.get(id) || [],

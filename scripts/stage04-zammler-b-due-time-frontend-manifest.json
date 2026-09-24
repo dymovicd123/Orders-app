@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "revision": "stage04-zammler-b-due-time-plumbing",
+  "files": {
+    "src/app/types.ts": {
+      "beforeGitBlob": "d189e80ca97442a16a0535bc4ec3091db02fda12",
+      "afterGitBlob": "625411434d4a8272c96cb1fee7da0d3da1fa1803",
+      "beforeLines": 1743,
+      "afterLines": 1746,
+      "replacements": [
+        {
+          "beforeBlock": "  workshopUrgent?: boolean\n  workshopDueDate?: string\n  stockObservationEnabled?: boolean",
+          "afterBlock": "  workshopUrgent?: boolean\n  workshopDueDate?: string\n  workshopDueTime?: string\n  stockObservationEnabled?: boolean"
+        },
+        {
+          "beforeBlock": "  urgent: boolean\n  dueDate: string\n  status:",
+          "afterBlock": "  urgent: boolean\n  dueDate: string\n  dueTime: string\n  status:"
+        },
+        {
+          "beforeBlock": "    workshopUrgent?: boolean\n    workshopDueDate?: string | null\n    isWorkshop?: boolean",
+          "afterBlock": "    workshopUrgent?: boolean\n    workshopDueDate?: string | null\n    workshopDueTime?: string | null\n    isWorkshop?: boolean"
+        }
+      ]
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "0531b3fcf8856acae7078b3ec501a78dbdec8e0a",
+      "afterGitBlob": "3cf26215cade4a5f582fb6bcdc347c6363f9b351",
+      "beforeLines": 965,
+      "afterLines": 967,
+      "replacements": [
+        {
+          "beforeBlock": "    workshopUrgent: false,\n    workshopDueDate: '',\n  }",
+          "afterBlock": "    workshopUrgent: false,\n    workshopDueDate: '',\n    workshopDueTime: '',\n  }"
+        },
+        {
+          "beforeBlock": "          workshopUrgent: Boolean(item.workshopUrgent),\n          workshopDueDate: item.workshopDueDate || '',\n        }))",
+          "afterBlock": "          workshopUrgent: Boolean(item.workshopUrgent),\n          workshopDueDate: item.workshopDueDate || '',\n          workshopDueTime: item.workshopDueTime || '',\n        }))"
+        }
+      ]
+    },
+    "src/features/sections/CreateOrderSection.tsx": {
+      "beforeGitBlob": "6fa7c13467c3d6b2c94ddd9fb440aa165971d226",
+      "afterGitBlob": "430910e68928bec9cf8493052c84c622457d5062",
+      "beforeLines": 434,
+      "afterLines": 444,
+      "replacements": [
+        {
+          "beforeBlock": "                            {item.workshopUrgent ? (\n                              <label>\n                                <span>Нужно до</span>\n                                <input\n                                  type=\"date\"\n                                  value={item.workshopDueDate || ''}\n                                  onChange={(event) => updateCreateItem(index, 'workshopDueDate', event.target.value)}\n                                />\n                              </label>\n                            ) : null}",
+          "afterBlock": "                            {item.workshopUrgent ? (\n                              <>\n                                <label>\n                                  <span>Нужно до</span>\n                                  <input\n                                    type=\"date\"\n                                    value={item.workshopDueDate || ''}\n                                    onChange={(event) => updateCreateItem(index, 'workshopDueDate', event.target.value)}\n                                  />\n                                </label>\n                                <label>\n                                  <span>Время</span>\n                                  <input\n                                    type=\"time\"\n                                    value={item.workshopDueTime || ''}\n                                    onChange={(event) => updateCreateItem(index, 'workshopDueTime', event.target.value)}\n                                  />\n                                </label>\n                              </>\n                            ) : null}"
+        }
+      ]
+    },
+    "src/features/sections/OrderEditorSection.tsx": {
+      "beforeGitBlob": "b282772dd51890ef7d10284964e32e4ba2999558",
+      "afterGitBlob": "b4e931da6daea471ed7e926313e517e115567573",
+      "beforeLines": 461,
+      "afterLines": 471,
+      "replacements": [
+        {
+          "beforeBlock": "                                  {item.workshopUrgent ? (\n                                    <label>\n                                      <span>Нужно до</span>\n                                      <input\n                                        type=\"date\"\n                                        value={item.workshopDueDate || ''}\n                                        onChange={(event) => updateEditorItem(index, 'workshopDueDate', event.target.value)}\n                                      />\n                                    </label>\n                                  ) : null}",
+          "afterBlock": "                                  {item.workshopUrgent ? (\n                                    <>\n                                      <label>\n                                        <span>Нужно до</span>\n                                        <input\n                                          type=\"date\"\n                                          value={item.workshopDueDate || ''}\n                                          onChange={(event) => updateEditorItem(index, 'workshopDueDate', event.target.value)}\n                                        />\n                                      </label>\n                                      <label>\n                                        <span>Время</span>\n                                        <input\n                                          type=\"time\"\n                                          value={item.workshopDueTime || ''}\n                                          onChange={(event) => updateEditorItem(index, 'workshopDueTime', event.target.value)}\n                                        />\n                                      </label>\n                                    </>\n                                  ) : null}"
+        }
+      ]
+    },
+    "src/App.tsx": {
+      "beforeGitBlob": "781f42d2967d71c6f50e2599a7fe66d13a18431a",
+      "afterGitBlob": "4a86806a431a0c3b43ebd6d4969ae9b1e85db592",
+      "beforeLines": 7517,
+      "afterLines": 7520,
+      "replacements": [
+        {
+          "beforeBlock": "          workshopUrgent: Boolean(item.workshopUrgent),\n          workshopDueDate: item.workshopUrgent ? item.workshopDueDate : '',\n          observedPhysicalQuantity:",
+          "afterBlock": "          workshopUrgent: Boolean(item.workshopUrgent),\n          workshopDueDate: item.workshopUrgent ? item.workshopDueDate : '',\n          workshopDueTime: item.workshopUrgent ? item.workshopDueTime : '',\n          observedPhysicalQuantity:"
+        },
+        {
+          "beforeBlock": "          workshopUrgent: Boolean(item.workshopUrgent),\n          workshopDueDate: item.workshopUrgent ? item.workshopDueDate : '',\n          observedPhysicalQuantity:",
+          "afterBlock": "          workshopUrgent: Boolean(item.workshopUrgent),\n          workshopDueDate: item.workshopUrgent ? item.workshopDueDate : '',\n          workshopDueTime: item.workshopUrgent ? item.workshopDueTime : '',\n          observedPhysicalQuantity:"
+        },
+        {
+          "beforeBlock": "          workshopUrgent: Boolean(item.workshopUrgent),\n          workshopDueDate: item.workshopUrgent ? item.workshopDueDate || null : null,\n          isWorkshop:",
+          "afterBlock": "          workshopUrgent: Boolean(item.workshopUrgent),\n          workshopDueDate: item.workshopUrgent ? item.workshopDueDate || null : null,\n          workshopDueTime: item.workshopUrgent ? item.workshopDueTime || null : null,\n          isWorkshop:"
+        }
+      ]
+    }
+  }
+}
