@@ -16,7 +16,7 @@ export function calculateTotals(items: OrderInput['items'], payments: OrderInput
   const manualTotal = totalOverride === undefined || totalOverride === null || totalOverride === ''
     ? null
     : Math.max(0, toInt(totalOverride, 0));
-  const totalAmount = manualTotal !== null && Number.isFinite(manualTotal) && manualTotal > 0
+  const totalAmount = manualTotal !== null && Number.isFinite(manualTotal)
     ? manualTotal
     : itemsTotal;
 
@@ -133,9 +133,6 @@ export function assertOrderPaymentInputs(payments: OrderInput['payments']) {
     }
     if (amount > 0 && !method) {
       throw new OrderInputValidationError(`В оплате ${index + 1} указана сумма ${Math.trunc(amount)}, но не выбран способ оплаты.`)
-    }
-    if (method && amount <= 0) {
-      throw new OrderInputValidationError(`Для оплаты ${index + 1} выберите сумму больше нуля или очистите способ оплаты.`)
     }
   }
 }

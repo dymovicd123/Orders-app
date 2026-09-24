@@ -40,7 +40,9 @@ try {
     check(core.includes(marker), `Order input validator missing: ${marker}`)
   }
   check(core.includes('amount > 0 && !method'), 'Payment amount without method is not rejected explicitly')
+  check(!core.includes('method && amount <= 0'), 'Zero-amount row with a selected payment method must not block order saving')
   check(core.includes('amount < 0'), 'Negative payment is not rejected')
+  check(core.includes('manualTotal !== null && Number.isFinite(manualTotal)') && !core.includes('manualTotal > 0'), 'Explicit zero order total must remain an intentional valid value')
   check(!orders.includes("throw new Error('Добавьте хотя бы одну оплату.')"), 'Unpaid orders are still blocked')
 
   // Late-entered orders must not keep today's default payment date when the business order date is changed.

@@ -16,9 +16,9 @@
     },
     "worker/domains/order-core.ts": {
       "beforeGitBlob": "8bd55100934ea58bcfa4cfcc42a7e28da2d06d63",
-      "afterGitBlob": "265033a3b6654d49abad7b1ed0a00b8abb840ac5",
+      "afterGitBlob": "7a33b917072808e232d706954441c07aaaf6faec",
       "beforeLines": 441,
-      "afterLines": 453,
+      "afterLines": 450,
       "replacements": [
         {
           "beforeBlock": "export function normalizeOrderItems(items: OrderInput['items'], fallbackSource: SourceType) {",
@@ -31,6 +31,14 @@
         {
           "beforeBlock": "    && Boolean(left.workshopUrgent) === Boolean(right.workshopUrgent)\n    && (left.workshopDueDate || '') === (right.workshopDueDate || '');",
           "afterBlock": "    && Boolean(left.workshopUrgent) === Boolean(right.workshopUrgent)\n    && (left.workshopDueDate || '') === (right.workshopDueDate || '')\n    && (left.workshopDueTime || '') === (right.workshopDueTime || '');"
+        },
+        {
+          "beforeBlock": "  const totalAmount = manualTotal !== null && Number.isFinite(manualTotal) && manualTotal > 0\n    ? manualTotal\n    : itemsTotal;",
+          "afterBlock": "  const totalAmount = manualTotal !== null && Number.isFinite(manualTotal)\n    ? manualTotal\n    : itemsTotal;"
+        },
+        {
+          "beforeBlock": "    if (amount > 0 && !method) {\n      throw new OrderInputValidationError(`В оплате ${index + 1} указана сумма ${Math.trunc(amount)}, но не выбран способ оплаты.`)\n    }\n    if (method && amount <= 0) {\n      throw new OrderInputValidationError(`Для оплаты ${index + 1} выберите сумму больше нуля или очистите способ оплаты.`)\n    }",
+          "afterBlock": "    if (amount > 0 && !method) {\n      throw new OrderInputValidationError(`В оплате ${index + 1} указана сумма ${Math.trunc(amount)}, но не выбран способ оплаты.`)\n    }"
         }
       ]
     },

@@ -63,7 +63,13 @@ result = pricing.evaluateItemizedCreatePricing(
   [{ productName: 'Бесплатно', quantity: 1, unitPrice: 0, catalogPriceSnapshot: 1000 }],
   [],
 )
-check(result.status === 'ready' && result.totalAmount === 0, 'Explicit zero must remain technically representable pending client policy')
+check(result.status === 'ready' && result.totalAmount === 0, 'Explicit zero sold price must be allowed by confirmed client policy')
+
+result = pricing.evaluateItemizedCreatePricing(
+  [{ productName: 'Бесплатно', quantity: 1, unitPrice: 0, catalogPriceSnapshot: 1000 }],
+  [{ method: 'КАСПИ МАГАЗИН', amount: 0 }],
+)
+check(result.status === 'ready' && result.receivedAmount === 0 && result.debtAmount === 0, 'Zero-amount payment row with a selected method must not block a zero-price order')
 
 result = pricing.evaluateItemizedCreatePricing(
   [{ productName: 'Товар', quantity: 1, unitPrice: 1000, catalogPriceSnapshot: 1200 }],
@@ -89,4 +95,4 @@ result = pricing.evaluateItemizedCreatePricing(
 )
 check(result.status === 'blocked' && result.blockers.some(x => x.code === 'invalid_payment'), 'Payment amount without method must block readiness')
 
-console.log('STAGE03-H6G ITEMIZED CREATE READINESS PASSED — frontend can preflight exact itemized line/payment/debt arithmetic without activating UI, inventing missing prices, collapsing Catalog snapshot into sold price, or deciding zero-price policy')
+console.log('STAGE03-H6G ITEMIZED CREATE READINESS PASSED — frontend can preflight exact itemized line/payment/debt arithmetic without activating UI, inventing missing prices, or collapsing Catalog snapshot into sold price; confirmed zero-price/zero-payment-row policy is enforced')

@@ -172,7 +172,7 @@ export function evaluateItemizedCreatePricing(
     const rawAmount = payment?.amount
     const amount = Number(rawAmount || 0)
     const method = String(payment?.method || '').trim()
-    if (!Number.isFinite(amount) || !Number.isSafeInteger(amount) || amount < 0 || (amount > 0 && !method) || (method && amount <= 0)) {
+    if (!Number.isFinite(amount) || !Number.isSafeInteger(amount) || amount < 0 || (amount > 0 && !method)) {
       blockers.push({ code: 'invalid_payment', paymentIndex })
       return
     }

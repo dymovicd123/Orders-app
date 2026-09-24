@@ -139,22 +139,26 @@ Final adjacent audit covers:
 - Cash / Finance-day: remain Catalog-independent and pricing-generation agnostic;
 - physical return/exchange lifecycle: may read historical sold-line values for operational identity but cannot rewrite commercial price facts.
 
-## What remains intentionally unresolved
+## Client decisions received — 2026-09-24
 
-These are business/product decisions from Stage03-E, not technical gaps to guess:
+Confirmed:
+1. the existing Catalog price assignment is correct: `product + material + length + adult/child`;
+2. gender/color/size are not additional sale-price dimensions;
+3. delivery is not a separate sale-price dimension;
+4. if Catalog has no price, the manager must still be able to enter a final sold price and complete the order;
+5. explicit zero sold price is allowed;
+6. a zero-amount payment row may keep a preselected method and must not block order saving;
+7. sold orders keep their historical sold prices permanently; later Catalog price changes affect only later/new orders.
 
-1. whether gender/color/size/age affect price;
-2. whether delivery has its own price;
-3. whether an item with no Catalog price can be sold using a manual final price;
-4. whether zero-price/free items are allowed;
-5. exact discount UI model: final price / amount / percent;
-6. whether manager override requires a reason;
-7. behavior after changing price-driving characteristics following a manual override;
-8. return refund defaults;
-9. exchange price policy;
-10. explicit discount reporting requirements.
+Still unresolved:
+1. exact discount UI model: final price / amount / percent;
+2. whether manager override requires a reason;
+3. within an unsaved draft, what happens to a manual final-price override if product/material/length/adult-child is changed afterward;
+4. whether returns stay fully manual or receive only an optional suggested refund from the historical sold price;
+5. itemized exchange price policy;
+6. explicit discount reporting requirements.
 
-Until those are answered, do not switch the visible Create flow to itemized/autofill and do not invent itemized Edit/Return/Exchange policy.
+These remaining questions no longer block implementing the confirmed zero-price / missing-Catalog-price behavior. Visible itemized Create activation should still avoid inventing discount, draft-override, return or exchange policy.
 
 ## Completion statement
 

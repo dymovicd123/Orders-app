@@ -131,10 +131,11 @@ The storage model must support a new item with no Catalog price.
 
 Contract:
 - `catalog_price_snapshot = NULL`;
-- manager may supply an explicit final `unit_price` only if product policy allows it;
-- whether saving without any price is allowed is still a client/product decision.
+- the manager may and must be able to supply an explicit final `unit_price` when Catalog has no applicable price;
+- an absent Catalog recommendation must never block the sale by itself;
+- explicit final price `0` is valid when that is the intended sale price.
 
-Do not use zero to mean “price missing”.
+Do not use zero to mean “price missing”: missing price and an explicitly entered zero are different states.
 
 ## 5. Order total
 
@@ -306,19 +307,24 @@ No rewrite of `order_items.unit_price`.
 
 No payment/return/exchange mutation.
 
-## 15. Questions intentionally still open
+## 15. Client-confirmed pricing decisions — 2026-09-24
 
-These remain business/product decisions and are not silently decided by this contract:
+The current Stage03 price assignment is the accepted base model:
+- Catalog price key remains `product + material + length + adult/child`;
+- gender, color and size are not additional price dimensions;
+- delivery does not add or select a separate product sale price;
+- if Catalog has no price, the manager may enter the final sold price and save the order;
+- explicit zero final price is allowed;
+- a payment row with a preselected method and amount `0` is not a payment fact and must not block saving;
+- once an order is sold, its persisted sold price remains historical truth;
+- later Catalog price changes apply only to later/new orders and never rewrite old sales.
 
-- whether gender/color/size/age change price;
-- whether delivery has its own price;
-- whether an item with no Catalog price may be sold with manual price;
-- whether zero-price/free items are allowed;
+Still open:
 - exact discount UI (final price / amount / percent);
-- whether manager must give a reason for override;
-- behavior after changing price-driving item characteristics following a manual override;
-- return refund defaults;
-- exchange price policy;
+- whether a manager price override requires a reason;
+- inside one unsaved draft, whether a manual final-price override should survive a later change of product/material/length/adult-child or be replaced by the newly resolved Catalog recommendation;
+- whether returns should stay fully manual or merely receive an optional historical sold-price suggestion;
+- itemized exchange price semantics;
 - explicit discount reporting requirements.
 
 ## 16. Next safe engineering step
