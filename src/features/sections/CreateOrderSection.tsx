@@ -267,14 +267,24 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                               <span>Срочно для цеха</span>
                             </label>
                             {item.workshopUrgent ? (
-                              <label>
-                                <span>Нужно до</span>
-                                <input
-                                  type="date"
-                                  value={item.workshopDueDate || ''}
-                                  onChange={(event) => updateCreateItem(index, 'workshopDueDate', event.target.value)}
-                                />
-                              </label>
+                              <>
+                                <label>
+                                  <span>Нужно до</span>
+                                  <input
+                                    type="date"
+                                    value={item.workshopDueDate || ''}
+                                    onChange={(event) => updateCreateItem(index, 'workshopDueDate', event.target.value)}
+                                  />
+                                </label>
+                                <label>
+                                  <span>Время</span>
+                                  <input
+                                    type="time"
+                                    value={item.workshopDueTime || ''}
+                                    onChange={(event) => updateCreateItem(index, 'workshopDueTime', event.target.value)}
+                                  />
+                                </label>
+                              </>
                             ) : null}
                           </>
                         ) : null}
