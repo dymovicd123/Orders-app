@@ -159,3 +159,13 @@ Until those are answered, do not switch the visible Create flow to itemized/auto
 ## Completion statement
 
 As of this checkpoint, the Stage03 pricing/itemized preparation that can be completed without deciding the client's unresolved business rules is technically complete on Branch2.
+
+## 2026-09-24 note — separate CLIENT-ZAMMLER request
+
+A separate client request named CLIENT-ZAMMLER was implemented and deployed after this checkpoint. It does **not** resolve any Stage03 business-policy question and does **not** start roadmap Stage04.
+
+Do not use historical `Stage04-ZAMMLER` labels in old files/commits as roadmap state. The canonical completion record is:
+`docs/continuation/CLIENT_ZAMMLER_COMPLETION_20260924.md`.
+
+The unresolved client-decision list above remains authoritative until the client answers it.
+
