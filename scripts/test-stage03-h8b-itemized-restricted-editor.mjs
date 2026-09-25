@@ -44,7 +44,7 @@ const openStart = app.indexOf('async function handleEditOrder')
 const openEnd = app.indexOf('\n\n  function upsertOrderInState', openStart)
 const openFlow = app.slice(openStart, openEnd)
 check(openFlow.includes("if (order.pricing_mode === 'itemized_v1')") && openFlow.includes('loadCatalogData(true)'), 'H8F itemized open flow no longer refreshes supporting data')
-check(!openFlow.includes('Старый редактор пока отключён') && !openFlow.includes('setEditorOpen(false)\n      setMessage'), 'H8F itemized editor opening is blanket-blocked again')
+check(!openFlow.includes('Старый редактор пока отключён') && !openFlow.includes('Этот заказ использует построчную цену. Старый редактор'), 'H8F itemized editor opening is blanket-blocked again')
 
 check(ui.includes("const itemizedMode = selectedOrder?.pricing_mode === 'itemized_v1'"), 'H8B restricted UI mode missing')
 check(ui.includes('Редактируйте заказ прямо в форме'), 'H8F direct editor guidance missing')
