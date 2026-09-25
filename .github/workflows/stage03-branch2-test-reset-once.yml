@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   reset:
-    if: github.event.head_commit.message == 'Stage03 TESTRESET: prepare clean H8 acceptance environment'
+    if: contains(github.event.head_commit.message, 'TESTRESET')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
