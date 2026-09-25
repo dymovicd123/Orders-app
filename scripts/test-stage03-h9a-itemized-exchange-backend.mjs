@@ -61,7 +61,7 @@ check(regularExchange.includes("order.pricing_mode === 'itemized_v1'"), 'H9A mus
 check(workshopExchange.includes("order.pricing_mode === 'itemized_v1'"), 'H9A must not expose Workshop itemized Exchange UI yet')
 
 for (const marker of [
-  'orders.total_amount is derived from the active itemized lines',
+  '`orders.total_amount` is derived from the active itemized lines',
   'money facts do **not** add to or subtract from `orders.total_amount`',
   'Legacy `legacy_manual_total` exchange arithmetic is preserved unchanged',
   'Production/main is not a target',
