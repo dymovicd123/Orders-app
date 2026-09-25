@@ -5721,7 +5721,7 @@ function removeDebtPayment(index: number) {
       if (concurrentShortages.length) {
         setMessage(`Заказ ${order.external_id} обновлён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Внимание».`)
       } else {
-        setMessage(`Заказ ${order.external_id} обновлён.`)
+        setMessage(isItemizedEdit ? `Реквизиты заказа ${order.external_id} обновлены.` : `Заказ ${order.external_id} обновлён.`)
       }
       if (result?.order) {
         const savedOrder = result.order as OrderRecord
