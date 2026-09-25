@@ -1,6 +1,5 @@
 PRAGMA foreign_keys = ON;
 
-BEGIN IMMEDIATE;
 
 -- Stage03 H8 manual-acceptance reset. Branch2 only.
 -- Preserve auth/users, managers, reference dictionaries, production-like catalog and all non-test physical stock.
@@ -207,4 +206,3 @@ INSERT INTO inventory_stock(inventory_source, product_id, variant_id, product_na
 SELECT 'boutique', p.id, v.id, p.name, v.gender, v.color, v.material, v.length, v.size_label, 1, 0, 'Stage03 H8 test baseline', 'BR2-H8-RESET', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 FROM catalog_products p JOIN catalog_variants v ON v.product_id=p.id WHERE p.name='BR2-H8-E ДЕТСКИЙ';
 
-COMMIT;

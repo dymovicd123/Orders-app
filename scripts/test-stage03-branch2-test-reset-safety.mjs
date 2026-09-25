@@ -14,6 +14,7 @@ check(!/DELETE\s+FROM\s+(app_users|app_sessions|managers|reference_values|app_se
 check(!/DELETE\s+FROM\s+catalog_(products|variants|stock_positions|execution_prices)\s*;/i.test(sql), 'Reset must not globally wipe Catalog master data')
 check(!/UPDATE\s+inventory_stock\s+SET\s+quantity\s*=/i.test(sql), 'Reset must not rewrite non-test physical stock quantities')
 check(!/DROP\s+(TABLE|TRIGGER|INDEX)/i.test(sql), 'Reset must not change schema objects')
+check(!/\b(BEGIN|COMMIT|SAVEPOINT|ROLLBACK)\b/i.test(sql), 'Wrangler D1 file import owns transaction boundaries; reset SQL must not declare them')
 check(!sql.includes('orders_db_prod') && !sql.includes('17e68a41-1d58-4a36-8a63-47c3e32443c4'), 'Production D1 identity is forbidden in reset SQL')
 
 console.log('STAGE03 BRANCH2 TEST RESET SAFETY PASSED — transactional residue is cleared, master/auth data and non-test physical quantities are preserved, and fixtures are isolated under BR2-H8-*')
