@@ -35,7 +35,7 @@ for (const marker of [
 ]) check(edit.includes(marker), 'H8A: itemized metadata lane missing hard stop: ' + marker)
 
 check(edit.includes("existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete' && !itemizedMetadataOnlyEdit"), 'H8A: unsupported itemized edits no longer fail closed')
-check(edit.includes('Разрешены только безопасные исправления реквизитов, проведённых оплат, отдельная коррекция цены продажи и безопасная замена состава'), 'H8A: controlled conflict message missing')
+check(edit.includes('Реквизиты, проведённые оплаты, цены продажи и состав можно исправлять из редактора'), 'H8A: controlled conflict message missing')
 check(edit.includes('const requestedItems = replacementItems') && edit.includes(": (Array.isArray(input.items) ? normalizeOrderItems(input.items, nextSource) : null)"), 'H8A: absent items no longer remain absent outside the dedicated H8D replacement lane')
 check(edit.includes('const requestedPayments = Array.isArray(input.payments) ? normalizeOrderPayments(input.payments, nextOrderDate) : null'), 'H8A: absent payments no longer remain absent')
 check(edit.includes('const itemContentChanged = Boolean(requestedItems && !sameNormalizedOrderItemsForEdit'), 'H8A: metadata-only lane can unexpectedly rewrite item content')
@@ -49,4 +49,4 @@ check(app.includes('const payload = isItemizedContentRewrite ? {') && app.includ
 check(app.includes('itemPriceCorrections') && app.includes('itemContentReplacement'), 'H8A: dedicated H8C/H8E fields are missing from the isolated itemized request lanes')
 check(!app.includes('Старый редактор пока отключён для таких заказов'), 'H8A: obsolete blanket itemized editor block returned')
 
-console.log('STAGE03-H8A ITEMIZED METADATA EDIT FOUNDATION PASSED — full legacy item/payment/total/source/lifecycle rewrites remain blocked while H8B metadata/payment, H8C price and H8E composition requests stay isolated')
+console.log('STAGE03-H8A ITEMIZED METADATA EDIT FOUNDATION PASSED — full legacy item/payment/total/source/lifecycle rewrites remain blocked while H8F combines only the guarded itemized contracts')
