@@ -62,3 +62,12 @@ The itemized PATCH contains only the H8A allow-listed metadata plus `paymentCorr
 A separate future step is required for any real commercial/physical edit of an itemized order, including sold-price correction, SKU/quantity/source changes or itemized exchange semantics.
 
 Environment rule remains unchanged: Branch2 Worker + Branch2 D1 only. Production is not a target.
+
+
+## Branch2 deploy fallback
+
+Cloudflare Workers Builds may occasionally report a Branch2 build as `skipped` without running the project build. The deploy monitor now has a Branch2-only fallback for that exact outcome.
+
+Before the fallback deploys it verifies the exact checked-out commit, `orders-app-branch2`, `orders_db_branch2` and the Branch2 D1 id, explicitly rejects Production D1 identifiers, runs the full release check, and only then executes the normal deploy command.
+
+The fallback never runs for `main`, does not run migrations, and does not execute D1 commands.
