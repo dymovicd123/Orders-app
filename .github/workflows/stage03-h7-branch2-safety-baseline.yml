@@ -1,0 +1,105 @@
+name: Stage03 H7 Branch2 safety baseline
+
+on:
+  push:
+    branches:
+      - branch2
+
+permissions:
+  contents: read
+
+jobs:
+  safety:
+    name: Branch2-only pricing activation safety
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout exact Branch2 commit
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on branch or database identity drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "branch2" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo "Production D1 identity detected in Branch2. Refusing all further steps." >&2
+            exit 70
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run Branch2 environment gate
+        run: node scripts/test-branch2-environment.mjs
+
+      - name: Run Stage03 H6/H7 safety gates
+        run: |
+          set -euo pipefail
+          node scripts/test-stage03-h6i-pre-client-readiness-matrix.mjs
+          node scripts/test-stage03-h6j-adjacent-surfaces-isolation.mjs
+          node scripts/test-stage03-h7a-branch2-safety-baseline.mjs
+
+      - name: Typecheck and build exact Branch2 commit
+        run: |
+          set -euo pipefail
+          npm run typecheck
+          npm run build
+
+      - name: Verify generated deploy config still targets Branch2 only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('node:fs')
+          const path = require('node:path')
+          const redirect = JSON.parse(fs.readFileSync('.wrangler/deploy/config.json', 'utf8'))
+          const generatedPath = path.resolve('.wrangler/deploy', String(redirect.configPath || ''))
+          const generated = JSON.parse(fs.readFileSync(generatedPath, 'utf8'))
+          if (generated.name !== 'orders-app-branch2') throw new Error('Generated Worker target is not Branch2')
+          const db = (generated.d1_databases || []).find(row => row && row.binding === 'DB')
+          if (!db || db.database_name !== 'orders_db_branch2' || db.database_id !== '40065052-854e-44b8-bcd5-251bdd488301') {
+            throw new Error('Generated D1 binding is not Branch2')
+          }
+          if (JSON.stringify(generated).includes('orders_db_prod') || JSON.stringify(generated).includes('17e68a41-1d58-4a36-8a63-47c3e32443c4')) {
+            throw new Error('Generated config contains Production D1 identity')
+          }
+          console.log('Generated deploy config: Branch2 only')
+          NODE
+
+      - name: Capture read-only Branch2 D1 pricing fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]] || {
+            echo "Cloudflare credentials unavailable; refusing remote database access." >&2
+            exit 71
+          }
+          result="$(npx wrangler d1 execute orders_db_branch2             --remote             --config wrangler.jsonc             --command "SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount), 0) FROM orders) AS orders_total,
+              (SELECT COALESCE(SUM(received_amount), 0) FROM orders) AS orders_received,
+              (SELECT COALESCE(SUM(debt_amount), 0) FROM orders) AS orders_debt,
+              (SELECT SUM(CASE WHEN pricing_mode = 'itemized_v1' THEN 1 ELSE 0 END) FROM orders) AS itemized_orders,
+              (SELECT SUM(CASE WHEN pricing_mode = 'legacy_manual_total' THEN 1 ELSE 0 END) FROM orders) AS legacy_orders,
+              (SELECT COUNT(*) FROM pragma_table_info('order_items') WHERE name = 'catalog_price_snapshot') AS snapshot_column_count,
+              (SELECT COUNT(*) FROM pragma_table_info('retained_order_summaries') WHERE name = 'pricing_mode') AS retained_pricing_column_count"             --json)"
+          echo "$result"
+          invalid="$(jq -r '.[0].results[0] | if (.snapshot_column_count == 1 and .retained_pricing_column_count == 1) then 0 else 1 end' <<<"$result")"
+          [[ "$invalid" == "0" ]] || {
+            echo "Branch2 pricing schema fingerprint is incomplete." >&2
+            exit 72
+          }
+          echo "Read-only Branch2 D1 fingerprint captured. No migration or business-row write was executed."
