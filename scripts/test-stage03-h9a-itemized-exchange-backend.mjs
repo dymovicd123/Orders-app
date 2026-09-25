@@ -57,8 +57,9 @@ const workshopExchangeStart = app.indexOf('async function openWorkshopExchange')
 const workshopExchangeEnd = app.indexOf('\n\n  async function ', workshopExchangeStart + 40)
 const regularExchange = app.slice(regularExchangeStart, regularExchangeEnd)
 const workshopExchange = app.slice(workshopExchangeStart, workshopExchangeEnd)
-check(regularExchange.includes("order.pricing_mode === 'itemized_v1'"), 'H9A must not expose ordinary itemized Exchange UI yet')
-check(workshopExchange.includes("order.pricing_mode === 'itemized_v1'"), 'H9A must not expose Workshop itemized Exchange UI yet')
+check(!regularExchange.includes("order.pricing_mode === 'itemized_v1'"), 'H9B ordinary itemized Exchange entry is still blocked')
+check(!workshopExchange.includes("order.pricing_mode === 'itemized_v1'"), 'H9B Workshop itemized Exchange entry is still blocked')
+check(app.includes('expectedOrderTotal') && app.includes('expectedOldCatalogPriceSnapshot'), 'H9B UI does not supply H9A stale-snapshot contract')
 
 for (const marker of [
   '`orders.total_amount` is derived from the active itemized lines',
@@ -67,4 +68,4 @@ for (const marker of [
   'Production/main is not a target',
 ]) check(doc.includes(marker), 'H9A continuation contract missing: ' + marker)
 
-console.log('STAGE03-H9A ITEMIZED EXCHANGE BACKEND PASSED — Branch2 backend now has stale-safe itemized replacement pricing, line-derived totals, independent exchange money, safe correction/cancellation semantics, while UI activation remains deferred to H9B')
+console.log('STAGE03-H9A ITEMIZED EXCHANGE BACKEND PASSED — Branch2 backend keeps stale-safe itemized replacement pricing, line-derived totals, independent exchange money and safe correction/cancellation semantics; H9B now supplies the required UI snapshot contract')
