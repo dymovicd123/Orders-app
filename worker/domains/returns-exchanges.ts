@@ -1732,7 +1732,7 @@ export async function correctExchangeFinancials(
     const row = await db.prepare(
       `SELECT e.id, e.order_id, e.exchange_date, e.financial_action, e.financial_amount, e.payment_method,
               e.payment_id, e.refund_return_id, e.comment, e.status,
-              o.external_id, o.order_status,
+              o.external_id, o.order_status, o.pricing_mode,
               p.id AS linked_payment_id, p.payment_date AS linked_payment_date, p.method AS linked_payment_method,
               p.amount AS linked_payment_amount, p.comment AS linked_payment_comment,
               r.id AS linked_return_id, r.return_date AS linked_return_date, r.payment_method AS linked_return_method,
@@ -1813,18 +1813,35 @@ export async function correctExchangeFinancials(
 
     await syncOrderFinancialLedger(db, orderId);
     const ledger = await readOrderFinancialLedger(db, orderId);
+    const isItemizedExchange = cleanText(row.pricing_mode) === 'itemized_v1';
     let nextTotalAmount = ledger.totalAmount;
+    let projectedReceivedAmount = ledger.receivedAmount;
+    let projectedReturnAmount = ledger.returnAmount;
     if (financialAction === 'extra_payment') {
-      nextTotalAmount = ledger.totalAmount - oldAmount + nextAmount;
+      projectedReceivedAmount = Math.max(0, ledger.receivedAmount - oldAmount + nextAmount);
+      if (!isItemizedExchange) {
+        nextTotalAmount = ledger.totalAmount - oldAmount + nextAmount;
+      }
     } else {
       const otherReturns = Math.max(0, ledger.returnAmount - oldAmount);
       const availableRefund = Math.max(0, ledger.receivedAmount - otherReturns);
       if (nextAmount > availableRefund) {
         throw new Error(`Сумма возврата ${nextAmount} больше доступной суммы ${availableRefund}.`);
       }
-      nextTotalAmount = ledger.totalAmount + oldAmount - nextAmount;
+      projectedReturnAmount = otherReturns + nextAmount;
+      if (!isItemizedExchange) {
+        nextTotalAmount = ledger.totalAmount + oldAmount - nextAmount;
+      }
     }
-    if (!Number.isFinite(nextTotalAmount) || nextTotalAmount < 0) throw new Error('Исправление привело бы к отрицательной сумме заказа.');
+    if (!Number.isSafeInteger(nextTotalAmount) || nextTotalAmount < 0) throw new Error('Исправление привело бы к некорректной сумме заказа.');
+    if (isItemizedExchange) {
+      const projectedNetPaid = Math.max(0, projectedReceivedAmount - projectedReturnAmount);
+      if (!Number.isSafeInteger(projectedNetPaid) || projectedNetPaid > nextTotalAmount) {
+        throw new CriticalOperationConflictError(
+          `После исправления денежной части обмена у itemized-заказа останется необъяснённая переплата ${Math.max(0, projectedNetPaid - nextTotalAmount)}. Увеличьте возврат или уменьшите доплату.`
+        );
+      }
+    }
 
     const cashSettings = await db.prepare(
       `SELECT auto_tracking_enabled FROM cash_register_settings WHERE id = 1`
@@ -1910,7 +1927,9 @@ export async function correctExchangeFinancials(
        SET exchange_date = ?, financial_amount = ?, payment_method = ?, comment = ?
        WHERE id = ? AND COALESCE(status, 'completed') <> 'cancelled'`
     ).bind(nextExchangeDate, nextAmount, nextMethod, nextComment || null, exchangeId));
-    statements.push(db.prepare(`UPDATE orders SET total_amount = ?, updated_at = ? WHERE id = ?`).bind(nextTotalAmount, timestamp, orderId));
+    if (!isItemizedExchange) {
+      statements.push(db.prepare(`UPDATE orders SET total_amount = ?, updated_at = ? WHERE id = ?`).bind(nextTotalAmount, timestamp, orderId));
+    }
 
     if (cashDelta) {
       const cashDirection = cashDelta > 0 ? 'in' : 'out';
@@ -2268,7 +2287,7 @@ export async function cancelExchange(db: D1Database, exchangeId: number, input: 
   let operationContext = parseCriticalContext<Record<string, any>>(criticalOperation.row);
   if (!exchangeId) throw new Error('exchangeId is required.');
   const exchange = await db.prepare(
-    `SELECT e.*, o.external_id, o.order_status
+    `SELECT e.*, o.external_id, o.order_status, o.pricing_mode
      FROM exchanges e
      JOIN orders o ON o.id = e.order_id
      WHERE e.id = ?`
@@ -2319,11 +2338,52 @@ export async function cancelExchange(db: D1Database, exchangeId: number, input: 
     const cancelFinancialAction = normalizeExchangeFinancialAction(exchange.financial_action);
     const cancelFinancialAmount = Math.max(0, toInt(exchange.financial_amount, 0));
     const currentTotal = Math.max(0, toInt(currentOrderTotalRow?.total_amount, 0));
-    const restoredTotalAmountTarget = cancelFinancialAction === 'extra_payment'
+    const isItemizedExchange = cleanText(exchange.pricing_mode) === 'itemized_v1';
+    let restoredTotalAmountTarget = cancelFinancialAction === 'extra_payment'
       ? Math.max(0, currentTotal - cancelFinancialAmount)
       : cancelFinancialAction === 'refund'
         ? currentTotal + cancelFinancialAmount
         : currentTotal;
+    if (isItemizedExchange) {
+      if (!newItem) {
+        throw new CriticalOperationConflictError('Новая позиция itemized-обмена не найдена. Отмена остановлена без изменения финансов.');
+      }
+      const activePricingRows = await db.prepare(
+        `SELECT id, quantity, unit_price, line_total
+         FROM order_items
+         WHERE order_id = ? AND quantity > 0
+         ORDER BY id ASC`
+      ).bind(orderId).all<Record<string, unknown>>();
+      let derivedCurrentTotal = 0;
+      for (const pricingRow of activePricingRows.results || []) {
+        const quantity = Number(pricingRow.quantity);
+        const unitPrice = Number(pricingRow.unit_price);
+        const lineTotal = Number(pricingRow.line_total);
+        const derivedLineTotal = quantity * unitPrice;
+        if (!Number.isSafeInteger(quantity) || quantity <= 0
+          || !Number.isSafeInteger(unitPrice) || unitPrice < 0
+          || !Number.isSafeInteger(derivedLineTotal) || derivedLineTotal < 0
+          || lineTotal !== derivedLineTotal) {
+          throw new CriticalOperationConflictError('Itemized-заказ содержит повреждённую ценовую позицию. Отмена обмена остановлена без изменений.');
+        }
+        const nextDerivedTotal = derivedCurrentTotal + derivedLineTotal;
+        if (!Number.isSafeInteger(nextDerivedTotal) || nextDerivedTotal < 0) {
+          throw new CriticalOperationConflictError('Итог itemized-заказа слишком велик для точного расчёта отмены обмена.');
+        }
+        derivedCurrentTotal = nextDerivedTotal;
+      }
+      if (derivedCurrentTotal !== currentTotal) {
+        throw new CriticalOperationConflictError('Итог itemized-заказа не совпадает с активными позициями. Отмена обмена остановлена без изменений.');
+      }
+      const restoredOldValue = oldQuantity * Number(oldItem.unit_price);
+      const removedNewValue = Number(newItem.line_total);
+      restoredTotalAmountTarget = currentTotal - removedNewValue + restoredOldValue;
+      if (!Number.isSafeInteger(restoredOldValue) || restoredOldValue < 0
+        || !Number.isSafeInteger(removedNewValue) || removedNewValue < 0
+        || !Number.isSafeInteger(restoredTotalAmountTarget) || restoredTotalAmountTarget < 0) {
+        throw new CriticalOperationConflictError('Не удалось безопасно восстановить итог itemized-заказа при отмене обмена.');
+      }
+    }
     operationContext = {
       ...operationContext, baselineCaptured: true, startedAt: timestamp,
       restoredOldQuantityTarget: Math.max(0, toInt(oldItem.quantity, 0)) + oldQuantity,
