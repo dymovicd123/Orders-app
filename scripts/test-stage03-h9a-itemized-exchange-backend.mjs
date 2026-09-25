@@ -58,7 +58,7 @@ const workshopExchangeEnd = app.indexOf('\n\n  async function ', workshopExchang
 const regularExchange = app.slice(regularExchangeStart, regularExchangeEnd)
 const workshopExchange = app.slice(workshopExchangeStart, workshopExchangeEnd)
 check(!regularExchange.includes("order.pricing_mode === 'itemized_v1'"), 'H9B ordinary itemized Exchange entry is still blocked')
-check(!workshopExchange.includes("order.pricing_mode === 'itemized_v1'"), 'H9B Workshop itemized Exchange entry is still blocked')
+check(!workshopExchange.includes('текущая форма обмена работает по старой общей цене') && workshopExchange.includes('const exchangeDraftForTask = createExchangeDraft(order)'), 'H9B Workshop itemized Exchange entry is still blocked')
 check(app.includes('expectedOrderTotal') && app.includes('expectedOldCatalogPriceSnapshot'), 'H9B UI does not supply H9A stale-snapshot contract')
 
 for (const marker of [
