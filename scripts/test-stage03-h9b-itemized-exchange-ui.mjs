@@ -34,6 +34,7 @@ const regularExchange = between(app, 'async function handleOpenExchange', '\n\n 
 const workshopExchange = between(app, 'async function openWorkshopExchange', '\n\n  function inventoryOperationVariantFromRow')
 check(!regularExchange.includes("order.pricing_mode === 'itemized_v1'"), 'H9B ordinary itemized Exchange remains blocked')
 check(!workshopExchange.includes("order.pricing_mode === 'itemized_v1'"), 'H9B Workshop itemized Exchange remains blocked')
+check(workshopExchange.includes("order.pricing_mode === 'itemized_v1' && exactWorkshopItem") && workshopExchange.includes("unitPrice: Number(exactWorkshopItem.unitPrice)"), 'H9B Workshop entry does not seed the exact historical sold price')
 check(!app.includes('текущая форма обмена работает по старой общей цене'), 'H9B stale guard copy remains visible')
 
 const saveExchange = between(app, 'async function saveExchange()', '\n\n  async function ')
