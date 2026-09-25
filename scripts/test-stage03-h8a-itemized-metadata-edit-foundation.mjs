@@ -36,7 +36,7 @@ for (const marker of [
 
 check(edit.includes("existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete' && !itemizedMetadataOnlyEdit"), 'H8A: unsupported itemized edits no longer fail closed')
 check(edit.includes('Разрешены только безопасные исправления реквизитов, проведённых оплат, отдельная коррекция цены продажи и безопасная замена состава'), 'H8A: controlled conflict message missing')
-check(edit.includes('const requestedItems = Array.isArray(input.items) ? normalizeOrderItems(input.items, nextSource) : null'), 'H8A: absent items no longer remain absent')
+check(edit.includes('const requestedItems = replacementItems') && edit.includes(": (Array.isArray(input.items) ? normalizeOrderItems(input.items, nextSource) : null)"), 'H8A: absent items no longer remain absent outside the dedicated H8D replacement lane')
 check(edit.includes('const requestedPayments = Array.isArray(input.payments) ? normalizeOrderPayments(input.payments, nextOrderDate) : null'), 'H8A: absent payments no longer remain absent')
 check(edit.includes('const itemContentChanged = Boolean(requestedItems && !sameNormalizedOrderItemsForEdit'), 'H8A: metadata-only lane can unexpectedly rewrite item content')
 check(edit.includes('const rewriteItems = Boolean(requestedItems && !sameNormalizedOrderItemsExceptPriceForEdit'), 'H8A: metadata-only lane can unexpectedly trigger stock rewrite')
