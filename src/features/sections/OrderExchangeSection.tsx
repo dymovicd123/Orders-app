@@ -5,6 +5,7 @@ type SectionContext = Record<string, any>
 
 export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
   const {
+    applyExchangeItemPatch,
     applyExchangeProductPick,
     cancelExchangeEntry,
     closeExchangeForm,
@@ -109,6 +110,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     .filter((entry: any) => entry.status !== 'cancelled' && entry.oldPhysicalTracking && !entry.oldPhysicalReceivedAt && entry.oldOperationItemId)
   const loadedPendingExchangeQuantity = pendingExchangeIntake.reduce((sum: number, entry: any) => sum + Math.max(0, Number(entry.oldQuantity || 0)), 0)
 
+  const itemizedExchange = exchangeSelectedOrder?.pricing_mode === 'itemized_v1'
   const queuedPairs = exchangeDraft.queuedPairs || []
   const queuedOldQuantityByItem = new Map<number, number>()
   for (const pair of queuedPairs) {
@@ -163,7 +165,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
   const effectiveOldAvailableQuantity = Math.max(0, Number(effectiveOldItem?.operationAvailableQuantity || 0))
   const currentPairReady = Boolean(effectiveOldItem && effectiveOldAvailableQuantity > 0 && String(exchangeDraft.newItem.productName || '').trim())
   const queueCurrentExchangePair = () => {
-    if (!currentPairReady) return
+    if (itemizedExchange || !currentPairReady) return
     if (exchangePhysicalShortage && !exchangeObservationEnabled) return
     if (exchangeObservationEnabled && (exchangeObservedPhysical === null || exchangeObservedPhysical === undefined || !Number.isInteger(Number(exchangeObservedPhysical)) || Number(exchangeObservedPhysical) < exchangeRequired)) return
     const fresh = createExchangeDraft(exchangeSelectedOrder)
@@ -350,6 +352,12 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                   newSourceWasManuallyChanged: false,
                                   newItem: resetObservedStock(current.newItem, {
                                     sourceType: replacementSourceForItem(selectedItem),
+                                    ...(itemizedExchange && !String(current.newItem.productName || '').trim() ? {
+                                      unitPrice: selectedItem && Number.isSafeInteger(Number(selectedItem.unitPrice)) && Number(selectedItem.unitPrice) >= 0 ? Number(selectedItem.unitPrice) : undefined,
+                                      catalogPriceSnapshot: null,
+                                      priceOrigin: selectedItem && Number.isSafeInteger(Number(selectedItem.unitPrice)) && Number(selectedItem.unitPrice) >= 0 ? 'manual' : 'missing',
+                                      priceNeedsConfirmation: false,
+                                    } : {}),
                                   }),
                                 }))
                               }}
@@ -413,7 +421,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                               value={exchangeDraft.newItem.productName}
                               options={suggestionValues.products}
                               placeholder="Название товара"
-                              onChange={(value) => setExchangeDraft((current) => ({ ...current, newItem: resetObservedStock(current.newItem, { productName: value }) }))}
+                              onChange={(value) => applyExchangeItemPatch({ productName: value }, true)}
                               onPick={applyExchangeProductPick}
                             />
                           </label>
@@ -428,17 +436,52 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                           </label>
                           <label>
                             <span>Тип</span>
-                            <select value={exchangeDraft.newItem.audienceType || 'ВЗРОСЛЫЙ'} onChange={(event) => setExchangeDraft((current) => ({ ...current, newItem: resetObservedStock(current.newItem, { audienceType: event.target.value as EditorItem['audienceType'] }) }))}>
+                            <select value={exchangeDraft.newItem.audienceType || 'ВЗРОСЛЫЙ'} onChange={(event) => applyExchangeItemPatch({ audienceType: event.target.value as EditorItem['audienceType'] }, true)}>
                               <option value="ВЗРОСЛЫЙ">Взрослый</option>
                               <option value="ДЕТСКИЙ">Детский</option>
                             </select>
                           </label>
-                          <label><span>Пол</span><select value={exchangeDraft.newItem.gender || ''} onChange={(event) => setExchangeDraft((current) => ({ ...current, newItem: resetObservedStock(current.newItem, { gender: event.target.value }) }))}><option value="">Выберите для унисекс</option><option value="ЖЕН">ЖЕН</option><option value="МУЖ">МУЖ</option></select></label>
-                          <label><span>Цвет</span><SmartPickerInput value={exchangeDraft.newItem.color || ''} options={suggestionValues.colors} onChange={(value) => setExchangeDraft((current) => ({ ...current, newItem: resetObservedStock(current.newItem, { color: value }) }))} /></label>
-                          <label><span>Материал</span><SmartPickerInput value={exchangeDraft.newItem.material || ''} options={suggestionValues.materials} onChange={(value) => setExchangeDraft((current) => ({ ...current, newItem: resetObservedStock(current.newItem, { material: value }) }))} /></label>
-                          <label><span>Длина</span><SmartPickerInput value={exchangeDraft.newItem.length || ''} options={suggestionValues.lengths} onChange={(value) => setExchangeDraft((current) => ({ ...current, newItem: resetObservedStock(current.newItem, { length: value }) }))} /></label>
-                          <label><span>{exchangeDraft.newItem.audienceType === 'ДЕТСКИЙ' ? 'Возраст' : 'Размер'}</span><SmartPickerInput value={exchangeDraft.newItem.size || ''} options={exchangeDraft.newItem.audienceType === 'ДЕТСКИЙ' ? suggestionValues.childAges : suggestionValues.sizes} onChange={(value) => setExchangeDraft((current) => ({ ...current, newItem: resetObservedStock(current.newItem, { size: value }) }))} /></label>
-                          <label><span>Кол-во</span><FriendlyNumberInput type="number" min="1" value={exchangeDraft.newItem.quantity || 1} onChange={(event) => setExchangeDraft((current) => ({ ...current, newItem: resetObservedStock(current.newItem, { quantity: Math.max(1, Number(event.target.value || 1)) }) }))} /></label>
+                          <label><span>Пол</span><select value={exchangeDraft.newItem.gender || ''} onChange={(event) => applyExchangeItemPatch({ gender: event.target.value })}><option value="">Выберите для унисекс</option><option value="ЖЕН">ЖЕН</option><option value="МУЖ">МУЖ</option></select></label>
+                          <label><span>Цвет</span><SmartPickerInput value={exchangeDraft.newItem.color || ''} options={suggestionValues.colors} onChange={(value) => applyExchangeItemPatch({ color: value })} /></label>
+                          <label><span>Материал</span><SmartPickerInput value={exchangeDraft.newItem.material || ''} options={suggestionValues.materials} onChange={(value) => applyExchangeItemPatch({ material: value }, true)} /></label>
+                          <label><span>Длина</span><SmartPickerInput value={exchangeDraft.newItem.length || ''} options={suggestionValues.lengths} onChange={(value) => applyExchangeItemPatch({ length: value }, true)} /></label>
+                          <label><span>{exchangeDraft.newItem.audienceType === 'ДЕТСКИЙ' ? 'Возраст' : 'Размер'}</span><SmartPickerInput value={exchangeDraft.newItem.size || ''} options={exchangeDraft.newItem.audienceType === 'ДЕТСКИЙ' ? suggestionValues.childAges : suggestionValues.sizes} onChange={(value) => applyExchangeItemPatch({ size: value })} /></label>
+                          <label><span>Кол-во</span><FriendlyNumberInput type="number" min="1" value={exchangeDraft.newItem.quantity || 1} onChange={(event) => applyExchangeItemPatch({ quantity: Math.max(1, Number(event.target.value || 1)) })} /></label>
+                          {itemizedExchange ? (
+                            <>
+                              <label>
+                                <span>Цена по каталогу</span>
+                                <input value={exchangeDraft.newItem.catalogPriceSnapshot == null ? 'Нет цены' : formatMoney(Number(exchangeDraft.newItem.catalogPriceSnapshot || 0))} readOnly />
+                                <small className="field-hint">Рекомендация фиксируется в истории отдельно и не меняет цену клиента автоматически.</small>
+                              </label>
+                              <label>
+                                <span>Цена продажи</span>
+                                <FriendlyNumberInput
+                                  type="number"
+                                  min="0"
+                                  value={exchangeDraft.newItem.unitPrice ?? ''}
+                                  onChange={(event) => setExchangeDraft((current) => ({
+                                    ...current,
+                                    newItem: {
+                                      ...current.newItem,
+                                      unitPrice: event.target.value === '' ? undefined : Math.max(0, Math.trunc(Number(event.target.value) || 0)),
+                                      priceOrigin: 'manual',
+                                      priceNeedsConfirmation: false,
+                                    },
+                                  }))}
+                                />
+                                <small className="field-hint">Фактическая цена новой позиции. Для обмена без доплаты можно оставить цену старой позиции.</small>
+                              </label>
+                              <div className="wide-field editor-summary debt-target-summary">
+                                <div className="editor-summary-head">
+                                  <div>
+                                    <strong>Сумма новой позиции: {exchangeDraft.newItem.unitPrice == null ? '—' : formatMoney(Math.max(1, Number(exchangeDraft.newItem.quantity || 1)) * Number(exchangeDraft.newItem.unitPrice || 0))}</strong>
+                                    <span>Итог заказа будет пересчитан из активных позиций. Доплата или возврат ниже остаются отдельным денежным фактом.</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </>
+                          ) : null}
                           {exchangeAvailability ? (
                             <div className={`wide-field order-source-availability is-${exchangeAvailability.tone}${'needsAttention' in exchangeAvailability && exchangeAvailability.needsAttention ? ' needs-attention' : ''}`}>
                               <div className="order-source-availability-body">
@@ -518,7 +561,9 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                             <div className="editor-summary-head">
                               <div>
                                 <strong>Финансы обмена</strong>
-                                <span>Цену отдельных товаров убрали. Если по обмену есть доплата или возврат средств, выберите действие и сумму вручную.</span>
+                                <span>{itemizedExchange
+                                  ? 'Цена новой позиции задаётся выше. Здесь укажите только реальную доплату или возврат денег — эта сумма не подменяет цену товара.'
+                                  : 'Для старых заказов цена отдельных товаров не используется. Если по обмену есть доплата или возврат средств, выберите действие и сумму вручную.'}</span>
                               </div>
                             </div>
                             <div className="subgrid order-payment-grid">
@@ -548,9 +593,11 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                     </div>
     
                     <div className="actions order-create-actions form-bottom-actions">
-                      <button className="secondary" type="button" onClick={queueCurrentExchangePair} disabled={exchangeBusy || !currentPairReady || (exchangePhysicalShortage && !exchangeObservationEnabled)}>
-                        Добавить ещё позицию
-                      </button>
+                      {!itemizedExchange ? (
+                        <button className="secondary" type="button" onClick={queueCurrentExchangePair} disabled={exchangeBusy || !currentPairReady || (exchangePhysicalShortage && !exchangeObservationEnabled)}>
+                          Добавить ещё позицию
+                        </button>
+                      ) : null}
                       <button className="primary" type="button" onClick={() => void saveExchange()} disabled={exchangeBusy || (!queuedPairs.length && !currentPairReady)}>
                         {exchangeBusy ? 'Сохраняю...' : `Оформить обмен${queuedPairs.length ? ` (${queuedPairs.length + (currentPairReady ? 1 : 0)} поз.)` : ''}`}
                       </button>
