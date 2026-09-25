@@ -4699,6 +4699,14 @@ function App() {
       newItem: {
         ...exchangeDraftForTask.newItem,
         sourceType: 'workshop',
+        ...(order.pricing_mode === 'itemized_v1' && exactWorkshopItem ? {
+          unitPrice: Number.isSafeInteger(Number(exactWorkshopItem.unitPrice)) && Number(exactWorkshopItem.unitPrice) >= 0
+            ? Number(exactWorkshopItem.unitPrice)
+            : undefined,
+          catalogPriceSnapshot: null,
+          priceOrigin: Number.isSafeInteger(Number(exactWorkshopItem.unitPrice)) && Number(exactWorkshopItem.unitPrice) >= 0 ? 'manual' : 'missing',
+          priceNeedsConfirmation: false,
+        } : {}),
       },
     })
     setMessage(`Открыта форма обмена по заказу ${order.external_id}.`)
