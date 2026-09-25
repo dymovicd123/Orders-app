@@ -163,7 +163,14 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
   const exchangePhysicalShortage = Boolean(exchangeAvailability?.canObservePhysical && exchangePhysical < exchangeRequired)
   const exchangeFreeAfterIssue = exchangePhysical - exchangeReserved - exchangeRequired
   const effectiveOldAvailableQuantity = Math.max(0, Number(effectiveOldItem?.operationAvailableQuantity || 0))
-  const currentPairReady = Boolean(effectiveOldItem && effectiveOldAvailableQuantity > 0 && String(exchangeDraft.newItem.productName || '').trim())
+  const itemizedSoldPrice = exchangeDraft.newItem.unitPrice == null ? Number.NaN : Number(exchangeDraft.newItem.unitPrice)
+  const itemizedCatalogSnapshot = exchangeDraft.newItem.catalogPriceSnapshot == null ? null : Number(exchangeDraft.newItem.catalogPriceSnapshot)
+  const itemizedPriceReady = !itemizedExchange || (
+    Number.isSafeInteger(itemizedSoldPrice)
+    && itemizedSoldPrice >= 0
+    && (itemizedCatalogSnapshot === null || (Number.isSafeInteger(itemizedCatalogSnapshot) && itemizedCatalogSnapshot >= 0))
+  )
+  const currentPairReady = Boolean(effectiveOldItem && effectiveOldAvailableQuantity > 0 && String(exchangeDraft.newItem.productName || '').trim() && itemizedPriceReady)
   const queueCurrentExchangePair = () => {
     if (itemizedExchange || !currentPairReady) return
     if (exchangePhysicalShortage && !exchangeObservationEnabled) return
