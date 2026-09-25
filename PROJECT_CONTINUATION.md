@@ -1,5 +1,15 @@
 # Система заказов — continuation context
 
+## Execution discipline / delivery guard — user rule (2026-09-25)
+
+- **Current release scope is Branch2 only. Do not change or deploy `main` / Production unless the user explicitly opens that gate.** Main does not yet have the price setup required for safe Stage03 operation.
+- Work in **medium-sized coherent units**: normally one implementation slice + its direct regressions + cumulative CI checkpoint. Do not bundle several major stages into one pass, but also do not spend a pass on a trivial one-line change unless it is a necessary unblocker.
+- If a tool/CI/deploy wait becomes long, a stream looks unstable, or the response/session is at risk of timing out, **stop at a safe repository checkpoint instead of continuing to wait**. Safe checkpoint means all source changes are committed on a non-production work branch, no D1/deploy operation is half-finished, and the exact branch/HEAD/run/status/next action are recorded for handoff.
+- Never burn chat budget by repeatedly polling a slow external operation. Check it a bounded number of times; if it is still pending, report the safe checkpoint and continue in the next turn.
+- After each meaningful completed fix/merge/deploy, refresh the relevant continuation document(s). When a work branch is used, include the continuation update in the validated branch before merging where practical.
+- Do not call Branch2 deployed until the exact merged Branch2 SHA has a successful `cloudflare-deploy/branch2` status. Never infer deployment from a successful source CI alone.
+- Preserve environment isolation at every step: Branch2 Worker/D1 only; never mix Primary/Production and Branch2 data, migrations, bindings, or deploy targets.
+
 Updated: 2026-09-19 (Asia/Qyzylorda)
 
 ## Current priority — Stage02 transactional stock truth
