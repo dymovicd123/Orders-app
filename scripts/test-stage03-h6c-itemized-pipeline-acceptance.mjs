@@ -44,7 +44,8 @@ check(create.includes('buildItemizedOrderWritePlan(itemizedLines, normalizedPaym
 check(create.includes('itemizedWritePlan.totalAmount') && create.includes('itemizedWritePlan.receivedAmount') && create.includes('itemizedWritePlan.debtAmount'), 'Real Create money is not sourced from H2 plan')
 check(create.includes('pricing_mode') && create.includes("'itemized_v1'"), 'Real Create no longer persists itemized order classification')
 check(write.includes('catalog_price_snapshot') && write.includes('itemizedLine?.catalogPriceSnapshot ?? null'), 'Real item insert no longer persists nullable Catalog snapshot')
-check(edit.includes("existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete'"), 'Legacy edit path is no longer fail-closed for itemized orders')
+check(edit.includes("existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete' && !itemizedMetadataOnlyEdit"), 'Unsupported legacy edit path is no longer fail-closed for itemized orders')
+check(edit.includes('input.items === undefined') && edit.includes('input.orderTotal === undefined'), 'H8A metadata-only exception widened into item/total repricing')
 
 check(ordersRead.includes('pricing_mode'), 'Order read path lost pricing_mode')
 check(ordersRead.includes('catalog_price_snapshot'), 'Order read path lost Catalog snapshot')

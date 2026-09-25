@@ -4,6 +4,35 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage03H8AItemizedMetadataEditManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h8a-itemized-metadata-edit-worker-manifest.json'), 'utf8'))
+if (stage03H8AItemizedMetadataEditManifest?.version !== 1 || stage03H8AItemizedMetadataEditManifest?.revision !== 'stage03-h8a-itemized-metadata-edit-foundation') throw new Error('Stage03-H8A itemized metadata edit Worker manifest invalid')
+const stage03H8ABlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE03_H8A_ITEMIZED_METADATA_EDIT_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stage03H8AItemizedMetadataEditManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage03H8ABlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H8A Worker changed beyond exact manifest: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (stage03H8ABlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H8A baseline fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H8A_ITEMIZED_METADATA_EDIT_NORMALIZED: '1' }})
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03-H8A ITEMIZED METADATA EDIT WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const clientZammlerEOrderListManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/client-zammler-e-order-list-worker-manifest.json'), 'utf8'))
 if (clientZammlerEOrderListManifest?.version !== 1 || clientZammlerEOrderListManifest?.revision !== 'client-zammler-e-order-list') throw new Error('CLIENT-ZAMMLER-E Worker manifest invalid')
 const clientZammlerEWorkerBlobSha = (value) => {

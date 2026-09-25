@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "revision": "stage03-h8a-itemized-metadata-edit-foundation",
+  "files": {
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "fbf1cc3034fa3fe0d2982fda4ddc45c0fdbfa539",
+      "afterGitBlob": "4f45fa3fa33a54423cbd6949fb64c5899e012292",
+      "beforeLines": 1788,
+      "afterLines": 1799,
+      "baselineFixture": "scripts/fixtures/stage03-h8a-itemized-metadata-edit/worker/domains/orders-write.ts"
+    }
+  }
+}

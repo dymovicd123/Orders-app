@@ -1159,19 +1159,8 @@ export async function updateOrderCritical(
 
       const existingAny = existing as any;
       const existingPricingMode = cleanText(existingAny.pricing_mode) === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total';
-      const itemizedMetadataOnlyEdit = existingPricingMode === 'itemized_v1'
-        && options.lifecycleAction !== 'order_delete'
-        && input.items === undefined
-        && input.payments === undefined
-        && input.orderTotal === undefined
-        && input.pricingMode === undefined
-        && input.sourceType === undefined
-        && input.workshopStatus === undefined
-        && input.orderStatus === undefined
-        && input.shippingStatus === undefined
-        && input.shippingDate === undefined;
-      if (existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete' && !itemizedMetadataOnlyEdit) {
-        throw new CriticalOperationConflictError('Этот заказ использует построчную itemized-цену. Разрешены только безопасные исправления реквизитов и проведённых оплат; состав, цены позиций и жизненный цикл меняются отдельными штатными действиями.');
+      if (existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete') {
+        throw new CriticalOperationConflictError('Этот заказ использует построчную itemized-цену. Старый редактор заказа для него отключён, чтобы не потерять цены позиций и снимки Каталога. Используйте отдельные штатные действия заказа.');
       }
       const timestamp = new Date().toISOString();
       const nextOrderDate = normalizeDate(input.orderDate ?? existingAny.order_date);

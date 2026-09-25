@@ -53,6 +53,7 @@ jobs:
           node scripts/test-stage03-h7a-branch2-safety-baseline.mjs
           node scripts/test-stage03-h7b-itemized-create-activation.mjs
           node scripts/test-stage03-h7f-final-branch2-acceptance.mjs
+          node scripts/test-stage03-h8a-itemized-metadata-edit-foundation.mjs
 
       - name: Typecheck and build exact Branch2 commit
         run: |

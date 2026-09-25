@@ -81,7 +81,8 @@ check(result.status === 'blocked' && result.blockers.some(x => x.code === 'price
 
 const serverCreate = write.slice(write.indexOf('export async function createOrder'), write.indexOf('export async function updateOrderCritical'))
 check(serverCreate.includes("pricingMode === 'itemized_v1'") && serverCreate.includes('buildItemizedOrderWritePlan(itemizedLines, normalizedPayments)'), 'Server itemized Create revalidation missing')
-check(write.includes("existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete'"), 'Existing-order legacy editor is not fail-closed for itemized orders')
+check(write.includes("existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete' && !itemizedMetadataOnlyEdit"), 'Unsupported existing-order legacy editor writes are not fail-closed for itemized orders')
+check(write.includes('input.items === undefined') && write.includes('input.orderTotal === undefined'), 'H8A metadata-only exception can rewrite itemized commercial facts')
 const exchange = returns.slice(returns.indexOf('export async function createExchange'))
 check(exchange.includes("pricing_mode") && exchange.includes("'itemized_v1'"), 'Legacy exchange is not fail-closed for itemized orders')
 

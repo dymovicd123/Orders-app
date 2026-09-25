@@ -60,7 +60,8 @@ check(serverCreate.includes("pricingMode === 'itemized_v1'"), 'H7F: server itemi
 check(serverCreate.includes('isOrderPricingFoundationEnabled(db)'), 'H7F: server no longer requires pricing schema')
 check(serverCreate.includes('buildItemizedOrderWritePlan(itemizedLines, normalizedPayments)'), 'H7F: server itemized arithmetic revalidation missing')
 check(serverCreate.includes("'itemized_v1'") && serverCreate.includes('pricing_mode'), 'H7F: persisted itemized classification missing')
-check(serverEdit.includes("existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete'"), 'H7F: legacy full editor is no longer fail-closed for itemized orders')
+check(serverEdit.includes("existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete' && !itemizedMetadataOnlyEdit"), 'H7F: unsupported legacy full-editor rewrites are no longer fail-closed for itemized orders')
+check(serverEdit.includes('input.items === undefined') && serverEdit.includes('input.payments === undefined') && serverEdit.includes('input.orderTotal === undefined'), 'H7F: H8A metadata-only exception widened into commercial rewrite semantics')
 
 const exchangeStart = returns.indexOf('export async function createExchange')
 const returnStart = returns.indexOf('export async function createReturn')

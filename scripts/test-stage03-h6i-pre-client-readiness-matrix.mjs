@@ -40,7 +40,8 @@ check(create.includes('itemizedWritePlan.totalAmount') && create.includes('itemi
 check(create.includes('pricing_mode, total_amount') && write.includes('catalog_price_snapshot'), 'Itemized historical pricing metadata persistence missing')
 check(pricing.includes('requiredSafeInteger') && pricing.includes('assertItemizedOrderMoneyNotOverpaid'), 'Server itemized arithmetic safety missing')
 
-check(edit.includes("existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete'"), 'Legacy full-editor guard for itemized orders missing')
+check(edit.includes("existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete' && !itemizedMetadataOnlyEdit"), 'Legacy full-editor guard for unsupported itemized rewrites missing')
+check(edit.includes('input.items === undefined') && edit.includes('input.payments === undefined') && edit.includes('input.orderTotal === undefined'), 'H8A itemized metadata-only lane widened into commercial rewrite semantics')
 check(!edit.includes('buildItemizedOrderWritePlan('), 'Legacy existing-order editor unexpectedly gained itemized repricing semantics')
 
 const exchange = between(returns, 'export async function createExchange', '\n\nexport async function')
