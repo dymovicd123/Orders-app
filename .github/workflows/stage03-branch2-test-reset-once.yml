@@ -1,0 +1,131 @@
+name: Stage03 Branch2 one-shot H8 acceptance reset
+
+on:
+  push:
+    branches:
+      - branch2
+
+permissions:
+  contents: read
+
+jobs:
+  reset:
+    if: github.event.head_commit.message == 'Stage03 TESTRESET: prepare clean H8 acceptance environment'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+
+      - name: Hard-lock Branch2 Worker and D1 identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "branch2" ]]
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo "Production D1 identity detected. Refusing reset." >&2
+            exit 91
+          fi
+
+      - name: Validate one-shot reset SQL
+        run: node scripts/test-stage03-branch2-test-reset-safety.mjs
+
+      - name: Full code safety gate before remote mutation
+        run: npm run release:check
+
+      - name: Capture Branch2 pre-reset transaction fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --json --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) orders_count,
+              (SELECT COUNT(*) FROM order_items) order_items_count,
+              (SELECT COUNT(*) FROM payments) payments_count,
+              (SELECT COUNT(*) FROM returns) returns_count,
+              (SELECT COUNT(*) FROM exchanges) exchanges_count,
+              (SELECT COUNT(*) FROM workshop_tasks) workshop_tasks_count,
+              (SELECT COUNT(*) FROM inventory_reservations) reservations_count,
+              (SELECT COUNT(*) FROM financial_events) financial_events_count,
+              (SELECT COUNT(*) FROM cash_register_entries) cash_entries_count,
+              (SELECT COUNT(*) FROM activity_log) activity_count,
+              (SELECT COUNT(*) FROM customers) customers_count;"
+
+      - name: Reset only Branch2 transactional test state and seed isolated H8 fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file scripts/stage03-branch2-test-reset.sql
+
+      - name: Verify clean transaction state and fixture baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --json --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) orders_count,
+              (SELECT COUNT(*) FROM order_items) order_items_count,
+              (SELECT COUNT(*) FROM payments) payments_count,
+              (SELECT COUNT(*) FROM returns) returns_count,
+              (SELECT COUNT(*) FROM exchanges) exchanges_count,
+              (SELECT COUNT(*) FROM workshop_tasks) workshop_tasks_count,
+              (SELECT COUNT(*) FROM inventory_reservations) reservations_count,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) reserved_stock_total,
+              (SELECT COUNT(*) FROM financial_events) financial_events_count,
+              (SELECT COUNT(*) FROM cash_register_entries) cash_entries_count,
+              (SELECT COUNT(*) FROM activity_log) activity_count,
+              (SELECT COUNT(*) FROM customers) customers_count,
+              (SELECT COUNT(*) FROM catalog_products WHERE name LIKE 'BR2-H8-%') fixture_products,
+              (SELECT COUNT(*) FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE p.name LIKE 'BR2-H8-%' AND v.is_active=1) fixture_variants;")"
+          echo "$result"
+          jq -e '.[0].results[0] |
+            .orders_count == 0 and
+            .order_items_count == 0 and
+            .payments_count == 0 and
+            .returns_count == 0 and
+            .exchanges_count == 0 and
+            .workshop_tasks_count == 0 and
+            .reservations_count == 0 and
+            .reserved_stock_total == 0 and
+            .financial_events_count == 0 and
+            .cash_entries_count == 0 and
+            .activity_count == 0 and
+            .customers_count == 0 and
+            .fixture_products == 5 and
+            .fixture_variants == 6' <<<"$result" >/dev/null
+
+      - name: Print exact H8 fixture matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --json --command "
+            SELECT
+              p.name product,
+              v.id variant_id,
+              v.category,
+              v.gender,
+              v.color,
+              v.material,
+              v.length,
+              v.size_label,
+              ep.sale_price,
+              COALESCE((SELECT s.quantity FROM inventory_stock s WHERE s.variant_id=v.id AND s.inventory_source='warehouse'),0) warehouse_qty,
+              COALESCE((SELECT s.quantity FROM inventory_stock s WHERE s.variant_id=v.id AND s.inventory_source='boutique'),0) boutique_qty
+            FROM catalog_products p
+            JOIN catalog_variants v ON v.product_id=p.id AND v.is_active=1
+            LEFT JOIN catalog_execution_prices ep
+              ON ep.stock_position_id=v.stock_position_id AND ep.category=v.category
+            WHERE p.name LIKE 'BR2-H8-%'
+            ORDER BY p.name, v.material, v.id;"
