@@ -12,16 +12,16 @@
 
 Updated: 2026-09-25
 
-## Current checkpoint — Stage03 H9 itemized Exchange
+## Current checkpoint — Stage03 H10 manual Return policy
 
 - Release scope is still **Branch2 only**. Do not touch `main` / Production: Production does not yet have the price setup required for safe itemized operation.
-- Branch2 baseline before H9 merge: `11bac529237b4f2380847f516b675db68eb3b998` (`Stage03 H8G: remove redundant Create price confirmation`).
-- Current H9 work branch: `w-stage03-h9a-itemized-exchange-20260925`.
-- H9A backend: itemized replacement line gets factual sold price + separate Catalog snapshot; order total is derived from active itemized lines; Exchange payment/refund is a separate money fact; stale old-line snapshot, overpayment, correction, cancellation and legacy compatibility are guarded.
-- H9B UI: itemized Exchange opens from Orders and Workshop, uses one replacement pair per critical operation, defaults the new factual price to the old historical sold price, refreshes Catalog recommendation separately, exposes direct sold-price editing, and sends H9A's expected old commercial snapshot.
-- H9 uses no migration and must not write Production D1.
-- Before calling H9 complete: exact work-branch cumulative CI + build must pass, continuation docs must be included, then merge only into `branch2`, then verify the exact merged Branch2 SHA has successful `cloudflare-deploy/branch2`.
-- After H9, Stage03 remaining review is returns policy (expected to stay mostly manual), discount/analytics interpretation, then a final Create → Edit → payments/debt → Warehouse → Workshop → Return → Exchange → reports/history audit. Stage04 Workshop finance remains separate.
+- H9 is complete on Branch2: merged SHA `5fd108c05d05538467a39f55970545efdcac889d`; exact `cloudflare-deploy/branch2` completed successfully in run `36165964308`; Branch2 safety run `36165964296` also passed.
+- Current H10 work branch: `w-stage03-h10-return-policy-20260925`, based on the exact H9 Branch2 SHA above.
+- H10 policy: physical returned items/quantities and refund money are independent facts. For both itemized and legacy orders, manager enters the actual refund explicitly; no current Catalog price or historical sold line price is used as an automatic refund rule.
+- H10 UX change: new Return drafts start at 0 money rather than pre-filling the entire remaining received amount. The available refund ceiling stays visible; zero-money physical returns and explicit money-only refunds remain valid.
+- H10 has no migration, no backfill, and no Production/main action.
+- Before calling H10 complete: focused H10 regression + cumulative CI/build must pass, then merge only into `branch2` and verify exact Branch2 deploy success.
+- After H10: review discount/analytics interpretation (H11), then perform the final Create → Edit → payments/debt → Warehouse → Workshop → Return → Exchange → reports/history Stage03 audit. Stage04 Workshop finance remains separate.
 
 
 ## Current priority — Stage02 transactional stock truth

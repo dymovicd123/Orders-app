@@ -733,9 +733,13 @@ export function createDebtClosePayment(orderDate = formatLocalDateInput(), amoun
 
 
 export function createReturnDraft(order?: OrderRecord | null): ReturnDraft {
+  const refundableAmount = Math.max(
+    0,
+    Number(order?.received_amount || 0) - Number(order?.return_amount || 0),
+  )
   return {
     returnDate: formatLocalDateInput(),
-    amount: 0,
+    amount: refundableAmount,
     paymentMethod: '',
     comment: '',
     restockSource: 'none',
