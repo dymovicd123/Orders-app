@@ -10,7 +10,19 @@
 - Do not call Branch2 deployed until the exact merged Branch2 SHA has a successful `cloudflare-deploy/branch2` status. Never infer deployment from a successful source CI alone.
 - Preserve environment isolation at every step: Branch2 Worker/D1 only; never mix Primary/Production and Branch2 data, migrations, bindings, or deploy targets.
 
-Updated: 2026-09-19 (Asia/Qyzylorda)
+Updated: 2026-09-25
+
+## Current checkpoint — Stage03 H9 itemized Exchange
+
+- Release scope is still **Branch2 only**. Do not touch `main` / Production: Production does not yet have the price setup required for safe itemized operation.
+- Branch2 baseline before H9 merge: `11bac529237b4f2380847f516b675db68eb3b998` (`Stage03 H8G: remove redundant Create price confirmation`).
+- Current H9 work branch: `w-stage03-h9a-itemized-exchange-20260925`.
+- H9A backend: itemized replacement line gets factual sold price + separate Catalog snapshot; order total is derived from active itemized lines; Exchange payment/refund is a separate money fact; stale old-line snapshot, overpayment, correction, cancellation and legacy compatibility are guarded.
+- H9B UI: itemized Exchange opens from Orders and Workshop, uses one replacement pair per critical operation, defaults the new factual price to the old historical sold price, refreshes Catalog recommendation separately, exposes direct sold-price editing, and sends H9A's expected old commercial snapshot.
+- H9 uses no migration and must not write Production D1.
+- Before calling H9 complete: exact work-branch cumulative CI + build must pass, continuation docs must be included, then merge only into `branch2`, then verify the exact merged Branch2 SHA has successful `cloudflare-deploy/branch2`.
+- After H9, Stage03 remaining review is returns policy (expected to stay mostly manual), discount/analytics interpretation, then a final Create → Edit → payments/debt → Warehouse → Workshop → Return → Exchange → reports/history audit. Stage04 Workshop finance remains separate.
+
 
 ## Current priority — Stage02 transactional stock truth
 
