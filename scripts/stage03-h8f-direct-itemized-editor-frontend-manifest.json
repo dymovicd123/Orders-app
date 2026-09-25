@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "revision": "stage03-h8f-direct-itemized-editor",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "cb1ff710cb1fd6368f23f21ff23064a109d1ffc6",
+      "afterGitBlob": "3409f46df8e0724d4c9c9c6d64630bbd27006cb3",
+      "beforeLines": 7828,
+      "afterLines": 7813,
+      "baselineFixture": "scripts/fixtures/stage03-h8f-direct-itemized-editor/src/App.tsx"
+    },
+    "src/features/sections/OrderEditorSection.tsx": {
+      "beforeGitBlob": "fea2359badd73ebf5749c3e424cec1c9303e0c04",
+      "afterGitBlob": "cd22bd9a0c93eff37536d4708b27384e920c5051",
+      "beforeLines": 651,
+      "afterLines": 536,
+      "baselineFixture": "scripts/fixtures/stage03-h8f-direct-itemized-editor/src/features/sections/OrderEditorSection.tsx"
+    },
+    "src/app/controllers/useWorkspaceViewModel.tsx": {
+      "beforeGitBlob": "ce79d3dd8645319f93610de12e956ace2c342368",
+      "afterGitBlob": "08e28b337fd182f12872db48563e61c19bdf4208",
+      "beforeLines": 987,
+      "afterLines": 985,
+      "baselineFixture": "scripts/fixtures/stage03-h8f-direct-itemized-editor/src/app/controllers/useWorkspaceViewModel.tsx"
+    }
+  }
+}

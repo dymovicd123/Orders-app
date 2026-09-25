@@ -7,6 +7,8 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
     addEditorItem,
     addEditorPayment,
     applyEditorProductPick,
+    beginItemizedContentEdit,
+    cancelItemizedContentEdit,
     ChoicePills,
     closeOrderEditor,
     createEditorDraft,
@@ -19,6 +21,8 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
     FriendlyNumberInput,
     isAdmin,
     isArchivedOrderRecord,
+    itemizedContentEditLoading,
+    itemizedContentEditMode,
     ManagerPicker,
     normalizeAudienceTypeValue,
     normalizeSuggestion,
@@ -44,19 +48,6 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
 
   const projection = selectedOrder ? projectOrderOperationalState(selectedOrder, { isAdmin }) : null
   const itemizedMode = selectedOrder?.pricing_mode === 'itemized_v1'
-  const editedItemizedTotal = itemizedMode && editorDraft
-    ? editorDraft.items.reduce((sum, item) => {
-        const price = Number(item.unitPrice)
-        const quantity = Number(item.quantity)
-        return sum + (Number.isSafeInteger(price) && price >= 0 && Number.isSafeInteger(quantity) && quantity > 0 ? price * quantity : 0)
-      }, 0)
-    : Number(selectedOrder?.total_amount || 0)
-  const editedReceivedTotal = itemizedMode && editorDraft
-    ? editorDraft.payments
-        .filter((payment) => Boolean(payment.id) && Number(payment.amount || 0) > 0)
-        .reduce((sum, payment) => sum + Number(payment.amount || 0), 0)
-    : Number(projection?.receivedAmount || 0)
-  const editedDebtTotal = itemizedMode ? Math.max(0, editedItemizedTotal - editedReceivedTotal) : Number(projection?.debtAmount || 0)
 
   return (
     <article
@@ -80,7 +71,9 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                 <>
                   <div className="card-meta">
                     {itemizedMode
-                      ? 'Редактируйте заказ прямо в форме: реквизиты, состав, количество, источник, цену продажи и проведённые оплаты. Отдельные подтверждения не нужны; сервер при сохранении сам проверит актуальность данных, остатки и деньги.'
+                      ? (itemizedContentEditMode
+                        ? 'Режим безопасной замены состава. Сейчас сохраняются только товары, количество, источник, данные Цеха и цены нового состава; реквизиты и оплаты временно заблокированы.'
+                        : 'Безопасное исправление реквизитов заказа. Состав по умолчанию только для просмотра; цену продажи можно исправить отдельно, а изменение состава включается отдельной кнопкой.')
                       : 'Можно быстро исправить данные выбранного заказа. Оплаты и товары подставляются из базы и сохраняются безопасно; отправка, удаление и статусы Цеха меняются отдельными штатными действиями.'}
                   </div>
     
@@ -106,7 +99,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                       </div>
                       <div>
                         <span>Получено</span>
-                        <strong>{formatMoney(editedReceivedTotal)}</strong>
+                        <strong>{formatMoney(projection?.receivedAmount || 0)}</strong>
                       </div>
                       <div>
                         <span>Возвращено</span>
@@ -118,11 +111,12 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                       </div>
                       <div>
                         <span>Долг</span>
-                        <strong>{formatMoney(editedDebtTotal)}</strong>
+                        <strong>{formatMoney(projection?.debtAmount || 0)}</strong>
                       </div>
                     </div>
                   </div>
     
+                  <fieldset disabled={Boolean(itemizedContentEditMode)} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
                   <div className="form-grid edit-grid">
                     <label>
                       <span>Дата</span>
@@ -176,8 +170,8 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                     {itemizedMode ? (
                       <div className="field-block">
                         <span>Итого заказа</span>
-                        <strong>{formatMoney(editedItemizedTotal)}</strong>
-                        <small>Пересчитывается автоматически из количества и цены продажи по позициям.</small>
+                        <strong>{formatMoney(selectedOrder.total_amount || 0)}</strong>
+                        <small>Исторический итог складывается из сохранённых цен позиций и здесь не редактируется.</small>
                       </div>
                     ) : (
                       <label>
@@ -228,20 +222,35 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                       />
                     </label>
                   </div>
+                  </fieldset>
     
                   <div className="editor-columns">
                     <section className="mini-panel">
                       <div className="mini-panel-head">
                         <h3>Товары</h3>
-                        <button className="secondary compact" type="button" onClick={addEditorItem} disabled={savingOrder}>
-                          + Товар
-                        </button>
+                        {!itemizedMode || itemizedContentEditMode ? (
+                          <button className="secondary compact" type="button" onClick={addEditorItem} disabled={savingOrder}>
+                            + Товар
+                          </button>
+                        ) : (
+                          <button className="secondary compact" type="button" onClick={() => void beginItemizedContentEdit()} disabled={savingOrder || itemizedContentEditLoading}>
+                            {itemizedContentEditLoading ? 'Обновляю данные…' : 'Изменить состав'}
+                          </button>
+                        )}
+                        {itemizedMode && itemizedContentEditMode ? (
+                          <button className="ghost compact" type="button" onClick={cancelItemizedContentEdit} disabled={savingOrder}>
+                            Отменить изменение состава
+                          </button>
+                        ) : null}
                       </div>
                       {itemizedMode ? (
                         <p className="mini-panel-note">
-                          Изменения применятся одной кнопкой «Сохранить изменения». Для будущего состава доступность считается с учётом освобождения старого резерва; сервер всё перепроверит перед записью.
+                          {itemizedContentEditMode
+                            ? 'Старый резерв этого заказа учитывается как освобождаемый: ниже показана доступность для будущего состава. Товар, количество, источник и данные Цеха можно менять; сервер перед записью всё перечитает заново.'
+                            : 'Товар, количество, источник и данные Цеха остаются историческими и доступны только для просмотра. Проданную цену можно исправить отдельно ниже; изменение состава включается отдельным безопасным режимом.'}
                         </p>
                       ) : null}
+                      <fieldset disabled={Boolean(itemizedMode && !itemizedContentEditMode)} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
                       <div className="stack">
                         {editorDraft.items.map((item, index) => (
                           <div className="mini-item" key={`edit-item-${index}`}>
@@ -252,9 +261,11 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                                   {formatOrderItemTitle(item) || 'Проверьте состав позиции'}
                                 </span>
                               </div>
-                              <button className="ghost danger compact" type="button" onClick={() => removeEditorItem(index)} disabled={Boolean(itemizedMode && editorDraft.items.length <= 1) || savingOrder}>
-                                Удалить
-                              </button>
+                              {!itemizedMode || itemizedContentEditMode ? (
+                                <button className="ghost danger compact" type="button" onClick={() => removeEditorItem(index)} disabled={Boolean(itemizedMode && itemizedContentEditMode && editorDraft.items.length <= 1)}>
+                                  Удалить
+                                </button>
+                              ) : <span className="soft-badge">Только просмотр</span>}
                             </div>
                             <div className="subgrid">
                               <label>
@@ -331,28 +342,53 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                                 />
                               </label>
                               {itemizedMode ? (
-                                <>
-                                  <label>
-                                    <span>Цена продажи</span>
-                                    <FriendlyNumberInput
-                                      type="number"
-                                      min="0"
-                                      step="1"
-                                      value={item.unitPrice ?? ''}
-                                      onChange={(event) => updateEditorItem(index, 'unitPrice', event.target.value === '' ? null : Number(event.target.value))}
-                                      placeholder="Цена продажи"
-                                    />
-                                  </label>
-                                  <div className="field-block">
-                                    <span>Цена по каталогу</span>
-                                    <strong>{item.catalogPriceSnapshot !== null && item.catalogPriceSnapshot !== undefined ? formatMoney(item.catalogPriceSnapshot) : 'Нет цены в каталоге'}</strong>
-                                    <small>{item.priceOrigin === 'manual' ? 'Ручная цена.' : item.priceOrigin === 'catalog' ? 'Текущая рекомендация Каталога.' : 'Введите цену вручную.'}</small>
-                                  </div>
-                                  <div className="field-block">
-                                    <span>Сумма позиции</span>
-                                    <strong>{item.unitPrice === undefined || item.unitPrice === null ? '—' : formatMoney(Math.max(0, Number(item.quantity || 0)) * Math.max(0, Number(item.unitPrice || 0)))}</strong>
-                                  </div>
-                                </>
+                                itemizedContentEditMode ? (
+                                  <>
+                                    <label>
+                                      <span>Цена продажи</span>
+                                      <FriendlyNumberInput
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        value={item.unitPrice ?? ''}
+                                        onChange={(event) => updateEditorItem(index, 'unitPrice', event.target.value === '' ? null : Number(event.target.value))}
+                                        placeholder="Цена продажи"
+                                      />
+                                    </label>
+                                    <div className="field-block">
+                                      <span>Цена по каталогу</span>
+                                      <strong>{item.catalogPriceSnapshot !== null && item.catalogPriceSnapshot !== undefined ? formatMoney(item.catalogPriceSnapshot) : 'Нет цены в каталоге'}</strong>
+                                      <small>{item.priceOrigin === 'manual' ? 'Финальная цена введена вручную.' : item.priceOrigin === 'catalog' ? 'Финальная цена взята из текущего Каталога.' : 'Укажите финальную цену вручную.'}</small>
+                                    </div>
+                                    <div className="field-block">
+                                      <span>Сумма позиции</span>
+                                      <strong>{item.unitPrice === undefined || item.unitPrice === null ? '—' : formatMoney(Math.max(0, Number(item.quantity || 0)) * Math.max(0, Number(item.unitPrice || 0)))}</strong>
+                                    </div>
+                                    {item.priceNeedsConfirmation ? (
+                                      <div className="field-block">
+                                        <span>Цена требует подтверждения</span>
+                                        <button className="secondary compact" type="button" onClick={() => updateEditorItem(index, 'priceNeedsConfirmation', false)}>
+                                          Подтвердить текущую цену
+                                        </button>
+                                      </div>
+                                    ) : null}
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="field-block">
+                                      <span>Цена продажи</span>
+                                      <strong>{formatMoney(Number(item.unitPrice || 0))}</strong>
+                                    </div>
+                                    <div className="field-block">
+                                      <span>Цена по каталогу</span>
+                                      <strong>{item.catalogPriceSnapshot !== null && item.catalogPriceSnapshot !== undefined ? formatMoney(item.catalogPriceSnapshot) : 'Не зафиксирована'}</strong>
+                                    </div>
+                                    <div className="field-block">
+                                      <span>Сумма позиции</span>
+                                      <strong>{formatMoney(Math.max(0, Number(item.quantity || 0)) * Math.max(0, Number(item.unitPrice || 0)))}</strong>
+                                    </div>
+                                  </>
+                                )
                               ) : null}
                               <label>
                                 <span>Источник</span>
@@ -409,26 +445,103 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                             </div>
                             {!itemizedMode
                               ? renderOrderSourceAvailability(item, `edit-item-${index}`, index, 'edit')
-                              : renderOrderSourceAvailability(item, `edit-item-${index}`, index, 'itemized_edit')}
+                              : itemizedContentEditMode
+                                ? renderOrderSourceAvailability(item, `edit-item-${index}`, index, 'itemized_edit')
+                                : null}
                           </div>
                         ))}
                       </div>
+                      </fieldset>
+                      {itemizedMode && !itemizedContentEditMode ? (
+                        <div className="stack">
+                          <p className="mini-panel-note">
+                            Коррекция цены меняет только фактическую цену продажи и итог заказа. Сохранённая цена Каталога остаётся исторической рекомендацией; склад, количество и состав заказа не меняются.
+                          </p>
+                          {editorDraft.items.map((item, index) => {
+                            const originalItem = selectedOrder?.items.find((entry) => Number(entry.id || 0) === Number(item.orderItemId || 0))
+                            const originalPrice = Number(originalItem?.unitPrice || 0)
+                            const currentPrice = item.unitPrice === undefined || item.unitPrice === null ? null : Number(item.unitPrice)
+                            const priceChanged = currentPrice === null || currentPrice !== originalPrice
+                            return (
+                              <div className="mini-item" key={`edit-price-${item.orderItemId || index}`}>
+                                <div className="mini-item-head">
+                                  <div className="mini-item-head-main">
+                                    <strong>{formatOrderItemTitle(item) || `Позиция ${index + 1}`}</strong>
+                                    <span className="mini-item-summary">Было: {formatMoney(originalPrice)}</span>
+                                  </div>
+                                  {priceChanged ? (
+                                    <span className={item.priceNeedsConfirmation ? 'soft-badge' : 'status-pill status-online'}>
+                                      {item.priceNeedsConfirmation ? 'Нужно подтвердить' : 'Подтверждено'}
+                                    </span>
+                                  ) : <span className="soft-badge">Без изменений</span>}
+                                </div>
+                                <div className="subgrid">
+                                  <label>
+                                    <span>Исправить цену продажи</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="1"
+                                      value={item.unitPrice ?? ''}
+                                      disabled={savingOrder}
+                                      onChange={(event) => updateEditorItem(index, 'unitPrice', event.target.value === '' ? null : Number(event.target.value))}
+                                    />
+                                  </label>
+                                  <div className="field-block">
+                                    <span>Цена по каталогу</span>
+                                    <strong>{item.catalogPriceSnapshot !== null && item.catalogPriceSnapshot !== undefined ? formatMoney(item.catalogPriceSnapshot) : 'Не зафиксирована'}</strong>
+                                  </div>
+                                  <div className="field-block">
+                                    <span>Новая сумма позиции</span>
+                                    <strong>{currentPrice === null ? '—' : formatMoney(Math.max(0, Number(item.quantity || 0)) * Math.max(0, currentPrice))}</strong>
+                                  </div>
+                                </div>
+                                {priceChanged ? (
+                                  <div className="actions">
+                                    <button
+                                      className={item.priceNeedsConfirmation ? 'secondary compact' : 'primary compact'}
+                                      type="button"
+                                      disabled={savingOrder || currentPrice === null || !Number.isSafeInteger(currentPrice) || currentPrice < 0}
+                                      onClick={() => updateEditorItem(index, 'priceNeedsConfirmation', false)}
+                                    >
+                                      {item.priceNeedsConfirmation ? 'Подтвердить изменение цены' : 'Цена подтверждена'}
+                                    </button>
+                                  </div>
+                                ) : null}
+                              </div>
+                            )
+                          })}
+                          <div className="field-block">
+                            <span>Итог после коррекции</span>
+                            <strong>{formatMoney(editorDraft.items.reduce((sum, item) => {
+                              const price = Number(item.unitPrice)
+                              return sum + (Number.isSafeInteger(price) && price >= 0 ? Math.max(0, Number(item.quantity || 0)) * price : 0)
+                            }, 0))}</strong>
+                            <small>Сохранение будет остановлено, если новый итог окажется меньше уже проведённых оплат.</small>
+                          </div>
+                        </div>
+                      ) : null}
                     </section>
     
                     <section className="mini-panel">
+                      <fieldset disabled={Boolean(itemizedContentEditMode)} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
                       <div className="mini-panel-head">
                         <h3>Оплаты</h3>
-                        <div className="actions">
-                          <button className="secondary compact" type="button" onClick={() => addEditorPayment('primary')} disabled={savingOrder}>
-                            + Первичная оплата
-                          </button>
-                          <button className="secondary compact" type="button" onClick={() => addEditorPayment('debt_close')} disabled={savingOrder}>
-                            + Закрытие долга
-                          </button>
-                        </div>
+                        {!itemizedMode ? (
+                          <div className="actions">
+                            <button className="secondary compact" type="button" onClick={() => addEditorPayment('primary')} disabled={savingOrder}>
+                              + Первичная оплата
+                            </button>
+                            <button className="secondary compact" type="button" onClick={() => addEditorPayment('debt_close')} disabled={savingOrder}>
+                              + Закрытие долга
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                       <p className="mini-panel-note">
-                        Проведённые оплаты редактируются прямо в полях ниже: дата, сумма, способ, смысл и комментарий сохраняются вместе с заказом. Для доплаты из обмена здесь доступен только способ оплаты.
+                        {itemizedMode
+                          ? 'Здесь исправляются только уже проведённые оплаты. Новую оплату добавляйте через штатное закрытие долга; ID существующей оплаты при исправлении сохраняется, а изменение остаётся в денежной истории.'
+                          : 'Если первичную оплату забыли внести, добавьте её явно — при создании она относится к дате заказа. У уже проведённой обычной оплаты можно безопасно исправить дату, сумму, способ, смысл и комментарий: ID оплаты не меняется, а корректировка остаётся в денежной истории. Доплата, связанная с обменом, исправляется через операцию обмена; здесь для неё доступен только способ оплаты.'}
                       </p>
                       <div className="stack">
                         {editorDraft.payments.map((payment, index) => (
@@ -509,18 +622,20 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                           </div>
                         ))}
                         {!editorDraft.payments.length ? (
-                          <div className="empty-state">Оплат пока нет. Добавьте нужный вид операции одной из кнопок выше.</div>
+                          <div className="empty-state">{itemizedMode ? 'Проведённых оплат пока нет. Новая оплата добавляется через штатное закрытие долга.' : 'Оплат пока нет. Добавьте нужный вид операции одной из кнопок выше.'}</div>
                         ) : null}
                       </div>
+                      </fieldset>
+                      {itemizedContentEditMode ? <p className="mini-panel-note">Оплаты не меняются вместе с составом. Новый итог проверяется относительно уже проведённых оплат автоматически.</p> : null}
                     </section>
                   </div>
     
                   <div className="actions form-bottom-actions">
-                    <button className="primary" type="button" onClick={saveSelectedOrder} disabled={savingOrder}>
-                      {savingOrder ? 'Сохраняю...' : 'Сохранить изменения'}
+                    <button className="primary" type="button" onClick={saveSelectedOrder} disabled={savingOrder || itemizedContentEditLoading}>
+                      {savingOrder ? 'Сохраняю...' : itemizedContentEditMode ? 'Сохранить новый состав' : itemizedMode ? 'Сохранить исправления' : 'Сохранить изменения'}
                     </button>
                     <button className="secondary" type="button" onClick={() => selectedOrder && setEditorDraft(createEditorDraft(selectedOrder))} disabled={savingOrder}>
-                      Сбросить форму
+                      {itemizedContentEditMode ? 'Сбросить состав' : 'Сбросить форму'}
                     </button>
                     <button className="secondary back-action" type="button" onClick={closeOrderEditor} disabled={savingOrder}>
                       {editorReturnSector === 'workshop' ? 'Назад в цех' : 'Назад к таблице'}

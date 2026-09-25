@@ -39,7 +39,7 @@ check(persist.includes('expectedUnitPrice: originalUnitPrice'), 'H8C client stal
 check(persist.includes('expectedQuantity: Number(original.quantity || 0)'), 'H8C client stale-quantity snapshot missing')
 check(persist.includes('expectedLineTotal: Number(original.lineTotal || 0)'), 'H8C client stale-line-total snapshot missing')
 check(persist.includes('expectedCatalogPriceSnapshot: original.catalogPriceSnapshot ?? null'), 'H8C client stale Catalog-snapshot guard missing')
-check(persist.includes('if (item.priceNeedsConfirmation)'), 'H8C manual price confirmation gate missing')
+check(!persist.includes('if (item.priceNeedsConfirmation)'), 'H8F reintroduced a redundant price confirmation gate')
 check(persist.includes('itemPriceCorrections,'), 'H8C restricted payload does not send dedicated corrections')
 
 const restrictedStart = persist.indexOf(': isItemizedEdit ? {')
@@ -50,13 +50,9 @@ for (const marker of ['items:', 'orderTotal:', 'sourceType:', 'workshopStatus:',
   check(!restrictedPayload.includes(marker), 'H8C price correction leaked full commercial/physical field: ' + marker)
 }
 
-check(ui.includes('Исправить цену продажи'), 'H8C price correction input missing')
-check(ui.includes('Подтвердить изменение цены'), 'H8C explicit human confirmation missing')
-check(ui.includes('Цена по каталогу') && ui.includes('Сохранённая цена Каталога остаётся исторической рекомендацией'), 'H8C historical Catalog snapshot policy is not visible')
-check(ui.includes('Итог после коррекции'), 'H8C corrected order-total preview missing')
-check(ui.includes('Сохранение будет остановлено, если новый итог окажется меньше уже проведённых оплат'), 'H8C overpayment fail-closed explanation missing')
-check(ui.includes('fieldset disabled={Boolean(itemizedMode && !itemizedContentEditMode)}'), 'H8C physical item fields are no longer read-only outside H8E')
-check(ui.includes('{itemizedMode && !itemizedContentEditMode ? ('), 'H8C price-only panel is not isolated from H8E composition editing')
+check(ui.includes('<span>Цена продажи</span>') && ui.includes('Цена по каталогу'), 'H8F direct sold-price field or Catalog reference missing')
+check(!ui.includes('Подтвердить изменение цены') && !ui.includes('Цена требует подтверждения'), 'H8F price editing still asks for redundant confirmation')
+check(ui.includes('Пересчитывается автоматически из количества и цены продажи по позициям'), 'H8F corrected itemized total preview missing')
 
 const editStart = write.indexOf('export async function updateOrderCritical')
 const editEnd = write.indexOf('\n\nexport async function getOrder', editStart)
@@ -84,4 +80,4 @@ check(priceCommit.includes('await db.batch([') && priceCommit.includes('orderUpd
 check(write.includes('stockReversals = (p.rewriteItems || p.deletingOrder)'), 'H8C price correction started moving stock')
 check(write.includes('if (p.rewriteItems) await retireOrderItemsForRewrite'), 'H8C price correction may retire physical order items')
 
-console.log('STAGE03-H8C ITEMIZED PRICE CORRECTION PASSED — sold-price correction remains stale-safe and isolated from the H8E composition-rewrite UI; Catalog snapshot and inventory stay untouched in H8C')
+console.log('STAGE03-H8C ITEMIZED PRICE CORRECTION PASSED — price-only edits still use the stale-safe H8C backend path, but H8F removes redundant human confirmation and exposes the price directly in the item row')

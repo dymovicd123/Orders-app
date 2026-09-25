@@ -44,6 +44,7 @@ type WorkspaceViewModelArgs = {
   catalogVariantsByProductId: Map<number, CatalogVariantRecord[]>
   createDraft: EditorDraft
   editorDraft: EditorDraft | null
+  itemizedContentEditMode: boolean
   selectedOrder: OrderRecord | null
   getCatalogProductEffectiveCategory: (product?: CatalogProductRecord | null) => 'adult' | 'child'
   getInventoryRowCategory: (row: Pick<InventoryStockRecord, 'productId' | 'productName' | 'variantId' | 'gender' | 'size'>) => 'adult' | 'child'
@@ -72,6 +73,7 @@ export function useWorkspaceViewModel({
   catalogVariantsByProductId,
   createDraft,
   editorDraft,
+  itemizedContentEditMode,
   selectedOrder,
   getCatalogProductEffectiveCategory,
   getInventoryRowCategory,
@@ -395,7 +397,7 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
       items: current.items.map((item, itemIndex) => {
         if (itemIndex !== index) return item
         const pickedItem = buildOrderItemFromCatalogPick(item, productName)
-        if (selectedOrder?.pricing_mode !== 'itemized_v1') return pickedItem
+        if (!itemizedContentEditMode || selectedOrder?.pricing_mode !== 'itemized_v1') return pickedItem
         const pricing = resolveCatalogOrderSalePrice(catalogData, pickedItem)
         const keepManualPrice = item.priceOrigin === 'manual' && item.unitPrice !== undefined && item.unitPrice !== null
         return {
@@ -403,7 +405,7 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
           unitPrice: keepManualPrice ? item.unitPrice : pricing.status === 'matched' ? pricing.salePrice : undefined,
           catalogPriceSnapshot: pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null,
           priceOrigin: keepManualPrice ? 'manual' : pricing.status === 'matched' ? 'catalog' : 'missing',
-          priceNeedsConfirmation: false,
+          priceNeedsConfirmation: keepManualPrice,
         }
       }),
     }) : current)

@@ -2,7 +2,7 @@
 
 Date: 2026-09-25
 
-Status: **H8A backend foundation + H8B restricted editor + H8C sold-price correction + H8D stale-safe content rewrite + H8E dedicated composition editor implemented on Branch2.**
+Status: **H8A–H8E safety foundations implemented; H8F consolidates them into one direct itemized editor on Branch2.**
 
 ## Why H8 exists
 
@@ -134,3 +134,26 @@ Cloudflare Workers Builds may occasionally report a Branch2 build as `skipped` w
 Before the fallback deploys it verifies the exact checked-out commit, `orders-app-branch2`, `orders_db_branch2` and the Branch2 D1 id, explicitly rejects Production D1 identifiers, runs the full release check, and only then executes the normal deploy command.
 
 The fallback never runs for `main`, does not run migrations, and does not execute D1 commands.
+
+
+## H8F — direct editor UX
+
+Manual acceptance exposed an important UX problem in the staged H8 rollout: the technical safety lanes had become visible as permission-like UI modes. The separate «Изменить состав» button and per-price confirmation clicks are not business requirements and are removed.
+
+For an authorized editable itemized order, opening **Редактировать** now means the form is immediately editable:
+- order metadata, item composition, quantity, source, Workshop fields and sold price are editable in the same screen;
+- changing sold price does not require a second confirmation click;
+- changing a Catalog price-driving dimension re-resolves the current Catalog recommendation; a deliberately manual sold price remains manual without an extra acknowledgement;
+- existing posted payments are visibly editable in-place, including amount/date/method/kind/comment where their financial origin permits it;
+- new primary/debt-close payment drafts can be added from the same payment panel;
+- itemized total, edited received amount and debt preview update in the editor.
+
+The client still chooses the narrowest safe server contract on Save:
+- if physical composition did not change, sold-price-only changes use H8C;
+- if physical composition changed, H8D replacement is used;
+- metadata and posted-payment corrections may now accompany H8D replacement in the same critical operation;
+- H8D replacement never carries a duplicate H8C `itemPriceCorrections` payload.
+
+The server remains authoritative. Stale row/payment snapshots, sent/downstream-operation guards, stock re-check, Catalog snapshot rules and overpayment protection remain unchanged. For a combined composition + posted-payment correction, received/debt are derived from the corrected payment amount and the rewritten itemized total before commit.
+
+Lifecycle actions (send/delete/return/exchange) remain separate because they represent distinct business operations, not ordinary field editing.

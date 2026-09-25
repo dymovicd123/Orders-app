@@ -257,6 +257,7 @@ try {
   run('Stage03-H8C itemized sold-price correction', process.execPath, [path.join(root, 'scripts/test-stage03-h8c-itemized-price-correction.mjs')])
   run('Stage03-H8D itemized content rewrite foundation', process.execPath, [path.join(root, 'scripts/test-stage03-h8d-itemized-content-rewrite-foundation.mjs')])
   run('Stage03-H8E itemized content editor', process.execPath, [path.join(root, 'scripts/test-stage03-h8e-itemized-content-editor.mjs')])
+  run('Stage03-H8F direct itemized editor', process.execPath, [path.join(root, 'scripts/test-stage03-h8f-direct-itemized-editor.mjs')])
   run('Branch2 deploy fallback safety', process.execPath, [path.join(root, 'scripts/test-branch2-deploy-fallback-safety.mjs')])
   run('CLIENT-ZAMMLER-A foundation', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-a-foundation.mjs')])
   run('CLIENT-ZAMMLER-B due-time plumbing', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-b-due-time-plumbing.mjs')])

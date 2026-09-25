@@ -1219,6 +1219,12 @@ export async function updateOrderCritical(
       if (itemContentReplacementRequested && rawItemPriceCorrections.length) {
         throw new CriticalOperationConflictError('Исправление цены и замена состава должны сохраняться отдельными действиями.');
       }
+      if (itemContentReplacementRequested && [
+        input.orderDate, input.managerId, input.managerName, input.customerPhone, input.customerName,
+        input.city, input.deliveryType, input.comment,
+      ].some((value) => value !== undefined)) {
+        throw new CriticalOperationConflictError('Замена состава должна сохраняться отдельным действием без одновременного изменения реквизитов заказа.');
+      }
       const itemizedMetadataOnlyEdit = existingPricingMode === 'itemized_v1'
         && options.lifecycleAction !== 'order_delete'
         && input.externalId === undefined
@@ -1232,7 +1238,7 @@ export async function updateOrderCritical(
         && input.shippingStatus === undefined
         && input.shippingDate === undefined;
       if (existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete' && !itemizedMetadataOnlyEdit) {
-        throw new CriticalOperationConflictError('Этот заказ использует построчную itemized-цену. Реквизиты, проведённые оплаты, цены продажи и состав можно исправлять из редактора; жизненный цикл меняется отдельными штатными действиями.');
+        throw new CriticalOperationConflictError('Этот заказ использует построчную itemized-цену. Разрешены только безопасные исправления реквизитов, проведённых оплат, отдельная коррекция цены продажи и безопасная замена состава; жизненный цикл меняется отдельными штатными действиями.');
       }
       const timestamp = new Date().toISOString();
       const nextOrderDate = normalizeDate(input.orderDate ?? existingAny.order_date);
@@ -1333,6 +1339,9 @@ export async function updateOrderCritical(
         : (Array.isArray(input.paymentMethodCorrections)
           ? input.paymentMethodCorrections.map((correction) => ({ paymentId: correction.paymentId, method: correction.method }))
           : []);
+      if (itemContentReplacementRequested && rawPaymentCorrections.length) {
+        throw new CriticalOperationConflictError('Замена состава и исправление проведённых оплат должны сохраняться отдельными действиями.');
+      }
       const requestedPaymentCorrections = new Map<number, PaymentCorrectionInput>();
       for (const correction of rawPaymentCorrections) {
         const paymentId = toInt(correction?.paymentId, 0);
@@ -1743,8 +1752,8 @@ export async function updateOrderCritical(
       if (itemContentReplacementRequested && itemizedRewritePlan) {
         totals = {
           totalAmount: itemizedRewritePlan.totalAmount,
-          receivedAmount: correctedReceivedAmount,
-          debtAmount: Math.max(0, itemizedRewritePlan.totalAmount - correctedReceivedAmount),
+          receivedAmount: itemizedRewritePlan.receivedAmount,
+          debtAmount: itemizedRewritePlan.debtAmount,
         };
       }
       if (totals.receivedAmount > totals.totalAmount) throw new OrderInputValidationError(`Оплаты (${totals.receivedAmount}) больше цены заказа (${totals.totalAmount}). Исправьте цену или оплаты.`);

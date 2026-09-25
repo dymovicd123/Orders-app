@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "revision": "stage03-h8f-direct-itemized-editor",
+  "files": {
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "b93897b1a54c49170b82838820dfe74f01b622fe",
+      "afterGitBlob": "a0cc8531d9edf2d6ab0aa5edc972dbc63d2dd200",
+      "beforeLines": 2105,
+      "afterLines": 2096,
+      "baselineFixture": "scripts/fixtures/stage03-h8f-direct-itemized-editor/worker/domains/orders-write.ts"
+    }
+  }
+}

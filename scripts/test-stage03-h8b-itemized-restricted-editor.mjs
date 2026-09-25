@@ -37,7 +37,7 @@ for (const marker of ['orderDate:', 'managerId:', 'managerName:', 'customerPhone
 for (const marker of ['sourceType:', 'orderTotal:', 'workshopStatus:', 'orderStatus:', 'shippingStatus:', 'items:', 'payments:']) {
   check(!restrictedPayload.includes(marker), 'H8B restricted payload leaked forbidden commercial/physical field: ' + marker)
 }
-check(persist.includes('const pendingEditorPayments = isItemizedEdit ? [] :'), 'H8B itemized editor can still stage a new payment through the legacy editor')
+check(persist.includes('const pendingEditorPayments = nextDraft.payments.filter((payment) => !payment.id)'), 'H8F itemized editor lost support for visible new-payment drafts')
 check(persist.includes('if (!isItemizedEdit || isItemizedContentRewrite) invalidateInventoryStockCaches(true)'), 'H8B/H8E inventory invalidation boundary drifted')
 
 const openStart = app.indexOf('async function handleEditOrder')
@@ -46,14 +46,14 @@ const openFlow = app.slice(openStart, openEnd)
 check(!openFlow.includes("if (order.pricing_mode === 'itemized_v1')"), 'H8B still blanket-blocks itemized editor opening')
 
 check(ui.includes("const itemizedMode = selectedOrder?.pricing_mode === 'itemized_v1'"), 'H8B restricted UI mode missing')
-check(ui.includes('fieldset disabled={Boolean(itemizedMode && !itemizedContentEditMode)}'), 'H8B product facts are not hard-disabled outside the dedicated H8E composition mode')
-check(ui.includes('Только просмотр') && ui.includes('Товар, количество, источник и данные Цеха остаются историческими'), 'H8B read-only physical product explanation missing')
+check(ui.includes('Редактируйте заказ прямо в форме'), 'H8F direct editor guidance missing')
+check(!ui.includes('Изменить состав') && !ui.includes('Только просмотр'), 'H8F must not restore the old composition permission gate')
 check(ui.includes('Цена продажи') && ui.includes('Цена по каталогу') && ui.includes('Сумма позиции'), 'H8B historical price facts missing')
-check(ui.includes('Исторический итог складывается из сохранённых цен позиций'), 'H8B order total is not presented as immutable history')
+check(ui.includes('Пересчитывается автоматически из количества и цены продажи по позициям'), 'H8F itemized order total no longer updates directly in the editor')
 check(ui.includes('Жизненный цикл меняется только отдельными штатными действиями'), 'H8B lifecycle field is not read-only')
-check(ui.includes('{!itemizedMode ? (') && ui.includes('+ Первичная оплата') && ui.includes('+ Закрытие долга'), 'H8B legacy payment-add controls are not isolated behind non-itemized mode')
-check(ui.includes('Здесь исправляются только уже проведённые оплаты'), 'H8B posted-payment correction policy is not visible')
-check(ui.includes("itemizedContentEditMode ? 'Сохранить новый состав' : itemizedMode ? 'Сохранить исправления' : 'Сохранить изменения'"), 'H8B/H8E save action no longer distinguishes restricted correction from composition rewrite')
+check(ui.includes('+ Первичная оплата') && ui.includes('+ Закрытие долга'), 'H8F payment creation controls are not visible in the editor')
+check(ui.includes('Проведённые оплаты редактируются прямо в полях ниже'), 'H8F direct payment-edit guidance missing')
+check(ui.includes("{savingOrder ? 'Сохраняю...' : 'Сохранить изменения'}"), 'H8F unified save action missing')
 
 check(utils.includes('catalogPriceSnapshot: item.catalogPriceSnapshot ?? null'), 'H8B editor draft loses the historical Catalog snapshot')
 
@@ -66,4 +66,4 @@ for (const marker of ['input.externalId === undefined','input.items === undefine
   check(edit.includes(marker), 'H8B backend hard stop missing: ' + marker)
 }
 
-console.log('STAGE03-H8B ITEMIZED RESTRICTED EDITOR PASSED — metadata/payment correction remains isolated; physical facts stay read-only by default and are exposed only through the dedicated H8E composition mode')
+console.log('STAGE03-H8B ITEMIZED EDIT FOUNDATION PASSED — stale-safe metadata/payment correction remains intact while H8F presents the authorized editor as one direct form')

@@ -64,26 +64,26 @@ Expected: save succeeds; products, quantities, sources, sold prices and total do
 
 ### T06 — H8C sold-price correction
 Open an unpaid or partially paid itemized order and change sold price 1000 → 900.
-Expected: explicit confirmation is required. After confirmation, line/order total and debt change; Catalog snapshot stays 1000; reservation/stock do not move.
+Expected: the new value is editable directly. After Save, line/order total and debt change; Catalog snapshot stays 1000; reservation/stock do not move.
 Then try to lower total below money already received.
 Expected: Save is rejected as overpayment.
 
 ### T07 — H8E quantity rewrite
-Create `BR2-H8-A ОСНОВНОЙ / СТАНДАРТ` qty 2 on Warehouse. Reopen → “Изменить состав” → qty 3.
+Create `BR2-H8-A ОСНОВНОЙ / СТАНДАРТ` qty 2 on Warehouse. Reopen Edit and change qty directly from 2 to 3.
 Expected preview counts the old reservation as releasable rather than double-reserving it. Save succeeds; final active reservation is 3, not 5; old order-item row becomes historical/replaced.
 
 ### T08 — H8E source switch
-For an A/STANDARD order switch Warehouse → Boutique.
+Open Edit for an A/STANDARD order and switch Warehouse → Boutique directly.
 Expected: preview uses Boutique stock 4. After save, Warehouse reservation is released and Boutique receives exactly the new reservation. Physical quantities are not reduced just by editing.
 
 ### T09 — H8E Catalog price-key change
 On A/STANDARD switch material to `ПРЕМИУМ`.
 Expected: Catalog recommendation changes 1000 → 1300 and snapshot becomes 1300.
 Then first manually set a sold price (for example 1100), and after that change the price-driving material.
-Expected: manual sold price remains visible but requires explicit confirmation before Save.
+Expected: manual sold price remains visible and may be saved directly; no second confirmation click appears.
 
 ### T10 — add/remove item
-In composition mode add `BR2-H8-E ДЕТСКИЙ`; remove another line.
+In Edit add `BR2-H8-E ДЕТСКИЙ`; remove another line.
 Expected: cannot remove the final remaining line. Multi-line total is exact sum of line totals; reservations match only the final active composition.
 
 ### T11 — shortage
@@ -101,7 +101,7 @@ Open the same itemized order in tab A and tab B. In A change composition and sav
 Expected: B is rejected with a controlled “order/item changed, refresh and retry” conflict. It must not overwrite A.
 
 ### T14 — sent/downstream protection
-Mark a test order sent through the normal shipping action, then try “Изменить состав”.
+Mark a test order sent through the normal shipping action, then try changing the composition in Edit.
 Expected: blocked.
 For an order with a completed Return/Exchange, composition rewrite must also be blocked. Itemized Exchange itself remains intentionally unavailable until its price policy is approved.
 
@@ -114,3 +114,13 @@ For each test, send only:
 - exact visible error text if any.
 
 Do not use real Catalog products for this acceptance cycle; use only `BR2-H8-` fixtures so every effect is attributable to the new Stage03 flow.
+
+
+## H8F UX retest
+
+After the direct-editor change, specifically verify:
+- opening Edit immediately allows item/quantity/source/price changes; there is no «Изменить состав» permission button;
+- editing a sold price needs only the final «Сохранить изменения», not a per-line confirmation;
+- an existing ordinary payment amount can be changed directly in the payment card and is saved together with the order;
+- changing item composition and an existing payment amount in the same Save either succeeds as one guarded operation or fails without silently dropping either edit;
+- payment rows tied to Exchange extra-payment still restrict non-method changes, because their amount/date belong to the Exchange operation.

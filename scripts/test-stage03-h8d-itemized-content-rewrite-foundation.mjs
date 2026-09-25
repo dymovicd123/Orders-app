@@ -29,8 +29,8 @@ check(edit.includes('Безопасная замена состава перед
 check(edit.includes("existingPricingMode !== 'itemized_v1'"), 'H8D: replacement is not isolated to itemized orders')
 check(edit.includes("options.lifecycleAction === 'order_delete'"), 'H8D: replacement can be combined with delete')
 check(edit.includes('Исправление цены и замена состава должны сохраняться отдельными действиями'), 'H8D: H8C price correction can be mixed with content rewrite')
-check(edit.includes('Замена состава должна сохраняться отдельным действием без одновременного изменения реквизитов заказа'), 'H8D: metadata can be mixed into physical rewrite')
-check(edit.includes('Замена состава и исправление проведённых оплат должны сохраняться отдельными действиями'), 'H8D: posted-payment correction can be mixed into physical rewrite')
+check(!edit.includes('Замена состава должна сохраняться отдельным действием без одновременного изменения реквизитов заказа'), 'H8F still blocks metadata from the unified edit save')
+check(!edit.includes('Замена состава и исправление проведённых оплат должны сохраняться отдельными действиями'), 'H8F still blocks payment correction from the unified edit save')
 check(edit.includes('Безопасную itemized-замену состава нельзя совмещать со старым полем items'), 'H8D: legacy full-items field can bypass dedicated replacement lane')
 
 check(edit.includes('replacementExpectedItems') && edit.includes('replacementItems'), 'H8D: expected/new composition pair missing')
@@ -57,7 +57,7 @@ check(edit.includes('catalogPriceSnapshot: item.catalogPriceSnapshot ?? null'), 
 check(edit.includes('existingPaymentsForEdit'), 'H8D: replacement total is not checked against existing payments')
 check(edit.includes("throw new CriticalOperationConflictError('Состав не изменился. Для исправления только цены используйте отдельную коррекцию цены продажи.')"), 'H8D: dedicated replacement can be abused for price-only change')
 check(edit.includes('totalAmount: itemizedRewritePlan.totalAmount'), 'H8D: order total is not server-derived from replacement lines')
-check(edit.includes('debtAmount: itemizedRewritePlan.debtAmount'), 'H8D: debt is not server-derived after replacement')
+check(edit.includes('receivedAmount: correctedReceivedAmount') && edit.includes('debtAmount: Math.max(0, itemizedRewritePlan.totalAmount - correctedReceivedAmount)'), 'H8F combined composition/payment totals are not server-derived')
 
 check(edit.includes("itemContentReplacementRequested && existingShippingStatus === 'sent'"), 'H8D: sent order physical rewrite is not hard-blocked')
 check(edit.includes('inventory_reservations WHERE order_id = ? AND status = \'fulfilled\''), 'H8D: partial handover protection missing')
@@ -79,8 +79,8 @@ check(insert.includes('reserveOrderItemV2') || write.includes('applyOrderStockWr
 check(reservations.includes("WHERE order_id = ? AND status IN ('active', 'unresolved')"), 'H8D: reservation release path missing')
 check(reservations.includes("UPDATE inventory_reservations\n         SET status = 'released'"), 'H8D: old active reservations are not released')
 
-check(ui.includes('fieldset disabled={Boolean(itemizedMode && !itemizedContentEditMode)}'), 'H8D/H8E lost the default read-only boundary for physical item fields')
-check(ui.includes('Изменить состав') && ui.includes('Отменить изменение состава'), 'H8E dedicated composition-mode controls missing')
+check(!ui.includes('Изменить состав') && !ui.includes('Отменить изменение состава'), 'H8F restored the old separate composition mode')
+check(ui.includes('Изменения применятся одной кнопкой «Сохранить изменения»'), 'H8F direct composition guidance missing')
 check(app.includes('itemContentReplacement = {') && app.includes('const payload = isItemizedContentRewrite ? {'), 'H8E does not consume the H8D dedicated replacement primitive')
 const persistStart = app.indexOf('async function persistOrder')
 const persistEnd = app.indexOf('\n\n  async function loadArchivePreview', persistStart)
@@ -89,6 +89,7 @@ const rewritePayloadStart = persist.indexOf('const payload = isItemizedContentRe
 const metadataPayloadStart = persist.indexOf('} : isItemizedEdit ? {', rewritePayloadStart)
 check(rewritePayloadStart >= 0 && metadataPayloadStart > rewritePayloadStart, 'H8E dedicated replacement payload boundary missing')
 const rewritePayload = persist.slice(rewritePayloadStart, metadataPayloadStart)
-check(rewritePayload.includes('itemContentReplacement') && !rewritePayload.includes('orderDate:') && !rewritePayload.includes('paymentCorrections'), 'H8E replacement payload widened beyond the dedicated H8D envelope')
+check(rewritePayload.includes('itemContentReplacement') && rewritePayload.includes('orderDate:') && rewritePayload.includes('paymentCorrections'), 'H8F unified replacement payload must include metadata/payment edits')
+check(!rewritePayload.includes('itemPriceCorrections') && !rewritePayload.includes('orderTotal:') && !rewritePayload.includes('sourceType:'), 'H8F unified replacement payload leaked legacy/full-price fields')
 
-console.log('STAGE03-H8D ITEMIZED CONTENT REWRITE FOUNDATION PASSED — the stale-safe replacement primitive remains isolated from legacy items while H8E activates it only through a dedicated composition mode')
+console.log('STAGE03-H8D ITEMIZED CONTENT REWRITE FOUNDATION PASSED — stale-safe replacement remains isolated from legacy items while H8F safely combines it with metadata and posted-payment corrections in one editor save')
