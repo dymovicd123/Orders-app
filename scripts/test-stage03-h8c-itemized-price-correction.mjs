@@ -52,7 +52,7 @@ for (const marker of ['items:', 'orderTotal:', 'sourceType:', 'workshopStatus:',
 
 check(ui.includes('Исправить цену продажи'), 'H8C price correction input missing')
 check(ui.includes('Подтвердить изменение цены'), 'H8C explicit human confirmation missing')
-check(ui.includes('Цена по каталогу') && ui.includes('цена Каталога при этом не переписывается'), 'H8C historical Catalog snapshot policy is not visible')
+check(ui.includes('Цена по каталогу') && ui.includes('Сохранённая цена Каталога остаётся исторической рекомендацией'), 'H8C historical Catalog snapshot policy is not visible')
 check(ui.includes('Итог после коррекции'), 'H8C corrected order-total preview missing')
 check(ui.includes('Сохранение будет остановлено, если новый итог окажется меньше уже проведённых оплат'), 'H8C overpayment fail-closed explanation missing')
 check(ui.includes('fieldset disabled={Boolean(itemizedMode && !itemizedContentEditMode)}'), 'H8C physical item fields are no longer read-only outside H8E')
