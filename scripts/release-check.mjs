@@ -250,6 +250,7 @@ try {
   run('Stage03-H6I pre-client readiness matrix', process.execPath, [path.join(root, 'scripts/test-stage03-h6i-pre-client-readiness-matrix.mjs')])
   run('Stage03-H6J adjacent surfaces isolation', process.execPath, [path.join(root, 'scripts/test-stage03-h6j-adjacent-surfaces-isolation.mjs')])
   run('Stage03-H7A Branch2-only safety baseline', process.execPath, [path.join(root, 'scripts/test-stage03-h7a-branch2-safety-baseline.mjs')])
+  run('Stage03-H7B itemized Create activation', process.execPath, [path.join(root, 'scripts/test-stage03-h7b-itemized-create-activation.mjs')])
   run('CLIENT-ZAMMLER-A foundation', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-a-foundation.mjs')])
   run('CLIENT-ZAMMLER-B due-time plumbing', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-b-due-time-plumbing.mjs')])
   run('CLIENT-ZAMMLER-C create form', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-c-create-form.mjs')])

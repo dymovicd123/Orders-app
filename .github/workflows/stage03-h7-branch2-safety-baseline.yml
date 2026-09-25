@@ -51,6 +51,7 @@ jobs:
           node scripts/test-stage03-h6i-pre-client-readiness-matrix.mjs
           node scripts/test-stage03-h6j-adjacent-surfaces-isolation.mjs
           node scripts/test-stage03-h7a-branch2-safety-baseline.mjs
+          node scripts/test-stage03-h7b-itemized-create-activation.mjs
 
       - name: Typecheck and build exact Branch2 commit
         run: |

@@ -13,12 +13,12 @@ check(manifest?.version === 1 && manifest?.revision === 'stage03-h6g-itemized-cr
 check(Object.keys(manifest.files || {}).join(',') === 'src/app/order-pricing.ts', 'H6G frontend allow-list widened')
 check(source.includes('export function evaluateItemizedCreatePricing'), 'H6G pure readiness function missing')
 check(source.includes("pricingMode: 'itemized_v1'"), 'H6G readiness must carry explicit itemized mode')
-check(source.includes("'missing_unit_price'") && source.includes("'overpayment'"), 'H6G readiness blockers incomplete')
+check(source.includes("'missing_unit_price'") && source.includes("'price_confirmation_required'") && source.includes("'overpayment'"), 'H6G readiness blockers incomplete')
 check(!createUi.includes('evaluateItemizedCreatePricing'), 'H6G readiness must not activate visible Create UI')
 const createStart = app.indexOf('async function createOrderFromDraft')
 const createEnd = app.indexOf('\n  function ', createStart + 40)
 const createFlow = app.slice(createStart, createEnd > createStart ? createEnd : app.length)
-check(!createFlow.includes('pricingMode:'), 'H6G must not activate itemized Create request')
+check(createFlow.includes("pricingMode: 'itemized_v1'"), 'H6G/H7 activated Create must carry itemized pricing mode')
 
 const utilsSource = read('src/app/utils.ts')
 const transpile = src => ts.transpileModule(src, {
@@ -95,4 +95,10 @@ result = pricing.evaluateItemizedCreatePricing(
 )
 check(result.status === 'blocked' && result.blockers.some(x => x.code === 'invalid_payment'), 'Payment amount without method must block readiness')
 
-console.log('STAGE03-H6G ITEMIZED CREATE READINESS PASSED — frontend can preflight exact itemized line/payment/debt arithmetic without activating UI, inventing missing prices, or collapsing Catalog snapshot into sold price; confirmed zero-price/zero-payment-row policy is enforced')
+result = pricing.evaluateItemizedCreatePricing(
+  [{ productName: 'Товар', quantity: 1, unitPrice: 1000, catalogPriceSnapshot: 1200, priceOrigin: 'manual', priceNeedsConfirmation: true }],
+  [],
+)
+check(result.status === 'blocked' && result.blockers.some(x => x.code === 'price_confirmation_required'), 'Changed price-driving fields must require manual-price reconfirmation')
+
+console.log('STAGE03-H6G ITEMIZED CREATE READINESS PASSED — active Branch2 Create preflights exact line/payment/debt arithmetic, permits explicit zero, rejects missing prices and overpayment, and fails closed on stale manual overrides')

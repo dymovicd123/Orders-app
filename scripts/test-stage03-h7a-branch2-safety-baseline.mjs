@@ -8,8 +8,6 @@ const envTest = read('scripts/test-branch2-environment.mjs')
 const deployMonitor = read('.github/workflows/cloudflare-deploy-monitor.yml')
 const h6i = read('scripts/test-stage03-h6i-pre-client-readiness-matrix.mjs')
 const h6j = read('scripts/test-stage03-h6j-adjacent-surfaces-isolation.mjs')
-const createUi = read('src/features/sections/CreateOrderSection.tsx')
-const app = read('src/App.tsx')
 
 const BRANCH2_WORKER = 'orders-app-branch2'
 const BRANCH2_DB = 'orders_db_branch2'
@@ -35,13 +33,6 @@ check(h6i.includes('Branch2 Worker identity drifted'), 'H7A: H6I environment ide
 check(h6i.includes('Production D1 identity leaked into Branch2'), 'H7A: H6I Production leak guard missing')
 check(h6j.includes('ADJACENT SURFACES ISOLATION PASSED'), 'H7A: H6J adjacent-surface isolation gate missing')
 
-const createStart = app.indexOf('async function createOrderFromDraft')
-const createEnd = app.indexOf('\n  function ', createStart + 40)
-check(createStart >= 0 && createEnd > createStart, 'H7A: Create flow source boundary missing')
-const createFlow = app.slice(createStart, createEnd)
-check(!createFlow.includes('pricingMode:'), 'H7A: itemized Create was activated before H7 activation commit')
-check(createFlow.includes('unitPrice: 0,'), 'H7A: legacy Create request baseline drifted before H7 activation commit')
-check(createUi.includes('Цена заказа'), 'H7A: legacy visible order-total field disappeared before H7 activation commit')
-check(!createUi.includes('Цена продажи'), 'H7A: visible line-price UI appeared before H7 activation commit')
+check(fs.existsSync('scripts/test-stage03-h7b-itemized-create-activation.mjs'), 'H7A: H7 activation regression gate is missing')
 
-console.log('STAGE03-H7A BRANCH2 SAFETY BASELINE PASSED — branch2 Worker/D1 identity is hard-locked, Production D1 is rejected, H6 isolation gates remain present, and itemized Create is still unactivated')
+console.log('STAGE03-H7A BRANCH2 SAFETY BASELINE PASSED — branch2 Worker/D1 identity is hard-locked, Production D1 is rejected, H6 isolation gates remain present, and H7 activation has its own regression gate')

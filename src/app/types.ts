@@ -11,6 +11,8 @@ export type OrderItem = {
   quantity?: number
   unitPrice?: number
   catalogPriceSnapshot?: number | null
+  priceOrigin?: 'catalog' | 'manual' | 'missing'
+  priceNeedsConfirmation?: boolean
   sourceType?: 'warehouse' | 'boutique' | 'workshop'
   workshopComment?: string
   workshopUrgent?: boolean

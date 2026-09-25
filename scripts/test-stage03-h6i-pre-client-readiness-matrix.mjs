@@ -89,14 +89,15 @@ check(frontendPricing.includes("'missing_unit_price'") && frontendPricing.includ
 check(frontendPricing.includes("pricingMode: 'itemized_v1'"), 'Create readiness does not carry future explicit pricing mode')
 
 const appCreate = between(app, 'async function createOrderFromDraft', '\n  function ')
-check(!appCreate.includes('pricingMode:'), 'Visible Create request was activated before client decisions')
-check(appCreate.includes('unitPrice: 0,'), 'Current legacy Create request unexpectedly changed')
-check(createUi.includes('Цена заказа'), 'Current manual-total Create UI unexpectedly changed')
-check(!createUi.includes('itemized_v1') && !createUi.includes('catalogPriceSnapshot'), 'Itemized internals leaked into current visible Create UI')
+check(appCreate.includes("pricingMode: 'itemized_v1'"), 'Branch2 visible Create lost explicit itemized pricing mode after approved activation')
+check(!appCreate.includes('orderTotal: createDraft.orderTotal'), 'Branch2 itemized Create must not send a separate manual order total')
+check(appCreate.includes('unitPrice: item.unitPrice') && appCreate.includes('catalogPriceSnapshot: item.catalogPriceSnapshot ?? null'), 'Branch2 itemized Create lost final sold price or Catalog snapshot')
+check(createUi.includes('Цена продажи') && createUi.includes('Цена по каталогу'), 'Branch2 visible itemized Create pricing UI disappeared')
+check(!createUi.includes('itemized_v1') && !createUi.includes('catalogPriceSnapshot'), 'Technical itemized internals leaked into user-facing Create UI')
 
 check(contract.includes('the manager may and must be able to supply an explicit final `unit_price` when Catalog has no applicable price'), 'Confirmed missing-Catalog manual-price policy disappeared')
 check(contract.includes('explicit final price `0` is valid'), 'Confirmed zero-price policy disappeared')
 check(contract.includes('delivery does not add or select a separate product sale price'), 'Confirmed delivery price boundary disappeared')
 check(contract.includes('whether returns should stay fully manual') && contract.includes('itemized exchange price semantics'), 'Remaining return/exchange client boundaries disappeared')
 
-console.log('STAGE03-H6I PRE-CLIENT READINESS MATRIX PASSED — confirmed Catalog/manual/zero-price policies are locked while pricing history, reports, debt, manual returns, lifecycle actions, retention and the remaining draft-override/discount/exchange boundaries stay explicit')
+console.log('STAGE03-H6I BRANCH2 ACTIVATION MATRIX PASSED — confirmed Catalog/manual/zero-price policies are active in new-order Create while history, reports, debt, manual returns, lifecycle actions, retention and unresolved discount/exchange boundaries remain isolated')

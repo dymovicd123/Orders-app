@@ -807,7 +807,7 @@ export function createEmptyOrderDraft(): EditorDraft {
     workshopStatus: 'in_workshop',
     orderStatus: 'active',
     comment: '',
-    items: [createEmptyEditorItem()],
+    items: [{ ...createEmptyEditorItem(), unitPrice: undefined, catalogPriceSnapshot: null, priceOrigin: 'missing', priceNeedsConfirmation: false }],
     payments: [createEmptyEditorPayment(today)],
   }
 }

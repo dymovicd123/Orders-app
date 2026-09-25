@@ -40,7 +40,7 @@ import { useWorkshopReads } from './features/workshop/useWorkshopReads'
 import { useApiClient } from './app/controllers/useApiClient'
 import { useOperationalViewModel } from './app/controllers/useOperationalViewModel'
 import { useWorkspaceViewModel } from './app/controllers/useWorkspaceViewModel'
-import { resolveCatalogOrderSalePrice } from './app/order-pricing'
+import { evaluateItemizedCreatePricing, resolveCatalogOrderSalePrice } from './app/order-pricing'
 import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft } from './features/inventory/inventoryDraftFactories'
 import { downloadBlobFile, makeExportHtml } from './features/export/documentExport'
 import './styles/1905-small-screen-acceptance.css'
@@ -3870,7 +3870,21 @@ function App() {
     setCreateDraft((current) => {
       const nextItems = current.items.map((item, itemIndex) => {
         if (itemIndex !== index) return item
-        const nextItem = { ...item, [field]: field === 'audienceType' ? normalizeAudienceTypeValue(value) : value }
+        const normalizedValue = field === 'audienceType' ? normalizeAudienceTypeValue(value) : value
+        const nextItem = { ...item, [field]: normalizedValue } as EditorItem
+
+        if (field === 'unitPrice') {
+          const rawPrice = value === null || value === undefined ? '' : String(value).trim()
+          nextItem.unitPrice = rawPrice === '' ? undefined : Number(rawPrice)
+          nextItem.priceOrigin = rawPrice === '' ? 'missing' : 'manual'
+          nextItem.priceNeedsConfirmation = false
+          return nextItem
+        }
+        if (field === 'priceNeedsConfirmation') {
+          nextItem.priceNeedsConfirmation = Boolean(value)
+          return nextItem
+        }
+
         if (['productName', 'audienceType', 'gender', 'color', 'material', 'length', 'size', 'sourceType'].includes(String(field))) {
           nextItem.stockObservationEnabled = false
           nextItem.observedPhysicalQuantity = null
@@ -3897,8 +3911,17 @@ function App() {
         }
         if (['productName', 'audienceType', 'material', 'length'].includes(String(field))) {
           const pricing = resolveCatalogOrderSalePrice(catalogData, nextItem)
-          nextItem.unitPrice = pricing.status === 'matched' ? pricing.salePrice : undefined
+          const keepManualPrice = item.priceOrigin === 'manual' && item.unitPrice !== undefined && item.unitPrice !== null
           nextItem.catalogPriceSnapshot = pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null
+          if (keepManualPrice) {
+            nextItem.unitPrice = item.unitPrice
+            nextItem.priceOrigin = 'manual'
+            nextItem.priceNeedsConfirmation = true
+          } else {
+            nextItem.unitPrice = pricing.status === 'matched' ? pricing.salePrice : undefined
+            nextItem.priceOrigin = pricing.status === 'matched' ? 'catalog' : 'missing'
+            nextItem.priceNeedsConfirmation = false
+          }
         }
         return nextItem
       })
@@ -3907,7 +3930,10 @@ function App() {
   }
 
   function addCreateItem() {
-    setCreateDraft((current) => ({ ...current, items: [...current.items, createEmptyEditorItem()] }))
+    setCreateDraft((current) => ({
+      ...current,
+      items: [...current.items, { ...createEmptyEditorItem(), unitPrice: undefined, catalogPriceSnapshot: null, priceOrigin: 'missing', priceNeedsConfirmation: false }],
+    }))
   }
 
   function removeCreateItem(index: number) {
@@ -3942,10 +3968,15 @@ function App() {
     })
   }
 
-  const createTotals = useMemo(
-    () => calculateTotals(createDraft.items, createDraft.payments, createDraft.orderTotal),
-    [createDraft.items, createDraft.payments, createDraft.orderTotal],
+  const createPricing = useMemo(
+    () => evaluateItemizedCreatePricing(createDraft.items, createDraft.payments),
+    [createDraft.items, createDraft.payments],
   )
+  const createTotals = useMemo(() => ({
+    totalAmount: createPricing.totalAmount ?? 0,
+    receivedAmount: createPricing.receivedAmount,
+    debtAmount: createPricing.debtAmount ?? 0,
+  }), [createPricing])
 
   function createOrderDraftWithDefaultManager() {
     const draft = createEmptyOrderDraft()
@@ -3999,6 +4030,23 @@ function App() {
         throw new Error(`Укажите фактическое количество для «${missingObservation.productName || 'позиции'}» или выберите «Сейчас проверить не могу».`)
       }
 
+      const pricingReadiness = evaluateItemizedCreatePricing(createDraft.items, createDraft.payments)
+      if (pricingReadiness.status !== 'ready') {
+        const blocker = pricingReadiness.blockers[0]
+        const position = blocker?.itemIndex !== undefined ? blocker.itemIndex + 1 : 0
+        const payment = blocker?.paymentIndex !== undefined ? blocker.paymentIndex + 1 : 0
+        if (blocker?.code === 'empty_items') throw new Error('Добавьте хотя бы один товар в заказ.')
+        if (blocker?.code === 'invalid_quantity') throw new Error(`Проверьте количество в позиции ${position}.`)
+        if (blocker?.code === 'price_confirmation_required') throw new Error(`После изменения характеристик подтвердите цену продажи в позиции ${position}.`)
+        if (blocker?.code === 'missing_unit_price') throw new Error(`Укажите цену продажи для позиции ${position}. Если цены в Каталоге нет, введите её вручную.`)
+        if (blocker?.code === 'invalid_unit_price') throw new Error(`Цена продажи в позиции ${position} должна быть целым числом от 0.`)
+        if (blocker?.code === 'invalid_catalog_snapshot') throw new Error(`Не удалось безопасно зафиксировать цену Каталога для позиции ${position}. Обновите выбор товара.`)
+        if (blocker?.code === 'invalid_payment') throw new Error(`Проверьте оплату ${payment}: положительная сумма требует способ оплаты, сумма должна быть целым числом от 0.`)
+        if (blocker?.code === 'overpayment') throw new Error(`Сумма оплат (${pricingReadiness.receivedAmount}) больше итога заказа (${pricingReadiness.totalAmount ?? 0}). Исправьте оплаты или цены позиций.`)
+        throw new Error('Проверьте цены позиций и оплаты перед сохранением заказа.')
+      }
+      const pricedLineByInputIndex = new Map(pricingReadiness.lines.map((line) => [line.itemIndex, line]))
+
       const payload = {
         orderDate: createDraft.orderDate,
         managerId: createDraft.managerId || undefined,
@@ -4008,7 +4056,7 @@ function App() {
         city: createDraft.city,
         deliveryType: createDraft.deliveryType,
         sourceType: deriveOrderSourceType(createDraft.items),
-        orderTotal: createDraft.orderTotal ? Number(createDraft.orderTotal) : undefined,
+        pricingMode: 'itemized_v1' as const,
         workshopStatus: createDraft.workshopStatus,
         orderStatus: createDraft.orderStatus,
         comment: createDraft.comment,
@@ -4021,7 +4069,8 @@ function App() {
           length: item.length,
           size: item.size,
           quantity: item.quantity,
-          unitPrice: 0,
+          unitPrice: item.unitPrice,
+          catalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
           sourceType: item.sourceType,
           workshopComment: item.workshopComment,
           workshopUrgent: Boolean(item.workshopUrgent),
@@ -4060,6 +4109,7 @@ function App() {
         totalAmount?: number
         receivedAmount?: number
         debtAmount?: number
+        pricingMode?: 'legacy_manual_total' | 'itemized_v1'
         code?: string
         shortages?: CreateOrderShortage[]
         stockWriteOff?: Array<{ productName?: string; concurrentShortage?: boolean; shortageAfter?: number }>
@@ -4133,6 +4183,7 @@ function App() {
         city: createDraft.city || null,
         delivery_type: createDraft.deliveryType || null,
         source_type: deriveOrderSourceType(createDraft.items),
+        pricing_mode: 'itemized_v1',
         workshop_status: createDraft.workshopStatus,
         order_status: createDraft.orderStatus,
         total_amount: Number(result.totalAmount || 0),
@@ -4140,24 +4191,31 @@ function App() {
         debt_amount: Number(result.debtAmount || 0),
         return_amount: 0,
         comment: createDraft.comment || null,
-        items: createDraft.items.filter((item) => String(item.productName || '').trim()).map((item) => ({
-          productName: item.productName,
-          audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
-          gender: item.gender || null,
-          color: item.color || null,
-          material: item.material || null,
-          length: item.length || null,
-          size: item.size || null,
-          quantity: item.quantity ?? 1,
-          unitPrice: 0,
-          lineTotal: 0,
-          sourceType: item.sourceType || 'warehouse',
-          workshopComment: item.workshopComment || null,
-          workshopUrgent: Boolean(item.workshopUrgent),
-          workshopDueDate: item.workshopUrgent ? item.workshopDueDate || null : null,
-          workshopDueTime: item.workshopUrgent ? item.workshopDueTime || null : null,
-          isWorkshop: item.sourceType === 'workshop',
-        })),
+        items: createDraft.items
+          .map((item, inputIndex) => ({ item, inputIndex }))
+          .filter(({ item }) => String(item.productName || '').trim())
+          .map(({ item, inputIndex }) => {
+            const pricedLine = pricedLineByInputIndex.get(inputIndex)
+            return {
+              productName: item.productName,
+              audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
+              gender: item.gender || null,
+              color: item.color || null,
+              material: item.material || null,
+              length: item.length || null,
+              size: item.size || null,
+              quantity: pricedLine?.quantity ?? item.quantity ?? 1,
+              unitPrice: pricedLine?.unitPrice ?? Number(item.unitPrice || 0),
+              catalogPriceSnapshot: pricedLine?.catalogPriceSnapshot ?? item.catalogPriceSnapshot ?? null,
+              lineTotal: pricedLine?.lineTotal ?? 0,
+              sourceType: item.sourceType || 'warehouse',
+              workshopComment: item.workshopComment || null,
+              workshopUrgent: Boolean(item.workshopUrgent),
+              workshopDueDate: item.workshopUrgent ? item.workshopDueDate || null : null,
+              workshopDueTime: item.workshopUrgent ? item.workshopDueTime || null : null,
+              isWorkshop: item.sourceType === 'workshop',
+            }
+          }),
         payments: createDraft.payments
           .map((payment, index) => ({
             paymentDate: payment.paymentDate,
@@ -7397,11 +7455,11 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'create'} label="Создание заказа">
-        <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment }} />
+        <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createPricing, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label="Создание заказа ЗАММЛЕР">
-        <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment, zammlerMode: true }} />
+        <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createPricing, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment, zammlerMode: true }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'edit'} label="Редактирование заказа">

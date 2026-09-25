@@ -374,10 +374,13 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
         if (itemIndex !== index) return item
         const pickedItem = buildOrderItemFromCatalogPick(item, productName)
         const pricing = resolveCatalogOrderSalePrice(catalogData, pickedItem)
+        const keepManualPrice = item.priceOrigin === 'manual' && item.unitPrice !== undefined && item.unitPrice !== null
         return {
           ...pickedItem,
-          unitPrice: pricing.status === 'matched' ? pricing.salePrice : undefined,
+          unitPrice: keepManualPrice ? item.unitPrice : pricing.status === 'matched' ? pricing.salePrice : undefined,
           catalogPriceSnapshot: pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null,
+          priceOrigin: keepManualPrice ? 'manual' : pricing.status === 'matched' ? 'catalog' : 'missing',
+          priceNeedsConfirmation: keepManualPrice,
         }
       }),
     }))

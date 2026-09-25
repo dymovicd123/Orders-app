@@ -87,6 +87,7 @@ export type ItemizedCreatePricingBlocker = {
   code:
     | 'empty_items'
     | 'invalid_quantity'
+    | 'price_confirmation_required'
     | 'missing_unit_price'
     | 'invalid_unit_price'
     | 'invalid_catalog_snapshot'
@@ -129,6 +130,11 @@ export function evaluateItemizedCreatePricing(
     const quantity = Number(item?.quantity ?? 1)
     if (!Number.isSafeInteger(quantity) || quantity < 1) {
       blockers.push({ code: 'invalid_quantity', itemIndex })
+      continue
+    }
+
+    if (item?.priceNeedsConfirmation) {
+      blockers.push({ code: 'price_confirmation_required', itemIndex })
       continue
     }
 
