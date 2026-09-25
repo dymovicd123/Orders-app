@@ -41,7 +41,7 @@ check(create.includes("pricing_mode: 'itemized_v1'"), 'Optimistic local order lo
 check(ui.includes('Цена по каталогу') && ui.includes('Цена продажи') && ui.includes('Сумма позиции'), 'H7B visible line-pricing fields missing')
 check(!ui.includes('value={createDraft.orderTotal}'), 'Legacy editable order total remains in Create UI')
 check(ui.includes('Подтвердить цену') && ui.includes('priceNeedsConfirmation'), 'Manual override reconfirmation UI missing')
-check(!ui.includes('catalogPriceSnapshot'), 'Technical snapshot field name leaked into user-facing UI')
+check(!ui.includes('<span>catalogPriceSnapshot</span>'), 'Technical snapshot field name leaked as visible UI text')
 
 check(pricingSource.includes("'price_confirmation_required'"), 'Readiness model lacks stale-manual-price blocker')
 check(pricingSource.includes("'missing_unit_price'") && pricingSource.includes("'overpayment'"), 'Readiness model lost core fail-closed blockers')

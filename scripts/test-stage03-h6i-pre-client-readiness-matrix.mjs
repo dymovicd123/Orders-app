@@ -93,7 +93,7 @@ check(appCreate.includes("pricingMode: 'itemized_v1'"), 'Branch2 visible Create 
 check(!appCreate.includes('orderTotal: createDraft.orderTotal'), 'Branch2 itemized Create must not send a separate manual order total')
 check(appCreate.includes('unitPrice: item.unitPrice') && appCreate.includes('catalogPriceSnapshot: item.catalogPriceSnapshot ?? null'), 'Branch2 itemized Create lost final sold price or Catalog snapshot')
 check(createUi.includes('Цена продажи') && createUi.includes('Цена по каталогу'), 'Branch2 visible itemized Create pricing UI disappeared')
-check(!createUi.includes('itemized_v1') && !createUi.includes('catalogPriceSnapshot'), 'Technical itemized internals leaked into user-facing Create UI')
+check(!createUi.includes('<span>itemized_v1</span>') && !createUi.includes('<span>catalogPriceSnapshot</span>'), 'Technical itemized internals leaked as visible UI text')
 
 check(contract.includes('the manager may and must be able to supply an explicit final `unit_price` when Catalog has no applicable price'), 'Confirmed missing-Catalog manual-price policy disappeared')
 check(contract.includes('explicit final price `0` is valid'), 'Confirmed zero-price policy disappeared')

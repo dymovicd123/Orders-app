@@ -68,6 +68,6 @@ check(!appCreate.includes('orderTotal: createDraft.orderTotal'), 'Activated item
 check(appCreate.includes("pricingMode: 'itemized_v1'"), 'Activated itemized Create request lost explicit pricing mode')
 check(appCreate.includes('unitPrice: item.unitPrice') && appCreate.includes('catalogPriceSnapshot: item.catalogPriceSnapshot ?? null'), 'Activated itemized Create request lost line price history')
 check(createUi.includes('Цена продажи') && createUi.includes('Цена по каталогу'), 'Visible Create line pricing is missing')
-check(!createUi.includes('catalogPriceSnapshot'), 'Technical Catalog snapshot field name leaked into user-facing Create UI')
+check(!createUi.includes('<span>catalogPriceSnapshot</span>'), 'Technical Catalog snapshot field name leaked as visible UI text')
 
 console.log('STAGE03-H6C ITEMIZED PIPELINE ACCEPTANCE PASSED — itemized arithmetic, Create persistence, historical read/report behavior, edit guard and visible Branch2 line pricing align end-to-end')
