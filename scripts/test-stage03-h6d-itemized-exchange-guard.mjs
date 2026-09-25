@@ -29,7 +29,7 @@ const workshopExchangeEnd = app.indexOf('\n\n  async function ', workshopExchang
 const regularExchange = app.slice(regularExchangeStart, regularExchangeEnd)
 const workshopExchange = app.slice(workshopExchangeStart, workshopExchangeEnd)
 check(!regularExchange.includes("order.pricing_mode === 'itemized_v1'"), 'H9B ordinary itemized Exchange entry is still blocked by the historical guard')
-check(!workshopExchange.includes("order.pricing_mode === 'itemized_v1'"), 'H9B Workshop itemized Exchange entry is still blocked by the historical guard')
+check(!workshopExchange.includes('текущая форма обмена работает по старой общей цене') && workshopExchange.includes('const exchangeDraftForTask = createExchangeDraft(order)'), 'H9B Workshop itemized Exchange entry is still blocked by the historical guard')
 check(app.includes("const isItemizedEdit = order.pricing_mode === 'itemized_v1'"), 'H8B itemized editor selector disappeared while H9B activates Exchange separately')
 check(regularExchangeStart >= 0 && workshopExchangeStart >= 0, 'Exchange UI boundaries missing')
 check(!app.includes('текущая форма обмена работает по старой общей цене'), 'Historical itemized Exchange guard copy leaked into H9B')
