@@ -19,7 +19,9 @@ const createStart = app.indexOf('async function createOrderFromDraft')
 const createEnd = app.indexOf('\n  function ', createStart + 40)
 const createFlow = app.slice(createStart, createEnd > createStart ? createEnd : app.length)
 check(!createUi.includes('resolveCatalogOrderSalePrice'), 'H5 resolver must not be rendered/called by CreateOrderSection')
-check(!createFlow.includes('pricingMode:') && createFlow.includes('unitPrice: 0,'), 'H5/H6B may prepare shadow pricing, but itemized Create request must remain inactive')
+check(createFlow.includes("pricingMode: 'itemized_v1'"), 'H7 activation must explicitly use itemized_v1 in Create')
+check(createFlow.includes('unitPrice: item.unitPrice') && createFlow.includes('catalogPriceSnapshot: item.catalogPriceSnapshot ?? null'), 'H7 activation must carry resolver-derived snapshot separately from final sold price')
+check(!createFlow.includes('orderTotal: createDraft.orderTotal'), 'H7 itemized Create must not send legacy manual order total')
 
 const utilsSource = read('src/app/utils.ts')
 const transpile = (source) => ts.transpileModule(source, {
@@ -79,4 +81,4 @@ const ambiguous = { ...catalog, executionPrices: [...catalog.executionPrices,
 result = mod.resolveCatalogOrderSalePrice(ambiguous, { productName: 'Платье', audienceType: 'ВЗРОСЛЫЙ', material: 'ШЕЛК', length: 'МИДИ' })
 check(result.status === 'ambiguous' && result.salePrice === null, 'Conflicting recommendations must fail closed')
 
-console.log('STAGE03-H5 CATALOG PRICE RESOLVER PASSED — Catalog response types match the backend, product/execution/audience lookup is deterministic, missing/conflicting prices fail closed, and Create UI remains inactive')
+console.log('STAGE03-H5 CATALOG PRICE RESOLVER PASSED — Catalog lookup remains deterministic and fail-closed for missing/conflicting recommendations, while Branch2 H7 consumes the resolver without conflating recommendation and final sold price')

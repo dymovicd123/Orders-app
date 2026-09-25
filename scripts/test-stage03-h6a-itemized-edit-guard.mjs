@@ -24,7 +24,7 @@ check(updateOrder.includes('Старый редактор заказа для н
 
 check((app.match(/order\.pricing_mode === 'itemized_v1'/g) || []).length >= 2, 'Both editor entry and stale-save paths must guard itemized orders')
 check(app.includes('async function handleEditOrder') && app.includes('async function persistOrder'), 'Frontend editor boundaries missing')
-check(createUi.includes('Цена заказа'), 'Legacy Create UI unexpectedly changed in H6A')
-check(!createUi.includes('pricingMode') && !createUi.includes('resolveCatalogOrderSalePrice'), 'H6A must not activate itemized Create UI or Catalog autofill')
+check(createUi.includes('Цена продажи') && createUi.includes('Цена по каталогу'), 'H7 Create pricing UI disappeared while H6A existing-order guard is still required')
+check(!createUi.includes('<span>pricingMode</span>') && !createUi.includes('<span>itemized_v1</span>'), 'Technical itemized mode leaked as visible Create UI copy')
 
-console.log('STAGE03-H6A ITEMIZED EDIT GUARD PASSED — existing itemized orders fail closed in legacy PATCH/editor paths, dedicated lifecycle delete remains separate, and Create UI stays unchanged')
+console.log('STAGE03-H6A ITEMIZED EDIT GUARD PASSED — existing itemized orders still fail closed in legacy PATCH/editor paths and dedicated lifecycle delete remains separate while new Branch2 Create uses H7 itemized pricing')

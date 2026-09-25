@@ -48,7 +48,10 @@ check(!updateOrder.includes('buildItemizedOrderWritePlan('), 'H3 must not silent
 const app = read('src/App.tsx')
 const createUi = read('src/features/sections/CreateOrderSection.tsx')
 const frontendCreate = sliceBetween(app, 'async function createOrderFromDraft(', '\n  function ')
-check(!frontendCreate.includes('pricingMode:'), 'Current Create request must not activate itemized_v1 yet')
-check(!createUi.includes('pricingMode') && !createUi.includes('itemized_v1'), 'Current visible Create UI must not expose itemized mode yet')
+check(frontendCreate.includes("pricingMode: 'itemized_v1'"), 'Branch2 H7 Create must explicitly activate itemized_v1')
+check(!frontendCreate.includes('orderTotal: createDraft.orderTotal'), 'Branch2 H7 Create must not send an independent manual total')
+check(frontendCreate.includes('unitPrice: item.unitPrice') && frontendCreate.includes('catalogPriceSnapshot: item.catalogPriceSnapshot ?? null'), 'Branch2 H7 Create must send final line price and historical Catalog snapshot')
+check(createUi.includes('Цена продажи') && createUi.includes('Цена по каталогу'), 'Branch2 H7 visible Create pricing controls are missing')
+check(!createUi.includes('<span>itemized_v1</span>') && !createUi.includes('<span>pricingMode</span>'), 'Technical pricing mode leaked as visible UI copy')
 
-console.log('STAGE03-H3 EXPLICIT ITEMIZED CREATE PASSED — legacy remains the default, only explicit itemized_v1 consumes H2, server-derived money and Catalog snapshot persist separately, and current UI remains inactive')
+console.log('STAGE03-H3 EXPLICIT ITEMIZED CREATE PASSED — legacy remains the server default for omitted mode, while Branch2 H7 explicitly activates itemized_v1 for new Create and preserves server-derived money plus historical Catalog snapshots')
