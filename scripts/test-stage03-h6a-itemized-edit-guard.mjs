@@ -23,7 +23,7 @@ check(updateOrder.includes("const itemizedMetadataOnlyEdit = existingPricingMode
 check(updateOrder.includes('input.items === undefined') && updateOrder.includes('input.payments === undefined') && updateOrder.includes('input.orderTotal === undefined'), 'Itemized metadata-edit lane must reject item/payment/total rewrites')
 check(updateOrder.includes('input.sourceType === undefined') && updateOrder.includes('input.orderStatus === undefined') && updateOrder.includes('input.shippingStatus === undefined'), 'Itemized metadata-edit lane must reject source/lifecycle/shipping rewrites')
 check(updateOrder.includes("existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete' && !itemizedMetadataOnlyEdit"), 'Unsupported itemized legacy PATCH must still fail closed while dedicated delete stays separate')
-check(updateOrder.includes('Разрешены только безопасные исправления реквизитов, проведённых оплат и отдельная коррекция цены продажи'), 'Controlled itemized edit conflict message missing')
+check(updateOrder.includes('Разрешены только безопасные исправления реквизитов, проведённых оплат, отдельная коррекция цены продажи и безопасная замена состава'), 'Controlled itemized edit conflict message missing')
 
 check(app.includes("const isItemizedEdit = order.pricing_mode === 'itemized_v1'"), 'Frontend no longer distinguishes restricted itemized edit')
 check(app.includes('const payload = isItemizedEdit ? {'), 'Frontend itemized editor no longer uses a restricted payload')

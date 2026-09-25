@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "revision": "stage03-h8d-itemized-content-rewrite-foundation",
+  "files": {
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "23d0d2bbd45c36824951e640a33b187887d277fd",
+      "afterGitBlob": "b93897b1a54c49170b82838820dfe74f01b622fe",
+      "beforeLines": 1904,
+      "afterLines": 2105,
+      "baselineFixture": "scripts/fixtures/stage03-h8d-itemized-content-rewrite/worker/domains/orders-write.ts"
+    }
+  }
+}

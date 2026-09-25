@@ -1,0 +1,86 @@
+import fs from 'node:fs'
+
+const read = path => fs.readFileSync(path, 'utf8')
+const check = (condition, message) => { if (!condition) throw new Error(message) }
+
+const wrangler = read('wrangler.jsonc')
+const write = read('worker/domains/orders-write.ts')
+const reservations = read('worker/domains/order-reservations.ts')
+const ui = read('src/features/sections/OrderEditorSection.tsx')
+const app = read('src/App.tsx')
+const manifest = JSON.parse(read('scripts/stage03-h8d-itemized-content-rewrite-worker-manifest.json'))
+
+check(wrangler.includes('"name": "orders-app-branch2"'), 'H8D: Branch2 Worker identity drifted')
+check(wrangler.includes('"database_name": "orders_db_branch2"') && wrangler.includes('"database_id": "40065052-854e-44b8-bcd5-251bdd488301"'), 'H8D: Branch2 D1 binding drifted')
+check(!wrangler.includes('orders_db_prod') && !wrangler.includes('17e68a41-1d58-4a36-8a63-47c3e32443c4'), 'H8D: Production D1 identity leaked into Branch2')
+
+check(manifest?.version === 1 && manifest?.revision === 'stage03-h8d-itemized-content-rewrite-foundation', 'H8D structural manifest missing')
+check(Object.keys(manifest.files || {}).join(',') === 'worker/domains/orders-write.ts', 'H8D Worker allow-list widened')
+
+const editStart = write.indexOf('export async function updateOrderCritical')
+const editEnd = write.indexOf('\n\nexport async function getOrder', editStart)
+check(editStart >= 0 && editEnd > editStart, 'H8D: updateOrderCritical boundary missing')
+const edit = write.slice(editStart, editEnd)
+
+check(edit.includes('type ItemContentReplacementInput = {'), 'H8D: dedicated replacement contract missing')
+check(edit.includes('itemContentReplacement?: ItemContentReplacementInput'), 'H8D: dedicated replacement field missing')
+check(edit.includes("hasItemContentReplacementField = Object.prototype.hasOwnProperty.call(itemizedInput, 'itemContentReplacement')"), 'H8D: malformed-field detection missing')
+check(edit.includes('Безопасная замена состава передана в неверном формате'), 'H8D: malformed replacement no longer fails closed')
+check(edit.includes("existingPricingMode !== 'itemized_v1'"), 'H8D: replacement is not isolated to itemized orders')
+check(edit.includes("options.lifecycleAction === 'order_delete'"), 'H8D: replacement can be combined with delete')
+check(edit.includes('Исправление цены и замена состава должны сохраняться отдельными действиями'), 'H8D: H8C price correction can be mixed with content rewrite')
+check(edit.includes('Замена состава должна сохраняться отдельным действием без одновременного изменения реквизитов заказа'), 'H8D: metadata can be mixed into physical rewrite')
+check(edit.includes('Замена состава и исправление проведённых оплат должны сохраняться отдельными действиями'), 'H8D: posted-payment correction can be mixed into physical rewrite')
+check(edit.includes('Безопасную itemized-замену состава нельзя совмещать со старым полем items'), 'H8D: legacy full-items field can bypass dedicated replacement lane')
+
+check(edit.includes('replacementExpectedItems') && edit.includes('replacementItems'), 'H8D: expected/new composition pair missing')
+check(edit.includes('В itemized-заказе должна остаться хотя бы одна товарная позиция'), 'H8D: empty replacement is not blocked')
+check(edit.includes("['warehouse', 'boutique', 'workshop'].includes(sourceType)"), 'H8D: replacement source must be explicit')
+check(edit.includes("Object.prototype.hasOwnProperty.call(replacementItem, 'catalogPriceSnapshot')"), 'H8D: replacement cannot distinguish null Catalog snapshot from omitted data')
+
+check(edit.includes('const currentById = new Map<number, Record<string, unknown>>()'), 'H8D: current active item identity map missing')
+check(edit.includes('replacementExpectedItems.length !== currentItems.length'), 'H8D: whole-set stale guard missing')
+check(edit.includes('expectedIds.has(orderItemId)'), 'H8D: duplicate expected item id guard missing')
+check(edit.includes('sameNormalizedOrderItemsForEdit(currentNormalized, expectedNormalized)'), 'H8D: expected physical/commercial snapshot is not compared with current truth')
+check(edit.includes('Number(expected.lineTotal) !== Number(currentItem.lineTotal || 0)'), 'H8D: expected line-total stale guard missing')
+check(edit.includes('expectedCatalogSnapshot !== currentCatalogSnapshot'), 'H8D: expected Catalog-snapshot stale guard missing')
+check(edit.includes('nextSeenExistingIds.has(carriedOrderItemId)'), 'H8D: duplicate carried old item id guard missing')
+
+check(edit.includes('const priceKeyUnchanged = previousNormalized.productName === nextNormalized.productName'), 'H8D: price-key continuity check missing')
+check(edit.includes('previousNormalized.audienceType === nextNormalized.audienceType'), 'H8D: adult/child price dimension missing from continuity guard')
+check(edit.includes('previousNormalized.material === nextNormalized.material'), 'H8D: material price dimension missing from continuity guard')
+check(edit.includes('previousNormalized.length === nextNormalized.length'), 'H8D: length price dimension missing from continuity guard')
+check(edit.includes('Цена Каталога для неизменённого ценового исполнения является историческим снимком'), 'H8D: unchanged price-key can rewrite historical Catalog snapshot')
+
+check(edit.includes('itemizedRewritePlan = buildItemizedOrderWritePlan('), 'H8D: replacement does not rebuild itemized money plan')
+check(edit.includes('catalogPriceSnapshot: item.catalogPriceSnapshot ?? null'), 'H8D: new itemized rows lose explicit Catalog snapshot')
+check(edit.includes('existingPaymentsForEdit'), 'H8D: replacement total is not checked against existing payments')
+check(edit.includes("throw new CriticalOperationConflictError('Состав не изменился. Для исправления только цены используйте отдельную коррекцию цены продажи.')"), 'H8D: dedicated replacement can be abused for price-only change')
+check(edit.includes('totalAmount: itemizedRewritePlan.totalAmount'), 'H8D: order total is not server-derived from replacement lines')
+check(edit.includes('debtAmount: itemizedRewritePlan.debtAmount'), 'H8D: debt is not server-derived after replacement')
+
+check(edit.includes("itemContentReplacementRequested && existingShippingStatus === 'sent'"), 'H8D: sent order physical rewrite is not hard-blocked')
+check(edit.includes('inventory_reservations WHERE order_id = ? AND status = \'fulfilled\''), 'H8D: partial handover protection missing')
+check(edit.includes('if (itemContentReplacementRequested) {') && edit.includes('completedOrderOperationCounts(db, id)'), 'H8D: returns/exchanges are not checked before replacement resolution')
+check(edit.includes('Замена состава запрещена до их штатной отмены'), 'H8D: downstream-operation controlled conflict missing')
+
+check(edit.includes('assertCreateOrderShortageDecisions(db, nextItems, rewritePreResolvedCatalog, { excludeOrderId: id })'), 'H8D: proposed composition does not preflight fresh stock excluding its old reservations')
+check(edit.includes('inventoryObligationLineageForRewrite(db, id, nextItems)'), 'H8D: inventory obligation lineage is not preserved where identity survives')
+check(write.includes('stockReversals = (p.rewriteItems || p.deletingOrder)'), 'H8D: physical rewrite no longer releases/reverses old inventory obligation')
+check(write.includes('if (p.rewriteItems) await retireOrderItemsForRewrite(db, id, p.timestamp)'), 'H8D: old active order items are not retired safely')
+check(write.includes('p.itemizedRewritePlan || null'), 'H8D: itemized write plan is not passed into replacement insertion')
+
+const insertStart = write.indexOf('export async function insertOrderContent')
+const insertEnd = write.indexOf('\n\nexport async function createWorkshopTaskForOrderItem', insertStart)
+const insert = write.slice(insertStart, insertEnd)
+check(insert.includes('catalog_price_snapshot'), 'H8D: replacement insertion cannot persist Catalog snapshot')
+check(insert.includes('itemizedLine?.catalogPriceSnapshot ?? null'), 'H8D: replacement insertion does not use itemized snapshot plan')
+check(insert.includes('reserveOrderItemV2') || write.includes('applyOrderStockWriteOff('), 'H8D: replacement insertion is disconnected from inventory handling')
+check(reservations.includes("WHERE order_id = ? AND status IN ('active', 'unresolved')"), 'H8D: reservation release path missing')
+check(reservations.includes("UPDATE inventory_reservations\n         SET status = 'released'"), 'H8D: old active reservations are not released')
+
+check(ui.includes('fieldset disabled={itemizedMode}'), 'H8D foundation accidentally enabled physical editing in UI')
+check(ui.includes('Товар, количество, источник и данные Цеха остаются историческими'), 'H8D foundation removed the read-only physical-item warning')
+check(!app.includes('itemContentReplacement:'), 'H8D backend foundation leaked replacement activation into App before dedicated UI step')
+
+console.log('STAGE03-H8D ITEMIZED CONTENT REWRITE FOUNDATION PASSED — Branch2 backend has a stale-safe, isolated full-composition replacement primitive that reuses reservation/Workshop rewrite machinery and itemized money persistence, while the UI remains read-only for SKU/quantity/source changes')

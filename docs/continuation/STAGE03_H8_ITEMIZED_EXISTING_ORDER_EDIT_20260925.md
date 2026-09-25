@@ -2,7 +2,7 @@
 
 Date: 2026-09-25
 
-Status: **H8A backend foundation + H8B restricted editor + H8C sold-price correction implemented on Branch2.**
+Status: **H8A backend foundation + H8B restricted editor + H8C sold-price correction + H8D content-rewrite backend foundation implemented on Branch2.**
 
 ## Why H8 exists
 
@@ -76,7 +76,32 @@ Safety rules:
 - active Return/Exchange operations still block the correction;
 - the UI requires an explicit price confirmation after a value is changed.
 
-This does not enable SKU, quantity or source changes and does not define itemized exchange pricing. Those remain separate future work.
+This does not enable SKU, quantity or source changes in the UI and does not define itemized exchange pricing.
+
+## H8D — stale-safe itemized composition rewrite foundation
+
+The backend now has a dedicated `itemContentReplacement` primitive for a future restricted composition editor. H8D does **not** expose this action in the UI yet.
+
+The replacement request is deliberately separate from the legacy `items` field and from H8C price correction. It carries:
+- a complete expected snapshot of the currently active order lines, keyed by persisted `order_items.id`;
+- a complete proposed replacement composition with explicit source, final sold price and explicit Catalog snapshot/null.
+
+Before any physical rewrite the server:
+- rejects malformed replacement envelopes and empty replacement sets;
+- rejects use on legacy orders or together with delete, metadata edits, posted-payment corrections, H8C price corrections or the legacy full `items` field;
+- verifies every expected active line still exists and still matches identity, quantity, sold price, line total and historical Catalog snapshot;
+- rejects duplicate/missing old line identities;
+- requires every proposed line to explicitly name Warehouse/Boutique/Workshop and explicitly carry `catalogPriceSnapshot` or null;
+- preserves the old Catalog snapshot when the confirmed price key (product + adult/child + material + length) is unchanged;
+- requires a real physical/content change; price-only corrections stay in H8C;
+- blocks sent orders, partial fulfilled handovers and orders with active Return/Exchange operations before catalog/reservation rewrite;
+- revalidates proposed stock availability while excluding this order's old reservations;
+- rebuilds itemized totals against existing payments and rejects overpayment;
+- derives the coarse order source from the first non-Workshop proposed line.
+
+When committed, the existing safe rewrite machinery releases/reverses old reservations, retires old active rows without deleting history, cancels replaced Workshop tasks, inserts new itemized rows with their historical Catalog snapshots, recreates Workshop tasks/reservations, and preserves inventory-obligation lineage for unchanged physical identities where possible.
+
+H8E is the future UI activation step. Until H8E, product/SKU/quantity/source/Workshop fields remain read-only in the itemized editor.
 
 Environment rule remains unchanged: Branch2 Worker + Branch2 D1 only. Production is not a target.
 

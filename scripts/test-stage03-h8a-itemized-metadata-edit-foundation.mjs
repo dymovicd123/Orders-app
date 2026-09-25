@@ -35,14 +35,14 @@ for (const marker of [
 ]) check(edit.includes(marker), 'H8A: itemized metadata lane missing hard stop: ' + marker)
 
 check(edit.includes("existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete' && !itemizedMetadataOnlyEdit"), 'H8A: unsupported itemized edits no longer fail closed')
-check(edit.includes('Разрешены только безопасные исправления реквизитов, проведённых оплат и отдельная коррекция цены продажи'), 'H8A: controlled conflict message missing')
+check(edit.includes('Разрешены только безопасные исправления реквизитов, проведённых оплат, отдельная коррекция цены продажи и безопасная замена состава'), 'H8A: controlled conflict message missing')
 check(edit.includes('const requestedItems = Array.isArray(input.items) ? normalizeOrderItems(input.items, nextSource) : null'), 'H8A: absent items no longer remain absent')
 check(edit.includes('const requestedPayments = Array.isArray(input.payments) ? normalizeOrderPayments(input.payments, nextOrderDate) : null'), 'H8A: absent payments no longer remain absent')
 check(edit.includes('const itemContentChanged = Boolean(requestedItems && !sameNormalizedOrderItemsForEdit'), 'H8A: metadata-only lane can unexpectedly rewrite item content')
 check(edit.includes('const rewriteItems = Boolean(requestedItems && !sameNormalizedOrderItemsExceptPriceForEdit'), 'H8A: metadata-only lane can unexpectedly trigger stock rewrite')
 check(edit.includes('const rewritePayments = !deletingOrder && Boolean(requestedPayments && !sameNormalizedOrderPaymentsForEdit'), 'H8A: metadata-only lane can unexpectedly replace payment ledger')
 check(edit.includes('input.orderTotal !== undefined ? input.orderTotal : existingAny.total_amount'), 'H8A: metadata-only lane does not preserve persisted commercial total')
-check(!edit.includes('catalogPriceSnapshot'), 'H8A: legacy editor path unexpectedly writes Catalog snapshots')
+check(!edit.includes('UPDATE order_items SET catalog_price_snapshot') && !edit.includes('catalog_price_snapshot = ?'), 'H8A: restricted edit path unexpectedly rewrites historical Catalog snapshots in place')
 
 check(app.includes("const isItemizedEdit = order.pricing_mode === 'itemized_v1'"), 'H8A: H8B frontend no longer selects the restricted itemized path')
 check(app.includes('const payload = isItemizedEdit ? {'), 'H8A: H8B frontend no longer sends the restricted itemized payload')
