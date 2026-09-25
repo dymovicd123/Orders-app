@@ -47,8 +47,9 @@ check(edit.includes('Безопасную itemized-замену состава �
 check(edit.includes('itemContentReplacement?: ItemContentReplacementInput'), 'H8D dedicated replacement contract is missing')
 
 const exchange = between(returns, 'export async function createExchange', '\n\nexport async function')
-check(exchange.includes("cleanText((existing as any).pricing_mode) === 'itemized_v1'"), 'Legacy exchange guard for itemized orders missing')
-check(exchange.includes('unitPrice: 0') && exchange.includes('lineTotal: 0'), 'Legacy exchange model changed without client policy')
+check(exchange.includes("const isItemizedExchange = cleanText((existing as any).pricing_mode) === 'itemized_v1'"), 'Explicit itemized/legacy exchange mode boundary missing')
+check(exchange.includes("unitPrice: isItemizedExchange ? itemizedExchangePricingPlan!.newUnitPrice : 0"), 'Legacy exchange model is no longer isolated from H9A itemized semantics')
+check(exchange.includes('expectedOldCatalogPriceSnapshot') && exchange.includes('projectedTotalAmount = currentItemizedTotalAmount - replacedOldValue + newLine.lineTotal'), 'H9A itemized exchange stale/total contract missing')
 
 const createReturn = between(returns, 'export async function createReturn', '\n\nexport async function')
 check(createReturn.includes('const amount = Math.max(0, toInt(input.amount, 0))'), 'Returns no longer use explicit manager-entered refund amount')
@@ -101,6 +102,7 @@ check(!createUi.includes('<span>itemized_v1</span>') && !createUi.includes('<spa
 check(contract.includes('the manager may and must be able to supply an explicit final `unit_price` when Catalog has no applicable price'), 'Confirmed missing-Catalog manual-price policy disappeared')
 check(contract.includes('explicit final price `0` is valid'), 'Confirmed zero-price policy disappeared')
 check(contract.includes('delivery does not add or select a separate product sale price'), 'Confirmed delivery price boundary disappeared')
-check(contract.includes('whether returns should stay fully manual') && contract.includes('itemized exchange price semantics'), 'Remaining return/exchange client boundaries disappeared')
+check(contract.includes('whether returns should stay fully manual'), 'Remaining return client boundary disappeared')
+check(read('docs/continuation/STAGE03_H9_ITEMIZED_EXCHANGE_20260925.md').includes('Accepted itemized Exchange semantics'), 'Approved H9 itemized exchange contract missing')
 
-console.log('STAGE03-H6I BRANCH2 ACTIVATION MATRIX PASSED — confirmed Catalog/manual/zero-price policies are active in new-order Create while history, reports, debt, manual returns, lifecycle actions, retention and unresolved discount/exchange boundaries remain isolated')
+console.log('STAGE03-H6I BRANCH2 ACTIVATION MATRIX PASSED — confirmed Create pricing remains intact; H9A deliberately activates only the reviewed itemized Exchange backend contract while manual returns, history, reports, debt, lifecycle actions and retention remain isolated')
