@@ -43,7 +43,8 @@ check(insertContent.includes(': db.prepare('), 'legacy order-item insert branch 
 check(!createOrder.includes('catalog_execution_prices') && !insertContent.includes('catalog_execution_prices'), 'H3 must not read mutable Catalog prices or enable autofill')
 
 const updateOrder = write.slice(write.indexOf('export async function updateOrderCritical('))
-check(!updateOrder.includes('buildItemizedOrderWritePlan('), 'H3 must not silently switch existing-order edit to itemized semantics')
+check(updateOrder.includes('itemizedRewritePlan = buildItemizedOrderWritePlan('), 'H8D dedicated existing-order itemized rewrite plan is missing')
+check(updateOrder.includes('Безопасную itemized-замену состава нельзя совмещать со старым полем items'), 'H3 legacy full-items edit boundary was weakened while adding H8D')
 
 const app = read('src/App.tsx')
 const createUi = read('src/features/sections/CreateOrderSection.tsx')
