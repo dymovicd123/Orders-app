@@ -12,16 +12,15 @@
 
 Updated: 2026-09-25
 
-## Current checkpoint — Stage03 H10 manual Return policy
+## Current checkpoint — Stage03 H10 complete / H11 client-gated
 
-- Release scope is still **Branch2 only**. Do not touch `main` / Production: Production does not yet have the price setup required for safe itemized operation.
-- H9 is complete on Branch2: merged SHA `5fd108c05d05538467a39f55970545efdcac889d`; exact `cloudflare-deploy/branch2` completed successfully in run `36165964308`; Branch2 safety run `36165964296` also passed.
-- Current H10 work branch: `w-stage03-h10-return-policy-20260925`, based on the exact H9 Branch2 SHA above.
-- H10 policy: physical returned items/quantities and refund money are independent facts. For both itemized and legacy orders, manager enters the actual refund explicitly; no current Catalog price or historical sold line price is used as an automatic refund rule.
-- H10 UX change: new Return drafts start at 0 money rather than pre-filling the entire remaining received amount. The available refund ceiling stays visible; zero-money physical returns and explicit money-only refunds remain valid.
-- H10 has no migration, no backfill, and no Production/main action.
-- Before calling H10 complete: focused H10 regression + cumulative CI/build must pass, then merge only into `branch2` and verify exact Branch2 deploy success.
-- After H10: review discount/analytics interpretation (H11), then perform the final Create → Edit → payments/debt → Warehouse → Workshop → Return → Exchange → reports/history Stage03 audit. Stage04 Workshop finance remains separate.
+- Release scope remains **Branch2 only**. Do not touch `main` / Production until the user explicitly opens that gate; Production does not yet have the price setup required for safe itemized operation.
+- H9 remains complete on Branch2: merged SHA `5fd108c05d05538467a39f55970545efdcac889d`; exact deploy run `36165964308` succeeded.
+- H10 is complete on Branch2: merged SHA `c580b5231bc0101646b013ea000c9151355fec31`; work-branch cumulative CI/build run `36166794744` succeeded; Branch2 safety run `36167153671` succeeded; exact `cloudflare-deploy/branch2` run `36167153573` succeeded.
+- H10 policy: physical returned items/quantities and refund money are independent facts. New Return drafts start at 0; manager enters the actual refund explicitly; current Catalog price and historical sold line price never become an automatic refund rule. Zero-money physical returns and money-only refunds remain supported. No migration/backfill was used.
+- **H11 discount/analytics policy is paused pending client clarification.** Do not invent discount amount/percent UI, override-reason requirements, or explicit discount-reporting semantics.
+- Engineering work that does not require those client decisions: perform the final Branch2 Stage03 end-to-end audit/acceptance across Create → Edit → payments/debt → Warehouse → Workshop → Return → Exchange → reports/history, while treating discount-specific behavior as an explicit open client gate rather than guessing it.
+- After the final audit, Stage03 can be reported as technically complete for all confirmed pricing rules, with H11 discount behavior still client-gated. Stage04 Workshop finance remains a separate roadmap stage and should not be started implicitly.
 
 
 ## Current priority — Stage02 transactional stock truth
