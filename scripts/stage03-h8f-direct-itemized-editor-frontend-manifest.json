@@ -11,7 +11,7 @@
     },
     "src/features/sections/OrderEditorSection.tsx": {
       "beforeGitBlob": "fea2359badd73ebf5749c3e424cec1c9303e0c04",
-      "afterGitBlob": "955a894d76af79daba7265abb4a30724a5a95b26",
+      "afterGitBlob": "17196a208cd31efd655533fa12051397be903cb1",
       "beforeLines": 651,
       "afterLines": 536,
       "baselineFixture": "scripts/fixtures/stage03-h8f-direct-itemized-editor/src/features/sections/OrderEditorSection.tsx"
