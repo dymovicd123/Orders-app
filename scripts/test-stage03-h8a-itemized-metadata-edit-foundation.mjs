@@ -45,8 +45,8 @@ check(edit.includes('input.orderTotal !== undefined ? input.orderTotal : existin
 check(!edit.includes('UPDATE order_items SET catalog_price_snapshot') && !edit.includes('catalog_price_snapshot = ?'), 'H8A: restricted edit path unexpectedly rewrites historical Catalog snapshots in place')
 
 check(app.includes("const isItemizedEdit = order.pricing_mode === 'itemized_v1'"), 'H8A: H8B frontend no longer selects the restricted itemized path')
-check(app.includes('const payload = isItemizedEdit ? {'), 'H8A: H8B frontend no longer sends the restricted itemized payload')
-check(app.includes('itemPriceCorrections'), 'H8A: H8C dedicated price correction field is missing from the restricted payload')
+check(app.includes('const payload = isItemizedContentRewrite ? {') && app.includes('} : isItemizedEdit ? {'), 'H8A: H8B metadata/price lane is no longer isolated from H8E composition rewrite')
+check(app.includes('itemPriceCorrections') && app.includes('itemContentReplacement'), 'H8A: dedicated H8C/H8E fields are missing from the isolated itemized request lanes')
 check(!app.includes('Старый редактор пока отключён для таких заказов'), 'H8A: obsolete blanket itemized editor block returned')
 
-console.log('STAGE03-H8A ITEMIZED METADATA EDIT FOUNDATION PASSED — full item/payment/total/source/lifecycle rewrites remain blocked while H8B metadata/payment corrections and the dedicated H8C sold-price correction field stay isolated')
+console.log('STAGE03-H8A ITEMIZED METADATA EDIT FOUNDATION PASSED — full legacy item/payment/total/source/lifecycle rewrites remain blocked while H8B metadata/payment, H8C price and H8E composition requests stay isolated')
