@@ -1,16 +1,19 @@
 name: Stage03 Branch2 one-shot H8 acceptance reset
 
 on:
-  push:
-    branches:
-      - branch2
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type RESET-BRANCH2-H8 to erase Branch2 transactional test data and reseed H8 fixtures'
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   reset:
-    if: contains(github.event.head_commit.message, 'TESTRESET')
+    if: github.ref_name == 'branch2' && inputs.confirmation == 'RESET-BRANCH2-H8'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
