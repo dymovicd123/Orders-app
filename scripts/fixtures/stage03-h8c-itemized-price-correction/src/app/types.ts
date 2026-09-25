@@ -43,9 +43,7 @@ export type Payment = {
 
 
 
-export type EditorItem = OrderItem & {
-  orderItemId?: number
-}
+export type EditorItem = OrderItem
 
 
 export type EditorPayment = Payment

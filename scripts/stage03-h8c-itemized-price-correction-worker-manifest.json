@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "revision": "stage03-h8c-itemized-price-correction",
+  "files": {
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "cc20030bc4dfdc20d2ace3a1373600ef57f3fa94",
+      "afterGitBlob": "23d0d2bbd45c36824951e640a33b187887d277fd",
+      "beforeLines": 1800,
+      "afterLines": 1904,
+      "baselineFixture": "scripts/fixtures/stage03-h8c-itemized-price-correction/worker/domains/orders-write.ts"
+    }
+  }
+}

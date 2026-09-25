@@ -42,7 +42,7 @@ check(
   'Order edit must reserve full item rewrite for non-price content changes',
 )
 check(
-  write.includes('const priceOnlyItemsEdit = itemContentChanged && !rewriteItems;'),
+  write.includes('let priceOnlyItemsEdit = itemContentChanged && !rewriteItems;'),
   'Price-only classification is missing',
 )
 check(
@@ -90,8 +90,8 @@ check(
   'Partial-handover policy guard must still treat a price correction as an item edit',
 )
 check(
-  write.includes('if (itemContentChanged || rewritePayments || deletingOrder) {'),
-  'Return/exchange safety guard must remain active for price corrections',
+  write.includes('if (itemContentChanged || priceOnlyItemsEdit || rewritePayments || deletingOrder) {'),
+  'Return/exchange safety guard must remain active for legacy and dedicated price corrections',
 )
 check(
   write.includes('Цены позиций исправлены без движения склада'),

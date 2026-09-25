@@ -933,7 +933,6 @@ export function createEditorDraft(order: OrderRecord): EditorDraft {
     comment: order.comment || '',
     items: order.items.length
         ? order.items.map((item) => ({
-          orderItemId: Number(item.id || 0) || undefined,
           productName: item.productName,
           audienceType: item.audienceType
             ? (normalizeSuggestion(item.audienceType).includes('ДЕТ') ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ')
@@ -946,7 +945,6 @@ export function createEditorDraft(order: OrderRecord): EditorDraft {
           quantity: item.quantity,
           unitPrice: Number(item.unitPrice || 0),
           catalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
-          priceNeedsConfirmation: false,
           sourceType: item.isWorkshop ? 'workshop' : (item.sourceType === 'boutique' ? 'boutique' : 'warehouse'),
           workshopComment: item.workshopComment || '',
           workshopUrgent: Boolean(item.workshopUrgent),

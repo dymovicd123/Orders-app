@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "revision": "stage03-h8c-itemized-price-correction",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "32bc31a073408b03b3b2b1f834edbfaa104efa5d",
+      "afterGitBlob": "4b920f45b2ff71f70c54069eee7b82f290ac026d",
+      "beforeLines": 7639,
+      "afterLines": 7692,
+      "baselineFixture": "scripts/fixtures/stage03-h8c-itemized-price-correction/src/App.tsx"
+    },
+    "src/features/sections/OrderEditorSection.tsx": {
+      "beforeGitBlob": "ada62932f871d2aad02640942c745ba4375c1d27",
+      "afterGitBlob": "592d7d93e702f589cc3901c372a264d30126eebb",
+      "beforeLines": 521,
+      "afterLines": 590,
+      "baselineFixture": "scripts/fixtures/stage03-h8c-itemized-price-correction/src/features/sections/OrderEditorSection.tsx"
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "0f85e27beb1a42917b6c564ff0ca2674a44b983a",
+      "afterGitBlob": "f027ab1ba6d228786e8a72aa4f97bbb0ce757f58",
+      "beforeLines": 968,
+      "afterLines": 970,
+      "baselineFixture": "scripts/fixtures/stage03-h8c-itemized-price-correction/src/app/utils.ts"
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "9a676ad4ef566bfed7d74668715c7079ca7ecf7c",
+      "afterGitBlob": "b51050af859fadc37bcb2d66e76dc4e5319d7a2b",
+      "beforeLines": 1750,
+      "afterLines": 1752,
+      "baselineFixture": "scripts/fixtures/stage03-h8c-itemized-price-correction/src/app/types.ts"
+    }
+  }
+}

@@ -227,7 +227,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                         ) : null}
                       </div>
                       {itemizedMode ? (
-                        <p className="mini-panel-note">Товар, количество, источник и данные Цеха остаются историческими и доступны только для просмотра. Проданную цену можно исправить отдельно ниже; цена Каталога при этом не переписывается.</p>
+                        <p className="mini-panel-note">Это исторические данные продажи. Изменение товара, количества, источника и цены потребует отдельного безопасного сценария и здесь недоступно.</p>
                       ) : null}
                       <fieldset disabled={itemizedMode} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
                       <div className="stack">
@@ -394,75 +394,6 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                         ))}
                       </div>
                       </fieldset>
-                      {itemizedMode ? (
-                        <div className="stack">
-                          <p className="mini-panel-note">
-                            Коррекция цены меняет только фактическую цену продажи и итог заказа. Сохранённая цена Каталога остаётся исторической рекомендацией; склад, количество и состав заказа не меняются.
-                          </p>
-                          {editorDraft.items.map((item, index) => {
-                            const originalItem = selectedOrder?.items.find((entry) => Number(entry.id || 0) === Number(item.orderItemId || 0))
-                            const originalPrice = Number(originalItem?.unitPrice || 0)
-                            const currentPrice = item.unitPrice === undefined || item.unitPrice === null ? null : Number(item.unitPrice)
-                            const priceChanged = currentPrice === null || currentPrice !== originalPrice
-                            return (
-                              <div className="mini-item" key={`edit-price-${item.orderItemId || index}`}>
-                                <div className="mini-item-head">
-                                  <div className="mini-item-head-main">
-                                    <strong>{formatOrderItemTitle(item) || `Позиция ${index + 1}`}</strong>
-                                    <span className="mini-item-summary">Было: {formatMoney(originalPrice)}</span>
-                                  </div>
-                                  {priceChanged ? (
-                                    <span className={item.priceNeedsConfirmation ? 'soft-badge' : 'status-pill status-online'}>
-                                      {item.priceNeedsConfirmation ? 'Нужно подтвердить' : 'Подтверждено'}
-                                    </span>
-                                  ) : <span className="soft-badge">Без изменений</span>}
-                                </div>
-                                <div className="subgrid">
-                                  <label>
-                                    <span>Исправить цену продажи</span>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      step="1"
-                                      value={item.unitPrice ?? ''}
-                                      disabled={savingOrder}
-                                      onChange={(event) => updateEditorItem(index, 'unitPrice', event.target.value === '' ? null : Number(event.target.value))}
-                                    />
-                                  </label>
-                                  <div className="field-block">
-                                    <span>Цена по каталогу</span>
-                                    <strong>{item.catalogPriceSnapshot !== null && item.catalogPriceSnapshot !== undefined ? formatMoney(item.catalogPriceSnapshot) : 'Не зафиксирована'}</strong>
-                                  </div>
-                                  <div className="field-block">
-                                    <span>Новая сумма позиции</span>
-                                    <strong>{currentPrice === null ? '—' : formatMoney(Math.max(0, Number(item.quantity || 0)) * Math.max(0, currentPrice))}</strong>
-                                  </div>
-                                </div>
-                                {priceChanged ? (
-                                  <div className="actions">
-                                    <button
-                                      className={item.priceNeedsConfirmation ? 'secondary compact' : 'primary compact'}
-                                      type="button"
-                                      disabled={savingOrder || currentPrice === null || !Number.isSafeInteger(currentPrice) || currentPrice < 0}
-                                      onClick={() => updateEditorItem(index, 'priceNeedsConfirmation', false)}
-                                    >
-                                      {item.priceNeedsConfirmation ? 'Подтвердить изменение цены' : 'Цена подтверждена'}
-                                    </button>
-                                  </div>
-                                ) : null}
-                              </div>
-                            )
-                          })}
-                          <div className="field-block">
-                            <span>Итог после коррекции</span>
-                            <strong>{formatMoney(editorDraft.items.reduce((sum, item) => {
-                              const price = Number(item.unitPrice)
-                              return sum + (Number.isSafeInteger(price) && price >= 0 ? Math.max(0, Number(item.quantity || 0)) * price : 0)
-                            }, 0))}</strong>
-                            <small>Сохранение будет остановлено, если новый итог окажется меньше уже проведённых оплат.</small>
-                          </div>
-                        </div>
-                      ) : null}
                     </section>
     
                     <section className="mini-panel">

@@ -8,7 +8,7 @@ import type { CriticalOperationHandle } from './critical.ts'
 import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, criticalOperationEntityId, failCriticalOperation, insertCriticalMappedEntity, parseCriticalContext, updateCriticalOperationTargetFromLastInsert } from './critical.ts'
 import { buildPaymentAndMoneyEventStatements, financialEventStatement, financialOperationTypeFromPaymentKind, removeOrderPaymentsWithMoneyEvents } from './money.ts'
 import { assertOrderItemInputs, assertOrderPaymentInputs, assertOrderTotalInput, calculateTotals, completedOrderOperationCounts, normalizeOrderItems, normalizeOrderPayments, OrderInputValidationError, sameNormalizedOrderItemsExceptPriceForEdit, sameNormalizedOrderItemsForEdit, sameNormalizedOrderPaymentsForEdit } from './order-core.ts'
-import { assertItemizedOrderMoneyNotOverpaid, buildItemizedOrderWritePlan, ItemizedPricingValidationError, type ItemizedOrderWritePlan } from './order-pricing.ts'
+import { buildItemizedOrderWritePlan, ItemizedPricingValidationError, type ItemizedOrderWritePlan } from './order-pricing.ts'
 import { assertCreateOrderShortageDecisions, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, OrderStockShortageError, orderShipmentInventoryBlockerMessage, releaseOrderReservationsV2, reserveOrderItemV2, resolveCatalogProductAndVariant, resolveWorkshopCatalogProductOnly } from './order-reservations.ts'
 import { canonicalItemProjection, fetchOrderRelations, isOrderPricingFoundationEnabled, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
 import { upsertCustomerIdentityForOrderCreate } from './references.ts'
@@ -1159,24 +1159,6 @@ export async function updateOrderCritical(
 
       const existingAny = existing as any;
       const existingPricingMode = cleanText(existingAny.pricing_mode) === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total';
-      type ItemPriceCorrectionInput = {
-        orderItemId?: number;
-        unitPrice?: number;
-        expectedUnitPrice?: number;
-        expectedQuantity?: number;
-        expectedLineTotal?: number;
-        expectedCatalogPriceSnapshot?: number | null;
-      };
-      const itemizedInput = input as OrderInput & { itemPriceCorrections?: ItemPriceCorrectionInput[] };
-      const rawItemPriceCorrections: ItemPriceCorrectionInput[] = Array.isArray(itemizedInput.itemPriceCorrections)
-        ? itemizedInput.itemPriceCorrections
-        : [];
-      if (rawItemPriceCorrections.length && existingPricingMode !== 'itemized_v1') {
-        throw new CriticalOperationConflictError('Построчная коррекция цены доступна только для itemized-заказа.');
-      }
-      if (rawItemPriceCorrections.length && options.lifecycleAction === 'order_delete') {
-        throw new CriticalOperationConflictError('Исправление цены нельзя совмещать с удалением заказа. Сохраните эти действия отдельно.');
-      }
       const itemizedMetadataOnlyEdit = existingPricingMode === 'itemized_v1'
         && options.lifecycleAction !== 'order_delete'
         && input.externalId === undefined
@@ -1190,7 +1172,7 @@ export async function updateOrderCritical(
         && input.shippingStatus === undefined
         && input.shippingDate === undefined;
       if (existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete' && !itemizedMetadataOnlyEdit) {
-        throw new CriticalOperationConflictError('Этот заказ использует построчную itemized-цену. Разрешены только безопасные исправления реквизитов, проведённых оплат и отдельная коррекция цены продажи; состав позиций и жизненный цикл меняются отдельными штатными действиями.');
+        throw new CriticalOperationConflictError('Этот заказ использует построчную itemized-цену. Разрешены только безопасные исправления реквизитов и проведённых оплат; состав, цены позиций и жизненный цикл меняются отдельными штатными действиями.');
       }
       const timestamp = new Date().toISOString();
       const nextOrderDate = normalizeDate(input.orderDate ?? existingAny.order_date);
@@ -1359,9 +1341,8 @@ export async function updateOrderCritical(
       }
       const itemContentChanged = Boolean(requestedItems && !sameNormalizedOrderItemsForEdit(existingItemsForEdit, requestedItems));
       const rewriteItems = Boolean(requestedItems && !sameNormalizedOrderItemsExceptPriceForEdit(existingItemsForEdit, requestedItems));
-      let priceOnlyItemsEdit = itemContentChanged && !rewriteItems;
+      const priceOnlyItemsEdit = itemContentChanged && !rewriteItems;
       const priceOnlyItemUpdates: Array<{ orderItemId: number; unitPrice: number; lineTotal: number }> = [];
-      let itemizedPricingRows: Array<Record<string, unknown>> | null = null;
       if (priceOnlyItemsEdit && requestedItems) {
         const activeItemRows = await db.prepare(
           `SELECT id, unit_price
@@ -1384,76 +1365,6 @@ export async function updateOrderCritical(
           }
         }
       }
-
-      if (rawItemPriceCorrections.length) {
-        const activeItemRows = await db.prepare(
-          `SELECT id, quantity, unit_price, line_total, catalog_price_snapshot
-           FROM order_items
-           WHERE order_id = ? AND quantity > 0
-           ORDER BY id ASC`
-        ).bind(id).all<Record<string, unknown>>();
-        itemizedPricingRows = activeItemRows.results || [];
-        if (!itemizedPricingRows.length) {
-          throw new CriticalOperationConflictError('У заказа нет активных позиций для исправления цены. Обновите заказ и повторите.');
-        }
-
-        const rowsById = new Map<number, Record<string, unknown>>();
-        for (const row of itemizedPricingRows) {
-          const rowId = toInt(row?.id, 0);
-          if (rowId) rowsById.set(rowId, row);
-        }
-        const seenItemIds = new Set<number>();
-        for (const correction of rawItemPriceCorrections) {
-          const orderItemId = Number(correction?.orderItemId);
-          if (!Number.isSafeInteger(orderItemId) || orderItemId <= 0 || seenItemIds.has(orderItemId)) {
-            throw new OrderInputValidationError('Не удалось однозначно определить позицию заказа для исправления цены.');
-          }
-          seenItemIds.add(orderItemId);
-          const row = rowsById.get(orderItemId);
-          if (!row) {
-            throw new CriticalOperationConflictError('Одна из позиций заказа уже изменилась или исчезла. Обновите заказ и повторите исправление цены.');
-          }
-
-          const quantity = toInt(row.quantity, 0);
-          const currentUnitPrice = toInt(row.unit_price, 0);
-          const currentLineTotal = toInt(row.line_total, 0);
-          const currentCatalogSnapshot = row.catalog_price_snapshot === null || row.catalog_price_snapshot === undefined
-            ? null
-            : Math.max(0, toInt(row.catalog_price_snapshot, 0));
-          const nextUnitPrice = Number(correction?.unitPrice);
-          if (!Number.isSafeInteger(nextUnitPrice) || nextUnitPrice < 0) {
-            throw new OrderInputValidationError('Новая цена позиции должна быть целым числом от 0.');
-          }
-          if (quantity <= 0) {
-            throw new CriticalOperationConflictError('Позиция больше не активна. Обновите заказ и повторите исправление цены.');
-          }
-
-          const expectedCatalogSnapshot = correction.expectedCatalogPriceSnapshot === undefined
-            ? undefined
-            : correction.expectedCatalogPriceSnapshot === null
-              ? null
-              : Number(correction.expectedCatalogPriceSnapshot);
-          const staleSnapshot = (
-            (correction.expectedUnitPrice !== undefined && Number(correction.expectedUnitPrice) !== currentUnitPrice)
-            || (correction.expectedQuantity !== undefined && Number(correction.expectedQuantity) !== quantity)
-            || (correction.expectedLineTotal !== undefined && Number(correction.expectedLineTotal) !== currentLineTotal)
-            || (expectedCatalogSnapshot !== undefined && expectedCatalogSnapshot !== currentCatalogSnapshot)
-          );
-          if (staleSnapshot) {
-            throw new CriticalOperationConflictError('Цена или состав этой позиции уже изменились после открытия редактора. Обновите заказ и повторите исправление.');
-          }
-
-          const nextLineTotal = quantity * nextUnitPrice;
-          if (!Number.isSafeInteger(nextLineTotal) || nextLineTotal < 0) {
-            throw new OrderInputValidationError('Сумма позиции слишком велика для точного расчёта.');
-          }
-          if (currentUnitPrice !== nextUnitPrice || currentLineTotal !== nextLineTotal) {
-            priceOnlyItemUpdates.push({ orderItemId, unitPrice: nextUnitPrice, lineTotal: nextLineTotal });
-          }
-        }
-        if (priceOnlyItemUpdates.length) priceOnlyItemsEdit = true;
-      }
-
       const rewritePayments = !deletingOrder && Boolean(requestedPayments && !sameNormalizedOrderPaymentsForEdit(existingPaymentsForEdit, requestedPayments));
       if (paymentCorrections.length && (rewritePayments || deletingOrder)) {
         throw new CriticalOperationConflictError('Исправление проведённой оплаты нельзя совмещать с удалением заказа или полной перезаписью оплат. Сохраните эти действия отдельно.');
@@ -1537,28 +1448,13 @@ export async function updateOrderCritical(
         0,
       );
       const correctedReceivedAmount = calculatedTotals.receivedAmount + paymentCorrectionAmountDelta;
-      let totals = {
+      const totals = {
         ...calculatedTotals,
         receivedAmount: correctedReceivedAmount,
         debtAmount: Math.max(0, calculatedTotals.totalAmount - correctedReceivedAmount),
       };
-      if (rawItemPriceCorrections.length) {
-        const updatePriceByItemId = new Map(priceOnlyItemUpdates.map((update) => [update.orderItemId, update.unitPrice]));
-        const itemizedMoney = assertItemizedOrderMoneyNotOverpaid(
-          (itemizedPricingRows || []).map((row) => ({
-            quantity: toInt(row.quantity, 0),
-            unitPrice: updatePriceByItemId.get(toInt(row.id, 0)) ?? toInt(row.unit_price, 0),
-          })),
-          [{ amount: correctedReceivedAmount }],
-        );
-        totals = {
-          totalAmount: itemizedMoney.totalAmount,
-          receivedAmount: itemizedMoney.receivedAmount,
-          debtAmount: itemizedMoney.debtAmount,
-        };
-      }
       if (totals.receivedAmount > totals.totalAmount) throw new OrderInputValidationError(`Оплаты (${totals.receivedAmount}) больше цены заказа (${totals.totalAmount}). Исправьте цену или оплаты.`);
-      if (itemContentChanged || priceOnlyItemsEdit || rewritePayments || deletingOrder) {
+      if (itemContentChanged || rewritePayments || deletingOrder) {
         const operations = await completedOrderOperationCounts(db, id);
         if (operations.returns > 0 || operations.exchanges > 0) {
           const parts = [

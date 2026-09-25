@@ -35,7 +35,7 @@ for (const marker of [
 ]) check(edit.includes(marker), 'H8A: itemized metadata lane missing hard stop: ' + marker)
 
 check(edit.includes("existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete' && !itemizedMetadataOnlyEdit"), 'H8A: unsupported itemized edits no longer fail closed')
-check(edit.includes('Разрешены только безопасные исправления реквизитов и проведённых оплат'), 'H8A: controlled conflict message missing')
+check(edit.includes('Разрешены только безопасные исправления реквизитов, проведённых оплат и отдельная коррекция цены продажи'), 'H8A: controlled conflict message missing')
 check(edit.includes('const requestedItems = Array.isArray(input.items) ? normalizeOrderItems(input.items, nextSource) : null'), 'H8A: absent items no longer remain absent')
 check(edit.includes('const requestedPayments = Array.isArray(input.payments) ? normalizeOrderPayments(input.payments, nextOrderDate) : null'), 'H8A: absent payments no longer remain absent')
 check(edit.includes('const itemContentChanged = Boolean(requestedItems && !sameNormalizedOrderItemsForEdit'), 'H8A: metadata-only lane can unexpectedly rewrite item content')
@@ -46,6 +46,7 @@ check(!edit.includes('catalogPriceSnapshot'), 'H8A: legacy editor path unexpecte
 
 check(app.includes("const isItemizedEdit = order.pricing_mode === 'itemized_v1'"), 'H8A: H8B frontend no longer selects the restricted itemized path')
 check(app.includes('const payload = isItemizedEdit ? {'), 'H8A: H8B frontend no longer sends the restricted itemized payload')
+check(app.includes('itemPriceCorrections'), 'H8A: H8C dedicated price correction field is missing from the restricted payload')
 check(!app.includes('Старый редактор пока отключён для таких заказов'), 'H8A: obsolete blanket itemized editor block returned')
 
-console.log('STAGE03-H8A ITEMIZED METADATA EDIT FOUNDATION PASSED — backend accepts only metadata and posted-payment corrections for itemized orders, while H8B consumes that narrow lane and commercial/physical rewrites remain fail-closed')
+console.log('STAGE03-H8A ITEMIZED METADATA EDIT FOUNDATION PASSED — full item/payment/total/source/lifecycle rewrites remain blocked while H8B metadata/payment corrections and the dedicated H8C sold-price correction field stay isolated')

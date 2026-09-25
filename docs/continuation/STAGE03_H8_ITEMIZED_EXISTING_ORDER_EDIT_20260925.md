@@ -2,7 +2,7 @@
 
 Date: 2026-09-25
 
-Status: **H8A backend foundation + H8B restricted editor UI implemented on Branch2.**
+Status: **H8A backend foundation + H8B restricted editor + H8C sold-price correction implemented on Branch2.**
 
 ## Why H8 exists
 
@@ -59,7 +59,24 @@ The ordinary Edit action may now open an `itemized_v1` order when its operationa
 
 The itemized PATCH contains only the H8A allow-listed metadata plus `paymentCorrections`. It does not contain the external order ID, `items`, replacement `payments`, `orderTotal`, `sourceType`, lifecycle or shipping fields.
 
-A separate future step is required for any real commercial/physical edit of an itemized order, including sold-price correction, SKU/quantity/source changes or itemized exchange semantics.
+## H8C — dedicated sold-price correction
+
+The restricted itemized editor now has one explicit commercial correction: the already-sold unit price of an existing line may be corrected without sending the full item array.
+
+Safety rules:
+
+- correction targets the persisted `order_items.id`, never list position alone;
+- the client sends the previously observed unit price, quantity, line total and Catalog snapshot;
+- the server re-reads the active order-item rows and rejects stale or duplicate corrections;
+- the new unit price must be a safe integer from 0;
+- `line_total`, `orders.total_amount` and `orders.debt_amount` are derived again on the server;
+- a correction that would make recorded payments exceed the corrected order total is rejected;
+- current `catalog_price_snapshot` is checked for staleness but never changed;
+- product/SKU, quantity, source, Workshop fields, reservations and physical stock are not rewritten;
+- active Return/Exchange operations still block the correction;
+- the UI requires an explicit price confirmation after a value is changed.
+
+This does not enable SKU, quantity or source changes and does not define itemized exchange pricing. Those remain separate future work.
 
 Environment rule remains unchanged: Branch2 Worker + Branch2 D1 only. Production is not a target.
 

@@ -5185,26 +5185,12 @@ function App() {
     setEditorDraft((current) => (current ? { ...current, [key]: value } : current))
   }
 
-  function updateEditorItem(index: number, field: keyof EditorItem, value: string | number | boolean | null) {
+  function updateEditorItem(index: number, field: keyof EditorItem, value: string | number | boolean) {
     setEditorDraft((current) => {
       if (!current) return current
       const nextItems = current.items.map((item, itemIndex) => {
         if (itemIndex !== index) return item
         const nextItem = { ...item, [field]: field === 'audienceType' ? normalizeAudienceTypeValue(value) : value }
-        if (field === 'unitPrice') {
-          const rawPrice = value === null || value === undefined ? '' : String(value).trim()
-          nextItem.unitPrice = rawPrice === '' ? undefined : Number(rawPrice)
-          if (selectedOrder?.pricing_mode === 'itemized_v1') {
-            const original = selectedOrder.items.find((entry) => Number(entry.id || 0) === Number(item.orderItemId || 0))
-            const originalPrice = Number(original?.unitPrice || 0)
-            nextItem.priceNeedsConfirmation = rawPrice === '' || Number(nextItem.unitPrice) !== originalPrice
-          }
-          return nextItem
-        }
-        if (field === 'priceNeedsConfirmation') {
-          nextItem.priceNeedsConfirmation = Boolean(value)
-          return nextItem
-        }
         if (['productName', 'audienceType', 'gender', 'color', 'material', 'length', 'size', 'sourceType'].includes(String(field))) {
           nextItem.stockObservationEnabled = false
           nextItem.observedPhysicalQuantity = null
@@ -5569,40 +5555,6 @@ function removeDebtPayment(index: number) {
         throw new Error(`Укажите фактическое количество для «${missingObservation.productName || 'позиции'}» или выберите «Сейчас проверить не могу».`)
       }
 
-      const itemPriceCorrections: Array<{
-        orderItemId: number
-        unitPrice: number
-        expectedUnitPrice: number
-        expectedQuantity: number
-        expectedLineTotal: number
-        expectedCatalogPriceSnapshot: number | null
-      }> = []
-      if (isItemizedEdit) {
-        for (const item of nextDraft.items) {
-          const orderItemId = Number(item.orderItemId || 0)
-          if (!orderItemId) throw new Error('Не удалось определить позицию заказа для исправления цены. Обновите заказ и повторите.')
-          const original = order.items.find((entry) => Number(entry.id || 0) === orderItemId)
-          if (!original) throw new Error('Одна из позиций заказа уже изменилась. Обновите заказ и повторите исправление.')
-          const nextUnitPrice = Number(item.unitPrice)
-          if (!Number.isSafeInteger(nextUnitPrice) || nextUnitPrice < 0) {
-            throw new Error(`Укажите целую цену от 0 для «${item.productName || 'позиции'}».`)
-          }
-          const originalUnitPrice = Number(original.unitPrice || 0)
-          if (nextUnitPrice === originalUnitPrice) continue
-          if (item.priceNeedsConfirmation) {
-            throw new Error(`Подтвердите новую цену для «${item.productName || 'позиции'}» перед сохранением.`)
-          }
-          itemPriceCorrections.push({
-            orderItemId,
-            unitPrice: nextUnitPrice,
-            expectedUnitPrice: originalUnitPrice,
-            expectedQuantity: Number(original.quantity || 0),
-            expectedLineTotal: Number(original.lineTotal || 0),
-            expectedCatalogPriceSnapshot: original.catalogPriceSnapshot ?? null,
-          })
-        }
-      }
-
       const paymentCorrections: Array<{
         paymentId: number
         paymentDate: string
@@ -5662,7 +5614,6 @@ function removeDebtPayment(index: number) {
         deliveryType: nextDraft.deliveryType,
         comment: nextDraft.comment,
         paymentCorrections,
-        itemPriceCorrections,
       } : {
         orderDate: nextDraft.orderDate,
         managerId: nextDraft.managerId || undefined,
@@ -5770,11 +5721,7 @@ function removeDebtPayment(index: number) {
       if (concurrentShortages.length) {
         setMessage(`Заказ ${order.external_id} обновлён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Внимание».`)
       } else {
-        setMessage(isItemizedEdit
-          ? (itemPriceCorrections.length
-            ? `Заказ ${order.external_id}: цены и реквизиты обновлены.`
-            : `Реквизиты заказа ${order.external_id} обновлены.`)
-          : `Заказ ${order.external_id} обновлён.`)
+        setMessage(isItemizedEdit ? `Реквизиты заказа ${order.external_id} обновлены.` : `Заказ ${order.external_id} обновлён.`)
       }
       if (result?.order) {
         const savedOrder = result.order as OrderRecord

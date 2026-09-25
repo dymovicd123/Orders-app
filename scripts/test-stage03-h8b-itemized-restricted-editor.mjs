@@ -31,7 +31,7 @@ const restrictedStart = persist.indexOf('const payload = isItemizedEdit ? {')
 const legacyStart = persist.indexOf('} : {', restrictedStart)
 check(legacyStart > restrictedStart, 'H8B restricted/legacy payload split missing')
 const restrictedPayload = persist.slice(restrictedStart, legacyStart)
-for (const marker of ['orderDate:', 'managerId:', 'managerName:', 'customerPhone:', 'customerName:', 'city:', 'deliveryType:', 'comment:', 'paymentCorrections']) {
+for (const marker of ['orderDate:', 'managerId:', 'managerName:', 'customerPhone:', 'customerName:', 'city:', 'deliveryType:', 'comment:', 'paymentCorrections', 'itemPriceCorrections']) {
   check(restrictedPayload.includes(marker), 'H8B restricted payload missing allowed field: ' + marker)
 }
 for (const marker of ['sourceType:', 'orderTotal:', 'workshopStatus:', 'orderStatus:', 'shippingStatus:', 'items:', 'payments:']) {
@@ -47,7 +47,7 @@ check(!openFlow.includes("if (order.pricing_mode === 'itemized_v1')"), 'H8B stil
 
 check(ui.includes("const itemizedMode = selectedOrder?.pricing_mode === 'itemized_v1'"), 'H8B restricted UI mode missing')
 check(ui.includes('fieldset disabled={itemizedMode}'), 'H8B product facts are not hard-disabled in itemized mode')
-check(ui.includes('Только просмотр') && ui.includes('исторические данные продажи'), 'H8B read-only product explanation missing')
+check(ui.includes('Только просмотр') && ui.includes('Товар, количество, источник и данные Цеха остаются историческими'), 'H8B read-only physical product explanation missing')
 check(ui.includes('Цена продажи') && ui.includes('Цена по каталогу') && ui.includes('Сумма позиции'), 'H8B historical price facts missing')
 check(ui.includes('Исторический итог складывается из сохранённых цен позиций'), 'H8B order total is not presented as immutable history')
 check(ui.includes('Жизненный цикл меняется только отдельными штатными действиями'), 'H8B lifecycle field is not read-only')
@@ -66,4 +66,4 @@ for (const marker of ['input.externalId === undefined','input.items === undefine
   check(edit.includes(marker), 'H8B backend hard stop missing: ' + marker)
 }
 
-console.log('STAGE03-H8B ITEMIZED RESTRICTED EDITOR PASSED — itemized orders can correct metadata and posted payment facts while product/source/price/total/lifecycle fields remain historical read-only data and backend commercial rewrites stay fail-closed')
+console.log('STAGE03-H8B ITEMIZED RESTRICTED EDITOR PASSED — itemized orders can correct metadata and posted payment facts; physical product/source/quantity/lifecycle facts remain read-only while H8C owns sold-price correction separately')
