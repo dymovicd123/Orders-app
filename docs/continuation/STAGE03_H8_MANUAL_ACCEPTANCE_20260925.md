@@ -103,7 +103,9 @@ Expected: B is rejected with a controlled “order/item changed, refresh and ret
 ### T14 — sent/downstream protection
 Mark a test order sent through the normal shipping action, then try changing the composition in Edit.
 Expected: blocked.
-For an order with a completed Return/Exchange, composition rewrite must also be blocked. Itemized Exchange itself remains intentionally unavailable until its price policy is approved.
+For an order with a completed Return/Exchange, composition rewrite must also be blocked.
+
+> Superseded after H8: itemized Exchange was activated by Stage03 H9. The old sentence saying it remained unavailable is historical H8 acceptance context only.
 
 ## What to send back after testing
 
