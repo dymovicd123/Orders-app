@@ -42,7 +42,7 @@ check(persist.includes('expectedCatalogPriceSnapshot: original.catalogPriceSnaps
 check(persist.includes('if (item.priceNeedsConfirmation)'), 'H8C manual price confirmation gate missing')
 check(persist.includes('itemPriceCorrections,'), 'H8C restricted payload does not send dedicated corrections')
 
-const restrictedStart = persist.indexOf('const payload = isItemizedEdit ? {')
+const restrictedStart = persist.indexOf(': isItemizedEdit ? {')
 const legacyStart = persist.indexOf('} : {', restrictedStart)
 const restrictedPayload = persist.slice(restrictedStart, legacyStart)
 check(restrictedPayload.includes('itemPriceCorrections'), 'H8C restricted payload lost price corrections')
@@ -55,7 +55,8 @@ check(ui.includes('Подтвердить изменение цены'), 'H8C ex
 check(ui.includes('Цена по каталогу') && ui.includes('цена Каталога при этом не переписывается'), 'H8C historical Catalog snapshot policy is not visible')
 check(ui.includes('Итог после коррекции'), 'H8C corrected order-total preview missing')
 check(ui.includes('Сохранение будет остановлено, если новый итог окажется меньше уже проведённых оплат'), 'H8C overpayment fail-closed explanation missing')
-check(ui.includes('fieldset disabled={itemizedMode}'), 'H8C physical item editor is no longer read-only')
+check(ui.includes('fieldset disabled={Boolean(itemizedMode && !itemizedContentEditMode)}'), 'H8C physical item fields are no longer read-only outside H8E')
+check(ui.includes('{itemizedMode && !itemizedContentEditMode ? ('), 'H8C price-only panel is not isolated from H8E composition editing')
 
 const editStart = write.indexOf('export async function updateOrderCritical')
 const editEnd = write.indexOf('\n\nexport async function getOrder', editStart)
@@ -83,4 +84,4 @@ check(priceCommit.includes('await db.batch([') && priceCommit.includes('orderUpd
 check(write.includes('stockReversals = (p.rewriteItems || p.deletingOrder)'), 'H8C price correction started moving stock')
 check(write.includes('if (p.rewriteItems) await retireOrderItemsForRewrite'), 'H8C price correction may retire physical order items')
 
-console.log('STAGE03-H8C ITEMIZED PRICE CORRECTION PASSED — sold price and derived line/order/debt totals can be corrected through a stale-safe dedicated field while Catalog snapshot, product identity, quantity, source, stock and lifecycle remain untouched')
+console.log('STAGE03-H8C ITEMIZED PRICE CORRECTION PASSED — sold-price correction remains stale-safe and isolated from the H8E composition-rewrite UI; Catalog snapshot and inventory stay untouched in H8C')

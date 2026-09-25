@@ -2,7 +2,7 @@
 
 Date: 2026-09-25
 
-Status: **H8A backend foundation + H8B restricted editor + H8C sold-price correction + H8D content-rewrite backend foundation implemented on Branch2.**
+Status: **H8A backend foundation + H8B restricted editor + H8C sold-price correction + H8D stale-safe content rewrite + H8E dedicated composition editor implemented on Branch2.**
 
 ## Why H8 exists
 
@@ -101,7 +101,28 @@ Before any physical rewrite the server:
 
 When committed, the existing safe rewrite machinery releases/reverses old reservations, retires old active rows without deleting history, cancels replaced Workshop tasks, inserts new itemized rows with their historical Catalog snapshots, recreates Workshop tasks/reservations, and preserves inventory-obligation lineage for unchanged physical identities where possible.
 
-H8E is the future UI activation step. Until H8E, product/SKU/quantity/source/Workshop fields remain read-only in the itemized editor.
+## H8E — dedicated composition editor
+
+The itemized editor now exposes composition changes only through an explicit **«Изменить состав»** mode. Normal H8B metadata/payment correction and H8C price-only correction remain separate actions.
+
+When H8E starts, the client refreshes current Catalog prices and both Warehouse/Boutique stock snapshots, then resets the form to the persisted order truth. In composition mode:
+
+- order metadata and payments are disabled and are not sent in the PATCH;
+- physical item fields become editable and item add/remove is enabled;
+- removing the final remaining line is blocked;
+- the H8C price-only panel is hidden so price-only correction cannot be mixed with a physical rewrite;
+- product + adult/child + material + length changes are re-resolved against the current Catalog price;
+- a historical manual sold-price override is preserved only with an explicit re-confirmation after such a price-key change;
+- if Catalog has no current price, the final sold price must be entered manually;
+- Catalog snapshot/null is always explicit in the replacement request;
+- future availability is previewed with the current order's matching reservation treated as releasable, so the preview models replacement rather than double-reserving the old and new composition;
+- the manager can still choose «Посчитать сейчас» or «Сейчас проверить не могу» for a shortage; the server performs the authoritative fresh stock check before writing.
+
+The client sends only the dedicated `itemContentReplacement` envelope. It includes the complete expected old-line snapshot and the complete proposed new composition. Order metadata, payment corrections, H8C price corrections, lifecycle and shipping fields are absent from that request.
+
+The server remains authoritative: it repeats all H8D stale checks, stock checks, payment/total validation and reservation/Workshop rewrite logic. A successful H8E save invalidates inventory caches because physical obligations changed.
+
+Itemized exchange pricing is still intentionally separate and remains disabled.
 
 Environment rule remains unchanged: Branch2 Worker + Branch2 D1 only. Production is not a target.
 

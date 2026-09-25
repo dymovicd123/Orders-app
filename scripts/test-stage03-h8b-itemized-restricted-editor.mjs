@@ -26,8 +26,8 @@ const persistEnd = app.indexOf('\n\n  async function loadArchivePreview', persis
 check(persistStart >= 0 && persistEnd > persistStart, 'H8B persistOrder boundary missing')
 const persist = app.slice(persistStart, persistEnd)
 check(persist.includes("const isItemizedEdit = order.pricing_mode === 'itemized_v1'"), 'H8B itemized edit selector missing')
-check(persist.includes('const payload = isItemizedEdit ? {'), 'H8B restricted payload branch missing')
-const restrictedStart = persist.indexOf('const payload = isItemizedEdit ? {')
+check(persist.includes(': isItemizedEdit ? {'), 'H8B restricted metadata/payment payload branch missing')
+const restrictedStart = persist.indexOf(': isItemizedEdit ? {')
 const legacyStart = persist.indexOf('} : {', restrictedStart)
 check(legacyStart > restrictedStart, 'H8B restricted/legacy payload split missing')
 const restrictedPayload = persist.slice(restrictedStart, legacyStart)
@@ -38,7 +38,7 @@ for (const marker of ['sourceType:', 'orderTotal:', 'workshopStatus:', 'orderSta
   check(!restrictedPayload.includes(marker), 'H8B restricted payload leaked forbidden commercial/physical field: ' + marker)
 }
 check(persist.includes('const pendingEditorPayments = isItemizedEdit ? [] :'), 'H8B itemized editor can still stage a new payment through the legacy editor')
-check(persist.includes('if (!isItemizedEdit) invalidateInventoryStockCaches(true)'), 'H8B metadata correction still invalidates stock as if item content changed')
+check(persist.includes('if (!isItemizedEdit || isItemizedContentRewrite) invalidateInventoryStockCaches(true)'), 'H8B/H8E inventory invalidation boundary drifted')
 
 const openStart = app.indexOf('async function handleEditOrder')
 const openEnd = app.indexOf('\n\n  function upsertOrderInState', openStart)
@@ -46,14 +46,14 @@ const openFlow = app.slice(openStart, openEnd)
 check(!openFlow.includes("if (order.pricing_mode === 'itemized_v1')"), 'H8B still blanket-blocks itemized editor opening')
 
 check(ui.includes("const itemizedMode = selectedOrder?.pricing_mode === 'itemized_v1'"), 'H8B restricted UI mode missing')
-check(ui.includes('fieldset disabled={itemizedMode}'), 'H8B product facts are not hard-disabled in itemized mode')
+check(ui.includes('fieldset disabled={Boolean(itemizedMode && !itemizedContentEditMode)}'), 'H8B product facts are not hard-disabled outside the dedicated H8E composition mode')
 check(ui.includes('Только просмотр') && ui.includes('Товар, количество, источник и данные Цеха остаются историческими'), 'H8B read-only physical product explanation missing')
 check(ui.includes('Цена продажи') && ui.includes('Цена по каталогу') && ui.includes('Сумма позиции'), 'H8B historical price facts missing')
 check(ui.includes('Исторический итог складывается из сохранённых цен позиций'), 'H8B order total is not presented as immutable history')
 check(ui.includes('Жизненный цикл меняется только отдельными штатными действиями'), 'H8B lifecycle field is not read-only')
 check(ui.includes('{!itemizedMode ? (') && ui.includes('+ Первичная оплата') && ui.includes('+ Закрытие долга'), 'H8B legacy payment-add controls are not isolated behind non-itemized mode')
 check(ui.includes('Здесь исправляются только уже проведённые оплаты'), 'H8B posted-payment correction policy is not visible')
-check(ui.includes("itemizedMode ? 'Сохранить исправления' : 'Сохранить изменения'"), 'H8B save action does not distinguish restricted itemized correction')
+check(ui.includes("itemizedContentEditMode ? 'Сохранить новый состав' : itemizedMode ? 'Сохранить исправления' : 'Сохранить изменения'"), 'H8B/H8E save action no longer distinguishes restricted correction from composition rewrite')
 
 check(utils.includes('catalogPriceSnapshot: item.catalogPriceSnapshot ?? null'), 'H8B editor draft loses the historical Catalog snapshot')
 
@@ -66,4 +66,4 @@ for (const marker of ['input.externalId === undefined','input.items === undefine
   check(edit.includes(marker), 'H8B backend hard stop missing: ' + marker)
 }
 
-console.log('STAGE03-H8B ITEMIZED RESTRICTED EDITOR PASSED — itemized orders can correct metadata and posted payment facts; physical product/source/quantity/lifecycle facts remain read-only while H8C owns sold-price correction separately')
+console.log('STAGE03-H8B ITEMIZED RESTRICTED EDITOR PASSED — metadata/payment correction remains isolated; physical facts stay read-only by default and are exposed only through the dedicated H8E composition mode')

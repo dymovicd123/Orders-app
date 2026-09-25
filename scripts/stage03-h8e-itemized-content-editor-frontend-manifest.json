@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "revision": "stage03-h8e-itemized-content-editor",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "4b920f45b2ff71f70c54069eee7b82f290ac026d",
+      "afterGitBlob": "cb1ff710cb1fd6368f23f21ff23064a109d1ffc6",
+      "beforeLines": 7692,
+      "afterLines": 7828,
+      "baselineFixture": "scripts/fixtures/stage03-h8e-itemized-content-editor/src/App.tsx"
+    },
+    "src/features/sections/OrderEditorSection.tsx": {
+      "beforeGitBlob": "592d7d93e702f589cc3901c372a264d30126eebb",
+      "afterGitBlob": "fea2359badd73ebf5749c3e424cec1c9303e0c04",
+      "beforeLines": 590,
+      "afterLines": 651,
+      "baselineFixture": "scripts/fixtures/stage03-h8e-itemized-content-editor/src/features/sections/OrderEditorSection.tsx"
+    },
+    "src/app/controllers/useWorkspaceViewModel.tsx": {
+      "beforeGitBlob": "f8090d61bcf8079042afdd44645283d896326776",
+      "afterGitBlob": "ce79d3dd8645319f93610de12e956ace2c342368",
+      "beforeLines": 952,
+      "afterLines": 987,
+      "baselineFixture": "scripts/fixtures/stage03-h8e-itemized-content-editor/src/app/controllers/useWorkspaceViewModel.tsx"
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "f027ab1ba6d228786e8a72aa4f97bbb0ce757f58",
+      "afterGitBlob": "836633a53125042cca4a2a29327a607d207f4d3f",
+      "beforeLines": 970,
+      "afterLines": 971,
+      "baselineFixture": "scripts/fixtures/stage03-h8e-itemized-content-editor/src/app/utils.ts"
+    }
+  }
+}

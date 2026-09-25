@@ -91,6 +91,35 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage03H8EFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h8e-itemized-content-editor-frontend-manifest.json'), 'utf8'))
+if (stage03H8EFrontendManifest?.version !== 1 || stage03H8EFrontendManifest?.revision !== 'stage03-h8e-itemized-content-editor') throw new Error('Stage03-H8E frontend manifest invalid')
+const stage03H8EFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE03_H8E_ITEMIZED_CONTENT_EDITOR_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stage03H8EFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage03H8EFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H8E frontend changed beyond exact manifest: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (stage03H8EFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H8E frontend baseline fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H8E_ITEMIZED_CONTENT_EDITOR_NORMALIZED: '1' }})
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03-H8E ITEMIZED CONTENT EDITOR FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const stage03H8CFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h8c-itemized-price-correction-frontend-manifest.json'), 'utf8'))
 if (stage03H8CFrontendManifest?.version !== 1 || stage03H8CFrontendManifest?.revision !== 'stage03-h8c-itemized-price-correction') throw new Error('Stage03-H8C frontend manifest invalid')
 const stage03H8CFrontendBlobSha = (value) => {

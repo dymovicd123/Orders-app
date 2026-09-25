@@ -193,8 +193,6 @@ function App() {
   const [editorOrderOverride, setEditorOrderOverride] = useState<OrderRecord | null>(null)
   const [editorReturnSector, setEditorReturnSector] = useState<'orders' | 'workshop'>('orders')
   const [editorOpen, setEditorOpen] = useState(false)
-  const [itemizedContentEditMode, setItemizedContentEditMode] = useState(false)
-  const [itemizedContentEditLoading, setItemizedContentEditLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [orderBusy, setOrderBusy] = useState(false)
   const [savingOrder, setSavingOrder] = useState(false)
@@ -1141,8 +1139,6 @@ function App() {
     catalogVariantsByProductId,
     createDraft,
     editorDraft,
-    itemizedContentEditMode,
-    selectedOrder,
     getCatalogProductEffectiveCategory,
     getInventoryRowCategory,
     getStockQuantityForVariant,
@@ -5198,10 +5194,7 @@ function App() {
         if (field === 'unitPrice') {
           const rawPrice = value === null || value === undefined ? '' : String(value).trim()
           nextItem.unitPrice = rawPrice === '' ? undefined : Number(rawPrice)
-          if (selectedOrder?.pricing_mode === 'itemized_v1' && itemizedContentEditMode) {
-            nextItem.priceOrigin = rawPrice === '' ? 'missing' : 'manual'
-            nextItem.priceNeedsConfirmation = false
-          } else if (selectedOrder?.pricing_mode === 'itemized_v1') {
+          if (selectedOrder?.pricing_mode === 'itemized_v1') {
             const original = selectedOrder.items.find((entry) => Number(entry.id || 0) === Number(item.orderItemId || 0))
             const originalPrice = Number(original?.unitPrice || 0)
             nextItem.priceNeedsConfirmation = rawPrice === '' || Number(nextItem.unitPrice) !== originalPrice
@@ -5229,20 +5222,6 @@ function App() {
           const nextOptions = getSizeOptions(nextItem.productName, nextItem.audienceType)
           if (nextItem.size && !nextOptions.some((option) => normalizeSuggestion(option) === normalizeSuggestion(nextItem.size))) {
             nextItem.size = ''
-          }
-        }
-        if (selectedOrder?.pricing_mode === 'itemized_v1' && itemizedContentEditMode && ['productName', 'audienceType', 'material', 'length'].includes(String(field))) {
-          const pricing = resolveCatalogOrderSalePrice(catalogData, nextItem)
-          const keepManualPrice = item.priceOrigin === 'manual' && item.unitPrice !== undefined && item.unitPrice !== null
-          nextItem.catalogPriceSnapshot = pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null
-          if (keepManualPrice) {
-            nextItem.unitPrice = item.unitPrice
-            nextItem.priceOrigin = 'manual'
-            nextItem.priceNeedsConfirmation = true
-          } else {
-            nextItem.unitPrice = pricing.status === 'matched' ? pricing.salePrice : undefined
-            nextItem.priceOrigin = pricing.status === 'matched' ? 'catalog' : 'missing'
-            nextItem.priceNeedsConfirmation = false
           }
         }
         return nextItem
@@ -5376,19 +5355,12 @@ function App() {
   }
 
   function addEditorItem() {
-  setEditorDraft((current) => {
-    if (!current) return current
-    const nextItem = selectedOrder?.pricing_mode === 'itemized_v1' && itemizedContentEditMode
-      ? { ...createEmptyEditorItem(), unitPrice: undefined, catalogPriceSnapshot: null, priceOrigin: 'missing' as const, priceNeedsConfirmation: false }
-      : createEmptyEditorItem()
-    return { ...current, items: [...current.items, nextItem] }
-  })
+  setEditorDraft((current) => current ? { ...current, items: [...current.items, createEmptyEditorItem()] } : current)
 }
 
 function removeEditorItem(index: number) {
   setEditorDraft((current) => {
     if (!current) return current
-    if (selectedOrder?.pricing_mode === 'itemized_v1' && itemizedContentEditMode && current.items.length <= 1) return current
     const nextItems = current.items.filter((_, itemIndex) => itemIndex !== index)
     return { ...current, items: nextItems.length ? nextItems : [createEmptyEditorItem()] }
   })
@@ -5526,8 +5498,6 @@ function removeDebtPayment(index: number) {
   }
 
   function closeOrderEditor() {
-    setItemizedContentEditMode(false)
-    setItemizedContentEditLoading(false)
     setEditorOpen(false)
     setEditorOrderOverride(null)
     setSelectedOrderId(null)
@@ -5543,8 +5513,6 @@ function removeDebtPayment(index: number) {
   }
 
   async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' = 'orders') {
-    setItemizedContentEditMode(false)
-    setItemizedContentEditLoading(false)
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
       setSelectedOrderId(order.id)
@@ -5564,41 +5532,6 @@ function removeDebtPayment(index: number) {
     window.location.hash = '#editor'
   }
 
-  async function beginItemizedContentEdit() {
-    if (!selectedOrder || selectedOrder.pricing_mode !== 'itemized_v1' || savingOrder || itemizedContentEditLoading) return
-    if (selectedOrder.shipping_status === 'sent') {
-      setError('Отправленный заказ нельзя менять по составу. Используйте возврат, обмен или складскую корректировку.')
-      return
-    }
-    if (Number(selectedOrder.committed_return_count || 0) > 0 || Number(selectedOrder.committed_exchange_count || 0) > 0) {
-      setError('У заказа уже есть проведённый возврат или обмен. Сначала отмените или исправьте эту операцию штатным действием.')
-      return
-    }
-    setItemizedContentEditLoading(true)
-    setError(null)
-    setMessage(null)
-    try {
-      await Promise.all([
-        loadCatalogData(true),
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
-      ])
-      setEditorDraft(createEditorDraft(selectedOrder))
-      setItemizedContentEditMode(true)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось подготовить актуальные данные для изменения состава.')
-    } finally {
-      setItemizedContentEditLoading(false)
-    }
-  }
-
-  function cancelItemizedContentEdit() {
-    if (!selectedOrder || savingOrder) return
-    setEditorDraft(createEditorDraft(selectedOrder))
-    setItemizedContentEditMode(false)
-    setError(null)
-  }
-
   function upsertOrderInState(nextOrder: OrderRecord) {
     setOrders((current) => {
       const exists = current.some((order) => order.id === nextOrder.id)
@@ -5616,7 +5549,6 @@ function removeDebtPayment(index: number) {
     const order = targetOrder || selectedOrder
     if (!order) return
     const isItemizedEdit = order.pricing_mode === 'itemized_v1'
-    const isItemizedContentRewrite = isItemizedEdit && itemizedContentEditMode
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
       setMessage(projection.hasCommittedDownstreamOperation
@@ -5630,7 +5562,7 @@ function removeDebtPayment(index: number) {
     setMessage(null)
 
     try {
-      const missingObservation = isItemizedEdit && !isItemizedContentRewrite
+      const missingObservation = isItemizedEdit
         ? null
         : nextDraft.items.find((item) => item.sourceType !== 'workshop' && item.stockObservationEnabled && (item.observedPhysicalQuantity === null || item.observedPhysicalQuantity === undefined))
       if (missingObservation) {
@@ -5645,7 +5577,7 @@ function removeDebtPayment(index: number) {
         expectedLineTotal: number
         expectedCatalogPriceSnapshot: number | null
       }> = []
-      if (isItemizedEdit && !isItemizedContentRewrite) {
+      if (isItemizedEdit) {
         for (const item of nextDraft.items) {
           const orderItemId = Number(item.orderItemId || 0)
           if (!orderItemId) throw new Error('Не удалось определить позицию заказа для исправления цены. Обновите заказ и повторите.')
@@ -5684,7 +5616,7 @@ function removeDebtPayment(index: number) {
         expectedPaymentKind: string
         expectedComment: string
       }> = []
-      if (!isItemizedContentRewrite) for (const payment of nextDraft.payments) {
+      for (const payment of nextDraft.payments) {
         const paymentId = Number(payment.id || 0)
         if (!paymentId) continue
         const original = order.payments.find((entry) => Number(entry.id || 0) === paymentId)
@@ -5720,71 +5652,7 @@ function removeDebtPayment(index: number) {
         })
       }
 
-      let itemContentReplacement: {
-        expectedItems: Array<Record<string, unknown>>
-        items: Array<Record<string, unknown>>
-      } | null = null
-      if (isItemizedContentRewrite) {
-        const pricingReadiness = evaluateItemizedCreatePricing(nextDraft.items, order.payments)
-        if (pricingReadiness.status !== 'ready') {
-          const blocker = pricingReadiness.blockers[0]
-          const position = blocker?.itemIndex !== undefined ? blocker.itemIndex + 1 : 0
-          if (blocker?.code === 'empty_items') throw new Error('В заказе должна остаться хотя бы одна позиция.')
-          if (blocker?.code === 'invalid_quantity') throw new Error(`Проверьте количество в позиции ${position}.`)
-          if (blocker?.code === 'price_confirmation_required') throw new Error(`После изменения ценового исполнения подтвердите цену продажи в позиции ${position}.`)
-          if (blocker?.code === 'missing_unit_price') throw new Error(`Укажите цену продажи для позиции ${position}. Если цены в Каталоге нет, введите её вручную.`)
-          if (blocker?.code === 'invalid_unit_price') throw new Error(`Цена продажи в позиции ${position} должна быть целым числом от 0.`)
-          if (blocker?.code === 'invalid_catalog_snapshot') throw new Error(`Не удалось безопасно зафиксировать цену Каталога для позиции ${position}. Обновите выбор товара.`)
-          if (blocker?.code === 'overpayment') throw new Error(`После изменения состава итог заказа (${pricingReadiness.totalAmount ?? 0}) меньше уже проведённых оплат (${pricingReadiness.receivedAmount}). Исправьте состав или цены.`)
-          throw new Error('Проверьте состав и цены позиций перед сохранением.')
-        }
-
-        itemContentReplacement = {
-          expectedItems: order.items.map((item) => ({
-            orderItemId: Number(item.id || 0),
-            productName: item.productName,
-            audienceType: item.audienceType && normalizeSuggestion(item.audienceType).includes('ДЕТ') ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',
-            gender: item.gender || null,
-            color: item.color || null,
-            material: item.material || 'СТАНДАРТ',
-            length: item.length || 'СТАНДАРТ',
-            size: item.size || null,
-            quantity: Number(item.quantity || 0),
-            unitPrice: Number(item.unitPrice || 0),
-            lineTotal: Number(item.lineTotal || 0),
-            catalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
-            sourceType: item.isWorkshop ? 'workshop' : (item.sourceType === 'boutique' ? 'boutique' : 'warehouse'),
-            workshopComment: item.workshopComment || null,
-            workshopUrgent: Boolean(item.workshopUrgent),
-            workshopDueDate: item.workshopDueDate || null,
-            workshopDueTime: item.workshopDueTime || null,
-          })),
-          items: nextDraft.items.map((item) => ({
-            orderItemId: Number(item.orderItemId || 0) || undefined,
-            productName: item.productName,
-            audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
-            gender: item.gender || null,
-            color: item.color || null,
-            material: item.material || 'СТАНДАРТ',
-            length: item.length || 'СТАНДАРТ',
-            size: item.size || null,
-            quantity: Number(item.quantity || 0),
-            unitPrice: item.unitPrice,
-            catalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
-            sourceType: item.sourceType || 'warehouse',
-            workshopComment: item.workshopComment || null,
-            workshopUrgent: Boolean(item.workshopUrgent),
-            workshopDueDate: item.workshopUrgent ? (item.workshopDueDate || '') : '',
-            workshopDueTime: item.workshopUrgent ? (item.workshopDueTime || '') : '',
-            observedPhysicalQuantity: item.sourceType !== 'workshop' && item.stockObservationEnabled ? item.observedPhysicalQuantity : undefined,
-            shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
-          })),
-        }
-      }
-
-      const payload = isItemizedContentRewrite ? {
-        itemContentReplacement,
-      } : isItemizedEdit ? {
+      const payload = isItemizedEdit ? {
         orderDate: nextDraft.orderDate,
         managerId: nextDraft.managerId || undefined,
         managerName: nextDraft.managerName,
@@ -5897,18 +5765,16 @@ function removeDebtPayment(index: number) {
       const postSaveShortages = (result.stockWriteOff || []).filter((entry) => Number(entry.shortageAfter || 0) > 0)
       const concurrentShortages = postSaveShortages.filter((entry) => entry.concurrentShortage)
       invalidateFinanceReadCaches()
-      // Metadata/payment/price-only itemized correction leaves inventory intact; H8E content rewrite does not.
-      if (!isItemizedEdit || isItemizedContentRewrite) invalidateInventoryStockCaches(true)
+      // Restricted itemized metadata/payment correction does not touch items, reservations or stock.
+      if (!isItemizedEdit) invalidateInventoryStockCaches(true)
       if (concurrentShortages.length) {
         setMessage(`Заказ ${order.external_id} обновлён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Внимание».`)
       } else {
-        setMessage(isItemizedContentRewrite
-          ? `Состав заказа ${order.external_id} обновлён; резервы и задачи Цеха пересобраны по новому составу.`
-          : isItemizedEdit
-            ? (itemPriceCorrections.length
-              ? `Заказ ${order.external_id}: цены и реквизиты обновлены.`
-              : `Реквизиты заказа ${order.external_id} обновлены.`)
-            : `Заказ ${order.external_id} обновлён.`)
+        setMessage(isItemizedEdit
+          ? (itemPriceCorrections.length
+            ? `Заказ ${order.external_id}: цены и реквизиты обновлены.`
+            : `Реквизиты заказа ${order.external_id} обновлены.`)
+          : `Заказ ${order.external_id} обновлён.`)
       }
       if (result?.order) {
         const savedOrder = result.order as OrderRecord
@@ -5918,7 +5784,6 @@ function removeDebtPayment(index: number) {
         setEditorOrderOverride(savedOrder)
         const savedDraft = createEditorDraft(savedOrder)
         setEditorDraft(pendingEditorPayments.length ? { ...savedDraft, payments: [...savedDraft.payments, ...pendingEditorPayments] } : savedDraft)
-        if (isItemizedContentRewrite) setItemizedContentEditMode(false)
         if (pendingEditorPayments.length) {
           setEditorOpen(true)
           setMessage(`Заказ ${order.external_id} обновлён. Новые оплаты ещё не проведены — сохраните каждую новой кнопкой «Провести оплату».`)
@@ -5928,7 +5793,6 @@ function removeDebtPayment(index: number) {
         if (activeSector === 'orders' && orderPanel === 'list') void loadOrdersFinanceSummary(filters, true)
         return savedOrder
       }
-      if (isItemizedContentRewrite) setItemizedContentEditMode(false)
       if (pendingEditorPayments.length) {
         setEditorOpen(true)
         setMessage(`Заказ ${order.external_id} сохранён. Новые оплаты ещё не проведены — сохраните каждую отдельно.`)
@@ -7654,7 +7518,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'edit'} label="Редактирование заказа">
-        <OrderEditorSection ctx={{ addEditorItem, addEditorPayment, applyEditorProductPick, beginItemizedContentEdit, cancelItemizedContentEdit, ChoicePills, closeOrderEditor, createEditorDraft, editorDraft, editorFormRef, editorOpen, editorReturnSector, formatMoney, formatOrderItemTitle, FriendlyNumberInput, isAdmin, isArchivedOrderRecord, itemizedContentEditLoading, itemizedContentEditMode, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderPanelStyle, references, removeEditorItem, removeEditorPayment, renderOrderSizeSelect, renderOrderSourceAvailability, saveEditorPayment, saveSelectedOrder, savingOrder, sectorStyle, selectedOrder, setEditorDraft, SmartPickerInput, sourceLabel, suggestionValues, updateEditorDraft, updateEditorItem, updateEditorPayment }} />
+        <OrderEditorSection ctx={{ addEditorItem, addEditorPayment, applyEditorProductPick, ChoicePills, closeOrderEditor, createEditorDraft, editorDraft, editorFormRef, editorOpen, editorReturnSector, formatMoney, formatOrderItemTitle, FriendlyNumberInput, isAdmin, isArchivedOrderRecord, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderPanelStyle, references, removeEditorItem, removeEditorPayment, renderOrderSizeSelect, renderOrderSourceAvailability, saveEditorPayment, saveSelectedOrder, savingOrder, sectorStyle, selectedOrder, setEditorDraft, SmartPickerInput, sourceLabel, suggestionValues, updateEditorDraft, updateEditorItem, updateEditorPayment }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">

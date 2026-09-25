@@ -946,7 +946,6 @@ export function createEditorDraft(order: OrderRecord): EditorDraft {
           quantity: item.quantity,
           unitPrice: Number(item.unitPrice || 0),
           catalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
-          priceOrigin: item.catalogPriceSnapshot !== null && item.catalogPriceSnapshot !== undefined && Number(item.catalogPriceSnapshot) === Number(item.unitPrice || 0) ? 'catalog' : 'manual',
           priceNeedsConfirmation: false,
           sourceType: item.isWorkshop ? 'workshop' : (item.sourceType === 'boutique' ? 'boutique' : 'warehouse'),
           workshopComment: item.workshopComment || '',
