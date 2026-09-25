@@ -12,6 +12,6 @@ check(
   'retained pricing-mode projection/fallback missing'
 )
 check(!o.includes('catalog_execution_prices')&&!/UPDATE\s+orders\s+SET\s+pricing_mode/i.test(g)&&!/SET[\\s\\S]{0,240}catalog_price_snapshot\s*=/i.test(g),'read path widened into repricing/write')
-check(!a.includes('catalogPriceSnapshot:'),'UI write activated too early')
+check(a.includes("pricingMode: 'itemized_v1'") && a.includes('catalogPriceSnapshot: item.catalogPriceSnapshot ?? null'),'Activated Branch2 Create lost explicit itemized snapshot write')
 check(!f.includes('catalog_execution_prices'),'Finance repricing introduced')
-console.log('STAGE03-F2 PRICING READ COMPAT PASSED — legacy-safe before 0073, metadata-readable after 0073, no pricing writes/autofill/report repricing')
+console.log('STAGE03-F2 PRICING READ COMPAT PASSED — legacy-safe read fallback remains intact after Branch2 itemized Create activation; historical reads and Finance still never reprice from current Catalog')
