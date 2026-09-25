@@ -91,6 +91,35 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage03H7BManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h7b-itemized-create-activation-frontend-manifest.json'), 'utf8'))
+if (stage03H7BManifest?.version !== 1 || stage03H7BManifest?.revision !== 'stage03-h7b-itemized-create-activation') throw new Error('Stage03-H7B frontend manifest invalid')
+const stage03H7BBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE03_H7B_ITEMIZED_CREATE_ACTIVATION_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stage03H7BManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage03H7BBlobSha(actual) !== delta.afterGitBlob) throw new Error('Stage03-H7B frontend changed beyond exact manifest: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (stage03H7BBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Stage03-H7B baseline fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H7B_ITEMIZED_CREATE_ACTIVATION_NORMALIZED: '1' }})
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03-H7B FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const clientZammlerGUiPolishManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/client-zammler-g-ui-polish-frontend-manifest.json'), 'utf8'))
 if (clientZammlerGUiPolishManifest?.version !== 1 || clientZammlerGUiPolishManifest?.revision !== 'client-zammler-g-ui-polish') throw new Error('CLIENT-ZAMMLER-G frontend manifest invalid')
 const clientZammlerGBlobSha = (value) => {

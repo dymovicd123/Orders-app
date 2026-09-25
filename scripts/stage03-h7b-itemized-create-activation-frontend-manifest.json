@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "revision": "stage03-h7b-itemized-create-activation",
+  "baseline": "branch2 b78a0ba6760d3679ce72759324941943ad494158",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "c14399f54e7e889fbbe0dbe176d9148ad09eecc2",
+      "afterGitBlob": "fbc4b7a92200a0edd626c3acfd7a74c20cf5c099",
+      "baselineFixture": "scripts/fixtures/stage03-h7b-itemized-create-activation/src/App.tsx"
+    },
+    "src/app/controllers/useWorkspaceViewModel.tsx": {
+      "beforeGitBlob": "a7a61c16873121b3edb65d039859058aeb8dfa3e",
+      "afterGitBlob": "f8090d61bcf8079042afdd44645283d896326776",
+      "baselineFixture": "scripts/fixtures/stage03-h7b-itemized-create-activation/src/app/controllers/useWorkspaceViewModel.tsx"
+    },
+    "src/app/order-pricing.ts": {
+      "beforeGitBlob": "133f3198261ffa6ada2ef76521e00cac7541d845",
+      "afterGitBlob": "663375a8d248c5d818a12e5f7a951b4731ee11ae",
+      "baselineFixture": "scripts/fixtures/stage03-h7b-itemized-create-activation/src/app/order-pricing.ts"
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "288d1964dfb3337f333451bc97eb08bb6002cf1b",
+      "afterGitBlob": "9a676ad4ef566bfed7d74668715c7079ca7ecf7c",
+      "baselineFixture": "scripts/fixtures/stage03-h7b-itemized-create-activation/src/app/types.ts"
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "3cf26215cade4a5f582fb6bcdc347c6363f9b351",
+      "afterGitBlob": "977eb91b6a7519074dbaaae5a62ac841ca6936db",
+      "baselineFixture": "scripts/fixtures/stage03-h7b-itemized-create-activation/src/app/utils.ts"
+    },
+    "src/features/sections/CreateOrderSection.tsx": {
+      "beforeGitBlob": "03f375c3015e29cb1644a926e63ed9dbffd52797",
+      "afterGitBlob": "d8d0c1f6f0cfbd49989ad2661b4548f1ddd67736",
+      "baselineFixture": "scripts/fixtures/stage03-h7b-itemized-create-activation/src/features/sections/CreateOrderSection.tsx"
+    }
+  }
+}
