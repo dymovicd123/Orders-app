@@ -28,7 +28,7 @@ Before visible `itemized_v1` activation, add a permanent safety gate that:
 5. verifies TypeScript/build;
 6. verifies the generated Wrangler deploy config still points only to Branch2;
 7. performs a read-only Branch2 D1 pricing/schema fingerprint;
-8. confirms visible Create is still legacy before the later activation commit.
+8. originally locked the pre-activation legacy Create baseline; after H7B activation it remains the environment/schema safety layer while H7B/H7F own the active Create assertions.
 
 H7A performs **no migration and no D1 business-row write**.
 
@@ -65,3 +65,24 @@ Implemented only on Branch2:
 - legacy exchange remains blocked for itemized orders until exchange pricing policy is explicitly designed.
 
 No Stage04 work is started by this activation. No Production Worker or Production D1 operation is allowed.
+
+
+## H7F/G — cumulative Branch2 acceptance
+
+The H7 activation is now protected by one cumulative acceptance gate in addition to the focused H6/H7 tests.
+
+The gate verifies:
+
+- Branch2 Worker/D1 identity and explicit rejection of Production D1 identifiers;
+- visible Create uses line-level final sale prices and has no independent editable order total;
+- missing Catalog recommendation remains distinct from explicit zero;
+- stale manual override after a price-driving field change blocks Save until reconfirmed;
+- the request sends `pricingMode: itemized_v1`, final `unitPrice` and nullable historical `catalogPriceSnapshot`;
+- server revalidates itemized arithmetic and requires the pricing schema before writing;
+- existing itemized orders remain fail-closed in the legacy full editor;
+- legacy exchange remains fail-closed for itemized orders;
+- returns remain manager-entered rather than automatically repriced;
+- Finance, Workshop, Clients, Cash and retention stay isolated from mutable current Catalog pricing;
+- the exact H7 frontend structural layer is present so earlier preservation layers still remain enforceable.
+
+Activation commit `7797e6a338b6bf34dbc492bf07114d75d271f4fc` passed the Branch2 safety workflow and Cloudflare deploy monitor on 2026-09-25. No Production D1 migration or business-row write was used for H7 activation.
