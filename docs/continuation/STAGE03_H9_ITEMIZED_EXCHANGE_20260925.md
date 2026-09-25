@@ -1,10 +1,10 @@
-# Stage03 H9A — itemized Exchange backend foundation
+# Stage03 H9 — itemized Exchange
 
 Date: 2026-09-25
 
 Environment: **Branch2 only**. Production/main is not a target. No Production D1 action is allowed in H9A.
 
-Status: backend contract only. The existing itemized Exchange entry points in the UI remain fail-closed until H9B.
+Status: H9A backend foundation implemented; H9B UI activation implemented on the Branch2 work branch and gated by cumulative CI before merge.
 
 ## Accepted itemized Exchange semantics
 
@@ -61,3 +61,39 @@ Exchange cancellation restores the old line quantity, retires the replacement li
 - no discount UI.
 
 Next step after H9A is green: H9B UI payload/price resolver wiring and Branch2 manual acceptance.
+
+
+## H9B UI activation
+
+H9B activates itemized Exchange in the existing Exchange form without reusing legacy manual-total semantics.
+
+- both ordinary order entry and Workshop entry may open Exchange for `itemized_v1` orders;
+- one replacement pair per itemized Exchange operation is allowed in H9B; the legacy multi-pair queue remains available only for legacy pricing mode;
+- the historical sold price is the default factual price for the new line, which makes a negotiated no-surcharge exchange easy and explicit;
+- changing the new product or a Catalog-driving dimension (audience, material, length) refreshes the current Catalog recommendation;
+- a deliberate manager-entered sold price is preserved when the Catalog recommendation refreshes;
+- Catalog recommendation remains a separate snapshot and never silently overwrites the manager's factual sold price;
+- the form shows `Цена по каталогу`, `Цена продажи`, and the resulting new-line amount directly;
+- missing/invalid sold price remains fail-closed.
+
+Immediately before POST, the client validates the current old line snapshot and sends H9A's stale contract:
+`expectedOrderTotal`, `expectedOldActiveQuantity`, `expectedOldUnitPrice`, `expectedOldLineTotal`, and `expectedOldCatalogPriceSnapshot`.
+
+The new item payload carries its factual `unitPrice` separately from `catalogPriceSnapshot`.
+
+### Financial UX
+
+The itemized commercial total is never edited through the Exchange financial amount.
+
+The Exchange finance panel represents only the real cash event:
+- no money movement;
+- client extra payment;
+- refund to client.
+
+Therefore an itemized replacement may create or reduce debt according to the new line price, while the separate money action records only what actually moved.
+
+### Compatibility
+
+Legacy Exchange behavior is intentionally preserved for `legacy_manual_total` orders. H9B does not migrate or reprice old orders.
+
+No migration is introduced by H9B. Production/main remains outside the release scope.
