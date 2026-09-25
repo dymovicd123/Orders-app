@@ -27,6 +27,35 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 const root = process.cwd()
+const stage03H9BFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h9b-itemized-exchange-ui-frontend-manifest.json'), 'utf8'))
+if (stage03H9BFrontendManifest?.version !== 1 || stage03H9BFrontendManifest?.revision !== 'stage03-h9b-itemized-exchange-ui') throw new Error('Stage03-H9B frontend manifest invalid')
+const stage03H9BFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE03_H9B_ITEMIZED_EXCHANGE_UI_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stage03H9BFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage03H9BFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H9B frontend changed beyond exact manifest: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (stage03H9BFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H9B frontend baseline fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H9B_ITEMIZED_EXCHANGE_UI_NORMALIZED: '1' }})
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03-H9B ITEMIZED EXCHANGE UI FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const legacyPath = path.join(root, 'scripts/test-step1906b-frontend-modularization-legacy.mjs')
 const manifestPath = path.join(root, 'scripts/order-edit-safe-payment-corrections-frontend-manifest.json')
 const appPath = path.join(root, 'src/App.tsx')
