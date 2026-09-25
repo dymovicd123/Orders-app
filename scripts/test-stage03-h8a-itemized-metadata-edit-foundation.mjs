@@ -43,7 +43,8 @@ check(edit.includes('const rewritePayments = !deletingOrder && Boolean(requested
 check(edit.includes('input.orderTotal !== undefined ? input.orderTotal : existingAny.total_amount'), 'H8A: metadata-only lane does not preserve persisted commercial total')
 check(!edit.includes('catalogPriceSnapshot'), 'H8A: legacy editor path unexpectedly writes Catalog snapshots')
 
-check((app.match(/order\.pricing_mode === 'itemized_v1'/g) || []).length >= 2, 'H8A: frontend full editor must remain blocked until H8B restricted UI is ready')
-check(app.includes('Старый редактор пока отключён для таких заказов'), 'H8A: frontend fail-closed message disappeared before H8B')
+check(app.includes("const isItemizedEdit = order.pricing_mode === 'itemized_v1'"), 'H8A: H8B frontend no longer selects the restricted itemized path')
+check(app.includes('const payload = isItemizedEdit ? {'), 'H8A: H8B frontend no longer sends the restricted itemized payload')
+check(!app.includes('Старый редактор пока отключён для таких заказов'), 'H8A: obsolete blanket itemized editor block returned')
 
-console.log('STAGE03-H8A ITEMIZED METADATA EDIT FOUNDATION PASSED — backend accepts only metadata and posted-payment corrections for itemized orders, while item/price/source/lifecycle/shipping rewrites stay fail-closed and frontend activation remains deferred')
+console.log('STAGE03-H8A ITEMIZED METADATA EDIT FOUNDATION PASSED — backend accepts only metadata and posted-payment corrections for itemized orders, while H8B consumes that narrow lane and commercial/physical rewrites remain fail-closed')

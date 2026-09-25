@@ -2,7 +2,7 @@
 
 Date: 2026-09-25
 
-Status: **H8A backend foundation implemented on Branch2. Restricted editor UI is not activated yet.**
+Status: **H8A backend foundation + H8B restricted editor UI implemented on Branch2.**
 
 ## Why H8 exists
 
@@ -41,10 +41,23 @@ The allowed lane therefore cannot:
 
 The persisted itemized `orders.total_amount` remains unchanged. Existing posted-payment corrections may update received/debt through the already-audited correction path.
 
-## Rollout boundary
+## H8B — restricted editor UI
 
-H8A is backend-only. The current frontend still blocks opening/saving itemized orders in the legacy full editor.
+The ordinary Edit action may now open an `itemized_v1` order when its operational projection allows editing, but the form switches into a restricted mode:
 
-H8B will provide a restricted UI that sends only the allowed metadata/payment-correction payload. Product lines, quantities, sources, final sold prices and Catalog snapshots will be displayed as historical read-only facts until a separate commercial/physical edit design is implemented.
+- order date, manager, customer name/phone, city, delivery text and comment remain editable;
+- order total is shown as historical read-only data;
+- order lifecycle status is shown read-only and still changes only through dedicated actions;
+- product identity, quantity, source, Workshop item fields and stock availability actions are disabled;
+- final sold price, historical Catalog recommendation and line total are visible for each item;
+- product add/remove is unavailable;
+- new payments are not staged in this editor;
+- existing posted payments can use the existing audited correction path;
+- exchange-linked extra payment keeps its previous restriction: only payment method is editable here;
+- after an itemized metadata/payment correction, Inventory caches are not invalidated because no stock fact changed.
+
+The itemized PATCH contains only the H8A allow-listed metadata plus `paymentCorrections`. It does not contain `items`, replacement `payments`, `orderTotal`, `sourceType`, lifecycle or shipping fields.
+
+A separate future step is required for any real commercial/physical edit of an itemized order, including sold-price correction, SKU/quantity/source changes or itemized exchange semantics.
 
 Environment rule remains unchanged: Branch2 Worker + Branch2 D1 only. Production is not a target.

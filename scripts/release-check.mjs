@@ -253,6 +253,7 @@ try {
   run('Stage03-H7B itemized Create activation', process.execPath, [path.join(root, 'scripts/test-stage03-h7b-itemized-create-activation.mjs')])
   run('Stage03-H7F final Branch2 pricing acceptance', process.execPath, [path.join(root, 'scripts/test-stage03-h7f-final-branch2-acceptance.mjs')])
   run('Stage03-H8A itemized metadata edit foundation', process.execPath, [path.join(root, 'scripts/test-stage03-h8a-itemized-metadata-edit-foundation.mjs')])
+  run('Stage03-H8B itemized restricted editor', process.execPath, [path.join(root, 'scripts/test-stage03-h8b-itemized-restricted-editor.mjs')])
   run('CLIENT-ZAMMLER-A foundation', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-a-foundation.mjs')])
   run('CLIENT-ZAMMLER-B due-time plumbing', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-b-due-time-plumbing.mjs')])
   run('CLIENT-ZAMMLER-C create form', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-c-create-form.mjs')])

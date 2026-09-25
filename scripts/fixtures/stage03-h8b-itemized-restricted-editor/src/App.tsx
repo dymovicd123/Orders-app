@@ -5499,6 +5499,12 @@ function removeDebtPayment(index: number) {
   }
 
   async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' = 'orders') {
+    if (order.pricing_mode === 'itemized_v1') {
+      setSelectedOrderId(order.id)
+      setEditorOpen(false)
+      setMessage('Этот заказ использует построчную цену. Старый редактор пока отключён для таких заказов, чтобы не повредить цены позиций и снимки Каталога.')
+      return
+    }
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
       setSelectedOrderId(order.id)
@@ -5534,7 +5540,11 @@ function removeDebtPayment(index: number) {
   async function persistOrder(nextDraft: EditorDraft, targetOrder?: OrderRecord | null) {
     const order = targetOrder || selectedOrder
     if (!order) return
-    const isItemizedEdit = order.pricing_mode === 'itemized_v1'
+    if (order.pricing_mode === 'itemized_v1') {
+      setEditorOpen(false)
+      setMessage('Этот заказ использует построчную цену. Старый редактор пока отключён для таких заказов, чтобы не повредить цены позиций и снимки Каталога.')
+      return
+    }
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
       setMessage(projection.hasCommittedDownstreamOperation
@@ -5548,9 +5558,7 @@ function removeDebtPayment(index: number) {
     setMessage(null)
 
     try {
-      const missingObservation = isItemizedEdit
-        ? null
-        : nextDraft.items.find((item) => item.sourceType !== 'workshop' && item.stockObservationEnabled && (item.observedPhysicalQuantity === null || item.observedPhysicalQuantity === undefined))
+      const missingObservation = nextDraft.items.find((item) => item.sourceType !== 'workshop' && item.stockObservationEnabled && (item.observedPhysicalQuantity === null || item.observedPhysicalQuantity === undefined))
       if (missingObservation) {
         throw new Error(`Укажите фактическое количество для «${missingObservation.productName || 'позиции'}» или выберите «Сейчас проверить не могу».`)
       }
@@ -5604,17 +5612,7 @@ function removeDebtPayment(index: number) {
         })
       }
 
-      const payload = isItemizedEdit ? {
-        orderDate: nextDraft.orderDate,
-        managerId: nextDraft.managerId || undefined,
-        managerName: nextDraft.managerName,
-        customerPhone: nextDraft.customerPhone,
-        customerName: nextDraft.customerName,
-        city: nextDraft.city,
-        deliveryType: nextDraft.deliveryType,
-        comment: nextDraft.comment,
-        paymentCorrections,
-      } : {
+      const payload = {
         orderDate: nextDraft.orderDate,
         managerId: nextDraft.managerId || undefined,
         managerName: nextDraft.managerName,
@@ -5712,12 +5710,12 @@ function removeDebtPayment(index: number) {
       // browser retry token before readback-driven UI work, including the common result.order path.
       completeCriticalRequest(criticalKey, critical.requestId)
 
-      const pendingEditorPayments = isItemizedEdit ? [] : nextDraft.payments.filter((payment) => !payment.id)
+      const pendingEditorPayments = nextDraft.payments.filter((payment) => !payment.id)
       const postSaveShortages = (result.stockWriteOff || []).filter((entry) => Number(entry.shortageAfter || 0) > 0)
       const concurrentShortages = postSaveShortages.filter((entry) => entry.concurrentShortage)
       invalidateFinanceReadCaches()
-      // Restricted itemized metadata/payment correction does not touch items, reservations or stock.
-      if (!isItemizedEdit) invalidateInventoryStockCaches(true)
+      // Unsent edits can release/recreate reservations; a sent transition can also fulfill them.
+      invalidateInventoryStockCaches(true)
       if (concurrentShortages.length) {
         setMessage(`Заказ ${order.external_id} обновлён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Внимание».`)
       } else {

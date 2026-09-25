@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "revision": "stage03-h8b-itemized-restricted-editor",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "fbc4b7a92200a0edd626c3acfd7a74c20cf5c099",
+      "afterGitBlob": "e9f7cb97d03562918986b8d240652d9bac81f95d",
+      "beforeLines": 7637,
+      "afterLines": 7639,
+      "baselineFixture": "scripts/fixtures/stage03-h8b-itemized-restricted-editor/src/App.tsx"
+    },
+    "src/features/sections/OrderEditorSection.tsx": {
+      "beforeGitBlob": "b4e931da6daea471ed7e926313e517e115567573",
+      "afterGitBlob": "ada62932f871d2aad02640942c745ba4375c1d27",
+      "beforeLines": 471,
+      "afterLines": 521,
+      "baselineFixture": "scripts/fixtures/stage03-h8b-itemized-restricted-editor/src/features/sections/OrderEditorSection.tsx"
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "977eb91b6a7519074dbaaae5a62ac841ca6936db",
+      "afterGitBlob": "0f85e27beb1a42917b6c564ff0ca2674a44b983a",
+      "beforeLines": 967,
+      "afterLines": 968,
+      "baselineFixture": "scripts/fixtures/stage03-h8b-itemized-restricted-editor/src/app/utils.ts"
+    }
+  }
+}

@@ -45,7 +45,7 @@ jobs:
       - name: Run Branch2 environment gate
         run: node scripts/test-branch2-environment.mjs
 
-      - name: Run Stage03 H6/H7 safety gates
+      - name: Run Stage03 H6/H8 safety gates
         run: |
           set -euo pipefail
           node scripts/test-stage03-h6i-pre-client-readiness-matrix.mjs
@@ -54,6 +54,7 @@ jobs:
           node scripts/test-stage03-h7b-itemized-create-activation.mjs
           node scripts/test-stage03-h7f-final-branch2-acceptance.mjs
           node scripts/test-stage03-h8a-itemized-metadata-edit-foundation.mjs
+          node scripts/test-stage03-h8b-itemized-restricted-editor.mjs
 
       - name: Typecheck and build exact Branch2 commit
         run: |

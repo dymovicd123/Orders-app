@@ -25,9 +25,10 @@ check(updateOrder.includes('input.sourceType === undefined') && updateOrder.incl
 check(updateOrder.includes("existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete' && !itemizedMetadataOnlyEdit"), 'Unsupported itemized legacy PATCH must still fail closed while dedicated delete stays separate')
 check(updateOrder.includes('Разрешены только безопасные исправления реквизитов и проведённых оплат'), 'Controlled itemized edit conflict message missing')
 
-check((app.match(/order\.pricing_mode === 'itemized_v1'/g) || []).length >= 2, 'Both editor entry and stale-save paths must guard itemized orders')
+check(app.includes("const isItemizedEdit = order.pricing_mode === 'itemized_v1'"), 'Frontend no longer distinguishes restricted itemized edit')
+check(app.includes('const payload = isItemizedEdit ? {'), 'Frontend itemized editor no longer uses a restricted payload')
 check(app.includes('async function handleEditOrder') && app.includes('async function persistOrder'), 'Frontend editor boundaries missing')
 check(createUi.includes('Цена продажи') && createUi.includes('Цена по каталогу'), 'H7 Create pricing UI disappeared while H6A existing-order guard is still required')
 check(!createUi.includes('<span>pricingMode</span>') && !createUi.includes('<span>itemized_v1</span>'), 'Technical itemized mode leaked as visible Create UI copy')
 
-console.log('STAGE03-H6A ITEMIZED EDIT GUARD PASSED — unsupported itemized rewrites still fail closed, dedicated delete remains separate, and H8A exposes only a backend metadata/payment-correction lane while frontend activation stays blocked')
+console.log('STAGE03-H6A ITEMIZED EDIT GUARD PASSED — unsupported itemized rewrites remain fail-closed, dedicated delete stays separate, and H8B frontend uses only the H8A metadata/payment-correction lane')
