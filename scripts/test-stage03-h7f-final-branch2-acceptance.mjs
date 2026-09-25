@@ -47,8 +47,8 @@ check(create.includes('evaluateItemizedCreatePricing(createDraft.items, createDr
 
 check(ui.includes('Цена по каталогу') && ui.includes('Цена продажи') && ui.includes('Сумма позиции'), 'H7F: visible itemized line-pricing UI missing')
 check(!ui.includes('value={createDraft.orderTotal}'), 'H7F: old editable order total is visible again')
-check(ui.includes('Подтвердить цену') && ui.includes('priceNeedsConfirmation'), 'H7F: stale manual-price confirmation UI missing')
-check(pricing.includes("'price_confirmation_required'"), 'H7F: stale manual override blocker missing')
+check(!ui.includes('Подтвердить цену') && !ui.includes('нужно подтвердить заново'), 'H8G: redundant Create price confirmation returned')
+check(!pricing.includes("'price_confirmation_required'"), 'H8G: redundant Create readiness confirmation blocker returned')
 check(pricing.includes("'missing_unit_price'") && pricing.includes("'overpayment'"), 'H7F: missing-price/overpayment fail-closed blockers missing')
 
 const serverCreateStart = write.indexOf('export async function createOrder')

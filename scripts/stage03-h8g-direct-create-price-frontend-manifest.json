@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "revision": "stage03-h8g-direct-create-price",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "3409f46df8e0724d4c9c9c6d64630bbd27006cb3",
+      "afterGitBlob": "93f177915f4357b3e462a95bc630efe56fccb16a",
+      "beforeLines": 7813,
+      "afterLines": 7812,
+      "baselineFixture": "scripts/fixtures/stage03-h8g-direct-create-price/src/App.tsx"
+    },
+    "src/app/controllers/useWorkspaceViewModel.tsx": {
+      "beforeGitBlob": "08e28b337fd182f12872db48563e61c19bdf4208",
+      "afterGitBlob": "f85dc97017b7885e6e65ca17c4b29094ee81a6a7",
+      "beforeLines": 985,
+      "afterLines": 985,
+      "baselineFixture": "scripts/fixtures/stage03-h8g-direct-create-price/src/app/controllers/useWorkspaceViewModel.tsx"
+    },
+    "src/features/sections/CreateOrderSection.tsx": {
+      "beforeGitBlob": "d8d0c1f6f0cfbd49989ad2661b4548f1ddd67736",
+      "afterGitBlob": "c327b64a67ba6e361f1797d02c6a45b40a6f0ff6",
+      "beforeLines": 478,
+      "afterLines": 473,
+      "baselineFixture": "scripts/fixtures/stage03-h8g-direct-create-price/src/features/sections/CreateOrderSection.tsx"
+    },
+    "src/app/order-pricing.ts": {
+      "beforeGitBlob": "663375a8d248c5d818a12e5f7a951b4731ee11ae",
+      "afterGitBlob": "133f3198261ffa6ada2ef76521e00cac7541d845",
+      "beforeLines": 228,
+      "afterLines": 222,
+      "baselineFixture": "scripts/fixtures/stage03-h8g-direct-create-price/src/app/order-pricing.ts"
+    }
+  }
+}

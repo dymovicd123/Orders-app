@@ -21,10 +21,10 @@ check(!wrangler.includes('orders_db_prod') && !wrangler.includes('17e68a41-1d58-
 
 check(types.includes("priceOrigin?: 'catalog' | 'manual' | 'missing'") && types.includes('priceNeedsConfirmation?: boolean'), 'Draft price-origin safety state missing')
 check(utils.includes("priceOrigin: 'missing'") && utils.includes('unitPrice: undefined'), 'New Create draft must distinguish missing price from explicit zero')
-check(workspace.includes("const keepManualPrice = item.priceOrigin === 'manual'"), 'Catalog product pick no longer preserves manual override for explicit reconfirmation')
-check(workspace.includes('priceNeedsConfirmation: keepManualPrice'), 'Catalog product pick no longer marks stale manual price for review')
-check(app.includes("const keepManualPrice = item.priceOrigin === 'manual'"), 'Price-driving field update no longer protects manual override')
-check(app.includes('nextItem.priceNeedsConfirmation = true'), 'Price-driving field update no longer requires explicit reconfirmation')
+check(workspace.includes("const keepManualPrice = item.priceOrigin === 'manual'"), 'Catalog product pick no longer preserves a deliberate manual sold price')
+check(workspace.includes('priceNeedsConfirmation: false'), 'H8G product pick reintroduced a redundant confirmation state')
+check(app.includes("const keepManualPrice = item.priceOrigin === 'manual'"), 'Price-driving field update no longer preserves a deliberate manual override')
+check(!app.includes('nextItem.priceNeedsConfirmation = true'), 'H8G price-driving field update reintroduced explicit reconfirmation')
 check(app.includes("field === 'unitPrice'") && app.includes("nextItem.priceOrigin = rawPrice === '' ? 'missing' : 'manual'"), 'Manual final-price edit state missing')
 
 const createStart = app.indexOf('async function createOrderFromDraft')
@@ -40,10 +40,11 @@ check(create.includes("pricing_mode: 'itemized_v1'"), 'Optimistic local order lo
 
 check(ui.includes('Цена по каталогу') && ui.includes('Цена продажи') && ui.includes('Сумма позиции'), 'H7B visible line-pricing fields missing')
 check(!ui.includes('value={createDraft.orderTotal}'), 'Legacy editable order total remains in Create UI')
-check(ui.includes('Подтвердить цену') && ui.includes('priceNeedsConfirmation'), 'Manual override reconfirmation UI missing')
+check(!ui.includes('Подтвердить цену') && !ui.includes('нужно подтвердить заново'), 'H8G Create still exposes redundant manual-price confirmation')
+check(ui.includes('ваша цена останется без дополнительного подтверждения'), 'H8G Create does not explain preserved manual sold price')
 check(!ui.includes('<span>catalogPriceSnapshot</span>'), 'Technical snapshot field name leaked as visible UI text')
 
-check(pricingSource.includes("'price_confirmation_required'"), 'Readiness model lacks stale-manual-price blocker')
+check(!pricingSource.includes("'price_confirmation_required'"), 'H8G readiness model still carries stale-manual confirmation blocker')
 check(pricingSource.includes("'missing_unit_price'") && pricingSource.includes("'overpayment'"), 'Readiness model lost core fail-closed blockers')
 
 const utilsSource = read('src/app/utils.ts')
@@ -77,7 +78,7 @@ result = pricing.evaluateItemizedCreatePricing(
   [{ productName: 'A', quantity: 1, unitPrice: 4000, catalogPriceSnapshot: 5000, priceOrigin: 'manual', priceNeedsConfirmation: true }],
   [],
 )
-check(result.status === 'blocked' && result.blockers.some(x => x.code === 'price_confirmation_required'), 'H7B stale manual override must fail closed')
+check(result.status === 'ready' && result.totalAmount === 4000, 'H8G valid manual price must stay save-ready without a second confirmation click')
 
 const serverCreate = write.slice(write.indexOf('export async function createOrder'), write.indexOf('export async function updateOrderCritical'))
 check(serverCreate.includes("pricingMode === 'itemized_v1'") && serverCreate.includes('buildItemizedOrderWritePlan(itemizedLines, normalizedPayments)'), 'Server itemized Create revalidation missing')
@@ -86,4 +87,4 @@ check(write.includes('input.items === undefined') && write.includes('input.order
 const exchange = returns.slice(returns.indexOf('export async function createExchange'))
 check(exchange.includes("pricing_mode") && exchange.includes("'itemized_v1'"), 'Legacy exchange is not fail-closed for itemized orders')
 
-console.log('STAGE03-H7B ITEMIZED CREATE ACTIVATION PASSED — Branch2 new orders use explicit line prices and historical Catalog snapshots, missing versus zero is distinct, stale manual overrides require confirmation, and legacy edit/exchange remain isolated')
+console.log('STAGE03-H7B ITEMIZED CREATE ACTIVATION PASSED — Branch2 new orders use explicit line prices and historical Catalog snapshots, missing versus zero is distinct, deliberate manual sold prices stay direct without reconfirmation, and legacy edit/exchange remain isolated')

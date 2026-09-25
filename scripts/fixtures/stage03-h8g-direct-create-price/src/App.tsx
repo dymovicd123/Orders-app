@@ -3917,7 +3917,7 @@ function App() {
           if (keepManualPrice) {
             nextItem.unitPrice = item.unitPrice
             nextItem.priceOrigin = 'manual'
-            nextItem.priceNeedsConfirmation = false
+            nextItem.priceNeedsConfirmation = true
           } else {
             nextItem.unitPrice = pricing.status === 'matched' ? pricing.salePrice : undefined
             nextItem.priceOrigin = pricing.status === 'matched' ? 'catalog' : 'missing'
@@ -4038,6 +4038,7 @@ function App() {
         const payment = blocker?.paymentIndex !== undefined ? blocker.paymentIndex + 1 : 0
         if (blocker?.code === 'empty_items') throw new Error('Добавьте хотя бы один товар в заказ.')
         if (blocker?.code === 'invalid_quantity') throw new Error(`Проверьте количество в позиции ${position}.`)
+        if (blocker?.code === 'price_confirmation_required') throw new Error(`После изменения характеристик подтвердите цену продажи в позиции ${position}.`)
         if (blocker?.code === 'missing_unit_price') throw new Error(`Укажите цену продажи для позиции ${position}. Если цены в Каталоге нет, введите её вручную.`)
         if (blocker?.code === 'invalid_unit_price') throw new Error(`Цена продажи в позиции ${position} должна быть целым числом от 0.`)
         if (blocker?.code === 'invalid_catalog_snapshot') throw new Error(`Не удалось безопасно зафиксировать цену Каталога для позиции ${position}. Обновите выбор товара.`)

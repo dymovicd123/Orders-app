@@ -383,7 +383,7 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
           unitPrice: keepManualPrice ? item.unitPrice : pricing.status === 'matched' ? pricing.salePrice : undefined,
           catalogPriceSnapshot: pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null,
           priceOrigin: keepManualPrice ? 'manual' : pricing.status === 'matched' ? 'catalog' : 'missing',
-          priceNeedsConfirmation: false,
+          priceNeedsConfirmation: keepManualPrice,
         }
       }),
     }))

@@ -263,8 +263,13 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                           <span>Сумма позиции</span>
                           <strong>{item.unitPrice === undefined || item.unitPrice === null || String(item.unitPrice).trim() === '' ? '—' : formatMoney(Math.max(0, Number(item.quantity || 0)) * Math.max(0, Number(item.unitPrice || 0)))}</strong>
                         </div>
-                        {item.priceOrigin === 'manual' && item.catalogPriceSnapshot !== null && item.catalogPriceSnapshot !== undefined ? (
-                          <small className="wide-field">Цена продажи введена вручную. При изменении товара, материала, длины или типа рекомендация Каталога обновится, а ваша цена останется без дополнительного подтверждения.</small>
+                        {item.priceNeedsConfirmation ? (
+                          <div className="wide-field order-manager-required" role="alert">
+                            Характеристики, влияющие на цену Каталога, изменились. Ручная цена сохранена, но её нужно подтвердить заново.
+                            <button className="secondary compact" type="button" onClick={() => updateCreateItem(index, 'priceNeedsConfirmation', false)}>
+                              Подтвердить цену
+                            </button>
+                          </div>
                         ) : null}
                         {normalizeSuggestion(item.sourceType) === 'WORKSHOP' && Number(item.quantity || 0) > 0 ? (
                           <>

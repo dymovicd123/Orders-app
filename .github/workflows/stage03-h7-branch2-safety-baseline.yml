@@ -59,6 +59,7 @@ jobs:
           node scripts/test-stage03-h8d-itemized-content-rewrite-foundation.mjs
           node scripts/test-stage03-h8e-itemized-content-editor.mjs
           node scripts/test-stage03-h8f-direct-itemized-editor.mjs
+          node scripts/test-stage03-h8g-direct-create-price.mjs
           node scripts/test-branch2-deploy-fallback-safety.mjs
 
       - name: Typecheck and build exact Branch2 commit

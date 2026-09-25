@@ -13,7 +13,7 @@ check(manifest?.version === 1 && manifest?.revision === 'stage03-h6g-itemized-cr
 check(Object.keys(manifest.files || {}).join(',') === 'src/app/order-pricing.ts', 'H6G frontend allow-list widened')
 check(source.includes('export function evaluateItemizedCreatePricing'), 'H6G pure readiness function missing')
 check(source.includes("pricingMode: 'itemized_v1'"), 'H6G readiness must carry explicit itemized mode')
-check(source.includes("'missing_unit_price'") && source.includes("'price_confirmation_required'") && source.includes("'overpayment'"), 'H6G readiness blockers incomplete')
+check(source.includes("'missing_unit_price'") && source.includes("'overpayment'") && !source.includes("'price_confirmation_required'"), 'H8G readiness blockers must reject real invalid money states without requiring a redundant price confirmation')
 check(!createUi.includes('evaluateItemizedCreatePricing'), 'H6G readiness must not activate visible Create UI')
 const createStart = app.indexOf('async function createOrderFromDraft')
 const createEnd = app.indexOf('\n  function ', createStart + 40)
@@ -99,6 +99,6 @@ result = pricing.evaluateItemizedCreatePricing(
   [{ productName: 'Товар', quantity: 1, unitPrice: 1000, catalogPriceSnapshot: 1200, priceOrigin: 'manual', priceNeedsConfirmation: true }],
   [],
 )
-check(result.status === 'blocked' && result.blockers.some(x => x.code === 'price_confirmation_required'), 'Changed price-driving fields must require manual-price reconfirmation')
+check(result.status === 'ready' && result.totalAmount === 1000, 'H8G: historical priceNeedsConfirmation state must no longer block an otherwise valid manager-entered price')
 
-console.log('STAGE03-H6G ITEMIZED CREATE READINESS PASSED — active Branch2 Create preflights exact line/payment/debt arithmetic, permits explicit zero, rejects missing prices and overpayment, and fails closed on stale manual overrides')
+console.log('STAGE03-H6G ITEMIZED CREATE READINESS PASSED — active Branch2 Create preflights exact line/payment/debt arithmetic, permits explicit zero, rejects missing prices and overpayment, and H8G removes redundant price reconfirmation')

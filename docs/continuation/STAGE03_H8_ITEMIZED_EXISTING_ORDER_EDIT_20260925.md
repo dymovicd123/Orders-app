@@ -157,3 +157,16 @@ The client still chooses the narrowest safe server contract on Save:
 The server remains authoritative. Stale row/payment snapshots, sent/downstream-operation guards, stock re-check, Catalog snapshot rules and overpayment protection remain unchanged. For a combined composition + posted-payment correction, received/debt are derived from the corrected payment amount and the rewritten itemized total before commit.
 
 Lifecycle actions (send/delete/return/exchange) remain separate because they represent distinct business operations, not ordinary field editing.
+
+
+## H8G — direct sold-price UX in Create
+
+Manual acceptance also rejected the remaining per-line «confirm price» step in new-order Create. The technical confirmation flag is no longer a save blocker and no confirmation button is shown.
+
+When a manager has deliberately typed a sold price and then changes a Catalog-driving characteristic (product / adult-child / material / length):
+- the current Catalog recommendation/snapshot is re-resolved;
+- the manager-entered sold price remains the final sold price;
+- Save does not require another acknowledgement click;
+- missing price, invalid price, invalid quantity, invalid payment and overpayment still fail closed.
+
+This chooses the least destructive mobile behavior: never silently erase a manager-entered sold price and never confuse it with the mutable Catalog recommendation.
