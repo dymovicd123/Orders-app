@@ -11,7 +11,6 @@ import type { InventoryLifecycleEventRow } from './lifecycle.ts'
 import { applyCanonicalInventoryLifecycleEvent, canAutoApplyFreshWorkshopInbound, cancelInventoryLifecycleEvent, getOrderItemForReturnOrExchange, insertInventoryLifecycleEvent, inventoryLifecyclePendingReason, resolveInventoryLifecycleCandidate } from './lifecycle.ts'
 import { buildPaymentAndMoneyEventStatements, financialEventStatement, readOrderFinancialLedger, refundMoneyEventStatement, refundReversalMoneyEventStatement, removeSinglePaymentWithMoneyEvent, syncOrderFinancialLedger } from './money.ts'
 import { normalizeOrderItems } from './order-core.ts'
-import { buildItemizedOrderWritePlan, type ItemizedOrderWritePlan } from './order-pricing.ts'
 import { correctMistakenOrderHandover, fulfillOrderReservationsV2, resolveCatalogProductAndVariantV2 } from './order-reservations.ts'
 import { getOrder, insertOrderContent } from './orders-write.ts'
 import { normalizeWorkshopTaskStatus, refreshOrderWorkshopStatusFromTasks } from './workshop.ts'
@@ -1048,11 +1047,6 @@ export async function createExchange(
     oldPhysicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock';
     newItem?: NonNullable<OrderInput['items']>[number];
     newSourceWasManuallyChanged?: boolean;
-    expectedOrderTotal?: number;
-    expectedOldActiveQuantity?: number;
-    expectedOldUnitPrice?: number;
-    expectedOldLineTotal?: number;
-    expectedOldCatalogPriceSnapshot?: number | null;
     financialAction?: unknown;
     financialAmount?: number;
     paymentMethod?: string;
@@ -1071,7 +1065,9 @@ export async function createExchange(
   await syncOrderFinancialLedger(db, orderId);
   const existing = await getOrder(db, orderId);
   if (!existing) throw new Error('Order not found.');
-  const isItemizedExchange = cleanText((existing as any).pricing_mode) === 'itemized_v1';
+  if (cleanText((existing as any).pricing_mode) === 'itemized_v1') {
+    throw new CriticalOperationConflictError('Обмен для заказа с построчной itemized-ценой пока отключён. Текущая логика обмена использует старую общую цену заказа и может повредить финансовую историю.');
+  }
   if (isArchivedOrder(existing)) throw new Error('Нельзя оформлять обмен по архивному заказу.');
   if (normalizeOrderStatus((existing as any).order_status) === 'deleted') throw new Error('Нельзя оформлять обмен по удалённому заказу.');
   const oldItemId = toInt(input.oldItemId, 0);
@@ -1180,138 +1176,6 @@ export async function createExchange(
 
   const newItems = normalizeOrderItems(input.newItem ? [input.newItem] : [], normalizeSourceType((existing as any).source_type));
   if (!newItems.length) throw new Error('Новая позиция обмена не заполнена.');
-
-  let itemizedExchangeWritePlan: ItemizedOrderWritePlan | null = null;
-  let itemizedExchangePricingPlan = operationContext.itemizedExchangePricingPlan as {
-    projectedTotalAmount: number;
-    currentItemizedTotalAmount: number;
-    oldUnitPrice: number;
-    oldCatalogPriceSnapshot: number | null;
-    newUnitPrice: number;
-    newLineTotal: number;
-    newCatalogPriceSnapshot: number | null;
-  } | undefined;
-
-  if (isItemizedExchange) {
-    if (!input.newItem || !Object.prototype.hasOwnProperty.call(input.newItem, 'unitPrice')) {
-      throw new CriticalOperationConflictError('Для itemized-обмена укажите фактическую цену продажи новой позиции.');
-    }
-    if (!Object.prototype.hasOwnProperty.call(input.newItem, 'catalogPriceSnapshot')) {
-      throw new CriticalOperationConflictError('Для itemized-обмена передайте явный снимок цены Каталога новой позиции или null, если цены в Каталоге нет.');
-    }
-    itemizedExchangeWritePlan = buildItemizedOrderWritePlan([{
-      quantity: input.newItem.quantity ?? 1,
-      unitPrice: input.newItem.unitPrice,
-      catalogPriceSnapshot: input.newItem.catalogPriceSnapshot ?? null,
-    }], []);
-
-    if (!itemizedExchangePricingPlan) {
-      const expectedFields = [
-        'expectedOrderTotal',
-        'expectedOldActiveQuantity',
-        'expectedOldUnitPrice',
-        'expectedOldLineTotal',
-        'expectedOldCatalogPriceSnapshot',
-      ];
-      if (!expectedFields.every((key) => Object.prototype.hasOwnProperty.call(input, key))) {
-        throw new CriticalOperationConflictError('Обновите заказ перед обменом: для itemized-обмена нужен исходный снимок цены заменяемой позиции и итога заказа.');
-      }
-
-      const activePricingRows = await db.prepare(
-        `SELECT id, quantity, unit_price, line_total, catalog_price_snapshot
-         FROM order_items
-         WHERE order_id = ? AND quantity > 0
-         ORDER BY id ASC`
-      ).bind(orderId).all<Record<string, unknown>>();
-      const rows = activePricingRows.results || [];
-      let currentItemizedTotalAmount = 0;
-      let oldPricingRow: Record<string, unknown> | null = null;
-      for (const row of rows) {
-        const rowId = toInt(row.id, 0);
-        const quantity = Number(row.quantity);
-        const unitPrice = Number(row.unit_price);
-        const lineTotal = Number(row.line_total);
-        if (!rowId || !Number.isSafeInteger(quantity) || quantity <= 0 || !Number.isSafeInteger(unitPrice) || unitPrice < 0) {
-          throw new CriticalOperationConflictError('В itemized-заказе найдена повреждённая ценовая позиция. Обмен остановлен без изменений.');
-        }
-        const derivedLineTotal = quantity * unitPrice;
-        if (!Number.isSafeInteger(derivedLineTotal) || derivedLineTotal < 0 || lineTotal !== derivedLineTotal) {
-          throw new CriticalOperationConflictError('Сумма одной из позиций itemized-заказа не совпадает с количеством и ценой. Обмен остановлен без изменений.');
-        }
-        const nextTotal = currentItemizedTotalAmount + derivedLineTotal;
-        if (!Number.isSafeInteger(nextTotal) || nextTotal < 0) {
-          throw new CriticalOperationConflictError('Итог itemized-заказа слишком велик для точного расчёта обмена.');
-        }
-        currentItemizedTotalAmount = nextTotal;
-        if (rowId === oldItemId) oldPricingRow = row;
-      }
-
-      if (!oldPricingRow) {
-        throw new CriticalOperationConflictError('Заменяемая позиция больше не активна. Обновите заказ и повторите обмен.');
-      }
-      if (currentItemizedTotalAmount !== ledger.totalAmount) {
-        throw new CriticalOperationConflictError('Итог itemized-заказа не совпадает с активными позициями. Обмен остановлен, чтобы не переписать финансовую историю.');
-      }
-
-      const oldActiveQuantity = Number(oldPricingRow.quantity);
-      const oldUnitPrice = Number(oldPricingRow.unit_price);
-      const oldLineTotal = Number(oldPricingRow.line_total);
-      const oldCatalogPriceSnapshot = oldPricingRow.catalog_price_snapshot === null || oldPricingRow.catalog_price_snapshot === undefined
-        ? null
-        : Number(oldPricingRow.catalog_price_snapshot);
-      const expectedCatalogSnapshot = input.expectedOldCatalogPriceSnapshot === null || input.expectedOldCatalogPriceSnapshot === undefined
-        ? null
-        : Number(input.expectedOldCatalogPriceSnapshot);
-      const expectedOrderTotal = Number(input.expectedOrderTotal);
-      const expectedOldActiveQuantity = Number(input.expectedOldActiveQuantity);
-      const expectedOldUnitPrice = Number(input.expectedOldUnitPrice);
-      const expectedOldLineTotal = Number(input.expectedOldLineTotal);
-      const expectedSnapshotValid = expectedCatalogSnapshot === null || (Number.isSafeInteger(expectedCatalogSnapshot) && expectedCatalogSnapshot >= 0);
-      if (!Number.isSafeInteger(expectedOrderTotal) || expectedOrderTotal < 0
-        || !Number.isSafeInteger(expectedOldActiveQuantity) || expectedOldActiveQuantity <= 0
-        || !Number.isSafeInteger(expectedOldUnitPrice) || expectedOldUnitPrice < 0
-        || !Number.isSafeInteger(expectedOldLineTotal) || expectedOldLineTotal < 0
-        || !expectedSnapshotValid) {
-        throw new CriticalOperationConflictError('Исходный ценовой снимок itemized-обмена повреждён. Обновите заказ и повторите.');
-      }
-      if (expectedOrderTotal !== ledger.totalAmount
-        || expectedOldActiveQuantity !== oldActiveQuantity
-        || expectedOldUnitPrice !== oldUnitPrice
-        || expectedOldLineTotal !== oldLineTotal
-        || expectedCatalogSnapshot !== oldCatalogPriceSnapshot) {
-        throw new CriticalOperationConflictError('Цена или состав заказа изменились после открытия обмена. Обновите заказ и повторите.');
-      }
-
-      const newLine = itemizedExchangeWritePlan.lines[0];
-      const replacedOldValue = oldQuantity * oldUnitPrice;
-      const projectedTotalAmount = currentItemizedTotalAmount - replacedOldValue + newLine.lineTotal;
-      if (!Number.isSafeInteger(replacedOldValue) || replacedOldValue < 0
-        || !Number.isSafeInteger(projectedTotalAmount) || projectedTotalAmount < 0) {
-        throw new CriticalOperationConflictError('Не удалось безопасно рассчитать новый итог itemized-заказа.');
-      }
-      const currentNetPaid = Math.max(0, ledger.receivedAmount - ledger.returnAmount);
-      const projectedNetPaid = financialAction === 'extra_payment'
-        ? currentNetPaid + financialAmount
-        : financialAction === 'refund'
-          ? Math.max(0, currentNetPaid - financialAmount)
-          : currentNetPaid;
-      if (!Number.isSafeInteger(projectedNetPaid) || projectedNetPaid > projectedTotalAmount) {
-        throw new CriticalOperationConflictError(
-          `После обмена у заказа останется необъяснённая переплата ${Math.max(0, projectedNetPaid - projectedTotalAmount)}. Укажите достаточный возврат денег или скорректируйте фактическую цену новой позиции.`
-        );
-      }
-
-      itemizedExchangePricingPlan = {
-        projectedTotalAmount,
-        currentItemizedTotalAmount,
-        oldUnitPrice,
-        oldCatalogPriceSnapshot,
-        newUnitPrice: newLine.unitPrice,
-        newLineTotal: newLine.lineTotal,
-        newCatalogPriceSnapshot: newLine.catalogPriceSnapshot,
-      };
-    }
-  }
   const inheritedReplacementSource: OrderItemSourceType = toInt(oldItem.is_workshop, 0)
     ? 'workshop'
     : normalizeSourceType(oldItem.source_type) === 'boutique'
@@ -1326,8 +1190,8 @@ export async function createExchange(
     sourceType: effectiveReplacementSource,
     inventorySource: effectiveReplacementSource === 'boutique' ? 'boutique' : 'warehouse' as SourceType,
     isWorkshop: effectiveReplacementSource === 'workshop',
-    unitPrice: isItemizedExchange ? itemizedExchangePricingPlan!.newUnitPrice : 0,
-    lineTotal: isItemizedExchange ? itemizedExchangePricingPlan!.newLineTotal : 0,
+    unitPrice: 0,
+    lineTotal: 0,
   };
 
   // Resolve/check a canonical outgoing replacement before the exchange mutates the old item.
@@ -1383,7 +1247,6 @@ export async function createExchange(
       availableOldQuantity,
       availableRefundAmount,
       baseTotalAmount: ledger.totalAmount,
-      itemizedExchangePricingPlan: itemizedExchangePricingPlan || null,
       oldWorkshopTaskId: toInt(oldWorkshopTask?.id, 0) || null,
       oldWorkshopTaskStatus: cleanText(oldWorkshopTask?.status) || null,
       oldWorkshopTaskQuantity: toInt(oldWorkshopTask?.quantity, 0) || 0,
@@ -1494,7 +1357,7 @@ export async function createExchange(
     db,
     orderId,
     cleanText((existing as any).external_id),
-    [newItem],
+    [{ ...newItem, unitPrice: 0, lineTotal: 0 }],
     [],
     timestamp,
     'exchange_new',
@@ -1503,8 +1366,6 @@ export async function createExchange(
     preResolvedNewCatalog ? [preResolvedNewCatalog] : undefined,
     criticalOperation,
     'exchange_new',
-    undefined,
-    isItemizedExchange ? itemizedExchangeWritePlan : null,
   );
 
   const newOrderItemId = await criticalOperationEntityId(db, criticalOperation.requestId, 'order_item', 'exchange_new:item:1');
@@ -1573,9 +1434,7 @@ export async function createExchange(
 
   let paymentId: number | null = null;
   let refundReturnId: number | null = null;
-  let nextTotalAmount = isItemizedExchange
-    ? Math.max(0, toInt(itemizedExchangePricingPlan?.projectedTotalAmount, ledger.totalAmount))
-    : Math.max(0, toInt(operationContext.baseTotalAmount, ledger.totalAmount));
+  let nextTotalAmount = Math.max(0, toInt(operationContext.baseTotalAmount, ledger.totalAmount));
 
   if (financialAction === 'extra_payment') {
     const paymentComment = comment || `Доплата по обмену #${exchangeId}`;
@@ -1599,9 +1458,7 @@ export async function createExchange(
       ]);
       paymentId = await criticalOperationEntityId(db, criticalOperation.requestId, 'payment', paymentEntityKey) || toInt(paymentInsert.meta?.last_row_id, 0) || null;
     }
-    if (!isItemizedExchange) {
-      nextTotalAmount = Math.max(0, toInt(operationContext.baseTotalAmount, ledger.totalAmount)) + financialAmount;
-    }
+    nextTotalAmount = Math.max(0, toInt(operationContext.baseTotalAmount, ledger.totalAmount)) + financialAmount;
   } else if (financialAction === 'refund') {
     const refundComment = comment || `Возврат средств по обмену #${exchangeId}`;
     const refundEntityKey = 'exchange:refund-return';
@@ -1644,15 +1501,11 @@ export async function createExchange(
         );
       }
     }
-    if (!isItemizedExchange) {
-      nextTotalAmount = Math.max(0, Math.max(0, toInt(operationContext.baseTotalAmount, ledger.totalAmount)) - financialAmount);
-    }
+    nextTotalAmount = Math.max(0, Math.max(0, toInt(operationContext.baseTotalAmount, ledger.totalAmount)) - financialAmount);
   }
 
-  if (isItemizedExchange || financialAction !== 'none') {
-    await db.prepare(`UPDATE orders SET total_amount = ?, updated_at = ? WHERE id = ?`).bind(nextTotalAmount, timestamp, orderId).run();
-  }
   if (financialAction !== 'none') {
+    await db.prepare(`UPDATE orders SET total_amount = ?, updated_at = ? WHERE id = ?`).bind(nextTotalAmount, timestamp, orderId).run();
     await db.prepare(`UPDATE exchanges SET payment_id = ?, refund_return_id = ? WHERE id = ?`).bind(paymentId, refundReturnId, exchangeId).run();
   }
 
@@ -1732,7 +1585,7 @@ export async function correctExchangeFinancials(
     const row = await db.prepare(
       `SELECT e.id, e.order_id, e.exchange_date, e.financial_action, e.financial_amount, e.payment_method,
               e.payment_id, e.refund_return_id, e.comment, e.status,
-              o.external_id, o.order_status, o.pricing_mode,
+              o.external_id, o.order_status,
               p.id AS linked_payment_id, p.payment_date AS linked_payment_date, p.method AS linked_payment_method,
               p.amount AS linked_payment_amount, p.comment AS linked_payment_comment,
               r.id AS linked_return_id, r.return_date AS linked_return_date, r.payment_method AS linked_return_method,
@@ -1813,35 +1666,18 @@ export async function correctExchangeFinancials(
 
     await syncOrderFinancialLedger(db, orderId);
     const ledger = await readOrderFinancialLedger(db, orderId);
-    const isItemizedExchange = cleanText(row.pricing_mode) === 'itemized_v1';
     let nextTotalAmount = ledger.totalAmount;
-    let projectedReceivedAmount = ledger.receivedAmount;
-    let projectedReturnAmount = ledger.returnAmount;
     if (financialAction === 'extra_payment') {
-      projectedReceivedAmount = Math.max(0, ledger.receivedAmount - oldAmount + nextAmount);
-      if (!isItemizedExchange) {
-        nextTotalAmount = ledger.totalAmount - oldAmount + nextAmount;
-      }
+      nextTotalAmount = ledger.totalAmount - oldAmount + nextAmount;
     } else {
       const otherReturns = Math.max(0, ledger.returnAmount - oldAmount);
       const availableRefund = Math.max(0, ledger.receivedAmount - otherReturns);
       if (nextAmount > availableRefund) {
         throw new Error(`Сумма возврата ${nextAmount} больше доступной суммы ${availableRefund}.`);
       }
-      projectedReturnAmount = otherReturns + nextAmount;
-      if (!isItemizedExchange) {
-        nextTotalAmount = ledger.totalAmount + oldAmount - nextAmount;
-      }
+      nextTotalAmount = ledger.totalAmount + oldAmount - nextAmount;
     }
-    if (!Number.isSafeInteger(nextTotalAmount) || nextTotalAmount < 0) throw new Error('Исправление привело бы к некорректной сумме заказа.');
-    if (isItemizedExchange) {
-      const projectedNetPaid = Math.max(0, projectedReceivedAmount - projectedReturnAmount);
-      if (!Number.isSafeInteger(projectedNetPaid) || projectedNetPaid > nextTotalAmount) {
-        throw new CriticalOperationConflictError(
-          `После исправления денежной части обмена у itemized-заказа останется необъяснённая переплата ${Math.max(0, projectedNetPaid - nextTotalAmount)}. Увеличьте возврат или уменьшите доплату.`
-        );
-      }
-    }
+    if (!Number.isFinite(nextTotalAmount) || nextTotalAmount < 0) throw new Error('Исправление привело бы к отрицательной сумме заказа.');
 
     const cashSettings = await db.prepare(
       `SELECT auto_tracking_enabled FROM cash_register_settings WHERE id = 1`
@@ -1927,9 +1763,7 @@ export async function correctExchangeFinancials(
        SET exchange_date = ?, financial_amount = ?, payment_method = ?, comment = ?
        WHERE id = ? AND COALESCE(status, 'completed') <> 'cancelled'`
     ).bind(nextExchangeDate, nextAmount, nextMethod, nextComment || null, exchangeId));
-    if (!isItemizedExchange) {
-      statements.push(db.prepare(`UPDATE orders SET total_amount = ?, updated_at = ? WHERE id = ?`).bind(nextTotalAmount, timestamp, orderId));
-    }
+    statements.push(db.prepare(`UPDATE orders SET total_amount = ?, updated_at = ? WHERE id = ?`).bind(nextTotalAmount, timestamp, orderId));
 
     if (cashDelta) {
       const cashDirection = cashDelta > 0 ? 'in' : 'out';
@@ -2287,7 +2121,7 @@ export async function cancelExchange(db: D1Database, exchangeId: number, input: 
   let operationContext = parseCriticalContext<Record<string, any>>(criticalOperation.row);
   if (!exchangeId) throw new Error('exchangeId is required.');
   const exchange = await db.prepare(
-    `SELECT e.*, o.external_id, o.order_status, o.pricing_mode
+    `SELECT e.*, o.external_id, o.order_status
      FROM exchanges e
      JOIN orders o ON o.id = e.order_id
      WHERE e.id = ?`
@@ -2338,52 +2172,11 @@ export async function cancelExchange(db: D1Database, exchangeId: number, input: 
     const cancelFinancialAction = normalizeExchangeFinancialAction(exchange.financial_action);
     const cancelFinancialAmount = Math.max(0, toInt(exchange.financial_amount, 0));
     const currentTotal = Math.max(0, toInt(currentOrderTotalRow?.total_amount, 0));
-    const isItemizedExchange = cleanText(exchange.pricing_mode) === 'itemized_v1';
-    let restoredTotalAmountTarget = cancelFinancialAction === 'extra_payment'
+    const restoredTotalAmountTarget = cancelFinancialAction === 'extra_payment'
       ? Math.max(0, currentTotal - cancelFinancialAmount)
       : cancelFinancialAction === 'refund'
         ? currentTotal + cancelFinancialAmount
         : currentTotal;
-    if (isItemizedExchange) {
-      if (!newItem) {
-        throw new CriticalOperationConflictError('Новая позиция itemized-обмена не найдена. Отмена остановлена без изменения финансов.');
-      }
-      const activePricingRows = await db.prepare(
-        `SELECT id, quantity, unit_price, line_total
-         FROM order_items
-         WHERE order_id = ? AND quantity > 0
-         ORDER BY id ASC`
-      ).bind(orderId).all<Record<string, unknown>>();
-      let derivedCurrentTotal = 0;
-      for (const pricingRow of activePricingRows.results || []) {
-        const quantity = Number(pricingRow.quantity);
-        const unitPrice = Number(pricingRow.unit_price);
-        const lineTotal = Number(pricingRow.line_total);
-        const derivedLineTotal = quantity * unitPrice;
-        if (!Number.isSafeInteger(quantity) || quantity <= 0
-          || !Number.isSafeInteger(unitPrice) || unitPrice < 0
-          || !Number.isSafeInteger(derivedLineTotal) || derivedLineTotal < 0
-          || lineTotal !== derivedLineTotal) {
-          throw new CriticalOperationConflictError('Itemized-заказ содержит повреждённую ценовую позицию. Отмена обмена остановлена без изменений.');
-        }
-        const nextDerivedTotal = derivedCurrentTotal + derivedLineTotal;
-        if (!Number.isSafeInteger(nextDerivedTotal) || nextDerivedTotal < 0) {
-          throw new CriticalOperationConflictError('Итог itemized-заказа слишком велик для точного расчёта отмены обмена.');
-        }
-        derivedCurrentTotal = nextDerivedTotal;
-      }
-      if (derivedCurrentTotal !== currentTotal) {
-        throw new CriticalOperationConflictError('Итог itemized-заказа не совпадает с активными позициями. Отмена обмена остановлена без изменений.');
-      }
-      const restoredOldValue = oldQuantity * Number(oldItem.unit_price);
-      const removedNewValue = Number(newItem.line_total);
-      restoredTotalAmountTarget = currentTotal - removedNewValue + restoredOldValue;
-      if (!Number.isSafeInteger(restoredOldValue) || restoredOldValue < 0
-        || !Number.isSafeInteger(removedNewValue) || removedNewValue < 0
-        || !Number.isSafeInteger(restoredTotalAmountTarget) || restoredTotalAmountTarget < 0) {
-        throw new CriticalOperationConflictError('Не удалось безопасно восстановить итог itemized-заказа при отмене обмена.');
-      }
-    }
     operationContext = {
       ...operationContext, baselineCaptured: true, startedAt: timestamp,
       restoredOldQuantityTarget: Math.max(0, toInt(oldItem.quantity, 0)) + oldQuantity,

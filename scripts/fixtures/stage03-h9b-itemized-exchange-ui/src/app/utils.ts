@@ -769,12 +769,6 @@ export function createExchangeDraft(order?: OrderRecord | null): ExchangeDraft {
     : firstItem?.sourceType === 'boutique'
       ? 'boutique'
       : 'warehouse'
-  const itemizedPricing = order?.pricing_mode === 'itemized_v1'
-  const oldSoldPrice = firstItem?.unitPrice
-  const hasSafeOldSoldPrice = oldSoldPrice !== undefined
-    && oldSoldPrice !== null
-    && Number.isSafeInteger(Number(oldSoldPrice))
-    && Number(oldSoldPrice) >= 0
   return {
     orderId: order?.id || null,
     exchangeDate: formatLocalDateInput(),
@@ -787,12 +781,6 @@ export function createExchangeDraft(order?: OrderRecord | null): ExchangeDraft {
     newItem: {
       ...createEmptyEditorItem(),
       sourceType: inheritedSource,
-      ...(itemizedPricing ? {
-        unitPrice: hasSafeOldSoldPrice ? Number(oldSoldPrice) : undefined,
-        catalogPriceSnapshot: null,
-        priceOrigin: hasSafeOldSoldPrice ? 'manual' : 'missing',
-        priceNeedsConfirmation: false,
-      } : {}),
     },
     financialAction: 'none',
     financialAmount: 0,

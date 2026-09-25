@@ -43,6 +43,7 @@ check(createFlow.includes("pricingMode: 'itemized_v1'"), 'H7 activation must exp
 check(createFlow.includes('unitPrice: item.unitPrice') && createFlow.includes('catalogPriceSnapshot: item.catalogPriceSnapshot ?? null'), 'H7 activation must persist final sold price separately from Catalog snapshot')
 check(!createFlow.includes('orderTotal: createDraft.orderTotal'), 'H7 itemized Create must not revive an independent manual order total')
 check(!reports.includes('catalog_execution_prices'), 'Finance reports must not reprice history from current Catalog')
-check(returnsExchanges.includes('unitPrice: 0'), 'Return/exchange legacy commercial behavior unexpectedly changed')
+check(returnsExchanges.includes("unitPrice: isItemizedExchange ? itemizedExchangePricingPlan!.newUnitPrice : 0"), 'Legacy exchange zero-price compatibility is no longer isolated to legacy pricing mode')
+check(returnsExchanges.includes("if (!isItemizedExchange) {") && returnsExchanges.includes("baseTotalAmount, ledger.totalAmount)) + financialAmount") && returnsExchanges.includes("baseTotalAmount, ledger.totalAmount)) - financialAmount"), 'Legacy exchange total-delta arithmetic unexpectedly changed')
 
 console.log('STAGE03-F1 PRICING FOUNDATION PASSED — additive legacy classification and nullable Catalog snapshot schema remain intact after Branch2 H7 activation; historical reports and legacy return/exchange pricing stay isolated')

@@ -68,7 +68,8 @@ const returnStart = returns.indexOf('export async function createReturn')
 check(exchangeStart >= 0 && returnStart >= 0, 'H7F: return/exchange boundaries missing')
 const exchange = returns.slice(exchangeStart)
 const createReturn = returns.slice(returnStart, exchangeStart > returnStart ? exchangeStart : undefined)
-check(exchange.includes("cleanText((existing as any).pricing_mode) === 'itemized_v1'"), 'H7F: legacy exchange no longer blocks itemized orders')
+check(exchange.includes("const isItemizedExchange = cleanText((existing as any).pricing_mode) === 'itemized_v1'"), 'H7F/H9A: explicit itemized Exchange pricing boundary missing')
+check(exchange.includes("unitPrice: isItemizedExchange ? itemizedExchangePricingPlan!.newUnitPrice : 0"), 'H7F/H9A: legacy Exchange compatibility no longer isolated')
 check(createReturn.includes('const amount = Math.max(0, toInt(input.amount, 0))'), 'H7F: return amount is no longer explicit manager input')
 check(!createReturn.includes('catalog_execution_prices') && !createReturn.includes('catalog_price_snapshot'), 'H7F: return flow started repricing from Catalog')
 
@@ -82,4 +83,4 @@ check(ordersRead.includes("cleanText(row.pricing_mode) === 'itemized_v1' ? 'item
 check(migration73.includes("DEFAULT 'legacy_manual_total'") && migration73.includes('catalog_price_snapshot'), 'H7F: pricing foundation migration drifted')
 check(migration74.includes("DEFAULT 'legacy_manual_total'") && migration74.includes("'itemized_v1'"), 'H7F: retained pricing migration drifted')
 
-console.log('STAGE03-H7F FINAL BRANCH2 ACCEPTANCE PASSED — active itemized Create, server revalidation, legacy edit/exchange guards, manual returns, historical pricing retention and adjacent Finance/Workshop/Clients/Cash isolation remain aligned under Branch2-only environment hard stops')
+console.log('STAGE03-H7F FINAL BRANCH2 ACCEPTANCE PASSED — active itemized Create and H9A Exchange backend remain server-revalidated; legacy compatibility, manual returns, historical pricing retention and adjacent Finance/Workshop/Clients/Cash isolation remain aligned under Branch2-only hard stops')

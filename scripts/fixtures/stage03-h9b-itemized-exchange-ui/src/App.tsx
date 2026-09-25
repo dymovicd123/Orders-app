@@ -1117,7 +1117,6 @@ function App() {
   const {
     applyCreateProductPick,
     applyEditorProductPick,
-    applyExchangeItemPatch,
     applyExchangeProductPick,
     arrivalSuggestionValues,
     filteredReferenceItems,
@@ -4684,6 +4683,12 @@ function App() {
       setMessage('Заказ найден в цехе, но не загрузился для обмена. Откройте его через таблицу заказов.')
       return
     }
+    if (order.pricing_mode === 'itemized_v1') {
+      setSelectedOrderId(order.id)
+      setMessage('Обмен для этого заказа пока отключён: заказ использует построчную цену, а текущая форма обмена работает по старой общей цене.')
+      return
+    }
+
     const exchangeDraftForTask = createExchangeDraft(order)
     const exactWorkshopItem = (order.items || []).find((item) => (
       Number(item.id || 0) === Number(task.orderItemId || 0)
@@ -4699,14 +4704,6 @@ function App() {
       newItem: {
         ...exchangeDraftForTask.newItem,
         sourceType: 'workshop',
-        ...(order.pricing_mode === 'itemized_v1' && exactWorkshopItem ? {
-          unitPrice: Number.isSafeInteger(Number(exactWorkshopItem.unitPrice)) && Number(exactWorkshopItem.unitPrice) >= 0
-            ? Number(exactWorkshopItem.unitPrice)
-            : undefined,
-          catalogPriceSnapshot: null,
-          priceOrigin: Number.isSafeInteger(Number(exactWorkshopItem.unitPrice)) && Number(exactWorkshopItem.unitPrice) >= 0 ? 'manual' : 'missing',
-          priceNeedsConfirmation: false,
-        } : {}),
       },
     })
     setMessage(`Открыта форма обмена по заказу ${order.external_id}.`)
@@ -5501,6 +5498,11 @@ function removeDebtPayment(index: number) {
   }
 
   async function handleOpenExchange(order: OrderRecord) {
+    if (order.pricing_mode === 'itemized_v1') {
+      setSelectedOrderId(order.id)
+      setMessage('Обмен для этого заказа пока отключён: заказ использует построчную цену, а текущая форма обмена работает по старой общей цене.')
+      return
+    }
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canOpenExchange) {
       setSelectedOrderId(order.id)
@@ -6574,7 +6576,6 @@ function removeDebtPayment(index: number) {
       return
     }
 
-    const itemizedExchange = exchangeSelectedOrder.pricing_mode === 'itemized_v1'
     const exchangeableOldItems = exchangeSelectedOrder.items.filter((item) => Number(item.id || 0) > 0 && Number(item.availableOperationQuantity ?? item.quantity ?? 0) > 0)
     const queuedPairs = exchangeDraft.queuedPairs || []
     const requestedCurrentOldItem = exchangeableOldItems.find((item) => Number(item.id || 0) === Number(exchangeDraft.oldItemId || 0)) || null
@@ -6592,10 +6593,6 @@ function removeDebtPayment(index: number) {
     const pairDrafts = [...queuedPairs, ...(currentPair ? [currentPair] : [])]
     if (!pairDrafts.length) {
       setError(exchangeableOldItems.length ? 'Добавьте хотя бы одну позицию обмена.' : 'В заказе не осталось доступных позиций для обмена.')
-      return
-    }
-    if (itemizedExchange && pairDrafts.length !== 1) {
-      setError('Для заказа с построчной ценой оформляйте одну заменяемую позицию за один обмен. Следующую позицию можно обменять отдельной операцией.')
       return
     }
 
@@ -6651,29 +6648,6 @@ function removeDebtPayment(index: number) {
       const effectiveNewItem = pair.newSourceWasManuallyChanged
         ? pair.newItem
         : { ...pair.newItem, sourceType: inheritedReplacementSource as EditorItem['sourceType'] }
-      if (itemizedExchange) {
-        const oldActiveQuantity = Number(selectedOldItem.quantity)
-        const oldUnitPrice = Number(selectedOldItem.unitPrice)
-        const oldLineTotal = Number(selectedOldItem.lineTotal)
-        const oldCatalogSnapshot = selectedOldItem.catalogPriceSnapshot == null ? null : Number(selectedOldItem.catalogPriceSnapshot)
-        const newUnitPrice = effectiveNewItem.unitPrice == null ? Number.NaN : Number(effectiveNewItem.unitPrice)
-        const newCatalogSnapshot = effectiveNewItem.catalogPriceSnapshot == null ? null : Number(effectiveNewItem.catalogPriceSnapshot)
-        if (!Number.isSafeInteger(oldActiveQuantity) || oldActiveQuantity <= 0
-          || !Number.isSafeInteger(oldUnitPrice) || oldUnitPrice < 0
-          || !Number.isSafeInteger(oldLineTotal) || oldLineTotal !== oldActiveQuantity * oldUnitPrice
-          || (oldCatalogSnapshot !== null && (!Number.isSafeInteger(oldCatalogSnapshot) || oldCatalogSnapshot < 0))) {
-          setError(`Позиция обмена ${index + 1}: ценовые данные старой позиции устарели или повреждены. Обновите заказ и откройте обмен заново.`)
-          return
-        }
-        if (!Number.isSafeInteger(newUnitPrice) || newUnitPrice < 0) {
-          setError(`Позиция обмена ${index + 1}: укажите фактическую цену продажи новой позиции.`)
-          return
-        }
-        if (newCatalogSnapshot !== null && (!Number.isSafeInteger(newCatalogSnapshot) || newCatalogSnapshot < 0)) {
-          setError(`Позиция обмена ${index + 1}: снимок цены Каталога некорректен. Обновите товар в форме обмена.`)
-          return
-        }
-      }
       const exchangeRequiredQuantity = Math.max(1, Number(effectiveNewItem.quantity || 1))
       const exchangeAvailability = effectiveNewItem.sourceType === 'workshop'
         ? null
@@ -6731,19 +6705,8 @@ function removeDebtPayment(index: number) {
           oldQuantity: pair.oldQuantity,
           oldReturnSource: pair.oldReturnSource,
           oldPhysicalState: pair.oldPhysicalState,
-          newItem: itemizedExchange ? {
-            ...pair.effectiveNewItem,
-            unitPrice: Number(pair.effectiveNewItem.unitPrice),
-            catalogPriceSnapshot: pair.effectiveNewItem.catalogPriceSnapshot == null ? null : Number(pair.effectiveNewItem.catalogPriceSnapshot),
-          } : pair.effectiveNewItem,
+          newItem: pair.effectiveNewItem,
           newSourceWasManuallyChanged: pair.newSourceWasManuallyChanged,
-          ...(itemizedExchange ? {
-            expectedOrderTotal: Number(exchangeSelectedOrder.total_amount),
-            expectedOldActiveQuantity: Number(pair.selectedOldItem.quantity),
-            expectedOldUnitPrice: Number(pair.selectedOldItem.unitPrice),
-            expectedOldLineTotal: Number(pair.selectedOldItem.lineTotal),
-            expectedOldCatalogPriceSnapshot: pair.selectedOldItem.catalogPriceSnapshot == null ? null : Number(pair.selectedOldItem.catalogPriceSnapshot),
-          } : {}),
           // One visit has one money difference. Put it only on the final child exchange,
           // so debt/top-up/refund can never be counted once per selected product.
           financialAction: isFinalPair ? exchangeDraft.financialAction : 'none',
@@ -7695,7 +7658,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'exchange'} label="Обмен размера">
-        <OrderExchangeSection ctx={{ applyExchangeItemPatch, applyExchangeProductPick, cancelExchangeEntry, closeExchangeForm, correctExchangeFinancialEntry, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />
+        <OrderExchangeSection ctx={{ applyExchangeProductPick, cancelExchangeEntry, closeExchangeForm, correctExchangeFinancialEntry, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'team'} label="Команда">

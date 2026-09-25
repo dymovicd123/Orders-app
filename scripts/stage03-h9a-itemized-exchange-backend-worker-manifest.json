@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "revision": "stage03-h9a-itemized-exchange-backend",
+  "files": {
+    "worker/domains/returns-exchanges.ts": {
+      "beforeGitBlob": "dbbe0f25733e1dd933502b7c374a16239ad341e7",
+      "afterGitBlob": "bf6baf5b03453c1ed4be2668ac5c6aefe8c3c76c",
+      "beforeLines": 2427,
+      "afterLines": 2634,
+      "baselineFixture": "scripts/fixtures/stage03-h9a-itemized-exchange-backend/worker/domains/returns-exchanges.ts"
+    }
+  }
+}

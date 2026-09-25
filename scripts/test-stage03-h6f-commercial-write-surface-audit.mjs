@@ -64,8 +64,9 @@ check(exchangeTotalWrites === 3, 'Legacy exchange total mutation surface changed
 const createExchangeStart = returnsExchanges.indexOf('export async function createExchange')
 const createExchangeEnd = returnsExchanges.indexOf('\n\nexport async function', createExchangeStart + 40)
 const createExchange = returnsExchanges.slice(createExchangeStart, createExchangeEnd > createExchangeStart ? createExchangeEnd : returnsExchanges.length)
-check(createExchange.includes("cleanText((existing as any).pricing_mode) === 'itemized_v1'"), 'Itemized exchange creation guard missing')
-check(createExchange.includes('unitPrice: 0') && createExchange.includes('lineTotal: 0'), 'Legacy exchange price model changed; policy review required')
+check(createExchange.includes("const isItemizedExchange = cleanText((existing as any).pricing_mode) === 'itemized_v1'"), 'Explicit itemized/legacy exchange pricing boundary missing')
+check(createExchange.includes("unitPrice: isItemizedExchange ? itemizedExchangePricingPlan!.newUnitPrice : 0"), 'Legacy exchange zero-price behavior is no longer isolated to legacy pricing mode')
+check(createExchange.includes('isItemizedExchange ? itemizedExchangeWritePlan : null'), 'Reviewed H9A itemized replacement write path missing')
 check(!returnsExchanges.includes('catalog_execution_prices'), 'Return/exchange writes must not read current Catalog price')
 
 for (const [name, source] of [['money', money], ['order-delete', deleteOrder], ['order-reservations', reservations]]) {
@@ -75,4 +76,4 @@ for (const [name, source] of [['money', money], ['order-delete', deleteOrder], [
   check(!source.includes('catalog_execution_prices'), name + ' unexpectedly depends on mutable current Catalog pricing')
 }
 
-console.log('STAGE03-H6F COMMERCIAL WRITE SURFACE AUDIT PASSED — commercial order/item SQL writes remain confined to reviewed order Create/Edit and legacy exchange code; itemized edits/exchanges fail closed; money/delete/shipping paths cannot silently reprice orders')
+console.log('STAGE03-H6F COMMERCIAL WRITE SURFACE AUDIT PASSED — commercial order/item SQL writes remain confined to reviewed order Create/Edit/Exchange code; H9A itemized exchange is explicit while legacy zero-price behavior stays isolated; money/delete/shipping paths cannot silently reprice orders')

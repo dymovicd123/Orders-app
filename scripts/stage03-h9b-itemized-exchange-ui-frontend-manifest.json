@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "revision": "stage03-h9b-itemized-exchange-ui",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "93f177915f4357b3e462a95bc630efe56fccb16a",
+      "afterGitBlob": "3defc6bac0b975d1968bd75dd3d03e9e150961cb",
+      "beforeLines": 7812,
+      "afterLines": 7849,
+      "baselineFixture": "scripts/fixtures/stage03-h9b-itemized-exchange-ui/src/App.tsx"
+    },
+    "src/app/controllers/useWorkspaceViewModel.tsx": {
+      "beforeGitBlob": "f85dc97017b7885e6e65ca17c4b29094ee81a6a7",
+      "afterGitBlob": "9f5a1cc92eab32938ffd825630aa6fc342ccf55d",
+      "beforeLines": 985,
+      "afterLines": 1021,
+      "baselineFixture": "scripts/fixtures/stage03-h9b-itemized-exchange-ui/src/app/controllers/useWorkspaceViewModel.tsx"
+    },
+    "src/features/sections/OrderExchangeSection.tsx": {
+      "beforeGitBlob": "8fd0c60cc80f239e8d1905e86dd5f9c2edc5ca40",
+      "afterGitBlob": "773033ec06b71508462a6658843bfd8b0a609e1a",
+      "beforeLines": 705,
+      "afterLines": 759,
+      "baselineFixture": "scripts/fixtures/stage03-h9b-itemized-exchange-ui/src/features/sections/OrderExchangeSection.tsx"
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "836633a53125042cca4a2a29327a607d207f4d3f",
+      "afterGitBlob": "7985db2472cd9f0ca842752f96597a87cdac6306",
+      "beforeLines": 971,
+      "afterLines": 983,
+      "baselineFixture": "scripts/fixtures/stage03-h9b-itemized-exchange-ui/src/app/utils.ts"
+    }
+  }
+}

@@ -410,50 +410,15 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
   }
 
 
-  const resolveExchangeItemPricing = (nextItem: EditorItem, previousItem: EditorItem): EditorItem => {
-    if (selectedOrder?.pricing_mode !== 'itemized_v1') return nextItem
-    const pricing = resolveCatalogOrderSalePrice(catalogData, nextItem)
-    const keepManualPrice = previousItem.priceOrigin === 'manual'
-      && previousItem.unitPrice !== undefined
-      && previousItem.unitPrice !== null
-    return {
-      ...nextItem,
-      unitPrice: keepManualPrice ? previousItem.unitPrice : pricing.status === 'matched' ? pricing.salePrice : undefined,
-      catalogPriceSnapshot: pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null,
-      priceOrigin: keepManualPrice ? 'manual' : pricing.status === 'matched' ? 'catalog' : 'missing',
-      priceNeedsConfirmation: false,
-    }
-  }
-
-  function applyExchangeItemPatch(patch: Partial<EditorItem>, refreshCatalogPrice = false) {
-    setExchangeDraft((current) => {
-      const patchedItem: EditorItem = {
-        ...current.newItem,
-        ...patch,
-        stockObservationEnabled: false,
-        observedPhysicalQuantity: null,
-      }
-      return {
-        ...current,
-        newItem: refreshCatalogPrice
-          ? resolveExchangeItemPricing(patchedItem, current.newItem)
-          : patchedItem,
-      }
-    })
-  }
-
   function applyExchangeProductPick(productName: string) {
-    setExchangeDraft((current) => {
-      const pickedItem: EditorItem = {
+    setExchangeDraft((current) => ({
+      ...current,
+      newItem: {
         ...buildOrderItemFromCatalogPick(current.newItem, productName),
         stockObservationEnabled: false,
         observedPhysicalQuantity: null,
-      }
-      return {
-        ...current,
-        newItem: resolveExchangeItemPricing(pickedItem, current.newItem),
-      }
-    })
+      },
+    }))
   }
 
   function resolveClientCatalogProduct(productName: unknown) {
@@ -1000,7 +965,6 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
   return {
     applyCreateProductPick,
     applyEditorProductPick,
-    applyExchangeItemPatch,
     applyExchangeProductPick,
     arrivalSuggestionValues,
     filteredReferenceItems,

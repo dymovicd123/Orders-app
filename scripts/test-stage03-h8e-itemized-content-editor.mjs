@@ -80,7 +80,7 @@ check(ui.includes("{savingOrder ? 'Сохраняю...' : 'Сохранить и
 
 check(vm.includes('selectedOrder: OrderRecord | null'), 'H8F workspace view model lacks order context')
 check(!vm.includes('itemizedContentEditMode: boolean'), 'H8F workspace view model still requires old composition mode')
-const editorPick = between(vm, 'function applyEditorProductPick(', '\n\n\n  function applyExchangeProductPick')
+const editorPick = between(vm, 'function applyEditorProductPick(', '\n\n  const resolveExchangeItemPricing')
 check(editorPick.includes('resolveCatalogOrderSalePrice(catalogData, pickedItem)'), 'H8F Catalog product pick does not resolve sale price')
 check(editorPick.includes("keepManualPrice = item.priceOrigin === 'manual'"), 'H8F product pick silently drops a manual sold price')
 check(editorPick.includes('priceNeedsConfirmation: false'), 'H8F product pick reintroduced confirmation gating')
