@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "revision": "stage03-h10-manual-return-policy",
+  "files": {
+    "src/app/utils.ts": {
+      "beforeGitBlob": "7985db2472cd9f0ca842752f96597a87cdac6306",
+      "afterGitBlob": "6e20547f7e8825303d79fbc21f37fe8214c4214e",
+      "beforeLines": 983,
+      "afterLines": 979,
+      "baselineFixture": "scripts/fixtures/stage03-h10-manual-return-policy/src/app/utils.ts"
+    },
+    "src/features/sections/OrderReturnsSection.tsx": {
+      "beforeGitBlob": "1191e6c49ee3088f4efaca740ef4c22490d3758a",
+      "afterGitBlob": "a79b580af2e5a1aaf6fe032f9586c8ac1bd54896",
+      "beforeLines": 576,
+      "afterLines": 577,
+      "baselineFixture": "scripts/fixtures/stage03-h10-manual-return-policy/src/features/sections/OrderReturnsSection.tsx"
+    }
+  }
+}
