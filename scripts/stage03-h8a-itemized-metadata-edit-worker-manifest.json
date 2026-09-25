@@ -4,9 +4,9 @@
   "files": {
     "worker/domains/orders-write.ts": {
       "beforeGitBlob": "fbf1cc3034fa3fe0d2982fda4ddc45c0fdbfa539",
-      "afterGitBlob": "4f45fa3fa33a54423cbd6949fb64c5899e012292",
+      "afterGitBlob": "cc20030bc4dfdc20d2ace3a1373600ef57f3fa94",
       "beforeLines": 1788,
-      "afterLines": 1799,
+      "afterLines": 1800,
       "baselineFixture": "scripts/fixtures/stage03-h8a-itemized-metadata-edit/worker/domains/orders-write.ts"
     }
   }

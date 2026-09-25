@@ -20,6 +20,7 @@ That guard remains correct for commercial or physical rewrites, but it is unnece
 ## H8A — backend metadata-only lane
 
 `updateOrderCritical` now recognizes an itemized metadata-only edit only when the request contains **none** of the following:
+- external order ID;
 - items;
 - payments replacement;
 - order total;
@@ -56,7 +57,7 @@ The ordinary Edit action may now open an `itemized_v1` order when its operationa
 - exchange-linked extra payment keeps its previous restriction: only payment method is editable here;
 - after an itemized metadata/payment correction, Inventory caches are not invalidated because no stock fact changed.
 
-The itemized PATCH contains only the H8A allow-listed metadata plus `paymentCorrections`. It does not contain `items`, replacement `payments`, `orderTotal`, `sourceType`, lifecycle or shipping fields.
+The itemized PATCH contains only the H8A allow-listed metadata plus `paymentCorrections`. It does not contain the external order ID, `items`, replacement `payments`, `orderTotal`, `sourceType`, lifecycle or shipping fields.
 
 A separate future step is required for any real commercial/physical edit of an itemized order, including sold-price correction, SKU/quantity/source changes or itemized exchange semantics.
 

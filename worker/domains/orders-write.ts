@@ -1161,6 +1161,7 @@ export async function updateOrderCritical(
       const existingPricingMode = cleanText(existingAny.pricing_mode) === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total';
       const itemizedMetadataOnlyEdit = existingPricingMode === 'itemized_v1'
         && options.lifecycleAction !== 'order_delete'
+        && input.externalId === undefined
         && input.items === undefined
         && input.payments === undefined
         && input.orderTotal === undefined

@@ -62,7 +62,7 @@ const updateEnd = write.indexOf('\n\nexport async function getOrder', updateStar
 const edit = write.slice(updateStart, updateEnd)
 check(edit.includes("const itemizedMetadataOnlyEdit = existingPricingMode === 'itemized_v1'"), 'H8B backend metadata-only lane missing')
 check(edit.includes("existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete' && !itemizedMetadataOnlyEdit"), 'H8B backend fail-closed guard missing')
-for (const marker of ['input.items === undefined','input.payments === undefined','input.orderTotal === undefined','input.sourceType === undefined','input.orderStatus === undefined','input.shippingStatus === undefined']) {
+for (const marker of ['input.externalId === undefined','input.items === undefined','input.payments === undefined','input.orderTotal === undefined','input.sourceType === undefined','input.orderStatus === undefined','input.shippingStatus === undefined']) {
   check(edit.includes(marker), 'H8B backend hard stop missing: ' + marker)
 }
 

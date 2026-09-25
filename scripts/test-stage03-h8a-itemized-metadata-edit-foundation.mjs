@@ -22,6 +22,7 @@ const edit = write.slice(start, end)
 
 check(edit.includes("const itemizedMetadataOnlyEdit = existingPricingMode === 'itemized_v1'"), 'H8A: restricted itemized edit lane missing')
 for (const marker of [
+  'input.externalId === undefined',
   'input.items === undefined',
   'input.payments === undefined',
   'input.orderTotal === undefined',
