@@ -1117,6 +1117,7 @@ function App() {
   const {
     applyCreateProductPick,
     applyEditorProductPick,
+    applyExchangeItemPatch,
     applyExchangeProductPick,
     arrivalSuggestionValues,
     filteredReferenceItems,
