@@ -410,7 +410,7 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
   }
 
 
-  const resolveExchangeItemPricing = (nextItem: EditorItem, previousItem: EditorItem) => {
+  const resolveExchangeItemPricing = (nextItem: EditorItem, previousItem: EditorItem): EditorItem => {
     if (selectedOrder?.pricing_mode !== 'itemized_v1') return nextItem
     const pricing = resolveCatalogOrderSalePrice(catalogData, nextItem)
     const keepManualPrice = previousItem.priceOrigin === 'manual'
