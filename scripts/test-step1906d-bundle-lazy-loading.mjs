@@ -86,11 +86,11 @@ try {
   const graphRelative = [...graph].map((file) => path.relative(root, file).replace(/\\/g, '/')).sort()
   const sourceBytes = [...graph].reduce((sum, file) => sum + fs.statSync(file).size, 0)
   // O1 added one small transport helper. Stage03-H6B made the tiny pure pricing resolver
-  // reachable. Stage03-H7B activates the already-reviewed Create pricing path and is protected by
-  // an exact frontend structural manifest; allow only its measured sub-0.5% static-source delta.
-  check(graphRelative.includes('src/app/order-pricing.ts'), 'H6B/H7 Catalog price resolver is not reachable from the initial Create controller graph')
+  // reachable. Stage03-H7B activated Create pricing and H8C adds the stale-safe sold-price correction
+  // controller path. Both are covered by exact structural manifests; keep the measured H8C delta bounded.
+  check(graphRelative.includes('src/app/order-pricing.ts'), 'H6B/H8 Catalog price resolver is not reachable from the initial Create controller graph')
   check(graph.size <= 26, `Initial static source graph regrew beyond the accepted pricing module set: ${graph.size} modules`)
-  check(sourceBytes <= 653_000, `Initial static source graph regrew beyond the exact H7B allowance: ${sourceBytes} bytes`)
+  check(sourceBytes <= 656_000, `Initial static source graph regrew beyond the exact H8C allowance: ${sourceBytes} bytes`)
   for (const name of lazySections) {
     check(!graphRelative.includes(`src/features/sections/${name}.tsx`), `Lazy section is still initial-static: ${name}`)
   }
