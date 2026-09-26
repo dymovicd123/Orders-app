@@ -174,7 +174,11 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
   const suggestionValues = useMemo(() => {
     const refs = references || emptyReferenceData
     void FALLBACK_REFERENCE_DATA
-    const catalogProducts = catalogData?.products?.map((product) => product.name) || []
+    const activeCatalogProducts = (catalogData?.products || []).filter((product) => product.isActive)
+    const activeProductIds = new Set(activeCatalogProducts.map((product) => Number(product.id || 0)).filter(Boolean))
+    const activeVariants = (catalogData?.variants || []).filter((variant) => (
+      variant.isActive && activeProductIds.has(Number(variant.productId || 0))
+    ))
     const optionSort = (a: string, b: string) => {
       const aNum = Number(String(a).replace(',', '.'))
       const bNum = Number(String(b).replace(',', '.'))
@@ -195,22 +199,45 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
       return [...result].sort(optionSort)
     }
 
+    const knownFactIdentity = (value: unknown) => normalizeSuggestion(value)
+      .replace(/[‐‑‒–—-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    const collectKnownFacts = (...groups: Array<Array<unknown> | readonly unknown[] | undefined>) => {
+      const result = new Map<string, string>()
+      for (const group of groups) {
+        for (const value of group || []) {
+          const normalized = normalizeSuggestion(value)
+          const identity = knownFactIdentity(normalized)
+          if (normalized && identity && !result.has(identity)) result.set(identity, normalized)
+        }
+      }
+      return [...result.values()].sort(optionSort)
+    }
+
     return {
-      // Канонические источники подсказок:
-      // менеджеры — только из «Команда», товары — только из «Склад → Товары»,
-      // характеристики — только из справочников. История заказов и старые fallback-списки
-      // больше не подмешиваются в рабочие формы.
+      // Рабочие подсказки показывают только активную товарную истину.
+      // Товар можно выбрать только из active Catalog; характеристики считаются известными,
+      // если они разрешены справочником или уже используются активным SKU активного товара.
+      // История заказов и inactive Catalog rows в рабочие формы не подмешиваются.
       managers: collect(refs.managers),
       cities: collect(refs.cities),
       deliveryTypes: collect(refs.deliveryTypes),
       paymentMethods: collect(refs.paymentMethods),
-      products: collect(catalogProducts),
-      genders: collect((catalogData?.variants || []).map((variant) => variant.gender)),
-      colors: collect(refs.colors),
-      materials: collect(refs.materials),
-      lengths: collect(refs.lengths),
-      sizes: sortSizeLikeValues(collect(refs.sizes).filter(isLikelyAdultSizeValue)),
-      childAges: sortSizeLikeValues(collect(refs.childAges).filter(isLikelyChildAgeValue)),
+      products: collect(refs.products, activeCatalogProducts.map((product) => product.name)),
+      genders: collect(activeVariants.map((variant) => variant.gender)),
+      colors: collectKnownFacts(refs.colors, activeVariants.map((variant) => variant.color)),
+      materials: collectKnownFacts(refs.materials, activeVariants.map((variant) => canonicalStockPositionValue(variant.material))),
+      lengths: collectKnownFacts(refs.lengths, activeVariants.map((variant) => canonicalStockPositionValue(variant.length))),
+      sizes: sortSizeLikeValues(collectKnownFacts(
+        refs.sizes,
+        activeVariants.filter((variant) => getCatalogVariantCategory(variant) === 'adult').map((variant) => variant.sizeLabel),
+      ).filter(isLikelyAdultSizeValue)),
+      childAges: sortSizeLikeValues(collectKnownFacts(
+        refs.childAges,
+        activeVariants.filter((variant) => getCatalogVariantCategory(variant) === 'child').map((variant) => variant.sizeLabel),
+      ).filter(isLikelyChildAgeValue)),
       returnReasons: collect(refs.returnReasons),
       writeoffReasons: collect(refs.writeoffReasons),
     }
