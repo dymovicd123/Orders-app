@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "revision": "catalog-resolver-r12-catalog-consistency",
+  "files": {
+    "src/features/orders/OrderCatalogResolutionModal.tsx": {
+      "beforeGitBlob": "c41d84db1810fa646be698ede7e7c873ffa0df15",
+      "afterGitBlob": "f743b78ad176973afffca422d9ea142ae31cc285",
+      "beforeLines": 393,
+      "afterLines": 403,
+      "baselineFixture": "scripts/fixtures/catalog-resolver-r12-catalog-consistency/src/features/orders/OrderCatalogResolutionModal.tsx"
+    },
+    "src/features/orders/catalogResolutionFlow.ts": {
+      "beforeGitBlob": "a3d0801137f23c0ddf8a3aaf75eb313146dc2140",
+      "afterGitBlob": "f10fa6e8e4af4398a7815a14d21a5598e836abe8",
+      "beforeLines": 217,
+      "afterLines": 218,
+      "baselineFixture": "scripts/fixtures/catalog-resolver-r12-catalog-consistency/src/features/orders/catalogResolutionFlow.ts"
+    },
+    "src/features/renderers/FinanceReportContentRenderer.tsx": {
+      "beforeGitBlob": "09507f509a08cdd17dfc0e7a3e71b4ff10427e2b",
+      "afterGitBlob": "d5beac0346fcd4b463b9f937424245bd919b10f6",
+      "beforeLines": 272,
+      "afterLines": 272,
+      "baselineFixture": "scripts/fixtures/catalog-resolver-r12-catalog-consistency/src/features/renderers/FinanceReportContentRenderer.tsx"
+    },
+    "src/features/sections/CreateOrderSection.tsx": {
+      "beforeGitBlob": "28228f14b3da7813c152148fc97326210afcf227",
+      "afterGitBlob": "29e90a12ff54fc6e7607cbc18b4e46f83bb80a8c",
+      "beforeLines": 473,
+      "afterLines": 473,
+      "baselineFixture": "scripts/fixtures/catalog-resolver-r12-catalog-consistency/src/features/sections/CreateOrderSection.tsx"
+    }
+  }
+}
