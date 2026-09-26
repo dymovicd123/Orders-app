@@ -342,6 +342,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                                       onChange={(event) => updateEditorItem(index, 'unitPrice', event.target.value === '' ? null : Number(event.target.value))}
                                       placeholder="Цена продажи"
                                     />
+                                    <small className="field-hint">Скидка задаётся итоговой ценой продажи, а не процентом.</small>
                                   </label>
                                   <div className="field-block">
                                     <span>Цена по каталогу</span>
