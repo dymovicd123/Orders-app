@@ -16,6 +16,8 @@ const createUi = read('src/features/sections/CreateOrderSection.tsx')
 const editUi = read('src/features/sections/OrderEditorSection.tsx')
 const returnUi = read('src/features/sections/OrderReturnsSection.tsx')
 const exchangeUi = read('src/features/sections/OrderExchangeSection.tsx')
+const workspace = read('src/app/controllers/useWorkspaceViewModel.tsx')
+const resolverR11 = read('scripts/test-catalog-resolver-r11-preserve-known-gender.mjs')
 const orderWrite = read('worker/domains/orders-write.ts')
 const pricing = read('worker/domains/order-pricing.ts')
 const money = read('worker/domains/money.ts')
@@ -101,6 +103,13 @@ check(finance.includes('average_sold_price: itemizedQuantity > 0 ? Math.round(it
 check(finance.includes('legacy_quantity: Math.max(0, quantity - itemizedQuantity)'), 'H12 legacy price-coverage marker missing')
 check(!finance.includes('catalog_execution_prices'), 'H12 Finance report reads mutable current Catalog price')
 check(storage.includes('pricing_mode') || read('worker/domains/orders-read.ts').includes('pricing_mode'), 'H12 retained/read history lost pricing generation')
+
+// Cross-stage preservation: the independently shipped Resolver R11 fix must survive Stage03 closure/promotion.
+check(workspace.includes('const enteredGender = canonicalOrderGender(currentItem.gender)'), 'H12/R11: manager-entered gender preservation disappeared')
+check(workspace.includes('const preferredGender = enteredGender || automaticGender'), 'H12/R11: known-gender group preference disappeared')
+check(workspace.includes('gender: enteredGender || canonicalOrderGender(selected.gender) || automaticGender'), 'H12/R11: selected concrete SKU gender is no longer preserved')
+check(!workspace.includes("gender: automaticGender ? (selected.gender || automaticGender) : ''"), 'H12/R11: old unisex gender-erasure path returned')
+check(resolverR11.includes('explicit manager gender and concrete selected SKU gender survive unisex product picks'), 'H12/R11: dedicated resolver regression was removed or replaced')
 
 // Explicit compatibility: old orders are not silently reinterpreted as itemized.
 check(orderWrite.includes("'legacy_manual_total'") || read('worker/domains/order-core.ts').includes('legacy_manual_total'), 'H12 legacy pricing mode compatibility marker missing')
