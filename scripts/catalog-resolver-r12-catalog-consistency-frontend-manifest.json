@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "revision": "catalog-resolver-r12-catalog-consistency",
+  "files": {
+    "src/features/orders/OrderCatalogResolutionModal.tsx": {
+      "beforeGitBlob": "c41d84db1810fa646be698ede7e7c873ffa0df15",
+      "afterGitBlob": "f743b78ad176973afffca422d9ea142ae31cc285",
+      "beforeLines": 393,
+      "afterLines": 403,
+      "baselineFixture": "scripts/fixtures/catalog-resolver-r12-catalog-consistency/src/features/orders/OrderCatalogResolutionModal.tsx"
+    },
+    "src/features/orders/catalogResolutionFlow.ts": {
+      "beforeGitBlob": "a3d0801137f23c0ddf8a3aaf75eb313146dc2140",
+      "afterGitBlob": "f10fa6e8e4af4398a7815a14d21a5598e836abe8",
+      "beforeLines": 217,
+      "afterLines": 218,
+      "baselineFixture": "scripts/fixtures/catalog-resolver-r12-catalog-consistency/src/features/orders/catalogResolutionFlow.ts"
+    }
+  }
+}
