@@ -262,6 +262,7 @@ try {
   run('Stage03-H9A itemized Exchange backend', process.execPath, [path.join(root, 'scripts/test-stage03-h9a-itemized-exchange-backend.mjs')])
   run('Stage03-H9B itemized Exchange UI', process.execPath, [path.join(root, 'scripts/test-stage03-h9b-itemized-exchange-ui.mjs')])
   run('Stage03-H10 manual Return policy', process.execPath, [path.join(root, 'scripts/test-stage03-h10-manual-return-policy.mjs')])
+  run('Stage03-H11 product price analytics', process.execPath, [path.join(root, 'scripts/test-stage03-h11-product-price-analytics.mjs')])
   run('Branch2 deploy fallback safety', process.execPath, [path.join(root, 'scripts/test-branch2-deploy-fallback-safety.mjs')])
   run('CLIENT-ZAMMLER-A foundation', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-a-foundation.mjs')])
   run('CLIENT-ZAMMLER-B due-time plumbing', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-b-due-time-plumbing.mjs')])
