@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "revision": "stage03-h11-product-price-analytics",
+  "files": {
+    "src/app/types.ts": {
+      "beforeGitBlob": "b51050af859fadc37bcb2d66e76dc4e5319d7a2b",
+      "afterGitBlob": "17e326425c77745cf92b1c0c05d2d8f7c10d8136",
+      "beforeLines": 1752,
+      "afterLines": 1763,
+      "baselineFixture": "scripts/fixtures/stage03-h11-product-price-analytics/src/app/types.ts"
+    },
+    "src/features/renderers/FinanceReportContentRenderer.tsx": {
+      "beforeGitBlob": "5e48a6bdb636633e67ffcab5b1f24204c4e5bc31",
+      "afterGitBlob": "09507f509a08cdd17dfc0e7a3e71b4ff10427e2b",
+      "beforeLines": 257,
+      "afterLines": 272,
+      "baselineFixture": "scripts/fixtures/stage03-h11-product-price-analytics/src/features/renderers/FinanceReportContentRenderer.tsx"
+    },
+    "src/features/sections/CreateOrderSection.tsx": {
+      "beforeGitBlob": "c327b64a67ba6e361f1797d02c6a45b40a6f0ff6",
+      "afterGitBlob": "28228f14b3da7813c152148fc97326210afcf227",
+      "beforeLines": 473,
+      "afterLines": 473,
+      "baselineFixture": "scripts/fixtures/stage03-h11-product-price-analytics/src/features/sections/CreateOrderSection.tsx"
+    },
+    "src/features/sections/OrderEditorSection.tsx": {
+      "beforeGitBlob": "17196a208cd31efd655533fa12051397be903cb1",
+      "afterGitBlob": "92d3e3b39e882362a7a9363f2396b2bdd313b2f1",
+      "beforeLines": 536,
+      "afterLines": 537,
+      "baselineFixture": "scripts/fixtures/stage03-h11-product-price-analytics/src/features/sections/OrderEditorSection.tsx"
+    },
+    "src/features/sections/OrderExchangeSection.tsx": {
+      "beforeGitBlob": "773033ec06b71508462a6658843bfd8b0a609e1a",
+      "afterGitBlob": "d98b9a14f5f45d5393d1d51d8c0bcae39ec087ca",
+      "beforeLines": 759,
+      "afterLines": 759,
+      "baselineFixture": "scripts/fixtures/stage03-h11-product-price-analytics/src/features/sections/OrderExchangeSection.tsx"
+    }
+  }
+}
