@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "revision": "catalog-resolver-r12-catalog-consistency",
+  "files": {
+    "worker/domains/catalog-review.ts": {
+      "beforeGitBlob": "ac5361a8602091ffd7dd2ed6b4fd2257e5551eb2",
+      "afterGitBlob": "0fbbba86b3e5f7b68f4eeb77918d31278da5597d",
+      "beforeLines": 1087,
+      "afterLines": 1154,
+      "baselineFixture": "scripts/fixtures/catalog-resolver-r12-catalog-consistency/worker/domains/catalog-review.ts"
+    },
+    "worker/domains/references.ts": {
+      "beforeGitBlob": "727aa513dc252c0967e4e582ba8ee493b4e07009",
+      "afterGitBlob": "b46c37cb84dbf6e31909799a4cbb87d0b9481c9d",
+      "beforeLines": 454,
+      "afterLines": 482,
+      "baselineFixture": "scripts/fixtures/catalog-resolver-r12-catalog-consistency/worker/domains/references.ts"
+    }
+  }
+}
