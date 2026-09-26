@@ -199,6 +199,27 @@ export async function assertReferenceValueCanChange(db: D1Database, dbKind: stri
 }
 
 
+export function referenceValueIdentityKey(value: unknown) {
+  return upperText(value)
+    .replace(/[‐‑‒–—-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+
+export async function assertNoEquivalentReferenceValue(db: D1Database, dbKind: string, value: string, excludeId = 0) {
+  const identity = referenceValueIdentityKey(value);
+  if (!identity) return;
+  const rows = await db.prepare(
+    `SELECT id, value FROM reference_values WHERE kind = ? AND id <> ? ORDER BY is_active DESC, id ASC`
+  ).bind(dbKind, excludeId).all<{ id: number; value: string }>();
+  const duplicate = (rows.results || []).find((row) => referenceValueIdentityKey(row.value) === identity);
+  if (duplicate?.id) {
+    throw new Error(`Такое значение уже есть: «${cleanText(duplicate.value)}». Используйте существующий вариант вместо создания дубликата.`);
+  }
+}
+
+
 export async function upsertReferenceValue(db: D1Database, input: { kind?: unknown; value?: unknown; sortOrder?: unknown; isActive?: unknown }, id?: number) {
   const kind = normalizeReferenceKind(input.kind);
   if (!kind) {
@@ -233,6 +254,12 @@ export async function upsertReferenceValue(db: D1Database, input: { kind?: unkno
 
   const dbKind = referenceKindToDbKind(kind);
   if (id) {
+    const current = await db.prepare(
+      `SELECT value FROM reference_values WHERE id = ? AND kind = ? LIMIT 1`
+    ).bind(id, dbKind).first<{ value: string }>();
+    if (!current || referenceValueIdentityKey(current.value) !== referenceValueIdentityKey(value)) {
+      await assertNoEquivalentReferenceValue(db, dbKind, value, id);
+    }
     await assertReferenceValueCanChange(db, dbKind, id, value, isActive);
     await db.prepare(
       `UPDATE reference_values
@@ -240,6 +267,7 @@ export async function upsertReferenceValue(db: D1Database, input: { kind?: unkno
        WHERE id = ?`
     ).bind(value, isActive, sortOrder, now, id).run();
   } else {
+    await assertNoEquivalentReferenceValue(db, dbKind, value, 0);
     await db.prepare(
       `INSERT INTO reference_values (kind, value, is_active, sort_order, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
