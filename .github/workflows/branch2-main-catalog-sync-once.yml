@@ -6,6 +6,7 @@ on:
       - branch2
     paths:
       - '.github/workflows/branch2-main-catalog-sync-once.yml'
+      - 'scripts/branch2-sync-main-catalog-once.mjs'
 
 permissions:
   contents: read
