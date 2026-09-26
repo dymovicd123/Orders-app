@@ -10,6 +10,16 @@
 - Do not call Branch2 deployed until the exact merged Branch2 SHA has a successful `cloudflare-deploy/branch2` status. Never infer deployment from a successful source CI alone.
 - Preserve environment isolation at every step: Branch2 Worker/D1 only; never mix Primary/Production and Branch2 data, migrations, bindings, or deploy targets.
 
+## NON-NEGOTIABLE preservation gate — Resolver R11
+
+- **Must survive every future Stage03 / Branch2 → main promotion.** The unisex resolver bug is fixed independently of Stage03 and must never be overwritten by an older Stage03 branch/file.
+- Canonical R11 behavior: a manager-entered concrete gender is authoritative; otherwise keep the concrete gender of the selected existing Catalog SKU; fixed product gender scope is only a fallback. Unisex product selection must not erase a gender already known from the manager or the selected SKU.
+- Forbidden regression in `src/app/controllers/useWorkspaceViewModel.tsx`: do not restore `gender: automaticGender ? (selected.gender || automaticGender) : ''`. Preserve `enteredGender` / `preferredGender` selection and the final `enteredGender || canonicalOrderGender(selected.gender) || automaticGender` semantics.
+- Automated guard: `scripts/test-catalog-resolver-r11-preserve-known-gender.mjs` is registered in the cumulative release gate on both main and Branch2. Any Stage03 promotion must keep this test and make it pass before merge/deploy.
+- R11 Branch2 runtime fix is merged as `9352bc72b4628ebd5937798b185de1b6c266056b` and passed Branch2 safety/deploy. Production resolver fix is merged in main lineage starting at `c2d2f1093b2c3f4901886e588a068c46d6ce06aa`; the later Production deploy-fallback work does not change resolver semantics.
+- **Important stale-branch warning:** the old H12 work branch `w-stage03-h12-final-e2e-audit-20260926` was originally cut before R11. Do not promote/merge a stale H12 snapshot over current Branch2 or main. Before H12/Stage03 closure, refresh/recreate H12 from the current Branch2 head that already contains R11, then reapply only H12 audit/docs/test deltas.
+- During eventual Stage03 → main promotion, never replace the entire main `useWorkspaceViewModel.tsx` with an older Branch2/H12 copy. Merge/reconcile deliberately and run R11 + full cumulative CI on the exact promotion candidate.
+
 Updated: 2026-09-25
 
 ## Current checkpoint — Stage03 H12 final end-to-end audit
