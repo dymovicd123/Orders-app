@@ -1,196 +1,139 @@
-# Актуальный контекст проекта
+# Постоянный контекст проекта «Система заказов»
 
-Этот файл заменяет разрозненные `CLOUDFLARE_CONTINUATION_CONTEXT_STEP*.md`. Для новых изменений нужно читать его вместе с `docs/ARCHITECTURE.md` и исходным кодом текущей ветки. Старые step-файлы являются историей, а не источником актуальной версии.
+Updated: 2026-09-26
 
-## Защищённые решения интерфейса
+Этот файл хранит **долгоживущие архитектурные и инженерные инварианты**. Текущий статус этапов/релизов хранится в корневом `PROJECT_CONTINUATION.md`.
 
-### Приход товара — согласованный Step 115B
+Старые `CLOUDFLARE_CONTINUATION_CONTEXT_STEP*.md`, старые ZIP/context-файлы и исторические Stage-документы — evidence/history. Они не заменяют актуальный GitHub.
 
-- Используется одна простая форма: товар, тип, пол, материал, длина.
-- После выбора товара характеристики автоматически заполняются по наиболее частой известной комбинации.
-- Пользователь может вручную изменить заполненные характеристики.
-- Цвет и размер выбираются в матрице после кнопки «Показать таблицу».
-- В матрице цвета расположены по столбцам, размеры — по строкам.
-- Положительные количества создают или пополняют соответствующие складские клетки.
-- Нельзя возвращать старый многоэтапный guided-интерфейс вместо этой формы.
+## Source of truth
 
-### Менеджеры и цвета
+- Перед любой содержательной работой сначала проверять `dymovicd123/Orders-app` на GitHub.
+- Использовать код текущей target-ветки, а не память о прошлой сессии.
+- При конфликте старого документа с current branch/history приоритет у current GitHub.
+- Никогда не переносить целые старые файлы поверх новой ветки без намеренного reconciliation.
 
-- Выбор менеджера должен быть полноценным выпадающим полем с поиском, цветной точкой и датой начала работы.
-- Менеджер в обычном рабочем режиме может выбрать себя при создании заказа; админ-режим для этого не требуется.
-- Цветные обозначения менеджера должны отображаться в заказах, долгах, возвратах, клиентах, планах, лидах, отчётах и разделе «Команда».
-- Раздел «Команда» сохраняет готовую палитру цветов и пользовательский цвет.
-- Сотрудник связывается с историей через внутренний `manager_id`; одинаковые имена допустимы.
-- Увольнение отключает сотрудника для новых операций, но не меняет старые заказы.
+## Архитектура
 
-### Финансы и заказ
+- Frontend: React + TypeScript + Vite.
+- Backend: Cloudflare Worker + D1.
+- `worker/index.ts` — composition root; доменная логика разнесена по `worker/domains`.
+- Runtime-модули должны быть достижимы из `src/main.tsx` / `worker/index.ts`, кроме deliberately inactive contracts/fixtures, явно защищённых regression gate.
+- CSS order/cascade является частью поведения; широкую CSS cleanup не смешивать с изменением business semantics.
 
-- Финансовая сводка состоит из трёх отдельных карточек: продажи, фактические движения денег, текущий долг.
-- «Состав заказа» и товары в таблице показываются читаемыми карточками, а не слипшимся техническим текстом.
-- Проверка наличия товара в форме заказа должна сохранять точную комбинацию и похожие варианты.
+## Environment isolation
 
-## Основные правила каталога и склада
+Production:
+- branch: `main`
+- Worker: `orders-app`
+- D1: `orders_db_prod`
+- D1 id: `17e68a41-1d58-4a36-8a63-47c3e32443c4`
 
-- Вариант товара определяется связкой `товар + материал + длина`.
-- Цвет, размер и пол не должны сами по себе создавать новый вариант.
-- Пол не должен конфликтовать с политикой товара; для женских и мужских товаров значение фиксируется, для унисекс допускается выбор.
-- Значение `СТАНДАРТ` должно присутствовать в справочнике материалов и не добавляться в видимое имя товара.
-- Допускается «без цвета».
-- Товар можно создать без заранее заполненных цветов и размеров; они могут появиться при приходе.
-- Поиск должен учитывать похожие казахские и русские буквы и распространённые варианты написания.
+Branch2:
+- branch: `branch2`
+- Worker: `orders-app-branch2`
+- D1: `orders_db_branch2`
+- D1 id: `40065052-854e-44b8-bcd5-251bdd488301`
 
-## Жёсткая изоляция Branch2 и Production
+Permanent rules:
+- never cross-bind Worker/D1;
+- never copy data between environments without explicit user request;
+- verify actual physical binding before every D1 mutation;
+- branch name is not proof of binding;
+- preserve branch-specific `wrangler.jsonc`, visual marker and environment gate;
+- do not blanket-apply legacy migration journals; audit schema/journal first and apply only the specific migration proven necessary.
 
-Это постоянный инвариант проекта, а не временная договорённость.
+Incident 2026-09-22: Branch2 temporarily inherited Production D1 identity. Fix `0f38bf4f1c85ef124237abd952384b05513b946c` is the permanent reminder to verify environment identity before deploy/mutation.
 
-- `main` / Production Worker: `orders-app`.
-- Production D1: `orders_db_prod`, id `17e68a41-1d58-4a36-8a63-47c3e32443c4`.
-- `branch2` Worker: `orders-app-branch2`.
-- Branch2 D1: `orders_db_branch2`, id `40065052-854e-44b8-bcd5-251bdd488301`.
-- **Никогда не привязывать Branch2 Worker к Production D1 и никогда не привязывать Production Worker к Branch2 D1.**
-- **Никогда не копировать/синхронизировать данные одной D1 в другую без отдельного явного запроса пользователя.**
-- При переносе кода между `main` и `branch2` environment identity не переносится вместе с бизнес-кодом. `wrangler.jsonc`, визуальный marker среды и environment regression gate должны оставаться ветко-специфичными.
-- Любой Branch2 deploy обязан падать до релиза, если в `wrangler.jsonc` обнаружены `orders_db_prod` или Production D1 id. Любой Production deploy обязан аналогично отвергать Branch2 binding.
-- Перед любой D1 mutation сначала проверить, к какой физической D1 привязан текущий Worker. Имя ветки само по себе не считается доказательством изоляции.
-- Если Branch2 показывает те же данные, что Production, первым подозрением считается неправильный D1 binding; до выяснения причины запрещены любые тестовые мутации.
+## Catalog identity and Resolver
 
-Инцидент 2026-09-22: история `branch2` была продолжена от Production hotfix `186f9b58ecd8e188783dd6b1886c30e190393c4b`, после чего Branch2-specific `wrangler.jsonc`/environment gate не были восстановлены. В результате `branch2` содержал Production binding. Исправлено hotfix `0f38bf4f1c85ef124237abd952384b05513b946c`.
+Canonical identity hierarchy:
+1. product — `catalog_products`;
+2. execution — product + material + length, represented by `catalog_stock_positions`;
+3. exact SKU — execution + audience category + gender + color + size/age, represented by `catalog_variants`.
 
-## Правило внесения изменений
+Resolver invariants:
+- anomaly guard, not compatibility questionnaire;
+- a fact is known if present in maintained references or any active Catalog SKU;
+- harmless punctuation/spacing identity canonicalizes automatically;
+- recognized facts are independent: exact combination absence is not itself an anomaly;
+- safe missing exact combination may be created/linked at physical stock 0;
+- explicit manager gender wins, otherwise concrete selected SKU gender, then fixed product scope fallback;
+- duplicate-reference guard is prospective/non-destructive.
 
-1. Никогда не заменять актуальные `src`, `worker` или миграции файлами из старого step-пакета.
-2. Любое изменение выполняется поверх текущей версии и проверяется через `npm run release:check`.
-3. Патчи должны содержать только изменённые файлы, а не `node_modules`, `dist`, SQL-бэкапы и старые контексты.
-4. Перед изменением общей стилизации проверять баланс CSS и верхний уровень критических селекторов.
-5. При рефакторинге сначала сохраняется поведение, затем отдельно меняется UX или бизнес-логика.
-6. Любая правка связанной бизнес-цепочки считается незавершённой, пока не проведён сквозной аудит соседних read/write-paths, которые напрямую не менялись, но используют те же сущности, статусы, lifecycle-события, резервы, остатки, платежи, идемпотентность или историю. Нельзя исходить из предположения «этот участок не трогали — значит он безопасен».
-7. Для каждого такого изменения перед релизом составляется карта влияния: источник события → серверная валидация → критическая запись → вторичные записи/readback → UI/Attention/история → retry/lost-response. Каждый соседний участок либо покрывается regression-test/статическим инвариантом, либо явно фиксируется как проверенный и неизменяемый.
-8. Если новая логика меняет смысл общего состояния или границу ответственности (например, когда и кем меняется `inventory_stock`, reservation, fulfillment, lifecycle или order state), нужно отдельно проверить все другие операции, которые читают или пишут это состояние: create/edit order, handover/shipping, returns/exchanges, Workshop, transfers, stock checks/stocktakes, Attention, catalog resolution и history. Опыт Step 192B2A4 считается постоянным доказательством того, что локальный фикс без такого аудита недопустим.
-9. Для опасных мутаций сначала доказывается retry/idempotency/atomicity и отсутствие false-failure после уже выполненной критической записи; затем проверяется UI. Потерянный ответ, повторный запрос, refresh и повторное действие не должны удваивать бизнес-эффект.
-10. На Branch 2 выполняется технический gate, но если среда не содержит репрезентативных данных, это не считается достаточной функциональной приёмкой data-dependent сценария. Тогда Primary используется только для осторожной read-only/неразрушающей приёмки до любого реального mutation-теста.
+## Inventory truth
 
-## Текущий технический статус
+- `Physical` = tracked physical count.
+- `Reserved` = promises/reservations.
+- `Available = Physical - Reserved`.
+- Only explicit count/correction workflows can replace absolute Physical.
+- Shipping/handover/transfer/writeoff possession confirmation proves only the concrete handled quantity.
+- For unexplained outbound, source Physical is bounded at zero; unexplained quantity is append-only operation evidence.
+- Transfer target still receives exact +Q.
+- Return/exchange intake is transaction truth, not a fake stock count.
+- Catalog/identity ambiguity and physical-quantity ambiguity are separate problems.
+- Arrival / «Приход» is frozen unless user explicitly reopens it.
 
-- Frontend: React + TypeScript + Vite; `App.tsx` остаётся controller, крупные view-model/presentation части вынесены по feature-модулям.
-- Inventory: controller + типизированные panel renderers; React hook ownership сохраняется у контроллера.
-- Backend: Cloudflare Worker + D1; после Step 190.6A Worker разделён на `core`/`domains`, а `worker/index.ts` является composition root.
-- Step 190.6C удаляет недостижимый Test1 Import Hub, legacy import/repair runtime и старые одноразовые Step-артефакты из активного source tree.
-- Каждый runtime TS/TSX файл должен быть достижим из `src/main.tsx` или `worker/index.ts`; migrations и актуальные regression tests сохраняются как история схемы и защита поведения.
-- CSS cascade/order остаётся частью принятого поведения; отдельная чистка CSS/bundle не смешивается с source cleanup.
-- Step 190.0 access/auth остаётся отложенным до согласования с клиентом.
-- «Приход» заморожен и защищён regression SHA; рефакторинг не должен менять его исходный блок.
+## Orders / finance truth
 
-<!-- STEP189-CONTEXT:START -->
-## Последний checkpoint перед Step 189 — 2026-08-18
+- Historical order state is not reinterpreted from mutable current Catalog.
+- Payments are independent money facts with their own history.
+- Debt derives from persisted commercial total and actual received money.
+- Safe corrections preserve history through correction/reversal instead of silent rewrite.
+- Return physical facts and refund amount are independent.
+- Exchange physical change and exchange payment/refund are independent.
 
-- Step 188K.2 client catalog cleanup успешно завершён; исторические заказы/резервы/stocktake evidence сохранены.
-- Step 188K.3 вводит узкую раннюю выдачу складской части и разбор запоздалых заказов без общего partial-shipping engine. Rev 4 должен учитывать exact SKU check или FULL stocktake той же точки как fallback; статус deployment Rev 4 проверять по последнему live/post-check логу.
-- Клиент НЕ должен вручную разбирать старые unresolved snapshots без текущей операционной причины. `Требуют разбора` должен быть очередью действий сейчас; исторический шум хранится как evidence и возвращается в review только если снова становится физически релевантным (например, return/exchange lifecycle).
-- Step 189 выполняется небольшими проверяемыми частями: 189A stabilization/actionable queues/storage safety/release gate -> 189B visible honest histories -> 189C append-only financial events -> 189D team vs system audit -> Step 190 full-system audit.
-- Не возвращать логический архив как основную модель; `Хранилище базы` = контролируемый physical retention старых безопасных месяцев. Не переусложнять UI.
+Stage03 pricing model (active on Branch2, not yet fully promoted to Production):
+- `legacy_manual_total` preserves old order-total truth.
+- `itemized_v1` uses factual sold `unit_price`, `line_total = quantity × unit_price`.
+- `catalog_price_snapshot` stores the historical Catalog recommendation, not actual payment and not mutable current price.
+- Existing legacy orders must never be auto-converted/repriced.
 
-Полный план: Context/CLOUDFLARE_CONTINUATION_CONTEXT_STEP189_PLAN_2026-08-18.md.
-<!-- STEP189-CONTEXT:END -->
+## Operational autonomy
 
-<!-- STEP189A1_OPERATIONAL_CLEANUP_START -->
-## Step 189A.1 — Operational Cleanup & Stocktake Save Safety
+Routine legitimate correction should be possible in the application:
+- multiple independent returns / return+exchange coexistence by remaining item capacity;
+- debt close after legitimate return;
+- explicit mistaken sent/handover correction;
+- audited exchange-finance correction;
+- ordinary posted-payment correction.
 
-- «Требуют разбора» — operational queue only; old history is hidden, not deleted.
-- Old hidden unresolved rows are surfaced only when that exact order becomes operational again.
-- Catalog resolution no longer sweeps unrelated stale legacy orders with the same text.
-- Stocktake autosave reports only server-confirmed saves; bulk zero and final flush are failure-aware; Enter/blur saves are deduplicated.
-- Step 188K.3 REV 4 is cumulative in this package if not yet deployed.
-- Next: 189A.2 Storage Cleanup safety + one reliable release gate; then 189B/189C/189D as documented in Context/CLOUDFLARE_CONTINUATION_CONTEXT_STEP189_PLAN_2026-08-18.md.
-<!-- STEP189A1_OPERATIONAL_CLEANUP_END -->
+Safety comes from fresh-state validation, CAS/stale checks, idempotency, append-only history and reconciliation — not from requiring developer intervention.
 
-<!-- STEP189A2_STABILIZATION_START -->
-## Step 189A.2 — Review, Storage Safety & Release Gate
+## Change discipline
 
-- «Требуют разбора» is a current-work queue; old June/legacy noise does not stay in the normal list. Exact old orders can resurface only their own unresolved rows when a later operation needs them.
-- «Не добавлять в каталог» keeps the original order snapshot but deliberately excludes that reviewed line from catalog/inventory accounting.
-- The UI no longer shows a technical count of hidden old review rows.
-- Storage Cleanup now blocks active/unresolved reservations, pending inventory lifecycle events and active stocktakes, and deletes target lifecycle references before linked inventory movements.
-- npm run check is the current release gate: targeted 189A.2 SQL tests -> TypeScript -> clean Vite build -> deploy identity verification -> Wrangler dry-run.
-- Step 189A stabilization is complete after production verification. Next: 189B existing history visibility, then 189C financial event history and 189D team/system audit separation.
-- Full context: Context/CLOUDFLARE_CONTINUATION_CONTEXT_STEP189A2_STABILIZATION.md and Context/CLOUDFLARE_CONTINUATION_CONTEXT_STEP189_PLAN_2026-08-18.md.
-<!-- STEP189A2_STABILIZATION_END -->
+For every material change:
+1. start from current target branch;
+2. define influence map;
+3. implement one coherent slice;
+4. add direct semantic regressions;
+5. run cumulative `npm run release:check`/build as appropriate;
+6. verify environment identity;
+7. for D1 changes, prove schema target and exact migration;
+8. merge only reviewed diff;
+9. verify exact merged SHA deploy status;
+10. update continuation.
 
-<!-- STEP189B_BUSINESS_HISTORY_START -->
-## Step 189B — Business History Visibility
+For dangerous mutation paths explicitly test:
+- retry after lost response;
+- duplicate request;
+- stale editor/state;
+- partial failure after critical write;
+- no duplicate money/stock/history effect.
 
-- История склада конкретной позиции теперь идёт через отдельный server query, а не через локальную фильтрацию последних 120 движений.
-- Завершённые ревизии и физические сверки видимы отдельно; перемещения TR отображаются одним документом.
-- Возвраты и обмены: server-side поиск/период/status, 50 строк + «Показать ещё», явные loading/empty/error states, комментарий и причина отмены разделены.
-- Касса: компактные прошлые циклы без смешивания с текущим журналом.
-- Step 189B не меняет D1 schema, остатки, резервы, приход или финансовую модель.
-- Health marker: businessHistoryVisibility=189b.
-- Full context: Context/CLOUDFLARE_CONTINUATION_CONTEXT_STEP189B_BUSINESS_HISTORY.md.
-- Next: 189C financial events -> 189D Team/System Audit -> Step 190 full audit.
-<!-- STEP189B_BUSINESS_HISTORY_END -->
+Do not treat secondary readback/history failures as proof that a completed critical business write failed.
 
-<!-- STEP189C_RELIABLE_MONEY_HISTORY_START -->
-## Step 189C — Reliable Money History
+## Testing philosophy
 
-- Added append-only financial_events history; current payments/returns/orders remain present-state truth.
-- Payment corrections/refund cancellations create new history rows instead of erasing the earlier money event.
-- UI: simple server-paged «История денег»; no accounting journal and no mandatory actor audit.
-- 0058 backfills only provable existing facts and never rewrites current money tables.
-- financial_events intentionally has no FK to orders so future retention can remove old detailed orders without breaking compact money history.
-- Cash register, Warehouse, stocktake, Arrival and reservations are unchanged.
-- Health marker: reliableMoneyHistory=189c.
-- Full context: Context/CLOUDFLARE_CONTINUATION_CONTEXT_STEP189C_RELIABLE_MONEY_HISTORY.md.
-<!-- STEP189C_RELIABLE_MONEY_HISTORY_END -->
+- Prefer semantic/domain tests for business invariants.
+- Exact-source manifests are acceptable for frozen or historically sensitive layers, but should not expand casually.
+- Keep byte-level freeze for truly protected artifacts such as Arrival.
+- Data-dependent acceptance on Branch2 is not automatically representative; Production should be read-only/non-destructive until an explicit mutation test is authorized.
 
-<!-- STEP189D_TEAM_ACTIVITY_CLEANUP_START -->
-## Step 189D — Team Activity Cleanup
+## Protected product boundaries
 
-- Team «Активность» is now «Работа с заказами»: commercial facts attributed to the manager of the order, not proof of who clicked a button.
-- Return/exchange creation and later cancellation are separate events; current status no longer rewrites the earlier fact.
-- Manager totals are calculated over the entire selected period in SQL; the visible feed is paginated 50 + «Показать ещё».
-- Manager is visible in Returns, Exchanges, Money History and the supplementary order-action journal.
-- The old activity_log UI is narrowed to order-linked supplementary history; technical event names/internal DB order-ID filtering are removed.
-- No order transfer/reassignment workflow and no heavy actor/system-audit architecture were added.
-- 189D has no new D1 migration; if 0058 was still missing, this cumulative installer safely completes the additive 189C migration first.
-- Warehouse, stocktakes, Arrival, reservations, cash and order business state are unchanged by 189D.
-- Health marker: teamActivityCleanup=189d.
-- Full context: Context/CLOUDFLARE_CONTINUATION_CONTEXT_STEP189D_TEAM_ACTIVITY_CLEANUP.md.
-<!-- STEP189D_TEAM_ACTIVITY_CLEANUP_END -->
-
-<!-- STEP189D1_PRE_AUDIT_STABILITY_START -->
-## Step 189D.1 Rev 2 — Pre-Audit Stability
-
-- Live Primary verification exposed D1_ERROR: too many terms in compound SELECT in Team Activity. Rev 2 removes the compound Team report completely.
-- Orders, reliable money/debt events, return create/cancel and exchange create/cancel use independent small read-only SELECTs; D1 batches them and the Worker merges rows + manager aggregates.
-- Health: teamActivityCleanup=189d1, preAuditStability=189d1, teamActivityQueryPlan=split-selects-r2.
-- Failed first loads still show —; stale prior data is labeled; structured Worker 5xx errors remain visible.
-- Team history displays the business actionDate used by report filters while actionAt remains only for ordering.
-- No D1 migration/business-state changes.
-- Full context: Context/CLOUDFLARE_CONTINUATION_CONTEXT_STEP189D1_PRE_AUDIT_STABILITY.md.
-- Next after successful live verification: Step 190 Full System Audit.
-<!-- STEP189D1_PRE_AUDIT_STABILITY_END -->
-
-<!-- STEP1901_CRITICAL_OPERATION_RELIABILITY_START -->
-## Step 190.1 — Critical Operation Reliability
-
-- Step 190.0 access/auth changes are deferred pending client approval.
-- 0059 adds internal retry/idempotency state only; existing business rows are not rewritten by migration.
-- Create/edit order, return create/cancel, exchange create/cancel use stable request IDs and resumable server steps.
-- Money-only return creates no physical return_items.
-- Team internal sentence about button-control/audit was removed.
-- Arrival UI remains frozen.
-- Full Step 190 plan: Context/CLOUDFLARE_CONTINUATION_CONTEXT_STEP190_PLAN.md.
-- Step context: Context/CLOUDFLARE_CONTINUATION_CONTEXT_STEP1901_CRITICAL_OPERATION_RELIABILITY.md.
-- Next planned step after production verification: 190.2 Cloudflare bulk-limit corrections.
-<!-- STEP1901_CRITICAL_OPERATION_RELIABILITY_END -->
-
-<!-- CLIENT_ZAMMLER_COMPLETION_20260924_START -->
-## CLIENT-ZAMMLER — separate client request, completed 2026-09-24
-
-- CLIENT-ZAMMLER is **not** roadmap Stage04. Old `Stage04-ZAMMLER` names are historical labels only.
-- Scope completed: dedicated ZAMMLER create surface, exact ZAMMLER order list, editable Workshop due time, and separate operational ZAMMLER Workshop invoice.
-- Existing Orders / Workshop tables are reused; no parallel ZAMMLER order/finance model was added.
-- Production migration 0075 and runtime release are deployed and green.
-- Roadmap Stage04 remains paused; Stage03 client-policy questions are still unresolved and must not be guessed.
-- Canonical completion record: `docs/continuation/CLIENT_ZAMMLER_COMPLETION_20260924.md`.
-<!-- CLIENT_ZAMMLER_COMPLETION_20260924_END -->
-
+- Arrival UI is frozen.
+- Step 190.0 access/auth remains deferred pending client agreement.
+- CLIENT-ZAMMLER uses the existing Orders/Workshop model and is not roadmap Stage04.
+- Resolver R11/R12/R13 is considered stable; change only for a concrete defect.
+- Full Stage03 Production promotion requires explicit user authorization and fresh reconciliation from current main.

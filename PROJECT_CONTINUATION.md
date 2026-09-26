@@ -1,280 +1,135 @@
-# Система заказов — continuation context
-
-## Execution discipline / delivery guard — user rule (2026-09-25)
-
-- **Current release scope is Branch2 only. Do not change or deploy `main` / Production unless the user explicitly opens that gate.** Main does not yet have the price setup required for safe Stage03 operation.
-- Work in **medium-sized coherent units**: normally one implementation slice + its direct regressions + cumulative CI checkpoint. Do not bundle several major stages into one pass, but also do not spend a pass on a trivial one-line change unless it is a necessary unblocker.
-- If a tool/CI/deploy wait becomes long, a stream looks unstable, or the response/session is at risk of timing out, **stop at a safe repository checkpoint instead of continuing to wait**. Safe checkpoint means all source changes are committed on a non-production work branch, no D1/deploy operation is half-finished, and the exact branch/HEAD/run/status/next action are recorded for handoff.
-- Never burn chat budget by repeatedly polling a slow external operation. Check it a bounded number of times; if it is still pending, report the safe checkpoint and continue in the next turn.
-- After each meaningful completed fix/merge/deploy, refresh the relevant continuation document(s). When a work branch is used, include the continuation update in the validated branch before merging where practical.
-- Do not call Branch2 deployed until the exact merged Branch2 SHA has a successful `cloudflare-deploy/branch2` status. Never infer deployment from a successful source CI alone.
-- Preserve environment isolation at every step: Branch2 Worker/D1 only; never mix Primary/Production and Branch2 data, migrations, bindings, or deploy targets.
-
-## NON-NEGOTIABLE preservation gate — Resolver R13
-
-- Resolver is an **anomaly guard, not a compatibility questionnaire**. Do not ask a manager to reconfirm a non-empty fact merely because the exact SKU combination does not already exist.
-- Manager-entered facts are independent facts once recognized: canonical `ЖЕН/МУЖ`, known size/age, color, material and length must pass without another human question.
-- A value is recognized if it exists in the maintained reference list **or anywhere in the active Catalog**. An incomplete/stale reference list must never make a valid Catalog value unknown.
-- Harmless spelling-format differences such as `ТЕМНО-СЕРЫЙ` vs `ТЕМНО СЕРЫЙ` are canonicalized automatically by punctuation/spacing identity; do not summon the resolver for that.
-- If all facts are recognized but that exact combination is new, the existing deterministic auto-resolver may create/link the safe missing combination at physical stock 0 and reserve separately. Human clarification is only for genuinely unknown values (for example a color absent from both references and Catalog), an unknown product, or genuinely missing required facts.
-- R11 still applies: explicit manager gender wins; otherwise concrete selected-SKU gender wins; fixed product scope is fallback.
-- Reference duplicate protection remains non-destructive: it blocks creating/renaming into an equivalent duplicate but never rewrites old orders, retained history, existing Catalog variants, or old dirty reference rows automatically.
-- Canonical R13 Branch2 runtime SHA: `0a23edd48d0eacdbd2e0f59cae51a4dc1f1a170e`; work-branch Quality run `36242588497` succeeded; exact Branch2 safety `36242679603` and deploy `36242679601` succeeded.
-- Automated guards: `scripts/test-catalog-resolver-r13-known-facts.mjs`, R10/R11/R12 regressions, and the cumulative release gate. Preserve them in any future Branch2 → main promotion.
-
-## NON-NEGOTIABLE preservation gate — Resolver R11
-
-- **Must survive every future Stage03 / Branch2 → main promotion.** The unisex resolver bug is fixed independently of Stage03 and must never be overwritten by an older Stage03 branch/file.
-- Canonical R11 behavior: a manager-entered concrete gender is authoritative; otherwise keep the concrete gender of the selected existing Catalog SKU; fixed product gender scope is only a fallback. Unisex product selection must not erase a gender already known from the manager or the selected SKU.
-- Forbidden regression in `src/app/controllers/useWorkspaceViewModel.tsx`: do not restore `gender: automaticGender ? (selected.gender || automaticGender) : ''`. Preserve `enteredGender` / `preferredGender` selection and the final `enteredGender || canonicalOrderGender(selected.gender) || automaticGender` semantics.
-- Automated guard: `scripts/test-catalog-resolver-r11-preserve-known-gender.mjs` is registered in the cumulative release gate on both main and Branch2. Any Stage03 promotion must keep this test and make it pass before merge/deploy.
-- R11 Branch2 runtime fix is merged as `9352bc72b4628ebd5937798b185de1b6c266056b` and passed Branch2 safety/deploy. Production resolver fix is merged in main lineage starting at `c2d2f1093b2c3f4901886e588a068c46d6ce06aa`; the later Production deploy-fallback work does not change resolver semantics.
-- **Important stale-branch warning:** the old H12 work branch `w-stage03-h12-final-e2e-audit-20260926` was originally cut before R11. Do not promote/merge a stale H12 snapshot over current Branch2 or main. Before H12/Stage03 closure, refresh/recreate H12 from the current Branch2 head that already contains R11, then reapply only H12 audit/docs/test deltas.
-- During eventual Stage03 → main promotion, never replace the entire main `useWorkspaceViewModel.tsx` with an older Branch2/H12 copy. Merge/reconcile deliberately and run R11 + full cumulative CI on the exact promotion candidate.
-
-Updated: 2026-09-26
-
-## Current checkpoint — Stage03 H12 final end-to-end audit (R11-safe refresh)
-
-- Release scope remains **Branch2 only** for Stage03. Do not promote Stage03 pricing to `main` / Production until the user explicitly opens that gate.
-- H11 is complete and deployed on Branch2. Resolver R11 was then independently fixed and deployed on Branch2 as `9352bc72b4628ebd5937798b185de1b6c266056b`; the canonical preservation rule is recorded above.
-- The original H12 work branch / PR #200 was cut before R11 and is now stale. **Do not merge it.**
-- Current H12 branch: `w-stage03-h12-final-e2e-audit-r11-20260926`, recreated from the current Branch2 lineage that already contains R11.
-- H12 adds only the aggregate final audit/docs/test layer. It verifies Create → Edit → payments/debt → Warehouse → Workshop → Return → Exchange → reports/history and additionally asserts that Resolver R11 survives Stage03 closure.
-- Before calling Stage03 technically complete on Branch2: this refreshed H12 focused audit + full cumulative CI/build must pass, then merge only this refreshed H12 candidate into `branch2`, then verify exact Branch2 safety and `cloudflare-deploy/branch2` success.
-- Eventual Stage03 → main promotion must preserve main's R11 resolver semantics and test. Never copy a stale pre-R11 `useWorkspaceViewModel.tsx` over Production.
-- Stage04 Workshop finance remains separate and must not be started implicitly during H12 closure.
-
-## Current priority — Stage02 transactional stock truth
-
-- Canonical design: `docs/continuation/STAGE02_PHASE2_STOCK_TRUTH_MODEL_20260919.md`; canonical Warehouse continuation: `docs/continuation/WAREHOUSE_CURRENT_CONTEXT.md`.
-- The old “self-healing / Smart Daily Stock” assumption is superseded for Stage02. Operational possession proves only the concrete units being handled; it never becomes an absolute SKU count. Only explicit counting/correction workflows may replace Physical.
-- Phase2A is complete: shared `stock_resolution_required`, bounded outbound semantics, append-only `inventory_operation_evidence`, migration 0071.
-- Phase2B is complete in Branch2 and Production: final shipping shortage asks only whether the concrete shipped units are physically present; Physical is bounded at zero and unexplained outbound is evidence, not a fake stock check.
-- Baseline before current Phase2C: Branch2 `d7ef267a3581dcb8a2781b16b82ae2889b5698fd`; Production/main `f7a6f7240bcaf3c73e7568d7b9b33d98d87b8ac5`. Migration 0071 is already applied to both D1 environments.
-- Current implementation branch: `w-stage02-phase2c-early-handover-20260919`. Goal: apply the same bounded possession resolver to early `issue_now` while keeping `still_here / issued_before_checkpoint` lineage questions separate.
-- Next: Phase2D transfer/writeoff, then Phase2E Attention dependency removal + Stage02 acceptance.
-- **User release gate:** finish remaining Stage02 in `branch2`; then the user will inspect all Stage02 changes and send objections. Do not promote Phase2C+ to Production before that inspection.
-- Arrival remains frozen. Never mix Primary and Branch2 D1. Update all continuation context after every meaningful Stage02 code/CI/merge/deploy step.
-
-## Current priority — Operational Autonomy R3
-
-- PR #31 `Fix safe correction of posted order payments` is complete and live. It was squash-merged to `main` as `6653e0ab4f438dca6832eb233624faed5a01602a`.
-- Full GitHub Quality check run `34486738784` passed, including the cumulative regression gate and application build. Exact Cloudflare deploy monitor run `34486914530` also completed successfully for `main`.
-- Posted ordinary payments can now be corrected in place without changing `payment_id`: date, amount, method, semantic kind (`primary` / `debt_close`) and comment. The path has stale-editor/CAS protection, append-only finance reversal + replacement, delta-only cash correction, corrected order received/debt totals and request idempotency. Exchange-linked extras remain owned by the exchange flow.
-- The release also refreshed stale 189C/F5 expectations and explicitly registered the accepted Worker/frontend source deltas in the 1906A/1906B structural preservation gates. No migration was required; Arrival and Branch2 were not changed.
-- User's current product rule: legitimate day-to-day business corrections must be executable by staff through the application without developer intervention. Safety must come from explicit correction/reversal flows, current-state validation, audit history and idempotency — not from leaving a valid business state with no supported action.
-- Remaining high-priority autonomy gaps found in current `main`: (1) only one active return per order; (2) an existing return blocks a later exchange; (3) debt closing after a return is blocked without a normal self-service continuation; (4) a mistakenly recorded `sent`/handover fact lacks a natural keep-the-order correction path; (5) exchange-linked payment/date/amount corrections appear to require cancel/recreate rather than a dedicated audited correction.
-- Physical/financial truth must NOT be weakened to remove these blockers. The target is safe correction without developer intervention while preserving history.
-- Separate maintainability issue: cumulative exact-source hash/manifest/line-count gates are too source-shape-sensitive. PR #31 proved they can reject an intentional safe behavior change. Gradually prefer semantic behavior/idempotency/reconciliation tests; keep exact hashes only for deliberately frozen artifacts such as the current Arrival UI.
-- Role/access boundaries remain a separate product-policy review: Operational Autonomy R2 already made many routine operations manager-safe, while Step 190.0 access/auth is still explicitly deferred pending client agreement.
-- Detailed audit and proposed order: `docs/continuation/OPERATIONAL_AUTONOMY_AUDIT_20260910.md`. Final payment-correction context: `docs/continuation/ORDER_EDIT_SAFE_PAYMENT_CORRECTIONS_20260910.md`.
-- Working branch for the next autonomy work is `operational-autonomy-r3`, based on the exact Production commit above. Do not merge context-only changes merely to trigger another Production build; carry them with the next validated runtime fix.
+# Система заказов — актуальный continuation
+
+Updated: 2026-09-26  
+Repository: `dymovicd123/Orders-app`  
+Branch represented by this file: **branch2**
+
+Этот файл — короткий актуальный checkpoint Branch2. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не являются текущим roadmap без сверки с GitHub.
+
+## Текущее состояние Branch2
+
+Branch2 содержит весь завершённый Stage03 и последующие Resolver fixes.
+
+Ключевые закрытые checkpoints:
+- Stage03 H12 final E2E audit merged через PR #205; H12 commit lineage включает `504a14d11c5fab28435031bc6c9da0f4ba950e51`.
+- Resolver R11 Branch2 runtime fix: `9352bc72b4628ebd5937798b185de1b6c266056b`.
+- Resolver R13 runtime baseline: `0a23edd48d0eacdbd2e0f59cae51a4dc1f1a170e`; Branch2 safety/deploy были green.
+- Последний head перед этой context-cleanup был docs-only `cdcf994bd586837fb0b0f9592fe7add0878886c3`.
+
+Завершено на Branch2:
+- Stage01 / Stage02 lineage.
+- Stage02 transactional stock truth полностью, включая Phase2C/2D/2E и post-review fixes.
+- Operational Autonomy A1–A5.
+- CLIENT-ZAMMLER.
+- **Stage03 полностью технически закрыт на Branch2**: Create → Edit → payments/debt → Warehouse → Workshop → Return → Exchange → reports/history.
+- Resolver R11/R12/R13.
 
-## Prior completed priority — O1
+Branch2 D1 имеет Stage03 schema work, включая migrations 0073/0074, которые Production ещё не имеет.
 
-- User explicitly paused Warehouse W work for further product discussion. W is NOT complete; do not infer closure from the historical W8 UI checkpoint.
-- O1 is the separate D1 read-cost optimization step, based on production Query Insights, not a Warehouse redesign.
-- Baseline: main `f49249753676f75885afc37694b1453105ed76aa`; implementation branch `codex/o1-read-budget`.
-- O1 changes: bounded daily payment/return aggregation for manager/department plans; browser-local in-flight GET coalescing with mutation barriers. No completed-response cache added; explicit refresh semantics preserved.
-- O1 continuation: all eight report types now opt into only their required SQL; legacy full and Finance workspace responses remain unchanged. Report cache keys include report type; invalidation/force prevent older flights from refilling caches. Added migration 0067: exchange-payment lookup, normalized stock-check chronology, exact SKU/stocktake lookup indexes (additive, no business-row changes).
-- Final expanded `npm run release:check` passed uninterrupted (exit 0), including O1 parity/race/index tests, all historical regressions through W8.4, TypeScript, clean build, byte budgets and Wrangler dry-run. Lint passed with existing warnings. Full report/export DOM parity holds for all eight report types. GitHub Quality check run 34472578988 also passed.
-- Production SELECT-only benchmark (August, before new indexes): 28 base report queries cost 44850 reads, excluding auxiliary plans/team/leads/call-centre. Selected reports: payments 3128, managers 16817, products 7211, cities 10351, returns 130, debts 1759. This is workflow cost, not an account-wide percentage.
-- User explicitly authorized PUBLIC code/context publication and primary rollout. O1 is deployed via PR #29, main merge `90750f25e491b1ba5c47b9b13d8dbdb75084caeb`; exact `cloudflare-deploy/main` status is success (run 34472769192). Worker version `44538eca-dfac-4541-b60e-2aee823acc9f`, deployed at 2026-09-10 11:44:07 UTC, serves 100%.
-- Migration 0067 was applied only to `orders_db_prod` and registered in `d1_migrations`; all three indexes verified. IMPORTANT: the legacy migration journal otherwise records only 0001, so do NOT run blanket remote `migrations apply`; historical migrations appear pending despite existing schema. Business rows and Branch2 were not changed.
-- Production before/after SELECT benchmark: all 30 result hashes match. Index-only full-base cost 44850 -> 37345; final selected report costs: payments 3128, managers 9786, products 7211, cities 7929, returns 130, debts 1285. Compact handover page/all-active stayed 3141/3742; no measured warehouse-query gain is claimed. Evidence: local ignored `_o1-evidence/before.json` and `after.json` (counts/hashes); command `node scripts/measure-o1-d1.mjs before|after`.
-- Live SELECT-only comparison for August: manager plans 4403 -> 1996 rows read; department plans 1612 -> 1115. All returned fields/rows matched; zero rows written. These are per-query results, NOT an account-wide reduction claim.
-- Implementation/validation details and remaining optimization work: `docs/continuation/O1_READ_BUDGET_20260909.md`.
-- O1 implementation/publication is complete; account-wide effectiveness still needs a comparable clean post-deploy traffic interval. Do not promise Free-tier capacity for Branch2. W remains paused and open; Branch2 remains untouched. Final context-only follow-up does not change runtime.
+## Production boundary
+
+Полный Stage03 **не находится в main / Production**.
+
+Нельзя:
+- merge-ить Branch2 целиком в main;
+- переносить старый H12 snapshot поверх более новых Production fixes;
+- заменять Production `useWorkspaceViewModel.tsx` старой Branch2 копией;
+- случайно тащить Branch2 `wrangler.jsonc`/D1 identity в Production.
 
-## Current execution point
+Будущий Stage03 rollout — только после явного разрешения пользователя и только через fresh candidate от текущего `main`, с намеренным переносом Stage03 deltas и сохранением R11/R12/R13 + CLIENT-ZAMMLER + всех новых Production-only fixes.
 
-- Production/main baseline before the current promotion: `39fcdaa6d2e72d772206e8e6dfe057aad0fa576f` (Operational Autonomy R2).
-- D1 Read Budget R3 was fully validated on safe branch. Exact validated source commit before cleanup: `abfb5ff289932c194e5d2122ab4dc5498bc904c0`.
-- Full cumulative `npm run release:check`, database safety, clean production build and Wrangler `--dry-run` all passed. Permanent R3 regression also passed.
-- Temporary R3 workflow/patcher/registrar/trigger files were removed after validation. Promote only the clean descendant of the validated source.
-- Arrival UI (`Приход`) remains frozen: no visual/layout/form redesign.
+## Resolver status
 
-## D1 Read Budget R3 — validated
+Resolver сейчас считается закрытым:
+- R11: не терять известный gender;
+- R12: Catalog-consistent clarification + non-destructive reference duplicate guard;
+- R13: known facts независимы от существования точной SKU-комбинации.
 
-Fresh D1 Insights on 2026-09-02 showed the remaining read budget was being spent mainly by Warehouse Attention and broad finance/report calculations.
+Не продолжать Resolver «на всякий случай». Возвращаться к нему только при конкретном воспроизводимом дефекте.
 
-R3 permanent behavior:
+## Roadmap после Stage03
 
-1. **Overview read isolation**
-   - the overview screen now has a lightweight `/api/dashboard` loader;
-   - it no longer needs the old full dashboard loader that also pulled orders/catalog/reference data just to render the overview.
+Настоящий Stage04 ещё не начинался. CLIENT-ZAMMLER не считается Stage04.
 
-2. **Finance workspace scope**
-   - finance reads now distinguish `scope=finance` from the full Reports payload;
-   - Finance skips report-only manager/product/city/day/lead/call-centre/plan/team datasets that its own UI does not use;
-   - full Reports behavior remains available and unchanged for the Reports section;
-   - full-report and finance-workspace caches are isolated by scope;
-   - normal Finance navigation no longer forces an extra full report refresh and can reuse the scoped cache;
-   - explicit refresh/mutation invalidation still forces a fresh read.
+Stage04 должен отдельно определить Workshop finance / historical cost truth. Stage05/profitability нельзя честно строить до исторической себестоимости.
 
-3. **Warehouse Attention detail de-duplication**
-   - `details=1` no longer runs the full expensive summary catalog scan and then repeats the same unresolved-catalog work for detail rows;
-   - the detail catalog query carries the exact grouped total via `COUNT(*) OVER()`;
-   - shortage/lifecycle/stocktake counts remain exact through a smaller core summary query;
-   - problem classification/business semantics are unchanged.
+Warehouse Stage02 уже закрыт; старый W9 может быть отдельным будущим product audit, но не текущей недоделкой Stage02.
 
-Permanent R3 files include:
+## Непереговорные правила работы
 
-- `scripts/test-d1-read-budget-r3.mjs`
-- `scripts/d1-read-budget-r3-worker-manifest.json`
-- the exact Step 190.6A cumulative preservation-chain extension for `listFinanceReports` and the historically 192B1-added `getWarehouseAttentionSummary` declaration.
+1. **Перед любой содержательной работой по проекту сначала открыть актуальный `dymovicd123/Orders-app` на GitHub.** Память, скриншоты, старые ZIP/step-файлы и локальные context-файлы — только исторические подсказки, не source of truth.
+2. Источник истины по текущему состоянию: актуальная ветка и её код → этот continuation → профильные документы в `docs/continuation`. Если старый документ конфликтует с текущим кодом/историей GitHub, приоритет у текущего GitHub.
+3. Не заменять современные `src`, `worker`, migrations или controller-файлы снимком из старой ветки. Любой перенос — только осознанное reconciliation поверх свежего target branch.
+4. Работать средними цельными кусками: одна логическая правка + прямые regressions + cumulative release gate. Не смешивать несколько крупных этапов в один релиз.
+5. Для связанной бизнес-логики обязательно проверять соседнюю цепочку: источник события → серверная валидация → критическая запись → вторичные записи/readback → UI/история → retry/lost-response.
+6. Для мутаций сначала доказывать atomicity/idempotency/replay safety и отсутствие false-failure после уже совершённой критической записи. Потерянный ответ или повторный запрос не должен удваивать бизнес-эффект.
+7. Историческая финансовая/складская правда не переписывается «для удобства». Исправления должны идти через безопасную correction/reversal логику с историей, а не через скрытый rewrite.
+8. Пользовательские интерфейсы не должны показывать служебные комментарии, внутренние шаги разработки, названия регрессий или сообщения, предназначенные разработчику.
+9. Предпочитать semantic/domain regression tests exact-source hash/line-count проверкам. Byte-level freeze оставлять только для действительно замороженных артефактов.
+10. Не считать релиз завершённым по одному CI. Для deploy нужен успешный статус **точного merged SHA** в соответствующем Cloudflare workflow.
+11. Не тратить сессию на бесконечный polling. Если внешний CI/deploy долго ждёт, оставить безопасный checkpoint: ветка/HEAD/run/status/следующее действие.
+12. После значимого merge/deploy/нового инварианта обновлять continuation, чтобы новый чат не восстанавливал состояние по древним файлам.
 
-No migration or D1 write is part of R3.
+## Жёсткая изоляция окружений
 
-## D1 optimization history
+- `main` / Production Worker: `orders-app`.
+- Production D1: `orders_db_prod`, id `17e68a41-1d58-4a36-8a63-47c3e32443c4`.
+- `branch2` Worker: `orders-app-branch2`.
+- Branch2 D1: `orders_db_branch2`, id `40065052-854e-44b8-bcd5-251bdd488301`.
+- Никогда не связывать Worker одной среды с D1 другой.
+- Никогда не копировать/синхронизировать данные между Production и Branch2 без отдельного явного запроса пользователя.
+- Перед любой D1 mutation сначала проверить фактические Worker name + D1 logical name + D1 id; имя ветки само по себе не доказательство.
+- Не запускать blanket remote `migrations apply` по старому журналу. Сначала read-only сверка schema/`d1_migrations`, затем только конкретная доказанно нужная migration.
+- Environment-specific `wrangler.jsonc`, визуальный marker и regression gate не переносятся вместе с бизнес-кодом.
+- Инцидент 2026-09-22 с Production binding в Branch2 считается постоянным предупреждением; исправление: `0f38bf4f1c85ef124237abd952384b05513b946c`.
 
-### R1
+## Постоянные бизнес-инварианты
 
-Main commit: `414320141ae84e54ac8ddffcf87c67f39a858b59`.
+### Catalog / Resolver
+- Catalog identity: product → execution (`product + material + length`) → exact SKU (execution + adult/child + gender + color + size/age).
+- Resolver — **anomaly guard, а не анкета на совместимость**.
+- Известный факт считается известным, если он есть в maintained references **или любом активном Catalog SKU**.
+- Безопасные различия пунктуации/пробелов, например `ТЕМНО-СЕРЫЙ` и `ТЕМНО СЕРЫЙ`, канонизируются автоматически.
+- Новая точная комбинация уже известных фактов не должна вызывать лишний вопрос; deterministic safe combination path может создать/связать комбинацию с physical stock 0.
+- R11 сохраняется: явный пол менеджера → пол выбранного concrete SKU → fixed product scope fallback.
+- Reference duplicate protection не переписывает старые заказы/варианты/историю.
 
-- compact order handover list flags;
-- indexed exact `ORD-...` lookup;
-- safer small-result relation/stat reuse;
-- permanent regression `scripts/test-d1-read-budget-r1.mjs`.
+### Warehouse / inventory truth
+- `Physical`, `Reserved`, `Available = Physical - Reserved` остаются разными истинами.
+- Только явный count/correction workflow может задавать абсолютный Physical.
+- Operational possession подтверждает только конкретные единицы текущей операции и никогда не превращается в «полный пересчёт SKU».
+- Outbound при нехватке tracked Physical ограничивается снизу нулём; unexplained quantity остаётся audit evidence.
+- Arrival / «Приход» заморожен и не меняется без отдельного явного запроса.
 
-### R2
+### Finance / pricing truth
+- Текущая Catalog recommendation, фактическая цена продажи, платежи и долг — разные сущности.
+- Исторические заказы не пересчитываются по сегодняшнему Catalog.
+- Для будущего/Branch2 `itemized_v1`: `catalog_price_snapshot` — историческая рекомендация, `unit_price` — фактическая цена, `line_total = quantity × unit_price`, платежи независимы.
+- Legacy orders остаются `legacy_manual_total`; нельзя выдумывать построчную цену для старой истории.
+- Возврат денег и физический возврат — отдельные факты; exchange money также отдельный финансовый факт.
 
-R2 introduced:
+### Operational autonomy
+- Нормальные бизнес-коррекции должны быть выполнимы через приложение без разработчика.
+- Безопасность достигается stale checks, явными correction/reversal действиями, audit history и idempotency, а не блокировкой законного сценария навсегда.
 
-- compact all-active handover reads;
-- compact Warehouse Attention summary handover path;
-- indexed `ORD-...` prefix range;
-- active catalog variant join instead of correlated lookup;
-- preaggregated Team counters;
-- clients `COUNT(*) OVER()` total;
-- short Warehouse Attention frontend TTL/in-flight coalescing with forced invalidation after writes.
+## Техническая основа
 
-Permanent regression: `scripts/test-d1-read-budget-r2.mjs`.
+- Frontend: React + TypeScript + Vite.
+- Backend: Cloudflare Worker + D1; `worker/index.ts` — composition root, доменная логика разнесена по `worker/domains`.
+- Runtime-файл должен быть достижим из `src/main.tsx` или `worker/index.ts`, если он не является deliberately inactive contract/fixture.
+- CSS cascade/order считается поведением; широкую CSS-cleanup не смешивать с бизнес-изменениями.
+- Step 190.0 access/auth всё ещё отложен до отдельного согласования с клиентом.
 
-### R3 measurement rule
 
-After exact Production deployment, re-run fresh one-hour D1 Insights. Do not use the polluted rolling 24h profile to judge R3 immediately. Rank the next optimization only from post-deploy fresh traffic.
+## Актуальные подробные документы
 
-Do not blindly add indexes. First collect live query-plan / rows-read evidence for whatever remains at the top after R3.
+- `docs/PROJECT_CONTEXT.md` — постоянные архитектурные/рабочие инварианты.
+- `docs/continuation/STAGE03_H12_FINAL_E2E_AUDIT_20260926.md` — финальная Stage03 интеграционная модель.
+- `docs/continuation/CLIENT_ZAMMLER_COMPLETION_20260924.md` — ZAMMLER завершён и не является Stage04.
+- `docs/continuation/WAREHOUSE_CURRENT_CONTEXT.md` — Warehouse/Stage02 history; Phase2 уже завершён.
+- `docs/continuation/STAGE02_PHASE2_STOCK_TRUTH_MODEL_20260919.md` — stock-truth semantics.
+- `docs/continuation/OPERATIONAL_AUTONOMY_AUDIT_20260910.md` — A1–A5 теперь закрыты.
 
-## Branch2 — urgent sync state
+## Точка продолжения
 
-User explicitly requested Branch2 be brought current; it has materially drifted.
-
-Current old Branch2 HEAD before sync:
-
-- `539195eec4796d75115e8add722fa9bb4b009405`
-- date: 2026-08-29
-- checkpoint: Arrival save reliability.
-
-Comparison against pre-R3 main showed the histories diverged at `21c4f68a819441269978f9c674960601805453d9`: main had roughly 167 newer commits while Branch2 retained its own historical promotion/checkpoint commits. Do not simply force Branch2 to main without restoring environment-specific invariants.
-
-### Confirmed Branch2 environment invariants
-
-Branch2 is a separate Worker / D1 environment. Its old config says:
-
-- Worker: `orders-app-branch2`
-- D1 logical name: `orders_db_branch2`
-- historical configured UUID: `40065052-854e-44b8-bcd5-251bdd488301`
-- title marker: `Система заказов 2`
-
-The historical UUID must NOT be trusted blindly: a direct read-only Cloudflare D1 API check against that UUID returned Cloudflare `7403`. A follow-up audit is resolving the live database by **name** through Wrangler before any schema action.
-
-Branch2 also intentionally added an auth fallback guard in `verifySimpleAdminPassword`:
-
-- when no stored hash exists but `app_settings.require_stored_admin_password = '1'`, do not fall back to the environment/default admin password.
-
-Preserve that Branch2-specific safeguard unless a later explicit design decision replaces it.
-
-The old two-line `worker/index.ts` delta was investigated: it merely removed the admin gate from GET `/api/inventory/cycle-counts`. Current main already contains that behavior, so it is not an extra Branch2-only delta that needs to be reapplied.
-
-### Safe Branch2 sync procedure
-
-1. Finish R3 main promotion and confirm the exact matching Production Cloudflare build.
-2. Resolve the actual live `orders_db_branch2` identity by Cloudflare/Wrangler name, not the stale hard-coded UUID.
-3. Read-only compare Branch2 `d1_migrations` / schema with the repository's 64 migration files.
-4. Build Branch2 sync candidate from the new exact main SHA.
-5. Restore only proven environment deltas:
-   - Branch2 Worker/D1 config using the live resolved Branch2 database;
-   - `Система заказов 2` title marker;
-   - stored-admin-password-required fallback safeguard and its exact preservation registration.
-6. Run full cumulative release gate, database safety, clean build and Wrangler dry-run against Branch2 config.
-7. Apply only genuinely missing normal migrations if the read-only audit proves they are absent and applicable. Never copy Primary data and never create historical optional/audit tables merely to make environments look identical.
-8. Preserve the old Branch2 head in a backup ref before rebasing/repointing the environment branch if history replacement is needed.
-9. Push the exact validated Branch2 source and require `cloudflare-deploy/branch2` to confirm the matching SHA before calling Branch2 current.
-
-## Operational Autonomy R2 — already Production baseline before R3
-
-Routine deterministic operations are manager-safe; genuine master-data creation, ambiguity and destructive reversals remain admin-only.
-
-Manager-safe includes routine stocktake/cycle-count paths, existing-SKU transfer/correction/writeoff, known existing-variant Arrival, unfinished stocktake continuation and active/unshipped Workshop order editing. Hidden Warehouse panel visibility blocker was fixed end-to-end.
-
-Arrival visual workspace remained untouched.
-
-## Order / warehouse reliability already established
-
-- Order create/save separates critical writes from secondary readback/audit so a committed order cannot be falsely reported as unsaved because a follow-up diagnostic read failed.
-- Structured stock-shortage handling, Workshop exclusion from warehouse shortage, unpaid-order support, payment validation and idempotency remain protected.
-- No partial shipments; all-or-nothing model.
-- Physical / Reserved / Available remain separate truths.
-- Newer physical check/stocktake beats older inverse arithmetic.
-- Known deterministic situations should self-resolve; unknown SKU/attribute/policy ambiguity may require admin.
-- `СТАНДАРТ`/empty is valid, not automatically unknown.
-
-## Exact erroneous duplicate F3A7
-
-`ORD-20260829144801-F3A7DDC3`, order id `1242`, was already safely deleted. A post-Operational-Autonomy Production API read reconfirmed:
-
-- `order_status=deleted`
-- `shipping_status=not_sent`
-- `workshop_status=cancelled`
-- return #33 cancelled
-
-Do not mutate this order again merely to verify it.
-
-## Next optimization/audit after R3 + Branch2 sync
-
-User expects a broader second system audit because the currently discovered D1 issues are likely only part of the problem. Audit the full chain:
-
-- UI effects/render -> API fan-out;
-- duplicate/in-flight/retry reads;
-- endpoints loaded while their section is unopened;
-- payload overfetch;
-- Worker query fan-out;
-- correlated subqueries/full scans/repeated aggregates;
-- D1 indexes/query plans;
-- real `rows_read`/`rows_written` by workflow;
-- dashboard, orders, clients, team, workshop, finance, reports, warehouse, catalog/references;
-- cache/invalidation correctness;
-- exports;
-- Cloudflare Worker/D1/storage/bundle cost.
-
-A likely next candidate is the Reports section: it still obtains a broad full finance/report payload even though the user selects one report type. Measure after R3 before changing it.
-
-## Project invariants / workflow
-
-- Before every Warehouse patch, audit adjacent workflows and data-entry paths, not only one screen.
-- After each meaningful step, update this continuation context.
-- When local delivery is needed, user historically wants one Windows root command such as `.APPLY_STEP...cmd`.
-- Production safety, exact environment isolation and idempotency take precedence over cosmetic convenience.
-- Never mix Primary and Branch2 D1 bindings/data.
-- Do not claim a deployment until the exact matching Cloudflare monitor succeeds.
-
-
-## Checkpoint 2026-09-19 — Phase2D micro-step mode
-
-- User requested that Stage02 continue in small, bounded steps rather than large bursts, to avoid losing progress to response/tool time limits.
-- Current working branch: `w-stage02-phase2d-transfer-writeoff-20260919`.
-- Current branch head when this checkpoint was written: `4e8e9103199ef6a01b5934eb4bc41b5e670fcbda`.
-- Phase2C changes are already included in this branch; current work is Phase2D transfer/writeoff transactional possession handling.
-- The latest GitHub Actions attempt is blocked before project checks by an external npm registry audit HTTP 503, so that failure is not yet evidence of a project regression.
-- Continue with one narrow verification/fix at a time, report it, then proceed to the next micro-step.
-
-- Phase2D micro-step: fixed legacy negative Physical handling in transfer. Source/target quantities are normalized to >= 0 at the transaction boundary; stale guards and retry diagnostics use the same semantics; transfer-in applies exact +Q from a non-negative baseline. This prevents an infinite resolver loop where the UI confirms expectedQuantity=0 but the server compares it to a legacy negative value. Regression assertions were added in `scripts/test-stage02-phase2d-transfer-writeoff-possession-resolver.mjs`. Commits: `c9e05d981be22ece8fda70aedf3d8d6edec2e06e`, `6a0cdd6d234cb234b6dd5f62cb41fbdf9bed9c52`.
-
-- Phase2D micro-step: verified transfer resolver idempotency. A committed `request_id` is checked before stock-confirmation/resolver validation; resolver confirmations are not part of the transfer fingerprint; `inventory_transfer_documents.request_id` is UNIQUE; concurrent identical retries recover through the winning document; transfer items and operation evidence also have uniqueness guards. Added regression assertions and registered the Phase2D test in `scripts/release-check.mjs`. Commits: `d191ad47e7978682a22809997f52b7ee2c8bea59`, `e9da8aef051b2b9acc4129c1cef03e9ff0d9d42f`.
-
-- Phase2D balanced checkpoint: writeoff resolver now uses the same bounded legacy-negative semantics as transfer, so old negative Physical is treated as 0 only for writeoff operation confirmation/replay while exact manual correction semantics stay unchanged. Writeoff retry/idempotency invariants are covered: committed `operation_id` short-circuits before resolver validation, confirmations are excluded from the request fingerprint, concurrent identical retries converge on duplicate success, and evidence keys remain unique. The Phase2D regression itself is green. CI then exposed the expected structural-preservation layer mismatch from Phase2D edits; added exact Phase2D Worker/frontend manifests and outer normalization layers for Step 190.6A/190.6B. Relevant commits: `25d6eb160c2f348dc652201bc30409686beaea33`, `01c3d517234a63d19a7321e8cb5cf0681ff0c1c0`, `1d9ed76857ae8d7892b4a693c917599091c2f3b9`, `f05ecdb5ee8aa358495e4af48caaec18044860f1`, `2dd0562500653ba87eb337bf317d85012ad3b126`, `aa10952a4c09f53616cc3f05af2b16299a23f117`. Latest full Quality run for the final structural-layer commit is still in progress at this checkpoint.
-
-- Phase2D completion checkpoint: combined transfer + manual writeoff resolver audit is green. Additional correctness fixes found during final review: transfer reversal now restores only the source Physical delta that the forward transfer actually deducted (the explained portion), while destination reversal still removes exact Q; zero/negative tracked writeoff rows remain selectable so the possession resolver is reachable instead of being hidden by the UI; duplicate manual-movement retries no longer emit duplicate activity-log events; Worker route result narrowing is explicit and TypeScript-safe. W4/W8.4 legacy acceptance assertions were updated to protect the new bounded-possession flow instead of the retired full-count prompt. Full Quality run `35459453380` succeeded on code head `106a0dc9e849b1643d12a5f499e797f6beb694b4`. Phase2C is still stacked underneath Phase2D and neither is in production. Next repository action is to merge the combined Phase2C+Phase2D branch into `branch2`; production remains blocked until the user's full Stage02 review.
+Не начинать новый Stage или Production promotion без следующего вопроса/решения пользователя. Перед любым новым шагом заново открыть GitHub и проверить текущие HEAD/PR/deploy state.

@@ -1,5 +1,7 @@
 # Stage03 H12 — final end-to-end pricing audit
 
+> **H12 completion status — satisfied (2026-09-26):** the refreshed R11-safe H12 candidate passed its focused/full gates, was merged to Branch2 via PR #205, and the Branch2 line subsequently received Resolver R12/R13. Stage03 is therefore technically complete on Branch2. Full Stage03 is still **not** promoted to Production; any future promotion must preserve current Production R11/R12/R13 and reconcile from fresh `main` rather than copying an older Branch2 snapshot.
+
 Date: 2026-09-26
 
 Environment: **Branch2 only**.

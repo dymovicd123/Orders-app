@@ -1,5 +1,8 @@
 # Warehouse current context — canonical continuation
 
+> **STATUS UPDATE — 2026-09-26:** Stage02 transactional stock truth is complete, reviewed and promoted to Production through PR #145. Phase2C, Phase2D, Phase2E and the post-review fixes are **not pending work** anymore. Any older checkpoint below that says “current Phase2C/2D/2E” is historical only. The stock-truth semantics remain authoritative. W9 is only an optional future product/UX audit after real usage, not an unfinished Stage02 phase. Current cross-project status lives in `PROJECT_CONTINUATION.md`.
+
+
 Updated: 2026-09-23
 Repository: `dymovicd123/Orders-app`
 
