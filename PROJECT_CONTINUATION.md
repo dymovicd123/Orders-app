@@ -14,6 +14,7 @@ Branch2 содержит весь завершённый Stage03 и послед
 - Stage03 H12 final E2E audit merged через PR #205; H12 commit lineage включает `504a14d11c5fab28435031bc6c9da0f4ba950e51`.
 - Resolver R11 Branch2 runtime fix: `9352bc72b4628ebd5937798b185de1b6c266056b`.
 - Resolver R13 runtime baseline: `0a23edd48d0eacdbd2e0f59cae51a4dc1f1a170e`; Branch2 safety/deploy были green.
+- Catalog selection / retirement integrity: `43c79cbf0adb9d19a1b57ab3ecf303ed13871fbc`, PR #216; Branch2 safety run `36254901882` и exact deploy run `36254901804` — success.
 - Последний head перед этой context-cleanup был docs-only `cdcf994bd586837fb0b0f9592fe7add0878886c3`.
 
 Завершено на Branch2:
@@ -23,6 +24,7 @@ Branch2 содержит весь завершённый Stage03 и послед
 - CLIENT-ZAMMLER.
 - **Stage03 полностью технически закрыт на Branch2**: Create → Edit → payments/debt → Warehouse → Workshop → Return → Exchange → reports/history.
 - Resolver R11/R12/R13.
+- Catalog selection / retirement integrity: working pickers active-only, characteristics use maintained references ∪ active Catalog, whole-product retirement guarded/soft, retired products cannot receive active executions/SKUs, reactivation re-checks aliases/canonical identity.
 
 Branch2 D1 имеет Stage03 schema work, включая migrations 0073/0074, которые Production ещё не имеет.
 
@@ -93,6 +95,10 @@ Warehouse Stage02 уже закрыт; старый W9 может быть от�
 - Новая точная комбинация уже известных фактов не должна вызывать лишний вопрос; deterministic safe combination path может создать/связать комбинацию с physical stock 0.
 - R11 сохраняется: явный пол менеджера → пол выбранного concrete SKU → fixed product scope fallback.
 - Reference duplicate protection не переписывает старые заказы/варианты/историю.
+- Retired product/SKU остаётся историей, но не должен попадать в рабочие формы выбора; вывод из каталога — soft deactivate, не delete.
+- Нельзя создавать новое исполнение/SKU или сохранять активный SKU под retired product.
+- Whole-product retirement допустим только после вывода активных SKU и при отсутствии физического остатка, резерва, активного неотправленного заказа, незавершённой задачи Цеха, pending lifecycle и активной ревизии.
+- Reactivation retired product обязана заново проверять canonical product identity/aliases, чтобы старый дубль вроде `ОРДА` не мог вернуться в рабочий каталог.
 
 ### Warehouse / inventory truth
 - `Physical`, `Reserved`, `Available = Physical - Reserved` остаются разными истинами.
