@@ -268,9 +268,14 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
     : [];
 
   const references: CatalogReferenceOptions = { materials: ['СТАНДАРТ'], lengths: ['СТАНДАРТ'], colors: [], sizes: [], childAges: [] };
+  const referenceIdentity = (value: unknown) => upperText(value)
+    .replace(/[‐‑‒–—-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   const addReference = (target: string[], value: unknown) => {
     const normalized = upperText(value);
-    if (normalized && !target.includes(normalized)) target.push(normalized);
+    const identity = referenceIdentity(normalized);
+    if (normalized && identity && !target.some((entry) => referenceIdentity(entry) === identity)) target.push(normalized);
   };
   for (const row of referencesResult.results || []) {
     if (row.kind === 'material') addReference(references.materials, row.value);
