@@ -278,13 +278,15 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
 
     const productGenderScope = String(product.genderScope || 'unisex') as 'female' | 'male' | 'unisex'
     const automaticGender = productGenderScope === 'female' ? 'ЖЕН' : productGenderScope === 'male' ? 'МУЖ' : ''
+    const enteredGender = canonicalOrderGender(currentItem.gender)
+    const preferredGender = enteredGender || automaticGender
     const variants = (catalogVariantsByProductId.get(Number(product.id)) || []).filter((variant) => variant.isActive)
     if (!variants.length) {
       return {
         ...currentItem,
         productName: product.name,
         audienceType: getCatalogProductEffectiveCategory(product) === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',
-        gender: automaticGender,
+        gender: preferredGender,
         color: '',
         material: 'СТАНДАРТ',
         length: 'СТАНДАРТ',
@@ -328,9 +330,9 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
       const leftCategory = getCatalogVariantCategory(left.variants[0]) === targetCategory ? 0 : 1
       const rightCategory = getCatalogVariantCategory(right.variants[0]) === targetCategory ? 0 : 1
       if (leftCategory !== rightCategory) return leftCategory - rightCategory
-      if (automaticGender) {
-        const leftGender = canonicalOrderGender(left.variants[0]?.gender) === automaticGender ? 0 : 1
-        const rightGender = canonicalOrderGender(right.variants[0]?.gender) === automaticGender ? 0 : 1
+      if (preferredGender) {
+        const leftGender = canonicalOrderGender(left.variants[0]?.gender) === preferredGender ? 0 : 1
+        const rightGender = canonicalOrderGender(right.variants[0]?.gender) === preferredGender ? 0 : 1
         if (leftGender !== rightGender) return leftGender - rightGender
       }
       if (left.frequency !== right.frequency) return right.frequency - left.frequency
@@ -353,10 +355,10 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
       ...currentItem,
       productName: product.name,
       audienceType: getCatalogVariantCategory(selected) === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',
-      // Product gender is only a default. If the chosen existing SKU carries an
-      // explicit opposite gender, keep that concrete catalog fact instead of fabricating
-      // a default-gender SKU with the selected color/size/material.
-      gender: automaticGender ? (selected.gender || automaticGender) : '',
+      // A concrete manager-entered gender is authoritative. Otherwise keep the
+      // concrete gender of the selected existing SKU; product scope is only a fallback.
+      // This prevents unisex product picks from erasing a gender the Catalog already knows.
+      gender: enteredGender || canonicalOrderGender(selected.gender) || automaticGender,
       color: selected.color || '',
       material: canonicalStockPositionValue(selected.material),
       length: canonicalStockPositionValue(selected.length),
