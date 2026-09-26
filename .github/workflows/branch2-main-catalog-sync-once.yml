@@ -69,8 +69,8 @@ jobs:
               (SELECT COUNT(*) FROM catalog_products WHERE name LIKE 'BR2-H8-%') AS fixture_products,
               (SELECT COUNT(*) FROM inventory_stock WHERE product_name_snapshot LIKE 'BR2-H8-%') AS fixture_stock;"
 
-      - name: Read current Production Catalog and prepare Branch2-only SQL
-        run: node scripts/branch2-sync-main-catalog-once.mjs prepare /tmp/branch2-main-catalog-sync.sql /tmp/branch2-main-catalog-sync-manifest.json
+      - name: Read current Production Catalog and prepare Branch2-only plan
+        run: node scripts/branch2-sync-main-catalog-once.mjs prepare /tmp/branch2-main-catalog-sync.sql /tmp/branch2-main-catalog-sync-manifest.json /tmp/branch2-main-catalog-sync-plan.json
 
       - name: Apply cleanup and Catalog sync to Branch2 D1 only
         shell: bash
@@ -79,11 +79,12 @@ jobs:
           [[ "$GITHUB_REF_NAME" == "branch2" ]]
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
           test -s /tmp/branch2-main-catalog-sync.sql
+          test -s /tmp/branch2-main-catalog-sync-plan.json
           if grep -Fq 'orders_db_prod' /tmp/branch2-main-catalog-sync.sql || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' /tmp/branch2-main-catalog-sync.sql; then
             echo "Generated Branch2 SQL contains Production D1 identity. Refusing mutation." >&2
             exit 92
           fi
-          npx wrangler d1 execute orders_db_branch2             --remote             --config wrangler.jsonc             --file /tmp/branch2-main-catalog-sync.sql
+          node scripts/branch2-sync-main-catalog-once.mjs apply /tmp/branch2-main-catalog-sync.sql /tmp/branch2-main-catalog-sync-manifest.json /tmp/branch2-main-catalog-sync-plan.json
 
       - name: Verify zero test residue and exact main Catalog copy
-        run: node scripts/branch2-sync-main-catalog-once.mjs verify /tmp/branch2-main-catalog-sync.sql /tmp/branch2-main-catalog-sync-manifest.json
+        run: node scripts/branch2-sync-main-catalog-once.mjs verify /tmp/branch2-main-catalog-sync.sql /tmp/branch2-main-catalog-sync-manifest.json /tmp/branch2-main-catalog-sync-plan.json
