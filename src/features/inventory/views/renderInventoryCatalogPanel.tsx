@@ -108,6 +108,16 @@ const productGenderScope = (product: any): 'female' | 'male' | 'unisex' => ['fem
 const fixedGenderForProduct = (product: any) => productGenderScope(product) === 'female' ? 'ЖЕН' : productGenderScope(product) === 'male' ? 'МУЖ' : ''
 const productGenderScopeLabel = (product: any) => productGenderScope(product) === 'female' ? 'Женский' : productGenderScope(product) === 'male' ? 'Мужской' : 'Унисекс'
 
+async function readCatalogProductMutationResult(response: Response) {
+  const text = await response.text()
+  if (!text) return { ok: response.ok, message: '' }
+  try {
+    return JSON.parse(text) as { ok?: boolean; message?: string }
+  } catch {
+    return { ok: response.ok, message: response.ok ? '' : 'Сервер вернул неполный ответ. Обновите каталог перед повтором.' }
+  }
+}
+
 const executionKey = (material: unknown, length: unknown) => `${normalizedKey(material)}¦${normalizedKey(length)}`
 
 const executionLabel = (material: unknown, length: unknown) => {
@@ -326,12 +336,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: false }),
       })
-      let result: any = {}
-      try {
-        result = await response.json()
-      } catch {
-        result = {}
-      }
+      const result = await readCatalogProductMutationResult(response)
       if (!response.ok || result?.ok === false) {
         window.alert(result?.message || 'Товар не выведен из каталога. Проверьте активные позиции и связанные операции.')
         return
