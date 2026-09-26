@@ -199,6 +199,27 @@ export async function assertReferenceValueCanChange(db: D1Database, dbKind: stri
 }
 
 
+export function referenceValueIdentityKey(value: unknown) {
+  return upperText(value)
+    .replace(/[‐‑‒–—-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+
+export async function assertNoEquivalentReferenceValue(db: D1Database, dbKind: string, value: string, excludeId = 0) {
+  const identity = referenceValueIdentityKey(value);
+  if (!identity) return;
+  const rows = await db.prepare(
+    `SELECT id, value FROM reference_values WHERE kind = ? AND id <> ? ORDER BY is_active DESC, id ASC`
+  ).bind(dbKind, excludeId).all<{ id: number; value: string }>();
+  const duplicate = (rows.results || []).find((row) => referenceValueIdentityKey(row.value) === identity);
+  if (duplicate?.id) {
+    throw new Error(`Такое значение уже есть: «${cleanText(duplicate.value)}». Используйте существующий вариант вместо создания дубликата.`);
+  }
+}
+
+
 export async function upsertReferenceValue(db: D1Database, input: { kind?: unknown; value?: unknown; sortOrder?: unknown; isActive?: unknown }, id?: number) {
   const kind = normalizeReferenceKind(input.kind);
   if (!kind) {
@@ -232,6 +253,7 @@ export async function upsertReferenceValue(db: D1Database, input: { kind?: unkno
   }
 
   const dbKind = referenceKindToDbKind(kind);
+  await assertNoEquivalentReferenceValue(db, dbKind, value, id || 0);
   if (id) {
     await assertReferenceValueCanChange(db, dbKind, id, value, isActive);
     await db.prepare(
