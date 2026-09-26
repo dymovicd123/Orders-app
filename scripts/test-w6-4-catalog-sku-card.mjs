@@ -41,9 +41,20 @@ check(backend.includes("COALESCE(o.order_status, 'active') = 'active'") && backe
 check(backend.includes("workshop_tasks") && backend.includes("status IN ('active', 'ready')"), 'Workshop retirement blocker missing')
 check(backend.includes("inventory_lifecycle_events") && backend.includes("status = 'pending'"), 'pending lifecycle retirement blocker missing')
 check(backend.includes('inventory_stocktake_sessions s') && backend.includes("s.status = 'active'"), 'active stocktake retirement blocker missing')
-check(backend.includes('if (deactivating && identityChanged)') && backend.includes('Нельзя одновременно исправлять идентичность и выводить позицию'), 'mixed identity/deactivation mutation is not blocked')
+check(
+  backend.includes('const identityInputChanged = productId !== toInt(existing.product_id, 0)')
+    && backend.includes('if (deactivating) {')
+    && backend.includes('if (identityInputChanged)')
+    && backend.includes('Нельзя одновременно исправлять идентичность и выводить позицию'),
+  'mixed identity/deactivation mutation is not blocked',
+)
 check(backend.includes('if (identityChanged && hasOperationalUsage)') && backend.includes('catalogVariantHasOperationalUsage'), 'used SKU identity rewrite guard was lost')
-check(backend.includes('if (deactivating) await assertCatalogVariantMayDeactivate(db, id)'), 'runtime retirement does not use authoritative blocker')
+check(
+  backend.includes('if (deactivating) {')
+    && backend.includes('await assertCatalogVariantMayDeactivate(db, id);')
+    && backend.includes("UPDATE catalog_variants SET is_active = 0, sort_order = ?, updated_at = ? WHERE id = ? AND is_active = 1"),
+  'runtime retirement does not use authoritative blocker/pure soft-deactivation path',
+)
 const variantPatchRoute = workerIndex.slice(workerIndex.indexOf("const variantMatch = url.pathname.match(/^\\/api\\/catalog\\/variants"), workerIndex.indexOf("const orderRestoreMatch", workerIndex.indexOf("const variantMatch = url.pathname.match(/^\\/api\\/catalog\\/variants")))
 check(variantPatchRoute.includes("if (variantMatch && request.method === 'PATCH')") && variantPatchRoute.includes('const denied = requireAdminAccess(request);') && variantPatchRoute.includes('return json(await updateCatalogVariant'), 'catalog variant PATCH is not server-authorized as admin-only')
 
