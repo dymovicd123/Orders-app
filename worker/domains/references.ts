@@ -253,8 +253,13 @@ export async function upsertReferenceValue(db: D1Database, input: { kind?: unkno
   }
 
   const dbKind = referenceKindToDbKind(kind);
-  await assertNoEquivalentReferenceValue(db, dbKind, value, id || 0);
   if (id) {
+    const current = await db.prepare(
+      `SELECT value FROM reference_values WHERE id = ? AND kind = ? LIMIT 1`
+    ).bind(id, dbKind).first<{ value: string }>();
+    if (!current || referenceValueIdentityKey(current.value) !== referenceValueIdentityKey(value)) {
+      await assertNoEquivalentReferenceValue(db, dbKind, value, id);
+    }
     await assertReferenceValueCanChange(db, dbKind, id, value, isActive);
     await db.prepare(
       `UPDATE reference_values
@@ -262,6 +267,7 @@ export async function upsertReferenceValue(db: D1Database, input: { kind?: unkno
        WHERE id = ?`
     ).bind(value, isActive, sortOrder, now, id).run();
   } else {
+    await assertNoEquivalentReferenceValue(db, dbKind, value, 0);
     await db.prepare(
       `INSERT INTO reference_values (kind, value, is_active, sort_order, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
