@@ -264,6 +264,12 @@ async function prepare() {
   sql.push('DELETE FROM catalog_stock_positions WHERE NOT EXISTS (SELECT 1 FROM ' + quoted(positionStage.table) + ' x WHERE x.id=catalog_stock_positions.id);')
   sql.push('DELETE FROM catalog_products WHERE NOT EXISTS (SELECT 1 FROM ' + quoted(productStage.table) + ' x WHERE x.id=catalog_products.id);')
 
+  // Main and Branch2 can temporarily disagree about which id is the active keeper for
+  // the same canonical execution/combination. Deactivate current rows before replaying
+  // the exact main snapshot so partial unique indexes cannot reject a valid keeper swap.
+  sql.push('UPDATE catalog_variants SET is_active=0 WHERE COALESCE(is_active,1)<>0;')
+  sql.push('UPDATE catalog_stock_positions SET is_active=0 WHERE COALESCE(is_active,1)<>0;')
+
   sql.push(...insertRows('catalog_products', source.catalog_products.info, source.catalog_products.rows, true))
   sql.push(...insertRows('catalog_stock_positions', source.catalog_stock_positions.info, source.catalog_stock_positions.rows, true))
   sql.push(...insertRows('catalog_variants', source.catalog_variants.info, source.catalog_variants.rows, true))

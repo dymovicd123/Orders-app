@@ -15,10 +15,12 @@ check(script.includes("'orders','customers','inventory_movements'") || (script.i
 check(script.includes("Main Catalog does not contain an Этно кардиган product"), 'Ethno cardigan source precondition missing')
 check(script.includes("_branch2_catalog_price_backup_20260926"), 'Branch2 Stage03 price preservation backup missing')
 check(script.includes("DELETE FROM catalog_execution_prices;"), 'Stale/test execution price cleanup missing')
+check(script.includes("UPDATE catalog_variants SET is_active=0") && script.includes("UPDATE catalog_stock_positions SET is_active=0"), 'Keeper-conflict neutralization missing before exact main replay')
 check(script.includes("does not match the captured main Catalog snapshot"), 'Exact main Catalog verification missing')
 check(script.includes("BR2-H8 fixture products survived cleanup"), 'Fixture residue verification missing')
 
 check(workflow.includes("branches:\n      - branch2"), 'Workflow is not branch2-only')
+check(workflow.includes("'scripts/branch2-sync-main-catalog-once.mjs'"), 'R3 script changes would not retrigger the one-shot sync')
 check(workflow.includes('node scripts/branch2-sync-main-catalog-once.mjs apply'), 'Branch2 guarded API apply step missing')
 check(!workflow.includes('npx wrangler d1 execute orders_db_prod'), 'Workflow must never execute Production D1')
 check(workflow.includes('Full code gate before remote mutation') && workflow.includes('npm run release:check'), 'Full gate must run before mutation')
