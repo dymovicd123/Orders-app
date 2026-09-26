@@ -20,6 +20,7 @@ check(script.includes("does not match the captured main Catalog snapshot"), 'Exa
 check(script.includes("BR2-H8 fixture products survived cleanup"), 'Fixture residue verification missing')
 
 check(workflow.includes("branches:\n      - branch2"), 'Workflow is not branch2-only')
+check(workflow.includes("'scripts/branch2-sync-main-catalog-once.mjs'"), 'R3 script changes would not retrigger the one-shot sync')
 check(workflow.includes('node scripts/branch2-sync-main-catalog-once.mjs apply'), 'Branch2 guarded API apply step missing')
 check(!workflow.includes('npx wrangler d1 execute orders_db_prod'), 'Workflow must never execute Production D1')
 check(workflow.includes('Full code gate before remote mutation') && workflow.includes('npm run release:check'), 'Full gate must run before mutation')
