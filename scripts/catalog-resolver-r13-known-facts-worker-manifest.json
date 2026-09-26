@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "revision": "catalog-resolver-r13-known-facts",
+  "files": {
+    "worker/domains/catalog-review.ts": {
+      "beforeGitBlob": "0fbbba86b3e5f7b68f4eeb77918d31278da5597d",
+      "afterGitBlob": "8065073360933a5de672e5957b369f577e046901",
+      "beforeLines": 1154,
+      "afterLines": 1133,
+      "baselineFixture": "scripts/fixtures/catalog-resolver-r13-known-facts/worker/domains/catalog-review.ts"
+    }
+  }
+}
