@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 
 const review = fs.readFileSync('worker/domains/catalog-review.ts', 'utf8')
+const reservations = fs.readFileSync('worker/domains/order-reservations.ts', 'utf8')
 const flow = fs.readFileSync('src/features/orders/catalogResolutionFlow.ts', 'utf8')
 const workspace = fs.readFileSync('src/app/controllers/useWorkspaceViewModel.tsx', 'utf8')
 const references = fs.readFileSync('worker/domains/references.ts', 'utf8')
@@ -26,6 +27,16 @@ check(review.includes("if (!knownSize) unknownFields.push('size')"), 'R13: size 
 check(!review.includes('const genderVariants = facts.gender'), 'R13: gender is still being validated against an exact SKU combination')
 check(!review.includes('const colorVariants = facts.color'), 'R13: color is still being validated against an exact SKU combination')
 check(!review.includes('const sizeMatches = colorVariants.some'), 'R13: size is still being validated against an exact SKU combination')
+
+// The pre-modal automatic resolver must use the same definition of "known" so a valid
+// fact cannot fall back into the human modal merely because reference_values is stale.
+check(reservations.includes('export async function loadCatalogKnownFacts'), 'R13: automatic resolver has no Catalog-backed known-fact source')
+check(reservations.includes("SELECT 'color' AS kind, color AS value FROM catalog_variants"), 'R13: automatic resolver ignores Catalog colors')
+check(reservations.includes("const material = knownFacts.resolve('material', aliasedMaterial)"), 'R13: automatic resolver does not canonicalize known material')
+check(reservations.includes("const color = knownFacts.resolve('color', aliasedColor)"), 'R13: automatic resolver does not canonicalize known color')
+check(reservations.includes("const size = knownFacts.resolve(sizeKind, aliasedSize)"), 'R13: automatic resolver does not canonicalize known size')
+check(reservations.includes("matchStatus: created.created ? 'created_combination' : 'matched'"), 'R13: recognized new combinations no longer auto-resolve')
+check(!reservations.includes("upperText(item.color) && !await catalogReferenceValueExists(db, 'color', color)"), 'R13: automatic resolver still requires a reference row for a Catalog-known color')
 
 // Unknown values still reach the clarification flow; known non-exact combinations simply reach ready.
 check(flow.includes("const needsCorrection = (context.unknownFields || []).includes(field)"), 'R13: unknown fields are not routed to clarification')
