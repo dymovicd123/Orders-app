@@ -12,15 +12,17 @@
 
 Updated: 2026-09-25
 
-## Current checkpoint — Stage03 H10 complete / H11 client-gated
+## Current checkpoint — Stage03 H11 product price analytics
 
 - Release scope remains **Branch2 only**. Do not touch `main` / Production until the user explicitly opens that gate; Production does not yet have the price setup required for safe itemized operation.
-- H9 remains complete on Branch2: merged SHA `5fd108c05d05538467a39f55970545efdcac889d`; exact deploy run `36165964308` succeeded.
-- H10 is complete on Branch2: merged SHA `c580b5231bc0101646b013ea000c9151355fec31`; work-branch cumulative CI/build run `36166794744` succeeded; Branch2 safety run `36167153671` succeeded; exact `cloudflare-deploy/branch2` run `36167153573` succeeded.
-- H10 policy: physical returned items/quantities and refund money are independent facts. New Return drafts start at 0; manager enters the actual refund explicitly; current Catalog price and historical sold line price never become an automatic refund rule. Zero-money physical returns and money-only refunds remain supported. No migration/backfill was used.
-- **H11 discount/analytics policy is paused pending client clarification.** Do not invent discount amount/percent UI, override-reason requirements, or explicit discount-reporting semantics.
-- Engineering work that does not require those client decisions: perform the final Branch2 Stage03 end-to-end audit/acceptance across Create → Edit → payments/debt → Warehouse → Workshop → Return → Exchange → reports/history, while treating discount-specific behavior as an explicit open client gate rather than guessing it.
-- After the final audit, Stage03 can be reported as technically complete for all confirmed pricing rules, with H11 discount behavior still client-gated. Stage04 Workshop finance remains a separate roadmap stage and should not be started implicitly.
+- H10 is complete and deployed on Branch2. Latest completed H10 runtime SHA: `c580b5231bc0101646b013ea000c9151355fec31`; exact deploy run `36167153573` succeeded. Context-only Branch2 SHA `394cae38472d647c414bffbfe2b4ebe354e8e2fc` also passed safety/deploy.
+- Current H11 work branch: `w-stage03-h11-product-price-analytics-20260926`.
+- Client-confirmed discount rule: discount is represented by the **final absolute sold price**, not a percent. Example: Catalog 115000 → actual sale 105000. Persisted truth remains Catalog snapshot + factual `unit_price`; no separate required discount field or percent UI is needed.
+- Client-requested analytics: existing Products report ranks products by sold quantity and must show the **quantity-weighted average factual sold price** next to each product.
+- Legacy safety: legacy product quantities may still contribute to popularity, but legacy orders without trustworthy line prices must never be included in the average. UI must show exact-price coverage when itemized + legacy history are mixed.
+- H11 implementation scope: extend exact itemized product reporting from persisted `order_items.line_total` + itemized quantity; display average sold price and coverage; clarify direct final-price discount wording in Create/Edit/Exchange; no current-Catalog historical repricing, migration, backfill, payment/debt/return rewrite, or Production action.
+- Before H11 completion: focused H11 regression + cumulative CI/build, then merge only into `branch2` and verify exact `cloudflare-deploy/branch2` success.
+- After H11: final Branch2 Stage03 end-to-end audit/acceptance across Create → Edit → payments/debt → Warehouse → Workshop → Return → Exchange → reports/history. Stage04 Workshop finance remains separate.
 
 
 ## Current priority — Stage02 transactional stock truth

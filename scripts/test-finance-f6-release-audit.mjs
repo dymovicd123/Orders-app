@@ -116,7 +116,7 @@ check(`${money}\n${orderWrite}`.includes("'payment_reversal'"), 'Immutable payme
   // Adjacent strict-report semantics: do not mix business-order cohorts with operation-date totals
   // or show placeholder aggregate columns as if they were implemented.
   check(report.includes('COUNT(DISTINCT o.customer_id) AS clients') && report.includes('COUNT(DISTINCT o.manager_id) AS managers'), 'City aggregate still lacks real distinct client/manager counts')
-  check(reportUi.includes('Товары из заказов с бизнес-датой заказа в выбранном периоде.'), 'Product report confuses business order date with system creation time')
+  check(reportUi.includes('Товары ранжируются по количеству проданных единиц.') && reportUi.includes('старые legacy-заказы не подмешиваются в среднюю'), 'Product report lost honest order-period / historical-price semantics')
   const productReportBlock = between(reportUi, 'const renderProductReport = () => (', 'const renderCityReport = () => (')
   check(!productReportBlock.includes('Возвраты по заказам') && !productReportBlock.includes('activeReturnTotal'), 'Product report mixes operation-date returns into the order-date product cohort')
   check(reportUi.includes("{ label: 'Возвраты по дате операции', value: formatMoney(activeReturnTotal) }"), 'Manager report does not label return-period semantics honestly')

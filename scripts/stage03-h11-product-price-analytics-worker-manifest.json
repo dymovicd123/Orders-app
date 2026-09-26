@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "revision": "stage03-h11-product-price-analytics",
+  "files": {
+    "worker/domains/finance-reports.ts": {
+      "beforeGitBlob": "2e36e850c9e17f3135731ecaba9a3514b77bede2",
+      "afterGitBlob": "731c40de473b00a353fc58e987626d16d7671186",
+      "beforeLines": 1249,
+      "afterLines": 1270,
+      "baselineFixture": "scripts/fixtures/stage03-h11-product-price-analytics/worker/domains/finance-reports.ts"
+    }
+  }
+}

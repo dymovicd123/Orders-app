@@ -91,6 +91,35 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage03H11FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h11-product-price-analytics-frontend-manifest.json'), 'utf8'))
+if (stage03H11FrontendManifest?.version !== 1 || stage03H11FrontendManifest?.revision !== 'stage03-h11-product-price-analytics') throw new Error('Stage03-H11 frontend manifest invalid')
+const stage03H11FrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE03_H11_PRODUCT_PRICE_ANALYTICS_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stage03H11FrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage03H11FrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Stage03-H11 frontend changed beyond exact manifest: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (stage03H11FrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Stage03-H11 frontend baseline fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, STAGE03_H11_PRODUCT_PRICE_ANALYTICS_FRONTEND_NORMALIZED: '1' }})
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03-H11 PRODUCT PRICE ANALYTICS FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const stage03H10FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h10-manual-return-policy-frontend-manifest.json'), 'utf8'))
 if (stage03H10FrontendManifest?.version !== 1 || stage03H10FrontendManifest?.revision !== 'stage03-h10-manual-return-policy') throw new Error('Stage03-H10 frontend manifest invalid')
 const stage03H10FrontendBlobSha = (value) => {

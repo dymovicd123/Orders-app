@@ -680,18 +680,7 @@ export type FinanceReportResponse = {
     traceScope?: { startDate: string; endDate: string; selectedOperationPeriodOnly: boolean; includesOrderPeriodBeforePayments: boolean }
     consistency?: FinanceConsistency
     managers: Array<{ manager_id?: number; manager: string; color_key?: string; order_count: number; total_sales: number; total_received: number; total_returns: number; total_debt: number; avg_check: number }>
-    products: Array<{
-      product: string
-      quantity: number
-      order_count: number
-      order_sales: number
-      itemized_quantity?: number
-      itemized_gross_sales?: number
-      itemized_order_count?: number
-      legacy_order_count?: number
-      legacy_quantity?: number
-      average_sold_price?: number | null
-    }>
+    products: Array<{ product: string; quantity: number; order_count: number; order_sales: number }>
     cities: Array<{ city: string; order_count: number; total_sales: number; total_received: number; total_debt: number; total_returns: number; clients: number; managers: number }>
     days: Array<{ date: string; order_count: number; total_sales: number; total_received: number; total_returns: number; total_debt: number }>
     returns: Array<{ id: number; order_id: number; external_id: string; order_date: string; return_date: string; amount: number; status: string; comment: string; manager: string; manager_color?: string; customer?: string; city?: string; return_type?: 'order_return' | 'exchange_refund' | string }>
