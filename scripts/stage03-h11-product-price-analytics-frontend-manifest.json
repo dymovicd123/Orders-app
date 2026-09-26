@@ -4,7 +4,7 @@
   "files": {
     "src/app/types.ts": {
       "beforeGitBlob": "b51050af859fadc37bcb2d66e76dc4e5319d7a2b",
-      "afterGitBlob": "17e326425c77745cf92b1c0c05d2d8f7c10d8136",
+      "afterGitBlob": "b36f6bdd9204dd7aaf6161bdd19ee5fb3a097043",
       "beforeLines": 1752,
       "afterLines": 1763,
       "baselineFixture": "scripts/fixtures/stage03-h11-product-price-analytics/src/app/types.ts"
