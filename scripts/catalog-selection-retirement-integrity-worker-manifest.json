@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "revision": "catalog-selection-retirement-integrity-r1",
+  "files": {
+    "worker/domains/catalog.ts": {
+      "beforeGitBlob": "d5be79e09ee6d236ca15038072db1f1f39a809f9",
+      "afterGitBlob": "1cba1e87d6d8d41f3b820b8fdfa9f005ed3e2cb8",
+      "beforeLines": 1183,
+      "afterLines": 1329,
+      "baselineFixture": "scripts/fixtures/catalog-selection-retirement-integrity/worker/domains/catalog.ts"
+    }
+  }
+}
