@@ -28,7 +28,7 @@ import './styles/189d-team-activity-cleanup.css'
 import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, ExchangeDraft, ExchangeHistoryEntry, ExchangeHistoryResponse, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, InventoryHistoryResponse, InventoryCheckHistoryResponse, FinancialHistoryEntry, FinancialHistoryResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryDraftItem, InventoryMatrixDraft, InventoryMovementRecord, InventoryOperationVariantDraft, InventoryPanel, InventoryResponse, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, InventoryStockRecord, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, ReturnDraft, ReturnHistoryEntry, ReturnHistoryResponse, SimpleAdminStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
 import type { CatalogResolutionContext, CatalogResolutionInput, CatalogResolutionResponse, InventoryCycleCountApplyResponse, InventoryCycleCountSuggestionsResponse, InventoryReservationsResponse, InventoryStocktakeMutationResponse, InventoryStocktakeSessionsResponse, WarehouseAttentionSummaryResponse } from '../shared/api-contracts.ts'
 import { MANAGER_COLOR_OPTIONS, SIMPLE_ADMIN_USER, SIMPLE_MANAGER_USER, orderPanelOptions, workspaceModules } from './app/constants'
-import { createDebtClosePayment, createEditorDraft, createEmptyEditorItem, createEmptyEditorPayment, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, deriveOrderSourceType, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, htmlEscape, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, resolvePaymentKind, sectorFromHash, shippingStatusLabel, sortSizeLikeValues, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
+import { calculateTotals, createDebtClosePayment, createEditorDraft, createEmptyEditorItem, createEmptyEditorPayment, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, deriveOrderSourceType, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, htmlEscape, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, resolvePaymentKind, sectorFromHash, shippingStatusLabel, sortSizeLikeValues, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
 import { ChoicePills, FriendlyNumberInput, ManagerBadge, ManagerPicker, SmartPickerInput, resolveManagerDisplayColor } from './components'
 import { TableDragScrollManager } from './components/tables/TableDragScrollManager'
 import { DatabaseStorageModal, DatabaseStorageWarning, useDatabaseStorageMaintenance } from './features/storage/DatabaseStorageMaintenance'
@@ -40,7 +40,6 @@ import { useWorkshopReads } from './features/workshop/useWorkshopReads'
 import { useApiClient } from './app/controllers/useApiClient'
 import { useOperationalViewModel } from './app/controllers/useOperationalViewModel'
 import { useWorkspaceViewModel } from './app/controllers/useWorkspaceViewModel'
-import { evaluateItemizedCreatePricing, resolveCatalogOrderSalePrice } from './app/order-pricing'
 import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft } from './features/inventory/inventoryDraftFactories'
 import { downloadBlobFile, makeExportHtml } from './features/export/documentExport'
 import './styles/1905-small-screen-acceptance.css'
@@ -1117,7 +1116,6 @@ function App() {
   const {
     applyCreateProductPick,
     applyEditorProductPick,
-    applyExchangeItemPatch,
     applyExchangeProductPick,
     arrivalSuggestionValues,
     filteredReferenceItems,
@@ -1140,7 +1138,6 @@ function App() {
     catalogVariantsByProductId,
     createDraft,
     editorDraft,
-    selectedOrder,
     getCatalogProductEffectiveCategory,
     getInventoryRowCategory,
     getStockQuantityForVariant,
@@ -3872,21 +3869,7 @@ function App() {
     setCreateDraft((current) => {
       const nextItems = current.items.map((item, itemIndex) => {
         if (itemIndex !== index) return item
-        const normalizedValue = field === 'audienceType' ? normalizeAudienceTypeValue(value) : value
-        const nextItem = { ...item, [field]: normalizedValue } as EditorItem
-
-        if (field === 'unitPrice') {
-          const rawPrice = value === null || value === undefined ? '' : String(value).trim()
-          nextItem.unitPrice = rawPrice === '' ? undefined : Number(rawPrice)
-          nextItem.priceOrigin = rawPrice === '' ? 'missing' : 'manual'
-          nextItem.priceNeedsConfirmation = false
-          return nextItem
-        }
-        if (field === 'priceNeedsConfirmation') {
-          nextItem.priceNeedsConfirmation = Boolean(value)
-          return nextItem
-        }
-
+        const nextItem = { ...item, [field]: field === 'audienceType' ? normalizeAudienceTypeValue(value) : value }
         if (['productName', 'audienceType', 'gender', 'color', 'material', 'length', 'size', 'sourceType'].includes(String(field))) {
           nextItem.stockObservationEnabled = false
           nextItem.observedPhysicalQuantity = null
@@ -3911,20 +3894,6 @@ function App() {
             nextItem.size = ''
           }
         }
-        if (['productName', 'audienceType', 'material', 'length'].includes(String(field))) {
-          const pricing = resolveCatalogOrderSalePrice(catalogData, nextItem)
-          const keepManualPrice = item.priceOrigin === 'manual' && item.unitPrice !== undefined && item.unitPrice !== null
-          nextItem.catalogPriceSnapshot = pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null
-          if (keepManualPrice) {
-            nextItem.unitPrice = item.unitPrice
-            nextItem.priceOrigin = 'manual'
-            nextItem.priceNeedsConfirmation = false
-          } else {
-            nextItem.unitPrice = pricing.status === 'matched' ? pricing.salePrice : undefined
-            nextItem.priceOrigin = pricing.status === 'matched' ? 'catalog' : 'missing'
-            nextItem.priceNeedsConfirmation = false
-          }
-        }
         return nextItem
       })
       return { ...current, items: nextItems }
@@ -3932,10 +3901,7 @@ function App() {
   }
 
   function addCreateItem() {
-    setCreateDraft((current) => ({
-      ...current,
-      items: [...current.items, { ...createEmptyEditorItem(), unitPrice: undefined, catalogPriceSnapshot: null, priceOrigin: 'missing', priceNeedsConfirmation: false }],
-    }))
+    setCreateDraft((current) => ({ ...current, items: [...current.items, createEmptyEditorItem()] }))
   }
 
   function removeCreateItem(index: number) {
@@ -3970,15 +3936,10 @@ function App() {
     })
   }
 
-  const createPricing = useMemo(
-    () => evaluateItemizedCreatePricing(createDraft.items, createDraft.payments),
-    [createDraft.items, createDraft.payments],
+  const createTotals = useMemo(
+    () => calculateTotals(createDraft.items, createDraft.payments, createDraft.orderTotal),
+    [createDraft.items, createDraft.payments, createDraft.orderTotal],
   )
-  const createTotals = useMemo(() => ({
-    totalAmount: createPricing.totalAmount ?? 0,
-    receivedAmount: createPricing.receivedAmount,
-    debtAmount: createPricing.debtAmount ?? 0,
-  }), [createPricing])
 
   function createOrderDraftWithDefaultManager() {
     const draft = createEmptyOrderDraft()
@@ -4032,22 +3993,6 @@ function App() {
         throw new Error(`Укажите фактическое количество для «${missingObservation.productName || 'позиции'}» или выберите «Сейчас проверить не могу».`)
       }
 
-      const pricingReadiness = evaluateItemizedCreatePricing(createDraft.items, createDraft.payments)
-      if (pricingReadiness.status !== 'ready') {
-        const blocker = pricingReadiness.blockers[0]
-        const position = blocker?.itemIndex !== undefined ? blocker.itemIndex + 1 : 0
-        const payment = blocker?.paymentIndex !== undefined ? blocker.paymentIndex + 1 : 0
-        if (blocker?.code === 'empty_items') throw new Error('Добавьте хотя бы один товар в заказ.')
-        if (blocker?.code === 'invalid_quantity') throw new Error(`Проверьте количество в позиции ${position}.`)
-        if (blocker?.code === 'missing_unit_price') throw new Error(`Укажите цену продажи для позиции ${position}. Если цены в Каталоге нет, введите её вручную.`)
-        if (blocker?.code === 'invalid_unit_price') throw new Error(`Цена продажи в позиции ${position} должна быть целым числом от 0.`)
-        if (blocker?.code === 'invalid_catalog_snapshot') throw new Error(`Не удалось безопасно зафиксировать цену Каталога для позиции ${position}. Обновите выбор товара.`)
-        if (blocker?.code === 'invalid_payment') throw new Error(`Проверьте оплату ${payment}: положительная сумма требует способ оплаты, сумма должна быть целым числом от 0.`)
-        if (blocker?.code === 'overpayment') throw new Error(`Сумма оплат (${pricingReadiness.receivedAmount}) больше итога заказа (${pricingReadiness.totalAmount ?? 0}). Исправьте оплаты или цены позиций.`)
-        throw new Error('Проверьте цены позиций и оплаты перед сохранением заказа.')
-      }
-      const pricedLineByInputIndex = new Map(pricingReadiness.lines.map((line) => [line.itemIndex, line]))
-
       const payload = {
         orderDate: createDraft.orderDate,
         managerId: createDraft.managerId || undefined,
@@ -4057,7 +4002,7 @@ function App() {
         city: createDraft.city,
         deliveryType: createDraft.deliveryType,
         sourceType: deriveOrderSourceType(createDraft.items),
-        pricingMode: 'itemized_v1' as const,
+        orderTotal: createDraft.orderTotal ? Number(createDraft.orderTotal) : undefined,
         workshopStatus: createDraft.workshopStatus,
         orderStatus: createDraft.orderStatus,
         comment: createDraft.comment,
@@ -4070,8 +4015,7 @@ function App() {
           length: item.length,
           size: item.size,
           quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          catalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
+          unitPrice: 0,
           sourceType: item.sourceType,
           workshopComment: item.workshopComment,
           workshopUrgent: Boolean(item.workshopUrgent),
@@ -4110,7 +4054,6 @@ function App() {
         totalAmount?: number
         receivedAmount?: number
         debtAmount?: number
-        pricingMode?: 'legacy_manual_total' | 'itemized_v1'
         code?: string
         shortages?: CreateOrderShortage[]
         stockWriteOff?: Array<{ productName?: string; concurrentShortage?: boolean; shortageAfter?: number }>
@@ -4184,7 +4127,6 @@ function App() {
         city: createDraft.city || null,
         delivery_type: createDraft.deliveryType || null,
         source_type: deriveOrderSourceType(createDraft.items),
-        pricing_mode: 'itemized_v1',
         workshop_status: createDraft.workshopStatus,
         order_status: createDraft.orderStatus,
         total_amount: Number(result.totalAmount || 0),
@@ -4192,31 +4134,24 @@ function App() {
         debt_amount: Number(result.debtAmount || 0),
         return_amount: 0,
         comment: createDraft.comment || null,
-        items: createDraft.items
-          .map((item, inputIndex) => ({ item, inputIndex }))
-          .filter(({ item }) => String(item.productName || '').trim())
-          .map(({ item, inputIndex }) => {
-            const pricedLine = pricedLineByInputIndex.get(inputIndex)
-            return {
-              productName: item.productName,
-              audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
-              gender: item.gender || null,
-              color: item.color || null,
-              material: item.material || null,
-              length: item.length || null,
-              size: item.size || null,
-              quantity: pricedLine?.quantity ?? item.quantity ?? 1,
-              unitPrice: pricedLine?.unitPrice ?? Number(item.unitPrice || 0),
-              catalogPriceSnapshot: pricedLine?.catalogPriceSnapshot ?? item.catalogPriceSnapshot ?? null,
-              lineTotal: pricedLine?.lineTotal ?? 0,
-              sourceType: item.sourceType || 'warehouse',
-              workshopComment: item.workshopComment || null,
-              workshopUrgent: Boolean(item.workshopUrgent),
-              workshopDueDate: item.workshopUrgent ? item.workshopDueDate || null : null,
-              workshopDueTime: item.workshopUrgent ? item.workshopDueTime || null : null,
-              isWorkshop: item.sourceType === 'workshop',
-            }
-          }),
+        items: createDraft.items.filter((item) => String(item.productName || '').trim()).map((item) => ({
+          productName: item.productName,
+          audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
+          gender: item.gender || null,
+          color: item.color || null,
+          material: item.material || null,
+          length: item.length || null,
+          size: item.size || null,
+          quantity: item.quantity ?? 1,
+          unitPrice: 0,
+          lineTotal: 0,
+          sourceType: item.sourceType || 'warehouse',
+          workshopComment: item.workshopComment || null,
+          workshopUrgent: Boolean(item.workshopUrgent),
+          workshopDueDate: item.workshopUrgent ? item.workshopDueDate || null : null,
+          workshopDueTime: item.workshopUrgent ? item.workshopDueTime || null : null,
+          isWorkshop: item.sourceType === 'workshop',
+        })),
         payments: createDraft.payments
           .map((payment, index) => ({
             paymentDate: payment.paymentDate,
@@ -4684,6 +4619,7 @@ function App() {
       setMessage('Заказ найден в цехе, но не загрузился для обмена. Откройте его через таблицу заказов.')
       return
     }
+
     const exchangeDraftForTask = createExchangeDraft(order)
     const exactWorkshopItem = (order.items || []).find((item) => (
       Number(item.id || 0) === Number(task.orderItemId || 0)
@@ -4699,14 +4635,6 @@ function App() {
       newItem: {
         ...exchangeDraftForTask.newItem,
         sourceType: 'workshop',
-        ...(order.pricing_mode === 'itemized_v1' && exactWorkshopItem ? {
-          unitPrice: Number.isSafeInteger(Number(exactWorkshopItem.unitPrice)) && Number(exactWorkshopItem.unitPrice) >= 0
-            ? Number(exactWorkshopItem.unitPrice)
-            : undefined,
-          catalogPriceSnapshot: null,
-          priceOrigin: Number.isSafeInteger(Number(exactWorkshopItem.unitPrice)) && Number(exactWorkshopItem.unitPrice) >= 0 ? 'manual' : 'missing',
-          priceNeedsConfirmation: false,
-        } : {}),
       },
     })
     setMessage(`Открыта форма обмена по заказу ${order.external_id}.`)
@@ -5188,25 +5116,12 @@ function App() {
     setEditorDraft((current) => (current ? { ...current, [key]: value } : current))
   }
 
-  function updateEditorItem(index: number, field: keyof EditorItem, value: string | number | boolean | null) {
+  function updateEditorItem(index: number, field: keyof EditorItem, value: string | number | boolean) {
     setEditorDraft((current) => {
       if (!current) return current
       const nextItems = current.items.map((item, itemIndex) => {
         if (itemIndex !== index) return item
         const nextItem = { ...item, [field]: field === 'audienceType' ? normalizeAudienceTypeValue(value) : value }
-        if (field === 'unitPrice') {
-          const rawPrice = value === null || value === undefined ? '' : String(value).trim()
-          nextItem.unitPrice = rawPrice === '' ? undefined : Number(rawPrice)
-          if (selectedOrder?.pricing_mode === 'itemized_v1') {
-            nextItem.priceOrigin = rawPrice === '' ? 'missing' : 'manual'
-            nextItem.priceNeedsConfirmation = false
-          }
-          return nextItem
-        }
-        if (field === 'priceNeedsConfirmation') {
-          nextItem.priceNeedsConfirmation = Boolean(value)
-          return nextItem
-        }
         if (['productName', 'audienceType', 'gender', 'color', 'material', 'length', 'size', 'sourceType'].includes(String(field))) {
           nextItem.stockObservationEnabled = false
           nextItem.observedPhysicalQuantity = null
@@ -5224,20 +5139,6 @@ function App() {
           const nextOptions = getSizeOptions(nextItem.productName, nextItem.audienceType)
           if (nextItem.size && !nextOptions.some((option) => normalizeSuggestion(option) === normalizeSuggestion(nextItem.size))) {
             nextItem.size = ''
-          }
-        }
-        if (selectedOrder?.pricing_mode === 'itemized_v1' && ['productName', 'audienceType', 'material', 'length'].includes(String(field))) {
-          const pricing = resolveCatalogOrderSalePrice(catalogData, nextItem)
-          const keepManualPrice = item.priceOrigin === 'manual' && item.unitPrice !== undefined && item.unitPrice !== null
-          nextItem.catalogPriceSnapshot = pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null
-          if (keepManualPrice) {
-            nextItem.unitPrice = item.unitPrice
-            nextItem.priceOrigin = 'manual'
-            nextItem.priceNeedsConfirmation = false
-          } else {
-            nextItem.unitPrice = pricing.status === 'matched' ? pricing.salePrice : undefined
-            nextItem.priceOrigin = pricing.status === 'matched' ? 'catalog' : 'missing'
-            nextItem.priceNeedsConfirmation = false
           }
         }
         return nextItem
@@ -5371,19 +5272,12 @@ function App() {
   }
 
   function addEditorItem() {
-  setEditorDraft((current) => {
-    if (!current) return current
-    const nextItem = selectedOrder?.pricing_mode === 'itemized_v1'
-      ? { ...createEmptyEditorItem(), unitPrice: undefined, catalogPriceSnapshot: null, priceOrigin: 'missing' as const, priceNeedsConfirmation: false }
-      : createEmptyEditorItem()
-    return { ...current, items: [...current.items, nextItem] }
-  })
+  setEditorDraft((current) => current ? { ...current, items: [...current.items, createEmptyEditorItem()] } : current)
 }
 
 function removeEditorItem(index: number) {
   setEditorDraft((current) => {
     if (!current) return current
-    if (selectedOrder?.pricing_mode === 'itemized_v1' && current.items.length <= 1) return current
     const nextItems = current.items.filter((_, itemIndex) => itemIndex !== index)
     return { ...current, items: nextItems.length ? nextItems : [createEmptyEditorItem()] }
   })
@@ -5548,15 +5442,6 @@ function removeDebtPayment(index: number) {
     setOrderPanel('edit')
     setEditorOpen(true)
     window.location.hash = '#editor'
-    if (order.pricing_mode === 'itemized_v1') {
-      void Promise.all([
-        loadCatalogData(true),
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
-      ]).catch((err) => {
-        setError(err instanceof Error ? err.message : 'Не удалось обновить Каталог или остатки. Сервер всё равно перепроверит данные при сохранении.')
-      })
-    }
   }
 
   function upsertOrderInState(nextOrder: OrderRecord) {
@@ -5575,31 +5460,6 @@ function removeDebtPayment(index: number) {
   async function persistOrder(nextDraft: EditorDraft, targetOrder?: OrderRecord | null) {
     const order = targetOrder || selectedOrder
     if (!order) return
-    const isItemizedEdit = order.pricing_mode === 'itemized_v1'
-    const normalizedEditorText = (value: unknown) => normalizeSuggestion(String(value ?? ''))
-    const originalItemsById = new Map(order.items.map((item) => [Number(item.id || 0), item]))
-    const isItemizedContentRewrite = isItemizedEdit && (
-      nextDraft.items.length !== order.items.length
-      || nextDraft.items.some((item) => {
-        const original = originalItemsById.get(Number(item.orderItemId || 0))
-        if (!original) return true
-        const originalSource = original.isWorkshop ? 'workshop' : (original.sourceType === 'boutique' ? 'boutique' : 'warehouse')
-        const nextSource = item.sourceType === 'workshop' ? 'workshop' : (item.sourceType === 'boutique' ? 'boutique' : 'warehouse')
-        return normalizedEditorText(item.productName) !== normalizedEditorText(original.productName)
-          || normalizeAudienceTypeValue(item.audienceType) !== normalizeAudienceTypeValue(original.audienceType)
-          || normalizedEditorText(item.gender) !== normalizedEditorText(original.gender)
-          || normalizedEditorText(item.color) !== normalizedEditorText(original.color)
-          || normalizedEditorText(item.material || 'СТАНДАРТ') !== normalizedEditorText(original.material || 'СТАНДАРТ')
-          || normalizedEditorText(item.length || 'СТАНДАРТ') !== normalizedEditorText(original.length || 'СТАНДАРТ')
-          || normalizedEditorText(item.size) !== normalizedEditorText(original.size)
-          || Number(item.quantity || 0) !== Number(original.quantity || 0)
-          || nextSource !== originalSource
-          || String(item.workshopComment || '').trim() !== String(original.workshopComment || '').trim()
-          || Boolean(item.workshopUrgent) !== Boolean(original.workshopUrgent)
-          || String(item.workshopUrgent ? (item.workshopDueDate || '') : '') !== String(original.workshopUrgent ? (original.workshopDueDate || '') : '')
-          || String(item.workshopUrgent ? (item.workshopDueTime || '') : '') !== String(original.workshopUrgent ? (original.workshopDueTime || '') : '')
-      })
-    )
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
       setMessage(projection.hasCommittedDownstreamOperation
@@ -5613,42 +5473,9 @@ function removeDebtPayment(index: number) {
     setMessage(null)
 
     try {
-      const missingObservation = isItemizedEdit && !isItemizedContentRewrite
-        ? null
-        : nextDraft.items.find((item) => item.sourceType !== 'workshop' && item.stockObservationEnabled && (item.observedPhysicalQuantity === null || item.observedPhysicalQuantity === undefined))
+      const missingObservation = nextDraft.items.find((item) => item.sourceType !== 'workshop' && item.stockObservationEnabled && (item.observedPhysicalQuantity === null || item.observedPhysicalQuantity === undefined))
       if (missingObservation) {
         throw new Error(`Укажите фактическое количество для «${missingObservation.productName || 'позиции'}» или выберите «Сейчас проверить не могу».`)
-      }
-
-      const itemPriceCorrections: Array<{
-        orderItemId: number
-        unitPrice: number
-        expectedUnitPrice: number
-        expectedQuantity: number
-        expectedLineTotal: number
-        expectedCatalogPriceSnapshot: number | null
-      }> = []
-      if (isItemizedEdit && !isItemizedContentRewrite) {
-        for (const item of nextDraft.items) {
-          const orderItemId = Number(item.orderItemId || 0)
-          if (!orderItemId) throw new Error('Не удалось определить позицию заказа для исправления цены. Обновите заказ и повторите.')
-          const original = order.items.find((entry) => Number(entry.id || 0) === orderItemId)
-          if (!original) throw new Error('Одна из позиций заказа уже изменилась. Обновите заказ и повторите исправление.')
-          const nextUnitPrice = Number(item.unitPrice)
-          if (!Number.isSafeInteger(nextUnitPrice) || nextUnitPrice < 0) {
-            throw new Error(`Укажите целую цену от 0 для «${item.productName || 'позиции'}».`)
-          }
-          const originalUnitPrice = Number(original.unitPrice || 0)
-          if (nextUnitPrice === originalUnitPrice) continue
-          itemPriceCorrections.push({
-            orderItemId,
-            unitPrice: nextUnitPrice,
-            expectedUnitPrice: originalUnitPrice,
-            expectedQuantity: Number(original.quantity || 0),
-            expectedLineTotal: Number(original.lineTotal || 0),
-            expectedCatalogPriceSnapshot: original.catalogPriceSnapshot ?? null,
-          })
-        }
       }
 
       const paymentCorrections: Array<{
@@ -5700,90 +5527,7 @@ function removeDebtPayment(index: number) {
         })
       }
 
-      let itemContentReplacement: {
-        expectedItems: Array<Record<string, unknown>>
-        items: Array<Record<string, unknown>>
-      } | null = null
-      if (isItemizedContentRewrite) {
-        const pricingReadiness = evaluateItemizedCreatePricing(nextDraft.items, nextDraft.payments.filter((payment) => Boolean(payment.id)))
-        if (pricingReadiness.status !== 'ready') {
-          const blocker = pricingReadiness.blockers[0]
-          const position = blocker?.itemIndex !== undefined ? blocker.itemIndex + 1 : 0
-          if (blocker?.code === 'empty_items') throw new Error('В заказе должна остаться хотя бы одна позиция.')
-          if (blocker?.code === 'invalid_quantity') throw new Error(`Проверьте количество в позиции ${position}.`)
-          if (blocker?.code === 'missing_unit_price') throw new Error(`Укажите цену продажи для позиции ${position}. Если цены в Каталоге нет, введите её вручную.`)
-          if (blocker?.code === 'invalid_unit_price') throw new Error(`Цена продажи в позиции ${position} должна быть целым числом от 0.`)
-          if (blocker?.code === 'invalid_catalog_snapshot') throw new Error(`Не удалось безопасно зафиксировать цену Каталога для позиции ${position}. Обновите выбор товара.`)
-          if (blocker?.code === 'overpayment') throw new Error(`После изменения состава итог заказа (${pricingReadiness.totalAmount ?? 0}) меньше уже проведённых оплат (${pricingReadiness.receivedAmount}). Исправьте состав или цены.`)
-          throw new Error('Проверьте состав и цены позиций перед сохранением.')
-        }
-
-        itemContentReplacement = {
-          expectedItems: order.items.map((item) => ({
-            orderItemId: Number(item.id || 0),
-            productName: item.productName,
-            audienceType: item.audienceType && normalizeSuggestion(item.audienceType).includes('ДЕТ') ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',
-            gender: item.gender || null,
-            color: item.color || null,
-            material: item.material || 'СТАНДАРТ',
-            length: item.length || 'СТАНДАРТ',
-            size: item.size || null,
-            quantity: Number(item.quantity || 0),
-            unitPrice: Number(item.unitPrice || 0),
-            lineTotal: Number(item.lineTotal || 0),
-            catalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
-            sourceType: item.isWorkshop ? 'workshop' : (item.sourceType === 'boutique' ? 'boutique' : 'warehouse'),
-            workshopComment: item.workshopComment || null,
-            workshopUrgent: Boolean(item.workshopUrgent),
-            workshopDueDate: item.workshopDueDate || null,
-            workshopDueTime: item.workshopDueTime || null,
-          })),
-          items: nextDraft.items.map((item) => ({
-            orderItemId: Number(item.orderItemId || 0) || undefined,
-            productName: item.productName,
-            audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
-            gender: item.gender || null,
-            color: item.color || null,
-            material: item.material || 'СТАНДАРТ',
-            length: item.length || 'СТАНДАРТ',
-            size: item.size || null,
-            quantity: Number(item.quantity || 0),
-            unitPrice: item.unitPrice,
-            catalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
-            sourceType: item.sourceType || 'warehouse',
-            workshopComment: item.workshopComment || null,
-            workshopUrgent: Boolean(item.workshopUrgent),
-            workshopDueDate: item.workshopUrgent ? (item.workshopDueDate || '') : '',
-            workshopDueTime: item.workshopUrgent ? (item.workshopDueTime || '') : '',
-            observedPhysicalQuantity: item.sourceType !== 'workshop' && item.stockObservationEnabled ? item.observedPhysicalQuantity : undefined,
-            shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
-          })),
-        }
-      }
-
-      const payload = isItemizedContentRewrite ? {
-        orderDate: nextDraft.orderDate,
-        managerId: nextDraft.managerId || undefined,
-        managerName: nextDraft.managerName,
-        customerPhone: nextDraft.customerPhone,
-        customerName: nextDraft.customerName,
-        city: nextDraft.city,
-        deliveryType: nextDraft.deliveryType,
-        comment: nextDraft.comment,
-        paymentCorrections,
-        itemContentReplacement,
-      } : isItemizedEdit ? {
-        orderDate: nextDraft.orderDate,
-        managerId: nextDraft.managerId || undefined,
-        managerName: nextDraft.managerName,
-        customerPhone: nextDraft.customerPhone,
-        customerName: nextDraft.customerName,
-        city: nextDraft.city,
-        deliveryType: nextDraft.deliveryType,
-        comment: nextDraft.comment,
-        paymentCorrections,
-        itemPriceCorrections,
-      } : {
+      const payload = {
         orderDate: nextDraft.orderDate,
         managerId: nextDraft.managerId || undefined,
         managerName: nextDraft.managerName,
@@ -5885,14 +5629,12 @@ function removeDebtPayment(index: number) {
       const postSaveShortages = (result.stockWriteOff || []).filter((entry) => Number(entry.shortageAfter || 0) > 0)
       const concurrentShortages = postSaveShortages.filter((entry) => entry.concurrentShortage)
       invalidateFinanceReadCaches()
-      // Metadata/payment/price-only itemized correction leaves inventory intact; H8E content rewrite does not.
-      if (!isItemizedEdit || isItemizedContentRewrite) invalidateInventoryStockCaches(true)
+      // Unsent edits can release/recreate reservations; a sent transition can also fulfill them.
+      invalidateInventoryStockCaches(true)
       if (concurrentShortages.length) {
         setMessage(`Заказ ${order.external_id} обновлён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Внимание».`)
       } else {
-        setMessage(isItemizedEdit
-          ? `Заказ ${order.external_id} обновлён.`
-          : `Заказ ${order.external_id} обновлён.`)
+        setMessage(`Заказ ${order.external_id} обновлён.`)
       }
       if (result?.order) {
         const savedOrder = result.order as OrderRecord
@@ -6574,7 +6316,6 @@ function removeDebtPayment(index: number) {
       return
     }
 
-    const itemizedExchange = exchangeSelectedOrder.pricing_mode === 'itemized_v1'
     const exchangeableOldItems = exchangeSelectedOrder.items.filter((item) => Number(item.id || 0) > 0 && Number(item.availableOperationQuantity ?? item.quantity ?? 0) > 0)
     const queuedPairs = exchangeDraft.queuedPairs || []
     const requestedCurrentOldItem = exchangeableOldItems.find((item) => Number(item.id || 0) === Number(exchangeDraft.oldItemId || 0)) || null
@@ -6592,10 +6333,6 @@ function removeDebtPayment(index: number) {
     const pairDrafts = [...queuedPairs, ...(currentPair ? [currentPair] : [])]
     if (!pairDrafts.length) {
       setError(exchangeableOldItems.length ? 'Добавьте хотя бы одну позицию обмена.' : 'В заказе не осталось доступных позиций для обмена.')
-      return
-    }
-    if (itemizedExchange && pairDrafts.length !== 1) {
-      setError('Для заказа с построчной ценой оформляйте одну заменяемую позицию за один обмен. Следующую позицию можно обменять отдельной операцией.')
       return
     }
 
@@ -6651,29 +6388,6 @@ function removeDebtPayment(index: number) {
       const effectiveNewItem = pair.newSourceWasManuallyChanged
         ? pair.newItem
         : { ...pair.newItem, sourceType: inheritedReplacementSource as EditorItem['sourceType'] }
-      if (itemizedExchange) {
-        const oldActiveQuantity = Number(selectedOldItem.quantity)
-        const oldUnitPrice = Number(selectedOldItem.unitPrice)
-        const oldLineTotal = Number(selectedOldItem.lineTotal)
-        const oldCatalogSnapshot = selectedOldItem.catalogPriceSnapshot == null ? null : Number(selectedOldItem.catalogPriceSnapshot)
-        const newUnitPrice = effectiveNewItem.unitPrice == null ? Number.NaN : Number(effectiveNewItem.unitPrice)
-        const newCatalogSnapshot = effectiveNewItem.catalogPriceSnapshot == null ? null : Number(effectiveNewItem.catalogPriceSnapshot)
-        if (!Number.isSafeInteger(oldActiveQuantity) || oldActiveQuantity <= 0
-          || !Number.isSafeInteger(oldUnitPrice) || oldUnitPrice < 0
-          || !Number.isSafeInteger(oldLineTotal) || oldLineTotal !== oldActiveQuantity * oldUnitPrice
-          || (oldCatalogSnapshot !== null && (!Number.isSafeInteger(oldCatalogSnapshot) || oldCatalogSnapshot < 0))) {
-          setError(`Позиция обмена ${index + 1}: ценовые данные старой позиции устарели или повреждены. Обновите заказ и откройте обмен заново.`)
-          return
-        }
-        if (!Number.isSafeInteger(newUnitPrice) || newUnitPrice < 0) {
-          setError(`Позиция обмена ${index + 1}: укажите фактическую цену продажи новой позиции.`)
-          return
-        }
-        if (newCatalogSnapshot !== null && (!Number.isSafeInteger(newCatalogSnapshot) || newCatalogSnapshot < 0)) {
-          setError(`Позиция обмена ${index + 1}: снимок цены Каталога некорректен. Обновите товар в форме обмена.`)
-          return
-        }
-      }
       const exchangeRequiredQuantity = Math.max(1, Number(effectiveNewItem.quantity || 1))
       const exchangeAvailability = effectiveNewItem.sourceType === 'workshop'
         ? null
@@ -6731,19 +6445,8 @@ function removeDebtPayment(index: number) {
           oldQuantity: pair.oldQuantity,
           oldReturnSource: pair.oldReturnSource,
           oldPhysicalState: pair.oldPhysicalState,
-          newItem: itemizedExchange ? {
-            ...pair.effectiveNewItem,
-            unitPrice: Number(pair.effectiveNewItem.unitPrice),
-            catalogPriceSnapshot: pair.effectiveNewItem.catalogPriceSnapshot == null ? null : Number(pair.effectiveNewItem.catalogPriceSnapshot),
-          } : pair.effectiveNewItem,
+          newItem: pair.effectiveNewItem,
           newSourceWasManuallyChanged: pair.newSourceWasManuallyChanged,
-          ...(itemizedExchange ? {
-            expectedOrderTotal: Number(exchangeSelectedOrder.total_amount),
-            expectedOldActiveQuantity: Number(pair.selectedOldItem.quantity),
-            expectedOldUnitPrice: Number(pair.selectedOldItem.unitPrice),
-            expectedOldLineTotal: Number(pair.selectedOldItem.lineTotal),
-            expectedOldCatalogPriceSnapshot: pair.selectedOldItem.catalogPriceSnapshot == null ? null : Number(pair.selectedOldItem.catalogPriceSnapshot),
-          } : {}),
           // One visit has one money difference. Put it only on the final child exchange,
           // so debt/top-up/refund can never be counted once per selected product.
           financialAction: isFinalPair ? exchangeDraft.financialAction : 'none',
@@ -7667,11 +7370,11 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'create'} label="Создание заказа">
-        <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createPricing, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment }} />
+        <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label="Создание заказа ЗАММЛЕР">
-        <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createPricing, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment, zammlerMode: true }} />
+        <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment, zammlerMode: true }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'edit'} label="Редактирование заказа">
@@ -7695,7 +7398,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'exchange'} label="Обмен размера">
-        <OrderExchangeSection ctx={{ applyExchangeItemPatch, applyExchangeProductPick, cancelExchangeEntry, closeExchangeForm, correctExchangeFinancialEntry, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />
+        <OrderExchangeSection ctx={{ applyExchangeProductPick, cancelExchangeEntry, closeExchangeForm, correctExchangeFinancialEntry, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'team'} label="Команда">

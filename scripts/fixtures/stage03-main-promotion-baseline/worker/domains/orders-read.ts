@@ -3,7 +3,7 @@
 import { cleanText, isArchivedOrder, normalizeArchiveMode, normalizeDate, normalizeShippingFilter, normalizeStatusFilter, toInt } from '../core/text.ts'
 import type { OrderListRow } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
-import { canonicalItemProjection, fetchOrderRelations, isOrderPricingFoundationEnabled, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
+import { canonicalItemProjection, fetchOrderRelations, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
 import { getOrder } from './orders-write.ts'
 
 export type ArchiveRuleInput = {
@@ -238,7 +238,6 @@ export function retainedOrderSummaryPayload(row: Record<string, unknown>) {
     order_status: 'archived',
     shipping_status: cleanText(row.shipping_status) || 'not_sent',
     shipping_date: cleanText(row.shipping_date) || null,
-    pricing_mode: cleanText(row.pricing_mode) === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total',
     total_amount: toInt(row.total_amount, 0),
     received_amount: toInt(row.received_amount, 0),
     debt_amount: toInt(row.debt_amount, 0),
@@ -286,10 +285,6 @@ export async function listOrders(db: D1Database, url: URL) {
   const archiveMode = status === 'archived' ? 'archived' : normalizeArchiveMode(url.searchParams.get('archiveMode'));
   const dateFrom = cleanText(url.searchParams.get('dateFrom'));
   const dateTo = cleanText(url.searchParams.get('dateTo'));
-  const pricingFoundationEnabled = await isOrderPricingFoundationEnabled(db);
-  const pricingModeSelect = pricingFoundationEnabled
-    ? 'o.pricing_mode'
-    : "'legacy_manual_total' AS pricing_mode";
   // R5.7: paymentCount is not rendered by the Orders UI. Legacy callers still get it by default.
   // The UI may explicitly opt out so an active/no-date summary can reuse the canonical per-order
   // received_amount instead of scanning every payment again.
@@ -480,14 +475,13 @@ export async function listOrders(db: D1Database, url: URL) {
       o.manager_snapshot_name, COALESCE(m.color_key, '#64748B') AS manager_color, c.phone_normalized AS customer_phone, c.display_name AS customer_name,
       o.city, o.delivery_type, o.source_type, o.workshop_status, o.order_status,
       o.shipping_status, o.shipping_date,
-      ${pricingModeSelect},
       o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment,
       o.archived_at, o.archived_by, o.archive_reason, o.archive_batch_id
     ${joins}
     ${pageWhereParts.length ? `WHERE ${pageWhereParts.join(' AND ')}` : ''}
     ORDER BY o.order_date DESC, o.id DESC
     LIMIT ? OFFSET ?`
-  ).bind(...pageBindings, limit, hasPageCursor ? 0 : offset).all<OrderListRow & { pricing_mode?: 'legacy_manual_total' | 'itemized_v1' }>();
+  ).bind(...pageBindings, limit, hasPageCursor ? 0 : offset).all<OrderListRow>();
 
   const orders = rows.results || [];
   if (!orders.length && offset === 0 && q) {
@@ -660,7 +654,6 @@ export async function listOrders(db: D1Database, url: URL) {
     } : null,
     orders: orders.map(order => ({
       ...order,
-      pricing_mode: order.pricing_mode === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total',
       stock_handover_review_needed: (relations.handoverReviewByOrderId.get(order.id) || []).length > 0,
       stock_handover_has_active_items: (relations.activeStockHandoverByOrderId.get(order.id) || []).length > 0,
       committed_return_count: (relations.returnsByOrderId.get(order.id) || []).filter(ret => cleanText((ret as any).status || 'completed').toLowerCase() !== 'cancelled').length,
@@ -682,7 +675,6 @@ export async function listOrders(db: D1Database, url: URL) {
         quantity: (item as any).quantity,
         availableOperationQuantity: orderItemAvailableOperationQuantity(item as Record<string, unknown>),
         unitPrice: (item as any).unit_price,
-        catalogPriceSnapshot: (item as any).catalog_price_snapshot == null ? null : Math.max(0, toInt((item as any).catalog_price_snapshot, 0)),
         lineTotal: (item as any).line_total,
         sourceType: (item as any).is_workshop ? 'workshop' : (item as any).source_type,
         isWorkshop: Boolean((item as any).is_workshop),

@@ -9,7 +9,7 @@ try {
   check(worker.includes("const includePeriodStats = cleanText(url.searchParams.get('includePeriodStats')) !== '0';"), 'R5.9 must keep full periodStats as the default API contract')
   check(worker.includes("const hasPageCursor = offset > 0 && /^\\d{4}-\\d{2}-\\d{2}$/.test(pageCursorDate) && pageCursorId > 0;"), 'R5.9 cursor must require a logical later page and a valid date/id pair')
   check(worker.includes("pageWhereParts.push('(o.order_date < ? OR (o.order_date = ? AND o.id < ?))');"), 'R5.9 cursor must preserve order_date DESC, id DESC seek semantics')
-  check(worker.includes('.bind(...pageBindings, limit, hasPageCursor ? 0 : offset).all<OrderListRow>();'), 'R5.9 cursor must not double-apply OFFSET')
+  check(/\.bind\(\.\.\.pageBindings, limit, hasPageCursor \? 0 : offset\)\.all<OrderListRow(?:\s*&\s*\{[^;]+\})?>\(\);/.test(worker), 'R5.9 cursor must not double-apply OFFSET')
   check(worker.includes('if (!includePeriodStats) {\n    // The UI already owns the exact periodStats from page 1.'), 'R5.9 page reuse must use count-only summary metadata')
   check(worker.includes('periodStats: includePeriodStats ? {'), 'R5.9 full summary must remain available to default callers')
   check(app.includes("params.set('afterOrderDate', pageReadOptions.afterOrderDate)"), 'Orders UI must pass the sequential seek cursor only when available')

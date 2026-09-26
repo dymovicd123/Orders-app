@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "revision": "stage03-main-promotion-candidate-r1",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "d0496155439938875979a5c32d58582d41fa83f8",
+      "afterGitBlob": "3defc6bac0b975d1968bd75dd3d03e9e150961cb",
+      "baselineFixture": "scripts/fixtures/stage03-main-promotion-baseline/src/App.tsx"
+    },
+    "src/app/controllers/useWorkspaceViewModel.tsx": {
+      "beforeGitBlob": "337335b363d1149e80ee079cd9f756b953a07fcb",
+      "afterGitBlob": "d8d4b0cada9736d1af2b1f9d77232c194fb4f631",
+      "baselineFixture": "scripts/fixtures/stage03-main-promotion-baseline/src/app/controllers/useWorkspaceViewModel.tsx"
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "c876da8c3259549ac99f3b862e78c5877c2eb97a",
+      "afterGitBlob": "b36f6bdd9204dd7aaf6161bdd19ee5fb3a097043",
+      "baselineFixture": "scripts/fixtures/stage03-main-promotion-baseline/src/app/types.ts"
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "3cf26215cade4a5f582fb6bcdc347c6363f9b351",
+      "afterGitBlob": "6e20547f7e8825303d79fbc21f37fe8214c4214e",
+      "baselineFixture": "scripts/fixtures/stage03-main-promotion-baseline/src/app/utils.ts"
+    },
+    "src/features/renderers/FinanceReportContentRenderer.tsx": {
+      "beforeGitBlob": "5e48a6bdb636633e67ffcab5b1f24204c4e5bc31",
+      "afterGitBlob": "d5beac0346fcd4b463b9f937424245bd919b10f6",
+      "baselineFixture": "scripts/fixtures/stage03-main-promotion-baseline/src/features/renderers/FinanceReportContentRenderer.tsx"
+    },
+    "src/features/sections/CreateOrderSection.tsx": {
+      "beforeGitBlob": "03f375c3015e29cb1644a926e63ed9dbffd52797",
+      "afterGitBlob": "29e90a12ff54fc6e7607cbc18b4e46f83bb80a8c",
+      "baselineFixture": "scripts/fixtures/stage03-main-promotion-baseline/src/features/sections/CreateOrderSection.tsx"
+    },
+    "src/features/sections/OrderEditorSection.tsx": {
+      "beforeGitBlob": "b4e931da6daea471ed7e926313e517e115567573",
+      "afterGitBlob": "92d3e3b39e882362a7a9363f2396b2bdd313b2f1",
+      "baselineFixture": "scripts/fixtures/stage03-main-promotion-baseline/src/features/sections/OrderEditorSection.tsx"
+    },
+    "src/features/sections/OrderExchangeSection.tsx": {
+      "beforeGitBlob": "8fd0c60cc80f239e8d1905e86dd5f9c2edc5ca40",
+      "afterGitBlob": "d98b9a14f5f45d5393d1d51d8c0bcae39ec087ca",
+      "baselineFixture": "scripts/fixtures/stage03-main-promotion-baseline/src/features/sections/OrderExchangeSection.tsx"
+    },
+    "src/features/sections/OrderReturnsSection.tsx": {
+      "beforeGitBlob": "1191e6c49ee3088f4efaca740ef4c22490d3758a",
+      "afterGitBlob": "a79b580af2e5a1aaf6fe032f9586c8ac1bd54896",
+      "baselineFixture": "scripts/fixtures/stage03-main-promotion-baseline/src/features/sections/OrderReturnsSection.tsx"
+    },
+    "src/app/order-pricing.ts": {
+      "beforeAbsent": true,
+      "afterGitBlob": "133f3198261ffa6ada2ef76521e00cac7541d845"
+    }
+  }
+}

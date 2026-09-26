@@ -10,9 +10,6 @@ export type OrderItem = {
   size?: string
   quantity?: number
   unitPrice?: number
-  catalogPriceSnapshot?: number | null
-  priceOrigin?: 'catalog' | 'manual' | 'missing'
-  priceNeedsConfirmation?: boolean
   sourceType?: 'warehouse' | 'boutique' | 'workshop'
   workshopComment?: string
   workshopUrgent?: boolean
@@ -43,9 +40,7 @@ export type Payment = {
 
 
 
-export type EditorItem = OrderItem & {
-  orderItemId?: number
-}
+export type EditorItem = OrderItem
 
 
 export type EditorPayment = Payment
@@ -680,18 +675,7 @@ export type FinanceReportResponse = {
     traceScope?: { startDate: string; endDate: string; selectedOperationPeriodOnly: boolean; includesOrderPeriodBeforePayments: boolean }
     consistency?: FinanceConsistency
     managers: Array<{ manager_id?: number; manager: string; color_key?: string; order_count: number; total_sales: number; total_received: number; total_returns: number; total_debt: number; avg_check: number }>
-    products: Array<{
-      product: string
-      quantity: number
-      order_count: number
-      order_sales: number
-      itemized_quantity?: number
-      itemized_gross_sales?: number
-      itemized_order_count?: number
-      legacy_order_count?: number
-      legacy_quantity?: number
-      average_sold_price?: number | null
-    }>
+    products: Array<{ product: string; quantity: number; order_count: number; order_sales: number }>
     cities: Array<{ city: string; order_count: number; total_sales: number; total_received: number; total_debt: number; total_returns: number; clients: number; managers: number }>
     days: Array<{ date: string; order_count: number; total_sales: number; total_received: number; total_returns: number; total_debt: number }>
     returns: Array<{ id: number; order_id: number; external_id: string; order_date: string; return_date: string; amount: number; status: string; comment: string; manager: string; manager_color?: string; customer?: string; city?: string; return_type?: 'order_return' | 'exchange_refund' | string }>
@@ -789,7 +773,6 @@ export type OrderRecord = {
   order_status: string
   shipping_status?: 'not_sent' | 'sent' | string | null
   shipping_date?: string | null
-  pricing_mode?: 'legacy_manual_total' | 'itemized_v1'
   stock_handover_review_needed?: boolean
   stock_handover_has_active_items?: boolean
   catalog_review_required?: boolean
@@ -824,7 +807,6 @@ export type OrderRecord = {
     quantity: number
     availableOperationQuantity?: number
     unitPrice: number
-    catalogPriceSnapshot?: number | null
     lineTotal: number
     sourceType: string
     workshopComment?: string | null
@@ -1338,7 +1320,6 @@ export type CatalogProductRecord = {
 export type CatalogVariantRecord = {
   id: number
   productId: number
-  stockPositionId: number
   productName: string
   productCategory: string
   gender: string
@@ -1354,27 +1335,11 @@ export type CatalogVariantRecord = {
 
 
 
-export type CatalogExecutionPriceRecord = {
-  stockPositionId: number
-  productId: number
-  productName: string
-  material: string
-  length: string
-  category: 'adult' | 'child'
-  costPrice: number | null
-  salePrice: number | null
-  createdAt: string
-  updatedAt: string
-}
-
-
-
 export type CatalogResponse = {
   ok: boolean
   products: CatalogProductRecord[]
   productAliases?: Array<{ rawValue: string; productId: number; productName: string }>
   valueAliases?: Array<{ kind: string; rawValue: string; canonicalValue: string }>
-  executionPrices?: CatalogExecutionPriceRecord[]
   variants: CatalogVariantRecord[]
 }
 

@@ -85,9 +85,11 @@ try {
   const graph = staticSourceGraph(mainRelative)
   const graphRelative = [...graph].map((file) => path.relative(root, file).replace(/\\/g, '/')).sort()
   const sourceBytes = [...graph].reduce((sum, file) => sum + fs.statSync(file).size, 0)
-  // O1 adds one small transport helper; the byte budget below stays unchanged.
-  check(graph.size <= 25, `Initial static source graph regrew: ${graph.size} modules`)
-  check(sourceBytes <= 650_000, `Initial static source graph regrew: ${sourceBytes} bytes`)
+  // O1 added one small transport helper. Stage03 makes the pure pricing resolver reachable
+  // from the existing controller graph. Keep the allowance narrow rather than weakening lazy boundaries.
+  check(graphRelative.includes('src/app/order-pricing.ts'), 'Stage03 Catalog price resolver is not reachable from the initial Create controller graph')
+  check(graph.size <= 26, `Initial static source graph regrew beyond the accepted pricing module set: ${graph.size} modules`)
+  check(sourceBytes <= 672_000, `Initial static source graph regrew beyond the accepted Stage03 promotion allowance: ${sourceBytes} bytes`)
   for (const name of lazySections) {
     check(!graphRelative.includes(`src/features/sections/${name}.tsx`), `Lazy section is still initial-static: ${name}`)
   }
