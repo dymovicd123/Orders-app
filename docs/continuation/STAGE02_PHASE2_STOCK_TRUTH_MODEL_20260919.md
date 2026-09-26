@@ -1,5 +1,8 @@
 # Stage02 Phase2 — Stock Truth Model
 
+> **STATUS UPDATE — 2026-09-26:** Phase2A–2E are complete. The reviewed Stage02 state plus post-review fixes were promoted to Production through PR #145. This file remains the canonical **stock-truth semantics** document, but old execution checkpoints that describe Phase2C/2D/2E as upcoming/current are historical and must not be treated as the present roadmap. Current project status lives in `PROJECT_CONTINUATION.md`.
+
+
 Date: 2026-09-19
 
 
