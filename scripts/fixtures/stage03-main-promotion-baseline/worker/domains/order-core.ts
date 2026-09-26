@@ -16,7 +16,7 @@ export function calculateTotals(items: OrderInput['items'], payments: OrderInput
   const manualTotal = totalOverride === undefined || totalOverride === null || totalOverride === ''
     ? null
     : Math.max(0, toInt(totalOverride, 0));
-  const totalAmount = manualTotal !== null && Number.isFinite(manualTotal)
+  const totalAmount = manualTotal !== null && Number.isFinite(manualTotal) && manualTotal > 0
     ? manualTotal
     : itemsTotal;
 
@@ -134,6 +134,9 @@ export function assertOrderPaymentInputs(payments: OrderInput['payments']) {
     if (amount > 0 && !method) {
       throw new OrderInputValidationError(`В оплате ${index + 1} указана сумма ${Math.trunc(amount)}, но не выбран способ оплаты.`)
     }
+    if (method && amount <= 0) {
+      throw new OrderInputValidationError(`Для оплаты ${index + 1} выберите сумму больше нуля или очистите способ оплаты.`)
+    }
   }
 }
 
@@ -151,7 +154,7 @@ export function normalizeOrderPayments(payments: OrderInput['payments'], fallbac
 }
 
 
-export function sameOrderItemExceptPriceForEdit(
+export function sameOrderItemForEdit(
   left: ReturnType<typeof normalizeOrderItems>[number],
   right: ReturnType<typeof normalizeOrderItems>[number],
 ) {
@@ -163,21 +166,13 @@ export function sameOrderItemExceptPriceForEdit(
     && left.length === right.length
     && left.size === right.size
     && left.quantity === right.quantity
+    && left.unitPrice === right.unitPrice
     && left.sourceType === right.sourceType
     && left.isWorkshop === right.isWorkshop
     && left.workshopComment === right.workshopComment
     && Boolean(left.workshopUrgent) === Boolean(right.workshopUrgent)
     && (left.workshopDueDate || '') === (right.workshopDueDate || '')
     && (left.workshopDueTime || '') === (right.workshopDueTime || '');
-}
-
-
-export function sameOrderItemForEdit(
-  left: ReturnType<typeof normalizeOrderItems>[number],
-  right: ReturnType<typeof normalizeOrderItems>[number],
-) {
-  return sameOrderItemExceptPriceForEdit(left, right)
-    && left.unitPrice === right.unitPrice;
 }
 
 
@@ -199,15 +194,6 @@ export function sameNormalizedOrderItemsForEdit(
 ) {
   if (left.length !== right.length) return false;
   return left.every((item, index) => sameOrderItemForEdit(item, right[index]));
-}
-
-
-export function sameNormalizedOrderItemsExceptPriceForEdit(
-  left: ReturnType<typeof normalizeOrderItems>,
-  right: ReturnType<typeof normalizeOrderItems>,
-) {
-  if (left.length !== right.length) return false;
-  return left.every((item, index) => sameOrderItemExceptPriceForEdit(item, right[index]));
 }
 
 

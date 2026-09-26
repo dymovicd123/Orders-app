@@ -23,7 +23,6 @@ export type OrderInput = {
   deliveryType?: string;
   sourceType?: 'warehouse' | 'boutique';
   orderTotal?: number;
-  pricingMode?: 'legacy_manual_total' | 'itemized_v1';
   workshopStatus?: 'in_workshop' | 'ready' | 'shipped' | 'cancelled';
   orderStatus?: 'active' | 'closed' | 'archived' | 'deleted';
   shippingStatus?: 'not_sent' | 'sent' | 'Не отправлено' | 'Отправлено';
@@ -38,7 +37,6 @@ export type OrderInput = {
     size?: string;
     quantity?: number;
     unitPrice?: number;
-    catalogPriceSnapshot?: number | null;
     sourceType?: 'warehouse' | 'boutique' | 'workshop';
     audienceType?: string;
     workshopComment?: string;

@@ -13,7 +13,6 @@ import type {
   InventorySourceKey,
   InventoryStockRecord,
   OrderPanel,
-  OrderRecord,
   ReferenceData,
   ReferenceKind,
   ReferenceListItem,
@@ -33,7 +32,6 @@ import {
   sortSizeLikeValues,
   sourceLabel,
 } from '../utils'
-import { resolveCatalogOrderSalePrice } from '../order-pricing'
 
 type ReferenceGroupSummary = { kind: ReferenceKind; label: string; count: number; help: string }
 
@@ -44,7 +42,6 @@ type WorkspaceViewModelArgs = {
   catalogVariantsByProductId: Map<number, CatalogVariantRecord[]>
   createDraft: EditorDraft
   editorDraft: EditorDraft | null
-  selectedOrder: OrderRecord | null
   getCatalogProductEffectiveCategory: (product?: CatalogProductRecord | null) => 'adult' | 'child'
   getInventoryRowCategory: (row: Pick<InventoryStockRecord, 'productId' | 'productName' | 'variantId' | 'gender' | 'size'>) => 'adult' | 'child'
   getStockQuantityForVariant: (source: InventorySourceKey, variantId: string | number) => number | null
@@ -72,7 +69,6 @@ export function useWorkspaceViewModel({
   catalogVariantsByProductId,
   createDraft,
   editorDraft,
-  selectedOrder,
   getCatalogProductEffectiveCategory,
   getInventoryRowCategory,
   getStockQuantityForVariant,
@@ -402,87 +398,31 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
   function applyCreateProductPick(index: number, productName: string) {
     setCreateDraft((current) => ({
       ...current,
-      items: current.items.map((item, itemIndex) => {
-        if (itemIndex !== index) return item
-        const pickedItem = buildOrderItemFromCatalogPick(item, productName)
-        const pricing = resolveCatalogOrderSalePrice(catalogData, pickedItem)
-        const keepManualPrice = item.priceOrigin === 'manual' && item.unitPrice !== undefined && item.unitPrice !== null
-        return {
-          ...pickedItem,
-          unitPrice: keepManualPrice ? item.unitPrice : pricing.status === 'matched' ? pricing.salePrice : undefined,
-          catalogPriceSnapshot: pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null,
-          priceOrigin: keepManualPrice ? 'manual' : pricing.status === 'matched' ? 'catalog' : 'missing',
-          priceNeedsConfirmation: false,
-        }
-      }),
+      items: current.items.map((item, itemIndex) => (
+        itemIndex === index ? buildOrderItemFromCatalogPick(item, productName) : item
+      )),
     }))
   }
 
   function applyEditorProductPick(index: number, productName: string) {
     setEditorDraft((current) => current ? ({
       ...current,
-      items: current.items.map((item, itemIndex) => {
-        if (itemIndex !== index) return item
-        const pickedItem = buildOrderItemFromCatalogPick(item, productName)
-        if (selectedOrder?.pricing_mode !== 'itemized_v1') return pickedItem
-        const pricing = resolveCatalogOrderSalePrice(catalogData, pickedItem)
-        const keepManualPrice = item.priceOrigin === 'manual' && item.unitPrice !== undefined && item.unitPrice !== null
-        return {
-          ...pickedItem,
-          unitPrice: keepManualPrice ? item.unitPrice : pricing.status === 'matched' ? pricing.salePrice : undefined,
-          catalogPriceSnapshot: pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null,
-          priceOrigin: keepManualPrice ? 'manual' : pricing.status === 'matched' ? 'catalog' : 'missing',
-          priceNeedsConfirmation: false,
-        }
-      }),
+      items: current.items.map((item, itemIndex) => (
+        itemIndex === index ? buildOrderItemFromCatalogPick(item, productName) : item
+      )),
     }) : current)
   }
 
 
-  const resolveExchangeItemPricing = (nextItem: EditorItem, previousItem: EditorItem): EditorItem => {
-    if (selectedOrder?.pricing_mode !== 'itemized_v1') return nextItem
-    const pricing = resolveCatalogOrderSalePrice(catalogData, nextItem)
-    const keepManualPrice = previousItem.priceOrigin === 'manual'
-      && previousItem.unitPrice !== undefined
-      && previousItem.unitPrice !== null
-    return {
-      ...nextItem,
-      unitPrice: keepManualPrice ? previousItem.unitPrice : pricing.status === 'matched' ? pricing.salePrice : undefined,
-      catalogPriceSnapshot: pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null,
-      priceOrigin: keepManualPrice ? 'manual' : pricing.status === 'matched' ? 'catalog' : 'missing',
-      priceNeedsConfirmation: false,
-    }
-  }
-
-  function applyExchangeItemPatch(patch: Partial<EditorItem>, refreshCatalogPrice = false) {
-    setExchangeDraft((current) => {
-      const patchedItem: EditorItem = {
-        ...current.newItem,
-        ...patch,
-        stockObservationEnabled: false,
-        observedPhysicalQuantity: null,
-      }
-      return {
-        ...current,
-        newItem: refreshCatalogPrice
-          ? resolveExchangeItemPricing(patchedItem, current.newItem)
-          : patchedItem,
-      }
-    })
-  }
-
   function applyExchangeProductPick(productName: string) {
-    setExchangeDraft((current) => {
-      const pickedItem: EditorItem = {
+    setExchangeDraft((current) => ({
+      ...current,
+      newItem: {
         ...buildOrderItemFromCatalogPick(current.newItem, productName),
         stockObservationEnabled: false,
         observedPhysicalQuantity: null,
-      }
-      return {
-        ...current,
-        newItem: resolveExchangeItemPricing(pickedItem, current.newItem),
-      }
-    })
+      },
+    }))
   }
 
   function resolveClientCatalogProduct(productName: unknown) {
@@ -518,7 +458,7 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
     return compact ? resolveClientCatalogValue(category === 'child' ? 'child_age' : 'size', compact) : ''
   }
 
-  function getOrderSourceAvailability(item: EditorItem, requiredQuantity = Math.max(1, Number(item.quantity || 1)), reservationCredit = 0) {
+  function getOrderSourceAvailability(item: EditorItem, requiredQuantity = Math.max(1, Number(item.quantity || 1))) {
     const productName = String(item.productName || '').trim()
     if (!productName) return null
 
@@ -669,10 +609,7 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
     }
 
     if (exactSourceRows.length) {
-      const summary = stockSummary(exactSourceRows)
-      const physical = summary.physical
-      const reserved = Math.max(0, summary.reserved - Math.max(0, reservationCredit))
-      const available = physical - reserved
+      const { physical, reserved, available } = stockSummary(exactSourceRows)
       const shortageForOrder = Math.max(0, requiredQuantity - available)
       const needsAttention = physical < 0 || shortageForOrder > 0
       return {
@@ -773,7 +710,7 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
     }
   }
 
-  function renderOrderSourceAvailability(item: EditorItem, keyPrefix: string, itemIndex?: number, mode: 'create' | 'edit' | 'itemized_edit' = 'create') {
+  function renderOrderSourceAvailability(item: EditorItem, keyPrefix: string, itemIndex?: number, mode: 'create' | 'edit' = 'create') {
     const itemIdentityKey = (value: EditorItem) => {
       const resolvedProduct = resolveClientCatalogProduct(value.productName)
       const category = normalizeAudienceTypeValue(value.audienceType) === 'ДЕТСКИЙ' ? 'child' : 'adult'
@@ -788,30 +725,14 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
         canonicalOrderSize(value.size, category),
       ].join('¦')
     }
-    const targetDraft = mode === 'create' ? createDraft : editorDraft
+    const targetDraft = mode === 'edit' ? editorDraft : createDraft
     const requiredInOrder = itemIndex === undefined || !targetDraft
       ? Math.max(1, Number(item.quantity || 1))
       : targetDraft.items
         .filter((candidate) => candidate.sourceType !== 'workshop' && itemIdentityKey(candidate) === itemIdentityKey(item))
         .reduce((sum, candidate) => sum + Math.max(1, Number(candidate.quantity || 1)), 0)
-    const reservationCredit = mode === 'itemized_edit' && selectedOrder
-      ? selectedOrder.items
-        .filter((candidate) => !candidate.isWorkshop && candidate.sourceType !== 'workshop')
-        .filter((candidate) => itemIdentityKey({
-          productName: candidate.productName,
-          audienceType: normalizeAudienceTypeValue(candidate.audienceType),
-          gender: candidate.gender || '',
-          color: candidate.color || '',
-          material: candidate.material || 'СТАНДАРТ',
-          length: candidate.length || 'СТАНДАРТ',
-          size: candidate.size || '',
-          quantity: candidate.quantity,
-          sourceType: candidate.sourceType === 'boutique' ? 'boutique' : 'warehouse',
-        }) === itemIdentityKey(item))
-        .reduce((sum, candidate) => sum + Math.max(0, Number(candidate.quantity || 0)), 0)
-      : 0
     const serverShortage = item.serverShortage
-    const localAvailability = getOrderSourceAvailability(item, Math.max(1, requiredInOrder), reservationCredit)
+    const localAvailability = getOrderSourceAvailability(item, Math.max(1, requiredInOrder))
     if (mode === 'edit' && !serverShortage) return null
     const availability = localAvailability || (serverShortage ? {
       tone: 'danger',
@@ -834,7 +755,7 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
     const updateMatchingStockDecision = (patch: Partial<EditorItem>) => {
       if (itemIndex === undefined) return
       const identity = itemIdentityKey(item)
-      if (mode !== 'create') {
+      if (mode === 'edit') {
         setEditorDraft((current) => current ? ({
           ...current,
           items: current.items.map((currentItem) => currentItem.sourceType !== 'workshop' && itemIdentityKey(currentItem) === identity
@@ -1029,7 +950,6 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
   return {
     applyCreateProductPick,
     applyEditorProductPick,
-    applyExchangeItemPatch,
     applyExchangeProductPick,
     arrivalSuggestionValues,
     filteredReferenceItems,

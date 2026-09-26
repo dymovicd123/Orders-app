@@ -7,10 +7,9 @@ import { isHumanInventoryModelEnabled } from './catalog.ts'
 import type { CriticalOperationHandle } from './critical.ts'
 import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, criticalOperationEntityId, failCriticalOperation, insertCriticalMappedEntity, parseCriticalContext, updateCriticalOperationTargetFromLastInsert } from './critical.ts'
 import { buildPaymentAndMoneyEventStatements, financialEventStatement, financialOperationTypeFromPaymentKind, removeOrderPaymentsWithMoneyEvents } from './money.ts'
-import { assertOrderItemInputs, assertOrderPaymentInputs, assertOrderTotalInput, calculateTotals, completedOrderOperationCounts, normalizeOrderItems, normalizeOrderPayments, OrderInputValidationError, sameNormalizedOrderItemsExceptPriceForEdit, sameNormalizedOrderItemsForEdit, sameNormalizedOrderPaymentsForEdit } from './order-core.ts'
-import { assertItemizedOrderMoneyNotOverpaid, buildItemizedOrderWritePlan, ItemizedPricingValidationError, type ItemizedOrderWritePlan } from './order-pricing.ts'
+import { assertOrderItemInputs, assertOrderPaymentInputs, assertOrderTotalInput, calculateTotals, completedOrderOperationCounts, normalizeOrderItems, normalizeOrderPayments, OrderInputValidationError, sameNormalizedOrderItemsForEdit, sameNormalizedOrderPaymentsForEdit } from './order-core.ts'
 import { assertCreateOrderShortageDecisions, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, OrderStockShortageError, orderShipmentInventoryBlockerMessage, releaseOrderReservationsV2, reserveOrderItemV2, resolveCatalogProductAndVariant, resolveWorkshopCatalogProductOnly } from './order-reservations.ts'
-import { canonicalItemProjection, fetchOrderRelations, isOrderPricingFoundationEnabled, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
+import { canonicalItemProjection, fetchOrderRelations, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
 import { upsertCustomerIdentityForOrderCreate } from './references.ts'
 import { isInventoryAutoWriteoffEnabled, recalculateCustomersAfterStorageCleanup } from './storage.ts'
 import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'
@@ -403,20 +402,24 @@ export async function insertOrderContent(
   criticalOperation?: CriticalOperationHandle | null,
   criticalEntityPrefix = 'order_content',
   inventoryObligationLineage?: Array<{ key: string; originAt: string } | null>,
-  itemizedWritePlan?: ItemizedOrderWritePlan | null,
 ) {
   const stockResults: Array<{ source: string; productName: string; variantId: number | null; quantityBefore: number; quantityAfter: number }> = [];
   let workshopCount = 0;
   const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
   const autoWriteoffEnabled = humanInventoryModelEnabled ? true : await isInventoryAutoWriteoffEnabled(db);
-  if (itemizedWritePlan && itemizedWritePlan.lines.length !== items.length) {
-    throw new CriticalOperationConflictError('Itemized-план заказа не совпадает с количеством сохраняемых позиций. Повторите сохранение после обновления страницы.');
-  }
 
   for (const [itemIndex, item] of items.entries()) {
     const resolved = preResolvedCatalog?.[itemIndex]
       || (item.isWorkshop ? await resolveWorkshopCatalogProductOnly(db, item) : await resolveCatalogProductAndVariant(db, item, timestamp));
-    const commonOrderItemValues = [
+    const orderItemInsert = db.prepare(
+      `INSERT INTO order_items (
+        order_id, product_id, variant_id, product_name_snapshot, audience_type,
+        gender_snapshot, color_snapshot, material_snapshot, length_snapshot,
+        size_snapshot, quantity, unit_price, line_total, is_workshop,
+        source_type, workshop_comment, workshop_urgent, workshop_due_date, workshop_due_time, stock_writeoff_status, created_at,
+        inventory_obligation_key, inventory_obligation_origin_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
       orderId,
       resolved.productId,
       resolved.variantId,
@@ -430,52 +433,17 @@ export async function insertOrderContent(
       item.quantity,
       item.unitPrice,
       item.lineTotal,
-    ];
-    const itemizedLine = itemizedWritePlan?.lines[itemIndex];
-    const orderItemInsert = itemizedWritePlan
-      ? db.prepare(
-        `INSERT INTO order_items (
-          order_id, product_id, variant_id, product_name_snapshot, audience_type,
-          gender_snapshot, color_snapshot, material_snapshot, length_snapshot,
-          size_snapshot, quantity, unit_price, line_total, catalog_price_snapshot, is_workshop,
-          source_type, workshop_comment, workshop_urgent, workshop_due_date, workshop_due_time, stock_writeoff_status, created_at,
-          inventory_obligation_key, inventory_obligation_origin_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(
-        ...commonOrderItemValues,
-        itemizedLine?.catalogPriceSnapshot ?? null,
-        item.isWorkshop ? 1 : 0,
-        item.isWorkshop ? 'warehouse' : item.inventorySource,
-        item.workshopComment || null,
-        item.isWorkshop && item.workshopUrgent ? 1 : 0,
-        item.isWorkshop && item.workshopUrgent ? item.workshopDueDate : null,
-        item.isWorkshop && item.workshopUrgent ? (item.workshopDueTime || null) : null,
-        item.isWorkshop ? 'workshop' : (humanInventoryModelEnabled ? ((!resolved.productId || !resolved.variantId) ? 'catalog_unresolved' : 'pending_reservation') : (autoWriteoffEnabled ? 'pending_writeoff' : 'writeoff_disabled')),
-        timestamp,
-        inventoryObligationLineage?.[itemIndex]?.key || `${externalId}:${stockReferenceType}:${timestamp}:item:${itemIndex + 1}`,
-        inventoryObligationLineage?.[itemIndex]?.originAt || timestamp,
-      )
-      : db.prepare(
-        `INSERT INTO order_items (
-          order_id, product_id, variant_id, product_name_snapshot, audience_type,
-          gender_snapshot, color_snapshot, material_snapshot, length_snapshot,
-          size_snapshot, quantity, unit_price, line_total, is_workshop,
-          source_type, workshop_comment, workshop_urgent, workshop_due_date, workshop_due_time, stock_writeoff_status, created_at,
-          inventory_obligation_key, inventory_obligation_origin_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(
-        ...commonOrderItemValues,
-        item.isWorkshop ? 1 : 0,
-        item.isWorkshop ? 'warehouse' : item.inventorySource,
-        item.workshopComment || null,
-        item.isWorkshop && item.workshopUrgent ? 1 : 0,
-        item.isWorkshop && item.workshopUrgent ? item.workshopDueDate : null,
-        item.isWorkshop && item.workshopUrgent ? (item.workshopDueTime || null) : null,
-        item.isWorkshop ? 'workshop' : (humanInventoryModelEnabled ? ((!resolved.productId || !resolved.variantId) ? 'catalog_unresolved' : 'pending_reservation') : (autoWriteoffEnabled ? 'pending_writeoff' : 'writeoff_disabled')),
-        timestamp,
-        inventoryObligationLineage?.[itemIndex]?.key || `${externalId}:${stockReferenceType}:${timestamp}:item:${itemIndex + 1}`,
-        inventoryObligationLineage?.[itemIndex]?.originAt || timestamp,
-      );
+      item.isWorkshop ? 1 : 0,
+      item.isWorkshop ? 'warehouse' : item.inventorySource,
+      item.workshopComment || null,
+      item.isWorkshop && item.workshopUrgent ? 1 : 0,
+      item.isWorkshop && item.workshopUrgent ? item.workshopDueDate : null,
+      item.isWorkshop && item.workshopUrgent ? (item.workshopDueTime || null) : null,
+      item.isWorkshop ? 'workshop' : (humanInventoryModelEnabled ? ((!resolved.productId || !resolved.variantId) ? 'catalog_unresolved' : 'pending_reservation') : (autoWriteoffEnabled ? 'pending_writeoff' : 'writeoff_disabled')),
+      timestamp,
+      inventoryObligationLineage?.[itemIndex]?.key || `${externalId}:${stockReferenceType}:${timestamp}:item:${itemIndex + 1}`,
+      inventoryObligationLineage?.[itemIndex]?.originAt || timestamp,
+    );
     let orderItemId: number | null = null;
     if (criticalOperation) {
       const mapped = await insertCriticalMappedEntity(
@@ -787,8 +755,6 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
           normalizedPayments,
           totals: { totalAmount, receivedAmount, debtAmount },
           paymentStatus,
-          pricingMode: 'legacy_manual_total',
-          itemizedWritePlan: null,
           preResolvedCatalog,
         };
         // Pre-192B2A4 create incremented customers.orders_count before the order target was written.
@@ -831,17 +797,8 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
 
         assertOrderItemInputs(items);
         assertOrderPaymentInputs(payments);
-        const requestedPricingMode = cleanText(input.pricingMode);
-        if (requestedPricingMode && requestedPricingMode !== 'legacy_manual_total' && requestedPricingMode !== 'itemized_v1') {
-          throw new OrderInputValidationError('Неизвестный режим расчёта заказа.');
-        }
-        const pricingMode = requestedPricingMode === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total';
-        if (pricingMode === 'legacy_manual_total') {
-          assertOrderTotalInput(input.orderTotal);
-        } else if (input.orderTotal !== undefined && input.orderTotal !== null && cleanText(input.orderTotal) !== '') {
-          throw new OrderInputValidationError('Для itemized_v1 итог заказа рассчитывается сервером по позициям. Не передавайте отдельную цену заказа.');
-        }
-        let normalizedItems = normalizeOrderItems(items, sourceType);
+        assertOrderTotalInput(input.orderTotal);
+        const normalizedItems = normalizeOrderItems(items, sourceType);
         const normalizedPayments = normalizeOrderPayments(payments, orderDate).map(payment => (
           payment.paymentKind === 'primary'
             ? { ...payment, paymentDate: orderDate }
@@ -859,45 +816,9 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         }
         if (!normalizedItems.length) throw new OrderInputValidationError('Добавьте хотя бы один товар в заказ.');
 
-        let itemizedWritePlan: ItemizedOrderWritePlan | null = null;
-        let totals: { totalAmount: number; receivedAmount: number; debtAmount: number };
-        if (pricingMode === 'itemized_v1') {
-          if (!await isOrderPricingFoundationEnabled(db)) {
-            throw new CriticalOperationConflictError('Itemized-расчёт пока недоступен: схема цен заказа не подготовлена.');
-          }
-          const itemizedLines = items
-            .filter(item => upperText(item?.productName))
-            .map(item => ({
-              quantity: item?.quantity ?? 1,
-              unitPrice: item?.unitPrice,
-              catalogPriceSnapshot: item?.catalogPriceSnapshot ?? null,
-            }));
-          try {
-            itemizedWritePlan = buildItemizedOrderWritePlan(itemizedLines, normalizedPayments);
-          } catch (error) {
-            if (error instanceof ItemizedPricingValidationError) {
-              throw new OrderInputValidationError(error.message);
-            }
-            throw error;
-          }
-          if (itemizedWritePlan.lines.length !== normalizedItems.length) {
-            throw new CriticalOperationConflictError('Itemized-план не совпадает с нормализованными позициями заказа.');
-          }
-          normalizedItems = normalizedItems.map((item, index) => ({
-            ...item,
-            unitPrice: itemizedWritePlan!.lines[index].unitPrice,
-            lineTotal: itemizedWritePlan!.lines[index].lineTotal,
-          }));
-          totals = {
-            totalAmount: itemizedWritePlan.totalAmount,
-            receivedAmount: itemizedWritePlan.receivedAmount,
-            debtAmount: itemizedWritePlan.debtAmount,
-          };
-        } else {
-          totals = calculateTotals(normalizedItems, normalizedPayments, input.orderTotal);
-          if (totals.receivedAmount > totals.totalAmount) {
-            throw new OrderInputValidationError(`Оплаты (${totals.receivedAmount}) больше цены заказа (${totals.totalAmount}). Исправьте цену или оплаты.`);
-          }
+        const totals = calculateTotals(normalizedItems, normalizedPayments, input.orderTotal);
+        if (totals.receivedAmount > totals.totalAmount) {
+          throw new OrderInputValidationError(`Оплаты (${totals.receivedAmount}) больше цены заказа (${totals.totalAmount}). Исправьте цену или оплаты.`);
         }
         const paymentStatus = totals.debtAmount <= 0
           ? 'Оплачено'
@@ -947,8 +868,6 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
           comment,
           normalizedItems,
           normalizedPayments,
-          pricingMode,
-          itemizedWritePlan,
           totals,
           paymentStatus,
           preResolvedCatalog,
@@ -963,8 +882,6 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
     const createdAt = cleanText(plan.createdAt) || requestedAt;
     const normalizedItems = plan.normalizedItems as ReturnType<typeof normalizeOrderItems>;
     const normalizedPayments = plan.normalizedPayments as ReturnType<typeof normalizeOrderPayments>;
-    const pricingMode = cleanText(plan.pricingMode) === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total';
-    const itemizedWritePlan = pricingMode === 'itemized_v1' ? plan.itemizedWritePlan as ItemizedOrderWritePlan : null;
     const preResolvedCatalog = plan.preResolvedCatalog as Array<{ productId: number | null; variantId: number | null }>;
     const totals = plan.totals as { totalAmount: number; receivedAmount: number; debtAmount: number };
     const managerId = toInt(plan.managerId, 0) || null;
@@ -984,29 +901,17 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
       if (criticalOperation.row.step !== 'validated') {
         throw new CriticalOperationConflictError('Безопасное создание заказа остановилось на неожиданном этапе. Повторите сохранение после обновления страницы.');
       }
-      const orderStatement = pricingMode === 'itemized_v1'
-        ? db.prepare(
-          `INSERT INTO orders (
-            external_id, order_date, manager_id, manager_snapshot_name, customer_id, city,
-            delivery_type, source_type, workshop_status, order_status, pricing_mode, total_amount,
-            received_amount, debt_amount, return_amount, comment, shipping_status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'itemized_v1', ?, ?, ?, 0, ?, 'not_sent', ?, ?)`
-        ).bind(
-          externalId, orderDate, managerId, managerName, customerId, city || null, deliveryType || null,
-          sourceType, workshopStatus, orderStatus, totals.totalAmount, totals.receivedAmount, totals.debtAmount,
-          comment || null, createdAt, createdAt,
-        )
-        : db.prepare(
-          `INSERT INTO orders (
-            external_id, order_date, manager_id, manager_snapshot_name, customer_id, city,
-            delivery_type, source_type, workshop_status, order_status, total_amount,
-            received_amount, debt_amount, return_amount, comment, shipping_status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'not_sent', ?, ?)`
-        ).bind(
-          externalId, orderDate, managerId, managerName, customerId, city || null, deliveryType || null,
-          sourceType, workshopStatus, orderStatus, totals.totalAmount, totals.receivedAmount, totals.debtAmount,
-          comment || null, createdAt, createdAt,
-        );
+      const orderStatement = db.prepare(
+        `INSERT INTO orders (
+          external_id, order_date, manager_id, manager_snapshot_name, customer_id, city,
+          delivery_type, source_type, workshop_status, order_status, total_amount,
+          received_amount, debt_amount, return_amount, comment, shipping_status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'not_sent', ?, ?)`
+      ).bind(
+        externalId, orderDate, managerId, managerName, customerId, city || null, deliveryType || null,
+        sourceType, workshopStatus, orderStatus, totals.totalAmount, totals.receivedAmount, totals.debtAmount,
+        comment || null, createdAt, createdAt,
+      );
       orderId = await updateCriticalOperationTargetFromLastInsert(
         db, criticalOperation, 'order', externalId, orderStatement, 'order_created',
       );
@@ -1029,8 +934,6 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         preResolvedCatalog,
         criticalOperation,
         'order_create',
-        undefined,
-        itemizedWritePlan,
       );
       insertedContent = {
         stockResults: content.stockResults,
@@ -1054,7 +957,6 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
       receivedAmount: totals.receivedAmount,
       debtAmount: totals.debtAmount,
       paymentStatus,
-      pricingMode,
       stockWriteOff: stockResults,
       workshopCount,
     };
@@ -1158,82 +1060,6 @@ export async function updateOrderCritical(
       if (isArchivedOrder(existing)) throw new CriticalOperationConflictError(`Заказ ${(existing as any).external_id} находится в архиве. Архивные заказы доступны только для просмотра.`);
 
       const existingAny = existing as any;
-      const existingPricingMode = cleanText(existingAny.pricing_mode) === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total';
-      type ItemPriceCorrectionInput = {
-        orderItemId?: number;
-        unitPrice?: number;
-        expectedUnitPrice?: number;
-        expectedQuantity?: number;
-        expectedLineTotal?: number;
-        expectedCatalogPriceSnapshot?: number | null;
-      };
-      type ItemContentReplacementExpectedInput = {
-        orderItemId?: number;
-        productName?: string;
-        audienceType?: string;
-        gender?: string | null;
-        color?: string | null;
-        material?: string | null;
-        length?: string | null;
-        size?: string | null;
-        quantity?: number;
-        unitPrice?: number;
-        lineTotal?: number;
-        catalogPriceSnapshot?: number | null;
-        sourceType?: string;
-        workshopComment?: string | null;
-        workshopUrgent?: boolean;
-        workshopDueDate?: string | null;
-        workshopDueTime?: string | null;
-      };
-      type ItemContentReplacementInput = {
-        expectedItems?: ItemContentReplacementExpectedInput[];
-        items?: Array<Record<string, unknown>>;
-      };
-      const itemizedInput = input as OrderInput & {
-        itemPriceCorrections?: ItemPriceCorrectionInput[];
-        itemContentReplacement?: ItemContentReplacementInput;
-      };
-      const rawItemPriceCorrections: ItemPriceCorrectionInput[] = Array.isArray(itemizedInput.itemPriceCorrections)
-        ? itemizedInput.itemPriceCorrections
-        : [];
-      const hasItemContentReplacementField = Object.prototype.hasOwnProperty.call(itemizedInput, 'itemContentReplacement');
-      const rawItemContentReplacement = itemizedInput.itemContentReplacement
-        && typeof itemizedInput.itemContentReplacement === 'object'
-        && !Array.isArray(itemizedInput.itemContentReplacement)
-        ? itemizedInput.itemContentReplacement
-        : null;
-      if (hasItemContentReplacementField && !rawItemContentReplacement) {
-        throw new OrderInputValidationError('Безопасная замена состава передана в неверном формате.');
-      }
-      const itemContentReplacementRequested = rawItemContentReplacement !== null;
-      if (rawItemPriceCorrections.length && existingPricingMode !== 'itemized_v1') {
-        throw new CriticalOperationConflictError('Построчная коррекция цены доступна только для itemized-заказа.');
-      }
-      if (itemContentReplacementRequested && existingPricingMode !== 'itemized_v1') {
-        throw new CriticalOperationConflictError('Безопасная замена состава доступна только для itemized-заказа.');
-      }
-      if ((rawItemPriceCorrections.length || itemContentReplacementRequested) && options.lifecycleAction === 'order_delete') {
-        throw new CriticalOperationConflictError('Исправление цены или состава нельзя совмещать с удалением заказа. Сохраните эти действия отдельно.');
-      }
-      if (itemContentReplacementRequested && rawItemPriceCorrections.length) {
-        throw new CriticalOperationConflictError('Исправление цены и замена состава должны сохраняться отдельными действиями.');
-      }
-      const itemizedMetadataOnlyEdit = existingPricingMode === 'itemized_v1'
-        && options.lifecycleAction !== 'order_delete'
-        && input.externalId === undefined
-        && input.items === undefined
-        && input.payments === undefined
-        && input.orderTotal === undefined
-        && input.pricingMode === undefined
-        && input.sourceType === undefined
-        && input.workshopStatus === undefined
-        && input.orderStatus === undefined
-        && input.shippingStatus === undefined
-        && input.shippingDate === undefined;
-      if (existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete' && !itemizedMetadataOnlyEdit) {
-        throw new CriticalOperationConflictError('Этот заказ использует построчную itemized-цену. Реквизиты, проведённые оплаты, цены продажи и состав можно исправлять из редактора; жизненный цикл меняется отдельными штатными действиями.');
-      }
       const timestamp = new Date().toISOString();
       const nextOrderDate = normalizeDate(input.orderDate ?? existingAny.order_date);
       const nextManager = input.managerName !== undefined ? upperText(input.managerName) : cleanText(existingAny.manager_name);
@@ -1259,9 +1085,6 @@ export async function updateOrderCritical(
       const existingOrderStatus = normalizeOrderStatus(existingAny.order_status);
       const existingWorkshopStatus = normalizeWorkshopStatus(existingAny.workshop_status);
       const existingShippingStatus = normalizeShippingStatus(existingAny.shipping_status);
-      if (itemContentReplacementRequested && existingShippingStatus === 'sent') {
-        throw new CriticalOperationConflictError('Отправленный заказ нельзя менять по составу. Используйте возврат, обмен или складскую корректировку.');
-      }
       const workingModeEdit = actor?.role !== 'admin';
       if (workingModeEdit && (['deleted', 'archived'].includes(existingOrderStatus) || existingShippingStatus === 'sent')) {
         throw new CriticalOperationConflictError('Отправленный, удалённый или архивный заказ нельзя переписывать в рабочем режиме. Используйте отдельное штатное действие заказа.');
@@ -1287,46 +1110,13 @@ export async function updateOrderCritical(
         ? normalizeDate(input.shippingDate || existingAny.shipping_date || timestamp)
         : null;
 
-      const replacementExpectedItems = itemContentReplacementRequested && Array.isArray(rawItemContentReplacement?.expectedItems)
-        ? rawItemContentReplacement.expectedItems
-        : null;
-      const replacementItems = itemContentReplacementRequested && Array.isArray(rawItemContentReplacement?.items)
-        ? rawItemContentReplacement.items
-        : null;
-      if (itemContentReplacementRequested && (!replacementExpectedItems || !replacementItems)) {
-        throw new OrderInputValidationError('Для безопасной замены состава передайте ожидаемый текущий состав и новый состав заказа.');
-      }
-      if (itemContentReplacementRequested && !replacementItems?.length) {
-        throw new OrderInputValidationError('В itemized-заказе должна остаться хотя бы одна товарная позиция.');
-      }
-      if (replacementItems) {
-        for (const [index, replacementItem] of replacementItems.entries()) {
-          const sourceType = cleanText(replacementItem?.sourceType).toLowerCase();
-          if (!['warehouse', 'boutique', 'workshop'].includes(sourceType)) {
-            throw new OrderInputValidationError(`Для позиции ${index + 1} явно укажите источник: Склад, Бутик или Цех.`);
-          }
-          if (!Object.prototype.hasOwnProperty.call(replacementItem, 'catalogPriceSnapshot')) {
-            throw new OrderInputValidationError(`Для позиции ${index + 1} явно передайте исторический снимок цены Каталога или null.`);
-          }
-        }
-      }
-      if (itemContentReplacementRequested && input.items !== undefined) {
-        throw new CriticalOperationConflictError('Безопасную itemized-замену состава нельзя совмещать со старым полем items.');
-      }
-
       if (Array.isArray(input.items)) assertOrderItemInputs(input.items);
-      if (replacementItems) assertOrderItemInputs(replacementItems as OrderInput['items']);
       if (Array.isArray(input.payments)) assertOrderPaymentInputs(input.payments);
       if (input.orderTotal !== undefined) assertOrderTotalInput(input.orderTotal);
-      const requestedItems = replacementItems
-        ? normalizeOrderItems(replacementItems as OrderInput['items'], nextSource)
-        : (Array.isArray(input.items) ? normalizeOrderItems(input.items, nextSource) : null);
+      const requestedItems = Array.isArray(input.items) ? normalizeOrderItems(input.items, nextSource) : null;
       const requestedPayments = Array.isArray(input.payments) ? normalizeOrderPayments(input.payments, nextOrderDate) : null;
       const existingItemsForEdit = normalizeOrderItems((existingAny.items || []) as OrderInput['items'], nextSource);
       const existingPaymentsForEdit = normalizeOrderPayments((existingAny.payments || []) as OrderInput['payments'], nextOrderDate);
-      const replacementOrderSource = itemContentReplacementRequested && requestedItems
-        ? (requestedItems.find((item) => !item.isWorkshop)?.sourceType === 'boutique' ? 'boutique' : 'warehouse')
-        : nextSource;
       type PaymentCorrectionInput = NonNullable<OrderInput['paymentCorrections']>[number];
       const rawPaymentCorrections: PaymentCorrectionInput[] = Array.isArray(input.paymentCorrections)
         ? input.paymentCorrections
@@ -1435,198 +1225,7 @@ export async function updateOrderCritical(
           isExchangeExtra,
         });
       }
-      let itemizedRewritePlan: ItemizedOrderWritePlan | null = null;
-      if (itemContentReplacementRequested && replacementExpectedItems && replacementItems && requestedItems) {
-        const currentItems = Array.isArray(existingAny.items) ? existingAny.items as Array<Record<string, unknown>> : [];
-        if (replacementExpectedItems.length !== currentItems.length) {
-          throw new CriticalOperationConflictError('Состав заказа уже изменился после открытия редактора. Обновите заказ и повторите замену.');
-        }
-
-        const currentById = new Map<number, Record<string, unknown>>();
-        for (const currentItem of currentItems) {
-          const currentId = toInt(currentItem?.id, 0);
-          if (!currentId || currentById.has(currentId)) {
-            throw new CriticalOperationConflictError('Не удалось однозначно определить текущие позиции заказа. Обновите заказ и повторите замену.');
-          }
-          currentById.set(currentId, currentItem);
-        }
-
-        const expectedIds = new Set<number>();
-        for (const expected of replacementExpectedItems) {
-          const orderItemId = Number(expected?.orderItemId);
-          if (!Number.isSafeInteger(orderItemId) || orderItemId <= 0 || expectedIds.has(orderItemId)) {
-            throw new OrderInputValidationError('Ожидаемый состав содержит неоднозначную позицию заказа.');
-          }
-          expectedIds.add(orderItemId);
-          const currentItem = currentById.get(orderItemId);
-          if (!currentItem) {
-            throw new CriticalOperationConflictError('Одна из позиций заказа уже изменилась или исчезла. Обновите заказ и повторите замену.');
-          }
-          if (!Object.prototype.hasOwnProperty.call(expected, 'catalogPriceSnapshot') || expected.lineTotal === undefined) {
-            throw new OrderInputValidationError('Для безопасной замены состава не хватает исторического снимка цены позиции.');
-          }
-          const expectedNormalized = normalizeOrderItems([expected as unknown as NonNullable<OrderInput['items']>[number]], nextSource);
-          const currentNormalized = normalizeOrderItems([currentItem as unknown as NonNullable<OrderInput['items']>[number]], nextSource);
-          const currentCatalogSnapshot = currentItem.catalogPriceSnapshot === null || currentItem.catalogPriceSnapshot === undefined
-            ? null
-            : Math.max(0, toInt(currentItem.catalogPriceSnapshot, 0));
-          const expectedCatalogSnapshot = expected.catalogPriceSnapshot === null || expected.catalogPriceSnapshot === undefined
-            ? null
-            : Number(expected.catalogPriceSnapshot);
-          const stale = !sameNormalizedOrderItemsForEdit(currentNormalized, expectedNormalized)
-            || Number(expected.lineTotal) !== Number(currentItem.lineTotal || 0)
-            || expectedCatalogSnapshot !== currentCatalogSnapshot;
-          if (stale) {
-            throw new CriticalOperationConflictError('Одна из позиций заказа уже изменилась после открытия редактора. Обновите заказ и повторите замену.');
-          }
-        }
-        if (expectedIds.size !== currentById.size) {
-          throw new CriticalOperationConflictError('Текущий состав заказа не совпадает с открытым редактором. Обновите заказ и повторите замену.');
-        }
-
-        const nextSeenExistingIds = new Set<number>();
-        for (const [index, rawNextItem] of replacementItems.entries()) {
-          const carriedOrderItemId = Number((rawNextItem as Record<string, unknown>)?.orderItemId || 0);
-          if (carriedOrderItemId) {
-            if (!Number.isSafeInteger(carriedOrderItemId) || carriedOrderItemId <= 0 || nextSeenExistingIds.has(carriedOrderItemId)) {
-              throw new OrderInputValidationError('Новый состав содержит неоднозначную ссылку на старую позицию.');
-            }
-            nextSeenExistingIds.add(carriedOrderItemId);
-            const previousRaw = currentById.get(carriedOrderItemId);
-            if (!previousRaw) {
-              throw new CriticalOperationConflictError('Новый состав ссылается на позицию, которой больше нет в заказе.');
-            }
-            const previousNormalized = normalizeOrderItems([previousRaw as unknown as NonNullable<OrderInput['items']>[number]], nextSource)[0];
-            const nextNormalized = requestedItems[index];
-            const priceKeyUnchanged = previousNormalized.productName === nextNormalized.productName
-              && previousNormalized.audienceType === nextNormalized.audienceType
-              && previousNormalized.material === nextNormalized.material
-              && previousNormalized.length === nextNormalized.length;
-            if (priceKeyUnchanged) {
-              const oldSnapshot = previousRaw.catalogPriceSnapshot === null || previousRaw.catalogPriceSnapshot === undefined
-                ? null
-                : Math.max(0, toInt(previousRaw.catalogPriceSnapshot, 0));
-              const nextSnapshotRaw = (rawNextItem as Record<string, unknown>).catalogPriceSnapshot;
-              const nextSnapshot = nextSnapshotRaw === null || nextSnapshotRaw === undefined || cleanText(nextSnapshotRaw) === ''
-                ? null
-                : Number(nextSnapshotRaw);
-              if (nextSnapshot !== oldSnapshot) {
-                throw new CriticalOperationConflictError('Цена Каталога для неизменённого ценового исполнения является историческим снимком и не может быть переписана.');
-              }
-            }
-          }
-        }
-
-        itemizedRewritePlan = buildItemizedOrderWritePlan(
-          replacementItems.map((item) => ({
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            catalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
-          })),
-          existingPaymentsForEdit,
-        );
-      }
-
-      const itemContentChanged = Boolean(requestedItems && !sameNormalizedOrderItemsForEdit(existingItemsForEdit, requestedItems));
-      const rewriteItems = Boolean(requestedItems && !sameNormalizedOrderItemsExceptPriceForEdit(existingItemsForEdit, requestedItems));
-      if (itemContentReplacementRequested && !rewriteItems) {
-        throw new CriticalOperationConflictError('Состав не изменился. Для исправления только цены используйте отдельную коррекцию цены продажи.');
-      }
-      let priceOnlyItemsEdit = itemContentChanged && !rewriteItems;
-      const priceOnlyItemUpdates: Array<{ orderItemId: number; unitPrice: number; lineTotal: number }> = [];
-      let itemizedPricingRows: Array<Record<string, unknown>> | null = null;
-      if (priceOnlyItemsEdit && requestedItems) {
-        const activeItemRows = await db.prepare(
-          `SELECT id, unit_price
-           FROM order_items
-           WHERE order_id = ? AND quantity > 0
-           ORDER BY id ASC`
-        ).bind(id).all<Record<string, unknown>>();
-        const activeRows = activeItemRows.results || [];
-        if (activeRows.length !== requestedItems.length) {
-          throw new CriticalOperationConflictError('Состав заказа изменился после открытия редактора. Обновите заказ и повторите исправление цены.');
-        }
-        for (const [index, item] of requestedItems.entries()) {
-          const row = activeRows[index];
-          const orderItemId = toInt(row?.id, 0);
-          if (!orderItemId) {
-            throw new CriticalOperationConflictError('Не удалось однозначно определить позицию заказа для исправления цены. Обновите заказ и повторите.');
-          }
-          if (toInt(row?.unit_price, 0) !== item.unitPrice) {
-            priceOnlyItemUpdates.push({ orderItemId, unitPrice: item.unitPrice, lineTotal: item.lineTotal });
-          }
-        }
-      }
-
-      if (rawItemPriceCorrections.length) {
-        const activeItemRows = await db.prepare(
-          `SELECT id, quantity, unit_price, line_total, catalog_price_snapshot
-           FROM order_items
-           WHERE order_id = ? AND quantity > 0
-           ORDER BY id ASC`
-        ).bind(id).all<Record<string, unknown>>();
-        itemizedPricingRows = activeItemRows.results || [];
-        if (!itemizedPricingRows.length) {
-          throw new CriticalOperationConflictError('У заказа нет активных позиций для исправления цены. Обновите заказ и повторите.');
-        }
-
-        const rowsById = new Map<number, Record<string, unknown>>();
-        for (const row of itemizedPricingRows) {
-          const rowId = toInt(row?.id, 0);
-          if (rowId) rowsById.set(rowId, row);
-        }
-        const seenItemIds = new Set<number>();
-        for (const correction of rawItemPriceCorrections) {
-          const orderItemId = Number(correction?.orderItemId);
-          if (!Number.isSafeInteger(orderItemId) || orderItemId <= 0 || seenItemIds.has(orderItemId)) {
-            throw new OrderInputValidationError('Не удалось однозначно определить позицию заказа для исправления цены.');
-          }
-          seenItemIds.add(orderItemId);
-          const row = rowsById.get(orderItemId);
-          if (!row) {
-            throw new CriticalOperationConflictError('Одна из позиций заказа уже изменилась или исчезла. Обновите заказ и повторите исправление цены.');
-          }
-
-          const quantity = toInt(row.quantity, 0);
-          const currentUnitPrice = toInt(row.unit_price, 0);
-          const currentLineTotal = toInt(row.line_total, 0);
-          const currentCatalogSnapshot = row.catalog_price_snapshot === null || row.catalog_price_snapshot === undefined
-            ? null
-            : Math.max(0, toInt(row.catalog_price_snapshot, 0));
-          const nextUnitPrice = Number(correction?.unitPrice);
-          if (!Number.isSafeInteger(nextUnitPrice) || nextUnitPrice < 0) {
-            throw new OrderInputValidationError('Новая цена позиции должна быть целым числом от 0.');
-          }
-          if (quantity <= 0) {
-            throw new CriticalOperationConflictError('Позиция больше не активна. Обновите заказ и повторите исправление цены.');
-          }
-
-          const expectedCatalogSnapshot = correction.expectedCatalogPriceSnapshot === undefined
-            ? undefined
-            : correction.expectedCatalogPriceSnapshot === null
-              ? null
-              : Number(correction.expectedCatalogPriceSnapshot);
-          const staleSnapshot = (
-            (correction.expectedUnitPrice !== undefined && Number(correction.expectedUnitPrice) !== currentUnitPrice)
-            || (correction.expectedQuantity !== undefined && Number(correction.expectedQuantity) !== quantity)
-            || (correction.expectedLineTotal !== undefined && Number(correction.expectedLineTotal) !== currentLineTotal)
-            || (expectedCatalogSnapshot !== undefined && expectedCatalogSnapshot !== currentCatalogSnapshot)
-          );
-          if (staleSnapshot) {
-            throw new CriticalOperationConflictError('Цена или состав этой позиции уже изменились после открытия редактора. Обновите заказ и повторите исправление.');
-          }
-
-          const nextLineTotal = quantity * nextUnitPrice;
-          if (!Number.isSafeInteger(nextLineTotal) || nextLineTotal < 0) {
-            throw new OrderInputValidationError('Сумма позиции слишком велика для точного расчёта.');
-          }
-          if (currentUnitPrice !== nextUnitPrice || currentLineTotal !== nextLineTotal) {
-            priceOnlyItemUpdates.push({ orderItemId, unitPrice: nextUnitPrice, lineTotal: nextLineTotal });
-          }
-        }
-        if (priceOnlyItemUpdates.length) priceOnlyItemsEdit = true;
-      }
-
+      const rewriteItems = Boolean(requestedItems && !sameNormalizedOrderItemsForEdit(existingItemsForEdit, requestedItems));
       const rewritePayments = !deletingOrder && Boolean(requestedPayments && !sameNormalizedOrderPaymentsForEdit(existingPaymentsForEdit, requestedPayments));
       if (paymentCorrections.length && (rewritePayments || deletingOrder)) {
         throw new CriticalOperationConflictError('Исправление проведённой оплаты нельзя совмещать с удалением заказа или полной перезаписью оплат. Сохраните эти действия отдельно.');
@@ -1638,10 +1237,10 @@ export async function updateOrderCritical(
       if (humanInventoryModelEnabled && existingShippingStatus === 'sent' && nextShippingStatus !== 'sent') {
         throw new CriticalOperationConflictError('Отправленный заказ нельзя вернуть в состояние «не отправлено». Физическое движение товара уже зафиксировано.');
       }
-      if (humanInventoryModelEnabled && existingShippingStatus === 'sent' && (itemContentChanged || deletingOrder)) {
+      if (humanInventoryModelEnabled && existingShippingStatus === 'sent' && (rewriteItems || deletingOrder)) {
         throw new CriticalOperationConflictError('Товар уже был физически выдан / отправлен. Состав такого заказа нельзя переписывать или удалять напрямую — используйте возврат, обмен или складскую корректировку.');
       }
-      if (humanInventoryModelEnabled && existingShippingStatus !== 'sent' && (itemContentChanged || deletingOrder)) {
+      if (humanInventoryModelEnabled && existingShippingStatus !== 'sent' && (rewriteItems || deletingOrder)) {
         const issuedBeforeFullShipping = await db.prepare(
           `SELECT COUNT(*) AS count FROM inventory_reservations WHERE order_id = ? AND status = 'fulfilled'`
         ).bind(id).first<{ count: number }>();
@@ -1651,16 +1250,6 @@ export async function updateOrderCritical(
       }
       const nextItems = requestedItems || existingItemsForEdit;
       const nextPayments = deletingOrder ? existingPaymentsForEdit : (requestedPayments || existingPaymentsForEdit);
-      if (itemContentReplacementRequested) {
-        const operations = await completedOrderOperationCounts(db, id);
-        if (operations.returns > 0 || operations.exchanges > 0) {
-          const parts = [
-            operations.returns > 0 ? `возвратов: ${operations.returns}` : '',
-            operations.exchanges > 0 ? `обменов: ${operations.exchanges}` : '',
-          ].filter(Boolean).join(', ');
-          throw new CriticalOperationConflictError(`У заказа есть действующие операции (${parts}). Замена состава запрещена до их штатной отмены.`);
-        }
-      }
       if (rewriteItems && nextItems.some(item => item.isWorkshop)) await assertWorkshopTaskDetailSchema(db);
       const inventoryObligationLineage = rewriteItems
         ? await inventoryObligationLineageForRewrite(db, id, nextItems)
@@ -1720,35 +1309,13 @@ export async function updateOrderCritical(
         0,
       );
       const correctedReceivedAmount = calculatedTotals.receivedAmount + paymentCorrectionAmountDelta;
-      let totals = {
+      const totals = {
         ...calculatedTotals,
         receivedAmount: correctedReceivedAmount,
         debtAmount: Math.max(0, calculatedTotals.totalAmount - correctedReceivedAmount),
       };
-      if (rawItemPriceCorrections.length) {
-        const updatePriceByItemId = new Map(priceOnlyItemUpdates.map((update) => [update.orderItemId, update.unitPrice]));
-        const itemizedMoney = assertItemizedOrderMoneyNotOverpaid(
-          (itemizedPricingRows || []).map((row) => ({
-            quantity: toInt(row.quantity, 0),
-            unitPrice: updatePriceByItemId.get(toInt(row.id, 0)) ?? toInt(row.unit_price, 0),
-          })),
-          [{ amount: correctedReceivedAmount }],
-        );
-        totals = {
-          totalAmount: itemizedMoney.totalAmount,
-          receivedAmount: itemizedMoney.receivedAmount,
-          debtAmount: itemizedMoney.debtAmount,
-        };
-      }
-      if (itemContentReplacementRequested && itemizedRewritePlan) {
-        totals = {
-          totalAmount: itemizedRewritePlan.totalAmount,
-          receivedAmount: correctedReceivedAmount,
-          debtAmount: Math.max(0, itemizedRewritePlan.totalAmount - correctedReceivedAmount),
-        };
-      }
       if (totals.receivedAmount > totals.totalAmount) throw new OrderInputValidationError(`Оплаты (${totals.receivedAmount}) больше цены заказа (${totals.totalAmount}). Исправьте цену или оплаты.`);
-      if (itemContentChanged || priceOnlyItemsEdit || rewritePayments || deletingOrder) {
+      if (rewriteItems || rewritePayments || deletingOrder) {
         const operations = await completedOrderOperationCounts(db, id);
         if (operations.returns > 0 || operations.exchanges > 0) {
           const parts = [
@@ -1766,14 +1333,12 @@ export async function updateOrderCritical(
         externalId: cleanText(existingAny.external_id),
         existingManagerId, existingCustomerId: toInt(existingAny.customer_id, 0) || null,
         previousManagerName: cleanText(existingAny.manager_name || existingAny.manager_snapshot_name),
-        nextOrderDate, nextManager, nextManagerId, nextCustomerId, nextCity, nextDelivery, nextSource: replacementOrderSource,
+        nextOrderDate, nextManager, nextManagerId, nextCustomerId, nextCity, nextDelivery, nextSource,
         finalWorkshopStatus, nextOrderStatus, nextShippingStatus, nextShippingDate,
         persistedShippingStatus, persistedShippingDate, nextComment,
-        itemContentChanged, rewriteItems, priceOnlyItemsEdit, priceOnlyItemUpdates,
-        rewritePayments, deletingOrder, deferShippingCommit,
+        rewriteItems, rewritePayments, deletingOrder, deferShippingCommit,
         paymentCorrections,
         nextItems, nextPayments, totals, rewritePreResolvedCatalog: rewritePreResolvedCatalog || null,
-        itemizedRewritePlan,
         inventoryObligationLineage, humanInventoryModelEnabled,
       };
       operationContext = { ...operationContext, plan };
@@ -1817,7 +1382,7 @@ export async function updateOrderCritical(
     }
 
     if (criticalOperation.row.step === 'old_content_retired') {
-      const orderUpdateStatement = db.prepare(
+      await db.prepare(
         `UPDATE orders SET order_date = ?, manager_id = ?, manager_snapshot_name = ?, customer_id = ?, city = ?,
             delivery_type = ?, source_type = ?, workshop_status = ?, order_status = ?, shipping_status = ?, shipping_date = ?,
             total_amount = ?, received_amount = ?, debt_amount = ?, updated_at = ?, comment = ? WHERE id = ?`
@@ -1825,25 +1390,7 @@ export async function updateOrderCritical(
         p.nextOrderDate, p.nextManagerId, p.nextManager, p.nextCustomerId, p.nextCity || null, p.nextDelivery || null,
         p.nextSource, p.finalWorkshopStatus, p.nextOrderStatus, p.persistedShippingStatus, p.persistedShippingDate,
         p.totals.totalAmount, p.totals.receivedAmount, p.totals.debtAmount, p.timestamp, p.nextComment || null, id,
-      );
-      const priceOnlyItemUpdates = Array.isArray(p.priceOnlyItemUpdates) ? p.priceOnlyItemUpdates : [];
-      if (priceOnlyItemUpdates.length) {
-        await db.batch([
-          orderUpdateStatement,
-          ...priceOnlyItemUpdates.map((update: Record<string, any>) => db.prepare(
-            `UPDATE order_items
-             SET unit_price = ?, line_total = ?
-             WHERE id = ? AND order_id = ? AND quantity > 0`
-          ).bind(
-            Math.max(0, toInt(update.unitPrice, 0)),
-            Math.max(0, toInt(update.lineTotal, 0)),
-            toInt(update.orderItemId, 0),
-            id,
-          )),
-        ]);
-      } else {
-        await orderUpdateStatement.run();
-      }
+      ).run();
       await advanceCriticalOperation(db, criticalOperation, 'order_updated');
     }
 
@@ -1858,7 +1405,6 @@ export async function updateOrderCritical(
           p.rewriteItems && Array.isArray(p.rewritePreResolvedCatalog) ? p.rewritePreResolvedCatalog : undefined,
           criticalOperation, 'order_edit',
           Array.isArray(p.inventoryObligationLineage) ? p.inventoryObligationLineage : undefined,
-          p.itemizedRewritePlan || null,
         );
       }
       operationContext = { ...operationContext, insertedContent };
@@ -1992,7 +1538,7 @@ export async function updateOrderCritical(
       await writeActivityLog(db, {
         eventType: 'order_updated', entityType: 'order', entityId: id, orderId: id, externalOrderId: p.externalId,
         title: `Изменён заказ ${p.externalId}`,
-        details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.priceOnlyItemsEdit ? 'Цены позиций исправлены без движения склада; ' : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}${paymentCorrectionCount ? `оплаты исправлены: ${paymentCorrectionCount}; ` : ''}статус отправки: ${p.nextShippingStatus}`,
+        details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}${paymentCorrectionCount ? `оплаты исправлены: ${paymentCorrectionCount}; ` : ''}статус отправки: ${p.nextShippingStatus}`,
         amount: p.totals.totalAmount, createdAt: p.timestamp,
       });
     } catch (error) {
@@ -2023,10 +1569,6 @@ export async function updateOrderCritical(
 
 
 export async function getOrder(db: D1Database, id: number) {
-  const pricingFoundationEnabled = await isOrderPricingFoundationEnabled(db);
-  const pricingModeSelect = pricingFoundationEnabled
-    ? 'o.pricing_mode'
-    : "'legacy_manual_total' AS pricing_mode";
   const order = await db.prepare(
     `SELECT
       o.id, o.external_id, o.order_date, o.manager_id, o.customer_id,
@@ -2035,14 +1577,13 @@ export async function getOrder(db: D1Database, id: number) {
       COALESCE(m.color_key, '#64748B') AS manager_color,
       c.phone_normalized AS customer_phone, c.display_name AS customer_name,
       o.city, o.delivery_type, o.source_type, o.workshop_status, o.order_status,
-      ${pricingModeSelect},
       o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment, o.shipping_status, o.shipping_date,
       o.archived_at, o.archived_by, o.archive_reason, o.archive_batch_id, o.created_at, o.updated_at
      FROM orders o
      LEFT JOIN managers m ON m.id = o.manager_id
      LEFT JOIN customers c ON c.id = o.customer_id
      WHERE o.id = ?`
-  ).bind(id).first<OrderListRow & { pricing_mode?: 'legacy_manual_total' | 'itemized_v1'; created_at: string; updated_at: string }>();
+  ).bind(id).first<OrderListRow & { created_at: string; updated_at: string }>();
 
   if (!order) {
     return null;
@@ -2051,7 +1592,6 @@ export async function getOrder(db: D1Database, id: number) {
   const relations = await fetchOrderRelations(db, [id]);
   return {
     ...order,
-    pricing_mode: order.pricing_mode === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total',
     committed_return_count: (relations.returnsByOrderId.get(id) || []).filter(ret => cleanText((ret as any).status || 'completed').toLowerCase() !== 'cancelled').length,
     committed_exchange_count: relations.committedExchangeCountByOrderId.get(id) || 0,
     has_committed_item_return: relations.hasCommittedItemReturnByOrderId.get(id) || false,
@@ -2061,7 +1601,6 @@ export async function getOrder(db: D1Database, id: number) {
       quantity: (item as any).quantity,
       availableOperationQuantity: orderItemAvailableOperationQuantity(item as Record<string, unknown>),
       unitPrice: (item as any).unit_price,
-      catalogPriceSnapshot: (item as any).catalog_price_snapshot == null ? null : Math.max(0, toInt((item as any).catalog_price_snapshot, 0)),
       lineTotal: (item as any).line_total,
       sourceType: (item as any).is_workshop ? 'workshop' : (item as any).source_type,
       isWorkshop: Boolean((item as any).is_workshop),
