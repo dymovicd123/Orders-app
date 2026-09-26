@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "revision": "stage03-main-promotion-candidate-r1",
+  "files": {
+    "worker/core/types.ts": {
+      "beforeGitBlob": "312bc1d727934eda47cc87e803f0bca7bb9e31dc",
+      "afterGitBlob": "380476d593008c0bbaeae3ce1e815ae60ec52c67",
+      "baselineFixture": "scripts/fixtures/stage03-main-promotion-baseline/worker/core/types.ts"
+    },
+    "worker/domains/finance-reports.ts": {
+      "beforeGitBlob": "0a495b70e884c34e4a92ae395ae7a87b020343c3",
+      "afterGitBlob": "731c40de473b00a353fc58e987626d16d7671186",
+      "baselineFixture": "scripts/fixtures/stage03-main-promotion-baseline/worker/domains/finance-reports.ts"
+    },
+    "worker/domains/order-core.ts": {
+      "beforeGitBlob": "caead3a5af825baa003857c58912c46f82a843a1",
+      "afterGitBlob": "7a33b917072808e232d706954441c07aaaf6faec",
+      "baselineFixture": "scripts/fixtures/stage03-main-promotion-baseline/worker/domains/order-core.ts"
+    },
+    "worker/domains/orders-read.ts": {
+      "beforeGitBlob": "5552336ea806cbb144bfc64de8991951eedee13e",
+      "afterGitBlob": "73b1001a0985e49626f32a812edd5f9c95de5e4b",
+      "baselineFixture": "scripts/fixtures/stage03-main-promotion-baseline/worker/domains/orders-read.ts"
+    },
+    "worker/domains/orders-relations.ts": {
+      "beforeGitBlob": "66e7c7acc571bd6531da9d09ed39082f5e4f2f6a",
+      "afterGitBlob": "8f4140cb9f93e586c0d5bd51e5ef68041f177051",
+      "baselineFixture": "scripts/fixtures/stage03-main-promotion-baseline/worker/domains/orders-relations.ts"
+    },
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "69e513b7b800f875b710553d898271bc198e90ac",
+      "afterGitBlob": "a0cc8531d9edf2d6ab0aa5edc972dbc63d2dd200",
+      "baselineFixture": "scripts/fixtures/stage03-main-promotion-baseline/worker/domains/orders-write.ts"
+    },
+    "worker/domains/returns-exchanges.ts": {
+      "beforeGitBlob": "01d717af4e4eafb44d967c9f5830fa2cf25bb448",
+      "afterGitBlob": "bf6baf5b03453c1ed4be2668ac5c6aefe8c3c76c",
+      "baselineFixture": "scripts/fixtures/stage03-main-promotion-baseline/worker/domains/returns-exchanges.ts"
+    },
+    "worker/domains/storage.ts": {
+      "beforeGitBlob": "7f90f543878cc6854565c949bbd578cf57455b60",
+      "afterGitBlob": "4095ad56e7e91eb601f1b6483e903c0119213380",
+      "baselineFixture": "scripts/fixtures/stage03-main-promotion-baseline/worker/domains/storage.ts"
+    },
+    "worker/domains/order-pricing.ts": {
+      "beforeAbsent": true,
+      "afterGitBlob": "aea8ee7483c2da8a8dd6ae62ededd56a0c26bdc4"
+    }
+  }
+}
