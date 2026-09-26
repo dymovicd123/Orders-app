@@ -157,17 +157,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          schema="$(npx wrangler d1 execute orders_db_prod             --remote             --config wrangler.jsonc             --command "SELECT
-              (SELECT COUNT(*) FROM pragma_table_info('orders') WHERE name='pricing_mode' AND type='TEXT' AND \"notnull\"=1 AND dflt_value='\''legacy_manual_total'\'') AS valid_orders_column,
-              (SELECT COUNT(*) FROM pragma_table_info('order_items') WHERE name='catalog_price_snapshot' AND type='INTEGER') AS valid_item_column"             --json)"
-          echo "$schema"
-          [[ "$(jq -r '.[0].results[0].valid_orders_column // 0' <<<"$schema")" == "1" ]] || {
-            echo "orders.pricing_mode column shape is not the expected Stage03 contract." >&2
+          orders_schema="$(npx wrangler d1 execute orders_db_prod             --remote             --config wrangler.jsonc             --command "SELECT name, type, \"notnull\" AS not_null, dflt_value FROM pragma_table_info('orders') WHERE name='pricing_mode'"             --json)"
+          items_schema="$(npx wrangler d1 execute orders_db_prod             --remote             --config wrangler.jsonc             --command "SELECT name, type FROM pragma_table_info('order_items') WHERE name='catalog_price_snapshot'"             --json)"
+          echo "$orders_schema"
+          echo "$items_schema"
+          [[ "$(jq -r '.[0].results | length' <<<"$orders_schema")" == "1" ]] || {
+            echo "orders.pricing_mode column is missing or duplicated." >&2
             exit 30
           }
-          [[ "$(jq -r '.[0].results[0].valid_item_column // 0' <<<"$schema")" == "1" ]] || {
-            echo "order_items.catalog_price_snapshot column shape is not the expected Stage03 contract." >&2
+          [[ "$(jq -r '.[0].results[0].type // ""' <<<"$orders_schema")" == "TEXT" && "$(jq -r '.[0].results[0].not_null // 0' <<<"$orders_schema")" == "1" && "$(jq -r '.[0].results[0].dflt_value // ""' <<<"$orders_schema")" == "'legacy_manual_total'" ]] || {
+            echo "orders.pricing_mode column shape/default is not the expected Stage03 contract." >&2
             exit 31
+          }
+          [[ "$(jq -r '.[0].results | length' <<<"$items_schema")" == "1" && "$(jq -r '.[0].results[0].type // ""' <<<"$items_schema")" == "INTEGER" ]] || {
+            echo "order_items.catalog_price_snapshot column shape is not the expected Stage03 contract." >&2
+            exit 32
           }
 
           orders="$(npx wrangler d1 execute orders_db_prod             --remote             --config wrangler.jsonc             --command "SELECT
@@ -183,14 +187,14 @@ jobs:
           invalid_count="$(jq -r '.[0].results[0].invalid_count // 0' <<<"$orders")"
           [[ "$legacy_count" == "$orders_count" && "$itemized_count" == "0" && "$invalid_count" == "0" ]] || {
             echo "Before Stage03 runtime rollout, all existing Production orders must remain legacy/manual." >&2
-            exit 32
+            exit 33
           }
 
           items="$(npx wrangler d1 execute orders_db_prod             --remote             --config wrangler.jsonc             --command "SELECT COUNT(*) AS snapshot_rows FROM order_items WHERE catalog_price_snapshot IS NOT NULL"             --json)"
           echo "$items"
           [[ "$(jq -r '.[0].results[0].snapshot_rows // 0' <<<"$items")" == "0" ]] || {
             echo "Historical Production order items unexpectedly received Catalog price snapshots." >&2
-            exit 33
+            exit 34
           }
 
       - name: Apply 0074 if absent
@@ -207,11 +211,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          schema="$(npx wrangler d1 execute orders_db_prod             --remote             --config wrangler.jsonc             --command "SELECT COUNT(*) AS valid_column FROM pragma_table_info('retained_order_summaries') WHERE name='pricing_mode' AND type='TEXT' AND \"notnull\"=1 AND dflt_value='\''legacy_manual_total'\''"             --json)"
+          schema="$(npx wrangler d1 execute orders_db_prod             --remote             --config wrangler.jsonc             --command "SELECT name, type, \"notnull\" AS not_null, dflt_value FROM pragma_table_info('retained_order_summaries') WHERE name='pricing_mode'"             --json)"
           echo "$schema"
-          [[ "$(jq -r '.[0].results[0].valid_column // 0' <<<"$schema")" == "1" ]] || {
-            echo "retained_order_summaries.pricing_mode column shape is not the expected Stage03 contract." >&2
-            exit 34
+          [[ "$(jq -r '.[0].results | length' <<<"$schema")" == "1" && "$(jq -r '.[0].results[0].type // ""' <<<"$schema")" == "TEXT" && "$(jq -r '.[0].results[0].not_null // 0' <<<"$schema")" == "1" && "$(jq -r '.[0].results[0].dflt_value // ""' <<<"$schema")" == "'legacy_manual_total'" ]] || {
+            echo "retained_order_summaries.pricing_mode column shape/default is not the expected Stage03 contract." >&2
+            exit 35
           }
 
           retained="$(npx wrangler d1 execute orders_db_prod             --remote             --config wrangler.jsonc             --command "SELECT
@@ -227,7 +231,7 @@ jobs:
           invalid_count="$(jq -r '.[0].results[0].invalid_count // 0' <<<"$retained")"
           [[ "$legacy_count" == "$retained_count" && "$itemized_count" == "0" && "$invalid_count" == "0" ]] || {
             echo "Before Stage03 runtime rollout, all retained Production history must remain legacy/manual." >&2
-            exit 35
+            exit 36
           }
 
       - name: Verify Production finance fingerprints unchanged
@@ -255,7 +259,7 @@ jobs:
             echo "Production live finance fingerprint changed during Stage03 schema prep." >&2
             echo "Before: $before_live" >&2
             echo "After:  $after_live" >&2
-            exit 36
+            exit 37
           }
 
           retained="$(npx wrangler d1 execute orders_db_prod             --remote             --config wrangler.jsonc             --command "SELECT
@@ -273,7 +277,7 @@ jobs:
             echo "Production retained-history fingerprint changed during Stage03 schema prep." >&2
             echo "Before: $before_retained" >&2
             echo "After:  $after_retained" >&2
-            exit 37
+            exit 38
           }
 
           echo "Stage03 Production schema prep verified: 0073/0074 are present, all pre-rollout history remains legacy-classified, no historical Catalog snapshots were fabricated, and finance fingerprints are unchanged."
