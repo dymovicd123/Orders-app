@@ -11,9 +11,9 @@
     },
     "worker/domains/references.ts": {
       "beforeGitBlob": "727aa513dc252c0967e4e582ba8ee493b4e07009",
-      "afterGitBlob": "26a600d8e5d9c963e516fc90d60bd10f4a6d97a7",
+      "afterGitBlob": "b46c37cb84dbf6e31909799a4cbb87d0b9481c9d",
       "beforeLines": 454,
-      "afterLines": 476,
+      "afterLines": 482,
       "baselineFixture": "scripts/fixtures/catalog-resolver-r12-catalog-consistency/worker/domains/references.ts"
     }
   }
