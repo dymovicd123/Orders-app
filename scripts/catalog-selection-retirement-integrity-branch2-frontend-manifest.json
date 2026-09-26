@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "revision": "catalog-selection-retirement-integrity-r1-branch2",
+  "files": {
+    "src/app/controllers/useWorkspaceViewModel.tsx": {
+      "beforeGitBlob": "228096dd5ef89cbbbc3d787ca542d14ceb2d19f9",
+      "afterGitBlob": "d8d4b0cada9736d1af2b1f9d77232c194fb4f631",
+      "beforeLines": 1023,
+      "afterLines": 1050,
+      "baselineFixture": "scripts/fixtures/catalog-selection-retirement-integrity-branch2/src/app/controllers/useWorkspaceViewModel.tsx"
+    },
+    "src/features/inventory/views/renderInventoryCatalogPanel.tsx": {
+      "beforeGitBlob": "96f497f54c55d92cb1b6a0eb8d4c38db14355dc5",
+      "afterGitBlob": "49ab565611e35bcb1af64247fbba9b90c3fdf73b",
+      "beforeLines": 664,
+      "afterLines": 721,
+      "baselineFixture": "scripts/fixtures/catalog-selection-retirement-integrity-branch2/src/features/inventory/views/renderInventoryCatalogPanel.tsx"
+    }
+  }
+}
