@@ -22,18 +22,16 @@
 
 Updated: 2026-09-25
 
-## Current checkpoint — Stage03 H11 product price analytics
+## Current checkpoint — Stage03 H12 final end-to-end audit (R11-safe refresh)
 
-- Release scope remains **Branch2 only**. Do not touch `main` / Production until the user explicitly opens that gate; Production does not yet have the price setup required for safe itemized operation.
-- H10 is complete and deployed on Branch2. Latest completed H10 runtime SHA: `c580b5231bc0101646b013ea000c9151355fec31`; exact deploy run `36167153573` succeeded. Context-only Branch2 SHA `394cae38472d647c414bffbfe2b4ebe354e8e2fc` also passed safety/deploy.
-- Current H11 work branch: `w-stage03-h11-product-price-analytics-20260926`.
-- Client-confirmed discount rule: discount is represented by the **final absolute sold price**, not a percent. Example: Catalog 115000 → actual sale 105000. Persisted truth remains Catalog snapshot + factual `unit_price`; no separate required discount field or percent UI is needed.
-- Client-requested analytics: existing Products report ranks products by sold quantity and must show the **quantity-weighted average factual sold price** next to each product.
-- Legacy safety: legacy product quantities may still contribute to popularity, but legacy orders without trustworthy line prices must never be included in the average. UI must show exact-price coverage when itemized + legacy history are mixed.
-- H11 implementation scope: extend exact itemized product reporting from persisted `order_items.line_total` + itemized quantity; display average sold price and coverage; clarify direct final-price discount wording in Create/Edit/Exchange; no current-Catalog historical repricing, migration, backfill, payment/debt/return rewrite, or Production action.
-- Before H11 completion: focused H11 regression + cumulative CI/build, then merge only into `branch2` and verify exact `cloudflare-deploy/branch2` success.
-- After H11: final Branch2 Stage03 end-to-end audit/acceptance across Create → Edit → payments/debt → Warehouse → Workshop → Return → Exchange → reports/history. Stage04 Workshop finance remains separate.
-
+- Release scope remains **Branch2 only** for Stage03. Do not promote Stage03 pricing to `main` / Production until the user explicitly opens that gate.
+- H11 is complete and deployed on Branch2. Resolver R11 was then independently fixed and deployed on Branch2 as `9352bc72b4628ebd5937798b185de1b6c266056b`; the canonical preservation rule is recorded above.
+- The original H12 work branch / PR #200 was cut before R11 and is now stale. **Do not merge it.**
+- Current H12 branch: `w-stage03-h12-final-e2e-audit-r11-20260926`, recreated from the current Branch2 lineage that already contains R11.
+- H12 adds only the aggregate final audit/docs/test layer. It verifies Create → Edit → payments/debt → Warehouse → Workshop → Return → Exchange → reports/history and additionally asserts that Resolver R11 survives Stage03 closure.
+- Before calling Stage03 technically complete on Branch2: this refreshed H12 focused audit + full cumulative CI/build must pass, then merge only this refreshed H12 candidate into `branch2`, then verify exact Branch2 safety and `cloudflare-deploy/branch2` success.
+- Eventual Stage03 → main promotion must preserve main's R11 resolver semantics and test. Never copy a stale pre-R11 `useWorkspaceViewModel.tsx` over Production.
+- Stage04 Workshop finance remains separate and must not be started implicitly during H12 closure.
 
 ## Current priority — Stage02 transactional stock truth
 
