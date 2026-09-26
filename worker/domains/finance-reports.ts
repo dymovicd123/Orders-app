@@ -30,8 +30,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
               COALESCE(SUM(CASE WHEN o.pricing_mode = 'itemized_v1' THEN oi.line_total ELSE 0 END), 0) AS itemized_gross_sales,
               COUNT(DISTINCT CASE WHEN o.pricing_mode = 'itemized_v1' THEN oi.order_id END) AS itemized_order_count,
               COUNT(DISTINCT CASE WHEN COALESCE(o.pricing_mode, 'legacy_manual_total') <> 'itemized_v1' THEN oi.order_id END) AS legacy_order_count`
-    : `0 AS itemized_quantity,
-              0 AS itemized_gross_sales,
+    : `0 AS itemized_gross_sales,
               0 AS itemized_order_count,
               COUNT(DISTINCT oi.order_id) AS legacy_order_count`;
 
@@ -1064,22 +1063,25 @@ export async function listFinanceReports(db: D1Database, url: URL) {
     avg_check: summary.nonzero_order_count > 0 ? summary.total_sales / summary.nonzero_order_count : 0,
   })).sort((a, b) => Number(b.total_received || 0) - Number(a.total_received || 0) || String(a.manager).localeCompare(String(b.manager), 'ru'));
 
-  const normalizedProductRows = (mapSqlRows(productRows) as any[]).map((row) => {
-    const quantity = Math.max(0, Number(row.quantity || 0));
-    const itemizedQuantity = Math.max(0, Number(row.itemized_quantity || 0));
-    const itemizedGrossSales = Number(row.itemized_gross_sales || 0);
-    return {
-      ...row,
-      quantity,
-      order_count: Math.max(0, Number(row.order_count || 0)),
-      itemized_quantity: itemizedQuantity,
-      itemized_gross_sales: itemizedGrossSales,
-      itemized_order_count: Math.max(0, Number(row.itemized_order_count || 0)),
-      legacy_order_count: Math.max(0, Number(row.legacy_order_count || 0)),
-      legacy_quantity: Math.max(0, quantity - itemizedQuantity),
-      average_sold_price: itemizedQuantity > 0 ? Math.round(itemizedGrossSales / itemizedQuantity) : null,
-    };
-  });
+  const rawProductRows = mapSqlRows(productRows) as any[];
+  const normalizedProductRows = productPricingFoundationEnabled
+    ? rawProductRows.map((row) => {
+        const quantity = Math.max(0, Number(row.quantity || 0));
+        const itemizedQuantity = Math.max(0, Number(row.itemized_quantity || 0));
+        const itemizedGrossSales = Number(row.itemized_gross_sales || 0);
+        return {
+          ...row,
+          quantity,
+          order_count: Math.max(0, Number(row.order_count || 0)),
+          itemized_quantity: itemizedQuantity,
+          itemized_gross_sales: itemizedGrossSales,
+          itemized_order_count: Math.max(0, Number(row.itemized_order_count || 0)),
+          legacy_order_count: Math.max(0, Number(row.legacy_order_count || 0)),
+          legacy_quantity: Math.max(0, quantity - itemizedQuantity),
+          average_sold_price: itemizedQuantity > 0 ? Math.round(itemizedGrossSales / itemizedQuantity) : null,
+        };
+      })
+    : rawProductRows;
 
   const productDaysMap = new Map<string, any>();
   for (const row of mapSqlRows(productDayRows) as any[]) {
