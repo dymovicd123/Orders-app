@@ -10,6 +10,18 @@
 - Do not call Branch2 deployed until the exact merged Branch2 SHA has a successful `cloudflare-deploy/branch2` status. Never infer deployment from a successful source CI alone.
 - Preserve environment isolation at every step: Branch2 Worker/D1 only; never mix Primary/Production and Branch2 data, migrations, bindings, or deploy targets.
 
+## NON-NEGOTIABLE preservation gate — Resolver R13
+
+- Resolver is an **anomaly guard, not a compatibility questionnaire**. Do not ask a manager to reconfirm a non-empty fact merely because the exact SKU combination does not already exist.
+- Manager-entered facts are independent facts once recognized: canonical `ЖЕН/МУЖ`, known size/age, color, material and length must pass without another human question.
+- A value is recognized if it exists in the maintained reference list **or anywhere in the active Catalog**. An incomplete/stale reference list must never make a valid Catalog value unknown.
+- Harmless spelling-format differences such as `ТЕМНО-СЕРЫЙ` vs `ТЕМНО СЕРЫЙ` are canonicalized automatically by punctuation/spacing identity; do not summon the resolver for that.
+- If all facts are recognized but that exact combination is new, the existing deterministic auto-resolver may create/link the safe missing combination at physical stock 0 and reserve separately. Human clarification is only for genuinely unknown values (for example a color absent from both references and Catalog), an unknown product, or genuinely missing required facts.
+- R11 still applies: explicit manager gender wins; otherwise concrete selected-SKU gender wins; fixed product scope is fallback.
+- Reference duplicate protection remains non-destructive: it blocks creating/renaming into an equivalent duplicate but never rewrites old orders, retained history, existing Catalog variants, or old dirty reference rows automatically.
+- Canonical R13 Branch2 runtime SHA: `0a23edd48d0eacdbd2e0f59cae51a4dc1f1a170e`; work-branch Quality run `36242588497` succeeded; exact Branch2 safety `36242679603` and deploy `36242679601` succeeded.
+- Automated guards: `scripts/test-catalog-resolver-r13-known-facts.mjs`, R10/R11/R12 regressions, and the cumulative release gate. Preserve them in any future Branch2 → main promotion.
+
 ## NON-NEGOTIABLE preservation gate — Resolver R11
 
 - **Must survive every future Stage03 / Branch2 → main promotion.** The unisex resolver bug is fixed independently of Stage03 and must never be overwritten by an older Stage03 branch/file.
@@ -20,7 +32,7 @@
 - **Important stale-branch warning:** the old H12 work branch `w-stage03-h12-final-e2e-audit-20260926` was originally cut before R11. Do not promote/merge a stale H12 snapshot over current Branch2 or main. Before H12/Stage03 closure, refresh/recreate H12 from the current Branch2 head that already contains R11, then reapply only H12 audit/docs/test deltas.
 - During eventual Stage03 → main promotion, never replace the entire main `useWorkspaceViewModel.tsx` with an older Branch2/H12 copy. Merge/reconcile deliberately and run R11 + full cumulative CI on the exact promotion candidate.
 
-Updated: 2026-09-25
+Updated: 2026-09-26
 
 ## Current checkpoint — Stage03 H12 final end-to-end audit (R11-safe refresh)
 
