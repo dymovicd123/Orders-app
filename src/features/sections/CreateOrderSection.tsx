@@ -257,7 +257,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                             onChange={(event) => updateCreateItem(index, 'unitPrice', event.target.value)}
                             placeholder="Введите итоговую цену"
                           />
-                          <small>Скидка задаётся итоговой ценой продажи: например, вместо 115 000 укажите 105 000. Можно указать 0. Эта цена сохранится как историческая цена продажи.</small>
+                          <small>Укажите цену, по которой товар реально продаётся. Если по каталогу 115 000, а клиенту продаёте за 105 000, укажите 105 000. Можно указать 0.</small>
                         </label>
                         <div className="field-block">
                           <span>Сумма позиции</span>
