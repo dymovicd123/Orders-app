@@ -1,5 +1,15 @@
 # Система заказов — continuation context
 
+## Production resolver preservation gate — R11/R12/R13 (2026-09-26)
+
+- Current resolver promotion to `main` is **resolver-only**. Stage03 pricing/runtime files are outside the promotion and must not be copied from Branch2.
+- Preserve the already-shipped R11 Production rule exactly: manager-entered concrete gender wins; otherwise preserve the concrete selected Catalog SKU gender; fixed product scope is fallback. Do not restore the old unisex gender-erasure path.
+- R12 adds Catalog-consistent clarification and non-destructive reference duplicate protection. Active Catalog values remain legitimate resolver choices even if auxiliary references are stale; equivalent reference spellings such as hyphen/space variants cannot be created as new duplicates.
+- R13 treats recognized manager facts independently. Known material/length/color/size/age may come from maintained references **or any active Catalog SKU**; harmless hyphen/spacing differences canonicalize automatically. A new exact combination of known facts must not summon a compatibility questionnaire; the safe deterministic combination path remains allowed at physical stock 0.
+- The Production port deliberately leaves `src/app/controllers/useWorkspaceViewModel.tsx`, `src/features/sections/CreateOrderSection.tsx` and `src/features/renderers/FinanceReportContentRenderer.tsx` byte-identical to the pre-port main baseline. This preserves R11 and excludes Branch2 Stage03 pricing/UI deltas.
+- No migration, D1 backfill or Catalog/reference data rewrite is part of R12/R13 promotion. Reference protection is prospective/non-destructive.
+- Permanent gates: `scripts/test-catalog-resolver-r10-acceptance-matrix.mjs`, R11, R12, R13, resolver UX regression, and the cumulative release gate. Resolver R12/R13 structural normalization wraps the existing Production structural chain rather than replacing it.
+
 Updated: 2026-09-19 (Asia/Qyzylorda)
 
 ## Current priority — Stage02 transactional stock truth
