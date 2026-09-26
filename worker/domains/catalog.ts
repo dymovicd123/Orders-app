@@ -1025,6 +1025,25 @@ export async function updateCatalogVariant(db: D1Database, id: number, input: { 
     }
   }
 
+  const deactivating = toInt(existing.is_active, 1) === 1 && isActive === 0;
+  const identityInputChanged = productId !== toInt(existing.product_id, 0)
+    || category !== normalizeAudienceCategory(existing.category, existing.size_label)
+    || gender !== normalizeCatalogCombinationGender(existing.gender)
+    || color !== normalizeCatalogCombinationColor(existing.color)
+    || material !== canonicalStockPositionValue(existing.material)
+    || length !== canonicalStockPositionValue(existing.length)
+    || sizeLabel !== normalizeCatalogCombinationSize(existing.size_label);
+  if (deactivating) {
+    if (identityInputChanged) {
+      throw new Error('Нельзя одновременно исправлять идентичность и выводить позицию из каталога. Сохраните только одно действие.');
+    }
+    await assertCatalogVariantMayDeactivate(db, id);
+    await db.prepare(
+      'UPDATE catalog_variants SET is_active = 0, sort_order = ?, updated_at = ? WHERE id = ? AND is_active = 1'
+    ).bind(sortOrder, timestamp, id).run();
+    return { ok: true };
+  }
+
   if (await isCatalogIdentityV3Enabled(db)) {
     if (canonicalStockPositionValue(existing.material) !== material) await requireCatalogAdminReferenceValue(db, 'material', material, 'Материал');
     if (canonicalStockPositionValue(existing.length) !== length) await requireCatalogAdminReferenceValue(db, 'length', length, 'Длина');
@@ -1039,10 +1058,6 @@ export async function updateCatalogVariant(db: D1Database, id: number, input: { 
       || gender !== normalizeCatalogCombinationGender(existing.gender)
       || color !== normalizeCatalogCombinationColor(existing.color)
       || sizeLabel !== normalizeCatalogCombinationSize(existing.size_label);
-    const deactivating = toInt(existing.is_active, 1) === 1 && isActive === 0;
-    if (deactivating && identityChanged) {
-      throw new Error('Нельзя одновременно исправлять идентичность и выводить позицию из каталога. Сохраните только одно действие.');
-    }
     const duplicate = await findCatalogCombinationV3(db, execution.id, category, gender, color, sizeLabel, id);
     const existingGender = normalizeCatalogCombinationGender(existing.gender);
     const genderOnlyIdentityChange = identityChanged
@@ -1072,7 +1087,7 @@ export async function updateCatalogVariant(db: D1Database, id: number, input: { 
       }
 
       const sourceIsActive = toInt(existing.is_active, 1) === 1;
-      if (!sourceIsActive || isActive !== 1 || deactivating) {
+      if (!sourceIsActive || isActive !== 1) {
         throw new Error('Эта старая позиция уже не активна. Обновите каталог и повторите исправление на актуальной карточке.');
       }
 
@@ -1220,7 +1235,6 @@ export async function updateCatalogVariant(db: D1Database, id: number, input: { 
     if (identityChanged && hasOperationalUsage) {
       const safeLegacyUnisexGenderCorrection = productScope === 'unisex'
         && isActive === 1
-        && !deactivating
         && !duplicate?.id;
       if (safeLegacyUnisexGenderCorrection) {
         await db.batch([
@@ -1234,7 +1248,6 @@ export async function updateCatalogVariant(db: D1Database, id: number, input: { 
       }
       throw new Error('Эта комбинация уже использовалась в заказах или движениях склада. Нельзя переписать её историю. Создайте правильную комбинацию отдельно; старую затем можно отключить.');
     }
-    if (deactivating) await assertCatalogVariantMayDeactivate(db, id);
     if (duplicate?.id && isActive) throw new Error('Такая комбинация уже существует. Не создавайте второй дубль.');
     await db.prepare(
       `UPDATE catalog_variants
@@ -1245,8 +1258,6 @@ export async function updateCatalogVariant(db: D1Database, id: number, input: { 
     return { ok: true };
   }
 
-  const deactivating = toInt(existing.is_active, 1) === 1 && isActive === 0;
-  if (deactivating) await assertCatalogVariantMayDeactivate(db, id);
   await db.prepare(
     `UPDATE catalog_variants
      SET product_id = ?, category = ?, gender = ?, color = ?, material = ?, length = ?, size_label = ?, is_active = ?, sort_order = ?, updated_at = ?
