@@ -265,6 +265,7 @@ try {
   run('Stage03-H10 manual Return policy', process.execPath, [path.join(root, 'scripts/test-stage03-h10-manual-return-policy.mjs')])
   run('Stage03-H11 product price analytics', process.execPath, [path.join(root, 'scripts/test-stage03-h11-product-price-analytics.mjs')])
   run('Stage03-H12 final end-to-end pricing audit', process.execPath, [path.join(root, 'scripts/test-stage03-h12-final-e2e-audit.mjs')])
+  run('Branch2 main Catalog sync safety', process.execPath, [path.join(root, 'scripts/test-branch2-main-catalog-sync-safety.mjs')])
   run('Branch2 deploy fallback safety', process.execPath, [path.join(root, 'scripts/test-branch2-deploy-fallback-safety.mjs')])
   run('CLIENT-ZAMMLER-A foundation', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-a-foundation.mjs')])
   run('CLIENT-ZAMMLER-B due-time plumbing', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-b-due-time-plumbing.mjs')])
