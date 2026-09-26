@@ -477,7 +477,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                     },
                                   }))}
                                 />
-                                <small className="field-hint">Фактическая цена новой позиции. Для обмена без доплаты можно оставить цену старой позиции.</small>
+                                <small className="field-hint">Фактическая итоговая цена новой позиции. Скидка задаётся этой суммой, не процентом. Для обмена без доплаты можно оставить цену старой позиции.</small>
                               </label>
                               <div className="wide-field editor-summary debt-target-summary">
                                 <div className="editor-summary-head">
