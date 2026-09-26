@@ -47,7 +47,7 @@ for (const marker of [
 
 // Create: current Catalog recommendation is separate from the factual final sold price.
 check(createUi.includes('Цена по каталогу') && createUi.includes('Цена продажи'), 'H12 Create price fields are no longer separate')
-check(createUi.includes('Скидка задаётся итоговой ценой продажи'), 'H12 absolute discount semantics disappeared from Create')
+check(createUi.includes('Укажите цену, по которой товар реально продаётся.') && createUi.includes('115 000') && createUi.includes('105 000'), 'H12 absolute discount semantics disappeared from Create')
 check(app.includes("pricingMode: 'itemized_v1'"), 'H12 Create request no longer explicitly activates itemized_v1')
 check(pricing.includes('lineTotal = quantity * unitPrice'), 'H12 server no longer derives itemized line total')
 check(pricing.includes('totalAmount = lineTotals.reduce'), 'H12 server no longer derives itemized order total')

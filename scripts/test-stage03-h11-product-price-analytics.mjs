@@ -33,12 +33,12 @@ for (const marker of ['itemized_quantity?: number', 'itemized_gross_sales?: numb
 
 check(reportUi.includes('Самые продаваемые товары'), 'H11 best-seller report heading missing')
 check(reportUi.includes('Средняя цена продажи'), 'H11 average sold-price column missing')
-check(reportUi.includes('Основа средней цены'), 'H11 exact-price coverage column missing')
-check(reportUi.includes('точная цена по всем') && reportUi.includes('старых заказов без точной цены'), 'H11 mixed legacy/itemized coverage wording missing')
-check(reportUi.includes('Только старые заказы без точной построчной цены'), 'H11 legacy-only average must be visibly unavailable')
+check(reportUi.includes('Данные для средней цены'), 'H11 exact-price coverage column missing')
+check(reportUi.includes('учтены все') && reportUi.includes('цена позиции не сохранена'), 'H11 mixed legacy/itemized coverage wording missing')
+check(reportUi.includes('Нет данных по цене отдельных позиций'), 'H11 legacy-only average must be visibly unavailable')
 check(reportUi.includes('row.average_sold_price'), 'H11 UI is not displaying server-derived weighted average')
 
-check(createUi.includes('Скидка задаётся итоговой ценой продажи'), 'H11 Create does not explain absolute final-price discount')
+check(createUi.includes('Укажите цену, по которой товар реально продаётся.') && createUi.includes('115 000') && createUi.includes('105 000'), 'H11 Create does not explain absolute final-price discount')
 check(editUi.includes('Скидка задаётся итоговой ценой продажи, а не процентом.'), 'H11 Edit does not explain absolute final-price discount')
 check(exchangeUi.includes('Скидка задаётся этой суммой, не процентом.'), 'H11 Exchange does not explain absolute final-price discount')
 for (const source of [createUi, editUi, exchangeUi]) {

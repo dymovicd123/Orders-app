@@ -315,28 +315,18 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       const field = question.field
       const label = fieldLabel(field, draft.category)
       const small = field === 'gender' ? [['ЖЕН', 'Жен'], ['МУЖ', 'Муж']] : field === 'category' ? [['adult', 'Взрослый'], ['child', 'Детский']] : []
-      const needsCorrection = (context.unknownFields || []).includes(field) && Boolean(clean(draft[field]))
-      const heading = needsCorrection
-        ? `Проверьте ${label.toLowerCase()}`
-        : clean(draft[field])
-          ? `Уточните: ${label.toLowerCase()}`
-          : field === 'category' ? 'Это взрослый или детский товар?'
-            : field === 'length' ? 'Не указана длина'
-              : `Не указан ${label.toLowerCase()}`
+      const heading = clean(draft[field])
+        ? `Уточните: ${label.toLowerCase()}`
+        : field === 'category' ? 'Это взрослый или детский товар?'
+          : field === 'length' ? 'Не указана длина'
+            : `Не указан ${label.toLowerCase()}`
       const values = referenceValues(context, draft, field)
-      const ranked = rankedReferenceValues(values, answer || draft[field], field)
+      const ranked = rankedReferenceValues(values, answer, field)
       const matched = ranked.filter(entry => entry.score > 0)
-      const correctionValues = ranked
-        .filter(entry => normalize(entry.value) !== normalize(draft[field]))
-        .slice(0, 8)
       const visibleValues = (clean(answer) && matched.length ? matched.map(entry => entry.value) : [...values].sort((a, b) => a.localeCompare(b, 'ru'))).slice(0, 12)
       return <>{minimalFieldQuestion && context.product ? <strong>{context.product.name}</strong> : null}<h4 ref={questionHeading} tabIndex={-1}>{heading}</h4>
-        {needsCorrection ? <p className="resolution-current-value">В заказе: <strong>{displayFact(field, draft[field])}</strong></p> : null}
         {small.length ? <div className="resolution-choices">{small.map(([value, text]) => <button type="button" key={value} onClick={() => answerField(field, value)}>{text}</button>)}</div> : <>
-          {!editing && needsCorrection && (field === 'color' || field === 'size') ? <>
-            {correctionValues.length ? <div className="resolution-suggestion"><small>Есть в каталоге</small><div className="resolution-choices">{correctionValues.map(entry => <button type="button" key={entry.value} onClick={() => answerField(field, entry.value)}>{entry.value}</button>)}</div></div> : null}
-            <button type="button" className="secondary-button" onClick={() => { setEditing(field); setCreatingReference(null); setAnswer('') }}>Другой вариант</button>
-          </> : !editing && (field === 'color' || field === 'size') ? <div className="resolution-choices"><button type="button" onClick={() => answerField(field, field === 'color' ? 'БЕЗ ЦВЕТА' : 'БЕЗ РАЗМЕРА')}>{field === 'color' ? 'Без цвета' : draft.category === 'child' ? 'Без возраста' : 'Без размера'}</button><button type="button" onClick={() => { setEditing(field); setCreatingReference(null); setAnswer('') }}>{field === 'color' ? 'Выбрать цвет' : `Выбрать ${label.toLowerCase()}`}</button></div> : <form onSubmit={event => { event.preventDefault(); answerField(field, answer) }}>
+          {!editing && (field === 'color' || field === 'size') ? <div className="resolution-choices"><button type="button" onClick={() => answerField(field, field === 'color' ? 'БЕЗ ЦВЕТА' : 'БЕЗ РАЗМЕРА')}>{field === 'color' ? 'Без цвета' : draft.category === 'child' ? 'Без возраста' : 'Без размера'}</button><button type="button" onClick={() => { setEditing(field); setCreatingReference(null); setAnswer('') }}>{field === 'color' ? 'Выбрать цвет' : `Выбрать ${label.toLowerCase()}`}</button></div> : <form onSubmit={event => { event.preventDefault(); answerField(field, answer) }}>
             <label>{label}<input autoFocus value={answer} onChange={event => setAnswer(event.target.value)} placeholder={`Введите или выберите ${label.toLowerCase()}`} /></label>
             {values.length ? <div className="resolution-combobox" role="listbox" aria-label={`Справочник: ${label}`}><small>{clean(answer) && matched.length ? 'Подходящие варианты' : 'Все варианты'}</small><div className="resolution-combobox-list">{visibleValues.map(value => <button type="button" key={value} onClick={() => answerField(field, value)}>{value}</button>)}</div></div> : null}
             <button type="submit" className="primary-button" disabled={!clean(answer)}>Подтвердить</button>

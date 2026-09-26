@@ -135,7 +135,7 @@ export function FinanceReportContentRenderer(ctx: RendererContext) {
 
     const renderProductReport = () => (
       <>
-        {renderHeader('Товары расположены по количеству проданных единиц. Средняя цена считается по продажам, где цена товара была сохранена отдельно. Старые заказы без цены по позиции в расчёт не входят.')}
+        {renderHeader('Товары ранжируются по количеству проданных единиц. Средняя цена продажи считается только по заказам с точной построчной исторической ценой; старые legacy-заказы не подмешиваются в среднюю.')}
         {renderStatsTable([
           { label: 'Всего единиц', value: financeReport.reports.products.reduce((sum, row) => sum + Number(row.quantity || 0), 0) },
           { label: 'Товаров', value: financeReport.reports.products.length },
@@ -143,7 +143,7 @@ export function FinanceReportContentRenderer(ctx: RendererContext) {
           { label: 'Лидер продаж', value: financeReport.reports.products[0]?.product || '—' },
           
         ])}
-        <section className="report-table-card"><div className="strict-section-head"><h3>Самые продаваемые товары</h3><span className="soft-badge">по количеству за период</span></div><div className="table-shell"><table className="data-table strict-report-table"><thead><tr><th>Товар</th><th className="num">Продано</th><th className="num">Заказов</th><th className="num">Средняя цена продажи</th><th>Данные для средней цены</th></tr></thead><tbody>
+        <section className="report-table-card"><div className="strict-section-head"><h3>Самые продаваемые товары</h3><span className="soft-badge">по количеству за период</span></div><div className="table-shell"><table className="data-table strict-report-table"><thead><tr><th>Товар</th><th className="num">Продано</th><th className="num">Заказов</th><th className="num">Средняя цена продажи</th><th>Основа средней цены</th></tr></thead><tbody>
           {financeReport.reports.products.map((row) => {
             const exactQuantity = Math.max(0, Number(row.itemized_quantity || 0))
             const totalQuantity = Math.max(0, Number(row.quantity || 0))
@@ -155,9 +155,9 @@ export function FinanceReportContentRenderer(ctx: RendererContext) {
               <td className="num">{exactQuantity > 0 && row.average_sold_price !== null && row.average_sold_price !== undefined ? formatMoney(row.average_sold_price) : '—'}</td>
               <td>{exactQuantity > 0
                 ? legacyQuantity > 0
-                  ? `учтено ${exactQuantity} из ${totalQuantity} шт.; по ${legacyQuantity} шт. цена позиции не сохранена`
-                  : `учтены все ${exactQuantity} шт.`
-                : 'Нет данных по цене отдельных позиций'}</td>
+                  ? `точная цена по ${exactQuantity} из ${totalQuantity} шт.; ${legacyQuantity} шт. из старых заказов без точной цены`
+                  : `точная цена по всем ${exactQuantity} шт.`
+                : 'Только старые заказы без точной построчной цены'}</td>
             </tr>
           })}
           {!financeReport.reports.products.length ? <tr><td colSpan={5} className="empty-state">Нет товаров за период.</td></tr> : null}

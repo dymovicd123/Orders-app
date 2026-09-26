@@ -254,46 +254,15 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
     : await db.prepare(
         `SELECT id, name, category FROM catalog_products WHERE is_active = 1 ORDER BY name COLLATE NOCASE, id LIMIT 300`
       ).all<{ id: number; name: string; category: string }>();
-
-  const executions = product?.id
-    ? (await db.prepare(`SELECT id, material, length FROM catalog_stock_positions WHERE product_id = ? AND is_active = 1 ORDER BY material, length, id`).bind(product.id).all<{ id: number; material: string; length: string }>()).results || []
-    : [];
-  const productVariants = product?.id
-    ? (await db.prepare(
-        `SELECT id, stock_position_id, COALESCE(category, 'adult') AS category, gender, color, material, length, size_label
-         FROM catalog_variants
-         WHERE product_id = ? AND is_active = 1
-         ORDER BY stock_position_id, category, gender, color, size_label, id`
-      ).bind(product.id).all<{ id: number; stock_position_id: number | null; category: string; gender: string | null; color: string | null; material: string | null; length: string | null; size_label: string | null }>()).results || []
-    : [];
-
   const references: CatalogReferenceOptions = { materials: ['СТАНДАРТ'], lengths: ['СТАНДАРТ'], colors: [], sizes: [], childAges: [] };
-  const referenceIdentity = (value: unknown) => upperText(value)
-    .replace(/[‐‑‒–—-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  const addReference = (target: string[], value: unknown) => {
-    const normalized = upperText(value);
-    const identity = referenceIdentity(normalized);
-    if (normalized && identity && !target.some((entry) => referenceIdentity(entry) === identity)) target.push(normalized);
-  };
   for (const row of referencesResult.results || []) {
-    if (row.kind === 'material') addReference(references.materials, row.value);
-    else if (row.kind === 'length') addReference(references.lengths, row.value);
-    else if (row.kind === 'color') addReference(references.colors, row.value);
-    else if (row.kind === 'size') addReference(references.sizes, row.value);
-    else if (row.kind === 'child_age') addReference(references.childAges, row.value);
-  }
-  // Values already used by the Catalog are valid even when the auxiliary reference list is stale.
-  // This keeps the resolver from asking a person to "confirm" a color/size that an active SKU already uses.
-  for (const row of executions) {
-    addReference(references.materials, canonicalStockPositionValue(row.material));
-    addReference(references.lengths, canonicalStockPositionValue(row.length));
-  }
-  for (const row of productVariants) {
-    addReference(references.colors, normalizeCatalogCombinationColor(row.color));
-    if (normalizeAudienceCategory(row.category, row.size_label) === 'child') addReference(references.childAges, normalizeCatalogCombinationSize(row.size_label));
-    else addReference(references.sizes, normalizeCatalogCombinationSize(row.size_label));
+    const value = upperText(row.value);
+    if (!value) continue;
+    if (row.kind === 'material' && !references.materials.includes(value)) references.materials.push(value);
+    else if (row.kind === 'length' && !references.lengths.includes(value)) references.lengths.push(value);
+    else if (row.kind === 'color' && !references.colors.includes(value)) references.colors.push(value);
+    else if (row.kind === 'size' && !references.sizes.includes(value)) references.sizes.push(value);
+    else if (row.kind === 'child_age' && !references.childAges.includes(value)) references.childAges.push(value);
   }
 
   let execution: { id: number; product_id: number; material: string; length: string; is_active: number } | null = null;
@@ -311,55 +280,15 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
       }
     }
 
+    // Exact existing identity is authoritative even if a reference row is stale. Otherwise
+    // every independent fact is classified before the UI invites the admin to confirm it.
     if (!existingVariant?.id) {
-      if (!product?.id) {
-        if (!await catalogReferenceDbValueExists(db, 'material', facts.material)) unknownFields.push('material');
-        if (!await catalogReferenceDbValueExists(db, 'length', facts.length)) unknownFields.push('length');
-        if ((productGenderScope === 'unisex' && !facts.gender) || (facts.gender && facts.gender !== 'ЖЕН' && facts.gender !== 'МУЖ')) unknownFields.push('gender');
-        if (!await catalogReferenceDbValueExists(db, 'color', facts.color)) unknownFields.push('color');
-        const sizeKind = facts.category === 'child' ? 'child_age' : 'size';
-        if (!await catalogReferenceDbValueExists(db, sizeKind, facts.size)) unknownFields.push('size');
-      } else if (!execution?.id) {
-        // For an existing product, diagnose against the product's own executions instead of
-        // a global reference list. A valid catalog color/size must never be blamed for a
-        // different mismatch.
-        if (executions.length) {
-          const sameMaterial = executions.filter((row) => canonicalStockPositionValue(row.material) === facts.material);
-          if (!sameMaterial.length) unknownFields.push('material');
-          else if (!sameMaterial.some((row) => canonicalStockPositionValue(row.length) === facts.length)) unknownFields.push('length');
-        } else {
-          if (!await catalogReferenceDbValueExists(db, 'material', facts.material)) unknownFields.push('material');
-          if (!await catalogReferenceDbValueExists(db, 'length', facts.length)) unknownFields.push('length');
-        }
-      } else {
-        const executionVariants = productVariants.filter((row) => toInt(row.stock_position_id, 0) === execution!.id);
-        const categoryVariants = executionVariants.filter((row) => normalizeAudienceCategory(row.category, row.size_label) === facts.category);
-        if (executionVariants.length && !categoryVariants.length) {
-          unknownFields.push('category');
-        } else {
-          const genderInvalid = (productGenderScope === 'unisex' && !facts.gender) || (facts.gender && facts.gender !== 'ЖЕН' && facts.gender !== 'МУЖ');
-          if (genderInvalid) {
-            unknownFields.push('gender');
-          } else {
-            const genderVariants = facts.gender
-              ? categoryVariants.filter((row) => normalizeCatalogCombinationGender(row.gender) === facts.gender)
-              : categoryVariants;
-            if (facts.gender && categoryVariants.length && !genderVariants.length) {
-              unknownFields.push('gender');
-            } else {
-              const colorVariants = facts.color
-                ? genderVariants.filter((row) => normalizeCatalogCombinationColor(row.color) === facts.color)
-                : [];
-              if (!facts.color || (genderVariants.length && !colorVariants.length)) {
-                unknownFields.push('color');
-              } else {
-                const sizeMatches = colorVariants.some((row) => normalizeCatalogCombinationSize(row.size_label) === facts.size);
-                if (!facts.size || (colorVariants.length && !sizeMatches)) unknownFields.push('size');
-              }
-            }
-          }
-        }
-      }
+      if (!await catalogReferenceDbValueExists(db, 'material', facts.material)) unknownFields.push('material');
+      if (!await catalogReferenceDbValueExists(db, 'length', facts.length)) unknownFields.push('length');
+      if ((productGenderScope === 'unisex' && !facts.gender) || (facts.gender && facts.gender !== 'ЖЕН' && facts.gender !== 'МУЖ')) unknownFields.push('gender');
+      if (!await catalogReferenceDbValueExists(db, 'color', facts.color)) unknownFields.push('color');
+      const sizeKind = facts.category === 'child' ? 'child_age' : 'size';
+      if (!await catalogReferenceDbValueExists(db, sizeKind, facts.size)) unknownFields.push('size');
     }
 
     if (!product?.id) issueType = 'unknown_product';
@@ -368,6 +297,10 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
     else if (!execution?.id) issueType = 'new_execution';
     else issueType = 'missing_combination';
   }
+
+  const executions = product?.id
+    ? (await db.prepare(`SELECT id, material, length FROM catalog_stock_positions WHERE product_id = ? AND is_active = 1 ORDER BY material, length, id`).bind(product.id).all<{ id: number; material: string; length: string }>()).results || []
+    : [];
 
   return {
     ok: true,
