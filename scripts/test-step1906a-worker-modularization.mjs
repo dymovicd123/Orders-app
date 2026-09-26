@@ -4,6 +4,35 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const resolverR12WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-resolver-r12-catalog-consistency-worker-manifest.json'), 'utf8'))
+if (resolverR12WorkerManifest?.version !== 1 || resolverR12WorkerManifest?.revision !== 'catalog-resolver-r12-catalog-consistency') throw new Error('Resolver R12 Worker manifest invalid')
+const resolverR12WorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.CATALOG_RESOLVER_R12_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(resolverR12WorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (resolverR12WorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) throw new Error('Resolver R12 Worker changed beyond exact manifest: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (resolverR12WorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) throw new Error('Resolver R12 Worker baseline fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, CATALOG_RESOLVER_R12_WORKER_NORMALIZED: '1' }})
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('CATALOG RESOLVER R12 WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const stage03H11WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h11-product-price-analytics-worker-manifest.json'), 'utf8'))
 if (stage03H11WorkerManifest?.version !== 1 || stage03H11WorkerManifest?.revision !== 'stage03-h11-product-price-analytics') throw new Error('Stage03-H11 Worker manifest invalid')
 const stage03H11WorkerBlobSha = (value) => {
