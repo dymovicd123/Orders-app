@@ -173,3 +173,16 @@ Do not use historical `Stage04-ZAMMLER` labels in old files/commits as roadmap s
 
 The unresolved client-decision list above remains authoritative until the client answers it.
 
+
+
+## 2026-09-26 Stage03 policy supersession
+
+The old unresolved-policy list above is historical. Later Stage03 decisions supersede it:
+
+- itemized Exchange policy was implemented in H9;
+- Return money policy was fixed in H10 as explicit manager-entered refund money, separate from physical returned items;
+- discount entry is now client-confirmed as an **absolute final sold price**, not a percent (for example Catalog 115000 → sold 105000);
+- client requested a best-seller product indicator with the quantity-weighted average factual sold price beside each product;
+- H11 must keep legacy orders out of that average when exact historical line price is unavailable.
+
+Current canonical H11 context: `docs/continuation/STAGE03_H11_PRODUCT_PRICE_ANALYTICS_20260926.md`.
