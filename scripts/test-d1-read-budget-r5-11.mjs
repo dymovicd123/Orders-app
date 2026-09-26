@@ -23,8 +23,9 @@ expect(
   'R5.11: product-aware Warehouse panels must keep explicit catalog loading',
 )
 expect(
-  workspace.includes('const catalogProducts = catalogData?.products?.map((product) => product.name) || []'),
-  'R5.11: product suggestions still depend on catalogData and therefore require the explicit panel loads',
+  workspace.includes("const activeCatalogProducts = (catalogData?.products || []).filter((product) => product.isActive)")
+    && workspace.includes('products: collect(refs.products, activeCatalogProducts.map((product) => product.name))'),
+  'R5.11: working product suggestions must remain catalog-backed/active-only and therefore require the explicit panel loads',
 )
 expect(
   workspace.includes('function applyExchangeProductPick(productName: string)') && workspace.includes('buildOrderItemFromCatalogPick(current.newItem, productName)'),
