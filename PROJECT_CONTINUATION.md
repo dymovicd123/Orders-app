@@ -8,9 +8,10 @@ Branch represented by this file: **main / Production**
 
 ## Текущее состояние Production
 
-Последний runtime-changing Production baseline перед этой чисткой контекста:
-- `4ecd8e2aeab8afc5805c5eb209542659acc09a72` — Resolver R12/R13 Production promotion.
-- Exact Production deploy для него: GitHub Actions run `36244645101` — success.
+Последний runtime-changing Production baseline:
+- `87b54bc2ac85f2a7a4fb965c9a25385ec233dcf0` — Catalog selection / retirement integrity.
+- Exact Production deploy для него: GitHub Actions run `36253621529` — success (`cloudflare-deploy/main`).
+- Предыдущий resolver baseline `4ecd8e2aeab8afc5805c5eb209542659acc09a72` остаётся в этой lineage.
 
 Завершено и находится в Production:
 - **Stage01** — завершён и выпущен через Production release candidate PR #102.
@@ -18,6 +19,7 @@ Branch represented by this file: **main / Production**
 - **Operational Autonomy R3 A1–A5** — все реализованы в текущей main lineage: multiple returns / return+exchange coexistence, debt close after return, mistaken sent/handover correction, exchange financial correction.
 - **CLIENT-ZAMMLER** — отдельный клиентский запрос, завершён и в Production. Это **не roadmap Stage04**.
 - **Resolver R11/R12/R13** — завершён и в Production. Сейчас resolver считается стабильным; новые изменения только при конкретном обнаруженном дефекте.
+- **Catalog selection / retirement integrity** — завершён и в Production через PR #214: рабочие product pickers не показывают retired products; известные характеристики берутся из maintained references ∪ active Catalog; whole-product retirement мягкий и блокируется активными SKU/остатками/резервами/незавершёнными операциями; reactivation заново проверяет canonical name/alias conflicts.
 - D1 read-budget/O1/R5 optimizations уже находятся в истории main; следующий performance pass делать только по свежим Query Insights, а не «по инерции».
 
 ## Что НЕ находится в Production
@@ -95,6 +97,10 @@ Stage02 stock-truth работа закрыта и уже в Production. Ста�
 - Новая точная комбинация уже известных фактов не должна вызывать лишний вопрос; deterministic safe combination path может создать/связать комбинацию с physical stock 0.
 - R11 сохраняется: явный пол менеджера → пол выбранного concrete SKU → fixed product scope fallback.
 - Reference duplicate protection не переписывает старые заказы/варианты/историю.
+- Retired product/SKU остаётся историей, но не должен попадать в рабочие формы выбора; вывод из каталога — soft deactivate, не delete.
+- Нельзя создавать новое исполнение/SKU или сохранять активный SKU под retired product.
+- Whole-product retirement допустим только после вывода активных SKU и при отсутствии физического остатка, резерва, активного неотправленного заказа, незавершённой задачи Цеха, pending lifecycle и активной ревизии.
+- Reactivation retired product обязана заново проверять canonical product identity/aliases, чтобы старый дубль не мог вернуться в рабочий каталог.
 
 ### Warehouse / inventory truth
 - `Physical`, `Reserved`, `Available = Physical - Reserved` остаются разными истинами.
