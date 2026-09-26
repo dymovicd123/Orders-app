@@ -269,15 +269,6 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
   const executions = product?.id
     ? (await db.prepare(`SELECT id, material, length FROM catalog_stock_positions WHERE product_id = ? AND is_active = 1 ORDER BY material, length, id`).bind(product.id).all<{ id: number; material: string; length: string }>()).results || []
     : [];
-  const productVariants = product?.id
-    ? (await db.prepare(
-        `SELECT id, stock_position_id, COALESCE(category, 'adult') AS category, gender, color, material, length, size_label
-         FROM catalog_variants
-         WHERE product_id = ? AND is_active = 1
-         ORDER BY stock_position_id, category, gender, color, size_label, id`
-      ).bind(product.id).all<{ id: number; stock_position_id: number | null; category: string; gender: string | null; color: string | null; material: string | null; length: string | null; size_label: string | null }>()).results || []
-    : [];
-
   const references: CatalogReferenceOptions = { materials: ['СТАНДАРТ'], lengths: ['СТАНДАРТ'], colors: [], sizes: [], childAges: [] };
   const referenceIdentity = (value: unknown) => upperText(value)
     .replace(/[‐‑‒–—-]+/g, ' ')
