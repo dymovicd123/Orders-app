@@ -83,6 +83,18 @@ For `legacy_manual_total` orders:
 - retained history preserves pricing generation;
 - current Catalog values never reprice history.
 
+## Resolver R11 preservation boundary
+
+Resolver R11 is an independent production/Branch2 fix and is **not part of Stage03 pricing policy**. H12 must preserve it while Stage03 is closed and later promoted:
+
+- manager-entered concrete gender remains authoritative;
+- otherwise the concrete gender of the selected existing Catalog SKU is preserved;
+- fixed product gender scope is only a fallback;
+- selecting an `unisex` product must not erase a gender already known from the manager or Catalog SKU;
+- the old `gender: automaticGender ? (selected.gender || automaticGender) : ''` behavior must never return.
+
+The H12 candidate must include and pass `scripts/test-catalog-resolver-r11-preserve-known-gender.mjs`. Future Stage03 → main promotion must reconcile `useWorkspaceViewModel.tsx` deliberately instead of replacing Production with a stale pre-R11 copy.
+
 ## Scope boundary
 
 H12 adds an aggregate regression/acceptance layer and documentation. It does not add a migration, backfill, D1 business-row write, new discount source of truth, automatic refund rule, or new Workshop finance behavior.
