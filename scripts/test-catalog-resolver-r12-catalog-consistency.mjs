@@ -36,7 +36,11 @@ check(modal.includes('В заказе:'), 'R12 resolver does not show the value 
 check(references.includes('referenceValueIdentityKey'), 'R12 reference duplicate identity guard missing')
 check(references.includes(".replace(/[‐‑‒–—-]+/g, ' ')"), 'R12 hyphen/space duplicate normalization missing')
 check(references.includes('Такое значение уже есть:'), 'R12 duplicate reference error is not user-facing')
-check(references.includes('await assertNoEquivalentReferenceValue(db, dbKind, value, id || 0)'), 'R12 duplicate guard is not enforced on reference writes')
+check(references.includes("referenceValueIdentityKey(current.value) !== referenceValueIdentityKey(value)"), 'R12 existing reference rows would be blocked even without changing their identity')
+check(references.includes('await assertNoEquivalentReferenceValue(db, dbKind, value, 0)'), 'R12 new reference duplicate guard missing')
+check(!/UPDATE\\s+orders\\b/i.test(references) && !/UPDATE\\s+order_items\\b/i.test(references) && !/UPDATE\\s+retained_order_summaries\\b/i.test(references), 'R12 reference protection must never rewrite historical order data')
+check(!/UPDATE\\s+catalog_variants\\b/i.test(references), 'R12 duplicate protection must not silently normalize existing Catalog variants')
+check(references.includes('await assertNoEquivalentReferenceValue(db, dbKind, value, id)'), 'R12 duplicate guard is not enforced on changed existing reference values')
 
 check(workspace.includes('const enteredGender = canonicalOrderGender(currentItem.gender)'), 'R12 regressed R11 entered gender preservation')
 check(workspace.includes('gender: enteredGender || canonicalOrderGender(selected.gender) || automaticGender'), 'R12 regressed R11 selected SKU gender preservation')
