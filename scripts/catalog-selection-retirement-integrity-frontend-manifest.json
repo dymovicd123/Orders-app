@@ -11,9 +11,9 @@
     },
     "src/features/inventory/views/renderInventoryCatalogPanel.tsx": {
       "beforeGitBlob": "96f497f54c55d92cb1b6a0eb8d4c38db14355dc5",
-      "afterGitBlob": "947e4985ca762374f11d0ea4ee9377109213f35e",
+      "afterGitBlob": "49ab565611e35bcb1af64247fbba9b90c3fdf73b",
       "beforeLines": 664,
-      "afterLines": 716,
+      "afterLines": 721,
       "baselineFixture": "scripts/fixtures/catalog-selection-retirement-integrity/src/features/inventory/views/renderInventoryCatalogPanel.tsx"
     }
   }
