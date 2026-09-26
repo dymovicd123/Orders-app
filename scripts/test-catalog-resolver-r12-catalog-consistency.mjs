@@ -18,7 +18,7 @@ check(!reportUi.includes('legacy-заказы') && !reportUi.includes('точн�
 check(reportUi.includes('Данные для средней цены'), 'R12 average-price coverage heading missing')
 
 check(review.includes('Any value already used by an active Catalog SKU is a known business fact'), 'R12 resolver does not treat Catalog values as valid facts')
-check(review.includes('const productVariants = product?.id'), 'R12 resolver no longer loads active product variants')
+check(review.includes('const catalogReferenceResult = await db.prepare'), 'R12 resolver no longer loads active Catalog values')
 check(review.includes("unknownFields.push('size')"), 'R12 resolver cannot identify an unknown size')
 check(review.includes("unknownFields.push('color')"), 'R12 resolver cannot identify an unknown color')
 check(review.includes("SELECT 'color' AS kind, color AS value FROM catalog_variants"), 'R12 Catalog colors are not added to resolver choices')
