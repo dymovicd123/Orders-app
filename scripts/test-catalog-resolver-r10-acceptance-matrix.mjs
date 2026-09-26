@@ -45,7 +45,7 @@ assert.ok(review.includes("gender_snapshot: cleanText(linked.gender)"), 'R10.2: 
 
 // 3. Explicit gender + known references + missing exact combination: deterministic auto-create, physical=0, reserve separately.
 assert.ok(reservations.includes('const enteredGender = normalizeCatalogCombinationGender(item.gender)') && reservations.includes('let gender = enteredGender'), 'R10.3: explicit manager gender no longer leads deterministic resolution')
-assert.ok(reservations.includes("!await catalogReferenceDbValueExists(db, 'material', material)") && reservations.includes("!await catalogReferenceValueExists(db, 'color', color)"), 'R10.3: known-reference validation before auto-create disappeared')
+assert.ok(reservations.includes('const knownFacts = await loadCatalogKnownFacts(db)') && reservations.includes("const material = knownFacts.resolve('material', aliasedMaterial)") && reservations.includes("const color = knownFacts.resolve('color', aliasedColor)"), 'R10.3: known reference/Catalog validation before auto-create disappeared')
 assert.ok(reservations.includes('const created = await createCatalogCombinationV3(db, {') && reservations.includes("matchStatus: created.created ? 'created_combination' : 'matched'"), 'R10.3: safe missing combination no longer auto-creates')
 assert.ok(reservations.includes('VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)'), 'R10.3: auto-created stock no longer starts at physical=0/reserved=0')
 assert.ok(reservations.includes('reserved_quantity = MAX(0, COALESCE(reserved_quantity, 0) + ?)'), 'R10.3: reservation is no longer separate from physical stock')
