@@ -22,11 +22,12 @@ check(finance.includes('AS itemized_quantity') && finance.includes('AS itemized_
 check(finance.includes('average_sold_price: itemizedQuantity > 0 ? Math.round(itemizedGrossSales / itemizedQuantity) : null'), 'H11 weighted average sold price must be gross sold value divided by exact sold quantity')
 check(finance.includes('legacy_quantity: Math.max(0, quantity - itemizedQuantity)'), 'H11 legacy quantity coverage marker missing')
 check(finance.includes('products: normalizedProductRows'), 'H11 normalized product analytics are not returned')
+check(finance.includes(': rawProductRows;'), 'H11 pre-pricing report response must remain byte-shape compatible without synthetic analytics fields')
 check(finance.includes('ORDER BY quantity DESC, order_count DESC, product ASC'), 'H11 popularity ranking changed away from sold quantity')
 check(!finance.includes('catalog_execution_prices'), 'H11 historical product average must never read current Catalog price')
 check(!finance.includes('catalog_price_snapshot'), 'H11 average sold price must use factual sold line totals, not Catalog recommendation')
 
-for (const marker of ['itemized_quantity: number', 'itemized_gross_sales: number', 'legacy_quantity: number', 'average_sold_price: number | null']) {
+for (const marker of ['itemized_quantity?: number', 'itemized_gross_sales?: number', 'legacy_quantity?: number', 'average_sold_price?: number | null']) {
   check(types.includes(marker), 'H11 API type missing: ' + marker)
 }
 
