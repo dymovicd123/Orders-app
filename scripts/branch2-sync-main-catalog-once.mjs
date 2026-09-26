@@ -9,6 +9,7 @@ const API_TOKEN = String(process.env.CLOUDFLARE_API_TOKEN || '').trim()
 const MODE = String(process.argv[2] || '').trim()
 const SQL_PATH = process.argv[3] || '/tmp/branch2-main-catalog-sync.sql'
 const MANIFEST_PATH = process.argv[4] || '/tmp/branch2-main-catalog-sync-manifest.json'
+const PLAN_PATH = process.argv[5] || '/tmp/branch2-main-catalog-sync-plan.json'
 
 const MASTER_TABLES = ['catalog_products','catalog_stock_positions','catalog_variants']
 const ALIAS_TABLES = ['catalog_product_aliases','catalog_input_aliases','catalog_value_aliases']
@@ -77,6 +78,38 @@ async function d1Query(databaseId, sql, params = []) {
     if (chunk && chunk.success === false) throw new Error('D1 statement failed: ' + JSON.stringify(chunk))
   }
   return chunks.flatMap(chunk => Array.isArray(chunk && chunk.results) ? chunk.results : [])
+}
+
+async function d1BatchWrite(databaseId, statements, chunkSize = 40) {
+  check(ACCOUNT_ID && API_TOKEN, 'Cloudflare account/token environment is required')
+  check(databaseId === BRANCH2_DB_ID, 'D1 batch writes are allowed only to Branch2')
+  check(Array.isArray(statements) && statements.length > 0, 'Branch2 write plan is empty')
+
+  for (let offset = 0; offset < statements.length; offset += chunkSize) {
+    const chunk = statements.slice(offset, offset + chunkSize)
+    const response = await fetch(
+      API_BASE + '/accounts/' + ACCOUNT_ID + '/d1/database/' + databaseId + '/query',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + API_TOKEN,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ batch: chunk.map(sql => ({ sql })) }),
+      }
+    )
+    const payload = await response.json().catch(() => null)
+    check(response.ok && payload && payload.success !== false,
+      'Branch2 D1 batch failed at statement ' + offset + ': ' + response.status + ' ' + JSON.stringify(payload && (payload.errors || payload)))
+    const results = Array.isArray(payload.result) ? payload.result : [payload.result]
+    check(results.length === chunk.length,
+      'Branch2 D1 batch result count mismatch at statement ' + offset + ': expected ' + chunk.length + ', got ' + results.length)
+    results.forEach((result, index) => {
+      check(result && result.success !== false,
+        'Branch2 D1 statement failed at index ' + (offset + index) + ': ' + JSON.stringify(result))
+    })
+    console.log('Applied Branch2 sync statements ' + offset + '..' + (offset + chunk.length - 1) + ' of ' + statements.length)
+  }
 }
 
 async function tableInfo(databaseId, table) {
@@ -256,6 +289,7 @@ async function prepare() {
   sql.push('DROP TABLE "_branch2_catalog_price_backup_20260926";')
 
   fs.writeFileSync(SQL_PATH, sql.join('\n') + '\n')
+  fs.writeFileSync(PLAN_PATH, JSON.stringify(sql, null, 2) + '\n')
   const tablesForFingerprint = MASTER_TABLES.concat(ALIAS_TABLES, ['reference_values'])
   const manifest = {
     generatedAt: new Date().toISOString(),
@@ -268,6 +302,18 @@ async function prepare() {
   }
   fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + '\n')
   console.log(JSON.stringify({ phase: 'prepared', counts: manifest.counts, ethnoCardigan: ethno }, null, 2))
+}
+
+async function apply() {
+  check(process.env.GITHUB_REF_NAME === 'branch2', 'Catalog sync apply may run only on branch2')
+  const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8'))
+  check(manifest.sourceDatabaseId === PROD_DB_ID && manifest.targetDatabaseId === BRANCH2_DB_ID, 'Sync manifest database identity drifted')
+  const statements = JSON.parse(fs.readFileSync(PLAN_PATH, 'utf8'))
+  check(Array.isArray(statements) && statements.length > 0, 'Prepared Branch2 sync plan is missing')
+  check(statements.every(statement => typeof statement === 'string' && !statement.includes(PROD_DB_ID) && !statement.includes('orders_db_prod')),
+    'Prepared Branch2 write plan contains Production identity')
+  await d1BatchWrite(BRANCH2_DB_ID, statements)
+  console.log(JSON.stringify({ phase: 'applied', statements: statements.length, targetDatabaseId: BRANCH2_DB_ID }, null, 2))
 }
 
 async function verify() {
@@ -322,5 +368,6 @@ async function verify() {
 }
 
 if (MODE === 'prepare') await prepare()
+else if (MODE === 'apply') await apply()
 else if (MODE === 'verify') await verify()
-else throw new Error('Usage: node scripts/branch2-sync-main-catalog-once.mjs prepare|verify [sqlPath] [manifestPath]')
+else throw new Error('Usage: node scripts/branch2-sync-main-catalog-once.mjs prepare|apply|verify [sqlPath] [manifestPath] [planPath]')
