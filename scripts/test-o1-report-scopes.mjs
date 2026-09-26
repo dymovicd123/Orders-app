@@ -84,6 +84,14 @@ const withoutClientReconciliation = result => {
   const reports = { ...(stableResult.reports || {}) }
   delete reports.paymentMethodReconciliation
   delete reports.paymentReconciliationByDay
+  reports.products = (reports.products || []).map(row => {
+    const legacyProductRow = Object.create(Object.getPrototypeOf(row))
+    for (const [key, value] of Object.entries(row)) {
+      if (['itemized_gross_sales', 'itemized_order_count', 'legacy_order_count'].includes(key)) continue
+      legacyProductRow[key] = value
+    }
+    return legacyProductRow
+  })
   return { ...stableResult, reports }
 }
 const canonicalMethod = value => {
