@@ -91,6 +91,50 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage03MainPromotionFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-main-promotion-frontend-manifest.json'), 'utf8'))
+if (stage03MainPromotionFrontendManifest?.version !== 1 || stage03MainPromotionFrontendManifest?.revision !== 'stage03-main-promotion-candidate-r1') throw new Error('Stage03 main-promotion frontend manifest invalid')
+const stage03MainPromotionFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE03_MAIN_PROMOTION_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stage03MainPromotionFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      if (!fs.existsSync(absolute)) throw new Error('Stage03 main-promotion frontend file missing: ' + relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage03MainPromotionFrontendBlobSha(actual) !== delta.afterGitBlob) {
+        throw new Error('Stage03 main-promotion frontend changed beyond reviewed candidate: ' + relative)
+      }
+      originals.set(relative, actual)
+      if (delta.beforeAbsent) {
+        fs.unlinkSync(absolute)
+      } else {
+        const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+        if (stage03MainPromotionFrontendBlobSha(baseline) !== delta.beforeGitBlob) {
+          throw new Error('Stage03 main-promotion frontend baseline fixture drifted: ' + relative)
+        }
+        fs.writeFileSync(absolute, baseline)
+      }
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, STAGE03_MAIN_PROMOTION_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03 MAIN-PROMOTION FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const catalogIntegrityFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-selection-retirement-integrity-frontend-manifest.json'), 'utf8'))
 if (catalogIntegrityFrontendManifest?.version !== 1 || catalogIntegrityFrontendManifest?.revision !== 'catalog-selection-retirement-integrity-r1') throw new Error('Catalog selection/retirement frontend manifest invalid')
 const catalogIntegrityFrontendBlobSha = (value) => {
