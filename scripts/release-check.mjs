@@ -219,6 +219,7 @@ try {
   run('Catalog resolver R11 preserve known gender', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-r11-preserve-known-gender.mjs')])
   run('Catalog resolver R12 Catalog consistency', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-r12-catalog-consistency.mjs')])
   run('Catalog resolver R13 known facts', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-r13-known-facts.mjs')])
+  run('Catalog selection / retirement integrity', process.execPath, [path.join(root, 'scripts/test-catalog-selection-retirement-integrity.mjs')])
   run('Stage02 Phase1B Workshop disposition R1 tests', process.execPath, [path.join(root, 'scripts/test-stage02-phase1b-workshop-disposition-r1.mjs')])
   run('Stage02 Phase1B R2 Workshop Boutique disposition tests', process.execPath, [path.join(root, 'scripts/test-stage02-phase1b-r2-workshop-boutique-disposition.mjs')])
   run('Stage02 Phase2A stock truth primitives', process.execPath, [path.join(root, 'scripts/test-stage02-phase2a-stock-truth-primitives.mjs')])

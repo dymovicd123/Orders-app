@@ -91,6 +91,45 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const catalogIntegrityBranch2FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-selection-retirement-integrity-branch2-frontend-manifest.json'), 'utf8'))
+if (catalogIntegrityBranch2FrontendManifest?.version !== 1 || catalogIntegrityBranch2FrontendManifest?.revision !== 'catalog-selection-retirement-integrity-r1-branch2') throw new Error('Catalog selection/retirement Branch2 frontend manifest invalid')
+const catalogIntegrityBranch2FrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.CATALOG_SELECTION_RETIREMENT_INTEGRITY_BRANCH2_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(catalogIntegrityBranch2FrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (catalogIntegrityBranch2FrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Catalog selection/retirement Branch2 frontend changed beyond exact manifest: ' + relative)
+      }
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (catalogIntegrityBranch2FrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Catalog selection/retirement Branch2 frontend baseline fixture drifted: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, CATALOG_SELECTION_RETIREMENT_INTEGRITY_BRANCH2_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('CATALOG SELECTION / RETIREMENT BRANCH2 FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const resolverR12FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-resolver-r12-catalog-consistency-frontend-manifest.json'), 'utf8'))
 if (resolverR12FrontendManifest?.version !== 1 || resolverR12FrontendManifest?.revision !== 'catalog-resolver-r12-catalog-consistency') throw new Error('Resolver R12 frontend manifest invalid')
 const resolverR12FrontendBlobSha = (value) => {
