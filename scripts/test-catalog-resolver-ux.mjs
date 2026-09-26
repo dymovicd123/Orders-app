@@ -166,10 +166,12 @@ CREATE TABLE order_items(id INTEGER, order_id INTEGER, product_id INTEGER, audie
 CREATE TABLE catalog_products(id INTEGER, name TEXT, category TEXT, is_active INTEGER);
 CREATE TABLE reference_values(kind TEXT, value TEXT, is_active INTEGER, sort_order INTEGER);
 CREATE TABLE catalog_stock_positions(id INTEGER, product_id INTEGER, material TEXT, length TEXT, is_active INTEGER);
+CREATE TABLE catalog_variants(id INTEGER, product_id INTEGER, stock_position_id INTEGER, category TEXT, gender TEXT, color TEXT, material TEXT, length TEXT, size_label TEXT, is_active INTEGER);
 INSERT INTO orders VALUES(12,'TEST','not_sent','','active','');
 INSERT INTO order_items VALUES(1,12,1,'adult','','ДОКЕР','СТАНДАРТ','СТАНДАРТ','МУЖ','',0);
 INSERT INTO catalog_products VALUES(1,'ДОКЕР','adult',1);
 INSERT INTO catalog_stock_positions VALUES(10,1,'СТАНДАРТ','СТАНДАРТ',1);
+INSERT INTO catalog_variants VALUES(7,1,10,'adult','МУЖ','БЕЗ ЦВЕТА','СТАНДАРТ','СТАНДАРТ','',1);
 INSERT INTO reference_values VALUES('color','БЕЗ ЦВЕТА',1,1);`)
 const sqlCalls = []
 const db = { prepare(sql) {

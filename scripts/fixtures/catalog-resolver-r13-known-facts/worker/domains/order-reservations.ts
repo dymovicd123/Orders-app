@@ -5,7 +5,7 @@ import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, norm
 import type { SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
 import type { CanonicalVariantSnapshot } from './catalog.ts'
-import { catalogGenderForProductScope, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
+import { catalogGenderForProductScope, catalogReferenceDbValueExists, catalogReferenceValueExists, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
 import { inventoryPhysicalCheckStatement } from './inventory-primitives.ts'
 import { boundedOutboundStock } from './stock-resolution.ts'
 import { normalizeOrderItems } from './order-core.ts'
@@ -198,50 +198,6 @@ export async function resolveCatalogProductAndVariantV2Flat(
 }
 
 
-export function catalogKnownFactIdentity(value: unknown) {
-  return upperText(value)
-    .replace(/[‐‑‒–—-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-
-export async function loadCatalogKnownFacts(db: D1Database) {
-  const rows = await db.prepare(
-    `SELECT kind, value FROM reference_values
-     WHERE is_active = 1 AND kind IN ('material','length','color','size','child_age')
-     UNION
-     SELECT 'material' AS kind, material AS value FROM catalog_stock_positions
-     WHERE is_active = 1 AND TRIM(COALESCE(material, '')) <> ''
-     UNION
-     SELECT 'length' AS kind, length AS value FROM catalog_stock_positions
-     WHERE is_active = 1 AND TRIM(COALESCE(length, '')) <> ''
-     UNION
-     SELECT 'color' AS kind, color AS value FROM catalog_variants
-     WHERE is_active = 1 AND TRIM(COALESCE(color, '')) <> ''
-     UNION
-     SELECT CASE WHEN COALESCE(category, 'adult') = 'child' THEN 'child_age' ELSE 'size' END AS kind, size_label AS value
-     FROM catalog_variants
-     WHERE is_active = 1 AND TRIM(COALESCE(size_label, '')) <> ''`
-  ).all<{ kind: string; value: string }>()
-
-  const byKind = new Map<string, Map<string, string>>()
-  for (const row of rows.results || []) {
-    const identity = catalogKnownFactIdentity(row.value)
-    if (!identity) continue
-    const kindMap = byKind.get(row.kind) || new Map<string, string>()
-    if (!kindMap.has(identity)) kindMap.set(identity, upperText(row.value))
-    byKind.set(row.kind, kindMap)
-  }
-  return {
-    resolve(kind: 'material' | 'length' | 'color' | 'size' | 'child_age', value: unknown) {
-      const identity = catalogKnownFactIdentity(value)
-      return identity ? (byKind.get(kind)?.get(identity) || '') : ''
-    },
-  }
-}
-
-
 export async function resolveCatalogProductAndVariantV2(
   db: D1Database,
   item: ReturnType<typeof normalizeOrderItems>[number],
@@ -252,11 +208,8 @@ export async function resolveCatalogProductAndVariantV2(
   if (!product?.id) return { productId: null, variantId: null, matchStatus: 'unresolved_product', inputKey };
 
   const category = normalizeAudienceCategory(item.category, item.size);
-  const knownFacts = await loadCatalogKnownFacts(db);
-  const aliasedMaterial = await resolveCatalogValueAlias(db, 'material', canonicalStockPositionValue(item.material));
-  const aliasedLength = await resolveCatalogValueAlias(db, 'length', canonicalStockPositionValue(item.length));
-  const material = knownFacts.resolve('material', aliasedMaterial);
-  const length = knownFacts.resolve('length', aliasedLength);
+  const material = await resolveCatalogValueAlias(db, 'material', canonicalStockPositionValue(item.material));
+  const length = await resolveCatalogValueAlias(db, 'length', canonicalStockPositionValue(item.length));
   const enteredGender = normalizeCatalogCombinationGender(item.gender);
   let gender = enteredGender;
   if (!gender) {
@@ -268,11 +221,8 @@ export async function resolveCatalogProductAndVariantV2(
   }
   const rawColor = upperText(item.color);
   const rawSize = upperText(item.size);
-  const aliasedColor = await resolveCatalogValueAlias(db, 'color', normalizeCatalogCombinationColor(item.color));
-  const sizeKind = category === 'child' ? 'child_age' : 'size';
-  const aliasedSize = await resolveCatalogValueAlias(db, sizeKind, normalizeCatalogCombinationSize(item.size));
-  const color = knownFacts.resolve('color', aliasedColor);
-  const size = knownFacts.resolve(sizeKind, aliasedSize);
+  const color = await resolveCatalogValueAlias(db, 'color', normalizeCatalogCombinationColor(item.color));
+  const size = await resolveCatalogValueAlias(db, category === 'child' ? 'child_age' : 'size', normalizeCatalogCombinationSize(item.size));
 
   // Step 192A2: an omitted manager color must not silently select a legacy БЕЗ ЦВЕТА
   // placeholder when this exact execution also contains real colors. A truly colorless
@@ -318,14 +268,15 @@ export async function resolveCatalogProductAndVariantV2(
     return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
   }
 
-  // Unknown input still stops before any master-data mutation. Recognized human facts
-  // are accepted independently of whether this exact SKU combination existed before.
+  // Validate every manager-entered fact before mutating master data. Unknown input must
+  // never leave behind a newly-created execution/combination as a hidden side effect.
+  const sizeKind = category === 'child' ? 'child_age' : 'size';
   if (
-    !material
-    || !length
+    !await catalogReferenceDbValueExists(db, 'material', material)
+    || !await catalogReferenceDbValueExists(db, 'length', length)
     || (gender && gender !== 'ЖЕН' && gender !== 'МУЖ')
-    || (rawColor && !color)
-    || (rawSize && !size)
+    || (upperText(item.color) && !await catalogReferenceValueExists(db, 'color', color))
+    || (size && !await catalogReferenceValueExists(db, sizeKind, size))
   ) {
     return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
   }

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "revision": "catalog-resolver-r13-known-facts",
+  "files": {
+    "worker/domains/catalog-review.ts": {
+      "beforeGitBlob": "0fbbba86b3e5f7b68f4eeb77918d31278da5597d",
+      "afterGitBlob": "be35906bab2e8e55b87bb9ccb665ad5fecd0a805",
+      "beforeLines": 1154,
+      "afterLines": 1124,
+      "baselineFixture": "scripts/fixtures/catalog-resolver-r13-known-facts/worker/domains/catalog-review.ts"
+    },
+    "worker/domains/order-reservations.ts": {
+      "beforeGitBlob": "c4d7066bd73771c6f5610be1ff11c22f5bd98da4",
+      "afterGitBlob": "465b6117be429e21bc59fd84ad37bd2bbb023ff6",
+      "beforeLines": 2577,
+      "afterLines": 2626,
+      "baselineFixture": "scripts/fixtures/catalog-resolver-r13-known-facts/worker/domains/order-reservations.ts"
+    }
+  }
+}

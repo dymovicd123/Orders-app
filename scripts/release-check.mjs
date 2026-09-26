@@ -217,6 +217,8 @@ try {
   run('Catalog resolver R9 final acceptance', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-r9-final-acceptance.mjs')])
   run('Catalog resolver R10 acceptance matrix', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-r10-acceptance-matrix.mjs')])
   run('Catalog resolver R11 preserve known gender', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-r11-preserve-known-gender.mjs')])
+  run('Catalog resolver R12 Catalog consistency', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-r12-catalog-consistency.mjs')])
+  run('Catalog resolver R13 known facts', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-r13-known-facts.mjs')])
   run('Production deploy skipped-build fallback safety', process.execPath, [path.join(root, 'scripts/test-production-deploy-fallback-safety.mjs')])
   run('Stage02 Phase1B Workshop disposition R1 tests', process.execPath, [path.join(root, 'scripts/test-stage02-phase1b-workshop-disposition-r1.mjs')])
   run('Stage02 Phase1B R2 Workshop Boutique disposition tests', process.execPath, [path.join(root, 'scripts/test-stage02-phase1b-r2-workshop-boutique-disposition.mjs')])

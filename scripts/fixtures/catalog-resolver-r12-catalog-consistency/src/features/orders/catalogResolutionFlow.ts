@@ -182,11 +182,10 @@ export function nextQuestion(context: CatalogResolutionContext, draft: Draft, op
   }
   for (const field of fields) {
     if (field === 'gender' && options.legacy) continue
-    const needsCorrection = (context.unknownFields || []).includes(field) && !options.confirmed[field]
     const missing = field === 'gender' ? !['ЖЕН', 'МУЖ'].includes(normalize(draft.gender))
-      : field === 'category' ? needsCorrection
+      : field === 'category' ? (context.unknownFields || []).includes(field) && !options.confirmed[field]
       : !clean(draft[field])
-    if (needsCorrection || missing) {
+    if (missing) {
       if (field === 'color' && !draft.size && context.exactVariant
         && normalize(context.exactVariant.facts.color) === 'БЕЗ ЦВЕТА'
         && ['', 'БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р'].includes(normalize(context.exactVariant.facts.size))) return { kind: 'combined' }
