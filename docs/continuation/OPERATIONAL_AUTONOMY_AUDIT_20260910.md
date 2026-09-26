@@ -1,5 +1,8 @@
 # Operational autonomy audit — 2026-09-10
 
+> **STATUS UPDATE — 2026-09-26:** The A1–A5 gaps identified by this audit are implemented and are ancestors of current `main`: multiple returns / return+exchange coexistence, debt close after return, mistaken sent/handover correction, and audited exchange-finance correction. The “remaining gaps” and priority list below describe the original audit state, not current unfinished work. Step 190.0 role/access policy is still deferred, and gradual replacement of brittle exact-source gates remains technical debt. Current status lives in `PROJECT_CONTINUATION.md`.
+
+
 ## Goal
 
 Normal, legitimate business corrections must be executable by staff through the application without developer intervention. Safety should come from explicit correction/reversal workflows, fresh-state validation, audit history, idempotency and role checks — not from leaving a valid business situation with no supported action.
