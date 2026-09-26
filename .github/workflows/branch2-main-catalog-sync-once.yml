@@ -1,0 +1,89 @@
+name: Branch2 one-shot clean and main Catalog sync
+
+on:
+  push:
+    branches:
+      - branch2
+    paths:
+      - '.github/workflows/branch2-main-catalog-sync-once.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Clean Branch2 test data and copy current main Catalog
+    if: github.ref_name == 'branch2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+    steps:
+      - name: Checkout exact Branch2 commit
+        uses: actions/checkout@v4
+
+      - name: Hard-lock Branch2 write target
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "branch2" ]]
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo "Production D1 identity leaked into the Branch2 write config. Refusing sync." >&2
+            exit 91
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Validate one-shot sync guard
+        run: node scripts/test-branch2-main-catalog-sync-safety.mjs
+
+      - name: Full code gate before remote mutation
+        run: npm run release:check
+
+      - name: Capture Branch2 pre-clean fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --json --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM order_items) AS order_items_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM returns) AS returns_count,
+              (SELECT COUNT(*) FROM exchanges) AS exchanges_count,
+              (SELECT COUNT(*) FROM workshop_tasks) AS workshop_tasks_count,
+              (SELECT COUNT(*) FROM customers) AS customers_count,
+              (SELECT COUNT(*) FROM catalog_products WHERE name LIKE 'BR2-H8-%') AS fixture_products,
+              (SELECT COUNT(*) FROM inventory_stock WHERE product_name_snapshot LIKE 'BR2-H8-%') AS fixture_stock;"
+
+      - name: Read current Production Catalog and prepare Branch2-only SQL
+        run: node scripts/branch2-sync-main-catalog-once.mjs prepare /tmp/branch2-main-catalog-sync.sql /tmp/branch2-main-catalog-sync-manifest.json
+
+      - name: Apply cleanup and Catalog sync to Branch2 D1 only
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "branch2" ]]
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          test -s /tmp/branch2-main-catalog-sync.sql
+          if grep -Fq 'orders_db_prod' /tmp/branch2-main-catalog-sync.sql || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' /tmp/branch2-main-catalog-sync.sql; then
+            echo "Generated Branch2 SQL contains Production D1 identity. Refusing mutation." >&2
+            exit 92
+          fi
+          npx wrangler d1 execute orders_db_branch2             --remote             --config wrangler.jsonc             --file /tmp/branch2-main-catalog-sync.sql
+
+      - name: Verify zero test residue and exact main Catalog copy
+        run: node scripts/branch2-sync-main-catalog-once.mjs verify /tmp/branch2-main-catalog-sync.sql /tmp/branch2-main-catalog-sync-manifest.json
