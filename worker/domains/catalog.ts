@@ -284,6 +284,12 @@ export async function ensureCatalogExecutionV3(db: D1Database, productId: number
   const normalizedLength = canonicalStockPositionValue(length);
   let execution = await findCatalogExecutionV3(db, productId, normalizedMaterial, normalizedLength);
   if (execution?.id) return execution;
+  const activeProduct = await db.prepare(
+    'SELECT id FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1'
+  ).bind(productId).first<{ id: number }>();
+  if (!activeProduct?.id) {
+    throw new Error('Нельзя создавать исполнение у товара, выведенного из активного каталога.');
+  }
   try {
     const result = await db.prepare(
       `INSERT INTO catalog_stock_positions (
@@ -463,6 +469,62 @@ export async function assertCatalogVariantMayDeactivate(db: D1Database, variantI
 
   if (blockers.length) {
     throw new Error(`Нельзя вывести позицию из активного каталога: ${blockers.join('; ')}. Сначала завершите связанные операции или разберите остаток.`);
+  }
+}
+
+
+export async function assertCatalogProductMayDeactivate(db: D1Database, productId: number) {
+  const row = await db.prepare(
+    `SELECT
+       COALESCE((SELECT COUNT(*) FROM catalog_variants WHERE product_id = ? AND is_active = 1), 0) AS active_variants,
+       COALESCE((SELECT SUM(ABS(COALESCE(quantity, 0))) FROM inventory_stock WHERE product_id = ?), 0) AS physical_quantity,
+       COALESCE((SELECT SUM(ABS(COALESCE(reserved_quantity, 0))) FROM inventory_stock WHERE product_id = ?), 0) AS stock_reserved_quantity,
+       COALESCE((SELECT SUM(COALESCE(quantity, 0)) FROM inventory_reservations WHERE product_id = ? AND status = 'active'), 0) AS active_reservation_quantity,
+       EXISTS(
+         SELECT 1 FROM order_items oi
+         JOIN orders o ON o.id = oi.order_id
+         WHERE oi.product_id = ?
+           AND COALESCE(o.order_status, 'active') = 'active'
+           AND COALESCE(o.shipping_status, 'not_sent') <> 'sent'
+         LIMIT 1
+       ) AS open_order,
+       EXISTS(
+         SELECT 1 FROM workshop_tasks
+         WHERE product_id = ? AND status IN ('active', 'ready')
+         LIMIT 1
+       ) AS open_workshop,
+       EXISTS(
+         SELECT 1 FROM inventory_lifecycle_events
+         WHERE product_id = ? AND status = 'pending'
+         LIMIT 1
+       ) AS pending_lifecycle,
+       EXISTS(
+         SELECT 1
+         FROM inventory_stocktake_items i
+         JOIN inventory_stocktake_sessions s ON s.id = i.session_id
+         WHERE i.product_id = ? AND s.status = 'active'
+         LIMIT 1
+       ) AS active_stocktake`
+  ).bind(productId, productId, productId, productId, productId, productId, productId, productId)
+    .first<Record<string, unknown>>();
+
+  const activeVariants = Math.max(0, toInt(row?.active_variants, 0));
+  const physicalQuantity = Math.max(0, toInt(row?.physical_quantity, 0));
+  const stockReservedQuantity = Math.max(0, toInt(row?.stock_reserved_quantity, 0));
+  const activeReservationQuantity = Math.max(0, toInt(row?.active_reservation_quantity, 0));
+  const blockers: string[] = [];
+  if (activeVariants) blockers.push(`есть активные позиции: ${activeVariants}`);
+  if (physicalQuantity) blockers.push(`есть физический остаток: ${physicalQuantity} шт.`);
+  if (stockReservedQuantity || activeReservationQuantity) {
+    blockers.push(`есть действующий резерв: ${Math.max(stockReservedQuantity, activeReservationQuantity)} шт.`);
+  }
+  if (toInt(row?.open_order, 0)) blockers.push('есть активный неотправленный заказ');
+  if (toInt(row?.open_workshop, 0)) blockers.push('есть незавершённая задача Цеха');
+  if (toInt(row?.pending_lifecycle, 0)) blockers.push('есть незавершённая приёмка или возврат');
+  if (toInt(row?.active_stocktake, 0)) blockers.push('товар участвует в текущей ревизии');
+
+  if (blockers.length) {
+    throw new Error(`Нельзя вывести товар из активного каталога: ${blockers.join('; ')}. Сначала выведите его позиции и завершите связанные операции.`);
   }
 }
 
@@ -797,20 +859,44 @@ export async function createCatalogProduct(db: D1Database, input: { name?: unkno
 
 
 export async function updateCatalogProduct(db: D1Database, id: number, input: { name?: unknown; category?: unknown; genderScope?: unknown; isActive?: unknown }) {
-  const existing = await db.prepare('SELECT id FROM catalog_products WHERE id = ?').bind(id).first<{ id: number }>();
-  if (!existing) throw new Error('Product not found.');
+  const existing = await db.prepare(
+    'SELECT id, name, category, gender_scope, is_active FROM catalog_products WHERE id = ? LIMIT 1'
+  ).bind(id).first<Record<string, unknown>>();
+  if (!existing?.id) throw new Error('Product not found.');
+
   const name = input.name !== undefined ? upperText(input.name) : undefined;
   const category = input.category !== undefined ? normalizeCatalogCategory(input.category) : undefined;
-  if (name) {
-    const duplicate = await findCatalogProductByIdentity(db, name, id);
-    if (duplicate?.id) throw new Error(`Такой базовый товар уже существует: ${cleanText(duplicate.name)}.`);
-  }
   const genderScope = input.genderScope === undefined ? undefined : normalizeCatalogProductGenderScope(input.genderScope);
   if (genderScope !== undefined && !await isCatalogProductGenderScopeEnabled(db)) {
     throw new Error('Схема каталога ещё не поддерживает назначение товара по полу. Примените миграцию 0068 и повторите действие.');
   }
+
+  const currentActive = toInt(existing.is_active, 1);
   const isActive = input.isActive === undefined ? undefined : (cleanText(input.isActive).toLowerCase() === 'false' ? 0 : 1);
-  const createdAt = new Date().toISOString();
+  const targetActive = isActive === undefined ? currentActive : isActive;
+  const targetName = name || upperText(existing.name);
+  const deactivating = currentActive === 1 && targetActive === 0;
+  const activating = currentActive === 0 && targetActive === 1;
+  const profileChanges = Boolean(
+    (name && name !== upperText(existing.name))
+    || (category !== undefined && category !== normalizeCatalogCategory(existing.category))
+    || (genderScope !== undefined && genderScope !== normalizeCatalogProductGenderScope(existing.gender_scope))
+  );
+
+  if (deactivating && profileChanges) {
+    throw new Error('Нельзя одновременно менять карточку товара и выводить её из каталога. Сохраните изменения отдельно.');
+  }
+
+  if ((name !== undefined || activating) && targetName) {
+    const duplicate = await findCatalogProductByIdentity(db, targetName, id);
+    if (duplicate?.id) {
+      throw new Error(`Такой базовый товар или его каноническое написание уже связано с «${cleanText(duplicate.name)}».`);
+    }
+  }
+
+  if (deactivating) await assertCatalogProductMayDeactivate(db, id);
+
+  const updatedAt = new Date().toISOString();
   await db.prepare(
     `UPDATE catalog_products
      SET name = COALESCE(?, name),
@@ -819,8 +905,45 @@ export async function updateCatalogProduct(db: D1Database, id: number, input: { 
          is_active = COALESCE(?, is_active),
          updated_at = ?
      WHERE id = ?`
-  ).bind(name || null, category || null, genderScope ?? null, isActive ?? null, createdAt, id).run();
-  return { ok: true };
+  ).bind(name || null, category || null, genderScope ?? null, isActive ?? null, updatedAt, id).run();
+  return { ok: true, isActive: targetActive === 1 };
+}
+
+
+export async function catalogActiveCharacteristicValueExists(db: D1Database, dbKind: string, value: unknown) {
+  const normalized = upperText(value);
+  if (!normalized) return true;
+  if ((dbKind === 'material' || dbKind === 'length') && normalized === 'СТАНДАРТ') return true;
+
+  let predicate = '';
+  let boundValue = normalized;
+  if (dbKind === 'material') {
+    predicate = `COALESCE(NULLIF(UPPER(TRIM(v.material)), ''), 'СТАНДАРТ') = ?`;
+    boundValue = canonicalStockPositionValue(normalized);
+  } else if (dbKind === 'length') {
+    predicate = `COALESCE(NULLIF(UPPER(TRIM(v.length)), ''), 'СТАНДАРТ') = ?`;
+    boundValue = canonicalStockPositionValue(normalized);
+  } else if (dbKind === 'color') {
+    predicate = `CASE WHEN TRIM(COALESCE(v.color, '')) = '' THEN 'БЕЗ ЦВЕТА' ELSE UPPER(TRIM(v.color)) END = ?`;
+    boundValue = normalizeCatalogCombinationColor(normalized);
+  } else if (dbKind === 'size') {
+    predicate = `COALESCE(v.category, 'adult') <> 'child' AND UPPER(TRIM(COALESCE(v.size_label, ''))) = ?`;
+    boundValue = normalizeCatalogCombinationSize(normalized);
+  } else if (dbKind === 'child_age') {
+    predicate = `COALESCE(v.category, 'adult') = 'child' AND UPPER(TRIM(COALESCE(v.size_label, ''))) = ?`;
+    boundValue = normalizeCatalogCombinationSize(normalized);
+  } else {
+    return false;
+  }
+
+  const row = await db.prepare(
+    `SELECT v.id
+     FROM catalog_variants v
+     JOIN catalog_products p ON p.id = v.product_id
+     WHERE v.is_active = 1 AND p.is_active = 1 AND ${predicate}
+     LIMIT 1`
+  ).bind(boundValue).first<{ id: number }>();
+  return Boolean(row?.id);
 }
 
 
@@ -828,15 +951,18 @@ export async function requireCatalogAdminReferenceValue(db: D1Database, dbKind: 
   const normalized = upperText(value);
   if (!normalized || ((dbKind === 'material' || dbKind === 'length') && normalized === 'СТАНДАРТ')) return;
   if (await catalogReferenceDbValueExists(db, dbKind, normalized)) return;
-  throw new Error(`${label} «${normalized}» отсутствует в справочнике. Сначала добавьте значение в «Склад → Товары → Характеристики одежды».`);
+  if (await catalogActiveCharacteristicValueExists(db, dbKind, normalized)) return;
+  throw new Error(`${label} «${normalized}» отсутствует в справочнике и не используется активным Каталогом. Сначала добавьте значение в «Склад → Товары → Характеристики одежды».`);
 }
 
 
 export async function createCatalogVariant(db: D1Database, input: { productId?: unknown; category?: unknown; gender?: unknown; color?: unknown; material?: unknown; length?: unknown; sizeLabel?: unknown; sortOrder?: unknown }) {
   const productId = toInt(input.productId, 0);
   if (!productId) throw new Error('productId is required.');
-  const product = await db.prepare('SELECT id FROM catalog_products WHERE id = ?').bind(productId).first<{ id: number }>();
-  if (!product) throw new Error('Product not found.');
+  const product = await db.prepare(
+    'SELECT id FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1'
+  ).bind(productId).first<{ id: number }>();
+  if (!product?.id) throw new Error('Нельзя добавить позицию: товар не найден или выведен из активного каталога.');
   const category = normalizeAudienceCategory(input.category, input.sizeLabel) as 'adult' | 'child';
   const genderResolution = await resolveCatalogGenderForProduct(db, productId, input.gender);
   const gender = genderResolution.gender;
@@ -889,6 +1015,15 @@ export async function updateCatalogVariant(db: D1Database, id: number, input: { 
   const isActive = input.isActive === undefined ? toInt(existing.is_active, 1) : (cleanText(input.isActive).toLowerCase() === 'false' ? 0 : 1);
   const sortOrder = input.sortOrder === undefined ? toInt(existing.sort_order, 0) : toInt(input.sortOrder, 0);
   const timestamp = new Date().toISOString();
+
+  if (isActive === 1 || productId !== toInt(existing.product_id, 0)) {
+    const activeProduct = await db.prepare(
+      'SELECT id FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1'
+    ).bind(productId).first<{ id: number }>();
+    if (!activeProduct?.id) {
+      throw new Error('Нельзя сохранить активную позицию у товара, выведенного из каталога.');
+    }
+  }
 
   if (await isCatalogIdentityV3Enabled(db)) {
     if (canonicalStockPositionValue(existing.material) !== material) await requireCatalogAdminReferenceValue(db, 'material', material, 'Материал');
