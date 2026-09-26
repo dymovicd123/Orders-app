@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "revision": "catalog-resolver-r11-known-gender",
+  "file": "src/app/controllers/useWorkspaceViewModel.tsx",
+  "replacements": [
+    {
+      "beforeBlock": "    const productGenderScope = String(product.genderScope || 'unisex') as 'female' | 'male' | 'unisex'\n    const automaticGender = productGenderScope === 'female' ? 'ЖЕН' : productGenderScope === 'male' ? 'МУЖ' : ''\n    const variants = (catalogVariantsByProductId.get(Number(product.id)) || []).filter((variant) => variant.isActive)\n",
+      "afterBlock": "    const productGenderScope = String(product.genderScope || 'unisex') as 'female' | 'male' | 'unisex'\n    const automaticGender = productGenderScope === 'female' ? 'ЖЕН' : productGenderScope === 'male' ? 'МУЖ' : ''\n    const enteredGender = canonicalOrderGender(currentItem.gender)\n    const preferredGender = enteredGender || automaticGender\n    const variants = (catalogVariantsByProductId.get(Number(product.id)) || []).filter((variant) => variant.isActive)\n"
+    },
+    {
+      "beforeBlock": "        gender: automaticGender,\n",
+      "afterBlock": "        gender: preferredGender,\n"
+    },
+    {
+      "beforeBlock": "      if (automaticGender) {\n        const leftGender = canonicalOrderGender(left.variants[0]?.gender) === automaticGender ? 0 : 1\n        const rightGender = canonicalOrderGender(right.variants[0]?.gender) === automaticGender ? 0 : 1\n        if (leftGender !== rightGender) return leftGender - rightGender\n      }\n",
+      "afterBlock": "      if (preferredGender) {\n        const leftGender = canonicalOrderGender(left.variants[0]?.gender) === preferredGender ? 0 : 1\n        const rightGender = canonicalOrderGender(right.variants[0]?.gender) === preferredGender ? 0 : 1\n        if (leftGender !== rightGender) return leftGender - rightGender\n      }\n"
+    },
+    {
+      "beforeBlock": "      // Product gender is only a default. If the chosen existing SKU carries an\n      // explicit opposite gender, keep that concrete catalog fact instead of fabricating\n      // a default-gender SKU with the selected color/size/material.\n      gender: automaticGender ? (selected.gender || automaticGender) : '',\n",
+      "afterBlock": "      // A concrete manager-entered gender is authoritative. Otherwise keep the\n      // concrete gender of the selected existing SKU; product scope is only a fallback.\n      // This prevents unisex product picks from erasing a gender the Catalog already knows.\n      gender: enteredGender || canonicalOrderGender(selected.gender) || automaticGender,\n"
+    }
+  ]
+}
