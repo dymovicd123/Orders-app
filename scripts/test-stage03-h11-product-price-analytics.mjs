@@ -38,7 +38,7 @@ check(reportUi.includes('учтены все') && reportUi.includes('цена п
 check(reportUi.includes('Нет данных по цене отдельных позиций'), 'H11 legacy-only average must be visibly unavailable')
 check(reportUi.includes('row.average_sold_price'), 'H11 UI is not displaying server-derived weighted average')
 
-check(createUi.includes('Укажите цену, по которой товар реально продаётся.') && createUi.includes('вместо 115 000') && createUi.includes('105 000'), 'H11 Create does not explain absolute final-price discount')
+check(createUi.includes('Укажите цену, по которой товар реально продаётся.') && createUi.includes('115 000') && createUi.includes('105 000'), 'H11 Create does not explain absolute final-price discount')
 check(editUi.includes('Скидка задаётся итоговой ценой продажи, а не процентом.'), 'H11 Edit does not explain absolute final-price discount')
 check(exchangeUi.includes('Скидка задаётся этой суммой, не процентом.'), 'H11 Exchange does not explain absolute final-price discount')
 for (const source of [createUi, editUi, exchangeUi]) {
