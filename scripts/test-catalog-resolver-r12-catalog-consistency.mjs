@@ -25,6 +25,7 @@ check(review.includes('const colorVariants = facts.color'), 'R12 resolver does n
 check(review.includes('const sizeMatches = colorVariants.some'), 'R12 resolver does not validate size inside the chosen color/gender combination')
 check(review.includes('addReference(references.colors, normalizeCatalogCombinationColor(row.color))'), 'R12 Catalog colors are not added to resolver choices')
 check(review.includes('addReference(references.sizes, normalizeCatalogCombinationSize(row.size_label))'), 'R12 Catalog sizes are not added to resolver choices')
+check(review.includes('const referenceIdentity = (value: unknown)'), 'R12 resolver suggestion de-duplication missing')
 
 check(flow.includes('const needsCorrection = (context.unknownFields || []).includes(field)'), 'R12 frontend does not ask about the actual conflicting field')
 check(flow.includes('if (needsCorrection || missing)'), 'R12 non-empty conflicting fields can still be skipped')
