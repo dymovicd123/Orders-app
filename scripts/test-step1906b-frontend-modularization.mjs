@@ -27,38 +27,6 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 const root = process.cwd()
-const resolverR11Manifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-resolver-r11-known-gender-frontend-manifest.json'), 'utf8'))
-if (resolverR11Manifest?.version !== 1 || resolverR11Manifest?.revision !== 'catalog-resolver-r11-known-gender' || resolverR11Manifest?.file !== 'src/app/controllers/useWorkspaceViewModel.tsx') {
-  throw new Error('Catalog resolver R11 frontend manifest invalid')
-}
-if (!process.env.CATALOG_RESOLVER_R11_KNOWN_GENDER_NORMALIZED) {
-  const absolute = path.join(root, resolverR11Manifest.file)
-  const actual = fs.readFileSync(absolute, 'utf8')
-  let reverted = actual
-  for (const replacement of [...(resolverR11Manifest.replacements || [])].reverse()) {
-    const occurrences = reverted.split(replacement.afterBlock).length - 1
-    if (occurrences !== 1) throw new Error('Catalog resolver R11 frontend after-block missing or ambiguous')
-    reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-  }
-  fs.writeFileSync(absolute, reverted)
-  let childStatus = 1
-  try {
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, CATALOG_RESOLVER_R11_KNOWN_GENDER_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    fs.writeFileSync(absolute, actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG RESOLVER R11 KNOWN-GENDER FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
 const legacyPath = path.join(root, 'scripts/test-step1906b-frontend-modularization-legacy.mjs')
 const manifestPath = path.join(root, 'scripts/order-edit-safe-payment-corrections-frontend-manifest.json')
 const appPath = path.join(root, 'src/App.tsx')
@@ -123,6 +91,38 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const resolverR11Manifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-resolver-r11-known-gender-frontend-manifest.json'), 'utf8'))
+if (resolverR11Manifest?.version !== 1 || resolverR11Manifest?.revision !== 'catalog-resolver-r11-known-gender' || resolverR11Manifest?.file !== 'src/app/controllers/useWorkspaceViewModel.tsx') {
+  throw new Error('Catalog resolver R11 frontend manifest invalid')
+}
+if (!process.env.CATALOG_RESOLVER_R11_KNOWN_GENDER_NORMALIZED) {
+  const absolute = path.join(root, resolverR11Manifest.file)
+  const actual = fs.readFileSync(absolute, 'utf8')
+  let reverted = actual
+  for (const replacement of [...(resolverR11Manifest.replacements || [])].reverse()) {
+    const occurrences = reverted.split(replacement.afterBlock).length - 1
+    if (occurrences !== 1) throw new Error('Catalog resolver R11 frontend after-block missing or ambiguous')
+    reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+  }
+  fs.writeFileSync(absolute, reverted)
+  let childStatus = 1
+  try {
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, CATALOG_RESOLVER_R11_KNOWN_GENDER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    fs.writeFileSync(absolute, actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('CATALOG RESOLVER R11 KNOWN-GENDER FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const clientZammlerProdRuntimeManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/client-zammler-prod-runtime-frontend-manifest.json'), 'utf8'))
 if (clientZammlerProdRuntimeManifest?.version !== 1 || clientZammlerProdRuntimeManifest?.revision !== 'client-zammler-prod-runtime-20260924') throw new Error('CLIENT-ZAMMLER Production frontend manifest invalid')
 const clientZammlerProdFrontendBlobSha = (value) => {
