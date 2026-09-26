@@ -685,12 +685,12 @@ export type FinanceReportResponse = {
       quantity: number
       order_count: number
       order_sales: number
-      itemized_quantity: number
-      itemized_gross_sales: number
-      itemized_order_count: number
-      legacy_order_count: number
-      legacy_quantity: number
-      average_sold_price: number | null
+      itemized_quantity?: number
+      itemized_gross_sales?: number
+      itemized_order_count?: number
+      legacy_order_count?: number
+      legacy_quantity?: number
+      average_sold_price?: number | null
     }>
     cities: Array<{ city: string; order_count: number; total_sales: number; total_received: number; total_debt: number; total_returns: number; clients: number; managers: number }>
     days: Array<{ date: string; order_count: number; total_sales: number; total_received: number; total_returns: number; total_debt: number }>
