@@ -247,6 +247,17 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
   const referencesResult = await db.prepare(
     `SELECT kind, value FROM reference_values WHERE is_active = 1 AND kind IN ('material','length','color','size','child_age') ORDER BY sort_order, value`
   ).all<{ kind: string; value: string }>();
+  const catalogReferenceResult = await db.prepare(
+    `SELECT 'material' AS kind, material AS value FROM catalog_stock_positions WHERE is_active = 1 AND TRIM(COALESCE(material, '')) <> ''
+     UNION
+     SELECT 'length' AS kind, length AS value FROM catalog_stock_positions WHERE is_active = 1 AND TRIM(COALESCE(length, '')) <> ''
+     UNION
+     SELECT 'color' AS kind, color AS value FROM catalog_variants WHERE is_active = 1 AND TRIM(COALESCE(color, '')) <> ''
+     UNION
+     SELECT CASE WHEN COALESCE(category, 'adult') = 'child' THEN 'child_age' ELSE 'size' END AS kind, size_label AS value
+     FROM catalog_variants
+     WHERE is_active = 1 AND TRIM(COALESCE(size_label, '')) <> ''`
+  ).all<{ kind: string; value: string }>();
   // Loading hundreds of products is only necessary when the base product itself is unknown.
   // Known-product issues stay focused on the one missing fact and keep the page lightweight.
   const productsResult = product?.id
@@ -254,16 +265,45 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
     : await db.prepare(
         `SELECT id, name, category FROM catalog_products WHERE is_active = 1 ORDER BY name COLLATE NOCASE, id LIMIT 300`
       ).all<{ id: number; name: string; category: string }>();
+
+  const executions = product?.id
+    ? (await db.prepare(`SELECT id, material, length FROM catalog_stock_positions WHERE product_id = ? AND is_active = 1 ORDER BY material, length, id`).bind(product.id).all<{ id: number; material: string; length: string }>()).results || []
+    : [];
   const references: CatalogReferenceOptions = { materials: ['СТАНДАРТ'], lengths: ['СТАНДАРТ'], colors: [], sizes: [], childAges: [] };
-  for (const row of referencesResult.results || []) {
-    const value = upperText(row.value);
-    if (!value) continue;
-    if (row.kind === 'material' && !references.materials.includes(value)) references.materials.push(value);
-    else if (row.kind === 'length' && !references.lengths.includes(value)) references.lengths.push(value);
-    else if (row.kind === 'color' && !references.colors.includes(value)) references.colors.push(value);
-    else if (row.kind === 'size' && !references.sizes.includes(value)) references.sizes.push(value);
-    else if (row.kind === 'child_age' && !references.childAges.includes(value)) references.childAges.push(value);
-  }
+  const referenceIdentity = (value: unknown) => upperText(value)
+    .replace(/[‐‑‒–—-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const addReference = (target: string[], value: unknown) => {
+    const normalized = upperText(value);
+    const identity = referenceIdentity(normalized);
+    if (normalized && identity && !target.some((entry) => referenceIdentity(entry) === identity)) target.push(normalized);
+  };
+  const absorbReference = (row: { kind: string; value: string }) => {
+    if (row.kind === 'material') addReference(references.materials, row.value);
+    else if (row.kind === 'length') addReference(references.lengths, row.value);
+    else if (row.kind === 'color') addReference(references.colors, row.value);
+    else if (row.kind === 'size') addReference(references.sizes, row.value);
+    else if (row.kind === 'child_age') addReference(references.childAges, row.value);
+  };
+  for (const row of referencesResult.results || []) absorbReference(row);
+  // Any value already used by an active Catalog SKU is a known business fact even if the
+  // auxiliary reference list is incomplete.
+  for (const row of catalogReferenceResult.results || []) absorbReference(row);
+
+  const canonicalKnownValue = (values: string[], value: unknown) => {
+    const identity = referenceIdentity(value);
+    if (!identity) return '';
+    return values.find((entry) => referenceIdentity(entry) === identity) || '';
+  };
+  const knownMaterial = canonicalKnownValue(references.materials, facts.material);
+  const knownLength = canonicalKnownValue(references.lengths, facts.length);
+  const knownColor = canonicalKnownValue(references.colors, facts.color);
+  const knownSize = canonicalKnownValue(facts.category === 'child' ? references.childAges : references.sizes, facts.size);
+  if (knownMaterial) facts.material = canonicalStockPositionValue(knownMaterial);
+  if (knownLength) facts.length = canonicalStockPositionValue(knownLength);
+  if (knownColor) facts.color = normalizeCatalogCombinationColor(knownColor);
+  if (knownSize) facts.size = normalizeCatalogCombinationSize(knownSize);
 
   let execution: { id: number; product_id: number; material: string; length: string; is_active: number } | null = null;
   let existingVariant: { id: number } | null = null;
@@ -280,15 +320,16 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
       }
     }
 
-    // Exact existing identity is authoritative even if a reference row is stale. Otherwise
-    // every independent fact is classified before the UI invites the admin to confirm it.
     if (!existingVariant?.id) {
-      if (!await catalogReferenceDbValueExists(db, 'material', facts.material)) unknownFields.push('material');
-      if (!await catalogReferenceDbValueExists(db, 'length', facts.length)) unknownFields.push('length');
+      // Resolver is an anomaly guard, not a compatibility questionnaire.
+      // Human-entered facts are accepted independently once the system recognizes them
+      // in the reference lists or anywhere in the active Catalog. A missing exact SKU
+      // combination is allowed to proceed without asking the manager to reconfirm facts.
+      if (!knownMaterial) unknownFields.push('material');
+      if (!knownLength) unknownFields.push('length');
       if ((productGenderScope === 'unisex' && !facts.gender) || (facts.gender && facts.gender !== 'ЖЕН' && facts.gender !== 'МУЖ')) unknownFields.push('gender');
-      if (!await catalogReferenceDbValueExists(db, 'color', facts.color)) unknownFields.push('color');
-      const sizeKind = facts.category === 'child' ? 'child_age' : 'size';
-      if (!await catalogReferenceDbValueExists(db, sizeKind, facts.size)) unknownFields.push('size');
+      if (!knownColor) unknownFields.push('color');
+      if (!knownSize) unknownFields.push('size');
     }
 
     if (!product?.id) issueType = 'unknown_product';
@@ -297,10 +338,6 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
     else if (!execution?.id) issueType = 'new_execution';
     else issueType = 'missing_combination';
   }
-
-  const executions = product?.id
-    ? (await db.prepare(`SELECT id, material, length FROM catalog_stock_positions WHERE product_id = ? AND is_active = 1 ORDER BY material, length, id`).bind(product.id).all<{ id: number; material: string; length: string }>()).results || []
-    : [];
 
   return {
     ok: true,
