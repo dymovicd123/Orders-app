@@ -1,0 +1,111 @@
+name: DIAG Ethno Cardigan newly-created read-only
+
+on:
+  push:
+    branches:
+      - 'diag/ethno-cardigan-readonly-20260927'
+    paths:
+      - '.github/workflows/diag-ethno-cardigan-new-variants-readonly.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Newly-created variants read-only
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exact Production guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Read only
+        shell: bash
+        run: |
+          set -euo pipefail
+          q() { echo; echo "===== $1 ====="; npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$2" --json; }
+
+          q "NEW_VARIANTS_TODAY" "
+            WITH rt AS (
+              SELECT inventory_source, variant_id, SUM(quantity) AS reserved
+              FROM inventory_reservations
+              WHERE status='active'
+              GROUP BY inventory_source, variant_id
+            )
+            SELECT v.id AS variant_id, v.created_at, v.updated_at, v.stock_position_id AS execution_id,
+                   v.category, v.gender, v.color, v.material, v.length, v.size_label,
+                   s.inventory_source, COALESCE(s.quantity,0) AS physical,
+                   COALESCE(s.reserved_quantity,0) AS stored_reserved,
+                   COALESCE(rt.reserved,0) AS live_reserved,
+                   COALESCE(s.quantity,0)-COALESCE(rt.reserved,0) AS live_available,
+                   s.last_action, s.last_source_ref, s.updated_at AS stock_updated_at
+            FROM catalog_variants v
+            LEFT JOIN inventory_stock s ON s.variant_id=v.id
+            LEFT JOIN rt ON rt.variant_id=v.id AND rt.inventory_source=s.inventory_source
+            WHERE v.product_id=75 AND v.is_active=1
+              AND datetime(v.created_at) >= datetime('2026-09-27T00:00:00Z')
+            ORDER BY datetime(v.created_at), v.id, s.inventory_source;
+          "
+
+          q "NEW_EXECUTIONS_TODAY" "
+            SELECT sp.id, sp.created_at, sp.updated_at, sp.material, sp.length, sp.is_active,
+                   COUNT(v.id) AS variants
+            FROM catalog_stock_positions sp
+            LEFT JOIN catalog_variants v ON v.stock_position_id=sp.id AND v.is_active=1
+            WHERE sp.product_id=75
+              AND datetime(sp.created_at) >= datetime('2026-09-27T00:00:00Z')
+            GROUP BY sp.id
+            ORDER BY datetime(sp.created_at), sp.id;
+          "
+
+          q "ARRIVALS_FOR_NEW_VARIANTS" "
+            SELECT m.id, m.reference_id, m.created_at, m.inventory_source, m.variant_id,
+                   m.color_snapshot AS color, m.material_snapshot AS material,
+                   m.length_snapshot AS length, m.size_snapshot AS size,
+                   m.quantity_delta, m.quantity_after
+            FROM inventory_movements m
+            WHERE m.movement_type='arrival' AND m.product_id=75
+              AND m.variant_id IN (
+                SELECT id FROM catalog_variants
+                WHERE product_id=75 AND datetime(created_at) >= datetime('2026-09-27T00:00:00Z')
+              )
+            ORDER BY datetime(m.created_at), m.id;
+          "
+
+          q "COLLISION_ARRIVAL_HISTORY" "
+            SELECT m.id, m.reference_id, m.created_at, m.inventory_source, m.variant_id,
+                   v.color, v.size_label, m.quantity_delta, m.quantity_after
+            FROM inventory_movements m
+            JOIN catalog_variants v ON v.id=m.variant_id
+            WHERE m.movement_type='arrival' AND m.product_id=75
+              AND m.variant_id IN (1277,1438,1278,1436,1279,1441,1303,1473)
+            ORDER BY datetime(m.created_at), m.id;
+          "
+
+          q "RECENT_ORDERS_COLLISION_VARIANTS" "
+            SELECT o.id AS order_id, o.external_id, o.order_date, o.created_at,
+                   oi.id AS order_item_id, oi.variant_id, oi.product_name_snapshot,
+                   oi.gender_snapshot, oi.color_snapshot, oi.material_snapshot,
+                   oi.length_snapshot, oi.size_snapshot, oi.quantity, oi.source_type,
+                   r.id AS reservation_id, r.inventory_source, r.quantity AS reserved_quantity, r.status
+            FROM order_items oi
+            JOIN orders o ON o.id=oi.order_id
+            LEFT JOIN inventory_reservations r ON r.order_item_id=oi.id
+            WHERE oi.variant_id IN (1277,1438,1278,1436,1279,1441,1303,1473)
+            ORDER BY datetime(o.created_at) DESC, oi.id DESC
+            LIMIT 30;
+          "
