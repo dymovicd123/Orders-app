@@ -702,29 +702,17 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
     }
 
     if (canonicalIdentityKnown) {
-      const rows = exactCatalogVariants.length
-        ? exactCatalogVariants.slice(0, 4).map((variant) => ({
-          key: `catalog-only-${variant.id}`,
-          title: [variant.productName, variant.gender, variant.color, variant.material, variant.length, variant.sizeLabel].filter(Boolean).join(' · '),
-          quantity: null as number | null,
-        }))
-        : similarSourceRows.slice(0, 4).map((row) => ({
-          key: `source-similar-${row.id}`,
-          title: [row.productName, row.gender, row.color, row.material, row.length, row.size].filter(Boolean).join(' · '),
-          quantity: availableFor(row),
-          detail: `На месте ${physicalFor(row)} · в заказах ${reservedFor(row)} · свободно ${availableFor(row)}`,
-        }))
       return {
-        tone: 'danger',
-        label: exactCatalogVariants.length ? `Для заказа не хватает ${requiredQuantity} шт.` : 'Остаток этой комбинации ещё не зафиксирован',
+        tone: 'warning',
+        label: 'Остаток этой комбинации ещё не зафиксирован',
         note: exactCatalogVariants.length
-          ? `В каталоге такой вариант есть, но в «${sourceTitle}» по учёту свободно 0. Для заказа нужно ${requiredQuantity} шт. Если товар перед вами, уточните фактическое количество.`
-          : `Все значения известны системе и новая комбинация создастся автоматически, но её физический остаток ещё не зафиксирован. Если товар перед вами, укажите реальное количество перед сохранением заказа.`,
-        rows,
+          ? `Комбинация есть в каталоге, но в «${sourceTitle}» её физический остаток ещё не зафиксирован. Если товар перед вами, можно сверить реальное количество.`
+          : 'Все значения известны системе и новая комбинация создастся автоматически, но её физический остаток ещё не зафиксирован. Если товар перед вами, можно сверить реальное количество.',
+        rows: [],
         canObservePhysical: true,
         currentPhysical: 0,
         currentReserved: 0,
-        needsAttention: true,
+        needsAttention: false,
       }
     }
 
