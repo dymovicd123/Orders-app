@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "revision": "catalog-semantic-sku-identity-r1",
+  "files": {
+    "worker/domains/catalog.ts": {
+      "beforeGitBlob": "1cba1e87d6d8d41f3b820b8fdfa9f005ed3e2cb8",
+      "afterGitBlob": "9cb0482bb49909d298a8c3eb7516ee8b39d74064",
+      "beforeLines": 1329,
+      "afterLines": 1363,
+      "baselineFixture": "scripts/fixtures/catalog-semantic-sku-identity/worker/domains/catalog.ts"
+    },
+    "worker/domains/inventory-movement.ts": {
+      "beforeGitBlob": "730334dd5dfb7691598237a7ac86180bf5fd1995",
+      "afterGitBlob": "dc4f64b84407d205dcc2309ed4906338e4b1dae4",
+      "beforeLines": 2012,
+      "afterLines": 2033,
+      "baselineFixture": "scripts/fixtures/catalog-semantic-sku-identity/worker/domains/inventory-movement.ts"
+    }
+  }
+}
