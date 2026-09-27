@@ -5,7 +5,7 @@ import { chunksOf, mapSqlRows } from '../core/sql.ts'
 import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, normalizeCatalogCategory, normalizeSourceType, toInt, upperText } from '../core/text.ts'
 import type { InventoryItemInput, InventoryMovementKind, SourceType } from '../core/types.ts'
 import type { CanonicalVariantSnapshot } from './catalog.ts'
-import { isCatalogIdentityV3Enabled, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, normalizeCatalogProductIdentityKey } from './catalog.ts'
+import { catalogColorIdentity, isCatalogIdentityV3Enabled, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, normalizeCatalogProductIdentityKey } from './catalog.ts'
 import { findInventoryMovementMatch, listInventory } from './inventory-read.ts'
 import { isReversibleInventoryMovementReference } from './inventory-reservations.ts'
 import type { InventoryResolvedItem } from './order-core.ts'
@@ -246,29 +246,48 @@ export async function resolveInventoryCreatableItemsBulk(
      ORDER BY id ASC`
   ).bind(executionIdsJson).all<VariantRow>()) as VariantRow[];
 
-  const variantKey = (executionId: number, category: unknown, gender: unknown, color: unknown, size: unknown) => [
+  const variantExactKey = (executionId: number, category: unknown, gender: unknown, color: unknown, size: unknown) => [
     executionId,
     normalizeAudienceCategory(category, size),
     normalizeCatalogCombinationGender(gender),
     normalizeCatalogCombinationColor(color),
     normalizeCatalogCombinationSize(size),
   ].join('¦');
+  const variantSemanticKey = (executionId: number, category: unknown, gender: unknown, color: unknown, size: unknown) => [
+    executionId,
+    normalizeAudienceCategory(category, size),
+    normalizeCatalogCombinationGender(gender),
+    catalogColorIdentity(color),
+    normalizeCatalogCombinationSize(size),
+  ].join('¦');
+  const buildVariantLookups = (rows: VariantRow[]) => {
+    const exact = new Map<string, VariantRow>();
+    const semantic = new Map<string, VariantRow>();
+    for (const row of rows) {
+      const exactKey = variantExactKey(toInt(row.stock_position_id, 0), row.category, row.gender, row.color, row.size_label);
+      if (!exact.has(exactKey)) exact.set(exactKey, row);
+      const semanticKey = variantSemanticKey(toInt(row.stock_position_id, 0), row.category, row.gender, row.color, row.size_label);
+      if (!semantic.has(semanticKey)) semantic.set(semanticKey, row);
+    }
+    return { exact, semantic };
+  };
 
   let variants = await loadVariants();
-  let variantByKey = new Map(variants.map(row => [variantKey(toInt(row.stock_position_id, 0), row.category, row.gender, row.color, row.size_label), row]));
+  let { exact: variantByExactKey, semantic: variantBySemanticKey } = buildVariantLookups(variants);
   const missingVariants = new Map<string, Record<string, unknown>>();
   rawItems.forEach((item, index) => {
     const product = productForItem[index]!;
     const execution = executionForItem[index]!;
     const gender = resolvedGenderForItem[index];
-    const key = variantKey(toInt(execution.id, 0), item.category, gender, item.color, item.size);
-    if (variantByKey.has(key) || missingVariants.has(key)) return;
+    const exactKey = variantExactKey(toInt(execution.id, 0), item.category, gender, item.color, item.size);
+    const semanticKey = variantSemanticKey(toInt(execution.id, 0), item.category, gender, item.color, item.size);
+    if (variantByExactKey.has(exactKey) || variantBySemanticKey.has(semanticKey) || missingVariants.has(semanticKey)) return;
     const category = normalizeAudienceCategory(item.category, item.size);
-    const color = normalizeCatalogCombinationColor(item.color);
+    const color = catalogColorIdentity(item.color);
     const size = normalizeCatalogCombinationSize(item.size);
     const material = canonicalStockPositionValue(execution.material);
     const length = canonicalStockPositionValue(execution.length);
-    missingVariants.set(key, {
+    missingVariants.set(semanticKey, {
       externalId: makeVariantExternalId(cleanText(product.name), category, gender, color, material, length, size),
       productId: toInt(product.id, 0),
       executionId: toInt(execution.id, 0),
@@ -324,14 +343,16 @@ export async function resolveInventoryCreatableItemsBulk(
        FROM json_each(?) j`
     ).bind(now, now, variantsJson).run();
     variants = await loadVariants();
-    variantByKey = new Map(variants.map(row => [variantKey(toInt(row.stock_position_id, 0), row.category, row.gender, row.color, row.size_label), row]));
+    ({ exact: variantByExactKey, semantic: variantBySemanticKey } = buildVariantLookups(variants));
   }
 
   return rawItems.map((item, index) => {
     const product = productForItem[index]!;
     const execution = executionForItem[index]!;
     const resolvedGender = resolvedGenderForItem[index];
-    const variant = variantByKey.get(variantKey(toInt(execution.id, 0), item.category, resolvedGender, item.color, item.size));
+    const exactKey = variantExactKey(toInt(execution.id, 0), item.category, resolvedGender, item.color, item.size);
+    const semanticKey = variantSemanticKey(toInt(execution.id, 0), item.category, resolvedGender, item.color, item.size);
+    const variant = variantByExactKey.get(exactKey) || variantBySemanticKey.get(semanticKey);
     if (!variant?.id) throw new Error('Не удалось создать складскую комбинацию товара. Повторите действие.');
     return {
       productId: toInt(product.id, 0) || null,
@@ -339,7 +360,7 @@ export async function resolveInventoryCreatableItemsBulk(
       productName: upperText(product.name),
       category: normalizeAudienceCategory(item.category, item.size),
       gender: resolvedGender || null,
-      color: normalizeCatalogCombinationColor(item.color) || null,
+      color: normalizeCatalogCombinationColor(variant.color) || null,
       material: canonicalStockPositionValue(execution.material),
       length: canonicalStockPositionValue(execution.length),
       size: normalizeCatalogCombinationSize(item.size) || null,
