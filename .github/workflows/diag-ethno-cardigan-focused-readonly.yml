@@ -1,0 +1,206 @@
+name: DIAG Ethno Cardigan focused read-only
+
+on:
+  push:
+    branches:
+      - 'diag/ethno-cardigan-readonly-20260927'
+    paths:
+      - '.github/workflows/diag-ethno-cardigan-focused-readonly.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Focused read-only Production D1 inspection
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hard-stop on exact Production identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "diag/ethno-cardigan-readonly-20260927" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders_db_branch2' wrangler.jsonc || grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc; then
+            echo "Branch2 binding detected; refusing diagnostic." >&2
+            exit 20
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Focused Ethno Cardigan diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          q() {
+            local label="$1"; shift
+            echo
+            echo "===== $label ====="
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$1" --json
+          }
+
+          q "LATEST_ARRIVAL_BATCHES" "
+            SELECT reference_id,
+                   MIN(created_at) AS first_at,
+                   MAX(created_at) AS last_at,
+                   COUNT(*) AS row_count,
+                   SUM(quantity_delta) AS total_quantity
+            FROM inventory_movements
+            WHERE movement_type='arrival' AND product_id=75
+            GROUP BY reference_id
+            ORDER BY datetime(MAX(created_at)) DESC, MAX(id) DESC
+            LIMIT 8;
+          "
+
+          q "LATEST_ARRIVAL_ROWS" "
+            WITH batches AS (
+              SELECT reference_id, MAX(created_at) AS last_at, MAX(id) AS max_id
+              FROM inventory_movements
+              WHERE movement_type='arrival' AND product_id=75
+              GROUP BY reference_id
+              ORDER BY datetime(last_at) DESC, max_id DESC
+              LIMIT 5
+            )
+            SELECT m.id, m.reference_id, m.created_at, m.inventory_source, m.variant_id,
+                   m.gender_snapshot AS gender, m.color_snapshot AS color,
+                   m.material_snapshot AS material, m.length_snapshot AS length,
+                   m.size_snapshot AS size, m.quantity_delta, m.quantity_after
+            FROM inventory_movements m
+            JOIN batches b ON b.reference_id=m.reference_id
+            WHERE m.movement_type='arrival' AND m.product_id=75
+            ORDER BY datetime(m.created_at) DESC, m.reference_id, m.id;
+          "
+
+          q "LATEST_ARRIVAL_AVAILABILITY" "
+            WITH batches AS (
+              SELECT reference_id, MAX(created_at) AS last_at, MAX(id) AS max_id
+              FROM inventory_movements
+              WHERE movement_type='arrival' AND product_id=75
+              GROUP BY reference_id
+              ORDER BY datetime(last_at) DESC, max_id DESC
+              LIMIT 5
+            ), variants AS (
+              SELECT DISTINCT m.variant_id
+              FROM inventory_movements m
+              JOIN batches b ON b.reference_id=m.reference_id
+              WHERE m.movement_type='arrival' AND m.product_id=75 AND m.variant_id IS NOT NULL
+            ), reservation_totals AS (
+              SELECT inventory_source, variant_id, SUM(quantity) AS reserved
+              FROM inventory_reservations
+              WHERE status='active' AND variant_id IN (SELECT variant_id FROM variants)
+              GROUP BY inventory_source, variant_id
+            )
+            SELECT v.id AS variant_id, v.stock_position_id AS execution_id,
+                   v.category, v.gender, v.color, v.material, v.length, v.size_label,
+                   s.inventory_source, COALESCE(s.quantity,0) AS physical,
+                   COALESCE(s.reserved_quantity,0) AS stored_reserved,
+                   COALESCE(rt.reserved,0) AS live_reserved,
+                   COALESCE(s.quantity,0)-COALESCE(rt.reserved,0) AS live_available,
+                   s.last_action, s.last_source_ref, s.updated_at
+            FROM variants x
+            JOIN catalog_variants v ON v.id=x.variant_id
+            LEFT JOIN inventory_stock s ON s.variant_id=v.id
+            LEFT JOIN reservation_totals rt ON rt.variant_id=v.id AND rt.inventory_source=s.inventory_source
+            ORDER BY v.id, s.inventory_source;
+          "
+
+          q "COLOR_PUNCTUATION_COLLISIONS" "
+            SELECT v.stock_position_id AS execution_id,
+                   v.category, COALESCE(v.gender,'') AS gender,
+                   REPLACE(UPPER(TRIM(COALESCE(v.color,''))),'-',' ') AS color_identity,
+                   v.size_label,
+                   COUNT(DISTINCT UPPER(TRIM(COALESCE(v.color,'')))) AS spelling_count,
+                   GROUP_CONCAT(DISTINCT UPPER(TRIM(COALESCE(v.color,'')))) AS spellings,
+                   GROUP_CONCAT(v.id) AS variant_ids
+            FROM catalog_variants v
+            WHERE v.product_id=75 AND v.is_active=1
+            GROUP BY v.stock_position_id, v.category, COALESCE(v.gender,''),
+                     REPLACE(UPPER(TRIM(COALESCE(v.color,''))),'-',' '), v.size_label
+            HAVING COUNT(DISTINCT UPPER(TRIM(COALESCE(v.color,'')))) > 1
+            ORDER BY execution_id, color_identity, v.size_label;
+          "
+
+          q "COLLISION_STOCK_AND_RESERVATIONS" "
+            WITH collision_variants AS (
+              SELECT v.id
+              FROM catalog_variants v
+              JOIN (
+                SELECT stock_position_id, category, COALESCE(gender,'') AS gender,
+                       REPLACE(UPPER(TRIM(COALESCE(color,''))),'-',' ') AS color_identity,
+                       size_label
+                FROM catalog_variants
+                WHERE product_id=75 AND is_active=1
+                GROUP BY stock_position_id, category, COALESCE(gender,''),
+                         REPLACE(UPPER(TRIM(COALESCE(color,''))),'-',' '), size_label
+                HAVING COUNT(DISTINCT UPPER(TRIM(COALESCE(color,'')))) > 1
+              ) c
+                ON c.stock_position_id=v.stock_position_id
+               AND c.category=v.category
+               AND c.gender=COALESCE(v.gender,'')
+               AND c.color_identity=REPLACE(UPPER(TRIM(COALESCE(v.color,''))),'-',' ')
+               AND COALESCE(c.size_label,'')=COALESCE(v.size_label,'')
+              WHERE v.product_id=75 AND v.is_active=1
+            ), rt AS (
+              SELECT inventory_source, variant_id, SUM(quantity) AS reserved
+              FROM inventory_reservations
+              WHERE status='active' AND variant_id IN (SELECT id FROM collision_variants)
+              GROUP BY inventory_source, variant_id
+            )
+            SELECT v.id AS variant_id, v.stock_position_id AS execution_id, v.color, v.material, v.length, v.size_label,
+                   s.inventory_source, COALESCE(s.quantity,0) AS physical,
+                   COALESCE(s.reserved_quantity,0) AS stored_reserved,
+                   COALESCE(rt.reserved,0) AS live_reserved,
+                   COALESCE(s.quantity,0)-COALESCE(rt.reserved,0) AS live_available,
+                   s.last_action, s.last_source_ref, s.updated_at
+            FROM collision_variants cv
+            JOIN catalog_variants v ON v.id=cv.id
+            LEFT JOIN inventory_stock s ON s.variant_id=v.id
+            LEFT JOIN rt ON rt.variant_id=v.id AND rt.inventory_source=s.inventory_source
+            ORDER BY execution_id, REPLACE(UPPER(TRIM(v.color)),'-',' '), v.size_label, v.color, s.inventory_source;
+          "
+
+          q "COLOR_REFERENCE_COLLISIONS" "
+            SELECT id, kind, value, is_active, sort_order
+            FROM reference_values
+            WHERE kind='color' AND is_active=1
+              AND REPLACE(UPPER(TRIM(value)),'-',' ') IN (
+                SELECT REPLACE(UPPER(TRIM(color)),'-',' ')
+                FROM catalog_variants
+                WHERE product_id=75 AND is_active=1
+                GROUP BY REPLACE(UPPER(TRIM(color)),'-',' ')
+                HAVING COUNT(DISTINCT UPPER(TRIM(color))) > 1
+              )
+            ORDER BY REPLACE(UPPER(TRIM(value)),'-',' '), id;
+          "
+
+          q "KNOWN_FACT_UNION_FOR_COLLISION_COLORS" "
+            WITH facts AS (
+              SELECT 'ref' AS source, value
+              FROM reference_values
+              WHERE is_active=1 AND kind='color'
+              UNION
+              SELECT 'catalog' AS source, color AS value
+              FROM catalog_variants
+              WHERE is_active=1 AND TRIM(COALESCE(color,'')) <> ''
+            )
+            SELECT source, value,
+                   REPLACE(UPPER(TRIM(value)),'-',' ') AS identity
+            FROM facts
+            WHERE REPLACE(UPPER(TRIM(value)),'-',' ') IN (
+              SELECT REPLACE(UPPER(TRIM(color)),'-',' ')
+              FROM catalog_variants
+              WHERE product_id=75 AND is_active=1
+              GROUP BY REPLACE(UPPER(TRIM(color)),'-',' ')
+              HAVING COUNT(DISTINCT UPPER(TRIM(color))) > 1
+            )
+            ORDER BY identity, value, source;
+          "
