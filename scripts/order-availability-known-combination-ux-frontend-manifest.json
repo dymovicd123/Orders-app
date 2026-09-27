@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "revision": "order-availability-known-combination-ux-r1",
+  "file": "src/app/controllers/useWorkspaceViewModel.tsx",
+  "beforeGitBlob": "d8d4b0cada9736d1af2b1f9d77232c194fb4f631",
+  "afterGitBlob": "8fbc9e753d7e7561c65ade6e931605e7497c5b69",
+  "beforeLines": 1050,
+  "afterLines": 1038,
+  "replacements": [
+    {
+      "beforeBlock": "    if (canonicalIdentityKnown) {\n      const rows = exactCatalogVariants.length\n        ? exactCatalogVariants.slice(0, 4).map((variant) => ({\n          key: `catalog-only-${variant.id}`,\n          title: [variant.productName, variant.gender, variant.color, variant.material, variant.length, variant.sizeLabel].filter(Boolean).join(' · '),\n          quantity: null as number | null,\n        }))\n        : similarSourceRows.slice(0, 4).map((row) => ({\n          key: `source-similar-${row.id}`,\n          title: [row.productName, row.gender, row.color, row.material, row.length, row.size].filter(Boolean).join(' · '),\n          quantity: availableFor(row),\n          detail: `На месте ${physicalFor(row)} · в заказах ${reservedFor(row)} · свободно ${availableFor(row)}`,\n        }))\n      return {\n        tone: 'danger',\n        label: exactCatalogVariants.length ? `Для заказа не хватает ${requiredQuantity} шт.` : 'Остаток этой комбинации ещё не зафиксирован',\n        note: exactCatalogVariants.length\n          ? `В каталоге такой вариант есть, но в «${sourceTitle}» по учёту свободно 0. Для заказа нужно ${requiredQuantity} шт. Если товар перед вами, уточните фактическое количество.`\n          : `Все значения известны системе и новая комбинация создастся автоматически, но её физический остаток ещё не зафиксирован. Если товар перед вами, укажите реальное количество перед сохранением заказа.`,\n        rows,\n        canObservePhysical: true,\n        currentPhysical: 0,\n        currentReserved: 0,\n        needsAttention: true,\n      }\n    }\n\n",
+      "afterBlock": "    if (canonicalIdentityKnown) {\n      return {\n        tone: 'warning',\n        label: 'Остаток этой комбинации ещё не зафиксирован',\n        note: exactCatalogVariants.length\n          ? `Комбинация есть в каталоге, но в «${sourceTitle}» её физический остаток ещё не зафиксирован. Если товар перед вами, можно сверить реальное количество.`\n          : 'Все значения известны системе и новая комбинация создастся автоматически, но её физический остаток ещё не зафиксирован. Если товар перед вами, можно сверить реальное количество.',\n        rows: [],\n        canObservePhysical: true,\n        currentPhysical: 0,\n        currentReserved: 0,\n        needsAttention: false,\n      }\n    }\n\n"
+    }
+  ]
+}
