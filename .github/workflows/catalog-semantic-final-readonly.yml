@@ -1,0 +1,132 @@
+name: Catalog semantic final Branch2 read-only
+
+on:
+  push:
+    branches:
+      - 'fix/catalog-semantic-data-correction-branch2-20260927'
+    paths:
+      - '.github/workflows/catalog-semantic-final-readonly.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      VERIFY_DB: 'orders_db_branch2'
+      VERIFY_PAIRS: '[{"source":480,"keeper":1084},{"source":1277,"keeper":1438},{"source":1278,"keeper":1436},{"source":1279,"keeper":1441}]'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Environment hard-stop
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo "Cross-environment binding detected" >&2
+            exit 20
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - run: npm ci
+
+      - name: Final semantic SKU read-only verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { execFileSync } = require('node:child_process')
+          const db=process.env.VERIFY_DB
+          const pairs=JSON.parse(process.env.VERIFY_PAIRS)
+          const clean=v=>String(v??'').trim()
+          const upper=v=>clean(v).toUpperCase()
+          const normColor=v=>(upper(v)||'БЕЗ ЦВЕТА').replace(/[‐-‒–—-]+/g,' ').replace(/\s+/g,' ').trim()
+          const normGender=v=>{const x=upper(v); if(x.includes('ЖЕН'))return'ЖЕН'; if(x.includes('МУЖ'))return'МУЖ'; return x}
+          const normSize=v=>{const x=upper(v); return (!x||['БЕЗ РАЗМЕРА','БЕЗРАЗМЕРА','Б/Р'].includes(x))?'':x}
+          const normCategory=(v,size)=>{const x=clean(v).toLowerCase(); if(x==='child'||x==='детский'||x.includes('дет'))return'child'; const n=Number(clean(size)); return Number.isInteger(n)&&n>=1&&n<=12?'child':'adult'}
+          const sem=r=>[Number(r.stock_position_id||0),normCategory(r.category,r.size_label),normGender(r.gender),normColor(r.color),normSize(r.size_label)].join('¦')
+          const q=sql=>{
+            const t=String(sql).trim()
+            if(!/^(SELECT|PRAGMA)\b/i.test(t)) throw new Error('non-read query rejected')
+            if(/\b(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|REPLACE|VACUUM|ATTACH|DETACH)\b/i.test(t)) throw new Error('mutation token rejected')
+            const raw=execFileSync('npx',['wrangler','d1','execute',db,'--remote','--config','wrangler.jsonc','--command',t,'--json'],{encoding:'utf8',maxBuffer:64*1024*1024})
+            const j=JSON.parse(raw)
+            if(!Array.isArray(j)||!j[0]||!Array.isArray(j[0].results)) throw new Error('bad D1 response')
+            const m=j[0].meta||{}
+            if(Number(m.changes||0)!==0||Number(m.rows_written||0)!==0) throw new Error('read unexpectedly wrote')
+            return j[0].results
+          }
+          const active=q('SELECT id,product_id,stock_position_id,category,gender,color,size_label,is_active FROM catalog_variants WHERE is_active=1 AND stock_position_id IS NOT NULL ORDER BY id')
+          const groups=new Map()
+          for(const r of active){const k=sem(r); if(!groups.has(k))groups.set(k,[]); groups.get(k).push(Number(r.id))}
+          const collisions=[...groups.entries()].filter(([,ids])=>ids.length>1).map(([key,ids])=>({key,ids}))
+          if(collisions.length) throw new Error('active semantic collisions remain: '+JSON.stringify(collisions))
+
+          const identity=q("SELECT value FROM catalog_identity_meta WHERE key='catalog_identity_v3' LIMIT 1")[0]
+          if(String(identity?.value||'').toLowerCase()!=='active') throw new Error('catalog_identity_v3 is not active')
+          const human=q("SELECT value FROM inventory_model_meta WHERE key='human_inventory_v2' LIMIT 1")[0]
+          if(String(human?.value||'').toLowerCase()!=='active') throw new Error('human_inventory_v2 is not active')
+
+          const refTables=['order_items','inventory_movements','workshop_tasks','inventory_reservations','catalog_input_aliases','inventory_lifecycle_events','inventory_transfer_items','inventory_stock_checks','inventory_operation_evidence']
+          const sourceIds=pairs.map(p=>Number(p.source))
+          const sourceSql=sourceIds.join(',')
+          for(const table of refTables){
+            const n=Number(q('SELECT COUNT(*) AS c FROM '+table+' WHERE variant_id IN ('+sourceSql+')')[0]?.c||0)
+            if(n!==0) throw new Error('source references remain in '+table+': '+n)
+          }
+
+          const targetIds=[...new Set(pairs.flatMap(p=>[Number(p.source),Number(p.keeper)]))]
+          const targetSql=targetIds.join(',')
+          const variants=q('SELECT id,is_active,stock_position_id,category,gender,color,size_label FROM catalog_variants WHERE id IN ('+targetSql+') ORDER BY id')
+          const vmap=new Map(variants.map(r=>[Number(r.id),r]))
+          for(const p of pairs){
+            const s=vmap.get(Number(p.source)), k=vmap.get(Number(p.keeper))
+            if(!s||Number(s.is_active)!==0) throw new Error('source not retired '+p.source)
+            if(!k||Number(k.is_active)!==1) throw new Error('keeper not active '+p.keeper)
+            if(sem(s)!==sem(k)) throw new Error('pair semantic drift '+p.source+'->'+p.keeper)
+            const hist=q('SELECT keeper_variant_id FROM catalog_identity_variant_merges WHERE old_variant_id='+Number(p.source)+' LIMIT 1')[0]
+            if(Number(hist?.keeper_variant_id||0)!==Number(p.keeper)) throw new Error('merge history mismatch '+p.source+'->'+p.keeper)
+            const audit=q("SELECT keeper_variant_id,status FROM catalog_semantic_variant_corrections WHERE correction_key='semantic-sku-20260927-r1' AND source_variant_id="+Number(p.source)+" LIMIT 1")[0]
+            if(Number(audit?.keeper_variant_id||0)!==Number(p.keeper)||String(audit?.status)!=='completed') throw new Error('correction audit mismatch '+p.source+'->'+p.keeper)
+          }
+
+          const stock=q('SELECT id,inventory_source,variant_id,quantity,reserved_quantity FROM inventory_stock WHERE variant_id IN ('+targetSql+') ORDER BY inventory_source,variant_id,id')
+          for(const p of pairs){
+            for(const src of ['warehouse','boutique']){
+              const base=q("SELECT COALESCE(SUM(quantity_before),0) AS q,COALESCE(SUM(reserved_before),0) AS r FROM catalog_semantic_stock_correction_baseline WHERE correction_key='semantic-sku-20260927-r1' AND inventory_source='"+src+"' AND variant_id IN ("+Number(p.source)+","+Number(p.keeper)+")")[0]
+              const rows=stock.filter(r=>r.inventory_source===src&&[Number(p.source),Number(p.keeper)].includes(Number(r.variant_id)))
+              const currentQ=rows.reduce((a,r)=>a+Number(r.quantity||0),0)
+              if(currentQ!==Number(base?.q||0)) throw new Error('physical total mismatch '+p.source+'->'+p.keeper+' '+src+': '+currentQ+' vs '+Number(base?.q||0))
+              const sourceRows=rows.filter(r=>Number(r.variant_id)===Number(p.source))
+              if(sourceRows.some(r=>Number(r.quantity||0)!==0||Number(r.reserved_quantity||0)!==0)) throw new Error('retired source carries current stock '+p.source+' '+src)
+              const keeperReserved=rows.filter(r=>Number(r.variant_id)===Number(p.keeper)).reduce((a,r)=>a+Number(r.reserved_quantity||0),0)
+              const activeReserved=Number(q("SELECT COALESCE(SUM(quantity),0) AS q FROM inventory_reservations WHERE status='active' AND inventory_source='"+src+"' AND variant_id="+Number(p.keeper))[0]?.q||0)
+              if(keeperReserved!==activeReserved) throw new Error('keeper reserved mismatch '+p.keeper+' '+src+': '+keeperReserved+' vs '+activeReserved)
+            }
+          }
+
+          const activeStocktakes=q('SELECT i.session_id,i.variant_id FROM inventory_stocktake_items i JOIN inventory_stocktake_sessions s ON s.id=i.session_id WHERE s.status="active" AND i.variant_id IN ('+targetSql+')')
+          if(activeStocktakes.length) throw new Error('active stocktake touches corrected variants')
+
+          
+
+          console.log('FINAL_SEMANTIC_SKU_VERIFY_OK',JSON.stringify({
+            db,
+            activeSemanticCollisions:0,
+            pairs,
+            currentStock:stock,
+            sourceOperationalReferences:0,
+            activeStocktakes:0
+          },null,2))
+          NODE
