@@ -1,6 +1,6 @@
 # Система заказов — актуальный continuation
 
-Updated: 2026-09-26  
+Updated: 2026-09-27  
 Repository: `dymovicd123/Orders-app`  
 Branch represented by this file: **main / Production**
 
@@ -9,9 +9,9 @@ Branch represented by this file: **main / Production**
 ## Текущее состояние Production
 
 Последний runtime-changing Production baseline:
-- `87b54bc2ac85f2a7a4fb965c9a25385ec233dcf0` — Catalog selection / retirement integrity.
-- Exact Production deploy для него: GitHub Actions run `36253621529` — success (`cloudflare-deploy/main`).
-- Предыдущий resolver baseline `4ecd8e2aeab8afc5805c5eb209542659acc09a72` остаётся в этой lineage.
+- `645b54ae320e45e1d34861f2e6e715819fcf5e43` — Catalog semantic SKU identity: punctuation-equivalent colors no longer materialize as a new physical SKU when an equivalent active combination already exists.
+- Exact Production deploy для него: GitHub Actions run `36320979456` — success (`cloudflare-deploy/main`).
+- Предыдущий Catalog retirement baseline `87b54bc2ac85f2a7a4fb965c9a25385ec233dcf0` и resolver baseline `4ecd8e2aeab8afc5805c5eb209542659acc09a72` остаются в этой lineage.
 
 Завершено и находится в Production:
 - **Stage01** — завершён и выпущен через Production release candidate PR #102.
@@ -20,6 +20,7 @@ Branch represented by this file: **main / Production**
 - **CLIENT-ZAMMLER** — отдельный клиентский запрос, завершён и в Production. Это **не roadmap Stage04**.
 - **Resolver R11/R12/R13** — завершён и в Production. Сейчас resolver считается стабильным; новые изменения только при конкретном обнаруженном дефекте.
 - **Catalog selection / retirement integrity** — завершён и в Production через PR #214: рабочие product pickers не показывают retired products; известные характеристики берутся из maintained references ∪ active Catalog; whole-product retirement мягкий и блокируется активными SKU/остатками/резервами/незавершёнными операциями; reactivation заново проверяет canonical name/alias conflicts.
+- **Catalog semantic SKU identity prevention** — PR #220, runtime `645b54ae320e45e1d34861f2e6e715819fcf5e43`: exact spelling остаётся fast path, но harmless hyphen/space color variants переиспользуют существующий semantic SKU; Arrival materialization больше не должна создавать новый physical `variant_id` только из-за дефиса/пробела. Существующие исторические дубли пока **не объединены**.
 - D1 read-budget/O1/R5 optimizations уже находятся в истории main; следующий performance pass делать только по свежим Query Insights, а не «по инерции».
 
 ## Что НЕ находится в Production
@@ -94,6 +95,7 @@ Stage02 stock-truth работа закрыта и уже в Production. Ста�
 - Resolver — **anomaly guard, а не анкета на совместимость**.
 - Известный факт считается известным, если он есть в maintained references **или любом активном Catalog SKU**.
 - Безопасные различия пунктуации/пробелов, например `ТЕМНО-СЕРЫЙ` и `ТЕМНО СЕРЫЙ`, канонизируются автоматически.
+- Harmless punctuation-equivalent **color** spellings не должны материализовываться как два новых physical SKU: runtime использует exact-first lookup + semantic fallback; существующие старые semantic duplicates исправляются только отдельной контролируемой data-correction операцией.
 - Новая точная комбинация уже известных фактов не должна вызывать лишний вопрос; deterministic safe combination path может создать/связать комбинацию с physical stock 0.
 - R11 сохраняется: явный пол менеджера → пол выбранного concrete SKU → fixed product scope fallback.
 - Reference duplicate protection не переписывает старые заказы/варианты/историю.
@@ -132,6 +134,7 @@ Stage02 stock-truth работа закрыта и уже в Production. Ста�
 ## Актуальные подробные документы
 
 - `docs/PROJECT_CONTEXT.md` — постоянные архитектурные/рабочие инварианты.
+- `docs/continuation/CATALOG_SEMANTIC_SKU_IDENTITY_20260927.md` — текущий incident/checkpoint по ЭТНО КАРДИГАНУ, PR #220/#221, доказательства deploy и план безопасной коррекции существующих дублей.
 - `docs/continuation/CLIENT_ZAMMLER_COMPLETION_20260924.md` — завершённый ZAMMLER scope.
 - `docs/continuation/WAREHOUSE_CURRENT_CONTEXT.md` — исторические детали Warehouse/Stage02; верхняя status-note должна трактоваться как актуальная.
 - `docs/continuation/STAGE02_PHASE2_STOCK_TRUTH_MODEL_20260919.md` — canonical stock-truth semantics, этап уже завершён.
@@ -140,4 +143,4 @@ Stage02 stock-truth работа закрыта и уже в Production. Ста�
 
 ## Точка продолжения
 
-Никакой незапрошенной крупной разработки сейчас не начинать. Следующее содержательное действие определяется следующим вопросом/решением пользователя. Если речь пойдёт о Stage03 rollout, сначала заново сверить current `main` и `branch2` и построить fresh promotion candidate.
+Текущий следующий кусок работы — **не новый Stage**, а отдельная контролируемая коррекция уже существующих semantic SKU duplicates, обнаруженных на ЭТНО КАРДИГАНЕ. Перед любой D1 mutation заново открыть GitHub, отдельно read-only проверить Production и Branch2, доказать keeper mapping/операционные ссылки и только затем выполнять retry-safe correction. PR #220 уже предотвращает создание новых дублей, но существующие Production пары (включая 1277/1438, 1278/1436, 1279/1441, 1303/1473) ещё не объединены. Stage03 rollout не смешивать с этой работой.
