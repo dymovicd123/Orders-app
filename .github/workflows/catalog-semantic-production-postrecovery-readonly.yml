@@ -1,0 +1,64 @@
+name: Catalog semantic Production post-recovery verification
+
+on:
+  push:
+    branches:
+      - 'fix/catalog-semantic-data-correction-main-20260927'
+    paths:
+      - '.github/workflows/catalog-semantic-production-postrecovery-readonly.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Hard-stop Production identity and Stage03 boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+          test ! -e migrations/0073_v72_order_item_pricing_foundation.sql
+          test ! -e migrations/0074_v72_retained_order_pricing_mode.sql
+      - name: Verify corrected Production state read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          q() {
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$1" --json
+          }
+          echo '=== TARGET VARIANTS ==='
+          q "SELECT id,stock_position_id,category,gender,color,size_label,is_active FROM catalog_variants WHERE id IN (480,1084,1277,1438,1278,1436,1279,1441,1303,1473) ORDER BY id"
+          echo '=== TARGET CURRENT STOCK ==='
+          q "SELECT id,inventory_source,variant_id,quantity,reserved_quantity,last_action,last_source_ref,updated_at FROM inventory_stock WHERE variant_id IN (480,1084,1277,1438,1278,1436,1279,1441,1303,1473) ORDER BY inventory_source,variant_id,id"
+          echo '=== ACTIVE RESERVATIONS ==='
+          q "SELECT variant_id,inventory_source,COUNT(*) rows_count,COALESCE(SUM(quantity),0) quantity FROM inventory_reservations WHERE status='active' AND variant_id IN (1084,1438,1436,1441,1473) GROUP BY variant_id,inventory_source ORDER BY variant_id,inventory_source"
+          echo '=== SOURCE REFERENCE COUNTS ==='
+          q "SELECT
+            (SELECT COUNT(*) FROM order_items WHERE variant_id IN (480,1277,1278,1279,1303)) AS order_items,
+            (SELECT COUNT(*) FROM inventory_movements WHERE variant_id IN (480,1277,1278,1279,1303)) AS inventory_movements,
+            (SELECT COUNT(*) FROM workshop_tasks WHERE variant_id IN (480,1277,1278,1279,1303)) AS workshop_tasks,
+            (SELECT COUNT(*) FROM inventory_reservations WHERE variant_id IN (480,1277,1278,1279,1303)) AS inventory_reservations,
+            (SELECT COUNT(*) FROM catalog_input_aliases WHERE variant_id IN (480,1277,1278,1279,1303)) AS catalog_input_aliases,
+            (SELECT COUNT(*) FROM inventory_lifecycle_events WHERE variant_id IN (480,1277,1278,1279,1303)) AS inventory_lifecycle_events,
+            (SELECT COUNT(*) FROM inventory_transfer_items WHERE variant_id IN (480,1277,1278,1279,1303)) AS inventory_transfer_items,
+            (SELECT COUNT(*) FROM inventory_stock_checks WHERE variant_id IN (480,1277,1278,1279,1303)) AS inventory_stock_checks,
+            (SELECT COUNT(*) FROM inventory_operation_evidence WHERE variant_id IN (480,1277,1278,1279,1303)) AS inventory_operation_evidence"
+          echo '=== STRICT POST-BASELINE MOVEMENTS ==='
+          q "SELECT id,inventory_source,variant_id,movement_type,quantity_delta,quantity_after,reference_type,reference_id,created_at FROM inventory_movements WHERE variant_id IN (1084,1438,1436,1441,1473) AND datetime(created_at) > datetime((SELECT MIN(captured_at) FROM catalog_semantic_stock_correction_baseline WHERE correction_key='semantic-sku-20260927-r1')) ORDER BY datetime(created_at),id"
+          echo '=== RECOVERY AUDIT ==='
+          q "SELECT * FROM catalog_semantic_stock_recoveries WHERE recovery_key='semantic-sku-20260927-r1-stock-recovery-v1'"
