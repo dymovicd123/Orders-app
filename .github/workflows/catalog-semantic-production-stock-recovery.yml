@@ -1,0 +1,49 @@
+name: Catalog semantic Production stock recovery
+
+on:
+  push:
+    branches:
+      - 'fix/catalog-semantic-data-correction-main-20260927'
+    paths:
+      - 'scripts/.catalog-semantic-production-stock-recovery-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout exact recovery branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Hard-stop Production identity, branch scope and Stage03 boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == 'fix/catalog-semantic-data-correction-main-20260927' ]]
+          git merge-base --is-ancestor 9ed7638c5af6831c6df5be506a1c42b96580a01f HEAD
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Fq 'orders-app-branch2' wrangler.jsonc
+          ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+          ! grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          test ! -e migrations/0073_v72_order_item_pricing_foundation.sql
+          test ! -e migrations/0074_v72_retained_order_pricing_mode.sql
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Syntax check recovery runner
+        run: node --check scripts/run-catalog-semantic-production-stock-recovery.mjs
+      - name: Recover only the two proven lost Physical quantities
+        run: node scripts/run-catalog-semantic-production-stock-recovery.mjs
