@@ -128,6 +128,10 @@ const protectedBefore = {
 }
 const protectedHashes=Object.fromEntries(Object.entries(protectedBefore).map(([k,v])=>[k,hash(v)]))
 console.log('PRE_CORRECTION',JSON.stringify({pairs,collisionsBefore,blockers,stockBefore:stockBefore.map(r=>({id:r.id,source:r.inventory_source,variant:r.variant_id,q:r.quantity,r:r.reserved_quantity})),protectedHashes},null,2))
+if (process.env.CORRECTION_DRY_RUN === '1') {
+  console.log('DRY_RUN_COMPLETE')
+  process.exit(0)
+}
 
 mutate('CREATE TABLE IF NOT EXISTS catalog_semantic_variant_corrections (correction_key TEXT NOT NULL,source_variant_id INTEGER NOT NULL,keeper_variant_id INTEGER NOT NULL,semantic_key TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ("pending","completed")),started_at TEXT NOT NULL,completed_at TEXT,PRIMARY KEY(correction_key,source_variant_id))','create correction audit')
 mutate('CREATE TABLE IF NOT EXISTS catalog_semantic_stock_correction_baseline (correction_key TEXT NOT NULL,stock_id INTEGER NOT NULL,inventory_source TEXT NOT NULL,variant_id INTEGER NOT NULL,quantity_before INTEGER NOT NULL,reserved_before INTEGER NOT NULL,product_id INTEGER,product_name_snapshot TEXT,gender_snapshot TEXT,color_snapshot TEXT,material_snapshot TEXT,length_snapshot TEXT,size_snapshot TEXT,last_action TEXT,last_source_ref TEXT,captured_at TEXT NOT NULL,PRIMARY KEY(correction_key,stock_id))','create stock baseline')
