@@ -1,0 +1,53 @@
+name: Catalog semantic Production recovery read-only
+
+on:
+  push:
+    branches:
+      - 'fix/catalog-semantic-data-correction-main-20260927'
+    paths:
+      - '.github/workflows/catalog-semantic-production-recovery-readonly.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Hard-stop Production identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+      - name: Read current correction state only
+        shell: bash
+        run: |
+          set -euo pipefail
+          q() {
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$1" --json
+          }
+          echo '=== CORRECTION MAP ==='
+          q "SELECT * FROM catalog_semantic_variant_corrections WHERE correction_key='semantic-sku-20260927-r1' ORDER BY source_variant_id"
+          echo '=== IMMUTABLE STOCK BASELINE ==='
+          q "SELECT correction_key,stock_id,inventory_source,variant_id,quantity_before,reserved_before,captured_at FROM catalog_semantic_stock_correction_baseline WHERE correction_key='semantic-sku-20260927-r1' ORDER BY inventory_source,variant_id,stock_id"
+          echo '=== CURRENT STOCK ==='
+          q "SELECT id,inventory_source,variant_id,quantity,reserved_quantity,last_action,last_source_ref,updated_at FROM inventory_stock WHERE variant_id IN (480,1084,1277,1438,1278,1436,1279,1441,1303,1473) ORDER BY inventory_source,variant_id,id"
+          echo '=== POST-CAPTURE MOVEMENTS ==='
+          q "SELECT id,inventory_source,variant_id,movement_type,quantity_delta,quantity_after,reference_type,reference_id,created_at FROM inventory_movements WHERE variant_id IN (1084,1438,1436,1441,1473) AND created_at >= (SELECT MIN(captured_at) FROM catalog_semantic_stock_correction_baseline WHERE correction_key='semantic-sku-20260927-r1') ORDER BY created_at,id"
+          echo '=== ACTIVE RESERVATIONS ==='
+          q "SELECT variant_id,inventory_source,COUNT(*) rows_count,COALESCE(SUM(quantity),0) quantity FROM inventory_reservations WHERE status='active' AND variant_id IN (1084,1438,1436,1441,1473) GROUP BY variant_id,inventory_source ORDER BY variant_id,inventory_source"
+          echo '=== MERGE HISTORY ==='
+          q "SELECT old_variant_id,keeper_variant_id,reason,merged_at FROM catalog_identity_variant_merges WHERE old_variant_id IN (480,1277,1278,1279,1303) ORDER BY old_variant_id"
