@@ -1,0 +1,203 @@
+name: DIAG Ethno Cardigan read-only
+
+on:
+  push:
+    branches:
+      - 'diag/ethno-cardigan-readonly-20260927'
+    paths:
+      - '.github/workflows/diag-ethno-cardigan-readonly.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Read-only Production D1 inspection
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Hard-stop on exact Production identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "diag/ethno-cardigan-readonly-20260927" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders_db_branch2' wrangler.jsonc || grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc; then
+            echo "Branch2 binding detected; refusing diagnostic." >&2
+            exit 20
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Read-only Ethno Cardigan data
+        shell: bash
+        run: |
+          set -euo pipefail
+          q() {
+            local label="$1"
+            local sql="$2"
+            echo
+            echo "===== $label ====="
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$sql" --json
+          }
+
+          q "PRODUCTS" "
+            SELECT id, name, category, gender_scope, is_active, external_id, created_at, updated_at
+            FROM catalog_products
+            WHERE UPPER(COALESCE(name,'')) LIKE '%ЭТНО%'
+               OR UPPER(COALESCE(name,'')) LIKE '%КАРДИГАН%'
+            ORDER BY id;
+          "
+
+          q "PRODUCT_ALIASES" "
+            SELECT a.id, a.alias_key, a.raw_value, a.product_id, p.name AS product_name,
+                   p.is_active AS product_active, a.created_at, a.updated_at
+            FROM catalog_product_aliases a
+            JOIN catalog_products p ON p.id = a.product_id
+            WHERE UPPER(COALESCE(p.name,'')) LIKE '%ЭТНО%'
+               OR UPPER(COALESCE(p.name,'')) LIKE '%КАРДИГАН%'
+               OR UPPER(COALESCE(a.raw_value,'')) LIKE '%ЭТНО%'
+               OR UPPER(COALESCE(a.raw_value,'')) LIKE '%КАРДИГАН%'
+            ORDER BY a.id;
+          "
+
+          q "EXECUTIONS_AND_VARIANTS" "
+            SELECT p.id AS product_id, p.name AS product_name, p.is_active AS product_active,
+                   sp.id AS execution_id, sp.material AS execution_material, sp.length AS execution_length,
+                   sp.is_active AS execution_active,
+                   v.id AS variant_id, v.external_id AS variant_external_id, v.is_active AS variant_active,
+                   v.category, v.gender, v.color, v.material AS variant_material, v.length AS variant_length,
+                   v.size_label, v.created_at, v.updated_at
+            FROM catalog_products p
+            LEFT JOIN catalog_stock_positions sp ON sp.product_id = p.id
+            LEFT JOIN catalog_variants v ON v.product_id = p.id AND v.stock_position_id = sp.id
+            WHERE UPPER(COALESCE(p.name,'')) LIKE '%ЭТНО%'
+               OR UPPER(COALESCE(p.name,'')) LIKE '%КАРДИГАН%'
+            ORDER BY p.id, sp.id, v.id;
+          "
+
+          q "CURRENT_STOCK" "
+            SELECT s.id AS stock_id, s.inventory_source, s.product_id, p.name AS product_name,
+                   s.variant_id, v.is_active AS variant_active,
+                   v.stock_position_id AS execution_id, v.category, v.gender, v.color,
+                   v.material, v.length, v.size_label,
+                   s.quantity, s.reserved_quantity,
+                   (COALESCE(s.quantity,0) - COALESCE(s.reserved_quantity,0)) AS stored_available,
+                   COALESCE((
+                     SELECT SUM(r.quantity) FROM inventory_reservations r
+                     WHERE r.status='active' AND r.inventory_source=s.inventory_source AND r.variant_id=s.variant_id
+                   ),0) AS live_active_reservations,
+                   (COALESCE(s.quantity,0) - COALESCE((
+                     SELECT SUM(r.quantity) FROM inventory_reservations r
+                     WHERE r.status='active' AND r.inventory_source=s.inventory_source AND r.variant_id=s.variant_id
+                   ),0)) AS live_available,
+                   s.product_name_snapshot, s.gender_snapshot, s.color_snapshot,
+                   s.material_snapshot, s.length_snapshot, s.size_snapshot,
+                   s.last_action, s.last_source_ref, s.created_at, s.updated_at
+            FROM inventory_stock s
+            LEFT JOIN catalog_variants v ON v.id = s.variant_id
+            LEFT JOIN catalog_products p ON p.id = COALESCE(v.product_id, s.product_id)
+            WHERE UPPER(COALESCE(p.name,s.product_name_snapshot,'')) LIKE '%ЭТНО%'
+               OR UPPER(COALESCE(p.name,s.product_name_snapshot,'')) LIKE '%КАРДИГАН%'
+            ORDER BY s.inventory_source, s.variant_id, s.id;
+          "
+
+          q "RECENT_ARRIVAL_MOVEMENTS" "
+            SELECT m.id, m.created_at, m.inventory_source, m.product_id, m.variant_id,
+                   p.name AS current_product_name,
+                   m.product_name_snapshot, m.gender_snapshot, m.color_snapshot,
+                   m.material_snapshot, m.length_snapshot, m.size_snapshot,
+                   m.quantity_delta, m.quantity_after,
+                   m.reference_type, m.reference_id, m.comment
+            FROM inventory_movements m
+            LEFT JOIN catalog_variants v ON v.id = m.variant_id
+            LEFT JOIN catalog_products p ON p.id = COALESCE(v.product_id, m.product_id)
+            WHERE m.movement_type='arrival'
+              AND (
+                UPPER(COALESCE(p.name,m.product_name_snapshot,'')) LIKE '%ЭТНО%'
+                OR UPPER(COALESCE(p.name,m.product_name_snapshot,'')) LIKE '%КАРДИГАН%'
+              )
+            ORDER BY datetime(m.created_at) DESC, m.id DESC
+            LIMIT 100;
+          "
+
+          q "ACTIVE_RESERVATIONS" "
+            SELECT r.id, r.order_id, o.external_id AS order_external_id, r.order_item_id,
+                   r.inventory_source, r.variant_id, r.quantity, r.status, r.created_at, r.updated_at,
+                   p.name AS product_name, v.category, v.gender, v.color, v.material, v.length, v.size_label
+            FROM inventory_reservations r
+            LEFT JOIN orders o ON o.id=r.order_id
+            LEFT JOIN catalog_variants v ON v.id=r.variant_id
+            LEFT JOIN catalog_products p ON p.id=v.product_id
+            WHERE r.status='active'
+              AND (
+                UPPER(COALESCE(p.name,'')) LIKE '%ЭТНО%'
+                OR UPPER(COALESCE(p.name,'')) LIKE '%КАРДИГАН%'
+              )
+            ORDER BY r.variant_id, r.id;
+          "
+
+          q "VALUE_ALIASES_RELEVANT_TO_VARIANTS" "
+            SELECT a.id, a.kind, a.alias_key, a.raw_value, a.canonical_value, a.created_at, a.updated_at
+            FROM catalog_value_aliases a
+            WHERE EXISTS (
+              SELECT 1
+              FROM catalog_variants v
+              JOIN catalog_products p ON p.id=v.product_id
+              WHERE (
+                UPPER(COALESCE(p.name,'')) LIKE '%ЭТНО%'
+                OR UPPER(COALESCE(p.name,'')) LIKE '%КАРДИГАН%'
+              )
+              AND (
+                UPPER(COALESCE(a.raw_value,'')) IN (
+                  UPPER(COALESCE(v.color,'')), UPPER(COALESCE(v.material,'')),
+                  UPPER(COALESCE(v.length,'')), UPPER(COALESCE(v.size_label,''))
+                )
+                OR UPPER(COALESCE(a.canonical_value,'')) IN (
+                  UPPER(COALESCE(v.color,'')), UPPER(COALESCE(v.material,'')),
+                  UPPER(COALESCE(v.length,'')), UPPER(COALESCE(v.size_label,''))
+                )
+              )
+            )
+            ORDER BY a.kind, a.id;
+          "
+
+          q "DUPLICATE_HUMAN_IDENTITIES" "
+            SELECT p.name AS product_name,
+                   COALESCE(v.category,'adult') AS category,
+                   COALESCE(v.gender,'') AS gender,
+                   UPPER(TRIM(COALESCE(v.color,''))) AS color,
+                   UPPER(TRIM(COALESCE(v.material,''))) AS material,
+                   UPPER(TRIM(COALESCE(v.length,''))) AS length,
+                   UPPER(TRIM(COALESCE(v.size_label,''))) AS size_label,
+                   COUNT(*) AS variant_rows,
+                   GROUP_CONCAT(v.id) AS variant_ids,
+                   GROUP_CONCAT(v.is_active) AS active_flags
+            FROM catalog_variants v
+            JOIN catalog_products p ON p.id=v.product_id
+            WHERE (
+              UPPER(COALESCE(p.name,'')) LIKE '%ЭТНО%'
+              OR UPPER(COALESCE(p.name,'')) LIKE '%КАРДИГАН%'
+            )
+            GROUP BY p.id, COALESCE(v.category,'adult'), COALESCE(v.gender,''),
+                     UPPER(TRIM(COALESCE(v.color,''))),
+                     UPPER(TRIM(COALESCE(v.material,''))),
+                     UPPER(TRIM(COALESCE(v.length,''))),
+                     UPPER(TRIM(COALESCE(v.size_label,'')))
+            HAVING COUNT(*) > 1
+            ORDER BY variant_rows DESC;
+          "
