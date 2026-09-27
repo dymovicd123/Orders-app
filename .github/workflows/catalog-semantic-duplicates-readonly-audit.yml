@@ -1,0 +1,411 @@
+name: Catalog semantic duplicates Branch2 read-only audit
+
+on:
+  push:
+    branches:
+      - 'audit/catalog-semantic-data-branch2-20260927-r1'
+    paths:
+      - '.github/workflows/catalog-semantic-duplicates-readonly-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Read-only semantic SKU duplicate audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      AUDIT_DB: 'orders_db_branch2'
+      AUDIT_BRANCH: 'audit/catalog-semantic-data-branch2-20260927-r1'
+    steps:
+      - name: Checkout exact audit branch
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on environment drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "$AUDIT_BRANCH" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders-app"' wrangler.jsonc || grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo "Cross-environment binding detected. Refusing audit." >&2
+            exit 20
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run read-only semantic duplicate forensic
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { execFileSync } = require('node:child_process')
+
+          const db = process.env.AUDIT_DB
+          const query = (sql) => {
+            const trimmed = String(sql || '').trim()
+            if (!/^(SELECT|PRAGMA)\b/i.test(trimmed)) throw new Error('Read-only audit rejected non-read query: ' + trimmed.slice(0, 80))
+            if (/\b(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|REPLACE|VACUUM|ATTACH|DETACH)\b/i.test(trimmed)) {
+              throw new Error('Read-only audit rejected mutation token: ' + trimmed.slice(0, 120))
+            }
+            const raw = execFileSync('npx', [
+              'wrangler', 'd1', 'execute', db,
+              '--remote', '--config', 'wrangler.jsonc',
+              '--command', trimmed, '--json',
+            ], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
+            const parsed = JSON.parse(raw)
+            if (!Array.isArray(parsed) || !parsed[0] || !Array.isArray(parsed[0].results)) {
+              throw new Error('Unexpected Wrangler JSON response')
+            }
+            const meta = parsed[0].meta || {}
+            if (Number(meta.changes || 0) !== 0 || Number(meta.rows_written || 0) !== 0) {
+              throw new Error('Read-only audit unexpectedly reported writes: ' + JSON.stringify(meta))
+            }
+            return parsed[0].results
+          }
+
+          const clean = (value) => String(value ?? '').trim()
+          const upper = (value) => clean(value).toUpperCase()
+          const normColor = (value) => (upper(value) || 'БЕЗ ЦВЕТА')
+            .replace(/[‐‑‒–—-]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+          const normGender = (value) => {
+            const text = upper(value)
+            if (!text) return ''
+            if (text.includes('ЖЕН')) return 'ЖЕН'
+            if (text.includes('МУЖ')) return 'МУЖ'
+            return text
+          }
+          const normSize = (value) => {
+            const text = upper(value)
+            return (!text || ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р'].includes(text)) ? '' : text
+          }
+          const normCategory = (value, size) => {
+            const text = clean(value).toLowerCase()
+            if (text === 'child' || text === 'детский' || text.includes('дет')) return 'child'
+            const sizeText = clean(size)
+            const sizeNumber = Number(sizeText)
+            if (Number.isInteger(sizeNumber) && sizeNumber >= 1 && sizeNumber <= 12) return 'child'
+            return 'adult'
+          }
+          const out = (label, value) => {
+            console.log('\n===== ' + label + ' =====')
+            console.log(JSON.stringify(value, null, 2))
+          }
+
+          const variantTables = query(`
+            SELECT name, sql
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND lower(COALESCE(sql, '')) LIKE '%variant_id%'
+            ORDER BY name
+          `)
+          out('VARIANT_LINKED_TABLE_SCHEMAS', variantTables)
+
+          const variants = query(`
+            SELECT
+              v.id,
+              v.external_id,
+              v.product_id,
+              p.name AS product_name,
+              p.is_active AS product_active,
+              v.stock_position_id,
+              sp.material AS execution_material,
+              sp.length AS execution_length,
+              sp.is_active AS execution_active,
+              v.category,
+              v.gender,
+              v.color,
+              v.size_label,
+              v.material AS variant_material,
+              v.length AS variant_length,
+              v.is_active,
+              v.created_at,
+              v.updated_at
+            FROM catalog_variants v
+            LEFT JOIN catalog_products p ON p.id = v.product_id
+            LEFT JOIN catalog_stock_positions sp ON sp.id = v.stock_position_id
+            ORDER BY v.product_id, v.stock_position_id, v.id
+          `)
+
+          const groups = new Map()
+          for (const row of variants) {
+            const key = [
+              Number(row.stock_position_id || 0),
+              normCategory(row.category, row.size_label),
+              normGender(row.gender),
+              normColor(row.color),
+              normSize(row.size_label),
+            ].join('¦')
+            if (!groups.has(key)) groups.set(key, [])
+            groups.get(key).push(row)
+          }
+
+          const duplicateGroups = [...groups.entries()]
+            .filter(([, rows]) => rows.length > 1)
+            .map(([key, rows]) => ({
+              key,
+              activeCount: rows.filter(r => Number(r.is_active || 0) === 1).length,
+              rows,
+            }))
+          const activeCollisions = duplicateGroups.filter(g => g.activeCount > 1)
+          const mixedHistorical = duplicateGroups.filter(g => g.activeCount === 1)
+
+          out('SEMANTIC_DUPLICATE_SUMMARY', {
+            totalVariants: variants.length,
+            duplicateSemanticGroupsAllStatuses: duplicateGroups.length,
+            activeCollisionGroups: activeCollisions.length,
+            activeCollisionVariantIds: activeCollisions.flatMap(g => g.rows.filter(r => Number(r.is_active || 0) === 1).map(r => Number(r.id))),
+            oneActivePlusHistoricalGroups: mixedHistorical.length,
+          })
+          out('ACTIVE_SEMANTIC_COLLISIONS', activeCollisions)
+
+          const targetIds = [...new Set(activeCollisions.flatMap(g => g.rows.map(r => Number(r.id)).filter(Boolean)))].sort((a,b) => a-b)
+          if (!targetIds.length) {
+            console.log('\nNO_ACTIVE_SEMANTIC_COLLISIONS_FOUND')
+            process.exit(0)
+          }
+          const ids = targetIds.join(',')
+          const groupByVariantId = new Map()
+          for (const group of activeCollisions) {
+            for (const row of group.rows) groupByVariantId.set(Number(row.id), group.key)
+          }
+
+          const directTableCounts = {}
+          for (const schema of variantTables) {
+            const table = String(schema.name || '')
+            if (!/^[A-Za-z0-9_]+$/.test(table)) continue
+            const columns = query(`PRAGMA table_info("${table}")`)
+            if (!columns.some(c => String(c.name) === 'variant_id')) continue
+            directTableCounts[table] = query(`
+              SELECT variant_id, COUNT(*) AS row_count
+              FROM "${table}"
+              WHERE variant_id IN (${ids})
+              GROUP BY variant_id
+              ORDER BY variant_id
+            `)
+          }
+          out('ALL_DIRECT_VARIANT_ID_REFERENCE_COUNTS', directTableCounts)
+
+          const stock = query(`
+            SELECT id, inventory_source, product_id, variant_id,
+                   product_name_snapshot, gender_snapshot, color_snapshot,
+                   material_snapshot, length_snapshot, size_snapshot,
+                   quantity, reserved_quantity, last_action, last_source_ref, updated_at
+            FROM inventory_stock
+            WHERE variant_id IN (${ids})
+            ORDER BY variant_id, inventory_source, id
+          `)
+          out('CURRENT_INVENTORY_STOCK_ROWS', stock)
+
+          const reservations = query(`
+            SELECT variant_id, inventory_source, status,
+                   COUNT(*) AS rows_count,
+                   COALESCE(SUM(quantity), 0) AS quantity
+            FROM inventory_reservations
+            WHERE variant_id IN (${ids})
+            GROUP BY variant_id, inventory_source, status
+            ORDER BY variant_id, inventory_source, status
+          `)
+          out('RESERVATIONS_BY_STATUS', reservations)
+
+          const activeReservations = query(`
+            SELECT id, order_id, order_item_id, inventory_source, product_id, variant_id,
+                   quantity, status, reference_type, reference_id, unresolved_reason,
+                   created_at, updated_at
+            FROM inventory_reservations
+            WHERE variant_id IN (${ids}) AND status = 'active'
+            ORDER BY variant_id, id
+          `)
+          out('ACTIVE_RESERVATION_ROWS', activeReservations)
+
+          const orderSummary = query(`
+            SELECT oi.variant_id,
+                   COUNT(*) AS item_rows,
+                   COALESCE(SUM(oi.quantity), 0) AS item_quantity,
+                   SUM(CASE WHEN COALESCE(o.order_status, 'active') = 'active'
+                              AND COALESCE(o.shipping_status, 'not_sent') <> 'sent'
+                            THEN 1 ELSE 0 END) AS open_unsent_rows,
+                   COALESCE(SUM(CASE WHEN COALESCE(o.order_status, 'active') = 'active'
+                                      AND COALESCE(o.shipping_status, 'not_sent') <> 'sent'
+                                    THEN oi.quantity ELSE 0 END), 0) AS open_unsent_quantity
+            FROM order_items oi
+            JOIN orders o ON o.id = oi.order_id
+            WHERE oi.variant_id IN (${ids})
+            GROUP BY oi.variant_id
+            ORDER BY oi.variant_id
+          `)
+          out('ORDER_REFERENCE_SUMMARY', orderSummary)
+
+          const orderSnapshots = query(`
+            SELECT oi.variant_id,
+                   oi.product_name_snapshot, oi.audience_type, oi.gender_snapshot,
+                   oi.color_snapshot, oi.material_snapshot, oi.length_snapshot, oi.size_snapshot,
+                   COUNT(*) AS rows_count,
+                   COALESCE(SUM(oi.quantity), 0) AS quantity
+            FROM order_items oi
+            WHERE oi.variant_id IN (${ids})
+            GROUP BY oi.variant_id, oi.product_name_snapshot, oi.audience_type, oi.gender_snapshot,
+                     oi.color_snapshot, oi.material_snapshot, oi.length_snapshot, oi.size_snapshot
+            ORDER BY oi.variant_id, rows_count DESC
+          `)
+          out('ORDER_HISTORICAL_SNAPSHOT_GROUPS', orderSnapshots)
+
+          const workshop = query(`
+            SELECT variant_id, status, COUNT(*) AS rows_count, COALESCE(SUM(quantity), 0) AS quantity
+            FROM workshop_tasks
+            WHERE variant_id IN (${ids})
+            GROUP BY variant_id, status
+            ORDER BY variant_id, status
+          `)
+          out('WORKSHOP_REFERENCES', workshop)
+
+          const movements = query(`
+            SELECT variant_id, inventory_source, movement_type, reference_type,
+                   COUNT(*) AS rows_count, COALESCE(SUM(quantity_delta), 0) AS quantity_delta
+            FROM inventory_movements
+            WHERE variant_id IN (${ids})
+            GROUP BY variant_id, inventory_source, movement_type, reference_type
+            ORDER BY variant_id, inventory_source, movement_type, reference_type
+          `)
+          out('MOVEMENT_REFERENCE_SUMMARY', movements)
+
+          const aliases = query(`
+            SELECT variant_id, COUNT(*) AS rows_count
+            FROM catalog_input_aliases
+            WHERE variant_id IN (${ids})
+            GROUP BY variant_id
+            ORDER BY variant_id
+          `)
+          out('CATALOG_INPUT_ALIASES', aliases)
+
+          const lifecycle = query(`
+            SELECT variant_id, status, event_type, inventory_source,
+                   COUNT(*) AS rows_count, COALESCE(SUM(quantity), 0) AS quantity
+            FROM inventory_lifecycle_events
+            WHERE variant_id IN (${ids})
+            GROUP BY variant_id, status, event_type, inventory_source
+            ORDER BY variant_id, status, event_type, inventory_source
+          `)
+          out('LIFECYCLE_REFERENCES', lifecycle)
+
+          const transfers = query(`
+            SELECT i.id, i.transfer_id, i.variant_id, i.quantity,
+                   i.from_quantity_before, i.from_quantity_after,
+                   i.to_quantity_before, i.to_quantity_after,
+                   i.source_reserved_quantity, i.source_shortage_after,
+                   d.external_id, d.from_source, d.to_source, d.status, d.created_at, d.reversed_at
+            FROM inventory_transfer_items i
+            JOIN inventory_transfer_documents d ON d.id = i.transfer_id
+            WHERE i.variant_id IN (${ids})
+            ORDER BY i.transfer_id, i.id
+          `)
+          out('TRANSFER_REFERENCES', transfers)
+
+          const transferCollisions = []
+          const transferGroups = new Map()
+          for (const row of transfers) {
+            const sem = groupByVariantId.get(Number(row.variant_id))
+            if (!sem) continue
+            const key = String(row.transfer_id) + '¦' + sem
+            if (!transferGroups.has(key)) transferGroups.set(key, [])
+            transferGroups.get(key).push(row)
+          }
+          for (const [key, rows] of transferGroups) {
+            if (new Set(rows.map(r => Number(r.variant_id))).size > 1) transferCollisions.push({ key, rows })
+          }
+          out('SAME_TRANSFER_SEMANTIC_COLLISIONS', transferCollisions)
+
+          const stockChecks = query(`
+            SELECT variant_id, check_type, reference_type,
+                   COUNT(*) AS rows_count,
+                   MIN(checked_at) AS first_checked_at,
+                   MAX(checked_at) AS last_checked_at
+            FROM inventory_stock_checks
+            WHERE variant_id IN (${ids})
+            GROUP BY variant_id, check_type, reference_type
+            ORDER BY variant_id, check_type, reference_type
+          `)
+          out('STOCK_CHECK_REFERENCES', stockChecks)
+
+          const stocktakes = query(`
+            SELECT i.id, i.session_id, i.variant_id, i.inventory_source, i.status AS item_status,
+                   i.opening_quantity, i.opening_reserved_quantity, i.baseline_quantity,
+                   i.counted_quantity, i.applied_quantity,
+                   s.status AS session_status, s.started_at, s.completed_at, s.cancelled_at
+            FROM inventory_stocktake_items i
+            JOIN inventory_stocktake_sessions s ON s.id = i.session_id
+            WHERE i.variant_id IN (${ids})
+            ORDER BY i.session_id, i.id
+          `)
+          out('STOCKTAKE_REFERENCES', stocktakes)
+
+          const stocktakeCollisions = []
+          const stocktakeGroups = new Map()
+          for (const row of stocktakes) {
+            const sem = groupByVariantId.get(Number(row.variant_id))
+            if (!sem) continue
+            const key = String(row.session_id) + '¦' + sem
+            if (!stocktakeGroups.has(key)) stocktakeGroups.set(key, [])
+            stocktakeGroups.get(key).push(row)
+          }
+          for (const [key, rows] of stocktakeGroups) {
+            if (new Set(rows.map(r => Number(r.variant_id))).size > 1) stocktakeCollisions.push({ key, rows })
+          }
+          out('SAME_STOCKTAKE_SEMANTIC_COLLISIONS', stocktakeCollisions)
+
+          const evidence = query(`
+            SELECT variant_id, inventory_source, operation_type,
+                   COUNT(*) AS rows_count,
+                   COALESCE(SUM(unexplained_quantity), 0) AS unexplained_quantity,
+                   MIN(occurred_at) AS first_occurred_at,
+                   MAX(occurred_at) AS last_occurred_at
+            FROM inventory_operation_evidence
+            WHERE variant_id IN (${ids})
+            GROUP BY variant_id, inventory_source, operation_type
+            ORDER BY variant_id, inventory_source, operation_type
+          `)
+          out('OPERATION_EVIDENCE_REFERENCES', evidence)
+
+          const identityHistory = query(`
+            SELECT old_variant_id, keeper_variant_id, reason, merged_at
+            FROM catalog_identity_variant_merges
+            WHERE old_variant_id IN (${ids}) OR keeper_variant_id IN (${ids})
+            ORDER BY old_variant_id
+          `)
+          out('CATALOG_IDENTITY_MERGE_HISTORY', identityHistory)
+
+          const genderHistory = query(`
+            SELECT old_variant_id, keeper_variant_id, product_id, target_gender, repair_mode, repaired_at
+            FROM catalog_gender_variant_repairs
+            WHERE old_variant_id IN (${ids}) OR keeper_variant_id IN (${ids})
+            ORDER BY old_variant_id
+          `)
+          out('CATALOG_GENDER_REPAIR_HISTORY', genderHistory)
+
+          const activeStocktakes = stocktakes.filter(r => String(r.session_status) === 'active')
+          const appliedTransferCollisions = transferCollisions.filter(c => c.rows.some(r => String(r.status) === 'applied'))
+          out('CORRECTION_PREFLIGHT', {
+            targetVariantIds: targetIds,
+            activeStocktakeRows: activeStocktakes,
+            sameStocktakeSemanticCollisions: stocktakeCollisions,
+            sameTransferSemanticCollisions: transferCollisions,
+            appliedTransferSemanticCollisions: appliedTransferCollisions,
+            rowsWrittenGuard: 0,
+          })
+
+          console.log('\nREAD_ONLY_AUDIT_COMPLETE')
+          NODE
