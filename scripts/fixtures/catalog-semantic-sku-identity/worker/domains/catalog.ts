@@ -248,14 +248,6 @@ export function normalizeCatalogCombinationColor(value: unknown) {
 }
 
 
-export function catalogColorIdentity(value: unknown) {
-  return normalizeCatalogCombinationColor(value)
-    .replace(/[‐‑‒–—-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-
 export function normalizeCatalogCombinationSize(value: unknown) {
   const text = upperText(value);
   if (!text || ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р'].includes(text)) return '';
@@ -328,8 +320,7 @@ export async function findCatalogCombinationV3(
   const normalizedGender = normalizeCatalogCombinationGender(gender);
   const normalizedColor = normalizeCatalogCombinationColor(color);
   const normalizedSize = normalizeCatalogCombinationSize(sizeLabel);
-  type CombinationRow = { id: number; product_id: number; stock_position_id: number; category: string; gender: string; color: string; size_label: string; is_active: number };
-  const exact = await db.prepare(
+  return await db.prepare(
     `SELECT id, product_id, stock_position_id, category, gender, color, size_label, is_active
      FROM catalog_variants
      WHERE stock_position_id = ? AND id <> ? AND is_active = 1
@@ -349,30 +340,7 @@ export async function findCatalogCombinationV3(
        END = ?
      ORDER BY id ASC LIMIT 1`
   ).bind(executionId, excludeId, normalizedCategory, normalizedGender, normalizedColor, normalizedSize)
-    .first<CombinationRow>();
-  if (exact?.id) return exact;
-
-  // Human-safe punctuation differences (for example СВЕТЛО-СЕРЫЙ vs СВЕТЛО СЕРЫЙ)
-  // are one color identity. Keep the exact lookup fast, then fall back only when it misses.
-  const candidates = await db.prepare(
-    `SELECT id, product_id, stock_position_id, category, gender, color, size_label, is_active
-     FROM catalog_variants
-     WHERE stock_position_id = ? AND id <> ? AND is_active = 1
-       AND COALESCE(category, 'adult') = ?
-       AND CASE
-         WHEN UPPER(TRIM(COALESCE(gender, ''))) LIKE '%ЖЕН%' THEN 'ЖЕН'
-         WHEN UPPER(TRIM(COALESCE(gender, ''))) LIKE '%МУЖ%' THEN 'МУЖ'
-         ELSE UPPER(TRIM(COALESCE(gender, '')))
-       END = ?
-       AND CASE
-         WHEN UPPER(TRIM(COALESCE(size_label, ''))) IN ('', 'БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р') THEN ''
-         ELSE UPPER(TRIM(size_label))
-       END = ?
-     ORDER BY id ASC
-     LIMIT 200`
-  ).bind(executionId, excludeId, normalizedCategory, normalizedGender, normalizedSize).all<CombinationRow>();
-  const semanticColor = catalogColorIdentity(normalizedColor);
-  return (candidates.results || []).find((row) => catalogColorIdentity(row.color) === semanticColor) || null;
+    .first<{ id: number; product_id: number; stock_position_id: number; category: string; gender: string; color: string; size_label: string; is_active: number }>();
 }
 
 
@@ -394,9 +362,7 @@ export async function createCatalogCombinationV3(
 ) {
   const category = normalizeAudienceCategory(input.category, input.sizeLabel);
   const gender = normalizeCatalogCombinationGender(input.gender);
-  // New combinations store one stable punctuation-insensitive color spelling so
-  // concurrent equivalent inputs cannot materialize two physical SKU identities.
-  const color = catalogColorIdentity(input.color);
+  const color = normalizeCatalogCombinationColor(input.color);
   const sizeLabel = normalizeCatalogCombinationSize(input.sizeLabel);
   const material = canonicalStockPositionValue(input.material);
   const length = canonicalStockPositionValue(input.length);
