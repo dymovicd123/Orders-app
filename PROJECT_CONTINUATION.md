@@ -26,7 +26,7 @@ Branch2 содержит весь завершённый Stage03 и послед
 - **Stage03 полностью технически закрыт на Branch2**: Create → Edit → payments/debt → Warehouse → Workshop → Return → Exchange → reports/history.
 - Resolver R11/R12/R13.
 - Catalog selection / retirement integrity: working pickers active-only, characteristics use maintained references ∪ active Catalog, whole-product retirement guarded/soft, retired products cannot receive active executions/SKUs, reactivation re-checks aliases/canonical identity.
-- Catalog semantic SKU identity prevention: exact spelling remains the fast path; punctuation-equivalent colors use semantic fallback during Catalog/Arrival materialization, preventing a new physical SKU split from harmless hyphen/space differences. Existing historical semantic duplicates remain for a separate controlled correction.
+- Catalog semantic SKU identity prevention + controlled correction: exact spelling remains the fast path; punctuation-equivalent colors use semantic fallback during Catalog/Arrival materialization. 2026-09-27 the independently audited Branch2 D1 correction retired its confirmed active semantic duplicates; final Branch2 audit `36322040358` attempt 3 reports `activeCollisionGroups: 0`. Historical inactive rows/snapshots remain as audit history.
 
 Branch2 D1 имеет Stage03 schema work, включая migrations 0073/0074, которые Production ещё не имеет.
 
@@ -94,7 +94,7 @@ Warehouse Stage02 уже закрыт; старый W9 может быть от�
 - Resolver — **anomaly guard, а не анкета на совместимость**.
 - Известный факт считается известным, если он есть в maintained references **или любом активном Catalog SKU**.
 - Безопасные различия пунктуации/пробелов, например `ТЕМНО-СЕРЫЙ` и `ТЕМНО СЕРЫЙ`, канонизируются автоматически.
-- Harmless punctuation-equivalent **color** spellings не должны материализовываться как два новых physical SKU: runtime использует exact-first lookup + semantic fallback; старые semantic duplicates не переписываются автоматически.
+- Harmless punctuation-equivalent **color** spellings не должны материализовываться как два новых physical SKU: runtime использует exact-first lookup + semantic fallback. Подтверждённые Branch2 active collisions исправлены отдельной guarded D1 correction 2026-09-27; исторические inactive rows/snapshots не переписываются.
 - Новая точная комбинация уже известных фактов не должна вызывать лишний вопрос; deterministic safe combination path может создать/связать комбинацию с physical stock 0.
 - R11 сохраняется: явный пол менеджера → пол выбранного concrete SKU → fixed product scope fallback.
 - Reference duplicate protection не переписывает старые заказы/варианты/историю.
@@ -142,4 +142,4 @@ Warehouse Stage02 уже закрыт; старый W9 может быть от�
 
 ## Точка продолжения
 
-Следующий кусок работы — отдельный read-only audit и затем, только после доказанного mapping, контролируемая коррекция уже существующих semantic SKU duplicates. Branch2 D1 проверяется отдельно от Production: нельзя переносить Production variant IDs/stock assumptions или синхронизировать данные между средами. Stage03 считается сохранённым и не должен переписываться в ходе этой коррекции. Перед любым новым шагом заново открыть GitHub и проверить HEAD/deploy state.
+Semantic SKU incident 2026-09-27 закрыт и на Branch2: отдельная correction использовала только Branch2 evidence, не копировала Production data assumptions, и финальный audit показывает `activeCollisionGroups: 0`. Branch2 Stage03 runtime остался сохранённым и не переписывался этой работой. Возвращаться к semantic SKU correction следует только при новом конкретном дефекте; перед следующим проектным шагом заново открыть GitHub и проверить актуальные HEAD/deploy state.
