@@ -1,6 +1,6 @@
 # Система заказов — актуальный continuation
 
-Updated: 2026-09-26  
+Updated: 2026-09-27  
 Repository: `dymovicd123/Orders-app`  
 Branch represented by this file: **branch2**
 
@@ -15,6 +15,7 @@ Branch2 содержит весь завершённый Stage03 и послед
 - Resolver R11 Branch2 runtime fix: `9352bc72b4628ebd5937798b185de1b6c266056b`.
 - Resolver R13 runtime baseline: `0a23edd48d0eacdbd2e0f59cae51a4dc1f1a170e`; Branch2 safety/deploy были green.
 - Catalog selection / retirement integrity: `43c79cbf0adb9d19a1b57ab3ecf303ed13871fbc`, PR #216; Branch2 safety run `36254901882` и exact deploy run `36254901804` — success.
+- Catalog semantic SKU identity: `56f24c0dd9a883de966d9dccf31bf456d86422b1`, PR #221; cumulative candidate-tree Quality run `36320955570` — success, merged-SHA Stage03 safety run `36321055413` — success, exact Branch2 deploy run `36321055507` — success.
 - Последний head перед этой context-cleanup был docs-only `cdcf994bd586837fb0b0f9592fe7add0878886c3`.
 
 Завершено на Branch2:
@@ -25,6 +26,7 @@ Branch2 содержит весь завершённый Stage03 и послед
 - **Stage03 полностью технически закрыт на Branch2**: Create → Edit → payments/debt → Warehouse → Workshop → Return → Exchange → reports/history.
 - Resolver R11/R12/R13.
 - Catalog selection / retirement integrity: working pickers active-only, characteristics use maintained references ∪ active Catalog, whole-product retirement guarded/soft, retired products cannot receive active executions/SKUs, reactivation re-checks aliases/canonical identity.
+- Catalog semantic SKU identity prevention: exact spelling remains the fast path; punctuation-equivalent colors use semantic fallback during Catalog/Arrival materialization, preventing a new physical SKU split from harmless hyphen/space differences. Existing historical semantic duplicates remain for a separate controlled correction.
 
 Branch2 D1 имеет Stage03 schema work, включая migrations 0073/0074, которые Production ещё не имеет.
 
@@ -92,6 +94,7 @@ Warehouse Stage02 уже закрыт; старый W9 может быть от�
 - Resolver — **anomaly guard, а не анкета на совместимость**.
 - Известный факт считается известным, если он есть в maintained references **или любом активном Catalog SKU**.
 - Безопасные различия пунктуации/пробелов, например `ТЕМНО-СЕРЫЙ` и `ТЕМНО СЕРЫЙ`, канонизируются автоматически.
+- Harmless punctuation-equivalent **color** spellings не должны материализовываться как два новых physical SKU: runtime использует exact-first lookup + semantic fallback; старые semantic duplicates не переписываются автоматически.
 - Новая точная комбинация уже известных фактов не должна вызывать лишний вопрос; deterministic safe combination path может создать/связать комбинацию с physical stock 0.
 - R11 сохраняется: явный пол менеджера → пол выбранного concrete SKU → fixed product scope fallback.
 - Reference duplicate protection не переписывает старые заказы/варианты/историю.
@@ -130,6 +133,7 @@ Warehouse Stage02 уже закрыт; старый W9 может быть от�
 ## Актуальные подробные документы
 
 - `docs/PROJECT_CONTEXT.md` — постоянные архитектурные/рабочие инварианты.
+- `docs/continuation/CATALOG_SEMANTIC_SKU_IDENTITY_20260927.md` — incident/checkpoint по ЭТНО КАРДИГАНУ, PR #220/#221, release evidence и следующий safe data-correction chunk.
 - `docs/continuation/STAGE03_H12_FINAL_E2E_AUDIT_20260926.md` — финальная Stage03 интеграционная модель.
 - `docs/continuation/CLIENT_ZAMMLER_COMPLETION_20260924.md` — ZAMMLER завершён и не является Stage04.
 - `docs/continuation/WAREHOUSE_CURRENT_CONTEXT.md` — Warehouse/Stage02 history; Phase2 уже завершён.
@@ -138,4 +142,4 @@ Warehouse Stage02 уже закрыт; старый W9 может быть от�
 
 ## Точка продолжения
 
-Не начинать новый Stage или Production promotion без следующего вопроса/решения пользователя. Перед любым новым шагом заново открыть GitHub и проверить текущие HEAD/PR/deploy state.
+Следующий кусок работы — отдельный read-only audit и затем, только после доказанного mapping, контролируемая коррекция уже существующих semantic SKU duplicates. Branch2 D1 проверяется отдельно от Production: нельзя переносить Production variant IDs/stock assumptions или синхронизировать данные между средами. Stage03 считается сохранённым и не должен переписываться в ходе этой коррекции. Перед любым новым шагом заново открыть GitHub и проверить HEAD/deploy state.
