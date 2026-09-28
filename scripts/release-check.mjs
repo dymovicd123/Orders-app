@@ -221,6 +221,7 @@ try {
   run('Catalog resolver R13 known facts', process.execPath, [path.join(root, 'scripts/test-catalog-resolver-r13-known-facts.mjs')])
   run('Catalog semantic SKU identity', process.execPath, [path.join(root, 'scripts/test-catalog-semantic-sku-identity.mjs')])
   run('Catalog selection / retirement integrity', process.execPath, [path.join(root, 'scripts/test-catalog-selection-retirement-integrity.mjs')])
+  run('Stage03 Production schema prep safety', process.execPath, [path.join(root, 'scripts/test-stage03-production-schema-prep.mjs')])
   run('Production deploy skipped-build fallback safety', process.execPath, [path.join(root, 'scripts/test-production-deploy-fallback-safety.mjs')])
   run('Stage02 Phase1B Workshop disposition R1 tests', process.execPath, [path.join(root, 'scripts/test-stage02-phase1b-workshop-disposition-r1.mjs')])
   run('Stage02 Phase1B R2 Workshop Boutique disposition tests', process.execPath, [path.join(root, 'scripts/test-stage02-phase1b-r2-workshop-boutique-disposition.mjs')])
