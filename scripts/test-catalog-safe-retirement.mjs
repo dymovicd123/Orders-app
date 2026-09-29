@@ -51,7 +51,8 @@ check(reservations.includes("WHERE r.order_id = ? AND r.status IN ('active', 'un
 check(reservations.includes('v.is_active AS variant_active, p.is_active AS product_active'), 'shipping does not load live Catalog status')
 check(reservations.includes('live_variant.is_active') && reservations.includes('__shipping_conflict__'), 'stale shipping can still mutate a retired SKU')
 check(inventory.includes('AND v.is_active = 1 AND p.is_active = 1'), 'manual stock/transfer canonical lookup can use retired SKU')
-check(inventory.includes('const retiredExecutionKeys = new Set') && inventory.includes('Приход не может восстановить его автоматически'), 'Arrival can auto-resurrect a retired execution')
+check(inventory.includes('const retiredExecutionKeys = new Set') && inventory.includes("retiredExecutionKeys.has(key) && !options.allowRetiredRecreate"), 'retired execution protection must remain for non-Arrival stock operations')
+check(inventory.includes("allowRetiredRecreate: movementType === 'arrival'"), 'Arrival should explicitly opt into a fresh generation for a previously retired human variant')
 check(inventory.includes('live_variant.is_active') && inventory.includes('__manual_operation_conflict__') && inventory.includes('__transfer_conflict__'), 'stale stock operation CAS does not include Catalog retirement')
 
 // Historical order display switches to immutable order-time snapshots after Catalog retirement.
@@ -76,4 +77,4 @@ check(retirementUi.includes('Удалить исполнение?') && retiremen
 check(!retirementUi.includes('window.confirm'), 'Catalog retirement still uses a browser/system confirmation prompt')
 check(!productUi.includes("disabled={selectedVariants.length > 0}"), 'product delete is still blocked merely because active variants exist')
 
-console.log('CATALOG SAFE RETIREMENT PASSED — execution/product removal preserves history, releases warehouse obligations, zeroes working stock with audit, blocks stale operations, and never auto-resurrects retired identity')
+console.log('CATALOG SAFE RETIREMENT PASSED — removal preserves history and clears working stock/reservations; normal runtime paths cannot resurrect retired identity, while Arrival may create a fresh working generation')

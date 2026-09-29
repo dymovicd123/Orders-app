@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "revision": "catalog-safe-restore-branch2-r1",
+  "files": {
+    "worker/domains/catalog-retirement.ts": {
+      "baselineFixture": "scripts/fixtures/catalog-safe-restore/worker/domains/catalog-retirement.ts",
+      "beforeGitBlob": "7cfcc43a46f5d7b8c8da80f33bbe0f1aa3f7d578",
+      "afterGitBlob": "11577b03a61d7b08c2ebe390ed65500d7b0487b9",
+      "beforeLines": 405,
+      "afterLines": 632
+    },
+    "worker/domains/inventory-movement.ts": {
+      "baselineFixture": "scripts/fixtures/catalog-safe-restore/worker/domains/inventory-movement.ts",
+      "beforeGitBlob": "b6b926b4d0793caa4ac72c167313889b956b5c49",
+      "afterGitBlob": "a442854e71a0fb0cbfbf439a73b19bca54d75f05",
+      "beforeLines": 2066,
+      "afterLines": 2105
+    },
+    "worker/index.ts": {
+      "baselineFixture": "scripts/fixtures/catalog-safe-restore/worker/index.ts",
+      "beforeGitBlob": "8a5f626a62e58fd09332f0b854c9a8e509cb1959",
+      "afterGitBlob": "130cdba1750b87d9c3efc0e92327b8a466f3b63c",
+      "beforeLines": 1575,
+      "afterLines": 1604
+    }
+  }
+}

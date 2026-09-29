@@ -79,7 +79,6 @@ export function normalizeInventoryOperationStockConfirmations(input: unknown): I
 export async function resolveInventoryCreatableItemsBulk(
   db: D1Database,
   rawItems: ReturnType<typeof normalizeInventoryItem>[],
-  options: { allowRetiredRecreate?: boolean } = {},
 ): Promise<InventoryResolvedItem[]> {
   if (!rawItems.length) return [];
 
@@ -124,22 +123,13 @@ export async function resolveInventoryCreatableItemsBulk(
       const identity = normalizeCatalogProductIdentityKey(row.name);
       if (identity && !byIdentity.has(identity)) byIdentity.set(identity, row);
     }
-    const byInactiveExact = new Map<string, ProductRow>();
-    const byInactiveIdentity = new Map<string, ProductRow>();
-    for (const row of rows) {
-      if (toInt(row.is_active, 0) === 1) continue;
-      const exact = upperText(row.name);
-      if (exact && !byInactiveExact.has(exact)) byInactiveExact.set(exact, row);
-      const identity = normalizeCatalogProductIdentityKey(row.name);
-      if (identity && !byInactiveIdentity.has(identity)) byInactiveIdentity.set(identity, row);
-    }
     const byAlias = new Map<string, ProductRow>();
     for (const alias of aliasRows) {
       const key = cleanText(alias.alias_key);
       const target = byId.get(toInt(alias.product_id, 0));
       if (key && target && !byAlias.has(key)) byAlias.set(key, target);
     }
-    return { byId, byExact, byIdentity, byInactiveExact, byInactiveIdentity, byAlias };
+    return { byId, byExact, byIdentity, byAlias };
   };
 
   let lookup = buildProductLookup(products);
@@ -156,25 +146,9 @@ export async function resolveInventoryCreatableItemsBulk(
   };
 
   const missingProducts = new Map<string, { name: string; category: string; externalId: string }>();
-  const retiredProductIdsToReactivate = new Set<number>();
   rawItems.forEach((item, index) => {
     if (!item.productName) throw new Error('Product is required for inventory operation.');
     if (resolveProduct(item)) return;
-
-    if (options.allowRetiredRecreate) {
-      const explicit = item.productId > 0 ? lookup.byId.get(item.productId) : null;
-      const identityKey = normalizeCatalogProductIdentityKey(item.productName);
-      const retired = explicit && toInt(explicit.is_active, 0) !== 1
-        ? explicit
-        : lookup.byInactiveExact.get(upperText(item.productName))
-          || (identityKey ? lookup.byInactiveIdentity.get(identityKey) : null);
-      const retiredId = toInt(retired?.id, 0);
-      if (retiredId) {
-        retiredProductIdsToReactivate.add(retiredId);
-        return;
-      }
-    }
-
     const identityKey = normalizeCatalogProductIdentityKey(item.productName) || `RAW:${item.productName}`;
     if (!missingProducts.has(identityKey)) {
       missingProducts.set(identityKey, {
@@ -184,17 +158,6 @@ export async function resolveInventoryCreatableItemsBulk(
       });
     }
   });
-
-  if (retiredProductIdsToReactivate.size) {
-    await db.prepare(
-      `UPDATE catalog_products
-       SET is_active=1, updated_at=?
-       WHERE is_active=0
-         AND id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
-    ).bind(now, JSON.stringify(Array.from(retiredProductIdsToReactivate))).run();
-    products = await loadProducts();
-    lookup = buildProductLookup(products);
-  }
 
   if (missingProducts.size) {
     const missingProductsJson = JSON.stringify(Array.from(missingProducts.values()));
@@ -252,8 +215,8 @@ export async function resolveInventoryCreatableItemsBulk(
   rawItems.forEach((item, index) => {
     const productId = toInt(productForItem[index]?.id, 0);
     const key = executionKey(productId, item.material, item.length);
-    if (!executionByKey.has(key) && retiredExecutionKeys.has(key) && !options.allowRetiredRecreate) {
-      throw new Error(`Исполнение «${canonicalStockPositionValue(item.material)} · ${canonicalStockPositionValue(item.length)}» было удалено из рабочего каталога. Эту операцию нельзя использовать для его автоматического восстановления.`);
+    if (!executionByKey.has(key) && retiredExecutionKeys.has(key)) {
+      throw new Error(`Исполнение «${canonicalStockPositionValue(item.material)} · ${canonicalStockPositionValue(item.length)}» было удалено из рабочего каталога. Приход не может восстановить его автоматически; добавьте исполнение заново через Каталог.`);
     }
     if (!executionByKey.has(key) && !missingExecutions.has(key)) {
       missingExecutions.set(key, {
@@ -569,9 +532,7 @@ export async function applyInventoryMovement(
 
   if (creatableIndexes.length) {
     const creatableRaw = creatableIndexes.map(index => ({ ...items[index], variantId: 0 }));
-    const createdResolved = await resolveInventoryCreatableItemsBulk(db, creatableRaw, {
-      allowRetiredRecreate: movementType === 'arrival',
-    });
+    const createdResolved = await resolveInventoryCreatableItemsBulk(db, creatableRaw);
     creatableIndexes.forEach((index, localIndex) => {
       resolvedEntries[index] = { raw: items[index], item: createdResolved[localIndex] };
     });
