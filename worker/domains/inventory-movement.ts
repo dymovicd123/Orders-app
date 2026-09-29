@@ -198,10 +198,26 @@ export async function resolveInventoryCreatableItemsBulk(
   const executionKey = (productId: number, material: unknown, length: unknown) =>
     `${productId}¦${canonicalStockPositionValue(material)}¦${canonicalStockPositionValue(length)}`;
   let executionByKey = new Map(executions.map(row => [executionKey(toInt(row.product_id, 0), row.material, row.length), row]));
+
+  // An inactive execution is an explicit administrator decision, not an unknown combination.
+  // Physical workflows may create genuinely new executions, but they must never resurrect one
+  // that was deliberately retired. Re-adding the same human execution is Catalog-admin only.
+  const retiredExecutionRows = mapSqlRows(await db.prepare(
+    `SELECT product_id, material, length
+     FROM catalog_stock_positions
+     WHERE is_active = 0
+       AND product_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
+  ).bind(productIdsJson).all<{ product_id: number; material: string; length: string }>()) as Array<{ product_id: number; material: string; length: string }>;
+  const retiredExecutionKeys = new Set(retiredExecutionRows.map(row =>
+    executionKey(toInt(row.product_id, 0), row.material, row.length)));
+
   const missingExecutions = new Map<string, { productId: number; material: string; length: string }>();
   rawItems.forEach((item, index) => {
     const productId = toInt(productForItem[index]?.id, 0);
     const key = executionKey(productId, item.material, item.length);
+    if (!executionByKey.has(key) && retiredExecutionKeys.has(key)) {
+      throw new Error(`Исполнение «${canonicalStockPositionValue(item.material)} · ${canonicalStockPositionValue(item.length)}» было удалено из рабочего каталога. Приход не может восстановить его автоматически; добавьте исполнение заново через Каталог.`);
+    }
     if (!executionByKey.has(key) && !missingExecutions.has(key)) {
       missingExecutions.set(key, {
         productId,
@@ -453,7 +469,8 @@ export async function applyInventoryMovement(
               v.gender, v.color, v.material, v.length, v.size_label
        FROM catalog_variants v
        JOIN catalog_products p ON p.id = v.product_id
-       WHERE v.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
+       WHERE v.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+         AND v.is_active = 1 AND p.is_active = 1`
     ).bind(variantIdsJson).all<Record<string, unknown>>();
     for (const row of canonicalResult.results || []) {
       const variantId = toInt(row.variant_id, 0);
@@ -834,6 +851,14 @@ export async function applyInventoryMovement(
            OR (x.stock_existed = 0 AND s.inventory_source = ? AND s.variant_id = x.variant_id)
          WHERE (x.stock_existed = 1 AND (s.id IS NULL OR ${guardedStockQuantitySql} <> x.current_quantity))
             OR (x.stock_existed = 0 AND s.id IS NOT NULL)
+       )
+       OR EXISTS (
+         SELECT 1 FROM x
+         LEFT JOIN catalog_variants live_variant ON live_variant.id = x.variant_id
+         LEFT JOIN catalog_products live_product ON live_product.id = live_variant.product_id
+         WHERE x.variant_id IS NOT NULL
+           AND (live_variant.id IS NULL OR COALESCE(live_variant.is_active,0) <> 1
+             OR live_product.id IS NULL OR COALESCE(live_product.is_active,0) <> 1)
        )`
     ).bind(...chunk.rowBindings, now, inventorySource));
   }
@@ -1157,7 +1182,8 @@ export async function applyInventoryTransfer(
             v.gender, v.color, v.material, v.length, v.size_label
      FROM catalog_variants v
      JOIN catalog_products p ON p.id = v.product_id
-     WHERE v.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
+     WHERE v.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+       AND v.is_active = 1 AND p.is_active = 1`
   ).bind(variantIdsJson).all<Record<string, unknown>>();
   const canonicalById = new Map<number, CanonicalVariantSnapshot>();
   for (const row of canonicalResult.results || []) {
@@ -1334,6 +1360,13 @@ export async function applyInventoryTransfer(
      OR EXISTS (
        SELECT 1 FROM inventory_stocktake_sessions
        WHERE status = 'active' AND inventory_source IN (?, ?)
+     )
+     OR EXISTS (
+       SELECT 1 FROM x
+       LEFT JOIN catalog_variants live_variant ON live_variant.id = x.variant_id
+       LEFT JOIN catalog_products live_product ON live_product.id = live_variant.product_id
+       WHERE live_variant.id IS NULL OR COALESCE(live_variant.is_active,0) <> 1
+          OR live_product.id IS NULL OR COALESCE(live_product.is_active,0) <> 1
      )`
   ).bind(...transferRowBindings, now, fromSource, toSource, fromSource, toSource);
 

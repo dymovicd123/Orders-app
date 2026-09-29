@@ -35,8 +35,13 @@ export function canonicalItemProjection(item: Record<string, unknown>) {
 
   const canonicalProductName = cleanText(item.canonical_product_name);
   const canonicalCategory = cleanText(item.canonical_category).toLowerCase();
-  const hasCanonicalProduct = Boolean(productId && canonicalProductName);
-  const hasCanonicalVariant = Boolean(variantId);
+  const canonicalProductActive = toInt(item.canonical_product_active, 0) === 1;
+  const canonicalVariantActive = toInt(item.canonical_variant_active, 0) === 1;
+  const retiredLinkedIdentity = Boolean((productId && !canonicalProductActive) || (variantId && !canonicalVariantActive));
+  // Retired Catalog rows are historical identity anchors only. Once retired, an order must render
+  // from its immutable order-time snapshots so later Catalog changes/reactivation cannot rewrite history.
+  const hasCanonicalProduct = Boolean(productId && canonicalProductName && canonicalProductActive && !retiredLinkedIdentity);
+  const hasCanonicalVariant = Boolean(variantId && canonicalVariantActive && hasCanonicalProduct);
   const canonicalAudienceType = hasCanonicalProduct && canonicalCategory
     ? (canonicalCategory === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ')
     : '';
@@ -104,6 +109,8 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
       db.prepare(
         `SELECT oi.*,
                 p.name AS canonical_product_name,
+                p.is_active AS canonical_product_active,
+                v.is_active AS canonical_variant_active,
                 COALESCE(v.category, p.category) AS canonical_category,
                 v.gender AS canonical_gender,
                 v.color AS canonical_color,

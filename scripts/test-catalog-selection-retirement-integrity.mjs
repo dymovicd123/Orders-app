@@ -51,10 +51,11 @@ check(catalog.includes('export async function catalogActiveCharacteristicValueEx
 check(catalog.includes('JOIN catalog_products p ON p.id = v.product_id') && catalog.includes('v.is_active = 1 AND p.is_active = 1'), 'Catalog-backed characteristic validation does not require active SKU + active product')
 check(catalog.includes('if (await catalogActiveCharacteristicValueExists(db, dbKind, normalized)) return;'), 'Catalog admin still rejects values already used by active Catalog')
 
-// Product retirement is exposed as a guarded admin action, not hard delete.
-check(catalogPanel.includes('Вывести товар'), 'whole-product retirement action missing from Catalog UI')
-check(catalogPanel.includes('disabled={selectedVariants.length > 0}'), 'whole-product retirement UI can bypass active SKU cleanup')
-check(catalogPanel.includes("body: JSON.stringify({ isActive: false })"), 'whole-product retirement UI does not use soft deactivate')
-check(catalogPanel.includes('Он исчезнет из форм выбора, но история останется.'), 'whole-product retirement confirmation does not explain historical preservation')
+// Whole-product removal now uses the safe-retirement engine: active SKU/stock/reservations are
+// handled atomically instead of forcing the admin through manual cleanup first.
+check(catalogPanel.includes('Удалить товар'), 'whole-product safe-retirement action missing from Catalog UI')
+check(!catalogPanel.includes('disabled={selectedVariants.length > 0}'), 'whole-product safe retirement is still blocked merely by active SKU presence')
+check(catalogPanel.includes('/retirement-preview') && catalogPanel.includes('/retire'), 'whole-product UI does not use guarded retirement preview/apply')
+check(catalogPanel.includes('История заказов и движений сохранится.'), 'whole-product retirement confirmation does not explain historical preservation')
 
 console.log('CATALOG SELECTION / RETIREMENT INTEGRITY PASSED — working pickers are active-only, known facts share Catalog truth, ORDA alias safety is preserved, and product/SKU retirement is soft and guarded')
