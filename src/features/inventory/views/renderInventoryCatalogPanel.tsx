@@ -322,23 +322,42 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
 
   const retireProduct = async (product: any) => {
     if (!isAdmin || !product?.id) return
-    const activeVariantCount = activeVariantsFor(Number(product.id)).length
-    if (activeVariantCount) {
-      window.alert(`Сначала выведите из каталога все активные позиции товара. Сейчас активно: ${activeVariantCount}.`)
-      return
-    }
-    if (!window.confirm(`Вывести товар «${product.name}» из рабочего каталога? Он исчезнет из форм выбора, но история останется.`)) return
-
     try {
-      const response = await fetch(`/api/catalog/products/${encodeURIComponent(String(product.id))}`, {
-        method: 'PATCH',
+      const previewResponse = await fetch(`/api/catalog/products/${encodeURIComponent(String(product.id))}/retirement-preview`, {
+        credentials: 'include',
+      })
+      const preview: any = await readCatalogProductMutationResult(previewResponse)
+      if (!previewResponse.ok || preview?.ok === false) {
+        window.alert(preview?.message || 'Не удалось проверить товар перед удалением.')
+        return
+      }
+      if (preview?.activeStocktake) {
+        window.alert('Сейчас по товару идёт ревизия. Завершите или отмените её и повторите удаление.')
+        return
+      }
+      if (preview?.pendingLifecycle) {
+        window.alert('По товару есть незавершённая приёмка или возврат. Завершите её и повторите удаление.')
+        return
+      }
+
+      const accepted = window.confirm(
+        `Удалить товар «${product.name}» из рабочего каталога?\n\n`
+        + `Активных позиций: ${Number(preview?.activeVariantCount || 0)} · физически: ${Number(preview?.physicalQuantity || 0)} · резерв: ${Number(preview?.activeReservationQuantity || 0)}\n`
+        + `Открытых позиций заказов: ${Number(preview?.openOrderItemCount || 0)} · исторических: ${Number(preview?.historicalOrderItemCount || 0)}\n\n`
+        + 'История заказов и движений сохранится. Рабочие остатки и резервы этого товара будут сняты. Если товар вернётся позже, его можно будет добавить снова без восстановления старого склада.',
+      )
+      if (!accepted) return
+
+      const requestId = `catalog-product-retire-${product.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const response = await fetch(`/api/catalog/products/${encodeURIComponent(String(product.id))}/retire`, {
+        method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: false }),
+        body: JSON.stringify({ requestId }),
       })
-      const result = await readCatalogProductMutationResult(response)
+      const result: any = await readCatalogProductMutationResult(response)
       if (!response.ok || result?.ok === false) {
-        window.alert(result?.message || 'Товар не выведен из каталога. Проверьте активные позиции и связанные операции.')
+        window.alert(result?.message || 'Товар не удалён. Обновите каталог и повторите.')
         return
       }
 
@@ -347,12 +366,12 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
       setCatalogVariantDraft(blankVariant(0, catalogCategoryFilter === 'child' ? 'child' : 'adult'))
       try {
         const refreshed = await loadCatalogData(true)
-        if (!refreshed) window.alert('Товар выведен из каталога, но список не обновился. Нажмите «Обновить»; повторять вывод не нужно.')
+        if (!refreshed) window.alert('Товар удалён, но список не обновился. Нажмите «Обновить»; повторять удаление не нужно.')
       } catch {
-        window.alert('Товар выведен из каталога, но список не обновился. Нажмите «Обновить»; повторять вывод не нужно.')
+        window.alert('Товар удалён, но список не обновился. Нажмите «Обновить»; повторять удаление не нужно.')
       }
     } catch {
-      window.alert('Не удалось подтвердить результат. Нажмите «Обновить» и проверьте каталог перед повторным действием.')
+      window.alert('Не удалось подтвердить результат. Нажмите «Обновить» и проверьте каталог перед повторным удалением.')
     }
   }
 
@@ -570,13 +589,12 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                   <button className="secondary compact" type="button" onClick={() => openProductEditor(selectedProduct)}>Редактировать товар</button>
                   {isAdmin ? (
                     <button
-                      className="secondary compact"
+                      className="danger compact"
                       type="button"
-                      disabled={selectedVariants.length > 0}
-                      title={selectedVariants.length > 0 ? 'Сначала выведите все активные позиции товара' : 'Товар исчезнет из рабочих списков, история сохранится'}
+                      title="Удалить товар из рабочего каталога и склада, сохранив историю"
                       onClick={() => void retireProduct(selectedProduct)}
                     >
-                      Вывести товар
+                      Удалить товар
                     </button>
                   ) : null}
                   <button className="primary compact" type="button" disabled={!stocktakeReferenceReady} title={!stocktakeReferenceReady ? 'Сначала загружаются справочники характеристик' : undefined} onClick={() => openNewVariant(selectedProduct)}>+ Позиция</button>
