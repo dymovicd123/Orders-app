@@ -50,10 +50,10 @@ check(relations.includes('!retiredLinkedIdentity'), 'retired Catalog identity ma
 
 // Admin-only preview/apply API exists for both scopes.
 for (const token of [
-  '/api/catalog/executions\\/(\\d+)\\/retirement-preview',
-  '/api/catalog/executions\\/(\\d+)\\/retire',
-  '/api/catalog/products\\/(\\d+)\\/retirement-preview',
-  '/api/catalog/products\\/(\\d+)\\/retire',
+  'catalogExecutionRetirementPreviewMatch',
+  'catalogExecutionRetireMatch',
+  'catalogProductRetirementPreviewMatch',
+  'catalogProductRetireMatch',
 ]) check(worker.includes(token), 'retirement route missing: ' + token)
 check(worker.includes("requireAdminAccess(request)"), 'retirement endpoints are not admin-guarded')
 
