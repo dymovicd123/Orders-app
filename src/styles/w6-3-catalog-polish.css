@@ -422,3 +422,133 @@
     white-space: normal;
   }
 }
+
+
+/* Catalog safe-retirement confirmation — human-facing, not a browser/system prompt. */
+.catalog-retirement-action {
+  display: inline-grid;
+  gap: 5px;
+  justify-items: end;
+}
+
+.catalog-retirement-action > button {
+  white-space: nowrap;
+}
+
+.catalog-retirement-notice,
+.catalog-retirement-error {
+  max-width: 260px;
+  font-size: .68rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.catalog-retirement-notice { color: #166534; }
+.catalog-retirement-error { color: #b91c1c; }
+
+.catalog-retirement-backdrop {
+  z-index: 1450;
+}
+
+.catalog-retirement-modal {
+  width: min(560px, calc(100vw - 28px));
+  padding: 22px;
+}
+
+.catalog-retirement-head {
+  display: grid;
+  gap: 6px;
+}
+
+.catalog-retirement-head h3 {
+  margin: 0;
+  color: #172033;
+  font-size: 1.35rem;
+}
+
+.catalog-retirement-head p {
+  margin: 0;
+  color: #526173;
+  line-height: 1.5;
+}
+
+.catalog-retirement-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 18px;
+}
+
+.catalog-retirement-summary > div {
+  display: grid;
+  gap: 2px;
+  padding: 12px;
+  border: 1px solid #e0e7ef;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.catalog-retirement-summary strong {
+  color: #172033;
+  font-size: 1.25rem;
+}
+
+.catalog-retirement-summary span {
+  color: #718096;
+  font-size: .72rem;
+  font-weight: 700;
+}
+
+.catalog-retirement-explanation {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #e7ebf0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.catalog-retirement-explanation > strong {
+  color: #26344a;
+}
+
+.catalog-retirement-explanation p {
+  margin: 0;
+  color: #5f6f84;
+  font-size: .82rem;
+  line-height: 1.5;
+}
+
+.catalog-retirement-modal-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: .8rem;
+  font-weight: 700;
+}
+
+@media (max-width: 560px) {
+  .catalog-retirement-modal {
+    width: calc(100vw - 16px);
+    padding: 17px;
+  }
+
+  .catalog-retirement-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .catalog-retirement-action {
+    justify-items: stretch;
+  }
+
+  .catalog-retirement-notice,
+  .catalog-retirement-error {
+    max-width: none;
+    text-align: left;
+  }
+}
