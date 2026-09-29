@@ -5,7 +5,7 @@ import type { AuthUser, Env, InventoryItemInput, OrderInput, ReferenceKind } fro
 import { listActivityLog, listOrdersFinanceSummary, listReturnHistory, writeActivityLog } from './domains/activity.ts'
 import { authUserPayload, createAuthUser, deleteAuthUser, ensureAuthSchema, handleAuthChangePassword, handleAuthLogin, handleAuthLogout, handleAuthSetup, handleAuthStatus, handleSimpleAdminLogin, handleSimpleAdminLogout, handleSimpleAdminPasswordChange, handleSimpleAdminStatus, isDiagnosticsEnabled, listAuthUsers, makeSimpleAccessUser, normalizeAccessRole, publicAuthPath, requireAdminAccess, requireAdminUser, updateAuthUser, withAuthenticatedHeaders } from './domains/auth.ts'
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
-import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, saveCatalogExecutionPrice, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
+import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, previewCatalogRetirement, retireCatalogEntity, saveCatalogExecutionPrice, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
 import type { CatalogReviewFactsInput } from './domains/catalog-review.ts'
 import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant } from './domains/catalog-review.ts'
 import { getClientDetails, listClients } from './domains/clients.ts'
@@ -999,6 +999,42 @@ export default {
         if (denied) return denied;
         const input = await readJson<{ stockPositionId?: unknown; category?: unknown; costPrice?: unknown; salePrice?: unknown }>(request);
         return json(await saveCatalogExecutionPrice(env.DB, input));
+      }
+
+      const catalogExecutionRetirementPreviewMatch = url.pathname.match(/^\/api\/catalog\/executions\/(\d+)\/retirement-preview$/);
+      if (catalogExecutionRetirementPreviewMatch && request.method === 'GET') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        return json(await previewCatalogRetirement(env.DB, 'execution', toInt(catalogExecutionRetirementPreviewMatch[1], 0)));
+      }
+
+      const catalogExecutionRetireMatch = url.pathname.match(/^\/api\/catalog\/executions\/(\d+)\/retire$/);
+      if (catalogExecutionRetireMatch && request.method === 'POST') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        const input = await readJson<{ requestId?: unknown; reason?: unknown }>(request);
+        return json(await retireCatalogEntity(env.DB, 'execution', toInt(catalogExecutionRetireMatch[1], 0), {
+          ...input,
+          actor: authUser?.displayName || authUser?.managerName || authUser?.email || 'admin',
+        }));
+      }
+
+      const catalogProductRetirementPreviewMatch = url.pathname.match(/^\/api\/catalog\/products\/(\d+)\/retirement-preview$/);
+      if (catalogProductRetirementPreviewMatch && request.method === 'GET') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        return json(await previewCatalogRetirement(env.DB, 'product', toInt(catalogProductRetirementPreviewMatch[1], 0)));
+      }
+
+      const catalogProductRetireMatch = url.pathname.match(/^\/api\/catalog\/products\/(\d+)\/retire$/);
+      if (catalogProductRetireMatch && request.method === 'POST') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        const input = await readJson<{ requestId?: unknown; reason?: unknown }>(request);
+        return json(await retireCatalogEntity(env.DB, 'product', toInt(catalogProductRetireMatch[1], 0), {
+          ...input,
+          actor: authUser?.displayName || authUser?.managerName || authUser?.email || 'admin',
+        }));
       }
 
       if (url.pathname === '/api/catalog/products' && request.method === 'POST') {
