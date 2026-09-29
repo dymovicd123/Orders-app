@@ -198,10 +198,26 @@ export async function resolveInventoryCreatableItemsBulk(
   const executionKey = (productId: number, material: unknown, length: unknown) =>
     `${productId}¦${canonicalStockPositionValue(material)}¦${canonicalStockPositionValue(length)}`;
   let executionByKey = new Map(executions.map(row => [executionKey(toInt(row.product_id, 0), row.material, row.length), row]));
+
+  // An inactive execution is an explicit administrator decision, not an unknown combination.
+  // Physical workflows may create genuinely new executions, but they must never resurrect one
+  // that was deliberately retired. Re-adding the same human execution is Catalog-admin only.
+  const retiredExecutionRows = mapSqlRows(await db.prepare(
+    `SELECT product_id, material, length
+     FROM catalog_stock_positions
+     WHERE is_active = 0
+       AND product_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
+  ).bind(productIdsJson).all<{ product_id: number; material: string; length: string }>()) as Array<{ product_id: number; material: string; length: string }>;
+  const retiredExecutionKeys = new Set(retiredExecutionRows.map(row =>
+    executionKey(toInt(row.product_id, 0), row.material, row.length)));
+
   const missingExecutions = new Map<string, { productId: number; material: string; length: string }>();
   rawItems.forEach((item, index) => {
     const productId = toInt(productForItem[index]?.id, 0);
     const key = executionKey(productId, item.material, item.length);
+    if (!executionByKey.has(key) && retiredExecutionKeys.has(key)) {
+      throw new Error(`Исполнение «${canonicalStockPositionValue(item.material)} · ${canonicalStockPositionValue(item.length)}» было удалено из рабочего каталога. Приход не может восстановить его автоматически; добавьте исполнение заново через Каталог.`);
+    }
     if (!executionByKey.has(key) && !missingExecutions.has(key)) {
       missingExecutions.set(key, {
         productId,
