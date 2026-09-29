@@ -10,6 +10,8 @@ const reservations = read('worker/domains/order-reservations.ts')
 const inventory = read('worker/domains/inventory-movement.ts')
 const relations = read('worker/domains/orders-relations.ts')
 const worker = read('worker/index.ts')
+const executionUi = read('src/features/inventory/views/catalogPolishExecutionGroups.tsx')
+const productUi = read('src/features/inventory/views/renderInventoryCatalogPanel.tsx')
 
 // Audit schema is additive; historical facts are never deleted.
 check(migration.includes('CREATE TABLE IF NOT EXISTS catalog_retirement_operations'), 'retirement operation audit table missing')
@@ -32,6 +34,8 @@ check(!retirement.includes('DELETE FROM order_items') && !retirement.includes('D
 check(catalog.includes('export async function findRetiredCatalogExecutionV3'), 'retired execution lookup missing')
 check(catalog.includes('if (!options.allowRetiredRecreate)'), 'automatic execution recreation guard missing')
 check(catalog.includes('allowRetiredRecreate: true'), 'explicit Catalog admin recreation path missing')
+check(catalog.includes('reactivated: true'), 'explicit re-add of a retired product shell is missing')
+check(catalog.includes("SET category = ?, gender_scope = ?, is_active = 1"), 'retired product shell is not reactivated without restoring old executions/SKUs')
 check(catalog.includes('Нельзя создать позицию у удалённого исполнения или товара'), 'combination creation can target inactive Catalog identity')
 check(reservations.includes("matchStatus: 'unresolved_execution'"), 'order resolver does not stop at retired execution')
 check(reservations.indexOf('findRetiredCatalogExecutionV3') < reservations.indexOf('await ensureCatalogExecutionV3(db, product.id, material, length'), 'retired execution guard runs too late')
@@ -57,5 +61,12 @@ for (const token of [
   'catalogProductRetireMatch',
 ]) check(worker.includes(token), 'retirement route missing: ' + token)
 check(worker.includes("requireAdminAccess(request)"), 'retirement endpoints are not admin-guarded')
+
+check(executionUi.includes('Удалить исполнение'), 'execution delete action is missing from Catalog UI')
+check(executionUi.includes('/retirement-preview') && executionUi.includes('/retire'), 'execution delete UI does not use guarded preview/apply flow')
+check(executionUi.includes('История заказов и движений сохранится'), 'execution delete confirmation does not explain preserved history')
+check(productUi.includes('Удалить товар'), 'product delete action is missing from Catalog UI')
+check(productUi.includes('/retirement-preview') && productUi.includes('/retire'), 'product delete UI does not use guarded preview/apply flow')
+check(!productUi.includes("disabled={selectedVariants.length > 0}"), 'product delete is still blocked merely because active variants exist')
 
 console.log('CATALOG SAFE RETIREMENT PASSED — execution/product removal preserves history, releases warehouse obligations, zeroes working stock with audit, blocks stale operations, and never auto-resurrects retired identity')
