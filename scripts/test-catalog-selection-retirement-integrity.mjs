@@ -5,6 +5,7 @@ const check = (condition, message) => { if (!condition) throw new Error(message)
 
 const workspace = read('src/app/controllers/useWorkspaceViewModel.tsx')
 const catalogPanel = read('src/features/inventory/views/renderInventoryCatalogPanel.tsx')
+const retirementAction = read('src/features/inventory/views/CatalogRetirementAction.tsx')
 const catalog = read('worker/domains/catalog.ts')
 const arrival = read('worker/domains/inventory-movement.ts')
 const inventorySection = read('src/features/sections/InventorySection.tsx')
@@ -53,9 +54,10 @@ check(catalog.includes('if (await catalogActiveCharacteristicValueExists(db, dbK
 
 // Whole-product removal now uses the safe-retirement engine: active SKU/stock/reservations are
 // handled atomically instead of forcing the admin through manual cleanup first.
-check(catalogPanel.includes('Удалить товар'), 'whole-product safe-retirement action missing from Catalog UI')
+check(catalogPanel.includes('buttonLabel="Удалить товар"'), 'whole-product safe-retirement action missing from Catalog UI')
 check(!catalogPanel.includes('disabled={selectedVariants.length > 0}'), 'whole-product safe retirement is still blocked merely by active SKU presence')
-check(catalogPanel.includes('/retirement-preview') && catalogPanel.includes('/retire'), 'whole-product UI does not use guarded retirement preview/apply')
-check(catalogPanel.includes('История заказов и движений сохранится.'), 'whole-product retirement confirmation does not explain historical preservation')
+check(catalogPanel.includes('CatalogRetirementAction'), 'whole-product UI is not wired to the guarded retirement action')
+check(retirementAction.includes('/retirement-preview') && retirementAction.includes('/retire'), 'whole-product UI does not use guarded retirement preview/apply')
+check(retirementAction.includes('Старые заказы и движения сохранятся в истории.'), 'whole-product retirement confirmation does not explain historical preservation')
 
 console.log('CATALOG SELECTION / RETIREMENT INTEGRITY PASSED — working pickers are active-only, known facts share Catalog truth, ORDA alias safety is preserved, and product/SKU retirement is soft and guarded')

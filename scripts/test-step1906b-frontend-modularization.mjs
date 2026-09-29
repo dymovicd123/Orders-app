@@ -91,6 +91,57 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const catalogRetirementHotfixFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-safe-retirement-hotfix-frontend-manifest.json'), 'utf8'))
+if (catalogRetirementHotfixFrontendManifest?.version !== 1 || catalogRetirementHotfixFrontendManifest?.revision !== 'catalog-safe-retirement-hotfix-ui-r1') {
+  throw new Error('Catalog retirement hotfix frontend manifest invalid')
+}
+const catalogRetirementHotfixFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.CATALOG_SAFE_RETIREMENT_HOTFIX_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(catalogRetirementHotfixFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (catalogRetirementHotfixFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Catalog retirement hotfix frontend changed beyond exact manifest: ' + relative)
+      }
+      originals.set(relative, actual)
+      if (delta.added) {
+        fs.unlinkSync(absolute)
+        continue
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        const occurrences = reverted.split(replacement.afterBlock).length - 1
+        if (occurrences !== 1) throw new Error('Catalog retirement hotfix frontend after-block missing or ambiguous: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (catalogRetirementHotfixFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Catalog retirement hotfix frontend predecessor reconstruction failed: ' + relative)
+      }
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, CATALOG_SAFE_RETIREMENT_HOTFIX_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('CATALOG SAFE RETIREMENT HOTFIX FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const catalogSafeRetirementFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-safe-retirement-branch2-frontend-manifest.json'), 'utf8'))
 if (catalogSafeRetirementFrontendManifest?.version !== 1 || catalogSafeRetirementFrontendManifest?.revision !== 'catalog-safe-retirement-branch2-ui-r1') {
   throw new Error('Catalog safe retirement frontend manifest invalid')

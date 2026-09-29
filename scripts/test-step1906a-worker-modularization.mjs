@@ -4,6 +4,47 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const catalogRetirementHotfixManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-safe-retirement-hotfix-worker-manifest.json'), 'utf8'))
+if (catalogRetirementHotfixManifest?.version !== 1 || catalogRetirementHotfixManifest?.revision !== 'catalog-safe-retirement-hotfix-r1') throw new Error('Catalog retirement hotfix Worker manifest invalid')
+const catalogRetirementHotfixBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.CATALOG_SAFE_RETIREMENT_HOTFIX_NORMALIZED) {
+  const absolute = path.join(root, catalogRetirementHotfixManifest.file)
+  const actual = fs.readFileSync(absolute, 'utf8')
+  if (catalogRetirementHotfixBlobSha(actual) !== catalogRetirementHotfixManifest.afterGitBlob || actual.split(/\r?\n/).length !== catalogRetirementHotfixManifest.afterLines) {
+    throw new Error('Catalog retirement hotfix Worker changed beyond exact manifest')
+  }
+  let reverted = actual
+  for (const replacement of [...(catalogRetirementHotfixManifest.replacements || [])].reverse()) {
+    const occurrences = reverted.split(replacement.afterBlock).length - 1
+    if (occurrences !== 1) throw new Error('Catalog retirement hotfix Worker after-block missing or ambiguous')
+    reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+  }
+  if (catalogRetirementHotfixBlobSha(reverted) !== catalogRetirementHotfixManifest.beforeGitBlob || reverted.split(/\r?\n/).length !== catalogRetirementHotfixManifest.beforeLines) {
+    throw new Error('Catalog retirement hotfix Worker predecessor reconstruction failed')
+  }
+  fs.writeFileSync(absolute, reverted)
+  let childStatus = 1
+  try {
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, CATALOG_SAFE_RETIREMENT_HOTFIX_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    fs.writeFileSync(absolute, actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('CATALOG SAFE RETIREMENT HOTFIX WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const catalogSafeRetirementManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-safe-retirement-branch2-worker-manifest.json'), 'utf8'))
 if (catalogSafeRetirementManifest?.version !== 1 || catalogSafeRetirementManifest?.revision !== 'catalog-safe-retirement-branch2-r1') throw new Error('Catalog safe retirement Worker manifest invalid')
 const catalogSafeRetirementBlobSha = (value) => {
