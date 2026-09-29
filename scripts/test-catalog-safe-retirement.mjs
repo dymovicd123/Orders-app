@@ -7,6 +7,7 @@ const migration = read('migrations/0076_v72_catalog_safe_retirement.sql')
 const retirement = read('worker/domains/catalog-retirement.ts')
 const catalog = read('worker/domains/catalog.ts')
 const reservations = read('worker/domains/order-reservations.ts')
+const orderWrites = read('worker/domains/orders-write.ts')
 const inventory = read('worker/domains/inventory-movement.ts')
 const relations = read('worker/domains/orders-relations.ts')
 const worker = read('worker/index.ts')
@@ -35,16 +36,23 @@ check(retirement.includes("SET is_active=0") && retirement.includes('UPDATE cata
 check(retirement.includes("'delete'") && retirement.includes("'catalog_retirement'"), 'physical removal lacks inventory movement audit')
 check(!retirement.includes('DELETE FROM order_items') && !retirement.includes('DELETE FROM catalog_variants') && !retirement.includes('DELETE FROM inventory_stock'), 'safe retirement must keep historical rows')
 
-// Runtime resolution must never resurrect a deliberately retired execution.
-// Explicit Catalog admin creation may create a fresh active generation.
+// Background/runtime resolution must never resurrect retired identity.
+// A deliberate NEW order save may create a fresh working generation; history stays retired.
 check(catalog.includes('export async function findRetiredCatalogExecutionV3'), 'retired execution lookup missing')
 check(catalog.includes('if (!options.allowRetiredRecreate)'), 'automatic execution recreation guard missing')
 check(catalog.includes('allowRetiredRecreate: true'), 'explicit Catalog admin recreation path missing')
 check(catalog.includes('reactivated: true'), 'explicit re-add of a retired product shell is missing')
 check(catalog.includes("SET category = ?, gender_scope = ?, is_active = 1"), 'retired product shell is not reactivated without restoring old executions/SKUs')
 check(catalog.includes('Нельзя создать позицию у удалённого исполнения или товара'), 'combination creation can target inactive Catalog identity')
-check(reservations.includes("matchStatus: 'unresolved_execution'"), 'order resolver does not stop at retired execution')
-check(reservations.indexOf('findRetiredCatalogExecutionV3') < reservations.indexOf('await ensureCatalogExecutionV3(db, product.id, material, length'), 'retired execution guard runs too late')
+check(reservations.includes("matchStatus: 'unresolved_execution'"), 'default resolver does not stop at retired execution')
+check(reservations.includes('findRetiredCatalogCombinationV3'), 'default resolver can silently recreate a retired exact SKU')
+check(reservations.includes("retiredCombination?.id && !allowRetiredRecreate"), 'retired exact-SKU guard is not fail-closed by default')
+check(reservations.includes("retiredExecution?.id && !allowRetiredRecreate"), 'retired execution guard is not fail-closed by default')
+check(reservations.includes("retiredProductShell") && reservations.includes("SET is_active = 1, updated_at = ?"), 'explicit order path cannot reactivate only the retired product shell')
+check(reservations.includes("allowRetiredRecreate ? { allowRetiredRecreate: true } : {}"), 'explicit retired execution recreation option is not scoped')
+check(reservations.includes("-ORD-"), 'fresh order-driven SKU generation does not avoid retired external-id collision')
+check(orderWrites.includes("resolveCatalogProductAndVariant(db, item, createdAt, { allowRetiredRecreate: true })"), 'new-order save does not explicitly opt into retired recreation')
+check(!orderWrites.includes("resolveCatalogProductAndVariant(db, item, timestamp, { allowRetiredRecreate: true })"), 'order edit/background rewrite unexpectedly opts into retired recreation')
 
 // Released retired lines are ignored by normal shipping; stale pre-retirement send/stock requests fail closed.
 check(reservations.includes("WHERE r.order_id = ? AND r.status IN ('active', 'unresolved')"), 'shipping reservation scope unexpectedly includes released retirement rows')
@@ -77,4 +85,4 @@ check(retirementUi.includes('Удалить исполнение?') && retiremen
 check(!retirementUi.includes('window.confirm'), 'Catalog retirement still uses a browser/system confirmation prompt')
 check(!productUi.includes("disabled={selectedVariants.length > 0}"), 'product delete is still blocked merely because active variants exist')
 
-console.log('CATALOG SAFE RETIREMENT PASSED — removal preserves history and clears working stock/reservations; normal runtime paths cannot resurrect retired identity, while Arrival may create a fresh working generation')
+console.log('CATALOG SAFE RETIREMENT PASSED — retired rows stay outside working stock; background paths fail closed, while explicit Arrival/admin restore and deliberate new-order input may create a fresh generation')
