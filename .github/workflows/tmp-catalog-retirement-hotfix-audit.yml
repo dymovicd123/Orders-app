@@ -1,0 +1,68 @@
+name: TEMP Catalog retirement Branch2 read-only audit
+
+on:
+  push:
+    branches:
+      - w-catalog-retirement-hotfix-branch2-20260929
+    paths:
+      - '.github/workflows/tmp-catalog-retirement-hotfix-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hard-stop on Branch2 database identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo "Production identity detected; refusing even read-only audit." >&2
+            exit 20
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Read-only audit of retirement attempts
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT
+            op.id, op.entity_type, op.entity_id, op.product_id, op.product_name, op.material, op.length,
+            op.variant_count, op.physical_quantity, op.active_reservation_quantity, op.status, op.created_at, op.completed_at,
+            CASE WHEN op.entity_type='execution'
+              THEN COALESCE((SELECT sp.is_active FROM catalog_stock_positions sp WHERE sp.id=op.entity_id), -1)
+              ELSE COALESCE((SELECT p.is_active FROM catalog_products p WHERE p.id=op.entity_id), -1)
+            END AS entity_active,
+            CASE WHEN op.entity_type='execution'
+              THEN (SELECT COUNT(*) FROM catalog_variants v WHERE v.stock_position_id=op.entity_id AND v.is_active=1)
+              ELSE (SELECT COUNT(*) FROM catalog_variants v WHERE v.product_id=op.entity_id AND v.is_active=1)
+            END AS active_variants_now
+          FROM catalog_retirement_operations op
+          ORDER BY op.id DESC LIMIT 20" --json
+
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT
+            sp.id AS stock_position_id, sp.product_id, p.name AS product_name, sp.material, sp.length,
+            sp.is_active AS execution_active,
+            COUNT(CASE WHEN v.is_active=1 THEN 1 END) AS active_variants,
+            COALESCE(SUM(CASE WHEN v.is_active=1 THEN
+              (SELECT COALESCE(SUM(s.quantity),0) FROM inventory_stock s WHERE s.variant_id=v.id)
+              ELSE 0 END),0) AS active_variant_physical
+          FROM catalog_stock_positions sp
+          JOIN catalog_products p ON p.id=sp.product_id
+          LEFT JOIN catalog_variants v ON v.stock_position_id=sp.id
+          GROUP BY sp.id
+          HAVING sp.is_active=0 AND active_variants>0
+          ORDER BY sp.id" --json
