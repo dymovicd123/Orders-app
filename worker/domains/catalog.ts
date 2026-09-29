@@ -910,8 +910,6 @@ export async function saveCatalogExecutionPrice(
 export async function createCatalogProduct(db: D1Database, input: { name?: unknown; category?: unknown; genderScope?: unknown }) {
   const name = upperText(input.name);
   if (!name) throw new Error('Product name is required.');
-  const duplicate = await findCatalogProductByIdentity(db, name);
-  if (duplicate?.id) throw new Error(`Такой базовый товар уже существует: ${cleanText(duplicate.name)}.`);
   if (input.genderScope === undefined || !cleanText(input.genderScope)) {
     throw new Error('Выберите назначение товара по полу: Женский, Мужской или Унисекс.');
   }
@@ -921,6 +919,34 @@ export async function createCatalogProduct(db: D1Database, input: { name?: unkno
   const category = normalizeCatalogCategory(input.category);
   const genderScope = normalizeCatalogProductGenderScope(input.genderScope);
   const createdAt = new Date().toISOString();
+
+  const duplicate = await findCatalogProductByIdentity(db, name);
+  if (duplicate?.id) {
+    const existing = await db.prepare(
+      'SELECT id, name, is_active FROM catalog_products WHERE id = ? LIMIT 1'
+    ).bind(duplicate.id).first<Record<string, unknown>>();
+    if (toInt(existing?.is_active, 0) === 1) {
+      throw new Error(`Такой базовый товар уже существует: ${cleanText(duplicate.name)}.`);
+    }
+
+    // Product name is globally unique, so an intentionally retired product reuses only its
+    // non-stock shell. Retired executions/SKUs stay inactive; adding a position later creates
+    // a fresh execution/SKU generation with clean stock.
+    await db.prepare(
+      `UPDATE catalog_products
+       SET category = ?, gender_scope = ?, is_active = 1, updated_at = ?
+       WHERE id = ? AND is_active = 0`
+    ).bind(category, genderScope, createdAt, duplicate.id).run();
+    return {
+      ok: true,
+      id: toInt(duplicate.id, 0),
+      name: cleanText(existing?.name) || cleanText(duplicate.name) || name,
+      category,
+      genderScope,
+      reactivated: true,
+    };
+  }
+
   const result = await db.prepare(
     `INSERT INTO catalog_products (name, category, gender_scope, is_active, created_at, updated_at)
      VALUES (?, ?, ?, 1, ?, ?)`
