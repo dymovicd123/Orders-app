@@ -4,9 +4,9 @@
   "files": {
     "worker/domains/catalog.ts": {
       "beforeGitBlob": "9cb0482bb49909d298a8c3eb7516ee8b39d74064",
-      "afterGitBlob": "e781ffdb2ef32e585f063036c6d8e31c211d3c4d",
+      "afterGitBlob": "f48562a5f84ca5a64f2c96fd68662ff3db58e95a",
       "beforeLines": 1363,
-      "afterLines": 1401,
+      "afterLines": 1400,
       "replacements": [
         {
           "beforeBlock": "export async function ensureCatalogExecutionV3(db: D1Database, productId: number, material: unknown, length: unknown, timestamp: string) {\n  const normalizedMaterial = canonicalStockPositionValue(material);\n  const normalizedLength = canonicalStockPositionValue(length);\n  let execution = await findCatalogExecutionV3(db, productId, normalizedMaterial, normalizedLength);\n  if (execution?.id) return execution;\n  const activeProduct = await db.prepare(\n    'SELECT id FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1'\n  ).bind(productId).first<{ id: number }>();\n  if (!activeProduct?.id) {\n    throw new Error('Нельзя создавать исполнение у товара, выведенного из активного каталога.');\n  }\n  try {\n    const result = await db.prepare(\n      `INSERT INTO catalog_stock_positions (\n        product_id, category, gender_scope, material, length, is_default, is_active, sort_order, created_at, updated_at\n      ) VALUES (?, 'adult', 'unisex', ?, ?, 0, 1, 0, ?, ?)`\n    ).bind(productId, normalizedMaterial, normalizedLength, timestamp, timestamp).run();\n    const id = Number(result.meta?.last_row_id || 0);\n    if (id) return { id, product_id: productId, material: normalizedMaterial, length: normalizedLength, is_active: 1 };\n  } catch {\n    // Concurrent creation is safe because Step 188D adds a unique execution identity.\n  }\n  execution = await findCatalogExecutionV3(db, productId, normalizedMaterial, normalizedLength);\n  if (!execution?.id) throw new Error('Не удалось создать исполнение товара. Обновите каталог и повторите действие.');\n  return execution;\n}\n\n\n",
