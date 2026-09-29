@@ -1,0 +1,111 @@
+name: Catalog safe retirement Branch2 migration 0076
+
+on:
+  push:
+    branches:
+      - branch2
+    paths:
+      - '.github/workflows/catalog-safe-retirement-branch2-migration-0076.yml'
+      - 'migrations/0076_v72_catalog_safe_retirement.sql'
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: Apply 0076 to Branch2 D1 only
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout exact Branch2 commit
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on environment and migration scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "branch2" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo "Production D1 identity detected. Refusing 0076." >&2
+            exit 20
+          fi
+          migration='migrations/0076_v72_catalog_safe_retirement.sql'
+          grep -Fq 'CREATE TABLE IF NOT EXISTS catalog_retirement_operations' "$migration"
+          grep -Fq 'CREATE TABLE IF NOT EXISTS catalog_retirement_variants' "$migration"
+          if grep -Eiq '\b(UPDATE|DELETE[[:space:]]+FROM|INSERT[[:space:]]+(OR[[:space:]]+[^[:space:]]+[[:space:]]+)?INTO[[:space:]]+(orders|order_items|inventory_stock|inventory_reservations|inventory_movements|catalog_products|catalog_variants|catalog_stock_positions))\b' "$migration"; then
+            echo "0076 contains live business-row mutation. Refusing migration." >&2
+            exit 21
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Capture operational fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_total,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS stock_reserved_total,
+            (SELECT COUNT(*) FROM inventory_reservations WHERE status='active') AS active_reservations,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_reservations WHERE status='active') AS active_reserved_total,
+            (SELECT COUNT(*) FROM catalog_products WHERE is_active=1) AS active_products,
+            (SELECT COUNT(*) FROM catalog_variants WHERE is_active=1) AS active_variants" --json)"
+          echo "$result"
+          jq -cS '.[0].results[0]' <<<"$result" > /tmp/0076-before.json
+
+      - name: Apply additive audit schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file migrations/0076_v72_catalog_safe_retirement.sql
+
+      - name: Verify schema and unchanged operational fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          schema="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_retirement_operations') AS operations_table,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_retirement_variants') AS variants_table,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_catalog_retirement_operations_entity') AS operations_index,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_catalog_retirement_variants_variant') AS variants_index" --json)"
+          echo "$schema"
+          [[ "$(jq -r '.[0].results[0].operations_table' <<<"$schema")" == "1" ]]
+          [[ "$(jq -r '.[0].results[0].variants_table' <<<"$schema")" == "1" ]]
+          [[ "$(jq -r '.[0].results[0].operations_index' <<<"$schema")" == "1" ]]
+          [[ "$(jq -r '.[0].results[0].variants_index' <<<"$schema")" == "1" ]]
+
+          result="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_total,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS stock_reserved_total,
+            (SELECT COUNT(*) FROM inventory_reservations WHERE status='active') AS active_reservations,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_reservations WHERE status='active') AS active_reserved_total,
+            (SELECT COUNT(*) FROM catalog_products WHERE is_active=1) AS active_products,
+            (SELECT COUNT(*) FROM catalog_variants WHERE is_active=1) AS active_variants" --json)"
+          after="$(jq -cS '.[0].results[0]' <<<"$result")"
+          before="$(cat /tmp/0076-before.json)"
+          [[ "$after" == "$before" ]] || {
+            echo "Operational fingerprint changed while applying additive 0076." >&2
+            echo "Before: $before" >&2
+            echo "After:  $after" >&2
+            exit 22
+          }
+          echo "0076 verified on Branch2 D1 only; operational data unchanged."
