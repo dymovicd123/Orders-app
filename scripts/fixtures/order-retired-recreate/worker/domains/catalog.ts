@@ -403,65 +403,6 @@ export async function findCatalogCombinationV3(
 }
 
 
-export async function findRetiredCatalogCombinationV3(
-  db: D1Database,
-  executionId: number,
-  category: unknown,
-  gender: unknown,
-  color: unknown,
-  sizeLabel: unknown,
-  excludeId = 0,
-) {
-  const normalizedCategory = normalizeAudienceCategory(category, sizeLabel);
-  const normalizedGender = normalizeCatalogCombinationGender(gender);
-  const normalizedColor = normalizeCatalogCombinationColor(color);
-  const normalizedSize = normalizeCatalogCombinationSize(sizeLabel);
-  type CombinationRow = { id: number; product_id: number; stock_position_id: number; category: string; gender: string; color: string; size_label: string; is_active: number };
-  const exact = await db.prepare(
-    `SELECT id, product_id, stock_position_id, category, gender, color, size_label, is_active
-     FROM catalog_variants
-     WHERE stock_position_id = ? AND id <> ? AND is_active = 0
-       AND COALESCE(category, 'adult') = ?
-       AND CASE
-         WHEN UPPER(TRIM(COALESCE(gender, ''))) LIKE '%ЖЕН%' THEN 'ЖЕН'
-         WHEN UPPER(TRIM(COALESCE(gender, ''))) LIKE '%МУЖ%' THEN 'МУЖ'
-         ELSE UPPER(TRIM(COALESCE(gender, '')))
-       END = ?
-       AND CASE
-         WHEN TRIM(COALESCE(color, '')) = '' THEN 'БЕЗ ЦВЕТА'
-         ELSE UPPER(TRIM(color))
-       END = ?
-       AND CASE
-         WHEN UPPER(TRIM(COALESCE(size_label, ''))) IN ('', 'БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р') THEN ''
-         ELSE UPPER(TRIM(size_label))
-       END = ?
-     ORDER BY id DESC LIMIT 1`
-  ).bind(executionId, excludeId, normalizedCategory, normalizedGender, normalizedColor, normalizedSize)
-    .first<CombinationRow>();
-  if (exact?.id) return exact;
-
-  const candidates = await db.prepare(
-    `SELECT id, product_id, stock_position_id, category, gender, color, size_label, is_active
-     FROM catalog_variants
-     WHERE stock_position_id = ? AND id <> ? AND is_active = 0
-       AND COALESCE(category, 'adult') = ?
-       AND CASE
-         WHEN UPPER(TRIM(COALESCE(gender, ''))) LIKE '%ЖЕН%' THEN 'ЖЕН'
-         WHEN UPPER(TRIM(COALESCE(gender, ''))) LIKE '%МУЖ%' THEN 'МУЖ'
-         ELSE UPPER(TRIM(COALESCE(gender, '')))
-       END = ?
-       AND CASE
-         WHEN UPPER(TRIM(COALESCE(size_label, ''))) IN ('', 'БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р') THEN ''
-         ELSE UPPER(TRIM(size_label))
-       END = ?
-     ORDER BY id DESC
-     LIMIT 200`
-  ).bind(executionId, excludeId, normalizedCategory, normalizedGender, normalizedSize).all<CombinationRow>();
-  const semanticColor = catalogColorIdentity(normalizedColor);
-  return (candidates.results || []).find((row) => catalogColorIdentity(row.color) === semanticColor) || null;
-}
-
-
 export async function createCatalogCombinationV3(
   db: D1Database,
   input: {

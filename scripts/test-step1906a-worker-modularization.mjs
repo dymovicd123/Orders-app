@@ -4,6 +4,47 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+
+const orderRetiredRecreateManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-retired-recreate-branch2-worker-manifest.json'), 'utf8'))
+if (orderRetiredRecreateManifest?.version !== 1 || orderRetiredRecreateManifest?.revision !== 'order-retired-recreate-branch2-r1') throw new Error('Order retired recreation Worker manifest invalid')
+const orderRetiredRecreateBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.ORDER_RETIRED_RECREATE_BRANCH2_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(orderRetiredRecreateManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (orderRetiredRecreateBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Order retired recreation Worker changed beyond exact manifest: ' + relative)
+      }
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (orderRetiredRecreateBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Order retired recreation Worker baseline fixture drifted: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, ORDER_RETIRED_RECREATE_BRANCH2_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ORDER RETIRED RECREATE BRANCH2 WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const catalogSafeRestoreManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-safe-restore-branch2-worker-manifest.json'), 'utf8'))
 if (catalogSafeRestoreManifest?.version !== 1 || catalogSafeRestoreManifest?.revision !== 'catalog-safe-restore-branch2-r1') throw new Error('Catalog safe restore Worker manifest invalid')
 const catalogSafeRestoreBlobSha = (value) => {

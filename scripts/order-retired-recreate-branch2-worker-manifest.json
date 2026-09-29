@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "revision": "order-retired-recreate-branch2-r1",
+  "files": {
+    "worker/domains/catalog.ts": {
+      "beforeGitBlob": "b81077076f555ce48f905b7738e945149a0ae2f6",
+      "afterGitBlob": "845ebbeae6f6cd4e93290a7d2949ae84693e8878",
+      "beforeLines": 1426,
+      "afterLines": 1485,
+      "baselineFixture": "scripts/fixtures/order-retired-recreate/worker/domains/catalog.ts"
+    },
+    "worker/domains/order-reservations.ts": {
+      "beforeGitBlob": "340d42935880634892a11a6ca2e78036c0c373c9",
+      "afterGitBlob": "a894a98b17cb21b45b305be6c03547956a0110bf",
+      "beforeLines": 2650,
+      "afterLines": 2712,
+      "baselineFixture": "scripts/fixtures/order-retired-recreate/worker/domains/order-reservations.ts"
+    },
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "a0cc8531d9edf2d6ab0aa5edc972dbc63d2dd200",
+      "afterGitBlob": "94bf139438c71e74e0fdc15ab5eff8afbd998477",
+      "beforeLines": 2096,
+      "afterLines": 2096,
+      "baselineFixture": "scripts/fixtures/order-retired-recreate/worker/domains/orders-write.ts"
+    }
+  }
+}

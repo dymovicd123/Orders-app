@@ -32,7 +32,7 @@ check(inventory.includes('color: normalizeCatalogCombinationColor(variant.color)
 check(orderCore.includes('if (await isCatalogIdentityV3Enabled(db))'), 'Order materialization lost the Catalog identity-v3 gate')
 check(orderCore.includes('const combination = await createCatalogCombinationV3(db, {'), 'Order identity-v3 path bypasses canonical combination creation')
 check(orderReservations.includes('if (await isCatalogIdentityV3Enabled(db) || await isHumanInventoryModelEnabled(db))'), 'Order reservation resolver can fall back to legacy exact-only materialization while the current inventory model is active')
-check(orderReservations.includes('return await resolveCatalogProductAndVariantV2(db, item);'), 'Current order reservation resolver does not route through canonical V2 identity')
+check(orderReservations.includes('return await resolveCatalogProductAndVariantV2(db, item, { ...options, timestamp });'), 'Current order reservation resolver does not route through canonical V2 identity')
 check(orderReservations.includes('const created = await createCatalogCombinationV3(db, {'), 'Canonical order resolver bypasses semantic combination creation')
 
 const colorIdentity = (value) => String(value || '').trim().toUpperCase().replace(/[‐‑‒–—-]+/g, ' ').replace(/\s+/g, ' ').trim()

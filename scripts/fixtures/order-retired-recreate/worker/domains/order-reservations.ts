@@ -5,7 +5,7 @@ import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, norm
 import type { SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
 import type { CanonicalVariantSnapshot } from './catalog.ts'
-import { catalogGenderForProductScope, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, findRetiredCatalogCombinationV3, findRetiredCatalogExecutionV3, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
+import { catalogGenderForProductScope, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, findRetiredCatalogExecutionV3, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
 import { inventoryPhysicalCheckStatement } from './inventory-primitives.ts'
 import { boundedOutboundStock } from './stock-resolution.ts'
 import { normalizeOrderItems } from './order-core.ts'
@@ -245,30 +245,10 @@ export async function loadCatalogKnownFacts(db: D1Database) {
 export async function resolveCatalogProductAndVariantV2(
   db: D1Database,
   item: ReturnType<typeof normalizeOrderItems>[number],
-  options: { allowRetiredRecreate?: boolean; timestamp?: string } = {},
 ): Promise<ResolvedOrderCatalogReference> {
   if (!await isCatalogIdentityV3Enabled(db)) return await resolveCatalogProductAndVariantV2Flat(db, item);
   const inputKey = catalogOrderInputKey(item);
-  const allowRetiredRecreate = Boolean(options.allowRetiredRecreate);
-  const timestamp = cleanText(options.timestamp) || new Date().toISOString();
-
-  let product = await findCatalogProductByIdentity(db, item.productName, 0, { activeOnly: true }) as { id: number; name: string; category: string } | null;
-  let retiredProductShell = false;
-  if (!product?.id && allowRetiredRecreate) {
-    const retiredIdentity = await findCatalogProductByIdentity(db, item.productName, 0, { allowAlias: false }) as { id: number; name: string; category: string } | null;
-    if (retiredIdentity?.id) {
-      const inactive = await db.prepare(
-        `SELECT id, name, category, is_active
-         FROM catalog_products
-         WHERE id = ? AND is_active = 0
-         LIMIT 1`
-      ).bind(retiredIdentity.id).first<{ id: number; name: string; category: string; is_active: number }>();
-      if (inactive?.id) {
-        product = { id: toInt(inactive.id, 0), name: cleanText(inactive.name), category: cleanText(inactive.category) };
-        retiredProductShell = true;
-      }
-    }
-  }
+  const product = await findCatalogProductByIdentity(db, item.productName, 0, { activeOnly: true }) as { id: number; name: string; category: string } | null;
   if (!product?.id) return { productId: null, variantId: null, matchStatus: 'unresolved_product', inputKey };
 
   const category = normalizeAudienceCategory(item.category, item.size);
@@ -351,45 +331,18 @@ export async function resolveCatalogProductAndVariantV2(
   }
 
   // Only now may known facts create a previously unseen execution/combination.
-  // Retired identity is fail-closed for background/runtime resolution. A deliberate NEW order
-  // save may start a fresh working generation, but never reactivates the retired execution/SKU rows.
-  let retiredExecution: Awaited<ReturnType<typeof findRetiredCatalogExecutionV3>> = null;
+  // A deliberately retired execution is different from a never-seen execution: runtime order
+  // resolution must not resurrect it. Only an explicit admin Catalog action may create a fresh
+  // generation with the same human characteristics.
   if (!existingExecution?.id) {
-    retiredExecution = await findRetiredCatalogExecutionV3(db, product.id, material, length);
-    if (retiredExecution?.id && !allowRetiredRecreate) {
+    const retiredExecution = await findRetiredCatalogExecutionV3(db, product.id, material, length);
+    if (retiredExecution?.id) {
       return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_execution', inputKey };
     }
   }
-
-  if (retiredProductShell) {
-    await db.prepare(
-      `UPDATE catalog_products
-       SET is_active = 1, updated_at = ?
-       WHERE id = ? AND is_active = 0`
-    ).bind(timestamp, product.id).run();
-    const activeProduct = await db.prepare(
-      'SELECT id FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1'
-    ).bind(product.id).first<{ id: number }>();
-    if (!activeProduct?.id) {
-      return { productId: null, variantId: null, matchStatus: 'unresolved_product', inputKey };
-    }
-  }
-
   const execution = existingExecution?.id
     ? existingExecution
-    : await ensureCatalogExecutionV3(
-      db,
-      product.id,
-      material,
-      length,
-      timestamp,
-      allowRetiredRecreate ? { allowRetiredRecreate: true } : {},
-    );
-
-  const retiredCombination = await findRetiredCatalogCombinationV3(db, execution.id, category, gender, color, size);
-  if (retiredCombination?.id && !allowRetiredRecreate) {
-    return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_variant', inputKey };
-  }
+    : await ensureCatalogExecutionV3(db, product.id, material, length, new Date().toISOString());
 
   // Step 188D completion guard: legacy/manual aliases from the pre-v3 review UI are
   // accepted only when they point to the exact canonical identity we have independently
@@ -422,21 +375,7 @@ export async function resolveCatalogProductAndVariantV2(
     // Alias table is additive. Identity v3 continues through canonical lookup if unavailable.
   }
 
-  const deterministicExternalId = makeVariantExternalId(product.name, category, gender, color, execution.material, execution.length, size);
-  let externalId = deterministicExternalId;
-  if (allowRetiredRecreate && (retiredProductShell || retiredExecution?.id || retiredCombination?.id)) {
-    const occupied = await db.prepare(
-      'SELECT id FROM catalog_variants WHERE external_id = ? LIMIT 1'
-    ).bind(deterministicExternalId).first<{ id: number }>();
-    if (occupied?.id) {
-      const parsed = Date.parse(timestamp);
-      const incarnation = Number.isFinite(parsed)
-        ? Math.max(0, parsed).toString(36).toUpperCase()
-        : Date.now().toString(36).toUpperCase();
-      externalId = `${deterministicExternalId}-ORD-${incarnation}`;
-    }
-  }
-
+  const timestamp = new Date().toISOString();
   const created = await createCatalogCombinationV3(db, {
     productId: product.id,
     executionId: execution.id,
@@ -446,7 +385,7 @@ export async function resolveCatalogProductAndVariantV2(
     material: execution.material,
     length: execution.length,
     sizeLabel: size,
-    externalId,
+    externalId: makeVariantExternalId(product.name, category, gender, color, execution.material, execution.length, size),
   }, timestamp);
   return { productId: toInt(product.id, 0) || null, variantId: created.id || null, matchStatus: created.created ? 'created_combination' : 'matched', inputKey };
 }
@@ -456,10 +395,9 @@ export async function resolveCatalogProductAndVariant(
   db: D1Database,
   item: ReturnType<typeof normalizeOrderItems>[number],
   timestamp: string,
-  options: { allowRetiredRecreate?: boolean } = {},
 ): Promise<ResolvedOrderCatalogReference> {
   if (await isCatalogIdentityV3Enabled(db) || await isHumanInventoryModelEnabled(db)) {
-    return await resolveCatalogProductAndVariantV2(db, item, { ...options, timestamp });
+    return await resolveCatalogProductAndVariantV2(db, item);
   }
   return await resolveCatalogProductAndVariantLegacy(db, item, timestamp);
 }
