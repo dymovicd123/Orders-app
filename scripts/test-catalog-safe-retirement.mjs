@@ -41,6 +41,7 @@ check(reservations.includes("WHERE r.order_id = ? AND r.status IN ('active', 'un
 check(reservations.includes('v.is_active AS variant_active, p.is_active AS product_active'), 'shipping does not load live Catalog status')
 check(reservations.includes('live_variant.is_active') && reservations.includes('__shipping_conflict__'), 'stale shipping can still mutate a retired SKU')
 check(inventory.includes('AND v.is_active = 1 AND p.is_active = 1'), 'manual stock/transfer canonical lookup can use retired SKU')
+check(inventory.includes('const retiredExecutionKeys = new Set') && inventory.includes('Приход не может восстановить его автоматически'), 'Arrival can auto-resurrect a retired execution')
 check(inventory.includes('live_variant.is_active') && inventory.includes('__manual_operation_conflict__') && inventory.includes('__transfer_conflict__'), 'stale stock operation CAS does not include Catalog retirement')
 
 // Historical order display switches to immutable order-time snapshots after Catalog retirement.
