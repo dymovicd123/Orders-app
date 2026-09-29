@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "revision": "catalog-safe-retirement-hotfix-r1",
+  "file": "worker/domains/catalog-retirement.ts",
+  "beforeGitBlob": "874f5f733de433ef41bacee42b76ced80ca80487",
+  "afterGitBlob": "7cfcc43a46f5d7b8c8da80f33bbe0f1aa3f7d578",
+  "beforeLines": 372,
+  "afterLines": 405,
+  "replacements": [
+    {
+      "beforeBlock": "  const preview = await previewCatalogRetirement(db, entityType, entityId);\n  if (!preview.active) {\n    return { ok: true, alreadyRetired: true, requestId, entityType, entityId };\n  }\n",
+      "afterBlock": "  const preview = await previewCatalogRetirement(db, entityType, entityId);\n  const hasWorkingState = preview.active\n    || preview.activeVariantCount > 0\n    || preview.physicalQuantity !== 0\n    || preview.stockReservedQuantity !== 0\n    || preview.activeReservationQuantity > 0;\n  if (!hasWorkingState) {\n    return { ok: true, alreadyRetired: true, requestId, entityType, entityId };\n  }\n"
+    },
+    {
+      "beforeBlock": "  const entityGuardSql = entityType === 'execution'\n    ? `sp.id = ? AND sp.is_active = 1 AND p.is_active = 1`\n    : `p.id = ? AND p.is_active = 1`;\n\n",
+      "afterBlock": "  const entityGuardSql = entityType === 'execution'\n    ? `sp.id = ? AND p.is_active = 1\n       AND (\n         sp.is_active = 1\n         OR EXISTS (\n           SELECT 1 FROM catalog_variants repair_v\n           WHERE repair_v.stock_position_id = sp.id AND repair_v.is_active = 1\n         )\n       )`\n    : `p.id = ?\n       AND (\n         p.is_active = 1\n         OR EXISTS (\n           SELECT 1 FROM catalog_variants repair_v\n           WHERE repair_v.product_id = p.id AND repair_v.is_active = 1\n         )\n         OR EXISTS (\n           SELECT 1 FROM catalog_stock_positions repair_sp\n           WHERE repair_sp.product_id = p.id AND repair_sp.is_active = 1\n         )\n       )`;\n\n"
+    },
+    {
+      "beforeBlock": ").bind(entityId, now, requestId),",
+      "afterBlock": ").bind(now, entityId, requestId),"
+    },
+    {
+      "beforeBlock": "  await db.batch(statements);\n\n  const operation = await db.prepare(\n",
+      "afterBlock": "  await db.batch(statements);\n\n  const after = await previewCatalogRetirement(db, entityType, entityId);\n  if (after.activeVariantCount > 0 || after.physicalQuantity !== 0 || after.stockReservedQuantity !== 0 || after.activeReservationQuantity > 0) {\n    throw new Error('Удаление выполнено не полностью. Обновите каталог и повторите удаление; история не повреждена.');\n  }\n\n  const operation = await db.prepare(\n"
+    },
+    {
+      "beforeBlock": "    const fresh = await previewCatalogRetirement(db, entityType, entityId);\n    if (!fresh.active) return { ok: true, alreadyRetired: true, requestId, entityType, entityId };\n",
+      "afterBlock": "    const fresh = await previewCatalogRetirement(db, entityType, entityId);\n    const freshHasWorkingState = fresh.active\n      || fresh.activeVariantCount > 0\n      || fresh.physicalQuantity !== 0\n      || fresh.stockReservedQuantity !== 0\n      || fresh.activeReservationQuantity > 0;\n    if (!freshHasWorkingState) return { ok: true, alreadyRetired: true, requestId, entityType, entityId };\n"
+    }
+  ]
+}
