@@ -294,6 +294,10 @@ export async function resolveCatalogProductAndVariantV2(
   const color = knownFacts.resolve('color', aliasedColor);
   const size = knownFacts.resolve(sizeKind, aliasedSize);
 
+  // Step 192A2: an omitted manager color must not silently select a legacy БЕЗ ЦВЕТА
+  // placeholder when this exact execution also contains real colors. A truly colorless
+  // product keeps working through its existing no-color identity; creating a new no-color
+  // combination requires the explicit reference value БЕЗ ЦВЕТА instead of an empty field.
   const existingExecution = await findCatalogExecutionV3(db, product.id, material, length);
   if (existingExecution?.id) {
     const existing = await findCatalogCombinationV3(db, existingExecution.id, category, gender, color, size);
@@ -301,16 +305,11 @@ export async function resolveCatalogProductAndVariantV2(
       let omittedColorConflictsWithConcreteSibling = false;
       if (!rawColor) {
         const profile = await db.prepare(
-          `SELECT MAX(CASE WHEN TRIM(COALESCE(color,'')) <> '' AND UPPER(TRIM(color)) NOT IN ('БЕЗ ЦВЕТА','БЕЗЦВЕТА','НЕ УКАЗАН') THEN 1 ELSE 0 END) AS has_color
+          `SELECT MAX(CASE WHEN TRIM(COALESCE(color,'')) <> '' AND UPPER(TRIM(color)) <> 'БЕЗ ЦВЕТА' THEN 1 ELSE 0 END) AS has_color
            FROM catalog_variants
            WHERE product_id = ? AND stock_position_id = ? AND is_active = 1
-             AND COALESCE(category,'adult') = ?
-             AND CASE
-               WHEN UPPER(TRIM(COALESCE(gender,''))) LIKE '%ЖЕН%' THEN 'ЖЕН'
-               WHEN UPPER(TRIM(COALESCE(gender,''))) LIKE '%МУЖ%' THEN 'МУЖ'
-               ELSE UPPER(TRIM(COALESCE(gender,'')))
-             END = ?`
-        ).bind(product.id, existingExecution.id, category, gender || null).first<{ has_color: number }>();
+             AND COALESCE(category,'adult') = ?`
+        ).bind(product.id, existingExecution.id, category).first<{ has_color: number }>();
         omittedColorConflictsWithConcreteSibling = toInt(profile?.has_color, 0) > 0;
       }
       let omittedSizeConflictsWithConcreteSibling = false;
@@ -320,15 +319,8 @@ export async function resolveCatalogProductAndVariantV2(
            FROM catalog_variants
            WHERE product_id = ? AND stock_position_id = ? AND is_active = 1
              AND COALESCE(category,'adult') = ?
-             AND CASE
-               WHEN UPPER(TRIM(COALESCE(gender,''))) LIKE '%ЖЕН%' THEN 'ЖЕН'
-               WHEN UPPER(TRIM(COALESCE(gender,''))) LIKE '%МУЖ%' THEN 'МУЖ'
-               ELSE UPPER(TRIM(COALESCE(gender,'')))
-             END = ?
-             AND CASE
-               WHEN TRIM(COALESCE(color,'')) = '' THEN 'БЕЗ ЦВЕТА'
-               ELSE UPPER(TRIM(color))
-             END = ?`
+             AND COALESCE(gender,'') = COALESCE(?, '')
+             AND COALESCE(color,'') = COALESCE(?, '')`
         ).bind(product.id, existingExecution.id, category, gender || null, color || null).first<{ has_size: number }>();
         omittedSizeConflictsWithConcreteSibling = toInt(sizeProfile?.has_size, 0) > 0;
       }
@@ -339,10 +331,15 @@ export async function resolveCatalogProductAndVariantV2(
     }
   }
 
+  // Never synthesize a new БЕЗ ЦВЕТА SKU merely because the manager left color empty.
+  // One-size/unisex cases are intentionally not guessed here; their UI semantics are handled
+  // separately so existing legitimate dimensionless variants are not broken by this cleanup.
   if (!rawColor || !rawSize) {
     return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
   }
 
+  // Unknown input still stops before any master-data mutation. Recognized human facts
+  // are accepted independently of whether this exact SKU combination existed before.
   if (
     !material
     || !length
@@ -353,6 +350,9 @@ export async function resolveCatalogProductAndVariantV2(
     return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
   }
 
+  // Only now may known facts create a previously unseen execution/combination.
+  // Retired identity is fail-closed for background/runtime resolution. A deliberate NEW order
+  // save may start a fresh working generation, but never reactivates the retired execution/SKU rows.
   let retiredExecution: Awaited<ReturnType<typeof findRetiredCatalogExecutionV3>> = null;
   if (!existingExecution?.id) {
     retiredExecution = await findRetiredCatalogExecutionV3(db, product.id, material, length);
@@ -362,9 +362,6 @@ export async function resolveCatalogProductAndVariantV2(
   }
 
   if (retiredProductShell) {
-    if (!allowRetiredRecreate) {
-      return { productId: null, variantId: null, matchStatus: 'unresolved_product', inputKey };
-    }
     await db.prepare(
       `UPDATE catalog_products
        SET is_active = 1, updated_at = ?
@@ -394,6 +391,10 @@ export async function resolveCatalogProductAndVariantV2(
     return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_variant', inputKey };
   }
 
+  // Step 188D completion guard: legacy/manual aliases from the pre-v3 review UI are
+  // accepted only when they point to the exact canonical identity we have independently
+  // derived from the current input. This prevents an old 46 -> 42 or HAKI -> BLACK
+  // mapping from overriding the v3 product/execution/color/size model.
   try {
     const alias = await db.prepare(
       `SELECT v.id AS variant_id, v.product_id, v.stock_position_id,
@@ -429,7 +430,9 @@ export async function resolveCatalogProductAndVariantV2(
     ).bind(deterministicExternalId).first<{ id: number }>();
     if (occupied?.id) {
       const parsed = Date.parse(timestamp);
-      const incarnation = Number.isFinite(parsed) ? Math.max(0, parsed).toString(36).toUpperCase() : Date.now().toString(36).toUpperCase();
+      const incarnation = Number.isFinite(parsed)
+        ? Math.max(0, parsed).toString(36).toUpperCase()
+        : Date.now().toString(36).toUpperCase();
       externalId = `${deterministicExternalId}-ORD-${incarnation}`;
     }
   }
@@ -447,6 +450,7 @@ export async function resolveCatalogProductAndVariantV2(
   }, timestamp);
   return { productId: toInt(product.id, 0) || null, variantId: created.id || null, matchStatus: created.created ? 'created_combination' : 'matched', inputKey };
 }
+
 
 export async function resolveCatalogProductAndVariant(
   db: D1Database,
