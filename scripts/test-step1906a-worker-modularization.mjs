@@ -20,6 +20,11 @@ if (!process.env.CATALOG_SAFE_RETIREMENT_BRANCH2_NORMALIZED) {
       if (catalogSafeRetirementBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
         throw new Error('Catalog safe retirement Worker changed beyond exact manifest: ' + relative)
       }
+      originals.set(relative, actual)
+      if (delta.added) {
+        fs.unlinkSync(absolute)
+        continue
+      }
       let reverted = actual
       for (const replacement of [...(delta.replacements || [])].reverse()) {
         const occurrences = reverted.split(replacement.afterBlock).length - 1
@@ -29,7 +34,6 @@ if (!process.env.CATALOG_SAFE_RETIREMENT_BRANCH2_NORMALIZED) {
       if (catalogSafeRetirementBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
         throw new Error('Catalog safe retirement Worker predecessor reconstruction failed: ' + relative)
       }
-      originals.set(relative, actual)
       fs.writeFileSync(absolute, reverted)
     }
     const child = spawnSync(process.execPath, [process.argv[1]], {
