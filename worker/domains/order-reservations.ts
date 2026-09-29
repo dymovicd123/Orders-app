@@ -5,7 +5,7 @@ import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, norm
 import type { SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
 import type { CanonicalVariantSnapshot } from './catalog.ts'
-import { catalogGenderForProductScope, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, findRetiredCatalogExecutionV3, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
+import { catalogGenderForProductScope, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, findRetiredCatalogCombinationV3, findRetiredCatalogExecutionV3, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
 import { inventoryPhysicalCheckStatement } from './inventory-primitives.ts'
 import { boundedOutboundStock } from './stock-resolution.ts'
 import { normalizeOrderItems } from './order-core.ts'
@@ -245,10 +245,30 @@ export async function loadCatalogKnownFacts(db: D1Database) {
 export async function resolveCatalogProductAndVariantV2(
   db: D1Database,
   item: ReturnType<typeof normalizeOrderItems>[number],
+  options: { allowRetiredRecreate?: boolean; timestamp?: string } = {},
 ): Promise<ResolvedOrderCatalogReference> {
   if (!await isCatalogIdentityV3Enabled(db)) return await resolveCatalogProductAndVariantV2Flat(db, item);
   const inputKey = catalogOrderInputKey(item);
-  const product = await findCatalogProductByIdentity(db, item.productName, 0, { activeOnly: true }) as { id: number; name: string; category: string } | null;
+  const allowRetiredRecreate = Boolean(options.allowRetiredRecreate);
+  const timestamp = cleanText(options.timestamp) || new Date().toISOString();
+
+  let product = await findCatalogProductByIdentity(db, item.productName, 0, { activeOnly: true }) as { id: number; name: string; category: string } | null;
+  let retiredProductShell = false;
+  if (!product?.id && allowRetiredRecreate) {
+    const retiredIdentity = await findCatalogProductByIdentity(db, item.productName, 0, { allowAlias: false }) as { id: number; name: string; category: string } | null;
+    if (retiredIdentity?.id) {
+      const inactive = await db.prepare(
+        `SELECT id, name, category, is_active
+         FROM catalog_products
+         WHERE id = ? AND is_active = 0
+         LIMIT 1`
+      ).bind(retiredIdentity.id).first<{ id: number; name: string; category: string; is_active: number }>();
+      if (inactive?.id) {
+        product = { id: toInt(inactive.id, 0), name: cleanText(inactive.name), category: cleanText(inactive.category) };
+        retiredProductShell = true;
+      }
+    }
+  }
   if (!product?.id) return { productId: null, variantId: null, matchStatus: 'unresolved_product', inputKey };
 
   const category = normalizeAudienceCategory(item.category, item.size);
@@ -274,10 +294,6 @@ export async function resolveCatalogProductAndVariantV2(
   const color = knownFacts.resolve('color', aliasedColor);
   const size = knownFacts.resolve(sizeKind, aliasedSize);
 
-  // Step 192A2: an omitted manager color must not silently select a legacy БЕЗ ЦВЕТА
-  // placeholder when this exact execution also contains real colors. A truly colorless
-  // product keeps working through its existing no-color identity; creating a new no-color
-  // combination requires the explicit reference value БЕЗ ЦВЕТА instead of an empty field.
   const existingExecution = await findCatalogExecutionV3(db, product.id, material, length);
   if (existingExecution?.id) {
     const existing = await findCatalogCombinationV3(db, existingExecution.id, category, gender, color, size);
@@ -285,11 +301,16 @@ export async function resolveCatalogProductAndVariantV2(
       let omittedColorConflictsWithConcreteSibling = false;
       if (!rawColor) {
         const profile = await db.prepare(
-          `SELECT MAX(CASE WHEN TRIM(COALESCE(color,'')) <> '' AND UPPER(TRIM(color)) <> 'БЕЗ ЦВЕТА' THEN 1 ELSE 0 END) AS has_color
+          `SELECT MAX(CASE WHEN TRIM(COALESCE(color,'')) <> '' AND UPPER(TRIM(color)) NOT IN ('БЕЗ ЦВЕТА','БЕЗЦВЕТА','НЕ УКАЗАН') THEN 1 ELSE 0 END) AS has_color
            FROM catalog_variants
            WHERE product_id = ? AND stock_position_id = ? AND is_active = 1
-             AND COALESCE(category,'adult') = ?`
-        ).bind(product.id, existingExecution.id, category).first<{ has_color: number }>();
+             AND COALESCE(category,'adult') = ?
+             AND CASE
+               WHEN UPPER(TRIM(COALESCE(gender,''))) LIKE '%ЖЕН%' THEN 'ЖЕН'
+               WHEN UPPER(TRIM(COALESCE(gender,''))) LIKE '%МУЖ%' THEN 'МУЖ'
+               ELSE UPPER(TRIM(COALESCE(gender,'')))
+             END = ?`
+        ).bind(product.id, existingExecution.id, category, gender || null).first<{ has_color: number }>();
         omittedColorConflictsWithConcreteSibling = toInt(profile?.has_color, 0) > 0;
       }
       let omittedSizeConflictsWithConcreteSibling = false;
@@ -299,8 +320,15 @@ export async function resolveCatalogProductAndVariantV2(
            FROM catalog_variants
            WHERE product_id = ? AND stock_position_id = ? AND is_active = 1
              AND COALESCE(category,'adult') = ?
-             AND COALESCE(gender,'') = COALESCE(?, '')
-             AND COALESCE(color,'') = COALESCE(?, '')`
+             AND CASE
+               WHEN UPPER(TRIM(COALESCE(gender,''))) LIKE '%ЖЕН%' THEN 'ЖЕН'
+               WHEN UPPER(TRIM(COALESCE(gender,''))) LIKE '%МУЖ%' THEN 'МУЖ'
+               ELSE UPPER(TRIM(COALESCE(gender,'')))
+             END = ?
+             AND CASE
+               WHEN TRIM(COALESCE(color,'')) = '' THEN 'БЕЗ ЦВЕТА'
+               ELSE UPPER(TRIM(color))
+             END = ?`
         ).bind(product.id, existingExecution.id, category, gender || null, color || null).first<{ has_size: number }>();
         omittedSizeConflictsWithConcreteSibling = toInt(sizeProfile?.has_size, 0) > 0;
       }
@@ -311,15 +339,10 @@ export async function resolveCatalogProductAndVariantV2(
     }
   }
 
-  // Never synthesize a new БЕЗ ЦВЕТА SKU merely because the manager left color empty.
-  // One-size/unisex cases are intentionally not guessed here; their UI semantics are handled
-  // separately so existing legitimate dimensionless variants are not broken by this cleanup.
   if (!rawColor || !rawSize) {
     return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
   }
 
-  // Unknown input still stops before any master-data mutation. Recognized human facts
-  // are accepted independently of whether this exact SKU combination existed before.
   if (
     !material
     || !length
@@ -330,24 +353,47 @@ export async function resolveCatalogProductAndVariantV2(
     return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
   }
 
-  // Only now may known facts create a previously unseen execution/combination.
-  // A deliberately retired execution is different from a never-seen execution: runtime order
-  // resolution must not resurrect it. Only an explicit admin Catalog action may create a fresh
-  // generation with the same human characteristics.
+  let retiredExecution: Awaited<ReturnType<typeof findRetiredCatalogExecutionV3>> = null;
   if (!existingExecution?.id) {
-    const retiredExecution = await findRetiredCatalogExecutionV3(db, product.id, material, length);
-    if (retiredExecution?.id) {
+    retiredExecution = await findRetiredCatalogExecutionV3(db, product.id, material, length);
+    if (retiredExecution?.id && !allowRetiredRecreate) {
       return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_execution', inputKey };
     }
   }
+
+  if (retiredProductShell) {
+    if (!allowRetiredRecreate) {
+      return { productId: null, variantId: null, matchStatus: 'unresolved_product', inputKey };
+    }
+    await db.prepare(
+      `UPDATE catalog_products
+       SET is_active = 1, updated_at = ?
+       WHERE id = ? AND is_active = 0`
+    ).bind(timestamp, product.id).run();
+    const activeProduct = await db.prepare(
+      'SELECT id FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1'
+    ).bind(product.id).first<{ id: number }>();
+    if (!activeProduct?.id) {
+      return { productId: null, variantId: null, matchStatus: 'unresolved_product', inputKey };
+    }
+  }
+
   const execution = existingExecution?.id
     ? existingExecution
-    : await ensureCatalogExecutionV3(db, product.id, material, length, new Date().toISOString());
+    : await ensureCatalogExecutionV3(
+      db,
+      product.id,
+      material,
+      length,
+      timestamp,
+      allowRetiredRecreate ? { allowRetiredRecreate: true } : {},
+    );
 
-  // Step 188D completion guard: legacy/manual aliases from the pre-v3 review UI are
-  // accepted only when they point to the exact canonical identity we have independently
-  // derived from the current input. This prevents an old 46 -> 42 or HAKI -> BLACK
-  // mapping from overriding the v3 product/execution/color/size model.
+  const retiredCombination = await findRetiredCatalogCombinationV3(db, execution.id, category, gender, color, size);
+  if (retiredCombination?.id && !allowRetiredRecreate) {
+    return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_variant', inputKey };
+  }
+
   try {
     const alias = await db.prepare(
       `SELECT v.id AS variant_id, v.product_id, v.stock_position_id,
@@ -375,7 +421,19 @@ export async function resolveCatalogProductAndVariantV2(
     // Alias table is additive. Identity v3 continues through canonical lookup if unavailable.
   }
 
-  const timestamp = new Date().toISOString();
+  const deterministicExternalId = makeVariantExternalId(product.name, category, gender, color, execution.material, execution.length, size);
+  let externalId = deterministicExternalId;
+  if (allowRetiredRecreate && (retiredProductShell || retiredExecution?.id || retiredCombination?.id)) {
+    const occupied = await db.prepare(
+      'SELECT id FROM catalog_variants WHERE external_id = ? LIMIT 1'
+    ).bind(deterministicExternalId).first<{ id: number }>();
+    if (occupied?.id) {
+      const parsed = Date.parse(timestamp);
+      const incarnation = Number.isFinite(parsed) ? Math.max(0, parsed).toString(36).toUpperCase() : Date.now().toString(36).toUpperCase();
+      externalId = `${deterministicExternalId}-ORD-${incarnation}`;
+    }
+  }
+
   const created = await createCatalogCombinationV3(db, {
     productId: product.id,
     executionId: execution.id,
@@ -385,19 +443,19 @@ export async function resolveCatalogProductAndVariantV2(
     material: execution.material,
     length: execution.length,
     sizeLabel: size,
-    externalId: makeVariantExternalId(product.name, category, gender, color, execution.material, execution.length, size),
+    externalId,
   }, timestamp);
   return { productId: toInt(product.id, 0) || null, variantId: created.id || null, matchStatus: created.created ? 'created_combination' : 'matched', inputKey };
 }
-
 
 export async function resolveCatalogProductAndVariant(
   db: D1Database,
   item: ReturnType<typeof normalizeOrderItems>[number],
   timestamp: string,
+  options: { allowRetiredRecreate?: boolean } = {},
 ): Promise<ResolvedOrderCatalogReference> {
   if (await isCatalogIdentityV3Enabled(db) || await isHumanInventoryModelEnabled(db)) {
-    return await resolveCatalogProductAndVariantV2(db, item);
+    return await resolveCatalogProductAndVariantV2(db, item, { ...options, timestamp });
   }
   return await resolveCatalogProductAndVariantLegacy(db, item, timestamp);
 }
