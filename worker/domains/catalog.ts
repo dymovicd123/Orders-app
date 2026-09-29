@@ -600,7 +600,6 @@ export async function assertCatalogProductMayDeactivate(db: D1Database, productI
 }
 
 
-
 export function makeVariantExternalId(productName: string, category: string, gender: string, color: string, material: string, length: string, size: string) {
   const raw = [productName, category, gender, color, material, length, size]
     .map(part => cleanText(part).toUpperCase())
