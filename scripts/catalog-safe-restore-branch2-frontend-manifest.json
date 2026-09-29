@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "revision": "catalog-safe-restore-branch2-ui-r1",
+  "files": {
+    "src/features/inventory/views/renderInventoryCatalogPanel.tsx": {
+      "baselineFixture": "scripts/fixtures/catalog-safe-restore/src/features/inventory/views/renderInventoryCatalogPanel.tsx",
+      "beforeGitBlob": "374c1b889657fa2a42b973c0bb6cb303e62785d1",
+      "afterGitBlob": "593277ceb18c48c1c562eb0fd2604637109afa55",
+      "beforeLines": 684,
+      "afterLines": 686
+    },
+    "src/styles/w6-3-catalog-polish.css": {
+      "baselineFixture": "scripts/fixtures/catalog-safe-restore/src/styles/w6-3-catalog-polish.css",
+      "beforeGitBlob": "61203b0b2400f6e0c1845ba838961053e3ce996a",
+      "afterGitBlob": "ca23377a1b0937380f2bcf44f1bb55e7d832c00d",
+      "beforeLines": 555,
+      "afterLines": 671
+    },
+    "src/features/inventory/views/CatalogRetirementHistory.tsx": {
+      "added": true,
+      "afterGitBlob": "9feb8632806684d96bac3ecfbe03f5c4068c0c71",
+      "afterLines": 193
+    }
+  }
+}
