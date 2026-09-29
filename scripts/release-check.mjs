@@ -222,6 +222,7 @@ try {
   run('Catalog semantic SKU identity', process.execPath, [path.join(root, 'scripts/test-catalog-semantic-sku-identity.mjs')])
   run('Catalog selection / retirement integrity', process.execPath, [path.join(root, 'scripts/test-catalog-selection-retirement-integrity.mjs')])
   run('Catalog safe execution/product retirement', process.execPath, [path.join(root, 'scripts/test-catalog-safe-retirement.mjs')])
+  run('Catalog safe restore / Arrival recreation', process.execPath, [path.join(root, 'scripts/test-catalog-safe-restore.mjs')])
   run('Stage02 Phase1B Workshop disposition R1 tests', process.execPath, [path.join(root, 'scripts/test-stage02-phase1b-workshop-disposition-r1.mjs')])
   run('Stage02 Phase1B R2 Workshop Boutique disposition tests', process.execPath, [path.join(root, 'scripts/test-stage02-phase1b-r2-workshop-boutique-disposition.mjs')])
   run('Stage02 Phase2A stock truth primitives', process.execPath, [path.join(root, 'scripts/test-stage02-phase2a-stock-truth-primitives.mjs')])
