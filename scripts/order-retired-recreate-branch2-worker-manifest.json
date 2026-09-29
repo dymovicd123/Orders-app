@@ -11,9 +11,9 @@
     },
     "worker/domains/order-reservations.ts": {
       "beforeGitBlob": "340d42935880634892a11a6ca2e78036c0c373c9",
-      "afterGitBlob": "ae9787c36c28185e693f912c5ae860746c6ef801",
+      "afterGitBlob": "a894a98b17cb21b45b305be6c03547956a0110bf",
       "beforeLines": 2650,
-      "afterLines": 2708,
+      "afterLines": 2712,
       "baselineFixture": "scripts/fixtures/order-retired-recreate/worker/domains/order-reservations.ts"
     },
     "worker/domains/orders-write.ts": {
