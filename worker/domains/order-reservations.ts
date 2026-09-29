@@ -5,7 +5,7 @@ import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, norm
 import type { SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
 import type { CanonicalVariantSnapshot } from './catalog.ts'
-import { catalogGenderForProductScope, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
+import { catalogGenderForProductScope, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, findRetiredCatalogExecutionV3, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
 import { inventoryPhysicalCheckStatement } from './inventory-primitives.ts'
 import { boundedOutboundStock } from './stock-resolution.ts'
 import { normalizeOrderItems } from './order-core.ts'
@@ -331,6 +331,15 @@ export async function resolveCatalogProductAndVariantV2(
   }
 
   // Only now may known facts create a previously unseen execution/combination.
+  // A deliberately retired execution is different from a never-seen execution: runtime order
+  // resolution must not resurrect it. Only an explicit admin Catalog action may create a fresh
+  // generation with the same human characteristics.
+  if (!existingExecution?.id) {
+    const retiredExecution = await findRetiredCatalogExecutionV3(db, product.id, material, length);
+    if (retiredExecution?.id) {
+      return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_execution', inputKey };
+    }
+  }
   const execution = existingExecution?.id
     ? existingExecution
     : await ensureCatalogExecutionV3(db, product.id, material, length, new Date().toISOString());
