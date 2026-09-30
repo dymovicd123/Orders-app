@@ -225,6 +225,7 @@ try {
   run('Catalog safe restore / Arrival recreation', process.execPath, [path.join(root, 'scripts/test-catalog-safe-restore.mjs')])
   run('Arrival canonical product alias', process.execPath, [path.join(root, 'scripts/test-arrival-canonical-product-alias-r1.mjs')])
   run('Catalog retired operational write guards', process.execPath, [path.join(root, 'scripts/test-catalog-retired-operational-write-guards.mjs')])
+  run('Catalog retired order/return recovery', process.execPath, [path.join(root, 'scripts/test-catalog-retired-recovery.mjs')])
   run('Catalog local retirement', process.execPath, [path.join(root, 'scripts/test-catalog-local-retirement.mjs')])
   run('Catalog fixed product gender scope', process.execPath, [path.join(root, 'scripts/test-catalog-fixed-gender-scope.mjs')])
   run('Order retired Catalog confirmation', process.execPath, [path.join(root, 'scripts/test-order-retired-confirmation.mjs')])
