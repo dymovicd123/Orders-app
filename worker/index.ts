@@ -20,7 +20,7 @@ import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileK
 import { createManualOrderPaymentCritical } from './domains/money.ts'
 import { OrderInputValidationError } from './domains/order-core.ts'
 import { deleteOrderSafely } from './domains/order-delete.ts'
-import { activeStocktakeSessionForHandover, confirmItemStillHere, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, getOrderStockHandoverState, normalizeShipmentStockConfirmations, OrderStockShortageError, orderShipmentInventoryBlockerMessage, orderWorkshopPendingForShipping, reconcileIssuedBeforeCheckpoint } from './domains/order-reservations.ts'
+import { activeStocktakeSessionForHandover, confirmItemStillHere, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, getOrderStockHandoverState, normalizeShipmentStockConfirmations, OrderRetiredCatalogConfirmationError, OrderStockShortageError, orderShipmentInventoryBlockerMessage, orderWorkshopPendingForShipping, reconcileIssuedBeforeCheckpoint } from './domains/order-reservations.ts'
 import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
@@ -518,6 +518,9 @@ export default {
           }
           if (error instanceof OrderStockShortageError) {
             return json({ ok: false, code: error.code, message: error.message, shortages: error.shortages }, { status: 409 });
+          }
+          if (error instanceof OrderRetiredCatalogConfirmationError) {
+            return json({ ok: false, code: error.code, message: error.message, retiredItems: error.items }, { status: error.status });
           }
           const criticalResponse = criticalOperationErrorResponse(error);
           if (criticalResponse) return criticalResponse;
