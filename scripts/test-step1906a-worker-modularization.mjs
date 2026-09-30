@@ -5,6 +5,46 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
+const catalogGranularHistoryWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-granular-history-r1-worker-manifest.json'), 'utf8'))
+if (catalogGranularHistoryWorkerManifest?.version !== 1 || catalogGranularHistoryWorkerManifest?.revision !== 'catalog-granular-history-worker-r1') throw new Error('Catalog granular history Worker manifest invalid')
+const catalogGranularHistoryWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.CATALOG_GRANULAR_HISTORY_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(catalogGranularHistoryWorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (catalogGranularHistoryWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Catalog granular history Worker changed beyond exact manifest: ' + relative)
+      }
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (catalogGranularHistoryWorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Catalog granular history Worker baseline fixture drifted: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, CATALOG_GRANULAR_HISTORY_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('CATALOG GRANULAR HISTORY WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const catalogRetiredRecoveryWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-retired-recovery-r1-worker-manifest.json'), 'utf8'))
 if (catalogRetiredRecoveryWorkerManifest?.version !== 1 || catalogRetiredRecoveryWorkerManifest?.revision !== 'catalog-retired-recovery-worker-r1') throw new Error('Catalog retired recovery Worker manifest invalid')
 const catalogRetiredRecoveryWorkerBlobSha = (value) => {
