@@ -94,7 +94,7 @@ export async function previewCatalogVariantGroupRetirement(
             AND COALESCE(o.shipping_status,'not_sent')<>'sent'
             AND COALESCE(oi.quantity,0)>0) AS open_order_item_count,
        (SELECT COUNT(*) FROM workshop_tasks wt
-          WHERE wt.variant_id IN (SELECT id FROM active_variants) AND wt.status IN ('active','ready')) AS active_workshop_task_count,
+          WHERE wt.variant_id IN (SELECT id FROM active_variants) AND wt.status = 'active') AS active_workshop_task_count,
        (SELECT COUNT(*) FROM inactive_variants iv
           WHERE EXISTS (
             SELECT 1 FROM inventory_stock s
@@ -177,7 +177,7 @@ export async function retireCatalogVariantGroup(
        )
        AND NOT EXISTS (
          SELECT 1 FROM workshop_tasks wt
-         WHERE wt.variant_id IN (SELECT id FROM target_variants) AND wt.status IN ('active','ready')
+         WHERE wt.variant_id IN (SELECT id FROM target_variants) AND wt.status = 'active'
        )
        AND NOT EXISTS (
          SELECT 1 FROM inventory_lifecycle_events e
@@ -287,7 +287,7 @@ export async function previewCatalogRetirement(
             AND COALESCE(o.shipping_status,'not_sent')<>'sent'
             AND COALESCE(oi.quantity,0)>0) AS open_order_item_count,
        (SELECT COUNT(*) FROM workshop_tasks wt
-          WHERE wt.variant_id IN (SELECT id FROM active_variants) AND wt.status IN ('active','ready')) AS active_workshop_task_count,
+          WHERE wt.variant_id IN (SELECT id FROM active_variants) AND wt.status = 'active') AS active_workshop_task_count,
        (SELECT COUNT(*) FROM inactive_variants iv
           WHERE EXISTS (
             SELECT 1 FROM inventory_stock s
@@ -434,7 +434,7 @@ export async function retireCatalogEntity(
          AND NOT EXISTS (
            SELECT 1 FROM workshop_tasks wt
            JOIN catalog_variants v ON v.id=wt.variant_id
-           WHERE v.stock_position_id=sp.id AND v.is_active=1 AND wt.status IN ('active','ready')
+           WHERE v.stock_position_id=sp.id AND v.is_active=1 AND wt.status = 'active'
          )
          AND NOT EXISTS (
            SELECT 1 FROM catalog_variants v
@@ -475,7 +475,7 @@ export async function retireCatalogEntity(
          AND NOT EXISTS (
            SELECT 1 FROM workshop_tasks wt
            JOIN catalog_variants v ON v.id=wt.variant_id
-           WHERE v.product_id=p.id AND v.is_active=1 AND wt.status IN ('active','ready')
+           WHERE v.product_id=p.id AND v.is_active=1 AND wt.status = 'active'
          )
          AND NOT EXISTS (
            SELECT 1 FROM catalog_variants v
@@ -687,6 +687,7 @@ export type CatalogRetirementHistoryRow = {
   createdAt: string;
   completedAt: string | null;
   restoredAt: string | null;
+  restorePending: boolean;
   workingAgain: boolean;
 };
 
@@ -703,7 +704,19 @@ export async function listCatalogRetirements(db: D1Database, limitInput: unknown
          WHERE rr.retirement_id = op.id AND rr.status='completed'
          ORDER BY rr.id DESC LIMIT 1
        ) AS restored_at,
+       EXISTS(
+         SELECT 1 FROM catalog_retirement_restores pending_rr
+         WHERE pending_rr.retirement_id=op.id AND pending_rr.status='started'
+       ) AS restore_pending,
        CASE
+         WHEN EXISTS(
+           SELECT 1 FROM catalog_retirement_restores pending_rr
+           WHERE pending_rr.retirement_id=op.id AND pending_rr.status='started'
+         ) THEN 0
+         WHEN EXISTS(
+           SELECT 1 FROM catalog_retirement_restores completed_rr
+           WHERE completed_rr.retirement_id=op.id AND completed_rr.status='completed'
+         ) THEN 1
          WHEN op.entity_type='product' THEN EXISTS(
            SELECT 1 FROM catalog_products p
            WHERE p.id=op.product_id AND p.is_active=1
@@ -738,6 +751,7 @@ export async function listCatalogRetirements(db: D1Database, limitInput: unknown
     createdAt: cleanText(row.created_at),
     completedAt: cleanText(row.completed_at) || null,
     restoredAt: cleanText(row.restored_at) || null,
+    restorePending: toInt(row.restore_pending, 0) === 1,
     workingAgain: toInt(row.working_again, 0) === 1,
   }));
   return { ok: true, rows };
@@ -784,6 +798,30 @@ export async function restoreCatalogRetirement(
     };
   }
 
+  const completedRestore = await db.prepare(
+    `SELECT id, retirement_id, request_id, status, restored_variant_count, completed_at
+     FROM catalog_retirement_restores
+     WHERE retirement_id=? AND status='completed'
+     ORDER BY id DESC LIMIT 1`
+  ).bind(retirementId).first<Record<string, unknown>>();
+  if (completedRestore?.id && !existingRestore?.id) {
+    return {
+      ok: true,
+      replayed: true,
+      retirementId,
+      restoreId: toInt(completedRestore.id, 0),
+      restoredVariantCount: Math.max(0, toInt(completedRestore.restored_variant_count, 0)),
+      completedAt: cleanText(completedRestore.completed_at) || null,
+    };
+  }
+
+  let resumableRestore = existingRestore?.id ? existingRestore : await db.prepare(
+    `SELECT id, retirement_id, request_id, status, restored_variant_count, completed_at
+     FROM catalog_retirement_restores
+     WHERE retirement_id=? AND status='started'
+     ORDER BY id DESC LIMIT 1`
+  ).bind(retirementId).first<Record<string, unknown>>();
+
   const integrityPreview = await previewCatalogRetirement(db, retirementEntityType, toInt(operation.entity_id, 0));
   if (integrityPreview.inactiveOperationalVariantCount > 0) {
     throw new Error('Восстановление остановлено: у исторической неактивной позиции найден живой остаток или резерв. Сначала разберите аномалию склада.');
@@ -812,18 +850,21 @@ export async function restoreCatalogRetirement(
   // partly restored working generation behind.
   const now = new Date().toISOString();
   const actor = cleanText(input.actor) || null;
-  if (!existingRestore?.id) {
+  if (!resumableRestore?.id) {
     await db.prepare(
-      `INSERT INTO catalog_retirement_restores (
+      `INSERT OR IGNORE INTO catalog_retirement_restores (
          retirement_id, request_id, restored_by, status, restored_variant_count, created_at
        ) VALUES (?, ?, ?, 'started', 0, ?)`
     ).bind(retirementId, requestId, actor, now).run();
+    resumableRestore = await db.prepare(
+      `SELECT id, retirement_id, request_id, status, restored_variant_count, completed_at
+       FROM catalog_retirement_restores
+       WHERE retirement_id=? AND status='started'
+       ORDER BY id DESC LIMIT 1`
+    ).bind(retirementId).first<Record<string, unknown>>();
   }
-  const restore = await db.prepare(
-    'SELECT id FROM catalog_retirement_restores WHERE request_id=? LIMIT 1'
-  ).bind(requestId).first<{ id: number }>();
-  const restoreId = toInt(restore?.id, 0);
-  if (!restoreId) throw new Error('Не удалось начать безопасное восстановление.');
+  const restoreId = toInt(resumableRestore?.id, 0);
+  if (!restoreId) throw new Error('Не удалось начать или продолжить безопасное восстановление.');
 
   // Restore only the product shell. Old executions/SKUs remain retired forever.
   if (toInt(product.is_active, 0) !== 1) {
@@ -848,7 +889,6 @@ export async function restoreCatalogRetirement(
     addGroup(operation.material, operation.length);
   }
 
-  let ensuredVariants = 0;
   for (const group of groups.values()) {
     const execution = await ensureCatalogExecutionV3(
       db,
@@ -885,14 +925,16 @@ export async function restoreCatalogRetirement(
            restore_id, retired_variant_id, active_variant_id, active_stock_position_id, created_at
          ) VALUES (?, ?, ?, ?, ?)`
       ).bind(restoreId, toInt(row.variant_id, 0), activeVariantId, toInt(execution.id, 0), now).run();
-      ensuredVariants += 1;
     }
   }
 
   const mapped = await db.prepare(
     'SELECT COUNT(*) AS count FROM catalog_retirement_restore_variants WHERE restore_id=?'
   ).bind(restoreId).first<{ count: number }>();
-  const restoredVariantCount = Math.max(ensuredVariants, toInt(mapped?.count, 0));
+  const restoredVariantCount = Math.max(0, toInt(mapped?.count, 0));
+  if (restoredVariantCount !== snapshots.length) {
+    throw new Error('Восстановление не завершено полностью. Повторите действие: уже созданные рабочие позиции будут безопасно использованы повторно.');
+  }
 
   await db.prepare(
     `UPDATE catalog_retirement_restores
