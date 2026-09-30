@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { CatalogRetirementAction } from './CatalogRetirementAction'
+import { CatalogVariantGroupRetirementAction } from './CatalogVariantGroupRetirementAction'
 
 const normalizedText = (value: unknown) => String(value || '').trim()
 const normalizedKey = (value: unknown) => normalizedText(value).toUpperCase() || 'СТАНДАРТ'
@@ -402,6 +403,25 @@ export function CatalogPolishExecutionGroups({
                             <div className="catalog-color-subgroup-label">
                               <strong>{subgroup.gender}</strong>
                               <span>{productCategoryLabel(subgroup.category)} · {subgroup.category === 'child' ? 'возраст' : 'размер'}</span>
+                              {isAdmin && groupStockPositionId ? (
+                                <CatalogVariantGroupRetirementAction
+                                  executionId={groupStockPositionId}
+                                  category={subgroup.category}
+                                  gender={subgroup.gender}
+                                  color={colorGroup.label}
+                                  disabled={Boolean(actionBusyVariantId)}
+                                  onRetired={async () => {
+                                    setVariantCard(null)
+                                    setActionError('')
+                                    setActionMessage(`Группа «${colorGroup.label} · ${subgroup.gender}» удалена. История сохранена.`)
+                                    try {
+                                      return await loadCatalogData(true)
+                                    } catch {
+                                      return false
+                                    }
+                                  }}
+                                />
+                              ) : null}
                             </div>
                             <div className="catalog-size-grid">
                               {subgroup.variants.map((variant: any) => {
