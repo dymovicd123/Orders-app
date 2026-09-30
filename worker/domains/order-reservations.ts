@@ -141,7 +141,7 @@ export async function resolveCatalogProductAndVariantLegacy(
 export type ResolvedOrderCatalogReference = {
   productId: number | null;
   variantId: number | null;
-  matchStatus?: 'matched' | 'alias' | 'created_combination' | 'unresolved_product' | 'unresolved_execution' | 'unresolved_attribute' | 'unresolved_variant';
+  matchStatus?: 'matched' | 'alias' | 'created_combination' | 'unresolved_product' | 'unresolved_execution' | 'unresolved_attribute' | 'unresolved_variant' | 'retired_historical';
   inputKey?: string;
 };
 
