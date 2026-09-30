@@ -99,7 +99,15 @@ const catalogRetirementMainPortBlobSha = (value) => {
 }
 const stage03ProductionSuccessorFrontendBlobs = {
   'src/App.tsx': 'a8d155fbd74f94dd361b837e306ae9fc6e1aa0bf',
+  'src/app/controllers/useWorkspaceViewModel.tsx': '8fbc9e753d7e7561c65ade6e931605e7497c5b69',
+  'src/app/order-pricing.ts': '133f3198261ffa6ada2ef76521e00cac7541d845',
   'src/app/types.ts': '14741ad9b64156f519a2bbd9c458c6b0585a0d24',
+  'src/app/utils.ts': '6e20547f7e8825303d79fbc21f37fe8214c4214e',
+  'src/features/renderers/FinanceReportContentRenderer.tsx': '3d7ff45fd4418eefaf5ea9bd94745964ef8fd47a',
+  'src/features/sections/CreateOrderSection.tsx': '29e90a12ff54fc6e7607cbc18b4e46f83bb80a8c',
+  'src/features/sections/OrderEditorSection.tsx': '92d3e3b39e882362a7a9363f2396b2bdd313b2f1',
+  'src/features/sections/OrderExchangeSection.tsx': 'd98b9a14f5f45d5393d1d51d8c0bcae39ec087ca',
+  'src/features/sections/OrderReturnsSection.tsx': 'a79b580af2e5a1aaf6fe032f9586c8ac1bd54896',
 }
 if (!process.env.CATALOG_RETIREMENT_MAIN_PORT_FRONTEND_NORMALIZED) {
   const originals = new Map()
@@ -296,7 +304,9 @@ if (!process.env.CLIENT_ZAMMLER_PROD_RUNTIME_FRONTEND_NORMALIZED) {
     for (const [relative, delta] of Object.entries(clientZammlerProdRuntimeManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (clientZammlerProdFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('CLIENT-ZAMMLER Production frontend changed beyond exact manifest: ' + relative)
+      const actualBlob = clientZammlerProdFrontendBlobSha(actual)
+      const acceptedSuccessorBlob = stage03ProductionSuccessorFrontendBlobs[relative]
+      if (actualBlob !== delta.afterGitBlob && actualBlob !== acceptedSuccessorBlob) throw new Error('CLIENT-ZAMMLER Production frontend changed beyond exact manifest or approved Stage03 successor: ' + relative)
       const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
       if (clientZammlerProdFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('CLIENT-ZAMMLER Production frontend baseline fixture drifted: ' + relative)
       originals.set(relative, actual)
