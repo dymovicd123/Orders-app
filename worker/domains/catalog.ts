@@ -1227,9 +1227,25 @@ export async function updateCatalogVariant(db: D1Database, id: number, input: { 
       throw new Error('Нельзя одновременно исправлять идентичность и выводить позицию из каталога. Сохраните только одно действие.');
     }
     await assertCatalogVariantMayDeactivate(db, id);
-    await db.prepare(
-      'UPDATE catalog_variants SET is_active = 0, sort_order = ?, updated_at = ? WHERE id = ? AND is_active = 1'
-    ).bind(sortOrder, timestamp, id).run();
+    const [retired] = await db.batch([
+      db.prepare(
+        'UPDATE catalog_variants SET is_active = 0, sort_order = ?, updated_at = ? WHERE id = ? AND is_active = 1'
+      ).bind(sortOrder, timestamp, id),
+      db.prepare(
+        `INSERT INTO catalog_retirement_history_events (
+           event_type, product_id, product_name, stock_position_id, variant_id,
+           material, length, category, gender, color, size_label, variant_count, created_at
+         )
+         SELECT 'variant', v.product_id, p.name, v.stock_position_id, v.id,
+                v.material, v.length, v.category, v.gender, v.color, v.size_label, 1, ?
+         FROM catalog_variants v
+         JOIN catalog_products p ON p.id=v.product_id
+         WHERE v.id=? AND v.is_active=0 AND v.updated_at=?`
+      ).bind(timestamp, id, timestamp),
+    ]);
+    if (Math.max(0, toInt(retired.meta?.changes, 0)) !== 1) {
+      throw new Error('Позиция изменилась одновременно с удалением. Обновите Каталог и проверьте её состояние перед повтором.');
+    }
     return { ok: true };
   }
 
