@@ -35,7 +35,6 @@ function normalizeVariantGroupScope(input: {
   if (!executionId) throw new Error('Исполнение не найдено.');
   const category = normalizeAudienceCategory(input.category, '');
   const gender = normalizeCatalogCombinationGender(input.gender);
-  if (!gender) throw new Error('Не удалось однозначно определить пол группы.');
   const color = normalizeCatalogCombinationColor(input.color);
   return { executionId, category, gender, color };
 }
