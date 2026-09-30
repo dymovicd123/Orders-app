@@ -107,7 +107,7 @@ export async function resolveInventoryLifecycleCandidate(
   const existingVariantId = toInt(item.variant_id, 0);
   if (existingVariantId) {
     try {
-      const canonical = await loadCanonicalVariantSnapshot(db, existingVariantId);
+      const canonical = await loadCanonicalVariantSnapshot(db, existingVariantId, { activeOnly: true });
       // An explicit valid order-item variant link is canonical truth for both ordinary
       // and Workshop lines. Do not re-resolve a repaired Workshop line from stale text.
       return { productId: canonical.productId, variantId: canonical.variantId, matchStatus: 'matched', inputKey: catalogOrderInputKey(inventoryLifecycleItemFromRow(item)) };
@@ -387,7 +387,7 @@ export async function applyCanonicalInventoryLifecycleEvent(
   if (cleanText(event.status) === 'applied') return { applied: false, already: true, event };
   if (cleanText(event.status) === 'cancelled') throw new Error('Эта складская задача уже отменена.');
 
-  const canonical = await loadCanonicalVariantSnapshot(db, variantId);
+  const canonical = await loadCanonicalVariantSnapshot(db, variantId, { activeOnly: true });
   const source = normalizeSourceType(event.inventory_source);
   const qty = Math.max(1, toInt(event.quantity, 1));
   const delta = cleanText(event.direction) === 'in' ? qty : -qty;
@@ -578,7 +578,7 @@ export async function applyCanonicalInventoryLifecycleEvent(
 
 type InventoryLifecycleCancellationDisposition = {
   reversePhysical: boolean;
-  reason: 'safe' | 'active_stocktake' | 'later_physical_check' | 'unknown_event_time' | 'insufficient_current_physical';
+  reason: 'safe' | 'retired_identity' | 'active_stocktake' | 'later_physical_check' | 'unknown_event_time' | 'insufficient_current_physical';
   eventAt?: string;
   activeStocktakeId?: string;
   laterCheckId?: number;
@@ -595,6 +595,17 @@ async function inventoryLifecycleCancellationDisposition(
   const variantId = toInt(event.variant_id, 0);
   const quantity = Math.max(1, toInt(event.quantity, 1));
   const eventAt = cleanText(event.applied_at) || cleanText(event.created_at);
+
+  const liveCatalogIdentity = await db.prepare(
+    `SELECT v.id
+     FROM catalog_variants v
+     JOIN catalog_products p ON p.id = v.product_id
+     WHERE v.id = ? AND v.is_active = 1 AND p.is_active = 1
+     LIMIT 1`
+  ).bind(variantId).first<{ id: number }>();
+  if (!liveCatalogIdentity?.id) {
+    return { reversePhysical: false, reason: 'retired_identity', eventAt };
+  }
 
   const activeStocktake = await db.prepare(
     `SELECT id, started_at
@@ -721,9 +732,11 @@ export async function cancelInventoryLifecycleEvent(
   const reversalDelta = -originalDelta;
   const physicalDisposition = await inventoryLifecycleCancellationDisposition(db, event);
   if (!physicalDisposition.reversePhysical) {
-    const reasonText = physicalDisposition.reason === 'active_stocktake'
-      ? 'Физический остаток не откатывался: на точке идёт ревизия, которая является текущей физической истиной.'
-      : physicalDisposition.reason === 'later_physical_check'
+    const reasonText = physicalDisposition.reason === 'retired_identity'
+      ? 'Физический остаток не откатывался: старая SKU уже выведена из рабочего каталога и не может снова получать рабочий остаток.'
+      : physicalDisposition.reason === 'active_stocktake'
+        ? 'Физический остаток не откатывался: на точке идёт ревизия, которая является текущей физической истиной.'
+        : physicalDisposition.reason === 'later_physical_check'
         ? 'Физический остаток не откатывался: после операции уже была более свежая физическая сверка.'
         : physicalDisposition.reason === 'insufficient_current_physical'
           ? 'Физический остаток не откатывался: обратное списание сделало бы остаток отрицательным.'
@@ -960,7 +973,7 @@ export async function getInventoryLifecycleContext(db: D1Database, eventId: numb
   let currentCanonical = null;
   if (currentVariantId) {
     try {
-      currentCanonical = await loadCanonicalVariantSnapshot(db, currentVariantId);
+      currentCanonical = await loadCanonicalVariantSnapshot(db, currentVariantId, { activeOnly: true });
     } catch {
       // Broken current FK is ignored here; the lifecycle snapshot remains safe fallback evidence.
     }
