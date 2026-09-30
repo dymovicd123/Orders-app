@@ -123,7 +123,7 @@ export async function resolveInventoryLifecycleCandidate(
           inputKey: catalogOrderInputKey(inventoryLifecycleItemFromRow(item)),
         };
       } catch {
-        // A genuinely broken legacy link may still be resolved from recorded human facts.
+        // A genuinely broken legacy link still uses independent identity resolution from the recorded item facts.
       }
     }
   }
