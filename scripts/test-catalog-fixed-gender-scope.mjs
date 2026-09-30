@@ -58,7 +58,7 @@ const restoreStart = retirement.indexOf('export async function restoreCatalogRet
 const restoreBody = retirement.slice(restoreStart)
 check(restoreBody.includes('const productGenderScope = await getCatalogProductGenderScope(db, productId)'), 'restore does not inspect current product gender scope')
 check(restoreBody.includes('assertCatalogGenderAllowedForScope(productGenderScope, row.gender'), 'restore can recreate historical opposite-gender SKU')
-check(restoreBody.indexOf('assertCatalogGenderAllowedForScope(productGenderScope, row.gender') < restoreBody.indexOf('INSERT INTO catalog_retirement_restores'),
+check(restoreBody.indexOf('assertCatalogGenderAllowedForScope(productGenderScope, row.gender') < restoreBody.indexOf('INSERT OR IGNORE INTO catalog_retirement_restores'),
   'restore writes started/audit state before rejecting an invalid historical gender snapshot')
 check(restoreBody.indexOf('assertCatalogGenderAllowedForScope(productGenderScope, row.gender') < restoreBody.indexOf('UPDATE catalog_products SET is_active=1'),
   'restore can reactivate product shell before rejecting invalid historical gender snapshot')

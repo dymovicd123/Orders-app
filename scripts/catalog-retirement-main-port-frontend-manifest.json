@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "revision": "catalog-retirement-main-port-frontend-r1",
+  "baseMain": "820ff6be9a2e06fad4f61b147263927b0c42d3a7",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "d0496155439938875979a5c32d58582d41fa83f8",
+      "afterGitBlob": "4d9eec123e97fc0f217518243efa87a6d63dcf03",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/src/App.tsx"
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "c876da8c3259549ac99f3b862e78c5877c2eb97a",
+      "afterGitBlob": "5fce5302775bdd000a416dadad9303fe6256ae6e",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/src/app/types.ts"
+    },
+    "src/features/inventory/views/CatalogRetirementAction.tsx": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "5f62b20b5fb2a176bfbe1d3371cbdb0a86818fe2",
+      "baselineFixture": null
+    },
+    "src/features/inventory/views/CatalogRetirementHistory.tsx": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "766768987bccf9c832b602455805dcc17ec2f81f",
+      "baselineFixture": null
+    },
+    "src/features/inventory/views/CatalogVariantGroupRetirementAction.tsx": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "292d37ceaf8fabd406bd3c50d46e3e299d09ad78",
+      "baselineFixture": null
+    },
+    "src/features/inventory/views/catalogPolishExecutionGroups.tsx": {
+      "beforeGitBlob": "6db3f787285e38e0a6fcaa3c5d3c1e3069374635",
+      "afterGitBlob": "400a50d19eb6d088ee6e4fe8616a7d0bf12ea2ea",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/src/features/inventory/views/catalogPolishExecutionGroups.tsx"
+    },
+    "src/features/inventory/views/renderInventoryCatalogPanel.tsx": {
+      "beforeGitBlob": "49ab565611e35bcb1af64247fbba9b90c3fdf73b",
+      "afterGitBlob": "593277ceb18c48c1c562eb0fd2604637109afa55",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/src/features/inventory/views/renderInventoryCatalogPanel.tsx"
+    },
+    "src/features/orders/OrderCatalogResolutionModal.tsx": {
+      "beforeGitBlob": "f743b78ad176973afffca422d9ea142ae31cc285",
+      "afterGitBlob": "178085838663420ad60f88e62cabe954d93d24d3",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/src/features/orders/OrderCatalogResolutionModal.tsx"
+    },
+    "src/features/orders/ReturnedItemResolutionModal.tsx": {
+      "beforeGitBlob": "ea7a76b4fb1558f38b88103f90047818a25f527c",
+      "afterGitBlob": "909aedc887504f0727daeedd1a781d7aba44d54c",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/src/features/orders/ReturnedItemResolutionModal.tsx"
+    },
+    "src/styles/w6-3-catalog-polish.css": {
+      "beforeGitBlob": "73bd806b7069cd9137e173806f216e7f3d7a7d75",
+      "afterGitBlob": "c4dff97458b29e0e3099f5fa5e65e7dc333421dc",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/src/styles/w6-3-catalog-polish.css"
+    }
+  }
+}

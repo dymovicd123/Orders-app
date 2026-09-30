@@ -1,0 +1,55 @@
+import fs from 'node:fs'
+
+const read = (path) => fs.readFileSync(path, 'utf8')
+const check = (condition, message) => { if (!condition) throw new Error(message) }
+
+const migration = read('migrations/0077_v72_catalog_safe_restore.sql')
+const resumabilityMigration = read('migrations/0078_v72_catalog_restore_resumability.sql')
+const retirement = read('worker/domains/catalog-retirement.ts')
+const inventory = read('worker/domains/inventory-movement.ts')
+const worker = read('worker/index.ts')
+const panel = read('src/features/inventory/views/renderInventoryCatalogPanel.tsx')
+const historyUi = read('src/features/inventory/views/CatalogRetirementHistory.tsx')
+
+check(migration.includes('CREATE TABLE IF NOT EXISTS catalog_retirement_restores'), 'safe restore audit table missing')
+check(migration.includes('CREATE TABLE IF NOT EXISTS catalog_retirement_restore_variants'), 'safe restore variant mapping table missing')
+check(!migration.includes('UPDATE catalog_variants') && !migration.includes('UPDATE inventory_stock'), '0077 must be additive schema only')
+check(resumabilityMigration.includes('CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_retirement_restores_single_started'), 'single in-flight restore invariant missing')
+check(resumabilityMigration.includes("WHERE status = 'started'"), 'single in-flight restore invariant must be scoped to started restores')
+check(!resumabilityMigration.includes('DELETE FROM') && !resumabilityMigration.includes('UPDATE '), '0078 resumability migration must not rewrite historical data')
+
+check(retirement.includes('export async function listCatalogRetirements'), 'retirement history read path missing')
+check(retirement.includes('export async function restoreCatalogRetirement'), 'safe restore engine missing')
+check(retirement.includes("UPDATE catalog_products SET is_active=1"), 'restore does not reactivate only the product shell')
+check(retirement.includes('allowRetiredRecreate: true'), 'restore cannot create a fresh execution generation')
+check(retirement.includes('createCatalogCombinationV3'), 'restore cannot create fresh SKU generation')
+check(retirement.includes('catalog_retirement_restore_variants'), 'restore does not persist old-to-new SKU mapping')
+check(!retirement.includes("UPDATE catalog_variants SET is_active=1"), 'restore must never reactivate retired SKU rows')
+check(!retirement.includes("UPDATE inventory_stock SET quantity"), 'restore must never restore old physical stock')
+check(retirement.includes("working_again"), 'history does not detect a variant already returned through Arrival/manual re-add')
+check(retirement.includes('restore_pending'), 'history does not expose interrupted restore state')
+check(retirement.includes("WHERE retirement_id=? AND status='started'"), 'restore cannot resume an interrupted restore by retirement id')
+check(retirement.includes('INSERT OR IGNORE INTO catalog_retirement_restores'), 'concurrent restore start is not idempotent under the single-started invariant')
+check(retirement.includes('restoredVariantCount !== snapshots.length'), 'restore can mark a partial mapping completed')
+check(retirement.includes("WHERE retirement_id=? AND status='completed'"), 'repeat restore does not reuse prior completed restore')
+check(retirement.includes("pending_rr.retirement_id=op.id AND pending_rr.status='started'") && retirement.includes("completed_rr.retirement_id=op.id AND completed_rr.status='completed'") && retirement.includes(") THEN 0\n           WHEN EXISTS("), 'partial restore can still be reported as working again')
+
+check(inventory.includes("allowRetiredRecreate: movementType === 'arrival'"), 'only Arrival should opt into retired Catalog recreation')
+check(inventory.includes('retiredProductIdsToReactivate'), 'Arrival cannot revive a retired product shell')
+check(inventory.includes('lookup.byInactiveExact') && inventory.includes('lookup.byInactiveIdentity'), 'Arrival cannot find a retired product by human identity')
+check(inventory.includes('retiredExecutionKeys.has(key) && !options.allowRetiredRecreate'), 'retired execution guard still blocks Arrival or is removed for all operations')
+check(inventory.includes('INSERT OR IGNORE INTO catalog_stock_positions'), 'Arrival cannot create fresh execution generation')
+check(inventory.includes('PHYS-'), 'Arrival fresh SKU generation does not avoid retired external-id collision')
+
+check(worker.includes("url.pathname === '/api/catalog/retirements'"), 'Catalog retirement history endpoint missing')
+check(worker.includes('catalogRetirementRestoreMatch'), 'Catalog safe restore endpoint missing')
+check(worker.includes('requireAdminAccess(request)'), 'Catalog restore endpoints are not admin-guarded')
+
+check(panel.includes('CatalogRetirementHistory'), 'Catalog does not expose deleted history')
+check(historyUi.includes('Удалённые товары и позиции'), 'human-facing unified deleted history title missing')
+check(historyUi.includes('Физический остаток и резерв начнутся с нуля.'), 'restore confirmation does not state clean warehouse semantics')
+check(historyUi.includes('Восстановить'), 'restore action missing from UI')
+check(historyUi.includes('Восстановление не завершено') && historyUi.includes('Продолжить'), 'partial restore is not represented honestly/resumably in UI')
+check(!historyUi.includes('window.confirm'), 'restore UI fell back to browser confirmation')
+
+console.log('CATALOG SAFE RESTORE PASSED — restore creates a new working generation with clean stock/history isolation, while Arrival may reintroduce retired human variants without reviving old SKU rows')

@@ -4,55 +4,50 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
-const catalogSafeRetirementManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-safe-retirement-branch2-worker-manifest.json'), 'utf8'))
-if (catalogSafeRetirementManifest?.version !== 1 || catalogSafeRetirementManifest?.revision !== 'catalog-safe-retirement-branch2-r1') throw new Error('Catalog safe retirement Worker manifest invalid')
-const catalogSafeRetirementBlobSha = (value) => {
+const catalogRetirementMainPortManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-retirement-main-port-worker-manifest.json'), 'utf8'))
+if (catalogRetirementMainPortManifest?.version !== 1 || catalogRetirementMainPortManifest?.revision !== 'catalog-retirement-main-port-worker-r1') throw new Error('Catalog retirement main-port Worker manifest invalid')
+const catalogRetirementMainPortBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
-if (!process.env.CATALOG_SAFE_RETIREMENT_BRANCH2_NORMALIZED) {
+if (!process.env.CATALOG_RETIREMENT_MAIN_PORT_WORKER_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
   try {
-    for (const [relative, delta] of Object.entries(catalogSafeRetirementManifest.files || {})) {
+    for (const [relative, delta] of Object.entries(catalogRetirementMainPortManifest.files || {})) {
       const absolute = path.join(root, relative)
+      if (!fs.existsSync(absolute)) throw new Error('Catalog retirement main-port Worker current file missing: ' + relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogSafeRetirementBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Catalog safe retirement Worker changed beyond exact manifest: ' + relative)
-      }
+      if (catalogRetirementMainPortBlobSha(actual) !== delta.afterGitBlob) throw new Error('Catalog retirement main-port Worker changed beyond exact reconciled main port: ' + relative)
       originals.set(relative, actual)
-      if (delta.added) {
+      if (delta.beforeGitBlob) {
+        const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+        if (catalogRetirementMainPortBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Catalog retirement main-port Worker baseline fixture drifted: ' + relative)
+        fs.writeFileSync(absolute, baseline)
+      } else {
         fs.unlinkSync(absolute)
-        continue
       }
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        const occurrences = reverted.split(replacement.afterBlock).length - 1
-        if (occurrences !== 1) throw new Error('Catalog safe retirement Worker after-block missing or ambiguous: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (catalogSafeRetirementBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Catalog safe retirement Worker predecessor reconstruction failed: ' + relative)
-      }
-      fs.writeFileSync(absolute, reverted)
     }
     const child = spawnSync(process.execPath, [process.argv[1]], {
       cwd: root,
       stdio: 'inherit',
       shell: false,
       windowsHide: true,
-      env: { ...process.env, CATALOG_SAFE_RETIREMENT_BRANCH2_NORMALIZED: '1' },
+      env: { ...process.env, CATALOG_RETIREMENT_MAIN_PORT_WORKER_NORMALIZED: '1' },
     })
     if (child.error) throw child.error
     childStatus = child.status ?? 1
   } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('CATALOG SAFE RETIREMENT BRANCH2 WORKER STRUCTURAL LAYER PASSED')
+  console.log('CATALOG RETIREMENT MAIN-PORT WORKER EXACT RECONCILED MAIN PORT PASSED')
   process.exit(0)
 }
-
 const semanticSkuWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-semantic-sku-identity-worker-manifest.json'), 'utf8'))
 if (semanticSkuWorkerManifest?.version !== 1 || semanticSkuWorkerManifest?.revision !== 'catalog-semantic-sku-identity-r1') throw new Error('Catalog semantic-SKU Worker manifest invalid')
 const semanticSkuWorkerBlobSha = (value) => {
