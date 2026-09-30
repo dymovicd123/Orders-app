@@ -200,8 +200,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   }
   if (!order) return null
   const exactDraftVariant = context?.exactVariant
-  const retiredRecovery = Boolean(item?.retiredRecovery || context?.retiredRecovery || item?.stockWriteoffStatus === 'catalog_retired')
-  const canLegacy = !retiredRecovery && isAdmin && Boolean(context?.canLeaveGenderUnknown) && !draft?.createProduct
+  const canLegacy = isAdmin && Boolean(context?.canLeaveGenderUnknown) && !draft?.createProduct
   const disabled = busy || resolving || needsRecheck
   const approveReference = (field: Field, value = clean(draft?.[field])) => {
     if (!draft || !clean(value)) return
@@ -235,31 +234,12 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   }
   const finalAction = () => {
     if (!draft || !context) return null
-    if (retiredRecovery) {
-      if (!exactDraftVariant?.id) {
-        return <div className="resolution-admin-required">
-          <p>Свежей рабочей версии этой точной комбинации пока нет. Сначала восстановите товар/исполнение через «Склад → Товары → Удалённые» или создайте ту же комбинацию через разрешённый рабочий путь, затем нажмите «Проверить снова».</p>
-          <button type="button" className="secondary-button" disabled={disabled} onClick={() => void load()}>Проверить снова</button>
-        </div>
-      }
-      return <button type="button" className="primary-button" disabled={disabled || Boolean(error)} onClick={() => void finish(exactDraftVariant.id)}>
-        {resolving ? 'Создаю резерв…' : 'Привязать резерв к свежей версии'}
-      </button>
-    }
     const needsAdminCatalogMutation = Boolean(draft.createProduct || draft.createFields?.length || legacy)
     if (!isAdmin && needsAdminCatalogMutation) return <div className="resolution-admin-required"><p>Нужен администратор, чтобы добавить это в каталог.</p>{onRequestAdminMode ? <button type="button" className="primary-button" onClick={onRequestAdminMode}>Войти как администратор</button> : null}</div>
     return <button type="button" className="primary-button" disabled={disabled || Boolean(error)} onClick={() => void finish(legacy ? undefined : exactDraftVariant?.id)}>{resolving ? 'Сохраняю…' : 'Сохранить и продолжить'}</button>
   }
   const renderQuestion = () => {
-    if (!draft || !context || !item) return null
-    if (retiredRecovery) {
-      return <>
-        <h4 ref={questionHeading} tabIndex={-1}>{exactDraftVariant?.id ? 'Найдена свежая рабочая версия' : 'Эта версия товара была удалена из каталога'}</h4>
-        <p>Историческая SKU в заказе останется без изменений. Для дальнейшей отправки система создаст резерв только на новой активной версии той же точной комбинации.</p>
-        {finalAction()}
-      </>
-    }
-    if (!question) return null
+    if (!question || !draft || !context || !item) return null
     if (question.kind === 'product') {
       const sorted = rankedProducts(choices, item.productName)
       const searchRanked = rankedProducts(choices, search || item.productName)
@@ -391,7 +371,6 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         {!context.isWorkshop ? <p>{fields.filter(field => clean(draft[field]) && (field !== 'length' || normalize(draft.length) !== 'СТАНДАРТ')).map(field => <span key={field}>{fieldLabel(field, draft.category)}: {displayFact(field, draft[field])}{confirmed[field] ? ' ✓' : ''}</span>)}</p> : <p>Для Цеха нужно уточнить только сам товар.</p>}
       </section> : null}
     </div> : null}
-    {retiredRecovery ? <div className="resolution-feedback" role="status">Историческая позиция удалена из рабочего каталога. Старую SKU мы не оживляем и не переписываем в заказе.</div> : null}
     {!minimalFieldQuestion && notice ? <div role="status" aria-live="polite" className="resolution-feedback">{notice}</div> : null}
     {error ? <div role="alert" className="resolution-error"><p>{error}</p><button type="button" className="secondary-button" disabled={busy || resolving} onClick={() => void retry()}>{needsRecheck ? 'Проверить оставшиеся позиции' : 'Повторить проверку'}</button></div> : null}
     {busy ? <p role="status">Проверяю товар…</p> : null}
@@ -418,6 +397,6 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         </>}
       </fieldset>
     </section> : null}
-    {isAdmin && item && !advancedOpen && !minimalFieldQuestion && !retiredRecovery ? <footer><button type="button" className="resolution-link" disabled={disabled} onClick={() => void openAdvanced()}>Исправить вручную</button></footer> : null}
+    {isAdmin && item && !advancedOpen && !minimalFieldQuestion ? <footer><button type="button" className="resolution-link" disabled={disabled} onClick={() => void openAdvanced()}>Исправить вручную</button></footer> : null}
   </div></div>
 }

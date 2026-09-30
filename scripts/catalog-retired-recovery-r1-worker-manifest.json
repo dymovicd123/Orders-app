@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "revision": "catalog-retired-recovery-worker-r1",
+  "files": {
+    "worker/domains/catalog-review.ts": {
+      "beforeGitBlob": "ea877bad0ce0e9163f28d64f886773ec9351499f",
+      "beforeLines": 1126,
+      "afterGitBlob": "4c155ec4477f4020d2a31ef0b532c0dc29e5d5c0",
+      "afterLines": 1161,
+      "baselineFixture": "scripts/fixtures/catalog-retired-recovery-r1/worker/domains/catalog-review.ts"
+    },
+    "worker/domains/lifecycle.ts": {
+      "beforeGitBlob": "518871dc03c4fa86127e53ee1f3168e438a2fc63",
+      "beforeLines": 1198,
+      "afterGitBlob": "25f08471020220883107de8ee02b26bc774eb29a",
+      "afterLines": 1263,
+      "baselineFixture": "scripts/fixtures/catalog-retired-recovery-r1/worker/domains/lifecycle.ts"
+    },
+    "worker/domains/order-reservations.ts": {
+      "beforeGitBlob": "c454ebba4b0d6b1fd9425e118907d28db8041181",
+      "beforeLines": 2840,
+      "afterGitBlob": "5c0be05527542eaa448b1c33fe87cf9379d906cc",
+      "afterLines": 2840,
+      "baselineFixture": "scripts/fixtures/catalog-retired-recovery-r1/worker/domains/order-reservations.ts"
+    },
+    "worker/domains/warehouse-attention.ts": {
+      "beforeGitBlob": "1d536e823e660d1d246dfadc022a23e8617f2a54",
+      "beforeLines": 456,
+      "afterGitBlob": "5351db911154293cf79d8b5a9bbd6cea48a8be3b",
+      "afterLines": 462,
+      "baselineFixture": "scripts/fixtures/catalog-retired-recovery-r1/worker/domains/warehouse-attention.ts"
+    }
+  }
+}

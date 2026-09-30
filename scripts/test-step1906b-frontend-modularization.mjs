@@ -91,6 +91,46 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const catalogRetiredRecoveryFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-retired-recovery-r1-frontend-manifest.json'), 'utf8'))
+if (catalogRetiredRecoveryFrontendManifest?.version !== 1 || catalogRetiredRecoveryFrontendManifest?.revision !== 'catalog-retired-recovery-ui-r1') throw new Error('Catalog retired recovery frontend manifest invalid')
+const catalogRetiredRecoveryFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.CATALOG_RETIRED_RECOVERY_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(catalogRetiredRecoveryFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (catalogRetiredRecoveryFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Catalog retired recovery frontend changed beyond exact manifest: ' + relative)
+      }
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (catalogRetiredRecoveryFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Catalog retired recovery frontend baseline fixture drifted: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, CATALOG_RETIRED_RECOVERY_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('CATALOG RETIRED RECOVERY FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const catalogReadyResumeFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-ready-resume-r1-frontend-manifest.json'), 'utf8'))
 if (catalogReadyResumeFrontendManifest?.version !== 1 || catalogReadyResumeFrontendManifest?.revision !== 'catalog-ready-resume-ui-r1') throw new Error('Catalog ready/resume frontend manifest invalid')
 const catalogReadyResumeFrontendBlobSha = (value) => {

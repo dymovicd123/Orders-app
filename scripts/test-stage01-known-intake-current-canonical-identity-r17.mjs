@@ -13,7 +13,11 @@ check(fn.includes('LEFT JOIN catalog_products exact_product ON exact_product.id 
 check(fn.includes('exact_product.name AS exact_product_name'), 'Known-intake attention lacks current canonical product label')
 check(fn.includes('exact_variant.size_label AS exact_size'), 'Known-intake attention lacks current canonical SKU details')
 
-check(fn.includes("const exactKnown = Boolean(exactVariantId && cleanText(row.direction) === 'in')"), 'Known intake classification drifted')
+check(fn.includes('const exactKnown = Boolean(')
+  && fn.includes('exactVariantId')
+  && fn.includes("cleanText(row.direction) === 'in'")
+  && fn.includes("cleanText(row.pending_reason) !== 'retired_historical'"),
+  'Known intake classification drifted: ordinary exact inbound must stay fast, retired historical intake must stay explicit')
 check(fn.includes("productName: exactKnown ? (cleanText(row.exact_product_name) || cleanText(row.product_name_snapshot)) : cleanText(row.product_name_snapshot)"), 'Known intake still displays event-time product snapshot before current canonical identity')
 check(fn.includes("size: exactKnown ? (cleanText(row.exact_size) || cleanText(row.size_snapshot)) : cleanText(row.size_snapshot)"), 'Known intake still displays event-time SKU size before current canonical identity')
 check(fn.includes("productId: exactKnown ? (toInt(row.exact_product_id, 0) || toInt(row.product_id, 0) || null)"), 'Known intake product FK is not aligned with the exact current variant')

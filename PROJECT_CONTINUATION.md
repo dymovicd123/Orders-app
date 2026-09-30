@@ -7,6 +7,34 @@ Branch represented by this file: **branch2**
 Этот файл — короткий актуальный checkpoint Branch2. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не являются текущим roadmap без сверки с GitHub.
 
 
+## STATUS UPDATE — 2026-09-30 — Retired open-order + Return/Exchange recovery
+
+Combined Branch2 candidate closes the two remaining operational retired-identity gaps.
+
+Read-only Branch2 D1 audit run `36705983071` completed successfully and wrote **0 rows**:
+- open unsent `catalog_retired` order items: **0**;
+- pending inbound lifecycle rows linked to inactive SKU: **0**;
+- pending inbound lifecycle rows linked to a retirement snapshot: **0**.
+So this change is future-path hardening, not live-data repair.
+
+Open-order recovery:
+- `catalog_retired` open demand now enters the existing order-scoped Resolver explicitly; background/automatic Resolver passes deliberately skip it.
+- operator recovery is row-scoped and accepts only a **fresh active exact combination** with the same product/category/gender/color/material/length/size.
+- a fresh reservation is created and then re-read/proven before success.
+- the old `order_items.variant_id` remains the historical retired SKU; it is **not rewritten** to the fresh generation. Shipping/handover use the active reservation as current operational identity.
+- if replacement reservation fails, the line remains `catalog_retired` and visible for retry rather than falling into generic identity repair.
+
+Return/Exchange recovery:
+- an inbound return/exchange linked to an inactive historical SKU becomes explicit `retired_historical` lifecycle work instead of silently remapping to an active lookalike.
+- ordinary known intake remains fast, but retired historical intake is excluded from one-click Warehouse Attention intake.
+- the operator sees that the old sold SKU stays historical. If an exact fresh version already exists, «Принять в свежую версию» applies Physical only to that active SKU.
+- when a whole retirement record exists, admin can explicitly «Восстановить рабочую версию» and then confirm intake; non-admin gets an admin escalation action.
+- generic return fact editing/creation is disabled for this lane, so a historical SKU cannot accidentally manufacture a different product identity.
+
+Focused semantic/structural gates were added for both flows. Validation run `36708803392`: cumulative `npm run release:check` — **success**; `npm run build` — **success**.
+
+After this chunk the only remaining Catalog-retirement product gap is unified exact-SKU/local-group history visibility. The development-dependency Quality audit remains separate infrastructure debt.
+
 ## STATUS UPDATE — 2026-09-30 — Workshop ready semantics + resumable restore
 
 Combined follow-up candidate closes the semantic correction and the restore-resumability gap:
@@ -96,15 +124,15 @@ Validation:
 ### Ещё не решено
 
 Приоритетные оставшиеся gaps:
-1. **Open `catalog_retired` order recovery** — открытый заказ после retirement может остаться заблокированным без явного пути перепривязать его demand к fresh active generation и восстановить резерв.
-2. **Return/Exchange UX for historical retired SKU** — stock safety закрыта, но нужен явный операторский путь выбора fresh working identity вместо тупика.
-3. **Exact-SKU/local-group history visibility** — старые точечные/local retirement действия ещё не представлены в `Удалённые` так полно, как whole execution/product retirement.
-4. Отдельно от этой цепочки: стандартный Quality workflow всё ещё останавливается на **high-risk development-dependency audit** из-за dev-only Cloudflare toolchain/undici advisory chain; production-dependency audit проходит. Security gate не ослаблять ради зелёного CI.
+1. **Exact-SKU/local-group history visibility** — старые точечные/local retirement действия ещё не представлены в `Удалённые` так полно, как whole execution/product retirement.
+2. Отдельно от этой цепочки: стандартный Quality workflow всё ещё останавливается на **high-risk development-dependency audit** из-за dev-only Cloudflare toolchain/undici advisory chain; production-dependency audit проходит. Security gate не ослаблять ради зелёного CI.
 
 Уже закрыто и не должно возвращаться в roadmap без нового воспроизводимого дефекта:
 - fixed `male|female` gender-scope prevention + legacy wrong-gender cleanup;
 - read-only inactive-SKU/non-zero-stock audit и runtime quarantine guard;
-- whole execution/product Workshop rule: active/ready task = hard blocker.
+- Workshop retirement rule: only `active` task is a hard blocker; `ready` / `done` are completed;
+- open `catalog_retired` order recovery through a fresh exact reservation without rewriting historical order SKU identity;
+- Return/Exchange intake for historical retired SKU through an explicit fresh active identity.
 
 Каноническая подробная записка:
 `docs/continuation/CATALOG_RETIREMENT_CHAIN_AUDIT_20260930.md`.

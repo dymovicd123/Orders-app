@@ -174,20 +174,21 @@ Therefore the fixed-gender retirement sub-chain is now closed on Branch2: preven
 
 ## Remaining unresolved retirement-chain work
 
-### P1 — open orders left in `catalog_retired` can become operationally stuck
+### CLOSED — explicit recovery for open `catalog_retired` orders
 
-Whole execution/product retirement can intentionally release the reservation and mark a still-open order item `stock_writeoff_status='catalog_retired'` while keeping its old historical `variant_id`.
+Read-only Branch2 D1 audit `36705983071` found **0** currently affected open order items, so no production-style data correction was needed.
 
-Shipping correctly blocks such an order, but the current Catalog Resolver queue is primarily built around unresolved/null Catalog links and does not provide a complete recovery path for `catalog_retired`.
+The operational path is now explicit and history-preserving:
+- open unsent `catalog_retired` rows enter the order-scoped Resolver queue;
+- automatic/global reconciliation filters them out, so recovery cannot happen silently;
+- recovery is row-scoped and requires a fresh **active exact combination** of the same product/category/gender/color/material/length/size;
+- the replacement reservation is created and re-read/proven before the operation is published as successful;
+- the old `order_items.variant_id` is deliberately not rewritten. It remains historical retired evidence while the active reservation carries the current physical identity for shipping/handover;
+- failed reservation replacement keeps `stock_writeoff_status='catalog_retired'`, preserving the explicit retry lane.
 
-Required design:
-- preserve old order-item historical evidence;
-- never relink history silently;
-- give an explicit operational action to bind the still-open order demand to a **fresh active generation** after restore/recreation;
-- recreate reservation only on the fresh active SKU;
-- keep sent/completed/history cases immutable.
+UI states plainly that the historical SKU is not revived/relinked and offers either «Привязать резерв к свежей версии» or a restore/recreate-first instruction.
 
-This is the next highest-priority functional gap.
+Validation `36708803392`: cumulative release-check + build — **success**.
 
 ### CLOSED — safe restore resumability / partial-state honesty
 
@@ -233,17 +234,21 @@ Both preview and write-time race guards use the active-only condition, so a genu
 
 Validation `36705047496`: cumulative release-check + build — **success**.
 
-### P2 — returns/exchanges involving a retired historical SKU need a deliberate operator UX
+### CLOSED — Return/Exchange intake for retired historical SKU
 
-Safety is now correct: lifecycle cannot put new Physical back onto the retired SKU.
+Read-only audit `36705983071` found **0** current pending inbound rows linked to inactive/retired SKU, so this is preventive runtime/UX hardening.
 
-However, when a customer returns an item whose historical SKU has since been retired, the system may now need an explicit working-identity resolution/restore step rather than silently completing stock intake.
+New semantics:
+- an inbound Return/Exchange with an inactive historical SKU becomes explicit `retired_historical` lifecycle work;
+- even when a fresh exact active lookalike already exists, the retired historical event is kept out of the one-click exact-known intake lane;
+- generic fact resolution is fail-closed for this state, preventing accidental creation/revival from historical evidence;
+- if a fresh exact identity already exists, the operator explicitly confirms «Принять в свежую версию»; Physical is applied only after active-SKU resolution;
+- if a whole-retirement record exists, admin can explicitly restore a fresh working generation first, then confirm intake;
+- the historical sold `order_items.variant_id` remains unchanged.
 
-Required UX:
-- explain that the sold SKU is historical/retired;
-- choose/confirm the fresh working identity or restore path;
-- apply returned Physical only to the fresh active identity;
-- preserve the return's historical sold-item evidence.
+Warehouse Attention continues to own ordinary exact-known intake; `retired_historical` stays in the deliberate lifecycle/recovery lane instead.
+
+Validation `36708803392`: cumulative release-check + build — **success**.
 
 ### P3 — exact-SKU retirement history/admin visibility is weaker than whole retirement history
 
@@ -264,9 +269,7 @@ This is separate from Catalog retirement semantics. Do not weaken/remove the sec
 
 ## Suggested continuation order
 
-1. Fix recovery for open `catalog_retired` orders.
-2. Add explicit retired-SKU Return/Exchange intake UX.
-3. Unify exact-SKU/local-group history with the new retirement-history UI.
-4. Separately resolve the high-risk dev-dependency audit.
+1. Unify exact-SKU/local-group history with the new retirement-history UI.
+2. Separately resolve the high-risk dev-dependency audit.
 
 For every remaining item, start from current `branch2`, add focused semantic regression, run cumulative `release:check` + build, verify exact merged SHA deploy, and keep `main` untouched unless the user explicitly changes the release boundary.

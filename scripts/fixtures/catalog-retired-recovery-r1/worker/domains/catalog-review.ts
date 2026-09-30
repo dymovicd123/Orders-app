@@ -51,7 +51,7 @@ export const CATALOG_REVIEW_RECENT_DAYS = 30;
 
 export function catalogReviewBasePredicate(oi = 'oi', o = 'o') {
   return `${oi}.quantity > 0
-    AND (${oi}.product_id IS NULL OR ${oi}.variant_id IS NULL OR COALESCE(${oi}.stock_writeoff_status, '') IN ('catalog_unresolved', 'catalog_retired'))
+    AND (${oi}.product_id IS NULL OR ${oi}.variant_id IS NULL OR COALESCE(${oi}.stock_writeoff_status, '') = 'catalog_unresolved')
     AND COALESCE(${oi}.stock_writeoff_status, '') NOT IN ('catalog_excluded', 'catalog_excluded_history', 'workshop_no_catalog', 'legacy_unknown_gender')
     AND COALESCE(${o}.order_status, 'active') NOT IN ('deleted', 'archived')
     AND COALESCE(${o}.archived_at, '') = ''
@@ -342,12 +342,8 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
   return {
     ok: true,
     orderItemId,
-    issueType: cleanText(anchor.stock_writeoff_status) === 'catalog_retired'
-      ? (existingVariant?.id ? 'retired_demand_ready' : 'retired_demand_waiting_restore')
-      : issueType,
+    issueType,
     unknownFields,
-    retiredRecovery: cleanText(anchor.stock_writeoff_status) === 'catalog_retired',
-    historicalVariantId: cleanText(anchor.stock_writeoff_status) === 'catalog_retired' ? (toInt(anchor.variant_id, 0) || null) : null,
     isWorkshop: Boolean(toInt(anchor.is_workshop, 0)),
     shippingStatus: cleanText(anchor.shipping_status),
     facts,
@@ -374,9 +370,6 @@ export async function resolveCatalogReviewFacts(
      FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.id = ? LIMIT 1`
   ).bind(orderItemId).first<Record<string, unknown>>();
   if (!anchor?.id) throw new Error('Позиция заказа для разбора не найдена.');
-  if (cleanText(anchor.stock_writeoff_status) === 'catalog_retired') {
-    throw new Error('Эта позиция заказа относится к удалённой исторической SKU. Сначала восстановите или заново создайте точную рабочую комбинацию в Каталоге, затем повторите проверку заказа.');
-  }
   const inputKey = normalizedCatalogReviewKey(anchor);
   const candidates = await fetchCatalogReviewResolutionCandidates(db, toInt(anchor.order_id, 0));
   const matching = options.singleItem
@@ -676,14 +669,12 @@ export async function resolveCatalogReviewRows(
   let linked = 0;
   let reserved = 0;
   let historicalLinked = 0;
-  let retiredRecovered = 0;
   let skipped = 0;
 
   for (const row of matching) {
     const id = toInt(row.id ?? row.order_item_id, 0);
     const orderId = toInt(row.order_id, 0);
     if (!id || !orderId) continue;
-    const retiredDemand = cleanText(row.stock_writeoff_status) === 'catalog_retired';
 
     // Workshop identity stops at the base product. Even legacy/manual review endpoints
     // must not attach or create an ordinary warehouse SKU for a custom workshop piece.
@@ -764,9 +755,9 @@ export async function resolveCatalogReviewRows(
           // of silently losing it from the review queue.
           db.prepare(
             `UPDATE order_items
-             SET stock_writeoff_status = ?, stock_quantity_before = NULL, stock_quantity_after = NULL
+             SET stock_writeoff_status = 'catalog_unresolved', stock_quantity_before = NULL, stock_quantity_after = NULL
              WHERE id = ?`
-          ).bind(retiredDemand ? 'catalog_retired' : 'catalog_unresolved', id),
+          ).bind(id),
         ]);
         existingReservation = null;
       }
@@ -777,9 +768,9 @@ export async function resolveCatalogReviewRows(
         db.prepare(`DELETE FROM inventory_reservations WHERE id = ? AND status <> 'fulfilled'`).bind(toInt(existingReservation.id, 0)),
         db.prepare(
           `UPDATE order_items
-           SET stock_writeoff_status = ?, stock_quantity_before = NULL, stock_quantity_after = NULL
+           SET stock_writeoff_status = 'catalog_unresolved', stock_quantity_before = NULL, stock_quantity_after = NULL
            WHERE id = ?`
-        ).bind(retiredDemand ? 'catalog_retired' : 'catalog_unresolved', id),
+        ).bind(id),
       ]);
       existingReservation = null;
     }
@@ -815,25 +806,20 @@ export async function resolveCatalogReviewRows(
       throw new Error('Резерв позиции изменился одновременно с исправлением каталога. Обновите заказ и повторите действие.');
     }
 
-    // A catalog-retired open order keeps its historical sold/demand SKU on order_items forever.
-    // The fresh active reservation is the current operational identity used by shipping/handover.
-    // This lets the order continue without rewriting historical evidence to the new generation.
-    if (!retiredDemand) {
-      await db.prepare(`UPDATE order_items SET product_id = ?, variant_id = ? WHERE id = ?`).bind(productId, variantId, id).run();
-      await db.prepare(`UPDATE workshop_tasks SET product_id = ?, variant_id = ?, updated_at = ? WHERE order_item_id = ?`).bind(productId, variantId, timestamp, id).run();
-    }
+    // Current working identity is published only after the matching physical reservation exists.
+    await db.prepare(`UPDATE order_items SET product_id = ?, variant_id = ? WHERE id = ?`).bind(productId, variantId, id).run();
+    await db.prepare(`UPDATE workshop_tasks SET product_id = ?, variant_id = ?, updated_at = ? WHERE order_item_id = ?`).bind(productId, variantId, timestamp, id).run();
     linked += 1;
     reserved += 1;
-    if (retiredDemand) retiredRecovered += 1;
   }
 
-  return { ok: true, linked, reserved, historicalLinked, retiredRecovered, fulfilled: 0, skipped };
+  return { ok: true, linked, reserved, historicalLinked, fulfilled: 0, skipped };
 }
 
 export async function reconcileCatalogReviewQueue(db: D1Database, url: URL) {
   const groupLimit = Math.min(20, Math.max(1, toInt(url.searchParams.get('limit'), 10)));
   const rowsResult = await fetchCatalogReviewRows(db, 160);
-  const rows = (rowsResult.results || []).filter((row) => cleanText(row.stock_writeoff_status) !== 'catalog_retired');
+  const rows = rowsResult.results || [];
   const groups = new Map<string, Record<string, unknown>[]>();
   for (const row of rows) {
     const key = normalizedCatalogReviewKey(row);
@@ -909,7 +895,7 @@ export async function reconcileCatalogReviewQueue(db: D1Database, url: URL) {
 export async function reconcileCatalogReviewOrder(db: D1Database, orderId: number) {
   if (!orderId) return { ok: true, resolvedGroups: 0, linkedItems: 0, reserved: 0 };
   const rowsResult = await fetchCatalogReviewRows(db, 160, orderId);
-  const rows = (rowsResult.results || []).filter((row) => cleanText(row.stock_writeoff_status) !== 'catalog_retired');
+  const rows = rowsResult.results || [];
   const groups = new Map<string, Record<string, unknown>[]>();
   for (const row of rows) {
     const key = normalizedCatalogReviewKey(row);
@@ -1019,28 +1005,9 @@ export async function resolveOrderCatalogReviewExistingVariant(db: D1Database, o
   if (knownProductId && knownProductId !== toInt(selected.product_id, 0)) {
     throw new Error('Для этой позиции базовый товар уже известен. Выберите вариант именно этого товара.');
   }
-  const retiredRecovery = cleanText(anchor.stock_writeoff_status) === 'catalog_retired';
-  if (retiredRecovery) {
-    const expectedCategory = normalizeAudienceCategory(anchor.audience_type, anchor.size_snapshot);
-    const expectedGender = normalizeCatalogCombinationGender(anchor.gender_snapshot);
-    const expectedColor = normalizeCatalogCombinationColor(anchor.color_snapshot);
-    const expectedMaterial = canonicalStockPositionValue(anchor.material_snapshot);
-    const expectedLength = canonicalStockPositionValue(anchor.length_snapshot);
-    const expectedSize = normalizeCatalogCombinationSize(anchor.size_snapshot);
-    const selectedCategory = normalizeAudienceCategory(selected.category, selected.size_label);
-    const exactFreshIdentity = selectedCategory === expectedCategory
-      && normalizeCatalogCombinationGender(selected.gender) === expectedGender
-      && normalizeCatalogCombinationColor(selected.color) === expectedColor
-      && canonicalStockPositionValue(selected.material) === expectedMaterial
-      && canonicalStockPositionValue(selected.length) === expectedLength
-      && normalizeCatalogCombinationSize(selected.size_label) === expectedSize;
-    if (!exactFreshIdentity) {
-      throw new Error('Для удалённой позиции заказа можно привязать только свежую рабочую версию той же точной комбинации. Исторические характеристики заказа менять нельзя.');
-    }
-  }
 
   const inputKey = normalizedCatalogReviewKey(anchor);
-  const reusableExactInput = !retiredRecovery && catalogReviewInputCanLearnExact(anchor);
+  const reusableExactInput = catalogReviewInputCanLearnExact(anchor);
   const rowsResult = reusableExactInput
     ? await fetchCatalogReviewResolutionCandidates(db, orderId)
     : await fetchCatalogReviewRows(db, 160, orderId);
@@ -1129,8 +1096,6 @@ export async function listCatalogReviewQueue(db: D1Database, url: URL) {
       size: cleanText(row.size_snapshot),
       quantity: Math.max(1, toInt(row.quantity, 1)),
       sourceType: cleanText(row.is_workshop) === '1' || toInt(row.is_workshop, 0) ? 'workshop' : normalizeSourceType(row.source_type),
-      stockWriteoffStatus: cleanText(row.stock_writeoff_status),
-      retiredRecovery: cleanText(row.stock_writeoff_status) === 'catalog_retired',
       inputKey: normalizedCatalogReviewKey(row),
       affectedCount: Math.max(1, toInt(row.affected_count, 1)),
     })),

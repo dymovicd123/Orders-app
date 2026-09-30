@@ -30,7 +30,6 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onRequ
   const [createFields, setCreateFields] = useState<Record<string, boolean>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [reloadNonce, setReloadNonce] = useState(0)
 
   useEffect(() => {
     if (!eventId) return
@@ -69,7 +68,7 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onRequ
       .catch((value) => { if (!cancelled) setError(value instanceof Error ? value.message : 'Не удалось открыть уточнение товара.') })
       .finally(() => { if (!cancelled) setBusy(false) })
     return () => { cancelled = true }
-  }, [eventId, reloadNonce])
+  }, [eventId])
 
   const products = context?.products || []
   const ranked = useMemo(() => rankedProducts(products, search || context?.facts?.productName || '').filter((row: any) => row.score > 0).slice(0, 10), [products, search, context?.facts?.productName])
@@ -86,9 +85,7 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onRequ
     if (field === 'size' && ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р'].includes(norm(value))) return false
     return !valuesFor(field).some((entry: string) => norm(entry) === norm(value))
   })
-  const retiredHistoricalSku = Boolean(context?.retiredHistoricalSku)
-  const canSubmit = Boolean(!retiredHistoricalSku
-    && (draft.productId || (isAdmin && draft.createProduct && clean(draft.productName) && draft.genderScope))
+  const canSubmit = Boolean((draft.productId || (isAdmin && draft.createProduct && clean(draft.productName) && draft.genderScope))
     && ['ЖЕН','МУЖ'].includes(norm(draft.gender))
     && clean(draft.color)
     && clean(draft.size)
@@ -98,44 +95,6 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onRequ
     setDraft((current: any) => ({ ...current, productId: Number(product.id), productName: product.name, createProduct: false }))
     setSearch(product.name)
     setError('')
-  }
-
-  const reconcileRetired = async () => {
-    if (!eventId || !context?.freshVariantReady || busy) return
-    setBusy(true)
-    setError('')
-    try {
-      const response = await apiFetch(`/api/inventory/lifecycle/${eventId}/reconcile-known`, { method: 'POST' })
-      const data = await readJsonResponse<CatalogResolutionResponse>(response, 'Приёмка возвращённого товара')
-      if (!response.ok || data?.ok === false) throw new Error(data?.message || 'Не удалось принять товар в свежую рабочую версию.')
-      await onCompleted()
-      onClose()
-    } catch (value) {
-      setError(value instanceof Error ? value.message : 'Не удалось принять товар в свежую рабочую версию.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const restoreRetired = async () => {
-    if (!eventId || !context?.retirementId || busy || !isAdmin) return
-    setBusy(true)
-    setError('')
-    try {
-      const requestId = `return-retired-restore-${eventId}-${Date.now()}-${Math.random().toString(36).slice(2)}`
-      const response = await apiFetch(`/api/catalog/retirements/${context.retirementId}/restore`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestId }),
-      })
-      const data = await readJsonResponse<CatalogResolutionResponse>(response, 'Восстановление товара')
-      if (!response.ok || data?.ok === false) throw new Error(data?.message || 'Не удалось восстановить рабочую версию товара.')
-      setReloadNonce((value) => value + 1)
-    } catch (value) {
-      setError(value instanceof Error ? value.message : 'Не удалось восстановить рабочую версию товара.')
-    } finally {
-      setBusy(false)
-    }
   }
 
   const submit = async () => {
@@ -178,10 +137,8 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onRequ
         <div className="modal-head">
           <div>
             <div className="card-label">Приёмка товара</div>
-            <h3 id="returned-item-resolution-title">{retiredHistoricalSku ? 'Куда принять исторический товар?' : 'Что именно приехало?'}</h3>
-            <p>{retiredHistoricalSku
-              ? 'Возвращённая вещь связана со старой удалённой SKU. Выберите безопасный путь в свежую рабочую версию, не меняя историю продажи.'
-              : 'Товар уже отмечен как физически полученный. Осталось один раз сопоставить запись с каталогом, чтобы правильно добавить его в остаток.'}</p>
+            <h3 id="returned-item-resolution-title">Что именно приехало?</h3>
+            <p>Товар уже отмечен как физически полученный. Осталось один раз сопоставить запись с каталогом, чтобы правильно добавить его в остаток.</p>
           </div>
           <button className="secondary compact" type="button" disabled={busy} onClick={onClose}>Закрыть</button>
         </div>
@@ -196,26 +153,7 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onRequ
             <small>{[context.facts?.gender, context.facts?.material, context.facts?.length, context.facts?.color, context.facts?.size].filter(Boolean).join(' · ')}</small>
           </div>
 
-          {retiredHistoricalSku ? <div className="returned-item-product-search">
-            <div className="returned-item-warning">
-              Эта вещь была продана как историческая SKU, которая сейчас удалена из рабочего каталога. Старая SKU останется историей и не получит новый остаток.
-            </div>
-            {context.freshVariantReady ? <>
-              <p>Найдена свежая активная версия той же точной комбинации. Возврат можно принять только в неё.</p>
-              <button type="button" className="primary" disabled={busy} onClick={() => void reconcileRetired()}>
-                {busy ? 'Принимаю…' : 'Принять в свежую версию'}
-              </button>
-            </> : context.retirementId ? <>
-              <p>Свежей рабочей версии пока нет. Сначала восстановите её, затем система ещё раз проверит точную комбинацию.</p>
-              {isAdmin
-                ? <button type="button" className="primary" disabled={busy} onClick={() => void restoreRetired()}>{busy ? 'Восстанавливаю…' : 'Восстановить рабочую версию'}</button>
-                : <button type="button" className="secondary" disabled={busy} onClick={onRequestAdminMode}>Нужен администратор для восстановления</button>}
-            </> : <>
-              <p>Для этой исторической SKU нет записи полного удаления, поэтому автоматически восстановить её нельзя. Создайте в Каталоге свежую рабочую комбинацию с теми же характеристиками и вернитесь сюда.</p>
-              {isAdmin ? null : <button type="button" className="secondary" disabled={busy} onClick={onRequestAdminMode}>Войти в админ режим</button>}
-            </>}
-            <button type="button" className="secondary" disabled={busy} onClick={() => setReloadNonce((value) => value + 1)}>Проверить снова</button>
-          </div> : !context.product && !draft.createProduct ? <div className="returned-item-product-search">
+          {!context.product && !draft.createProduct ? <div className="returned-item-product-search">
             <label>Найти товар в каталоге<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Введите часть названия" autoFocus /></label>
             <div className="returned-item-product-results">
               {ranked.map(({ product }: any) => <button type="button" key={product.id} onClick={() => chooseProduct(product)}>{product.name}</button>)}
@@ -225,7 +163,7 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onRequ
               : <button type="button" className="secondary" onClick={onRequestAdminMode}>Товара нет в каталоге — нужен админ</button>}
           </div> : null}
 
-          {!retiredHistoricalSku && (context.product || draft.productId || draft.createProduct) ? <div className="returned-item-fields">
+          {context.product || draft.productId || draft.createProduct ? <div className="returned-item-fields">
             <div className="returned-item-selected-product">
               <span>Товар</span><strong>{draft.createProduct ? draft.productName : (draft.productName || context.product?.name)}</strong>
               {!draft.createProduct && !context.product && <button type="button" className="resolution-link" onClick={() => setDraft((current: any) => ({ ...current, productId: 0, productName: context.facts?.productName || '' }))}>Выбрать другой</button>}
@@ -245,9 +183,9 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onRequ
             </label>)}
           </div> : null}
 
-          {!retiredHistoricalSku && !isAdmin && unknownReferenceFields.length ? <button type="button" className="secondary" onClick={onRequestAdminMode}>Войти в админ режим и продолжить здесь</button> : null}
+          {!isAdmin && unknownReferenceFields.length ? <button type="button" className="secondary" onClick={onRequestAdminMode}>Войти в админ режим и продолжить здесь</button> : null}
           <div className="modal-actions">
-            {!retiredHistoricalSku ? <button type="button" className="primary" disabled={!canSubmit || busy} onClick={() => void submit()}>{busy ? 'Сохраняю…' : 'Подтвердить и принять в остаток'}</button> : null}
+            <button type="button" className="primary" disabled={!canSubmit || busy} onClick={() => void submit()}>{busy ? 'Сохраняю…' : 'Подтвердить и принять в остаток'}</button>
             <button type="button" className="secondary" disabled={busy} onClick={onClose}>Отложить</button>
           </div>
         </> : null}
