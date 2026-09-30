@@ -284,6 +284,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                               value={returnDraft.amount}
                               onChange={(event) => setReturnDraft((current) => ({ ...current, amount: Number(event.target.value) }))}
                             />
+                            <small className="field-hint">Введите фактическую сумму возврата вручную. Система не подставляет цену товара или текущую цену Каталога автоматически.</small>
                           </label>
                           <label>
                             <span>Способ возврата денег {Number(returnDraft.amount || 0) > 0 ? '' : '(не нужен при 0 ₸)'}</span>
@@ -309,7 +310,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                       <div className="mini-item order-payment-card">
                         <div className="mini-item-head">
                           <strong>Какие товары возвращаются</strong>
-                          <span className="muted-small">Для каждой возвращаемой позиции укажите только фактическую ситуацию: товар ещё едет или уже физически пришёл. Если он придёт позже, отметьте это одной кнопкой в истории возвратов.</span>
+                          <span className="muted-small">Выбор товара фиксирует физический возврат, но не рассчитывает деньги автоматически. Сумму возврата укажите отдельно по фактической договорённости с клиентом.</span>
                         </div>
                         <div className="table-shell">
                           <table className="data-table return-items-table">

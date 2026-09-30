@@ -733,13 +733,9 @@ export function createDebtClosePayment(orderDate = formatLocalDateInput(), amoun
 
 
 export function createReturnDraft(order?: OrderRecord | null): ReturnDraft {
-  const refundableAmount = Math.max(
-    0,
-    Number(order?.received_amount || 0) - Number(order?.return_amount || 0),
-  )
   return {
     returnDate: formatLocalDateInput(),
-    amount: refundableAmount,
+    amount: 0,
     paymentMethod: '',
     comment: '',
     restockSource: 'none',
@@ -769,6 +765,12 @@ export function createExchangeDraft(order?: OrderRecord | null): ExchangeDraft {
     : firstItem?.sourceType === 'boutique'
       ? 'boutique'
       : 'warehouse'
+  const itemizedPricing = order?.pricing_mode === 'itemized_v1'
+  const oldSoldPrice = firstItem?.unitPrice
+  const hasSafeOldSoldPrice = oldSoldPrice !== undefined
+    && oldSoldPrice !== null
+    && Number.isSafeInteger(Number(oldSoldPrice))
+    && Number(oldSoldPrice) >= 0
   return {
     orderId: order?.id || null,
     exchangeDate: formatLocalDateInput(),
@@ -781,6 +783,12 @@ export function createExchangeDraft(order?: OrderRecord | null): ExchangeDraft {
     newItem: {
       ...createEmptyEditorItem(),
       sourceType: inheritedSource,
+      ...(itemizedPricing ? {
+        unitPrice: hasSafeOldSoldPrice ? Number(oldSoldPrice) : undefined,
+        catalogPriceSnapshot: null,
+        priceOrigin: hasSafeOldSoldPrice ? 'manual' : 'missing',
+        priceNeedsConfirmation: false,
+      } : {}),
     },
     financialAction: 'none',
     financialAmount: 0,
@@ -807,7 +815,7 @@ export function createEmptyOrderDraft(): EditorDraft {
     workshopStatus: 'in_workshop',
     orderStatus: 'active',
     comment: '',
-    items: [createEmptyEditorItem()],
+    items: [{ ...createEmptyEditorItem(), unitPrice: undefined, catalogPriceSnapshot: null, priceOrigin: 'missing', priceNeedsConfirmation: false }],
     payments: [createEmptyEditorPayment(today)],
   }
 }
@@ -933,6 +941,7 @@ export function createEditorDraft(order: OrderRecord): EditorDraft {
     comment: order.comment || '',
     items: order.items.length
         ? order.items.map((item) => ({
+          orderItemId: Number(item.id || 0) || undefined,
           productName: item.productName,
           audienceType: item.audienceType
             ? (normalizeSuggestion(item.audienceType).includes('ДЕТ') ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ')
@@ -944,6 +953,9 @@ export function createEditorDraft(order: OrderRecord): EditorDraft {
           size: item.size || '',
           quantity: item.quantity,
           unitPrice: Number(item.unitPrice || 0),
+          catalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
+          priceOrigin: item.catalogPriceSnapshot !== null && item.catalogPriceSnapshot !== undefined && Number(item.catalogPriceSnapshot) === Number(item.unitPrice || 0) ? 'catalog' : 'manual',
+          priceNeedsConfirmation: false,
           sourceType: item.isWorkshop ? 'workshop' : (item.sourceType === 'boutique' ? 'boutique' : 'warehouse'),
           workshopComment: item.workshopComment || '',
           workshopUrgent: Boolean(item.workshopUrgent),
