@@ -147,6 +147,7 @@ export type ResolvedOrderCatalogReference = {
 
 export type OrderRetiredCatalogConfirmationItem = {
   inputIndex: number;
+  confirmationKey: string;
   entityType: 'product' | 'execution' | 'variant';
   productName: string;
   category: string;
@@ -274,6 +275,7 @@ export async function inspectOrderRetiredCatalogIdentityV2(
   item: ReturnType<typeof normalizeOrderItems>[number],
 ): Promise<Omit<OrderRetiredCatalogConfirmationItem, 'inputIndex'> | null> {
   if (!await isCatalogIdentityV3Enabled(db)) return null;
+  const confirmationKey = catalogOrderInputKey(item);
 
   let product = await findCatalogProductByIdentity(db, item.productName, 0, { activeOnly: true }) as { id: number; name: string; category: string } | null;
   if (!product?.id) {
@@ -287,6 +289,7 @@ export async function inspectOrderRetiredCatalogIdentityV2(
     ).bind(historical.id).first<{ id: number; name: string; category: string }>();
     if (!inactive?.id) return null;
     return {
+      confirmationKey,
       entityType: 'product',
       productName: cleanText(inactive.name) || item.productName,
       category: normalizeAudienceCategory(item.category, item.size),
@@ -319,6 +322,7 @@ export async function inspectOrderRetiredCatalogIdentityV2(
     const retiredExecution = await findRetiredCatalogExecutionV3(db, product.id, material, length);
     if (!retiredExecution?.id) return null;
     return {
+      confirmationKey,
       entityType: 'execution',
       productName: cleanText(product.name) || item.productName,
       category,
@@ -336,6 +340,7 @@ export async function inspectOrderRetiredCatalogIdentityV2(
   const retiredVariant = await findRetiredCatalogCombinationV3(db, activeExecution.id, category, gender, color, size);
   if (!retiredVariant?.id) return null;
   return {
+    confirmationKey,
     entityType: 'variant',
     productName: cleanText(product.name) || item.productName,
     category,
