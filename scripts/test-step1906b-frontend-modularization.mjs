@@ -97,6 +97,10 @@ const catalogRetirementMainPortBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
+const stage03ProductionSuccessorFrontendBlobs = {
+  'src/App.tsx': 'a8d155fbd74f94dd361b837e306ae9fc6e1aa0bf',
+  'src/app/types.ts': '14741ad9b64156f519a2bbd9c458c6b0585a0d24',
+}
 if (!process.env.CATALOG_RETIREMENT_MAIN_PORT_FRONTEND_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
@@ -105,7 +109,9 @@ if (!process.env.CATALOG_RETIREMENT_MAIN_PORT_FRONTEND_NORMALIZED) {
       const absolute = path.join(root, relative)
       if (!fs.existsSync(absolute)) throw new Error('Catalog retirement main-port frontend current file missing: ' + relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogRetirementMainPortBlobSha(actual) !== delta.afterGitBlob) throw new Error('Catalog retirement main-port frontend changed beyond exact reconciled main port: ' + relative)
+      const actualBlob = catalogRetirementMainPortBlobSha(actual)
+      const acceptedSuccessorBlob = stage03ProductionSuccessorFrontendBlobs[relative]
+      if (actualBlob !== delta.afterGitBlob && actualBlob !== acceptedSuccessorBlob) throw new Error('Catalog retirement main-port frontend changed beyond exact reconciled main port or approved Stage03 successor: ' + relative)
       originals.set(relative, actual)
       if (delta.beforeGitBlob) {
         const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
