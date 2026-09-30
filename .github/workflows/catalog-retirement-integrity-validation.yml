@@ -1,0 +1,30 @@
+name: Temporary catalog retirement integrity validation
+
+on:
+  push:
+    branches:
+      - w-catalog-retirement-integrity-branch2-20260930
+    paths:
+      - 'worker/domains/catalog-retirement.ts'
+      - 'scripts/test-catalog-safe-retirement.mjs'
+      - 'scripts/test-step1906a-worker-modularization.mjs'
+      - 'scripts/catalog-retirement-integrity-r1-worker-manifest.json'
+      - 'scripts/fixtures/catalog-retirement-integrity-r1/worker/domains/catalog-retirement.ts'
+      - '.github/workflows/catalog-retirement-integrity-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run release:check
+      - run: npm run build
