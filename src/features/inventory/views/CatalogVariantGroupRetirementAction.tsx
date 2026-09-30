@@ -125,7 +125,7 @@ export function CatalogVariantGroupRetirementAction({
     <>
       <span className="catalog-local-retirement-action">
         <button
-          className="secondary compact catalog-local-retirement-button"
+          className="danger compact catalog-local-retirement-button"
           type="button"
           disabled={disabled || checking || deleting}
           onClick={() => void open()}
