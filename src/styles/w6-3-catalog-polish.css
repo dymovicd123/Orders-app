@@ -197,6 +197,19 @@
   font-weight: 650;
 }
 
+.catalog-local-retirement-action {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.catalog-local-retirement-button {
+  justify-self: start;
+  min-height: 28px;
+  padding: 4px 7px;
+  font-size: .62rem;
+}
+
 .catalog-size-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
@@ -351,6 +364,11 @@
     align-items: baseline;
     gap: 6px;
     padding-top: 2px;
+  }
+
+  .catalog-color-subgroup-label .catalog-local-retirement-action {
+    margin-top: 0;
+    margin-left: auto;
   }
 }
 
