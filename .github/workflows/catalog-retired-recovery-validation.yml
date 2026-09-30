@@ -19,6 +19,7 @@ on:
       - 'scripts/test-stage01-resolver-active-reservation-r12.mjs'
       - 'scripts/test-stage01-postfix-cross-regression.mjs'
       - 'scripts/test-step192b2a2-attention-context.mjs'
+      - 'scripts/test-stage01-known-intake-current-canonical-identity-r17.mjs'
       - 'scripts/release-check.mjs'
       - 'scripts/test-step1906a-worker-modularization.mjs'
       - 'scripts/test-step1906b-frontend-modularization.mjs'
