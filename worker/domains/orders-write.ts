@@ -833,7 +833,7 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         for (const item of normalizedItems) {
           const resolved = item.isWorkshop
             ? await resolveWorkshopCatalogProductOnly(db, item)
-            : await resolveCatalogProductAndVariant(db, item, createdAt);
+            : await resolveCatalogProductAndVariant(db, item, createdAt, { allowRetiredRecreate: true });
           preResolvedCatalog.push(resolved);
           if (item.observedPhysicalQuantity === null) continue;
           if (!resolved.productId || !resolved.variantId) {
