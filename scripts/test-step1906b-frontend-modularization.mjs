@@ -95,7 +95,7 @@ const stage03ProductionRuntimeFrontendManifest = JSON.parse(fs.readFileSync(path
 if (stage03ProductionRuntimeFrontendManifest?.version !== 1 || stage03ProductionRuntimeFrontendManifest?.revision !== 'stage03-production-runtime-r1') throw new Error('Stage03 Production frontend manifest invalid')
 const stage03ProductionRuntimeFrontendBlobSha = (value) => {
   const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\\0`)).update(bytes).digest('hex')
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 if (!process.env.STAGE03_PRODUCTION_RUNTIME_FRONTEND_NORMALIZED) {
   const originals = new Map()
