@@ -362,8 +362,10 @@ if (!process.env.RESOLVER_FOLLOWUP_R2_WORKER_NORMALIZED) {
     for (const [relative, delta] of Object.entries(resolverFollowupWorkerManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (resolverFollowupWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Resolver follow-up R2 Worker changed beyond exact manifest: ' + relative)
+      const actualBlob = resolverFollowupWorkerBlobSha(actual)
+      const approvedStage03Successor = stage03ProductionSuccessorWorkerBlobs[relative] === actualBlob
+      if (!approvedStage03Successor && (actualBlob !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines)) {
+        throw new Error('Resolver follow-up R2 Worker changed beyond exact manifest or approved Stage03 successor: ' + relative)
       }
       const reverted = fs.readFileSync(path.join(root, delta.beforeFixture), 'utf8')
       if (resolverFollowupWorkerBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
