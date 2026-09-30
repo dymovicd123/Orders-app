@@ -19,14 +19,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - name: Run cumulative regression gate
-        run: node scripts/release-check.mjs
-      - name: Run deploy-monitor trailing regressions
-        run: |
-          node scripts/test-arrival-canonical-product-alias-r1.mjs
-          node scripts/test-stage01-workshop-lifecycle-canonical-link-r10.mjs
-          node scripts/test-stage01-workshop-lifecycle-cancel-reopen-r10b.mjs
-          node scripts/test-stage01-active-reservation-retired-sku-r12.mjs
-          node scripts/test-stage01-handover-physical-canonical-identity-r13.mjs
+      - name: Run full release check
+        run: npm run release:check
       - name: Build application
         run: npm run build
