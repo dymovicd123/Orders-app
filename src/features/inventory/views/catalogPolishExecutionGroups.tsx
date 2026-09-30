@@ -401,9 +401,11 @@ export function CatalogPolishExecutionGroups({
                         const cardTotalQty = cardWarehouseQty + cardBoutiqueQty
                         return (
                           <div key={`subgroup-${group.key}-${colorGroup.key}-${subgroup.key}`} className="catalog-color-subgroup">
-                            <div className="catalog-color-subgroup-label">
-                              <strong>{subgroup.gender}</strong>
-                              <span>{productCategoryLabel(subgroup.category)} · {subgroup.category === 'child' ? 'возраст' : 'размер'}</span>
+                            <div className="catalog-color-subgroup-heading">
+                              <div className="catalog-color-subgroup-label">
+                                <strong>{subgroup.gender}</strong>
+                                <span>{productCategoryLabel(subgroup.category)} · {subgroup.category === 'child' ? 'возраст' : 'размер'}</span>
+                              </div>
                               {isAdmin && groupStockPositionId ? (
                                 <CatalogVariantGroupRetirementAction
                                   executionId={groupStockPositionId}
