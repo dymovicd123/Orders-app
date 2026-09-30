@@ -31,7 +31,7 @@ check(listPending.includes('variantId: toInt(row.current_order_variant_id, 0) ||
 check(listPending.includes('productName: cleanText(row.product_name_snapshot)'), 'Pending lifecycle list stopped preserving event-time text evidence')
 
 check(context.includes('const currentVariantId = toInt(event.current_order_variant_id, 0)'), 'Lifecycle context ignores repaired exact variant link')
-check(context.includes('currentCanonical = await loadCanonicalVariantSnapshot(db, currentVariantId)'), 'Lifecycle context does not validate repaired exact variant canonically')
+check(context.includes('currentCanonical = await loadCanonicalVariantSnapshot(db, currentVariantId, { activeOnly: true })'), 'Lifecycle context does not validate repaired exact variant as live Catalog identity')
 check(context.includes('const effectiveProductId = toInt(currentCanonical?.productId, 0)') && context.includes('|| toInt(event.current_order_product_id, 0)'), 'Lifecycle context ignores repaired current product link')
 check(context.includes('let existingVariant: { id: number } | null = currentCanonical?.variantId ? { id: currentCanonical.variantId } : null'), 'Lifecycle context does not surface repaired exact variant as existing')
 check(context.includes('productName: currentCanonical.productName'), 'Lifecycle working context still pre-fills stale snapshot identity after exact repair')
