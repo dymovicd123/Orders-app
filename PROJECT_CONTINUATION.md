@@ -7,6 +7,22 @@ Branch represented by this file: **branch2**
 Этот файл — короткий актуальный checkpoint Branch2. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не являются текущим roadmap без сверки с GitHub.
 
 
+## STATUS UPDATE — 2026-09-30 — Legacy fixed-gender cleanup completed
+
+Guarded Branch2 D1 correction run `36699491214` completed **successfully** after the read-only audit.
+
+What changed:
+- exactly the 13 previously audited active fixed-scope wrong-gender variants were soft-retired by setting only `catalog_variants.is_active=0` + `updated_at`;
+- the write was guarded by an exact target-count check (13/13) and rechecked zero Physical, zero Reserved, zero active reservations, zero open unsent orders, zero active/ready Workshop tasks, zero pending lifecycle, and zero active stocktake before mutation;
+- no order rows, stock quantities, reservations, movements, products, executions, or historical snapshots were rewritten.
+
+Post-state:
+- active fixed-scope gender mismatches: **0**;
+- all 13 audited targets inactive: **13**;
+- inactive variants with live Physical/Reserved/active reservation: **0**.
+
+This closes the Branch2 legacy wrong-gender data cleanup. PR #240/#241/#242 already prevent recurrence. The next product/release focus is the requested **fresh main candidate for Catalog deletion**, preserving current main Production fixes and never merging Branch2 wholesale.
+
 ## STATUS UPDATE — 2026-09-30 — Branch2 read-only retirement data audit
 
 Read-only Branch2 D1 audit run `36699118208` completed **successfully** against verified Branch2 identity only (`orders-app-branch2` / `orders_db_branch2` / `40065052-854e-44b8-bcd5-251bdd488301`). The audit wrote **0 rows**.

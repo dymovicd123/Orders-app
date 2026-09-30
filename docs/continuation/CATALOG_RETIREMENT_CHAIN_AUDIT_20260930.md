@@ -153,6 +153,25 @@ Results:
 
 This changes the earlier P2 fixed-gender item: **prevention is closed by PR #240/#241/#242; only evidence-bound cleanup of 13 legacy zero-footprint groups remains.** Do not infer a broader data rewrite from this audit.
 
+## Guarded cleanup of audited fixed-gender legacy rows — 2026-09-30
+
+Correction workflow run `36699491214` completed **successfully** on verified Branch2 D1 only.
+
+Preflight revalidated the exact evidence set immediately before mutation:
+- expected target count: 13;
+- all active fixed-scope mismatches: 13;
+- target active mismatches: 13;
+- Physical / stock Reserved / active reservation / open unsent order / active-ready Workshop / pending lifecycle / active stocktake: all 0.
+
+The mutation soft-retired only variant IDs `158,254,288,315,450,654,670,854,862,893,1016,1022,1082`. It did not rewrite inventory quantities, reservation rows, order rows, products, executions, movements, or historical snapshots.
+
+Verified post-state:
+- active fixed-scope gender mismatches: 0;
+- all 13 exact targets inactive;
+- inactive variants with live Physical/Reserved/active reservation: 0.
+
+Therefore the fixed-gender retirement sub-chain is now closed on Branch2: prevention is in runtime, legacy mismatches are removed from the working Catalog, and no operational stock state was stranded.
+
 ## Remaining unresolved retirement-chain work
 
 ### P1 — open orders left in `catalog_retired` can become operationally stuck
