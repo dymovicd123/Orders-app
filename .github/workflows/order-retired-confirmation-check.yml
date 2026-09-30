@@ -1,0 +1,25 @@
+name: Order retired confirmation check
+
+on:
+  push:
+    branches:
+      - w-order-retired-confirmation-branch2-20260930
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Run cumulative regression gate
+        run: node scripts/release-check.mjs
+      - name: Build application
+        run: npm run build
