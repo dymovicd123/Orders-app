@@ -1449,16 +1449,26 @@ export type CanonicalVariantSnapshot = {
 };
 
 
-export async function loadCanonicalVariantSnapshot(db: D1Database, variantId: number): Promise<CanonicalVariantSnapshot> {
+export async function loadCanonicalVariantSnapshot(
+  db: D1Database,
+  variantId: number,
+  options: { activeOnly?: boolean } = {},
+): Promise<CanonicalVariantSnapshot> {
+  const activePredicate = options.activeOnly ? ' AND v.is_active = 1 AND p.is_active = 1' : '';
   const row = await db.prepare(
     `SELECT v.id AS variant_id, v.product_id, p.name AS product_name,
             COALESCE(v.category, p.category, 'adult') AS category,
             v.gender, v.color, v.material, v.length, v.size_label
      FROM catalog_variants v
      JOIN catalog_products p ON p.id = v.product_id
-     WHERE v.id = ? LIMIT 1`
+     WHERE v.id = ?${activePredicate} LIMIT 1`
   ).bind(variantId).first<Record<string, unknown>>();
-  if (!row?.variant_id || !row?.product_id) throw new Error('Каноническая комбинация товара не найдена. Обновите каталог и повторите операцию.');
+  if (!row?.variant_id || !row?.product_id) {
+    if (options.activeOnly) {
+      throw new Error('Эта комбинация уже выведена из рабочего каталога. Старая SKU не может получать новые остатки или резервы; обновите данные и повторите действие.');
+    }
+    throw new Error('Каноническая комбинация товара не найдена. Обновите каталог и повторите операцию.');
+  }
   return {
     productId: toInt(row.product_id, 0),
     variantId: toInt(row.variant_id, 0),
