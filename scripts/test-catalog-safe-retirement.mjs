@@ -51,7 +51,9 @@ check(reservations.includes("retiredExecution?.id && !allowRetiredRecreate"), 'r
 check(reservations.includes("retiredProductShell") && reservations.includes("SET is_active = 1, updated_at = ?"), 'explicit order path cannot reactivate only the retired product shell')
 check(reservations.includes("allowRetiredRecreate ? { allowRetiredRecreate: true } : {}"), 'explicit retired execution recreation option is not scoped')
 check(reservations.includes("-ORD-"), 'fresh order-driven SKU generation does not avoid retired external-id collision')
-check(orderWrites.includes("resolveCatalogProductAndVariant(db, item, createdAt, { allowRetiredRecreate: true })"), 'new-order save does not explicitly opt into retired recreation')
+check(orderWrites.includes("confirmedRetiredKeys.has(catalogOrderInputKey(item))"), 'new-order save does not scope retired recreation to an explicit exact-item confirmation')
+check(orderWrites.includes("resolveCatalogProductAndVariant(db, item, createdAt, { allowRetiredRecreate })"), 'confirmed new-order save does not pass the scoped retired recreation option')
+check(!orderWrites.includes("resolveCatalogProductAndVariant(db, item, createdAt, { allowRetiredRecreate: true })"), 'new-order save still has blanket retired recreation permission')
 check(!orderWrites.includes("resolveCatalogProductAndVariant(db, item, timestamp, { allowRetiredRecreate: true })"), 'order edit/background rewrite unexpectedly opts into retired recreation')
 
 // Released retired lines are ignored by normal shipping; stale pre-retirement send/stock requests fail closed.
