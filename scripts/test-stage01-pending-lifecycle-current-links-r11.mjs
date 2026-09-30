@@ -20,9 +20,9 @@ for (const [name, block] of [['reconcile', reconcile], ['list', listPending], ['
 }
 
 const resolutionEventPos = reconcile.indexOf('const resolutionEvent = {')
-const currentVariantPos = reconcile.indexOf('variant_id: toInt(event.current_order_variant_id, 0) || event.variant_id')
+const currentVariantPos = reconcile.indexOf("variant_id: retiredHistorical ? null : (toInt(event.current_order_variant_id, 0) || event.variant_id)")
 const resolvePos = reconcile.indexOf('resolveInventoryLifecycleCandidate(db, resolutionEvent')
-check(resolutionEventPos >= 0 && currentVariantPos > resolutionEventPos && resolvePos > currentVariantPos, 'Known-intake reconciliation still resolves the stale event before current order links')
+check(resolutionEventPos >= 0 && currentVariantPos > resolutionEventPos && resolvePos > currentVariantPos, 'Known-intake reconciliation must use current order links, except explicit retired-historical intake which deliberately re-resolves to a fresh active SKU')
 check(reconcile.includes('product_id: toInt(event.current_order_product_id, 0) || event.product_id'), 'Known-intake reconciliation ignores repaired base-product link')
 check(!reconcile.includes('UPDATE order_items'), 'Known-intake hydration unexpectedly rewrites order item identity')
 
@@ -31,7 +31,7 @@ check(listPending.includes('variantId: toInt(row.current_order_variant_id, 0) ||
 check(listPending.includes('productName: cleanText(row.product_name_snapshot)'), 'Pending lifecycle list stopped preserving event-time text evidence')
 
 check(context.includes('const currentVariantId = toInt(event.current_order_variant_id, 0)'), 'Lifecycle context ignores repaired exact variant link')
-check(context.includes('currentCanonical = await loadCanonicalVariantSnapshot(db, currentVariantId)'), 'Lifecycle context does not validate repaired exact variant canonically')
+check(context.includes('currentCanonical = await loadCanonicalVariantSnapshot(db, currentVariantId, { activeOnly: true })'), 'Lifecycle context does not validate repaired exact variant as live Catalog identity')
 check(context.includes('const effectiveProductId = toInt(currentCanonical?.productId, 0)') && context.includes('|| toInt(event.current_order_product_id, 0)'), 'Lifecycle context ignores repaired current product link')
 check(context.includes('let existingVariant: { id: number } | null = currentCanonical?.variantId ? { id: currentCanonical.variantId } : null'), 'Lifecycle context does not surface repaired exact variant as existing')
 check(context.includes('productName: currentCanonical.productName'), 'Lifecycle working context still pre-fills stale snapshot identity after exact repair')

@@ -63,7 +63,11 @@ try {
   // Known exact inbound is intake, unknown identity stays identify. No six-field form for an exact known SKU.
   // Inspect the lifecycle projection itself; do not accidentally satisfy this guard from the separate found-stock model.
   const lifecycleProjection = between(attention, 'const lifecycleItems =', 'response.items =')
-  check(lifecycleProjection.includes('const exactKnown = Boolean(exactVariantId') && lifecycleProjection.includes("cleanText(row.direction) === 'in'"), 'Exact known inbound classification missing')
+  check(lifecycleProjection.includes('const exactKnown = Boolean(')
+    && lifecycleProjection.includes('exactVariantId')
+    && lifecycleProjection.includes("cleanText(row.direction) === 'in'")
+    && lifecycleProjection.includes("cleanText(row.pending_reason) !== 'retired_historical'"),
+    'Exact known inbound classification must stay fast for ordinary intake while retired historical returns remain explicit')
   check(attention.includes('intake: lifecycleItems.filter((row) => row.exactKnown)') && attention.includes('lifecycle: lifecycleItems.filter((row) => !row.exactKnown)'), 'Known intake and unknown identity are not separated')
   check(panel.includes('Принять в остаток') && panel.includes('Товар уже известен.') && panel.includes('Принимайте только если вещь действительно находится у вас.'), 'Known intake no longer communicates known identity plus physical confirmation')
   check(panel.includes('Здесь только позиции, которым действительно не хватает точной идентичности.'), 'Identify tab still mixes known intake')
