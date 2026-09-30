@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "revision": "catalog-retired-operational-write-guards-r1",
+  "files": {
+    "worker/domains/catalog.ts": {
+      "beforeGitBlob": "845ebbeae6f6cd4e93290a7d2949ae84693e8878",
+      "beforeLines": 1485,
+      "afterGitBlob": "c7eac84b9c5760f6b7a507381a63c9ea41f6edba",
+      "afterLines": 1495,
+      "baselineFixture": "scripts/fixtures/catalog-retired-operational-write-guards/worker/domains/catalog.ts"
+    },
+    "worker/domains/inventory-movement.ts": {
+      "beforeGitBlob": "a442854e71a0fb0cbfbf439a73b19bca54d75f05",
+      "beforeLines": 2105,
+      "afterGitBlob": "cf0c04ef896e12a3b7d6be52c8a97aab5706c154",
+      "afterLines": 2125,
+      "baselineFixture": "scripts/fixtures/catalog-retired-operational-write-guards/worker/domains/inventory-movement.ts"
+    },
+    "worker/domains/lifecycle.ts": {
+      "beforeGitBlob": "5704fe601b0d766bee75d30e1023b8a264463530",
+      "beforeLines": 1185,
+      "afterGitBlob": "518871dc03c4fa86127e53ee1f3168e438a2fc63",
+      "afterLines": 1198,
+      "baselineFixture": "scripts/fixtures/catalog-retired-operational-write-guards/worker/domains/lifecycle.ts"
+    },
+    "worker/domains/order-reservations.ts": {
+      "beforeGitBlob": "a894a98b17cb21b45b305be6c03547956a0110bf",
+      "beforeLines": 2712,
+      "afterGitBlob": "6b59ba314510d2579634f01991ddb8ec79db8fbd",
+      "afterLines": 2725,
+      "baselineFixture": "scripts/fixtures/catalog-retired-operational-write-guards/worker/domains/order-reservations.ts"
+    }
+  }
+}
