@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "revision": "order-retired-confirmation-r1",
+  "files": {
+    "worker/domains/order-reservations.ts": {
+      "beforeGitBlob": "6b59ba314510d2579634f01991ddb8ec79db8fbd",
+      "beforeLines": 2725,
+      "afterGitBlob": "fb434d43e8947734b669f52011bda7cb994870e8",
+      "afterLines": 2836,
+      "baselineFixture": "scripts/fixtures/order-retired-confirmation/worker/domains/order-reservations.ts"
+    },
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "94bf139438c71e74e0fdc15ab5eff8afbd998477",
+      "beforeLines": 2096,
+      "afterGitBlob": "bf311618cd8398e83fe93bc02d578ba1460faebc",
+      "afterLines": 2142,
+      "baselineFixture": "scripts/fixtures/order-retired-confirmation/worker/domains/orders-write.ts"
+    },
+    "worker/core/types.ts": {
+      "beforeGitBlob": "380476d593008c0bbaeae3ce1e815ae60ec52c67",
+      "beforeLines": 180,
+      "afterGitBlob": "14a60ac4efa73bc64fcb11542621bb08d45548c2",
+      "afterLines": 181,
+      "baselineFixture": "scripts/fixtures/order-retired-confirmation/worker/core/types.ts"
+    },
+    "worker/index.ts": {
+      "beforeGitBlob": "130cdba1750b87d9c3efc0e92327b8a466f3b63c",
+      "beforeLines": 1604,
+      "afterGitBlob": "d4eaf33a0f78bfa33b8ff4e9e77d85278e6d8369",
+      "afterLines": 1607,
+      "baselineFixture": "scripts/fixtures/order-retired-confirmation/worker/index.ts"
+    }
+  }
+}
