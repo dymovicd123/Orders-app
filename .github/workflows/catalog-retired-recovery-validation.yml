@@ -1,0 +1,38 @@
+name: Temporary catalog retired recovery validation
+
+on:
+  push:
+    branches:
+      - w-catalog-retired-recovery-branch2-20260930
+    paths:
+      - 'worker/domains/catalog-review.ts'
+      - 'worker/domains/lifecycle.ts'
+      - 'src/app/types.ts'
+      - 'shared/api-contracts.ts'
+      - 'src/features/orders/OrderCatalogResolutionModal.tsx'
+      - 'src/features/orders/ReturnedItemResolutionModal.tsx'
+      - 'scripts/test-catalog-retired-recovery.mjs'
+      - 'scripts/release-check.mjs'
+      - 'scripts/test-step1906a-worker-modularization.mjs'
+      - 'scripts/test-step1906b-frontend-modularization.mjs'
+      - 'scripts/catalog-retired-recovery-r1-worker-manifest.json'
+      - 'scripts/catalog-retired-recovery-r1-frontend-manifest.json'
+      - 'scripts/fixtures/catalog-retired-recovery-r1/**'
+      - '.github/workflows/catalog-retired-recovery-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run release:check
+      - run: npm run build
