@@ -11,6 +11,7 @@ on:
       - 'migrations/0078_v72_catalog_restore_resumability.sql'
       - 'scripts/test-catalog-safe-retirement.mjs'
       - 'scripts/test-catalog-safe-restore.mjs'
+      - 'scripts/test-catalog-local-retirement.mjs'
       - 'scripts/test-step1906a-worker-modularization.mjs'
       - 'scripts/catalog-ready-resume-r1-worker-manifest.json'
       - 'scripts/fixtures/catalog-ready-resume-r1/worker/domains/catalog-retirement.ts'
