@@ -204,45 +204,32 @@ Required fix:
 - retries must continue from the exact persisted mapping and never create duplicate generations;
 - UI must not claim complete restoration merely because some working identity exists.
 
-### P1/P2 — audit and quarantine legacy inactive SKU rows with non-zero operational stock
+### CLOSED — inactive SKU operational-state audit + invariant guard
 
-PR #234 prevents the known new write paths from putting Physical/Reserved onto retired SKU rows, but pre-existing anomalies may still exist in Branch2 data.
+Read-only Branch2 D1 audit `36699118208` found **0** inactive variants with non-zero Physical/Reserved or active reservations.
 
-Current retirement snapshots focus on active variants. A legacy inactive SKU with non-zero Physical/Reserved is an invalid state and can escape ordinary retirement assumptions.
+The later retirement-integrity hardening now also makes this a runtime invariant:
+- whole and local retirement surface inactive historical SKU rows with live stock/reservation state instead of ignoring them;
+- whole retirement fails closed before mutation and rechecks the invariant in its write guard;
+- restore checks the same invariant before starting/resuming a restore.
 
-Required work:
-- read-only audit on Branch2 D1 for inactive Product/SKU + non-zero `inventory_stock.quantity` or `reserved_quantity` and active reservations;
-- no automatic destructive correction;
-- define a guarded correction path if any anomaly is found;
-- add preflight/assertion so future retirement/restore does not ignore such corrupted state.
+Validation: `36702222809` cumulative release-check + build — **success**.
 
-### P2 — fixed product gender scope still needs prevention, not just cleanup
+### CLOSED — fixed product gender scope prevention + legacy cleanup
 
-PR #239 makes an erroneous subgroup removable, but it does not yet change the older gender-resolution rule.
+PR #240 added fixed `male|female` scope enforcement across ordinary Catalog creation, order resolution, inventory/Arrival materialization, Resolver review and restore preflight while preserving unisex/R11 behavior. PR #241/#242 synchronized the older acceptance gates.
 
-Current Catalog/Resolver lineage intentionally treats an explicit human `ЖЕН/МУЖ` choice as authoritative before fixed product-scope fallback. That rule was introduced to preserve known gender in unisex flows and must not be broadly removed without reconciliation.
+Guarded Branch2 data cleanup `36699491214` then retired the exact 13 legacy wrong-gender variants found by audit. Post-state: **0 active fixed-scope mismatches** and **0 inactive variants with live stock/reservation**.
 
-The new concrete product requirement is narrower:
-- if a Catalog product is truly fixed `gender_scope = male`, an accidental female working SKU should not be creatable through ordinary Catalog/Arrival/order materialization;
-- likewise for fixed female products;
-- `unisex` products must continue to allow both concrete genders;
-- historical rows are not rewritten.
+### CLOSED — Workshop semantics during whole execution/product retirement
 
-Required next step:
-- audit every SKU-creation/materialization path against fixed `gender_scope`;
-- add a focused fail-closed rule only where product scope is explicitly fixed;
-- preserve R11 behavior for genuinely unisex products and historical reads;
-- add a regression reproducing the accidental wrong-gender subgroup case.
+The rule is now explicit and fail-closed: **an active/ready Workshop task blocks whole execution/product retirement**.
 
-### P2 — Workshop semantics during whole execution/product retirement are not explicit enough
+Protection exists twice:
+- read preflight rejects the operation with a clear Workshop message;
+- write-time guard rechecks active/ready Workshop tasks so a task created between preview and mutation cannot be retired underneath.
 
-Retirement preview computes active Workshop task count, but whole execution/product retirement does not currently use that fact as a clear blocker/warning in the same way the older exact-SKU retirement path does.
-
-Required decision:
-- either active/ready Workshop tasks block retirement;
-- or retirement is allowed, but UI must explicitly state how the task continues and what happens to future Catalog/stock linkage.
-
-Do not guess this business rule silently.
+Local group retirement already used the same rule, so the semantics are now consistent across deletion scopes. Validation: `36702222809` release-check + build — **success**.
 
 ### P2 — returns/exchanges involving a retired historical SKU need a deliberate operator UX
 
@@ -275,13 +262,10 @@ This is separate from Catalog retirement semantics. Do not weaken/remove the sec
 
 ## Suggested continuation order
 
-1. Audit/fix **fixed product gender-scope prevention** so a removed wrong-gender subgroup cannot be recreated accidentally, while preserving unisex/R11 behavior.
-2. Fix recovery for open `catalog_retired` orders.
-3. Make restore resumable/idempotent and represent partial restore honestly.
-4. Run read-only inactive-SKU/non-zero-stock audit and add invariant guards.
-5. Decide and implement Workshop-retirement rule.
-6. Add explicit retired-SKU Return/Exchange intake UX.
-7. Unify exact-SKU/local-group history with the new retirement-history UI.
-8. Separately resolve the high-risk dev-dependency audit.
+1. Fix recovery for open `catalog_retired` orders.
+2. Make restore resumable/idempotent and represent partial restore honestly.
+3. Add explicit retired-SKU Return/Exchange intake UX.
+4. Unify exact-SKU/local-group history with the new retirement-history UI.
+5. Separately resolve the high-risk dev-dependency audit.
 
 For every remaining item, start from current `branch2`, add focused semantic regression, run cumulative `release:check` + build, verify exact merged SHA deploy, and keep `main` untouched unless the user explicitly changes the release boundary.
