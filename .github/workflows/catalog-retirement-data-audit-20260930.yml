@@ -1,0 +1,207 @@
+name: Branch2 read-only catalog retirement data audit 20260930
+
+on:
+  push:
+    branches:
+      - audit/catalog-retirement-data-20260930
+    paths:
+      - '.github/workflows/catalog-retirement-data-audit-20260930.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Read-only Branch2 D1 audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Hard-stop on Branch2 database identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "audit/catalog-retirement-data-20260930" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo "Production identity detected. Refusing audit." >&2
+            exit 20
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Audit active fixed-scope gender mismatches
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== WRONG_GENDER_ACTIVE_VARIANTS ==='
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+          SELECT
+            p.id AS product_id,
+            p.name AS product_name,
+            p.gender_scope,
+            sp.id AS execution_id,
+            sp.material,
+            sp.length,
+            v.id AS variant_id,
+            COALESCE(v.category,'adult') AS category,
+            COALESCE(v.gender,'') AS gender,
+            COALESCE(v.color,'') AS color,
+            COALESCE(v.size_label,'') AS size_label,
+            COALESCE((SELECT SUM(s.quantity) FROM inventory_stock s WHERE s.variant_id=v.id),0) AS physical,
+            COALESCE((SELECT SUM(s.reserved_quantity) FROM inventory_stock s WHERE s.variant_id=v.id),0) AS stock_reserved,
+            COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.variant_id=v.id AND r.status='active'),0) AS active_reservation,
+            (SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id=oi.order_id
+              WHERE oi.variant_id=v.id
+                AND COALESCE(o.order_status,'active')='active'
+                AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+                AND COALESCE(oi.quantity,0)>0) AS open_order_items,
+            (SELECT COUNT(*) FROM workshop_tasks wt WHERE wt.variant_id=v.id AND wt.status IN ('active','ready')) AS active_workshop_tasks,
+            (SELECT COUNT(*) FROM inventory_lifecycle_events e WHERE e.variant_id=v.id AND e.status='pending') AS pending_lifecycle,
+            (SELECT COUNT(*) FROM inventory_stocktake_items i JOIN inventory_stocktake_sessions st ON st.id=i.session_id
+              WHERE i.variant_id=v.id AND st.status='active') AS active_stocktake
+          FROM catalog_variants v
+          JOIN catalog_products p ON p.id=v.product_id
+          LEFT JOIN catalog_stock_positions sp ON sp.id=v.stock_position_id
+          WHERE v.is_active=1
+            AND p.is_active=1
+            AND (
+              (p.gender_scope='male' AND UPPER(TRIM(COALESCE(v.gender,''))) LIKE '%ЖЕН%')
+              OR
+              (p.gender_scope='female' AND UPPER(TRIM(COALESCE(v.gender,''))) LIKE '%МУЖ%')
+            )
+          ORDER BY p.name, sp.id, v.gender, v.color, v.size_label, v.id;
+          " --json
+
+      - name: Audit mismatch groups with local-retirement safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== WRONG_GENDER_GROUPS ==='
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+          WITH mismatches AS (
+            SELECT
+              v.id,
+              v.stock_position_id AS execution_id,
+              v.product_id,
+              COALESCE(v.category,'adult') AS category,
+              CASE
+                WHEN UPPER(TRIM(COALESCE(v.gender,''))) LIKE '%ЖЕН%' THEN 'ЖЕН'
+                WHEN UPPER(TRIM(COALESCE(v.gender,''))) LIKE '%МУЖ%' THEN 'МУЖ'
+                ELSE UPPER(TRIM(COALESCE(v.gender,'')))
+              END AS gender,
+              CASE WHEN TRIM(COALESCE(v.color,''))='' THEN 'БЕЗ ЦВЕТА' ELSE UPPER(TRIM(v.color)) END AS color
+            FROM catalog_variants v
+            JOIN catalog_products p ON p.id=v.product_id
+            WHERE v.is_active=1 AND p.is_active=1
+              AND (
+                (p.gender_scope='male' AND UPPER(TRIM(COALESCE(v.gender,''))) LIKE '%ЖЕН%')
+                OR
+                (p.gender_scope='female' AND UPPER(TRIM(COALESCE(v.gender,''))) LIKE '%МУЖ%')
+              )
+          )
+          SELECT
+            p.id AS product_id,
+            p.name AS product_name,
+            p.gender_scope,
+            m.execution_id,
+            sp.material,
+            sp.length,
+            m.category,
+            m.gender,
+            m.color,
+            COUNT(*) AS active_variant_count,
+            COALESCE((SELECT SUM(COALESCE(s.quantity,0)) FROM inventory_stock s
+              WHERE s.variant_id IN (SELECT x.id FROM mismatches x
+                WHERE x.execution_id=m.execution_id AND x.category=m.category AND x.gender=m.gender AND x.color=m.color)),0) AS physical,
+            COALESCE((SELECT SUM(COALESCE(s.reserved_quantity,0)) FROM inventory_stock s
+              WHERE s.variant_id IN (SELECT x.id FROM mismatches x
+                WHERE x.execution_id=m.execution_id AND x.category=m.category AND x.gender=m.gender AND x.color=m.color)),0) AS stock_reserved,
+            COALESCE((SELECT SUM(COALESCE(r.quantity,0)) FROM inventory_reservations r
+              WHERE r.status='active' AND r.variant_id IN (SELECT x.id FROM mismatches x
+                WHERE x.execution_id=m.execution_id AND x.category=m.category AND x.gender=m.gender AND x.color=m.color)),0) AS active_reservation,
+            (SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id=oi.order_id
+              WHERE oi.variant_id IN (SELECT x.id FROM mismatches x
+                WHERE x.execution_id=m.execution_id AND x.category=m.category AND x.gender=m.gender AND x.color=m.color)
+                AND COALESCE(o.order_status,'active')='active'
+                AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+                AND COALESCE(oi.quantity,0)>0) AS open_order_items,
+            (SELECT COUNT(*) FROM workshop_tasks wt
+              WHERE wt.variant_id IN (SELECT x.id FROM mismatches x
+                WHERE x.execution_id=m.execution_id AND x.category=m.category AND x.gender=m.gender AND x.color=m.color)
+                AND wt.status IN ('active','ready')) AS active_workshop_tasks,
+            (SELECT COUNT(*) FROM inventory_lifecycle_events e
+              WHERE e.variant_id IN (SELECT x.id FROM mismatches x
+                WHERE x.execution_id=m.execution_id AND x.category=m.category AND x.gender=m.gender AND x.color=m.color)
+                AND e.status='pending') AS pending_lifecycle,
+            (SELECT COUNT(*) FROM inventory_stocktake_items i JOIN inventory_stocktake_sessions st ON st.id=i.session_id
+              WHERE i.variant_id IN (SELECT x.id FROM mismatches x
+                WHERE x.execution_id=m.execution_id AND x.category=m.category AND x.gender=m.gender AND x.color=m.color)
+                AND st.status='active') AS active_stocktake
+          FROM mismatches m
+          JOIN catalog_products p ON p.id=m.product_id
+          LEFT JOIN catalog_stock_positions sp ON sp.id=m.execution_id
+          GROUP BY p.id,p.name,p.gender_scope,m.execution_id,sp.material,sp.length,m.category,m.gender,m.color
+          ORDER BY p.name,m.execution_id,m.gender,m.color;
+          " --json
+
+      - name: Audit inactive catalog variants with live operational state
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== INACTIVE_VARIANT_OPERATIONAL_ANOMALIES ==='
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+          SELECT
+            p.id AS product_id,
+            p.name AS product_name,
+            p.is_active AS product_active,
+            p.gender_scope,
+            sp.id AS execution_id,
+            sp.is_active AS execution_active,
+            v.id AS variant_id,
+            COALESCE(v.gender,'') AS gender,
+            COALESCE(v.color,'') AS color,
+            COALESCE(v.size_label,'') AS size_label,
+            COALESCE((SELECT SUM(s.quantity) FROM inventory_stock s WHERE s.variant_id=v.id),0) AS physical,
+            COALESCE((SELECT SUM(s.reserved_quantity) FROM inventory_stock s WHERE s.variant_id=v.id),0) AS stock_reserved,
+            COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.variant_id=v.id AND r.status='active'),0) AS active_reservation
+          FROM catalog_variants v
+          JOIN catalog_products p ON p.id=v.product_id
+          LEFT JOIN catalog_stock_positions sp ON sp.id=v.stock_position_id
+          WHERE v.is_active=0
+            AND (
+              EXISTS(SELECT 1 FROM inventory_stock s WHERE s.variant_id=v.id AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0))
+              OR EXISTS(SELECT 1 FROM inventory_reservations r WHERE r.variant_id=v.id AND r.status='active' AND COALESCE(r.quantity,0)<>0)
+            )
+          ORDER BY p.name,sp.id,v.id;
+          " --json
+
+      - name: Audit summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== AUDIT_SUMMARY ==='
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+          SELECT
+            (SELECT COUNT(*) FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
+              WHERE v.is_active=1 AND p.is_active=1 AND (
+                (p.gender_scope='male' AND UPPER(TRIM(COALESCE(v.gender,''))) LIKE '%ЖЕН%')
+                OR (p.gender_scope='female' AND UPPER(TRIM(COALESCE(v.gender,''))) LIKE '%МУЖ%')
+              )) AS wrong_gender_active_variants,
+            (SELECT COUNT(*) FROM catalog_variants v
+              WHERE v.is_active=0 AND (
+                EXISTS(SELECT 1 FROM inventory_stock s WHERE s.variant_id=v.id AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0))
+                OR EXISTS(SELECT 1 FROM inventory_reservations r WHERE r.variant_id=v.id AND r.status='active' AND COALESCE(r.quantity,0)<>0)
+              )) AS inactive_variants_with_live_stock_or_reservation;
+          " --json
