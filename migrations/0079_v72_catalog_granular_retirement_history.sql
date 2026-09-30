@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS catalog_retirement_history_events (
   product_id INTEGER NOT NULL,
   product_name TEXT NOT NULL,
   stock_position_id INTEGER,
+  variant_id INTEGER,
   material TEXT,
   length TEXT,
   category TEXT,
