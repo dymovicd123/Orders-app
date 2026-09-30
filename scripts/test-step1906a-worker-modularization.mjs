@@ -4,22 +4,52 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage03ProductionRuntimeWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-production-runtime-worker-manifest.json'), 'utf8'))
+if (stage03ProductionRuntimeWorkerManifest?.version !== 1 || stage03ProductionRuntimeWorkerManifest?.revision !== 'stage03-production-runtime-r1') throw new Error('Stage03 Production worker manifest invalid')
+const stage03ProductionRuntimeWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE03_PRODUCTION_RUNTIME_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stage03ProductionRuntimeWorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      if (!fs.existsSync(absolute)) throw new Error('Stage03 Production worker current file missing: ' + relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage03ProductionRuntimeWorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('Stage03 Production worker changed beyond exact promotion manifest: ' + relative)
+      originals.set(relative, actual)
+      if (delta.beforeGitBlob) {
+        const baseline = fs.readFileSync(path.join(root, delta.beforeFixture), 'utf8')
+        if (stage03ProductionRuntimeWorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Stage03 Production worker baseline fixture drifted: ' + relative)
+        fs.writeFileSync(absolute, baseline)
+      } else {
+        fs.unlinkSync(absolute)
+      }
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, STAGE03_PRODUCTION_RUNTIME_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03 PRODUCTION WORKER EXACT PROMOTION LAYER PASSED')
+  process.exit(0)
+}
 const catalogRetirementMainPortManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-retirement-main-port-worker-manifest.json'), 'utf8'))
 if (catalogRetirementMainPortManifest?.version !== 1 || catalogRetirementMainPortManifest?.revision !== 'catalog-retirement-main-port-worker-r1') throw new Error('Catalog retirement main-port Worker manifest invalid')
 const catalogRetirementMainPortBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-const stage03ProductionSuccessorWorkerBlobs = {
-  'worker/core/types.ts': '14a60ac4efa73bc64fcb11542621bb08d45548c2',
-  'worker/domains/finance-reports.ts': '731c40de473b00a353fc58e987626d16d7671186',
-  'worker/domains/order-core.ts': '7a33b917072808e232d706954441c07aaaf6faec',
-  'worker/domains/order-pricing.ts': 'aea8ee7483c2da8a8dd6ae62ededd56a0c26bdc4',
-  'worker/domains/orders-read.ts': '73b1001a0985e49626f32a812edd5f9c95de5e4b',
-  'worker/domains/orders-relations.ts': '7741e279029e4403d4b051e92a36b7e3f2b92775',
-  'worker/domains/orders-write.ts': 'bf311618cd8398e83fe93bc02d578ba1460faebc',
-  'worker/domains/returns-exchanges.ts': 'bf6baf5b03453c1ed4be2668ac5c6aefe8c3c76c',
-  'worker/domains/storage.ts': '4095ad56e7e91eb601f1b6483e903c0119213380',
 }
 if (!process.env.CATALOG_RETIREMENT_MAIN_PORT_WORKER_NORMALIZED) {
   const originals = new Map()
@@ -29,9 +59,7 @@ if (!process.env.CATALOG_RETIREMENT_MAIN_PORT_WORKER_NORMALIZED) {
       const absolute = path.join(root, relative)
       if (!fs.existsSync(absolute)) throw new Error('Catalog retirement main-port Worker current file missing: ' + relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      const actualBlob = catalogRetirementMainPortBlobSha(actual)
-      const acceptedSuccessorBlob = stage03ProductionSuccessorWorkerBlobs[relative]
-      if (actualBlob !== delta.afterGitBlob && actualBlob !== acceptedSuccessorBlob) throw new Error('Catalog retirement main-port Worker changed beyond exact reconciled main port or approved Stage03 successor: ' + relative)
+      if (catalogRetirementMainPortBlobSha(actual) !== delta.afterGitBlob) throw new Error('Catalog retirement main-port Worker changed beyond exact reconciled main port: ' + relative)
       originals.set(relative, actual)
       if (delta.beforeGitBlob) {
         const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
@@ -211,9 +239,7 @@ if (!process.env.CLIENT_ZAMMLER_PROD_RUNTIME_WORKER_NORMALIZED) {
     for (const [relative, delta] of Object.entries(clientZammlerProdRuntimeManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      const actualBlob = clientZammlerProdWorkerBlobSha(actual)
-      const acceptedSuccessorBlob = stage03ProductionSuccessorWorkerBlobs[relative]
-      if (actualBlob !== delta.afterGitBlob && actualBlob !== acceptedSuccessorBlob) throw new Error('CLIENT-ZAMMLER Production Worker changed beyond exact manifest or approved Stage03 successor: ' + relative)
+      if (clientZammlerProdWorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('CLIENT-ZAMMLER Production Worker changed beyond exact manifest: ' + relative)
       const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
       if (clientZammlerProdWorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('CLIENT-ZAMMLER Production Worker baseline fixture drifted: ' + relative)
       originals.set(relative, actual)
@@ -362,10 +388,8 @@ if (!process.env.RESOLVER_FOLLOWUP_R2_WORKER_NORMALIZED) {
     for (const [relative, delta] of Object.entries(resolverFollowupWorkerManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      const actualBlob = resolverFollowupWorkerBlobSha(actual)
-      const approvedStage03Successor = stage03ProductionSuccessorWorkerBlobs[relative] === actualBlob
-      if (!approvedStage03Successor && (actualBlob !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines)) {
-        throw new Error('Resolver follow-up R2 Worker changed beyond exact manifest or approved Stage03 successor: ' + relative)
+      if (resolverFollowupWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Resolver follow-up R2 Worker changed beyond exact manifest: ' + relative)
       }
       const reverted = fs.readFileSync(path.join(root, delta.beforeFixture), 'utf8')
       if (resolverFollowupWorkerBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {

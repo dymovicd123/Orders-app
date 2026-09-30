@@ -91,23 +91,52 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage03ProductionRuntimeFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-production-runtime-frontend-manifest.json'), 'utf8'))
+if (stage03ProductionRuntimeFrontendManifest?.version !== 1 || stage03ProductionRuntimeFrontendManifest?.revision !== 'stage03-production-runtime-r1') throw new Error('Stage03 Production frontend manifest invalid')
+const stage03ProductionRuntimeFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE03_PRODUCTION_RUNTIME_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stage03ProductionRuntimeFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      if (!fs.existsSync(absolute)) throw new Error('Stage03 Production frontend current file missing: ' + relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage03ProductionRuntimeFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Stage03 Production frontend changed beyond exact promotion manifest: ' + relative)
+      originals.set(relative, actual)
+      if (delta.beforeGitBlob) {
+        const baseline = fs.readFileSync(path.join(root, delta.beforeFixture), 'utf8')
+        if (stage03ProductionRuntimeFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Stage03 Production frontend baseline fixture drifted: ' + relative)
+        fs.writeFileSync(absolute, baseline)
+      } else {
+        fs.unlinkSync(absolute)
+      }
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, STAGE03_PRODUCTION_RUNTIME_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03 PRODUCTION FRONTEND EXACT PROMOTION LAYER PASSED')
+  process.exit(0)
+}
 const catalogRetirementMainPortManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-retirement-main-port-frontend-manifest.json'), 'utf8'))
 if (catalogRetirementMainPortManifest?.version !== 1 || catalogRetirementMainPortManifest?.revision !== 'catalog-retirement-main-port-frontend-r1') throw new Error('Catalog retirement main-port frontend manifest invalid')
 const catalogRetirementMainPortBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-const stage03ProductionSuccessorFrontendBlobs = {
-  'src/App.tsx': 'a8d155fbd74f94dd361b837e306ae9fc6e1aa0bf',
-  'src/app/controllers/useWorkspaceViewModel.tsx': '8fbc9e753d7e7561c65ade6e931605e7497c5b69',
-  'src/app/order-pricing.ts': '133f3198261ffa6ada2ef76521e00cac7541d845',
-  'src/app/types.ts': '14741ad9b64156f519a2bbd9c458c6b0585a0d24',
-  'src/app/utils.ts': '6e20547f7e8825303d79fbc21f37fe8214c4214e',
-  'src/features/renderers/FinanceReportContentRenderer.tsx': '3d7ff45fd4418eefaf5ea9bd94745964ef8fd47a',
-  'src/features/sections/CreateOrderSection.tsx': '29e90a12ff54fc6e7607cbc18b4e46f83bb80a8c',
-  'src/features/sections/OrderEditorSection.tsx': '92d3e3b39e882362a7a9363f2396b2bdd313b2f1',
-  'src/features/sections/OrderExchangeSection.tsx': 'd98b9a14f5f45d5393d1d51d8c0bcae39ec087ca',
-  'src/features/sections/OrderReturnsSection.tsx': 'a79b580af2e5a1aaf6fe032f9586c8ac1bd54896',
 }
 if (!process.env.CATALOG_RETIREMENT_MAIN_PORT_FRONTEND_NORMALIZED) {
   const originals = new Map()
@@ -117,9 +146,7 @@ if (!process.env.CATALOG_RETIREMENT_MAIN_PORT_FRONTEND_NORMALIZED) {
       const absolute = path.join(root, relative)
       if (!fs.existsSync(absolute)) throw new Error('Catalog retirement main-port frontend current file missing: ' + relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      const actualBlob = catalogRetirementMainPortBlobSha(actual)
-      const acceptedSuccessorBlob = stage03ProductionSuccessorFrontendBlobs[relative]
-      if (actualBlob !== delta.afterGitBlob && actualBlob !== acceptedSuccessorBlob) throw new Error('Catalog retirement main-port frontend changed beyond exact reconciled main port or approved Stage03 successor: ' + relative)
+      if (catalogRetirementMainPortBlobSha(actual) !== delta.afterGitBlob) throw new Error('Catalog retirement main-port frontend changed beyond exact reconciled main port: ' + relative)
       originals.set(relative, actual)
       if (delta.beforeGitBlob) {
         const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
@@ -304,9 +331,7 @@ if (!process.env.CLIENT_ZAMMLER_PROD_RUNTIME_FRONTEND_NORMALIZED) {
     for (const [relative, delta] of Object.entries(clientZammlerProdRuntimeManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      const actualBlob = clientZammlerProdFrontendBlobSha(actual)
-      const acceptedSuccessorBlob = stage03ProductionSuccessorFrontendBlobs[relative]
-      if (actualBlob !== delta.afterGitBlob && actualBlob !== acceptedSuccessorBlob) throw new Error('CLIENT-ZAMMLER Production frontend changed beyond exact manifest or approved Stage03 successor: ' + relative)
+      if (clientZammlerProdFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('CLIENT-ZAMMLER Production frontend changed beyond exact manifest: ' + relative)
       const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
       if (clientZammlerProdFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('CLIENT-ZAMMLER Production frontend baseline fixture drifted: ' + relative)
       originals.set(relative, actual)
