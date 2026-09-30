@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "revision": "catalog-granular-history-ui-r1",
+  "files": {
+    "src/features/inventory/views/catalogPolishExecutionGroups.tsx": {
+      "beforeGitBlob": "68d0ead3349c694e6cfd1c9ed0e3ef151387d6f6",
+      "beforeLines": 583,
+      "afterGitBlob": "400a50d19eb6d088ee6e4fe8616a7d0bf12ea2ea",
+      "afterLines": 585,
+      "baselineFixture": "scripts/fixtures/catalog-granular-history-r1/src/features/inventory/views/catalogPolishExecutionGroups.tsx"
+    },
+    "src/features/inventory/views/CatalogRetirementHistory.tsx": {
+      "beforeGitBlob": "a2f81ddd313fc346aca0e69ddb078c1cdb9c0338",
+      "beforeLines": 198,
+      "afterGitBlob": "766768987bccf9c832b602455805dcc17ec2f81f",
+      "afterLines": 225,
+      "baselineFixture": "scripts/fixtures/catalog-granular-history-r1/src/features/inventory/views/CatalogRetirementHistory.tsx"
+    },
+    "src/features/inventory/views/CatalogVariantGroupRetirementAction.tsx": {
+      "beforeGitBlob": "4ac49619d7d25108f498814d84247fadba8d80dc",
+      "beforeLines": 200,
+      "afterGitBlob": "292d37ceaf8fabd406bd3c50d46e3e299d09ad78",
+      "afterLines": 200,
+      "baselineFixture": "scripts/fixtures/catalog-granular-history-r1/src/features/inventory/views/CatalogVariantGroupRetirementAction.tsx"
+    }
+  }
+}
