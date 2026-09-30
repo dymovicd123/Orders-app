@@ -764,9 +764,9 @@ export async function resolveCatalogReviewRows(
           // of silently losing it from the review queue.
           db.prepare(
             `UPDATE order_items
-             SET stock_writeoff_status = 'catalog_unresolved', stock_quantity_before = NULL, stock_quantity_after = NULL
+             SET stock_writeoff_status = ?, stock_quantity_before = NULL, stock_quantity_after = NULL
              WHERE id = ?`
-          ).bind(id),
+          ).bind(retiredDemand ? 'catalog_retired' : 'catalog_unresolved', id),
         ]);
         existingReservation = null;
       }
@@ -777,9 +777,9 @@ export async function resolveCatalogReviewRows(
         db.prepare(`DELETE FROM inventory_reservations WHERE id = ? AND status <> 'fulfilled'`).bind(toInt(existingReservation.id, 0)),
         db.prepare(
           `UPDATE order_items
-           SET stock_writeoff_status = 'catalog_unresolved', stock_quantity_before = NULL, stock_quantity_after = NULL
+           SET stock_writeoff_status = ?, stock_quantity_before = NULL, stock_quantity_after = NULL
            WHERE id = ?`
-        ).bind(id),
+        ).bind(retiredDemand ? 'catalog_retired' : 'catalog_unresolved', id),
       ]);
       existingReservation = null;
     }
