@@ -1,0 +1,88 @@
+name: Production Catalog retirement post-deploy smoke
+
+on:
+  push:
+    branches:
+      - audit/prod-catalog-retirement-smoke-20260930
+    paths:
+      - '.github/workflows/prod-catalog-retirement-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Read-only Production retirement smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact Production identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "audit/prod-catalog-retirement-smoke-20260930" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Read-only schema and invariant smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+          SELECT
+            EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='catalog_retirement_operations') AS op_table,
+            EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='catalog_retirement_variants') AS variants_table,
+            EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='catalog_retirement_restores') AS restores_table,
+            EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='catalog_retirement_restore_variants') AS restore_variants_table,
+            EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='catalog_retirement_history_events') AS history_table,
+            EXISTS(SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_catalog_retirement_restores_single_started') AS restore_single_started_index,
+            EXISTS(SELECT 1 FROM pragma_table_info('orders') WHERE name='pricing_mode') AS stage03_orders_pricing_mode,
+            EXISTS(SELECT 1 FROM pragma_table_info('order_items') WHERE name='catalog_price_snapshot') AS stage03_item_snapshot;
+
+          SELECT
+            (SELECT COUNT(*) FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
+              WHERE v.is_active=1 AND p.is_active=1
+                AND ((p.gender_scope='female' AND UPPER(TRIM(COALESCE(v.gender,'')))='МУЖ')
+                  OR (p.gender_scope='male' AND UPPER(TRIM(COALESCE(v.gender,'')))='ЖЕН'))) AS active_gender_mismatch,
+            (SELECT COUNT(*) FROM catalog_variants v WHERE v.is_active=0 AND (
+              EXISTS (SELECT 1 FROM inventory_stock s WHERE s.variant_id=v.id AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0))
+              OR EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.variant_id=v.id AND r.status='active' AND COALESCE(r.quantity,0)<>0)
+            )) AS inactive_live_state,
+            (SELECT COUNT(*) FROM inventory_stock WHERE id=151 AND variant_id=158 AND quantity=0 AND reserved_quantity=0) AS repaired_source_zero,
+            (SELECT COUNT(*) FROM inventory_stock WHERE id=730 AND variant_id=1089 AND quantity=1 AND reserved_quantity=0) AS repaired_canonical_stock,
+            (SELECT COUNT(*) FROM catalog_variants WHERE id IN (158,254,288,315,450,654,670,854,862,893,1016,1022,1082) AND is_active=0) AS retired_fixed_gender_legacy,
+            (SELECT COUNT(*) FROM catalog_variants WHERE id IN (207,356,1065,1066) AND is_active=1) AS reactivated_live_legacy;
+
+          SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_total,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS stock_reserved_total,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_reservations WHERE status='active') AS active_reserved_total,
+            (SELECT COUNT(*) FROM catalog_retirement_operations) AS retirement_operations,
+            (SELECT COUNT(*) FROM catalog_retirement_history_events) AS granular_history_events;
+          " --json)"
+          echo "$result"
+
+          for key in op_table variants_table restores_table restore_variants_table history_table restore_single_started_index; do
+            [[ "$(jq -r ".[0].results[0].$key" <<<"$result")" == "1" ]]
+          done
+          [[ "$(jq -r '.[0].results[0].stage03_orders_pricing_mode' <<<"$result")" == "0" ]]
+          [[ "$(jq -r '.[0].results[0].stage03_item_snapshot' <<<"$result")" == "0" ]]
+          [[ "$(jq -r '.[1].results[0].active_gender_mismatch' <<<"$result")" == "0" ]]
+          [[ "$(jq -r '.[1].results[0].inactive_live_state' <<<"$result")" == "0" ]]
+          [[ "$(jq -r '.[1].results[0].repaired_source_zero' <<<"$result")" == "1" ]]
+          [[ "$(jq -r '.[1].results[0].repaired_canonical_stock' <<<"$result")" == "1" ]]
+          [[ "$(jq -r '.[1].results[0].retired_fixed_gender_legacy' <<<"$result")" == "13" ]]
+          [[ "$(jq -r '.[1].results[0].reactivated_live_legacy' <<<"$result")" == "4" ]]
+          echo "Production Catalog retirement post-deploy smoke passed; Stage03 remains off."
