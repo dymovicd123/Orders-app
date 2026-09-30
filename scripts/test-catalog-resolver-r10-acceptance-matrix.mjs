@@ -62,7 +62,7 @@ assert.equal(blankGenderQuestion.field, 'gender', 'R10.4: blank unisex gender is
 
 // 5. Two legitimate genders: server must not infer one for unisex scope.
 assert.ok(catalog.includes("return scope === 'female' ? 'ЖЕН' : scope === 'male' ? 'МУЖ' : ''"), 'R10.5: unisex gender scope can again synthesize a gender')
-assert.ok(reservations.includes('gender = catalogGenderForProductScope(productGenderScope)') && reservations.includes("matchStatus: 'unresolved_attribute'"), 'R10.5: ambiguous gender no longer remains unresolved')
+assert.ok(reservations.includes('const fixedProductGender = catalogGenderForProductScope(productGenderScope)') && reservations.includes('gender = fixedProductGender') && reservations.includes("matchStatus: 'unresolved_attribute'"), 'R10.5: ambiguous gender no longer remains unresolved')
 
 // 6. Blank color/size with concrete siblings: never silently create/select placeholder SKU.
 assert.ok(reservations.includes('omittedColorConflictsWithConcreteSibling') && reservations.includes('omittedSizeConflictsWithConcreteSibling'), 'R10.6: concrete sibling conflict guards disappeared')
