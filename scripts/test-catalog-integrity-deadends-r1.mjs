@@ -9,6 +9,10 @@ check(read.includes('catalogArchived:'), 'inventory response marks archived cata
 check(movement.includes('SELECT id, name, category, external_id, is_active, gender_scope FROM catalog_products'), 'bulk inventory resolver reuses existing product read for gender scope')
 check(movement.includes("if (scope === 'female') return 'ЖЕН'") && movement.includes("if (scope === 'male') return 'МУЖ'"), 'fixed product scope auto-fills inventory gender')
 check(movement.includes('Для товара «Унисекс» выберите пол конкретной вещи'), 'unisex blank inventory gender requires human choice')
-check(movement.includes("if (explicit === 'ЖЕН' || explicit === 'МУЖ') return explicit"), 'explicit human gender remains authoritative')
+check(
+  movement.includes("if (explicit === 'ЖЕН' || explicit === 'МУЖ')") &&
+    movement.includes("assertCatalogGenderAllowedForScope(product?.gender_scope, explicit, product?.name).gender"),
+  'explicit human gender remains authoritative for unisex, but fixed product scope rejects the opposite gender',
+)
 if (failed) process.exit(1)
 console.log('Catalog integrity dead ends R1: OK')
