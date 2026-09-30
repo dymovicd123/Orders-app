@@ -1,4 +1,4 @@
-name: Temporary Catalog retirement main candidate validation
+name: Temporary Catalog retirement main candidate validation r2
 
 on:
   push:
@@ -89,6 +89,48 @@ jobs:
                 WHERE r.variant_id=v.id AND r.status='active' AND COALESCE(r.quantity,0)<>0
               )
             );
+
+          SELECT
+            v.id AS variant_id, p.id AS product_id, p.name AS product_name, p.gender_scope,
+            v.stock_position_id, v.gender, v.color, v.size_label,
+            COALESCE((SELECT SUM(s.quantity) FROM inventory_stock s WHERE s.variant_id=v.id),0) AS physical,
+            COALESCE((SELECT SUM(s.reserved_quantity) FROM inventory_stock s WHERE s.variant_id=v.id),0) AS stock_reserved,
+            COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.variant_id=v.id AND r.status='active'),0) AS active_reserved,
+            (SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id=oi.order_id
+              WHERE oi.variant_id=v.id AND COALESCE(o.order_status,'active')='active'
+                AND COALESCE(o.archived_at,'')='' AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+                AND COALESCE(oi.quantity,0)>0) AS open_order_items,
+            (SELECT COUNT(*) FROM workshop_tasks wt WHERE wt.variant_id=v.id AND wt.status='active') AS active_workshop,
+            (SELECT COUNT(*) FROM inventory_lifecycle_events e WHERE e.variant_id=v.id AND e.status='pending') AS pending_lifecycle
+          FROM catalog_variants v
+          JOIN catalog_products p ON p.id=v.product_id
+          WHERE v.is_active=1 AND p.is_active=1
+            AND (
+              (p.gender_scope='female' AND UPPER(TRIM(COALESCE(v.gender,'')))='МУЖ')
+              OR (p.gender_scope='male' AND UPPER(TRIM(COALESCE(v.gender,'')))='ЖЕН')
+            )
+          ORDER BY p.name, v.id;
+
+          SELECT
+            v.id AS variant_id, p.id AS product_id, p.name AS product_name,
+            v.stock_position_id, v.gender, v.color, v.size_label,
+            COALESCE((SELECT SUM(s.quantity) FROM inventory_stock s WHERE s.variant_id=v.id),0) AS physical,
+            COALESCE((SELECT SUM(s.reserved_quantity) FROM inventory_stock s WHERE s.variant_id=v.id),0) AS stock_reserved,
+            COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.variant_id=v.id AND r.status='active'),0) AS active_reserved,
+            (SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id=oi.order_id
+              WHERE oi.variant_id=v.id AND COALESCE(o.order_status,'active')='active'
+                AND COALESCE(o.archived_at,'')='' AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+                AND COALESCE(oi.quantity,0)>0) AS open_order_items,
+            (SELECT COUNT(*) FROM workshop_tasks wt WHERE wt.variant_id=v.id AND wt.status='active') AS active_workshop,
+            (SELECT COUNT(*) FROM inventory_lifecycle_events e WHERE e.variant_id=v.id AND e.status='pending') AS pending_lifecycle
+          FROM catalog_variants v
+          JOIN catalog_products p ON p.id=v.product_id
+          WHERE v.is_active=0
+            AND (
+              EXISTS (SELECT 1 FROM inventory_stock s WHERE s.variant_id=v.id AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0))
+              OR EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.variant_id=v.id AND r.status='active' AND COALESCE(r.quantity,0)<>0)
+            )
+          ORDER BY p.name, v.id;
 
           SELECT
             (SELECT COUNT(*) FROM orders) AS orders_count,
