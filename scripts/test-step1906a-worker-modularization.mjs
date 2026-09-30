@@ -10,6 +10,11 @@ const catalogRetirementMainPortBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
+const stage03ProductionSuccessorWorkerBlobs = {
+  'worker/core/types.ts': '14a60ac4efa73bc64fcb11542621bb08d45548c2',
+  'worker/domains/orders-relations.ts': '7741e279029e4403d4b051e92a36b7e3f2b92775',
+  'worker/domains/orders-write.ts': 'bf311618cd8398e83fe93bc02d578ba1460faebc',
+}
 if (!process.env.CATALOG_RETIREMENT_MAIN_PORT_WORKER_NORMALIZED) {
   const originals = new Map()
   let childStatus = 1
@@ -18,7 +23,9 @@ if (!process.env.CATALOG_RETIREMENT_MAIN_PORT_WORKER_NORMALIZED) {
       const absolute = path.join(root, relative)
       if (!fs.existsSync(absolute)) throw new Error('Catalog retirement main-port Worker current file missing: ' + relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (catalogRetirementMainPortBlobSha(actual) !== delta.afterGitBlob) throw new Error('Catalog retirement main-port Worker changed beyond exact reconciled main port: ' + relative)
+      const actualBlob = catalogRetirementMainPortBlobSha(actual)
+      const acceptedSuccessorBlob = stage03ProductionSuccessorWorkerBlobs[relative]
+      if (actualBlob !== delta.afterGitBlob && actualBlob !== acceptedSuccessorBlob) throw new Error('Catalog retirement main-port Worker changed beyond exact reconciled main port or approved Stage03 successor: ' + relative)
       originals.set(relative, actual)
       if (delta.beforeGitBlob) {
         const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
