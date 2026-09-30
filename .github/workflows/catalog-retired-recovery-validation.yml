@@ -13,6 +13,7 @@ on:
       - 'src/features/orders/OrderCatalogResolutionModal.tsx'
       - 'src/features/orders/ReturnedItemResolutionModal.tsx'
       - 'scripts/test-catalog-retired-recovery.mjs'
+      - 'scripts/test-contextual-catalog-resolution-r1.mjs'
       - 'scripts/release-check.mjs'
       - 'scripts/test-step1906a-worker-modularization.mjs'
       - 'scripts/test-step1906b-frontend-modularization.mjs'
