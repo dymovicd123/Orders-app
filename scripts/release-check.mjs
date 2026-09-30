@@ -227,6 +227,7 @@ try {
   run('Catalog retired operational write guards', process.execPath, [path.join(root, 'scripts/test-catalog-retired-operational-write-guards.mjs')])
   run('Catalog retired order/return recovery', process.execPath, [path.join(root, 'scripts/test-catalog-retired-recovery.mjs')])
   run('Catalog local retirement', process.execPath, [path.join(root, 'scripts/test-catalog-local-retirement.mjs')])
+  run('Catalog granular retirement history/UI', process.execPath, [path.join(root, 'scripts/test-catalog-granular-retirement-history.mjs')])
   run('Catalog fixed product gender scope', process.execPath, [path.join(root, 'scripts/test-catalog-fixed-gender-scope.mjs')])
   run('Order retired Catalog confirmation', process.execPath, [path.join(root, 'scripts/test-order-retired-confirmation.mjs')])
   run('Stage02 Phase1B Workshop disposition R1 tests', process.execPath, [path.join(root, 'scripts/test-stage02-phase1b-workshop-disposition-r1.mjs')])
