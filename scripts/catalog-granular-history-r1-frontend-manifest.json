@@ -22,6 +22,13 @@
       "afterGitBlob": "292d37ceaf8fabd406bd3c50d46e3e299d09ad78",
       "afterLines": 200,
       "baselineFixture": "scripts/fixtures/catalog-granular-history-r1/src/features/inventory/views/CatalogVariantGroupRetirementAction.tsx"
+    },
+    "src/styles/w6-3-catalog-polish.css": {
+      "beforeGitBlob": "8c6012236f074f210a35e02af1feb3f34542e0b8",
+      "beforeLines": 689,
+      "afterGitBlob": "c4dff97458b29e0e3099f5fa5e65e7dc333421dc",
+      "afterLines": 750,
+      "baselineFixture": "scripts/fixtures/catalog-granular-history-r1/src/styles/w6-3-catalog-polish.css"
     }
   }
 }
