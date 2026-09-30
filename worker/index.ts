@@ -6,7 +6,7 @@ import { listActivityLog, listOrdersFinanceSummary, listReturnHistory, writeActi
 import { authUserPayload, createAuthUser, deleteAuthUser, ensureAuthSchema, handleAuthChangePassword, handleAuthLogin, handleAuthLogout, handleAuthSetup, handleAuthStatus, handleSimpleAdminLogin, handleSimpleAdminLogout, handleSimpleAdminPasswordChange, handleSimpleAdminStatus, isDiagnosticsEnabled, listAuthUsers, makeSimpleAccessUser, normalizeAccessRole, publicAuthPath, requireAdminAccess, requireAdminUser, updateAuthUser, withAuthenticatedHeaders } from './domains/auth.ts'
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
 import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, saveCatalogExecutionPrice, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
-import { listCatalogRetirements, previewCatalogRetirement, restoreCatalogRetirement, retireCatalogEntity } from './domains/catalog-retirement.ts'
+import { listCatalogRetirements, previewCatalogRetirement, previewCatalogVariantGroupRetirement, restoreCatalogRetirement, retireCatalogEntity, retireCatalogVariantGroup } from './domains/catalog-retirement.ts'
 import type { CatalogReviewFactsInput } from './domains/catalog-review.ts'
 import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant } from './domains/catalog-review.ts'
 import { getClientDetails, listClients } from './domains/clients.ts'
@@ -1030,6 +1030,43 @@ export default {
           });
         } catch {
           // Audit restore remains authoritative even if the generic activity log is unavailable.
+        }
+        return json(result);
+      }
+
+      const catalogVariantGroupRetirementPreviewMatch = url.pathname.match(/^\/api\/catalog\/executions\/(\d+)\/variant-groups\/retirement-preview$/);
+      if (catalogVariantGroupRetirementPreviewMatch && request.method === 'GET') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        return json(await previewCatalogVariantGroupRetirement(env.DB, {
+          executionId: toInt(catalogVariantGroupRetirementPreviewMatch[1], 0),
+          category: url.searchParams.get('category'),
+          gender: url.searchParams.get('gender'),
+          color: url.searchParams.get('color'),
+        }));
+      }
+
+      const catalogVariantGroupRetireMatch = url.pathname.match(/^\/api\/catalog\/executions\/(\d+)\/variant-groups\/retire$/);
+      if (catalogVariantGroupRetireMatch && request.method === 'POST') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        const input = await readJson<{ category?: unknown; gender?: unknown; color?: unknown }>(request);
+        const result = await retireCatalogVariantGroup(env.DB, {
+          executionId: toInt(catalogVariantGroupRetireMatch[1], 0),
+          category: input.category,
+          gender: input.gender,
+          color: input.color,
+        });
+        try {
+          await writeActivityLog(env.DB, {
+            eventType: 'catalog_variant_group_retired',
+            entityType: 'catalog_execution',
+            entityId: toInt(catalogVariantGroupRetireMatch[1], 0),
+            title: 'Группа позиций удалена из рабочего каталога',
+            details: `Пол: ${result.gender}; цвет: ${result.color}; тип: ${result.category}; позиций: ${result.retiredVariantCount || 0}.`,
+          });
+        } catch {
+          // Catalog mutation remains authoritative if secondary activity log is unavailable.
         }
         return json(result);
       }
