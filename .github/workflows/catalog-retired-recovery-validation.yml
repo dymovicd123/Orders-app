@@ -7,6 +7,7 @@ on:
     paths:
       - 'worker/domains/catalog-review.ts'
       - 'worker/domains/lifecycle.ts'
+      - 'worker/domains/order-reservations.ts'
       - 'src/app/types.ts'
       - 'shared/api-contracts.ts'
       - 'src/features/orders/OrderCatalogResolutionModal.tsx'
