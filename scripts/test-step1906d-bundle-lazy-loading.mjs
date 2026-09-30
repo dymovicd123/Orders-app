@@ -89,11 +89,12 @@ try {
   // reachable. Stage03-H7B activated Create pricing; H8C/H8E added guarded itemized edit controllers.
   // H9B adds the itemized Exchange stale-snapshot payload/controller wiring to the already-static App
   // graph. Catalog selection/retirement integrity adds only the reviewed active-only suggestion
-  // canonicalization inside the already-static workspace controller. Keep the allowance narrow rather
-  // than weakening the lazy-section/module-count boundary.
+  // canonicalization inside the already-static workspace controller. Retired-order confirmation adds
+  // only the structured Create conflict/retry copy; it introduces no new static module. Keep the
+  // allowance narrow rather than weakening the lazy-section/module-count boundary.
   check(graphRelative.includes('src/app/order-pricing.ts'), 'H6B/H8 Catalog price resolver is not reachable from the initial Create controller graph')
   check(graph.size <= 26, `Initial static source graph regrew beyond the accepted pricing module set: ${graph.size} modules`)
-  check(sourceBytes <= 672_000, `Initial static source graph regrew beyond the accepted H9B + Catalog-integrity allowance: ${sourceBytes} bytes`)
+  check(sourceBytes <= 674_000, `Initial static source graph regrew beyond the accepted H9B + Catalog-integrity + retired-confirmation allowance: ${sourceBytes} bytes`)
   for (const name of lazySections) {
     check(!graphRelative.includes(`src/features/sections/${name}.tsx`), `Lazy section is still initial-static: ${name}`)
   }
