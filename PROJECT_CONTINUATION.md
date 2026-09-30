@@ -9,7 +9,7 @@ Branch represented by this file: **branch2**
 
 ## STATUS UPDATE — 2026-09-30 — Catalog retirement / restore chain
 
-Последний завершённый runtime/business baseline этой цепочки: **`da0e24363ea25b65b0e8170a04fdfaaf4db22b28`**, PR #238.  
+Последний завершённый runtime/business baseline этой цепочки: **`7933aba9940c82884d83e2f282bc4782964497a3`**, PR #239.  
 После него documentation checkpoint добавлен отдельно; перед продолжением всегда проверять фактический текущий HEAD.
 
 Закрыто на Branch2:
@@ -18,12 +18,16 @@ Branch represented by this file: **branch2**
 - PR #233: new-order fresh-generation recreation вместо оживления старой SKU;
 - PR #234: retired SKU не может снова получать новый Physical/Reserved через reservation, return/exchange lifecycle, handover correction или generic inventory materialization;
 - PR #235/#236: regression sync для Arrival alias и lifecycle;
-- PR #238: new order больше не получает blanket retired-recreate permission. Сначала идёт read-only preflight, затем explicit operator confirmation, привязанное к exact normalized item key, затем shortage decision; только после этого разрешена fresh-generation materialization.
+- PR #238: new order больше не получает blanket retired-recreate permission. Сначала идёт read-only preflight, затем explicit operator confirmation, привязанное к exact normalized item key, затем shortage decision; только после этого разрешена fresh-generation materialization;
+- PR #239: добавлено строго локальное удаление группы `execution + adult/child + gender + color` через «Удалить группу». Операция soft-retire-ит только целевую подгруппу, атомарно блокируется любым Physical/Reserved/open order/Workshop/pending lifecycle/stocktake и не переписывает склад/заказы/историю. Ordinary PATCH для уже inactive SKU теперь fail-closed.
 
-Validation для PR #238:
-- branch validation `36669568796`: cumulative release-check + build — **success**;
-- merged-SHA Stage03 H7 safety `36669787332` — **success**;
-- exact merged-SHA Branch2 Cloudflare deploy `36669787336` — **success**.
+Validation:
+- PR #238 branch validation `36669568796`: cumulative release-check + build — **success**;
+- PR #238 merged-SHA Stage03 H7 safety `36669787332` — **success**;
+- PR #238 exact merged-SHA Branch2 Cloudflare deploy `36669787336` — **success**;
+- PR #239 branch validation `36689192770`: cumulative release-check + build — **success**;
+- PR #239 merged-SHA Stage03 H7 safety `36689481147` — **success**;
+- PR #239 exact merged-SHA Branch2 Cloudflare deploy `36689480949` — **success**.
 
 Непереговорная retirement-семантика:
 - старая retired SKU/execution остаётся historical/inactive;
@@ -37,13 +41,13 @@ Validation для PR #238:
 ### Ещё не решено
 
 Приоритетные оставшиеся gaps:
-1. **Open `catalog_retired` order recovery** — открытый заказ после retirement может остаться заблокированным без явного пути перепривязать его demand к fresh active generation и восстановить резерв.
-2. **Restore resumability/atomicity** — частичный сбой `restoreCatalogRetirement()` может оставить partly-active generation, а UI способен слишком рано считать объект «снова в каталоге».
-3. **Legacy inactive SKU + non-zero stock audit** — новые write-paths закрыты, но нужен read-only Branch2 D1 audit старых аномалий и guarded correction only if evidence exists.
-4. **Retired SKU immutability for ordinary PATCH** — legacy variant update contract нужно закрыть от reactivation/stale-edit side effects.
+1. **Fixed product gender-scope prevention** — PR #239 позволяет удалить ошибочную подгруппу, но нужно отдельно закрыть повторное создание противоположного пола для действительно fixed `gender_scope=male|female`, не ломая unisex/R11.
+2. **Open `catalog_retired` order recovery** — открытый заказ после retirement может остаться заблокированным без явного пути перепривязать его demand к fresh active generation и восстановить резерв.
+3. **Restore resumability/atomicity** — частичный сбой `restoreCatalogRetirement()` может оставить partly-active generation, а UI способен слишком рано считать объект «снова в каталоге».
+4. **Legacy inactive SKU + non-zero stock audit** — новые write-paths закрыты, но нужен read-only Branch2 D1 audit старых аномалий и guarded correction only if evidence exists.
 5. **Workshop retirement rule** — whole execution/product preview считает active Workshop tasks, но окончательное blocker/warning поведение не зафиксировано.
 6. **Return/Exchange UX for historical retired SKU** — stock safety закрыта, но нужен явный операторский путь выбора fresh working identity вместо тупика.
-7. **Exact-SKU history visibility** — старый `Вывести из каталога` не представлен в новом `Удалённые` так полно, как whole execution/product retirement.
+7. **Exact-SKU/local-group history visibility** — старые точечные/local retirement действия ещё не представлены в `Удалённые` так полно, как whole execution/product retirement.
 8. Отдельно от этой цепочки: стандартный Quality workflow всё ещё останавливается на **high-risk development-dependency audit**; production-dependency audit проходит. Security gate не ослаблять ради зелёного CI.
 
 Каноническая подробная записка:
