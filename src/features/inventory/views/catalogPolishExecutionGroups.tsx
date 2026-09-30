@@ -20,13 +20,14 @@ function colorGroupsFor(variants: any[], getCatalogVariantCategory: (variant: an
   for (const variant of variants) {
     const colorLabel = normalizedText(variant.color) || 'Цвет не указан'
     const colorKey = normalizedKey(colorLabel)
-    if (!groups.has(colorKey)) groups.set(colorKey, { key: colorKey, label: colorLabel, variants: [], subgroupMap: new Map<string, any>() })
+    if (!groups.has(colorKey)) groups.set(colorKey, { key: colorKey, label: colorLabel, value: normalizedText(variant.color), variants: [], subgroupMap: new Map<string, any>() })
     const colorGroup = groups.get(colorKey)!
     colorGroup.variants.push(variant)
     const category = getCatalogVariantCategory(variant)
-    const gender = normalizedText(variant.gender) || 'Пол не указан'
+    const genderValue = normalizedText(variant.gender)
+    const gender = genderValue || 'Пол не указан'
     const subgroupKey = `${category}¦${normalizedKey(gender)}`
-    if (!colorGroup.subgroupMap.has(subgroupKey)) colorGroup.subgroupMap.set(subgroupKey, { key: subgroupKey, category, gender, variants: [] })
+    if (!colorGroup.subgroupMap.has(subgroupKey)) colorGroup.subgroupMap.set(subgroupKey, { key: subgroupKey, category, gender, genderValue, variants: [] })
     colorGroup.subgroupMap.get(subgroupKey)!.variants.push(variant)
   }
 
@@ -407,8 +408,10 @@ export function CatalogPolishExecutionGroups({
                                 <CatalogVariantGroupRetirementAction
                                   executionId={groupStockPositionId}
                                   category={subgroup.category}
-                                  gender={subgroup.gender}
-                                  color={colorGroup.label}
+                                  gender={subgroup.genderValue}
+                                  genderLabel={subgroup.gender}
+                                  color={colorGroup.value}
+                                  colorLabel={colorGroup.label}
                                   disabled={Boolean(actionBusyVariantId)}
                                   onRetired={async () => {
                                     setVariantCard(null)
