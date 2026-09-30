@@ -1,0 +1,231 @@
+name: Temporary Production Catalog legacy integrity repair
+
+on:
+  push:
+    branches:
+      - release/catalog-retirement-main-20260930
+    paths:
+      - '.github/workflows/catalog-retirement-prod-legacy-repair-temp.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    name: Guarded Production legacy Catalog repair
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hard-lock Production identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "release/catalog-retirement-main-20260930" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders_db_branch2' wrangler.jsonc || grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc; then
+            echo "Branch2 identity detected; refusing Production repair." >&2
+            exit 20
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Exact preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          q() { npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$1" --json; }
+
+          mismatch="$(q "SELECT COUNT(*) AS n, GROUP_CONCAT(id, ',') AS ids FROM (
+            SELECT v.id
+            FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
+            WHERE v.is_active=1 AND p.is_active=1
+              AND ((p.gender_scope='female' AND UPPER(TRIM(COALESCE(v.gender,'')))='МУЖ')
+                OR (p.gender_scope='male' AND UPPER(TRIM(COALESCE(v.gender,'')))='ЖЕН'))
+            ORDER BY v.id
+          );")"
+          echo "$mismatch"
+          [[ "$(jq -r '.[0].results[0].n' <<<"$mismatch")" == "13" ]]
+          [[ "$(jq -r '.[0].results[0].ids' <<<"$mismatch")" == "158,254,288,315,450,654,670,854,862,893,1016,1022,1082" ]]
+
+          blockers="$(q "SELECT
+            COALESCE((SELECT SUM(s.quantity) FROM inventory_stock s WHERE s.variant_id IN (158,254,288,315,450,654,670,854,862,893,1016,1022,1082)),0) AS physical,
+            COALESCE((SELECT SUM(s.reserved_quantity) FROM inventory_stock s WHERE s.variant_id IN (158,254,288,315,450,654,670,854,862,893,1016,1022,1082)),0) AS stock_reserved,
+            COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.variant_id IN (158,254,288,315,450,654,670,854,862,893,1016,1022,1082) AND r.status='active'),0) AS active_reserved,
+            (SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id=oi.order_id
+              WHERE oi.variant_id IN (158,254,288,315,450,654,670,854,862,893,1016,1022,1082)
+                AND COALESCE(o.order_status,'active')='active' AND COALESCE(o.shipping_status,'not_sent')<>'sent' AND COALESCE(oi.quantity,0)>0) AS open_orders,
+            (SELECT COUNT(*) FROM workshop_tasks wt WHERE wt.variant_id IN (158,254,288,315,450,654,670,854,862,893,1016,1022,1082) AND wt.status='active') AS active_workshop,
+            (SELECT COUNT(*) FROM inventory_lifecycle_events e WHERE e.variant_id IN (158,254,288,315,450,654,670,854,862,893,1016,1022,1082) AND e.status='pending') AS pending_lifecycle,
+            (SELECT COUNT(*) FROM inventory_stocktake_items i JOIN inventory_stocktake_sessions ss ON ss.id=i.session_id
+              WHERE i.variant_id IN (158,254,288,315,450,654,670,854,862,893,1016,1022,1082) AND ss.status='active') AS active_stocktake,
+            (SELECT COUNT(*) FROM inventory_stock s WHERE s.variant_id IN (254,288,315,450,654,670,854,862,893,1016,1022,1082)
+              AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0)) AS non158_live_stock;")"
+          echo "$blockers"
+          [[ "$(jq -r '.[0].results[0].physical' <<<"$blockers")" == "1" ]]
+          [[ "$(jq -r '.[0].results[0].stock_reserved' <<<"$blockers")" == "0" ]]
+          [[ "$(jq -r '.[0].results[0].active_reserved' <<<"$blockers")" == "0" ]]
+          [[ "$(jq -r '.[0].results[0].open_orders' <<<"$blockers")" == "0" ]]
+          [[ "$(jq -r '.[0].results[0].active_workshop' <<<"$blockers")" == "0" ]]
+          [[ "$(jq -r '.[0].results[0].pending_lifecycle' <<<"$blockers")" == "0" ]]
+          [[ "$(jq -r '.[0].results[0].active_stocktake' <<<"$blockers")" == "0" ]]
+          [[ "$(jq -r '.[0].results[0].non158_live_stock' <<<"$blockers")" == "0" ]]
+
+          exact="$(q "SELECT
+            (SELECT COUNT(*) FROM inventory_stock WHERE id=151 AND inventory_source='boutique' AND variant_id=158 AND quantity=1 AND reserved_quantity=0) AS source_ok,
+            (SELECT COUNT(*) FROM inventory_stock WHERE id=730 AND inventory_source='boutique' AND variant_id=1089 AND quantity=0 AND reserved_quantity=0) AS target_zero_ok,
+            (SELECT COUNT(*) FROM catalog_variants a JOIN catalog_variants b
+              ON b.id=1089
+             WHERE a.id=158 AND a.is_active=1 AND b.is_active=1
+               AND a.product_id=b.product_id AND a.stock_position_id=b.stock_position_id
+               AND COALESCE(a.category,'adult')=COALESCE(b.category,'adult')
+               AND UPPER(TRIM(COALESCE(a.color,'')))=UPPER(TRIM(COALESCE(b.color,'')))
+               AND UPPER(TRIM(COALESCE(a.size_label,'')))=UPPER(TRIM(COALESCE(b.size_label,'')))
+               AND UPPER(TRIM(COALESCE(a.gender,'')))='ЖЕН' AND UPPER(TRIM(COALESCE(b.gender,'')))='МУЖ') AS counterpart_ok;")"
+          echo "$exact"
+          [[ "$(jq -r '.[0].results[0].source_ok' <<<"$exact")" == "1" ]]
+          [[ "$(jq -r '.[0].results[0].target_zero_ok' <<<"$exact")" == "1" ]]
+          [[ "$(jq -r '.[0].results[0].counterpart_ok' <<<"$exact")" == "1" ]]
+
+          legacy="$(q "SELECT COUNT(*) AS n, GROUP_CONCAT(id, ',') AS ids FROM (
+            SELECT v.id FROM catalog_variants v
+            WHERE v.is_active=0 AND (
+              EXISTS (SELECT 1 FROM inventory_stock s WHERE s.variant_id=v.id AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0))
+              OR EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.variant_id=v.id AND r.status='active' AND COALESCE(r.quantity,0)<>0)
+            ) ORDER BY v.id
+          );")"
+          echo "$legacy"
+          [[ "$(jq -r '.[0].results[0].n' <<<"$legacy")" == "4" ]]
+          [[ "$(jq -r '.[0].results[0].ids' <<<"$legacy")" == "207,356,1065,1066" ]]
+
+          legacy_state="$(q "SELECT
+            (SELECT COUNT(*) FROM catalog_products WHERE id=10 AND is_active=1) AS p10,
+            (SELECT COUNT(*) FROM catalog_stock_positions WHERE id=13 AND product_id=10 AND is_active=1) AS sp13,
+            (SELECT COUNT(*) FROM catalog_variants WHERE id=207 AND product_id=10 AND stock_position_id=13 AND is_active=0) AS v207,
+            (SELECT COUNT(*) FROM inventory_stock WHERE id=225 AND variant_id=207 AND inventory_source='warehouse' AND quantity=0 AND reserved_quantity=1) AS s207,
+            (SELECT COUNT(*) FROM inventory_reservations WHERE id=557 AND variant_id=207 AND order_id=943 AND status='active' AND quantity=1) AS r207,
+            (SELECT COUNT(*) FROM catalog_products WHERE id=41 AND UPPER(TRIM(name))='КОРСЕТ' AND is_active=0) AS p41,
+            (SELECT COUNT(*) FROM catalog_products WHERE id<>41 AND is_active=1 AND UPPER(TRIM(name))='КОРСЕТ') AS p41_conflict,
+            (SELECT COUNT(*) FROM catalog_stock_positions WHERE id=94 AND product_id=41 AND is_active=0) AS sp94,
+            (SELECT COUNT(*) FROM catalog_variants WHERE id IN (356,1065,1066) AND product_id=41 AND stock_position_id=94 AND is_active=0) AS p41_variants,
+            (SELECT COUNT(*) FROM inventory_stock WHERE id=613 AND variant_id=356 AND inventory_source='boutique' AND quantity=2 AND reserved_quantity=0) AS s356,
+            (SELECT COUNT(*) FROM inventory_stock WHERE id=702 AND variant_id=1065 AND inventory_source='boutique' AND quantity=1 AND reserved_quantity=0) AS s1065,
+            (SELECT COUNT(*) FROM inventory_stock WHERE id=703 AND variant_id=1066 AND inventory_source='boutique' AND quantity=1 AND reserved_quantity=0) AS s1066;")"
+          echo "$legacy_state"
+          for key in p10 sp13 v207 s207 r207 p41 sp94 s356 s1065 s1066; do [[ "$(jq -r ".[0].results[0].$key" <<<"$legacy_state")" == "1" ]]; done
+          [[ "$(jq -r '.[0].results[0].p41_conflict' <<<"$legacy_state")" == "0" ]]
+          [[ "$(jq -r '.[0].results[0].p41_variants' <<<"$legacy_state")" == "3" ]]
+
+          fingerprint="$(q "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM inventory_reservations) AS reservations_count,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_total,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS stock_reserved_total,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_reservations WHERE status='active') AS active_reserved_total;")"
+          echo "$fingerprint"
+          jq -cS '.[0].results[0]' <<<"$fingerprint" > /tmp/catalog-repair-before.json
+
+      - name: Repair current stock identity 158 to active canonical 1089
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "DELETE FROM inventory_stock WHERE id=730 AND inventory_source='boutique' AND variant_id=1089 AND quantity=0 AND reserved_quantity=0;" --json)"
+          echo "$result"
+          [[ "$(jq -r '.[0].meta.changes' <<<"$result")" == "1" ]]
+          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "UPDATE inventory_stock
+            SET variant_id=1089, gender_snapshot='МУЖ', last_action='Исправление идентичности Каталога',
+                last_source_ref='catalog-gender-repair:158->1089', updated_at=datetime('now')
+            WHERE id=151 AND inventory_source='boutique' AND variant_id=158 AND quantity=1 AND reserved_quantity=0;" --json)"
+          echo "$result"
+          [[ "$(jq -r '.[0].meta.changes' <<<"$result")" == "1" ]]
+
+      - name: Retire exact legacy fixed-gender mismatches
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "UPDATE catalog_variants
+            SET is_active=0, updated_at=datetime('now')
+            WHERE id IN (158,254,288,315,450,654,670,854,862,893,1016,1022,1082)
+              AND is_active=1
+              AND NOT EXISTS (SELECT 1 FROM inventory_stock s WHERE s.variant_id=catalog_variants.id AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0))
+              AND NOT EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.variant_id=catalog_variants.id AND r.status='active' AND COALESCE(r.quantity,0)<>0)
+              AND NOT EXISTS (SELECT 1 FROM order_items oi JOIN orders o ON o.id=oi.order_id
+                WHERE oi.variant_id=catalog_variants.id AND COALESCE(o.order_status,'active')='active'
+                  AND COALESCE(o.shipping_status,'not_sent')<>'sent' AND COALESCE(oi.quantity,0)>0)
+              AND NOT EXISTS (SELECT 1 FROM workshop_tasks wt WHERE wt.variant_id=catalog_variants.id AND wt.status='active')
+              AND NOT EXISTS (SELECT 1 FROM inventory_lifecycle_events e WHERE e.variant_id=catalog_variants.id AND e.status='pending')
+              AND NOT EXISTS (SELECT 1 FROM inventory_stocktake_items i JOIN inventory_stocktake_sessions ss ON ss.id=i.session_id
+                WHERE i.variant_id=catalog_variants.id AND ss.status='active');" --json)"
+          echo "$result"
+          [[ "$(jq -r '.[0].meta.changes' <<<"$result")" == "13" ]]
+
+      - name: Reactivate exact legacy rows that still own live operational state
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_one() {
+            local sql="$1" expected="$2"
+            local result
+            result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$sql" --json)"
+            echo "$result"
+            [[ "$(jq -r '.[0].meta.changes' <<<"$result")" == "$expected" ]]
+          }
+          run_one "UPDATE catalog_stock_positions SET is_active=1, updated_at=datetime('now') WHERE id=94 AND product_id=41 AND is_active=0;" 1
+          run_one "UPDATE catalog_variants SET is_active=1, updated_at=datetime('now') WHERE id IN (356,1065,1066) AND product_id=41 AND stock_position_id=94 AND is_active=0;" 3
+          run_one "UPDATE catalog_products SET is_active=1, updated_at=datetime('now') WHERE id=41 AND UPPER(TRIM(name))='КОРСЕТ' AND is_active=0 AND NOT EXISTS (SELECT 1 FROM catalog_products p2 WHERE p2.id<>41 AND p2.is_active=1 AND UPPER(TRIM(p2.name))='КОРСЕТ');" 1
+          run_one "UPDATE catalog_variants SET is_active=1, updated_at=datetime('now') WHERE id=207 AND product_id=10 AND stock_position_id=13 AND is_active=0;" 1
+
+      - name: Verify repaired invariants and unchanged business totals
+        shell: bash
+        run: |
+          set -euo pipefail
+          q() { npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$1" --json; }
+
+          post="$(q "SELECT
+            (SELECT COUNT(*) FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
+              WHERE v.is_active=1 AND p.is_active=1
+                AND ((p.gender_scope='female' AND UPPER(TRIM(COALESCE(v.gender,'')))='МУЖ')
+                  OR (p.gender_scope='male' AND UPPER(TRIM(COALESCE(v.gender,'')))='ЖЕН'))) AS active_gender_mismatch,
+            (SELECT COUNT(*) FROM catalog_variants v WHERE v.is_active=0 AND (
+              EXISTS (SELECT 1 FROM inventory_stock s WHERE s.variant_id=v.id AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0))
+              OR EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.variant_id=v.id AND r.status='active' AND COALESCE(r.quantity,0)<>0)
+            )) AS inactive_live_state,
+            (SELECT COUNT(*) FROM inventory_stock WHERE id=151 AND variant_id=1089 AND inventory_source='boutique' AND quantity=1 AND reserved_quantity=0) AS repaired_stock,
+            (SELECT COUNT(*) FROM inventory_stock WHERE id=730) AS obsolete_zero_row,
+            (SELECT COUNT(*) FROM catalog_products WHERE id=41 AND is_active=1) AS p41,
+            (SELECT COUNT(*) FROM catalog_stock_positions WHERE id=94 AND is_active=1) AS sp94,
+            (SELECT COUNT(*) FROM catalog_variants WHERE id IN (207,356,1065,1066) AND is_active=1) AS live_reactivated;")"
+          echo "$post"
+          [[ "$(jq -r '.[0].results[0].active_gender_mismatch' <<<"$post")" == "0" ]]
+          [[ "$(jq -r '.[0].results[0].inactive_live_state' <<<"$post")" == "0" ]]
+          [[ "$(jq -r '.[0].results[0].repaired_stock' <<<"$post")" == "1" ]]
+          [[ "$(jq -r '.[0].results[0].obsolete_zero_row' <<<"$post")" == "0" ]]
+          [[ "$(jq -r '.[0].results[0].p41' <<<"$post")" == "1" ]]
+          [[ "$(jq -r '.[0].results[0].sp94' <<<"$post")" == "1" ]]
+          [[ "$(jq -r '.[0].results[0].live_reactivated' <<<"$post")" == "4" ]]
+
+          after="$(q "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM inventory_reservations) AS reservations_count,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_total,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS stock_reserved_total,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_reservations WHERE status='active') AS active_reserved_total;")"
+          echo "$after"
+          before="$(cat /tmp/catalog-repair-before.json)"
+          now="$(jq -cS '.[0].results[0]' <<<"$after")"
+          [[ "$now" == "$before" ]] || {
+            echo "Business fingerprint changed during Catalog legacy repair." >&2
+            echo "Before: $before" >&2
+            echo "After:  $now" >&2
+            exit 30
+          }
+          echo "Production legacy Catalog repair completed with business totals unchanged."
