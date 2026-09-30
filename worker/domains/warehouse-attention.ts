@@ -90,7 +90,9 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
           )) AS shortage_count,
          (SELECT COUNT(*) FROM inventory_lifecycle_events WHERE status = 'pending') AS lifecycle_total_count,
          (SELECT COUNT(*) FROM inventory_lifecycle_events e
-          WHERE e.status = 'pending' AND e.direction = 'in' AND ${exactLifecycleVariantSql} IS NOT NULL) AS intake_count,
+          WHERE e.status = 'pending' AND e.direction = 'in'
+            AND COALESCE(e.pending_reason, '') <> 'retired_historical'
+            AND ${exactLifecycleVariantSql} IS NOT NULL) AS intake_count,
          (SELECT COUNT(*) FROM (
             SELECT 1
             FROM order_items oi
@@ -361,7 +363,11 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
 
   const lifecycleItems = (lifecycleResult.results || []).map((row) => {
     const exactVariantId = toInt(row.exact_variant_id, 0)
-    const exactKnown = Boolean(exactVariantId && cleanText(row.direction) === 'in')
+    const exactKnown = Boolean(
+      exactVariantId
+      && cleanText(row.direction) === 'in'
+      && cleanText(row.pending_reason) !== 'retired_historical'
+    )
     return {
       id: toInt(row.id, 0),
       eventType: cleanText(row.event_type),
