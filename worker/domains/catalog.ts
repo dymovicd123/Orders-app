@@ -287,7 +287,28 @@ export async function findCatalogExecutionV3(db: D1Database, productId: number, 
 }
 
 
-export async function ensureCatalogExecutionV3(db: D1Database, productId: number, material: unknown, length: unknown, timestamp: string) {
+export async function findRetiredCatalogExecutionV3(db: D1Database, productId: number, material: unknown, length: unknown) {
+  const normalizedMaterial = canonicalStockPositionValue(material);
+  const normalizedLength = canonicalStockPositionValue(length);
+  return await db.prepare(
+    `SELECT id, product_id, material, length, is_active
+     FROM catalog_stock_positions
+     WHERE product_id = ? AND is_active = 0
+       AND UPPER(TRIM(material)) = ?
+       AND UPPER(TRIM(length)) = ?
+     ORDER BY id DESC LIMIT 1`
+  ).bind(productId, normalizedMaterial, normalizedLength).first<{ id: number; product_id: number; material: string; length: string; is_active: number }>();
+}
+
+
+export async function ensureCatalogExecutionV3(
+  db: D1Database,
+  productId: number,
+  material: unknown,
+  length: unknown,
+  timestamp: string,
+  options: { allowRetiredRecreate?: boolean } = {},
+) {
   const normalizedMaterial = canonicalStockPositionValue(material);
   const normalizedLength = canonicalStockPositionValue(length);
   let execution = await findCatalogExecutionV3(db, productId, normalizedMaterial, normalizedLength);
@@ -298,6 +319,12 @@ export async function ensureCatalogExecutionV3(db: D1Database, productId: number
   if (!activeProduct?.id) {
     throw new Error('Нельзя создавать исполнение у товара, выведенного из активного каталога.');
   }
+  if (!options.allowRetiredRecreate) {
+    const retired = await findRetiredCatalogExecutionV3(db, productId, normalizedMaterial, normalizedLength);
+    if (retired?.id) {
+      throw new Error('Это исполнение было удалено из рабочего каталога. Автоматически создавать его заново нельзя; администратор может добавить исполнение заново вручную.');
+    }
+  }
   try {
     const result = await db.prepare(
       `INSERT INTO catalog_stock_positions (
@@ -307,7 +334,7 @@ export async function ensureCatalogExecutionV3(db: D1Database, productId: number
     const id = Number(result.meta?.last_row_id || 0);
     if (id) return { id, product_id: productId, material: normalizedMaterial, length: normalizedLength, is_active: 1 };
   } catch {
-    // Concurrent creation is safe because Step 188D adds a unique execution identity.
+    // Concurrent creation is safe because Step 188D adds a unique active execution identity.
   }
   execution = await findCatalogExecutionV3(db, productId, normalizedMaterial, normalizedLength);
   if (!execution?.id) throw new Error('Не удалось создать исполнение товара. Обновите каталог и повторите действие.');
@@ -400,6 +427,16 @@ export async function createCatalogCombinationV3(
   const sizeLabel = normalizeCatalogCombinationSize(input.sizeLabel);
   const material = canonicalStockPositionValue(input.material);
   const length = canonicalStockPositionValue(input.length);
+  const liveExecution = await db.prepare(
+    `SELECT sp.id
+     FROM catalog_stock_positions sp
+     JOIN catalog_products p ON p.id = sp.product_id
+     WHERE sp.id = ? AND sp.product_id = ? AND sp.is_active = 1 AND p.is_active = 1
+     LIMIT 1`
+  ).bind(input.executionId, input.productId).first<{ id: number }>();
+  if (!liveExecution?.id) {
+    throw new Error('Нельзя создать позицию у удалённого исполнения или товара. Добавьте исполнение заново через Каталог.');
+  }
   const duplicate = await findCatalogCombinationV3(db, input.executionId, category, gender, color, sizeLabel);
   if (duplicate?.id) return { id: toInt(duplicate.id, 0), created: false };
   try {
@@ -873,8 +910,6 @@ export async function saveCatalogExecutionPrice(
 export async function createCatalogProduct(db: D1Database, input: { name?: unknown; category?: unknown; genderScope?: unknown }) {
   const name = upperText(input.name);
   if (!name) throw new Error('Product name is required.');
-  const duplicate = await findCatalogProductByIdentity(db, name);
-  if (duplicate?.id) throw new Error(`Такой базовый товар уже существует: ${cleanText(duplicate.name)}.`);
   if (input.genderScope === undefined || !cleanText(input.genderScope)) {
     throw new Error('Выберите назначение товара по полу: Женский, Мужской или Унисекс.');
   }
@@ -884,6 +919,34 @@ export async function createCatalogProduct(db: D1Database, input: { name?: unkno
   const category = normalizeCatalogCategory(input.category);
   const genderScope = normalizeCatalogProductGenderScope(input.genderScope);
   const createdAt = new Date().toISOString();
+
+  const duplicate = await findCatalogProductByIdentity(db, name);
+  if (duplicate?.id) {
+    const existing = await db.prepare(
+      'SELECT id, name, is_active FROM catalog_products WHERE id = ? LIMIT 1'
+    ).bind(duplicate.id).first<Record<string, unknown>>();
+    if (toInt(existing?.is_active, 0) === 1) {
+      throw new Error(`Такой базовый товар уже существует: ${cleanText(duplicate.name)}.`);
+    }
+
+    // Product name is globally unique, so an intentionally retired product reuses only its
+    // non-stock shell. Retired executions/SKUs stay inactive; adding a position later creates
+    // a fresh execution/SKU generation with clean stock.
+    await db.prepare(
+      `UPDATE catalog_products
+       SET category = ?, gender_scope = ?, is_active = 1, updated_at = ?
+       WHERE id = ? AND is_active = 0`
+    ).bind(category, genderScope, createdAt, duplicate.id).run();
+    return {
+      ok: true,
+      id: toInt(duplicate.id, 0),
+      name: cleanText(existing?.name) || cleanText(duplicate.name) || name,
+      category,
+      genderScope,
+      reactivated: true,
+    };
+  }
+
   const result = await db.prepare(
     `INSERT INTO catalog_products (name, category, gender_scope, is_active, created_at, updated_at)
      VALUES (?, ?, ?, 1, ?, ?)`
@@ -1012,7 +1075,7 @@ export async function createCatalogVariant(db: D1Database, input: { productId?: 
     await requireCatalogAdminReferenceValue(db, 'length', length, 'Длина');
     await requireCatalogAdminReferenceValue(db, 'color', color, 'Цвет');
     await requireCatalogAdminReferenceValue(db, category === 'child' ? 'child_age' : 'size', sizeLabel, category === 'child' ? 'Возраст' : 'Размер');
-    const execution = await ensureCatalogExecutionV3(db, productId, material, length, createdAt);
+    const execution = await ensureCatalogExecutionV3(db, productId, material, length, createdAt, { allowRetiredRecreate: true });
     const duplicate = await findCatalogCombinationV3(db, execution.id, category, gender, color, sizeLabel);
     if (duplicate?.id) throw new Error('Такая комбинация товара уже существует. Откройте существующую строку вместо создания дубля.');
     const created = await createCatalogCombinationV3(db, {
@@ -1085,7 +1148,7 @@ export async function updateCatalogVariant(db: D1Database, id: number, input: { 
     if (normalizeCatalogCombinationSize(existing.size_label) !== sizeLabel || normalizeAudienceCategory(existing.category, existing.size_label) !== category) {
       await requireCatalogAdminReferenceValue(db, category === 'child' ? 'child_age' : 'size', sizeLabel, category === 'child' ? 'Возраст' : 'Размер');
     }
-    const execution = await ensureCatalogExecutionV3(db, productId, material, length, timestamp);
+    const execution = await ensureCatalogExecutionV3(db, productId, material, length, timestamp, { allowRetiredRecreate: true });
     const identityChanged = productId !== toInt(existing.product_id, 0)
       || execution.id !== toInt(existing.stock_position_id, 0)
       || category !== normalizeAudienceCategory(existing.category, existing.size_label)
