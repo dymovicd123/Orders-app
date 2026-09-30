@@ -10,7 +10,6 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
     ChoicePills,
     createDraft,
     createOrderFromDraft,
-    createPricing,
     createTotals,
     resetCreateOrderDraft,
     formatMoney,
@@ -69,7 +68,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                   <div className="order-step-index">1</div>
                   <div>
                     <h3>Клиент и условия заказа</h3>
-                    <p>Основные данные заказа. Итоговая цена теперь складывается из цен товарных позиций.</p>
+                    <p>Основные данные заказа. Цена и дата живут отдельно от товарных позиций.</p>
                   </div>
                 </div>
                 <div className="form-grid edit-grid">
@@ -120,6 +119,16 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                       />
                     )}
                   </label>
+                  <label>
+                    <span>Цена заказа</span>
+                    <FriendlyNumberInput
+                      type="number"
+                      min="0"
+                      value={createDraft.orderTotal}
+                      onChange={(event) => updateCreateDraft('orderTotal', event.target.value)}
+                      placeholder="Например: 45000"
+                    />
+                  </label>
                   <label className="wide-field">
                     <span>Комментарий</span>
                     <input
@@ -137,7 +146,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                     <div className="order-step-index">2</div>
                     <div>
                       <h3>Товары в заказе</h3>
-                      <p>Для каждой позиции укажите итоговую цену продажи. Цена Каталога подставляется как рекомендация, но её можно изменить.</p>
+                      <p>Если точного остатка нет, заказ всё равно сохранится. Источник выбирается для каждой позиции отдельно.</p>
                     </div>
                   </div>
                   <button className="primary compact" type="button" onClick={addCreateItem}>
@@ -243,29 +252,6 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                             onChange={(event) => updateCreateItem(index, 'quantity', Number(event.target.value))}
                           />
                         </label>
-                        <div className="field-block">
-                          <span>Цена по каталогу</span>
-                          <strong>{item.catalogPriceSnapshot !== null && item.catalogPriceSnapshot !== undefined ? formatMoney(item.catalogPriceSnapshot) : 'Нет цены'}</strong>
-                          <small>{item.catalogPriceSnapshot !== null && item.catalogPriceSnapshot !== undefined ? 'Рекомендованная цена для текущих характеристик.' : 'Введите цену продажи вручную.'}</small>
-                        </div>
-                        <label>
-                          <span>Цена продажи <b className="required-mark">*</b></span>
-                          <FriendlyNumberInput
-                            type="number"
-                            min="0"
-                            value={item.unitPrice ?? ''}
-                            onChange={(event) => updateCreateItem(index, 'unitPrice', event.target.value)}
-                            placeholder="Введите итоговую цену"
-                          />
-                          <small>Укажите цену, по которой товар реально продаётся. Если по каталогу 115 000, а клиенту продаёте за 105 000, укажите 105 000. Можно указать 0.</small>
-                        </label>
-                        <div className="field-block">
-                          <span>Сумма позиции</span>
-                          <strong>{item.unitPrice === undefined || item.unitPrice === null || String(item.unitPrice).trim() === '' ? '—' : formatMoney(Math.max(0, Number(item.quantity || 0)) * Math.max(0, Number(item.unitPrice || 0)))}</strong>
-                        </div>
-                        {item.priceOrigin === 'manual' && item.catalogPriceSnapshot !== null && item.catalogPriceSnapshot !== undefined ? (
-                          <small className="wide-field">Цена продажи введена вручную. При изменении товара, материала, длины или типа рекомендация Каталога обновится, а ваша цена останется без дополнительного подтверждения.</small>
-                        ) : null}
                         {normalizeSuggestion(item.sourceType) === 'WORKSHOP' && Number(item.quantity || 0) > 0 ? (
                           <>
                             <label className="wide-field">
@@ -383,7 +369,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                   <div className="order-step-index">4</div>
                   <div>
                     <h3>Проверка заказа</h3>
-                    <p>Перед сохранением сверьте цены позиций и оплаты. Итог заказа и долг рассчитываются автоматически.</p>
+                    <p>Перед сохранением сверьте цену заказа и сумму оплат. Если оплаты меньше, система автоматически покажет долг.</p>
                   </div>
                 </div>
                 <div className="editor-summary order-check-panel">
@@ -392,14 +378,14 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                       <strong>Итог по заказу</strong>
                       <span>Первичная оплата и долг определяются автоматически, вручную выбирать ничего не нужно.</span>
                     </div>
-                    <span className={`status-pill ${createPricing?.status !== 'ready' || createTotals.debtAmount > 0 ? 'status-warning' : 'status-online'}`}>
-                      {createPricing?.status !== 'ready' ? 'Нужно проверить' : createTotals.debtAmount <= 0 ? 'Оплата совпала' : 'Есть долг'}
+                    <span className={`status-pill ${createTotals.debtAmount <= 0 ? 'status-online' : 'status-warning'}`}>
+                      {createTotals.debtAmount <= 0 ? 'Оплата совпала' : 'Есть долг'}
                     </span>
                   </div>
                   <div className="editor-summary-grid">
                     <div>
-                      <span>Итого по позициям</span>
-                      <strong>{createPricing?.totalAmount === null ? '—' : formatMoney(createTotals.totalAmount)}</strong>
+                      <span>Цена заказа</span>
+                      <strong>{formatMoney(createTotals.totalAmount)}</strong>
                     </div>
                     <div>
                       <span>Получено</span>
@@ -407,7 +393,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                     </div>
                     <div>
                       <span>Долг</span>
-                      <strong>{createPricing?.debtAmount === null ? '—' : formatMoney(createTotals.debtAmount)}</strong>
+                      <strong>{formatMoney(createTotals.debtAmount)}</strong>
                     </div>
                     <div>
                       <span>Позиции</span>
@@ -438,12 +424,6 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                   </div>
                 </div>
     
-                {createPricing?.status === 'blocked' ? (
-                  <div className="order-manager-required" role="alert">
-                    Перед сохранением проверьте отмеченные цены позиций и оплаты. Цена продажи обязательна для каждой заполненной позиции.
-                  </div>
-                ) : null}
-
                 {!Number(createDraft.managerId || 0) ? (
                   <div className="order-manager-required" role="alert">
                     Выберите менеджера. Без менеджера заказ сохранить нельзя.

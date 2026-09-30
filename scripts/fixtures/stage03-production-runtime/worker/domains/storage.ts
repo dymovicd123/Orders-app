@@ -708,30 +708,16 @@ export async function processDatabaseStorageActivityPhase(db: D1Database, pendin
 }
 
 
-export async function isRetainedOrderPricingModeEnabled(db: D1Database) {
-  try {
-    await db.prepare('SELECT pricing_mode FROM retained_order_summaries LIMIT 1').first();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-
 export async function retainOrderSummariesForStorageCleanup(db: D1Database, orderIds: number[]) {
   const uniqueIds = Array.from(new Set(orderIds.filter(Boolean)));
   if (!uniqueIds.length) return;
   const now = new Date().toISOString();
-  const retainedPricingModeEnabled = await isRetainedOrderPricingModeEnabled(db);
-  const pricingModeInsertColumn = retainedPricingModeEnabled ? ', pricing_mode' : '';
-  const pricingModeSelectValue = retainedPricingModeEnabled ? ", COALESCE(o.pricing_mode, 'legacy_manual_total')" : '';
-  const pricingModeConflictUpdate = retainedPricingModeEnabled ? ', pricing_mode = excluded.pricing_mode' : '';
   for (const chunk of chunksOf(uniqueIds, 70)) {
     const marks = sqlQuestionMarks(chunk.length);
     await db.prepare(
       `INSERT INTO retained_order_summaries (
          original_order_id, external_id, order_date, customer_id, customer_phone, customer_name,
-         manager_id, manager_name, city, delivery_type, source_type${pricingModeInsertColumn},
+         manager_id, manager_name, city, delivery_type, source_type,
          total_amount, received_amount, debt_amount, return_amount,
          order_status, shipping_status, shipping_date,
          item_count, payment_count, return_count, item_summary,
@@ -740,7 +726,7 @@ export async function retainOrderSummariesForStorageCleanup(db: D1Database, orde
        SELECT
          o.id, o.external_id, o.order_date, o.customer_id, c.phone_normalized, c.display_name,
          o.manager_id, COALESCE(NULLIF(m.name, ''), NULLIF(o.manager_snapshot_name, ''), ''),
-         o.city, o.delivery_type, o.source_type${pricingModeSelectValue},
+         o.city, o.delivery_type, o.source_type,
          o.total_amount, o.received_amount, o.debt_amount, o.return_amount,
          o.order_status, o.shipping_status, o.shipping_date,
          (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id AND oi.quantity > 0),
@@ -771,7 +757,7 @@ export async function retainOrderSummariesForStorageCleanup(db: D1Database, orde
          manager_name = excluded.manager_name,
          city = excluded.city,
          delivery_type = excluded.delivery_type,
-         source_type = excluded.source_type${pricingModeConflictUpdate},
+         source_type = excluded.source_type,
          total_amount = excluded.total_amount,
          received_amount = excluded.received_amount,
          debt_amount = excluded.debt_amount,

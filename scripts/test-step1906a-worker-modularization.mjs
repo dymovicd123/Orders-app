@@ -4,6 +4,47 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stage03ProductionRuntimeWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-production-runtime-worker-manifest.json'), 'utf8'))
+if (stage03ProductionRuntimeWorkerManifest?.version !== 1 || stage03ProductionRuntimeWorkerManifest?.revision !== 'stage03-production-runtime-r1') throw new Error('Stage03 Production worker manifest invalid')
+const stage03ProductionRuntimeWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STAGE03_PRODUCTION_RUNTIME_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stage03ProductionRuntimeWorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      if (!fs.existsSync(absolute)) throw new Error('Stage03 Production worker current file missing: ' + relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stage03ProductionRuntimeWorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('Stage03 Production worker changed beyond exact promotion manifest: ' + relative)
+      originals.set(relative, actual)
+      if (delta.beforeGitBlob) {
+        const baseline = fs.readFileSync(path.join(root, delta.beforeFixture), 'utf8')
+        if (stage03ProductionRuntimeWorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Stage03 Production worker baseline fixture drifted: ' + relative)
+        fs.writeFileSync(absolute, baseline)
+      } else {
+        fs.unlinkSync(absolute)
+      }
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, STAGE03_PRODUCTION_RUNTIME_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03 PRODUCTION WORKER EXACT PROMOTION LAYER PASSED')
+  process.exit(0)
+}
 const catalogRetirementMainPortManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-retirement-main-port-worker-manifest.json'), 'utf8'))
 if (catalogRetirementMainPortManifest?.version !== 1 || catalogRetirementMainPortManifest?.revision !== 'catalog-retirement-main-port-worker-r1') throw new Error('Catalog retirement main-port Worker manifest invalid')
 const catalogRetirementMainPortBlobSha = (value) => {
