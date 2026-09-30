@@ -1,9 +1,205 @@
 // Branch2-first safe Catalog retirement.
 // Working Catalog/Inventory state is removed without deleting historical order/movement facts.
 import { canonicalStockPositionValue, cleanText, toInt } from '../core/text.ts'
-import { createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3 } from './catalog.ts'
+import { createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, normalizeAudienceCategory, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender } from './catalog.ts'
 
 export type CatalogRetirementEntityType = 'execution' | 'product';
+
+
+export type CatalogVariantGroupRetirementScope = {
+  executionId: number;
+  category: string;
+  gender: string;
+  color: string;
+};
+
+export type CatalogVariantGroupRetirementPreview = CatalogVariantGroupRetirementScope & {
+  activeVariantCount: number;
+  physicalQuantity: number;
+  stockReservedQuantity: number;
+  activeReservationQuantity: number;
+  historicalOrderItemCount: number;
+  openOrderItemCount: number;
+  activeWorkshopTaskCount: number;
+  activeStocktake: boolean;
+  pendingLifecycle: boolean;
+};
+
+function normalizeVariantGroupScope(input: {
+  executionId?: unknown;
+  category?: unknown;
+  gender?: unknown;
+  color?: unknown;
+}): CatalogVariantGroupRetirementScope {
+  const executionId = toInt(input.executionId, 0);
+  if (!executionId) throw new Error('Исполнение не найдено.');
+  const category = normalizeAudienceCategory(input.category, '');
+  const gender = normalizeCatalogCombinationGender(input.gender);
+  if (!gender) throw new Error('Не удалось однозначно определить пол группы.');
+  const color = normalizeCatalogCombinationColor(input.color);
+  return { executionId, category, gender, color };
+}
+
+function variantGroupPredicate(alias = 'v') {
+  return `${alias}.stock_position_id = ?
+    AND COALESCE(${alias}.category, 'adult') = ?
+    AND CASE
+      WHEN UPPER(TRIM(COALESCE(${alias}.gender, ''))) LIKE '%ЖЕН%' THEN 'ЖЕН'
+      WHEN UPPER(TRIM(COALESCE(${alias}.gender, ''))) LIKE '%МУЖ%' THEN 'МУЖ'
+      ELSE UPPER(TRIM(COALESCE(${alias}.gender, '')))
+    END = ?
+    AND CASE
+      WHEN TRIM(COALESCE(${alias}.color, '')) = '' THEN 'БЕЗ ЦВЕТА'
+      ELSE UPPER(TRIM(${alias}.color))
+    END = ?`;
+}
+
+function catalogVariantGroupBlockerMessage(preview: CatalogVariantGroupRetirementPreview) {
+  const blockers: string[] = [];
+  if (preview.physicalQuantity !== 0) blockers.push(`физический остаток ${preview.physicalQuantity} шт.`);
+  if (preview.stockReservedQuantity !== 0 || preview.activeReservationQuantity !== 0) {
+    blockers.push(`действующий резерв ${Math.max(Math.abs(preview.stockReservedQuantity), Math.abs(preview.activeReservationQuantity))} шт.`);
+  }
+  if (preview.openOrderItemCount > 0) blockers.push('есть активный неотправленный заказ');
+  if (preview.activeWorkshopTaskCount > 0) blockers.push('есть незавершённая задача Цеха');
+  if (preview.pendingLifecycle) blockers.push('есть незавершённая приёмка или возврат');
+  if (preview.activeStocktake) blockers.push('позиция участвует в текущей ревизии');
+  return blockers;
+}
+
+export async function previewCatalogVariantGroupRetirement(
+  db: D1Database,
+  input: { executionId?: unknown; category?: unknown; gender?: unknown; color?: unknown },
+): Promise<CatalogVariantGroupRetirementPreview> {
+  const scope = normalizeVariantGroupScope(input);
+  const predicate = variantGroupPredicate('v');
+  const row = await db.prepare(
+    `WITH all_variants AS (
+       SELECT v.id FROM catalog_variants v WHERE ${predicate}
+     ), active_variants AS (
+       SELECT v.id FROM catalog_variants v WHERE ${predicate} AND v.is_active = 1
+     )
+     SELECT
+       (SELECT COUNT(*) FROM active_variants) AS active_variant_count,
+       COALESCE((SELECT SUM(COALESCE(s.quantity, 0)) FROM inventory_stock s WHERE s.variant_id IN (SELECT id FROM active_variants)), 0) AS physical_quantity,
+       COALESCE((SELECT SUM(COALESCE(s.reserved_quantity, 0)) FROM inventory_stock s WHERE s.variant_id IN (SELECT id FROM active_variants)), 0) AS stock_reserved_quantity,
+       COALESCE((SELECT SUM(COALESCE(r.quantity, 0)) FROM inventory_reservations r WHERE r.variant_id IN (SELECT id FROM active_variants) AND r.status='active'), 0) AS active_reservation_quantity,
+       (SELECT COUNT(*) FROM order_items oi WHERE oi.variant_id IN (SELECT id FROM all_variants)) AS historical_order_item_count,
+       (SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id=oi.order_id
+          WHERE oi.variant_id IN (SELECT id FROM active_variants)
+            AND COALESCE(o.order_status,'active')='active'
+            AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+            AND COALESCE(oi.quantity,0)>0) AS open_order_item_count,
+       (SELECT COUNT(*) FROM workshop_tasks wt
+          WHERE wt.variant_id IN (SELECT id FROM active_variants) AND wt.status IN ('active','ready')) AS active_workshop_task_count,
+       EXISTS(
+         SELECT 1 FROM inventory_stocktake_items i
+         JOIN inventory_stocktake_sessions s ON s.id=i.session_id
+         WHERE i.variant_id IN (SELECT id FROM active_variants) AND s.status='active'
+         LIMIT 1
+       ) AS active_stocktake,
+       EXISTS(
+         SELECT 1 FROM inventory_lifecycle_events e
+         WHERE e.variant_id IN (SELECT id FROM active_variants) AND e.status='pending'
+         LIMIT 1
+       ) AS pending_lifecycle`
+  ).bind(
+    scope.executionId, scope.category, scope.gender, scope.color,
+    scope.executionId, scope.category, scope.gender, scope.color,
+  ).first<Record<string, unknown>>();
+
+  return {
+    ...scope,
+    activeVariantCount: Math.max(0, toInt(row?.active_variant_count, 0)),
+    physicalQuantity: toInt(row?.physical_quantity, 0),
+    stockReservedQuantity: toInt(row?.stock_reserved_quantity, 0),
+    activeReservationQuantity: Math.max(0, toInt(row?.active_reservation_quantity, 0)),
+    historicalOrderItemCount: Math.max(0, toInt(row?.historical_order_item_count, 0)),
+    openOrderItemCount: Math.max(0, toInt(row?.open_order_item_count, 0)),
+    activeWorkshopTaskCount: Math.max(0, toInt(row?.active_workshop_task_count, 0)),
+    activeStocktake: toInt(row?.active_stocktake, 0) === 1,
+    pendingLifecycle: toInt(row?.pending_lifecycle, 0) === 1,
+  };
+}
+
+export async function retireCatalogVariantGroup(
+  db: D1Database,
+  input: { executionId?: unknown; category?: unknown; gender?: unknown; color?: unknown },
+) {
+  const preview = await previewCatalogVariantGroupRetirement(db, input);
+  if (preview.activeVariantCount === 0) {
+    return { ok: true, alreadyRetired: true, ...preview };
+  }
+  const blockers = catalogVariantGroupBlockerMessage(preview);
+  if (blockers.length) {
+    throw new Error(`Нельзя удалить эту группу из рабочего каталога: ${blockers.join('; ')}. Сначала завершите связанные операции или разберите остаток.`);
+  }
+
+  const now = new Date().toISOString();
+  const predicate = variantGroupPredicate('v');
+  const result = await db.prepare(
+    `WITH target_variants AS (
+       SELECT v.id FROM catalog_variants v
+       WHERE ${predicate} AND v.is_active = 1
+     )
+     UPDATE catalog_variants
+     SET is_active = 0, updated_at = ?
+     WHERE id IN (SELECT id FROM target_variants)
+       AND NOT EXISTS (
+         SELECT 1 FROM inventory_stock s
+         WHERE s.variant_id IN (SELECT id FROM target_variants)
+           AND (COALESCE(s.quantity,0) <> 0 OR COALESCE(s.reserved_quantity,0) <> 0)
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM inventory_reservations r
+         WHERE r.variant_id IN (SELECT id FROM target_variants) AND r.status='active'
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM order_items oi
+         JOIN orders o ON o.id=oi.order_id
+         WHERE oi.variant_id IN (SELECT id FROM target_variants)
+           AND COALESCE(o.order_status,'active')='active'
+           AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+           AND COALESCE(oi.quantity,0)>0
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM workshop_tasks wt
+         WHERE wt.variant_id IN (SELECT id FROM target_variants) AND wt.status IN ('active','ready')
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM inventory_lifecycle_events e
+         WHERE e.variant_id IN (SELECT id FROM target_variants) AND e.status='pending'
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM inventory_stocktake_items i
+         JOIN inventory_stocktake_sessions s ON s.id=i.session_id
+         WHERE i.variant_id IN (SELECT id FROM target_variants) AND s.status='active'
+       )`
+  ).bind(preview.executionId, preview.category, preview.gender, preview.color, now).run();
+
+  const changed = Math.max(0, toInt(result.meta?.changes, 0));
+  if (changed !== preview.activeVariantCount) {
+    const fresh = await previewCatalogVariantGroupRetirement(db, preview);
+    const freshBlockers = catalogVariantGroupBlockerMessage(fresh);
+    if (fresh.activeVariantCount === 0) {
+      return { ok: true, replayed: true, retiredVariantCount: preview.activeVariantCount, ...fresh };
+    }
+    if (freshBlockers.length) {
+      throw new Error(`Удаление не выполнено: данные изменились во время проверки — ${freshBlockers.join('; ')}. Обновите Каталог и повторите после разбора связей.`);
+    }
+    throw new Error('Удаление не выполнено из-за одновременного изменения Каталога. Обновите страницу и повторите.');
+  }
+
+  return {
+    ok: true,
+    retiredVariantCount: changed,
+    executionId: preview.executionId,
+    category: preview.category,
+    gender: preview.gender,
+    color: preview.color,
+    historicalOrderItemCount: preview.historicalOrderItemCount,
+  };
+}
 
 export type CatalogRetirementPreview = {
   entityType: CatalogRetirementEntityType;
