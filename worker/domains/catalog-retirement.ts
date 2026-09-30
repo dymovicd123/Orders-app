@@ -1,7 +1,7 @@
 // Branch2-first safe Catalog retirement.
 // Working Catalog/Inventory state is removed without deleting historical order/movement facts.
 import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, toInt } from '../core/text.ts'
-import { createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender } from './catalog.ts'
+import { assertCatalogGenderAllowedForScope, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, getCatalogProductGenderScope, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender } from './catalog.ts'
 
 export type CatalogRetirementEntityType = 'execution' | 'product';
 
@@ -415,6 +415,27 @@ export async function restoreCatalogRetirement(
     };
   }
 
+  const productId = toInt(operation.product_id, 0);
+  const product = await db.prepare(
+    'SELECT id, name, is_active FROM catalog_products WHERE id=? LIMIT 1'
+  ).bind(productId).first<Record<string, unknown>>();
+  if (!product?.id) throw new Error('Историческая карточка товара больше не найдена.');
+
+  const snapshotsResult = await db.prepare(
+    `SELECT variant_id, stock_position_id, product_id, category, gender, color, material, length, size_label
+     FROM catalog_retirement_variants
+     WHERE retirement_id=?
+     ORDER BY variant_id ASC`
+  ).bind(retirementId).all<Record<string, unknown>>();
+  const snapshots = snapshotsResult.results || [];
+  const productGenderScope = await getCatalogProductGenderScope(db, productId);
+  for (const row of snapshots) {
+    assertCatalogGenderAllowedForScope(productGenderScope, row.gender, product.name || operation.product_name);
+  }
+
+  // Scope validation is intentionally read-only and happens before creating a restore audit row
+  // or reactivating the product shell. A historical wrong-gender snapshot must never leave a
+  // partly restored working generation behind.
   const now = new Date().toISOString();
   const actor = cleanText(input.actor) || null;
   if (!existingRestore?.id) {
@@ -430,26 +451,12 @@ export async function restoreCatalogRetirement(
   const restoreId = toInt(restore?.id, 0);
   if (!restoreId) throw new Error('Не удалось начать безопасное восстановление.');
 
-  const productId = toInt(operation.product_id, 0);
-  const product = await db.prepare(
-    'SELECT id, is_active FROM catalog_products WHERE id=? LIMIT 1'
-  ).bind(productId).first<Record<string, unknown>>();
-  if (!product?.id) throw new Error('Историческая карточка товара больше не найдена.');
-
   // Restore only the product shell. Old executions/SKUs remain retired forever.
   if (toInt(product.is_active, 0) !== 1) {
     await db.prepare(
       'UPDATE catalog_products SET is_active=1, updated_at=? WHERE id=? AND is_active=0'
     ).bind(now, productId).run();
   }
-
-  const snapshotsResult = await db.prepare(
-    `SELECT variant_id, stock_position_id, product_id, category, gender, color, material, length, size_label
-     FROM catalog_retirement_variants
-     WHERE retirement_id=?
-     ORDER BY variant_id ASC`
-  ).bind(retirementId).all<Record<string, unknown>>();
-  const snapshots = snapshotsResult.results || [];
 
   type ExecutionGroup = { material: string; length: string; rows: Record<string, unknown>[] };
   const groups = new Map<string, ExecutionGroup>();
