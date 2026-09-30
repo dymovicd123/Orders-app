@@ -46,7 +46,7 @@ check(worker.includes('catalogRetirementRestoreMatch'), 'Catalog safe restore en
 check(worker.includes('requireAdminAccess(request)'), 'Catalog restore endpoints are not admin-guarded')
 
 check(panel.includes('CatalogRetirementHistory'), 'Catalog does not expose deleted history')
-check(historyUi.includes('Удалённые товары и исполнения'), 'human-facing deleted history title missing')
+check(historyUi.includes('Удалённые товары и позиции'), 'human-facing unified deleted history title missing')
 check(historyUi.includes('Физический остаток и резерв начнутся с нуля.'), 'restore confirmation does not state clean warehouse semantics')
 check(historyUi.includes('Восстановить'), 'restore action missing from UI')
 check(historyUi.includes('Восстановление не завершено') && historyUi.includes('Продолжить'), 'partial restore is not represented honestly/resumably in UI')
