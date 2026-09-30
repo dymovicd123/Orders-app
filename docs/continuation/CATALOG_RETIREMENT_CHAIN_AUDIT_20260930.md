@@ -189,20 +189,20 @@ Required design:
 
 This is the next highest-priority functional gap.
 
-### P1 — safe restore is not fully atomic/resumable
+### CLOSED — safe restore resumability / partial-state honesty
 
-`restoreCatalogRetirement()` reactivates/creates several rows sequentially and marks the restore complete at the end.
+Read-only Branch2 D1 audit `36703729894` found 0 current `started` restore rows before the new invariant.
 
-If execution stops after product/execution/some variants were created but before completion:
-- partial active state may exist;
-- restore record may still be `started`;
-- current history UI can infer `workingAgain` from active entities and hide the normal Restore action too early.
+The restore path is now resumable/idempotent by retirement:
+- additive migration 0078 creates a partial unique index allowing at most one `started` restore per `retirement_id`;
+- retry with a new browser requestId finds and resumes the persisted `started` restore instead of creating a parallel audit/generation;
+- concurrent start uses `INSERT OR IGNORE` and converges on that one in-flight row;
+- an already completed restore is replayed instead of starting again;
+- completion is refused until the persisted old→new mapping count exactly matches the retirement snapshot count;
+- history exposes `restorePending`; while a restore is partial, `workingAgain` is forced false even if a shell/execution has already appeared;
+- UI shows «Восстановление не завершено» and offers «Продолжить».
 
-Required fix:
-- make restore explicitly resumable/idempotent by retirement;
-- distinguish `started/partial/completed` in read model/UI;
-- retries must continue from the exact persisted mapping and never create duplicate generations;
-- UI must not claim complete restoration merely because some working identity exists.
+Validation `36705047496`: cumulative release-check + build — **success**.
 
 ### CLOSED — inactive SKU operational-state audit + invariant guard
 
@@ -221,15 +221,17 @@ PR #240 added fixed `male|female` scope enforcement across ordinary Catalog crea
 
 Guarded Branch2 data cleanup `36699491214` then retired the exact 13 legacy wrong-gender variants found by audit. Post-state: **0 active fixed-scope mismatches** and **0 inactive variants with live stock/reservation**.
 
-### CLOSED — Workshop semantics during whole execution/product retirement
+### CLOSED — Workshop semantics during Catalog retirement
 
-The rule is now explicit and fail-closed: **an active/ready Workshop task blocks whole execution/product retirement**.
+The corrected rule is explicit and consistent across exact-SKU, local-group and whole execution/product retirement:
 
-Protection exists twice:
-- read preflight rejects the operation with a clear Workshop message;
-- write-time guard rechecks active/ready Workshop tasks so a task created between preview and mutation cannot be retired underneath.
+- **`active` Workshop task = hard blocker**;
+- **`ready` / `done` = completed Workshop state and does not block Catalog retirement by itself**;
+- stock, reservation, open-order, pending lifecycle and stocktake blockers remain independent.
 
-Local group retirement already used the same rule, so the semantics are now consistent across deletion scopes. Validation: `36702222809` release-check + build — **success**.
+Both preview and write-time race guards use the active-only condition, so a genuinely active task created between preview and mutation still stops deletion. The earlier PR #245 wording that included `ready` is superseded.
+
+Validation `36705047496`: cumulative release-check + build — **success**.
 
 ### P2 — returns/exchanges involving a retired historical SKU need a deliberate operator UX
 
@@ -263,9 +265,8 @@ This is separate from Catalog retirement semantics. Do not weaken/remove the sec
 ## Suggested continuation order
 
 1. Fix recovery for open `catalog_retired` orders.
-2. Make restore resumable/idempotent and represent partial restore honestly.
-3. Add explicit retired-SKU Return/Exchange intake UX.
-4. Unify exact-SKU/local-group history with the new retirement-history UI.
-5. Separately resolve the high-risk dev-dependency audit.
+2. Add explicit retired-SKU Return/Exchange intake UX.
+3. Unify exact-SKU/local-group history with the new retirement-history UI.
+4. Separately resolve the high-risk dev-dependency audit.
 
 For every remaining item, start from current `branch2`, add focused semantic regression, run cumulative `release:check` + build, verify exact merged SHA deploy, and keep `main` untouched unless the user explicitly changes the release boundary.
