@@ -150,67 +150,45 @@ export async function retireCatalogVariantGroup(
 
   const now = new Date().toISOString();
   const predicate = variantGroupPredicate('v');
-  const [result] = await db.batch([
-    db.prepare(
-      `WITH target_variants AS (
-         SELECT v.id FROM catalog_variants v
-         WHERE ${predicate} AND v.is_active = 1
+  const result = await db.prepare(
+    `WITH target_variants AS (
+       SELECT v.id FROM catalog_variants v
+       WHERE ${predicate} AND v.is_active = 1
+     )
+     UPDATE catalog_variants
+     SET is_active = 0, updated_at = ?
+     WHERE id IN (SELECT id FROM target_variants)
+       AND NOT EXISTS (
+         SELECT 1 FROM inventory_stock s
+         WHERE s.variant_id IN (SELECT id FROM target_variants)
+           AND (COALESCE(s.quantity,0) <> 0 OR COALESCE(s.reserved_quantity,0) <> 0)
        )
-       UPDATE catalog_variants
-       SET is_active = 0, updated_at = ?
-       WHERE id IN (SELECT id FROM target_variants)
-         AND NOT EXISTS (
-           SELECT 1 FROM inventory_stock s
-           WHERE s.variant_id IN (SELECT id FROM target_variants)
-             AND (COALESCE(s.quantity,0) <> 0 OR COALESCE(s.reserved_quantity,0) <> 0)
-         )
-         AND NOT EXISTS (
-           SELECT 1 FROM inventory_reservations r
-           WHERE r.variant_id IN (SELECT id FROM target_variants) AND r.status='active'
-         )
-         AND NOT EXISTS (
-           SELECT 1 FROM order_items oi
-           JOIN orders o ON o.id=oi.order_id
-           WHERE oi.variant_id IN (SELECT id FROM target_variants)
-             AND COALESCE(o.order_status,'active')='active'
-             AND COALESCE(o.shipping_status,'not_sent')<>'sent'
-             AND COALESCE(oi.quantity,0)>0
-         )
-         AND NOT EXISTS (
-           SELECT 1 FROM workshop_tasks wt
-           WHERE wt.variant_id IN (SELECT id FROM target_variants) AND wt.status = 'active'
-         )
-         AND NOT EXISTS (
-           SELECT 1 FROM inventory_lifecycle_events e
-           WHERE e.variant_id IN (SELECT id FROM target_variants) AND e.status='pending'
-         )
-         AND NOT EXISTS (
-           SELECT 1 FROM inventory_stocktake_items i
-           JOIN inventory_stocktake_sessions s ON s.id=i.session_id
-           WHERE i.variant_id IN (SELECT id FROM target_variants) AND s.status='active'
-         )`
-    ).bind(preview.executionId, preview.category, preview.gender, preview.color, now),
-    db.prepare(
-      `INSERT INTO catalog_retirement_history_events (
-         event_type, product_id, product_name, stock_position_id, variant_id,
-         material, length, category, gender, color, size_label, variant_count, created_at
+       AND NOT EXISTS (
+         SELECT 1 FROM inventory_reservations r
+         WHERE r.variant_id IN (SELECT id FROM target_variants) AND r.status='active'
        )
-       SELECT 'group', p.id, p.name, sp.id, NULL,
-              sp.material, sp.length, ?, ?, ?, NULL, ?, ?
-       FROM catalog_stock_positions sp
-       JOIN catalog_products p ON p.id=sp.product_id
-       WHERE sp.id=?
-         AND (
-           SELECT COUNT(*)
-           FROM catalog_variants v
-           WHERE ${predicate} AND v.is_active=0 AND v.updated_at=?
-         )=?`
-    ).bind(
-      preview.category, preview.gender, preview.color, preview.activeVariantCount, now,
-      preview.executionId,
-      preview.executionId, preview.category, preview.gender, preview.color, now, preview.activeVariantCount,
-    ),
-  ]);
+       AND NOT EXISTS (
+         SELECT 1 FROM order_items oi
+         JOIN orders o ON o.id=oi.order_id
+         WHERE oi.variant_id IN (SELECT id FROM target_variants)
+           AND COALESCE(o.order_status,'active')='active'
+           AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+           AND COALESCE(oi.quantity,0)>0
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM workshop_tasks wt
+         WHERE wt.variant_id IN (SELECT id FROM target_variants) AND wt.status = 'active'
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM inventory_lifecycle_events e
+         WHERE e.variant_id IN (SELECT id FROM target_variants) AND e.status='pending'
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM inventory_stocktake_items i
+         JOIN inventory_stocktake_sessions s ON s.id=i.session_id
+         WHERE i.variant_id IN (SELECT id FROM target_variants) AND s.status='active'
+       )`
+  ).bind(preview.executionId, preview.category, preview.gender, preview.color, now).run();
 
   const changed = Math.max(0, toInt(result.meta?.changes, 0));
   if (changed !== preview.activeVariantCount) {
@@ -695,21 +673,14 @@ export async function retireCatalogEntity(
 
 
 
-export type CatalogRetirementHistoryEntityType = CatalogRetirementEntityType | 'group' | 'variant';
-
 export type CatalogRetirementHistoryRow = {
   id: number;
-  historySource: 'operation' | 'granular';
-  entityType: CatalogRetirementHistoryEntityType;
+  entityType: CatalogRetirementEntityType;
   entityId: number;
   productId: number;
   productName: string;
   material: string | null;
   length: string | null;
-  category: string | null;
-  gender: string | null;
-  color: string | null;
-  sizeLabel: string | null;
   variantCount: number;
   physicalQuantity: number;
   reservedQuantity: number;
@@ -718,140 +689,71 @@ export type CatalogRetirementHistoryRow = {
   restoredAt: string | null;
   restorePending: boolean;
   workingAgain: boolean;
-  restorable: boolean;
 };
 
 export async function listCatalogRetirements(db: D1Database, limitInput: unknown = 30) {
   const limit = Math.min(100, Math.max(1, toInt(limitInput, 30)));
   const result = await db.prepare(
-    `SELECT *
-     FROM (
-       SELECT
-         'operation' AS history_source,
-         op.id, op.entity_type, op.entity_id, op.product_id, op.product_name, op.material, op.length,
-         NULL AS category, NULL AS gender, NULL AS color, NULL AS size_label,
-         op.variant_count, op.physical_quantity, op.active_reservation_quantity,
-         op.created_at, op.completed_at,
-         (
-           SELECT rr.completed_at
-           FROM catalog_retirement_restores rr
-           WHERE rr.retirement_id = op.id AND rr.status='completed'
-           ORDER BY rr.id DESC LIMIT 1
-         ) AS restored_at,
-         EXISTS(
+    `SELECT
+       op.id, op.entity_type, op.entity_id, op.product_id, op.product_name, op.material, op.length,
+       op.variant_count, op.physical_quantity, op.active_reservation_quantity,
+       op.created_at, op.completed_at,
+       (
+         SELECT rr.completed_at
+         FROM catalog_retirement_restores rr
+         WHERE rr.retirement_id = op.id AND rr.status='completed'
+         ORDER BY rr.id DESC LIMIT 1
+       ) AS restored_at,
+       EXISTS(
+         SELECT 1 FROM catalog_retirement_restores pending_rr
+         WHERE pending_rr.retirement_id=op.id AND pending_rr.status='started'
+       ) AS restore_pending,
+       CASE
+         WHEN EXISTS(
            SELECT 1 FROM catalog_retirement_restores pending_rr
            WHERE pending_rr.retirement_id=op.id AND pending_rr.status='started'
-         ) AS restore_pending,
-         CASE
-           WHEN EXISTS(
-             SELECT 1 FROM catalog_retirement_restores pending_rr
-             WHERE pending_rr.retirement_id=op.id AND pending_rr.status='started'
-           ) THEN 0
-           WHEN EXISTS(
-             SELECT 1 FROM catalog_retirement_restores completed_rr
-             WHERE completed_rr.retirement_id=op.id AND completed_rr.status='completed'
-           ) THEN 1
-           WHEN op.entity_type='product' THEN EXISTS(
-             SELECT 1 FROM catalog_products p
-             WHERE p.id=op.product_id AND p.is_active=1
-           )
-           ELSE EXISTS(
-             SELECT 1
-             FROM catalog_stock_positions sp
-             JOIN catalog_products p ON p.id=sp.product_id
-             WHERE sp.product_id=op.product_id
-               AND sp.is_active=1 AND p.is_active=1
-               AND UPPER(TRIM(sp.material))=UPPER(TRIM(COALESCE(op.material,'СТАНДАРТ')))
-               AND UPPER(TRIM(sp.length))=UPPER(TRIM(COALESCE(op.length,'СТАНДАРТ')))
-           )
-         END AS working_again,
-         1 AS restorable
-       FROM catalog_retirement_operations op
-       WHERE op.status='completed'
-
-       UNION ALL
-
-       SELECT
-         'granular' AS history_source,
-         h.id,
-         h.event_type AS entity_type,
-         CASE WHEN h.event_type='variant' THEN COALESCE(h.variant_id,0) ELSE COALESCE(h.stock_position_id,0) END AS entity_id,
-         h.product_id, h.product_name, h.material, h.length,
-         h.category, h.gender, h.color, h.size_label,
-         h.variant_count,
-         0 AS physical_quantity,
-         0 AS active_reservation_quantity,
-         h.created_at,
-         h.created_at AS completed_at,
-         NULL AS restored_at,
-         0 AS restore_pending,
-         CASE
-           WHEN h.event_type='variant' THEN EXISTS(
-             SELECT 1
-             FROM catalog_variants v
-             JOIN catalog_products p ON p.id=v.product_id
-             WHERE v.is_active=1 AND p.is_active=1
-               AND v.product_id=h.product_id
-               AND COALESCE(v.category,'adult')=COALESCE(h.category,'adult')
-               AND UPPER(TRIM(COALESCE(v.gender,'')))=UPPER(TRIM(COALESCE(h.gender,'')))
-               AND UPPER(TRIM(COALESCE(v.color,'')))=UPPER(TRIM(COALESCE(h.color,'')))
-               AND UPPER(TRIM(COALESCE(v.material,'СТАНДАРТ')))=UPPER(TRIM(COALESCE(h.material,'СТАНДАРТ')))
-               AND UPPER(TRIM(COALESCE(v.length,'СТАНДАРТ')))=UPPER(TRIM(COALESCE(h.length,'СТАНДАРТ')))
-               AND UPPER(TRIM(COALESCE(v.size_label,'')))=UPPER(TRIM(COALESCE(h.size_label,'')))
-           )
-           ELSE EXISTS(
-             SELECT 1
-             FROM catalog_variants v
-             JOIN catalog_products p ON p.id=v.product_id
-             WHERE v.is_active=1 AND p.is_active=1
-               AND v.product_id=h.product_id
-               AND COALESCE(v.category,'adult')=COALESCE(h.category,'adult')
-               AND UPPER(TRIM(COALESCE(v.gender,'')))=UPPER(TRIM(COALESCE(h.gender,'')))
-               AND UPPER(TRIM(COALESCE(v.color,'')))=UPPER(TRIM(COALESCE(h.color,'')))
-               AND UPPER(TRIM(COALESCE(v.material,'СТАНДАРТ')))=UPPER(TRIM(COALESCE(h.material,'СТАНДАРТ')))
-               AND UPPER(TRIM(COALESCE(v.length,'СТАНДАРТ')))=UPPER(TRIM(COALESCE(h.length,'СТАНДАРТ')))
-           )
-         END AS working_again,
-         0 AS restorable
-       FROM catalog_retirement_history_events h
-     )
-     ORDER BY COALESCE(completed_at, created_at) DESC, id DESC
+         ) THEN 0
+         WHEN EXISTS(
+           SELECT 1 FROM catalog_retirement_restores completed_rr
+           WHERE completed_rr.retirement_id=op.id AND completed_rr.status='completed'
+         ) THEN 1
+         WHEN op.entity_type='product' THEN EXISTS(
+           SELECT 1 FROM catalog_products p
+           WHERE p.id=op.product_id AND p.is_active=1
+         )
+         ELSE EXISTS(
+           SELECT 1
+           FROM catalog_stock_positions sp
+           JOIN catalog_products p ON p.id=sp.product_id
+           WHERE sp.product_id=op.product_id
+             AND sp.is_active=1 AND p.is_active=1
+             AND UPPER(TRIM(sp.material))=UPPER(TRIM(COALESCE(op.material,'СТАНДАРТ')))
+             AND UPPER(TRIM(sp.length))=UPPER(TRIM(COALESCE(op.length,'СТАНДАРТ')))
+         )
+       END AS working_again
+     FROM catalog_retirement_operations op
+     WHERE op.status='completed'
+     ORDER BY op.id DESC
      LIMIT ?`
   ).bind(limit).all<Record<string, unknown>>();
 
-  const rows: CatalogRetirementHistoryRow[] = (result.results || []).map((row) => {
-    const entityTypeRaw = cleanText(row.entity_type);
-    const entityType: CatalogRetirementHistoryEntityType = entityTypeRaw === 'product'
-      ? 'product'
-      : entityTypeRaw === 'group'
-        ? 'group'
-        : entityTypeRaw === 'variant'
-          ? 'variant'
-          : 'execution';
-    return {
-      id: toInt(row.id, 0),
-      historySource: cleanText(row.history_source) === 'granular' ? 'granular' : 'operation',
-      entityType,
-      entityId: toInt(row.entity_id, 0),
-      productId: toInt(row.product_id, 0),
-      productName: cleanText(row.product_name),
-      material: cleanText(row.material) || null,
-      length: cleanText(row.length) || null,
-      category: cleanText(row.category) || null,
-      gender: cleanText(row.gender) || null,
-      color: cleanText(row.color) || null,
-      sizeLabel: cleanText(row.size_label) || null,
-      variantCount: Math.max(0, toInt(row.variant_count, 0)),
-      physicalQuantity: Math.max(0, toInt(row.physical_quantity, 0)),
-      reservedQuantity: Math.max(0, toInt(row.active_reservation_quantity, 0)),
-      createdAt: cleanText(row.created_at),
-      completedAt: cleanText(row.completed_at) || null,
-      restoredAt: cleanText(row.restored_at) || null,
-      restorePending: toInt(row.restore_pending, 0) === 1,
-      workingAgain: toInt(row.working_again, 0) === 1,
-      restorable: toInt(row.restorable, 0) === 1,
-    };
-  });
+  const rows: CatalogRetirementHistoryRow[] = (result.results || []).map((row) => ({
+    id: toInt(row.id, 0),
+    entityType: cleanText(row.entity_type) === 'product' ? 'product' : 'execution',
+    entityId: toInt(row.entity_id, 0),
+    productId: toInt(row.product_id, 0),
+    productName: cleanText(row.product_name),
+    material: cleanText(row.material) || null,
+    length: cleanText(row.length) || null,
+    variantCount: Math.max(0, toInt(row.variant_count, 0)),
+    physicalQuantity: Math.max(0, toInt(row.physical_quantity, 0)),
+    reservedQuantity: Math.max(0, toInt(row.active_reservation_quantity, 0)),
+    createdAt: cleanText(row.created_at),
+    completedAt: cleanText(row.completed_at) || null,
+    restoredAt: cleanText(row.restored_at) || null,
+    restorePending: toInt(row.restore_pending, 0) === 1,
+    workingAgain: toInt(row.working_again, 0) === 1,
+  }));
   return { ok: true, rows };
 }
 

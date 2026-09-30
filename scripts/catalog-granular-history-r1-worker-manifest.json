@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "revision": "catalog-granular-history-worker-r1",
+  "files": {
+    "worker/domains/catalog-retirement.ts": {
+      "beforeGitBlob": "ee1ce0759e40729571f67bacba48068be88c81d0",
+      "beforeLines": 956,
+      "afterGitBlob": "ac7d878c9d88d1e66ad492f5308d3389dbd10336",
+      "afterLines": 1054,
+      "baselineFixture": "scripts/fixtures/catalog-granular-history-r1/worker/domains/catalog-retirement.ts"
+    },
+    "worker/domains/catalog.ts": {
+      "beforeGitBlob": "c6211565169df37c8bd459b134320cb6dcf9b60b",
+      "beforeLines": 1528,
+      "afterGitBlob": "a2b6f66afa0e9b624ef3ae35171607b7037e2833",
+      "afterLines": 1544,
+      "baselineFixture": "scripts/fixtures/catalog-granular-history-r1/worker/domains/catalog.ts"
+    }
+  }
+}

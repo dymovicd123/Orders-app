@@ -174,101 +174,40 @@
 
 .catalog-color-subgroup {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-  align-items: start;
-  padding: 8px 0 2px;
-}
-
-.catalog-color-subgroup + .catalog-color-subgroup {
-  border-top: 1px solid #eef1f5;
-  padding-top: 12px;
-}
-
-.catalog-color-subgroup-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  grid-template-columns: minmax(118px, 150px) minmax(0, 1fr);
   gap: 12px;
-  min-width: 0;
+  align-items: start;
 }
 
 .catalog-color-subgroup-label {
   display: grid;
   gap: 2px;
-  min-width: 0;
+  padding-top: 8px;
 }
 
 .catalog-color-subgroup-label strong {
   color: #46566d;
-  font-size: .76rem;
+  font-size: .72rem;
   font-weight: 850;
 }
 
 .catalog-color-subgroup-label span {
   color: #8994a2;
-  font-size: .66rem;
+  font-size: .65rem;
   font-weight: 650;
 }
 
 .catalog-local-retirement-action {
   display: grid;
-  justify-items: end;
   gap: 4px;
-  flex: 0 0 auto;
+  margin-top: 4px;
 }
 
-button.catalog-local-retirement-button {
-  min-height: 34px;
-  padding: 7px 11px;
-  border: 1px solid #df8e8e;
-  border-radius: 9px;
-  background: #fff4f4;
-  color: #9a2f2f;
-  font-size: .72rem;
-  font-weight: 800;
-  line-height: 1;
-  box-shadow: none;
-}
-
-button.catalog-local-retirement-button:hover:not(:disabled) {
-  border-color: #cf6666;
-  background: #ffe8e8;
-  color: #852121;
-  box-shadow: 0 3px 9px rgba(166, 54, 54, .10);
-}
-
-button.catalog-local-retirement-button:focus-visible {
-  outline: 2px solid rgba(191, 63, 63, .28);
-  outline-offset: 2px;
-}
-
-.catalog-local-retirement-action .catalog-retirement-notice,
-.catalog-local-retirement-action .catalog-retirement-error {
-  max-width: 260px;
-  text-align: right;
-}
-
-@media (max-width: 620px) {
-  .catalog-color-subgroup-heading {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .catalog-local-retirement-action {
-    justify-items: start;
-  }
-
-  button.catalog-local-retirement-button {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .catalog-local-retirement-action .catalog-retirement-notice,
-  .catalog-local-retirement-action .catalog-retirement-error {
-    max-width: none;
-    text-align: left;
-  }
+.catalog-local-retirement-button {
+  justify-self: start;
+  min-height: 28px;
+  padding: 4px 7px;
+  font-size: .62rem;
 }
 
 .catalog-size-grid {

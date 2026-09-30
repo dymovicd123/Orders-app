@@ -7,6 +7,21 @@ Branch represented by this file: **branch2**
 Этот файл — короткий актуальный checkpoint Branch2. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не являются текущим roadmap без сверки с GitHub.
 
 
+## STATUS UPDATE — 2026-09-30 — Unified granular retirement history + group-delete UI
+
+Final Catalog-retirement product/UX gap is closed on Branch2 candidate:
+
+- additive migration `0079_v72_catalog_granular_retirement_history.sql` adds durable history for operator-driven **exact SKU** and **local group** retirement without rewriting old business/history rows;
+- exact-SKU `Вывести из каталога` and local `Удалить группу` now write durable granular retirement events only after the guarded soft-retirement is proven;
+- `/api/catalog/retirements` returns one chronological feed combining whole product/execution retirement with exact-SKU/group history. Whole product/execution rows retain safe restore; granular rows are history-only and never reuse whole-retirement restore semantics;
+- `Удалённые` now shows **Товар / Исполнение / Группа / Точная позиция**, the removed combination, date, count, and preserved-history wording;
+- the local **«Удалить группу»** action was moved from the weak text column into the subgroup header, enlarged, given a visible danger treatment, and made full-width on narrow screens.
+
+Branch2 D1 schema pre-apply run `36716667655` — **success**; migration is additive/idempotent and Production was not touched.
+Validation run `36717045662`: cumulative `npm run release:check` — **success**; `npm run build` — **success**.
+
+At this checkpoint the Catalog-retirement product backlog is closed on Branch2. Remaining before any main release is the separate repository **high-risk development-dependency audit**; do not weaken that security gate.
+
 ## STATUS UPDATE — 2026-09-30 — Retired open-order + Return/Exchange recovery
 
 Combined Branch2 candidate closes the two remaining operational retired-identity gaps.
@@ -33,7 +48,7 @@ Return/Exchange recovery:
 
 Focused semantic/structural gates were added for both flows. Validation run `36708803392`: cumulative `npm run release:check` — **success**; `npm run build` — **success**.
 
-After this chunk the only remaining Catalog-retirement product gap is unified exact-SKU/local-group history visibility. The development-dependency Quality audit remains separate infrastructure debt.
+This retired-identity recovery chunk is complete. The newer checkpoint above also closes the final exact-SKU/local-group history/UI gap; only the separate development-dependency Quality audit remains before main release work.
 
 ## STATUS UPDATE — 2026-09-30 — Workshop ready semantics + resumable restore
 

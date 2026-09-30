@@ -32,7 +32,7 @@ check(retirement.includes("WHERE retirement_id=? AND status='started'"), 'restor
 check(retirement.includes('INSERT OR IGNORE INTO catalog_retirement_restores'), 'concurrent restore start is not idempotent under the single-started invariant')
 check(retirement.includes('restoredVariantCount !== snapshots.length'), 'restore can mark a partial mapping completed')
 check(retirement.includes("WHERE retirement_id=? AND status='completed'"), 'repeat restore does not reuse prior completed restore')
-check(retirement.includes("THEN 0\n         WHEN EXISTS(\n           SELECT 1 FROM catalog_retirement_restores completed_rr"), 'partial restore can still be reported as working again')
+check(retirement.includes("pending_rr.retirement_id=op.id AND pending_rr.status='started'") && retirement.includes("completed_rr.retirement_id=op.id AND completed_rr.status='completed'") && retirement.includes(") THEN 0\n           WHEN EXISTS("), 'partial restore can still be reported as working again')
 
 check(inventory.includes("allowRetiredRecreate: movementType === 'arrival'"), 'only Arrival should opt into retired Catalog recreation')
 check(inventory.includes('retiredProductIdsToReactivate'), 'Arrival cannot revive a retired product shell')
@@ -46,7 +46,7 @@ check(worker.includes('catalogRetirementRestoreMatch'), 'Catalog safe restore en
 check(worker.includes('requireAdminAccess(request)'), 'Catalog restore endpoints are not admin-guarded')
 
 check(panel.includes('CatalogRetirementHistory'), 'Catalog does not expose deleted history')
-check(historyUi.includes('Удалённые товары и исполнения'), 'human-facing deleted history title missing')
+check(historyUi.includes('Удалённые товары и позиции'), 'human-facing unified deleted history title missing')
 check(historyUi.includes('Физический остаток и резерв начнутся с нуля.'), 'restore confirmation does not state clean warehouse semantics')
 check(historyUi.includes('Восстановить'), 'restore action missing from UI')
 check(historyUi.includes('Восстановление не завершено') && historyUi.includes('Продолжить'), 'partial restore is not represented honestly/resumably in UI')

@@ -250,16 +250,20 @@ Warehouse Attention continues to own ordinary exact-known intake; `retired_histo
 
 Validation `36708803392`: cumulative release-check + build — **success**.
 
-### P3 — exact-SKU retirement history/admin visibility is weaker than whole retirement history
+### CLOSED — unified exact-SKU / local-group retirement history
 
-The new `Удалённые` panel represents whole execution/product retirements, while an exact SKU can still be removed through the older `Вывести из каталога` action.
+Additive migration 0079 creates a dedicated durable event table for granular retirement. It does **not** backfill/guess from legacy inactive rows, so the earlier fixed-gender cleanup is not misrepresented as operator deletion.
 
-Potential improvement:
-- include exact-SKU retirement history in one consistent admin history/read model;
-- show old combination, retirement date/actor and whether a fresh generation later replaced it;
-- do not merge old/new SKU identity.
+Current semantics:
+- exact-SKU `Вывести из каталога` records one `variant` history event after the guarded soft-retirement;
+- local `Удалить группу` records one `group` event after all scoped active variants are proven retired;
+- whole product/execution operations remain in `catalog_retirement_operations`;
+- the history read combines both sources chronologically without merging old/new SKU identity;
+- only whole product/execution rows expose the existing safe restore action; granular rows remain historical evidence and show if a fresh working equivalent later exists.
 
-This is observability/UX debt, not a current stock-truth blocker.
+UI polish in the same chunk moves `Удалить группу` into the subgroup header and gives it a larger, clearly destructive visual treatment, with a full-width mobile layout.
+
+Branch2 D1 pre-apply `36716667655` — success. Validation `36717045662`: cumulative release-check + build — **success**.
 
 ### Separate infrastructure debt — repository Quality dependency audit
 
@@ -269,7 +273,7 @@ This is separate from Catalog retirement semantics. Do not weaken/remove the sec
 
 ## Suggested continuation order
 
-1. Unify exact-SKU/local-group history with the new retirement-history UI.
-2. Separately resolve the high-risk dev-dependency audit.
+1. Separately resolve the high-risk dev-dependency audit.
+2. Only after that, prepare a fresh main candidate from current `main`; never merge Branch2 wholesale.
 
 For every remaining item, start from current `branch2`, add focused semantic regression, run cumulative `release:check` + build, verify exact merged SHA deploy, and keep `main` untouched unless the user explicitly changes the release boundary.
