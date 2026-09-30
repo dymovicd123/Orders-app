@@ -1,0 +1,66 @@
+name: Temporary high-risk dev dependency repair
+
+on:
+  push:
+    branches:
+      - w-security-deps-branch2-20260930
+    paths:
+      - '.github/workflows/security-deps-repair-temp.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Pin patched transitive undici only
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "w-security-deps-branch2-20260930" ]]
+          npm pkg set overrides.undici=7.29.1
+          npm install --package-lock-only --ignore-scripts
+          git diff -- package.json package-lock.json
+          extra="$(git diff --name-only | grep -Ev '^(package\.json|package-lock\.json)$' || true)"
+          if [[ -n "$extra" ]]; then
+            echo "Unexpected files changed: $extra" >&2
+            exit 20
+          fi
+          node - <<'NODE'
+          const fs = require('fs')
+          const lock = JSON.parse(fs.readFileSync('package-lock.json','utf8'))
+          const v = lock.packages?.['node_modules/undici']?.version
+          if (v !== '7.29.1') throw new Error('Expected undici 7.29.1, got ' + v)
+          console.log('Resolved undici:', v)
+          NODE
+      - name: Install exact repaired lock
+        run: npm ci
+      - name: Show Cloudflare dependency graph
+        run: npm ls undici miniflare wrangler @cloudflare/vite-plugin
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: Audit high-risk development dependencies
+        run: npm audit --audit-level=high
+      - name: Run cumulative regression gate
+        run: npm run release:check
+      - name: Build application
+        run: npm run build
+      - name: Commit repaired dependency lock to this repair branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Patch transitive undici security advisories"
+          git push origin HEAD:w-security-deps-branch2-20260930
