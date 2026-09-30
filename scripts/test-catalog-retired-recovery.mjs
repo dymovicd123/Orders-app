@@ -13,6 +13,7 @@ const review = read('worker/domains/catalog-review.ts')
 const lifecycle = read('worker/domains/lifecycle.ts')
 const orderUi = read('src/features/orders/OrderCatalogResolutionModal.tsx')
 const returnUi = read('src/features/orders/ReturnedItemResolutionModal.tsx')
+const attention = read('worker/domains/warehouse-attention.ts')
 const types = read('src/app/types.ts')
 const contracts = read('shared/api-contracts.ts')
 
@@ -47,6 +48,8 @@ check(orderUi.includes('!retiredRecovery ? <footer>'), 'retired recovery still e
 
 // Returned historical SKU must enter a deliberate intake lane and can only write stock to fresh active identity.
 check(returnCandidate.includes("matchStatus: 'retired_historical'"), 'retired return candidate can silently map old inactive SKU to current stock')
+check(attention.includes("COALESCE(e.pending_reason, '') <> 'retired_historical'"), 'Warehouse Attention still counts retired historical return as one-click exact intake')
+check(attention.includes("cleanText(row.pending_reason) !== 'retired_historical'"), 'Warehouse Attention detail can still expose retired historical return as exact-known intake')
 check(pendingQueue.includes('retired_historical_sku = 1') && pendingQueue.includes('retiredHistoricalSku:'), 'retired historical inbound can disappear from manual intake')
 check(returnContext.includes('retiredHistoricalSku') && returnContext.includes('retirementId') && returnContext.includes('freshVariantReady'), 'return context lacks retired/fresh recovery state')
 check(returnContext.includes("retired_return_ready") && returnContext.includes("retired_return_waiting_restore"), 'return read model does not distinguish restore readiness')
