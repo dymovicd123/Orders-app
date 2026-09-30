@@ -6,6 +6,36 @@ Branch represented by this file: **main / Production**
 
 Этот файл — короткий актуальный checkpoint. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не должны использоваться как текущий roadmap без сверки с GitHub.
 
+## RELEASE UPDATE — 2026-09-30 — Stage03 itemized pricing is live in Production
+
+Stage03 Production promotion is complete. It was reconciled onto fresh `main`; Branch2 was **not** merged wholesale.
+
+Production schema preparation:
+- PR #252 — `Stage03: prepare Production schema 0073/0074` — merged;
+- schema merge SHA: `8de27c402efc0eefd3e7e0da6485dfeb87eba4f1`;
+- guarded Production migration workflow run `36739732036` — **success**;
+- migrations 0073/0074 are applied in Production;
+- existing orders/retained history remained `legacy_manual_total`;
+- historical `catalog_price_snapshot` values were not invented/backfilled from the current Catalog;
+- the guarded before/after Production business fingerprint remained unchanged.
+
+Runtime promotion:
+- PR #253 — `Stage03: release completed itemized pricing to Production` — merged;
+- exact merged Production runtime SHA: `af5f666b0ef8aa3e99ff537c7d8ced3fc68b41b1`;
+- final PR cumulative Quality run `36744477616` — **success**, including cumulative regression gate and Production build;
+- exact merged-SHA Cloudflare deploy monitor run `36744693819` — **success**.
+
+Production now has the completed Stage03 pricing model:
+- new pricing generation `itemized_v1` for the supported new-order flow;
+- historical orders remain `legacy_manual_total`;
+- `catalog_price_snapshot` is historical Catalog recommendation, while `unit_price` is the factual sold price;
+- `line_total = quantity × unit_price`, and itemized order total is server-derived from lines;
+- Create/Edit/Exchange preserve factual item pricing; Return money remains an explicit separate fact;
+- current mutable Catalog price does not reinterpret historical orders, payments, debt, Workshop or Warehouse truth;
+- Finance product analytics can use factual itemized sold-price history while legacy rows remain explicitly legacy.
+
+No further Stage03 implementation is pending. Any future Stage03 work should be treated as a concrete defect/follow-up, not continuation of the rollout.
+
 ## RELEASE UPDATE — 2026-09-30 — Catalog deletion is live in Production
 
 Catalog deletion/retirement was promoted through fresh-main PR #250. Production runtime baseline:
@@ -32,23 +62,19 @@ Production now includes:
 - larger, visible `Удалить группу` action in the subgroup header;
 - patched transitive `undici 7.29.1` security override.
 
-Stage03 remains intentionally **off**:
-- migrations 0073/0074 were not shipped;
-- `orders.pricing_mode` and `order_items.catalog_price_snapshot` remain absent in Production;
-- itemized pricing activation remains postponed by explicit user decision.
-
-Catalog-retirement rollout is complete. Future work should start from current `main` and re-check GitHub before any new change.
+Catalog-retirement rollout is complete, and Stage03 is now also fully promoted to Production. Future work must start from current `main` and re-check GitHub before any new change.
 
 ## Текущее состояние Production
 
 Последний runtime-changing Production baseline:
-- `645b54ae320e45e1d34861f2e6e715819fcf5e43` — Catalog semantic SKU identity: punctuation-equivalent colors no longer materialize as a new physical SKU when an equivalent active combination already exists.
-- Exact Production deploy для него: GitHub Actions run `36320979456` — success (`cloudflare-deploy/main`).
-- Предыдущий Catalog retirement baseline `87b54bc2ac85f2a7a4fb965c9a25385ec233dcf0` и resolver baseline `4ecd8e2aeab8afc5805c5eb209542659acc09a72` остаются в этой lineage.
+- `af5f666b0ef8aa3e99ff537c7d8ced3fc68b41b1` — completed Stage03 itemized pricing promotion over the current Production lineage.
+- Exact Production deploy: GitHub Actions run `36744693819` — success.
+- Catalog deletion runtime `7953a01d2856a6e674f0473918244ab53839a36f`, semantic-SKU runtime `645b54ae320e45e1d34861f2e6e715819fcf5e43`, CLIENT-ZAMMLER, Resolver R11/R12/R13, Stage01/Stage02 and Operational Autonomy all remain preserved underneath this lineage.
 
 Завершено и находится в Production:
 - **Stage01** — завершён и выпущен через Production release candidate PR #102.
 - **Stage02 transactional stock truth** — завершён, прошёл Branch2 review/post-review fixes и выпущен через PR #145. Phase2C/2D/2E больше не являются pending work.
+- **Stage03 itemized pricing** — завершён и выпущен в Production через schema PR #252 + runtime PR #253. Migrations 0073/0074 применены guarded workflow; исторические заказы не repriced/backfilled, новый itemized runtime находится в текущем `main`.
 - **Operational Autonomy R3 A1–A5** — все реализованы в текущей main lineage: multiple returns / return+exchange coexistence, debt close after return, mistaken sent/handover correction, exchange financial correction.
 - **CLIENT-ZAMMLER** — отдельный клиентский запрос, завершён и в Production. Это **не roadmap Stage04**.
 - **Resolver R11/R12/R13** — завершён и в Production. Сейчас resolver считается стабильным; новые изменения только при конкретном обнаруженном дефекте.
@@ -56,31 +82,25 @@ Catalog-retirement rollout is complete. Future work should start from current `m
 - **Catalog semantic SKU identity prevention + controlled correction** — PR #220, runtime `645b54ae320e45e1d34861f2e6e715819fcf5e43`: exact spelling остаётся fast path, harmless hyphen/space colors переиспользуют существующий semantic SKU. 2026-09-27 отдельная guarded D1 correction вывела из активной работы подтверждённые semantic duplicates; финальный Production audit `36322036163` attempt 3 показал `activeCollisionGroups: 0`. Исторические строки/текстовые snapshots не удалялись.
 - D1 read-budget/O1/R5 optimizations уже находятся в истории main; следующий performance pass делать только по свежим Query Insights, а не «по инерции».
 
-## Что НЕ находится в Production
+## Следующий roadmap — Stage04
 
-### Stage03
-Stage03 технически завершён на Branch2 через H12, но **полный Stage03 pricing/itemized runtime не продвинут в main**.
-
-Production сейчас намеренно сохраняет:
-- актуальные Production-only fixes;
-- CLIENT-ZAMMLER;
-- Resolver R11/R12/R13;
-- Stage01/Stage02/Autonomy lineage.
-
-В `main` есть migration 0072 (Catalog execution prices) и 0075 (ZAMMLER due time), но **нет** Stage03 migrations 0073/0074 и нет полного `itemized_v1` runtime.
-
-Любой будущий Stage03 → Production rollout:
-- только после явного разрешения пользователя;
-- строится от свежего `main`, а не прямым merge старого Branch2 snapshot;
-- reconcile-ит только Stage03 business changes;
-- сохраняет R11/R12/R13 и все более новые Production fixes;
-- применяет 0073/0074 отдельными guarded schema steps после read-only D1 audit;
-- проходит full cumulative CI + exact Production environment guard + exact-SHA deploy + manual E2E acceptance.
-
-### Roadmap Stage04
 Настоящий Stage04 ещё не начинался. Старые имена `Stage04-ZAMMLER` — только историческая ошибка именования.
 
-Stage04 = отдельная будущая работа вокруг Workshop finance / исторической себестоимости и должна начинаться с бизнес-контракта, а не с миграции или UI.
+Stage04 = отдельная будущая работа вокруг **Workshop finance / исторической себестоимости / долга Цеху** и должна начинаться с бизнес-контракта, а не с миграции или UI.
+
+Предварительное направление, согласованное для продолжения обсуждения:
+- `Готово в цехе` / `workshop_task.done` само по себе **не создаёт долг**;
+- текущая mutable Catalog `cost_price` сама по себе **не является историческим долгом** и не должна переписывать старую себестоимость;
+- финансовое обязательство Цеху должно возникать только из отдельного подтверждённого факта приёмки/накладной Цеха;
+- старые `workshop_tasks` нельзя автоматически backfill-ить в долг: система не знает, что из старой работы уже было оплачено вне неё;
+- для запуска Stage04 нужен подтверждённый **opening balance / начальный долг (или аванс) на дату отсечения**, который сворачивает старую историю до cutover;
+- новые накладные после cutover должны хранить frozen quantity + фактическую unit cost/line cost, чтобы будущая прибыльность использовала исторический факт, а не сегодняшнюю цену Catalog;
+- оплаты Цеху — отдельные факты; обычное распределение по открытым обязательствам предполагается FIFO, при этом точная привязка к конкретной накладной может поддерживаться отдельно;
+- переплата должна становиться авансом, а не запрещённым/отрицательным странным долгом;
+- проведённые накладные/оплаты не должны тихо редактироваться задним числом: correction/reversal history обязана сохраняться;
+- customer Return/Exchange не должен автоматически менять долг Цеху: скидка/брак/переделка/кредит Цеха — отдельный финансовый факт.
+
+Это пока **business-design checkpoint, не реализованный Stage04 contract**. Перед кодом нужно отдельно подтвердить реальный формат накладной Цеха: есть ли фактическая цена по каждой позиции или иногда только общая сумма на набор изделий.
 
 ## Warehouse status
 
@@ -147,7 +167,7 @@ Stage02 stock-truth работа закрыта и уже в Production. Ста�
 ### Finance / pricing truth
 - Текущая Catalog recommendation, фактическая цена продажи, платежи и долг — разные сущности.
 - Исторические заказы не пересчитываются по сегодняшнему Catalog.
-- Для будущего/Branch2 `itemized_v1`: `catalog_price_snapshot` — историческая рекомендация, `unit_price` — фактическая цена, `line_total = quantity × unit_price`, платежи независимы.
+- Для текущего Production `itemized_v1`: `catalog_price_snapshot` — историческая рекомендация, `unit_price` — фактическая цена, `line_total = quantity × unit_price`, платежи независимы.
 - Legacy orders остаются `legacy_manual_total`; нельзя выдумывать построчную цену для старой истории.
 - Возврат денег и физический возврат — отдельные факты; exchange money также отдельный финансовый факт.
 
@@ -172,8 +192,8 @@ Stage02 stock-truth работа закрыта и уже в Production. Ста�
 - `docs/continuation/WAREHOUSE_CURRENT_CONTEXT.md` — исторические детали Warehouse/Stage02; верхняя status-note должна трактоваться как актуальная.
 - `docs/continuation/STAGE02_PHASE2_STOCK_TRUTH_MODEL_20260919.md` — canonical stock-truth semantics, этап уже завершён.
 - `docs/continuation/OPERATIONAL_AUTONOMY_AUDIT_20260910.md` — исторический аудит; A1–A5 уже реализованы.
-- Stage03 H12 document живёт в Branch2 и описывает завершённый Branch2 pricing audit.
+- Stage03 H12 document живёт в Branch2 как исторический подробный pricing audit; фактический Production rollout зафиксирован выше через PR #252/#253.
 
 ## Точка продолжения
 
-Semantic SKU incident 2026-09-27 закрыт: runtime prevention находится в Production, подтверждённые active duplicates отдельно исправлены в Production и Branch2, финальные read-only audits показывают `activeCollisionGroups: 0`. Production Physical после recovery снова совпадает с immutable pre-correction baseline; protected historical facts сохранены. Никакого продолжения этого фикса «на всякий случай» не требуется без нового воспроизводимого дефекта. **Stage03 по-прежнему не активирован в main** и может продвигаться только по отдельному явному разрешению пользователя.
+Stage03 Production rollout 2026-09-30 закрыт: schema PR #252 + runtime PR #253 merged, migrations 0073/0074 применены guarded workflow, cumulative Quality и exact merged-SHA Production deploy зелёные. Semantic SKU/Catalog retirement/Resolver/Stage01/Stage02/Autonomy/ZAMMLER lineage сохранена. **Следующая содержательная работа — вернуться к обсуждению Stage04 business contract для долга Цеху и исторической себестоимости; код Stage04 пока не начинать без финального подтверждения модели.**
