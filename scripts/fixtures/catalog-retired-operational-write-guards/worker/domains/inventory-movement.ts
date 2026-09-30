@@ -149,7 +149,7 @@ export async function resolveInventoryCreatableItemsBulk(
     const identityKey = normalizeCatalogProductIdentityKey(item.productName);
     if (!identityKey) return null;
     const alias = lookup.byAlias.get(identityKey);
-    if (alias && toInt(alias.is_active, 0) === 1) return alias;
+    if (alias) return alias;
     const exact = lookup.byExact.get(upperText(item.productName));
     if (exact) return exact;
     return lookup.byIdentity.get(identityKey) || null;
@@ -161,27 +161,23 @@ export async function resolveInventoryCreatableItemsBulk(
     if (!item.productName) throw new Error('Product is required for inventory operation.');
     if (resolveProduct(item)) return;
 
-    const explicit = item.productId > 0 ? lookup.byId.get(item.productId) : null;
-    const identityKey = normalizeCatalogProductIdentityKey(item.productName);
-    const aliasTarget = identityKey ? lookup.byAlias.get(identityKey) : null;
-    const retired = explicit && toInt(explicit.is_active, 0) !== 1
-      ? explicit
-      : aliasTarget && toInt(aliasTarget.is_active, 0) !== 1
-        ? aliasTarget
+    if (options.allowRetiredRecreate) {
+      const explicit = item.productId > 0 ? lookup.byId.get(item.productId) : null;
+      const identityKey = normalizeCatalogProductIdentityKey(item.productName);
+      const retired = explicit && toInt(explicit.is_active, 0) !== 1
+        ? explicit
         : lookup.byInactiveExact.get(upperText(item.productName))
           || (identityKey ? lookup.byInactiveIdentity.get(identityKey) : null);
-    const retiredId = toInt(retired?.id, 0);
-    if (retiredId) {
-      if (!options.allowRetiredRecreate) {
-        throw new Error(`Товар «${item.productName}» был удалён из рабочего каталога. Эта складская операция не может автоматически вернуть его; используйте Приход или восстановление Каталога.`);
+      const retiredId = toInt(retired?.id, 0);
+      if (retiredId) {
+        retiredProductIdsToReactivate.add(retiredId);
+        return;
       }
-      retiredProductIdsToReactivate.add(retiredId);
-      return;
     }
 
-    const newIdentityKey = identityKey || `RAW:${item.productName}`;
-    if (!missingProducts.has(newIdentityKey)) {
-      missingProducts.set(newIdentityKey, {
+    const identityKey = normalizeCatalogProductIdentityKey(item.productName) || `RAW:${item.productName}`;
+    if (!missingProducts.has(identityKey)) {
+      missingProducts.set(identityKey, {
         name: item.productName,
         category: normalizeAudienceCategory(item.category, item.size),
         externalId: `AUTO-PROD-${Date.now().toString(36).toUpperCase()}-${index + 1}-${item.productName.length}`,
@@ -331,19 +327,6 @@ export async function resolveInventoryCreatableItemsBulk(
 
   let variants = await loadVariants();
   let { exact: variantByExactKey, semantic: variantBySemanticKey } = buildVariantLookups(variants);
-
-  const retiredVariantRows = mapSqlRows(await db.prepare(
-    `SELECT id, product_id, stock_position_id, category, gender, color, material, length, size_label, is_active
-     FROM catalog_variants
-     WHERE is_active = 0
-       AND stock_position_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
-     ORDER BY id ASC`
-  ).bind(executionIdsJson).all<VariantRow>()) as VariantRow[];
-  const retiredVariantExactKeys = new Set(retiredVariantRows.map(row =>
-    variantExactKey(toInt(row.stock_position_id, 0), row.category, row.gender, row.color, row.size_label)));
-  const retiredVariantSemanticKeys = new Set(retiredVariantRows.map(row =>
-    variantSemanticKey(toInt(row.stock_position_id, 0), row.category, row.gender, row.color, row.size_label)));
-
   const missingVariants = new Map<string, Record<string, unknown>>();
   rawItems.forEach((item, index) => {
     const product = productForItem[index]!;
@@ -352,9 +335,6 @@ export async function resolveInventoryCreatableItemsBulk(
     const exactKey = variantExactKey(toInt(execution.id, 0), item.category, gender, item.color, item.size);
     const semanticKey = variantSemanticKey(toInt(execution.id, 0), item.category, gender, item.color, item.size);
     if (variantByExactKey.has(exactKey) || variantBySemanticKey.has(semanticKey) || missingVariants.has(semanticKey)) return;
-    if ((retiredVariantExactKeys.has(exactKey) || retiredVariantSemanticKeys.has(semanticKey)) && !options.allowRetiredRecreate) {
-      throw new Error(`Комбинация «${cleanText(product.name)} · ${normalizeCatalogCombinationColor(item.color)} · ${normalizeCatalogCombinationSize(item.size)}» была удалена из рабочего каталога. Эта операция не может автоматически создать её заново; используйте Приход или восстановление Каталога.`);
-    }
     const category = normalizeAudienceCategory(item.category, item.size);
     const color = catalogColorIdentity(item.color);
     const size = normalizeCatalogCombinationSize(item.size);

@@ -678,9 +678,6 @@ export async function reserveOrderItemV2(
   if (existingReservation?.id) {
     const existingVariantId = toInt(existingReservation.variant_id, toInt(variantId, 0));
     const existingSource = normalizeSourceType(existingReservation.inventory_source || item.inventorySource);
-    if (cleanText(existingReservation.status) === 'active' && existingVariantId > 0) {
-      await loadCanonicalVariantSnapshot(db, existingVariantId, { activeOnly: true });
-    }
     const committedStock = cleanText(existingReservation.status) === 'active' && existingVariantId > 0
       ? await db.prepare(
         `SELECT quantity, reserved_quantity FROM inventory_stock WHERE inventory_source = ? AND variant_id = ? ORDER BY id ASC LIMIT 1`
@@ -734,7 +731,7 @@ export async function reserveOrderItemV2(
     };
   }
 
-  const canonical = await loadCanonicalVariantSnapshot(db, variantId, { activeOnly: true });
+  const canonical = await loadCanonicalVariantSnapshot(db, variantId);
   const canonicalProductId = canonical.productId;
   const stock = await ensureHumanInventoryStockRow(db, item.inventorySource, canonical, timestamp);
   const physicalBefore = toInt(stock.quantity, 0);
@@ -2475,16 +2472,6 @@ export async function correctMistakenOrderHandover(
     const fulfilledAt = cleanText(row.fulfilled_at);
     if (!reservationId || !orderItemId || !variantId || !reservedQuantity || !fulfilledAt) {
       throw new Error('Ошибочную выдачу нельзя отменить автоматически: у проведённого списания неполная складская связь или отсутствует время выдачи. Нужна точечная физическая сверка.');
-    }
-    const liveCatalogIdentity = await db.prepare(
-      `SELECT v.id
-       FROM catalog_variants v
-       JOIN catalog_products p ON p.id = v.product_id
-       WHERE v.id = ? AND v.is_active = 1 AND p.is_active = 1
-       LIMIT 1`
-    ).bind(variantId).first<{ id: number }>();
-    if (!liveCatalogIdentity?.id) {
-      throw new Error('Ошибочную выдачу нельзя отменить автоматически: эта SKU уже выведена из рабочего каталога. Старая SKU не будет снова получать остаток или резерв; сначала восстановите рабочую комбинацию и разберите заказ.');
     }
     if (row.stock_quantity_before === null || row.stock_quantity_before === undefined || row.stock_quantity_after === null || row.stock_quantity_after === undefined) {
       throw new Error('Ошибочную выдачу нельзя отменить автоматически: для одной позиции не сохранён фактически списанный складской delta. Система ничего не изменила; нужна физическая сверка.');
