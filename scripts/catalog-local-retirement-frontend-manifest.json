@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "revision": "catalog-local-retirement-frontend-r1",
+  "files": {
+    "src/features/inventory/views/catalogPolishExecutionGroups.tsx": {
+      "mode": "replace",
+      "beforeGitBlob": "f6468d5131f0597d09f91acabdeab07ad0bc91c4",
+      "beforeLines": 560,
+      "afterGitBlob": "fd0eadc5a054b5b281af0d04c52011d1cc3c927a",
+      "afterLines": 580,
+      "baselineFixture": "scripts/fixtures/catalog-local-retirement/src/features/inventory/views/catalogPolishExecutionGroups.tsx"
+    },
+    "src/styles/w6-3-catalog-polish.css": {
+      "mode": "replace",
+      "beforeGitBlob": "ca23377a1b0937380f2bcf44f1bb55e7d832c00d",
+      "beforeLines": 671,
+      "afterGitBlob": "8c6012236f074f210a35e02af1feb3f34542e0b8",
+      "afterLines": 689,
+      "baselineFixture": "scripts/fixtures/catalog-local-retirement/src/styles/w6-3-catalog-polish.css"
+    },
+    "src/features/inventory/views/CatalogVariantGroupRetirementAction.tsx": {
+      "mode": "add",
+      "afterGitBlob": "39064fd69553eb37b5f14960d1dd62749f77f1ad",
+      "afterLines": 196
+    }
+  }
+}
