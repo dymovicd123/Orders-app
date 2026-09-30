@@ -16,7 +16,7 @@ check(previewStart >= 0 && retireStart > previewStart && nextSection > retireSta
 const previewBody = retirement.slice(previewStart, retireStart)
 const retireBody = retirement.slice(retireStart, nextSection)
 
-check(retirement.includes("v.stock_position_id = ?"), 'local group scope is not bound to one execution')
+check(retirement.includes("${alias}.stock_position_id = ?"), 'local group scope is not bound to one execution')
 check(retirement.includes("COALESCE(${alias}.category, 'adult') = ?"), 'local group scope is not bound to audience category')
 check(retirement.includes("END = ?") && retirement.includes("normalizeCatalogCombinationGender"), 'local group scope is not bound to gender')
 check(retirement.includes("normalizeCatalogCombinationColor"), 'local group scope is not bound to color')
