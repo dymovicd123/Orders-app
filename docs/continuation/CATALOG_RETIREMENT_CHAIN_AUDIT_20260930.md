@@ -141,6 +141,18 @@ Validation:
 - Active autocomplete/pickers must not suggest retired SKU/product rows.
 - Old orders may still display historical retired characteristics because that is order history, not active autocomplete.
 
+## Read-only Branch2 data audit — 2026-09-30
+
+Audit workflow run `36699118208` executed SELECT-only checks against the verified Branch2 D1 identity. Wrangler reported `changed_db: false` / `rows_written: 0` for the audit queries.
+
+Results:
+- 13 active fixed-scope gender mismatches remain as legacy data.
+- Every mismatch is currently safe for strict local retirement: zero Physical, zero stock Reserved, zero active reservation, zero active unsent order item, zero active/ready Workshop task, zero pending lifecycle, zero active stocktake.
+- Group breakdown: `АЙДАР БОМБЕР` — 4 female groups under male scope; `АЙДАР ШАПАН` — 4 male groups under female scope; `СӘУКЕЛЕ ШАПАН` — 4 male groups under female scope; `ҚОЗЫ КӨРПЕШ ШАПАН` — 1 female group under male scope.
+- No inactive Catalog variant with non-zero Physical/Reserved or active reservation was found.
+
+This changes the earlier P2 fixed-gender item: **prevention is closed by PR #240/#241/#242; only evidence-bound cleanup of 13 legacy zero-footprint groups remains.** Do not infer a broader data rewrite from this audit.
+
 ## Remaining unresolved retirement-chain work
 
 ### P1 — open orders left in `catalog_retired` can become operationally stuck
