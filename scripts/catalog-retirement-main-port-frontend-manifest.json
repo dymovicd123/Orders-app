@@ -52,6 +52,11 @@
       "beforeGitBlob": "73bd806b7069cd9137e173806f216e7f3d7a7d75",
       "afterGitBlob": "c4dff97458b29e0e3099f5fa5e65e7dc333421dc",
       "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/src/styles/w6-3-catalog-polish.css"
+    },
+    "shared/api-contracts.ts": {
+      "beforeGitBlob": "0a67f527fbe7cf1d8fde13d99f943dada75b35d9",
+      "afterGitBlob": "b1096165fb4fdcc96fa174c9eaeb4d6a5d0f9568",
+      "baselineFixture": "scripts/fixtures/catalog-retirement-main-port/shared/api-contracts.ts"
     }
   }
 }
