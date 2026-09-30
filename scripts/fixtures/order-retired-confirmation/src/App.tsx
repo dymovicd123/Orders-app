@@ -4018,7 +4018,7 @@ function App() {
     }
   }, [orderPanel])
 
-  async function createOrderFromDraft(retiredCatalogRecreateKeys: string[] = []) {
+  async function createOrderFromDraft() {
     setOrderBusy(true)
     setError(null)
     setMessage(null)
@@ -4058,7 +4058,6 @@ function App() {
         deliveryType: createDraft.deliveryType,
         sourceType: deriveOrderSourceType(createDraft.items),
         pricingMode: 'itemized_v1' as const,
-        ...(retiredCatalogRecreateKeys.length ? { retiredCatalogRecreateKeys } : {}),
         workshopStatus: createDraft.workshopStatus,
         orderStatus: createDraft.orderStatus,
         comment: createDraft.comment,
@@ -4105,15 +4104,6 @@ function App() {
         requestedQuantity?: number
         shortage?: number
       }
-      type CreateOrderRetiredCatalogItem = {
-        inputIndex?: number
-        confirmationKey?: string
-        productName?: string
-        material?: string
-        length?: string
-        color?: string
-        size?: string
-      }
       const result = await readJsonResponse<{
         orderId?: number
         externalId?: string
@@ -4123,31 +4113,9 @@ function App() {
         pricingMode?: 'legacy_manual_total' | 'itemized_v1'
         code?: string
         shortages?: CreateOrderShortage[]
-        retiredItems?: CreateOrderRetiredCatalogItem[]
         stockWriteOff?: Array<{ productName?: string; concurrentShortage?: boolean; shortageAfter?: number }>
         message?: string
       }>(response, 'Создание заказа')
-      if (!response.ok && result.code === 'order_retired_catalog_confirmation_required' && Array.isArray(result.retiredItems) && result.retiredItems.length) {
-        completeCriticalRequest(criticalKey, critical.requestId)
-        if (retiredCatalogRecreateKeys.length) {
-          throw new Error('Каталог изменился во время подтверждения. Обновите форму заказа и повторите сохранение.')
-        }
-        const confirmationKeys = [...new Set(result.retiredItems.map((item) => String(item.confirmationKey || '').trim()).filter(Boolean))]
-        if (!confirmationKeys.length) {
-          throw new Error(result.message || 'Не удалось безопасно подтвердить восстановление удалённой позиции.')
-        }
-        const names = [...new Set(result.retiredItems.map((item) => String(item.productName || '').trim()).filter(Boolean))]
-        const label = names.length ? names.map((name) => `«${name}»`).join(', ') : 'выбранная позиция'
-        const confirmed = window.confirm(
-          `${label} раньше была удалена из рабочего каталога. Вернуть её как новую рабочую позицию?\n\nСтарые заказы и история не изменятся. Старые остатки и резервы не вернутся; новая рабочая позиция начнёт с нуля.`,
-        )
-        if (!confirmed) {
-          setMessage('Заказ не сохранён. Удалённая позиция осталась вне рабочего каталога.')
-          return
-        }
-        await createOrderFromDraft(confirmationKeys)
-        return
-      }
       if (!response.ok && result.code === 'order_stock_shortage' && Array.isArray(result.shortages) && result.shortages.length) {
         const shortageByInputIndex = new Map<number, CreateOrderShortage>()
         for (const shortage of result.shortages) {
