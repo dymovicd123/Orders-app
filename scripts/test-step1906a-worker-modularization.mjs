@@ -5,6 +5,46 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
+const retiredWriteGuardsManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-retired-operational-write-guards-worker-manifest.json'), 'utf8'))
+if (retiredWriteGuardsManifest?.version !== 1 || retiredWriteGuardsManifest?.revision !== 'catalog-retired-operational-write-guards-r1') throw new Error('Catalog retired operational write guards Worker manifest invalid')
+const retiredWriteGuardsBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.CATALOG_RETIRED_OPERATIONAL_WRITE_GUARDS_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(retiredWriteGuardsManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (retiredWriteGuardsBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Catalog retired operational write guards changed beyond exact manifest: ' + relative)
+      }
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (retiredWriteGuardsBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Catalog retired operational write guards baseline fixture drifted: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, CATALOG_RETIRED_OPERATIONAL_WRITE_GUARDS_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('CATALOG RETIRED OPERATIONAL WRITE GUARDS WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const orderRetiredRecreateManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-retired-recreate-branch2-worker-manifest.json'), 'utf8'))
 if (orderRetiredRecreateManifest?.version !== 1 || orderRetiredRecreateManifest?.revision !== 'order-retired-recreate-branch2-r1') throw new Error('Order retired recreation Worker manifest invalid')
 const orderRetiredRecreateBlobSha = (value) => {
