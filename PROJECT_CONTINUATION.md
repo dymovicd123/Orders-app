@@ -7,6 +7,24 @@ Branch represented by this file: **branch2**
 Этот файл — короткий актуальный checkpoint Branch2. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не являются текущим roadmap без сверки с GitHub.
 
 
+## STATUS UPDATE — 2026-09-30 — High-risk dev dependency audit closed
+
+The separate Quality security debt is now fixed without weakening the audit:
+
+- the failing advisory chain was `@cloudflare/vite-plugin / wrangler → miniflare → undici 7.29.0`;
+- production dependencies already had **0 vulnerabilities** and were not changed;
+- rather than broad-upgrading the Cloudflare toolchain, `package.json` now uses a narrow npm `overrides` pin to **undici 7.29.1**, the patched 7.x release, and `package-lock.json` resolves only that transitive package forward;
+- Cloudflare package versions remain unchanged (`@cloudflare/vite-plugin 1.54.8`, `wrangler 4.131.1`, `miniflare 5.20260911.0-alpha`), minimizing deployment/runtime surface.
+
+Bounded repair run `36718325513` completed successfully:
+- exact repaired `npm ci` — success;
+- production audit — **0 vulnerabilities**;
+- high-risk development audit — **0 vulnerabilities**;
+- cumulative `npm run release:check` — success;
+- `npm run build` — success.
+
+The security gate remains intact. After this checkpoint there is no known Catalog-retirement or dependency-audit blocker on Branch2. Next release work must still use a fresh candidate from current `main`; never merge Branch2 wholesale.
+
 ## STATUS UPDATE — 2026-09-30 — Unified granular retirement history + group-delete UI
 
 Final Catalog-retirement product/UX gap is closed on Branch2 candidate:
@@ -20,7 +38,7 @@ Final Catalog-retirement product/UX gap is closed on Branch2 candidate:
 Branch2 D1 schema pre-apply run `36716667655` — **success**; migration is additive/idempotent and Production was not touched.
 Validation run `36717045662`: cumulative `npm run release:check` — **success**; `npm run build` — **success**.
 
-At this checkpoint the Catalog-retirement product backlog is closed on Branch2. Remaining before any main release is the separate repository **high-risk development-dependency audit**; do not weaken that security gate.
+At this checkpoint the Catalog-retirement product backlog is closed on Branch2. The newer security checkpoint above also closes the previously separate high-risk development-dependency audit.
 
 ## STATUS UPDATE — 2026-09-30 — Retired open-order + Return/Exchange recovery
 
