@@ -14,6 +14,7 @@ on:
       - 'src/features/orders/ReturnedItemResolutionModal.tsx'
       - 'scripts/test-catalog-retired-recovery.mjs'
       - 'scripts/test-contextual-catalog-resolution-r1.mjs'
+      - 'scripts/test-stage01-pending-lifecycle-current-links-r11.mjs'
       - 'scripts/release-check.mjs'
       - 'scripts/test-step1906a-worker-modularization.mjs'
       - 'scripts/test-step1906b-frontend-modularization.mjs'
