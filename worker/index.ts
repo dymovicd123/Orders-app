@@ -6,7 +6,7 @@ import { listActivityLog, listOrdersFinanceSummary, listReturnHistory, writeActi
 import { authUserPayload, createAuthUser, deleteAuthUser, ensureAuthSchema, handleAuthChangePassword, handleAuthLogin, handleAuthLogout, handleAuthSetup, handleAuthStatus, handleSimpleAdminLogin, handleSimpleAdminLogout, handleSimpleAdminPasswordChange, handleSimpleAdminStatus, isDiagnosticsEnabled, listAuthUsers, makeSimpleAccessUser, normalizeAccessRole, publicAuthPath, requireAdminAccess, requireAdminUser, updateAuthUser, withAuthenticatedHeaders } from './domains/auth.ts'
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
 import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, saveCatalogExecutionPrice, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
-import { previewCatalogRetirement, retireCatalogEntity } from './domains/catalog-retirement.ts'
+import { listCatalogRetirements, previewCatalogRetirement, restoreCatalogRetirement, retireCatalogEntity } from './domains/catalog-retirement.ts'
 import type { CatalogReviewFactsInput } from './domains/catalog-review.ts'
 import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant } from './domains/catalog-review.ts'
 import { getClientDetails, listClients } from './domains/clients.ts'
@@ -1000,6 +1000,35 @@ export default {
         if (denied) return denied;
         const input = await readJson<{ stockPositionId?: unknown; category?: unknown; costPrice?: unknown; salePrice?: unknown }>(request);
         return json(await saveCatalogExecutionPrice(env.DB, input));
+      }
+
+      if (url.pathname === '/api/catalog/retirements' && request.method === 'GET') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        return json(await listCatalogRetirements(env.DB, url.searchParams.get('limit')));
+      }
+
+      const catalogRetirementRestoreMatch = url.pathname.match(/^\/api\/catalog\/retirements\/(\d+)\/restore$/);
+      if (catalogRetirementRestoreMatch && request.method === 'POST') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        const input = await readJson<{ requestId?: unknown }>(request);
+        const result = await restoreCatalogRetirement(env.DB, toInt(catalogRetirementRestoreMatch[1], 0), {
+          requestId: input.requestId,
+          actor: authUser?.displayName || authUser?.managerName || authUser?.email || 'admin',
+        });
+        try {
+          await writeActivityLog(env.DB, {
+            eventType: 'catalog_retirement_restored',
+            entityType: 'catalog',
+            entityId: toInt(catalogRetirementRestoreMatch[1], 0),
+            title: 'Удалённая позиция восстановлена в каталог',
+            details: `Создано/связано новых рабочих позиций: ${result.restoredVariantCount}; старый склад не восстановлен.`,
+          });
+        } catch {
+          // Audit restore remains authoritative even if the generic activity log is unavailable.
+        }
+        return json(result);
       }
 
       const catalogExecutionRetirementPreviewMatch = url.pathname.match(/^\/api\/catalog\/executions\/(\d+)\/retirement-preview$/);
