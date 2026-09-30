@@ -1,7 +1,7 @@
 // Branch2-first safe Catalog retirement.
 // Working Catalog/Inventory state is removed without deleting historical order/movement facts.
-import { canonicalStockPositionValue, cleanText, toInt } from '../core/text.ts'
-import { createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, normalizeAudienceCategory, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender } from './catalog.ts'
+import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, toInt } from '../core/text.ts'
+import { createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender } from './catalog.ts'
 
 export type CatalogRetirementEntityType = 'execution' | 'product';
 
