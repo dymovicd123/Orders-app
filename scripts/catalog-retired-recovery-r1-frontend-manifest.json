@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "revision": "catalog-retired-recovery-ui-r1",
+  "files": {
+    "src/app/types.ts": {
+      "beforeGitBlob": "b36f6bdd9204dd7aaf6161bdd19ee5fb3a097043",
+      "beforeLines": 1763,
+      "afterGitBlob": "14741ad9b64156f519a2bbd9c458c6b0585a0d24",
+      "afterLines": 1766,
+      "baselineFixture": "scripts/fixtures/catalog-retired-recovery-r1/src/app/types.ts"
+    },
+    "src/features/orders/OrderCatalogResolutionModal.tsx": {
+      "beforeGitBlob": "f743b78ad176973afffca422d9ea142ae31cc285",
+      "beforeLines": 403,
+      "afterGitBlob": "178085838663420ad60f88e62cabe954d93d24d3",
+      "afterLines": 424,
+      "baselineFixture": "scripts/fixtures/catalog-retired-recovery-r1/src/features/orders/OrderCatalogResolutionModal.tsx"
+    },
+    "src/features/orders/ReturnedItemResolutionModal.tsx": {
+      "beforeGitBlob": "ea7a76b4fb1558f38b88103f90047818a25f527c",
+      "beforeLines": 196,
+      "afterGitBlob": "909aedc887504f0727daeedd1a781d7aba44d54c",
+      "afterLines": 258,
+      "baselineFixture": "scripts/fixtures/catalog-retired-recovery-r1/src/features/orders/ReturnedItemResolutionModal.tsx"
+    },
+    "shared/api-contracts.ts": {
+      "beforeGitBlob": "0a67f527fbe7cf1d8fde13d99f943dada75b35d9",
+      "beforeLines": 403,
+      "afterGitBlob": "b1096165fb4fdcc96fa174c9eaeb4d6a5d0f9568",
+      "afterLines": 409,
+      "baselineFixture": "scripts/fixtures/catalog-retired-recovery-r1/shared/api-contracts.ts"
+    }
+  }
+}
