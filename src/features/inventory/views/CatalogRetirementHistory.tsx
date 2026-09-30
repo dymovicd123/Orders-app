@@ -2,12 +2,17 @@ import { useState } from 'react'
 
 type RetirementHistoryRow = {
   id: number
-  entityType: 'execution' | 'product'
+  historySource: 'operation' | 'granular'
+  entityType: 'execution' | 'product' | 'group' | 'variant'
   entityId: number
   productId: number
   productName: string
   material: string | null
   length: string | null
+  category: string | null
+  gender: string | null
+  color: string | null
+  sizeLabel: string | null
   variantCount: number
   physicalQuantity: number
   reservedQuantity: number
@@ -16,24 +21,42 @@ type RetirementHistoryRow = {
   restoredAt: string | null
   restorePending: boolean
   workingAgain: boolean
+  restorable: boolean
 }
 
 type Props = {
   onCatalogChanged?: () => void | boolean | Promise<void | boolean>
 }
 
-const labelFor = (row: RetirementHistoryRow) => {
-  if (row.entityType === 'product') return row.productName
+const executionLabelFor = (row: RetirementHistoryRow) => {
   const material = String(row.material || 'СТАНДАРТ')
   const length = String(row.length || 'СТАНДАРТ')
-  const execution = material === 'СТАНДАРТ' && length === 'СТАНДАРТ'
+  return material === 'СТАНДАРТ' && length === 'СТАНДАРТ'
     ? 'Основное исполнение'
     : material === 'СТАНДАРТ'
       ? `Длина: ${length}`
       : length === 'СТАНДАРТ'
         ? material
         : `${material} · ${length}`
-  return `${row.productName} — ${execution}`
+}
+
+const labelFor = (row: RetirementHistoryRow) => {
+  if (row.entityType === 'product') return row.productName
+  const execution = executionLabelFor(row)
+  if (row.entityType === 'execution') return `${row.productName} — ${execution}`
+  const category = row.category === 'child' ? 'Детский' : 'Взрослый'
+  const identity = [row.color || 'Цвет не указан', row.gender || 'Пол не указан', category]
+  if (row.entityType === 'variant') {
+    identity.push(`${row.category === 'child' ? 'возраст' : 'размер'} ${row.sizeLabel || '—'}`)
+  }
+  return `${row.productName} — ${execution} · ${identity.join(' · ')}`
+}
+
+const typeLabelFor = (row: RetirementHistoryRow) => {
+  if (row.entityType === 'product') return 'Товар'
+  if (row.entityType === 'execution') return 'Исполнение'
+  if (row.entityType === 'group') return 'Группа'
+  return 'Точная позиция'
 }
 
 const formatMoment = (value: string | null) => {
@@ -93,7 +116,7 @@ export function CatalogRetirementHistory({ onCatalogChanged }: Props) {
   }
 
   const restore = async () => {
-    if (!confirmRow || restoringId) return
+    if (!confirmRow?.restorable || restoringId) return
     setRestoringId(confirmRow.id)
     setError('')
     setNotice('')
@@ -135,8 +158,8 @@ export function CatalogRetirementHistory({ onCatalogChanged }: Props) {
             <div className="catalog-retirement-history-head">
               <div>
                 <span className="card-label">История каталога</span>
-                <h3 id="catalog-retirement-history-title">Удалённые товары и исполнения</h3>
-                <p>История не удаляется. При восстановлении создаётся новая рабочая версия без старых остатков и резервов.</p>
+                <h3 id="catalog-retirement-history-title">Удалённые товары и позиции</h3>
+                <p>Здесь собраны удаления товара, исполнения, группы и точной SKU. Товар/исполнение можно безопасно восстановить; локальные удаления остаются историей и не оживляют старый остаток.</p>
               </div>
               <button className="secondary compact" type="button" disabled={Boolean(restoringId)} onClick={() => setOpen(false)}>Закрыть</button>
             </div>
@@ -146,21 +169,25 @@ export function CatalogRetirementHistory({ onCatalogChanged }: Props) {
 
             <div className="catalog-retirement-history-list">
               {busy ? <div className="empty-state compact-empty">Загружаю историю…</div> : null}
-              {!busy && !rows.length ? <div className="empty-state compact-empty">Удалённых товаров и исполнений пока нет.</div> : null}
+              {!busy && !rows.length ? <div className="empty-state compact-empty">Удалённых товаров и позиций пока нет.</div> : null}
               {!busy ? rows.map((row) => {
                 const working = Boolean(row.workingAgain)
                 const restorePending = Boolean(row.restorePending)
                 return (
-                  <article className="catalog-retirement-history-row" key={row.id}>
+                  <article className="catalog-retirement-history-row" key={`${row.historySource}-${row.id}`}>
                     <div className="catalog-retirement-history-copy">
                       <strong>{labelFor(row)}</strong>
-                      <span>{row.entityType === 'product' ? 'Товар' : 'Исполнение'} · удалено {formatMoment(row.completedAt || row.createdAt)}</span>
+                      <span>{typeLabelFor(row)} · удалено {formatMoment(row.completedAt || row.createdAt)}</span>
                       <small>
-                        {row.variantCount} поз. · было физически {row.physicalQuantity} · в резерве {row.reservedQuantity}
+                        {row.restorable
+                          ? `${row.variantCount} поз. · было физически ${row.physicalQuantity} · в резерве ${row.reservedQuantity}`
+                          : `${row.variantCount} поз. · история заказов и движений сохранена`}
                       </small>
                     </div>
                     <div className="catalog-retirement-history-actions">
-                      {working ? (
+                      {!row.restorable ? (
+                        <span className="soft-badge">{working ? 'Есть новая рабочая версия' : 'Локальное удаление'}</span>
+                      ) : working ? (
                         <span className="soft-badge">{row.restoredAt ? 'Восстановлено' : 'Снова в каталоге'}</span>
                       ) : (
                         <>
