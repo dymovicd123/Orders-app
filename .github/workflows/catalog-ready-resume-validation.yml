@@ -16,6 +16,7 @@ on:
       - 'scripts/test-step1906a-worker-modularization.mjs'
       - 'scripts/test-step1906b-frontend-modularization.mjs'
       - 'scripts/test-step1906c-dead-code-cleanup.mjs'
+      - 'scripts/test-w6-4-catalog-sku-card.mjs'
       - 'scripts/catalog-ready-resume-r1-frontend-manifest.json'
       - 'scripts/fixtures/catalog-ready-resume-r1/src/features/inventory/views/CatalogRetirementHistory.tsx'
       - 'scripts/catalog-ready-resume-r1-worker-manifest.json'
