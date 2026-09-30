@@ -139,7 +139,12 @@ export async function retireCatalogEntity(
   }
 
   const preview = await previewCatalogRetirement(db, entityType, entityId);
-  if (!preview.active) {
+  const hasWorkingState = preview.active
+    || preview.activeVariantCount > 0
+    || preview.physicalQuantity !== 0
+    || preview.stockReservedQuantity !== 0
+    || preview.activeReservationQuantity > 0;
+  if (!hasWorkingState) {
     return { ok: true, alreadyRetired: true, requestId, entityType, entityId };
   }
   if (preview.activeStocktake) {
@@ -154,8 +159,26 @@ export async function retireCatalogEntity(
   const actor = cleanText(input.actor) || null;
   const targetPredicate = catalogRetirementVariantPredicate(entityType);
   const entityGuardSql = entityType === 'execution'
-    ? `sp.id = ? AND sp.is_active = 1 AND p.is_active = 1`
-    : `p.id = ? AND p.is_active = 1`;
+    ? `sp.id = ? AND p.is_active = 1
+       AND (
+         sp.is_active = 1
+         OR EXISTS (
+           SELECT 1 FROM catalog_variants repair_v
+           WHERE repair_v.stock_position_id = sp.id AND repair_v.is_active = 1
+         )
+       )`
+    : `p.id = ?
+       AND (
+         p.is_active = 1
+         OR EXISTS (
+           SELECT 1 FROM catalog_variants repair_v
+           WHERE repair_v.product_id = p.id AND repair_v.is_active = 1
+         )
+         OR EXISTS (
+           SELECT 1 FROM catalog_stock_positions repair_sp
+           WHERE repair_sp.product_id = p.id AND repair_sp.is_active = 1
+         )
+       )`;
 
   const insertOperation = entityType === 'execution'
     ? db.prepare(
@@ -223,7 +246,7 @@ export async function retireCatalogEntity(
        FROM catalog_retirement_operations op
        JOIN catalog_variants v ON ${targetPredicate}
        WHERE op.request_id=? AND op.status='started' AND v.is_active=1`
-    ).bind(entityId, now, requestId),
+    ).bind(now, entityId, requestId),
 
     db.prepare(
       `UPDATE catalog_retirement_operations
@@ -343,6 +366,11 @@ export async function retireCatalogEntity(
 
   await db.batch(statements);
 
+  const after = await previewCatalogRetirement(db, entityType, entityId);
+  if (after.activeVariantCount > 0 || after.physicalQuantity !== 0 || after.stockReservedQuantity !== 0 || after.activeReservationQuantity > 0) {
+    throw new Error('Удаление выполнено не полностью. Обновите каталог и повторите удаление; история не повреждена.');
+  }
+
   const operation = await db.prepare(
     `SELECT id, status, variant_count, physical_quantity, stock_reserved_quantity,
             active_reservation_quantity, open_order_item_count
@@ -350,7 +378,12 @@ export async function retireCatalogEntity(
   ).bind(requestId).first<Record<string, unknown>>();
   if (!operation?.id) {
     const fresh = await previewCatalogRetirement(db, entityType, entityId);
-    if (!fresh.active) return { ok: true, alreadyRetired: true, requestId, entityType, entityId };
+    const freshHasWorkingState = fresh.active
+      || fresh.activeVariantCount > 0
+      || fresh.physicalQuantity !== 0
+      || fresh.stockReservedQuantity !== 0
+      || fresh.activeReservationQuantity > 0;
+    if (!freshHasWorkingState) return { ok: true, alreadyRetired: true, requestId, entityType, entityId };
     if (fresh.activeStocktake) throw new Error('Удаление не выполнено: началась ревизия этой позиции. Завершите или отмените её и повторите.');
     if (fresh.pendingLifecycle) throw new Error('Удаление не выполнено: появилась незавершённая приёмка/возврат. Завершите её и повторите.');
     throw new Error('Удаление не выполнено из-за изменения данных. Обновите Каталог и повторите.');
