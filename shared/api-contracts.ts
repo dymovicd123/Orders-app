@@ -198,6 +198,11 @@ export type CatalogResolutionContext = {
   message?: string
   status?: string
   completed?: boolean
+  retiredRecovery?: boolean
+  retiredHistoricalSku?: boolean
+  historicalVariantId?: number | null
+  retirementId?: number | null
+  freshVariantReady?: boolean
 }
 
 export type CatalogResolutionInput = CatalogResolutionFacts & {
@@ -219,6 +224,7 @@ export type CatalogResolutionResponse = ApiOkResponse & {
   workshopLinked?: number
   reserved?: number
   historicalLinked?: number
+  retiredRecovered?: number
   fulfilled?: number
   skipped?: number
   scannedGroups?: number
