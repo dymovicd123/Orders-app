@@ -265,15 +265,20 @@ UI polish in the same chunk moves `Удалить группу` into the subgrou
 
 Branch2 D1 pre-apply `36716667655` — success. Validation `36717045662`: cumulative release-check + build — **success**.
 
-### Separate infrastructure debt — repository Quality dependency audit
+### CLOSED — repository Quality dependency audit
 
-The standard Quality workflow currently fails at **Audit high-risk development dependencies** before it reaches cumulative release-check/build. The production-dependency audit passes.
+The high-risk development advisory was isolated to the Cloudflare development toolchain: `miniflare` resolved vulnerable `undici 7.29.0`.
 
-This is separate from Catalog retirement semantics. Do not weaken/remove the security audit just to get a green badge. Investigate/update the flagged dev dependency in its own bounded change.
+The fix is deliberately narrow:
+- keep the existing Cloudflare Vite/Wrangler/Miniflare versions unchanged;
+- pin only transitive `undici` to patched **7.29.1** through npm `overrides`;
+- retain both Quality audit steps unchanged.
+
+Bounded verification run `36718325513` reported **0 production vulnerabilities** and **0 high-risk development vulnerabilities**, then passed cumulative release-check and build.
 
 ## Suggested continuation order
 
-1. Separately resolve the high-risk dev-dependency audit.
-2. Only after that, prepare a fresh main candidate from current `main`; never merge Branch2 wholesale.
+1. Prepare a fresh main candidate from current `main` for the approved Catalog-deletion release; never merge Branch2 wholesale.
+2. Before any Production schema mutation/deploy, perform a read-only Production schema/`d1_migrations` comparison and port only the coherent required migration/runtime subset.
 
 For every remaining item, start from current `branch2`, add focused semantic regression, run cumulative `release:check` + build, verify exact merged SHA deploy, and keep `main` untouched unless the user explicitly changes the release boundary.
