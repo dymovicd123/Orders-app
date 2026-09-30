@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "revision": "order-retired-confirmation-ui-r1",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "3defc6bac0b975d1968bd75dd3d03e9e150961cb",
+      "beforeLines": 7849,
+      "afterGitBlob": "a8d155fbd74f94dd361b837e306ae9fc6e1aa0bf",
+      "afterLines": 7881,
+      "baselineFixture": "scripts/fixtures/order-retired-confirmation/src/App.tsx"
+    }
+  }
+}
