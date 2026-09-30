@@ -596,7 +596,7 @@ export async function assertCatalogVariantMayDeactivate(db: D1Database, variantI
        ) AS open_order,
        EXISTS(
          SELECT 1 FROM workshop_tasks
-         WHERE variant_id = ? AND status = 'active'
+         WHERE variant_id = ? AND status IN ('active', 'ready')
          LIMIT 1
        ) AS open_workshop,
        EXISTS(
@@ -650,7 +650,7 @@ export async function assertCatalogProductMayDeactivate(db: D1Database, productI
        ) AS open_order,
        EXISTS(
          SELECT 1 FROM workshop_tasks
-         WHERE product_id = ? AND status = 'active'
+         WHERE product_id = ? AND status IN ('active', 'ready')
          LIMIT 1
        ) AS open_workshop,
        EXISTS(

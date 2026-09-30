@@ -1,0 +1,123 @@
+name: Catalog restore resumability Branch2 migration 0078
+
+on:
+  push:
+    branches:
+      - branch2
+    paths:
+      - '.github/workflows/catalog-restore-resumability-branch2-migration-0078.yml'
+      - 'migrations/0078_v72_catalog_restore_resumability.sql'
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: Apply 0078 to Branch2 D1 only
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout exact Branch2 commit
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on environment and migration scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "branch2" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo "Production D1 identity detected. Refusing 0078." >&2
+            exit 20
+          fi
+          migration='migrations/0078_v72_catalog_restore_resumability.sql'
+          grep -Fq 'idx_catalog_retirement_restores_single_started' "$migration"
+          grep -Fq "WHERE status = 'started'" "$migration"
+          if grep -Eiq '\b(UPDATE|DELETE[[:space:]]+FROM|INSERT[[:space:]]+INTO)\b' "$migration"; then
+            echo "0078 contains business-row mutation. Refusing migration." >&2
+            exit 21
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Preflight started-restore uniqueness and capture fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          duplicates="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT COUNT(*) AS duplicate_retirements
+            FROM (
+              SELECT retirement_id
+              FROM catalog_retirement_restores
+              WHERE status='started'
+              GROUP BY retirement_id
+              HAVING COUNT(*) > 1
+            );" --json)"
+          echo "$duplicates"
+          [[ "$(jq -r '.[0].results[0].duplicate_retirements' <<<"$duplicates")" == "0" ]]
+
+          result="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_total,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS stock_reserved_total,
+            (SELECT COUNT(*) FROM inventory_reservations WHERE status='active') AS active_reservations,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_reservations WHERE status='active') AS active_reserved_total,
+            (SELECT COUNT(*) FROM catalog_products WHERE is_active=1) AS active_products,
+            (SELECT COUNT(*) FROM catalog_variants WHERE is_active=1) AS active_variants,
+            (SELECT COUNT(*) FROM catalog_retirement_restores WHERE status='started') AS started_restores,
+            (SELECT COUNT(*) FROM catalog_retirement_restores WHERE status='completed') AS completed_restores" --json)"
+          echo "$result"
+          jq -cS '.[0].results[0]' <<<"$result" > /tmp/0078-before.json
+
+      - name: Apply restore resumability invariant
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file migrations/0078_v72_catalog_restore_resumability.sql
+
+      - name: Verify invariant and unchanged operational fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          schema="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT COUNT(*) AS index_count
+            FROM sqlite_master
+            WHERE type='index' AND name='idx_catalog_retirement_restores_single_started';" --json)"
+          echo "$schema"
+          [[ "$(jq -r '.[0].results[0].index_count' <<<"$schema")" == "1" ]]
+
+          result="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_total,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS stock_reserved_total,
+            (SELECT COUNT(*) FROM inventory_reservations WHERE status='active') AS active_reservations,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_reservations WHERE status='active') AS active_reserved_total,
+            (SELECT COUNT(*) FROM catalog_products WHERE is_active=1) AS active_products,
+            (SELECT COUNT(*) FROM catalog_variants WHERE is_active=1) AS active_variants,
+            (SELECT COUNT(*) FROM catalog_retirement_restores WHERE status='started') AS started_restores,
+            (SELECT COUNT(*) FROM catalog_retirement_restores WHERE status='completed') AS completed_restores" --json)"
+          after="$(jq -cS '.[0].results[0]' <<<"$result")"
+          before="$(cat /tmp/0078-before.json)"
+          [[ "$after" == "$before" ]] || {
+            echo "Operational fingerprint changed while applying 0078." >&2
+            echo "Before: $before" >&2
+            echo "After:  $after" >&2
+            exit 22
+          }
+          echo "0078 verified on Branch2 D1 only; restore rows and operational data unchanged."

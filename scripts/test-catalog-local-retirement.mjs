@@ -24,7 +24,8 @@ check(!retirement.includes("if (!gender) throw new Error('Не удалось о
 check(previewBody.includes('inventory_stock') && previewBody.includes('reserved_quantity'), 'local preview does not inspect Physical/Reserved')
 check(previewBody.includes("inventory_reservations") && previewBody.includes("r.status='active'"), 'local preview does not inspect active reservations')
 check(previewBody.includes('order_items') && previewBody.includes("shipping_status"), 'local preview does not block active unsent orders')
-check(previewBody.includes('workshop_tasks') && previewBody.includes("'active','ready'"), 'local preview does not block Workshop work')
+check(previewBody.includes('workshop_tasks') && previewBody.includes("wt.status = 'active'"), 'local preview does not block active Workshop work')
+check(!previewBody.includes("'active','ready'"), 'ready Workshop task must not block local retirement')
 check(previewBody.includes('inventory_lifecycle_events') && previewBody.includes("status='pending'"), 'local preview does not block pending lifecycle')
 check(previewBody.includes('inventory_stocktake_sessions') && previewBody.includes("s.status='active'"), 'local preview does not block active stocktake')
 

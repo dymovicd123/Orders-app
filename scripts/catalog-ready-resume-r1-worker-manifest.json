@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "revision": "catalog-ready-resume-r1",
+  "files": {
+    "worker/domains/catalog-retirement.ts": {
+      "beforeGitBlob": "7f0c58877881c347d781e74e3dc8d2ddde085d63",
+      "beforeLines": 914,
+      "afterGitBlob": "ee1ce0759e40729571f67bacba48068be88c81d0",
+      "afterLines": 956,
+      "baselineFixture": "scripts/fixtures/catalog-ready-resume-r1/worker/domains/catalog-retirement.ts"
+    },
+    "worker/domains/catalog.ts": {
+      "beforeGitBlob": "a6104fea945137c2d20fb39677b0e3aaa9279e48",
+      "beforeLines": 1528,
+      "afterGitBlob": "c6211565169df37c8bd459b134320cb6dcf9b60b",
+      "afterLines": 1528,
+      "baselineFixture": "scripts/fixtures/catalog-ready-resume-r1/worker/domains/catalog.ts"
+    }
+  }
+}

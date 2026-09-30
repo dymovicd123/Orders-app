@@ -14,7 +14,6 @@ type RetirementHistoryRow = {
   createdAt: string
   completedAt: string | null
   restoredAt: string | null
-  restorePending: boolean
   workingAgain: boolean
 }
 
@@ -149,7 +148,6 @@ export function CatalogRetirementHistory({ onCatalogChanged }: Props) {
               {!busy && !rows.length ? <div className="empty-state compact-empty">Удалённых товаров и исполнений пока нет.</div> : null}
               {!busy ? rows.map((row) => {
                 const working = Boolean(row.workingAgain)
-                const restorePending = Boolean(row.restorePending)
                 return (
                   <article className="catalog-retirement-history-row" key={row.id}>
                     <div className="catalog-retirement-history-copy">
@@ -163,12 +161,9 @@ export function CatalogRetirementHistory({ onCatalogChanged }: Props) {
                       {working ? (
                         <span className="soft-badge">{row.restoredAt ? 'Восстановлено' : 'Снова в каталоге'}</span>
                       ) : (
-                        <>
-                          {restorePending ? <span className="soft-badge">Восстановление не завершено</span> : null}
-                          <button className="secondary compact" type="button" disabled={Boolean(restoringId)} onClick={() => { setConfirmRow(row); setError(''); setNotice('') }}>
-                            {restorePending ? 'Продолжить' : 'Восстановить'}
-                          </button>
-                        </>
+                        <button className="secondary compact" type="button" disabled={Boolean(restoringId)} onClick={() => { setConfirmRow(row); setError(''); setNotice('') }}>
+                          Восстановить
+                        </button>
                       )}
                     </div>
                   </article>
@@ -178,12 +173,12 @@ export function CatalogRetirementHistory({ onCatalogChanged }: Props) {
 
             {confirmRow ? (
               <div className="catalog-retirement-restore-confirm">
-                <strong>{confirmRow.restorePending ? 'Продолжить восстановление?' : 'Вернуть в рабочий каталог?'}</strong>
-                <p><b>{labelFor(confirmRow)}</b> {confirmRow.restorePending ? 'будет безопасно довосстановлен' : 'будет создан заново'} как рабочая версия.</p>
+                <strong>Вернуть в рабочий каталог?</strong>
+                <p><b>{labelFor(confirmRow)}</b> будет создан заново как рабочая версия.</p>
                 <p>Старые заказы и история останутся привязаны к удалённой версии. Физический остаток и резерв начнутся с нуля.</p>
                 <div className="modal-actions">
                   <button className="primary" type="button" disabled={Boolean(restoringId)} onClick={() => void restore()}>
-                    {restoringId ? 'Восстанавливаю…' : confirmRow.restorePending ? 'Продолжить' : 'Восстановить'}
+                    {restoringId ? 'Восстанавливаю…' : 'Восстановить'}
                   </button>
                   <button className="secondary" type="button" disabled={Boolean(restoringId)} onClick={() => setConfirmRow(null)}>Отмена</button>
                 </div>

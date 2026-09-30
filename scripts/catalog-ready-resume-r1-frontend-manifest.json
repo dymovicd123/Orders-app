@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "revision": "catalog-ready-resume-ui-r1",
+  "files": {
+    "src/features/inventory/views/CatalogRetirementHistory.tsx": {
+      "beforeGitBlob": "9feb8632806684d96bac3ecfbe03f5c4068c0c71",
+      "beforeLines": 193,
+      "afterGitBlob": "a2f81ddd313fc346aca0e69ddb078c1cdb9c0338",
+      "afterLines": 198,
+      "baselineFixture": "scripts/fixtures/catalog-ready-resume-r1/src/features/inventory/views/CatalogRetirementHistory.tsx"
+    }
+  }
+}

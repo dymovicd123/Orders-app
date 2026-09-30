@@ -7,17 +7,32 @@ Branch represented by this file: **branch2**
 Этот файл — короткий актуальный checkpoint Branch2. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не являются текущим roadmap без сверки с GitHub.
 
 
+## STATUS UPDATE — 2026-09-30 — Workshop ready semantics + resumable restore
+
+Combined follow-up candidate closes the semantic correction and the restore-resumability gap:
+
+- Workshop retirement blocker is now **active-only** across exact-SKU, local-group and whole execution/product retirement. `ready` and `done` are completed Workshop states and do **not** block Catalog retirement by themselves; normal stock/reservation/open-order/lifecycle/stocktake blockers still apply independently.
+- read/write race guards were synchronized to the same active-only rule.
+- read-only Branch2 D1 audit run `36703729894` found **0** `catalog_retirement_restores.status='started'` rows and therefore no duplicate in-flight restores before the new invariant.
+- migration `0078_v72_catalog_restore_resumability.sql` adds one in-flight restore per retirement via a partial unique index; it is additive and rewrites no business rows.
+- `restoreCatalogRetirement()` now resumes an existing `started` restore by `retirement_id`, uses `INSERT OR IGNORE` under the single-started invariant for concurrent retries, reuses an already completed restore, and refuses to mark completion until the old→new SKU mapping count equals the retirement snapshot count.
+- retirement history now exposes `restorePending`; partial restore no longer becomes `workingAgain` merely because the product shell/execution is partly active. UI shows **«Восстановление не завершено» → «Продолжить»**.
+
+Validation run `36705047496`: cumulative `npm run release:check` — **success**; `npm run build` — **success**.
+
+This supersedes the earlier wording that `ready` Workshop tasks block deletion. Correct invariant: **only `active` Workshop work blocks deletion**.
+
 ## STATUS UPDATE — 2026-09-30 — Retirement integrity hardening
 
 Combined Branch2 hardening chunk completed on the candidate tree:
-- whole execution/product retirement now **fails closed on active/ready Workshop tasks** both at read preflight and again inside the write guard, matching the stricter local-group semantics;
+- historical note from PR #245: this initially used active/ready Workshop tasks; the newer checkpoint above corrects the rule to **active-only** across every retirement scope;
 - whole/local retirement detects inactive historical SKU rows that still carry non-zero Physical/Reserved or active reservation and blocks instead of silently ignoring corrupted operational state;
 - restore now performs the same inactive-SKU operational-integrity preflight before starting/resuming a restore;
 - race diagnostics now report Workshop/inactive-stock blockers explicitly instead of falling through to a generic concurrency error.
 
 Validation run `36702222809`: cumulative `npm run release:check` — **success**; build — **success**. Temporary validation workflow was removed after the run.
 
-This closes the earlier Workshop-retirement rule gap by choosing the safe invariant: **active/ready Workshop work blocks whole execution/product retirement**. It also closes the legacy inactive-SKU invariant-guard gap; the earlier Branch2 data audit already found 0 such live-stock anomalies.
+The Workshop wording in this older checkpoint is superseded by the newer active-only correction above. The inactive-SKU invariant-guard conclusion remains valid.
 
 ## STATUS UPDATE — 2026-09-30 — Legacy fixed-gender cleanup completed
 
@@ -82,10 +97,9 @@ Validation:
 
 Приоритетные оставшиеся gaps:
 1. **Open `catalog_retired` order recovery** — открытый заказ после retirement может остаться заблокированным без явного пути перепривязать его demand к fresh active generation и восстановить резерв.
-2. **Restore resumability/atomicity** — частичный сбой `restoreCatalogRetirement()` может оставить partly-active generation, а UI способен слишком рано считать объект «снова в каталоге».
-3. **Return/Exchange UX for historical retired SKU** — stock safety закрыта, но нужен явный операторский путь выбора fresh working identity вместо тупика.
-4. **Exact-SKU/local-group history visibility** — старые точечные/local retirement действия ещё не представлены в `Удалённые` так полно, как whole execution/product retirement.
-5. Отдельно от этой цепочки: стандартный Quality workflow всё ещё останавливается на **high-risk development-dependency audit** из-за dev-only Cloudflare toolchain/undici advisory chain; production-dependency audit проходит. Security gate не ослаблять ради зелёного CI.
+2. **Return/Exchange UX for historical retired SKU** — stock safety закрыта, но нужен явный операторский путь выбора fresh working identity вместо тупика.
+3. **Exact-SKU/local-group history visibility** — старые точечные/local retirement действия ещё не представлены в `Удалённые` так полно, как whole execution/product retirement.
+4. Отдельно от этой цепочки: стандартный Quality workflow всё ещё останавливается на **high-risk development-dependency audit** из-за dev-only Cloudflare toolchain/undici advisory chain; production-dependency audit проходит. Security gate не ослаблять ради зелёного CI.
 
 Уже закрыто и не должно возвращаться в roadmap без нового воспроизводимого дефекта:
 - fixed `male|female` gender-scope prevention + legacy wrong-gender cleanup;
