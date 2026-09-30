@@ -21,6 +21,7 @@ export type CatalogVariantGroupRetirementPreview = CatalogVariantGroupRetirement
   historicalOrderItemCount: number;
   openOrderItemCount: number;
   activeWorkshopTaskCount: number;
+  inactiveOperationalVariantCount: number;
   activeStocktake: boolean;
   pendingLifecycle: boolean;
 };
@@ -91,6 +92,15 @@ export async function previewCatalogVariantGroupRetirement(
             AND COALESCE(oi.quantity,0)>0) AS open_order_item_count,
        (SELECT COUNT(*) FROM workshop_tasks wt
           WHERE wt.variant_id IN (SELECT id FROM active_variants) AND wt.status IN ('active','ready')) AS active_workshop_task_count,
+       (SELECT COUNT(*) FROM inactive_variants iv
+          WHERE EXISTS (
+            SELECT 1 FROM inventory_stock s
+            WHERE s.variant_id=iv.id AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0)
+          )
+          OR EXISTS (
+            SELECT 1 FROM inventory_reservations r
+            WHERE r.variant_id=iv.id AND r.status='active' AND COALESCE(r.quantity,0)<>0
+          )) AS inactive_operational_variant_count,
        EXISTS(
          SELECT 1 FROM inventory_stocktake_items i
          JOIN inventory_stocktake_sessions s ON s.id=i.session_id
@@ -116,6 +126,7 @@ export async function previewCatalogVariantGroupRetirement(
     historicalOrderItemCount: Math.max(0, toInt(row?.historical_order_item_count, 0)),
     openOrderItemCount: Math.max(0, toInt(row?.open_order_item_count, 0)),
     activeWorkshopTaskCount: Math.max(0, toInt(row?.active_workshop_task_count, 0)),
+    inactiveOperationalVariantCount: Math.max(0, toInt(row?.inactive_operational_variant_count, 0)),
     activeStocktake: toInt(row?.active_stocktake, 0) === 1,
     pendingLifecycle: toInt(row?.pending_lifecycle, 0) === 1,
   };
@@ -257,6 +268,8 @@ export async function previewCatalogRetirement(
        SELECT id FROM catalog_variants v WHERE ${predicate}
      ), active_variants AS (
        SELECT id FROM catalog_variants v WHERE ${predicate} AND v.is_active = 1
+     ), inactive_variants AS (
+       SELECT id FROM all_variants WHERE id NOT IN (SELECT id FROM active_variants)
      )
      SELECT
        (SELECT COUNT(*) FROM active_variants) AS active_variant_count,
@@ -335,6 +348,12 @@ export async function retireCatalogEntity(
   }
 
   const preview = await previewCatalogRetirement(db, entityType, entityId);
+  if (preview.inactiveOperationalVariantCount > 0) {
+    throw new Error('Удаление остановлено: у ранее выведенной позиции найден живой остаток или резерв. Сначала разберите эту аномалию склада.');
+  }
+  if (preview.activeWorkshopTaskCount > 0) {
+    throw new Error('Нельзя удалить позицию, пока по ней есть незавершённая задача Цеха. Сначала завершите или отмените задачу.');
+  }
   const hasWorkingState = preview.active
     || preview.activeVariantCount > 0
     || preview.physicalQuantity !== 0
@@ -398,6 +417,25 @@ export async function retireCatalogEntity(
            JOIN catalog_variants v ON v.id=e.variant_id
            WHERE v.stock_position_id=sp.id AND v.is_active=1 AND e.status='pending'
          )
+         AND NOT EXISTS (
+           SELECT 1 FROM workshop_tasks wt
+           JOIN catalog_variants v ON v.id=wt.variant_id
+           WHERE v.stock_position_id=sp.id AND v.is_active=1 AND wt.status IN ('active','ready')
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM catalog_variants v
+           WHERE v.stock_position_id=sp.id AND v.is_active=0
+             AND (
+               EXISTS (
+                 SELECT 1 FROM inventory_stock s
+                 WHERE s.variant_id=v.id AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0)
+               )
+               OR EXISTS (
+                 SELECT 1 FROM inventory_reservations r
+                 WHERE r.variant_id=v.id AND r.status='active' AND COALESCE(r.quantity,0)<>0
+               )
+             )
+         )
          AND NOT EXISTS (SELECT 1 FROM catalog_retirement_operations op WHERE op.request_id=?)`
     ).bind(requestId, reason, actor, now, entityId, requestId)
     : db.prepare(
@@ -419,6 +457,25 @@ export async function retireCatalogEntity(
            SELECT 1 FROM inventory_lifecycle_events e
            JOIN catalog_variants v ON v.id=e.variant_id
            WHERE v.product_id=p.id AND v.is_active=1 AND e.status='pending'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM workshop_tasks wt
+           JOIN catalog_variants v ON v.id=wt.variant_id
+           WHERE v.product_id=p.id AND v.is_active=1 AND wt.status IN ('active','ready')
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM catalog_variants v
+           WHERE v.product_id=p.id AND v.is_active=0
+             AND (
+               EXISTS (
+                 SELECT 1 FROM inventory_stock s
+                 WHERE s.variant_id=v.id AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0)
+               )
+               OR EXISTS (
+                 SELECT 1 FROM inventory_reservations r
+                 WHERE r.variant_id=v.id AND r.status='active' AND COALESCE(r.quantity,0)<>0
+               )
+             )
          )
          AND NOT EXISTS (SELECT 1 FROM catalog_retirement_operations op WHERE op.request_id=?)`
     ).bind(requestId, reason, actor, now, entityId, requestId);
@@ -579,6 +636,8 @@ export async function retireCatalogEntity(
       || fresh.physicalQuantity !== 0
       || fresh.stockReservedQuantity !== 0
       || fresh.activeReservationQuantity > 0;
+    if (fresh.inactiveOperationalVariantCount > 0) throw new Error('Удаление не выполнено: обнаружен живой остаток или резерв у уже неактивной позиции. Сначала разберите аномалию склада.');
+    if (fresh.activeWorkshopTaskCount > 0) throw new Error('Удаление не выполнено: появилась незавершённая задача Цеха. Сначала завершите или отмените её.');
     if (!freshHasWorkingState) return { ok: true, alreadyRetired: true, requestId, entityType, entityId };
     if (fresh.activeStocktake) throw new Error('Удаление не выполнено: началась ревизия этой позиции. Завершите или отмените её и повторите.');
     if (fresh.pendingLifecycle) throw new Error('Удаление не выполнено: появилась незавершённая приёмка/возврат. Завершите её и повторите.');
@@ -690,6 +749,8 @@ export async function restoreCatalogRetirement(
     throw new Error('Завершённая запись удаления не найдена.');
   }
 
+  const retirementEntityType: CatalogRetirementEntityType = cleanText(operation.entity_type) === 'product' ? 'product' : 'execution';
+
   const existingRestore = await db.prepare(
     `SELECT id, retirement_id, request_id, status, restored_variant_count, completed_at
      FROM catalog_retirement_restores
@@ -707,6 +768,11 @@ export async function restoreCatalogRetirement(
       restoredVariantCount: Math.max(0, toInt(existingRestore.restored_variant_count, 0)),
       completedAt: cleanText(existingRestore.completed_at) || null,
     };
+  }
+
+  const integrityPreview = await previewCatalogRetirement(db, retirementEntityType, toInt(operation.entity_id, 0));
+  if (integrityPreview.inactiveOperationalVariantCount > 0) {
+    throw new Error('Восстановление остановлено: у исторической неактивной позиции найден живой остаток или резерв. Сначала разберите аномалию склада.');
   }
 
   const productId = toInt(operation.product_id, 0);
