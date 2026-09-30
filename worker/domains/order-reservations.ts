@@ -145,6 +145,34 @@ export type ResolvedOrderCatalogReference = {
   inputKey?: string;
 };
 
+export type OrderRetiredCatalogConfirmationItem = {
+  inputIndex: number;
+  confirmationKey: string;
+  entityType: 'product' | 'execution' | 'variant';
+  productName: string;
+  category: string;
+  gender: string;
+  color: string;
+  material: string;
+  length: string;
+  size: string;
+};
+
+export class OrderRetiredCatalogConfirmationError extends Error {
+  readonly code = 'order_retired_catalog_confirmation_required';
+  readonly status = 409;
+  readonly items: OrderRetiredCatalogConfirmationItem[];
+
+  constructor(items: OrderRetiredCatalogConfirmationItem[]) {
+    const first = items[0];
+    const label = first?.productName ? ` «${first.productName}»` : '';
+    const suffix = items.length > 1 ? ` Ещё удалённых позиций: ${items.length - 1}.` : '';
+    super(`Позиция${label} раньше была удалена из рабочего каталога. Подтвердите, что хотите вернуть её как новую рабочую позицию без старых остатков и резервов.${suffix}`);
+    this.name = 'OrderRetiredCatalogConfirmationError';
+    this.items = items;
+  }
+}
+
 
 export function catalogOrderInputKey(item: ReturnType<typeof normalizeOrderItems>[number]) {
   return [
@@ -239,6 +267,89 @@ export async function loadCatalogKnownFacts(db: D1Database) {
       return identity ? (byKind.get(kind)?.get(identity) || '') : ''
     },
   }
+}
+
+
+export async function inspectOrderRetiredCatalogIdentityV2(
+  db: D1Database,
+  item: ReturnType<typeof normalizeOrderItems>[number],
+): Promise<Omit<OrderRetiredCatalogConfirmationItem, 'inputIndex'> | null> {
+  if (!await isCatalogIdentityV3Enabled(db)) return null;
+  const confirmationKey = catalogOrderInputKey(item);
+
+  let product = await findCatalogProductByIdentity(db, item.productName, 0, { activeOnly: true }) as { id: number; name: string; category: string } | null;
+  if (!product?.id) {
+    const historical = await findCatalogProductByIdentity(db, item.productName, 0, { allowAlias: false }) as { id: number; name: string; category: string } | null;
+    if (!historical?.id) return null;
+    const inactive = await db.prepare(
+      `SELECT id, name, category
+       FROM catalog_products
+       WHERE id = ? AND is_active = 0
+       LIMIT 1`
+    ).bind(historical.id).first<{ id: number; name: string; category: string }>();
+    if (!inactive?.id) return null;
+    return {
+      confirmationKey,
+      entityType: 'product',
+      productName: cleanText(inactive.name) || item.productName,
+      category: normalizeAudienceCategory(item.category, item.size),
+      gender: normalizeCatalogCombinationGender(item.gender),
+      color: normalizeCatalogCombinationColor(item.color),
+      material: canonicalStockPositionValue(item.material),
+      length: canonicalStockPositionValue(item.length),
+      size: normalizeCatalogCombinationSize(item.size),
+    };
+  }
+
+  const category = normalizeAudienceCategory(item.category, item.size);
+  const material = canonicalStockPositionValue(await resolveCatalogValueAlias(db, 'material', canonicalStockPositionValue(item.material)));
+  const length = canonicalStockPositionValue(await resolveCatalogValueAlias(db, 'length', canonicalStockPositionValue(item.length)));
+  let gender = normalizeCatalogCombinationGender(item.gender);
+  if (!gender) {
+    gender = catalogGenderForProductScope(await getCatalogProductGenderScope(db, product.id));
+  }
+  const color = normalizeCatalogCombinationColor(await resolveCatalogValueAlias(db, 'color', normalizeCatalogCombinationColor(item.color)));
+  const sizeKind = category === 'child' ? 'child_age' : 'size';
+  const size = normalizeCatalogCombinationSize(await resolveCatalogValueAlias(db, sizeKind, normalizeCatalogCombinationSize(item.size)));
+
+  // If the input is incomplete, the normal resolver will ask for clarification and cannot
+  // silently recreate an exact retired SKU. Do not manufacture a retirement confirmation
+  // from incomplete evidence.
+  if (!material || !length || !gender || !color || !size) return null;
+
+  const activeExecution = await findCatalogExecutionV3(db, product.id, material, length);
+  if (!activeExecution?.id) {
+    const retiredExecution = await findRetiredCatalogExecutionV3(db, product.id, material, length);
+    if (!retiredExecution?.id) return null;
+    return {
+      confirmationKey,
+      entityType: 'execution',
+      productName: cleanText(product.name) || item.productName,
+      category,
+      gender,
+      color,
+      material,
+      length,
+      size,
+    };
+  }
+
+  const activeVariant = await findCatalogCombinationV3(db, activeExecution.id, category, gender, color, size);
+  if (activeVariant?.id) return null;
+
+  const retiredVariant = await findRetiredCatalogCombinationV3(db, activeExecution.id, category, gender, color, size);
+  if (!retiredVariant?.id) return null;
+  return {
+    confirmationKey,
+    entityType: 'variant',
+    productName: cleanText(product.name) || item.productName,
+    category,
+    gender,
+    color,
+    material,
+    length,
+    size,
+  };
 }
 
 
