@@ -7,6 +7,7 @@ on:
     paths:
       - 'worker/domains/catalog-review.ts'
       - 'worker/domains/lifecycle.ts'
+      - 'worker/domains/warehouse-attention.ts'
       - 'worker/domains/order-reservations.ts'
       - 'src/app/types.ts'
       - 'shared/api-contracts.ts'
@@ -17,6 +18,7 @@ on:
       - 'scripts/test-stage01-pending-lifecycle-current-links-r11.mjs'
       - 'scripts/test-stage01-resolver-active-reservation-r12.mjs'
       - 'scripts/test-stage01-postfix-cross-regression.mjs'
+      - 'scripts/test-step192b2a2-attention-context.mjs'
       - 'scripts/release-check.mjs'
       - 'scripts/test-step1906a-worker-modularization.mjs'
       - 'scripts/test-step1906b-frontend-modularization.mjs'
