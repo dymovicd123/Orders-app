@@ -84,6 +84,14 @@ const withoutClientReconciliation = result => {
   const reports = { ...(stableResult.reports || {}) }
   delete reports.paymentMethodReconciliation
   delete reports.paymentReconciliationByDay
+  // Stage03 adds pricing-coverage metadata to the legacy product rows even when the pricing schema is absent.
+  // Strip only those additive compatibility fields for baseline parity; selected/full report parity below still checks the live rows exactly.
+  if (Array.isArray(reports.products)) {
+    reports.products = reports.products.map((row) => {
+      const { itemized_gross_sales, itemized_order_count, legacy_order_count, ...legacyRow } = row
+      return legacyRow
+    })
+  }
   return { ...stableResult, reports }
 }
 const canonicalMethod = value => {
@@ -163,7 +171,7 @@ for (const range of [['2026-09-01','2026-09-30'],['2026-08-01','2026-10-01'],['2
   url.searchParams.delete('scope'); url.searchParams.delete('reportType')
   const full = await baseline(adapter,url)
   const currentFull = await current(adapter,url)
-  assert.deepEqual(withoutClientReconciliation(currentFull),stable(full),'legacy full response parity outside the two intentional additive reconciliation fields')
+  assert.deepEqual(withoutClientReconciliation(currentFull),stable(full),'legacy full response parity outside intentional additive reconciliation/pricing fields')
   assertClientReconciliation(currentFull)
   for (const reportType of Object.keys(fields)) {
     queryReads.length = 0; auxiliaryReads.length = 0
@@ -184,7 +192,7 @@ for (const range of [['2026-09-01','2026-09-30'],['2026-08-01','2026-10-01'],['2
   }
   url.searchParams.set('reportType','unknown')
   const unknown = await current(adapter,url)
-  assert.deepEqual(withoutClientReconciliation(unknown),stable(full),'unknown type keeps legacy full contract outside intentional reconciliation fields')
+  assert.deepEqual(withoutClientReconciliation(unknown),stable(full),'unknown type keeps legacy full contract outside intentional reconciliation/pricing fields')
   assertClientReconciliation(unknown)
   url.searchParams.set('scope','finance'); url.searchParams.set('reportType','products')
   const financeWorkspaceCurrent = await current(adapter,url)
