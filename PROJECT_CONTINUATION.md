@@ -7,6 +7,18 @@ Branch represented by this file: **branch2**
 Этот файл — короткий актуальный checkpoint Branch2. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не являются текущим roadmap без сверки с GitHub.
 
 
+## STATUS UPDATE — 2026-09-30 — Branch2 read-only retirement data audit
+
+Read-only Branch2 D1 audit run `36699118208` completed **successfully** against verified Branch2 identity only (`orders-app-branch2` / `orders_db_branch2` / `40065052-854e-44b8-bcd5-251bdd488301`). The audit wrote **0 rows**.
+
+Findings:
+- **13 active wrong-gender variants** still exist under fixed product gender scope; all 13 are operationally clean for local retirement: Physical=0, stock Reserved=0, active reservations=0, open unsent order items=0, active/ready Workshop tasks=0, pending lifecycle=0, active stocktake=0.
+- The 13 rows are 13 distinct local groups across: `АЙДАР БОМБЕР` (4 female groups under male scope), `АЙДАР ШАПАН` (4 male groups under female scope), `СӘУКЕЛЕ ШАПАН` (4 male groups under female scope), `ҚОЗЫ КӨРПЕШ ШАПАН` (1 female group under male scope).
+- **0 inactive variants with live Physical/Reserved/active reservation** were found.
+- Runtime prevention from PR #240/#241/#242 is already deployed, so these are legacy data only; new ordinary creation paths should not recreate them.
+
+Next safe action: retire exactly these 13 zero-footprint wrong-gender groups on Branch2 with a guarded, evidence-bound correction; do not rewrite order/history/stock facts. After that, continue toward a fresh main candidate for Catalog deletion rather than merging Branch2 wholesale.
+
 ## STATUS UPDATE — 2026-09-30 — Catalog retirement / restore chain
 
 Последний завершённый runtime/business baseline этой цепочки: **`7933aba9940c82884d83e2f282bc4782964497a3`**, PR #239.  
