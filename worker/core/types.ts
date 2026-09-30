@@ -24,6 +24,7 @@ export type OrderInput = {
   sourceType?: 'warehouse' | 'boutique';
   orderTotal?: number;
   pricingMode?: 'legacy_manual_total' | 'itemized_v1';
+  retiredCatalogRecreateKeys?: string[];
   workshopStatus?: 'in_workshop' | 'ready' | 'shipped' | 'cancelled';
   orderStatus?: 'active' | 'closed' | 'archived' | 'deleted';
   shippingStatus?: 'not_sent' | 'sent' | 'Не отправлено' | 'Отправлено';
