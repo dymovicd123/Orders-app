@@ -3,7 +3,7 @@
 import type { CatalogReferenceOptions, CatalogResolutionContext, CatalogResolutionResponse } from '../../shared/api-contracts.ts'
 import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, normalizeOrderStatus, normalizeShippingStatus, normalizeSourceType, toInt, upperText } from '../core/text.ts'
 import type { ReferenceKind } from '../core/types.ts'
-import { assertCatalogProductAliasTargetAvailable, catalogGenderForProductScope, catalogReferenceDbValueExists, createCatalogCombinationV3, createCatalogProduct, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, getCatalogProductGenderScope, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, normalizeCatalogProductGenderScope, rememberCatalogProductAlias, rememberCatalogValueAlias, resolveCatalogValueAlias } from './catalog.ts'
+import { assertCatalogGenderAllowedForScope, assertCatalogProductAliasTargetAvailable, catalogGenderForProductScope, catalogReferenceDbValueExists, createCatalogCombinationV3, createCatalogProduct, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, getCatalogProductGenderScope, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, normalizeCatalogProductGenderScope, rememberCatalogProductAlias, rememberCatalogValueAlias, resolveCatalogValueAlias } from './catalog.ts'
 import { normalizeOrderItems } from './order-core.ts'
 import { releaseOrderReservationV2, reserveOrderItemV2, resolveCatalogProductAndVariantV2, resolveWorkshopCatalogProductOnly } from './order-reservations.ts'
 import { upsertReferenceValue } from './references.ts'
@@ -434,6 +434,8 @@ export async function resolveCatalogReviewFacts(
     }
     return { ok: true, linked: workshopLinked, workshopLinked, message: `Цеховая позиция связана с товаром «${cleanText(product.name)}». Складская комбинация для неё не требуется.` };
   }
+
+  assertCatalogGenderAllowedForScope(requestedGenderScope || 'unisex', gender, product?.name || requestedProductName);
 
   const legacyGenderException = Boolean(legacyUnknownGender && product?.id && requestedGenderScope === 'unisex' && !gender);
   if (legacyUnknownGender && !legacyGenderException) {
