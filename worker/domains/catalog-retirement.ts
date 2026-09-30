@@ -62,6 +62,7 @@ function catalogVariantGroupBlockerMessage(preview: CatalogVariantGroupRetiremen
   }
   if (preview.openOrderItemCount > 0) blockers.push('есть активный неотправленный заказ');
   if (preview.activeWorkshopTaskCount > 0) blockers.push('есть незавершённая задача Цеха');
+  if (preview.inactiveOperationalVariantCount > 0) blockers.push('у уже неактивной позиции есть живой остаток или резерв');
   if (preview.pendingLifecycle) blockers.push('есть незавершённая приёмка или возврат');
   if (preview.activeStocktake) blockers.push('позиция участвует в текущей ревизии');
   return blockers;
@@ -78,6 +79,8 @@ export async function previewCatalogVariantGroupRetirement(
        SELECT v.id FROM catalog_variants v WHERE ${predicate}
      ), active_variants AS (
        SELECT v.id FROM catalog_variants v WHERE ${predicate} AND v.is_active = 1
+     ), inactive_variants AS (
+       SELECT id FROM all_variants WHERE id NOT IN (SELECT id FROM active_variants)
      )
      SELECT
        (SELECT COUNT(*) FROM active_variants) AS active_variant_count,
@@ -226,6 +229,7 @@ export type CatalogRetirementPreview = {
   historicalOrderItemCount: number;
   openOrderItemCount: number;
   activeWorkshopTaskCount: number;
+  inactiveOperationalVariantCount: number;
   activeStocktake: boolean;
   pendingLifecycle: boolean;
 };
@@ -284,6 +288,15 @@ export async function previewCatalogRetirement(
             AND COALESCE(oi.quantity,0)>0) AS open_order_item_count,
        (SELECT COUNT(*) FROM workshop_tasks wt
           WHERE wt.variant_id IN (SELECT id FROM active_variants) AND wt.status IN ('active','ready')) AS active_workshop_task_count,
+       (SELECT COUNT(*) FROM inactive_variants iv
+          WHERE EXISTS (
+            SELECT 1 FROM inventory_stock s
+            WHERE s.variant_id=iv.id AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0)
+          )
+          OR EXISTS (
+            SELECT 1 FROM inventory_reservations r
+            WHERE r.variant_id=iv.id AND r.status='active' AND COALESCE(r.quantity,0)<>0
+          )) AS inactive_operational_variant_count,
        EXISTS(
          SELECT 1 FROM inventory_stocktake_items i
          JOIN inventory_stocktake_sessions s ON s.id=i.session_id
@@ -312,6 +325,7 @@ export async function previewCatalogRetirement(
     historicalOrderItemCount: Math.max(0, toInt(row?.historical_order_item_count, 0)),
     openOrderItemCount: Math.max(0, toInt(row?.open_order_item_count, 0)),
     activeWorkshopTaskCount: Math.max(0, toInt(row?.active_workshop_task_count, 0)),
+    inactiveOperationalVariantCount: Math.max(0, toInt(row?.inactive_operational_variant_count, 0)),
     activeStocktake: toInt(row?.active_stocktake, 0) === 1,
     pendingLifecycle: toInt(row?.pending_lifecycle, 0) === 1,
   };
