@@ -1,0 +1,162 @@
+name: Production Stage03 readiness read-only audit
+
+on:
+  push:
+    branches:
+      - audit/prod-stage03-readiness-20260930
+    paths:
+      - '.github/workflows/prod-stage03-readiness-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Read-only Production Stage03 audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Hard-stop on Production identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "audit/prod-stage03-readiness-20260930" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders_db_branch2' wrangler.jsonc || grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc; then
+            echo "Branch2 D1 identity detected. Refusing Production audit." >&2
+            exit 20
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - run: npm ci
+
+      - name: Read-only Production pricing coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+          WITH active_scopes AS (
+            SELECT DISTINCT
+              p.id AS product_id,
+              p.name AS product_name,
+              sp.id AS stock_position_id,
+              COALESCE(v.category,'adult') AS category
+            FROM catalog_products p
+            JOIN catalog_stock_positions sp ON sp.product_id=p.id AND sp.is_active=1
+            JOIN catalog_variants v ON v.stock_position_id=sp.id AND v.is_active=1
+            WHERE p.is_active=1
+          ),
+          scope_prices AS (
+            SELECT
+              s.*,
+              cep.cost_price,
+              cep.sale_price
+            FROM active_scopes s
+            LEFT JOIN catalog_execution_prices cep
+              ON cep.stock_position_id=s.stock_position_id
+             AND cep.category=s.category
+          ),
+          product_rollup AS (
+            SELECT
+              product_id,
+              product_name,
+              COUNT(*) AS active_scopes,
+              SUM(CASE WHEN cost_price IS NOT NULL OR sale_price IS NOT NULL THEN 1 ELSE 0 END) AS scopes_with_any_price,
+              SUM(CASE WHEN cost_price IS NOT NULL THEN 1 ELSE 0 END) AS scopes_with_cost,
+              SUM(CASE WHEN sale_price IS NOT NULL THEN 1 ELSE 0 END) AS scopes_with_sale,
+              SUM(CASE WHEN cost_price IS NOT NULL AND sale_price IS NOT NULL THEN 1 ELSE 0 END) AS scopes_with_both
+            FROM scope_prices
+            GROUP BY product_id, product_name
+          )
+          SELECT
+            (SELECT COUNT(*) FROM catalog_products WHERE is_active=1) AS active_products_total,
+            (SELECT COUNT(*) FROM product_rollup) AS active_products_with_active_sku,
+            SUM(CASE WHEN scopes_with_any_price>0 THEN 1 ELSE 0 END) AS products_with_any_price,
+            SUM(CASE WHEN scopes_with_sale>0 THEN 1 ELSE 0 END) AS products_with_sale_price,
+            SUM(CASE WHEN scopes_with_cost>0 THEN 1 ELSE 0 END) AS products_with_cost_price,
+            SUM(CASE WHEN scopes_with_both>0 THEN 1 ELSE 0 END) AS products_with_both_on_any_scope,
+            SUM(CASE WHEN scopes_with_sale=active_scopes THEN 1 ELSE 0 END) AS products_fully_sale_priced,
+            SUM(CASE WHEN scopes_with_both=active_scopes THEN 1 ELSE 0 END) AS products_fully_cost_and_sale_priced,
+            SUM(active_scopes) AS active_execution_category_scopes,
+            SUM(scopes_with_sale) AS scopes_with_sale_price,
+            SUM(scopes_with_cost) AS scopes_with_cost_price,
+            SUM(scopes_with_both) AS scopes_with_both_prices
+          FROM product_rollup;
+
+          WITH active_scopes AS (
+            SELECT DISTINCT
+              p.id AS product_id,
+              p.name AS product_name,
+              sp.id AS stock_position_id,
+              COALESCE(v.category,'adult') AS category
+            FROM catalog_products p
+            JOIN catalog_stock_positions sp ON sp.product_id=p.id AND sp.is_active=1
+            JOIN catalog_variants v ON v.stock_position_id=sp.id AND v.is_active=1
+            WHERE p.is_active=1
+          ),
+          product_rollup AS (
+            SELECT
+              s.product_id,
+              s.product_name,
+              COUNT(*) AS active_scopes,
+              SUM(CASE WHEN cep.cost_price IS NOT NULL OR cep.sale_price IS NOT NULL THEN 1 ELSE 0 END) AS scopes_with_any_price,
+              SUM(CASE WHEN cep.sale_price IS NOT NULL THEN 1 ELSE 0 END) AS scopes_with_sale,
+              SUM(CASE WHEN cep.cost_price IS NOT NULL THEN 1 ELSE 0 END) AS scopes_with_cost,
+              SUM(CASE WHEN cep.cost_price IS NOT NULL AND cep.sale_price IS NOT NULL THEN 1 ELSE 0 END) AS scopes_with_both
+            FROM active_scopes s
+            LEFT JOIN catalog_execution_prices cep
+              ON cep.stock_position_id=s.stock_position_id AND cep.category=s.category
+            GROUP BY s.product_id, s.product_name
+          )
+          SELECT product_id, product_name, active_scopes, scopes_with_any_price, scopes_with_sale, scopes_with_cost, scopes_with_both
+          FROM product_rollup
+          ORDER BY product_name;
+
+          SELECT
+            COUNT(*) AS price_rows_total,
+            SUM(CASE WHEN cost_price IS NOT NULL OR sale_price IS NOT NULL THEN 1 ELSE 0 END) AS price_rows_with_any_value,
+            SUM(CASE WHEN cost_price IS NOT NULL THEN 1 ELSE 0 END) AS price_rows_with_cost,
+            SUM(CASE WHEN sale_price IS NOT NULL THEN 1 ELSE 0 END) AS price_rows_with_sale,
+            SUM(CASE WHEN cost_price IS NOT NULL AND sale_price IS NOT NULL THEN 1 ELSE 0 END) AS price_rows_with_both
+          FROM catalog_execution_prices;
+          " --json
+
+      - name: Read-only Production schema and financial fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+          SELECT
+            EXISTS(SELECT 1 FROM pragma_table_info('orders') WHERE name='pricing_mode') AS has_orders_pricing_mode,
+            EXISTS(SELECT 1 FROM pragma_table_info('order_items') WHERE name='catalog_price_snapshot') AS has_item_snapshot,
+            EXISTS(SELECT 1 FROM pragma_table_info('retained_order_summaries') WHERE name='pricing_mode') AS has_retained_pricing_mode,
+            EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='catalog_execution_prices') AS has_execution_prices;
+
+          SELECT
+            (SELECT COUNT(*) FROM orders) AS live_orders,
+            (SELECT COUNT(*) FROM order_items) AS order_items,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS total_amount_sum,
+            (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS received_amount_sum,
+            (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS debt_amount_sum,
+            (SELECT COUNT(*) FROM retained_order_summaries) AS retained_rows;
+
+          SELECT name
+          FROM d1_migrations
+          WHERE name IN (
+            '0072_v72_catalog_execution_prices.sql',
+            '0073_v72_order_item_pricing_foundation.sql',
+            '0074_v72_retained_order_pricing_mode.sql'
+          )
+          ORDER BY name;
+          " --json
