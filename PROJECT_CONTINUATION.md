@@ -7,6 +7,18 @@ Branch represented by this file: **branch2**
 Этот файл — короткий актуальный checkpoint Branch2. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не являются текущим roadmap без сверки с GitHub.
 
 
+## STATUS UPDATE — 2026-09-30 — Retirement integrity hardening
+
+Combined Branch2 hardening chunk completed on the candidate tree:
+- whole execution/product retirement now **fails closed on active/ready Workshop tasks** both at read preflight and again inside the write guard, matching the stricter local-group semantics;
+- whole/local retirement detects inactive historical SKU rows that still carry non-zero Physical/Reserved or active reservation and blocks instead of silently ignoring corrupted operational state;
+- restore now performs the same inactive-SKU operational-integrity preflight before starting/resuming a restore;
+- race diagnostics now report Workshop/inactive-stock blockers explicitly instead of falling through to a generic concurrency error.
+
+Validation run `36702222809`: cumulative `npm run release:check` — **success**; build — **success**. Temporary validation workflow was removed after the run.
+
+This closes the earlier Workshop-retirement rule gap by choosing the safe invariant: **active/ready Workshop work blocks whole execution/product retirement**. It also closes the legacy inactive-SKU invariant-guard gap; the earlier Branch2 data audit already found 0 such live-stock anomalies.
+
 ## STATUS UPDATE — 2026-09-30 — Legacy fixed-gender cleanup completed
 
 Guarded Branch2 D1 correction run `36699491214` completed **successfully** after the read-only audit.
@@ -69,14 +81,16 @@ Validation:
 ### Ещё не решено
 
 Приоритетные оставшиеся gaps:
-1. **Fixed product gender-scope prevention** — PR #239 позволяет удалить ошибочную подгруппу, но нужно отдельно закрыть повторное создание противоположного пола для действительно fixed `gender_scope=male|female`, не ломая unisex/R11.
-2. **Open `catalog_retired` order recovery** — открытый заказ после retirement может остаться заблокированным без явного пути перепривязать его demand к fresh active generation и восстановить резерв.
-3. **Restore resumability/atomicity** — частичный сбой `restoreCatalogRetirement()` может оставить partly-active generation, а UI способен слишком рано считать объект «снова в каталоге».
-4. **Legacy inactive SKU + non-zero stock audit** — новые write-paths закрыты, но нужен read-only Branch2 D1 audit старых аномалий и guarded correction only if evidence exists.
-5. **Workshop retirement rule** — whole execution/product preview считает active Workshop tasks, но окончательное blocker/warning поведение не зафиксировано.
-6. **Return/Exchange UX for historical retired SKU** — stock safety закрыта, но нужен явный операторский путь выбора fresh working identity вместо тупика.
-7. **Exact-SKU/local-group history visibility** — старые точечные/local retirement действия ещё не представлены в `Удалённые` так полно, как whole execution/product retirement.
-8. Отдельно от этой цепочки: стандартный Quality workflow всё ещё останавливается на **high-risk development-dependency audit**; production-dependency audit проходит. Security gate не ослаблять ради зелёного CI.
+1. **Open `catalog_retired` order recovery** — открытый заказ после retirement может остаться заблокированным без явного пути перепривязать его demand к fresh active generation и восстановить резерв.
+2. **Restore resumability/atomicity** — частичный сбой `restoreCatalogRetirement()` может оставить partly-active generation, а UI способен слишком рано считать объект «снова в каталоге».
+3. **Return/Exchange UX for historical retired SKU** — stock safety закрыта, но нужен явный операторский путь выбора fresh working identity вместо тупика.
+4. **Exact-SKU/local-group history visibility** — старые точечные/local retirement действия ещё не представлены в `Удалённые` так полно, как whole execution/product retirement.
+5. Отдельно от этой цепочки: стандартный Quality workflow всё ещё останавливается на **high-risk development-dependency audit** из-за dev-only Cloudflare toolchain/undici advisory chain; production-dependency audit проходит. Security gate не ослаблять ради зелёного CI.
+
+Уже закрыто и не должно возвращаться в roadmap без нового воспроизводимого дефекта:
+- fixed `male|female` gender-scope prevention + legacy wrong-gender cleanup;
+- read-only inactive-SKU/non-zero-stock audit и runtime quarantine guard;
+- whole execution/product Workshop rule: active/ready task = hard blocker.
 
 Каноническая подробная записка:
 `docs/continuation/CATALOG_RETIREMENT_CHAIN_AUDIT_20260930.md`.
