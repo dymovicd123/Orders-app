@@ -2,6 +2,7 @@ import type { InventoryRenderContext } from './types'
 import { renderInventoryCatalogPanel as renderLegacyInventoryCatalogPanel } from './catalogLegacyAdminModes'
 import { CatalogPolishExecutionGroups, pluralRu } from './catalogPolishExecutionGroups'
 import { CatalogRetirementAction } from './CatalogRetirementAction'
+import { CatalogRetirementHistory } from './CatalogRetirementHistory'
 
 type PanelContext = Pick<InventoryRenderContext,
   | 'catalogActiveProducts'
@@ -365,6 +366,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
           <p>Каталог, цвета, размеры и другие характеристики.</p>
         </div>
         <div className="w6-catalog-head-actions">
+          {isAdmin ? <CatalogRetirementHistory onCatalogChanged={() => loadCatalogData(true)} /> : null}
           <button className="secondary compact" type="button" onClick={() => void loadCatalogData(true)}>Обновить</button>
         </div>
       </div>
