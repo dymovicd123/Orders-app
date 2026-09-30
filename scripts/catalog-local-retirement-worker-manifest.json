@@ -5,8 +5,8 @@
     "worker/domains/catalog-retirement.ts": {
       "beforeGitBlob": "11577b03a61d7b08c2ebe390ed65500d7b0487b9",
       "beforeLines": 632,
-      "afterGitBlob": "3047b4ec60e8bb3c79411267db1added26fff089",
-      "afterLines": 828,
+      "afterGitBlob": "172b709c83ae8070e314e2dcde2681a619d5f12f",
+      "afterLines": 827,
       "baselineFixture": "scripts/fixtures/catalog-local-retirement/worker/domains/catalog-retirement.ts"
     },
     "worker/domains/catalog.ts": {
