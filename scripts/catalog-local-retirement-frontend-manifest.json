@@ -6,8 +6,8 @@
       "mode": "replace",
       "beforeGitBlob": "f6468d5131f0597d09f91acabdeab07ad0bc91c4",
       "beforeLines": 560,
-      "afterGitBlob": "fd0eadc5a054b5b281af0d04c52011d1cc3c927a",
-      "afterLines": 580,
+      "afterGitBlob": "68d0ead3349c694e6cfd1c9ed0e3ef151387d6f6",
+      "afterLines": 583,
       "baselineFixture": "scripts/fixtures/catalog-local-retirement/src/features/inventory/views/catalogPolishExecutionGroups.tsx"
     },
     "src/styles/w6-3-catalog-polish.css": {
@@ -20,8 +20,8 @@
     },
     "src/features/inventory/views/CatalogVariantGroupRetirementAction.tsx": {
       "mode": "add",
-      "afterGitBlob": "39064fd69553eb37b5f14960d1dd62749f77f1ad",
-      "afterLines": 196
+      "afterGitBlob": "4ac49619d7d25108f498814d84247fadba8d80dc",
+      "afterLines": 200
     }
   }
 }
