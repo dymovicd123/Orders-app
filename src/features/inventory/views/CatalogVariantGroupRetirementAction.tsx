@@ -18,7 +18,9 @@ type Props = {
   executionId: number
   category: string
   gender: string
+  genderLabel?: string
   color: string
+  colorLabel?: string
   disabled?: boolean
   onRetired?: () => void | boolean | Promise<void | boolean>
 }
@@ -37,7 +39,9 @@ export function CatalogVariantGroupRetirementAction({
   executionId,
   category,
   gender,
+  genderLabel,
   color,
+  colorLabel,
   disabled = false,
   onRetired,
 }: Props) {
@@ -142,7 +146,7 @@ export function CatalogVariantGroupRetirementAction({
               <span className="card-label">Локальное удаление</span>
               <h3 id="catalog-local-retirement-title">Удалить только эту группу?</h3>
               <p>
-                <strong>{color} · {gender}</strong> исчезнет только из текущего исполнения. Другие цвета, пол и исполнения не изменятся.
+                <strong>{colorLabel || color || 'Цвет не указан'} · {genderLabel || gender || 'Пол не указан'}</strong> исчезнет только из текущего исполнения. Другие цвета, пол и исполнения не изменятся.
               </p>
             </div>
 
