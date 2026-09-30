@@ -38,7 +38,8 @@ check(backend.includes('export async function assertCatalogVariantMayDeactivate'
 check(backend.includes('SUM(COALESCE(quantity, 0)) FROM inventory_stock') && backend.includes('reserved_quantity'), 'physical/reserved stock retirement blockers missing')
 check(backend.includes("inventory_reservations WHERE variant_id = ? AND status = 'active'"), 'active reservation retirement blocker missing')
 check(backend.includes("COALESCE(o.order_status, 'active') = 'active'") && backend.includes("COALESCE(o.shipping_status, 'not_sent') <> 'sent'"), 'active unsent order retirement blocker missing')
-check(backend.includes("workshop_tasks") && backend.includes("status IN ('active', 'ready')"), 'Workshop retirement blocker missing')
+check(backend.includes("workshop_tasks") && backend.includes("status = 'active'"), 'active Workshop retirement blocker missing')
+check(!backend.includes("status IN ('active', 'ready')"), 'ready Workshop task must not block exact-SKU retirement')
 check(backend.includes("inventory_lifecycle_events") && backend.includes("status = 'pending'"), 'pending lifecycle retirement blocker missing')
 check(backend.includes('inventory_stocktake_sessions s') && backend.includes("s.status = 'active'"), 'active stocktake retirement blocker missing')
 check(
