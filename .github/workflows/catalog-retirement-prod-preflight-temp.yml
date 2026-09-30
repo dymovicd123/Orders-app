@@ -1,4 +1,4 @@
-name: Temporary Production Catalog retirement detailed preflight r2
+name: Temporary Production Catalog retirement detailed preflight r3
 
 on:
   push:
@@ -140,6 +140,24 @@ jobs:
           WHERE v.product_id IN (10,41)
           GROUP BY v.product_id,p.name,p.is_active
           ORDER BY v.product_id;
+          SELECT id,product_id,category,gender_scope,material,length,is_active
+          FROM catalog_stock_positions
+          WHERE id IN (13,94)
+          ORDER BY id;
+
+          SELECT id,name,category,gender_scope,is_active
+          FROM catalog_products
+          WHERE UPPER(TRIM(name))='КОРСЕТ' OR id=41
+          ORDER BY id;
+
+          SELECT a.id,a.alias_key,a.raw_value,a.product_id,p.name,p.is_active
+          FROM catalog_product_aliases a
+          JOIN catalog_products p ON p.id=a.product_id
+          WHERE a.alias_key IN (
+            SELECT alias_key FROM catalog_product_aliases WHERE product_id=41
+          )
+          ORDER BY a.alias_key,a.id;
+
 
 
           SELECT name
