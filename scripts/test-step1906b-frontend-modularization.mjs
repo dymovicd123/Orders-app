@@ -91,6 +91,46 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const orderRetiredConfirmationFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-retired-confirmation-frontend-manifest.json'), 'utf8'))
+if (orderRetiredConfirmationFrontendManifest?.version !== 1 || orderRetiredConfirmationFrontendManifest?.revision !== 'order-retired-confirmation-ui-r1') throw new Error('Order retired confirmation frontend manifest invalid')
+const orderRetiredConfirmationFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.ORDER_RETIRED_CONFIRMATION_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(orderRetiredConfirmationFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (orderRetiredConfirmationFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Order retired confirmation frontend changed beyond exact manifest: ' + relative)
+      }
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (orderRetiredConfirmationFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Order retired confirmation frontend baseline fixture drifted: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, ORDER_RETIRED_CONFIRMATION_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ORDER RETIRED CONFIRMATION FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const catalogSafeRestoreFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-safe-restore-branch2-frontend-manifest.json'), 'utf8'))
 if (catalogSafeRestoreFrontendManifest?.version !== 1 || catalogSafeRestoreFrontendManifest?.revision !== 'catalog-safe-restore-branch2-ui-r1') {
   throw new Error('Catalog safe restore frontend manifest invalid')
