@@ -3,7 +3,7 @@
 Updated: 2026-09-30  
 Repository: `dymovicd123/Orders-app`  
 Target environment: **Branch2 only**  
-Runtime/business-code baseline after the latest completed fix: `da0e24363ea25b65b0e8170a04fdfaaf4db22b28` (PR #238)
+Runtime/business-code baseline after the latest completed fix: `7933aba9940c82884d83e2f282bc4782964497a3` (PR #239)
 
 This document is the detailed continuation note for the Catalog retirement chain audited on 2026-09-29/30.  
 Always re-open the current GitHub branch before continuing; this note is a checkpoint, not a replacement for current code.
@@ -104,9 +104,37 @@ Validation:
 
 The repository-wide Quality workflow still stops earlier at the pre-existing high-risk development-dependency audit. Production dependency audit passes. The separate branch validation proved the cumulative regression gate and build for this change.
 
+
+### PR #239 — safe local color/gender subgroup retirement
+Merged as `7933aba9940c82884d83e2f282bc4782964497a3`.
+
+Added a narrower admin correction path for mistakes such as one accidental `ОРАНЖЕВЫЙ · ЖЕН` subgroup inside an otherwise male execution.
+
+Semantics:
+- scope is exact `execution + adult/child + gender + color`;
+- all active sizes/ages in that visible subgroup are retired together;
+- other colors, gender groups and executions are untouched;
+- the local action is **strict**: if any targeted SKU has Physical, Reserved, active reservation, active unsent order, active/ready Workshop task, pending lifecycle, or active stocktake, the whole operation is blocked;
+- mutation is one guarded soft-retirement UPDATE with blocker rechecks, so preview/write races cannot produce a partial subgroup delete;
+- local retirement does **not** rewrite `inventory_stock`, reservations, order rows, Workshop rows, Product or execution identity;
+- historical SKU rows remain historical/inactive;
+- legacy blank-gender/no-color groups are targetable because raw identity is kept separate from UI labels;
+- ordinary PATCH against an already inactive SKU now fails closed, so a stale editor/direct legacy update cannot reactivate or mutate historical SKU.
+
+UI:
+- every visible color/gender subgroup has admin action **«Удалить группу»**;
+- confirmation explains the narrow scope and lists blockers if deletion is unsafe.
+
+Validation:
+- branch validation `36689192770`: cumulative `release:check` **success**, build **success**;
+- merged-SHA Stage03 H7 Branch2 safety `36689481147`: **success**;
+- exact merged-SHA Cloudflare deploy `36689480949`: **success** to `orders-app-branch2` with D1 binding `orders_db_branch2`;
+- no migration and no D1 data mutation were required by this feature.
+
 ## Current UX facts
 
 - Exact active SKU card has admin action **«Вывести из каталога»**.
+- A visible color/gender subgroup now also has **«Удалить группу»**; this removes only that subgroup within the current execution and is strict-blocked by any operational linkage.
 - Whole execution/product retirement uses the newer retirement flow.
 - Admin Catalog header has **«Удалённые»** next to refresh; it shows whole execution/product retirement history and restore.
 - Exact-SKU retirement is an older path and is not currently represented as a first-class row in the new `Удалённые` history UI.
@@ -157,18 +185,23 @@ Required work:
 - define a guarded correction path if any anomaly is found;
 - add preflight/assertion so future retirement/restore does not ignore such corrupted state.
 
-### P2 — inactive exact SKU remains too mutable through the legacy variant PATCH contract
+### P2 — fixed product gender scope still needs prevention, not just cleanup
 
-The ordinary Catalog variant update API still has historical capabilities that can set `isActive` and may call execution ensure logic.
+PR #239 makes an erroneous subgroup removable, but it does not yet change the older gender-resolution rule.
 
-The normal current UI does not intentionally revive a retired SKU, but stale/admin/API calls should not be able to:
-- reactivate the old historical SKU row;
-- manufacture a fresh execution as a side effect of editing an inactive historical row.
+Current Catalog/Resolver lineage intentionally treats an explicit human `ЖЕН/МУЖ` choice as authoritative before fixed product-scope fallback. That rule was introduced to preserve known gender in unisex flows and must not be broadly removed without reconciliation.
 
-Required fix:
-- make retired/inactive SKU immutable for ordinary PATCH;
-- restoration/recreation must go only through explicit restore/Arrival/new-order-confirmation paths;
-- stale editor save against a retired SKU must fail with a refresh/retired-state conflict.
+The new concrete product requirement is narrower:
+- if a Catalog product is truly fixed `gender_scope = male`, an accidental female working SKU should not be creatable through ordinary Catalog/Arrival/order materialization;
+- likewise for fixed female products;
+- `unisex` products must continue to allow both concrete genders;
+- historical rows are not rewritten.
+
+Required next step:
+- audit every SKU-creation/materialization path against fixed `gender_scope`;
+- add a focused fail-closed rule only where product scope is explicitly fixed;
+- preserve R11 behavior for genuinely unisex products and historical reads;
+- add a regression reproducing the accidental wrong-gender subgroup case.
 
 ### P2 — Workshop semantics during whole execution/product retirement are not explicit enough
 
@@ -211,13 +244,13 @@ This is separate from Catalog retirement semantics. Do not weaken/remove the sec
 
 ## Suggested continuation order
 
-1. Fix recovery for open `catalog_retired` orders.
-2. Make restore resumable/idempotent and represent partial restore honestly.
-3. Run read-only inactive-SKU/non-zero-stock audit and add invariant guards.
-4. Lock ordinary inactive-SKU PATCH/stale editor behavior.
+1. Audit/fix **fixed product gender-scope prevention** so a removed wrong-gender subgroup cannot be recreated accidentally, while preserving unisex/R11 behavior.
+2. Fix recovery for open `catalog_retired` orders.
+3. Make restore resumable/idempotent and represent partial restore honestly.
+4. Run read-only inactive-SKU/non-zero-stock audit and add invariant guards.
 5. Decide and implement Workshop-retirement rule.
 6. Add explicit retired-SKU Return/Exchange intake UX.
-7. Unify exact-SKU history with the new retirement-history UI.
+7. Unify exact-SKU/local-group history with the new retirement-history UI.
 8. Separately resolve the high-risk dev-dependency audit.
 
 For every remaining item, start from current `branch2`, add focused semantic regression, run cumulative `release:check` + build, verify exact merged SHA deploy, and keep `main` untouched unless the user explicitly changes the release boundary.
