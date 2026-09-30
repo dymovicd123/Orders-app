@@ -86,6 +86,7 @@ export function CatalogPolishExecutionGroups({
   const [variantCard, setVariantCard] = useState<any | null>(null)
   const [retireConfirmVariantId, setRetireConfirmVariantId] = useState(0)
   const [actionBusyVariantId, setActionBusyVariantId] = useState(0)
+  const [actionBusyExecutionId, setActionBusyExecutionId] = useState(0)
   const [actionMessage, setActionMessage] = useState('')
   const [actionError, setActionError] = useState('')
   const [priceDrafts, setPriceDrafts] = useState<Record<string, { costPrice: string; salePrice: string }>>({})
@@ -204,6 +205,79 @@ export function CatalogPolishExecutionGroups({
     setActionError('')
   }
 
+  const retireExecution = async (group: any) => {
+    if (!isAdmin || actionBusyExecutionId || actionBusyVariantId) return
+    const stockPositionIds = Array.from(new Set(
+      (group?.variants || []).map((variant: any) => Number(variant.stockPositionId || 0)).filter((value: number) => value > 0),
+    ))
+    if (stockPositionIds.length !== 1) {
+      setActionError('Не удалось однозначно определить исполнение. Обновите каталог.')
+      return
+    }
+    const stockPositionId = Number(stockPositionIds[0])
+    setActionBusyExecutionId(stockPositionId)
+    setActionError('')
+    setActionMessage('')
+    try {
+      const previewResponse = await fetch(`/api/catalog/executions/${encodeURIComponent(String(stockPositionId))}/retirement-preview`, {
+        credentials: 'include',
+      })
+      const preview: any = await readCatalogMutationResult(previewResponse)
+      if (!previewResponse.ok || preview.ok === false) {
+        setActionError(preview.message || 'Не удалось проверить исполнение перед удалением.')
+        return
+      }
+      if (preview.activeStocktake) {
+        setActionError('Сейчас по этому исполнению идёт ревизия. Завершите или отмените её и повторите удаление.')
+        return
+      }
+      if (preview.pendingLifecycle) {
+        setActionError('По этому исполнению есть незавершённая приёмка или возврат. Завершите её и повторите удаление.')
+        return
+      }
+
+      const physical = Number(preview.physicalQuantity || 0)
+      const reserved = Number(preview.activeReservationQuantity || 0)
+      const openOrders = Number(preview.openOrderItemCount || 0)
+      const history = Number(preview.historicalOrderItemCount || 0)
+      const accepted = window.confirm(
+        `Удалить исполнение «${group.label}» из рабочего каталога?\n\n`
+        + `Позиции: ${Number(preview.activeVariantCount || 0)} · физически: ${physical} · резерв: ${reserved}\n`
+        + `Открытых позиций заказов: ${openOrders} · исторических: ${history}\n\n`
+        + 'История заказов и движений сохранится. Остатки уйдут из рабочего склада, активные резервы будут освобождены. Автоматически это исполнение больше не восстановится.',
+      )
+      if (!accepted) return
+
+      const requestId = `catalog-execution-retire-${stockPositionId}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const response = await fetch(`/api/catalog/executions/${encodeURIComponent(String(stockPositionId))}/retire`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId }),
+      })
+      const result: any = await readCatalogMutationResult(response)
+      if (!response.ok || result.ok === false) {
+        setActionError(result.message || 'Исполнение не удалено. Обновите каталог и повторите.')
+        return
+      }
+
+      setVariantCard(null)
+      setActionMessage(`Исполнение «${group.label}» удалено из рабочего каталога. История сохранена.`)
+      try {
+        const refreshed = await loadCatalogData(true)
+        if (!refreshed) {
+          setActionMessage('Исполнение удалено, но список не обновился. Нажмите «Обновить»; повторять удаление не нужно.')
+        }
+      } catch {
+        setActionMessage('Исполнение удалено, но список не обновился. Нажмите «Обновить»; повторять удаление не нужно.')
+      }
+    } catch {
+      setActionError('Не удалось подтвердить результат. Нажмите «Обновить» и проверьте каталог перед повторным удалением.')
+    } finally {
+      setActionBusyExecutionId(0)
+    }
+  }
+
   const retireVariant = async (variant: any) => {
     if (!isAdmin || !variant?.id || actionBusyVariantId) return
     const warehouseQty = Number(getStockQuantityForVariant('warehouse', variant.id) || 0)
@@ -254,6 +328,7 @@ export function CatalogPolishExecutionGroups({
   return (
     <div className="catalog-execution-list">
       {actionMessage ? <div className="catalog-sku-action-status is-success" role="status">{actionMessage}</div> : null}
+      {actionError ? <div className="catalog-sku-action-status is-error" role="alert">{actionError}</div> : null}
       {executionGroups.length ? executionGroups.map((group: any) => {
         const groupPhysical = group.variants.reduce((sum: number, variant: any) => sum + (getStockQuantityForVariant('warehouse', variant.id) || 0) + (getStockQuantityForVariant('boutique', variant.id) || 0), 0)
         const colorGroups = colorGroupsFor(group.variants, getCatalogVariantCategory)
@@ -269,6 +344,17 @@ export function CatalogPolishExecutionGroups({
                 <strong>{groupPhysical}</strong>
                 <span>физически в точках</span>
               </div>
+              {isAdmin ? (
+                <button
+                  className="danger compact"
+                  type="button"
+                  disabled={Boolean(actionBusyExecutionId || actionBusyVariantId)}
+                  onClick={() => void retireExecution(group)}
+                  title="Удалить это исполнение из рабочего каталога и склада, сохранив историю"
+                >
+                  {actionBusyExecutionId && (group.variants || []).some((variant: any) => Number(variant.stockPositionId || 0) === actionBusyExecutionId) ? 'Удаляю…' : 'Удалить исполнение'}
+                </button>
+              ) : null}
             </div>
 
             {isAdmin ? (() => {
