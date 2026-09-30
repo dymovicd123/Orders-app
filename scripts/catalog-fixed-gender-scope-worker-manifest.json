@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "revision": "catalog-fixed-gender-scope-worker-r1",
+  "files": {
+    "worker/domains/catalog.ts": {
+      "beforeGitBlob": "46a2ec0bdd404b8ecc69ef2a2d3af4bcc608e8ad",
+      "beforeLines": 1498,
+      "afterGitBlob": "a6104fea945137c2d20fb39677b0e3aaa9279e48",
+      "afterLines": 1528,
+      "baselineFixture": "scripts/fixtures/catalog-fixed-gender-scope/worker/domains/catalog.ts"
+    },
+    "worker/domains/order-reservations.ts": {
+      "beforeGitBlob": "fb434d43e8947734b669f52011bda7cb994870e8",
+      "beforeLines": 2836,
+      "afterGitBlob": "c454ebba4b0d6b1fd9425e118907d28db8041181",
+      "afterLines": 2840,
+      "baselineFixture": "scripts/fixtures/catalog-fixed-gender-scope/worker/domains/order-reservations.ts"
+    },
+    "worker/domains/inventory-movement.ts": {
+      "beforeGitBlob": "cf0c04ef896e12a3b7d6be52c8a97aab5706c154",
+      "beforeLines": 2125,
+      "afterGitBlob": "cb76c177b655e66682b6e6f97ca1a26cf5163c31",
+      "afterLines": 2140,
+      "baselineFixture": "scripts/fixtures/catalog-fixed-gender-scope/worker/domains/inventory-movement.ts"
+    },
+    "worker/domains/catalog-review.ts": {
+      "beforeGitBlob": "be35906bab2e8e55b87bb9ccb665ad5fecd0a805",
+      "beforeLines": 1124,
+      "afterGitBlob": "ea877bad0ce0e9163f28d64f886773ec9351499f",
+      "afterLines": 1126,
+      "baselineFixture": "scripts/fixtures/catalog-fixed-gender-scope/worker/domains/catalog-review.ts"
+    },
+    "worker/domains/catalog-retirement.ts": {
+      "beforeGitBlob": "172b709c83ae8070e314e2dcde2681a619d5f12f",
+      "beforeLines": 827,
+      "afterGitBlob": "66685b3181044ce7dd67fe205ed334cf0e3cbc10",
+      "afterLines": 834,
+      "baselineFixture": "scripts/fixtures/catalog-fixed-gender-scope/worker/domains/catalog-retirement.ts"
+    }
+  }
+}
