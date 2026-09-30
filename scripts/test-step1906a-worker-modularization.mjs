@@ -8,7 +8,7 @@ const stage03ProductionRuntimeWorkerManifest = JSON.parse(fs.readFileSync(path.j
 if (stage03ProductionRuntimeWorkerManifest?.version !== 1 || stage03ProductionRuntimeWorkerManifest?.revision !== 'stage03-production-runtime-r1') throw new Error('Stage03 Production worker manifest invalid')
 const stage03ProductionRuntimeWorkerBlobSha = (value) => {
   const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\\0`)).update(bytes).digest('hex')
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 if (!process.env.STAGE03_PRODUCTION_RUNTIME_WORKER_NORMALIZED) {
   const originals = new Map()
