@@ -15,6 +15,13 @@
       "afterGitBlob": "65c36da2b288f2c4352026556f1f9ff13c73a50f",
       "afterLines": 1263,
       "baselineFixture": "scripts/fixtures/catalog-retired-recovery-r1/worker/domains/lifecycle.ts"
+    },
+    "worker/domains/order-reservations.ts": {
+      "beforeGitBlob": "c454ebba4b0d6b1fd9425e118907d28db8041181",
+      "beforeLines": 2840,
+      "afterGitBlob": "5c0be05527542eaa448b1c33fe87cf9379d906cc",
+      "afterLines": 2840,
+      "baselineFixture": "scripts/fixtures/catalog-retired-recovery-r1/worker/domains/order-reservations.ts"
     }
   }
 }
