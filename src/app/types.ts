@@ -1187,6 +1187,8 @@ export type CatalogReviewItem = {
   size: string
   quantity: number
   sourceType: string
+  stockWriteoffStatus?: string
+  retiredRecovery?: boolean
   inputKey: string
   affectedCount?: number
 }
@@ -1234,6 +1236,7 @@ export type InventoryLifecyclePendingItem = {
   size: string
   isWorkshop: boolean
   pendingReason: string
+  retiredHistoricalSku?: boolean
   createdAt: string
 }
 
