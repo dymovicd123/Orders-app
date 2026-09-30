@@ -12,8 +12,14 @@ const catalogRetirementMainPortBlobSha = (value) => {
 }
 const stage03ProductionSuccessorWorkerBlobs = {
   'worker/core/types.ts': '14a60ac4efa73bc64fcb11542621bb08d45548c2',
+  'worker/domains/finance-reports.ts': '731c40de473b00a353fc58e987626d16d7671186',
+  'worker/domains/order-core.ts': '7a33b917072808e232d706954441c07aaaf6faec',
+  'worker/domains/order-pricing.ts': 'aea8ee7483c2da8a8dd6ae62ededd56a0c26bdc4',
+  'worker/domains/orders-read.ts': '73b1001a0985e49626f32a812edd5f9c95de5e4b',
   'worker/domains/orders-relations.ts': '7741e279029e4403d4b051e92a36b7e3f2b92775',
   'worker/domains/orders-write.ts': 'bf311618cd8398e83fe93bc02d578ba1460faebc',
+  'worker/domains/returns-exchanges.ts': 'bf6baf5b03453c1ed4be2668ac5c6aefe8c3c76c',
+  'worker/domains/storage.ts': '4095ad56e7e91eb601f1b6483e903c0119213380',
 }
 if (!process.env.CATALOG_RETIREMENT_MAIN_PORT_WORKER_NORMALIZED) {
   const originals = new Map()
@@ -205,7 +211,9 @@ if (!process.env.CLIENT_ZAMMLER_PROD_RUNTIME_WORKER_NORMALIZED) {
     for (const [relative, delta] of Object.entries(clientZammlerProdRuntimeManifest.files || {})) {
       const absolute = path.join(root, relative)
       const actual = fs.readFileSync(absolute, 'utf8')
-      if (clientZammlerProdWorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('CLIENT-ZAMMLER Production Worker changed beyond exact manifest: ' + relative)
+      const actualBlob = clientZammlerProdWorkerBlobSha(actual)
+      const acceptedSuccessorBlob = stage03ProductionSuccessorWorkerBlobs[relative]
+      if (actualBlob !== delta.afterGitBlob && actualBlob !== acceptedSuccessorBlob) throw new Error('CLIENT-ZAMMLER Production Worker changed beyond exact manifest or approved Stage03 successor: ' + relative)
       const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
       if (clientZammlerProdWorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('CLIENT-ZAMMLER Production Worker baseline fixture drifted: ' + relative)
       originals.set(relative, actual)
