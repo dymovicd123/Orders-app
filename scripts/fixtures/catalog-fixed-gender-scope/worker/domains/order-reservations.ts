@@ -390,13 +390,9 @@ export async function resolveCatalogProductAndVariantV2(
   const length = knownFacts.resolve('length', aliasedLength);
   const enteredGender = normalizeCatalogCombinationGender(item.gender);
   let gender = enteredGender;
-  const productGenderScope = await getCatalogProductGenderScope(db, product.id);
-  const fixedProductGender = catalogGenderForProductScope(productGenderScope);
-  if (enteredGender && fixedProductGender && enteredGender !== fixedProductGender) {
-    return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
-  }
   if (!gender) {
-    gender = fixedProductGender;
+    const productGenderScope = await getCatalogProductGenderScope(db, product.id);
+    gender = catalogGenderForProductScope(productGenderScope);
     if (!gender) {
       return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
     }

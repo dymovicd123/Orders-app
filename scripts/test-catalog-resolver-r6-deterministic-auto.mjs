@@ -14,7 +14,8 @@ try {
     'Shipping no longer attempts deterministic auto-reconciliation before opening the human resolver',
   )
   check(
-    reservations.includes("gender = catalogGenderForProductScope(productGenderScope)") &&
+    reservations.includes("const fixedProductGender = catalogGenderForProductScope(productGenderScope)") &&
+      reservations.includes("gender = fixedProductGender") &&
       reservations.includes("matchStatus: 'unresolved_attribute'"),
     'Single-gender product inference or unisex ambiguity guard disappeared',
   )

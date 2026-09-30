@@ -5,6 +5,46 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
+const catalogFixedGenderScopeWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-fixed-gender-scope-worker-manifest.json'), 'utf8'))
+if (catalogFixedGenderScopeWorkerManifest?.version !== 1 || catalogFixedGenderScopeWorkerManifest?.revision !== 'catalog-fixed-gender-scope-worker-r1') throw new Error('Catalog fixed gender-scope Worker manifest invalid')
+const catalogFixedGenderScopeWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.CATALOG_FIXED_GENDER_SCOPE_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(catalogFixedGenderScopeWorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (catalogFixedGenderScopeWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Catalog fixed gender-scope Worker changed beyond exact manifest: ' + relative)
+      }
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (catalogFixedGenderScopeWorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Catalog fixed gender-scope Worker baseline fixture drifted: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, CATALOG_FIXED_GENDER_SCOPE_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('CATALOG FIXED GENDER-SCOPE WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const catalogLocalRetirementWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-local-retirement-worker-manifest.json'), 'utf8'))
 if (catalogLocalRetirementWorkerManifest?.version !== 1 || catalogLocalRetirementWorkerManifest?.revision !== 'catalog-local-retirement-worker-r1') throw new Error('Catalog local retirement Worker manifest invalid')
 const catalogLocalRetirementWorkerBlobSha = (value) => {

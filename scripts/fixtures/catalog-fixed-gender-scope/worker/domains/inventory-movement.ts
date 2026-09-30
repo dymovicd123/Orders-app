@@ -5,7 +5,7 @@ import { chunksOf, mapSqlRows } from '../core/sql.ts'
 import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, normalizeCatalogCategory, normalizeSourceType, toInt, upperText } from '../core/text.ts'
 import type { InventoryItemInput, InventoryMovementKind, SourceType } from '../core/types.ts'
 import type { CanonicalVariantSnapshot } from './catalog.ts'
-import { assertCatalogGenderAllowedForScope, catalogColorIdentity, isCatalogIdentityV3Enabled, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, normalizeCatalogProductIdentityKey } from './catalog.ts'
+import { catalogColorIdentity, isCatalogIdentityV3Enabled, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, normalizeCatalogProductIdentityKey } from './catalog.ts'
 import { findInventoryMovementMatch, listInventory } from './inventory-read.ts'
 import { isReversibleInventoryMovementReference } from './inventory-reservations.ts'
 import type { InventoryResolvedItem } from './order-core.ts'
@@ -155,22 +155,11 @@ export async function resolveInventoryCreatableItemsBulk(
     return lookup.byIdentity.get(identityKey) || null;
   };
 
-  const assertKnownProductGender = (product: ProductRow | null | undefined, item: ReturnType<typeof normalizeInventoryItem>) => {
-    if (!product?.id) return;
-    const explicitGender = normalizeCatalogCombinationGender(item.gender);
-    if (explicitGender !== 'ЖЕН' && explicitGender !== 'МУЖ') return;
-    assertCatalogGenderAllowedForScope(product.gender_scope, explicitGender, product.name);
-  };
-
   const missingProducts = new Map<string, { name: string; category: string; externalId: string }>();
   const retiredProductIdsToReactivate = new Set<number>();
   rawItems.forEach((item, index) => {
     if (!item.productName) throw new Error('Product is required for inventory operation.');
-    const activeProduct = resolveProduct(item);
-    if (activeProduct) {
-      assertKnownProductGender(activeProduct, item);
-      return;
-    }
+    if (resolveProduct(item)) return;
 
     const explicit = item.productId > 0 ? lookup.byId.get(item.productId) : null;
     const identityKey = normalizeCatalogProductIdentityKey(item.productName);
@@ -183,7 +172,6 @@ export async function resolveInventoryCreatableItemsBulk(
           || (identityKey ? lookup.byInactiveIdentity.get(identityKey) : null);
     const retiredId = toInt(retired?.id, 0);
     if (retiredId) {
-      assertKnownProductGender(retired, item);
       if (!options.allowRetiredRecreate) {
         throw new Error(`Товар «${item.productName}» был удалён из рабочего каталога. Эта складская операция не может автоматически вернуть его; используйте Приход или восстановление Каталога.`);
       }
@@ -228,12 +216,9 @@ export async function resolveInventoryCreatableItemsBulk(
   if (productForItem.some(row => !row?.id)) throw new Error('Не удалось создать или найти товар для складской операции. Обновите каталог и повторите действие.');
 
   const resolvedGenderForItem = rawItems.map((item, index) => {
-    const product = productForItem[index];
     const explicit = normalizeCatalogCombinationGender(item.gender);
-    if (explicit === 'ЖЕН' || explicit === 'МУЖ') {
-      return assertCatalogGenderAllowedForScope(product?.gender_scope, explicit, product?.name).gender;
-    }
-    const scope = cleanText(product?.gender_scope).toLowerCase();
+    if (explicit === 'ЖЕН' || explicit === 'МУЖ') return explicit;
+    const scope = cleanText(productForItem[index]?.gender_scope).toLowerCase();
     if (scope === 'female') return 'ЖЕН';
     if (scope === 'male') return 'МУЖ';
     throw new Error('Для товара «Унисекс» выберите пол конкретной вещи: ЖЕН или МУЖ.');

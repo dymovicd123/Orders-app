@@ -18,7 +18,7 @@ check(catalog.includes('const color = catalogColorIdentity(input.color);'), 'New
 check(catalog.includes('const sizeLabel = normalizeCatalogCombinationSize(input.sizeLabel);'), 'New Catalog combinations do not normalize no-size aliases before identity lookup')
 check(catalog.includes("IN ('', 'БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р')"), 'Catalog semantic lookup no longer treats no-size aliases as one identity')
 
-check(inventory.includes("import { catalogColorIdentity,"), 'Arrival materializer does not share Catalog color identity')
+check(inventory.includes('catalogColorIdentity') && inventory.includes("from './catalog.ts'"), 'Arrival materializer does not share Catalog color identity')
 check(inventory.includes('const variantExactKey = '), 'Arrival exact variant lookup missing')
 check(inventory.includes('const variantSemanticKey = '), 'Arrival semantic variant lookup missing')
 check(inventory.includes('catalogColorIdentity(color)'), 'Arrival semantic key does not normalize punctuation-equivalent colors')
