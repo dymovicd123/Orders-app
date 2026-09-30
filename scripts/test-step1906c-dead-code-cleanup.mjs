@@ -172,6 +172,7 @@ try {
   acceptedAdditiveMigrations.push('0076_v72_catalog_safe_retirement.sql')
   acceptedAdditiveMigrations.push('0077_v72_catalog_safe_restore.sql')
   acceptedAdditiveMigrations.push('0078_v72_catalog_restore_resumability.sql')
+  acceptedAdditiveMigrations.push('0079_v72_catalog_granular_retirement_history.sql')
   const historicalMigrationFiles = migrationFiles.filter((name) => !acceptedAdditiveMigrations.includes(name))
   const aggregate = historicalMigrationFiles.map((name) => `${sha(fs.readFileSync(path.join(migrationDir, name)))}  migrations/${name}\n`).join('')
   check(historicalMigrationFiles.length === manifest.migrationCount, `Historical migration count changed: ${historicalMigrationFiles.length}/${manifest.migrationCount}`)
