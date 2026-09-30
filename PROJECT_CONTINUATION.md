@@ -1,31 +1,43 @@
 # Система заказов — актуальный continuation
 
-Updated: 2026-09-27  
+Updated: 2026-09-30  
 Repository: `dymovicd123/Orders-app`  
 Branch represented by this file: **main / Production**
 
 Этот файл — короткий актуальный checkpoint. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не должны использоваться как текущий roadmap без сверки с GitHub.
 
-## RELEASE UPDATE — 2026-09-30 — Catalog deletion candidate prepared for main
+## RELEASE UPDATE — 2026-09-30 — Catalog deletion is live in Production
 
-Fresh candidate `release/catalog-retirement-main-20260930` was built from current main `820ff6be9a2e06fad4f61b147263927b0c42d3a7`; Branch2 was **not** merged wholesale.
+Catalog deletion/retirement was promoted through fresh-main PR #250. Production runtime baseline:
+- `7953a01d2856a6e674f0473918244ab53839a36f` — exact merged SHA;
+- PR #250 was reconciled from main `820ff6be9a2e06fad4f61b147263927b0c42d3a7`; Branch2 was **not** merged wholesale;
+- Quality on the release PR: run `36733462167` — success;
+- exact merged-SHA Cloudflare deploy monitor: run `36733693812` — success.
 
-The candidate ports the completed Catalog-retirement chain only:
-- safe whole product/execution retirement + restore;
+Production data/schema preparation completed before runtime promotion:
+- guarded legacy Catalog repair v2: run `36732576266` — success;
+  - active fixed-gender mismatches = **0**;
+  - inactive SKU carrying live Physical/Reserved = **0**;
+  - one live Physical unit was moved from wrong-gender SKU 158 to its already-active canonical SKU 1089 without changing total Physical/Reserved/order counts;
+  - legacy inactive identities 207/356/1065/1066 that still owned real operational state were reactivated;
+- retirement schema 0076–0079: run `36733043591` — success, business fingerprint unchanged;
+- post-deploy read-only Production smoke: run `36734056327` — success.
+
+Production now includes:
+- whole product/execution safe retirement + restore;
 - exact-SKU and local-group retirement;
-- explicit retired-order recovery and historical return intake;
+- explicit retired-order recovery and historical Return/Exchange intake;
 - fixed product gender-scope prevention;
-- unified deleted-history UI and improved visible `Удалить группу` action;
-- dev-dependency security override for patched `undici 7.29.1`.
+- unified deleted-history UI;
+- larger, visible `Удалить группу` action in the subgroup header;
+- patched transitive `undici 7.29.1` security override.
 
-Stage03 remains intentionally excluded: migrations 0073/0074 and itemized pricing activation are not part of this release.
+Stage03 remains intentionally **off**:
+- migrations 0073/0074 were not shipped;
+- `orders.pricing_mode` and `order_items.catalog_price_snapshot` remain absent in Production;
+- itemized pricing activation remains postponed by explicit user decision.
 
-Validation:
-- reconciled candidate full cumulative gate + build: run `36727449513` — success;
-- guarded Production legacy Catalog repair v2: run `36732576266` — success; active fixed-gender mismatches = 0, inactive SKU with live operational state = 0, business stock/reservation/order totals unchanged;
-- Production retirement schema 0076–0079: run `36733043591` — success; business fingerprint unchanged and Stage03 schema remains off.
-
-Next action at this checkpoint: merge the fresh candidate to `main`, then verify Quality/Cloudflare deploy on the **exact merged SHA** and perform a read-only Production smoke audit.
+Catalog-retirement rollout is complete. Future work should start from current `main` and re-check GitHub before any new change.
 
 ## Текущее состояние Production
 
