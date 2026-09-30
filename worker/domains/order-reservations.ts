@@ -5,7 +5,7 @@ import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, norm
 import type { SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
 import type { CanonicalVariantSnapshot } from './catalog.ts'
-import { catalogGenderForProductScope, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
+import { catalogGenderForProductScope, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, findRetiredCatalogExecutionV3, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
 import { inventoryPhysicalCheckStatement } from './inventory-primitives.ts'
 import { boundedOutboundStock } from './stock-resolution.ts'
 import { normalizeOrderItems } from './order-core.ts'
@@ -331,6 +331,15 @@ export async function resolveCatalogProductAndVariantV2(
   }
 
   // Only now may known facts create a previously unseen execution/combination.
+  // A deliberately retired execution is different from a never-seen execution: runtime order
+  // resolution must not resurrect it. Only an explicit admin Catalog action may create a fresh
+  // generation with the same human characteristics.
+  if (!existingExecution?.id) {
+    const retiredExecution = await findRetiredCatalogExecutionV3(db, product.id, material, length);
+    if (retiredExecution?.id) {
+      return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_execution', inputKey };
+    }
+  }
   const execution = existingExecution?.id
     ? existingExecution
     : await ensureCatalogExecutionV3(db, product.id, material, length, new Date().toISOString());
@@ -1915,7 +1924,8 @@ export async function fulfillOrderReservationsV2(
      )
      SELECT w.source, w.variant_id,
             s.id AS stock_id, s.quantity, s.reserved_quantity,
-            v.product_id, p.name AS product_name, v.gender, v.color, v.material, v.length, v.size_label
+            v.product_id, p.name AS product_name, v.gender, v.color, v.material, v.length, v.size_label,
+            v.is_active AS variant_active, p.is_active AS product_active
      FROM wanted w
      LEFT JOIN inventory_stock s ON s.inventory_source = w.source AND s.variant_id = w.variant_id
      LEFT JOIN catalog_variants v ON v.id = w.variant_id
@@ -1931,6 +1941,9 @@ export async function fulfillOrderReservationsV2(
     }
     if (!toInt(loaded.product_id, 0) || !cleanText(loaded.product_name)) {
       throw new Error(`Не удалось загрузить каталог для отправки «${requirement.productName}». Обновите заказ.`);
+    }
+    if (toInt(loaded.variant_active, 0) !== 1 || toInt(loaded.product_active, 0) !== 1) {
+      throw new Error(`Позиция «${requirement.productName}» уже удалена из рабочего каталога. Обновите заказ: складское списание для удалённой позиции больше не выполняется.`);
     }
     const quantity = toInt(loaded.quantity, 0);
     const observation = observationsByKey.get(key) || null;
@@ -2070,10 +2083,21 @@ export async function fulfillOrderReservationsV2(
       `WITH ${cte}
        INSERT INTO inventory_model_meta (key, value, updated_at)
        SELECT 'human_inventory_v2', '__shipping_conflict__', ?
-       WHERE EXISTS (
-         SELECT 1 FROM x
-         LEFT JOIN inventory_stock s ON s.id = x.stock_id
-         WHERE s.id IS NULL OR COALESCE(s.quantity, 0) <> x.current_quantity
+       WHERE (
+         EXISTS (
+           SELECT 1 FROM x
+           LEFT JOIN inventory_stock s ON s.id = x.stock_id
+           WHERE s.id IS NULL OR COALESCE(s.quantity, 0) <> x.current_quantity
+         )
+         OR EXISTS (
+           SELECT 1 FROM x
+           LEFT JOIN catalog_variants live_variant ON live_variant.id = x.variant_id
+           LEFT JOIN catalog_products live_product ON live_product.id = live_variant.product_id
+           WHERE live_variant.id IS NULL
+              OR COALESCE(live_variant.is_active, 0) <> 1
+              OR live_product.id IS NULL
+              OR COALESCE(live_product.is_active, 0) <> 1
+         )
        )
          AND ${orderStillUnsentSql}`
     ).bind(...payloadChunk, timestamp, orderId));
