@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "revision": "catalog-local-retirement-worker-r1",
+  "files": {
+    "worker/domains/catalog-retirement.ts": {
+      "beforeGitBlob": "11577b03a61d7b08c2ebe390ed65500d7b0487b9",
+      "beforeLines": 632,
+      "afterGitBlob": "172b709c83ae8070e314e2dcde2681a619d5f12f",
+      "afterLines": 827,
+      "baselineFixture": "scripts/fixtures/catalog-local-retirement/worker/domains/catalog-retirement.ts"
+    },
+    "worker/domains/catalog.ts": {
+      "beforeGitBlob": "c7eac84b9c5760f6b7a507381a63c9ea41f6edba",
+      "beforeLines": 1495,
+      "afterGitBlob": "46a2ec0bdd404b8ecc69ef2a2d3af4bcc608e8ad",
+      "afterLines": 1498,
+      "baselineFixture": "scripts/fixtures/catalog-local-retirement/worker/domains/catalog.ts"
+    },
+    "worker/index.ts": {
+      "beforeGitBlob": "d4eaf33a0f78bfa33b8ff4e9e77d85278e6d8369",
+      "beforeLines": 1607,
+      "afterGitBlob": "7bcb3942d671a81386ea35de67a76cc9ea457f4b",
+      "afterLines": 1644,
+      "baselineFixture": "scripts/fixtures/catalog-local-retirement/worker/index.ts"
+    }
+  }
+}

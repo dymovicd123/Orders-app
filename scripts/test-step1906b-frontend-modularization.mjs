@@ -91,6 +91,54 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const catalogLocalRetirementFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-local-retirement-frontend-manifest.json'), 'utf8'))
+if (catalogLocalRetirementFrontendManifest?.version !== 1 || catalogLocalRetirementFrontendManifest?.revision !== 'catalog-local-retirement-frontend-r1') throw new Error('Catalog local retirement frontend manifest invalid')
+const catalogLocalRetirementFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.CATALOG_LOCAL_RETIREMENT_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(catalogLocalRetirementFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (catalogLocalRetirementFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Catalog local retirement frontend changed beyond exact manifest: ' + relative)
+      }
+      originals.set(relative, actual)
+      if (delta.mode === 'add') {
+        fs.unlinkSync(absolute)
+        continue
+      }
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (catalogLocalRetirementFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Catalog local retirement frontend baseline fixture drifted: ' + relative)
+      }
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, CATALOG_LOCAL_RETIREMENT_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('CATALOG LOCAL RETIREMENT FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const orderRetiredConfirmationFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-retired-confirmation-frontend-manifest.json'), 'utf8'))
 if (orderRetiredConfirmationFrontendManifest?.version !== 1 || orderRetiredConfirmationFrontendManifest?.revision !== 'order-retired-confirmation-ui-r1') throw new Error('Order retired confirmation frontend manifest invalid')
 const orderRetiredConfirmationFrontendBlobSha = (value) => {

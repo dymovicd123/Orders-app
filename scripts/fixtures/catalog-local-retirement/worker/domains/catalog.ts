@@ -1158,9 +1158,6 @@ export async function updateCatalogVariant(db: D1Database, id: number, input: { 
      FROM catalog_variants WHERE id = ? LIMIT 1`
   ).bind(id).first<Record<string, unknown>>();
   if (!existing?.id) throw new Error('Variant not found.');
-  if (toInt(existing.is_active, 0) !== 1) {
-    throw new Error('Эта позиция уже выведена из рабочего каталога и является исторической. Обычное редактирование не может её изменить или вернуть; используйте явное восстановление или создайте новую рабочую позицию.');
-  }
 
   const productId = input.productId === undefined ? toInt(existing.product_id, 0) : toInt(input.productId, 0);
   const targetSize = input.sizeLabel === undefined ? cleanText(existing.size_label) : normalizeCatalogCombinationSize(input.sizeLabel);
