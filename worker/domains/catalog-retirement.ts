@@ -150,45 +150,67 @@ export async function retireCatalogVariantGroup(
 
   const now = new Date().toISOString();
   const predicate = variantGroupPredicate('v');
-  const result = await db.prepare(
-    `WITH target_variants AS (
-       SELECT v.id FROM catalog_variants v
-       WHERE ${predicate} AND v.is_active = 1
-     )
-     UPDATE catalog_variants
-     SET is_active = 0, updated_at = ?
-     WHERE id IN (SELECT id FROM target_variants)
-       AND NOT EXISTS (
-         SELECT 1 FROM inventory_stock s
-         WHERE s.variant_id IN (SELECT id FROM target_variants)
-           AND (COALESCE(s.quantity,0) <> 0 OR COALESCE(s.reserved_quantity,0) <> 0)
+  const [result] = await db.batch([
+    db.prepare(
+      `WITH target_variants AS (
+         SELECT v.id FROM catalog_variants v
+         WHERE ${predicate} AND v.is_active = 1
        )
-       AND NOT EXISTS (
-         SELECT 1 FROM inventory_reservations r
-         WHERE r.variant_id IN (SELECT id FROM target_variants) AND r.status='active'
+       UPDATE catalog_variants
+       SET is_active = 0, updated_at = ?
+       WHERE id IN (SELECT id FROM target_variants)
+         AND NOT EXISTS (
+           SELECT 1 FROM inventory_stock s
+           WHERE s.variant_id IN (SELECT id FROM target_variants)
+             AND (COALESCE(s.quantity,0) <> 0 OR COALESCE(s.reserved_quantity,0) <> 0)
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM inventory_reservations r
+           WHERE r.variant_id IN (SELECT id FROM target_variants) AND r.status='active'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM order_items oi
+           JOIN orders o ON o.id=oi.order_id
+           WHERE oi.variant_id IN (SELECT id FROM target_variants)
+             AND COALESCE(o.order_status,'active')='active'
+             AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+             AND COALESCE(oi.quantity,0)>0
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM workshop_tasks wt
+           WHERE wt.variant_id IN (SELECT id FROM target_variants) AND wt.status = 'active'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM inventory_lifecycle_events e
+           WHERE e.variant_id IN (SELECT id FROM target_variants) AND e.status='pending'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM inventory_stocktake_items i
+           JOIN inventory_stocktake_sessions s ON s.id=i.session_id
+           WHERE i.variant_id IN (SELECT id FROM target_variants) AND s.status='active'
+         )`
+    ).bind(preview.executionId, preview.category, preview.gender, preview.color, now),
+    db.prepare(
+      `INSERT INTO catalog_retirement_history_events (
+         event_type, product_id, product_name, stock_position_id, variant_id,
+         material, length, category, gender, color, size_label, variant_count, created_at
        )
-       AND NOT EXISTS (
-         SELECT 1 FROM order_items oi
-         JOIN orders o ON o.id=oi.order_id
-         WHERE oi.variant_id IN (SELECT id FROM target_variants)
-           AND COALESCE(o.order_status,'active')='active'
-           AND COALESCE(o.shipping_status,'not_sent')<>'sent'
-           AND COALESCE(oi.quantity,0)>0
-       )
-       AND NOT EXISTS (
-         SELECT 1 FROM workshop_tasks wt
-         WHERE wt.variant_id IN (SELECT id FROM target_variants) AND wt.status = 'active'
-       )
-       AND NOT EXISTS (
-         SELECT 1 FROM inventory_lifecycle_events e
-         WHERE e.variant_id IN (SELECT id FROM target_variants) AND e.status='pending'
-       )
-       AND NOT EXISTS (
-         SELECT 1 FROM inventory_stocktake_items i
-         JOIN inventory_stocktake_sessions s ON s.id=i.session_id
-         WHERE i.variant_id IN (SELECT id FROM target_variants) AND s.status='active'
-       )`
-  ).bind(preview.executionId, preview.category, preview.gender, preview.color, now).run();
+       SELECT 'group', p.id, p.name, sp.id, NULL,
+              sp.material, sp.length, ?, ?, ?, NULL, ?, ?
+       FROM catalog_stock_positions sp
+       JOIN catalog_products p ON p.id=sp.product_id
+       WHERE sp.id=?
+         AND (
+           SELECT COUNT(*)
+           FROM catalog_variants v
+           WHERE ${predicate} AND v.is_active=0 AND v.updated_at=?
+         )=?`
+    ).bind(
+      preview.category, preview.gender, preview.color, preview.activeVariantCount, now,
+      preview.executionId,
+      preview.executionId, preview.category, preview.gender, preview.color, now, preview.activeVariantCount,
+    ),
+  ]);
 
   const changed = Math.max(0, toInt(result.meta?.changes, 0));
   if (changed !== preview.activeVariantCount) {
