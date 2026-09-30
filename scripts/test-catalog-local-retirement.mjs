@@ -20,6 +20,7 @@ check(retirement.includes("${alias}.stock_position_id = ?"), 'local group scope 
 check(retirement.includes("COALESCE(${alias}.category, 'adult') = ?"), 'local group scope is not bound to audience category')
 check(retirement.includes("END = ?") && retirement.includes("normalizeCatalogCombinationGender"), 'local group scope is not bound to gender')
 check(retirement.includes("normalizeCatalogCombinationColor"), 'local group scope is not bound to color')
+check(!retirement.includes("if (!gender) throw new Error('Не удалось однозначно определить пол группы.')"), 'legacy blank-gender subgroup cannot be locally retired')
 check(previewBody.includes('inventory_stock') && previewBody.includes('reserved_quantity'), 'local preview does not inspect Physical/Reserved')
 check(previewBody.includes("inventory_reservations") && previewBody.includes("r.status='active'"), 'local preview does not inspect active reservations')
 check(previewBody.includes('order_items') && previewBody.includes("shipping_status"), 'local preview does not block active unsent orders')
@@ -53,7 +54,8 @@ check(worker.includes("eventType: 'catalog_variant_group_retired'"), 'local reti
 
 check(ui.includes("CatalogVariantGroupRetirementAction"), 'Catalog subgroup does not expose local retirement control')
 check(ui.includes('executionId={groupStockPositionId}'), 'UI local retirement is not scoped to the current execution')
-check(ui.includes('category={subgroup.category}') && ui.includes('gender={subgroup.gender}') && ui.includes('color={colorGroup.label}'), 'UI local retirement does not send exact visible subgroup identity')
+check(ui.includes('category={subgroup.category}') && ui.includes('gender={subgroup.genderValue}') && ui.includes('color={colorGroup.value}'), 'UI local retirement does not send raw subgroup identity')
+check(ui.includes('genderLabel={subgroup.gender}') && ui.includes('colorLabel={colorGroup.label}'), 'UI local retirement does not keep human labels separate from raw identity')
 check(action.includes('Удалить только эту группу?'), 'local retirement confirmation does not explain its narrow scope')
 check(action.includes('Другие цвета, пол и исполнения не изменятся'), 'local retirement copy does not promise locality')
 check(action.includes('disabled={deleting || blockers.length > 0}'), 'UI can confirm a locally blocked retirement')
