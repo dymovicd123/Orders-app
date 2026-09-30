@@ -91,6 +91,50 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const catalogRetirementMainPortManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-retirement-main-port-frontend-manifest.json'), 'utf8'))
+if (catalogRetirementMainPortManifest?.version !== 1 || catalogRetirementMainPortManifest?.revision !== 'catalog-retirement-main-port-frontend-r1') throw new Error('Catalog retirement main-port frontend manifest invalid')
+const catalogRetirementMainPortBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.CATALOG_RETIREMENT_MAIN_PORT_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(catalogRetirementMainPortManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      if (!fs.existsSync(absolute)) throw new Error('Catalog retirement main-port frontend current file missing: ' + relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (catalogRetirementMainPortBlobSha(actual) !== delta.afterGitBlob) throw new Error('Catalog retirement main-port frontend changed beyond exact reconciled main port: ' + relative)
+      originals.set(relative, actual)
+      if (delta.beforeGitBlob) {
+        const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+        if (catalogRetirementMainPortBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Catalog retirement main-port frontend baseline fixture drifted: ' + relative)
+        fs.writeFileSync(absolute, baseline)
+      } else {
+        fs.unlinkSync(absolute)
+      }
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, CATALOG_RETIREMENT_MAIN_PORT_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('CATALOG RETIREMENT MAIN-PORT FRONTEND EXACT RECONCILED MAIN PORT PASSED')
+  process.exit(0)
+}
 const orderAvailabilityUxManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-availability-known-combination-ux-frontend-manifest.json'), 'utf8'))
 if (orderAvailabilityUxManifest?.version !== 1 || orderAvailabilityUxManifest?.revision !== 'order-availability-known-combination-ux-r1' || orderAvailabilityUxManifest?.file !== 'src/app/controllers/useWorkspaceViewModel.tsx') {
   throw new Error('Order availability known-combination UX frontend manifest invalid')

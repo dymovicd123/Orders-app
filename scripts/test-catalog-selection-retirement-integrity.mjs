@@ -5,6 +5,7 @@ const check = (condition, message) => { if (!condition) throw new Error(message)
 
 const workspace = read('src/app/controllers/useWorkspaceViewModel.tsx')
 const catalogPanel = read('src/features/inventory/views/renderInventoryCatalogPanel.tsx')
+const retirementAction = read('src/features/inventory/views/CatalogRetirementAction.tsx')
 const catalog = read('worker/domains/catalog.ts')
 const arrival = read('worker/domains/inventory-movement.ts')
 const inventorySection = read('src/features/sections/InventorySection.tsx')
@@ -51,10 +52,12 @@ check(catalog.includes('export async function catalogActiveCharacteristicValueEx
 check(catalog.includes('JOIN catalog_products p ON p.id = v.product_id') && catalog.includes('v.is_active = 1 AND p.is_active = 1'), 'Catalog-backed characteristic validation does not require active SKU + active product')
 check(catalog.includes('if (await catalogActiveCharacteristicValueExists(db, dbKind, normalized)) return;'), 'Catalog admin still rejects values already used by active Catalog')
 
-// Product retirement is exposed as a guarded admin action, not hard delete.
-check(catalogPanel.includes('Вывести товар'), 'whole-product retirement action missing from Catalog UI')
-check(catalogPanel.includes('disabled={selectedVariants.length > 0}'), 'whole-product retirement UI can bypass active SKU cleanup')
-check(catalogPanel.includes("body: JSON.stringify({ isActive: false })"), 'whole-product retirement UI does not use soft deactivate')
-check(catalogPanel.includes('Он исчезнет из форм выбора, но история останется.'), 'whole-product retirement confirmation does not explain historical preservation')
+// Whole-product removal now uses the safe-retirement engine: active SKU/stock/reservations are
+// handled atomically instead of forcing the admin through manual cleanup first.
+check(catalogPanel.includes('buttonLabel="Удалить товар"'), 'whole-product safe-retirement action missing from Catalog UI')
+check(!catalogPanel.includes('disabled={selectedVariants.length > 0}'), 'whole-product safe retirement is still blocked merely by active SKU presence')
+check(catalogPanel.includes('CatalogRetirementAction'), 'whole-product UI is not wired to the guarded retirement action')
+check(retirementAction.includes('/retirement-preview') && retirementAction.includes('/retire'), 'whole-product UI does not use guarded retirement preview/apply')
+check(retirementAction.includes('Старые заказы и движения сохранятся в истории.'), 'whole-product retirement confirmation does not explain historical preservation')
 
 console.log('CATALOG SELECTION / RETIREMENT INTEGRITY PASSED — working pickers are active-only, known facts share Catalog truth, ORDA alias safety is preserved, and product/SKU retirement is soft and guarded')

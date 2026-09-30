@@ -6,6 +6,7 @@ import { listActivityLog, listOrdersFinanceSummary, listReturnHistory, writeActi
 import { authUserPayload, createAuthUser, deleteAuthUser, ensureAuthSchema, handleAuthChangePassword, handleAuthLogin, handleAuthLogout, handleAuthSetup, handleAuthStatus, handleSimpleAdminLogin, handleSimpleAdminLogout, handleSimpleAdminPasswordChange, handleSimpleAdminStatus, isDiagnosticsEnabled, listAuthUsers, makeSimpleAccessUser, normalizeAccessRole, publicAuthPath, requireAdminAccess, requireAdminUser, updateAuthUser, withAuthenticatedHeaders } from './domains/auth.ts'
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
 import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, saveCatalogExecutionPrice, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
+import { listCatalogRetirements, previewCatalogRetirement, previewCatalogVariantGroupRetirement, restoreCatalogRetirement, retireCatalogEntity, retireCatalogVariantGroup } from './domains/catalog-retirement.ts'
 import type { CatalogReviewFactsInput } from './domains/catalog-review.ts'
 import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant } from './domains/catalog-review.ts'
 import { getClientDetails, listClients } from './domains/clients.ts'
@@ -19,7 +20,7 @@ import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileK
 import { createManualOrderPaymentCritical } from './domains/money.ts'
 import { OrderInputValidationError } from './domains/order-core.ts'
 import { deleteOrderSafely } from './domains/order-delete.ts'
-import { activeStocktakeSessionForHandover, confirmItemStillHere, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, getOrderStockHandoverState, normalizeShipmentStockConfirmations, OrderStockShortageError, orderShipmentInventoryBlockerMessage, orderWorkshopPendingForShipping, reconcileIssuedBeforeCheckpoint } from './domains/order-reservations.ts'
+import { activeStocktakeSessionForHandover, confirmItemStillHere, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, getOrderStockHandoverState, normalizeShipmentStockConfirmations, OrderRetiredCatalogConfirmationError, OrderStockShortageError, orderShipmentInventoryBlockerMessage, orderWorkshopPendingForShipping, reconcileIssuedBeforeCheckpoint } from './domains/order-reservations.ts'
 import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
@@ -518,6 +519,9 @@ export default {
           if (error instanceof OrderStockShortageError) {
             return json({ ok: false, code: error.code, message: error.message, shortages: error.shortages }, { status: 409 });
           }
+          if (error instanceof OrderRetiredCatalogConfirmationError) {
+            return json({ ok: false, code: error.code, message: error.message, retiredItems: error.items }, { status: error.status });
+          }
           const criticalResponse = criticalOperationErrorResponse(error);
           if (criticalResponse) return criticalResponse;
           throw error;
@@ -999,6 +1003,108 @@ export default {
         if (denied) return denied;
         const input = await readJson<{ stockPositionId?: unknown; category?: unknown; costPrice?: unknown; salePrice?: unknown }>(request);
         return json(await saveCatalogExecutionPrice(env.DB, input));
+      }
+
+      if (url.pathname === '/api/catalog/retirements' && request.method === 'GET') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        return json(await listCatalogRetirements(env.DB, url.searchParams.get('limit')));
+      }
+
+      const catalogRetirementRestoreMatch = url.pathname.match(/^\/api\/catalog\/retirements\/(\d+)\/restore$/);
+      if (catalogRetirementRestoreMatch && request.method === 'POST') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        const input = await readJson<{ requestId?: unknown }>(request);
+        const result = await restoreCatalogRetirement(env.DB, toInt(catalogRetirementRestoreMatch[1], 0), {
+          requestId: input.requestId,
+          actor: authUser?.displayName || authUser?.managerName || authUser?.email || 'admin',
+        });
+        try {
+          await writeActivityLog(env.DB, {
+            eventType: 'catalog_retirement_restored',
+            entityType: 'catalog',
+            entityId: toInt(catalogRetirementRestoreMatch[1], 0),
+            title: 'Удалённая позиция восстановлена в каталог',
+            details: `Создано/связано новых рабочих позиций: ${result.restoredVariantCount}; старый склад не восстановлен.`,
+          });
+        } catch {
+          // Audit restore remains authoritative even if the generic activity log is unavailable.
+        }
+        return json(result);
+      }
+
+      const catalogVariantGroupRetirementPreviewMatch = url.pathname.match(/^\/api\/catalog\/executions\/(\d+)\/variant-groups\/retirement-preview$/);
+      if (catalogVariantGroupRetirementPreviewMatch && request.method === 'GET') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        return json(await previewCatalogVariantGroupRetirement(env.DB, {
+          executionId: toInt(catalogVariantGroupRetirementPreviewMatch[1], 0),
+          category: url.searchParams.get('category'),
+          gender: url.searchParams.get('gender'),
+          color: url.searchParams.get('color'),
+        }));
+      }
+
+      const catalogVariantGroupRetireMatch = url.pathname.match(/^\/api\/catalog\/executions\/(\d+)\/variant-groups\/retire$/);
+      if (catalogVariantGroupRetireMatch && request.method === 'POST') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        const input = await readJson<{ category?: unknown; gender?: unknown; color?: unknown }>(request);
+        const result = await retireCatalogVariantGroup(env.DB, {
+          executionId: toInt(catalogVariantGroupRetireMatch[1], 0),
+          category: input.category,
+          gender: input.gender,
+          color: input.color,
+        });
+        try {
+          await writeActivityLog(env.DB, {
+            eventType: 'catalog_variant_group_retired',
+            entityType: 'catalog_execution',
+            entityId: toInt(catalogVariantGroupRetireMatch[1], 0),
+            title: 'Группа позиций удалена из рабочего каталога',
+            details: `Пол: ${result.gender}; цвет: ${result.color}; тип: ${result.category}; позиций: ${result.retiredVariantCount || 0}.`,
+          });
+        } catch {
+          // Catalog mutation remains authoritative if secondary activity log is unavailable.
+        }
+        return json(result);
+      }
+
+      const catalogExecutionRetirementPreviewMatch = url.pathname.match(/^\/api\/catalog\/executions\/(\d+)\/retirement-preview$/);
+      if (catalogExecutionRetirementPreviewMatch && request.method === 'GET') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        return json(await previewCatalogRetirement(env.DB, 'execution', toInt(catalogExecutionRetirementPreviewMatch[1], 0)));
+      }
+
+      const catalogExecutionRetireMatch = url.pathname.match(/^\/api\/catalog\/executions\/(\d+)\/retire$/);
+      if (catalogExecutionRetireMatch && request.method === 'POST') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        const input = await readJson<{ requestId?: unknown; reason?: unknown }>(request);
+        return json(await retireCatalogEntity(env.DB, 'execution', toInt(catalogExecutionRetireMatch[1], 0), {
+          ...input,
+          actor: authUser?.displayName || authUser?.managerName || authUser?.email || 'admin',
+        }));
+      }
+
+      const catalogProductRetirementPreviewMatch = url.pathname.match(/^\/api\/catalog\/products\/(\d+)\/retirement-preview$/);
+      if (catalogProductRetirementPreviewMatch && request.method === 'GET') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        return json(await previewCatalogRetirement(env.DB, 'product', toInt(catalogProductRetirementPreviewMatch[1], 0)));
+      }
+
+      const catalogProductRetireMatch = url.pathname.match(/^\/api\/catalog\/products\/(\d+)\/retire$/);
+      if (catalogProductRetireMatch && request.method === 'POST') {
+        const denied = requireAdminAccess(request);
+        if (denied) return denied;
+        const input = await readJson<{ requestId?: unknown; reason?: unknown }>(request);
+        return json(await retireCatalogEntity(env.DB, 'product', toInt(catalogProductRetireMatch[1], 0), {
+          ...input,
+          actor: authUser?.displayName || authUser?.managerName || authUser?.email || 'admin',
+        }));
       }
 
       if (url.pathname === '/api/catalog/products' && request.method === 'POST') {

@@ -1,6 +1,8 @@
 import type { InventoryRenderContext } from './types'
 import { renderInventoryCatalogPanel as renderLegacyInventoryCatalogPanel } from './catalogLegacyAdminModes'
 import { CatalogPolishExecutionGroups, pluralRu } from './catalogPolishExecutionGroups'
+import { CatalogRetirementAction } from './CatalogRetirementAction'
+import { CatalogRetirementHistory } from './CatalogRetirementHistory'
 
 type PanelContext = Pick<InventoryRenderContext,
   | 'catalogActiveProducts'
@@ -107,16 +109,6 @@ const isStandardValue = (value: unknown) => normalizedKey(value) === 'СТАНД
 const productGenderScope = (product: any): 'female' | 'male' | 'unisex' => ['female', 'male', 'unisex'].includes(String(product?.genderScope || '')) ? product.genderScope : 'unisex'
 const fixedGenderForProduct = (product: any) => productGenderScope(product) === 'female' ? 'ЖЕН' : productGenderScope(product) === 'male' ? 'МУЖ' : ''
 const productGenderScopeLabel = (product: any) => productGenderScope(product) === 'female' ? 'Женский' : productGenderScope(product) === 'male' ? 'Мужской' : 'Унисекс'
-
-async function readCatalogProductMutationResult(response: Response) {
-  const text = await response.text()
-  if (!text) return { ok: response.ok, message: '' }
-  try {
-    return JSON.parse(text) as { ok?: boolean; message?: string }
-  } catch {
-    return { ok: response.ok, message: response.ok ? '' : 'Сервер вернул неполный ответ. Обновите каталог перед повтором.' }
-  }
-}
 
 const executionKey = (material: unknown, length: unknown) => `${normalizedKey(material)}¦${normalizedKey(length)}`
 
@@ -320,41 +312,6 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
     })
     : []
 
-  const retireProduct = async (product: any) => {
-    if (!isAdmin || !product?.id) return
-    const activeVariantCount = activeVariantsFor(Number(product.id)).length
-    if (activeVariantCount) {
-      window.alert(`Сначала выведите из каталога все активные позиции товара. Сейчас активно: ${activeVariantCount}.`)
-      return
-    }
-    if (!window.confirm(`Вывести товар «${product.name}» из рабочего каталога? Он исчезнет из форм выбора, но история останется.`)) return
-
-    try {
-      const response = await fetch(`/api/catalog/products/${encodeURIComponent(String(product.id))}`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: false }),
-      })
-      const result = await readCatalogProductMutationResult(response)
-      if (!response.ok || result?.ok === false) {
-        window.alert(result?.message || 'Товар не выведен из каталога. Проверьте активные позиции и связанные операции.')
-        return
-      }
-
-      setExpandedCatalogProducts({})
-      setCatalogProductDraft({ id: 0, name: '', category: catalogCategoryFilter === 'child' ? 'child' : 'adult', genderScope: '' })
-      setCatalogVariantDraft(blankVariant(0, catalogCategoryFilter === 'child' ? 'child' : 'adult'))
-      try {
-        const refreshed = await loadCatalogData(true)
-        if (!refreshed) window.alert('Товар выведен из каталога, но список не обновился. Нажмите «Обновить»; повторять вывод не нужно.')
-      } catch {
-        window.alert('Товар выведен из каталога, но список не обновился. Нажмите «Обновить»; повторять вывод не нужно.')
-      }
-    } catch {
-      window.alert('Не удалось подтвердить результат. Нажмите «Обновить» и проверьте каталог перед повторным действием.')
-    }
-  }
 
   const selectedProductNameMatchesQuery = Boolean(query && selectedProduct && normalizedText(selectedProduct.name).toLocaleLowerCase('ru').includes(query))
   const visibleSelectedVariants = selectedVariants.filter((variant: any) => {
@@ -409,6 +366,7 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
           <p>Каталог, цвета, размеры и другие характеристики.</p>
         </div>
         <div className="w6-catalog-head-actions">
+          {isAdmin ? <CatalogRetirementHistory onCatalogChanged={() => loadCatalogData(true)} /> : null}
           <button className="secondary compact" type="button" onClick={() => void loadCatalogData(true)}>Обновить</button>
         </div>
       </div>
@@ -569,15 +527,22 @@ export function renderInventoryCatalogPanel(ctx: PanelContext) {
                   <button className="secondary compact" type="button" onClick={() => { setInventoryQuery(selectedProduct.name); ctx.openInventoryPanel('overview') }}>Найти в остатках</button>
                   <button className="secondary compact" type="button" onClick={() => openProductEditor(selectedProduct)}>Редактировать товар</button>
                   {isAdmin ? (
-                    <button
-                      className="secondary compact"
-                      type="button"
-                      disabled={selectedVariants.length > 0}
-                      title={selectedVariants.length > 0 ? 'Сначала выведите все активные позиции товара' : 'Товар исчезнет из рабочих списков, история сохранится'}
-                      onClick={() => void retireProduct(selectedProduct)}
-                    >
-                      Вывести товар
-                    </button>
+                    <CatalogRetirementAction
+                      kind="product"
+                      entityId={Number(selectedProduct.id || 0)}
+                      entityLabel={String(selectedProduct.name || '')}
+                      buttonLabel="Удалить товар"
+                      onRetired={async () => {
+                        setExpandedCatalogProducts({})
+                        setCatalogProductDraft({ id: 0, name: '', category: catalogCategoryFilter === 'child' ? 'child' : 'adult', genderScope: '' })
+                        setCatalogVariantDraft(blankVariant(0, catalogCategoryFilter === 'child' ? 'child' : 'adult'))
+                        try {
+                          return await loadCatalogData(true)
+                        } catch {
+                          return false
+                        }
+                      }}
+                    />
                   ) : null}
                   <button className="primary compact" type="button" disabled={!stocktakeReferenceReady} title={!stocktakeReferenceReady ? 'Сначала загружаются справочники характеристик' : undefined} onClick={() => openNewVariant(selectedProduct)}>+ Позиция</button>
                 </div>

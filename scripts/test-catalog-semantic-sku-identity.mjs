@@ -18,7 +18,7 @@ check(catalog.includes('const color = catalogColorIdentity(input.color);'), 'New
 check(catalog.includes('const sizeLabel = normalizeCatalogCombinationSize(input.sizeLabel);'), 'New Catalog combinations do not normalize no-size aliases before identity lookup')
 check(catalog.includes("IN ('', 'БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р')"), 'Catalog semantic lookup no longer treats no-size aliases as one identity')
 
-check(inventory.includes("import { catalogColorIdentity,"), 'Arrival materializer does not share Catalog color identity')
+check(inventory.includes('catalogColorIdentity') && inventory.includes("from './catalog.ts'"), 'Arrival materializer does not share Catalog color identity')
 check(inventory.includes('const variantExactKey = '), 'Arrival exact variant lookup missing')
 check(inventory.includes('const variantSemanticKey = '), 'Arrival semantic variant lookup missing')
 check(inventory.includes('catalogColorIdentity(color)'), 'Arrival semantic key does not normalize punctuation-equivalent colors')
@@ -32,7 +32,7 @@ check(inventory.includes('color: normalizeCatalogCombinationColor(variant.color)
 check(orderCore.includes('if (await isCatalogIdentityV3Enabled(db))'), 'Order materialization lost the Catalog identity-v3 gate')
 check(orderCore.includes('const combination = await createCatalogCombinationV3(db, {'), 'Order identity-v3 path bypasses canonical combination creation')
 check(orderReservations.includes('if (await isCatalogIdentityV3Enabled(db) || await isHumanInventoryModelEnabled(db))'), 'Order reservation resolver can fall back to legacy exact-only materialization while the current inventory model is active')
-check(orderReservations.includes('return await resolveCatalogProductAndVariantV2(db, item);'), 'Current order reservation resolver does not route through canonical V2 identity')
+check(orderReservations.includes('return await resolveCatalogProductAndVariantV2(db, item, { ...options, timestamp });'), 'Current order reservation resolver does not route through canonical V2 identity')
 check(orderReservations.includes('const created = await createCatalogCombinationV3(db, {'), 'Canonical order resolver bypasses semantic combination creation')
 
 const colorIdentity = (value) => String(value || '').trim().toUpperCase().replace(/[‐‑‒–—-]+/g, ' ').replace(/\s+/g, ' ').trim()

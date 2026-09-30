@@ -19,10 +19,10 @@ check(fn.includes('currentQuantity === Math.max(1, toInt(item.quantity, 1))'), '
 
 const releasePos = fn.indexOf("await releaseOrderReservationV2(db, id, timestamp, 'Исправлена canonical identity позиции заказа')")
 const deleteReleasedPos = fn.indexOf("DELETE FROM inventory_reservations WHERE id = ? AND status = 'released'", releasePos)
-const retryMarkerPos = fn.indexOf("SET stock_writeoff_status = 'catalog_unresolved'", releasePos)
+const retryMarkerPos = fn.indexOf("retiredDemand ? 'catalog_retired' : 'catalog_unresolved'", releasePos)
 const reservePos = fn.indexOf('await reserveOrderItemV2(', releasePos)
 check(releasePos >= 0 && deleteReleasedPos > releasePos, 'Old active reservation is not safely released before replacement')
-check(retryMarkerPos > releasePos && retryMarkerPos < reservePos, 'Resolver does not keep failed reservation migration visible for retry')
+check(retryMarkerPos > releasePos && retryMarkerPos < reservePos, 'Resolver does not keep failed reservation migration visible for retry (catalog_unresolved normally, catalog_retired during explicit retired recovery)')
 check(reservePos > deleteReleasedPos, 'Replacement reservation can be created before old reservation is removed')
 
 check(fn.includes("existingStatus !== 'fulfilled'"), 'Legacy unresolved/released placeholders are not separated from immutable fulfilled history')

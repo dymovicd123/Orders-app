@@ -8,7 +8,7 @@ import type { CriticalOperationHandle } from './critical.ts'
 import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, criticalOperationEntityId, failCriticalOperation, insertCriticalMappedEntity, parseCriticalContext, updateCriticalOperationTargetFromLastInsert } from './critical.ts'
 import { buildPaymentAndMoneyEventStatements, financialEventStatement, financialOperationTypeFromPaymentKind, removeOrderPaymentsWithMoneyEvents } from './money.ts'
 import { assertOrderItemInputs, assertOrderPaymentInputs, assertOrderTotalInput, calculateTotals, completedOrderOperationCounts, normalizeOrderItems, normalizeOrderPayments, OrderInputValidationError, sameNormalizedOrderItemsForEdit, sameNormalizedOrderPaymentsForEdit } from './order-core.ts'
-import { assertCreateOrderShortageDecisions, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, OrderStockShortageError, orderShipmentInventoryBlockerMessage, releaseOrderReservationsV2, reserveOrderItemV2, resolveCatalogProductAndVariant, resolveWorkshopCatalogProductOnly } from './order-reservations.ts'
+import { assertCreateOrderShortageDecisions, catalogOrderInputKey, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, inspectOrderRetiredCatalogIdentityV2, OrderRetiredCatalogConfirmationError, OrderStockShortageError, orderShipmentInventoryBlockerMessage, releaseOrderReservationsV2, reserveOrderItemV2, resolveCatalogProductAndVariant, resolveWorkshopCatalogProductOnly } from './order-reservations.ts'
 import { canonicalItemProjection, fetchOrderRelations, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
 import { upsertCustomerIdentityForOrderCreate } from './references.ts'
 import { isInventoryAutoWriteoffEnabled, recalculateCustomersAfterStorageCleanup } from './storage.ts'
@@ -828,12 +828,55 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         const createdAt = cleanText(operationContext.createdAt) || requestedAt;
         if (normalizedItems.some(item => item.isWorkshop)) await assertWorkshopTaskDetailSchema(db);
 
+        const confirmedRetiredKeys = new Set(
+          (Array.isArray(input.retiredCatalogRecreateKeys) ? input.retiredCatalogRecreateKeys : [])
+            .map(cleanText)
+            .filter(Boolean),
+        );
+        const retiredConfirmationItems = [];
+        const retiredCandidateByInputIndex = new Map<number, Awaited<ReturnType<typeof inspectOrderRetiredCatalogIdentityV2>>>();
+        for (const [index, item] of normalizedItems.entries()) {
+          if (item.isWorkshop) continue;
+          const retiredCandidate = await inspectOrderRetiredCatalogIdentityV2(db, item);
+          if (!retiredCandidate) continue;
+          const inputIndex = Math.max(0, toInt(item.inputIndex, index));
+          retiredCandidateByInputIndex.set(inputIndex, retiredCandidate);
+          if (!confirmedRetiredKeys.has(retiredCandidate.confirmationKey)) {
+            retiredConfirmationItems.push({ inputIndex, ...retiredCandidate });
+          }
+        }
+        if (retiredConfirmationItems.length) {
+          throw new OrderRetiredCatalogConfirmationError(retiredConfirmationItems);
+        }
+
+        const retiredFreshShortages = [];
+        for (const [index, item] of normalizedItems.entries()) {
+          if (item.isWorkshop || item.observedPhysicalQuantity !== null || item.shortageAcknowledged) continue;
+          const inputIndex = Math.max(0, toInt(item.inputIndex, index));
+          const retiredCandidate = retiredCandidateByInputIndex.get(inputIndex);
+          if (!retiredCandidate || !confirmedRetiredKeys.has(retiredCandidate.confirmationKey)) continue;
+          retiredFreshShortages.push({
+            inventorySource: item.inventorySource,
+            variantId: 0,
+            inputIndexes: [inputIndex],
+            productName: item.productName,
+            requestedQuantity: Math.max(1, toInt(item.quantity, 1)),
+            physicalQuantity: 0,
+            reservedQuantity: 0,
+            shortage: Math.max(1, toInt(item.quantity, 1)),
+          });
+        }
+        if (retiredFreshShortages.length) {
+          throw new OrderStockShortageError(retiredFreshShortages);
+        }
+
         const preResolvedCatalog: Array<{ productId: number | null; variantId: number | null }> = [];
         const observedByVariant = new Map<string, number>();
         for (const item of normalizedItems) {
+          const allowRetiredRecreate = !item.isWorkshop && confirmedRetiredKeys.has(catalogOrderInputKey(item));
           const resolved = item.isWorkshop
             ? await resolveWorkshopCatalogProductOnly(db, item)
-            : await resolveCatalogProductAndVariant(db, item, createdAt);
+            : await resolveCatalogProductAndVariant(db, item, createdAt, { allowRetiredRecreate });
           preResolvedCatalog.push(resolved);
           if (item.observedPhysicalQuantity === null) continue;
           if (!resolved.productId || !resolved.variantId) {

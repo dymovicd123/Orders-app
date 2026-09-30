@@ -23,6 +23,7 @@ export type OrderInput = {
   deliveryType?: string;
   sourceType?: 'warehouse' | 'boutique';
   orderTotal?: number;
+  retiredCatalogRecreateKeys?: string[];
   workshopStatus?: 'in_workshop' | 'ready' | 'shipped' | 'cancelled';
   orderStatus?: 'active' | 'closed' | 'archived' | 'deleted';
   shippingStatus?: 'not_sent' | 'sent' | 'Не отправлено' | 'Отправлено';

@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { CatalogRetirementAction } from './CatalogRetirementAction'
+import { CatalogVariantGroupRetirementAction } from './CatalogVariantGroupRetirementAction'
 
 const normalizedText = (value: unknown) => String(value || '').trim()
 const normalizedKey = (value: unknown) => normalizedText(value).toUpperCase() || 'СТАНДАРТ'
@@ -18,13 +20,14 @@ function colorGroupsFor(variants: any[], getCatalogVariantCategory: (variant: an
   for (const variant of variants) {
     const colorLabel = normalizedText(variant.color) || 'Цвет не указан'
     const colorKey = normalizedKey(colorLabel)
-    if (!groups.has(colorKey)) groups.set(colorKey, { key: colorKey, label: colorLabel, variants: [], subgroupMap: new Map<string, any>() })
+    if (!groups.has(colorKey)) groups.set(colorKey, { key: colorKey, label: colorLabel, value: normalizedText(variant.color), variants: [], subgroupMap: new Map<string, any>() })
     const colorGroup = groups.get(colorKey)!
     colorGroup.variants.push(variant)
     const category = getCatalogVariantCategory(variant)
-    const gender = normalizedText(variant.gender) || 'Пол не указан'
+    const genderValue = normalizedText(variant.gender)
+    const gender = genderValue || 'Пол не указан'
     const subgroupKey = `${category}¦${normalizedKey(gender)}`
-    if (!colorGroup.subgroupMap.has(subgroupKey)) colorGroup.subgroupMap.set(subgroupKey, { key: subgroupKey, category, gender, variants: [] })
+    if (!colorGroup.subgroupMap.has(subgroupKey)) colorGroup.subgroupMap.set(subgroupKey, { key: subgroupKey, category, gender, genderValue, variants: [] })
     colorGroup.subgroupMap.get(subgroupKey)!.variants.push(variant)
   }
 
@@ -254,8 +257,13 @@ export function CatalogPolishExecutionGroups({
   return (
     <div className="catalog-execution-list">
       {actionMessage ? <div className="catalog-sku-action-status is-success" role="status">{actionMessage}</div> : null}
+      {actionError ? <div className="catalog-sku-action-status is-error" role="alert">{actionError}</div> : null}
       {executionGroups.length ? executionGroups.map((group: any) => {
         const groupPhysical = group.variants.reduce((sum: number, variant: any) => sum + (getStockQuantityForVariant('warehouse', variant.id) || 0) + (getStockQuantityForVariant('boutique', variant.id) || 0), 0)
+        const groupStockPositionIds = Array.from(new Set(
+          (group.variants || []).map((variant: any) => Number(variant.stockPositionId || 0)).filter((value: number) => value > 0),
+        ))
+        const groupStockPositionId = groupStockPositionIds.length === 1 ? Number(groupStockPositionIds[0]) : 0
         const colorGroups = colorGroupsFor(group.variants, getCatalogVariantCategory)
         return (
           <section key={`execution-${group.key}`} className="catalog-execution-card">
@@ -269,15 +277,31 @@ export function CatalogPolishExecutionGroups({
                 <strong>{groupPhysical}</strong>
                 <span>физически в точках</span>
               </div>
+              {isAdmin && groupStockPositionId ? (
+                <CatalogRetirementAction
+                  kind="execution"
+                  entityId={groupStockPositionId}
+                  entityLabel={group.label}
+                  buttonLabel="Удалить исполнение"
+                  disabled={Boolean(actionBusyVariantId)}
+                  onRetired={async () => {
+                    setVariantCard(null)
+                    setActionError('')
+                    setActionMessage(`Исполнение «${group.label}» удалено. История сохранена.`)
+                    try {
+                      return await loadCatalogData(true)
+                    } catch {
+                      return false
+                    }
+                  }}
+                />
+              ) : null}
             </div>
 
             {isAdmin ? (() => {
               const categories = (['adult', 'child'] as const).filter((category) =>
                 group.variants.some((variant: any) => getCatalogVariantCategory(variant) === category))
-              const stockPositionIds = Array.from(new Set(
-                (group.variants || []).map((variant: any) => Number(variant.stockPositionId || 0)).filter((value: number) => value > 0),
-              ))
-              const stockPositionId = stockPositionIds.length === 1 ? Number(stockPositionIds[0]) : 0
+              const stockPositionId = groupStockPositionId
               return (
                 <section className="catalog-execution-prices" aria-label={`Цены: ${group.label}`}>
                   <div className="catalog-execution-prices-head">
@@ -377,9 +401,32 @@ export function CatalogPolishExecutionGroups({
                         const cardTotalQty = cardWarehouseQty + cardBoutiqueQty
                         return (
                           <div key={`subgroup-${group.key}-${colorGroup.key}-${subgroup.key}`} className="catalog-color-subgroup">
-                            <div className="catalog-color-subgroup-label">
-                              <strong>{subgroup.gender}</strong>
-                              <span>{productCategoryLabel(subgroup.category)} · {subgroup.category === 'child' ? 'возраст' : 'размер'}</span>
+                            <div className="catalog-color-subgroup-heading">
+                              <div className="catalog-color-subgroup-label">
+                                <strong>{subgroup.gender}</strong>
+                                <span>{productCategoryLabel(subgroup.category)} · {subgroup.category === 'child' ? 'возраст' : 'размер'}</span>
+                              </div>
+                              {isAdmin && groupStockPositionId ? (
+                                <CatalogVariantGroupRetirementAction
+                                  executionId={groupStockPositionId}
+                                  category={subgroup.category}
+                                  gender={subgroup.genderValue}
+                                  genderLabel={subgroup.gender}
+                                  color={colorGroup.value}
+                                  colorLabel={colorGroup.label}
+                                  disabled={Boolean(actionBusyVariantId)}
+                                  onRetired={async () => {
+                                    setVariantCard(null)
+                                    setActionError('')
+                                    setActionMessage(`Группа «${colorGroup.label} · ${subgroup.gender}» удалена. История сохранена.`)
+                                    try {
+                                      return await loadCatalogData(true)
+                                    } catch {
+                                      return false
+                                    }
+                                  }}
+                                />
+                              ) : null}
                             </div>
                             <div className="catalog-size-grid">
                               {subgroup.variants.map((variant: any) => {

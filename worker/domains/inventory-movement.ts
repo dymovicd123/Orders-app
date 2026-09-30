@@ -5,7 +5,7 @@ import { chunksOf, mapSqlRows } from '../core/sql.ts'
 import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, normalizeCatalogCategory, normalizeSourceType, toInt, upperText } from '../core/text.ts'
 import type { InventoryItemInput, InventoryMovementKind, SourceType } from '../core/types.ts'
 import type { CanonicalVariantSnapshot } from './catalog.ts'
-import { catalogColorIdentity, isCatalogIdentityV3Enabled, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, normalizeCatalogProductIdentityKey } from './catalog.ts'
+import { assertCatalogGenderAllowedForScope, catalogColorIdentity, isCatalogIdentityV3Enabled, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, normalizeCatalogProductIdentityKey } from './catalog.ts'
 import { findInventoryMovementMatch, listInventory } from './inventory-read.ts'
 import { isReversibleInventoryMovementReference } from './inventory-reservations.ts'
 import type { InventoryResolvedItem } from './order-core.ts'
@@ -79,6 +79,7 @@ export function normalizeInventoryOperationStockConfirmations(input: unknown): I
 export async function resolveInventoryCreatableItemsBulk(
   db: D1Database,
   rawItems: ReturnType<typeof normalizeInventoryItem>[],
+  options: { allowRetiredRecreate?: boolean } = {},
 ): Promise<InventoryResolvedItem[]> {
   if (!rawItems.length) return [];
 
@@ -123,13 +124,22 @@ export async function resolveInventoryCreatableItemsBulk(
       const identity = normalizeCatalogProductIdentityKey(row.name);
       if (identity && !byIdentity.has(identity)) byIdentity.set(identity, row);
     }
+    const byInactiveExact = new Map<string, ProductRow>();
+    const byInactiveIdentity = new Map<string, ProductRow>();
+    for (const row of rows) {
+      if (toInt(row.is_active, 0) === 1) continue;
+      const exact = upperText(row.name);
+      if (exact && !byInactiveExact.has(exact)) byInactiveExact.set(exact, row);
+      const identity = normalizeCatalogProductIdentityKey(row.name);
+      if (identity && !byInactiveIdentity.has(identity)) byInactiveIdentity.set(identity, row);
+    }
     const byAlias = new Map<string, ProductRow>();
     for (const alias of aliasRows) {
       const key = cleanText(alias.alias_key);
       const target = byId.get(toInt(alias.product_id, 0));
       if (key && target && !byAlias.has(key)) byAlias.set(key, target);
     }
-    return { byId, byExact, byIdentity, byAlias };
+    return { byId, byExact, byIdentity, byInactiveExact, byInactiveIdentity, byAlias };
   };
 
   let lookup = buildProductLookup(products);
@@ -139,25 +149,68 @@ export async function resolveInventoryCreatableItemsBulk(
     const identityKey = normalizeCatalogProductIdentityKey(item.productName);
     if (!identityKey) return null;
     const alias = lookup.byAlias.get(identityKey);
-    if (alias) return alias;
+    if (alias && toInt(alias.is_active, 0) === 1) return alias;
     const exact = lookup.byExact.get(upperText(item.productName));
     if (exact) return exact;
     return lookup.byIdentity.get(identityKey) || null;
   };
 
+  const assertKnownProductGender = (product: ProductRow | null | undefined, item: ReturnType<typeof normalizeInventoryItem>) => {
+    if (!product?.id) return;
+    const explicitGender = normalizeCatalogCombinationGender(item.gender);
+    if (explicitGender !== 'ЖЕН' && explicitGender !== 'МУЖ') return;
+    assertCatalogGenderAllowedForScope(product.gender_scope, explicitGender, product.name);
+  };
+
   const missingProducts = new Map<string, { name: string; category: string; externalId: string }>();
+  const retiredProductIdsToReactivate = new Set<number>();
   rawItems.forEach((item, index) => {
     if (!item.productName) throw new Error('Product is required for inventory operation.');
-    if (resolveProduct(item)) return;
-    const identityKey = normalizeCatalogProductIdentityKey(item.productName) || `RAW:${item.productName}`;
-    if (!missingProducts.has(identityKey)) {
-      missingProducts.set(identityKey, {
+    const activeProduct = resolveProduct(item);
+    if (activeProduct) {
+      assertKnownProductGender(activeProduct, item);
+      return;
+    }
+
+    const explicit = item.productId > 0 ? lookup.byId.get(item.productId) : null;
+    const identityKey = normalizeCatalogProductIdentityKey(item.productName);
+    const aliasTarget = identityKey ? lookup.byAlias.get(identityKey) : null;
+    const retired = explicit && toInt(explicit.is_active, 0) !== 1
+      ? explicit
+      : aliasTarget && toInt(aliasTarget.is_active, 0) !== 1
+        ? aliasTarget
+        : lookup.byInactiveExact.get(upperText(item.productName))
+          || (identityKey ? lookup.byInactiveIdentity.get(identityKey) : null);
+    const retiredId = toInt(retired?.id, 0);
+    if (retiredId) {
+      assertKnownProductGender(retired, item);
+      if (!options.allowRetiredRecreate) {
+        throw new Error(`Товар «${item.productName}» был удалён из рабочего каталога. Эта складская операция не может автоматически вернуть его; используйте Приход или восстановление Каталога.`);
+      }
+      retiredProductIdsToReactivate.add(retiredId);
+      return;
+    }
+
+    const newIdentityKey = identityKey || `RAW:${item.productName}`;
+    if (!missingProducts.has(newIdentityKey)) {
+      missingProducts.set(newIdentityKey, {
         name: item.productName,
         category: normalizeAudienceCategory(item.category, item.size),
         externalId: `AUTO-PROD-${Date.now().toString(36).toUpperCase()}-${index + 1}-${item.productName.length}`,
       });
     }
   });
+
+  if (retiredProductIdsToReactivate.size) {
+    await db.prepare(
+      `UPDATE catalog_products
+       SET is_active=1, updated_at=?
+       WHERE is_active=0
+         AND id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
+    ).bind(now, JSON.stringify(Array.from(retiredProductIdsToReactivate))).run();
+    products = await loadProducts();
+    lookup = buildProductLookup(products);
+  }
 
   if (missingProducts.size) {
     const missingProductsJson = JSON.stringify(Array.from(missingProducts.values()));
@@ -175,9 +228,12 @@ export async function resolveInventoryCreatableItemsBulk(
   if (productForItem.some(row => !row?.id)) throw new Error('Не удалось создать или найти товар для складской операции. Обновите каталог и повторите действие.');
 
   const resolvedGenderForItem = rawItems.map((item, index) => {
+    const product = productForItem[index];
     const explicit = normalizeCatalogCombinationGender(item.gender);
-    if (explicit === 'ЖЕН' || explicit === 'МУЖ') return explicit;
-    const scope = cleanText(productForItem[index]?.gender_scope).toLowerCase();
+    if (explicit === 'ЖЕН' || explicit === 'МУЖ') {
+      return assertCatalogGenderAllowedForScope(product?.gender_scope, explicit, product?.name).gender;
+    }
+    const scope = cleanText(product?.gender_scope).toLowerCase();
     if (scope === 'female') return 'ЖЕН';
     if (scope === 'male') return 'МУЖ';
     throw new Error('Для товара «Унисекс» выберите пол конкретной вещи: ЖЕН или МУЖ.');
@@ -198,10 +254,26 @@ export async function resolveInventoryCreatableItemsBulk(
   const executionKey = (productId: number, material: unknown, length: unknown) =>
     `${productId}¦${canonicalStockPositionValue(material)}¦${canonicalStockPositionValue(length)}`;
   let executionByKey = new Map(executions.map(row => [executionKey(toInt(row.product_id, 0), row.material, row.length), row]));
+
+  // An inactive execution is an explicit administrator decision, not an unknown combination.
+  // Physical workflows may create genuinely new executions, but they must never resurrect one
+  // that was deliberately retired. Re-adding the same human execution is Catalog-admin only.
+  const retiredExecutionRows = mapSqlRows(await db.prepare(
+    `SELECT product_id, material, length
+     FROM catalog_stock_positions
+     WHERE is_active = 0
+       AND product_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
+  ).bind(productIdsJson).all<{ product_id: number; material: string; length: string }>()) as Array<{ product_id: number; material: string; length: string }>;
+  const retiredExecutionKeys = new Set(retiredExecutionRows.map(row =>
+    executionKey(toInt(row.product_id, 0), row.material, row.length)));
+
   const missingExecutions = new Map<string, { productId: number; material: string; length: string }>();
   rawItems.forEach((item, index) => {
     const productId = toInt(productForItem[index]?.id, 0);
     const key = executionKey(productId, item.material, item.length);
+    if (!executionByKey.has(key) && retiredExecutionKeys.has(key) && !options.allowRetiredRecreate) {
+      throw new Error(`Исполнение «${canonicalStockPositionValue(item.material)} · ${canonicalStockPositionValue(item.length)}» было удалено из рабочего каталога. Эту операцию нельзя использовать для его автоматического восстановления.`);
+    }
     if (!executionByKey.has(key) && !missingExecutions.has(key)) {
       missingExecutions.set(key, {
         productId,
@@ -274,6 +346,19 @@ export async function resolveInventoryCreatableItemsBulk(
 
   let variants = await loadVariants();
   let { exact: variantByExactKey, semantic: variantBySemanticKey } = buildVariantLookups(variants);
+
+  const retiredVariantRows = mapSqlRows(await db.prepare(
+    `SELECT id, product_id, stock_position_id, category, gender, color, material, length, size_label, is_active
+     FROM catalog_variants
+     WHERE is_active = 0
+       AND stock_position_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+     ORDER BY id ASC`
+  ).bind(executionIdsJson).all<VariantRow>()) as VariantRow[];
+  const retiredVariantExactKeys = new Set(retiredVariantRows.map(row =>
+    variantExactKey(toInt(row.stock_position_id, 0), row.category, row.gender, row.color, row.size_label)));
+  const retiredVariantSemanticKeys = new Set(retiredVariantRows.map(row =>
+    variantSemanticKey(toInt(row.stock_position_id, 0), row.category, row.gender, row.color, row.size_label)));
+
   const missingVariants = new Map<string, Record<string, unknown>>();
   rawItems.forEach((item, index) => {
     const product = productForItem[index]!;
@@ -282,6 +367,9 @@ export async function resolveInventoryCreatableItemsBulk(
     const exactKey = variantExactKey(toInt(execution.id, 0), item.category, gender, item.color, item.size);
     const semanticKey = variantSemanticKey(toInt(execution.id, 0), item.category, gender, item.color, item.size);
     if (variantByExactKey.has(exactKey) || variantBySemanticKey.has(semanticKey) || missingVariants.has(semanticKey)) return;
+    if ((retiredVariantExactKeys.has(exactKey) || retiredVariantSemanticKeys.has(semanticKey)) && !options.allowRetiredRecreate) {
+      throw new Error(`Комбинация «${cleanText(product.name)} · ${normalizeCatalogCombinationColor(item.color)} · ${normalizeCatalogCombinationSize(item.size)}» была удалена из рабочего каталога. Эта операция не может автоматически создать её заново; используйте Приход или восстановление Каталога.`);
+    }
     const category = normalizeAudienceCategory(item.category, item.size);
     const color = catalogColorIdentity(item.color);
     const size = normalizeCatalogCombinationSize(item.size);
@@ -453,7 +541,8 @@ export async function applyInventoryMovement(
               v.gender, v.color, v.material, v.length, v.size_label
        FROM catalog_variants v
        JOIN catalog_products p ON p.id = v.product_id
-       WHERE v.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
+       WHERE v.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+         AND v.is_active = 1 AND p.is_active = 1`
     ).bind(variantIdsJson).all<Record<string, unknown>>();
     for (const row of canonicalResult.results || []) {
       const variantId = toInt(row.variant_id, 0);
@@ -515,7 +604,9 @@ export async function applyInventoryMovement(
 
   if (creatableIndexes.length) {
     const creatableRaw = creatableIndexes.map(index => ({ ...items[index], variantId: 0 }));
-    const createdResolved = await resolveInventoryCreatableItemsBulk(db, creatableRaw);
+    const createdResolved = await resolveInventoryCreatableItemsBulk(db, creatableRaw, {
+      allowRetiredRecreate: movementType === 'arrival',
+    });
     creatableIndexes.forEach((index, localIndex) => {
       resolvedEntries[index] = { raw: items[index], item: createdResolved[localIndex] };
     });
@@ -834,6 +925,14 @@ export async function applyInventoryMovement(
            OR (x.stock_existed = 0 AND s.inventory_source = ? AND s.variant_id = x.variant_id)
          WHERE (x.stock_existed = 1 AND (s.id IS NULL OR ${guardedStockQuantitySql} <> x.current_quantity))
             OR (x.stock_existed = 0 AND s.id IS NOT NULL)
+       )
+       OR EXISTS (
+         SELECT 1 FROM x
+         LEFT JOIN catalog_variants live_variant ON live_variant.id = x.variant_id
+         LEFT JOIN catalog_products live_product ON live_product.id = live_variant.product_id
+         WHERE x.variant_id IS NOT NULL
+           AND (live_variant.id IS NULL OR COALESCE(live_variant.is_active,0) <> 1
+             OR live_product.id IS NULL OR COALESCE(live_product.is_active,0) <> 1)
        )`
     ).bind(...chunk.rowBindings, now, inventorySource));
   }
@@ -1157,7 +1256,8 @@ export async function applyInventoryTransfer(
             v.gender, v.color, v.material, v.length, v.size_label
      FROM catalog_variants v
      JOIN catalog_products p ON p.id = v.product_id
-     WHERE v.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
+     WHERE v.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+       AND v.is_active = 1 AND p.is_active = 1`
   ).bind(variantIdsJson).all<Record<string, unknown>>();
   const canonicalById = new Map<number, CanonicalVariantSnapshot>();
   for (const row of canonicalResult.results || []) {
@@ -1334,6 +1434,13 @@ export async function applyInventoryTransfer(
      OR EXISTS (
        SELECT 1 FROM inventory_stocktake_sessions
        WHERE status = 'active' AND inventory_source IN (?, ?)
+     )
+     OR EXISTS (
+       SELECT 1 FROM x
+       LEFT JOIN catalog_variants live_variant ON live_variant.id = x.variant_id
+       LEFT JOIN catalog_products live_product ON live_product.id = live_variant.product_id
+       WHERE live_variant.id IS NULL OR COALESCE(live_variant.is_active,0) <> 1
+          OR live_product.id IS NULL OR COALESCE(live_product.is_active,0) <> 1
      )`
   ).bind(...transferRowBindings, now, fromSource, toSource, fromSource, toSource);
 

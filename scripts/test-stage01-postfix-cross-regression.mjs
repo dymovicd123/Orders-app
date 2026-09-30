@@ -156,7 +156,7 @@ check(!/UPDATE\s+inventory_stock\s+SET\s+product_name_snapshot/i.test(
   ),
 ), 'R20 stocktake start now rewrites live stock snapshot history')
 
-check(lifecycleSource.includes("WHERE NOT (direction = 'in' AND exact_variant_id IS NOT NULL)"), 'R21 manual queue again duplicates exact-known inbound')
+check(lifecycleSource.includes("WHERE retired_historical_sku = 1") && lifecycleSource.includes("OR NOT (direction = 'in' AND exact_variant_id IS NOT NULL)"), 'R21 manual queue must exclude ordinary exact-known inbound while keeping retired historical intake explicit')
 check(lifecycleSource.includes('COUNT(*) OVER() AS manual_queue_count'), 'R21 manual queue count no longer describes the filtered queue')
 check(attentionSource.includes('intake: lifecycleItems.filter((row) => row.exactKnown)'), 'Warehouse Attention lost ownership of exact-known intake')
 check(attentionSource.includes('lifecycle: lifecycleItems.filter((row) => !row.exactKnown)'), 'Warehouse Attention known/unresolved lifecycle split drifted')

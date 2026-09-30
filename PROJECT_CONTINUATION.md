@@ -6,6 +6,27 @@ Branch represented by this file: **main / Production**
 
 Этот файл — короткий актуальный checkpoint. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не должны использоваться как текущий roadmap без сверки с GitHub.
 
+## RELEASE UPDATE — 2026-09-30 — Catalog deletion candidate prepared for main
+
+Fresh candidate `release/catalog-retirement-main-20260930` was built from current main `820ff6be9a2e06fad4f61b147263927b0c42d3a7`; Branch2 was **not** merged wholesale.
+
+The candidate ports the completed Catalog-retirement chain only:
+- safe whole product/execution retirement + restore;
+- exact-SKU and local-group retirement;
+- explicit retired-order recovery and historical return intake;
+- fixed product gender-scope prevention;
+- unified deleted-history UI and improved visible `Удалить группу` action;
+- dev-dependency security override for patched `undici 7.29.1`.
+
+Stage03 remains intentionally excluded: migrations 0073/0074 and itemized pricing activation are not part of this release.
+
+Validation:
+- reconciled candidate full cumulative gate + build: run `36727449513` — success;
+- guarded Production legacy Catalog repair v2: run `36732576266` — success; active fixed-gender mismatches = 0, inactive SKU with live operational state = 0, business stock/reservation/order totals unchanged;
+- Production retirement schema 0076–0079: run `36733043591` — success; business fingerprint unchanged and Stage03 schema remains off.
+
+Next action at this checkpoint: merge the fresh candidate to `main`, then verify Quality/Cloudflare deploy on the **exact merged SHA** and perform a read-only Production smoke audit.
+
 ## Текущее состояние Production
 
 Последний runtime-changing Production baseline:

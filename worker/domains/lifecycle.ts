@@ -107,13 +107,24 @@ export async function resolveInventoryLifecycleCandidate(
   const existingVariantId = toInt(item.variant_id, 0);
   if (existingVariantId) {
     try {
-      const canonical = await loadCanonicalVariantSnapshot(db, existingVariantId);
+      const canonical = await loadCanonicalVariantSnapshot(db, existingVariantId, { activeOnly: true });
       // An explicit valid order-item variant link is canonical truth for both ordinary
       // and Workshop lines. Do not re-resolve a repaired Workshop line from stale text.
       return { productId: canonical.productId, variantId: canonical.variantId, matchStatus: 'matched', inputKey: catalogOrderInputKey(inventoryLifecycleItemFromRow(item)) };
     } catch {
-      // A stale legacy link is not trusted for a new physical movement. Fall through to
-      // independent identity resolution from the recorded item facts.
+      try {
+        const historical = await loadCanonicalVariantSnapshot(db, existingVariantId);
+        // A retired historical SKU is valid evidence of what was sold, but it must never
+        // silently receive a new physical return. Force an explicit fresh-identity intake.
+        return {
+          productId: historical.productId,
+          variantId: null,
+          matchStatus: 'retired_historical',
+          inputKey: catalogOrderInputKey(inventoryLifecycleItemFromRow(item)),
+        };
+      } catch {
+        // A genuinely broken legacy link still uses independent identity resolution from the recorded item facts.
+      }
     }
   }
 
@@ -260,10 +271,11 @@ export async function reconcileKnownPendingInventoryInbound(
   // A pending lifecycle row is historical evidence from the moment the physical event
   // was recorded. Resolver may legitimately repair the linked order_item later. Use
   // those current canonical FKs for live reconciliation without rewriting snapshots.
+  const retiredHistorical = cleanText(event.pending_reason) === 'retired_historical';
   const resolutionEvent = {
     ...event,
     product_id: toInt(event.current_order_product_id, 0) || event.product_id,
-    variant_id: toInt(event.current_order_variant_id, 0) || event.variant_id,
+    variant_id: retiredHistorical ? null : (toInt(event.current_order_variant_id, 0) || event.variant_id),
   };
   const resolved = await resolveInventoryLifecycleCandidate(db, resolutionEvent, Boolean(toInt(event.is_workshop, 0)));
   const variantId = toInt(resolved.variantId, 0);
@@ -387,7 +399,7 @@ export async function applyCanonicalInventoryLifecycleEvent(
   if (cleanText(event.status) === 'applied') return { applied: false, already: true, event };
   if (cleanText(event.status) === 'cancelled') throw new Error('Эта складская задача уже отменена.');
 
-  const canonical = await loadCanonicalVariantSnapshot(db, variantId);
+  const canonical = await loadCanonicalVariantSnapshot(db, variantId, { activeOnly: true });
   const source = normalizeSourceType(event.inventory_source);
   const qty = Math.max(1, toInt(event.quantity, 1));
   const delta = cleanText(event.direction) === 'in' ? qty : -qty;
@@ -578,7 +590,7 @@ export async function applyCanonicalInventoryLifecycleEvent(
 
 type InventoryLifecycleCancellationDisposition = {
   reversePhysical: boolean;
-  reason: 'safe' | 'active_stocktake' | 'later_physical_check' | 'unknown_event_time' | 'insufficient_current_physical';
+  reason: 'safe' | 'retired_identity' | 'active_stocktake' | 'later_physical_check' | 'unknown_event_time' | 'insufficient_current_physical';
   eventAt?: string;
   activeStocktakeId?: string;
   laterCheckId?: number;
@@ -595,6 +607,17 @@ async function inventoryLifecycleCancellationDisposition(
   const variantId = toInt(event.variant_id, 0);
   const quantity = Math.max(1, toInt(event.quantity, 1));
   const eventAt = cleanText(event.applied_at) || cleanText(event.created_at);
+
+  const liveCatalogIdentity = await db.prepare(
+    `SELECT v.id
+     FROM catalog_variants v
+     JOIN catalog_products p ON p.id = v.product_id
+     WHERE v.id = ? AND v.is_active = 1 AND p.is_active = 1
+     LIMIT 1`
+  ).bind(variantId).first<{ id: number }>();
+  if (!liveCatalogIdentity?.id) {
+    return { reversePhysical: false, reason: 'retired_identity', eventAt };
+  }
 
   const activeStocktake = await db.prepare(
     `SELECT id, started_at
@@ -721,9 +744,11 @@ export async function cancelInventoryLifecycleEvent(
   const reversalDelta = -originalDelta;
   const physicalDisposition = await inventoryLifecycleCancellationDisposition(db, event);
   if (!physicalDisposition.reversePhysical) {
-    const reasonText = physicalDisposition.reason === 'active_stocktake'
-      ? 'Физический остаток не откатывался: на точке идёт ревизия, которая является текущей физической истиной.'
-      : physicalDisposition.reason === 'later_physical_check'
+    const reasonText = physicalDisposition.reason === 'retired_identity'
+      ? 'Физический остаток не откатывался: старая SKU уже выведена из рабочего каталога и не может снова получать рабочий остаток.'
+      : physicalDisposition.reason === 'active_stocktake'
+        ? 'Физический остаток не откатывался: на точке идёт ревизия, которая является текущей физической истиной.'
+        : physicalDisposition.reason === 'later_physical_check'
         ? 'Физический остаток не откатывался: после операции уже была более свежая физическая сверка.'
         : physicalDisposition.reason === 'insufficient_current_physical'
           ? 'Физический остаток не откатывался: обратное списание сделало бы остаток отрицательным.'
@@ -863,6 +888,18 @@ export async function listInventoryLifecyclePending(db: D1Database, url: URL) {
   // Exact inbound rows belong to the normal Warehouse Attention intake lane. They are
   // already safe to reconcile against a concrete current SKU and should not be shown
   // again as manual catalog-resolution work.
+  const retiredHistoricalSql = `CASE WHEN EXISTS (
+    SELECT 1
+    FROM order_items retired_oi
+    JOIN catalog_variants retired_v ON retired_v.id = retired_oi.variant_id
+    WHERE retired_oi.id = e.order_item_id
+      AND retired_oi.order_id = e.order_id
+      AND retired_v.is_active = 0
+  ) OR EXISTS (
+    SELECT 1 FROM catalog_variants retired_event_v
+    WHERE retired_event_v.id = e.variant_id AND retired_event_v.is_active = 0
+  ) THEN 1 ELSE 0 END`;
+
   const exactVariantSql = `COALESCE(
     (SELECT v_link.id
      FROM order_items oi_link
@@ -891,6 +928,7 @@ export async function listInventoryLifecyclePending(db: D1Database, url: URL) {
        SELECT e.*, o.external_id, o.order_date,
               oi.product_id AS current_order_product_id,
               oi.variant_id AS current_order_variant_id,
+              ${retiredHistoricalSql} AS retired_historical_sku,
               ${exactVariantSql} AS exact_variant_id
        FROM inventory_lifecycle_events e
        JOIN orders o ON o.id = e.order_id
@@ -900,7 +938,8 @@ export async function listInventoryLifecyclePending(db: D1Database, url: URL) {
      manual_queue AS (
        SELECT pending_lifecycle.*, COUNT(*) OVER() AS manual_queue_count
        FROM pending_lifecycle
-       WHERE NOT (direction = 'in' AND exact_variant_id IS NOT NULL)
+       WHERE retired_historical_sku = 1
+          OR NOT (direction = 'in' AND exact_variant_id IS NOT NULL)
      )
      SELECT *
      FROM manual_queue
@@ -937,9 +976,34 @@ export async function listInventoryLifecyclePending(db: D1Database, url: URL) {
       size: cleanText(row.size_snapshot),
       isWorkshop: Boolean(toInt(row.is_workshop, 0)),
       pendingReason: cleanText(row.pending_reason),
+      retiredHistoricalSku: toInt(row.retired_historical_sku, 0) === 1,
       createdAt: cleanText(row.created_at),
     })),
   };
+}
+
+
+async function loadLifecycleRetiredCatalogLink(db: D1Database, eventId: number) {
+  return await db.prepare(
+    `SELECT
+       COALESCE(oi.variant_id, e.variant_id) AS historical_variant_id,
+       COALESCE(v.is_active, 0) AS historical_variant_active,
+       COALESCE(p.is_active, 0) AS historical_product_active,
+       (
+         SELECT rv.retirement_id
+         FROM catalog_retirement_variants rv
+         JOIN catalog_retirement_operations op ON op.id=rv.retirement_id AND op.status='completed'
+         WHERE rv.variant_id=COALESCE(oi.variant_id, e.variant_id)
+         ORDER BY rv.retirement_id DESC
+         LIMIT 1
+       ) AS retirement_id
+     FROM inventory_lifecycle_events e
+     LEFT JOIN order_items oi ON oi.id=e.order_item_id AND oi.order_id=e.order_id
+     LEFT JOIN catalog_variants v ON v.id=COALESCE(oi.variant_id, e.variant_id)
+     LEFT JOIN catalog_products p ON p.id=v.product_id
+     WHERE e.id=?
+     LIMIT 1`
+  ).bind(eventId).first<Record<string, unknown>>();
 }
 
 
@@ -955,12 +1019,17 @@ export async function getInventoryLifecycleContext(db: D1Database, eventId: numb
   ).bind(eventId).first<InventoryLifecycleEventRow>();
   if (!event?.id) throw new Error('Складская задача не найдена.');
   if (cleanText(event.status) !== 'pending') return { ok: true, eventId, status: cleanText(event.status), completed: true };
+  const retiredLink = await loadLifecycleRetiredCatalogLink(db, eventId);
+  const retiredHistoricalSku = Boolean(
+    toInt(retiredLink?.historical_variant_id, 0)
+    && toInt(retiredLink?.historical_variant_active, 0) !== 1
+  );
 
   const currentVariantId = toInt(event.current_order_variant_id, 0);
   let currentCanonical = null;
   if (currentVariantId) {
     try {
-      currentCanonical = await loadCanonicalVariantSnapshot(db, currentVariantId);
+      currentCanonical = await loadCanonicalVariantSnapshot(db, currentVariantId, { activeOnly: true });
     } catch {
       // Broken current FK is ignored here; the lifecycle snapshot remains safe fallback evidence.
     }
@@ -1030,12 +1099,18 @@ export async function getInventoryLifecycleContext(db: D1Database, eventId: numb
   return {
     ok: true,
     eventId,
-    issueType,
+    issueType: retiredHistoricalSku
+      ? (existingVariant?.id ? 'retired_return_ready' : 'retired_return_waiting_restore')
+      : issueType,
     unknownFields,
     isWorkshop: Boolean(toInt(event.is_workshop, 0)),
     eventType: cleanText(event.event_type),
     direction: cleanText(event.direction),
     inventorySource: cleanText(event.inventory_source),
+    retiredHistoricalSku,
+    historicalVariantId: retiredHistoricalSku ? (toInt(retiredLink?.historical_variant_id, 0) || null) : null,
+    retirementId: retiredHistoricalSku ? (toInt(retiredLink?.retirement_id, 0) || null) : null,
+    freshVariantReady: Boolean(retiredHistoricalSku && existingVariant?.id),
     quantity: Math.max(1, toInt(event.quantity, 1)),
     facts,
     product: product ? { id: product.id, name: cleanText(product.name), category: cleanText(product.category), genderScope: productGenderScope } : null,
@@ -1051,6 +1126,9 @@ export async function resolveInventoryLifecycleFacts(db: D1Database, eventId: nu
   const event = await db.prepare(`SELECT * FROM inventory_lifecycle_events WHERE id = ? LIMIT 1`).bind(eventId).first<InventoryLifecycleEventRow>();
   if (!event?.id) throw new Error('Складская задача не найдена.');
   if (cleanText(event.status) === 'applied') return { ok: true, already: true, message: 'Эта складская задача уже выполнена.' };
+  if (cleanText(event.pending_reason) === 'retired_historical') {
+    throw new Error('Возвращается историческая удалённая SKU. Сначала восстановите свежую рабочую версию, затем подтвердите приёмку в неё; старая SKU не будет оживлена.');
+  }
   if (cleanText(event.status) === 'cancelled') throw new Error('Эта складская задача уже отменена.');
 
   const preResolutionDisposition = await inventoryLifecycleDeferredInboundDisposition(db, event);

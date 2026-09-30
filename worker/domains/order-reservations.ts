@@ -5,7 +5,7 @@ import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, norm
 import type { SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
 import type { CanonicalVariantSnapshot } from './catalog.ts'
-import { catalogGenderForProductScope, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
+import { catalogGenderForProductScope, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, findRetiredCatalogCombinationV3, findRetiredCatalogExecutionV3, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
 import { inventoryPhysicalCheckStatement } from './inventory-primitives.ts'
 import { boundedOutboundStock } from './stock-resolution.ts'
 import { normalizeOrderItems } from './order-core.ts'
@@ -141,9 +141,37 @@ export async function resolveCatalogProductAndVariantLegacy(
 export type ResolvedOrderCatalogReference = {
   productId: number | null;
   variantId: number | null;
-  matchStatus?: 'matched' | 'alias' | 'created_combination' | 'unresolved_product' | 'unresolved_execution' | 'unresolved_attribute' | 'unresolved_variant';
+  matchStatus?: 'matched' | 'alias' | 'created_combination' | 'unresolved_product' | 'unresolved_execution' | 'unresolved_attribute' | 'unresolved_variant' | 'retired_historical';
   inputKey?: string;
 };
+
+export type OrderRetiredCatalogConfirmationItem = {
+  inputIndex: number;
+  confirmationKey: string;
+  entityType: 'product' | 'execution' | 'variant';
+  productName: string;
+  category: string;
+  gender: string;
+  color: string;
+  material: string;
+  length: string;
+  size: string;
+};
+
+export class OrderRetiredCatalogConfirmationError extends Error {
+  readonly code = 'order_retired_catalog_confirmation_required';
+  readonly status = 409;
+  readonly items: OrderRetiredCatalogConfirmationItem[];
+
+  constructor(items: OrderRetiredCatalogConfirmationItem[]) {
+    const first = items[0];
+    const label = first?.productName ? ` «${first.productName}»` : '';
+    const suffix = items.length > 1 ? ` Ещё удалённых позиций: ${items.length - 1}.` : '';
+    super(`Позиция${label} раньше была удалена из рабочего каталога. Подтвердите, что хотите вернуть её как новую рабочую позицию без старых остатков и резервов.${suffix}`);
+    this.name = 'OrderRetiredCatalogConfirmationError';
+    this.items = items;
+  }
+}
 
 
 export function catalogOrderInputKey(item: ReturnType<typeof normalizeOrderItems>[number]) {
@@ -242,13 +270,116 @@ export async function loadCatalogKnownFacts(db: D1Database) {
 }
 
 
+export async function inspectOrderRetiredCatalogIdentityV2(
+  db: D1Database,
+  item: ReturnType<typeof normalizeOrderItems>[number],
+): Promise<Omit<OrderRetiredCatalogConfirmationItem, 'inputIndex'> | null> {
+  if (!await isCatalogIdentityV3Enabled(db)) return null;
+  const confirmationKey = catalogOrderInputKey(item);
+
+  let product = await findCatalogProductByIdentity(db, item.productName, 0, { activeOnly: true }) as { id: number; name: string; category: string } | null;
+  if (!product?.id) {
+    const historical = await findCatalogProductByIdentity(db, item.productName, 0, { allowAlias: false }) as { id: number; name: string; category: string } | null;
+    if (!historical?.id) return null;
+    const inactive = await db.prepare(
+      `SELECT id, name, category
+       FROM catalog_products
+       WHERE id = ? AND is_active = 0
+       LIMIT 1`
+    ).bind(historical.id).first<{ id: number; name: string; category: string }>();
+    if (!inactive?.id) return null;
+    return {
+      confirmationKey,
+      entityType: 'product',
+      productName: cleanText(inactive.name) || item.productName,
+      category: normalizeAudienceCategory(item.category, item.size),
+      gender: normalizeCatalogCombinationGender(item.gender),
+      color: normalizeCatalogCombinationColor(item.color),
+      material: canonicalStockPositionValue(item.material),
+      length: canonicalStockPositionValue(item.length),
+      size: normalizeCatalogCombinationSize(item.size),
+    };
+  }
+
+  const category = normalizeAudienceCategory(item.category, item.size);
+  const material = canonicalStockPositionValue(await resolveCatalogValueAlias(db, 'material', canonicalStockPositionValue(item.material)));
+  const length = canonicalStockPositionValue(await resolveCatalogValueAlias(db, 'length', canonicalStockPositionValue(item.length)));
+  let gender = normalizeCatalogCombinationGender(item.gender);
+  if (!gender) {
+    gender = catalogGenderForProductScope(await getCatalogProductGenderScope(db, product.id));
+  }
+  const color = normalizeCatalogCombinationColor(await resolveCatalogValueAlias(db, 'color', normalizeCatalogCombinationColor(item.color)));
+  const sizeKind = category === 'child' ? 'child_age' : 'size';
+  const size = normalizeCatalogCombinationSize(await resolveCatalogValueAlias(db, sizeKind, normalizeCatalogCombinationSize(item.size)));
+
+  // If the input is incomplete, the normal resolver will ask for clarification and cannot
+  // silently recreate an exact retired SKU. Do not manufacture a retirement confirmation
+  // from incomplete evidence.
+  if (!material || !length || !gender || !color || !size) return null;
+
+  const activeExecution = await findCatalogExecutionV3(db, product.id, material, length);
+  if (!activeExecution?.id) {
+    const retiredExecution = await findRetiredCatalogExecutionV3(db, product.id, material, length);
+    if (!retiredExecution?.id) return null;
+    return {
+      confirmationKey,
+      entityType: 'execution',
+      productName: cleanText(product.name) || item.productName,
+      category,
+      gender,
+      color,
+      material,
+      length,
+      size,
+    };
+  }
+
+  const activeVariant = await findCatalogCombinationV3(db, activeExecution.id, category, gender, color, size);
+  if (activeVariant?.id) return null;
+
+  const retiredVariant = await findRetiredCatalogCombinationV3(db, activeExecution.id, category, gender, color, size);
+  if (!retiredVariant?.id) return null;
+  return {
+    confirmationKey,
+    entityType: 'variant',
+    productName: cleanText(product.name) || item.productName,
+    category,
+    gender,
+    color,
+    material,
+    length,
+    size,
+  };
+}
+
+
 export async function resolveCatalogProductAndVariantV2(
   db: D1Database,
   item: ReturnType<typeof normalizeOrderItems>[number],
+  options: { allowRetiredRecreate?: boolean; timestamp?: string } = {},
 ): Promise<ResolvedOrderCatalogReference> {
   if (!await isCatalogIdentityV3Enabled(db)) return await resolveCatalogProductAndVariantV2Flat(db, item);
   const inputKey = catalogOrderInputKey(item);
-  const product = await findCatalogProductByIdentity(db, item.productName, 0, { activeOnly: true }) as { id: number; name: string; category: string } | null;
+  const allowRetiredRecreate = Boolean(options.allowRetiredRecreate);
+  const timestamp = cleanText(options.timestamp) || new Date().toISOString();
+
+  let product = await findCatalogProductByIdentity(db, item.productName, 0, { activeOnly: true }) as { id: number; name: string; category: string } | null;
+  let retiredProductShell = false;
+  if (!product?.id && allowRetiredRecreate) {
+    const retiredIdentity = await findCatalogProductByIdentity(db, item.productName, 0, { allowAlias: false }) as { id: number; name: string; category: string } | null;
+    if (retiredIdentity?.id) {
+      const inactive = await db.prepare(
+        `SELECT id, name, category, is_active
+         FROM catalog_products
+         WHERE id = ? AND is_active = 0
+         LIMIT 1`
+      ).bind(retiredIdentity.id).first<{ id: number; name: string; category: string; is_active: number }>();
+      if (inactive?.id) {
+        product = { id: toInt(inactive.id, 0), name: cleanText(inactive.name), category: cleanText(inactive.category) };
+        retiredProductShell = true;
+      }
+    }
+  }
   if (!product?.id) return { productId: null, variantId: null, matchStatus: 'unresolved_product', inputKey };
 
   const category = normalizeAudienceCategory(item.category, item.size);
@@ -259,9 +390,13 @@ export async function resolveCatalogProductAndVariantV2(
   const length = knownFacts.resolve('length', aliasedLength);
   const enteredGender = normalizeCatalogCombinationGender(item.gender);
   let gender = enteredGender;
+  const productGenderScope = await getCatalogProductGenderScope(db, product.id);
+  const fixedProductGender = catalogGenderForProductScope(productGenderScope);
+  if (enteredGender && fixedProductGender && enteredGender !== fixedProductGender) {
+    return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
+  }
   if (!gender) {
-    const productGenderScope = await getCatalogProductGenderScope(db, product.id);
-    gender = catalogGenderForProductScope(productGenderScope);
+    gender = fixedProductGender;
     if (!gender) {
       return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
     }
@@ -331,9 +466,45 @@ export async function resolveCatalogProductAndVariantV2(
   }
 
   // Only now may known facts create a previously unseen execution/combination.
+  // Retired identity is fail-closed for background/runtime resolution. A deliberate NEW order
+  // save may start a fresh working generation, but never reactivates the retired execution/SKU rows.
+  let retiredExecution: Awaited<ReturnType<typeof findRetiredCatalogExecutionV3>> = null;
+  if (!existingExecution?.id) {
+    retiredExecution = await findRetiredCatalogExecutionV3(db, product.id, material, length);
+    if (retiredExecution?.id && !allowRetiredRecreate) {
+      return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_execution', inputKey };
+    }
+  }
+
+  if (retiredProductShell) {
+    await db.prepare(
+      `UPDATE catalog_products
+       SET is_active = 1, updated_at = ?
+       WHERE id = ? AND is_active = 0`
+    ).bind(timestamp, product.id).run();
+    const activeProduct = await db.prepare(
+      'SELECT id FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1'
+    ).bind(product.id).first<{ id: number }>();
+    if (!activeProduct?.id) {
+      return { productId: null, variantId: null, matchStatus: 'unresolved_product', inputKey };
+    }
+  }
+
   const execution = existingExecution?.id
     ? existingExecution
-    : await ensureCatalogExecutionV3(db, product.id, material, length, new Date().toISOString());
+    : await ensureCatalogExecutionV3(
+      db,
+      product.id,
+      material,
+      length,
+      timestamp,
+      allowRetiredRecreate ? { allowRetiredRecreate: true } : {},
+    );
+
+  const retiredCombination = await findRetiredCatalogCombinationV3(db, execution.id, category, gender, color, size);
+  if (retiredCombination?.id && !allowRetiredRecreate) {
+    return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_variant', inputKey };
+  }
 
   // Step 188D completion guard: legacy/manual aliases from the pre-v3 review UI are
   // accepted only when they point to the exact canonical identity we have independently
@@ -366,7 +537,21 @@ export async function resolveCatalogProductAndVariantV2(
     // Alias table is additive. Identity v3 continues through canonical lookup if unavailable.
   }
 
-  const timestamp = new Date().toISOString();
+  const deterministicExternalId = makeVariantExternalId(product.name, category, gender, color, execution.material, execution.length, size);
+  let externalId = deterministicExternalId;
+  if (allowRetiredRecreate && (retiredProductShell || retiredExecution?.id || retiredCombination?.id)) {
+    const occupied = await db.prepare(
+      'SELECT id FROM catalog_variants WHERE external_id = ? LIMIT 1'
+    ).bind(deterministicExternalId).first<{ id: number }>();
+    if (occupied?.id) {
+      const parsed = Date.parse(timestamp);
+      const incarnation = Number.isFinite(parsed)
+        ? Math.max(0, parsed).toString(36).toUpperCase()
+        : Date.now().toString(36).toUpperCase();
+      externalId = `${deterministicExternalId}-ORD-${incarnation}`;
+    }
+  }
+
   const created = await createCatalogCombinationV3(db, {
     productId: product.id,
     executionId: execution.id,
@@ -376,7 +561,7 @@ export async function resolveCatalogProductAndVariantV2(
     material: execution.material,
     length: execution.length,
     sizeLabel: size,
-    externalId: makeVariantExternalId(product.name, category, gender, color, execution.material, execution.length, size),
+    externalId,
   }, timestamp);
   return { productId: toInt(product.id, 0) || null, variantId: created.id || null, matchStatus: created.created ? 'created_combination' : 'matched', inputKey };
 }
@@ -386,9 +571,10 @@ export async function resolveCatalogProductAndVariant(
   db: D1Database,
   item: ReturnType<typeof normalizeOrderItems>[number],
   timestamp: string,
+  options: { allowRetiredRecreate?: boolean } = {},
 ): Promise<ResolvedOrderCatalogReference> {
   if (await isCatalogIdentityV3Enabled(db) || await isHumanInventoryModelEnabled(db)) {
-    return await resolveCatalogProductAndVariantV2(db, item);
+    return await resolveCatalogProductAndVariantV2(db, item, { ...options, timestamp });
   }
   return await resolveCatalogProductAndVariantLegacy(db, item, timestamp);
 }
@@ -607,6 +793,9 @@ export async function reserveOrderItemV2(
   if (existingReservation?.id) {
     const existingVariantId = toInt(existingReservation.variant_id, toInt(variantId, 0));
     const existingSource = normalizeSourceType(existingReservation.inventory_source || item.inventorySource);
+    if (cleanText(existingReservation.status) === 'active' && existingVariantId > 0) {
+      await loadCanonicalVariantSnapshot(db, existingVariantId, { activeOnly: true });
+    }
     const committedStock = cleanText(existingReservation.status) === 'active' && existingVariantId > 0
       ? await db.prepare(
         `SELECT quantity, reserved_quantity FROM inventory_stock WHERE inventory_source = ? AND variant_id = ? ORDER BY id ASC LIMIT 1`
@@ -660,7 +849,7 @@ export async function reserveOrderItemV2(
     };
   }
 
-  const canonical = await loadCanonicalVariantSnapshot(db, variantId);
+  const canonical = await loadCanonicalVariantSnapshot(db, variantId, { activeOnly: true });
   const canonicalProductId = canonical.productId;
   const stock = await ensureHumanInventoryStockRow(db, item.inventorySource, canonical, timestamp);
   const physicalBefore = toInt(stock.quantity, 0);
@@ -1915,7 +2104,8 @@ export async function fulfillOrderReservationsV2(
      )
      SELECT w.source, w.variant_id,
             s.id AS stock_id, s.quantity, s.reserved_quantity,
-            v.product_id, p.name AS product_name, v.gender, v.color, v.material, v.length, v.size_label
+            v.product_id, p.name AS product_name, v.gender, v.color, v.material, v.length, v.size_label,
+            v.is_active AS variant_active, p.is_active AS product_active
      FROM wanted w
      LEFT JOIN inventory_stock s ON s.inventory_source = w.source AND s.variant_id = w.variant_id
      LEFT JOIN catalog_variants v ON v.id = w.variant_id
@@ -1931,6 +2121,9 @@ export async function fulfillOrderReservationsV2(
     }
     if (!toInt(loaded.product_id, 0) || !cleanText(loaded.product_name)) {
       throw new Error(`Не удалось загрузить каталог для отправки «${requirement.productName}». Обновите заказ.`);
+    }
+    if (toInt(loaded.variant_active, 0) !== 1 || toInt(loaded.product_active, 0) !== 1) {
+      throw new Error(`Позиция «${requirement.productName}» уже удалена из рабочего каталога. Обновите заказ: складское списание для удалённой позиции больше не выполняется.`);
     }
     const quantity = toInt(loaded.quantity, 0);
     const observation = observationsByKey.get(key) || null;
@@ -2070,10 +2263,21 @@ export async function fulfillOrderReservationsV2(
       `WITH ${cte}
        INSERT INTO inventory_model_meta (key, value, updated_at)
        SELECT 'human_inventory_v2', '__shipping_conflict__', ?
-       WHERE EXISTS (
-         SELECT 1 FROM x
-         LEFT JOIN inventory_stock s ON s.id = x.stock_id
-         WHERE s.id IS NULL OR COALESCE(s.quantity, 0) <> x.current_quantity
+       WHERE (
+         EXISTS (
+           SELECT 1 FROM x
+           LEFT JOIN inventory_stock s ON s.id = x.stock_id
+           WHERE s.id IS NULL OR COALESCE(s.quantity, 0) <> x.current_quantity
+         )
+         OR EXISTS (
+           SELECT 1 FROM x
+           LEFT JOIN catalog_variants live_variant ON live_variant.id = x.variant_id
+           LEFT JOIN catalog_products live_product ON live_product.id = live_variant.product_id
+           WHERE live_variant.id IS NULL
+              OR COALESCE(live_variant.is_active, 0) <> 1
+              OR live_product.id IS NULL
+              OR COALESCE(live_product.is_active, 0) <> 1
+         )
        )
          AND ${orderStillUnsentSql}`
     ).bind(...payloadChunk, timestamp, orderId));
@@ -2386,6 +2590,16 @@ export async function correctMistakenOrderHandover(
     const fulfilledAt = cleanText(row.fulfilled_at);
     if (!reservationId || !orderItemId || !variantId || !reservedQuantity || !fulfilledAt) {
       throw new Error('Ошибочную выдачу нельзя отменить автоматически: у проведённого списания неполная складская связь или отсутствует время выдачи. Нужна точечная физическая сверка.');
+    }
+    const liveCatalogIdentity = await db.prepare(
+      `SELECT v.id
+       FROM catalog_variants v
+       JOIN catalog_products p ON p.id = v.product_id
+       WHERE v.id = ? AND v.is_active = 1 AND p.is_active = 1
+       LIMIT 1`
+    ).bind(variantId).first<{ id: number }>();
+    if (!liveCatalogIdentity?.id) {
+      throw new Error('Ошибочную выдачу нельзя отменить автоматически: эта SKU уже выведена из рабочего каталога. Старая SKU не будет снова получать остаток или резерв; сначала восстановите рабочую комбинацию и разберите заказ.');
     }
     if (row.stock_quantity_before === null || row.stock_quantity_before === undefined || row.stock_quantity_after === null || row.stock_quantity_after === undefined) {
       throw new Error('Ошибочную выдачу нельзя отменить автоматически: для одной позиции не сохранён фактически списанный складской delta. Система ничего не изменила; нужна физическая сверка.');
