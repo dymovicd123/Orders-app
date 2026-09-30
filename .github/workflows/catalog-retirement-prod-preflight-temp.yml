@@ -1,4 +1,4 @@
-name: Temporary Production Catalog retirement detailed preflight
+name: Temporary Production Catalog retirement detailed preflight r2
 
 on:
   push:
@@ -119,6 +119,28 @@ jobs:
           FROM catalog_products
           WHERE id IN (3,4,22,24,10,41)
           ORDER BY id;
+          SELECT v.id,v.product_id,v.stock_position_id,v.category,v.gender,v.color,v.size_label,v.is_active,
+                 p.name AS product_name,p.is_active AS product_active,p.gender_scope
+          FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
+          WHERE v.id IN (158,1089,254,517,207,356,1065,1066)
+          ORDER BY v.id;
+
+          SELECT s.id,s.inventory_source,s.product_id,s.variant_id,s.product_name_snapshot,
+                 s.gender_snapshot,s.color_snapshot,s.material_snapshot,s.length_snapshot,s.size_snapshot,
+                 s.quantity,s.reserved_quantity,s.last_action,s.last_source_ref
+          FROM inventory_stock s
+          WHERE s.variant_id IN (158,1089,254,517,207,356,1065,1066)
+          ORDER BY s.variant_id,s.inventory_source,s.id;
+
+          SELECT v.product_id,p.name,p.is_active AS product_active,
+                 COUNT(*) AS variants_total,
+                 SUM(CASE WHEN v.is_active=1 THEN 1 ELSE 0 END) AS active_variants,
+                 SUM(CASE WHEN EXISTS(SELECT 1 FROM inventory_stock s WHERE s.variant_id=v.id AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0)) THEN 1 ELSE 0 END) AS variants_with_live_stock
+          FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
+          WHERE v.product_id IN (10,41)
+          GROUP BY v.product_id,p.name,p.is_active
+          ORDER BY v.product_id;
+
 
           SELECT name
           FROM sqlite_master
