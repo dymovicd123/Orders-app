@@ -88,7 +88,10 @@ const withoutClientReconciliation = result => {
   // Strip only those additive compatibility fields for baseline parity; selected/full report parity below still checks the live rows exactly.
   if (Array.isArray(reports.products)) {
     reports.products = reports.products.map((row) => {
-      const { itemized_gross_sales, itemized_order_count, legacy_order_count, ...legacyRow } = row
+      const legacyRow = Object.assign(Object.create(Object.getPrototypeOf(row)), row)
+      delete legacyRow.itemized_gross_sales
+      delete legacyRow.itemized_order_count
+      delete legacyRow.legacy_order_count
       return legacyRow
     })
   }
