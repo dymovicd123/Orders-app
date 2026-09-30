@@ -833,7 +833,7 @@ export async function resolveCatalogReviewRows(
 export async function reconcileCatalogReviewQueue(db: D1Database, url: URL) {
   const groupLimit = Math.min(20, Math.max(1, toInt(url.searchParams.get('limit'), 10)));
   const rowsResult = await fetchCatalogReviewRows(db, 160);
-  const rows = rowsResult.results || [];
+  const rows = (rowsResult.results || []).filter((row) => cleanText(row.stock_writeoff_status) !== 'catalog_retired');
   const groups = new Map<string, Record<string, unknown>[]>();
   for (const row of rows) {
     const key = normalizedCatalogReviewKey(row);
@@ -909,7 +909,7 @@ export async function reconcileCatalogReviewQueue(db: D1Database, url: URL) {
 export async function reconcileCatalogReviewOrder(db: D1Database, orderId: number) {
   if (!orderId) return { ok: true, resolvedGroups: 0, linkedItems: 0, reserved: 0 };
   const rowsResult = await fetchCatalogReviewRows(db, 160, orderId);
-  const rows = rowsResult.results || [];
+  const rows = (rowsResult.results || []).filter((row) => cleanText(row.stock_writeoff_status) !== 'catalog_retired');
   const groups = new Map<string, Record<string, unknown>[]>();
   for (const row of rows) {
     const key = normalizedCatalogReviewKey(row);
@@ -1040,7 +1040,6 @@ export async function resolveOrderCatalogReviewExistingVariant(db: D1Database, o
   }
 
   const inputKey = normalizedCatalogReviewKey(anchor);
-  const retiredRecovery = cleanText(anchor.stock_writeoff_status) === 'catalog_retired';
   const reusableExactInput = !retiredRecovery && catalogReviewInputCanLearnExact(anchor);
   const rowsResult = reusableExactInput
     ? await fetchCatalogReviewResolutionCandidates(db, orderId)
