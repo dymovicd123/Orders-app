@@ -11,9 +11,27 @@ type Options = {
   reportReadFailure: ReportReadFailure
 }
 
-const ORDERS_SUMMARY_TTL_MS = 60 * 1000
+const ORDERS_SUMMARY_TTL_MS = 2 * 60 * 1000
 const FULL_REPORT_TTL_MS = 60 * 1000
 const FINANCE_WORKSPACE_TTL_MS = 3 * 60 * 1000
+
+function ordersSummaryFromFinanceReport(data: FinanceReportResponse): OrdersFinanceSummaryResponse {
+  return {
+    ok: data.ok,
+    startDate: data.startDate,
+    endDate: data.endDate,
+    generatedAt: data.generatedAt,
+    overview: {
+      orderCount: Number(data.overview.orderCount || 0),
+      totalSales: Number(data.overview.totalSales || 0),
+      avgCheck: Number(data.overview.avgCheck || 0),
+      grossReceived: Number(data.overview.grossReceived || 0),
+      totalReturned: Number(data.overview.totalReturned || 0),
+      currentDebt: Number(data.overview.currentDebt || 0),
+      currentDebtOrders: Number(data.overview.currentDebtOrders || 0),
+    },
+  }
+}
 
 export function useFinanceReportReads({ apiFetch, reportReadFailure }: Options) {
   const [financeReport, setFinanceReport] = useState<FinanceReportResponse | null>(null)
@@ -103,7 +121,18 @@ export function useFinanceReportReads({ apiFetch, reportReadFailure }: Options) 
         const response = await apiFetch(`/api/reports/finance?${params.toString()}`)
         const data = await readJsonResponse<FinanceReportResponse>(response, 'Финансовые отчёты')
         if (!response.ok) throw new Error('Не удалось загрузить финансовые отчёты.')
-        if (financeInFlight.current.get(key) === request) financeCache.current.set(key, { data, savedAt: Date.now() })
+        if (financeInFlight.current.get(key) === request) {
+          const savedAt = Date.now()
+          financeCache.current.set(key, { data, savedAt })
+          // R7.6: the full/Finance workspace response already computed the exact Orders summary
+          // with order_date for sales, payment_date for receipts, return_date for returns, and
+          // current debt independently of the period. Reuse that exact result across navigation
+          // instead of issuing a second /orders-summary aggregate for the same date range.
+          if (!reportType) {
+            const summaryKey = `${range.dateFrom}::${range.dateTo}`
+            summaryCache.current.set(summaryKey, { data: ordersSummaryFromFinanceReport(data), savedAt })
+          }
+        }
         return data
       })()
       financeInFlight.current.set(key, request)
