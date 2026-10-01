@@ -91,6 +91,142 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const r757FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/r7-5-7-read-budget-frontend-manifest.json'), 'utf8'))
+if (r757FrontendManifest?.version !== 1 || r757FrontendManifest?.revision !== 'r7-5-7-read-budget-r1') throw new Error('R7.5-R7.7 frontend manifest invalid')
+const r757FrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.R757_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(r757FrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (r757FrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('R7.5-R7.7 frontend changed beyond exact manifest: ' + relative)
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('R7.5-R7.7 frontend after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (r757FrontendBlobSha(reverted) !== delta.beforeGitBlob) throw new Error('R7.5-R7.7 frontend predecessor reconstruction failed: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, R757_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('R7.5-R7.7 FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+const r7ReadBudgetFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/r7-read-budget-frontend-manifest.json'), 'utf8'))
+if (r7ReadBudgetFrontendManifest?.version !== 1 || r7ReadBudgetFrontendManifest?.revision !== 'r7-read-budget-r1') throw new Error('R7 read-budget frontend manifest invalid')
+const r7ReadBudgetFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.R7_READ_BUDGET_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(r7ReadBudgetFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (r7ReadBudgetFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('R7 read-budget frontend changed beyond exact manifest: ' + relative)
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('R7 read-budget frontend after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (r7ReadBudgetFrontendBlobSha(reverted) !== delta.beforeGitBlob) throw new Error('R7 read-budget frontend predecessor reconstruction failed: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, R7_READ_BUDGET_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('R7 READ-BUDGET FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+const legacyPath = path.join(root, 'scripts/test-step1906b-frontend-modularization-legacy.mjs')
+const manifestPath = path.join(root, 'scripts/order-edit-safe-payment-corrections-frontend-manifest.json')
+const appPath = path.join(root, 'src/App.tsx')
+const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+if (manifest?.version !== 1 || manifest?.revision !== 'order-edit-safe-payment-corrections-r1') throw new Error('Safe payment correction frontend manifest invalid')
+if (Object.keys(manifest.files || {}).join(',') !== 'src/App.tsx') throw new Error('Safe payment correction frontend allow-list widened unexpectedly')
+const delta = manifest.files['src/App.tsx']
+if (delta?.beforeLines !== 7000 || delta?.afterLines !== 7049) throw new Error('Safe payment correction App line delta changed unexpectedly')
+const gitBlobSha = (text) => {
+  const bytes = Buffer.from(text)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+const app = fs.readFileSync(appPath, 'utf8')
+if (gitBlobSha(app) !== delta.afterGitBlob) throw new Error('App.tsx changed beyond exact safe-payment-correction frontend delta')
+if (app.split(/\r?\n/).length !== delta.afterLines) throw new Error('App.tsx line count changed beyond exact safe-payment-correction frontend delta')
+
+const original = fs.readFileSync(legacyPath, 'utf8')
+const oldBudget = "check(lineCount('src/App.tsx') <= 7000, `App.tsx regrew beyond 1906B controller budget (${lineCount('src/App.tsx')} lines)`)"
+const newBudget = `check(lineCount('src/App.tsx') <= ${delta.afterLines}, \`App.tsx exceeded exact safe-payment-correction controller allowance (\${lineCount('src/App.tsx')} lines)\`)`
+if (!original.includes(oldBudget)) throw new Error('1906B App budget anchor not found')
+
+const oldO1Block = [
+  "  if (relative === 'src/app/controllers/useApiClient.ts') {",
+  "    const o1 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/o1-frontend-manifest.json'), 'utf8'))",
+  "    check(sha(normalize(text)) === o1.after, 'O1 API client changed beyond exact transport delta')",
+  "    text = fs.readFileSync(path.join(root, 'scripts/fixtures/o1-api-client-baseline.ts'), 'utf8')",
+  "    check(sha(normalize(text)) === o1.before, 'O1 API client predecessor changed')",
+  "  }",
+].join('\n')
+const newO1Block = [
+  "  if (relative === 'src/app/controllers/useApiClient.ts') {",
+  "    const shortageDelta = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-shortage-nonblocking-frontend-manifest.json'), 'utf8'))",
+  "    check(shortageDelta?.version === 1 && shortageDelta?.revision === 'order-shortage-nonblocking-r1' && shortageDelta?.file === relative, 'Order shortage frontend manifest invalid')",
+  "    const apiClientGitBlobSha = (value) => {",
+  "      const bytes = Buffer.from(value)",
+  "      return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')",
+  "    }",
+  "    check(apiClientGitBlobSha(text) === shortageDelta.afterGitBlob, 'Order shortage API client changed beyond exact non-blocking delta')",
+  "    text = fs.readFileSync(path.join(root, 'scripts/fixtures/order-shortage-nonblocking-api-client-baseline.ts'), 'utf8')",
+  "    check(apiClientGitBlobSha(text) === shortageDelta.beforeGitBlob, 'Order shortage API client predecessor changed')",
+  "    const o1 = JSON.parse(fs.readFileSync(path.join(root, 'scripts/o1-frontend-manifest.json'), 'utf8'))",
+  "    check(sha(normalize(text)) === o1.after, 'Order shortage predecessor is not the accepted O1 API client')",
+  "    text = fs.readFileSync(path.join(root, 'scripts/fixtures/o1-api-client-baseline.ts'), 'utf8')",
+  "    check(sha(normalize(text)) === o1.before, 'O1 API client predecessor changed')",
+  "  }",
+].join('\n')
+if (!original.includes(oldO1Block)) throw new Error('1906B O1 API client anchor not found')
+
+const patchedLegacy = original.replace(oldBudget, newBudget).replace(oldO1Block, newO1Block)
+fs.writeFileSync(legacyPath, patchedLegacy)
+try {
+  await import('./test-step1906b-frontend-modularization-w8-3-layer.mjs')
+} finally {
+  fs.writeFileSync(legacyPath, original)
+}
+
+END PRESERVED PRE-CATALOG 1906B META-TEXT */
+
+import fs from 'node:fs'
+import path from 'node:path'
+import crypto from 'node:crypto'
+import { spawnSync } from 'node:child_process'
+
+const root = process.cwd()
 const catalogGranularHistoryFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/catalog-granular-history-r1-frontend-manifest.json'), 'utf8'))
 if (catalogGranularHistoryFrontendManifest?.version !== 1 || catalogGranularHistoryFrontendManifest?.revision !== 'catalog-granular-history-ui-r1') throw new Error('Catalog granular history frontend manifest invalid')
 const catalogGranularHistoryFrontendBlobSha = (value) => {
