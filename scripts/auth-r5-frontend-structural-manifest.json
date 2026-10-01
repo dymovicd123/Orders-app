@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "revision": "auth-r5-password-manager-frontend",
+  "baseBranch2Commit": "f988b093238d51a2804ca098a5f87d01537752ea",
+  "files": {
+    "src/App.tsx": {
+      "baselineFixture": "scripts/fixtures/auth-r5-frontend-app-baseline.tsx",
+      "beforeGitBlob": "139bc694f6ee88d589483e92e8b4d98d08a17ba6",
+      "beforeLines": 7940,
+      "afterGitBlob": "e695f584ad526db8e25f201052df840deeecfb1f",
+      "afterLines": 7940
+    }
+  }
+}
