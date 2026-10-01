@@ -555,7 +555,8 @@
 
 
 /* Auth R3 — human-first account setup inside Team. */
-.team-access-onboarding {
+.team-access-onboarding,
+.team-access-editor-panel {
   border: 1px solid rgba(37, 99, 235, 0.18);
   border-radius: 18px;
   background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
@@ -604,21 +605,22 @@
 
 .team-access-toggle input,
 .team-force-password-change input,
-.team-access-option input {
+.team-access-editor-flags input {
   width: 16px;
   height: 16px;
   min-height: 0;
   margin: 0;
-  flex: 0 0 auto;
 }
 
-.team-access-fields {
+.team-access-fields,
+.team-access-editor-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
-.team-access-fields label {
+.team-access-fields label,
+.team-access-editor-grid > label {
   display: grid;
   gap: 6px;
 }
@@ -688,179 +690,46 @@
   white-space: nowrap;
 }
 
-.team-access-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 120;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(15, 23, 42, 0.46);
-  backdrop-filter: blur(3px);
+.team-access-editor-panel {
+  margin-top: 14px;
+  padding: 16px;
 }
 
-.team-access-modal {
-  width: min(760px, calc(100vw - 32px));
-  max-height: min(760px, calc(100dvh - 48px));
-  overflow-y: auto;
-  padding: 0;
-  border: 1px solid rgba(148, 163, 184, 0.26);
-  border-radius: 22px;
-  background: #ffffff;
-  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.24);
+.team-access-editor-panel .mini-panel-head {
+  margin-bottom: 14px;
 }
 
-.team-access-modal-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 22px 24px 18px;
-  border-bottom: 1px solid #e2e8f0;
+.team-access-editor-grid {
+  grid-template-columns: minmax(180px, .8fr) minmax(240px, 1fr) minmax(170px, .6fr) minmax(260px, 1fr);
+  align-items: end;
 }
 
-.team-access-modal-head > div {
+.team-access-editor-flags {
   display: grid;
-  gap: 5px;
+  gap: 8px;
+  align-self: center;
 }
 
-.team-access-modal-head h3 {
+.team-access-editor-flags .checkbox-row {
   margin: 0;
-  font-size: 20px;
-  line-height: 1.25;
-}
-
-.team-access-modal-head p {
-  margin: 0;
-  max-width: 620px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.team-access-modal-head > button {
-  min-width: 38px;
-  min-height: 38px;
-  padding: 0;
-  border-radius: 12px;
-  font-size: 16px;
-}
-
-.team-access-modal-employee {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 18px 24px 0;
-  padding: 12px 14px;
-  border: 1px solid #dbeafe;
-  border-radius: 14px;
-  background: #f8fbff;
-}
-
-.team-access-modal-employee > div:last-child {
-  display: grid;
-  gap: 2px;
-}
-
-.team-access-modal-employee strong {
-  color: var(--ink);
-  font-size: 14px;
-}
-
-.team-access-modal-employee span {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.team-access-modal-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 14px;
-  padding: 18px 24px 0;
-}
-
-.team-access-modal-fields > label {
-  display: grid;
-  gap: 6px;
-  color: #475569;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.team-access-modal-fields > label:last-child {
-  grid-column: 1 / -1;
-}
-
-.team-access-modal-fields input,
-.team-access-modal-fields select {
-  width: 100%;
-  min-height: 42px;
-}
-
-.team-access-modal-fields small {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1.35;
-}
-
-.team-access-modal-options {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  padding: 16px 24px 0;
-}
-
-.team-access-option {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: flex-start;
-  gap: 10px;
-  margin: 0;
-  padding: 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  background: #f8fafc;
-  cursor: pointer;
-}
-
-.team-access-option > span {
-  display: grid;
-  gap: 3px;
-}
-
-.team-access-option strong {
-  color: var(--ink);
-  font-size: 12px;
-}
-
-.team-access-option small {
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.35;
 }
 
 .team-access-editor-help {
-  margin: 16px 24px 0;
+  margin-top: 12px;
   padding: 10px 12px;
   border-radius: 12px;
   background: #eff6ff;
   color: #334155;
 }
 
-.team-access-modal-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 18px;
-  padding: 16px 24px 22px;
-  border-top: 1px solid #e2e8f0;
+.team-access-editor-panel .button-row {
+  margin-top: 14px;
 }
 
-.team-access-modal-actions .button-row {
-  margin-left: auto;
+@media (max-width: 1100px) {
+  .team-access-editor-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -873,57 +742,8 @@
   }
 
   .team-access-fields,
-  .team-access-modal-fields,
-  .team-access-modal-options {
+  .team-access-editor-grid {
     grid-template-columns: 1fr;
-  }
-
-  .team-access-modal-backdrop {
-    align-items: flex-end;
-    padding: 10px;
-  }
-
-  .team-access-modal {
-    width: 100%;
-    max-height: calc(100dvh - 20px);
-    border-radius: 18px 18px 10px 10px;
-  }
-
-  .team-access-modal-head {
-    padding: 18px 16px 14px;
-  }
-
-  .team-access-modal-employee {
-    margin: 14px 16px 0;
-  }
-
-  .team-access-modal-fields {
-    padding: 14px 16px 0;
-  }
-
-  .team-access-modal-options {
-    padding: 14px 16px 0;
-  }
-
-  .team-access-editor-help {
-    margin: 14px 16px 0;
-  }
-
-  .team-access-modal-actions {
-    align-items: stretch;
-    flex-direction: column-reverse;
-    padding: 14px 16px 16px;
-  }
-
-  .team-access-modal-actions .button-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    width: 100%;
-    margin-left: 0;
-  }
-
-  .team-access-modal-actions > .danger {
-    width: 100%;
   }
 
   .team-roster-table .team-access-cell {
