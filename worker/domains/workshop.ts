@@ -411,36 +411,27 @@ hidden_return_workshop_tasks AS (
 
 
 export async function readWorkshopCounts(db: D1Database) {
-  // Count the common visible population directly from the status indexes, then
-  // subtract only concrete hidden tasks. A modern partial return updates its own
-  // Workshop task quantity/status and records a reversal snapshot, so sibling
-  // tasks from the same order must remain visible. Legacy ambiguous return rows
-  // are still suppressed conservatively.
+  // R7.4: the old shape counted active / urgent / done / ready with four separate
+  // workshop_tasks scans, then scanned hidden rows again. Build the hidden id set once
+  // and aggregate the visible task population in a single pass. Return/exchange/reversal
+  // visibility semantics stay identical; only the read shape changes.
   const row = await db.prepare(
     `WITH ${workshopStandaloneReturnOrdersCte},
-     hidden_task_ids AS (
+     hidden_task_ids AS MATERIALIZED (
        SELECT wt.id AS workshop_task_id
        FROM workshop_tasks wt
        JOIN orders o ON o.id = wt.order_id
        WHERE o.order_status IN ('deleted', 'archived')
        UNION
        SELECT workshop_task_id FROM hidden_return_workshop_tasks
-     ),
-     hidden_counts AS (
-       SELECT
-         COALESCE(SUM(CASE WHEN wt.status = 'active' THEN 1 ELSE 0 END), 0) AS active_count,
-         COALESCE(SUM(CASE WHEN wt.status = 'active' AND wt.urgent = 1 THEN 1 ELSE 0 END), 0) AS urgent_count,
-         COALESCE(SUM(CASE WHEN wt.status IN ('done', 'ready') THEN 1 ELSE 0 END), 0) AS done_count
-       FROM hidden_task_ids hidden
-       JOIN workshop_tasks wt ON wt.id = hidden.workshop_task_id
      )
      SELECT
-       MAX(0, (SELECT COUNT(*) FROM workshop_tasks WHERE status = 'active') - COALESCE(hidden_counts.active_count, 0)) AS active_count,
-       MAX(0, (SELECT COUNT(*) FROM workshop_tasks WHERE status = 'active' AND urgent = 1) - COALESCE(hidden_counts.urgent_count, 0)) AS urgent_count,
-       MAX(0, (SELECT COUNT(*) FROM workshop_tasks WHERE status = 'done')
-         + (SELECT COUNT(*) FROM workshop_tasks WHERE status = 'ready')
-         - COALESCE(hidden_counts.done_count, 0)) AS done_count
-     FROM hidden_counts`
+       COALESCE(SUM(CASE WHEN wt.status = 'active' THEN 1 ELSE 0 END), 0) AS active_count,
+       COALESCE(SUM(CASE WHEN wt.status = 'active' AND wt.urgent = 1 THEN 1 ELSE 0 END), 0) AS urgent_count,
+       COALESCE(SUM(CASE WHEN wt.status IN ('done', 'ready') THEN 1 ELSE 0 END), 0) AS done_count
+     FROM workshop_tasks wt
+     LEFT JOIN hidden_task_ids hidden ON hidden.workshop_task_id = wt.id
+     WHERE hidden.workshop_task_id IS NULL`
   ).first<{ active_count: number; urgent_count: number; done_count: number }>();
   return {
     activeCount: Number(row?.active_count || 0),
