@@ -610,9 +610,12 @@ export async function updateAuthUser(db: D1Database, userId: number, request: Re
   const values: unknown[] = [];
   const existingRole = normalizeAuthRole(existing.role);
   const existingActive = toInt(existing.is_active, 0) === 1;
+  const existingLogin = normalizeAuthLogin(existing.login);
   const nextRole = input.role !== undefined ? normalizeAuthRole(input.role) : existingRole;
   const nextActive = input.isActive !== undefined ? input.isActive !== false : existingActive;
   const nextManagerId = input.managerId !== undefined ? (toInt(input.managerId, 0) || null) : (existing.manager_id === null || existing.manager_id === undefined ? null : toInt(existing.manager_id, 0));
+  let loginChanged = false;
+  let roleChanged = false;
   if (existingRole === 'admin' && existingActive && (nextRole !== 'admin' || !nextActive)) {
     const lastAdminDenied = await ensureCanRemoveAdminRights(db, userId);
     if (lastAdminDenied) return lastAdminDenied;
@@ -624,10 +627,13 @@ export async function updateAuthUser(db: D1Database, userId: number, request: Re
     const login = normalizeAuthLogin(input.login);
     const loginError = authLoginError(login);
     if (loginError) return json({ ok: false, message: loginError }, { status: 400 });
-    patches.push('login = ?');
-    values.push(login);
-    patches.push('email = ?');
-    values.push(compatibilityEmailForLogin(login));
+    loginChanged = login !== existingLogin;
+    if (loginChanged) {
+      patches.push('login = ?');
+      values.push(login);
+      patches.push('email = ?');
+      values.push(compatibilityEmailForLogin(login));
+    }
   }
   if (input.password !== undefined && cleanText(input.password)) {
     if (currentUser.id === userId) return json({ ok: false, message: 'Свой пароль меняйте через «Сменить пароль».' }, { status: 400 });
@@ -640,8 +646,11 @@ export async function updateAuthUser(db: D1Database, userId: number, request: Re
     patches.push('must_change_password = 1');
   }
   if (input.role !== undefined) {
-    patches.push('role = ?');
-    values.push(nextRole);
+    roleChanged = nextRole !== existingRole;
+    if (roleChanged) {
+      patches.push('role = ?');
+      values.push(nextRole);
+    }
   }
   if (input.managerId !== undefined) {
     patches.push('manager_id = ?');
@@ -672,7 +681,7 @@ export async function updateAuthUser(db: D1Database, userId: number, request: Re
   } catch {
     return json({ ok: false, message: 'Аккаунт с таким логином уже существует.' }, { status: 409 });
   }
-  if ((input.password !== undefined && cleanText(input.password)) || input.isActive === false || input.login !== undefined || input.role !== undefined) {
+  if ((input.password !== undefined && cleanText(input.password)) || input.isActive === false || loginChanged || roleChanged) {
     await db.prepare('DELETE FROM app_sessions WHERE user_id = ?').bind(userId).run();
   }
   return json({ ok: true, id: userId });
