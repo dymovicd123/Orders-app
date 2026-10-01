@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "revision": "auth-r4-team-access-modal",
+  "baseBranch2Commit": "487937b38fffc5d3d287bcfab4ee062049373a0b",
+  "files": {
+    "src/features/sections/TeamSection.tsx": {
+      "baselineFixture": "scripts/fixtures/auth-r4-team-section-baseline.tsx",
+      "beforeGitBlob": "49f20705ab00ee1f62c822eb16b17515577844f0",
+      "beforeLines": 753,
+      "afterGitBlob": "069dbea7054e07f68323889de825f1f5564d8c67",
+      "afterLines": 814
+    },
+    "src/styles/10-workshop-reports-team.css": {
+      "baselineFixture": "scripts/fixtures/auth-r4-team-style-baseline.css",
+      "beforeGitBlob": "7ebe5b92c7e44659337a82e1f9ad8ce8814ee298",
+      "beforeLines": 753,
+      "afterGitBlob": "44b518d8d2c5ae91dc5627f9cba7406ce3146a05",
+      "afterLines": 933
+    }
+  }
+}
