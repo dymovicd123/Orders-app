@@ -25,9 +25,9 @@ import './styles/189b-business-history.css'
 import './styles/189c-reliable-money-history.css'
 import './styles/finance-f4-money-journal.css'
 import './styles/189d-team-activity-cleanup.css'
-import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, ExchangeDraft, ExchangeHistoryEntry, ExchangeHistoryResponse, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, InventoryHistoryResponse, InventoryCheckHistoryResponse, FinancialHistoryEntry, FinancialHistoryResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryDraftItem, InventoryMatrixDraft, InventoryMovementRecord, InventoryOperationVariantDraft, InventoryPanel, InventoryResponse, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, InventoryStockRecord, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, ReturnDraft, ReturnHistoryEntry, ReturnHistoryResponse, SimpleAdminStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
+import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, ExchangeDraft, ExchangeHistoryEntry, ExchangeHistoryResponse, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, InventoryHistoryResponse, InventoryCheckHistoryResponse, FinancialHistoryEntry, FinancialHistoryResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryDraftItem, InventoryMatrixDraft, InventoryMovementRecord, InventoryOperationVariantDraft, InventoryPanel, InventoryResponse, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, InventoryStockRecord, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, ReturnDraft, ReturnHistoryEntry, ReturnHistoryResponse, AuthStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
 import type { CatalogResolutionContext, CatalogResolutionInput, CatalogResolutionResponse, InventoryCycleCountApplyResponse, InventoryCycleCountSuggestionsResponse, InventoryReservationsResponse, InventoryStocktakeMutationResponse, InventoryStocktakeSessionsResponse, WarehouseAttentionSummaryResponse } from '../shared/api-contracts.ts'
-import { MANAGER_COLOR_OPTIONS, SIMPLE_ADMIN_USER, SIMPLE_MANAGER_USER, orderPanelOptions, workspaceModules } from './app/constants'
+import { MANAGER_COLOR_OPTIONS, orderPanelOptions, workspaceModules } from './app/constants'
 import { createDebtClosePayment, createEditorDraft, createEmptyEditorItem, createEmptyEditorPayment, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, deriveOrderSourceType, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, htmlEscape, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, resolvePaymentKind, sectorFromHash, shippingStatusLabel, sortSizeLikeValues, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
 import { ChoicePills, FriendlyNumberInput, ManagerBadge, ManagerPicker, SmartPickerInput, resolveManagerDisplayColor } from './components'
 import { TableDragScrollManager } from './components/tables/TableDragScrollManager'
@@ -231,28 +231,26 @@ function App() {
   const [workshopSortDirection, setWorkshopSortDirection] = useState<'oldest' | 'newest'>('oldest')
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const [authUser, setAuthUser] = useState<AuthUser | null>(SIMPLE_MANAGER_USER)
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [authChecking, setAuthChecking] = useState(true)
-  const [simpleAdminMode, setSimpleAdminMode] = useState(false)
-  const [adminModeOpen, setAdminModeOpen] = useState(false)
   const [stockResolutionPrompt, setStockResolutionPrompt] = useState<StockResolutionPrompt | null>(null)
   const stockResolutionDecisionRef = useRef<((value: boolean) => void) | null>(null)
   const [returnedItemResolutionEventId, setReturnedItemResolutionEventId] = useState<number | null>(null)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const [adminModeBusy, setAdminModeBusy] = useState(false)
-  const [adminModeDraft, setAdminModeDraft] = useState({ login: 'admin', password: '' })
   const [authHasUsers, setAuthHasUsers] = useState(true)
   const [authBusy, setAuthBusy] = useState(false)
-  const [authEmail, setAuthEmail] = useState('')
+  const [authLogin, setAuthLogin] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [authDisplayName, setAuthDisplayName] = useState('')
+  const [authBootstrapLogin, setAuthBootstrapLogin] = useState('admin')
+  const [authBootstrapPassword, setAuthBootstrapPassword] = useState('')
   const [passwordChangeOpen, setPasswordChangeOpen] = useState(false)
   const [passwordChangeBusy, setPasswordChangeBusy] = useState(false)
   const [passwordChangeDraft, setPasswordChangeDraft] = useState({ currentPassword: '', newPassword: '' })
   const [authUsersOpen, setAuthUsersOpen] = useState(false)
   const [authUsersBusy, setAuthUsersBusy] = useState(false)
   const [authUsers, setAuthUsers] = useState<ManagedAuthUser[]>([])
-  const [authUserDraft, setAuthUserDraft] = useState({ id: 0, email: '', password: '', role: 'manager' as AccessRole, managerId: 0, displayName: '', isActive: true, mustChangePassword: true })
+  const [authUserDraft, setAuthUserDraft] = useState({ id: 0, login: '', password: '', role: 'manager' as AccessRole, managerId: 0, displayName: '', isActive: true, mustChangePassword: true })
   const askStockResolution = (prompt: StockResolutionPrompt) => new Promise<boolean>((resolve) => {
     if (stockResolutionDecisionRef.current) stockResolutionDecisionRef.current(false)
     stockResolutionDecisionRef.current = resolve
@@ -265,8 +263,8 @@ function App() {
     resolve?.(confirmed)
   }
 
-  const accessRole: AccessRole = simpleAdminMode ? 'admin' : 'manager'
-  const isAdmin = accessRole === 'admin'
+  const accessRole: AccessRole = authUser?.role || 'manager'
+  const isAdmin = authUser?.role === 'admin'
   const authReady = !authChecking
   const { apiFetch, prepareCriticalRequest, completeCriticalRequest } = useApiClient({ accessRole, setError, setMessage })
   
@@ -328,44 +326,17 @@ function App() {
   const refreshAuth = useCallback(async () => {
     setAuthChecking(true)
     try {
-      const response = await fetch('/api/admin-mode/status', { credentials: 'include' })
-      const data = await readJsonResponse<SimpleAdminStatusResponse>(response, 'Проверка админ-режима')
-      const nextAdmin = Boolean(data.isAdmin)
-      setSimpleAdminMode(nextAdmin)
-      setAuthUser(nextAdmin ? SIMPLE_ADMIN_USER : SIMPLE_MANAGER_USER)
-      setAuthHasUsers(true)
+      const response = await fetch('/api/auth/status', { credentials: 'include', cache: 'no-store' })
+      const data = await readJsonResponse<AuthStatusResponse>(response, 'Проверка авторизации')
+      setAuthHasUsers(Boolean(data.hasUsers))
+      setAuthUser(data.user || null)
     } catch (error) {
       console.error(error)
-      setSimpleAdminMode(false)
-      setAuthUser(SIMPLE_MANAGER_USER)
+      setAuthUser(null)
     } finally {
       setAuthChecking(false)
     }
   }, [])
-
-  const submitAdminMode = useCallback(async (event?: FormEvent<HTMLFormElement>) => {
-    event?.preventDefault()
-    setAdminModeBusy(true)
-    setError(null)
-    try {
-      const response = await fetch('/api/admin-mode/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(adminModeDraft),
-      })
-      await readJsonResponse<SimpleAdminStatusResponse>(response, 'Админ-режим')
-      setSimpleAdminMode(true)
-      setAuthUser(SIMPLE_ADMIN_USER)
-      setAdminModeDraft({ login: 'admin', password: '' })
-      setAdminModeOpen(false)
-      setMessage('Админ-режим включён.')
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось включить админ-режим.')
-    } finally {
-      setAdminModeBusy(false)
-    }
-  }, [adminModeDraft])
 
 
   const submitAuth = useCallback(async (event: FormEvent<HTMLFormElement>) => {
@@ -375,8 +346,14 @@ function App() {
     try {
       const endpoint = authHasUsers ? '/api/auth/login' : '/api/auth/setup'
       const payload = authHasUsers
-        ? { email: authEmail, password: authPassword }
-        : { email: authEmail, password: authPassword, displayName: authDisplayName || 'Администратор' }
+        ? { login: authLogin, password: authPassword }
+        : {
+            login: authLogin,
+            password: authPassword,
+            displayName: authDisplayName || 'Администратор',
+            bootstrapLogin: authBootstrapLogin,
+            bootstrapPassword: authBootstrapPassword,
+          }
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -385,7 +362,9 @@ function App() {
       })
       const data = await readJsonResponse<{ ok: boolean; user?: AuthUser }>(response, authHasUsers ? 'Вход' : 'Первый администратор')
       setAuthUser(data.user || null)
+      setAuthHasUsers(true)
       setAuthPassword('')
+      setAuthBootstrapPassword('')
       if (data.user?.mustChangePassword) {
         setMessage('Вход выполнен. Нужно сменить временный пароль.')
       } else {
@@ -396,39 +375,44 @@ function App() {
     } finally {
       setAuthBusy(false)
     }
-  }, [authDisplayName, authEmail, authHasUsers, authPassword])
+  }, [authBootstrapLogin, authBootstrapPassword, authDisplayName, authHasUsers, authLogin, authPassword])
 
   const logout = useCallback(async () => {
-    await fetch('/api/admin-mode/logout', { method: 'POST', credentials: 'include' })
-    setSimpleAdminMode(false)
-    setAuthUser(SIMPLE_MANAGER_USER)
-    setMessage('Админ-режим выключен.')
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+    } finally {
+      setAuthUser(null)
+      setAuthUsersOpen(false)
+      setPasswordChangeOpen(false)
+      setMessage('Вы вышли из системы.')
+    }
   }, [])
 
   const submitPasswordChange = useCallback(async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault()
-    if (!isAdmin) return
+    if (!authUser) return
     setPasswordChangeBusy(true)
     setError(null)
     try {
       const currentPassword = passwordChangeDraft.currentPassword
       const newPassword = passwordChangeDraft.newPassword
       if (newPassword.length < 8) throw new Error('Новый пароль должен быть не короче 8 символов.')
-      const response = await apiFetch('/api/admin-mode/change-password', {
+      const response = await apiFetch('/api/auth/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ currentPassword, newPassword }),
       })
-      const data = await readJsonResponse<{ ok: boolean; message?: string }>(response, 'Смена пароля')
+      const data = await readJsonResponse<{ ok: boolean; user?: AuthUser; message?: string }>(response, 'Смена пароля')
+      if (data.user) setAuthUser(data.user)
       setPasswordChangeDraft({ currentPassword: '', newPassword: '' })
       setPasswordChangeOpen(false)
-      setMessage(data.message || 'Пароль админ-режима изменён.')
+      setMessage(data.message || 'Пароль изменён.')
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Не удалось сменить пароль.')
     } finally {
       setPasswordChangeBusy(false)
     }
-  }, [apiFetch, isAdmin, passwordChangeDraft])
+  }, [apiFetch, authUser, passwordChangeDraft])
 
   const loadAuthUsers = useCallback(async () => {
     if (!isAdmin) return
@@ -451,10 +435,10 @@ function App() {
     try {
       const isEdit = Boolean(authUserDraft.id)
       const payload = {
-        email: authUserDraft.email,
+        login: authUserDraft.login,
         password: authUserDraft.password || undefined,
         role: authUserDraft.role,
-        managerId: authUserDraft.managerId || undefined,
+        managerId: authUserDraft.managerId || null,
         displayName: authUserDraft.displayName,
         isActive: authUserDraft.isActive,
         mustChangePassword: authUserDraft.mustChangePassword,
@@ -465,31 +449,30 @@ function App() {
         body: JSON.stringify(payload),
       })
       await readJsonResponse(response, 'Пользователь')
-      setAuthUserDraft({ id: 0, email: '', password: '', role: 'manager', managerId: 0, displayName: '', isActive: true, mustChangePassword: true })
-      setMessage(isEdit ? 'Пользователь обновлён.' : 'Пользователь создан.')
+      setAuthUserDraft({ id: 0, login: '', password: '', role: 'manager', managerId: 0, displayName: '', isActive: true, mustChangePassword: true })
+      setMessage(isEdit ? 'Аккаунт обновлён.' : 'Аккаунт создан.')
       await loadAuthUsers()
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось сохранить пользователя.')
+      setError(error instanceof Error ? error.message : 'Не удалось сохранить аккаунт.')
     } finally {
       setAuthUsersBusy(false)
     }
   }, [apiFetch, authUserDraft, isAdmin, loadAuthUsers])
 
-  const deleteAuthUser = useCallback(async (id: number) => {
-    if (!isAdmin || !window.confirm('Удалить пользователя? Его активные сессии будут закрыты.')) return
+  const disableAuthUser = useCallback(async (id: number) => {
+    if (!isAdmin || !window.confirm('Отключить этот аккаунт? Его активные сессии будут закрыты.')) return
     setAuthUsersBusy(true)
     try {
       const response = await apiFetch(`/api/auth/users/${id}`, { method: 'DELETE' })
-      await readJsonResponse(response, 'Удаление пользователя')
-      setMessage('Пользователь удалён.')
+      await readJsonResponse(response, 'Отключение аккаунта')
+      setMessage('Аккаунт отключён.')
       await loadAuthUsers()
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось удалить пользователя.')
+      setError(error instanceof Error ? error.message : 'Не удалось отключить аккаунт.')
     } finally {
       setAuthUsersBusy(false)
     }
   }, [apiFetch, isAdmin, loadAuthUsers])
-
 
   const [editorDraft, setEditorDraft] = useState<EditorDraft | null>(null)
   const [inventoryDraft, setInventoryDraft] = useState<InventoryDraft>({
