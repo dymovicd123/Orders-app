@@ -86,6 +86,7 @@ function verifySource() {
     'scripts/test-step191f-admin-session-integrity.mjs',
     'scripts/test-auth-r3-team-access-ux.mjs',
     'scripts/test-auth-r5-hardening.mjs',
+    'scripts/auth-r6-password-manager-frontend-manifest.json',
     'scripts/test-auth-r6-password-manager.mjs',
     'scripts/step192a1-warehouse-truth-freshness-manifest.json',
     'scripts/test-step192a1-warehouse-truth-freshness.mjs',
