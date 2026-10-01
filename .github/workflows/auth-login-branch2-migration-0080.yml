@@ -1,0 +1,122 @@
+name: Auth login Branch2 migration 0080
+
+on:
+  push:
+    branches:
+      - branch2
+    paths:
+      - 'migrations/0080_v72_auth_login_identity.sql'
+      - '.github/workflows/auth-login-branch2-migration-0080.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: Apply auth login migration to Branch2 D1 only
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout exact Branch2 commit
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on environment and migration drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "branch2" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo "Production D1 binding detected. Refusing auth migration." >&2
+            exit 20
+          fi
+
+          migration='migrations/0080_v72_auth_login_identity.sql'
+          grep -Fq 'ALTER TABLE app_users ADD COLUMN login TEXT' "$migration"
+          grep -Fq 'idx_app_users_login_nocase' "$migration"
+          grep -Fq 'ON app_users(lower(login))' "$migration"
+          if grep -Eiq '\b(INSERT[[:space:]]+INTO|UPDATE|DELETE[[:space:]]+FROM|DROP[[:space:]]+TABLE)\b' "$migration"; then
+            echo "Migration 0080 contains row rewrites or destructive table operations. Refusing migration." >&2
+            exit 21
+          fi
+          if grep -Eiq '\b(orders|order_items|inventory_|workshop_|returns|exchanges|payments|clients)\b' "$migration"; then
+            echo "Migration 0080 references business tables. Refusing migration." >&2
+            exit 22
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify Branch2 auth baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM app_users) AS user_count,
+            (SELECT COUNT(*) FROM app_sessions) AS session_count,
+            (SELECT COUNT(*) FROM pragma_table_info('app_users') WHERE name = 'login') AS login_column_count" --json)"
+          echo "$result"
+          user_count="$(jq -r '.[0].results[0].user_count // -1' <<<"$result")"
+          session_count="$(jq -r '.[0].results[0].session_count // -1' <<<"$result")"
+          login_column_count="$(jq -r '.[0].results[0].login_column_count // -1' <<<"$result")"
+          [[ "$user_count" == "0" && "$session_count" == "0" ]] || {
+            echo "Branch2 auth baseline is no longer empty. Refusing automatic 0080 migration until reviewed." >&2
+            exit 23
+          }
+          [[ "$login_column_count" == "0" || "$login_column_count" == "1" ]] || {
+            echo "Unexpected login column count: $login_column_count" >&2
+            exit 24
+          }
+
+      - name: Apply migration 0080 if needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          schema="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS count FROM pragma_table_info('app_users') WHERE name = 'login'" --json)"
+          existing="$(jq -r '.[0].results[0].count // 0' <<<"$schema")"
+          if [[ "$existing" == "1" ]]; then
+            echo "0080 login column already exists; verifying current schema instead of reapplying."
+          else
+            [[ "$existing" == "0" ]] || {
+              echo "Unexpected login column count: $existing" >&2
+              exit 25
+            }
+            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file migrations/0080_v72_auth_login_identity.sql
+          fi
+
+      - name: Verify login identity schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM pragma_table_info('app_users') WHERE name = 'login' AND type = 'TEXT') AS login_column_count,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_app_users_login_nocase') AS login_index_count,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_app_users_manager_id') AS manager_index_count,
+            (SELECT COUNT(*) FROM app_users) AS user_count,
+            (SELECT COUNT(*) FROM app_sessions) AS session_count" --json)"
+          echo "$result"
+          login_column_count="$(jq -r '.[0].results[0].login_column_count // 0' <<<"$result")"
+          login_index_count="$(jq -r '.[0].results[0].login_index_count // 0' <<<"$result")"
+          manager_index_count="$(jq -r '.[0].results[0].manager_index_count // 0' <<<"$result")"
+          user_count="$(jq -r '.[0].results[0].user_count // -1' <<<"$result")"
+          session_count="$(jq -r '.[0].results[0].session_count // -1' <<<"$result")"
+          [[ "$login_column_count" == "1" && "$login_index_count" == "1" && "$manager_index_count" == "1" ]] || {
+            echo "Auth login schema verification failed." >&2
+            exit 26
+          }
+          [[ "$user_count" == "0" && "$session_count" == "0" ]] || {
+            echo "Migration 0080 unexpectedly changed auth rows." >&2
+            exit 27
+          }
+          echo "Auth migration 0080 verified on Branch2 D1: dedicated login identity added with no account/session row rewrite."
