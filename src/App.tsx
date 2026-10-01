@@ -7512,7 +7512,6 @@ function removeDebtPayment(index: number) {
         order={orderCatalogResolutionOrder}
         apiFetch={apiFetch}
         isAdmin={isAdmin}
-        onRequestAdminMode={() => setAdminModeOpen(true)}
         onClose={() => setOrderCatalogResolutionOrder(null)}
         onCompleted={async (resolvedOrder: OrderRecord) => {
           const freshResponse = await apiFetch(`/api/orders/${resolvedOrder.id}`, { cache: 'no-store' })
