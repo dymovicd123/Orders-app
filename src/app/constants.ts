@@ -1,4 +1,4 @@
-import type { AuthUser, OrderPanel, ReferenceData, ReferenceKind, WorkspaceModule } from './types'
+import type { OrderPanel, ReferenceData, ReferenceKind, WorkspaceModule } from './types'
 
 export const MANAGER_COLOR_OPTIONS = [
   '#2563EB', '#7C3AED', '#DB2777', '#EA580C', '#CA8A04', '#16A34A',
