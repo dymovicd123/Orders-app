@@ -165,7 +165,7 @@ check(appSource.includes("loadInventoryData('warehouse', true, '', false)"), 'R7
 // R7.6 — cross-navigation reuse only from a full exact finance overview.
 check(financeHookSource.includes('const ORDERS_SUMMARY_TTL_MS = 2 * 60 * 1000'), 'R7.6 Orders summary TTL missing')
 check(financeHookSource.includes('function ordersSummaryFromFinanceReport(data: FinanceReportResponse)'), 'R7.6 exact Finance-to-Orders summary projection missing')
-check(financeHookSource.includes('if (!reportType) {'), 'R7.6 must not reuse specialized partial report overviews')
+check(financeHookSource.includes('if (!reportType && data.overview) {'), 'R7.6 must reuse only a complete full/Finance overview, never a specialized partial payload')
 check(financeHookSource.includes('summaryCache.current.set(summaryKey, { data: ordersSummaryFromFinanceReport(data), savedAt })'), 'R7.6 Finance result is not priming Orders summary cache')
 check(activitySource.includes('WHERE order_date BETWEEN ? AND ?'), 'R7.6 sales must remain based on order_date')
 check(activitySource.includes('WHERE p.payment_date BETWEEN ? AND ?'), 'R7.6 receipts must remain based on payment_date')
