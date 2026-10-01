@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "revision": "auth-r3-team-access-frontend",
+  "baseBranch2Commit": "d10580cd8ac44ab45879cbf3e485b80b3d0fe606",
+  "files": {
+    "src/App.tsx": {
+      "baselineFixture": "scripts/fixtures/auth-r3-team-app-baseline.tsx",
+      "beforeGitBlob": "320992035d0423eb78d5cd83f646de1f7ce5ef8a",
+      "beforeLines": 7891,
+      "afterGitBlob": "db9b8984c037cb64e49ea1df2cbe8fe1dbdf3e69",
+      "afterLines": 8073
+    },
+    "src/features/sections/TeamSection.tsx": {
+      "baselineFixture": "scripts/fixtures/auth-r3-team-section-baseline.tsx",
+      "beforeGitBlob": "6ac224d7e4e558688daa5eea2bf5a42f985f3bc3",
+      "beforeLines": 445,
+      "afterGitBlob": "79a92ac17137c8aef351a03e70d129e7c2d5bb92",
+      "afterLines": 632
+    },
+    "src/styles/10-workshop-reports-team.css": {
+      "baselineFixture": "scripts/fixtures/auth-r3-team-style-baseline.css",
+      "beforeGitBlob": "089c2be22beb3dbb46d2bcc8afc3a3f91be77b13",
+      "beforeLines": 555,
+      "afterGitBlob": "7ebe5b92c7e44659337a82e1f9ad8ce8814ee298",
+      "afterLines": 753
+    }
+  }
+}
