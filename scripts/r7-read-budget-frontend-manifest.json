@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "revision": "r7-read-budget-r1",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "a8d155fbd74f94dd361b837e306ae9fc6e1aa0bf",
+      "afterGitBlob": "2104d65373989572d833c5ce00ea1d873b154a0c",
+      "replacements": [
+        {
+          "beforeBlock": "    setBusy(true)\n    setError(null)\n    setMessage(null)\n\n    try {\n      const activeFilters = overrideFilters\n",
+          "afterBlock": "    const activeFilters = overrideFilters\n    const searchQuery = activeFilters.q.trim()\n    if (searchQuery && Array.from(searchQuery).length < 3) {\n      setBusy(false)\n      setError(null)\n      setMessage('Введите минимум 3 символа для поиска заказа.')\n      setOrders([])\n      setOrderPeriodStats(null)\n      setOrderPageOffset(0)\n      setOrderPageInfo((current) => ({ ...current, offset: 0, totalCount: 0, hasMore: false, hasPrevious: false }))\n      setSelectedOrderId(null)\n      setEditorOpen(false)\n      return null\n    }\n\n    setBusy(true)\n    setError(null)\n    setMessage(null)\n\n    try {\n"
+        }
+      ]
+    }
+  }
+}

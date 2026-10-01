@@ -4,15 +4,17 @@ const source = fs.readFileSync('worker/domains/orders-read.ts', 'utf8')
 const migration = fs.readFileSync('migrations/0064_v72_d1_read_budget_r5_order_search_fts.sql', 'utf8')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 
-check(source.includes('} else if (Array.from(q).length >= 3) {'), 'FTS path must be limited to >=3 Unicode characters')
+check(source.includes("if (q && Array.from(q).length < 3) {"), 'R7.1 short generic search guard missing')
+check(source.indexOf("if (q && Array.from(q).length < 3) {") < source.indexOf('await isOrderPricingFoundationEnabled(db)'), 'R7.1 short search must return before any D1 pricing-mode read')
 check(source.includes('const qVariants = Array.from(new Set([q, q.toUpperCase(), q.toLowerCase()]))'), 'legacy raw/upper/lower search variants changed')
 check(source.includes('order_search_orders_fts MATCH ?'), 'order FTS candidate path missing')
 check(source.includes('order_search_items_fts MATCH ?'), 'item FTS candidate path missing')
 check(source.includes('order_search_payments_fts MATCH ?'), 'payment FTS candidate path missing')
 check(source.includes("INSTR(COALESCE(o.manager_snapshot_name, ''), ?) > 0"), 'historical manager snapshot search fallback missing')
 check(!migration.includes('manager_snapshot_name'), 'R5.3 migration must run on canonical migration history without Production-only snapshot drift')
-check(source.includes('FTS5 trigram cannot match fewer than three Unicode characters'), 'short-query legacy fallback missing')
-check(source.includes('INSTR(${searchOrderText}, ?) > 0'), 'short-query order fallback changed')
+check(!source.includes('const searchOrderText ='), 'R7.1 legacy 1–2 character full-history fallback returned')
+check(!source.includes('const searchItemText ='), 'R7.1 legacy short item scan returned')
+check(!source.includes('const searchPaymentText ='), 'R7.1 legacy short payment scan returned')
 check(source.includes("baseWhereParts.push('o.external_id >= ? AND o.external_id < ?')"), 'indexed ORD prefix fast path lost')
 check(!source.includes('genericSearchClause'), 'rejected full-history materialization path returned')
 
@@ -29,4 +31,4 @@ for (const trigger of [
 check(!/\b(?:UPDATE|DELETE FROM)\s+(?:orders|order_items|payments|managers|customers)\b/i.test(migration), 'R5.3 migration must not mutate business rows')
 check(migration.includes('PRAGMA optimize;'), 'R5.3 migration must refresh query-planner statistics')
 
-console.log('D1 READ BUDGET R5.3 PASSED — generic >=3-char order search uses derived case-sensitive trigram FTS indexes; short search and ORD prefix semantics stay intact')
+console.log('D1 READ BUDGET R5.3 PASSED — generic search stays on trigram FTS, ORD prefixes stay indexed, and R7.1 rejects 1–2 character generic scans before D1')
