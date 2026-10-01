@@ -91,6 +91,45 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const auth_r3_team_frontend_normalizedManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-r3-team-frontend-structural-manifest.json'), 'utf8'))
+if (auth_r3_team_frontend_normalizedManifest?.version !== 1 || auth_r3_team_frontend_normalizedManifest?.revision !== 'auth-r3-team-access-frontend') throw new Error('Auth R3 Team frontend structural manifest invalid')
+const auth_r3_team_frontend_normalizedBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.AUTH_R3_TEAM_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(auth_r3_team_frontend_normalizedManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (auth_r3_team_frontend_normalizedBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Auth R3 Team frontend changed beyond exact manifest: ' + relative)
+      }
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (auth_r3_team_frontend_normalizedBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Auth R3 Team frontend predecessor fixture drifted: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, AUTH_R3_TEAM_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('AUTH R3 TEAM FRONTEND STRUCTURAL LAYER PASSED — Team access UX is exact over Auth R2 Branch2')
+  process.exit(0)
+}
 const authR2FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-r2-frontend-structural-manifest.json'), 'utf8'))
 if (authR2FrontendManifest?.version !== 1 || authR2FrontendManifest?.revision !== 'auth-r2-account-sessions-frontend') throw new Error('Auth R2 frontend structural manifest invalid')
 const authR2FrontendBlobSha = (value) => {
