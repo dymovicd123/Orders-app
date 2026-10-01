@@ -7,6 +7,7 @@ try {
   const app = read('src/App.tsx')
   const team = read('src/features/sections/TeamSection.tsx')
   const teamWorker = read('worker/domains/team.ts')
+  const authWorker = read('worker/domains/auth.ts')
   const styles = read('src/styles/10-workshop-reports-team.css')
 
   check(team.includes('teamAccessEditorId') && team.includes('teamAccessDraft'), 'Integrated Team access editor state missing')
@@ -31,7 +32,13 @@ try {
   check(teamWorker.includes("DELETE FROM app_sessions WHERE user_id IN (SELECT id FROM app_users WHERE manager_id = ?)"), 'Dismissal does not revoke linked employee sessions')
   check(teamWorker.includes("UPDATE app_users SET is_active = 0, disabled_at = ?, updated_at = ? WHERE manager_id = ?"), 'Dismissal does not disable linked login accounts')
   check(teamWorker.includes("DELETE FROM app_users WHERE manager_id = ?"), 'Deleting an erroneous employee can leave an orphan account')
+  check(teamWorker.includes('ensureTeamEmployeeCanLoseAccess') && teamWorker.includes('последний активный администратор'), 'Employee dismissal/delete can remove the last active Admin')
   check(teamWorker.includes('Доступ в систему при необходимости включите отдельно'), 'Employee restore can silently reactivate access')
+
+  check(authWorker.includes('ensureManagerAccountAvailable'), 'Server does not enforce one account per employee')
+  check(authWorker.includes("'SELECT id, login FROM app_users WHERE manager_id = ? AND id <> ? LIMIT 1'"), 'Duplicate employee account check is not server-side')
+  check(authWorker.includes('const managerAccountError = await ensureManagerAccountAvailable(db, managerId)'), 'Account creation can still duplicate an employee identity')
+  check(authWorker.includes('const managerAccountError = await ensureManagerAccountAvailable(db, nextManagerId, userId)'), 'Account editing can still create duplicate employee identity')
 
   check(styles.includes('.team-access-onboarding') && styles.includes('.team-access-editor-panel'), 'Team access UI styles missing')
   check(styles.includes('@media (max-width: 720px)'), 'Team access UI has no mobile adaptation')
