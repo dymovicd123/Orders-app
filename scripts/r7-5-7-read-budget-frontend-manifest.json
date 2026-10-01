@@ -42,7 +42,7 @@
     },
     "src/features/finance/useFinanceReportReads.ts": {
       "beforeGitBlob": "b6478cce727954338d40ae03fe9cfd3f6fa85483",
-      "afterGitBlob": "8225002b119c2294a53f40d254765e04fcbbba32",
+      "afterGitBlob": "b4ae3636783af0429831de2044383a107d61ee52",
       "replacements": [
         {
           "beforeBlock": "const ORDERS_SUMMARY_TTL_MS = 60 * 1000\nconst FULL_REPORT_TTL_MS = 60 * 1000",
@@ -54,7 +54,7 @@
         },
         {
           "beforeBlock": "        const data = await readJsonResponse<FinanceReportResponse>(response, 'Финансовые отчёты')\n        if (!response.ok) throw new Error('Не удалось загрузить финансовые отчёты.')\n        if (financeInFlight.current.get(key) === request) financeCache.current.set(key, { data, savedAt: Date.now() })\n        return data",
-          "afterBlock": "        const data = await readJsonResponse<FinanceReportResponse>(response, 'Финансовые отчёты')\n        if (!response.ok) throw new Error('Не удалось загрузить финансовые отчёты.')\n        if (financeInFlight.current.get(key) === request) {\n          const savedAt = Date.now()\n          financeCache.current.set(key, { data, savedAt })\n          // R7.6: the full/Finance workspace response already computed the exact Orders summary\n          // with order_date for sales, payment_date for receipts, return_date for returns, and\n          // current debt independently of the period. Reuse that exact result across navigation\n          // instead of issuing a second /orders-summary aggregate for the same date range.\n          if (!reportType) {\n            const summaryKey = `${range.dateFrom}::${range.dateTo}`\n            summaryCache.current.set(summaryKey, { data: ordersSummaryFromFinanceReport(data), savedAt })\n          }\n        }\n        return data"
+          "afterBlock": "        const data = await readJsonResponse<FinanceReportResponse>(response, 'Финансовые отчёты')\n        if (!response.ok) throw new Error('Не удалось загрузить финансовые отчёты.')\n        if (financeInFlight.current.get(key) === request) {\n          const savedAt = Date.now()\n          financeCache.current.set(key, { data, savedAt })\n          // R7.6: the full/Finance workspace response already computed the exact Orders summary\n          // with order_date for sales, payment_date for receipts, return_date for returns, and\n          // current debt independently of the period. Reuse that exact result across navigation\n          // instead of issuing a second /orders-summary aggregate for the same date range.\n          if (!reportType && data.overview) {\n            const summaryKey = `${range.dateFrom}::${range.dateTo}`\n            summaryCache.current.set(summaryKey, { data: ordersSummaryFromFinanceReport(data), savedAt })\n          }\n        }\n        return data"
         }
       ]
     }
