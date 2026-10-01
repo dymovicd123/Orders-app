@@ -154,7 +154,7 @@ export default {
           typeApiBoundaryCleanup: '1906e',
           transferRuntimeSafety: '191d',
           runtimeLimitsAtomicity: '191e',
-          adminSessionIntegrity: '191f',
+          adminSessionIntegrity: 'account-auth-r2',
           warehouseTruthFreshness: '192a1',
           catalogTruthFinalizer: '192a2',
           warehouseAttentionTruthGates: '192b1',
