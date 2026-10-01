@@ -147,7 +147,8 @@ type OrderStockHandoverActionResponse = Omit<OrderStockHandoverResponse, 'items'
 }
 
 
-const WAREHOUSE_ATTENTION_SUMMARY_TTL_MS = 20_000
+const WAREHOUSE_ATTENTION_SUMMARY_TTL_MS = 60_000
+const INVENTORY_FORM_SNAPSHOT_TTL_MS = 30_000
 let warehouseAttentionSummaryCache: { data: WarehouseAttentionSummaryResponse; loadedAt: number } | null = null
 let warehouseAttentionSummaryInFlight: Promise<WarehouseAttentionSummaryResponse | null> | null = null
 let warehouseAttentionRequestToken = 0
@@ -209,6 +210,7 @@ function App() {
     warehouse: null,
     boutique: null,
   })
+  const inventorySnapshotLoadedAt = useRef<Record<InventorySourceKey, number>>({ warehouse: 0, boutique: 0 })
   const [catalogData, setCatalogData] = useState<CatalogResponse | null>(null)
   const [catalogReview, setCatalogReview] = useState<CatalogReviewResponse | null>(null)
   const [catalogReviewBusy, setCatalogReviewBusy] = useState(false)
@@ -1322,10 +1324,11 @@ function App() {
       if (isAdmin && !inventoryAdminPanels.includes(inventoryPanel)) setInventoryPanel('overview')
     }
     if (activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'zammler' || orderPanel === 'edit' || orderPanel === 'exchange')) {
-      // Форма заказа всегда получает свежие остатки обеих точек, но журнал движений ей не нужен.
-      // Каталог остаётся полным: список товаров и все варианты по-прежнему доступны при создании/редактировании.
-      void loadInventoryData('warehouse', true, '', false)
-      void loadInventoryData('boutique', true, '', false)
+      // R7.5: order forms may reuse a very recent stock snapshot instead of rescanning both sources
+      // on every panel transition. The server still performs the authoritative stock/CAS validation
+      // on every write, and committed inventory mutations invalidate this snapshot explicitly.
+      void loadInventoryData('warehouse', false, '', false)
+      void loadInventoryData('boutique', false, '', false)
       void loadCatalogData()
     }
   }, [activeSector, authReady, orderPanel, isAdmin, inventoryPanel])
@@ -1575,7 +1578,17 @@ function App() {
       const data = await request
       if (!data || requestToken !== warehouseAttentionRequestToken) return data
       setWarehouseAttention(data)
-      if (!shouldLoadDetails) warehouseAttentionSummaryCache = { data, loadedAt: Date.now() }
+      if (shouldLoadDetails) {
+        // R7.7: a detailed Attention response already carries the exact summary counters.
+        // Reuse those counters for the next passive badge/overview read instead of immediately
+        // rebuilding the same live Warehouse truth graph.
+        warehouseAttentionSummaryCache = {
+          data: { ok: data.ok, total: data.total, counts: data.counts },
+          loadedAt: Date.now(),
+        }
+      } else {
+        warehouseAttentionSummaryCache = { data, loadedAt: Date.now() }
+      }
       return data
     } finally {
       if (!shouldLoadDetails && warehouseAttentionSummaryInFlight === request) warehouseAttentionSummaryInFlight = null
@@ -1590,7 +1603,15 @@ function App() {
   ) {
     const cached = inventoryData[source]
     const cachedHasMovements = cached?.movementsIncluded !== false
-    if (cached && !force && !query.trim() && (!includeMovements || cachedHasMovements)) {
+    const snapshotAgeMs = Date.now() - inventorySnapshotLoadedAt.current[source]
+    if (
+      cached
+      && !force
+      && !query.trim()
+      && snapshotAgeMs >= 0
+      && snapshotAgeMs <= INVENTORY_FORM_SNAPSHOT_TTL_MS
+      && (!includeMovements || cachedHasMovements)
+    ) {
       return cached
     }
 
@@ -1603,6 +1624,7 @@ function App() {
     const response = await apiFetch(`/api/inventory?${params.toString()}`)
     if (!response.ok) return null
     const data = await readJsonResponse<InventoryResponse>(response, 'Склад')
+    if (!query.trim()) inventorySnapshotLoadedAt.current[source] = Date.now()
     setInventoryData((current) => {
       const previous = current[source]
       if (!includeMovements && previous && previous.movementsIncluded !== false) {
@@ -1622,6 +1644,7 @@ function App() {
 
   function invalidateInventoryStockCaches(includeCatalogReview = false) {
     setInventoryData({ warehouse: null, boutique: null })
+    inventorySnapshotLoadedAt.current = { warehouse: 0, boutique: 0 }
     if (includeCatalogReview) setCatalogReview(null)
     // W3.1A: mutations invalidate Warehouse Attention truth, but do not spend a D1 read
     // unless the user actually opens/refreshes the recovery surface. Its own effect/action
@@ -5597,8 +5620,10 @@ function removeDebtPayment(index: number) {
     if (order.pricing_mode === 'itemized_v1') {
       void Promise.all([
         loadCatalogData(true),
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
+        // R7.5: the edit panel effect owns freshness; reuse its bounded stock snapshot here
+        // instead of issuing a second forced Warehouse + Boutique read for the same transition.
+        loadInventoryData('warehouse', false, '', false),
+        loadInventoryData('boutique', false, '', false),
       ]).catch((err) => {
         setError(err instanceof Error ? err.message : 'Не удалось обновить Каталог или остатки. Сервер всё равно перепроверит данные при сохранении.')
       })
