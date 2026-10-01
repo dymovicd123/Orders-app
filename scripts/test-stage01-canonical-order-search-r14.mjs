@@ -6,12 +6,11 @@ const baseMigration = fs.readFileSync('migrations/0064_v72_d1_read_budget_r5_ord
 const migration = fs.readFileSync('migrations/0070_v72_stage01_canonical_order_search.sql', 'utf8')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 
-check(source.includes("LEFT JOIN catalog_products search_product ON search_product.id = oi.product_id"), 'Short order search does not read current canonical product identity')
-check(source.includes("LEFT JOIN catalog_variants search_variant ON search_variant.id = oi.variant_id"), 'Short order search does not read current canonical variant identity')
-check(source.includes("COALESCE(search_product.name, '')"), 'Short order search does not include canonical product name')
-check(source.includes("COALESCE(search_variant.size_label, '')"), 'Short order search does not include canonical SKU details')
-check(source.includes("COALESCE(oi.product_name_snapshot, '')"), 'Short order search lost historical snapshot vocabulary')
-check(source.includes('order_search_items_fts MATCH ?'), '>=3-character order search no longer uses the bounded FTS path')
+check(source.includes("if (q && Array.from(q).length < 3) {"), 'R7.1 minimum search length guard missing')
+check(!source.includes('LEFT JOIN catalog_products search_product ON search_product.id = oi.product_id'), 'R7.1 reintroduced the legacy short canonical-item scan')
+check(!source.includes('LEFT JOIN catalog_variants search_variant ON search_variant.id = oi.variant_id'), 'R7.1 reintroduced the legacy short canonical-SKU scan')
+check(source.includes('order_search_items_fts MATCH ?'), '>=3-character order search no longer uses the bounded canonical FTS path')
+check(source.includes('order_search_orders_fts MATCH ?') && source.includes('order_search_payments_fts MATCH ?'), 'R7.1 generic search lost one of the bounded FTS sources')
 
 for (const fragment of [
   'LEFT JOIN catalog_products p ON p.id = oi.product_id',
@@ -70,4 +69,4 @@ check(find('ИСТОРИЧЕСКОЕ ПАЛЬТО').includes(1), 'Snapshot fallb
 
 db.close()
 
-console.log('STAGE01 CANONICAL ORDER SEARCH R14 PASSED — working order search follows Resolver/catalog identity changes while immutable order-time vocabulary remains searchable history')
+console.log('STAGE01 CANONICAL ORDER SEARCH R14 PASSED — >=3-character working search follows Resolver/catalog identity through derived FTS, immutable snapshots remain searchable, and R7.1 blocks costly 1–2 character scans')
