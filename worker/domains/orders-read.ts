@@ -286,10 +286,6 @@ export async function listOrders(db: D1Database, url: URL) {
   const archiveMode = status === 'archived' ? 'archived' : normalizeArchiveMode(url.searchParams.get('archiveMode'));
   const dateFrom = cleanText(url.searchParams.get('dateFrom'));
   const dateTo = cleanText(url.searchParams.get('dateTo'));
-  const pricingFoundationEnabled = await isOrderPricingFoundationEnabled(db);
-  const pricingModeSelect = pricingFoundationEnabled
-    ? 'o.pricing_mode'
-    : "'legacy_manual_total' AS pricing_mode";
   // R5.7: paymentCount is not rendered by the Orders UI. Legacy callers still get it by default.
   // The UI may explicitly opt out so an active/no-date summary can reuse the canonical per-order
   // received_amount instead of scanning every payment again.
@@ -297,6 +293,38 @@ export async function listOrders(db: D1Database, url: URL) {
   // R5.9: subsequent UI pages may reuse the period summary already loaded on page 1.
   // Legacy/API callers keep the exact previous response by default.
   const includePeriodStats = cleanText(url.searchParams.get('includePeriodStats')) !== '0';
+
+  // R7.1: Cloudflare Query Insights showed the legacy 1–2 character substring fallback as the
+  // largest Production rows-read hotspot. Trigram FTS needs at least three Unicode characters.
+  // Return an empty search result before any D1 read; the UI explains the minimum to the operator.
+  if (q && Array.from(q).length < 3) {
+    return {
+      ok: true,
+      limit,
+      offset,
+      count: 0,
+      pageCount: 0,
+      totalCount: 0,
+      hasMore: false,
+      hasPrevious: offset > 0,
+      periodStats: includePeriodStats ? {
+        orderCount: 0,
+        totalAmount: 0,
+        paymentCount: includePaymentCount ? 0 : null,
+        paymentAmount: 0,
+        debtAmount: 0,
+        returnCount: 0,
+        returnAmount: 0,
+        workshopUnits: 0,
+      } : null,
+      orders: [],
+    };
+  }
+
+  const pricingFoundationEnabled = await isOrderPricingFoundationEnabled(db);
+  const pricingModeSelect = pricingFoundationEnabled
+    ? 'o.pricing_mode'
+    : "'legacy_manual_total' AS pricing_mode";
   const pageCursorDate = cleanText(url.searchParams.get('afterOrderDate'));
   const pageCursorId = toInt(url.searchParams.get('afterOrderId'), 0);
   const hasPageCursor = offset > 0 && /^\d{4}-\d{2}-\d{2}$/.test(pageCursorDate) && pageCursorId > 0;
@@ -365,13 +393,10 @@ export async function listOrders(db: D1Database, url: URL) {
       // indexed external_id range instead of scanning customers/items/payments per keystroke.
       baseWhereParts.push('o.external_id >= ? AND o.external_id < ?');
       baseBindings.push(externalIdPrefix, `${externalIdPrefix}￿`);
-    } else if (Array.from(q).length >= 3) {
-      // D1 read-budget R5.3: arbitrary substring search is the remaining order-list scan hotspot.
-      // The derived item FTS row is refreshed from both current canonical catalog identity and
-      // immutable order-time snapshots, so Resolver repair changes what can be found without
-      // erasing the historical search vocabulary.
-      // A case-sensitive trigram FTS index queried with the exact legacy raw/upper/lower variants
-      // preserves the old INSTR semantics while avoiding correlated scans of items/payments.
+    } else {
+      // R7.1: generic searches shorter than three Unicode characters returned above without
+      // touching D1. Every generic query that reaches this branch is therefore trigram-safe.
+      // R5.3 FTS keeps the historical raw/upper/lower vocabulary without correlated table scans.
       const qVariants = Array.from(new Set([q, q.toUpperCase(), q.toLowerCase()]));
       const ftsQuery = qVariants.map((value) => `\"${value.replaceAll('\"', '\"\"')}\"`).join(' OR ');
       baseWhereParts.push(`(
@@ -385,39 +410,6 @@ export async function listOrders(db: D1Database, url: URL) {
         ))
       )`);
       baseBindings.push(ftsQuery, ftsQuery, ftsQuery, q, q.toUpperCase(), q.toLowerCase());
-    } else {
-      // FTS5 trigram cannot match fewer than three Unicode characters. Keep the exact legacy
-      // fallback for those intentionally broad short searches.
-      aggregateNeedsManagerJoin = true;
-      aggregateNeedsCustomerJoin = true;
-      const searchOrderText = `COALESCE(o.external_id, '') || ' ' || COALESCE(o.order_date, '') || ' ' ||
-        COALESCE(m.name, o.manager_snapshot_name, '') || ' ' || COALESCE(c.phone_normalized, '') || ' ' ||
-        COALESCE(c.display_name, '') || ' ' || COALESCE(o.city, '') || ' ' || COALESCE(o.delivery_type, '') || ' ' || COALESCE(o.comment, '')`;
-      const searchItemText = `COALESCE(search_product.name, '') || ' ' ||
-        COALESCE(search_variant.gender, '') || ' ' || COALESCE(search_variant.color, '') || ' ' ||
-        COALESCE(search_variant.material, '') || ' ' || COALESCE(search_variant.length, '') || ' ' ||
-        COALESCE(search_variant.size_label, '') || ' ' ||
-        COALESCE(oi.product_name_snapshot, '') || ' ' || COALESCE(oi.gender_snapshot, '') || ' ' ||
-        COALESCE(oi.color_snapshot, '') || ' ' || COALESCE(oi.material_snapshot, '') || ' ' ||
-        COALESCE(oi.length_snapshot, '') || ' ' || COALESCE(oi.size_snapshot, '')`;
-      const searchPaymentText = `COALESCE(search_payment.method, '') || ' ' || COALESCE(search_payment.comment, '')`;
-      const qVariants = [q, q.toUpperCase(), q.toLowerCase()];
-      baseWhereParts.push(`(
-        INSTR(${searchOrderText}, ?) > 0 OR INSTR(${searchOrderText}, ?) > 0 OR INSTR(${searchOrderText}, ?) > 0
-        OR EXISTS (
-          SELECT 1
-          FROM order_items oi
-          LEFT JOIN catalog_products search_product ON search_product.id = oi.product_id
-          LEFT JOIN catalog_variants search_variant ON search_variant.id = oi.variant_id
-          WHERE oi.order_id = o.id AND (
-            INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0 OR INSTR(${searchItemText}, ?) > 0
-          )
-        )
-        OR EXISTS (SELECT 1 FROM payments search_payment WHERE search_payment.order_id = o.id AND (
-          INSTR(${searchPaymentText}, ?) > 0 OR INSTR(${searchPaymentText}, ?) > 0 OR INSTR(${searchPaymentText}, ?) > 0
-        ))
-      )`);
-      baseBindings.push(...qVariants, ...qVariants, ...qVariants);
     }
   }
 
