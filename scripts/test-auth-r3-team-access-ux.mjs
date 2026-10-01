@@ -25,8 +25,8 @@ try {
   check(team.includes('<th>Доступ</th>'), 'Team roster has no visible access column')
   check(team.includes('Нет аккаунта') && team.includes('Создать вход'), 'Existing employees without accounts cannot be provisioned from Team')
   check(team.includes('Вход включён') && team.includes('Вход отключён'), 'Account state is not visible in Team')
-  check(team.includes('Сохранить доступ') && team.includes('Отключить вход'), 'Existing account management is not available from Team')
-  check(team.includes('Аккаунт привязывается к сотруднику автоматически'), 'Access editor still asks the admin to manually re-select the employee')
+  check(team.includes("accessEditorAccount ? 'Сохранить' : 'Создать вход'") && team.includes('Отключить вход'), 'Existing account management is not available from Team')
+  check(team.includes('Аккаунт сразу привяжется к сотруднику') && team.includes('Ничего дополнительно выбирать не нужно'), 'Access editor still asks the admin to manually re-select the employee')
   check(team.includes('Новый временный пароль'), 'Password reset is not available from the employee access editor')
 
   check(teamWorker.includes("DELETE FROM app_sessions WHERE user_id IN (SELECT id FROM app_users WHERE manager_id = ?)"), 'Dismissal does not revoke linked employee sessions')
