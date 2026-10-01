@@ -243,11 +243,21 @@ export async function setTeamEmployeeActive(db: D1Database, id: number, isActive
 
   const isActive = isActiveValue === true || Number(isActiveValue) === 1 ? 1 : 0;
   const now = new Date().toISOString();
-  await db.prepare(
+  const managerUpdate = db.prepare(
     `UPDATE managers
      SET is_active = ?, dismissed_at = CASE WHEN ? = 1 THEN NULL ELSE ? END, updated_at = ?
      WHERE id = ?`
-  ).bind(isActive, isActive, now.slice(0, 10), now, id).run();
+  ).bind(isActive, isActive, now.slice(0, 10), now, id);
+
+  if (isActive) {
+    await managerUpdate.run();
+  } else {
+    await db.batch([
+      db.prepare('DELETE FROM app_sessions WHERE user_id IN (SELECT id FROM app_users WHERE manager_id = ?)').bind(id),
+      db.prepare('UPDATE app_users SET is_active = 0, disabled_at = ?, updated_at = ? WHERE manager_id = ?').bind(now, now, id),
+      managerUpdate,
+    ]);
+  }
 
   await writeActivityLog(db, {
     eventType: isActive ? 'team_employee_restored' : 'team_employee_dismissed',
@@ -264,8 +274,8 @@ export async function setTeamEmployeeActive(db: D1Database, id: number, isActive
     id,
     isActive: Boolean(isActive),
     message: isActive
-      ? `${cleanText(employee.name)} снова доступен в команде.`
-      : `${cleanText(employee.name)} перенесён в бывшие сотрудники. История сохранена.`,
+      ? `${cleanText(employee.name)} снова доступен в команде. Доступ в систему при необходимости включите отдельно.`
+      : `${cleanText(employee.name)} перенесён в бывшие сотрудники. История сохранена, вход в систему отключён.`,
   });
 }
 
@@ -283,7 +293,11 @@ export async function deleteTeamEmployee(db: D1Database, id: number) {
     }, { status: 409 });
   }
 
-  await db.prepare('DELETE FROM managers WHERE id = ?').bind(id).run();
+  await db.batch([
+    db.prepare('DELETE FROM app_sessions WHERE user_id IN (SELECT id FROM app_users WHERE manager_id = ?)').bind(id),
+    db.prepare('DELETE FROM app_users WHERE manager_id = ?').bind(id),
+    db.prepare('DELETE FROM managers WHERE id = ?').bind(id),
+  ]);
   await writeActivityLog(db, {
     eventType: 'team_employee_deleted',
     entityType: 'team_employee',
