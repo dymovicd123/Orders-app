@@ -9,13 +9,13 @@ try {
   const teamWorker = read('worker/domains/team.ts')
   const styles = read('src/styles/10-workshop-reports-team.css')
 
-  check(app.includes('teamAccessEditorId') && app.includes('teamAccessDraft'), 'Integrated Team access editor state missing')
-  check(app.includes('suggestTeamLogin') && app.includes("Ә: 'a'") && app.includes("Қ: 'q'"), 'Human login suggestion/transliteration missing')
+  check(team.includes('teamAccessEditorId') && team.includes('teamAccessDraft'), 'Integrated Team access editor state missing')
+  check(team.includes('suggestTeamLogin') && team.includes("Ә: 'a'") && team.includes("Қ: 'q'"), 'Human login suggestion/transliteration missing')
   check(app.includes("loadTeamEmployees(),") && app.includes("isAdmin ? loadAuthUsers() : Promise.resolve()"), 'Team screen does not load linked account state for admins')
   check(app.includes("shouldCreateAccount = isNewEmployee && teamDraft.createAccount !== false"), 'New employee flow no longer supports immediate account creation')
   check(app.includes("managerId: employeeId") && app.includes("displayName: teamDraft.name"), 'New account is not bound to the newly created employee')
   check(app.includes("Сотрудник создан, но вход не настроен"), 'Partial employee/account failure is not recoverable in the UI')
-  check(app.includes('saveTeamEmployeeAccess') && app.includes('disableTeamEmployeeAccess'), 'Existing-employee account management handlers missing')
+  check(team.includes('saveTeamEmployeeAccess') && team.includes('disableTeamEmployeeAccess'), 'Existing-employee account management handlers missing')
   check(app.includes('duplicateManagerAccount'), 'UI does not guard one employee from accidental duplicate accounts')
 
   check(team.includes('Вход в систему') && team.includes('Создать доступ сразу'), 'New employee form does not expose friendly access onboarding')
