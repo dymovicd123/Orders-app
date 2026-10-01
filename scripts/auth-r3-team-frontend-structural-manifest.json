@@ -7,15 +7,15 @@
       "baselineFixture": "scripts/fixtures/auth-r3-team-app-baseline.tsx",
       "beforeGitBlob": "320992035d0423eb78d5cd83f646de1f7ce5ef8a",
       "beforeLines": 7891,
-      "afterGitBlob": "db9b8984c037cb64e49ea1df2cbe8fe1dbdf3e69",
-      "afterLines": 8073
+      "afterGitBlob": "d7ff15d14e2df4bc4c76628b3b46f7f12b5f48d9",
+      "afterLines": 7941
     },
     "src/features/sections/TeamSection.tsx": {
       "baselineFixture": "scripts/fixtures/auth-r3-team-section-baseline.tsx",
       "beforeGitBlob": "6ac224d7e4e558688daa5eea2bf5a42f985f3bc3",
       "beforeLines": 445,
-      "afterGitBlob": "79a92ac17137c8aef351a03e70d129e7c2d5bb92",
-      "afterLines": 632
+      "afterGitBlob": "49f20705ab00ee1f62c822eb16b17515577844f0",
+      "afterLines": 753
     },
     "src/styles/10-workshop-reports-team.css": {
       "baselineFixture": "scripts/fixtures/auth-r3-team-style-baseline.css",
