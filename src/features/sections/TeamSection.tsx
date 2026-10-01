@@ -3,6 +3,10 @@ type SectionContext = Record<string, any>
 
 export function TeamSection({ ctx }: { ctx: SectionContext }) {
   const {
+    authUsers,
+    authUsersBusy,
+    closeTeamEmployeeAccess,
+    disableTeamEmployeeAccess,
     exportTeamPlanReportWord,
     formatDateShort,
     formatLocalDateInput,
@@ -18,6 +22,7 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
     loadTeamTimesheet,
     MANAGER_COLOR_OPTIONS,
     ManagerBadge,
+    openTeamEmployeeAccess,
     planBusy,
     planFilters,
     planReport,
@@ -25,10 +30,12 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
     removeTeamEmployee,
     resolveManagerDisplayColor,
     saveTeamEmployee,
+    saveTeamEmployeeAccess,
     saveTeamEmployeeColor,
     saveTeamTimesheet,
     sectorStyle,
     setPlanFilters,
+    setTeamAccessDraft,
     setTeamActivityFilters,
     setTeamColorEditorId,
     setTeamDraft,
@@ -45,6 +52,9 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
     setTimesheetSelectedManagers,
     setTimesheetWorkUntil,
     shiftTimesheetMonth,
+    suggestTeamLogin,
+    teamAccessDraft,
+    teamAccessEditorId,
     teamActivityBusy,
     teamActivityFilters,
     teamActivityLoadFailed,
@@ -68,6 +78,11 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
     toggleTimesheetDay,
     toggleTimesheetManager,
   } = ctx
+
+  const accessEditorEmployee = teamEmployees.find((employee) => employee.id === teamAccessEditorId) || null
+  const accessEditorAccount = accessEditorEmployee
+    ? authUsers.find((user) => user.managerId === accessEditorEmployee.id) || null
+    : null
 
   return (
     <article className="card wide sector-team" id="team" style={sectorStyle('team')}>
@@ -95,7 +110,7 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                     </div>
                     {isAdmin ? (
                       <button className="primary compact" type="button" onClick={() => {
-                        setTeamDraft({ id: 0, name: '', role: 'Менеджер', phone: '', colorKey: MANAGER_COLOR_OPTIONS[teamEmployees.length % MANAGER_COLOR_OPTIONS.length], hiredAt: formatLocalDateInput(), comment: '', isActive: true })
+                        setTeamDraft({ id: 0, name: '', role: 'Менеджер', phone: '', colorKey: MANAGER_COLOR_OPTIONS[teamEmployees.length % MANAGER_COLOR_OPTIONS.length], hiredAt: formatLocalDateInput(), comment: '', isActive: true, createAccount: true, login: '', password: '', mustChangePassword: true })
                         setTeamFormOpen(true)
                       }}>+ Добавить сотрудника</button>
                     ) : null}
@@ -106,7 +121,7 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                       <div className="mini-panel-head">
                         <div>
                           <h3>{teamDraft.id ? 'Редактирование сотрудника' : 'Новый сотрудник'}</h3>
-                          <p className="mini-panel-note">Одинаковые имена разрешены. Цвет помогает быстро различать сотрудников, а дата ниже используется только как дополнительная информация.</p>
+                          <p className="mini-panel-note">{teamDraft.id ? 'Здесь меняются данные сотрудника. Доступ в систему настраивается отдельно в таблице ниже.' : 'Создайте сотрудника и, если он будет работать в системе, сразу задайте ему логин и временный пароль.'}</p>
                         </div>
                         <button className="ghost compact" type="button" onClick={() => setTeamFormOpen(false)}>Закрыть</button>
                       </div>
@@ -152,6 +167,62 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                         <label className="span-2">Комментарий
                           <input disabled={!isAdmin} value={teamDraft.comment} onChange={(event) => setTeamDraft((draft) => ({ ...draft, comment: event.target.value }))} placeholder="Внутреннее примечание, если нужно" />
                         </label>
+                        {!teamDraft.id ? (
+                          <section className="team-access-onboarding span-2">
+                            <div className="team-access-onboarding-head">
+                              <div>
+                                <strong>Вход в систему</strong>
+                                <span>Логин будет привязан именно к этому сотруднику, поэтому его заказы и действия останутся на правильном человеке.</span>
+                              </div>
+                              <label className="team-access-toggle">
+                                <input
+                                  type="checkbox"
+                                  checked={teamDraft.createAccount !== false}
+                                  onChange={(event) => setTeamDraft((draft) => ({ ...draft, createAccount: event.target.checked }))}
+                                />
+                                <span>Создать доступ сразу</span>
+                              </label>
+                            </div>
+                            {teamDraft.createAccount !== false ? (
+                              <>
+                                <div className="team-access-fields">
+                                  <label>Логин
+                                    <input
+                                      value={teamDraft.login || ''}
+                                      onChange={(event) => setTeamDraft((draft) => ({ ...draft, login: event.target.value }))}
+                                      placeholder={suggestTeamLogin(teamDraft.name) || 'например: asel'}
+                                      autoComplete="off"
+                                      minLength={3}
+                                      maxLength={32}
+                                    />
+                                    <small>Можно оставить пустым — система возьмёт вариант из имени: <b>@{suggestTeamLogin(teamDraft.name)}</b></small>
+                                  </label>
+                                  <label>Временный пароль
+                                    <input
+                                      type="text"
+                                      value={teamDraft.password || ''}
+                                      onChange={(event) => setTeamDraft((draft) => ({ ...draft, password: event.target.value }))}
+                                      placeholder="Минимум 8 символов"
+                                      autoComplete="new-password"
+                                      minLength={8}
+                                    />
+                                    <small>Передайте пароль сотруднику лично. После первого входа он сможет заменить его.</small>
+                                  </label>
+                                </div>
+                                <label className="checkbox-row team-force-password-change">
+                                  <input
+                                    type="checkbox"
+                                    checked={teamDraft.mustChangePassword !== false}
+                                    onChange={(event) => setTeamDraft((draft) => ({ ...draft, mustChangePassword: event.target.checked }))}
+                                  />
+                                  <span>Потребовать сменить временный пароль при первом входе</span>
+                                </label>
+                              </>
+                            ) : (
+                              <div className="team-access-off-note">Сотрудник будет создан без входа. Доступ можно подключить позже одной кнопкой в его строке.</div>
+                            )}
+                          </section>
+                        ) : null}
                       </div>
                       <div className="button-row">
                         <button className="primary" type="button" disabled={teamBusy || !isAdmin} onClick={() => void saveTeamEmployee()}>{teamBusy ? 'Сохраняю...' : teamDraft.id ? 'Сохранить изменения' : 'Создать сотрудника'}</button>
@@ -170,9 +241,9 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                     <table className="data-table team-roster-table">
                       <thead>
                         {teamRosterView === 'active' ? (
-                          <tr><th>Сотрудник</th><th>Роль</th><th>Первый заказ</th><th>Цвет</th><th>Действия</th></tr>
+                          <tr><th>Сотрудник</th><th>Роль</th><th>Первый заказ</th><th>Цвет</th><th>Доступ</th><th>Действия</th></tr>
                         ) : (
-                          <tr><th>Сотрудник</th><th>Роль</th><th>Первый заказ</th><th>Уволен</th><th>Действия</th></tr>
+                          <tr><th>Сотрудник</th><th>Роль</th><th>Первый заказ</th><th>Уволен</th><th>Доступ</th><th>Действия</th></tr>
                         )}
                       </thead>
                       <tbody>
@@ -223,10 +294,46 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                                 ) : null}
                               </div>
                             ) : formatDateShort(employee.dismissedAt || employee.updatedAt || '')}</td>
+                            <td>
+                              {(() => {
+                                const account = authUsers.find((user) => user.managerId === employee.id) || null
+                                return (
+                                  <div className="team-access-cell">
+                                    {account ? (
+                                      <div className="team-access-identity">
+                                        <strong>@{account.login}</strong>
+                                        <span className={`team-access-status ${account.isActive ? 'is-active' : 'is-disabled'}`}>
+                                          {account.isActive ? 'Вход включён' : 'Вход отключён'}
+                                        </span>
+                                      </div>
+                                    ) : (
+                                      <div className="team-access-identity is-missing">
+                                        <strong>Нет аккаунта</strong>
+                                        <span>Сотрудник пока не может войти</span>
+                                      </div>
+                                    )}
+                                    {isAdmin && employee.isActive ? (
+                                      <button
+                                        className={account ? 'secondary compact' : 'primary compact team-access-create-button'}
+                                        type="button"
+                                        disabled={teamBusy || authUsersBusy}
+                                        onClick={() => {
+                                          setTeamFormOpen(false)
+                                          openTeamEmployeeAccess(employee)
+                                        }}
+                                      >
+                                        {account ? 'Настроить' : 'Создать вход'}
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                )
+                              })()}
+                            </td>
                             <td>{isAdmin ? (
                               <div className="table-action-row">
                                 <button className="secondary compact" type="button" onClick={() => {
-                                  setTeamDraft({ id: employee.id, name: employee.name, role: employee.role || 'Менеджер', phone: employee.phone || '', colorKey: employee.colorKey || '#2563EB', hiredAt: employee.hiredAt || formatLocalDateInput(), comment: employee.comment || '', isActive: employee.isActive })
+                                  setTeamDraft({ id: employee.id, name: employee.name, role: employee.role || 'Менеджер', phone: employee.phone || '', colorKey: employee.colorKey || '#2563EB', hiredAt: employee.hiredAt || formatLocalDateInput(), comment: employee.comment || '', isActive: employee.isActive, createAccount: false, login: '', password: '', mustChangePassword: true })
+                                  closeTeamEmployeeAccess()
                                   setTeamFormOpen(true)
                                 }}>Редактировать</button>
                                 {employee.isActive ? (
@@ -242,11 +349,91 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                           </tr>
                         ))}
                         {!teamEmployees.some((employee) => teamRosterView === 'active' ? employee.isActive : !employee.isActive) ? (
-                          <tr><td colSpan={5} className="empty-state">{teamRosterView === 'active' ? 'Активных сотрудников нет.' : 'Бывших сотрудников нет.'}</td></tr>
+                          <tr><td colSpan={6} className="empty-state">{teamRosterView === 'active' ? 'Активных сотрудников нет.' : 'Бывших сотрудников нет.'}</td></tr>
                         ) : null}
                       </tbody>
                     </table>
                   </div>
+
+                  {accessEditorEmployee ? (
+                    <section className="mini-panel team-access-editor-panel">
+                      <div className="mini-panel-head">
+                        <div>
+                          <div className="card-label">Доступ в систему</div>
+                          <h3>{accessEditorAccount ? `@${accessEditorAccount.login} · ${accessEditorEmployee.name}` : `Создать вход для ${accessEditorEmployee.name}`}</h3>
+                          <p className="mini-panel-note">
+                            Аккаунт привязывается к сотруднику автоматически. Администратору не нужно выбирать человека второй раз.
+                          </p>
+                        </div>
+                        <button className="ghost compact" type="button" onClick={closeTeamEmployeeAccess}>Закрыть</button>
+                      </div>
+
+                      <div className="team-access-editor-grid">
+                        <label>Логин
+                          <input
+                            value={teamAccessDraft.login}
+                            onChange={(event) => setTeamAccessDraft((draft) => ({ ...draft, login: event.target.value }))}
+                            placeholder={suggestTeamLogin(accessEditorEmployee.name, accessEditorAccount?.id || 0)}
+                            autoComplete="off"
+                            minLength={3}
+                            maxLength={32}
+                          />
+                        </label>
+                        <label>{accessEditorAccount ? 'Новый временный пароль' : 'Временный пароль'}
+                          <input
+                            type="text"
+                            value={teamAccessDraft.password}
+                            onChange={(event) => setTeamAccessDraft((draft) => ({ ...draft, password: event.target.value }))}
+                            placeholder={accessEditorAccount ? 'Оставьте пустым, если не меняете' : 'Минимум 8 символов'}
+                            autoComplete="new-password"
+                          />
+                        </label>
+                        <label>Права
+                          <select value={teamAccessDraft.role} onChange={(event) => setTeamAccessDraft((draft) => ({ ...draft, role: event.target.value }))}>
+                            <option value="manager">Менеджер</option>
+                            <option value="admin">Администратор</option>
+                          </select>
+                        </label>
+                        <div className="team-access-editor-flags">
+                          <label className="checkbox-row">
+                            <input
+                              type="checkbox"
+                              checked={teamAccessDraft.isActive}
+                              onChange={(event) => setTeamAccessDraft((draft) => ({ ...draft, isActive: event.target.checked }))}
+                            />
+                            <span>Вход разрешён</span>
+                          </label>
+                          <label className="checkbox-row">
+                            <input
+                              type="checkbox"
+                              checked={teamAccessDraft.password ? true : teamAccessDraft.mustChangePassword}
+                              disabled={Boolean(teamAccessDraft.password)}
+                              onChange={(event) => setTeamAccessDraft((draft) => ({ ...draft, mustChangePassword: event.target.checked }))}
+                            />
+                            <span>{teamAccessDraft.password ? 'После сброса пароль нужно будет сменить' : 'Потребовать смену пароля'}</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="team-access-editor-help">
+                        {accessEditorAccount
+                          ? 'Чтобы сбросить пароль, введите новый временный пароль и сохраните. Все старые сессии этого аккаунта будут закрыты.'
+                          : 'После создания сообщите сотруднику логин и временный пароль. При первом входе система попросит заменить пароль.'}
+                      </div>
+
+                      <div className="button-row">
+                        <button className="primary" type="button" disabled={authUsersBusy || teamBusy} onClick={() => void saveTeamEmployeeAccess(accessEditorEmployee)}>
+                          {authUsersBusy ? 'Сохраняю...' : accessEditorAccount ? 'Сохранить доступ' : 'Создать вход'}
+                        </button>
+                        {accessEditorAccount?.isActive ? (
+                          <button className="ghost danger" type="button" disabled={authUsersBusy || teamBusy} onClick={() => void disableTeamEmployeeAccess(accessEditorEmployee)}>
+                            Отключить вход
+                          </button>
+                        ) : null}
+                        <button className="secondary" type="button" onClick={closeTeamEmployeeAccess}>Отмена</button>
+                      </div>
+                    </section>
+                  ) : null}
                 </>
               ) : null}
     
