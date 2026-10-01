@@ -115,7 +115,20 @@ function combined(mode, q, limit, offset) {
       FROM stats WHERE ${whereSql}
       ORDER BY ${clientOrderBy(mode)} LIMIT ? OFFSET ?
     )
-    SELECT summary.*, filtered.* FROM summary LEFT JOIN filtered ON 1=1
+    SELECT
+      summary.total_clients AS summary_total_clients,
+      summary.repeat_clients AS summary_repeat_clients,
+      summary.debt_clients AS summary_debt_clients,
+      summary.total_debt AS summary_total_debt,
+      summary.total_sales AS summary_total_sales,
+      summary.total_received AS summary_total_received,
+      summary.total_returns AS summary_total_returns,
+      summary.order_count AS summary_order_count,
+      summary.archived_order_count AS summary_archived_order_count,
+      summary.active_order_count AS summary_active_order_count,
+      summary.filtered_count,
+      filtered.*
+    FROM summary LEFT JOIN filtered ON 1=1
     ORDER BY COALESCE(filtered.page_order, 0)`).all(...bindings, ...bindings, limit, offset)
 }
 
@@ -136,7 +149,7 @@ for (const scenario of [
   const oldFiltered = old.length ? Number(old[0].filtered_count || 0) : db.prepare(`${clientStatsCte()} SELECT COUNT(*) AS n FROM stats WHERE ${buildClientWhere(scenario.mode, scenario.q).whereSql}`).get(...buildClientWhere(scenario.mode, scenario.q).bindings).n
   check(Number(next[0].filtered_count || 0) === Number(oldFiltered || 0), 'R7.3 filtered count changed: ' + JSON.stringify(scenario))
   for (const key of ['total_clients','repeat_clients','debt_clients','total_debt','total_sales','total_received','total_returns','order_count','archived_order_count','active_order_count']) {
-    check(Number(next[0][key] || 0) === Number(summary[key] || 0), `R7.3 global summary changed (${key}): ${JSON.stringify(scenario)}`)
+    check(Number(next[0][`summary_${key}`] || 0) === Number(summary[key] || 0), `R7.3 global summary changed (${key}): ${JSON.stringify(scenario)}`)
   }
 }
 
