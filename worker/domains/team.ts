@@ -94,6 +94,24 @@ export function getMonthRange(monthValue: string) {
 }
 
 
+export async function ensureTeamEmployeeCanLoseAccess(db: D1Database, managerId: number) {
+  const [linkedAdmins, activeAdmins] = await Promise.all([
+    db.prepare("SELECT COUNT(*) AS count FROM app_users WHERE manager_id = ? AND role = 'admin' AND is_active = 1")
+      .bind(managerId).first<{ count: number }>(),
+    db.prepare("SELECT COUNT(*) AS count FROM app_users WHERE role = 'admin' AND is_active = 1 AND login IS NOT NULL AND trim(login) <> ''")
+      .first<{ count: number }>(),
+  ]);
+  const linkedCount = toInt(linkedAdmins?.count, 0);
+  if (linkedCount > 0 && toInt(activeAdmins?.count, 0) <= linkedCount) {
+    return json({
+      ok: false,
+      message: 'Нельзя отключить этого сотрудника: его аккаунт — последний активный администратор. Сначала назначьте другого администратора.',
+    }, { status: 409 });
+  }
+  return null;
+}
+
+
 export async function countTeamEmployeeReferences(db: D1Database, id: number) {
   const runD1Bounded = async (tasks: Array<() => Promise<any>>) => {
     const results: any[] = [];
@@ -242,6 +260,10 @@ export async function setTeamEmployeeActive(db: D1Database, id: number, isActive
   if (!employee) return json({ ok: false, message: 'Сотрудник не найден.' }, { status: 404 });
 
   const isActive = isActiveValue === true || Number(isActiveValue) === 1 ? 1 : 0;
+  if (!isActive) {
+    const accessDenied = await ensureTeamEmployeeCanLoseAccess(db, id);
+    if (accessDenied) return accessDenied;
+  }
   const now = new Date().toISOString();
   const managerUpdate = db.prepare(
     `UPDATE managers
@@ -292,6 +314,8 @@ export async function deleteTeamEmployee(db: D1Database, id: number) {
       message: `Удаление недоступно: у ${cleanText(employee.name)} есть история (${references} связанных записей). Используйте «Уволить».`,
     }, { status: 409 });
   }
+  const accessDenied = await ensureTeamEmployeeCanLoseAccess(db, id);
+  if (accessDenied) return accessDenied;
 
   await db.batch([
     db.prepare('DELETE FROM app_sessions WHERE user_id IN (SELECT id FROM app_users WHERE manager_id = ?)').bind(id),
