@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "revision": "r7-5-7-read-budget-r1",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "2104d65373989572d833c5ce00ea1d873b154a0c",
+      "afterGitBlob": "b0b277696983a27f569d3638038eeb1b9a7b714f",
+      "replacements": [
+        {
+          "beforeBlock": "const WAREHOUSE_ATTENTION_SUMMARY_TTL_MS = 20_000\nlet warehouseAttentionSummaryCache: { data: WarehouseAttentionSummaryResponse; loadedAt: number } | null = null",
+          "afterBlock": "const WAREHOUSE_ATTENTION_SUMMARY_TTL_MS = 60_000\nconst INVENTORY_FORM_SNAPSHOT_TTL_MS = 30_000\nlet warehouseAttentionSummaryCache: { data: WarehouseAttentionSummaryResponse; loadedAt: number } | null = null"
+        },
+        {
+          "beforeBlock": "  const [inventoryData, setInventoryData] = useState<{\n    warehouse: InventoryResponse | null\n    boutique: InventoryResponse | null\n  }>({\n    warehouse: null,\n    boutique: null,\n  })\n  const [catalogData, setCatalogData] = useState<CatalogResponse | null>(null)",
+          "afterBlock": "  const [inventoryData, setInventoryData] = useState<{\n    warehouse: InventoryResponse | null\n    boutique: InventoryResponse | null\n  }>({\n    warehouse: null,\n    boutique: null,\n  })\n  const inventorySnapshotLoadedAt = useRef<Record<InventorySourceKey, number>>({ warehouse: 0, boutique: 0 })\n  const [catalogData, setCatalogData] = useState<CatalogResponse | null>(null)"
+        },
+        {
+          "beforeBlock": "      setWarehouseAttention(data)\n      if (!shouldLoadDetails) warehouseAttentionSummaryCache = { data, loadedAt: Date.now() }\n      return data",
+          "afterBlock": "      setWarehouseAttention(data)\n      if (shouldLoadDetails) {\n        // R7.7: a detailed Attention response already carries the exact summary counters.\n        // Reuse those counters for the next passive badge/overview read instead of immediately\n        // rebuilding the same live Warehouse truth graph.\n        warehouseAttentionSummaryCache = {\n          data: { ok: data.ok, total: data.total, counts: data.counts },\n          loadedAt: Date.now(),\n        }\n      } else {\n        warehouseAttentionSummaryCache = { data, loadedAt: Date.now() }\n      }\n      return data"
+        },
+        {
+          "beforeBlock": "    const cached = inventoryData[source]\n    const cachedHasMovements = cached?.movementsIncluded !== false\n    if (cached && !force && !query.trim() && (!includeMovements || cachedHasMovements)) {\n      return cached\n    }",
+          "afterBlock": "    const cached = inventoryData[source]\n    const cachedHasMovements = cached?.movementsIncluded !== false\n    const snapshotAgeMs = Date.now() - inventorySnapshotLoadedAt.current[source]\n    if (\n      cached\n      && !force\n      && !query.trim()\n      && snapshotAgeMs >= 0\n      && snapshotAgeMs <= INVENTORY_FORM_SNAPSHOT_TTL_MS\n      && (!includeMovements || cachedHasMovements)\n    ) {\n      return cached\n    }"
+        },
+        {
+          "beforeBlock": "    const data = await readJsonResponse<InventoryResponse>(response, 'Склад')\n    setInventoryData((current) => {",
+          "afterBlock": "    const data = await readJsonResponse<InventoryResponse>(response, 'Склад')\n    if (!query.trim()) inventorySnapshotLoadedAt.current[source] = Date.now()\n    setInventoryData((current) => {"
+        },
+        {
+          "beforeBlock": "  function invalidateInventoryStockCaches(includeCatalogReview = false) {\n    setInventoryData({ warehouse: null, boutique: null })\n    if (includeCatalogReview) setCatalogReview(null)",
+          "afterBlock": "  function invalidateInventoryStockCaches(includeCatalogReview = false) {\n    setInventoryData({ warehouse: null, boutique: null })\n    inventorySnapshotLoadedAt.current = { warehouse: 0, boutique: 0 }\n    if (includeCatalogReview) setCatalogReview(null)"
+        },
+        {
+          "beforeBlock": "    if (activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'zammler' || orderPanel === 'edit' || orderPanel === 'exchange')) {\n      // Форма заказа всегда получает свежие остатки обеих точек, но журнал движений ей не нужен.\n      // Каталог остаётся полным: список товаров и все варианты по-прежнему доступны при создании/редактировании.\n      void loadInventoryData('warehouse', true, '', false)\n      void loadInventoryData('boutique', true, '', false)\n      void loadCatalogData()\n    }",
+          "afterBlock": "    if (activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'zammler' || orderPanel === 'edit' || orderPanel === 'exchange')) {\n      // R7.5: order forms may reuse a very recent stock snapshot instead of rescanning both sources\n      // on every panel transition. The server still performs the authoritative stock/CAS validation\n      // on every write, and committed inventory mutations invalidate this snapshot explicitly.\n      void loadInventoryData('warehouse', false, '', false)\n      void loadInventoryData('boutique', false, '', false)\n      void loadCatalogData()\n    }"
+        },
+        {
+          "beforeBlock": "    if (order.pricing_mode === 'itemized_v1') {\n      void Promise.all([\n        loadCatalogData(true),\n        loadInventoryData('warehouse', true, '', false),\n        loadInventoryData('boutique', true, '', false),\n      ]).catch((err) => {",
+          "afterBlock": "    if (order.pricing_mode === 'itemized_v1') {\n      void Promise.all([\n        loadCatalogData(true),\n        // R7.5: the edit panel effect owns freshness; reuse its bounded stock snapshot here\n        // instead of issuing a second forced Warehouse + Boutique read for the same transition.\n        loadInventoryData('warehouse', false, '', false),\n        loadInventoryData('boutique', false, '', false),\n      ]).catch((err) => {"
+        }
+      ]
+    },
+    "src/features/finance/useFinanceReportReads.ts": {
+      "beforeGitBlob": "b6478cce727954338d40ae03fe9cfd3f6fa85483",
+      "afterGitBlob": "8225002b119c2294a53f40d254765e04fcbbba32",
+      "replacements": [
+        {
+          "beforeBlock": "const ORDERS_SUMMARY_TTL_MS = 60 * 1000\nconst FULL_REPORT_TTL_MS = 60 * 1000",
+          "afterBlock": "const ORDERS_SUMMARY_TTL_MS = 2 * 60 * 1000\nconst FULL_REPORT_TTL_MS = 60 * 1000"
+        },
+        {
+          "beforeBlock": "const FINANCE_WORKSPACE_TTL_MS = 3 * 60 * 1000\n\nexport function useFinanceReportReads",
+          "afterBlock": "const FINANCE_WORKSPACE_TTL_MS = 3 * 60 * 1000\n\nfunction ordersSummaryFromFinanceReport(data: FinanceReportResponse): OrdersFinanceSummaryResponse {\n  return {\n    ok: data.ok,\n    startDate: data.startDate,\n    endDate: data.endDate,\n    generatedAt: data.generatedAt,\n    overview: {\n      orderCount: Number(data.overview.orderCount || 0),\n      totalSales: Number(data.overview.totalSales || 0),\n      avgCheck: Number(data.overview.avgCheck || 0),\n      grossReceived: Number(data.overview.grossReceived || 0),\n      totalReturned: Number(data.overview.totalReturned || 0),\n      currentDebt: Number(data.overview.currentDebt || 0),\n      currentDebtOrders: Number(data.overview.currentDebtOrders || 0),\n    },\n  }\n}\n\nexport function useFinanceReportReads"
+        },
+        {
+          "beforeBlock": "        const data = await readJsonResponse<FinanceReportResponse>(response, 'Финансовые отчёты')\n        if (!response.ok) throw new Error('Не удалось загрузить финансовые отчёты.')\n        if (financeInFlight.current.get(key) === request) financeCache.current.set(key, { data, savedAt: Date.now() })\n        return data",
+          "afterBlock": "        const data = await readJsonResponse<FinanceReportResponse>(response, 'Финансовые отчёты')\n        if (!response.ok) throw new Error('Не удалось загрузить финансовые отчёты.')\n        if (financeInFlight.current.get(key) === request) {\n          const savedAt = Date.now()\n          financeCache.current.set(key, { data, savedAt })\n          // R7.6: the full/Finance workspace response already computed the exact Orders summary\n          // with order_date for sales, payment_date for receipts, return_date for returns, and\n          // current debt independently of the period. Reuse that exact result across navigation\n          // instead of issuing a second /orders-summary aggregate for the same date range.\n          if (!reportType) {\n            const summaryKey = `${range.dateFrom}::${range.dateTo}`\n            summaryCache.current.set(summaryKey, { data: ordersSummaryFromFinanceReport(data), savedAt })\n          }\n        }\n        return data"
+        }
+      ]
+    }
+  }
+}
