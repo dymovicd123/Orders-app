@@ -388,22 +388,6 @@ export async function ensureManagerExists(db: D1Database, managerId: number | nu
 }
 
 
-export async function ensureManagerAccountAvailable(db: D1Database, managerId: number | null, exceptUserId = 0) {
-  if (!managerId) return null;
-  const existing = await db.prepare(
-    'SELECT id, login FROM app_users WHERE manager_id = ? AND id <> ? LIMIT 1'
-  ).bind(managerId, exceptUserId).first<{ id: number; login: string | null }>();
-  if (!existing?.id) return null;
-  const login = normalizeAuthLogin(existing.login);
-  return json({
-    ok: false,
-    message: login
-      ? `У этого сотрудника уже есть аккаунт @${login}.`
-      : 'У этого сотрудника уже есть аккаунт.',
-  }, { status: 409 });
-}
-
-
 export function permissionDenied(message = 'Недостаточно прав для действия.') {
   return json({ ok: false, message }, { status: 403 });
 }
@@ -607,8 +591,6 @@ export async function createAuthUser(db: D1Database, request: Request) {
   if (role === 'manager' && !managerId) return json({ ok: false, message: 'Аккаунт менеджера нужно привязать к сотруднику.' }, { status: 400 });
   const managerError = await ensureManagerExists(db, managerId);
   if (managerError) return managerError;
-  const managerAccountError = await ensureManagerAccountAvailable(db, managerId);
-  if (managerAccountError) return managerAccountError;
   const passwordHash = await hashPassword(password);
   try {
     const now = new Date().toISOString();
@@ -643,8 +625,6 @@ export async function updateAuthUser(db: D1Database, userId: number, request: Re
   if (nextRole === 'manager' && !nextManagerId) return json({ ok: false, message: 'Аккаунт менеджера нужно привязать к сотруднику.' }, { status: 400 });
   const managerError = await ensureManagerExists(db, nextManagerId);
   if (managerError) return managerError;
-  const managerAccountError = await ensureManagerAccountAvailable(db, nextManagerId, userId);
-  if (managerAccountError) return managerAccountError;
   if (input.login !== undefined) {
     const login = normalizeAuthLogin(input.login);
     const loginError = authLoginError(login);

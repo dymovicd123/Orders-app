@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "revision": "auth-r3-team-access-worker",
+  "baseBranch2Commit": "d10580cd8ac44ab45879cbf3e485b80b3d0fe606",
+  "files": {
+    "worker/domains/team.ts": {
+      "baselineFixture": "scripts/fixtures/auth-r3-team-worker-baseline.ts",
+      "beforeGitBlob": "d49da06e6d284112bb950483d3e667c6ca1b7b40",
+      "beforeLines": 1320,
+      "afterGitBlob": "80ee02df0ca5241cd5fe5c014ab62dda1837e5fb",
+      "afterLines": 1358
+    },
+    "worker/domains/auth.ts": {
+      "baselineFixture": "scripts/fixtures/auth-r3-auth-domain-baseline.ts",
+      "beforeGitBlob": "410782bc08091cd038b1d2b51ee4b60ecaca4c22",
+      "beforeLines": 735,
+      "afterGitBlob": "daf5bbe4f875379f3d93e84043589d1ac36a3d6a",
+      "afterLines": 755
+    }
+  }
+}
