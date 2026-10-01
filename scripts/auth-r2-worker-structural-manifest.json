@@ -14,8 +14,8 @@
       "baselineFixture": "scripts/fixtures/auth-r2-worker-auth-baseline.ts",
       "beforeGitBlob": "9dc58fef53901c21cc0539c2e2dbec7bbf159143",
       "beforeLines": 647,
-      "afterGitBlob": "2b60d8742bc8155379d3055aa7e65efd2b1261bb",
-      "afterLines": 733
+      "afterGitBlob": "410782bc08091cd038b1d2b51ee4b60ecaca4c22",
+      "afterLines": 735
     },
     "worker/core/types.ts": {
       "baselineFixture": "scripts/fixtures/auth-r2-worker-types-baseline.ts",
