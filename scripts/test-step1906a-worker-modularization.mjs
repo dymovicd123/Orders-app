@@ -4,6 +4,42 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const r73ClientsWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/r7-3-clients-read-budget-worker-manifest.json'), 'utf8'))
+if (r73ClientsWorkerManifest?.version !== 1 || r73ClientsWorkerManifest?.revision !== 'r7-3-clients-read-budget-r1') throw new Error('R7.3 Clients Worker manifest invalid')
+const r73ClientsWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.R73_CLIENTS_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(r73ClientsWorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (r73ClientsWorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('R7.3 Clients Worker changed beyond exact manifest: ' + relative)
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('R7.3 Clients Worker after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (r73ClientsWorkerBlobSha(reverted) !== delta.beforeGitBlob) throw new Error('R7.3 Clients Worker predecessor reconstruction failed: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, R73_CLIENTS_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('R7.3 CLIENTS WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const r7ReadBudgetWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/r7-read-budget-worker-manifest.json'), 'utf8'))
 if (r7ReadBudgetWorkerManifest?.version !== 1 || r7ReadBudgetWorkerManifest?.revision !== 'r7-read-budget-r1') throw new Error('R7 read-budget Worker manifest invalid')
 const r7ReadBudgetWorkerBlobSha = (value) => {

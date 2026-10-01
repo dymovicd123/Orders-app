@@ -19,7 +19,12 @@ check(inventory.includes('LEFT JOIN catalog_variants active_variant ON active_va
 check(!inventory.includes('WHERE active_variant.id = inventory_stock.variant_id'), 'correlated active-variant EXISTS returned')
 check(team.includes('WITH order_refs AS') && team.includes('LEFT JOIN attendance_refs ar ON ar.manager_id = m.id'), 'team reference counts must be preaggregated')
 check(!team.includes('(SELECT COUNT(*) FROM orders o WHERE o.manager_id = m.id)'), 'per-manager correlated order count returned')
-check(clients.includes('COUNT(*) OVER() AS filtered_count'), 'client list must carry filtered count in the page query')
+check(
+  clients.includes("const cte = clientStatsCte(true);")
+    && clients.includes("COALESCE(SUM(CASE WHEN ${whereSql} THEN 1 ELSE 0 END), 0) AS filtered_count")
+    && clients.includes('summary.filtered_count'),
+  'client list must derive exact filtered count from the same materialized stats graph',
+)
 check(app.includes('WAREHOUSE_ATTENTION_SUMMARY_TTL_MS') && app.includes('warehouseAttentionSummaryInFlight'), 'attention summary cache/coalescing missing')
 check(app.includes('warehouseAttentionSummaryCache = null'), 'inventory writes must invalidate attention cache')
 check(!app.includes('void loadWarehouseAttention(false, true)'), 'inventory writes must not force an Attention read when the recovery surface is unused')
