@@ -1,12 +1,12 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
+import { useState } from 'react'
 type SectionContext = Record<string, any>
 
 export function TeamSection({ ctx }: { ctx: SectionContext }) {
   const {
+    apiFetch,
     authUsers,
     authUsersBusy,
-    closeTeamEmployeeAccess,
-    disableTeamEmployeeAccess,
     exportTeamPlanReportWord,
     formatDateShort,
     formatLocalDateInput,
@@ -21,21 +21,22 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
     loadTeamSalaryReport,
     loadTeamTimesheet,
     MANAGER_COLOR_OPTIONS,
+    loadAuthUsers,
     ManagerBadge,
-    openTeamEmployeeAccess,
     planBusy,
     planFilters,
     planReport,
     printTeamPlanReportPdf,
     removeTeamEmployee,
     resolveManagerDisplayColor,
+    readJsonResponse,
     saveTeamEmployee,
-    saveTeamEmployeeAccess,
     saveTeamEmployeeColor,
     saveTeamTimesheet,
     sectorStyle,
+    setError,
+    setMessage,
     setPlanFilters,
-    setTeamAccessDraft,
     setTeamActivityFilters,
     setTeamColorEditorId,
     setTeamDraft,
@@ -52,9 +53,6 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
     setTimesheetSelectedManagers,
     setTimesheetWorkUntil,
     shiftTimesheetMonth,
-    suggestTeamLogin,
-    teamAccessDraft,
-    teamAccessEditorId,
     teamActivityBusy,
     teamActivityFilters,
     teamActivityLoadFailed,
@@ -78,6 +76,118 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
     toggleTimesheetDay,
     toggleTimesheetManager,
   } = ctx
+
+  const [teamAccessEditorId, setTeamAccessEditorId] = useState<number | null>(null)
+  const [teamAccessDraft, setTeamAccessDraft] = useState({ id: 0, login: '', password: '', role: 'manager', isActive: true, mustChangePassword: true })
+
+  function suggestTeamLogin(name: string, excludingAccountId = 0) {
+    const transliteration: Record<string, string> = {
+      А: 'a', Б: 'b', В: 'v', Г: 'g', Д: 'd', Е: 'e', Ё: 'e', Ж: 'zh', З: 'z', И: 'i', Й: 'i',
+      К: 'k', Л: 'l', М: 'm', Н: 'n', О: 'o', П: 'p', Р: 'r', С: 's', Т: 't', У: 'u', Ф: 'f',
+      Х: 'h', Ц: 'ts', Ч: 'ch', Ш: 'sh', Щ: 'sh', Ы: 'y', Э: 'e', Ю: 'yu', Я: 'ya',
+      Ә: 'a', Ғ: 'g', Қ: 'q', Ң: 'n', Ө: 'o', Ұ: 'u', Ү: 'u', Һ: 'h', І: 'i',
+    }
+    const normalized = String(name || '').trim().toUpperCase()
+    let base = ''
+    for (const char of normalized) {
+      if (/[A-Z0-9]/.test(char)) base += char.toLowerCase()
+      else if (transliteration[char]) base += transliteration[char]
+      else if (/\s|[-_.]/.test(char)) base += '.'
+    }
+    base = base.replace(/\.+/g, '.').replace(/^\.|\.$/g, '').slice(0, 24) || 'manager'
+    const occupied = new Set(authUsers.filter((user) => user.id !== excludingAccountId).map((user) => user.login.toLowerCase()))
+    if (!occupied.has(base)) return base
+    let suffix = 2
+    while (occupied.has(`${base}${suffix}`)) suffix += 1
+    return `${base}${suffix}`.slice(0, 32)
+  }
+
+  function teamAuthUserFor(employeeId: number) {
+    return authUsers.find((user) => user.managerId === employeeId) || null
+  }
+
+  function openTeamEmployeeAccess(employee) {
+    if (!isAdmin || !employee?.id) return
+    const account = teamAuthUserFor(employee.id)
+    setTeamAccessEditorId(employee.id)
+    setTeamAccessDraft({
+      id: account?.id || 0,
+      login: account?.login || suggestTeamLogin(employee.name),
+      password: '',
+      role: account?.role || (String(employee.role || '').toLowerCase().includes('админ') ? 'admin' : 'manager'),
+      isActive: account?.isActive ?? true,
+      mustChangePassword: account?.mustChangePassword ?? true,
+    })
+  }
+
+  function closeTeamEmployeeAccess() {
+    setTeamAccessEditorId(null)
+    setTeamAccessDraft({ id: 0, login: '', password: '', role: 'manager', isActive: true, mustChangePassword: true })
+  }
+
+  async function saveTeamEmployeeAccess(employee) {
+    if (!isAdmin || !employee?.id) return
+    const existingAccount = teamAuthUserFor(employee.id)
+    const login = String(teamAccessDraft.login || '').trim().toLowerCase()
+    if (login.length < 3) {
+      setError('Логин должен содержать минимум 3 символа.')
+      return
+    }
+    if (!existingAccount && String(teamAccessDraft.password || '').length < 8) {
+      setError('Для нового входа задайте временный пароль минимум из 8 символов.')
+      return
+    }
+    const duplicateLogin = authUsers.find((user) => user.id !== existingAccount?.id && user.login.toLowerCase() === login)
+    if (duplicateLogin) {
+      setError(`Логин @${login} уже используется.`)
+      return
+    }
+
+    setError(null)
+    setMessage(null)
+    try {
+      const isEdit = Boolean(existingAccount?.id)
+      const password = teamAccessDraft.password || undefined
+      const response = await apiFetch(isEdit ? `/api/auth/users/${existingAccount.id}` : '/api/auth/users', {
+        method: isEdit ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          login,
+          password,
+          role: teamAccessDraft.role,
+          managerId: employee.id,
+          displayName: employee.name,
+          isActive: teamAccessDraft.isActive,
+          mustChangePassword: password ? true : teamAccessDraft.mustChangePassword,
+        }),
+      })
+      const data = await readJsonResponse(response, 'Доступ сотрудника')
+      if (!response.ok) throw new Error(data.message || 'Не удалось сохранить доступ сотрудника.')
+      await loadAuthUsers()
+      closeTeamEmployeeAccess()
+      setMessage(isEdit ? `Доступ @${login} обновлён.` : `Для ${employee.name} создан вход @${login}.`)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Не удалось сохранить доступ сотрудника.')
+    }
+  }
+
+  async function disableTeamEmployeeAccess(employee) {
+    if (!isAdmin || !employee?.id) return
+    const account = teamAuthUserFor(employee.id)
+    if (!account) return
+    if (!window.confirm(`Отключить вход @${account.login} для ${employee.name}? Активные сессии будут закрыты.`)) return
+    setError(null)
+    try {
+      const response = await apiFetch(`/api/auth/users/${account.id}`, { method: 'DELETE' })
+      const data = await readJsonResponse(response, 'Отключение доступа')
+      if (!response.ok) throw new Error(data.message || 'Не удалось отключить доступ.')
+      await loadAuthUsers()
+      closeTeamEmployeeAccess()
+      setMessage(`Вход @${account.login} отключён.`)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Не удалось отключить доступ сотрудника.')
+    }
+  }
 
   const accessEditorEmployee = teamEmployees.find((employee) => employee.id === teamAccessEditorId) || null
   const accessEditorAccount = accessEditorEmployee
@@ -127,7 +237,17 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                       </div>
                       <div className="form-grid compact-form team-editor-grid">
                         <label>Имя сотрудника
-                          <input disabled={!isAdmin} value={teamDraft.name} onChange={(event) => setTeamDraft((draft) => ({ ...draft, name: event.target.value }))} placeholder="Например: АСЕЛЬ" />
+                          <input
+                            disabled={!isAdmin}
+                            value={teamDraft.name}
+                            onChange={(event) => setTeamDraft((draft) => ({ ...draft, name: event.target.value }))}
+                            onBlur={() => {
+                              if (!teamDraft.id && teamDraft.createAccount !== false && !String(teamDraft.login || '').trim()) {
+                                setTeamDraft((draft) => ({ ...draft, login: suggestTeamLogin(draft.name) }))
+                              }
+                            }}
+                            placeholder="Например: АСЕЛЬ"
+                          />
                         </label>
                         <label>Роль
                           <select disabled={!isAdmin} value={teamDraft.role} onChange={(event) => setTeamDraft((draft) => ({ ...draft, role: event.target.value }))}>
@@ -167,7 +287,7 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                         <label className="span-2">Комментарий
                           <input disabled={!isAdmin} value={teamDraft.comment} onChange={(event) => setTeamDraft((draft) => ({ ...draft, comment: event.target.value }))} placeholder="Внутреннее примечание, если нужно" />
                         </label>
-                        {!teamDraft.id ? (
+                        {(!teamDraft.id || teamDraft.createAccount) ? (
                           <section className="team-access-onboarding span-2">
                             <div className="team-access-onboarding-head">
                               <div>
@@ -178,9 +298,10 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                                 <input
                                   type="checkbox"
                                   checked={teamDraft.createAccount !== false}
+                                  disabled={Boolean(teamDraft.id)}
                                   onChange={(event) => setTeamDraft((draft) => ({ ...draft, createAccount: event.target.checked }))}
                                 />
-                                <span>Создать доступ сразу</span>
+                                <span>{teamDraft.id ? 'Завершить настройку доступа' : 'Создать доступ сразу'}</span>
                               </label>
                             </div>
                             {teamDraft.createAccount !== false ? (
