@@ -168,6 +168,7 @@ export async function makeSimpleAccessUser(request: Request, env: Env): Promise<
   const isAdminMode = await hasSimpleAdminMode(request, env);
   return {
     id: 0,
+    login: isAdminMode ? 'admin' : 'manager',
     email: isAdminMode ? 'admin' : 'manager',
     role: isAdminMode ? 'admin' : 'manager',
     managerId: null,
@@ -219,6 +220,7 @@ export async function handleSimpleAdminLogin(db: D1Database, env: Env, request: 
   const signature = base64Url(new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload))));
   const response = json({ ok: true, isAdmin: true, role: 'admin', user: authUserPayload({
     id: 0,
+    login: 'admin',
     email: 'admin',
     role: 'admin',
     managerId: null,
