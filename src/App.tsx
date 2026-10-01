@@ -7188,30 +7188,40 @@ function removeDebtPayment(index: number) {
             <div className="erp-brand-mark">S</div>
             <div>
               <div className="erp-brand-title">Система заказов</div>
-              <div className="erp-brand-subtitle">{authHasUsers ? 'Вход по почте и паролю' : 'Первый запуск'}</div>
+              <div className="erp-brand-subtitle">{authHasUsers ? 'Вход по логину и паролю' : 'Первый запуск'}</div>
             </div>
           </div>
           <div>
             <h1>{authHasUsers ? 'Вход' : 'Создать администратора'}</h1>
             <p>
               {authHasUsers
-                ? 'Введите почту и пароль. Роль больше не переключается вручную.'
-                : 'Создайте первый аккаунт администратора. После этого можно будет добавить менеджеров.'}
+                ? 'Введите логин и пароль своего аккаунта.'
+                : 'Подтвердите текущий админ-доступ и создайте первый персональный аккаунт администратора.'}
             </p>
           </div>
           {error ? <div className="app-alert error"><span>{error}</span><button type="button" onClick={() => setError(null)}>×</button></div> : null}
           {!authHasUsers ? (
-            <label>
-              <span>Имя администратора</span>
-              <input value={authDisplayName} onChange={(event) => setAuthDisplayName(event.target.value)} placeholder="Например: Администратор" />
-            </label>
+            <>
+              <label>
+                <span>Текущий админ-логин</span>
+                <input value={authBootstrapLogin} onChange={(event) => setAuthBootstrapLogin(event.target.value)} autoComplete="username" required />
+              </label>
+              <label>
+                <span>Текущий админ-пароль</span>
+                <input value={authBootstrapPassword} onChange={(event) => setAuthBootstrapPassword(event.target.value)} type="password" autoComplete="current-password" required />
+              </label>
+              <label>
+                <span>Имя администратора</span>
+                <input value={authDisplayName} onChange={(event) => setAuthDisplayName(event.target.value)} placeholder="Например: Администратор" />
+              </label>
+            </>
           ) : null}
           <label>
-            <span>Почта</span>
-            <input value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} type="email" autoComplete="email" required placeholder="name@example.com" />
+            <span>{authHasUsers ? 'Логин' : 'Новый логин'}</span>
+            <input value={authLogin} onChange={(event) => setAuthLogin(event.target.value)} autoComplete="username" required minLength={3} maxLength={32} placeholder="Например: admin" />
           </label>
           <label>
-            <span>Пароль</span>
+            <span>{authHasUsers ? 'Пароль' : 'Новый пароль'}</span>
             <input value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} type="password" autoComplete={authHasUsers ? 'current-password' : 'new-password'} required minLength={8} placeholder="Минимум 8 символов" />
           </label>
           <button className="primary" type="submit" disabled={authBusy}>
@@ -7296,30 +7306,31 @@ function removeDebtPayment(index: number) {
 
 
         <div className="erp-sidebar-card access-role-card">
-          <div className="card-label">Режим доступа</div>
+          <div className="card-label">Аккаунт</div>
           <div className="access-role-control">
             <div className="auth-user-card">
-              <strong>{isAdmin ? 'Админ режим' : 'Рабочий режим'}</strong>
-              <span>{isAdmin ? 'Доступны настройки, удаления и служебные действия' : 'Обычная работа без входа'}</span>
+              <strong>{authUser.displayName || authUser.managerName || authUser.login}</strong>
+              <span>@{authUser.login}{authUser.managerName ? ` · ${authUser.managerName}` : ''}</span>
               <em>{isAdmin ? 'Администратор' : 'Менеджер'}</em>
             </div>
-            {isAdmin ? (
-              <div className="access-role-actions">
-                <button className="secondary compact" type="button" onClick={storageMaintenance.openPanel}>
-                  Хранилище
-                </button>
-                <button className="secondary compact" type="button" onClick={() => setPasswordChangeOpen(true)}>
-                  Сменить пароль
-                </button>
-                <button className="secondary compact" type="button" onClick={() => void logout()}>
-                  Выйти из админ режима
-                </button>
-              </div>
-            ) : (
-              <button className="primary compact" type="button" onClick={() => setAdminModeOpen(true)}>
-                Войти в админ режим
+            <div className="access-role-actions">
+              {isAdmin ? (
+                <>
+                  <button className="secondary compact" type="button" onClick={storageMaintenance.openPanel}>
+                    Хранилище
+                  </button>
+                  <button className="secondary compact" type="button" onClick={() => { setAuthUsersOpen(true); void loadAuthUsers() }}>
+                    Аккаунты
+                  </button>
+                </>
+              ) : null}
+              <button className="secondary compact" type="button" onClick={() => setPasswordChangeOpen(true)}>
+                Сменить пароль
               </button>
-            )}
+              <button className="secondary compact" type="button" onClick={() => void logout()}>
+                Выйти
+              </button>
+            </div>
           </div>
         </div>
 
@@ -7481,7 +7492,6 @@ function removeDebtPayment(index: number) {
         eventId={returnedItemResolutionEventId}
         apiFetch={apiFetch}
         isAdmin={isAdmin}
-        onRequestAdminMode={() => setAdminModeOpen(true)}
         onClose={() => setReturnedItemResolutionEventId(null)}
         onCompleted={async () => {
           await Promise.allSettled([
@@ -7495,28 +7505,7 @@ function removeDebtPayment(index: number) {
         }}
       />
 
-      {adminModeOpen ? (
-        <div className="modal-backdrop" style={orderCatalogResolutionOrder || returnedItemResolutionEventId ? { zIndex: 1501 } : undefined} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAdminModeOpen(false) }}>
-          <form className="modal-card auth-users-modal" role="dialog" aria-modal="true" aria-label="Админ режим" onSubmit={submitAdminMode}>
-            <div className="modal-head">
-              <div>
-                <div className="card-label">Админ режим</div>
-                <h3>Войти в админ режим</h3>
-                <p>{orderCatalogResolutionOrder ? 'Введите пароль администратора. После входа вы вернётесь к уточнению этого заказа.' : returnedItemResolutionEventId ? 'Введите пароль администратора. После входа вы вернётесь к приёмке этого товара.' : 'Обычная работа доступна без входа. Пароль нужен только для удаления, настроек и служебных действий.'}</p>
-              </div>
-              <button className="secondary compact" type="button" onClick={() => { setAdminModeOpen(false); setAdminModeDraft({ login: 'admin', password: '' }) }}>Закрыть</button>
-            </div>
-            <div className="form-grid compact-form-grid">
-              <label><span>Логин</span><input value={adminModeDraft.login} onChange={(event) => setAdminModeDraft((draft) => ({ ...draft, login: event.target.value }))} autoComplete="username" /></label>
-              <label><span>Пароль</span><input type="password" value={adminModeDraft.password} onChange={(event) => setAdminModeDraft((draft) => ({ ...draft, password: event.target.value }))} autoComplete="current-password" autoFocus /></label>
-            </div>
-            <div className="modal-actions">
-              <button className="primary" type="submit" disabled={adminModeBusy}>{adminModeBusy ? 'Проверяю...' : 'Войти'}</button>
-              <button className="secondary" type="button" onClick={() => setAdminModeOpen(false)} disabled={adminModeBusy}>Отмена</button>
-            </div>
-          </form>
-        </div>
-      ) : null}
+
 
       <Suspense fallback={null}>
       <OrderCatalogResolutionModal
@@ -7595,7 +7584,7 @@ function removeDebtPayment(index: number) {
                   </div>
                 </div>
                 <div className="form-grid compact-form-grid">
-                  <label><span>Почта</span><input value={authUserDraft.email} onChange={(event) => setAuthUserDraft((draft) => ({ ...draft, email: event.target.value }))} placeholder="manager@example.com" /></label>
+                  <label><span>Логин</span><input value={authUserDraft.login} onChange={(event) => setAuthUserDraft((draft) => ({ ...draft, login: event.target.value }))} placeholder="Например: asel" minLength={3} maxLength={32} /></label>
                   <label><span>Пароль</span><input type="password" value={authUserDraft.password} onChange={(event) => setAuthUserDraft((draft) => ({ ...draft, password: event.target.value }))} placeholder={authUserDraft.id ? 'Не менять' : 'Минимум 8 символов'} /></label>
                   <label><span>Роль</span><select value={authUserDraft.role} onChange={(event) => setAuthUserDraft((draft) => ({ ...draft, role: normalizeAccessRole(event.target.value) }))}><option value="manager">Менеджер</option><option value="admin">Админ</option></select></label>
                   <label><span>Сотрудник</span><select value={authUserDraft.managerId || 0} onChange={(event) => setAuthUserDraft((draft) => ({ ...draft, managerId: Number(event.target.value) || 0 }))}><option value={0}>Не привязан</option>{teamEmployees.map((employee) => <option key={`auth-employee-${employee.id}`} value={employee.id}>{employee.name}</option>)}</select></label>
@@ -7605,7 +7594,7 @@ function removeDebtPayment(index: number) {
                 </div>
                 <div className="modal-actions">
                   <button className="primary" type="button" onClick={() => void saveAuthUser()} disabled={authUsersBusy}>{authUserDraft.id ? 'Сохранить' : 'Создать'}</button>
-                  {authUserDraft.id ? <button className="secondary" type="button" onClick={() => setAuthUserDraft({ id: 0, email: '', password: '', role: 'manager', managerId: 0, displayName: '', isActive: true, mustChangePassword: true })}>Новый</button> : null}
+                  {authUserDraft.id ? <button className="secondary" type="button" onClick={() => setAuthUserDraft({ id: 0, login: '', password: '', role: 'manager', managerId: 0, displayName: '', isActive: true, mustChangePassword: true })}>Новый</button> : null}
                 </div>
               </section>
 
@@ -7613,7 +7602,7 @@ function removeDebtPayment(index: number) {
                 <div className="mini-panel-head">
                   <div>
                     <h4>Аккаунты</h4>
-                    <p className="mini-panel-note">Показано {authUsers.length}. Удаление закрывает сессии пользователя.</p>
+                    <p className="mini-panel-note">Показано {authUsers.length}. Отключение аккаунта закрывает его активные сессии.</p>
                   </div>
                   <button className="secondary compact" type="button" onClick={() => void loadAuthUsers()}>{authUsersBusy ? 'Загружаю...' : 'Обновить'}</button>
                 </div>
@@ -7621,13 +7610,13 @@ function removeDebtPayment(index: number) {
                   {authUsers.map((user) => (
                     <div className={`auth-user-row ${user.isActive ? '' : 'is-disabled'}`} key={`auth-user-${user.id}`}>
                       <div>
-                        <strong>{user.email}</strong>
+                        <strong>@{user.login}</strong>
                         <span>{user.role === 'admin' ? 'Админ' : 'Менеджер'}{user.managerName ? ` · ${user.managerName}` : ''}</span>
                         <small>{user.mustChangePassword ? 'Нужно сменить временный пароль' : user.lastLoginAt ? `Последний вход: ${formatDateShort(user.lastLoginAt)}` : 'Входов пока нет'}</small>
                       </div>
                       <div className="row-actions">
-                        <button className="secondary compact" type="button" onClick={() => setAuthUserDraft({ id: user.id, email: user.email, password: '', role: user.role, managerId: user.managerId || 0, displayName: user.displayName || '', isActive: user.isActive, mustChangePassword: Boolean(user.mustChangePassword) })}>Править</button>
-                        <button className="danger subtle compact" type="button" onClick={() => void deleteAuthUser(user.id)}>Удалить</button>
+                        <button className="secondary compact" type="button" onClick={() => setAuthUserDraft({ id: user.id, login: user.login, password: '', role: user.role, managerId: user.managerId || 0, displayName: user.displayName || '', isActive: user.isActive, mustChangePassword: Boolean(user.mustChangePassword) })}>Править</button>
+                        <button className="danger subtle compact" type="button" disabled={!user.isActive} onClick={() => void disableAuthUser(user.id)}>Отключить</button>
                       </div>
                     </div>
                   ))}
