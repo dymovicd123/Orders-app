@@ -56,10 +56,10 @@ jobs:
           query "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('app_users','app_sessions','managers') ORDER BY name"
 
           echo '--- app_users columns ---'
-          query "SELECT name, type, "notnull" AS not_null, pk FROM pragma_table_info('app_users') ORDER BY cid"
+          query "SELECT name, type, [notnull] AS not_null, pk FROM pragma_table_info('app_users') ORDER BY cid"
 
           echo '--- app_sessions columns ---'
-          query "SELECT name, type, "notnull" AS not_null, pk FROM pragma_table_info('app_sessions') ORDER BY cid"
+          query "SELECT name, type, [notnull] AS not_null, pk FROM pragma_table_info('app_sessions') ORDER BY cid"
 
           echo '--- auth aggregate state ---'
           query "SELECT
