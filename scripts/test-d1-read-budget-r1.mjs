@@ -38,13 +38,11 @@ check(reservations.includes('const rows = await fetchOrderStockHandoverRows(db, 
 check(reservations.includes("fetchOrderStockHandoverRows(db, [], { allActive: true })"), 'Warehouse attention count must still use full canonical resolver')
 check(ordersRead.includes('const exactExternalId = /^ORD-'), 'Complete ORD identifiers must retain an explicit exact-id detector')
 check(ordersRead.includes("baseWhereParts.push('o.external_id = ?')"), 'Exact order search must use external_id equality')
-check(ordersRead.includes('const searchOrderText = `COALESCE(o.external_id'), 'General free-text search fallback must remain available')
-check(
-  ordersRead.includes('FROM order_items oi')
-    && ordersRead.includes('WHERE oi.order_id = o.id AND (')
-    && ordersRead.includes('INSTR(${searchItemText}, ?) > 0'),
-  'General item search fallback must remain available',
-)
-check(ordersRead.includes('EXISTS (SELECT 1 FROM payments search_payment WHERE search_payment.order_id = o.id'), 'General payment search fallback must remain available')
+check(ordersRead.includes("if (q && Array.from(q).length < 3) {"), 'R7.1 short generic search guard missing')
+check(ordersRead.indexOf("if (q && Array.from(q).length < 3) {") < ordersRead.indexOf('await isOrderPricingFoundationEnabled(db)'), 'R7.1 short search must return before any D1 read')
+check(!ordersRead.includes('const searchOrderText ='), 'R7.1 legacy short full-table order scan returned')
+check(ordersRead.includes('order_search_orders_fts MATCH ?'), 'General order FTS search missing')
+check(ordersRead.includes('order_search_items_fts MATCH ?'), 'General item FTS search missing')
+check(ordersRead.includes('order_search_payments_fts MATCH ?'), 'General payment FTS search missing')
 
-console.log('D1 read-budget R1 regression: OK')
+console.log('D1 read-budget R1 regression: OK — R7.1 keeps exact/prefix/FTS search while removing 1–2 character scans')

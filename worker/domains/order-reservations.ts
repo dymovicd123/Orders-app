@@ -2297,7 +2297,7 @@ export async function fulfillOrderReservationsV2(
                length_snapshot = (SELECT x.length FROM x WHERE x.stock_id = inventory_stock.id),
                size_snapshot = (SELECT x.size FROM x WHERE x.stock_id = inventory_stock.id),
                last_action = 'Сверено перед отправкой', last_source_ref = ?, updated_at = ?
-           WHERE EXISTS (SELECT 1 FROM x WHERE x.stock_id = inventory_stock.id AND x.observed IS NOT NULL)
+           WHERE id IN (SELECT x.stock_id FROM x WHERE x.observed IS NOT NULL)
              AND ${orderStillUnsentSql}`
         ).bind(...payloadChunk, `order:${externalId}`, timestamp, orderId),
         db.prepare(
@@ -2384,7 +2384,7 @@ export async function fulfillOrderReservationsV2(
        SET quantity = MAX(0, (SELECT x.effective_quantity - x.required FROM x WHERE x.stock_id = inventory_stock.id)),
            reserved_quantity = MAX(0, COALESCE(reserved_quantity, 0) - (SELECT x.required FROM x WHERE x.stock_id = inventory_stock.id)),
            last_action = 'Выдано / отправлено', last_source_ref = ?, updated_at = ?
-       WHERE EXISTS (SELECT 1 FROM x WHERE x.stock_id = inventory_stock.id)
+       WHERE id IN (SELECT x.stock_id FROM x)
          AND ${orderStillUnsentSql}`
     ).bind(...payloadChunk, `order:${externalId}`, timestamp, orderId));
   }
@@ -2432,14 +2432,14 @@ export async function fulfillOrderReservationsV2(
          SET stock_writeoff_status = 'fulfilled',
              stock_quantity_before = (SELECT x.quantity_before FROM x WHERE x.order_item_id = order_items.id),
              stock_quantity_after = (SELECT x.quantity_after FROM x WHERE x.order_item_id = order_items.id)
-         WHERE EXISTS (SELECT 1 FROM x WHERE x.order_item_id = order_items.id)
+         WHERE id IN (SELECT x.order_item_id FROM x)
            AND ${orderStillUnsentSql}`
       ).bind(...payloadChunk, orderId),
       db.prepare(
         `WITH ${cte}
          UPDATE inventory_reservations
          SET status = 'fulfilled', fulfilled_at = ?, updated_at = ?
-         WHERE status = 'active' AND EXISTS (SELECT 1 FROM x WHERE x.reservation_id = inventory_reservations.id)
+         WHERE status = 'active' AND id IN (SELECT x.reservation_id FROM x)
            AND ${orderStillUnsentSql}`
       ).bind(...payloadChunk, timestamp, timestamp, orderId),
     );
