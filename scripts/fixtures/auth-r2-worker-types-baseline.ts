@@ -171,7 +171,6 @@ export type ReferenceValueRecord = {
 
 export type AuthUser = {
   id: number;
-  login: string;
   email: string;
   role: 'admin' | 'manager';
   managerId: number | null;

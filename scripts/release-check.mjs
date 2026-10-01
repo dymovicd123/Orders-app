@@ -131,7 +131,7 @@ function verifySource() {
     "typeApiBoundaryCleanup: '1906e'",
     "transferRuntimeSafety: '191d'",
     "runtimeLimitsAtomicity: '191e'",
-    "adminSessionIntegrity: '191f'",
+    "adminSessionIntegrity: 'account-auth-r2'",
     "warehouseTruthFreshness: '192a1'",
     "catalogTruthFinalizer: '192a2'",
     "orderCreateSaveIntegrity: '192b2a4'",

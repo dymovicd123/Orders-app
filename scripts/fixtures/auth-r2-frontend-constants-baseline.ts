@@ -1,4 +1,4 @@
-import type { OrderPanel, ReferenceData, ReferenceKind, WorkspaceModule } from './types'
+import type { AuthUser, OrderPanel, ReferenceData, ReferenceKind, WorkspaceModule } from './types'
 
 export const MANAGER_COLOR_OPTIONS = [
   '#2563EB', '#7C3AED', '#DB2777', '#EA580C', '#CA8A04', '#16A34A',
@@ -6,6 +6,30 @@ export const MANAGER_COLOR_OPTIONS = [
   '#E11D48', '#B45309', '#15803D', '#0F766E', '#0369A1', '#4338CA',
   '#A21CAF', '#BE123C', '#6D28D9', '#1D4ED8', '#047857', '#9A3412',
 ]
+
+
+
+export const SIMPLE_MANAGER_USER: AuthUser = {
+  id: 0,
+  email: 'manager',
+  role: 'manager',
+  managerId: null,
+  managerName: null,
+  displayName: 'Рабочий режим',
+  mustChangePassword: false,
+}
+
+
+
+export const SIMPLE_ADMIN_USER: AuthUser = {
+  id: 0,
+  email: 'admin',
+  role: 'admin',
+  managerId: null,
+  managerName: null,
+  displayName: 'Админ режим',
+  mustChangePassword: false,
+}
 
 
 

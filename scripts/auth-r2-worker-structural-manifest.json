@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "revision": "auth-r2-account-sessions-worker",
+  "baseBranch2Commit": "c8dec16c0b70406e42ae74d5d511ead605d6611e",
+  "files": {
+    "worker/index.ts": {
+      "baselineFixture": "scripts/fixtures/auth-r2-worker-index-baseline.ts",
+      "beforeGitBlob": "7bcb3942d671a81386ea35de67a76cc9ea457f4b",
+      "beforeLines": 1644,
+      "afterGitBlob": "3d84101bcc5f050aeefffd0ff1fa33c00f6d96e0",
+      "afterLines": 1623
+    },
+    "worker/domains/auth.ts": {
+      "baselineFixture": "scripts/fixtures/auth-r2-worker-auth-baseline.ts",
+      "beforeGitBlob": "9dc58fef53901c21cc0539c2e2dbec7bbf159143",
+      "beforeLines": 647,
+      "afterGitBlob": "410782bc08091cd038b1d2b51ee4b60ecaca4c22",
+      "afterLines": 735
+    },
+    "worker/core/types.ts": {
+      "baselineFixture": "scripts/fixtures/auth-r2-worker-types-baseline.ts",
+      "beforeGitBlob": "14a60ac4efa73bc64fcb11542621bb08d45548c2",
+      "beforeLines": 181,
+      "afterGitBlob": "b85a4f4fa1c16ec4c08bea24aad65eeb62d559f2",
+      "afterLines": 182
+    }
+  }
+}

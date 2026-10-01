@@ -12,11 +12,12 @@ type Props = {
   isAdmin: boolean
   onClose: () => void
   onCompleted: (order: OrderRecord) => boolean | void | Promise<boolean | void>
+  onRequestAdminMode?: () => void
   onOpenFullReview?: (order: OrderRecord) => void | Promise<void>
 }
 const displayFact = (field: Field, value: string) => field === 'category' ? (value === 'child' ? 'Детский' : 'Взрослый') : field === 'gender' ? (value === 'ЖЕН' ? 'Женский' : value === 'МУЖ' ? 'Мужской' : value) : value
 
-export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose, onCompleted }: Props) {
+export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose, onCompleted, onRequestAdminMode }: Props) {
   const [item, setItem] = useState<CatalogReviewItem | null>(null)
   const [context, setContext] = useState<CatalogResolutionContext | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -246,7 +247,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       </button>
     }
     const needsAdminCatalogMutation = Boolean(draft.createProduct || draft.createFields?.length || legacy)
-    if (!isAdmin && needsAdminCatalogMutation) return <div className="resolution-admin-required"><p>Добавить новый товар или значение может только администратор. Попросите администратора обработать этот заказ под своим аккаунтом.</p></div>
+    if (!isAdmin && needsAdminCatalogMutation) return <div className="resolution-admin-required"><p>Нужен администратор, чтобы добавить это в каталог.</p>{onRequestAdminMode ? <button type="button" className="primary-button" onClick={onRequestAdminMode}>Войти как администратор</button> : null}</div>
     return <button type="button" className="primary-button" disabled={disabled || Boolean(error)} onClick={() => void finish(legacy ? undefined : exactDraftVariant?.id)}>{resolving ? 'Сохраняю…' : 'Сохранить и продолжить'}</button>
   }
   const renderQuestion = () => {
@@ -274,7 +275,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         </div> : <div className="resolution-admin-required">
           <p>Нет такого товара? Попросите администратора добавить его.</p>
           <div className="resolution-inline-actions">
-            <span className="resolution-admin-note">Продолжить это действие сможет администратор под своим аккаунтом.</span>
+            {onRequestAdminMode ? <button type="button" className="secondary-button" onClick={onRequestAdminMode}>Войти как администратор</button> : null}
             <button type="button" className="resolution-link" onClick={() => void load()}>Проверить снова</button>
           </div>
         </div>}</>
@@ -328,7 +329,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
           <button type="button" className="secondary-button" onClick={() => { setEditing(field); setCreatingReference(null); setAnswer('') }}>Другой вариант</button>
           {isAdmin ? <button type="button" className="secondary-button" onClick={() => { setCreatingReference(field); setAnswer(draft[field]) }}>Новый {label.toLowerCase()}</button> : null}
         </div>
-        {!isAdmin ? <div className="resolution-admin-required"><p>Нет такого значения? Попросите администратора добавить его под своим аккаунтом.</p><div className="resolution-inline-actions"><button type="button" className="resolution-link" onClick={() => void preview(draft)}>Проверить снова</button></div></div> : null}</>
+        {!isAdmin ? <div className="resolution-admin-required"><p>Нет такого значения? Попросите администратора добавить его.</p><div className="resolution-inline-actions">{onRequestAdminMode ? <button type="button" className="secondary-button" onClick={onRequestAdminMode}>Войти как администратор</button> : null}<button type="button" className="resolution-link" onClick={() => void preview(draft)}>Проверить снова</button></div></div> : null}</>
     }
     if (question.kind === 'field') {
       const field = question.field
