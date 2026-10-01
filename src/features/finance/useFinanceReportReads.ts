@@ -128,7 +128,7 @@ export function useFinanceReportReads({ apiFetch, reportReadFailure }: Options) 
           // with order_date for sales, payment_date for receipts, return_date for returns, and
           // current debt independently of the period. Reuse that exact result across navigation
           // instead of issuing a second /orders-summary aggregate for the same date range.
-          if (!reportType) {
+          if (!reportType && data.overview) {
             const summaryKey = `${range.dateFrom}::${range.dateTo}`
             summaryCache.current.set(summaryKey, { data: ordersSummaryFromFinanceReport(data), savedAt })
           }
