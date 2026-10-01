@@ -147,6 +147,21 @@ type OrderStockHandoverActionResponse = Omit<OrderStockHandoverResponse, 'items'
 }
 
 
+type BrowserPasswordCredentialConstructor = new (data: { id: string; password: string; name?: string }) => Credential
+
+async function offerBrowserPasswordSave(login: string, password: string) {
+  const username = login.trim()
+  if (!username || !password || typeof window === 'undefined') return
+  const PasswordCredentialCtor = (window as Window & { PasswordCredential?: BrowserPasswordCredentialConstructor }).PasswordCredential
+  if (!PasswordCredentialCtor || !navigator.credentials?.store) return
+  try {
+    const credential = new PasswordCredentialCtor({ id: username, password, name: username })
+    await navigator.credentials.store(credential)
+  } catch (error) {
+    console.debug('Password manager did not accept the credential storage request.', error)
+  }
+}
+
 const WAREHOUSE_ATTENTION_SUMMARY_TTL_MS = 60_000
 const INVENTORY_FORM_SNAPSHOT_TTL_MS = 30_000
 let warehouseAttentionSummaryCache: { data: WarehouseAttentionSummaryResponse; loadedAt: number } | null = null
@@ -361,6 +376,9 @@ function App() {
         body: JSON.stringify(payload),
       })
       const data = await readJsonResponse<{ ok: boolean; user?: AuthUser }>(response, authHasUsers ? 'Вход' : 'Первый администратор')
+      if (data.user && (!authHasUsers || !data.user.mustChangePassword)) {
+        await offerBrowserPasswordSave(authLogin, authPassword)
+      }
       setAuthUser(data.user || null)
       setAuthHasUsers(true)
       setAuthPassword('')
@@ -403,6 +421,7 @@ function App() {
         body: JSON.stringify({ currentPassword, newPassword }),
       })
       const data = await readJsonResponse<{ ok: boolean; user?: AuthUser; message?: string }>(response, 'Смена пароля')
+      await offerBrowserPasswordSave(authUser.login, newPassword)
       if (data.user) setAuthUser(data.user)
       setPasswordChangeDraft({ currentPassword: '', newPassword: '' })
       setPasswordChangeOpen(false)
@@ -7232,7 +7251,7 @@ function removeDebtPayment(index: number) {
   if (!authUser) {
     return (
       <main className="auth-shell">
-        <form className="auth-card" onSubmit={submitAuth}>
+        <form className="auth-card" onSubmit={submitAuth} method="post" action={authHasUsers ? '/api/auth/login' : '/api/auth/setup'} autoComplete="on">
           <div className="erp-brand auth-brand">
             <div className="erp-brand-mark">S</div>
             <div>
@@ -7284,7 +7303,7 @@ function removeDebtPayment(index: number) {
   if (authUser.mustChangePassword) {
     return (
       <main className="auth-shell">
-        <form className="auth-card" onSubmit={submitPasswordChange}>
+        <form className="auth-card" onSubmit={submitPasswordChange} method="post" action="/api/auth/change-password" autoComplete="on">
           <div className="erp-brand auth-brand">
             <div className="erp-brand-mark">S</div>
             <div>
@@ -7297,6 +7316,10 @@ function removeDebtPayment(index: number) {
             <p>Администратор создал аккаунт с временным паролем. Перед работой нужно задать свой пароль.</p>
           </div>
           {error ? <div className="app-alert error"><span>{error}</span><button type="button" onClick={() => setError(null)}>×</button></div> : null}
+          <label>
+            <span>Логин</span>
+            <input id="auth-change-username" name="username" value={authUser.login} autoComplete="username" readOnly />
+          </label>
           <label>
             <span>Текущий временный пароль</span>
             <input id="auth-current-password" name="current-password" value={passwordChangeDraft.currentPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, currentPassword: event.target.value }))} type="password" autoComplete="current-password" required />
@@ -7590,7 +7613,7 @@ function removeDebtPayment(index: number) {
 
       {passwordChangeOpen ? (
         <div className="modal-backdrop" role="presentation">
-          <form className="modal-card auth-users-modal" role="dialog" aria-modal="true" aria-label="Смена пароля" onSubmit={submitPasswordChange}>
+          <form className="modal-card auth-users-modal" role="dialog" aria-modal="true" aria-label="Смена пароля" onSubmit={submitPasswordChange} method="post" action="/api/auth/change-password" autoComplete="on">
             <div className="modal-head">
               <div>
                 <div className="card-label">Доступ</div>
@@ -7600,8 +7623,9 @@ function removeDebtPayment(index: number) {
               <button className="secondary compact" type="button" onClick={() => { setPasswordChangeOpen(false); setPasswordChangeDraft({ currentPassword: '', newPassword: '' }) }}>Закрыть</button>
             </div>
             <div className="form-grid compact-form-grid">
-              <label><span>Текущий пароль</span><input type="password" value={passwordChangeDraft.currentPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, currentPassword: event.target.value }))} required /></label>
-              <label><span>Новый пароль</span><input type="password" value={passwordChangeDraft.newPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, newPassword: event.target.value }))} required minLength={8} /></label>
+              <label><span>Логин</span><input name="username" value={authUser.login} autoComplete="username" readOnly /></label>
+              <label><span>Текущий пароль</span><input name="current-password" type="password" autoComplete="current-password" value={passwordChangeDraft.currentPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, currentPassword: event.target.value }))} required /></label>
+              <label><span>Новый пароль</span><input name="new-password" type="password" autoComplete="new-password" value={passwordChangeDraft.newPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, newPassword: event.target.value }))} required minLength={8} /></label>
             </div>
             <div className="modal-actions">
               <button className="primary" type="submit" disabled={passwordChangeBusy}>{passwordChangeBusy ? 'Обновляю...' : 'Обновить пароль'}</button>

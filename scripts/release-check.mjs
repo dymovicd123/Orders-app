@@ -86,6 +86,8 @@ function verifySource() {
     'scripts/test-step191f-admin-session-integrity.mjs',
     'scripts/test-auth-r3-team-access-ux.mjs',
     'scripts/test-auth-r5-hardening.mjs',
+    'scripts/auth-r6-password-manager-frontend-manifest.json',
+    'scripts/test-auth-r6-password-manager.mjs',
     'scripts/step192a1-warehouse-truth-freshness-manifest.json',
     'scripts/test-step192a1-warehouse-truth-freshness.mjs',
     'scripts/step192a2-catalog-truth-finalizer-manifest.json',
@@ -319,6 +321,7 @@ try {
   run('Step 191F admin session integrity tests', process.execPath, [path.join(root, 'scripts/test-step191f-admin-session-integrity.mjs')])
   run('Auth R3 Team access UX tests', process.execPath, [path.join(root, 'scripts/test-auth-r3-team-access-ux.mjs')])
   run('Auth R5 hardening tests', process.execPath, [path.join(root, 'scripts/test-auth-r5-hardening.mjs')])
+  run('Auth R6 password-manager tests', process.execPath, [path.join(root, 'scripts/test-auth-r6-password-manager.mjs')])
   run('Step 192A1 Warehouse truth / freshness tests', process.execPath, [path.join(root, 'scripts/test-step192a1-warehouse-truth-freshness.mjs')])
   run('Step 192A2 catalog truth finalizer tests', process.execPath, [path.join(root, 'scripts/test-step192a2-catalog-truth-finalizer.mjs')])
   run('Step 192B1 Warehouse truth gates / attention tests', process.execPath, [path.join(root, 'scripts/test-step192b1-warehouse-truth-attention.mjs')])
