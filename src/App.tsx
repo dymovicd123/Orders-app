@@ -2625,7 +2625,6 @@ function App() {
       return
     }
 
-    const isNewEmployee = !teamDraft.id
     const hasLinkedAccount = Boolean(teamDraft.id && authUsers.some((user) => user.managerId === teamDraft.id))
     const shouldCreateAccount = teamDraft.createAccount !== false && !hasLinkedAccount
     const requestedLogin = (teamDraft.login || '').trim().toLowerCase()
