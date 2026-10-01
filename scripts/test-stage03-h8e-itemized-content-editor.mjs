@@ -35,7 +35,10 @@ check(!app.includes('itemizedContentEditMode') && !app.includes('beginItemizedCo
 const openFlow = between(app, 'async function handleEditOrder(', '\n\n  function upsertOrderInState')
 check(openFlow.includes("order.pricing_mode === 'itemized_v1'"), 'H8F itemized editor no longer refreshes supporting data')
 check(openFlow.includes('loadCatalogData(true)'), 'H8F does not refresh Catalog after opening an itemized editor')
-check(openFlow.includes("loadInventoryData('warehouse', true, '', false)") && openFlow.includes("loadInventoryData('boutique', true, '', false)"), 'H8F does not refresh both stock sources')
+check(openFlow.includes("loadInventoryData('warehouse', false, '', false)") && openFlow.includes("loadInventoryData('boutique', false, '', false)"), 'H8F no longer loads both bounded stock sources')
+check(app.includes('const INVENTORY_FORM_SNAPSHOT_TTL_MS = 30_000'), 'H8F/R7.5 bounded stock snapshot TTL missing')
+check(app.includes('snapshotAgeMs <= INVENTORY_FORM_SNAPSHOT_TTL_MS'), 'H8F/R7.5 stock snapshot is not freshness-bounded')
+check(app.includes('inventorySnapshotLoadedAt.current = { warehouse: 0, boutique: 0 }'), 'H8F/R7.5 stock mutation invalidation no longer clears bounded snapshot freshness')
 
 const updateEditorItem = between(app, 'function updateEditorItem(', '\n\n  function updateEditorPayment')
 check(updateEditorItem.includes("selectedOrder?.pricing_mode === 'itemized_v1'"), 'H8F direct itemized price logic missing')
