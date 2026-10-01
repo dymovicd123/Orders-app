@@ -21,7 +21,7 @@
       "baselineFixture": "scripts/fixtures/auth-r2-frontend-constants-baseline.ts",
       "beforeGitBlob": "6a51f788ab93522c646afa75ea779d76d42252dc",
       "beforeLines": 266,
-      "afterGitBlob": "3da2beb19d66328a7c035a704ea726bf310b8407",
+      "afterGitBlob": "952ce7a5b6e630f4d657bc4a957ce72f0ce9fac2",
       "afterLines": 242
     },
     "src/app/controllers/useApiClient.ts": {
