@@ -7253,11 +7253,11 @@ function removeDebtPayment(index: number) {
             <>
               <label>
                 <span>Текущий админ-логин</span>
-                <input id="auth-bootstrap-username" name="bootstrap-username" value={authBootstrapLogin} onChange={(event) => setAuthBootstrapLogin(event.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} required />
+                <input value={authBootstrapLogin} onChange={(event) => setAuthBootstrapLogin(event.target.value)} autoComplete="username" required />
               </label>
               <label>
                 <span>Текущий админ-пароль</span>
-                <input id="auth-bootstrap-password" name="bootstrap-password" value={authBootstrapPassword} onChange={(event) => setAuthBootstrapPassword(event.target.value)} type="password" autoComplete="current-password" required />
+                <input value={authBootstrapPassword} onChange={(event) => setAuthBootstrapPassword(event.target.value)} type="password" autoComplete="current-password" required />
               </label>
               <label>
                 <span>Имя администратора</span>
@@ -7267,11 +7267,11 @@ function removeDebtPayment(index: number) {
           ) : null}
           <label>
             <span>{authHasUsers ? 'Логин' : 'Новый логин'}</span>
-            <input id="auth-username" name="username" value={authLogin} onChange={(event) => setAuthLogin(event.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} required minLength={3} maxLength={32} placeholder="Например: admin" />
+            <input value={authLogin} onChange={(event) => setAuthLogin(event.target.value)} autoComplete="username" required minLength={3} maxLength={32} placeholder="Например: admin" />
           </label>
           <label>
             <span>{authHasUsers ? 'Пароль' : 'Новый пароль'}</span>
-            <input id="auth-password" name="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} type="password" autoComplete={authHasUsers ? 'current-password' : 'new-password'} required minLength={8} placeholder="Минимум 8 символов" />
+            <input value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} type="password" autoComplete={authHasUsers ? 'current-password' : 'new-password'} required minLength={8} placeholder="Минимум 8 символов" />
           </label>
           <button className="primary" type="submit" disabled={authBusy}>
             {authBusy ? 'Проверяю...' : authHasUsers ? 'Войти' : 'Создать администратора'}
@@ -7299,11 +7299,11 @@ function removeDebtPayment(index: number) {
           {error ? <div className="app-alert error"><span>{error}</span><button type="button" onClick={() => setError(null)}>×</button></div> : null}
           <label>
             <span>Текущий временный пароль</span>
-            <input id="auth-current-password" name="current-password" value={passwordChangeDraft.currentPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, currentPassword: event.target.value }))} type="password" autoComplete="current-password" required />
+            <input value={passwordChangeDraft.currentPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, currentPassword: event.target.value }))} type="password" autoComplete="current-password" required />
           </label>
           <label>
             <span>Новый пароль</span>
-            <input id="auth-new-password" name="new-password" value={passwordChangeDraft.newPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, newPassword: event.target.value }))} type="password" autoComplete="new-password" required minLength={8} />
+            <input value={passwordChangeDraft.newPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, newPassword: event.target.value }))} type="password" autoComplete="new-password" required minLength={8} />
           </label>
           <button className="primary" type="submit" disabled={passwordChangeBusy}>
             {passwordChangeBusy ? 'Сохраняю...' : 'Сменить пароль и войти'}

@@ -111,7 +111,7 @@ export default {
       if (url.pathname === '/api/auth/users' && request.method === 'POST') {
         const denied = requireAdminUser(authUser);
         if (denied) return denied;
-        return createAuthUser(env.DB, request, authUser as AuthUser);
+        return createAuthUser(env.DB, request);
       }
 
       const authUserMatch = url.pathname.match(/^\/api\/auth\/users\/(\d+)$/);

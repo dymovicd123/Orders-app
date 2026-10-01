@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "revision": "auth-r5-security-hardening-worker",
+  "baseBranch2Commit": "f988b093238d51a2804ca098a5f87d01537752ea",
+  "files": {
+    "worker/domains/auth.ts": {
+      "baselineFixture": "scripts/fixtures/auth-r5-worker-auth-baseline.ts",
+      "beforeGitBlob": "daf5bbe4f875379f3d93e84043589d1ac36a3d6a",
+      "beforeLines": 755,
+      "afterGitBlob": "6feafbece4de20ebfb1da09e2c31a6284a0f0d09",
+      "afterLines": 936
+    },
+    "worker/index.ts": {
+      "baselineFixture": "scripts/fixtures/auth-r5-worker-index-baseline.ts",
+      "beforeGitBlob": "3d84101bcc5f050aeefffd0ff1fa33c00f6d96e0",
+      "beforeLines": 1623,
+      "afterGitBlob": "14dfa551e1d7eb686d9f1102a63af6a18b87df37",
+      "afterLines": 1623
+    }
+  }
+}

@@ -59,13 +59,9 @@ export async function sha256Base64Url(value: string) {
 }
 
 
-export const PASSWORD_HASH_ITERATIONS = 30000;
+export const PASSWORD_HASH_ITERATIONS = 12000;
 
 export const MAX_EDGE_PASSWORD_VERIFY_ITERATIONS = 30000;
-export const AUTH_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14;
-export const AUTH_LOGIN_FAILURE_LIMIT = 5;
-export const AUTH_LOGIN_WINDOW_MS = 15 * 60 * 1000;
-export const AUTH_LOGIN_BLOCK_MS = 15 * 60 * 1000;
 
 
 export async function hashPassword(password: string) {
@@ -78,22 +74,11 @@ export async function hashPassword(password: string) {
 }
 
 
-export function passwordHashIterations(storedHash: string) {
-  const parts = cleanText(storedHash).split('$');
-  if (parts.length !== 4 || parts[0] !== 'pbkdf2') return 0;
-  return toInt(parts[1], 0);
-}
-
-
 export function passwordHashNeedsEdgeReset(storedHash: string) {
-  const iterations = passwordHashIterations(storedHash);
+  const parts = cleanText(storedHash).split('$');
+  if (parts.length !== 4 || parts[0] !== 'pbkdf2') return false;
+  const iterations = toInt(parts[1], 0);
   return iterations > MAX_EDGE_PASSWORD_VERIFY_ITERATIONS;
-}
-
-
-export function passwordHashNeedsUpgrade(storedHash: string) {
-  const iterations = passwordHashIterations(storedHash);
-  return iterations > 0 && iterations < PASSWORD_HASH_ITERATIONS;
 }
 
 
@@ -430,93 +415,6 @@ export function requireAdminUser(user: AuthUser | null, message = 'Действ�
 }
 
 
-export async function authLoginThrottleKey(request: Request, login: string) {
-  const clientIp = cleanText(request.headers.get('CF-Connecting-IP')) || 'unknown';
-  return sha256Base64Url(`${normalizeAuthLogin(login)}|${clientIp}`);
-}
-
-
-export async function getAuthLoginThrottleStatus(db: D1Database, request: Request, login: string) {
-  const keyHash = await authLoginThrottleKey(request, login);
-  try {
-    const row = await db.prepare(
-      'SELECT failure_count, window_started_at_ms, blocked_until_ms FROM auth_login_throttle WHERE key_hash = ?'
-    ).bind(keyHash).first<any>();
-    const now = Date.now();
-    const blockedUntil = toInt(row?.blocked_until_ms, 0);
-    return {
-      keyHash,
-      blocked: blockedUntil > now,
-      retryAfterSeconds: blockedUntil > now ? Math.max(1, Math.ceil((blockedUntil - now) / 1000)) : 0,
-    };
-  } catch {
-    return { keyHash, blocked: false, retryAfterSeconds: 0 };
-  }
-}
-
-
-export async function recordAuthLoginFailure(db: D1Database, keyHash: string) {
-  const now = Date.now();
-  try {
-    const row = await db.prepare(
-      'SELECT failure_count, window_started_at_ms FROM auth_login_throttle WHERE key_hash = ?'
-    ).bind(keyHash).first<any>();
-    const withinWindow = row && now - toInt(row.window_started_at_ms, 0) <= AUTH_LOGIN_WINDOW_MS;
-    const failureCount = withinWindow ? toInt(row.failure_count, 0) + 1 : 1;
-    const windowStartedAt = withinWindow ? toInt(row.window_started_at_ms, now) : now;
-    const blockedUntil = failureCount >= AUTH_LOGIN_FAILURE_LIMIT ? now + AUTH_LOGIN_BLOCK_MS : 0;
-    await db.prepare(
-      `INSERT INTO auth_login_throttle (key_hash, failure_count, window_started_at_ms, blocked_until_ms, updated_at_ms)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(key_hash) DO UPDATE SET
-         failure_count = excluded.failure_count,
-         window_started_at_ms = excluded.window_started_at_ms,
-         blocked_until_ms = excluded.blocked_until_ms,
-         updated_at_ms = excluded.updated_at_ms`
-    ).bind(keyHash, failureCount, windowStartedAt, blockedUntil, now).run();
-  } catch {
-    // Fail open only during the short schema/deploy overlap.
-  }
-}
-
-
-export async function clearAuthLoginFailures(db: D1Database, keyHash: string) {
-  try {
-    await db.prepare('DELETE FROM auth_login_throttle WHERE key_hash = ?').bind(keyHash).run();
-  } catch {
-    // Best-effort cleanup during rollout.
-  }
-}
-
-
-export async function writeAuthAuditLog(db: D1Database, input: {
-  eventType: string;
-  actorUserId?: number | null;
-  targetUserId?: number | null;
-  actorLogin?: string | null;
-  targetLogin?: string | null;
-  details?: string | null;
-}) {
-  try {
-    await db.prepare(
-      `INSERT INTO auth_audit_log (
-        event_type, actor_user_id, target_user_id, actor_login, target_login, details, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).bind(
-      cleanText(input.eventType) || 'unknown',
-      input.actorUserId ?? null,
-      input.targetUserId ?? null,
-      input.actorLogin ? normalizeAuthLogin(input.actorLogin) : null,
-      input.targetLogin ? normalizeAuthLogin(input.targetLogin) : null,
-      input.details ? cleanText(input.details) : null,
-      new Date().toISOString(),
-    ).run();
-  } catch {
-    // Audit must not break account management during the short schema/deploy overlap.
-  }
-}
-
-
 export async function getCurrentAuthUser(db: D1Database, request: Request): Promise<AuthUser | null> {
   const token = readCookie(request, 'orders_session');
   if (!token) return null;
@@ -554,7 +452,7 @@ export async function createSession(db: D1Database, userId: number) {
   const token = randomToken();
   const tokenHash = await sha256Base64Url(token);
   const now = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + AUTH_SESSION_MAX_AGE_SECONDS * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString();
   await db.prepare('DELETE FROM app_sessions WHERE expires_at <= ?').bind(now).run();
   await db.prepare('INSERT INTO app_sessions (user_id, token_hash, expires_at, last_seen_at) VALUES (?, ?, ?, ?)')
     .bind(userId, tokenHash, expiresAt, now).run();
@@ -596,14 +494,6 @@ export async function handleAuthSetup(db: D1Database, env: Env, request: Request
       .bind(compatibilityEmailForLogin(login), login, passwordHash, 'admin', displayName, now).run();
     const userId = toInt((result.meta as any)?.last_row_id, 0);
     const token = await createSession(db, userId);
-    await writeAuthAuditLog(db, {
-      eventType: 'auth_first_admin_created',
-      actorUserId: userId,
-      targetUserId: userId,
-      actorLogin: login,
-      targetLogin: login,
-      details: 'Первый персональный администратор создан через защищённый bootstrap.',
-    });
     const user: AuthUser = {
       id: userId,
       login,
@@ -615,7 +505,7 @@ export async function handleAuthSetup(db: D1Database, env: Env, request: Request
       mustChangePassword: false,
     };
     const response = json({ ok: true, user: authUserPayload(user) }, { status: 201 });
-    response.headers.append('Set-Cookie', makeSessionCookie(request, token, AUTH_SESSION_MAX_AGE_SECONDS));
+    response.headers.append('Set-Cookie', makeSessionCookie(request, token, 60 * 60 * 24 * 14));
     return response;
   } catch {
     return json({ ok: false, message: 'Аккаунт с таким логином уже существует.' }, { status: 409 });
@@ -627,13 +517,6 @@ export async function handleAuthLogin(db: D1Database, request: Request) {
   const input = await readJson<{ login?: unknown; password?: unknown }>(request);
   const login = normalizeAuthLogin(input.login);
   const password = cleanText(input.password);
-  const throttle = await getAuthLoginThrottleStatus(db, request, login);
-  if (throttle.blocked) {
-    const response = json({ ok: false, message: 'Слишком много неудачных попыток. Попробуйте позже.', code: 'AUTH_RATE_LIMITED' }, { status: 429 });
-    response.headers.set('Retry-After', String(throttle.retryAfterSeconds));
-    return response;
-  }
-
   const row = await db.prepare(`
     SELECT u.id, u.login, u.email, u.password_hash, u.role, u.manager_id, u.display_name, u.is_active,
       COALESCE(u.must_change_password, 0) AS must_change_password, m.name AS manager_name
@@ -643,29 +526,20 @@ export async function handleAuthLogin(db: D1Database, request: Request) {
     LIMIT 1
   `).bind(login).first<any>();
   if (!row || !toInt(row.is_active, 0)) {
-    await recordAuthLoginFailure(db, throttle.keyHash);
     return json({ ok: false, message: 'Неверный логин или пароль.' }, { status: 401 });
   }
   if (passwordHashNeedsEdgeReset(cleanText(row.password_hash))) {
     return json({ ok: false, message: 'Пароль этого аккаунта требует сброса администратором.', code: 'PASSWORD_HASH_NEEDS_RESET' }, { status: 409 });
   }
   if (!(await verifyPassword(password, cleanText(row.password_hash)))) {
-    await recordAuthLoginFailure(db, throttle.keyHash);
     return json({ ok: false, message: 'Неверный логин или пароль.' }, { status: 401 });
   }
-
-  await clearAuthLoginFailures(db, throttle.keyHash);
   const now = new Date().toISOString();
-  const userId = toInt(row.id, 0);
-  if (passwordHashNeedsUpgrade(cleanText(row.password_hash))) {
-    await db.prepare('UPDATE app_users SET password_hash = ?, updated_at = ? WHERE id = ?')
-      .bind(await hashPassword(password), now, userId).run();
-  }
-  await db.prepare('UPDATE app_users SET last_login_at = ? WHERE id = ?').bind(now, userId).run();
-  const token = await createSession(db, userId);
+  await db.prepare('UPDATE app_users SET last_login_at = ? WHERE id = ?').bind(now, toInt(row.id, 0)).run();
+  const token = await createSession(db, toInt(row.id, 0));
   const normalizedLogin = normalizeAuthLogin(row.login);
   const user: AuthUser = {
-    id: userId,
+    id: toInt(row.id, 0),
     login: normalizedLogin,
     email: cleanText(row.email),
     role: normalizeAuthRole(row.role),
@@ -674,16 +548,8 @@ export async function handleAuthLogin(db: D1Database, request: Request) {
     displayName: cleanText(row.display_name) || cleanText(row.manager_name) || normalizedLogin,
     mustChangePassword: Boolean(toInt(row.must_change_password, 0)),
   };
-  await writeAuthAuditLog(db, {
-    eventType: 'auth_login_success',
-    actorUserId: userId,
-    targetUserId: userId,
-    actorLogin: normalizedLogin,
-    targetLogin: normalizedLogin,
-    details: `role=${user.role}; managerId=${user.managerId ?? 'none'}`,
-  });
   const response = json({ ok: true, user: authUserPayload(user) });
-  response.headers.append('Set-Cookie', makeSessionCookie(request, token, AUTH_SESSION_MAX_AGE_SECONDS));
+  response.headers.append('Set-Cookie', makeSessionCookie(request, token, 60 * 60 * 24 * 14));
   return response;
 }
 
@@ -727,7 +593,7 @@ export async function listAuthUsers(db: D1Database) {
 }
 
 
-export async function createAuthUser(db: D1Database, request: Request, currentUser: AuthUser) {
+export async function createAuthUser(db: D1Database, request: Request) {
   const input = await readJson<{ login?: unknown; password?: unknown; role?: unknown; managerId?: unknown; displayName?: unknown; isActive?: unknown }>(request);
   const login = normalizeAuthLogin(input.login);
   const password = cleanText(input.password);
@@ -748,16 +614,7 @@ export async function createAuthUser(db: D1Database, request: Request, currentUs
     const now = new Date().toISOString();
     const result = await db.prepare('INSERT INTO app_users (email, login, password_hash, role, manager_id, display_name, is_active, must_change_password, password_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)')
       .bind(compatibilityEmailForLogin(login), login, passwordHash, role, managerId, displayName, isActive, now).run();
-    const userId = toInt((result.meta as any)?.last_row_id, 0);
-    await writeAuthAuditLog(db, {
-      eventType: 'auth_user_created',
-      actorUserId: currentUser.id,
-      targetUserId: userId,
-      actorLogin: currentUser.login,
-      targetLogin: login,
-      details: `role=${role}; managerId=${managerId ?? 'none'}; active=${isActive === 1 ? 'yes' : 'no'}; temporaryPassword=yes`,
-    });
-    return json({ ok: true, id: userId }, { status: 201 });
+    return json({ ok: true, id: toInt((result.meta as any)?.last_row_id, 0) }, { status: 201 });
   } catch {
     return json({ ok: false, message: 'Аккаунт с таким логином уже существует.' }, { status: 409 });
   }
@@ -779,8 +636,6 @@ export async function updateAuthUser(db: D1Database, userId: number, request: Re
   const nextManagerId = input.managerId !== undefined ? (toInt(input.managerId, 0) || null) : (existing.manager_id === null || existing.manager_id === undefined ? null : toInt(existing.manager_id, 0));
   let loginChanged = false;
   let roleChanged = false;
-  let passwordReset = false;
-  const changedFields: string[] = [];
   if (existingRole === 'admin' && existingActive && (nextRole !== 'admin' || !nextActive)) {
     const lastAdminDenied = await ensureCanRemoveAdminRights(db, userId);
     if (lastAdminDenied) return lastAdminDenied;
@@ -796,7 +651,6 @@ export async function updateAuthUser(db: D1Database, userId: number, request: Re
     if (loginError) return json({ ok: false, message: loginError }, { status: 400 });
     loginChanged = login !== existingLogin;
     if (loginChanged) {
-      changedFields.push(`login:${existingLogin}->${login}`);
       patches.push('login = ?');
       values.push(login);
       patches.push('email = ?');
@@ -807,8 +661,6 @@ export async function updateAuthUser(db: D1Database, userId: number, request: Re
     if (currentUser.id === userId) return json({ ok: false, message: 'Свой пароль меняйте через «Сменить пароль».' }, { status: 400 });
     const password = cleanText(input.password);
     if (password.length < 8) return json({ ok: false, message: 'Пароль должен быть не короче 8 символов.' }, { status: 400 });
-    passwordReset = true;
-    changedFields.push('password:reset');
     patches.push('password_hash = ?');
     values.push(await hashPassword(password));
     patches.push('password_updated_at = ?');
@@ -818,24 +670,20 @@ export async function updateAuthUser(db: D1Database, userId: number, request: Re
   if (input.role !== undefined) {
     roleChanged = nextRole !== existingRole;
     if (roleChanged) {
-      changedFields.push(`role:${existingRole}->${nextRole}`);
       patches.push('role = ?');
       values.push(nextRole);
     }
   }
   if (input.managerId !== undefined) {
-    if (nextManagerId !== (existing.manager_id === null || existing.manager_id === undefined ? null : toInt(existing.manager_id, 0))) changedFields.push(`managerId:${existing.manager_id ?? 'none'}->${nextManagerId ?? 'none'}`);
     patches.push('manager_id = ?');
     values.push(nextManagerId);
   }
   if (input.displayName !== undefined) {
-    changedFields.push('displayName');
     patches.push('display_name = ?');
     values.push(cleanText(input.displayName));
   }
   if (input.isActive !== undefined) {
     const nextActiveValue = input.isActive === false ? 0 : 1;
-    if (nextActiveValue !== (existingActive ? 1 : 0)) changedFields.push(`active:${existingActive ? 'yes' : 'no'}->${nextActiveValue ? 'yes' : 'no'}`);
     if (currentUser.id === userId && nextActiveValue === 0) return json({ ok: false, message: 'Нельзя отключить свой текущий аккаунт.' }, { status: 400 });
     patches.push('is_active = ?');
     values.push(nextActiveValue);
@@ -843,7 +691,6 @@ export async function updateAuthUser(db: D1Database, userId: number, request: Re
     values.push(nextActiveValue ? null : now);
   }
   if (input.mustChangePassword !== undefined && currentUser.id !== userId) {
-    changedFields.push(`mustChangePassword:${input.mustChangePassword === false ? 'no' : 'yes'}`);
     patches.push('must_change_password = ?');
     values.push(input.mustChangePassword === false ? 0 : 1);
   }
@@ -856,19 +703,8 @@ export async function updateAuthUser(db: D1Database, userId: number, request: Re
   } catch {
     return json({ ok: false, message: 'Аккаунт с таким логином уже существует.' }, { status: 409 });
   }
-  if (passwordReset || input.isActive === false || loginChanged || roleChanged) {
+  if ((input.password !== undefined && cleanText(input.password)) || input.isActive === false || loginChanged || roleChanged) {
     await db.prepare('DELETE FROM app_sessions WHERE user_id = ?').bind(userId).run();
-  }
-  if (changedFields.length) {
-    const nextLogin = input.login !== undefined ? normalizeAuthLogin(input.login) : existingLogin;
-    await writeAuthAuditLog(db, {
-      eventType: 'auth_user_updated',
-      actorUserId: currentUser.id,
-      targetUserId: userId,
-      actorLogin: currentUser.login,
-      targetLogin: nextLogin,
-      details: changedFields.join('; '),
-    });
   }
   return json({ ok: true, id: userId });
 }
@@ -891,14 +727,6 @@ export async function handleAuthChangePassword(db: D1Database, request: Request,
   await db.prepare('DELETE FROM app_sessions WHERE user_id = ? AND token_hash <> ?')
     .bind(currentUser.id, currentTokenHash).run();
   const updatedUser = { ...currentUser, mustChangePassword: false };
-  await writeAuthAuditLog(db, {
-    eventType: 'auth_password_changed',
-    actorUserId: currentUser.id,
-    targetUserId: currentUser.id,
-    actorLogin: currentUser.login,
-    targetLogin: currentUser.login,
-    details: 'Пользователь самостоятельно сменил пароль.',
-  });
   return json({ ok: true, user: authUserPayload(updatedUser), message: 'Пароль изменён.' });
 }
 
@@ -910,15 +738,6 @@ export async function deleteAuthUser(db: D1Database, userId: number, currentUser
   const now = new Date().toISOString();
   await db.prepare('UPDATE app_users SET is_active = 0, disabled_at = ?, updated_at = ? WHERE id = ?').bind(now, now, userId).run();
   await db.prepare('DELETE FROM app_sessions WHERE user_id = ?').bind(userId).run();
-  const target = await db.prepare('SELECT login FROM app_users WHERE id = ?').bind(userId).first<{ login: string | null }>();
-  await writeAuthAuditLog(db, {
-    eventType: 'auth_user_disabled',
-    actorUserId: currentUser.id,
-    targetUserId: userId,
-    actorLogin: currentUser.login,
-    targetLogin: normalizeAuthLogin(target?.login),
-    details: 'Аккаунт отключён; активные сессии отозваны.',
-  });
   return json({ ok: true, id: userId, disabled: true });
 }
 

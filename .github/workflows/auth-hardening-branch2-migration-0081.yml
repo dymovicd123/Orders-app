@@ -1,0 +1,97 @@
+name: Auth hardening Branch2 migration 0081
+
+on:
+  push:
+    branches:
+      - branch2
+    paths:
+      - 'migrations/0081_v72_auth_hardening.sql'
+      - '.github/workflows/auth-hardening-branch2-migration-0081.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: Apply auth hardening migration to Branch2 D1 only
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout exact Branch2 commit
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on environment and migration drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "branch2" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo "Production D1 binding detected. Refusing auth hardening migration." >&2
+            exit 20
+          fi
+
+          migration='migrations/0081_v72_auth_hardening.sql'
+          grep -Fq 'idx_app_users_manager_unique' "$migration"
+          grep -Fq 'auth_login_throttle' "$migration"
+          grep -Fq 'auth_audit_log' "$migration"
+          if grep -Eiq '\b(INSERT[[:space:]]+INTO|UPDATE|DELETE[[:space:]]+FROM|DROP[[:space:]]+TABLE|ALTER[[:space:]]+TABLE)\b' "$migration"; then
+            echo "Migration 0081 contains row rewrites or destructive table operations. Refusing migration." >&2
+            exit 21
+          fi
+          if grep -Eiq '\b(orders|order_items|inventory_|workshop_|returns|exchanges|payments|clients)\b' "$migration"; then
+            echo "Migration 0081 references business tables. Refusing migration." >&2
+            exit 22
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify one-account-per-employee precondition
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS duplicate_manager_groups FROM (SELECT manager_id FROM app_users WHERE manager_id IS NOT NULL GROUP BY manager_id HAVING COUNT(*) > 1)" --json)"
+          echo "$result"
+          duplicates="$(jq -r '.[0].results[0].duplicate_manager_groups // -1' <<<"$result")"
+          [[ "$duplicates" == "0" ]] || {
+            echo "Duplicate manager-account links exist. Refusing unique index migration." >&2
+            exit 23
+          }
+
+      - name: Apply migration 0081
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file migrations/0081_v72_auth_hardening.sql
+
+      - name: Verify auth hardening schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_app_users_manager_unique') AS manager_unique_index,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'auth_login_throttle') AS throttle_table,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'auth_audit_log') AS audit_table,
+            (SELECT COUNT(*) FROM (SELECT manager_id FROM app_users WHERE manager_id IS NOT NULL GROUP BY manager_id HAVING COUNT(*) > 1)) AS duplicate_manager_groups" --json)"
+          echo "$result"
+          manager_unique_index="$(jq -r '.[0].results[0].manager_unique_index // 0' <<<"$result")"
+          throttle_table="$(jq -r '.[0].results[0].throttle_table // 0' <<<"$result")"
+          audit_table="$(jq -r '.[0].results[0].audit_table // 0' <<<"$result")"
+          duplicates="$(jq -r '.[0].results[0].duplicate_manager_groups // -1' <<<"$result")"
+          [[ "$manager_unique_index" == "1" && "$throttle_table" == "1" && "$audit_table" == "1" && "$duplicates" == "0" ]] || {
+            echo "Auth hardening schema verification failed." >&2
+            exit 24
+          }
+          echo "Auth migration 0081 verified on Branch2 D1."
