@@ -615,8 +615,6 @@ function App() {
   const [teamRosterView, setTeamRosterView] = useState<'active' | 'former'>('active')
   const [teamFormOpen, setTeamFormOpen] = useState(false)
   const [teamColorEditorId, setTeamColorEditorId] = useState<number | null>(null)
-  const [teamAccessEditorId, setTeamAccessEditorId] = useState<number | null>(null)
-  const [teamAccessDraft, setTeamAccessDraft] = useState({ id: 0, login: '', password: '', role: 'manager' as AccessRole, isActive: true, mustChangePassword: true })
   const [expandedOrderItemCounts, setExpandedOrderItemCounts] = useState<Record<number, number>>({})
   const [teamMode, setTeamMode] = useState<TeamMode>('employees')
   const [timesheetMonth, setTimesheetMonth] = useState(formatLocalDateInput().slice(0, 7))
@@ -690,51 +688,6 @@ function App() {
     return resolveManagerDisplayColor(byName?.colorKey, byName?.id || name || 'manager')
   }
 
-
-  function suggestTeamLogin(name: string, excludingAccountId = 0) {
-    const transliteration: Record<string, string> = {
-      А: 'a', Б: 'b', В: 'v', Г: 'g', Д: 'd', Е: 'e', Ё: 'e', Ж: 'zh', З: 'z', И: 'i', Й: 'i',
-      К: 'k', Л: 'l', М: 'm', Н: 'n', О: 'o', П: 'p', Р: 'r', С: 's', Т: 't', У: 'u', Ф: 'f',
-      Х: 'h', Ц: 'ts', Ч: 'ch', Ш: 'sh', Щ: 'sh', Ы: 'y', Э: 'e', Ю: 'yu', Я: 'ya',
-      Ә: 'a', Ғ: 'g', Қ: 'q', Ң: 'n', Ө: 'o', Ұ: 'u', Ү: 'u', Һ: 'h', І: 'i',
-    }
-    const normalized = String(name || '').trim().toUpperCase()
-    let base = ''
-    for (const char of normalized) {
-      if (/[A-Z0-9]/.test(char)) base += char.toLowerCase()
-      else if (transliteration[char]) base += transliteration[char]
-      else if (/\s|[-_.]/.test(char)) base += '.'
-    }
-    base = base.replace(/\.+/g, '.').replace(/^\.|\.$/g, '').slice(0, 24) || 'manager'
-    const occupied = new Set(authUsers.filter((user) => user.id !== excludingAccountId).map((user) => user.login.toLowerCase()))
-    if (!occupied.has(base)) return base
-    let suffix = 2
-    while (occupied.has(`${base}${suffix}`)) suffix += 1
-    return `${base}${suffix}`.slice(0, 32)
-  }
-
-  function teamAuthUserFor(employeeId: number) {
-    return authUsers.find((user) => user.managerId === employeeId) || null
-  }
-
-  function openTeamEmployeeAccess(employee: TeamEmployee) {
-    if (!isAdmin || !employee?.id) return
-    const account = teamAuthUserFor(employee.id)
-    setTeamAccessEditorId(employee.id)
-    setTeamAccessDraft({
-      id: account?.id || 0,
-      login: account?.login || suggestTeamLogin(employee.name),
-      password: '',
-      role: account?.role || (String(employee.role || '').toLowerCase().includes('админ') ? 'admin' : 'manager'),
-      isActive: account?.isActive ?? true,
-      mustChangePassword: account?.mustChangePassword ?? true,
-    })
-  }
-
-  function closeTeamEmployeeAccess() {
-    setTeamAccessEditorId(null)
-    setTeamAccessDraft({ id: 0, login: '', password: '', role: 'manager', isActive: true, mustChangePassword: true })
-  }
 
   useEffect(() => {
     const syncSectorFromHash = () => {
@@ -2673,8 +2626,9 @@ function App() {
     }
 
     const isNewEmployee = !teamDraft.id
-    const shouldCreateAccount = isNewEmployee && teamDraft.createAccount !== false
-    const requestedLogin = (teamDraft.login || '').trim().toLowerCase() || suggestTeamLogin(teamDraft.name)
+    const hasLinkedAccount = Boolean(teamDraft.id && authUsers.some((user) => user.managerId === teamDraft.id))
+    const shouldCreateAccount = teamDraft.createAccount !== false && !hasLinkedAccount
+    const requestedLogin = (teamDraft.login || '').trim().toLowerCase()
     if (shouldCreateAccount) {
       if (requestedLogin.length < 3) {
         setError('Для входа укажите логин минимум из 3 символов.')
@@ -2716,17 +2670,8 @@ function App() {
         const accountData = await readJsonResponse<{ ok?: boolean; message?: string }>(accountResponse, 'Доступ сотрудника')
         if (!accountResponse.ok) {
           await Promise.all([loadTeamEmployees(), loadAuthUsers(), loadReferencesData(true)])
-          setTeamFormOpen(false)
-          setTeamAccessEditorId(employeeId)
-          setTeamAccessDraft({
-            id: 0,
-            login: requestedLogin,
-            password: teamDraft.password,
-            role: String(teamDraft.role || '').toLowerCase().includes('админ') ? 'admin' : 'manager',
-            isActive: true,
-            mustChangePassword: true,
-          })
-          setError(`Сотрудник создан, но вход не настроен: ${accountData.message || 'не удалось создать аккаунт'}. Исправьте данные в блоке «Доступ в систему».`)
+          setTeamDraft((draft) => ({ ...draft, id: employeeId, login: requestedLogin, createAccount: true }))
+          setError(`Сотрудник создан, но вход не настроен: ${accountData.message || 'не удалось создать аккаунт'}. Исправьте логин или пароль здесь и сохраните ещё раз.`)
           return
         }
       }
@@ -2741,82 +2686,6 @@ function App() {
       setTeamBusy(false)
     }
   }
-
-  async function saveTeamEmployeeAccess(employee: TeamEmployee) {
-    if (!isAdmin || !employee?.id) return
-    const existingAccount = teamAuthUserFor(employee.id)
-    const login = (teamAccessDraft.login || '').trim().toLowerCase()
-    if (login.length < 3) {
-      setError('Логин должен содержать минимум 3 символа.')
-      return
-    }
-    if (!existingAccount && (teamAccessDraft.password || '').length < 8) {
-      setError('Для нового входа задайте временный пароль минимум из 8 символов.')
-      return
-    }
-    const duplicateLogin = authUsers.find((user) => user.id !== existingAccount?.id && user.login.toLowerCase() === login)
-    if (duplicateLogin) {
-      setError(`Логин @${login} уже используется.`)
-      return
-    }
-    const duplicateManagerAccount = authUsers.find((user) => user.id !== existingAccount?.id && user.managerId === employee.id)
-    if (duplicateManagerAccount) {
-      setError(`У ${employee.name} уже есть аккаунт @${duplicateManagerAccount.login}.`)
-      return
-    }
-
-    setAuthUsersBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const isEdit = Boolean(existingAccount?.id)
-      const password = teamAccessDraft.password || undefined
-      const response = await apiFetch(isEdit ? `/api/auth/users/${existingAccount!.id}` : '/api/auth/users', {
-        method: isEdit ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          login,
-          password,
-          role: teamAccessDraft.role,
-          managerId: employee.id,
-          displayName: employee.name,
-          isActive: teamAccessDraft.isActive,
-          mustChangePassword: password ? true : teamAccessDraft.mustChangePassword,
-        }),
-      })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'Доступ сотрудника')
-      if (!response.ok) throw new Error(data.message || 'Не удалось сохранить доступ сотрудника.')
-      await loadAuthUsers()
-      closeTeamEmployeeAccess()
-      setMessage(isEdit ? `Доступ @${login} обновлён.` : `Для ${employee.name} создан вход @${login}.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось сохранить доступ сотрудника.')
-    } finally {
-      setAuthUsersBusy(false)
-    }
-  }
-
-  async function disableTeamEmployeeAccess(employee: TeamEmployee) {
-    if (!isAdmin || !employee?.id) return
-    const account = teamAuthUserFor(employee.id)
-    if (!account) return
-    if (!window.confirm(`Отключить вход @${account.login} для ${employee.name}? Активные сессии будут закрыты.`)) return
-    setAuthUsersBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/auth/users/${account.id}`, { method: 'DELETE' })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'Отключение доступа')
-      if (!response.ok) throw new Error(data.message || 'Не удалось отключить доступ.')
-      await loadAuthUsers()
-      closeTeamEmployeeAccess()
-      setMessage(`Вход @${account.login} отключён.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось отключить доступ сотрудника.')
-    } finally {
-      setAuthUsersBusy(false)
-    }
-  }
-
 
   async function saveTeamEmployeeColor(employee: TeamEmployee, colorKey: string) {
     if (!isAdmin || !employee?.id) return
@@ -2901,7 +2770,6 @@ function App() {
       const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'Удаление сотрудника')
       if (!response.ok) throw new Error(data.message || 'Не удалось удалить сотрудника.')
       if (teamDraft.id === employee.id) setTeamDraft({ id: 0, name: '', role: 'Менеджер', phone: '', colorKey: '#2563EB', hiredAt: formatLocalDateInput(), comment: '', isActive: true, createAccount: true, login: '', password: '', mustChangePassword: true })
-      if (teamAccessEditorId === employee.id) closeTeamEmployeeAccess()
       await Promise.all([loadTeamEmployees(), isAdmin ? loadAuthUsers() : Promise.resolve(), loadReferencesData(true)])
       setMessage(data.message || 'Сотрудник удалён из команды.')
     } catch (err) {
@@ -7923,7 +7791,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'team'} label="Команда">
-        <TeamSection ctx={{ authUsers, authUsersBusy, closeTeamEmployeeAccess, disableTeamEmployeeAccess, exportTeamPlanReportWord, formatDateShort, formatLocalDateInput, formatMoney, formatPercent, getTimesheetCalendarSlots, getTimesheetEntriesForDate, getTimesheetWeekdayLabel, isAdmin, loadPlans, loadTeamActivityReport, loadTeamSalaryReport, loadTeamTimesheet, MANAGER_COLOR_OPTIONS, ManagerBadge, openTeamEmployeeAccess, planBusy, planFilters, planReport, printTeamPlanReportPdf, removeTeamEmployee, resolveManagerDisplayColor, saveTeamEmployee, saveTeamEmployeeAccess, saveTeamEmployeeColor, saveTeamTimesheet, sectorStyle, setPlanFilters, setTeamAccessDraft, setTeamActivityFilters, setTeamColorEditorId, setTeamDraft, setTeamEmployeeEmploymentStatus, setTeamFormOpen, setTeamMode, setTeamRosterView, setTeamSalaryFilters, setTimesheetComment, setTimesheetCurrentMonth, setTimesheetDaysPreset, setTimesheetMonth, setTimesheetSelectedDays, setTimesheetSelectedManagers, setTimesheetWorkUntil, shiftTimesheetMonth, suggestTeamLogin, teamAccessDraft, teamAccessEditorId, teamActivityBusy, teamActivityFilters, teamActivityLoadFailed, teamActivityReport, teamBusy, teamColorEditorId, teamDraft, teamEmployees, teamFormOpen, teamMode, teamRosterView, teamSalaryFilters, teamSalaryReport, timesheetBusy, timesheetComment, timesheetData, timesheetMonth, timesheetSelectedDays, timesheetSelectedManagers, timesheetWorkUntil, toggleTimesheetDay, toggleTimesheetManager }} />
+        <TeamSection ctx={{ apiFetch, authUsers, authUsersBusy, exportTeamPlanReportWord, formatDateShort, formatLocalDateInput, formatMoney, formatPercent, getTimesheetCalendarSlots, getTimesheetEntriesForDate, getTimesheetWeekdayLabel, isAdmin, loadPlans, loadTeamActivityReport, loadTeamSalaryReport, loadTeamTimesheet, MANAGER_COLOR_OPTIONS, ManagerBadge, loadAuthUsers, planBusy, planFilters, planReport, printTeamPlanReportPdf, removeTeamEmployee, resolveManagerDisplayColor, readJsonResponse, saveTeamEmployee, saveTeamEmployeeColor, saveTeamTimesheet, sectorStyle, setError, setMessage, setPlanFilters, setTeamActivityFilters, setTeamColorEditorId, setTeamDraft, setTeamEmployeeEmploymentStatus, setTeamFormOpen, setTeamMode, setTeamRosterView, setTeamSalaryFilters, setTimesheetComment, setTimesheetCurrentMonth, setTimesheetDaysPreset, setTimesheetMonth, setTimesheetSelectedDays, setTimesheetSelectedManagers, setTimesheetWorkUntil, shiftTimesheetMonth, teamActivityBusy, teamActivityFilters, teamActivityLoadFailed, teamActivityReport, teamBusy, teamColorEditorId, teamDraft, teamEmployees, teamFormOpen, teamMode, teamRosterView, teamSalaryFilters, teamSalaryReport, timesheetBusy, timesheetComment, timesheetData, timesheetMonth, timesheetSelectedDays, timesheetSelectedManagers, timesheetWorkUntil, toggleTimesheetDay, toggleTimesheetManager }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'leads'} label="Лиды">
