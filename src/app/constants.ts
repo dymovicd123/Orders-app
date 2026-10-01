@@ -9,30 +9,6 @@ export const MANAGER_COLOR_OPTIONS = [
 
 
 
-export const SIMPLE_MANAGER_USER: AuthUser = {
-  id: 0,
-  email: 'manager',
-  role: 'manager',
-  managerId: null,
-  managerName: null,
-  displayName: 'Рабочий режим',
-  mustChangePassword: false,
-}
-
-
-
-export const SIMPLE_ADMIN_USER: AuthUser = {
-  id: 0,
-  email: 'admin',
-  role: 'admin',
-  managerId: null,
-  managerName: null,
-  displayName: 'Админ режим',
-  mustChangePassword: false,
-}
-
-
-
 export const FALLBACK_REFERENCE_DATA = {
   managers: ['АСЕЛЬ', 'ГАЗИЗА', 'ГУЛНУР', 'ЖАНЕРКЕ', 'МАКПАЛ', 'САИДА', 'СЫМБАТ'],
   cities: [
