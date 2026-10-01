@@ -18,7 +18,7 @@ export function normalizeClientMode(value: unknown): ClientMode {
 }
 
 
-export function clientStatsCte() {
+export function clientStatsCte(materializeStats = false) {
   return `
     WITH order_history AS (
       SELECT
@@ -49,7 +49,7 @@ export function clientStatsCte() {
       WHERE s.customer_id IS NOT NULL
         AND NOT EXISTS (SELECT 1 FROM orders current_order WHERE current_order.id = s.original_order_id)
     ),
-    stats AS (
+    stats AS${materializeStats ? ' MATERIALIZED' : ''} (
       SELECT
         c.id,
         c.phone_normalized,
@@ -161,14 +161,32 @@ export async function listClients(db: D1Database, url: URL) {
   const limit = Math.min(60, Math.max(10, toInt(url.searchParams.get('limit'), 60)));
   const offset = Math.max(0, toInt(url.searchParams.get('offset'), 0));
   const { whereSql, bindings } = buildClientWhere(mode, q);
-  const cte = clientStatsCte();
+  // R7.3: list + global cards used to build the complete order_history/stats graph twice.
+  // Materialize that expensive history once, then derive the global summary and filtered page
+  // from the same per-client rows. This preserves exact historical/retained semantics without
+  // introducing a mutable client-money cache.
+  const cte = clientStatsCte(true);
 
-  const [summary, rows] = await Promise.all([
-    getClientsSummary(db),
-    db.prepare(`
-      ${cte}
+  const rows = await db.prepare(`
+    ${cte},
+    summary AS (
       SELECT
-        COUNT(*) OVER() AS filtered_count,
+        COALESCE(SUM(CASE WHEN order_count > 0 THEN 1 ELSE 0 END), 0) AS total_clients,
+        COALESCE(SUM(CASE WHEN order_count >= 2 THEN 1 ELSE 0 END), 0) AS repeat_clients,
+        COALESCE(SUM(CASE WHEN order_count > 0 AND debt_amount > 0 THEN 1 ELSE 0 END), 0) AS debt_clients,
+        COALESCE(SUM(CASE WHEN order_count > 0 THEN debt_amount ELSE 0 END), 0) AS total_debt,
+        COALESCE(SUM(CASE WHEN order_count > 0 THEN total_amount ELSE 0 END), 0) AS total_sales,
+        COALESCE(SUM(CASE WHEN order_count > 0 THEN received_amount ELSE 0 END), 0) AS total_received,
+        COALESCE(SUM(CASE WHEN order_count > 0 THEN return_amount ELSE 0 END), 0) AS total_returns,
+        COALESCE(SUM(CASE WHEN order_count > 0 THEN order_count ELSE 0 END), 0) AS order_count,
+        COALESCE(SUM(CASE WHEN order_count > 0 THEN archived_order_count ELSE 0 END), 0) AS archived_order_count,
+        COALESCE(SUM(CASE WHEN order_count > 0 THEN active_order_count ELSE 0 END), 0) AS active_order_count,
+        COALESCE(SUM(CASE WHEN ${whereSql} THEN 1 ELSE 0 END), 0) AS filtered_count
+      FROM stats
+    ),
+    filtered AS (
+      SELECT
+        ROW_NUMBER() OVER (ORDER BY ${clientOrderBy(mode)}) AS page_order,
         id,
         phone_normalized,
         display_name,
@@ -187,18 +205,60 @@ export async function listClients(db: D1Database, url: URL) {
       FROM stats
       WHERE ${whereSql}
       ORDER BY ${clientOrderBy(mode)}
-      LIMIT ? OFFSET ?`
-    ).bind(...bindings, limit, offset).all<Record<string, unknown>>(),
-  ]);
+      LIMIT ? OFFSET ?
+    )
+    SELECT
+      summary.total_clients AS summary_total_clients,
+      summary.repeat_clients AS summary_repeat_clients,
+      summary.debt_clients AS summary_debt_clients,
+      summary.total_debt AS summary_total_debt,
+      summary.total_sales AS summary_total_sales,
+      summary.total_received AS summary_total_received,
+      summary.total_returns AS summary_total_returns,
+      summary.order_count AS summary_order_count,
+      summary.archived_order_count AS summary_archived_order_count,
+      summary.active_order_count AS summary_active_order_count,
+      summary.filtered_count,
+      filtered.page_order,
+      filtered.id,
+      filtered.phone_normalized,
+      filtered.display_name,
+      filtered.city,
+      filtered.order_count,
+      filtered.total_amount,
+      filtered.received_amount,
+      filtered.debt_amount,
+      filtered.return_amount,
+      filtered.first_order_at,
+      filtered.last_order_at,
+      filtered.active_order_count,
+      filtered.archived_order_count,
+      filtered.cities,
+      filtered.managers
+    FROM summary
+    LEFT JOIN filtered ON 1 = 1
+    ORDER BY COALESCE(filtered.page_order, 0)`
+  ).bind(...bindings, ...bindings, limit, offset).all<Record<string, unknown>>();
 
-  const clientRows = rows.results || [];
-  // Window count removes the normal second full client-history scan. Only an out-of-range
-  // pagination request needs the old count fallback to preserve an exact total.
-  let filteredCount = clientRows.length ? toInt(clientRows[0].filtered_count, 0) : 0;
-  if (!clientRows.length && offset > 0) {
-    const countRow = await db.prepare(`${cte} SELECT COUNT(*) AS count FROM stats WHERE ${whereSql}`).bind(...bindings).first<{ count: number }>();
-    filteredCount = toInt(countRow?.count, 0);
-  }
+  const resultRows = rows.results || [];
+  const summaryRow = resultRows[0] || {};
+  const clientRows = resultRows.filter((row) => toInt(row.id, 0) > 0);
+  const filteredCount = toInt(summaryRow.filtered_count, 0);
+  const summaryOrderCount = toInt(summaryRow.summary_order_count, 0);
+  const summaryTotalSales = toInt(summaryRow.summary_total_sales, 0);
+  const summary = {
+    totalClients: toInt(summaryRow.summary_total_clients, 0),
+    repeatClients: toInt(summaryRow.summary_repeat_clients, 0),
+    debtClients: toInt(summaryRow.summary_debt_clients, 0),
+    totalDebt: toInt(summaryRow.summary_total_debt, 0),
+    totalSales: summaryTotalSales,
+    totalReceived: toInt(summaryRow.summary_total_received, 0),
+    totalReturns: toInt(summaryRow.summary_total_returns, 0),
+    orderCount: summaryOrderCount,
+    activeOrderCount: toInt(summaryRow.summary_active_order_count, 0),
+    archivedOrderCount: toInt(summaryRow.summary_archived_order_count, 0),
+    avgCheck: summaryOrderCount > 0 ? Math.round(summaryTotalSales / summaryOrderCount) : 0,
+  };
   const clientIds = clientRows.map((row) => toInt(row.id, 0)).filter(Boolean);
   const managerProfilesByClient = new Map<number, Array<{ id: number; name: string; colorKey: string }>>();
   if (clientIds.length) {
