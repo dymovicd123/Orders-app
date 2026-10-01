@@ -40,11 +40,16 @@ try {
   check(authWorker.includes('const managerAccountError = await ensureManagerAccountAvailable(db, managerId)'), 'Account creation can still duplicate an employee identity')
   check(authWorker.includes('const managerAccountError = await ensureManagerAccountAvailable(db, nextManagerId, userId)'), 'Account editing can still create duplicate employee identity')
 
-  check(styles.includes('.team-access-onboarding') && styles.includes('.team-access-editor-panel'), 'Team access UI styles missing')
-  check(styles.includes('@media (max-width: 720px)'), 'Team access UI has no mobile adaptation')
+  check(!team.includes('className="mini-panel team-access-editor-panel"'), 'Employee access still opens as an inline panel below the roster')
+  check(team.includes('className="modal-backdrop team-access-modal-backdrop"') && team.includes('className="modal-card team-access-modal"'), 'Employee access does not open in a dedicated modal')
+  check(team.includes('role="dialog"') && team.includes('aria-modal="true"'), 'Team access modal accessibility contract missing')
+  check(team.includes("event.key === 'Escape'") && team.includes('event.target === event.currentTarget'), 'Team access modal cannot be dismissed naturally')
+  check(team.includes('teamAccessLoginRef.current?.focus()') && team.includes('ref={teamAccessLoginRef}'), 'Team access modal does not focus the login field')
+  check(styles.includes('.team-access-onboarding') && styles.includes('.team-access-modal-backdrop') && styles.includes('.team-access-modal'), 'Team access modal styles missing')
+  check(styles.includes('@media (max-width: 720px)') && styles.includes('align-items: flex-end'), 'Team access modal has no mobile sheet adaptation')
 
-  console.log('AUTH R3 TEAM ACCESS UX PASSED — account provisioning is employee-first, linked, visible, recoverable, and dismissal revokes access.')
+  console.log('AUTH R3/R4 TEAM ACCESS UX PASSED — employee-first provisioning remains intact and row actions open a focused, keyboard-dismissable access modal.')
 } catch (error) {
-  console.error(`AUTH R3 TEAM ACCESS UX FAILED: ${error?.message || error}`)
+  console.error(`AUTH R3/R4 TEAM ACCESS UX FAILED: ${error?.message || error}`)
   process.exit(1)
 }
