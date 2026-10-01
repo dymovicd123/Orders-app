@@ -3682,12 +3682,26 @@ function App() {
   }
 
   async function loadDashboard(forceReferences = false, overrideFilters: typeof filters = filters, overrideOffset = orderPageOffset, pageReadOptions: { afterOrderDate?: string; afterOrderId?: number; reusePeriodStats?: boolean } | null = null) {
+    const activeFilters = overrideFilters
+    const searchQuery = activeFilters.q.trim()
+    if (searchQuery && Array.from(searchQuery).length < 3) {
+      setBusy(false)
+      setError(null)
+      setMessage('Введите минимум 3 символа для поиска заказа.')
+      setOrders([])
+      setOrderPeriodStats(null)
+      setOrderPageOffset(0)
+      setOrderPageInfo((current) => ({ ...current, offset: 0, totalCount: 0, hasMore: false, hasPrevious: false }))
+      setSelectedOrderId(null)
+      setEditorOpen(false)
+      return null
+    }
+
     setBusy(true)
     setError(null)
     setMessage(null)
 
     try {
-      const activeFilters = overrideFilters
       const params = new URLSearchParams({
         limit: activeFilters.pageSize || '100',
         offset: String(Math.max(0, overrideOffset)),
