@@ -713,9 +713,10 @@ export async function deleteAuthUser(db: D1Database, userId: number, currentUser
 
 export function withAuthenticatedHeaders(request: Request, user: AuthUser) {
   const headers = new Headers(request.headers);
-  const actor = user.displayName || user.email;
+  const actor = user.displayName || user.managerName || user.login;
   headers.set('X-Access-Role', user.role);
-  headers.set('X-Access-Email', user.email);
+  headers.set('X-Access-Login', user.login);
+  headers.delete('X-Access-Email');
   headers.set('X-Access-User', actor);
   headers.set('X-Archive-Actor', actor);
   return new Request(request, { headers });
