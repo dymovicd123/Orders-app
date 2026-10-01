@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "revision": "branch2-r7-read-budget-port-r1",
+  "sourceMainCommit": "4fe0bb1c246d0ba1b6e664ea544007ddceb06ea9",
+  "branch2BaseCommit": "f8e79f0054e2341ef3da77a8a04b7400ffeee123",
+  "runtimeFiles": {
+    "src/App.tsx": "b0b277696983a27f569d3638038eeb1b9a7b714f",
+    "src/features/finance/useFinanceReportReads.ts": "b4ae3636783af0429831de2044383a107d61ee52",
+    "worker/domains/workshop.ts": "4c27e0cc51bcd0ba2f66701d2993f6b16b971cd4",
+    "worker/domains/clients.ts": "953e92bb67f2d9cba95abcc01c17bbcfdacd4488",
+    "worker/domains/order-reservations.ts": "47c50f20247187c6aa06a29948ea0b109ce4723c",
+    "worker/domains/orders-read.ts": "d625e4113b95ecc10048c0368fb065a7f796585f"
+  },
+  "environmentInvariant": "wrangler.jsonc and Branch2 D1/Worker bindings are intentionally unchanged"
+}
