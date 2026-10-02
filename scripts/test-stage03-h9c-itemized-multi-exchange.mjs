@@ -14,6 +14,7 @@ const app = read('src/App.tsx')
 const ui = read('src/features/sections/OrderExchangeSection.tsx')
 const workerIndex = read('worker/index.ts')
 const worker = read('worker/domains/returns-exchanges.ts')
+const batchWorker = read('worker/domains/exchange-batch.ts')
 const doc = read('docs/continuation/STAGE03_H9_ITEMIZED_EXCHANGE_20260925.md')
 
 check(wrangler.includes('"name": "orders-app-branch2"'), 'H9C must stay on Branch2 Worker')
@@ -40,10 +41,9 @@ check(ui.includes("priceOrigin: nextOldItem") && ui.includes('unitPrice: nextOld
 
 check(workerIndex.includes("url.pathname === '/api/exchanges/batch'") && workerIndex.includes('createItemizedExchangeBatch'), 'H9C Worker route missing')
 
-const batchStart = worker.indexOf('export async function createItemizedExchangeBatch')
-const batchEnd = worker.indexOf('\n\nexport async function correctExchangeFinancials', batchStart)
-check(batchStart >= 0 && batchEnd > batchStart, 'H9C backend batch function boundary missing')
-const batch = worker.slice(batchStart, batchEnd)
+const batchStart = batchWorker.indexOf('export async function createItemizedExchangeBatch')
+check(batchStart >= 0, 'H9C backend batch function boundary missing')
+const batch = batchWorker.slice(batchStart)
 
 check(batch.includes("beginCriticalOperation(db, 'exchange_itemized_batch_create'"), 'H9C parent critical operation missing')
 check(batch.includes('criticalOperation.cachedResponse'), 'H9C parent replay cache missing')
@@ -59,7 +59,7 @@ check(batch.includes("financialAction === 'extra_payment' && position === ordere
 check(batch.includes('stockGroups') && batch.includes('group.requestedQuantity'), 'H9C repeated-SKU physical preflight missing')
 check(batch.includes('observedAssigned') && batch.includes('observedPhysicalQuantity = null'), 'H9C physical observation is not deduplicated across repeated SKU children')
 check(batch.includes('const childRequestId =') && batch.includes('criticalOperation.requestId') && batch.includes(':p'), 'H9C deterministic child idempotency key missing')
-check(batch.includes('await createExchange(db, {'), 'H9C batch does not reuse the proven single-exchange mutation path')
+check(batch.includes('await createExchange(db, {') && batchWorker.includes("from './returns-exchanges.ts'"), 'H9C batch does not reuse the proven single-exchange mutation path')
 check(batch.includes('completedPairs}_done') && batch.includes('advanceCriticalOperation(db, criticalOperation'), 'H9C parent progress checkpoint missing')
 check(batch.includes('await completeCriticalOperation(db, criticalOperation, response)'), 'H9C parent completion cache missing')
 
