@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "revision": "auth-production-port-r2-r6-worker",
+  "baseMainCommit": "dde6b7298b427381f848fca8cf77853e86eea47b",
+  "files": {
+    "worker/core/types.ts": {
+      "beforeGitBlob": "14a60ac4efa73bc64fcb11542621bb08d45548c2",
+      "beforeLines": 181,
+      "afterGitBlob": "b85a4f4fa1c16ec4c08bea24aad65eeb62d559f2",
+      "afterLines": 182,
+      "baselineFixture": "scripts/fixtures/auth-production-port/worker/core/types.ts"
+    },
+    "worker/domains/auth.ts": {
+      "beforeGitBlob": "9dc58fef53901c21cc0539c2e2dbec7bbf159143",
+      "beforeLines": 647,
+      "afterGitBlob": "6feafbece4de20ebfb1da09e2c31a6284a0f0d09",
+      "afterLines": 936,
+      "baselineFixture": "scripts/fixtures/auth-production-port/worker/domains/auth.ts"
+    },
+    "worker/domains/team.ts": {
+      "beforeGitBlob": "d49da06e6d284112bb950483d3e667c6ca1b7b40",
+      "beforeLines": 1320,
+      "afterGitBlob": "80ee02df0ca5241cd5fe5c014ab62dda1837e5fb",
+      "afterLines": 1358,
+      "baselineFixture": "scripts/fixtures/auth-production-port/worker/domains/team.ts"
+    },
+    "worker/index.ts": {
+      "beforeGitBlob": "b971fd1aaf2186badd2b2ba34a3dd47136fcfff0",
+      "beforeLines": 1641,
+      "afterGitBlob": "21e1d7aae5879c4050514031766cc21ea4726fce",
+      "afterLines": 1620,
+      "baselineFixture": "scripts/fixtures/auth-production-port/worker/index.ts"
+    }
+  }
+}
