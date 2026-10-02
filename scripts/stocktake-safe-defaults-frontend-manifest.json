@@ -2,26 +2,6 @@
   "version": 1,
   "revision": "stocktake-safe-defaults-r1",
   "files": {
-    "src/features/sections/InventorySection.tsx": {
-      "beforeGitBlob": "d1e24283243a472c8ac71f5e9e265ca584f62c61",
-      "beforeLines": 2622,
-      "afterGitBlob": "88bfb869f8d0a14c5cbf9fcca7858ad3b3fd5a69",
-      "afterLines": 2623,
-      "replacements": [
-        {
-          "beforeBlock": "\n  const stocktakeReadyForReview = stocktakeProgress.unfilled === 0 && stocktakeProgress.recount === 0\n  const stocktakeUnsavedCount = useMemo(() => (stocktakeSession?.items || []).filter((item: any) => {",
-          "afterBlock": "\n  const stocktakeReadyForReview = stocktakeProgress.recount === 0 && stocktakeProgress.filled > 0\n  const stocktakeUnsavedCount = useMemo(() => (stocktakeSession?.items || []).filter((item: any) => {"
-        },
-        {
-          "beforeBlock": "      const unfilled = (latest.items || []).filter((item: any) => item.countedQuantity === null || item.countedQuantity === undefined).length\n      const recount = (latest.items || []).filter((item: any) => item.status === 'recount_required').length\n      if (unfilled > 0) {\n        setStocktakeNotice(`Сначала пересчитайте ещё ${unfilled} позиций. Если товара нет — укажите 0.`)\n        return\n      }\n      if (recount > 0) {",
-          "afterBlock": "      const unfilled = (latest.items || []).filter((item: any) => item.countedQuantity === null || item.countedQuantity === undefined).length\n      const counted = (latest.items || []).length - unfilled\n      const recount = (latest.items || []).filter((item: any) => item.status === 'recount_required').length\n      if (recount > 0) {"
-        },
-        {
-          "beforeBlock": "      }\n      setStocktakeNotice('')\n      setStocktakeReviewMode(true)",
-          "afterBlock": "      }\n      if (counted <= 0) {\n        setStocktakeNotice('Введите фактическое количество хотя бы для одной позиции. Остальные можно оставить пустыми — при завершении они сохранят текущий системный остаток.')\n        return\n      }\n      setStocktakeNotice(unfilled > 0 ? `Пустых позиций: ${unfilled}. При завершении их текущий системный остаток будет сохранён без изменений.` : '')\n      setStocktakeReviewMode(true)"
-        }
-      ]
-    },
     "src/features/inventory/views/renderInventoryStocktakePanel.tsx": {
       "beforeGitBlob": "b6359a897776b8a394996328708ce9aa0cc614fe",
       "beforeLines": 639,
