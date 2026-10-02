@@ -94,6 +94,7 @@ function verifySource() {
     'scripts/test-auth-production-password-manager.mjs',
     'scripts/test-auth-r7-login-reliability.mjs',
     'scripts/test-auth-r8-system-admins.mjs',
+    'scripts/test-auth-r8b-system-admin-management.mjs',
     'scripts/step192a1-warehouse-truth-freshness-manifest.json',
     'scripts/test-step192a1-warehouse-truth-freshness.mjs',
     'scripts/step192a2-catalog-truth-finalizer-manifest.json',
@@ -291,6 +292,7 @@ try {
   run('Auth Production password-manager tests', process.execPath, [path.join(root, 'scripts/test-auth-production-password-manager.mjs')])
   run('Auth R7 login reliability tests', process.execPath, [path.join(root, 'scripts/test-auth-r7-login-reliability.mjs')])
   run('Auth R8 system-admin UX tests', process.execPath, [path.join(root, 'scripts/test-auth-r8-system-admins.mjs')])
+  run('Auth R8B system-admin management tests', process.execPath, [path.join(root, 'scripts/test-auth-r8b-system-admin-management.mjs')])
   run('Step 192A1 Warehouse truth / freshness tests', process.execPath, [path.join(root, 'scripts/test-step192a1-warehouse-truth-freshness.mjs')])
   run('Step 192A2 catalog truth finalizer tests', process.execPath, [path.join(root, 'scripts/test-step192a2-catalog-truth-finalizer.mjs')])
   run('Step 192B1 Warehouse truth gates / attention tests', process.execPath, [path.join(root, 'scripts/test-step192b1-warehouse-truth-attention.mjs')])
