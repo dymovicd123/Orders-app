@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "revision": "stage03-h9c-itemized-multi-exchange-frontend",
+  "files": {
+    "src/features/sections/OrderExchangeSection.tsx": {
+      "beforeGitBlob": "d98b9a14f5f45d5393d1d51d8c0bcae39ec087ca",
+      "beforeLines": 759,
+      "baselineFixture": "scripts/fixtures/stage03-h9c-itemized-multi-exchange-ui/OrderExchangeSection.tsx",
+      "afterGitBlob": "ee1fa083c38078dec9cc31612ba8665a2424003b",
+      "afterLines": 810
+    }
+  }
+}
