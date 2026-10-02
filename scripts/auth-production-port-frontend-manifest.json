@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "revision": "auth-production-port-r2-r6-frontend",
+  "baseMainCommit": "dde6b7298b427381f848fca8cf77853e86eea47b",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "d0fb089cdfd0a7bb50db7e7c19180a7005f52ad9",
+      "beforeLines": 7927,
+      "afterGitBlob": "4753066e1e0fd2250cdb9b95baf6cb3c9fd484ca",
+      "afterLines": 7971,
+      "baselineFixture": "scripts/fixtures/auth-production-port/src/App.tsx"
+    },
+    "src/app/constants.ts": {
+      "beforeGitBlob": "6a51f788ab93522c646afa75ea779d76d42252dc",
+      "beforeLines": 266,
+      "afterGitBlob": "952ce7a5b6e630f4d657bc4a957ce72f0ce9fac2",
+      "afterLines": 242,
+      "baselineFixture": "scripts/fixtures/auth-production-port/src/app/constants.ts"
+    },
+    "src/app/controllers/useApiClient.ts": {
+      "beforeGitBlob": "28074b639dbee0089b1c657c4f3426e8f8f5eb82",
+      "beforeLines": 246,
+      "afterGitBlob": "1696e2fa5e8db37b0780ecce62ad81e77be7a54b",
+      "afterLines": 246,
+      "baselineFixture": "scripts/fixtures/auth-production-port/src/app/controllers/useApiClient.ts"
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "14741ad9b64156f519a2bbd9c458c6b0585a0d24",
+      "beforeLines": 1766,
+      "afterGitBlob": "d487433ea1e1ee4257d571cf9a507a9b5525a0cb",
+      "afterLines": 1766,
+      "baselineFixture": "scripts/fixtures/auth-production-port/src/app/types.ts"
+    },
+    "src/features/orders/OrderCatalogResolutionModal.tsx": {
+      "beforeGitBlob": "178085838663420ad60f88e62cabe954d93d24d3",
+      "beforeLines": 424,
+      "afterGitBlob": "b955d232ad7d0e91a3375905fa56b81601a19925",
+      "afterLines": 423,
+      "baselineFixture": "scripts/fixtures/auth-production-port/src/features/orders/OrderCatalogResolutionModal.tsx"
+    },
+    "src/features/orders/ReturnedItemResolutionModal.tsx": {
+      "beforeGitBlob": "909aedc887504f0727daeedd1a781d7aba44d54c",
+      "beforeLines": 258,
+      "afterGitBlob": "e540cd800ece5e0edcad64832a001548cdda3b59",
+      "afterLines": 257,
+      "baselineFixture": "scripts/fixtures/auth-production-port/src/features/orders/ReturnedItemResolutionModal.tsx"
+    },
+    "src/features/sections/TeamSection.tsx": {
+      "beforeGitBlob": "6ac224d7e4e558688daa5eea2bf5a42f985f3bc3",
+      "beforeLines": 445,
+      "afterGitBlob": "069dbea7054e07f68323889de825f1f5564d8c67",
+      "afterLines": 814,
+      "baselineFixture": "scripts/fixtures/auth-production-port/src/features/sections/TeamSection.tsx"
+    },
+    "src/styles/10-workshop-reports-team.css": {
+      "beforeGitBlob": "089c2be22beb3dbb46d2bcc8afc3a3f91be77b13",
+      "beforeLines": 555,
+      "afterGitBlob": "44b518d8d2c5ae91dc5627f9cba7406ce3146a05",
+      "afterLines": 933,
+      "baselineFixture": "scripts/fixtures/auth-production-port/src/styles/10-workshop-reports-team.css"
+    }
+  }
+}
