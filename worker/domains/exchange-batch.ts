@@ -1,3 +1,4 @@
+import { readJson } from '../core/http.ts'
 import { cleanText, isArchivedOrder, normalizeDate, normalizeExchangeFinancialAction, normalizeOrderStatus, normalizeSourceType, toInt } from '../core/text.ts'
 import type { OrderInput, OrderItemSourceType, SourceType } from '../core/types.ts'
 import type { CriticalOperationHandle } from './critical.ts'
@@ -9,7 +10,7 @@ import { resolveCatalogProductAndVariantV2 } from './order-reservations.ts'
 import { getOrder } from './orders-write.ts'
 import { createExchange, noStandaloneReturnSql } from './returns-exchanges.ts'
 
-type ItemizedExchangeBatchPairInput = {
+export type ItemizedExchangeBatchPairInput = {
   oldItemId?: number;
   oldQuantity?: number;
   oldReturnSource?: unknown;
@@ -42,19 +43,21 @@ type ItemizedExchangeBatchExecutionPair = {
   stockKey: string | null;
 };
 
+export type ItemizedExchangeBatchInput = {
+  requestId?: string;
+  orderId?: number;
+  exchangeDate?: string;
+  expectedOrderTotal?: number;
+  pairs?: ItemizedExchangeBatchPairInput[];
+  financialAction?: unknown;
+  financialAmount?: number;
+  paymentMethod?: string;
+  comment?: string;
+};
+
 export async function createItemizedExchangeBatch(
   db: D1Database,
-  input: {
-    requestId?: string;
-    orderId?: number;
-    exchangeDate?: string;
-    expectedOrderTotal?: number;
-    pairs?: ItemizedExchangeBatchPairInput[];
-    financialAction?: unknown;
-    financialAmount?: number;
-    paymentMethod?: string;
-    comment?: string;
-  },
+  input: ItemizedExchangeBatchInput,
 ) {
   let criticalOperation: CriticalOperationHandle | null = null;
   try {
@@ -504,3 +507,10 @@ export async function createItemizedExchangeBatch(
   }
 }
 
+
+
+export async function createItemizedExchangeBatchFromRequest(db: D1Database, request: Request) {
+  const input = await readJson<ItemizedExchangeBatchInput>(request);
+  input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
+  return await createItemizedExchangeBatch(db, input);
+}
