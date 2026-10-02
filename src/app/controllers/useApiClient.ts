@@ -139,8 +139,8 @@ export function useApiClient({ accessRole, setError, setMessage }: ApiClientArgs
 
   const fetchWithRetry = useCallback(async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const headers = new Headers(init.headers || undefined)
-    headers.set('X-Access-Role', accessRole)
-    if (accessRole === 'admin') headers.set('X-Archive-Actor', 'admin')
+    // Auth R2: role and actor identity come only from the HttpOnly server session.
+    // Never let the browser assert administrative access through request headers.
 
     const method = String(init.method || (input instanceof Request ? input.method : 'GET')).toUpperCase()
     const safeRead = method === 'GET' || method === 'HEAD'
