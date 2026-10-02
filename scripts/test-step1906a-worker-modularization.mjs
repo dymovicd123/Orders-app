@@ -4,6 +4,49 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const branch2SessionHotpathWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/session-hotpath-branch2-worker-manifest.json'), 'utf8'))
+if (branch2SessionHotpathWorkerManifest?.version !== 1 || branch2SessionHotpathWorkerManifest?.revision !== 'branch2-session-hotpath-hotfix-r1') throw new Error('Branch2 session hotpath Worker manifest invalid')
+const branch2SessionHotpathWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.BRANCH2_SESSION_HOTPATH_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(branch2SessionHotpathWorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (branch2SessionHotpathWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Branch2 session hotpath Worker changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Branch2 session hotpath Worker after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (branch2SessionHotpathWorkerBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Branch2 session hotpath Worker predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, BRANCH2_SESSION_HOTPATH_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('BRANCH2 SESSION HOTPATH WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const authR5WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-r5-worker-structural-manifest.json'), 'utf8'))
 if (authR5WorkerManifest?.version !== 1 || authR5WorkerManifest?.revision !== 'auth-r5-security-hardening-worker') throw new Error('Auth R5 Worker structural manifest invalid')
 const authR5WorkerBlobSha = (value) => {
