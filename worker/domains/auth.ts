@@ -59,9 +59,13 @@ export async function sha256Base64Url(value: string) {
 }
 
 
-export const PASSWORD_HASH_ITERATIONS = 12000;
+export const PASSWORD_HASH_ITERATIONS = 30000;
 
 export const MAX_EDGE_PASSWORD_VERIFY_ITERATIONS = 30000;
+export const AUTH_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14;
+export const AUTH_LOGIN_FAILURE_LIMIT = 5;
+export const AUTH_LOGIN_WINDOW_MS = 15 * 60 * 1000;
+export const AUTH_LOGIN_BLOCK_MS = 15 * 60 * 1000;
 
 
 export async function hashPassword(password: string) {
@@ -74,11 +78,22 @@ export async function hashPassword(password: string) {
 }
 
 
-export function passwordHashNeedsEdgeReset(storedHash: string) {
+export function passwordHashIterations(storedHash: string) {
   const parts = cleanText(storedHash).split('$');
-  if (parts.length !== 4 || parts[0] !== 'pbkdf2') return false;
-  const iterations = toInt(parts[1], 0);
+  if (parts.length !== 4 || parts[0] !== 'pbkdf2') return 0;
+  return toInt(parts[1], 0);
+}
+
+
+export function passwordHashNeedsEdgeReset(storedHash: string) {
+  const iterations = passwordHashIterations(storedHash);
   return iterations > MAX_EDGE_PASSWORD_VERIFY_ITERATIONS;
+}
+
+
+export function passwordHashNeedsUpgrade(storedHash: string) {
+  const iterations = passwordHashIterations(storedHash);
+  return iterations > 0 && iterations < PASSWORD_HASH_ITERATIONS;
 }
 
 
@@ -168,6 +183,7 @@ export async function makeSimpleAccessUser(request: Request, env: Env): Promise<
   const isAdminMode = await hasSimpleAdminMode(request, env);
   return {
     id: 0,
+    login: isAdminMode ? 'admin' : 'manager',
     email: isAdminMode ? 'admin' : 'manager',
     role: isAdminMode ? 'admin' : 'manager',
     managerId: null,
@@ -219,6 +235,7 @@ export async function handleSimpleAdminLogin(db: D1Database, env: Env, request: 
   const signature = base64Url(new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload))));
   const response = json({ ok: true, isAdmin: true, role: 'admin', user: authUserPayload({
     id: 0,
+    login: 'admin',
     email: 'admin',
     role: 'admin',
     managerId: null,
@@ -268,11 +285,29 @@ export async function ensureTableColumn(db: D1Database, table: string, column: s
 }
 
 
+export function normalizeAuthLogin(value: unknown) {
+  return cleanText(value).toLowerCase();
+}
+
+
+export function authLoginError(login: string) {
+  if (login.length < 3 || login.length > 32) return 'Логин должен содержать от 3 до 32 символов.';
+  if (!/^[a-z0-9][a-z0-9._-]*$/.test(login)) return 'Логин может содержать только латинские буквы, цифры, точку, дефис и подчёркивание.';
+  return '';
+}
+
+
+export function compatibilityEmailForLogin(login: string) {
+  return `${login}@orders.invalid`;
+}
+
+
 export async function ensureAuthSchema(db: D1Database) {
   await db.batch([
     db.prepare(`CREATE TABLE IF NOT EXISTS app_users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT NOT NULL UNIQUE,
+      login TEXT,
       password_hash TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'manager' CHECK (role IN ('admin', 'manager')),
       manager_id INTEGER REFERENCES managers(id) ON DELETE SET NULL,
@@ -300,29 +335,40 @@ export async function ensureAuthSchema(db: D1Database) {
   await ensureTableColumn(db, 'app_users', 'must_change_password', 'must_change_password INTEGER NOT NULL DEFAULT 0');
   await ensureTableColumn(db, 'app_users', 'password_updated_at', 'password_updated_at TEXT');
   await ensureTableColumn(db, 'app_users', 'disabled_at', 'disabled_at TEXT');
+  await ensureTableColumn(db, 'app_users', 'login', 'login TEXT');
+  await db.batch([
+    db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_app_users_login_nocase ON app_users(lower(login)) WHERE login IS NOT NULL'),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_app_users_manager_id ON app_users(manager_id)'),
+  ]);
 }
 
 
 export async function countAuthUsers(db: D1Database) {
-  const row = await db.prepare('SELECT COUNT(*) AS count FROM app_users').first<{ count: number }>();
+  const row = await db.prepare("SELECT COUNT(*) AS count FROM app_users WHERE login IS NOT NULL AND trim(login) <> ''").first<{ count: number }>();
   return toInt(row?.count, 0);
 }
 
 
 export function publicAuthPath(pathname: string) {
-  return pathname === '/api/admin-mode/status'
-    || pathname === '/api/admin-mode/login'
-    || pathname === '/api/admin-mode/logout'
-    || pathname === '/api/auth/status'
+  return pathname === '/api/auth/status'
+    || pathname === '/api/auth/setup'
+    || pathname === '/api/auth/login'
     || pathname === '/api/auth/logout'
     || pathname === '/api/health';
+}
+
+
+export function passwordChangeOnlyPath(pathname: string) {
+  return pathname === '/api/auth/me'
+    || pathname === '/api/auth/change-password'
+    || pathname === '/api/auth/logout';
 }
 
 
 export function authUserPayload(user: AuthUser) {
   return {
     id: user.id,
-    email: user.email,
+    login: user.login,
     role: user.role,
     managerId: user.managerId,
     managerName: user.managerName,
@@ -332,10 +378,8 @@ export function authUserPayload(user: AuthUser) {
 }
 
 
-
-
 export async function countActiveAdmins(db: D1Database) {
-  const row = await db.prepare("SELECT COUNT(*) AS count FROM app_users WHERE role = 'admin' AND is_active = 1").first<{ count: number }>();
+  const row = await db.prepare("SELECT COUNT(*) AS count FROM app_users WHERE role = 'admin' AND is_active = 1 AND login IS NOT NULL AND trim(login) <> ''").first<{ count: number }>();
   return toInt(row?.count, 0);
 }
 
@@ -359,6 +403,22 @@ export async function ensureManagerExists(db: D1Database, managerId: number | nu
 }
 
 
+export async function ensureManagerAccountAvailable(db: D1Database, managerId: number | null, exceptUserId = 0) {
+  if (!managerId) return null;
+  const existing = await db.prepare(
+    'SELECT id, login FROM app_users WHERE manager_id = ? AND id <> ? LIMIT 1'
+  ).bind(managerId, exceptUserId).first<{ id: number; login: string | null }>();
+  if (!existing?.id) return null;
+  const login = normalizeAuthLogin(existing.login);
+  return json({
+    ok: false,
+    message: login
+      ? `У этого сотрудника уже есть аккаунт @${login}.`
+      : 'У этого сотрудника уже есть аккаунт.',
+  }, { status: 409 });
+}
+
+
 export function permissionDenied(message = 'Недостаточно прав для действия.') {
   return json({ ok: false, message }, { status: 403 });
 }
@@ -370,28 +430,121 @@ export function requireAdminUser(user: AuthUser | null, message = 'Действ�
 }
 
 
+export async function authLoginThrottleKey(request: Request, login: string) {
+  const clientIp = cleanText(request.headers.get('CF-Connecting-IP')) || 'unknown';
+  return sha256Base64Url(`${normalizeAuthLogin(login)}|${clientIp}`);
+}
+
+
+export async function getAuthLoginThrottleStatus(db: D1Database, request: Request, login: string) {
+  const keyHash = await authLoginThrottleKey(request, login);
+  try {
+    const row = await db.prepare(
+      'SELECT failure_count, window_started_at_ms, blocked_until_ms FROM auth_login_throttle WHERE key_hash = ?'
+    ).bind(keyHash).first<any>();
+    const now = Date.now();
+    const blockedUntil = toInt(row?.blocked_until_ms, 0);
+    return {
+      keyHash,
+      blocked: blockedUntil > now,
+      retryAfterSeconds: blockedUntil > now ? Math.max(1, Math.ceil((blockedUntil - now) / 1000)) : 0,
+    };
+  } catch {
+    return { keyHash, blocked: false, retryAfterSeconds: 0 };
+  }
+}
+
+
+export async function recordAuthLoginFailure(db: D1Database, keyHash: string) {
+  const now = Date.now();
+  try {
+    const row = await db.prepare(
+      'SELECT failure_count, window_started_at_ms FROM auth_login_throttle WHERE key_hash = ?'
+    ).bind(keyHash).first<any>();
+    const withinWindow = row && now - toInt(row.window_started_at_ms, 0) <= AUTH_LOGIN_WINDOW_MS;
+    const failureCount = withinWindow ? toInt(row.failure_count, 0) + 1 : 1;
+    const windowStartedAt = withinWindow ? toInt(row.window_started_at_ms, now) : now;
+    const blockedUntil = failureCount >= AUTH_LOGIN_FAILURE_LIMIT ? now + AUTH_LOGIN_BLOCK_MS : 0;
+    await db.prepare(
+      `INSERT INTO auth_login_throttle (key_hash, failure_count, window_started_at_ms, blocked_until_ms, updated_at_ms)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(key_hash) DO UPDATE SET
+         failure_count = excluded.failure_count,
+         window_started_at_ms = excluded.window_started_at_ms,
+         blocked_until_ms = excluded.blocked_until_ms,
+         updated_at_ms = excluded.updated_at_ms`
+    ).bind(keyHash, failureCount, windowStartedAt, blockedUntil, now).run();
+  } catch {
+    // Fail open only during the short schema/deploy overlap.
+  }
+}
+
+
+export async function clearAuthLoginFailures(db: D1Database, keyHash: string) {
+  try {
+    await db.prepare('DELETE FROM auth_login_throttle WHERE key_hash = ?').bind(keyHash).run();
+  } catch {
+    // Best-effort cleanup during rollout.
+  }
+}
+
+
+export async function writeAuthAuditLog(db: D1Database, input: {
+  eventType: string;
+  actorUserId?: number | null;
+  targetUserId?: number | null;
+  actorLogin?: string | null;
+  targetLogin?: string | null;
+  details?: string | null;
+}) {
+  try {
+    await db.prepare(
+      `INSERT INTO auth_audit_log (
+        event_type, actor_user_id, target_user_id, actor_login, target_login, details, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      cleanText(input.eventType) || 'unknown',
+      input.actorUserId ?? null,
+      input.targetUserId ?? null,
+      input.actorLogin ? normalizeAuthLogin(input.actorLogin) : null,
+      input.targetLogin ? normalizeAuthLogin(input.targetLogin) : null,
+      input.details ? cleanText(input.details) : null,
+      new Date().toISOString(),
+    ).run();
+  } catch {
+    // Audit must not break account management during the short schema/deploy overlap.
+  }
+}
+
+
 export async function getCurrentAuthUser(db: D1Database, request: Request): Promise<AuthUser | null> {
   const token = readCookie(request, 'orders_session');
   if (!token) return null;
   const tokenHash = await sha256Base64Url(token);
   const now = new Date().toISOString();
   const row = await db.prepare(`
-    SELECT u.id, u.email, u.role, u.manager_id, u.display_name, u.is_active, COALESCE(u.must_change_password, 0) AS must_change_password, m.name AS manager_name
+    SELECT u.id, u.login, u.email, u.role, u.manager_id, u.display_name, u.is_active,
+      COALESCE(u.must_change_password, 0) AS must_change_password, m.name AS manager_name
     FROM app_sessions s
     JOIN app_users u ON u.id = s.user_id
     LEFT JOIN managers m ON m.id = u.manager_id
-    WHERE s.token_hash = ? AND s.expires_at > ? AND u.is_active = 1
+    WHERE s.token_hash = ?
+      AND s.expires_at > ?
+      AND u.is_active = 1
+      AND u.login IS NOT NULL
+      AND trim(u.login) <> ''
     LIMIT 1
   `).bind(tokenHash, now).first<any>();
   if (!row) return null;
-  await db.prepare('UPDATE app_sessions SET last_seen_at = ? WHERE token_hash = ?').bind(now, tokenHash).run();
+  const login = normalizeAuthLogin(row.login);
   return {
     id: toInt(row.id, 0),
+    login,
     email: cleanText(row.email),
     role: normalizeAuthRole(row.role),
     managerId: row.manager_id === null || row.manager_id === undefined ? null : toInt(row.manager_id, 0),
     managerName: cleanText(row.manager_name) || null,
-    displayName: cleanText(row.display_name) || cleanText(row.manager_name) || cleanText(row.email),
+    displayName: cleanText(row.display_name) || cleanText(row.manager_name) || login,
     mustChangePassword: Boolean(toInt(row.must_change_password, 0)),
   };
 }
@@ -401,7 +554,7 @@ export async function createSession(db: D1Database, userId: number) {
   const token = randomToken();
   const tokenHash = await sha256Base64Url(token);
   const now = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString();
+  const expiresAt = new Date(Date.now() + AUTH_SESSION_MAX_AGE_SECONDS * 1000).toISOString();
   await db.prepare('DELETE FROM app_sessions WHERE expires_at <= ?').bind(now).run();
   await db.prepare('INSERT INTO app_sessions (user_id, token_hash, expires_at, last_seen_at) VALUES (?, ?, ?, ?)')
     .bind(userId, tokenHash, expiresAt, now).run();
@@ -411,65 +564,126 @@ export async function createSession(db: D1Database, userId: number) {
 
 export async function handleAuthStatus(db: D1Database, request: Request) {
   const [userCount, user] = await Promise.all([countAuthUsers(db), getCurrentAuthUser(db, request)]);
-  return json({ ok: true, hasUsers: userCount > 0, user: user ? authUserPayload(user) : null });
+  return json({ ok: true, hasUsers: userCount > 0, authDisabled: false, user: user ? authUserPayload(user) : null });
 }
 
 
-export async function handleAuthSetup(db: D1Database, request: Request) {
+export async function handleAuthSetup(db: D1Database, env: Env, request: Request) {
   const userCount = await countAuthUsers(db);
   if (userCount > 0) return json({ ok: false, message: 'Первый администратор уже создан.' }, { status: 409 });
-  const input = await readJson<{ email?: unknown; password?: unknown; displayName?: unknown }>(request);
-  const email = cleanText(input.email).toLowerCase();
+  const input = await readJson<{
+    login?: unknown;
+    password?: unknown;
+    displayName?: unknown;
+    bootstrapLogin?: unknown;
+    bootstrapPassword?: unknown;
+  }>(request);
+  const login = normalizeAuthLogin(input.login);
   const password = cleanText(input.password);
   const displayName = cleanText(input.displayName) || 'Администратор';
-  if (!email.includes('@')) return json({ ok: false, message: 'Укажите почту администратора.' }, { status: 400 });
+  const bootstrapLogin = normalizeAuthLogin(input.bootstrapLogin);
+  const bootstrapPassword = cleanText(input.bootstrapPassword);
+  const loginError = authLoginError(login);
+  if (loginError) return json({ ok: false, message: loginError }, { status: 400 });
   if (password.length < 8) return json({ ok: false, message: 'Пароль должен быть не короче 8 символов.' }, { status: 400 });
+  if (bootstrapLogin !== getAdminModeLogin(env) || !(await verifySimpleAdminPassword(db, env, bootstrapPassword))) {
+    return json({ ok: false, message: 'Неверный логин или пароль текущего администратора.' }, { status: 401 });
+  }
   const passwordHash = await hashPassword(password);
   const now = new Date().toISOString();
-  const result = await db.prepare('INSERT INTO app_users (email, password_hash, role, display_name, is_active, must_change_password, password_updated_at) VALUES (?, ?, ?, ?, 1, 0, ?)')
-    .bind(email, passwordHash, 'admin', displayName, now).run();
-  const userId = toInt((result.meta as any)?.last_row_id, 0);
-  const token = await createSession(db, userId);
-  const response = json({ ok: true, user: { id: userId, email, role: 'admin', managerId: null, managerName: null, displayName, mustChangePassword: false } }, { status: 201 });
-  response.headers.append('Set-Cookie', makeSessionCookie(request, token, 60 * 60 * 24 * 14));
-  return response;
+  try {
+    const result = await db.prepare('INSERT INTO app_users (email, login, password_hash, role, display_name, is_active, must_change_password, password_updated_at) VALUES (?, ?, ?, ?, ?, 1, 0, ?)')
+      .bind(compatibilityEmailForLogin(login), login, passwordHash, 'admin', displayName, now).run();
+    const userId = toInt((result.meta as any)?.last_row_id, 0);
+    const token = await createSession(db, userId);
+    await writeAuthAuditLog(db, {
+      eventType: 'auth_first_admin_created',
+      actorUserId: userId,
+      targetUserId: userId,
+      actorLogin: login,
+      targetLogin: login,
+      details: 'Первый персональный администратор создан через защищённый bootstrap.',
+    });
+    const user: AuthUser = {
+      id: userId,
+      login,
+      email: compatibilityEmailForLogin(login),
+      role: 'admin',
+      managerId: null,
+      managerName: null,
+      displayName,
+      mustChangePassword: false,
+    };
+    const response = json({ ok: true, user: authUserPayload(user) }, { status: 201 });
+    response.headers.append('Set-Cookie', makeSessionCookie(request, token, AUTH_SESSION_MAX_AGE_SECONDS));
+    return response;
+  } catch {
+    return json({ ok: false, message: 'Аккаунт с таким логином уже существует.' }, { status: 409 });
+  }
 }
 
 
 export async function handleAuthLogin(db: D1Database, request: Request) {
-  const input = await readJson<{ email?: unknown; password?: unknown }>(request);
-  const email = cleanText(input.email).toLowerCase();
+  const input = await readJson<{ login?: unknown; password?: unknown }>(request);
+  const login = normalizeAuthLogin(input.login);
   const password = cleanText(input.password);
+  const throttle = await getAuthLoginThrottleStatus(db, request, login);
+  if (throttle.blocked) {
+    const response = json({ ok: false, message: 'Слишком много неудачных попыток. Попробуйте позже.', code: 'AUTH_RATE_LIMITED' }, { status: 429 });
+    response.headers.set('Retry-After', String(throttle.retryAfterSeconds));
+    return response;
+  }
+
   const row = await db.prepare(`
-    SELECT u.id, u.email, u.password_hash, u.role, u.manager_id, u.display_name, u.is_active, COALESCE(u.must_change_password, 0) AS must_change_password, m.name AS manager_name
+    SELECT u.id, u.login, u.email, u.password_hash, u.role, u.manager_id, u.display_name, u.is_active,
+      COALESCE(u.must_change_password, 0) AS must_change_password, m.name AS manager_name
     FROM app_users u
     LEFT JOIN managers m ON m.id = u.manager_id
-    WHERE lower(u.email) = lower(?)
+    WHERE lower(u.login) = lower(?)
     LIMIT 1
-  `).bind(email).first<any>();
+  `).bind(login).first<any>();
   if (!row || !toInt(row.is_active, 0)) {
-    return json({ ok: false, message: 'Неверная почта или пароль.' }, { status: 401 });
+    await recordAuthLoginFailure(db, throttle.keyHash);
+    return json({ ok: false, message: 'Неверный логин или пароль.' }, { status: 401 });
   }
   if (passwordHashNeedsEdgeReset(cleanText(row.password_hash))) {
-    return json({ ok: false, message: 'Этот пароль был создан локально со слишком тяжёлым хэшем. Сбросьте пароль администратора через scripts\reset-prod-admin-password.cmd и войдите заново.', code: 'PASSWORD_HASH_NEEDS_RESET' }, { status: 409 });
+    return json({ ok: false, message: 'Пароль этого аккаунта требует сброса администратором.', code: 'PASSWORD_HASH_NEEDS_RESET' }, { status: 409 });
   }
   if (!(await verifyPassword(password, cleanText(row.password_hash)))) {
-    return json({ ok: false, message: 'Неверная почта или пароль.' }, { status: 401 });
+    await recordAuthLoginFailure(db, throttle.keyHash);
+    return json({ ok: false, message: 'Неверный логин или пароль.' }, { status: 401 });
   }
+
+  await clearAuthLoginFailures(db, throttle.keyHash);
   const now = new Date().toISOString();
-  await db.prepare('UPDATE app_users SET last_login_at = ? WHERE id = ?').bind(now, toInt(row.id, 0)).run();
-  const token = await createSession(db, toInt(row.id, 0));
+  const userId = toInt(row.id, 0);
+  if (passwordHashNeedsUpgrade(cleanText(row.password_hash))) {
+    await db.prepare('UPDATE app_users SET password_hash = ?, updated_at = ? WHERE id = ?')
+      .bind(await hashPassword(password), now, userId).run();
+  }
+  await db.prepare('UPDATE app_users SET last_login_at = ? WHERE id = ?').bind(now, userId).run();
+  const token = await createSession(db, userId);
+  const normalizedLogin = normalizeAuthLogin(row.login);
   const user: AuthUser = {
-    id: toInt(row.id, 0),
+    id: userId,
+    login: normalizedLogin,
     email: cleanText(row.email),
     role: normalizeAuthRole(row.role),
     managerId: row.manager_id === null || row.manager_id === undefined ? null : toInt(row.manager_id, 0),
     managerName: cleanText(row.manager_name) || null,
-    displayName: cleanText(row.display_name) || cleanText(row.manager_name) || cleanText(row.email),
+    displayName: cleanText(row.display_name) || cleanText(row.manager_name) || normalizedLogin,
     mustChangePassword: Boolean(toInt(row.must_change_password, 0)),
   };
+  await writeAuthAuditLog(db, {
+    eventType: 'auth_login_success',
+    actorUserId: userId,
+    targetUserId: userId,
+    actorLogin: normalizedLogin,
+    targetLogin: normalizedLogin,
+    details: `role=${user.role}; managerId=${user.managerId ?? 'none'}`,
+  });
   const response = json({ ok: true, user: authUserPayload(user) });
-  response.headers.append('Set-Cookie', makeSessionCookie(request, token, 60 * 60 * 24 * 14));
+  response.headers.append('Set-Cookie', makeSessionCookie(request, token, AUTH_SESSION_MAX_AGE_SECONDS));
   return response;
 }
 
@@ -488,16 +702,18 @@ export async function handleAuthLogout(db: D1Database, request: Request) {
 
 export async function listAuthUsers(db: D1Database) {
   const rows = await db.prepare(`
-    SELECT u.id, u.email, u.role, u.manager_id, u.display_name, u.is_active, COALESCE(u.must_change_password, 0) AS must_change_password, u.created_at, u.last_login_at, m.name AS manager_name
+    SELECT u.id, u.login, u.role, u.manager_id, u.display_name, u.is_active,
+      COALESCE(u.must_change_password, 0) AS must_change_password, u.created_at, u.last_login_at, m.name AS manager_name
     FROM app_users u
     LEFT JOIN managers m ON m.id = u.manager_id
-    ORDER BY u.role = 'admin' DESC, lower(u.email)
+    WHERE u.login IS NOT NULL AND trim(u.login) <> ''
+    ORDER BY u.role = 'admin' DESC, lower(u.login)
   `).all<any>();
   return {
     ok: true,
     items: (rows.results || []).map((row) => ({
       id: toInt(row.id, 0),
-      email: cleanText(row.email),
+      login: normalizeAuthLogin(row.login),
       role: normalizeAuthRole(row.role),
       managerId: row.manager_id === null || row.manager_id === undefined ? null : toInt(row.manager_id, 0),
       managerName: cleanText(row.manager_name),
@@ -511,85 +727,123 @@ export async function listAuthUsers(db: D1Database) {
 }
 
 
-export async function createAuthUser(db: D1Database, request: Request) {
-  const input = await readJson<{ email?: unknown; password?: unknown; role?: unknown; managerId?: unknown; displayName?: unknown; isActive?: unknown }>(request);
-  const email = cleanText(input.email).toLowerCase();
+export async function createAuthUser(db: D1Database, request: Request, currentUser: AuthUser) {
+  const input = await readJson<{ login?: unknown; password?: unknown; role?: unknown; managerId?: unknown; displayName?: unknown; isActive?: unknown }>(request);
+  const login = normalizeAuthLogin(input.login);
   const password = cleanText(input.password);
   const role = normalizeAuthRole(input.role || 'manager');
   const managerId = toInt(input.managerId, 0) || null;
-  const managerError = await ensureManagerExists(db, managerId);
-  if (managerError) return managerError;
   const displayName = cleanText(input.displayName);
   const isActive = input.isActive === false ? 0 : 1;
-  if (!email.includes('@')) return json({ ok: false, message: 'Укажите почту пользователя.' }, { status: 400 });
+  const loginError = authLoginError(login);
+  if (loginError) return json({ ok: false, message: loginError }, { status: 400 });
   if (password.length < 8) return json({ ok: false, message: 'Пароль должен быть не короче 8 символов.' }, { status: 400 });
+  if (role === 'manager' && !managerId) return json({ ok: false, message: 'Аккаунт менеджера нужно привязать к сотруднику.' }, { status: 400 });
+  const managerError = await ensureManagerExists(db, managerId);
+  if (managerError) return managerError;
+  const managerAccountError = await ensureManagerAccountAvailable(db, managerId);
+  if (managerAccountError) return managerAccountError;
   const passwordHash = await hashPassword(password);
   try {
     const now = new Date().toISOString();
-    const result = await db.prepare('INSERT INTO app_users (email, password_hash, role, manager_id, display_name, is_active, must_change_password, password_updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)')
-      .bind(email, passwordHash, role, managerId, displayName, isActive, now).run();
-    return json({ ok: true, id: toInt((result.meta as any)?.last_row_id, 0) }, { status: 201 });
-  } catch (error) {
-    return json({ ok: false, message: 'Пользователь с такой почтой уже существует.' }, { status: 409 });
+    const result = await db.prepare('INSERT INTO app_users (email, login, password_hash, role, manager_id, display_name, is_active, must_change_password, password_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)')
+      .bind(compatibilityEmailForLogin(login), login, passwordHash, role, managerId, displayName, isActive, now).run();
+    const userId = toInt((result.meta as any)?.last_row_id, 0);
+    await writeAuthAuditLog(db, {
+      eventType: 'auth_user_created',
+      actorUserId: currentUser.id,
+      targetUserId: userId,
+      actorLogin: currentUser.login,
+      targetLogin: login,
+      details: `role=${role}; managerId=${managerId ?? 'none'}; active=${isActive === 1 ? 'yes' : 'no'}; temporaryPassword=yes`,
+    });
+    return json({ ok: true, id: userId }, { status: 201 });
+  } catch {
+    return json({ ok: false, message: 'Аккаунт с таким логином уже существует.' }, { status: 409 });
   }
 }
 
 
 export async function updateAuthUser(db: D1Database, userId: number, request: Request, currentUser: AuthUser) {
-  const input = await readJson<{ email?: unknown; password?: unknown; role?: unknown; managerId?: unknown; displayName?: unknown; isActive?: unknown; mustChangePassword?: unknown }>(request);
-  const existing = await db.prepare('SELECT id, email, role, is_active FROM app_users WHERE id = ?').bind(userId).first<any>();
+  const input = await readJson<{ login?: unknown; password?: unknown; role?: unknown; managerId?: unknown; displayName?: unknown; isActive?: unknown; mustChangePassword?: unknown }>(request);
+  const existing = await db.prepare('SELECT id, login, role, manager_id, is_active FROM app_users WHERE id = ?').bind(userId).first<any>();
   if (!existing) return json({ ok: false, message: 'Пользователь не найден.' }, { status: 404 });
   const now = new Date().toISOString();
   const patches: string[] = [];
   const values: unknown[] = [];
   const existingRole = normalizeAuthRole(existing.role);
   const existingActive = toInt(existing.is_active, 0) === 1;
+  const existingLogin = normalizeAuthLogin(existing.login);
   const nextRole = input.role !== undefined ? normalizeAuthRole(input.role) : existingRole;
   const nextActive = input.isActive !== undefined ? input.isActive !== false : existingActive;
+  const nextManagerId = input.managerId !== undefined ? (toInt(input.managerId, 0) || null) : (existing.manager_id === null || existing.manager_id === undefined ? null : toInt(existing.manager_id, 0));
+  let loginChanged = false;
+  let roleChanged = false;
+  let passwordReset = false;
+  const changedFields: string[] = [];
   if (existingRole === 'admin' && existingActive && (nextRole !== 'admin' || !nextActive)) {
     const lastAdminDenied = await ensureCanRemoveAdminRights(db, userId);
     if (lastAdminDenied) return lastAdminDenied;
   }
-  if (input.email !== undefined) {
-    const email = cleanText(input.email).toLowerCase();
-    if (!email.includes('@')) return json({ ok: false, message: 'Укажите корректную почту.' }, { status: 400 });
-    patches.push('email = ?');
-    values.push(email);
+  if (nextRole === 'manager' && !nextManagerId) return json({ ok: false, message: 'Аккаунт менеджера нужно привязать к сотруднику.' }, { status: 400 });
+  const managerError = await ensureManagerExists(db, nextManagerId);
+  if (managerError) return managerError;
+  const managerAccountError = await ensureManagerAccountAvailable(db, nextManagerId, userId);
+  if (managerAccountError) return managerAccountError;
+  if (input.login !== undefined) {
+    const login = normalizeAuthLogin(input.login);
+    const loginError = authLoginError(login);
+    if (loginError) return json({ ok: false, message: loginError }, { status: 400 });
+    loginChanged = login !== existingLogin;
+    if (loginChanged) {
+      changedFields.push(`login:${existingLogin}->${login}`);
+      patches.push('login = ?');
+      values.push(login);
+      patches.push('email = ?');
+      values.push(compatibilityEmailForLogin(login));
+    }
   }
   if (input.password !== undefined && cleanText(input.password)) {
+    if (currentUser.id === userId) return json({ ok: false, message: 'Свой пароль меняйте через «Сменить пароль».' }, { status: 400 });
     const password = cleanText(input.password);
     if (password.length < 8) return json({ ok: false, message: 'Пароль должен быть не короче 8 символов.' }, { status: 400 });
+    passwordReset = true;
+    changedFields.push('password:reset');
     patches.push('password_hash = ?');
     values.push(await hashPassword(password));
     patches.push('password_updated_at = ?');
     values.push(now);
-    patches.push('must_change_password = ?');
-    values.push(currentUser.id === userId ? 0 : 1);
+    patches.push('must_change_password = 1');
   }
   if (input.role !== undefined) {
-    patches.push('role = ?');
-    values.push(nextRole);
+    roleChanged = nextRole !== existingRole;
+    if (roleChanged) {
+      changedFields.push(`role:${existingRole}->${nextRole}`);
+      patches.push('role = ?');
+      values.push(nextRole);
+    }
   }
   if (input.managerId !== undefined) {
-    const managerId = toInt(input.managerId, 0) || null;
-    const managerError = await ensureManagerExists(db, managerId);
-    if (managerError) return managerError;
+    if (nextManagerId !== (existing.manager_id === null || existing.manager_id === undefined ? null : toInt(existing.manager_id, 0))) changedFields.push(`managerId:${existing.manager_id ?? 'none'}->${nextManagerId ?? 'none'}`);
     patches.push('manager_id = ?');
-    values.push(managerId);
+    values.push(nextManagerId);
   }
   if (input.displayName !== undefined) {
+    changedFields.push('displayName');
     patches.push('display_name = ?');
     values.push(cleanText(input.displayName));
   }
   if (input.isActive !== undefined) {
-    const nextActive = input.isActive === false ? 0 : 1;
-    if (currentUser.id === userId && nextActive === 0) return json({ ok: false, message: 'Нельзя отключить свой текущий аккаунт.' }, { status: 400 });
+    const nextActiveValue = input.isActive === false ? 0 : 1;
+    if (nextActiveValue !== (existingActive ? 1 : 0)) changedFields.push(`active:${existingActive ? 'yes' : 'no'}->${nextActiveValue ? 'yes' : 'no'}`);
+    if (currentUser.id === userId && nextActiveValue === 0) return json({ ok: false, message: 'Нельзя отключить свой текущий аккаунт.' }, { status: 400 });
     patches.push('is_active = ?');
-    values.push(nextActive);
+    values.push(nextActiveValue);
     patches.push('disabled_at = ?');
-    values.push(nextActive ? null : now);
+    values.push(nextActiveValue ? null : now);
   }
   if (input.mustChangePassword !== undefined && currentUser.id !== userId) {
+    changedFields.push(`mustChangePassword:${input.mustChangePassword === false ? 'no' : 'yes'}`);
     patches.push('must_change_password = ?');
     values.push(input.mustChangePassword === false ? 0 : 1);
   }
@@ -597,9 +851,24 @@ export async function updateAuthUser(db: D1Database, userId: number, request: Re
   patches.push('updated_at = ?');
   values.push(now);
   values.push(userId);
-  await db.prepare(`UPDATE app_users SET ${patches.join(', ')} WHERE id = ?`).bind(...values).run();
-  if (input.password !== undefined || input.isActive === false) {
-    await db.prepare('DELETE FROM app_sessions WHERE user_id = ? AND user_id <> ?').bind(userId, currentUser.id).run();
+  try {
+    await db.prepare(`UPDATE app_users SET ${patches.join(', ')} WHERE id = ?`).bind(...values).run();
+  } catch {
+    return json({ ok: false, message: 'Аккаунт с таким логином уже существует.' }, { status: 409 });
+  }
+  if (passwordReset || input.isActive === false || loginChanged || roleChanged) {
+    await db.prepare('DELETE FROM app_sessions WHERE user_id = ?').bind(userId).run();
+  }
+  if (changedFields.length) {
+    const nextLogin = input.login !== undefined ? normalizeAuthLogin(input.login) : existingLogin;
+    await writeAuthAuditLog(db, {
+      eventType: 'auth_user_updated',
+      actorUserId: currentUser.id,
+      targetUserId: userId,
+      actorLogin: currentUser.login,
+      targetLogin: nextLogin,
+      details: changedFields.join('; '),
+    });
   }
   return json({ ok: true, id: userId });
 }
@@ -618,28 +887,48 @@ export async function handleAuthChangePassword(db: D1Database, request: Request,
   const now = new Date().toISOString();
   await db.prepare('UPDATE app_users SET password_hash = ?, must_change_password = 0, password_updated_at = ?, updated_at = ? WHERE id = ?')
     .bind(await hashPassword(newPassword), now, now, currentUser.id).run();
+  const currentTokenHash = await sha256Base64Url(readCookie(request, 'orders_session'));
   await db.prepare('DELETE FROM app_sessions WHERE user_id = ? AND token_hash <> ?')
-    .bind(currentUser.id, await sha256Base64Url(readCookie(request, 'orders_session'))).run();
+    .bind(currentUser.id, currentTokenHash).run();
   const updatedUser = { ...currentUser, mustChangePassword: false };
+  await writeAuthAuditLog(db, {
+    eventType: 'auth_password_changed',
+    actorUserId: currentUser.id,
+    targetUserId: currentUser.id,
+    actorLogin: currentUser.login,
+    targetLogin: currentUser.login,
+    details: 'Пользователь самостоятельно сменил пароль.',
+  });
   return json({ ok: true, user: authUserPayload(updatedUser), message: 'Пароль изменён.' });
 }
 
 
 export async function deleteAuthUser(db: D1Database, userId: number, currentUser: AuthUser) {
-  if (currentUser.id === userId) return json({ ok: false, message: 'Нельзя удалить свой текущий аккаунт.' }, { status: 400 });
-  const lastAdminDenied = await ensureCanRemoveAdminRights(db, userId, 'Нельзя удалить последнего активного администратора.');
+  if (currentUser.id === userId) return json({ ok: false, message: 'Нельзя отключить свой текущий аккаунт.' }, { status: 400 });
+  const lastAdminDenied = await ensureCanRemoveAdminRights(db, userId, 'Нельзя отключить последнего активного администратора.');
   if (lastAdminDenied) return lastAdminDenied;
+  const now = new Date().toISOString();
+  await db.prepare('UPDATE app_users SET is_active = 0, disabled_at = ?, updated_at = ? WHERE id = ?').bind(now, now, userId).run();
   await db.prepare('DELETE FROM app_sessions WHERE user_id = ?').bind(userId).run();
-  await db.prepare('DELETE FROM app_users WHERE id = ?').bind(userId).run();
-  return json({ ok: true, id: userId });
+  const target = await db.prepare('SELECT login FROM app_users WHERE id = ?').bind(userId).first<{ login: string | null }>();
+  await writeAuthAuditLog(db, {
+    eventType: 'auth_user_disabled',
+    actorUserId: currentUser.id,
+    targetUserId: userId,
+    actorLogin: currentUser.login,
+    targetLogin: normalizeAuthLogin(target?.login),
+    details: 'Аккаунт отключён; активные сессии отозваны.',
+  });
+  return json({ ok: true, id: userId, disabled: true });
 }
 
 
 export function withAuthenticatedHeaders(request: Request, user: AuthUser) {
   const headers = new Headers(request.headers);
-  const actor = user.displayName || user.email;
+  const actor = user.displayName || user.managerName || user.login;
   headers.set('X-Access-Role', user.role);
-  headers.set('X-Access-Email', user.email);
+  headers.set('X-Access-Login', user.login);
+  headers.delete('X-Access-Email');
   headers.set('X-Access-User', actor);
   headers.set('X-Archive-Actor', actor);
   return new Request(request, { headers });
