@@ -1,0 +1,123 @@
+name: Provision Production system admin dymovicd
+
+on:
+  push:
+    branches:
+      - provision-prod-system-admin-dymovicd-v3
+    paths:
+      - '.github/workflows/provision-prod-system-admin-dymovicd.yml'
+      - 'ops/provision-dymovicd.sql'
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    name: Provision unlinked Production system administrator
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+    steps:
+      - name: Checkout exact provisioning commit
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on Production identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "provision-prod-system-admin-dymovicd-v3" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders-app-branch2' wrangler.jsonc || grep -Fq 'orders_db_branch2' wrangler.jsonc; then
+            echo "Wrong environment; refusing provisioning." >&2
+            exit 20
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify target absent and capture business fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM app_users WHERE lower(login)='dymovicd') AS target_rows,
+            (SELECT COUNT(*) FROM app_users WHERE login IS NOT NULL AND trim(login) <> '') AS provisioned_users,
+            (SELECT COUNT(*) FROM app_users WHERE role='admin' AND is_active=1 AND login IS NOT NULL AND trim(login) <> '') AS active_admins" --json)"
+          echo "$auth"
+          row="$(jq -c '.[0].results[0]' <<<"$auth")"
+          [[ "$(jq -r '.target_rows' <<<"$row")" == "0" ]] || { echo "dymovicd already exists; refusing duplicate provisioning." >&2; exit 21; }
+          jq -cS '.[0].results[0]' <<<"$auth" > /tmp/auth-before.json
+
+          business="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+            (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS orders_received,
+            (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS orders_debt,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COALESCE(SUM(quantity),0) FROM order_items) AS order_items_quantity,
+            (SELECT COUNT(*) FROM payments) AS payments_count,
+            (SELECT COALESCE(SUM(amount),0) FROM payments) AS payments_amount,
+            (SELECT COUNT(*) FROM managers) AS managers_count,
+            (SELECT COUNT(*) FROM customers) AS customers_count" --json)"
+          echo "$business"
+          jq -cS '.[0].results[0]' <<<"$business" > /tmp/business-before.json
+
+      - name: Apply one-off system-admin provisioning
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file ops/provision-dymovicd.sql
+
+      - name: Verify account isolation and unchanged business data
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM app_users WHERE lower(login)='dymovicd') AS target_rows,
+            (SELECT COUNT(*) FROM app_users WHERE lower(login)='dymovicd' AND role='admin' AND is_active=1 AND manager_id IS NULL AND must_change_password=1) AS exact_system_admin,
+            (SELECT length(password_hash) FROM app_users WHERE lower(login)='dymovicd') AS password_hash_length,
+            (SELECT COUNT(*) FROM app_sessions s JOIN app_users u ON u.id=s.user_id WHERE lower(u.login)='dymovicd') AS target_sessions,
+            (SELECT COUNT(*) FROM auth_audit_log WHERE event_type='auth_user_created' AND target_login='dymovicd' AND actor_login='system-provision') AS audit_rows,
+            (SELECT COUNT(*) FROM app_users WHERE login IS NOT NULL AND trim(login) <> '') AS provisioned_users" --json)"
+          echo "$auth"
+          row="$(jq -c '.[0].results[0]' <<<"$auth")"
+          [[ "$(jq -r '.target_rows' <<<"$row")" == "1" ]] || exit 30
+          [[ "$(jq -r '.exact_system_admin' <<<"$row")" == "1" ]] || exit 31
+          [[ "$(jq -r '.password_hash_length' <<<"$row")" == "79" ]] || exit 32
+          [[ "$(jq -r '.target_sessions' <<<"$row")" == "0" ]] || exit 33
+          [[ "$(jq -r '.audit_rows' <<<"$row")" == "1" ]] || exit 34
+          before_users="$(jq -r '.provisioned_users' /tmp/auth-before.json)"
+          after_users="$(jq -r '.provisioned_users' <<<"$row")"
+          [[ "$after_users" == "$((before_users + 1))" ]] || exit 35
+
+          business="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+            (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS orders_received,
+            (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS orders_debt,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COALESCE(SUM(quantity),0) FROM order_items) AS order_items_quantity,
+            (SELECT COUNT(*) FROM payments) AS payments_count,
+            (SELECT COALESCE(SUM(amount),0) FROM payments) AS payments_amount,
+            (SELECT COUNT(*) FROM managers) AS managers_count,
+            (SELECT COUNT(*) FROM customers) AS customers_count" --json)"
+          echo "$business"
+          before="$(cat /tmp/business-before.json)"
+          after="$(jq -cS '.[0].results[0]' <<<"$business")"
+          [[ "$after" == "$before" ]] || {
+            echo "Business fingerprint changed during account provisioning." >&2
+            exit 36
+          }
+
+          echo "Production system administrator dymovicd provisioned successfully."
