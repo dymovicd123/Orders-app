@@ -39,7 +39,7 @@ check(!app.includes('текущая форма обмена работает п�
 
 const saveExchange = between(app, 'async function saveExchange()', '\n\n  async function ')
 check(saveExchange.includes("const itemizedExchange = exchangeSelectedOrder.pricing_mode === 'itemized_v1'"), 'H9B save path does not branch on persisted pricing mode')
-check(saveExchange.includes('itemizedExchange && pairDrafts.length !== 1'), 'H9B itemized Exchange does not fail closed on multi-pair draft')
+check(!saveExchange.includes('itemizedExchange && pairDrafts.length !== 1') && saveExchange.includes("itemizedExchange && unsavedPairs.length > 1") && saveExchange.includes("'/api/exchanges/batch'"), 'H9C itemized multi-pair route is not active in the save path')
 for (const field of ['expectedOrderTotal', 'expectedOldActiveQuantity', 'expectedOldUnitPrice', 'expectedOldLineTotal', 'expectedOldCatalogPriceSnapshot']) {
   check(saveExchange.includes(field), 'H9B stale snapshot payload missing ' + field)
 }
@@ -52,7 +52,7 @@ check(ui.includes('Цена по каталогу') && ui.includes('Цена п�
 check(ui.includes("priceOrigin: 'manual'"), 'H9B direct manager sold-price edit is not marked as factual/manual')
 check(ui.includes('Рекомендация фиксируется в истории отдельно и не меняет цену клиента автоматически.'), 'H9B Catalog recommendation separation copy missing')
 check(ui.includes('Для обмена без доплаты можно оставить цену старой позиции.'), 'H9B no-surcharge factual-price guidance missing')
-check(ui.includes('{!itemizedExchange ? (') && ui.includes('Добавить ещё позицию'), 'H9B itemized multi-pair UI is not disabled')
+check(ui.includes('Добавить ещё позицию') && !ui.includes('if (itemizedExchange || !currentPairReady) return') && ui.includes('exchangeBatchRequired'), 'H9C itemized multi-pair queue or aggregate stock guard is missing')
 check(ui.includes('itemizedPriceReady'), 'H9B UI does not fail closed when sold price is missing/invalid')
 
 check(vm.includes('const resolveExchangeItemPricing'), 'H9B exchange Catalog price resolver missing')
@@ -72,9 +72,9 @@ check(createExchange.includes('isItemizedExchange ? itemizedExchangeWritePlan : 
 
 for (const marker of [
   'H9B UI activation',
-  'one replacement pair per itemized Exchange operation',
+  'H9C itemized multi-pair Exchange',
   'historical sold price is the default factual price',
   'Catalog recommendation remains a separate snapshot',
 ]) check(doc.includes(marker), 'H9B continuation contract missing: ' + marker)
 
-console.log('STAGE03-H9B ITEMIZED EXCHANGE UI PASSED — Branch2 Exchange now exposes direct sold price plus separate Catalog snapshot, sends the H9A stale snapshot, keeps legacy behavior isolated, and limits itemized operations to one replacement pair per critical operation')
+console.log('STAGE03-H9B ITEMIZED EXCHANGE UI PASSED — itemized Exchange keeps direct sold price plus separate Catalog snapshot and H9C now extends it with a resumable multi-pair batch path while preserving legacy behavior')
