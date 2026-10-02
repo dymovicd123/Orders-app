@@ -1040,3 +1040,45 @@
     text-align: left;
   }
 }
+
+
+/* Auth R8B — admin-only management controls for unlinked system accounts. */
+.team-system-admins-head-actions,
+.team-system-admin-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.team-system-admin-card-actions {
+  justify-content: flex-end;
+}
+
+.team-system-admin-empty {
+  padding: 12px 14px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 14px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .team-system-admins-head {
+    display: grid;
+  }
+
+  .team-system-admins-head-actions {
+    justify-content: space-between;
+  }
+
+  .team-system-admin-card-actions {
+    width: 100%;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .team-system-admin-card-actions > button {
+    width: 100%;
+  }
+}
