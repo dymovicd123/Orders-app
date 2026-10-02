@@ -214,7 +214,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
   const currentStocktakeFilled = currentStocktakeRows.filter((row: any) => (stocktakeFacts[String(row.id)] ?? '') !== '').length
   const currentStocktakeRecount = currentStocktakeRows.filter((row: any) => row.status === 'recount_required').length
   const currentStocktakeStatus = currentStocktakeGroup
-    ? `${currentStocktakeFilled} из ${currentStocktakeRows.length} позиций посчитано${currentStocktakeRecount ? ` · пересчитать ${currentStocktakeRecount}` : ''}`
+    ? `${currentStocktakeFilled} из ${currentStocktakeRows.length} позиций введено вручную${currentStocktakeRecount ? ` · пересчитать ${currentStocktakeRecount}` : ''}`
     : ''
   const completedStocktakeItems = stocktakeSession?.status === 'completed' ? (stocktakeSession.items || []) : []
   const completedChangedRows = completedStocktakeItems.filter((row: any) => row.appliedQuantity !== null && Number(row.appliedQuantity) !== Number(row.baselineQuantity))
@@ -362,14 +362,14 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                         {stocktakeNotice ? <div className="stocktake-inline-notice">{stocktakeNotice}</div> : null}
     
                         {!stocktakeReviewMode ? <div className={`stocktake-sticky-progress ${stocktakeReadyForReview ? 'is-ready' : ''}`}>
-                          <div className="stocktake-sticky-progress-main"><strong>Проверено {stocktakeProgress.filled} из {stocktakeProgress.total} · {stocktakeProgressPercent}%</strong><span>{stocktakeSavingIds.length || stocktakeUnsavedCount ? 'Сначала дождитесь автосохранения введённых чисел.' : stocktakeProgress.recount ? `Нужно повторно пересчитать ${stocktakeProgress.recount}` : stocktakeProgress.unfilled ? `Осталось посчитать ${stocktakeProgress.unfilled}` : 'Все позиции посчитаны. Следующий шаг — проверить результат.'}</span></div>
+                          <div className="stocktake-sticky-progress-main"><strong>Введено вручную {stocktakeProgress.filled} из {stocktakeProgress.total} · {stocktakeProgressPercent}%</strong><span>{stocktakeSavingIds.length || stocktakeUnsavedCount ? 'Сначала дождитесь автосохранения введённых чисел.' : stocktakeProgress.recount ? `Нужно повторно пересчитать ${stocktakeProgress.recount}` : stocktakeProgress.unfilled ? `Пустых позиций: ${stocktakeProgress.unfilled} — при завершении они сохранят системный остаток` : 'Все позиции заполнены. Следующий шаг — проверить результат.'}</span></div>
                           <div className="stocktake-sticky-progress-bar"><i style={{ width: `${stocktakeProgress.total ? Math.round((stocktakeProgress.filled / stocktakeProgress.total) * 100) : 0}%` }} /></div>
-                          <button className="primary compact stocktake-review-button" type="button" disabled={!stocktakeReadyForReview || stocktakeBusy || stocktakeSavingIds.length > 0 || stocktakeUnsavedCount > 0} title={!stocktakeReadyForReview ? 'Сначала заполните все позиции и повторно пересчитайте конфликтные строки.' : ''} onClick={() => void openStocktakeReview()}>Проверить результат</button>
+                          <button className="primary compact stocktake-review-button" type="button" disabled={!stocktakeReadyForReview || stocktakeBusy || stocktakeSavingIds.length > 0 || stocktakeUnsavedCount > 0} title={!stocktakeReadyForReview ? (stocktakeProgress.recount ? 'Сначала повторно пересчитайте конфликтные строки.' : 'Введите факт хотя бы для одной позиции.') : ''} onClick={() => void openStocktakeReview()}>Проверить результат</button>
                         </div> : null}
     
                         {!stocktakeReviewMode ? (
                           <>
-                            <div className="stocktake-counting-rule">Считайте всё, что физически находится здесь, включая уже отложенные заказы. Системные числа появятся только после подсчёта. Пустое поле означает «ещё не посчитано», а не ноль.</div>
+                            <div className="stocktake-counting-rule">Считайте всё, что физически находится здесь, включая уже отложенные заказы. Под каждым размером показан текущий остаток по системе. Если поле оставить пустым, при завершении этот системный остаток сохранится без изменений; если товара фактически нет — введите 0.</div>
     
                             <div className="stocktake-counting-shell">
                               <aside className="stocktake-counting-sidebar">
@@ -450,7 +450,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                                                           const recount = row.status === 'recount_required'
                                                           return (
                                                             <label className={`stocktake-size-cell ${raw !== '' ? 'is-filled' : ''} ${saving ? 'is-saving' : ''} ${recount ? 'needs-recount' : ''}`} key={`stocktake-item-${row.id}`}>
-                                                              <span className="stocktake-size-label">{row.size || '—'}</span>
+                                                              <span className="stocktake-size-label">{row.size || '—'}<small className="stocktake-size-system">По системе: {Number(row.currentQuantity ?? row.baselineQuantity ?? 0)}</small></span>
                                                               <input data-stocktake-count-input="1" data-stocktake-item-id={row.id} aria-label={`${currentStocktakeGroup.productName} ${color} ${row.size || ''}: фактическое количество`} type="number" min="0" step="1" inputMode="numeric" value={raw} onChange={(event) => setStocktakeFact(Number(row.id), event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void persistStocktakeFact(Number(row.id), raw); focusNextStocktakeCountInput(Number(row.id)) } }} onBlur={() => { if (raw !== '' || row.countedQuantity !== null && row.countedQuantity !== undefined) void persistStocktakeFact(Number(row.id), raw) }} placeholder="—" />
                                                               {raw !== '' ? <button className="stocktake-size-clear" type="button" aria-label="Очистить значение" title="Вернуть в состояние «не посчитано»" onClick={(event) => { event.preventDefault(); setStocktakeFact(Number(row.id), '') }}>×</button> : null}
                                                               {recount ? <span className="stocktake-size-recount">Пересчитать</span> : null}
@@ -568,14 +568,14 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                             </div> : null}
     
                             <div className="stocktake-e-footer stocktake-e-footer-v4">
-                              <div><strong>{stocktakeReadyForReview ? 'Все позиции посчитаны' : stocktakeProgress.recount ? `Повторно пересчитать: ${stocktakeProgress.recount}` : `Осталось посчитать: ${stocktakeProgress.unfilled}`}</strong><span>{stocktakeReadyForReview ? 'Проверьте результат перед завершением.' : 'Пустые поля не считаются нулём.'}</span></div>
-                              {!stocktakeReadyForReview ? <button className="secondary" type="button" onClick={goToNextUnfilledStocktakeProduct}>{stocktakeProgress.recount ? 'К товару для пересчёта' : 'К следующему незаполненному товару'}</button> : null}
+                              <div><strong>{stocktakeProgress.recount ? `Повторно пересчитать: ${stocktakeProgress.recount}` : stocktakeProgress.filled ? `Введено вручную: ${stocktakeProgress.filled} · пустых: ${stocktakeProgress.unfilled}` : 'Введите хотя бы одну фактическую позицию'}</strong><span>{stocktakeProgress.recount ? 'Конфликтные строки нужно пересчитать вручную.' : stocktakeProgress.unfilled ? 'Пустые поля сохранят текущий системный остаток, а не обнулят его.' : 'Все позиции заполнены вручную.'}</span></div>
+                              {stocktakeProgress.recount || stocktakeProgress.unfilled ? <button className="secondary" type="button" onClick={goToNextUnfilledStocktakeProduct}>{stocktakeProgress.recount ? 'К товару для пересчёта' : 'К следующей пустой позиции'}</button> : null}
                             </div>
                           </>
                         ) : (
                           <section className="stocktake-e-review">
                             <div className="stocktake-e-review-head">
-                              <div><span className="stocktake-step-kicker">Проверка результата</span><h4>{stocktakeReviewRows.length ? `${stocktakeReviewRows.length} позиций требуют внимания` : 'Расхождений нет'}</h4><p>Системный остаток показан только сейчас — после физического пересчёта.</p></div>
+                              <div><span className="stocktake-step-kicker">Проверка результата</span><h4>{stocktakeReviewRows.length ? `${stocktakeReviewRows.length} позиций требуют внимания` : 'Расхождений нет'}</h4><p>{stocktakeProgress.unfilled ? `Пустых позиций: ${stocktakeProgress.unfilled}. Для них система оставит текущий остаток без изменений.` : 'Все позиции заполнены вручную.'}</p></div>
                               <button className="secondary compact stocktake-review-back" type="button" onClick={() => setStocktakeReviewMode(false)}>← Вернуться к подсчёту</button>
                             </div>
     
@@ -601,7 +601,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                             ) : <div className="stocktake-review-empty">Фактическое количество совпало с учётом по всем позициям.</div>}
     
                             <div className="stocktake-e-review-actions">
-                              <div><strong>{stocktakeSourceTitle(stocktakeSession.source)} · проверено {stocktakeProgress.total} позиций</strong><span>Перед завершением система ещё раз сверит, не изменился ли остаток после вашего подсчёта. Если изменился, нужно будет пересчитать только затронутые позиции; частичного применения не будет.</span></div>
+                              <div><strong>{stocktakeSourceTitle(stocktakeSession.source)} · вручную введено {stocktakeProgress.filled} из {stocktakeProgress.total}</strong><span>Введённые факты будут применены только если остаток не изменился после подсчёта. Пустые позиции возьмут актуальное системное количество на момент завершения; частичного применения не будет.</span></div>
                               <button className="primary stocktake-finish-button" type="button" disabled={stocktakeBusy || stocktakeSavingIds.length > 0 || stocktakeUnsavedCount > 0} onClick={() => void applyStocktake()}>{stocktakeBusy ? 'Проверяю и сохраняю…' : stocktakeProgress.differences ? `Сохранить изменения и завершить · ${stocktakeProgress.differences}` : 'Завершить проверку'}</button>
                             </div>
                           </section>
