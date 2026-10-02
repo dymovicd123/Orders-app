@@ -1,0 +1,167 @@
+name: Auth Production migrations 0080-0081
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/auth-production-migrations-0080-0081.yml'
+      - 'migrations/0080_v72_auth_login_identity.sql'
+      - 'migrations/0081_v72_auth_hardening.sql'
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: Apply Auth 0080-0081 to Production D1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout exact main commit
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on environment and migration drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "main" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders-app-branch2' wrangler.jsonc || grep -Fq 'orders_db_branch2' wrangler.jsonc || grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc; then
+            echo "Branch2 identity detected. Refusing Production auth migration." >&2
+            exit 20
+          fi
+
+          m80='migrations/0080_v72_auth_login_identity.sql'
+          grep -Fq 'ALTER TABLE app_users ADD COLUMN login TEXT' "$m80"
+          grep -Fq 'idx_app_users_login_nocase' "$m80"
+          grep -Fq 'idx_app_users_manager_id' "$m80"
+          if grep -Eiq '\b(INSERT|UPDATE|DELETE)\b' "$m80"; then
+            echo "0080 must remain schema-only." >&2
+            exit 21
+          fi
+
+          m81='migrations/0081_v72_auth_hardening.sql'
+          grep -Fq 'idx_app_users_manager_unique' "$m81"
+          grep -Fq 'CREATE TABLE IF NOT EXISTS auth_login_throttle' "$m81"
+          grep -Fq 'CREATE TABLE IF NOT EXISTS auth_audit_log' "$m81"
+          if grep -Eiq '\b(INSERT|UPDATE|DELETE)\b' "$m81"; then
+            echo "0081 must remain schema-only." >&2
+            exit 22
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Audit Production auth schema and capture business fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          schema="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='app_users') AS app_users_table,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='app_sessions') AS app_sessions_table,
+            (SELECT COUNT(*) FROM pragma_table_info('app_users') WHERE name='login') AS login_column,
+            (SELECT COUNT(*) FROM pragma_table_info('app_users') WHERE name='must_change_password') AS must_change_password_column,
+            (SELECT COUNT(*) FROM pragma_table_info('app_users') WHERE name='password_updated_at') AS password_updated_at_column,
+            (SELECT COUNT(*) FROM pragma_table_info('app_users') WHERE name='disabled_at') AS disabled_at_column,
+            (SELECT COUNT(*) FROM app_users) AS app_users_count,
+            (SELECT COUNT(*) FROM app_sessions) AS app_sessions_count,
+            (SELECT COUNT(*) FROM (SELECT manager_id FROM app_users WHERE manager_id IS NOT NULL GROUP BY manager_id HAVING COUNT(*) > 1)) AS duplicate_manager_links" --json)"
+          echo "$schema"
+          for field in app_users_table app_sessions_table must_change_password_column password_updated_at_column disabled_at_column; do
+            [[ "$(jq -r ".[0].results[0].$field // 0" <<<"$schema")" == "1" ]] || { echo "Required auth foundation missing: $field" >&2; exit 23; }
+          done
+          login_col="$(jq -r '.[0].results[0].login_column // -1' <<<"$schema")"
+          [[ "$login_col" == "0" || "$login_col" == "1" ]] || exit 24
+          [[ "$(jq -r '.[0].results[0].duplicate_manager_links // -1' <<<"$schema")" == "0" ]] || {
+            echo "Duplicate manager-account links exist; refusing unique-index migration." >&2
+            exit 25
+          }
+
+          if [[ "$login_col" == "1" ]]; then
+            duplicate_logins="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS count FROM (SELECT lower(login) FROM app_users WHERE login IS NOT NULL AND trim(login) <> '' GROUP BY lower(login) HAVING COUNT(*) > 1)" --json)"
+            echo "$duplicate_logins"
+            [[ "$(jq -r '.[0].results[0].count // -1' <<<"$duplicate_logins")" == "0" ]] || {
+              echo "Duplicate login identities exist; refusing migration." >&2
+              exit 26
+            }
+          fi
+
+          fingerprint="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+            (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS orders_received,
+            (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS orders_debt,
+            (SELECT COUNT(*) FROM order_items) AS item_count,
+            (SELECT COALESCE(SUM(quantity),0) FROM order_items) AS item_quantity,
+            (SELECT COUNT(*) FROM payments) AS payment_count,
+            (SELECT COALESCE(SUM(amount),0) FROM payments) AS payment_amount,
+            (SELECT COUNT(*) FROM managers) AS manager_count,
+            (SELECT COUNT(*) FROM app_users) AS app_users_count,
+            (SELECT COUNT(*) FROM app_sessions) AS app_sessions_count" --json)"
+          echo "$fingerprint"
+          jq -cS '.[0].results[0]' <<<"$fingerprint" > /tmp/auth-prod-before.json
+          printf '%s' "$login_col" > /tmp/auth-prod-login-present
+
+      - name: Apply exact additive auth schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(cat /tmp/auth-prod-login-present)" == "0" ]]; then
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0080_v72_auth_login_identity.sql
+          else
+            echo "0080 login column already present; ensuring its indexes."
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "CREATE UNIQUE INDEX IF NOT EXISTS idx_app_users_login_nocase ON app_users(lower(login)) WHERE login IS NOT NULL; CREATE INDEX IF NOT EXISTS idx_app_users_manager_id ON app_users(manager_id);"
+          fi
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0081_v72_auth_hardening.sql
+
+      - name: Verify auth schema and unchanged business rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          after_schema="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM pragma_table_info('app_users') WHERE name='login') AS login_column,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_app_users_login_nocase') AS login_index,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_app_users_manager_unique') AS manager_unique_index,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='auth_login_throttle') AS throttle_table,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='auth_audit_log') AS audit_table,
+            (SELECT COUNT(*) FROM (SELECT manager_id FROM app_users WHERE manager_id IS NOT NULL GROUP BY manager_id HAVING COUNT(*) > 1)) AS duplicate_manager_links" --json)"
+          echo "$after_schema"
+          for field in login_column login_index manager_unique_index throttle_table audit_table; do
+            [[ "$(jq -r ".[0].results[0].$field // 0" <<<"$after_schema")" == "1" ]] || { echo "Auth schema verification failed: $field" >&2; exit 27; }
+          done
+          [[ "$(jq -r '.[0].results[0].duplicate_manager_links // -1' <<<"$after_schema")" == "0" ]] || exit 28
+
+          after="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+            (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS orders_received,
+            (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS orders_debt,
+            (SELECT COUNT(*) FROM order_items) AS item_count,
+            (SELECT COALESCE(SUM(quantity),0) FROM order_items) AS item_quantity,
+            (SELECT COUNT(*) FROM payments) AS payment_count,
+            (SELECT COALESCE(SUM(amount),0) FROM payments) AS payment_amount,
+            (SELECT COUNT(*) FROM managers) AS manager_count,
+            (SELECT COUNT(*) FROM app_users) AS app_users_count,
+            (SELECT COUNT(*) FROM app_sessions) AS app_sessions_count" --json)"
+          echo "$after"
+          before="$(cat /tmp/auth-prod-before.json)"
+          after_norm="$(jq -cS '.[0].results[0]' <<<"$after")"
+          [[ "$after_norm" == "$before" ]] || {
+            echo "Production row fingerprint changed during auth schema migration." >&2
+            echo "Before: $before" >&2
+            echo "After:  $after_norm" >&2
+            exit 29
+          }
+          echo "Production auth schema 0080/0081 verified with business/auth row counts unchanged."
