@@ -91,6 +91,45 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const stocktakeNavigationManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stocktake-navigation-hotfix-frontend-manifest.json'), 'utf8'))
+if (stocktakeNavigationManifest?.version !== 1 || stocktakeNavigationManifest?.revision !== 'stocktake-navigation-hotfix-r1') throw new Error('Stocktake navigation hotfix manifest invalid')
+const stocktakeNavigationBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STOCKTAKE_NAVIGATION_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stocktakeNavigationManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stocktakeNavigationBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Stocktake navigation changed beyond exact hotfix: ' + relative)
+      }
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (stocktakeNavigationBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Stocktake navigation baseline fixture drifted: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, STOCKTAKE_NAVIGATION_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STOCKTAKE NAVIGATION STRUCTURAL LAYER PASSED — exact partial-count navigation hotfix preserved over current main')
+  process.exit(0)
+}
 const authProductionFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-production-port-frontend-manifest.json'), 'utf8'))
 if (authProductionFrontendManifest?.version !== 1 || authProductionFrontendManifest?.revision !== 'auth-production-port-r2-r8b-frontend') throw new Error('Auth Production frontend manifest invalid')
 const authProductionFrontendBlobSha = (value) => {

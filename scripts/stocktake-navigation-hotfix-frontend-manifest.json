@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "revision": "stocktake-navigation-hotfix-r1",
+  "baseMainCommit": "0077cc6d4545e3cb7c452a534a709be2a825fb16",
+  "files": {
+    "src/features/sections/InventorySection.tsx": {
+      "beforeGitBlob": "59a062fc7d4f06c086754571609ddb11e728a771",
+      "beforeLines": 2597,
+      "afterGitBlob": "d1e24283243a472c8ac71f5e9e265ca584f62c61",
+      "afterLines": 2622,
+      "baselineFixture": "scripts/fixtures/stocktake-navigation-hotfix/src/features/sections/InventorySection.tsx"
+    }
+  }
+}

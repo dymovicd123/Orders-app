@@ -573,7 +573,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const [stocktakeActiveSessions, setStocktakeActiveSessions] = useState<InventoryStocktakeSessionSummary[]>([])
   const [stocktakeBusy, setStocktakeBusy] = useState(false)
   const [stocktakeNotice, setStocktakeNotice] = useState('')
-  const [stocktakeProductIndex, setStocktakeProductIndexState] = useState(0)
+  const [stocktakeProductIndex, setStocktakeProductIndex] = useState(0)
   const [stocktakeProductSearch, setStocktakeProductSearch] = useState('')
   const [stocktakeReviewMode, setStocktakeReviewMode] = useState(false)
   const [stocktakeFacts, setStocktakeFacts] = useState<Record<string, string>>({})
@@ -607,8 +607,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const stocktakePendingValues = useRef<Map<number, string>>(new Map())
   const stocktakeLastPersistedValues = useRef<Map<number, string>>(new Map())
   const stocktakeTouchedIds = useRef<Set<number>>(new Set())
-  const stocktakeProductKeyRef = useRef('')
-  const stocktakeSessionIdRef = useRef('')
 
   const stocktakeSourceTitle = (source: StocktakeSource) => source === 'warehouse' ? 'Склад' : 'Бутик'
   const stocktakeSourceGenitive = (source: StocktakeSource) => source === 'warehouse' ? 'склада' : 'бутика'
@@ -626,14 +624,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
 
   function adoptStocktakeSession(session: InventoryStocktakeSession | null | undefined) {
     if (!session) return
-    const sameSession = stocktakeSessionIdRef.current === session.id
-    const preferredProductKey = sameSession ? stocktakeProductKeyRef.current : ''
-    const nextProductKeys = Array.from(new Set((session.items || []).map((item: any) =>
-      Number(item.productId || 0) > 0 ? `product:${item.productId}` : `name:${normalizeSuggestion(item.productName)}`
-    )))
-    const preferredIndex = preferredProductKey ? nextProductKeys.indexOf(preferredProductKey) : -1
-    const nextProductIndex = preferredIndex >= 0 ? preferredIndex : 0
-
     setStocktakeSession(session)
     setStocktakeSource(session.source)
     const persistedFacts = Object.fromEntries((session.items || []).map((item: any) => [String(item.id), item.countedQuantity === null || item.countedQuantity === undefined ? '' : String(item.countedQuantity)]))
@@ -641,9 +631,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     stocktakeLastPersistedValues.current = new Map((session.items || []).map((item: any) => [Number(item.id), item.countedQuantity === null || item.countedQuantity === undefined ? '' : String(item.countedQuantity)]))
     stocktakePendingValues.current.clear()
     stocktakeTouchedIds.current.clear()
-    setStocktakeProductIndexState(nextProductIndex)
-    stocktakeProductKeyRef.current = nextProductKeys[nextProductIndex] || ''
-    stocktakeSessionIdRef.current = session.id
+    setStocktakeProductIndex(0)
     setStocktakeProductSearch('')
     setStocktakeFoundExecutionKey('')
     setStocktakeFoundVariantId(0)
@@ -700,19 +688,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     }
     return Array.from(groups.values())
   }, [stocktakeRows])
-
-  function setStocktakeProductIndex(next: number | ((current: number) => number)) {
-    setStocktakeProductIndexState((current) => {
-      const requested = typeof next === 'function' ? next(current) : next
-      const bounded = stocktakeGroups.length ? Math.max(0, Math.min(stocktakeGroups.length - 1, Number(requested) || 0)) : 0
-      stocktakeProductKeyRef.current = stocktakeGroups[bounded]?.key || ''
-      return bounded
-    })
-  }
-
-  useEffect(() => {
-    stocktakeProductKeyRef.current = stocktakeGroups[stocktakeProductIndex]?.key || ''
-  }, [stocktakeGroups, stocktakeProductIndex])
 
   const filteredStocktakeProductGroups = useMemo(() => {
     const query = normalizeSuggestion(stocktakeProductSearch)
