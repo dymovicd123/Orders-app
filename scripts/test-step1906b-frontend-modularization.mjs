@@ -91,6 +91,49 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const branch2SessionHotpathFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/session-hotpath-branch2-frontend-manifest.json'), 'utf8'))
+if (branch2SessionHotpathFrontendManifest?.version !== 1 || branch2SessionHotpathFrontendManifest?.revision !== 'branch2-session-hotpath-frontend-r1') throw new Error('Branch2 session hotpath frontend manifest invalid')
+const branch2SessionHotpathFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.BRANCH2_SESSION_HOTPATH_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(branch2SessionHotpathFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (branch2SessionHotpathFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Branch2 session hotpath frontend changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Branch2 session hotpath frontend after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (branch2SessionHotpathFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Branch2 session hotpath frontend predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, BRANCH2_SESSION_HOTPATH_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('BRANCH2 SESSION HOTPATH FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const authR6FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-r6-password-manager-frontend-manifest.json'), 'utf8'))
 if (authR6FrontendManifest?.version !== 1 || authR6FrontendManifest?.revision !== 'auth-r6-password-manager-reliability') throw new Error('Auth R6 frontend structural manifest invalid')
 const authR6FrontendBlobSha = (value) => {

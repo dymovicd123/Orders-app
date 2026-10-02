@@ -340,8 +340,14 @@ function App() {
 
   const refreshAuth = useCallback(async () => {
     setAuthChecking(true)
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 8_000)
     try {
-      const response = await fetch('/api/auth/status', { credentials: 'include', cache: 'no-store' })
+      const response = await fetch('/api/auth/status', {
+        credentials: 'include',
+        cache: 'no-store',
+        signal: controller.signal,
+      })
       const data = await readJsonResponse<AuthStatusResponse>(response, 'Проверка авторизации')
       setAuthHasUsers(Boolean(data.hasUsers))
       setAuthUser(data.user || null)
@@ -349,6 +355,7 @@ function App() {
       console.error(error)
       setAuthUser(null)
     } finally {
+      window.clearTimeout(timeout)
       setAuthChecking(false)
     }
   }, [])
