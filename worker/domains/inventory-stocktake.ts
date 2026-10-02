@@ -2,7 +2,7 @@
 // Business behavior is intentionally unchanged.
 import type { InventoryCycleCountApplyResponse, InventoryCycleCountSuggestionsResponse, InventoryStocktakeMutationResponse, InventoryStocktakeSession, InventoryStocktakeSessionsResponse } from '../../shared/api-contracts.ts'
 import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, normalizeSourceType, toInt, upperText } from '../core/text.ts'
-import { ensureCatalogExecutionV3, isCatalogIdentityV3Enabled, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize } from './catalog.ts'
+import { catalogColorIdentity, ensureCatalogExecutionV3, isCatalogIdentityV3Enabled, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize } from './catalog.ts'
 import { isReversibleInventoryMovementReference } from './inventory-reservations.ts'
 
 export type InventoryStocktakeSessionRow = Record<string, unknown>;
@@ -599,8 +599,51 @@ export async function addInventoryStocktakeCombination(
        AND COALESCE(size_label, '') IN (SELECT CAST(value AS TEXT) FROM json_each(?))`
   ).bind(execution.id, category, gender, color, sizesJson).all<{ id: number; size_label: string }>();
   const existingBySize = new Map((existingVariants.results || []).map(row => [normalizeCatalogCombinationSize(row.size_label), toInt(row.id, 0)]));
-  const missingSizes = normalizedSizes.filter(size => !existingBySize.has(size));
 
+  // A valid older catalog row may still carry a legacy/null stock_position_id.
+  // During stocktake, reuse that exact active variant instead of trying to create a
+  // duplicate with the same external identity and then failing to add the selected size.
+  const fallbackSizes = normalizedSizes.filter(size => !existingBySize.has(size));
+  if (fallbackSizes.length) {
+    const fallbackRows = await db.prepare(
+      `SELECT id, size_label, color
+       FROM catalog_variants
+       WHERE product_id = ? AND is_active = 1
+         AND COALESCE(category, 'adult') = ?
+         AND CASE
+           WHEN UPPER(TRIM(COALESCE(gender, ''))) LIKE '%ЖЕН%' THEN 'ЖЕН'
+           WHEN UPPER(TRIM(COALESCE(gender, ''))) LIKE '%МУЖ%' THEN 'МУЖ'
+           ELSE UPPER(TRIM(COALESCE(gender, '')))
+         END = ?
+         AND UPPER(TRIM(COALESCE(NULLIF(material, ''), 'СТАНДАРТ'))) = UPPER(TRIM(?))
+         AND UPPER(TRIM(COALESCE(NULLIF(length, ''), 'СТАНДАРТ'))) = UPPER(TRIM(?))
+         AND CASE
+           WHEN UPPER(TRIM(COALESCE(size_label, ''))) IN ('', 'БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р') THEN ''
+           ELSE UPPER(TRIM(size_label))
+         END IN (SELECT CAST(value AS TEXT) FROM json_each(?))
+       ORDER BY id ASC`
+    ).bind(productId, category, gender, execution.material, execution.length, JSON.stringify(fallbackSizes))
+      .all<{ id: number; size_label: string; color: string }>();
+
+    const wantedColorIdentity = catalogColorIdentity(color);
+    const candidatesBySize = new Map<string, number[]>();
+    for (const row of fallbackRows.results || []) {
+      if (catalogColorIdentity(row.color) !== wantedColorIdentity) continue;
+      const sizeKey = normalizeCatalogCombinationSize(row.size_label);
+      const id = toInt(row.id, 0);
+      if (!id) continue;
+      const ids = candidatesBySize.get(sizeKey) || [];
+      ids.push(id);
+      candidatesBySize.set(sizeKey, ids);
+    }
+    for (const size of fallbackSizes) {
+      const ids = Array.from(new Set(candidatesBySize.get(size) || []));
+      if (ids.length > 1) throw new Error(`В каталоге найдено несколько одинаковых активных вариантов размера «${size}». Сначала объедините дубликаты в каталоге.`);
+      if (ids.length === 1) existingBySize.set(size, ids[0]);
+    }
+  }
+
+  const missingSizes = normalizedSizes.filter(size => !existingBySize.has(size));
   let createdCount = 0;
   if (missingSizes.length) {
     const missingVariantJson = JSON.stringify(missingSizes.map(size => ({
@@ -617,20 +660,24 @@ export async function addInventoryStocktakeCombination(
        FROM json_each(?) j`
     ).bind(productId, execution.id, category, gender, color, execution.material, execution.length, timestamp, timestamp, missingVariantJson).run();
     createdCount = Math.max(0, toInt(inserted.meta?.changes, 0));
+
+    const createdRows = await db.prepare(
+      `SELECT id, size_label
+       FROM catalog_variants
+       WHERE stock_position_id = ? AND is_active = 1
+         AND COALESCE(category, 'adult') = ?
+         AND COALESCE(gender, '') = ?
+         AND COALESCE(color, '') = ?
+         AND COALESCE(size_label, '') IN (SELECT CAST(value AS TEXT) FROM json_each(?))`
+    ).bind(execution.id, category, gender, color, JSON.stringify(missingSizes)).all<{ id: number; size_label: string }>();
+    for (const row of createdRows.results || []) {
+      const id = toInt(row.id, 0);
+      if (id) existingBySize.set(normalizeCatalogCombinationSize(row.size_label), id);
+    }
   }
 
-  const variantRows = await db.prepare(
-    `SELECT id, size_label
-     FROM catalog_variants
-     WHERE stock_position_id = ? AND is_active = 1
-       AND COALESCE(category, 'adult') = ?
-       AND COALESCE(gender, '') = ?
-       AND COALESCE(color, '') = ?
-       AND COALESCE(size_label, '') IN (SELECT CAST(value AS TEXT) FROM json_each(?))`
-  ).bind(execution.id, category, gender, color, sizesJson).all<{ id: number; size_label: string }>();
-  const variantBySize = new Map((variantRows.results || []).map(row => [normalizeCatalogCombinationSize(row.size_label), toInt(row.id, 0)]));
-  const variantIds = normalizedSizes.map(size => variantBySize.get(size) || 0).filter(Boolean);
-  if (variantIds.length !== normalizedSizes.length) throw new Error('Не удалось создать все выбранные складские комбинации. Обновите каталог и повторите действие.');
+  const variantIds = normalizedSizes.map(size => existingBySize.get(size) || 0).filter(Boolean);
+  if (variantIds.length !== normalizedSizes.length) throw new Error('Не удалось добавить все выбранные комбинации в ревизию. Обновите страницу и повторите действие.');
 
   const source = normalizeSourceType(session.inventory_source);
   const variantIdsJson = JSON.stringify(variantIds);
@@ -1219,12 +1266,18 @@ export async function completeInventoryStocktakeSession(db: D1Database, sessionI
   if (sessionStatus !== 'active') throw new Error('Эта ревизия уже завершена или отменена.');
   const source = normalizeSourceType(session.inventory_source);
   const rows = await getInventoryStocktakeItemRows(db, sessionId);
-  const unfilled = rows.filter(row => row.counted_quantity === null || row.counted_quantity === undefined);
-  if (unfilled.length) {
-    return { ok: false, code: 'unfilled', message: `Не заполнено ${unfilled.length} позиций.`, session: await serializeInventoryStocktakeSession(db, sessionId) };
+  const recountRows = rows.filter(row => cleanText(row.status) === 'recount_required');
+  if (recountRows.length) {
+    return { ok: false, code: 'recount_required', message: `Нужно повторно пересчитать ${recountRows.length} позиций после изменения склада.`, session: await serializeInventoryStocktakeSession(db, sessionId) };
   }
 
-  const conflicts = rows.filter(row => toInt(row.current_quantity, 0) !== toInt(row.baseline_quantity, 0));
+  // Blank means “leave the system quantity unchanged”. Only rows explicitly counted
+  // by a person are stale-checked against the baseline captured for that fact.
+  const conflicts = rows.filter(row =>
+    row.counted_quantity !== null
+    && row.counted_quantity !== undefined
+    && toInt(row.current_quantity, 0) !== toInt(row.baseline_quantity, 0)
+  );
   if (conflicts.length) {
     const { refreshed, conflictItemIds } = await markInventoryStocktakeConflicts(db, sessionId);
     return {
@@ -1257,8 +1310,11 @@ export async function completeInventoryStocktakeSession(db: D1Database, sessionI
      )
     WHERE guard_i.session_id = ?
       AND (
-        guard_i.counted_quantity IS NULL
-        OR COALESCE(guard_s.quantity, 0) <> guard_i.baseline_quantity
+        guard_i.status = 'recount_required'
+        OR (
+          guard_i.counted_quantity IS NOT NULL
+          AND COALESCE(guard_s.quantity, 0) <> guard_i.baseline_quantity
+        )
       )
   )`;
   const completionLock = `lock:${sessionId}:${now}`;
@@ -1274,6 +1330,51 @@ export async function completeInventoryStocktakeSession(db: D1Database, sessionI
        WHERE id = ? AND status = 'active' AND completed_at IS NULL
          AND ${consistencyGuard}`
     ).bind(completionLock, sessionId, sessionId),
+    db.prepare(
+      `UPDATE inventory_stocktake_items
+       SET stock_id = COALESCE(stock_id, (
+             SELECT s.id
+             FROM inventory_stock s
+             WHERE s.inventory_source = inventory_stocktake_items.inventory_source
+               AND inventory_stocktake_items.variant_id IS NOT NULL
+               AND s.variant_id = inventory_stocktake_items.variant_id
+             LIMIT 1
+           )),
+           baseline_quantity = COALESCE((
+             SELECT s.quantity
+             FROM inventory_stock s
+             WHERE s.inventory_source = inventory_stocktake_items.inventory_source
+               AND (
+                 (inventory_stocktake_items.stock_id IS NOT NULL AND s.id = inventory_stocktake_items.stock_id)
+                 OR (
+                   inventory_stocktake_items.stock_id IS NULL
+                   AND inventory_stocktake_items.variant_id IS NOT NULL
+                   AND s.variant_id = inventory_stocktake_items.variant_id
+                 )
+               )
+             LIMIT 1
+           ), 0),
+           counted_quantity = COALESCE((
+             SELECT s.quantity
+             FROM inventory_stock s
+             WHERE s.inventory_source = inventory_stocktake_items.inventory_source
+               AND (
+                 (inventory_stocktake_items.stock_id IS NOT NULL AND s.id = inventory_stocktake_items.stock_id)
+                 OR (
+                   inventory_stocktake_items.stock_id IS NULL
+                   AND inventory_stocktake_items.variant_id IS NOT NULL
+                   AND s.variant_id = inventory_stocktake_items.variant_id
+                 )
+               )
+             LIMIT 1
+           ), 0),
+           conflict_quantity = NULL,
+           updated_at = ?
+       WHERE session_id = ?
+         AND counted_quantity IS NULL
+         AND status <> 'recount_required'
+         AND ${hasCompletionLock}`
+    ).bind(now, sessionId, sessionId, completionLock),
     db.prepare(
       `INSERT INTO inventory_stock (
          inventory_source, product_id, variant_id, product_name_snapshot, gender_snapshot, color_snapshot,
@@ -1370,6 +1471,7 @@ export async function completeInventoryStocktakeSession(db: D1Database, sessionI
          COALESCE(i.counted_at, ?), COALESCE(i.counted_at, ?)
        FROM inventory_stocktake_items i
        WHERE i.session_id = ? AND i.variant_id IS NOT NULL AND i.counted_quantity IS NOT NULL
+         AND i.counted_at IS NOT NULL
          AND ${hasCompletionLock}`
     ).bind(now, now, sessionId, sessionId, completionLock),
     db.prepare(
