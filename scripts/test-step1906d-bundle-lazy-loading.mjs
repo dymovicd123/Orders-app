@@ -93,11 +93,12 @@ try {
   // only the structured Create conflict/retry copy; it introduces no new static module. R7 adds
   // bounded read-reuse bookkeeping inside the already-static App/Finance controllers, not a new
   // eager feature boundary. Auth R6 adds only the credential-save helper and password-form semantics.
-  // The Branch2 session hotfix adds only a bounded AbortController timeout to the already-static App;
-  // no new module becomes eager. Keep the allowance narrow.
+  // The Branch2 session hotfix adds only a bounded AbortController timeout to the already-static App.
+  // H9C adds the itemized multi-pair save coordinator to that same App controller without making
+  // OrderExchangeSection eager. Its measured delta stays below the narrow 682.5 KB ceiling.
   check(graphRelative.includes('src/app/order-pricing.ts'), 'H6B/H8 Catalog price resolver is not reachable from the initial Create controller graph')
   check(graph.size <= 26, `Initial static source graph regrew beyond the accepted pricing module set: ${graph.size} modules`)
-  check(sourceBytes <= 678_700, `Initial static source graph regrew beyond the accepted H9B + Catalog-integrity + retired-confirmation + R7 + Auth R6 + session-hotpath allowance: ${sourceBytes} bytes`)
+  check(sourceBytes <= 682_500, `Initial static source graph regrew beyond the accepted H9C + prior reviewed allowance: ${sourceBytes} bytes`)
   for (const name of lazySections) {
     check(!graphRelative.includes(`src/features/sections/${name}.tsx`), `Lazy section is still initial-static: ${name}`)
   }
