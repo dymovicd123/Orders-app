@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "revision": "auth-production-port-r2-r8-frontend",
+  "revision": "auth-production-port-r2-r8b-frontend",
   "baseMainCommit": "dde6b7298b427381f848fca8cf77853e86eea47b",
   "files": {
     "src/App.tsx": {
@@ -48,15 +48,15 @@
     "src/features/sections/TeamSection.tsx": {
       "beforeGitBlob": "6ac224d7e4e558688daa5eea2bf5a42f985f3bc3",
       "beforeLines": 445,
-      "afterGitBlob": "d731ccc6b3b787e95d0668a9ab42ec5fcf6790c1",
-      "afterLines": 845,
+      "afterGitBlob": "c8d330aff9cd45468a448eb8c70e24d55cf1d198",
+      "afterLines": 987,
       "baselineFixture": "scripts/fixtures/auth-production-port/src/features/sections/TeamSection.tsx"
     },
     "src/styles/10-workshop-reports-team.css": {
       "beforeGitBlob": "089c2be22beb3dbb46d2bcc8afc3a3f91be77b13",
       "beforeLines": 555,
-      "afterGitBlob": "112437f0a76f99ae597bdc8e22132c09d1858b6f",
-      "afterLines": 1043,
+      "afterGitBlob": "49e1a062eff80c5e9edc5466ed649a3083279a5d",
+      "afterLines": 1085,
       "baselineFixture": "scripts/fixtures/auth-production-port/src/styles/10-workshop-reports-team.css"
     }
   }
