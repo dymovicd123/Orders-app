@@ -327,8 +327,14 @@ function App() {
 
   const refreshAuth = useCallback(async () => {
     setAuthChecking(true)
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 8_000)
     try {
-      const response = await fetch('/api/admin-mode/status', { credentials: 'include' })
+      const response = await fetch('/api/admin-mode/status', {
+        credentials: 'include',
+        cache: 'no-store',
+        signal: controller.signal,
+      })
       const data = await readJsonResponse<SimpleAdminStatusResponse>(response, 'Проверка админ-режима')
       const nextAdmin = Boolean(data.isAdmin)
       setSimpleAdminMode(nextAdmin)
@@ -339,6 +345,7 @@ function App() {
       setSimpleAdminMode(false)
       setAuthUser(SIMPLE_MANAGER_USER)
     } finally {
+      window.clearTimeout(timeout)
       setAuthChecking(false)
     }
   }, [])
