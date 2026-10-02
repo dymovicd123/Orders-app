@@ -6791,6 +6791,11 @@ function removeDebtPayment(index: number) {
       setError(exchangeableOldItems.length ? 'Добавьте хотя бы одну позицию обмена.' : 'В заказе не осталось доступных позиций для обмена.')
       return
     }
+    if (itemizedExchange && pairDrafts.length !== 1) {
+      setError('Для заказа с построчной ценой оформляйте одну заменяемую позицию за один обмен. Следующую позицию можно обменять отдельной операцией.')
+      return
+    }
+
     if (exchangeDraft.financialAction !== 'none' && Number(exchangeDraft.financialAmount || 0) <= 0) {
       setError('Укажите сумму доплаты или возврата больше нуля.')
       return
@@ -6914,77 +6919,6 @@ function removeDebtPayment(index: number) {
     let exchangeTouchesWorkshop = false
 
     try {
-      if (itemizedExchange && unsavedPairs.length > 1) {
-        const batchPayload = {
-          orderId: exchangeSelectedOrder.id,
-          exchangeDate: exchangeDraft.exchangeDate,
-          expectedOrderTotal: Number(exchangeSelectedOrder.total_amount),
-          pairs: unsavedPairs.map((pair) => ({
-            oldItemId: Number(pair.selectedOldItem.id || 0),
-            oldQuantity: pair.oldQuantity,
-            oldReturnSource: pair.oldReturnSource,
-            oldPhysicalState: pair.oldPhysicalState,
-            newItem: {
-              ...pair.effectiveNewItem,
-              unitPrice: Number(pair.effectiveNewItem.unitPrice),
-              catalogPriceSnapshot: pair.effectiveNewItem.catalogPriceSnapshot == null ? null : Number(pair.effectiveNewItem.catalogPriceSnapshot),
-            },
-            newSourceWasManuallyChanged: pair.newSourceWasManuallyChanged,
-            expectedOldActiveQuantity: Number(pair.selectedOldItem.quantity),
-            expectedOldUnitPrice: Number(pair.selectedOldItem.unitPrice),
-            expectedOldLineTotal: Number(pair.selectedOldItem.lineTotal),
-            expectedOldCatalogPriceSnapshot: pair.selectedOldItem.catalogPriceSnapshot == null ? null : Number(pair.selectedOldItem.catalogPriceSnapshot),
-          })),
-          financialAction: exchangeDraft.financialAction,
-          financialAmount: exchangeDraft.financialAmount,
-          paymentMethod: exchangeDraft.paymentMethod,
-          comment: exchangeDraft.comment,
-        }
-        const batchKey = `exchange-batch-create:${exchangeSelectedOrder.id}:${unsavedPairs.map((pair) => pair.draftKey).join('.')}`
-        const critical = prepareCriticalRequest(batchKey, batchPayload)
-        const response = await apiFetch('/api/exchanges/batch', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-          body: JSON.stringify(critical.payload),
-        })
-        const result = await readJsonResponse<{
-          ok?: boolean
-          message?: string
-          order?: OrderRecord
-          exchangeIds?: number[]
-          exchangeCount?: number
-          pendingInventoryCount?: number
-          workshopCount?: number
-          finalTotalAmount?: number
-        }>(response, 'Обмен · несколько позиций')
-        if (!response.ok) throw new Error(result.message || `Exchange batch failed: ${response.status}`)
-        completeCriticalRequest(batchKey, critical.requestId)
-
-        if (result.order) {
-          upsertOrderInState(result.order)
-          setSelectedOrderId(result.order.id)
-        }
-        const totalPairCount = Math.max(unsavedPairs.length, Number(result.exchangeCount || 0))
-        pendingInventoryCount = Math.max(0, Number(result.pendingInventoryCount || 0))
-        exchangeTouchesWorkshop = unsavedPairs.some((pair) => pair.selectedOldItem.sourceType === 'workshop' || pair.effectiveNewItem.sourceType === 'workshop')
-        setExchangeSelectedOrderId(null)
-        setExchangeDraft(createExchangeDraft())
-        await Promise.allSettled([
-          loadExchangeHistory(),
-          refreshActivityLogIfVisible(),
-          refreshFinanceReportsIfVisible(),
-          loadDashboard(false),
-          exchangeTouchesWorkshop ? loadWorkshopData() : Promise.resolve(null),
-          loadInventoryData('warehouse', true, '', false),
-          loadInventoryData('boutique', true, '', false),
-          isAdmin ? loadInventoryLifecycle(true) : Promise.resolve(null),
-        ])
-        setMessage(pendingInventoryCount > 0
-          ? `Обмен по заказу ${exchangeSelectedOrder.external_id} сохранён: ${totalPairCount} поз. ${pendingInventoryCount} складск${pendingInventoryCount === 1 ? 'ое движение ожидает' : 'их движения ожидают'} подтверждения администратора.`
-          : `Обмен по заказу ${exchangeSelectedOrder.external_id} сохранён: ${totalPairCount} поз.`)
-        return
-      }
-
       for (const pair of unsavedPairs) {
         const isFinalPair = pair.index === pairDrafts.length - 1
         const payload = {

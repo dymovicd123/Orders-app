@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "revision": "stage03-h9c-production-frontend",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "d71fcd43dea886f7f4642adc9eeb87405c988d67",
+      "beforeLines": 8039,
+      "baselineFixture": "scripts/fixtures/stage03-h9c-production/App.tsx",
+      "afterGitBlob": "bac4ea2d1080bc702574717a7728fbbc8fef329c",
+      "afterLines": 8105
+    },
+    "src/features/sections/OrderExchangeSection.tsx": {
+      "beforeGitBlob": "d98b9a14f5f45d5393d1d51d8c0bcae39ec087ca",
+      "beforeLines": 759,
+      "baselineFixture": "scripts/fixtures/stage03-h9c-production/OrderExchangeSection.tsx",
+      "afterGitBlob": "ee1fa083c38078dec9cc31612ba8665a2424003b",
+      "afterLines": 810
+    }
+  }
+}
