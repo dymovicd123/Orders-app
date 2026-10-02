@@ -8,7 +8,6 @@ type Props = {
   eventId: number | null
   apiFetch: (path: string, init?: RequestInit) => Promise<Response>
   isAdmin: boolean
-  onRequestAdminMode: () => void
   onClose: () => void
   onCompleted: () => void | Promise<void>
 }
@@ -23,7 +22,7 @@ const fieldLabels: Record<string, string> = {
   size: 'Размер / возраст',
 }
 
-export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onRequestAdminMode, onClose, onCompleted }: Props) {
+export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onClose, onCompleted }: Props) {
   const [context, setContext] = useState<any>(null)
   const [draft, setDraft] = useState<any>({ productId: 0, productName: '', createProduct: false, genderScope: '', category: 'adult', gender: '', material: 'СТАНДАРТ', length: 'СТАНДАРТ', color: '', size: '' })
   const [search, setSearch] = useState('')
@@ -209,10 +208,10 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onRequ
               <p>Свежей рабочей версии пока нет. Сначала восстановите её, затем система ещё раз проверит точную комбинацию.</p>
               {isAdmin
                 ? <button type="button" className="primary" disabled={busy} onClick={() => void restoreRetired()}>{busy ? 'Восстанавливаю…' : 'Восстановить рабочую версию'}</button>
-                : <button type="button" className="secondary" disabled={busy} onClick={onRequestAdminMode}>Нужен администратор для восстановления</button>}
+                : <span className="resolution-admin-note">Восстановление доступно только администратору.</span>}
             </> : <>
               <p>Для этой исторической SKU нет записи полного удаления, поэтому автоматически восстановить её нельзя. Создайте в Каталоге свежую рабочую комбинацию с теми же характеристиками и вернитесь сюда.</p>
-              {isAdmin ? null : <button type="button" className="secondary" disabled={busy} onClick={onRequestAdminMode}>Войти в админ режим</button>}
+              {isAdmin ? null : <span className="resolution-admin-note">Попросите администратора продолжить под своим аккаунтом.</span>}
             </>}
             <button type="button" className="secondary" disabled={busy} onClick={() => setReloadNonce((value) => value + 1)}>Проверить снова</button>
           </div> : !context.product && !draft.createProduct ? <div className="returned-item-product-search">
@@ -222,7 +221,7 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onRequ
             </div>
             {!ranked.length ? <p>Подходящего товара пока не видно. Попробуйте другое слово из названия.</p> : null}
             {isAdmin ? <button type="button" className="secondary" onClick={() => setDraft((current: any) => ({ ...current, createProduct: true, productId: 0, productName: context.facts?.productName || current.productName }))}>Такого товара ещё нет</button>
-              : <button type="button" className="secondary" onClick={onRequestAdminMode}>Товара нет в каталоге — нужен админ</button>}
+              : <span className="resolution-admin-note">Товара нет в каталоге — нужен администратор.</span>}
           </div> : null}
 
           {!retiredHistoricalSku && (context.product || draft.productId || draft.createProduct) ? <div className="returned-item-fields">
@@ -245,7 +244,7 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onRequ
             </label>)}
           </div> : null}
 
-          {!retiredHistoricalSku && !isAdmin && unknownReferenceFields.length ? <button type="button" className="secondary" onClick={onRequestAdminMode}>Войти в админ режим и продолжить здесь</button> : null}
+          {!retiredHistoricalSku && !isAdmin && unknownReferenceFields.length ? <span className="resolution-admin-note">Добавить недостающие значения может только администратор под своим аккаунтом.</span> : null}
           <div className="modal-actions">
             {!retiredHistoricalSku ? <button type="button" className="primary" disabled={!canSubmit || busy} onClick={() => void submit()}>{busy ? 'Сохраняю…' : 'Подтвердить и принять в остаток'}</button> : null}
             <button type="button" className="secondary" disabled={busy} onClick={onClose}>Отложить</button>
