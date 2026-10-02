@@ -4,6 +4,49 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const sessionHotpathWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/session-hotpath-worker-manifest.json'), 'utf8'))
+if (sessionHotpathWorkerManifest?.version !== 1 || sessionHotpathWorkerManifest?.revision !== 'session-hotpath-hotfix-r1') throw new Error('Session hotpath Worker manifest invalid')
+const sessionHotpathWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.SESSION_HOTPATH_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(sessionHotpathWorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (sessionHotpathWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Session hotpath Worker changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Session hotpath Worker after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (sessionHotpathWorkerBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Session hotpath Worker predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, SESSION_HOTPATH_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('SESSION HOTPATH WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const r74WorkshopWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/r7-4-workshop-read-budget-worker-manifest.json'), 'utf8'))
 if (r74WorkshopWorkerManifest?.version !== 1 || r74WorkshopWorkerManifest?.revision !== 'r7-4-workshop-read-budget-r1') throw new Error('R7.4 Workshop Worker manifest invalid')
 const r74WorkshopWorkerBlobSha = (value) => {

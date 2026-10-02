@@ -72,6 +72,9 @@ function verifySource() {
     'migrations/0060_v72_storage_database_hygiene.sql',
     'scripts/test-step1904-storage-database-hygiene.mjs',
     'scripts/test-step1905-ui-small-screen-acceptance.mjs',
+    'scripts/session-hotpath-worker-manifest.json',
+    'scripts/session-hotpath-frontend-manifest.json',
+    'scripts/test-session-hotpath-hotfix.mjs',
     'scripts/test-step1906a-worker-modularization.mjs',
     'scripts/test-step1906b-frontend-modularization.mjs',
     'scripts/test-step1906c-dead-code-cleanup.mjs',
@@ -267,6 +270,7 @@ try {
   run('Step 190.3 read/error/cache safety tests', process.execPath, [path.join(root, 'scripts/test-step1903-read-error-cache-safety.mjs')])
   run('Step 190.4 storage/database hygiene tests', process.execPath, [path.join(root, 'scripts/test-step1904-storage-database-hygiene.mjs')])
   run('Step 190.5 UI / small-screen acceptance tests', process.execPath, [path.join(root, 'scripts/test-step1905-ui-small-screen-acceptance.mjs')])
+  run('Session hot-path hotfix tests', process.execPath, [path.join(root, 'scripts/test-session-hotpath-hotfix.mjs')])
   run('Step 190.6A Worker modularization tests', process.execPath, [path.join(root, 'scripts/test-step1906a-worker-modularization.mjs')])
   run('Step 190.6B frontend controller modularization tests', process.execPath, [path.join(root, 'scripts/test-step1906b-frontend-modularization.mjs')])
   run('Step 190.6C dead/dormant/legacy cleanup tests', process.execPath, [path.join(root, 'scripts/test-step1906c-dead-code-cleanup.mjs')])

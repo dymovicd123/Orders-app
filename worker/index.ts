@@ -31,7 +31,6 @@ import { buildStockResolutionRequired } from './domains/stock-resolution.ts'
 import type { CallCentreInput, DepartmentPlanInput, EmployeeInput, LeadInput, PlanInput, TimesheetInput } from './domains/team.ts'
 import { deleteCallCentreRecord, deleteDepartmentPlanRecord, deleteLeadRecord, deleteManagerPlanRecord, deleteTeamEmployee, listCallCentreRecords, listLeadRecords, listPlans, listTeamActivity, listTeamEmployees, listTeamSalaryPreview, listTeamTimesheet, saveCallCentreRecord, saveDepartmentPlan, saveLeadRecord, saveManagerPlan, saveTeamEmployee, saveTeamTimesheet, setTeamEmployeeActive } from './domains/team.ts'
 import { bulkUpdateWorkshopTasks, listWorkshopTasks, readWorkshopCounts, updateWorkshopTask } from './domains/workshop.ts'
-import { ensureOrderItemWorkshopColumn } from './domains/workshop-schema.ts'
 import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'
 
 // Step 78 keeps old account-auth handlers only as a dormant compatibility fallback.
@@ -49,8 +48,6 @@ export default {
     const url = new URL(request.url);
 
     try {
-      await ensureOrderItemWorkshopColumn(env.DB);
-
       if (url.pathname === '/api/admin-mode/status' && request.method === 'GET') {
         return handleSimpleAdminStatus(env, request);
       }
