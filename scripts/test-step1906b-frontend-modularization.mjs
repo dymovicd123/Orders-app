@@ -91,6 +91,45 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const h9cProductionFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h9c-production-frontend-manifest.json'), 'utf8'))
+if (h9cProductionFrontendManifest?.version !== 1 || h9cProductionFrontendManifest?.revision !== 'stage03-h9c-production-frontend') throw new Error('H9C Production frontend manifest invalid')
+const h9cProductionFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.H9C_PRODUCTION_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(h9cProductionFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (h9cProductionFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('H9C Production frontend changed beyond exact port: ' + relative)
+      }
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (h9cProductionFrontendBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('H9C Production frontend predecessor fixture drifted: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, H9C_PRODUCTION_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03-H9C PRODUCTION FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const stocktakeNavigationManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stocktake-navigation-hotfix-frontend-manifest.json'), 'utf8'))
 if (stocktakeNavigationManifest?.version !== 1 || stocktakeNavigationManifest?.revision !== 'stocktake-navigation-hotfix-r1') throw new Error('Stocktake navigation hotfix manifest invalid')
 const stocktakeNavigationBlobSha = (value) => {
