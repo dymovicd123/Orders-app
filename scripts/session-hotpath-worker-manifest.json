@@ -10,8 +10,8 @@
       "afterLines": 1641,
       "replacements": [
         {
-          "beforeBlock": "import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'\nimport { ensureOrderItemWorkshopColumn } from './domains/workshop-schema.ts'",
-          "afterBlock": "import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'"
+          "beforeBlock": "import { bulkUpdateWorkshopTasks, listWorkshopTasks, readWorkshopCounts, updateWorkshopTask } from './domains/workshop.ts'\nimport { ensureOrderItemWorkshopColumn } from './domains/workshop-schema.ts'\nimport { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'",
+          "afterBlock": "import { bulkUpdateWorkshopTasks, listWorkshopTasks, readWorkshopCounts, updateWorkshopTask } from './domains/workshop.ts'\nimport { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'"
         },
         {
           "beforeBlock": "    try {\n      await ensureOrderItemWorkshopColumn(env.DB);\n\n      if (url.pathname === '/api/admin-mode/status' && request.method === 'GET') {",
