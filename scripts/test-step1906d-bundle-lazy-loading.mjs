@@ -86,10 +86,11 @@ try {
   const graphRelative = [...graph].map((file) => path.relative(root, file).replace(/\\/g, '/')).sort()
   const sourceBytes = [...graph].reduce((sum, file) => sum + fs.statSync(file).size, 0)
   // O1 adds one transport helper; Stage03 adds one itemized-pricing helper plus the direct Create/Edit pricing wiring.
-  // Keep the increase explicitly bounded instead of silently relaxing the lazy-loading contract.
+  // Auth R7 adds only bounded startup/login/session-recovery logic inside the already-static App/API client.
+  // No new eager module is allowed; keep the source-byte increase explicitly bounded.
   check(graph.size <= 26, `Initial static source graph regrew: ${graph.size} modules`)
   check(graphRelative.includes('src/app/order-pricing.ts'), 'Stage03 itemized-pricing helper is missing from the expected initial graph')
-  check(sourceBytes <= 680_000, `Initial static source graph regrew: ${sourceBytes} bytes`)
+  check(sourceBytes <= 684_000, `Initial static source graph regrew: ${sourceBytes} bytes`)
   for (const name of lazySections) {
     check(!graphRelative.includes(`src/features/sections/${name}.tsx`), `Lazy section is still initial-static: ${name}`)
   }

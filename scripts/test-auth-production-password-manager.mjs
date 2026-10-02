@@ -8,7 +8,7 @@ try {
 
   check(app.includes('async function offerBrowserPasswordSave'), 'Credential Management helper missing')
   check(app.includes('PasswordCredentialCtor') && app.includes('navigator.credentials.store(credential)'), 'Browser credential store integration missing')
-  check(app.includes("if (data.user && (!authHasUsers || !data.user.mustChangePassword))"), 'Temporary-password login is not excluded from browser save')
+  check(app.includes("if (!user.mustChangePassword) await offerBrowserPasswordSave(authLogin, authPassword)"), 'Temporary-password login is not excluded from browser save')
   check(app.includes('await offerBrowserPasswordSave(authLogin, authPassword)'), 'Successful permanent login is not offered to the browser password manager')
   check(app.includes('await offerBrowserPasswordSave(authUser.login, newPassword)'), 'Changed permanent password is not offered to the browser password manager')
 

@@ -82,13 +82,16 @@ function criticalRequestStorageKey(key: string) {
   return `orders-app:critical-request:${key}`
 }
 
+type AuthInvalidReason = 'unauthorized' | 'password_change_required'
+
 type ApiClientArgs = {
   accessRole: AccessRole
   setError: Dispatch<SetStateAction<string | null>>
   setMessage: Dispatch<SetStateAction<string | null>>
+  onAuthInvalid?: (reason: AuthInvalidReason) => void
 }
 
-export function useApiClient({ accessRole, setError, setMessage }: ApiClientArgs) {
+export function useApiClient({ accessRole, setError, setMessage, onAuthInvalid }: ApiClientArgs) {
   const coalescedReadRef = useRef(createReadCoalescer())
   const getResponseCacheRef = useRef(new Map<string, CachedApiResponse>())
   const lastConnectionNoticeAtRef = useRef(0)
@@ -163,6 +166,21 @@ export function useApiClient({ accessRole, setError, setMessage }: ApiClientArgs
       if (retryDelays[attempt] > 0) await waitForApiRetry(retryDelays[attempt])
       try {
         const response = await fetch(input, { ...init, body: requestBody, headers, credentials: 'include' })
+        if (response.status === 401) {
+          onAuthInvalid?.('unauthorized')
+          return response
+        }
+        if (response.status === 403) {
+          try {
+            const authError = await response.clone().json() as { code?: unknown }
+            if (String(authError?.code || '') === 'PASSWORD_CHANGE_REQUIRED') {
+              onAuthInvalid?.('password_change_required')
+              return response
+            }
+          } catch {
+            // Non-JSON 403 responses keep their normal application error path.
+          }
+        }
         if (!retryableRequest) return response
 
         const bodyText = await response.clone().text()
@@ -229,7 +247,7 @@ export function useApiClient({ accessRole, setError, setMessage }: ApiClientArgs
       transient: true,
       status: lastError instanceof ApiResponseError ? lastError.status : 0,
     })
-  }, [accessRole])
+  }, [accessRole, onAuthInvalid])
 
   const apiFetch = useCallback((input: RequestInfo | URL, init: RequestInit = {}) => {
     const method = String(init.method || (input instanceof Request ? input.method : 'GET')).toUpperCase()

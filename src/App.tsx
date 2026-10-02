@@ -281,7 +281,24 @@ function App() {
   const accessRole: AccessRole = authUser?.role || 'manager'
   const isAdmin = authUser?.role === 'admin'
   const authReady = !authChecking
-  const { apiFetch, prepareCriticalRequest, completeCriticalRequest } = useApiClient({ accessRole, setError, setMessage })
+  const handleAuthInvalid = useCallback((reason: 'unauthorized' | 'password_change_required') => {
+    setError(null)
+    setAuthUsersOpen(false)
+    setPasswordChangeOpen(false)
+    if (reason === 'password_change_required') {
+      setAuthUser((current) => current ? { ...current, mustChangePassword: true } : current)
+      setMessage('Для продолжения работы нужно сменить пароль.')
+      return
+    }
+    setAuthUser(null)
+    setMessage('Сессия завершена. Войдите снова.')
+  }, [])
+  const { apiFetch, prepareCriticalRequest, completeCriticalRequest } = useApiClient({
+    accessRole,
+    setError,
+    setMessage,
+    onAuthInvalid: handleAuthInvalid,
+  })
   
   
 
@@ -354,6 +371,9 @@ function App() {
     } catch (error) {
       console.error(error)
       setAuthUser(null)
+      setError(error instanceof DOMException && error.name === 'AbortError'
+        ? 'Проверка сессии заняла слишком много времени. Попробуйте войти или обновить страницу.'
+        : 'Не удалось проверить текущую сессию. Попробуйте войти или обновить страницу.')
     } finally {
       window.clearTimeout(timeout)
       setAuthChecking(false)
@@ -366,35 +386,68 @@ function App() {
     setAuthBusy(true)
     setError(null)
     try {
-      const endpoint = authHasUsers ? '/api/auth/login' : '/api/auth/setup'
-      const payload = authHasUsers
-        ? { login: authLogin, password: authPassword }
-        : {
-            login: authLogin,
-            password: authPassword,
-            displayName: authDisplayName || 'Администратор',
-            bootstrapLogin: authBootstrapLogin,
-            bootstrapPassword: authBootstrapPassword,
-          }
-      const response = await fetch(endpoint, {
+      const finishAuthenticated = async (user: AuthUser, message: string) => {
+        if (!user.mustChangePassword) await offerBrowserPasswordSave(authLogin, authPassword)
+        setAuthUser(user)
+        setAuthHasUsers(true)
+        setAuthPassword('')
+        setAuthBootstrapPassword('')
+        setMessage(user.mustChangePassword ? 'Вход выполнен. Нужно сменить временный пароль.' : message)
+      }
+
+      if (authHasUsers) {
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          cache: 'no-store',
+          body: JSON.stringify({ login: authLogin, password: authPassword }),
+        })
+        const data = await readJsonResponse<{ ok?: boolean; user?: AuthUser; code?: string; message?: string }>(response, 'Вход', { allowHttpError: true })
+        if (!response.ok || data.ok === false || !data.user) {
+          throw new Error(data.message || 'Не удалось войти.')
+        }
+        await finishAuthenticated(data.user, 'Вход выполнен.')
+        return
+      }
+
+      const setupResponse = await fetch('/api/auth/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(payload),
+        cache: 'no-store',
+        body: JSON.stringify({
+          login: authLogin,
+          password: authPassword,
+          displayName: authDisplayName || 'Администратор',
+          bootstrapLogin: authBootstrapLogin,
+          bootstrapPassword: authBootstrapPassword,
+        }),
       })
-      const data = await readJsonResponse<{ ok: boolean; user?: AuthUser }>(response, authHasUsers ? 'Вход' : 'Первый администратор')
-      if (data.user && (!authHasUsers || !data.user.mustChangePassword)) {
-        await offerBrowserPasswordSave(authLogin, authPassword)
+      const setupData = await readJsonResponse<{ ok?: boolean; user?: AuthUser; code?: string; message?: string }>(setupResponse, 'Первый администратор', { allowHttpError: true })
+      if (setupResponse.ok && setupData.ok !== false && setupData.user) {
+        await finishAuthenticated(setupData.user, 'Первый администратор создан.')
+        return
       }
-      setAuthUser(data.user || null)
-      setAuthHasUsers(true)
-      setAuthPassword('')
-      setAuthBootstrapPassword('')
-      if (data.user?.mustChangePassword) {
-        setMessage('Вход выполнен. Нужно сменить временный пароль.')
-      } else {
-        setMessage(authHasUsers ? 'Вход выполнен.' : 'Первый администратор создан.')
+
+      if (setupData.code === 'AUTH_SETUP_ALREADY_COMPLETED' || setupResponse.status === 409) {
+        setAuthHasUsers(true)
+        setAuthBootstrapPassword('')
+        const statusResponse = await fetch('/api/auth/status', {
+          credentials: 'include',
+          cache: 'no-store',
+        })
+        const statusData = await readJsonResponse<AuthStatusResponse>(statusResponse, 'Проверка созданного администратора', { allowHttpError: true })
+        if (statusResponse.ok && statusData.user) {
+          setAuthUser(statusData.user)
+          setAuthPassword('')
+          setMessage('Администратор уже был создан. Текущая сессия восстановлена.')
+          return
+        }
+        throw new Error('Первый администратор уже создан. Войдите через обычную форму тем логином, который был создан первым.')
       }
+
+      throw new Error(setupData.message || 'Не удалось создать первого администратора.')
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Не удалось войти.')
     } finally {
@@ -403,13 +456,28 @@ function App() {
   }, [authBootstrapLogin, authBootstrapPassword, authDisplayName, authHasUsers, authLogin, authPassword])
 
   const logout = useCallback(async () => {
+    setError(null)
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 8_000)
     try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
-    } finally {
+      const response = await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        signal: controller.signal,
+      })
+      await readJsonResponse(response, 'Выход')
       setAuthUser(null)
       setAuthUsersOpen(false)
       setPasswordChangeOpen(false)
+      setPasswordChangeDraft({ currentPassword: '', newPassword: '' })
       setMessage('Вы вышли из системы.')
+    } catch (error) {
+      setError(error instanceof DOMException && error.name === 'AbortError'
+        ? 'Не удалось завершить сессию вовремя. Проверьте связь и повторите выход.'
+        : error instanceof Error ? error.message : 'Не удалось завершить сессию. Повторите выход.')
+    } finally {
+      window.clearTimeout(timeout)
     }
   }, [])
 

@@ -92,7 +92,7 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 const authProductionFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-production-port-frontend-manifest.json'), 'utf8'))
-if (authProductionFrontendManifest?.version !== 1 || authProductionFrontendManifest?.revision !== 'auth-production-port-r2-r6-frontend') throw new Error('Auth Production frontend manifest invalid')
+if (authProductionFrontendManifest?.version !== 1 || authProductionFrontendManifest?.revision !== 'auth-production-port-r2-r7-frontend') throw new Error('Auth Production frontend manifest invalid')
 const authProductionFrontendBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
@@ -127,7 +127,7 @@ if (!process.env.AUTH_PRODUCTION_FRONTEND_NORMALIZED) {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('AUTH PRODUCTION FRONTEND STRUCTURAL LAYER PASSED — exact R2-R6 account-session UI port preserved over current main')
+  console.log('AUTH PRODUCTION FRONTEND STRUCTURAL LAYER PASSED — exact R2-R7 account-session UI port preserved over current main')
   process.exit(0)
 }
 const sessionHotpathFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/session-hotpath-frontend-manifest.json'), 'utf8'))

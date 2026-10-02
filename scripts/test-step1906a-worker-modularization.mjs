@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 const authProductionWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-production-port-worker-manifest.json'), 'utf8'))
-if (authProductionWorkerManifest?.version !== 1 || authProductionWorkerManifest?.revision !== 'auth-production-port-r2-r6-worker') throw new Error('Auth Production Worker manifest invalid')
+if (authProductionWorkerManifest?.version !== 1 || authProductionWorkerManifest?.revision !== 'auth-production-port-r2-r7-worker') throw new Error('Auth Production Worker manifest invalid')
 const authProductionWorkerBlobSha = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
@@ -40,7 +40,7 @@ if (!process.env.AUTH_PRODUCTION_WORKER_NORMALIZED) {
     for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
   }
   if (childStatus !== 0) process.exit(childStatus)
-  console.log('AUTH PRODUCTION WORKER STRUCTURAL LAYER PASSED — exact R2-R6 account-session port preserved over current main')
+  console.log('AUTH PRODUCTION WORKER STRUCTURAL LAYER PASSED — exact R2-R7 account-session port preserved over current main')
   process.exit(0)
 }
 const sessionHotpathWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/session-hotpath-worker-manifest.json'), 'utf8'))
