@@ -1,0 +1,40 @@
+name: Diagnostic Production auth bootstrap
+
+on:
+  push:
+    branches:
+      - diag-prod-auth-bootstrap
+    paths:
+      - '.github/workflows/diag-prod-auth-bootstrap.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Read-only Production auth bootstrap state
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM app_users WHERE login IS NOT NULL AND trim(login) <> '') AS provisioned_users,
+            (SELECT COUNT(*) FROM app_users WHERE role='admin' AND is_active=1 AND login IS NOT NULL AND trim(login) <> '') AS active_admins,
+            (SELECT MAX(created_at) FROM app_users WHERE login IS NOT NULL AND trim(login) <> '') AS latest_provisioned_created_at,
+            (SELECT MAX(last_login_at) FROM app_users WHERE login IS NOT NULL AND trim(login) <> '') AS latest_login_at,
+            (SELECT COUNT(*) FROM auth_audit_log WHERE event_type='auth_first_admin_created') AS first_admin_events,
+            (SELECT MAX(created_at) FROM auth_audit_log WHERE event_type='auth_first_admin_created') AS first_admin_event_at,
+            (SELECT COUNT(*) FROM app_sessions s JOIN app_users u ON u.id=s.user_id WHERE u.login IS NOT NULL AND trim(u.login) <> '') AS provisioned_sessions" --json
