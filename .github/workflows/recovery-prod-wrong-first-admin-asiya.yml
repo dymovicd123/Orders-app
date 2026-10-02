@@ -1,0 +1,151 @@
+name: Recovery Production wrong first admin
+
+on:
+  push:
+    branches:
+      - recovery-prod-wrong-first-admin-asiya
+    paths:
+      - '.github/workflows/recovery-prod-wrong-first-admin-asiya.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    name: Reset wrong first admin in Production D1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout exact recovery commit
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on Production identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "recovery-prod-wrong-first-admin-asiya" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders-app-branch2' wrangler.jsonc || grep -Fq 'orders_db_branch2' wrangler.jsonc || grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc; then
+            echo "Branch2 identity detected. Refusing Production recovery." >&2
+            exit 20
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify exact mistaken admin and capture fingerprints
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM app_users WHERE login IS NOT NULL AND trim(login) <> '') AS provisioned_users,
+            (SELECT COUNT(*) FROM app_users WHERE lower(login)='asiya' AND role='admin' AND is_active=1 AND manager_id IS NULL AND created_at='2026-10-02 07:49:32') AS exact_wrong_admin,
+            (SELECT COUNT(*) FROM app_users WHERE login IS NOT NULL AND trim(login) <> '' AND lower(login)<>'asiya') AS other_provisioned_users,
+            (SELECT COUNT(*) FROM app_users WHERE login IS NULL OR trim(login)='') AS dormant_users,
+            (SELECT COUNT(*) FROM app_sessions s JOIN app_users u ON u.id=s.user_id WHERE lower(u.login)='asiya') AS wrong_admin_sessions,
+            (SELECT COUNT(*) FROM auth_audit_log WHERE event_type='auth_first_admin_created' AND lower(COALESCE(target_login,''))='asiya') AS wrong_first_admin_events,
+            (SELECT COUNT(*) FROM auth_login_throttle) AS throttle_rows" --json)"
+          echo "$auth"
+          row="$(jq -c '.[0].results[0]' <<<"$auth")"
+          [[ "$(jq -r '.provisioned_users' <<<"$row")" == "1" ]] || { echo "Expected exactly one provisioned account." >&2; exit 21; }
+          [[ "$(jq -r '.exact_wrong_admin' <<<"$row")" == "1" ]] || { echo "Expected exact mistaken asiya admin row." >&2; exit 22; }
+          [[ "$(jq -r '.other_provisioned_users' <<<"$row")" == "0" ]] || { echo "Another provisioned account exists. Refusing recovery." >&2; exit 23; }
+          [[ "$(jq -r '.wrong_first_admin_events' <<<"$row")" == "1" ]] || { echo "Unexpected first-admin audit state." >&2; exit 24; }
+          jq -cS '{dormant_users,wrong_admin_sessions}' <<<"$row" > /tmp/auth-before.json
+
+          business="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+            (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS orders_received,
+            (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS orders_debt,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COALESCE(SUM(quantity),0) FROM order_items) AS order_items_quantity,
+            (SELECT COUNT(*) FROM payments) AS payments_count,
+            (SELECT COALESCE(SUM(amount),0) FROM payments) AS payments_amount,
+            (SELECT COUNT(*) FROM managers) AS managers_count,
+            (SELECT COUNT(*) FROM customers) AS customers_count" --json)"
+          echo "$business"
+          jq -cS '.[0].results[0]' <<<"$business" > /tmp/business-before.json
+
+      - name: Reset only the mistaken first-admin account
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "PRAGMA foreign_keys = ON;
+            DELETE FROM app_sessions
+            WHERE user_id IN (
+              SELECT id FROM app_users
+              WHERE lower(login)='asiya'
+                AND role='admin'
+                AND is_active=1
+                AND manager_id IS NULL
+                AND created_at='2026-10-02 07:49:32'
+            );
+            DELETE FROM app_users
+            WHERE lower(login)='asiya'
+              AND role='admin'
+              AND is_active=1
+              AND manager_id IS NULL
+              AND created_at='2026-10-02 07:49:32';
+            DELETE FROM auth_login_throttle;
+            INSERT INTO auth_audit_log (
+              event_type, actor_user_id, target_user_id, actor_login, target_login, details, created_at
+            ) VALUES (
+              'auth_bootstrap_recovery', NULL, NULL, 'system-recovery', 'asiya',
+              'Mistaken first personal admin reset by explicit owner recovery; bootstrap reopened for the intended administrator.',
+              datetime('now')
+            );"
+
+      - name: Verify clean bootstrap state and untouched business data
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM app_users WHERE login IS NOT NULL AND trim(login) <> '') AS provisioned_users,
+            (SELECT COUNT(*) FROM app_users WHERE role='admin' AND is_active=1 AND login IS NOT NULL AND trim(login) <> '') AS active_admins,
+            (SELECT COUNT(*) FROM app_users WHERE login IS NULL OR trim(login)='') AS dormant_users,
+            (SELECT COUNT(*) FROM app_sessions s JOIN app_users u ON u.id=s.user_id WHERE u.login IS NOT NULL AND trim(u.login) <> '') AS provisioned_sessions,
+            (SELECT COUNT(*) FROM auth_login_throttle) AS throttle_rows,
+            (SELECT COUNT(*) FROM auth_audit_log WHERE event_type='auth_bootstrap_recovery' AND target_login='asiya') AS recovery_events" --json)"
+          echo "$auth"
+          row="$(jq -c '.[0].results[0]' <<<"$auth")"
+          [[ "$(jq -r '.provisioned_users' <<<"$row")" == "0" ]] || exit 30
+          [[ "$(jq -r '.active_admins' <<<"$row")" == "0" ]] || exit 31
+          [[ "$(jq -r '.provisioned_sessions' <<<"$row")" == "0" ]] || exit 32
+          [[ "$(jq -r '.throttle_rows' <<<"$row")" == "0" ]] || exit 33
+          [[ "$(jq -r '.recovery_events' <<<"$row")" == "1" ]] || exit 34
+          before_dormant="$(jq -r '.dormant_users' /tmp/auth-before.json)"
+          [[ "$(jq -r '.dormant_users' <<<"$row")" == "$before_dormant" ]] || { echo "Dormant legacy auth rows changed." >&2; exit 35; }
+
+          business="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+            (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS orders_received,
+            (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS orders_debt,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COALESCE(SUM(quantity),0) FROM order_items) AS order_items_quantity,
+            (SELECT COUNT(*) FROM payments) AS payments_count,
+            (SELECT COALESCE(SUM(amount),0) FROM payments) AS payments_amount,
+            (SELECT COUNT(*) FROM managers) AS managers_count,
+            (SELECT COUNT(*) FROM customers) AS customers_count" --json)"
+          echo "$business"
+          before="$(cat /tmp/business-before.json)"
+          after="$(jq -cS '.[0].results[0]' <<<"$business")"
+          [[ "$after" == "$before" ]] || {
+            echo "Business fingerprint changed during auth recovery." >&2
+            echo "Before: $before" >&2
+            echo "After:  $after" >&2
+            exit 36
+          }
+          echo "Production auth bootstrap recovery complete: wrong admin removed, lockout cleared, business data unchanged."
