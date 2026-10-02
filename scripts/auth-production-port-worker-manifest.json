@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "revision": "auth-production-port-r2-r6-worker",
+  "revision": "auth-production-port-r2-r7-worker",
   "baseMainCommit": "dde6b7298b427381f848fca8cf77853e86eea47b",
   "files": {
     "worker/core/types.ts": {
@@ -13,8 +13,8 @@
     "worker/domains/auth.ts": {
       "beforeGitBlob": "9dc58fef53901c21cc0539c2e2dbec7bbf159143",
       "beforeLines": 647,
-      "afterGitBlob": "6feafbece4de20ebfb1da09e2c31a6284a0f0d09",
-      "afterLines": 936,
+      "afterGitBlob": "d7bbf4e7dc5d5c86ac1b0b4abaa410e9e7caa9a2",
+      "afterLines": 974,
       "baselineFixture": "scripts/fixtures/auth-production-port/worker/domains/auth.ts"
     },
     "worker/domains/team.ts": {
