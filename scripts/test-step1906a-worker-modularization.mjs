@@ -4,6 +4,62 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const h9cProductionWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h9c-production-worker-manifest.json'), 'utf8'))
+if (h9cProductionWorkerManifest?.version !== 1 || h9cProductionWorkerManifest?.revision !== 'stage03-h9c-production-worker') throw new Error('H9C Production Worker manifest invalid')
+const h9cProductionWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.H9C_PRODUCTION_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    const indexDelta = h9cProductionWorkerManifest.files?.['worker/index.ts']
+    const indexPath = path.join(root, 'worker/index.ts')
+    const actualIndex = fs.readFileSync(indexPath, 'utf8')
+    if (h9cProductionWorkerBlobSha(actualIndex) !== indexDelta.afterGitBlob || actualIndex.split(/\r?\n/).length !== indexDelta.afterLines) {
+      throw new Error('H9C Production Worker changed beyond exact port: worker/index.ts')
+    }
+    let revertedIndex = actualIndex
+    for (const replacement of [...(indexDelta.replacements || [])].reverse()) {
+      if (!revertedIndex.includes(replacement.afterBlock)) throw new Error('H9C Production Worker after-block missing: worker/index.ts')
+      revertedIndex = revertedIndex.replace(replacement.afterBlock, replacement.beforeBlock)
+    }
+    if (h9cProductionWorkerBlobSha(revertedIndex) !== indexDelta.beforeGitBlob || revertedIndex.split(/\r?\n/).length !== indexDelta.beforeLines) {
+      throw new Error('H9C Production Worker predecessor reconstruction failed: worker/index.ts')
+    }
+    originals.set('worker/index.ts', actualIndex)
+    fs.writeFileSync(indexPath, revertedIndex)
+
+    const batchDelta = h9cProductionWorkerManifest.files?.['worker/domains/exchange-batch.ts']
+    const batchPath = path.join(root, 'worker/domains/exchange-batch.ts')
+    const actualBatch = fs.readFileSync(batchPath, 'utf8')
+    if (h9cProductionWorkerBlobSha(actualBatch) !== batchDelta.addedGitBlob || actualBatch.split(/\r?\n/).length !== batchDelta.addedLines) {
+      throw new Error('H9C Production exchange-batch module changed beyond exact port')
+    }
+    originals.set('worker/domains/exchange-batch.ts', actualBatch)
+    fs.unlinkSync(batchPath)
+
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, H9C_PRODUCTION_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03-H9C PRODUCTION WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const authProductionWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-production-port-worker-manifest.json'), 'utf8'))
 if (authProductionWorkerManifest?.version !== 1 || authProductionWorkerManifest?.revision !== 'auth-production-port-r2-r7-worker') throw new Error('Auth Production Worker manifest invalid')
 const authProductionWorkerBlobSha = (value) => {
