@@ -433,19 +433,18 @@ function App() {
       if (setupData.code === 'AUTH_SETUP_ALREADY_COMPLETED' || setupResponse.status === 409) {
         setAuthHasUsers(true)
         setAuthBootstrapPassword('')
-        const loginResponse = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const statusResponse = await fetch('/api/auth/status', {
           credentials: 'include',
           cache: 'no-store',
-          body: JSON.stringify({ login: authLogin, password: authPassword }),
         })
-        const loginData = await readJsonResponse<{ ok?: boolean; user?: AuthUser; message?: string }>(loginResponse, 'Вход после создания администратора', { allowHttpError: true })
-        if (loginResponse.ok && loginData.ok !== false && loginData.user) {
-          await finishAuthenticated(loginData.user, 'Администратор уже был создан. Вход выполнен.')
+        const statusData = await readJsonResponse<AuthStatusResponse>(statusResponse, 'Проверка созданного администратора', { allowHttpError: true })
+        if (statusResponse.ok && statusData.user) {
+          setAuthUser(statusData.user)
+          setAuthPassword('')
+          setMessage('Администратор уже был создан. Текущая сессия восстановлена.')
           return
         }
-        throw new Error('Первый администратор уже создан. Проверьте логин и пароль созданного аккаунта и войдите через обычную форму.')
+        throw new Error('Первый администратор уже создан. Войдите через обычную форму тем логином, который был создан первым.')
       }
 
       throw new Error(setupData.message || 'Не удалось создать первого администратора.')
