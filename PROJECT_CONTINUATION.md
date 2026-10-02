@@ -1,10 +1,34 @@
 # Система заказов — актуальный continuation
 
-Updated: 2026-09-30  
+Updated: 2026-10-02  
 Repository: `dymovicd123/Orders-app`  
 Branch represented by this file: **main / Production**
 
 Этот файл — короткий актуальный checkpoint. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не должны использоваться как текущий roadmap без сверки с GitHub.
+
+## RELEASE UPDATE — 2026-10-02 — Production authorization complete; stocktake navigation hotfix live
+
+Production authorization is no longer postponed:
+- PR #270 activated the tested account/session authorization stack on Production after guarded schema preparation;
+- PR #271 hardened first-admin/login/session recovery;
+- PR #272 added admin-only visibility of unlinked system administrators;
+- PR #273 added safe system-administrator management;
+- normal employee access is managed from Team, while account identity/role is server-owned;
+- account sessions, password-change flow, throttling/audit hardening and browser password-manager semantics are all part of the current Production lineage.
+
+Today’s stocktake incident was a frontend navigation regression, not a broken stocktake persistence model:
+- PR #274 — `Hotfix: keep stocktake product navigation stable during partial counts` — merged;
+- exact runtime-changing merged SHA: `99784288b3eafb30613d6213d818b62d2c0e0fd0`;
+- the selected product is now preserved by stable product key when the same stocktake session is refreshed/re-adopted;
+- operators may leave uncounted positions blank, move to another product and return later; blank still means “not counted”, not zero;
+- explicit `Остальные = 0` remains a deliberate action and is not required for navigation.
+
+Verification for the hotfix:
+- cumulative Quality check on head `b39ede48a99814ff504f0df46ab41eca8daeeee3`: run `37013147259` — **success**;
+- `STOCKTAKE FUNCTIONAL ACCEPTANCE PASSED`: start/resume, count persistence/replay, recount on concurrent stock change, atomic completion, completion replay, exact history, active-session guard and cancellation were verified;
+- exact merged-SHA Cloudflare monitor: run `37013188693` — **success**.
+
+No additional fixes are planned for 2026-10-02. The next session should return to business design, not continue opportunistic bug-fixing.
 
 ## RELEASE UPDATE — 2026-09-30 — Stage03 itemized pricing is live in Production
 
@@ -67,14 +91,16 @@ Catalog-retirement rollout is complete, and Stage03 is now also fully promoted t
 ## Текущее состояние Production
 
 Последний runtime-changing Production baseline:
-- `af5f666b0ef8aa3e99ff537c7d8ced3fc68b41b1` — completed Stage03 itemized pricing promotion over the current Production lineage.
-- Exact Production deploy: GitHub Actions run `36744693819` — success.
-- Catalog deletion runtime `7953a01d2856a6e674f0473918244ab53839a36f`, semantic-SKU runtime `645b54ae320e45e1d34861f2e6e715819fcf5e43`, CLIENT-ZAMMLER, Resolver R11/R12/R13, Stage01/Stage02 and Operational Autonomy all remain preserved underneath this lineage.
+- `99784288b3eafb30613d6213d818b62d2c0e0fd0` — PR #274 stocktake navigation hotfix on top of the completed Production authorization lineage.
+- Exact Production deploy monitor: GitHub Actions run `37013188693` — success.
+- Production authorization PR #270–#273, Stage03 itemized pricing, Catalog deletion, semantic-SKU correction, CLIENT-ZAMMLER, Resolver R11/R12/R13, Stage01/Stage02 and Operational Autonomy all remain preserved underneath this lineage.
 
 Завершено и находится в Production:
 - **Stage01** — завершён и выпущен через Production release candidate PR #102.
 - **Stage02 transactional stock truth** — завершён, прошёл Branch2 review/post-review fixes и выпущен через PR #145. Phase2C/2D/2E больше не являются pending work.
 - **Stage03 itemized pricing** — завершён и выпущен в Production через schema PR #252 + runtime PR #253. Migrations 0073/0074 применены guarded workflow; исторические заказы не repriced/backfilled, новый itemized runtime находится в текущем `main`.
+- **Production account authorization** — завершена и находится в текущем `main`: schema preparation PR #268/#269, activation PR #270, reliability R7 PR #271, system-admin visibility/management PR #272/#273. Новые auth-изменения делать только по конкретному дефекту или новому согласованному запросу клиента.
+- **Stocktake navigation hotfix** — PR #274 завершён: переход между товарами больше не требует заполнять все варианты нулями; сохранение/завершение ревизии остаётся под существующими persistence/CAS/replay guards.
 - **Operational Autonomy R3 A1–A5** — все реализованы в текущей main lineage: multiple returns / return+exchange coexistence, debt close after return, mistaken sent/handover correction, exchange financial correction.
 - **CLIENT-ZAMMLER** — отдельный клиентский запрос, завершён и в Production. Это **не roadmap Stage04**.
 - **Resolver R11/R12/R13** — завершён и в Production. Сейчас resolver считается стабильным; новые изменения только при конкретном обнаруженном дефекте.
@@ -82,9 +108,25 @@ Catalog-retirement rollout is complete, and Stage03 is now also fully promoted t
 - **Catalog semantic SKU identity prevention + controlled correction** — PR #220, runtime `645b54ae320e45e1d34861f2e6e715819fcf5e43`: exact spelling остаётся fast path, harmless hyphen/space colors переиспользуют существующий semantic SKU. 2026-09-27 отдельная guarded D1 correction вывела из активной работы подтверждённые semantic duplicates; финальный Production audit `36322036163` attempt 3 показал `activeCollisionGroups: 0`. Исторические строки/текстовые snapshots не удалялись.
 - D1 read-budget/O1/R5 optimizations уже находятся в истории main; следующий performance pass делать только по свежим Query Insights, а не «по инерции».
 
+## Ближайшая точка продолжения — Kaspi + Stage04 business discussion
+
+У пользователя уже есть новая информация от/для клиента по **Kaspi** и **Stage04**. Она ещё не зафиксирована в этом документе, потому что содержательное обсуждение отложено на следующую сессию. **Не додумывать эту информацию и не начинать реализацию до разговора с пользователем.**
+
+### Kaspi — текущий известный минимум
+
+Клиентский запрос на данный момент понимается так:
+- Kaspi-заказы должны быть отделены от обычного рабочего списка и показываться в отдельной вкладке/рабочем представлении в боковой навигации;
+- не создавать отдельную параллельную сущность заказа и не добавлять специальный Kaspi-ID только ради самого факта происхождения заказа — отдельный идентификатор допустим только если завтрашний бизнес-контракт докажет, что он реально нужен;
+- прежде чем менять schema/API/UI, нужно подтвердить бизнес-семантику: как Kaspi-заказ определяется/создаётся, как отражаются оплата и комиссия, что происходит с отменами/возвратами/обменами, и какие данные должны попадать в Finance/Workshop/Warehouse;
+- CLIENT-ZAMMLER — уже завершённый отдельный scope и не должен смешиваться с будущей Kaspi-моделью.
+
+Следующая сессия по Kaspi начинается с новой информации пользователя и сборки окончательного business contract. Только после этого проектировать код.
+
 ## Следующий roadmap — Stage04
 
 Настоящий Stage04 ещё не начинался. Старые имена `Stage04-ZAMMLER` — только историческая ошибка именования.
+
+У пользователя уже есть дополнительная информация для Stage04, которую нужно обсудить в следующей сессии. Ниже сохранён прежний design checkpoint, но он **не считается финальным контрактом** до сверки с этой новой информацией.
 
 Stage04 = отдельная будущая работа вокруг **Workshop finance / исторической себестоимости / долга Цеху** и должна начинаться с бизнес-контракта, а не с миграции или UI.
 
@@ -102,16 +144,28 @@ Stage04 = отдельная будущая работа вокруг **Workshop
 
 Это пока **business-design checkpoint, не реализованный Stage04 contract**. Перед кодом нужно отдельно подтвердить реальный формат накладной Цеха: есть ли фактическая цена по каждой позиции или иногда только общая сумма на набор изделий.
 
+## Дальнейший порядок завершения проекта
+
+Текущий high-level порядок после завтрашнего business discussion:
+1. Kaspi — подтвердить модель с клиентом, затем реализовывать только согласованный scope.
+2. Stage04 — подтвердить Workshop finance / historical cost contract с новой информацией пользователя, затем реализовать.
+3. Stage05 — следующий запланированный этап после Stage04; его конкретный scope перед стартом нужно заново сверить с актуальным roadmap, не выдумывать по памяти.
+4. Marketing / РНП — оставить ближе к самому концу, после основных operational/financial этапов.
+5. Финальный аудит, cleanup только по доказанным проблемам, Production acceptance и передача системы.
+
+Не смешивать Kaspi и Stage04 в один большой технический релиз только потому, что их бизнес-обсуждение идёт рядом.
+
 ## Warehouse status
 
-Stage02 stock-truth работа закрыта и уже в Production. Старый W9 «полный Warehouse product audit» остаётся возможным будущим read-only/UX review после реального использования, но **не является незавершённой Phase2 задачей**.
+Stage02 stock-truth работа закрыта и уже в Production. Старый W9 «полный Warehouse product audit» остаётся возможным будущим read-only/UX review после реального использования, но **не является незавершённой Phase2 задачей**. После PR #274 ревизию не перестраивать широко: дать текущему workflow пожить в реальной работе и исправлять только конкретно обнаруженные дефекты.
 
 ## Что отложено
 
-- Step 190.0 access/auth — до согласования ролей с клиентом.
+- Новые Kaspi/Stage04 изменения — до следующей сессии, где пользователь даст уже собранную дополнительную информацию и будет зафиксирован business contract.
 - Arrival / «Приход» — frozen.
 - Широкая перестройка Warehouse — только по конкретным проблемам/новому пользовательскому решению.
 - Новый resolver redesign — только если появится реальный дефект.
+- Дополнительный auth polish — только по конкретному Production-дефекту или новому запросу клиента; сам rollout авторизации завершён.
 
 ## Непереговорные правила работы
 
@@ -181,7 +235,7 @@ Stage02 stock-truth работа закрыта и уже в Production. Ста�
 - Backend: Cloudflare Worker + D1; `worker/index.ts` — composition root, доменная логика разнесена по `worker/domains`.
 - Runtime-файл должен быть достижим из `src/main.tsx` или `worker/index.ts`, если он не является deliberately inactive contract/fixture.
 - CSS cascade/order считается поведением; широкую CSS-cleanup не смешивать с бизнес-изменениями.
-- Step 190.0 access/auth всё ещё отложен до отдельного согласования с клиентом.
+- Production account authorization уже активна и завершена по текущему scope; не восстанавливать старое состояние «Step 190.0 auth отложен».
 
 
 ## Актуальные подробные документы
@@ -196,4 +250,6 @@ Stage02 stock-truth работа закрыта и уже в Production. Ста�
 
 ## Точка продолжения
 
-Stage03 Production rollout 2026-09-30 закрыт: schema PR #252 + runtime PR #253 merged, migrations 0073/0074 применены guarded workflow, cumulative Quality и exact merged-SHA Production deploy зелёные. Semantic SKU/Catalog retirement/Resolver/Stage01/Stage02/Autonomy/ZAMMLER lineage сохранена. **Следующая содержательная работа — вернуться к обсуждению Stage04 business contract для долга Цеху и исторической себестоимости; код Stage04 пока не начинать без финального подтверждения модели.**
+Production на конец 2026-10-02 включает завершённую account authorization lineage PR #270–#273 и stocktake navigation hotfix PR #274. Последний runtime-changing SHA `99784288b3eafb30613d6213d818b62d2c0e0fd0`; cumulative Quality на hotfix head и exact merged-SHA Cloudflare deploy зелёные. Stocktake persistence/completion acceptance также зелёный.
+
+**Следующая содержательная сессия: не искать новые фиксы. Сначала получить от пользователя уже собранную новую информацию по Kaspi и Stage04, отдельно собрать/зафиксировать два business contract, и только потом решать реализацию.** После этих блоков roadmap остаётся: Stage05 → Marketing/РНП → финальный аудит/Production acceptance/передача.
