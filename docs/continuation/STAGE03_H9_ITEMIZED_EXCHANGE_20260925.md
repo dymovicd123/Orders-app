@@ -68,7 +68,7 @@ Next step after H9A is green: H9B UI payload/price resolver wiring and Branch2 m
 H9B activates itemized Exchange in the existing Exchange form without reusing legacy manual-total semantics.
 
 - both ordinary order entry and Workshop entry may open Exchange for `itemized_v1` orders;
-- one replacement pair per itemized Exchange operation is allowed in H9B; the legacy multi-pair queue remains available only for legacy pricing mode;
+- H9B initially allowed one replacement pair per itemized Exchange operation; H9C below supersedes that temporary restriction with a resumable multi-pair path;
 - the historical sold price is the default factual price for the new line, which makes a negotiated no-surcharge exchange easy and explicit;
 - changing the new product or a Catalog-driving dimension (audience, material, length) refreshes the current Catalog recommendation;
 - a deliberate manager-entered sold price is preserved when the Catalog recommendation refreshes;
@@ -97,3 +97,31 @@ Therefore an itemized replacement may create or reduce debt according to the new
 Legacy Exchange behavior is intentionally preserved for `legacy_manual_total` orders. H9B does not migrate or reprice old orders.
 
 No migration is introduced by H9B. Production/main remains outside the release scope.
+
+
+## H9C itemized multi-pair Exchange — 2026-10-02 Branch2
+
+H9C removes the temporary one-pair UI restriction for `itemized_v1` orders while keeping the same factual-price contract.
+
+The implementation deliberately does **not** pretend several replacements are one D1 SQL transaction. Instead it uses a parent critical operation plus deterministic idempotent child Exchange operations:
+
+- the browser queues several old→new pairs and sends one `POST /api/exchanges/batch`;
+- the parent request fingerprint freezes the complete batch payload before the first commercial mutation;
+- every old-line price/quantity snapshot and the starting order total are re-read and validated before execution;
+- the final itemized commercial total and final net retained money are validated before the first child Exchange;
+- child request ids are derived deterministically from the parent id, so a lost response or transient failure can safely resume without duplicating an already completed replacement;
+- price-increasing/neutral replacements execute before price-decreasing replacements. A real refund, when required, is attached to the first child; a real extra payment is attached to the final child. This keeps every resumable intermediate state free from unexplained overpayment;
+- repeated new SKUs are aggregated for the physical-stock preflight. A manager's explicit physical count for the same SKU must agree across rows and is applied only once, preventing a second row from resetting stock back to the pre-first-issue count;
+- Workshop replacements remain supported per child through the existing exact task-link path;
+- legacy `legacy_manual_total` multi-pair Exchange stays on its existing path and is not repriced.
+
+If an application/transport failure happens after one child has committed, retrying the exact same batch resumes from the parent critical operation and replays already completed child requests from their cached responses. Changing the batch payload uses a different client idempotency request and therefore cannot silently reuse a partially completed parent operation.
+
+H9C is **Branch2 only** until manual acceptance confirms:
+1. two ordinary itemized replacements in one visit;
+2. mixed cheaper/more-expensive lines with one aggregate refund or extra payment;
+3. two replacements requesting the same physical SKU;
+4. a Workshop replacement mixed with a stock replacement;
+5. retry after a simulated lost response does not duplicate Exchange rows, money events or stock movement.
+
+Production/main must not receive H9C until that acceptance is complete.
