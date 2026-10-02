@@ -1,0 +1,61 @@
+name: Diagnostic Production stocktake navigation
+
+on:
+  push:
+    branches:
+      - diag-prod-stocktake-navigation
+    paths:
+      - '.github/workflows/diag-prod-stocktake-navigation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Read-only active stocktake shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            s.id,
+            s.inventory_source,
+            s.started_at,
+            COUNT(i.id) AS total_items,
+            COUNT(DISTINCT COALESCE(CAST(i.product_id AS TEXT), i.product_name_snapshot)) AS product_groups,
+            SUM(CASE WHEN i.counted_quantity IS NOT NULL THEN 1 ELSE 0 END) AS counted_items,
+            SUM(CASE WHEN i.counted_quantity IS NULL THEN 1 ELSE 0 END) AS unfilled_items
+          FROM inventory_stocktake_sessions s
+          LEFT JOIN inventory_stocktake_items i ON i.session_id=s.id
+          WHERE s.status='active'
+          GROUP BY s.id, s.inventory_source, s.started_at
+          ORDER BY s.started_at DESC" --json
+
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT
+            i.session_id,
+            i.product_id,
+            i.product_name_snapshot,
+            COUNT(*) AS total_rows,
+            SUM(CASE WHEN i.counted_quantity IS NOT NULL THEN 1 ELSE 0 END) AS counted_rows,
+            SUM(CASE WHEN i.counted_quantity IS NULL THEN 1 ELSE 0 END) AS unfilled_rows,
+            SUM(CASE WHEN i.status='recount_required' THEN 1 ELSE 0 END) AS recount_rows
+          FROM inventory_stocktake_items i
+          JOIN inventory_stocktake_sessions s ON s.id=i.session_id
+          WHERE s.status='active'
+          GROUP BY i.session_id, i.product_id, i.product_name_snapshot
+          ORDER BY i.session_id, i.product_name_snapshot
+          LIMIT 80" --json
