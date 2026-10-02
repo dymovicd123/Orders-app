@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "revision": "session-hotpath-frontend-r1",
+  "baseMainCommit": "4fe0bb1c246d0ba1b6e664ea544007ddceb06ea9",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "b0b277696983a27f569d3638038eeb1b9a7b714f",
+      "beforeLines": 7920,
+      "afterGitBlob": "d0fb089cdfd0a7bb50db7e7c19180a7005f52ad9",
+      "afterLines": 7927,
+      "replacements": [
+        {
+          "beforeBlock": "  const refreshAuth = useCallback(async () => {\n    setAuthChecking(true)\n    try {\n      const response = await fetch('/api/admin-mode/status', { credentials: 'include' })\n      const data = await readJsonResponse<SimpleAdminStatusResponse>(response, 'Проверка админ-режима')\n      const nextAdmin = Boolean(data.isAdmin)\n      setSimpleAdminMode(nextAdmin)\n      setAuthUser(nextAdmin ? SIMPLE_ADMIN_USER : SIMPLE_MANAGER_USER)\n      setAuthHasUsers(true)\n    } catch (error) {\n      console.error(error)\n      setSimpleAdminMode(false)\n      setAuthUser(SIMPLE_MANAGER_USER)\n    } finally {\n      setAuthChecking(false)\n    }\n  }, [])",
+          "afterBlock": "  const refreshAuth = useCallback(async () => {\n    setAuthChecking(true)\n    const controller = new AbortController()\n    const timeout = window.setTimeout(() => controller.abort(), 8_000)\n    try {\n      const response = await fetch('/api/admin-mode/status', {\n        credentials: 'include',\n        cache: 'no-store',\n        signal: controller.signal,\n      })\n      const data = await readJsonResponse<SimpleAdminStatusResponse>(response, 'Проверка админ-режима')\n      const nextAdmin = Boolean(data.isAdmin)\n      setSimpleAdminMode(nextAdmin)\n      setAuthUser(nextAdmin ? SIMPLE_ADMIN_USER : SIMPLE_MANAGER_USER)\n      setAuthHasUsers(true)\n    } catch (error) {\n      console.error(error)\n      setSimpleAdminMode(false)\n      setAuthUser(SIMPLE_MANAGER_USER)\n    } finally {\n      window.clearTimeout(timeout)\n      setAuthChecking(false)\n    }\n  }, [])"
+        }
+      ]
+    }
+  }
+}
