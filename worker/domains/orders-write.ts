@@ -13,7 +13,7 @@ import { assertCreateOrderShortageDecisions, catalogOrderInputKey, fulfillOrderR
 import { canonicalItemProjection, fetchOrderRelations, isOrderPricingFoundationEnabled, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
 import { upsertCustomerIdentityForOrderCreate } from './references.ts'
 import { isInventoryAutoWriteoffEnabled, recalculateCustomersAfterStorageCleanup } from './storage.ts'
-import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'
+import { assertWorkshopTaskDetailSchema, ensureOrderItemWorkshopColumn } from './workshop-schema.ts'
 
 export async function applyOrderStockWriteOff(
   db: D1Database,
@@ -685,6 +685,7 @@ async function markCreateCustomerOrderCount(
 
 
 export async function createOrder(db: D1Database, input: OrderInput, actor?: AuthUser | null) {
+  await ensureOrderItemWorkshopColumn(db);
   let criticalOperation: CriticalOperationHandle | null = null;
   try {
     const requestedAt = new Date().toISOString();
@@ -1191,6 +1192,7 @@ export async function updateOrderCritical(
   checkedBy: string,
   options: { lifecycleAction?: 'order_delete' } = {},
 ) {
+  await ensureOrderItemWorkshopColumn(db);
   let criticalOperation: CriticalOperationHandle | null = null;
   try {
     criticalOperation = await beginCriticalOperation(db, 'order_edit', input.requestId, { orderId: id, ...input }, { orderId: id });
@@ -2069,6 +2071,7 @@ export async function updateOrderCritical(
 
 
 export async function getOrder(db: D1Database, id: number) {
+  await ensureOrderItemWorkshopColumn(db);
   const pricingFoundationEnabled = await isOrderPricingFoundationEnabled(db);
   const pricingModeSelect = pricingFoundationEnabled
     ? 'o.pricing_mode'
