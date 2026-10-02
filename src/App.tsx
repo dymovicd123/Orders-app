@@ -25,9 +25,9 @@ import './styles/189b-business-history.css'
 import './styles/189c-reliable-money-history.css'
 import './styles/finance-f4-money-journal.css'
 import './styles/189d-team-activity-cleanup.css'
-import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, ExchangeDraft, ExchangeHistoryEntry, ExchangeHistoryResponse, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, InventoryHistoryResponse, InventoryCheckHistoryResponse, FinancialHistoryEntry, FinancialHistoryResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryDraftItem, InventoryMatrixDraft, InventoryMovementRecord, InventoryOperationVariantDraft, InventoryPanel, InventoryResponse, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, InventoryStockRecord, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, ReturnDraft, ReturnHistoryEntry, ReturnHistoryResponse, SimpleAdminStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
+import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, ExchangeDraft, ExchangeHistoryEntry, ExchangeHistoryResponse, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, InventoryHistoryResponse, InventoryCheckHistoryResponse, FinancialHistoryEntry, FinancialHistoryResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryDraftItem, InventoryMatrixDraft, InventoryMovementRecord, InventoryOperationVariantDraft, InventoryPanel, InventoryResponse, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, InventoryStockRecord, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, ReturnDraft, ReturnHistoryEntry, ReturnHistoryResponse, AuthStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
 import type { CatalogResolutionContext, CatalogResolutionInput, CatalogResolutionResponse, InventoryCycleCountApplyResponse, InventoryCycleCountSuggestionsResponse, InventoryReservationsResponse, InventoryStocktakeMutationResponse, InventoryStocktakeSessionsResponse, WarehouseAttentionSummaryResponse } from '../shared/api-contracts.ts'
-import { MANAGER_COLOR_OPTIONS, SIMPLE_ADMIN_USER, SIMPLE_MANAGER_USER, orderPanelOptions, workspaceModules } from './app/constants'
+import { MANAGER_COLOR_OPTIONS, orderPanelOptions, workspaceModules } from './app/constants'
 import { createDebtClosePayment, createEditorDraft, createEmptyEditorItem, createEmptyEditorPayment, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, deriveOrderSourceType, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, htmlEscape, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, resolvePaymentKind, sectorFromHash, shippingStatusLabel, sortSizeLikeValues, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
 import { ChoicePills, FriendlyNumberInput, ManagerBadge, ManagerPicker, SmartPickerInput, resolveManagerDisplayColor } from './components'
 import { TableDragScrollManager } from './components/tables/TableDragScrollManager'
@@ -147,6 +147,21 @@ type OrderStockHandoverActionResponse = Omit<OrderStockHandoverResponse, 'items'
 }
 
 
+type BrowserPasswordCredentialConstructor = new (data: { id: string; password: string; name?: string }) => Credential
+
+async function offerBrowserPasswordSave(login: string, password: string) {
+  const username = login.trim()
+  if (!username || !password || typeof window === 'undefined') return
+  const PasswordCredentialCtor = (window as Window & { PasswordCredential?: BrowserPasswordCredentialConstructor }).PasswordCredential
+  if (!PasswordCredentialCtor || !navigator.credentials?.store) return
+  try {
+    const credential = new PasswordCredentialCtor({ id: username, password, name: username })
+    await navigator.credentials.store(credential)
+  } catch (error) {
+    console.debug('Password manager did not accept the credential storage request.', error)
+  }
+}
+
 const WAREHOUSE_ATTENTION_SUMMARY_TTL_MS = 60_000
 const INVENTORY_FORM_SNAPSHOT_TTL_MS = 30_000
 let warehouseAttentionSummaryCache: { data: WarehouseAttentionSummaryResponse; loadedAt: number } | null = null
@@ -231,28 +246,26 @@ function App() {
   const [workshopSortDirection, setWorkshopSortDirection] = useState<'oldest' | 'newest'>('oldest')
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const [authUser, setAuthUser] = useState<AuthUser | null>(SIMPLE_MANAGER_USER)
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [authChecking, setAuthChecking] = useState(true)
-  const [simpleAdminMode, setSimpleAdminMode] = useState(false)
-  const [adminModeOpen, setAdminModeOpen] = useState(false)
   const [stockResolutionPrompt, setStockResolutionPrompt] = useState<StockResolutionPrompt | null>(null)
   const stockResolutionDecisionRef = useRef<((value: boolean) => void) | null>(null)
   const [returnedItemResolutionEventId, setReturnedItemResolutionEventId] = useState<number | null>(null)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const [adminModeBusy, setAdminModeBusy] = useState(false)
-  const [adminModeDraft, setAdminModeDraft] = useState({ login: 'admin', password: '' })
   const [authHasUsers, setAuthHasUsers] = useState(true)
   const [authBusy, setAuthBusy] = useState(false)
-  const [authEmail, setAuthEmail] = useState('')
+  const [authLogin, setAuthLogin] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [authDisplayName, setAuthDisplayName] = useState('')
+  const [authBootstrapLogin, setAuthBootstrapLogin] = useState('admin')
+  const [authBootstrapPassword, setAuthBootstrapPassword] = useState('')
   const [passwordChangeOpen, setPasswordChangeOpen] = useState(false)
   const [passwordChangeBusy, setPasswordChangeBusy] = useState(false)
   const [passwordChangeDraft, setPasswordChangeDraft] = useState({ currentPassword: '', newPassword: '' })
   const [authUsersOpen, setAuthUsersOpen] = useState(false)
   const [authUsersBusy, setAuthUsersBusy] = useState(false)
   const [authUsers, setAuthUsers] = useState<ManagedAuthUser[]>([])
-  const [authUserDraft, setAuthUserDraft] = useState({ id: 0, email: '', password: '', role: 'manager' as AccessRole, managerId: 0, displayName: '', isActive: true, mustChangePassword: true })
+  const [authUserDraft, setAuthUserDraft] = useState({ id: 0, login: '', password: '', role: 'manager' as AccessRole, managerId: 0, displayName: '', isActive: true, mustChangePassword: true })
   const askStockResolution = (prompt: StockResolutionPrompt) => new Promise<boolean>((resolve) => {
     if (stockResolutionDecisionRef.current) stockResolutionDecisionRef.current(false)
     stockResolutionDecisionRef.current = resolve
@@ -265,8 +278,8 @@ function App() {
     resolve?.(confirmed)
   }
 
-  const accessRole: AccessRole = simpleAdminMode ? 'admin' : 'manager'
-  const isAdmin = accessRole === 'admin'
+  const accessRole: AccessRole = authUser?.role || 'manager'
+  const isAdmin = authUser?.role === 'admin'
   const authReady = !authChecking
   const { apiFetch, prepareCriticalRequest, completeCriticalRequest } = useApiClient({ accessRole, setError, setMessage })
   
@@ -330,49 +343,22 @@ function App() {
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), 8_000)
     try {
-      const response = await fetch('/api/admin-mode/status', {
+      const response = await fetch('/api/auth/status', {
         credentials: 'include',
         cache: 'no-store',
         signal: controller.signal,
       })
-      const data = await readJsonResponse<SimpleAdminStatusResponse>(response, 'Проверка админ-режима')
-      const nextAdmin = Boolean(data.isAdmin)
-      setSimpleAdminMode(nextAdmin)
-      setAuthUser(nextAdmin ? SIMPLE_ADMIN_USER : SIMPLE_MANAGER_USER)
-      setAuthHasUsers(true)
+      const data = await readJsonResponse<AuthStatusResponse>(response, 'Проверка авторизации')
+      setAuthHasUsers(Boolean(data.hasUsers))
+      setAuthUser(data.user || null)
     } catch (error) {
       console.error(error)
-      setSimpleAdminMode(false)
-      setAuthUser(SIMPLE_MANAGER_USER)
+      setAuthUser(null)
     } finally {
       window.clearTimeout(timeout)
       setAuthChecking(false)
     }
   }, [])
-
-  const submitAdminMode = useCallback(async (event?: FormEvent<HTMLFormElement>) => {
-    event?.preventDefault()
-    setAdminModeBusy(true)
-    setError(null)
-    try {
-      const response = await fetch('/api/admin-mode/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(adminModeDraft),
-      })
-      await readJsonResponse<SimpleAdminStatusResponse>(response, 'Админ-режим')
-      setSimpleAdminMode(true)
-      setAuthUser(SIMPLE_ADMIN_USER)
-      setAdminModeDraft({ login: 'admin', password: '' })
-      setAdminModeOpen(false)
-      setMessage('Админ-режим включён.')
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось включить админ-режим.')
-    } finally {
-      setAdminModeBusy(false)
-    }
-  }, [adminModeDraft])
 
 
   const submitAuth = useCallback(async (event: FormEvent<HTMLFormElement>) => {
@@ -382,8 +368,14 @@ function App() {
     try {
       const endpoint = authHasUsers ? '/api/auth/login' : '/api/auth/setup'
       const payload = authHasUsers
-        ? { email: authEmail, password: authPassword }
-        : { email: authEmail, password: authPassword, displayName: authDisplayName || 'Администратор' }
+        ? { login: authLogin, password: authPassword }
+        : {
+            login: authLogin,
+            password: authPassword,
+            displayName: authDisplayName || 'Администратор',
+            bootstrapLogin: authBootstrapLogin,
+            bootstrapPassword: authBootstrapPassword,
+          }
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -391,8 +383,13 @@ function App() {
         body: JSON.stringify(payload),
       })
       const data = await readJsonResponse<{ ok: boolean; user?: AuthUser }>(response, authHasUsers ? 'Вход' : 'Первый администратор')
+      if (data.user && (!authHasUsers || !data.user.mustChangePassword)) {
+        await offerBrowserPasswordSave(authLogin, authPassword)
+      }
       setAuthUser(data.user || null)
+      setAuthHasUsers(true)
       setAuthPassword('')
+      setAuthBootstrapPassword('')
       if (data.user?.mustChangePassword) {
         setMessage('Вход выполнен. Нужно сменить временный пароль.')
       } else {
@@ -403,39 +400,45 @@ function App() {
     } finally {
       setAuthBusy(false)
     }
-  }, [authDisplayName, authEmail, authHasUsers, authPassword])
+  }, [authBootstrapLogin, authBootstrapPassword, authDisplayName, authHasUsers, authLogin, authPassword])
 
   const logout = useCallback(async () => {
-    await fetch('/api/admin-mode/logout', { method: 'POST', credentials: 'include' })
-    setSimpleAdminMode(false)
-    setAuthUser(SIMPLE_MANAGER_USER)
-    setMessage('Админ-режим выключен.')
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+    } finally {
+      setAuthUser(null)
+      setAuthUsersOpen(false)
+      setPasswordChangeOpen(false)
+      setMessage('Вы вышли из системы.')
+    }
   }, [])
 
   const submitPasswordChange = useCallback(async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault()
-    if (!isAdmin) return
+    if (!authUser) return
     setPasswordChangeBusy(true)
     setError(null)
     try {
       const currentPassword = passwordChangeDraft.currentPassword
       const newPassword = passwordChangeDraft.newPassword
       if (newPassword.length < 8) throw new Error('Новый пароль должен быть не короче 8 символов.')
-      const response = await apiFetch('/api/admin-mode/change-password', {
+      const response = await apiFetch('/api/auth/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ currentPassword, newPassword }),
       })
-      const data = await readJsonResponse<{ ok: boolean; message?: string }>(response, 'Смена пароля')
+      const data = await readJsonResponse<{ ok: boolean; user?: AuthUser; message?: string }>(response, 'Смена пароля')
+      await offerBrowserPasswordSave(authUser.login, newPassword)
+      if (data.user) setAuthUser(data.user)
       setPasswordChangeDraft({ currentPassword: '', newPassword: '' })
       setPasswordChangeOpen(false)
-      setMessage(data.message || 'Пароль админ-режима изменён.')
+      setMessage(data.message || 'Пароль изменён.')
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Не удалось сменить пароль.')
     } finally {
       setPasswordChangeBusy(false)
     }
-  }, [apiFetch, isAdmin, passwordChangeDraft])
+  }, [apiFetch, authUser, passwordChangeDraft])
 
   const loadAuthUsers = useCallback(async () => {
     if (!isAdmin) return
@@ -457,11 +460,17 @@ function App() {
     setError(null)
     try {
       const isEdit = Boolean(authUserDraft.id)
+      const duplicateManagerAccount = authUserDraft.managerId
+        ? authUsers.find((user) => user.managerId === authUserDraft.managerId && user.id !== authUserDraft.id)
+        : null
+      if (duplicateManagerAccount) {
+        throw new Error(`У этого сотрудника уже есть аккаунт @${duplicateManagerAccount.login}. Измените его в разделе «Команда».`)
+      }
       const payload = {
-        email: authUserDraft.email,
+        login: authUserDraft.login,
         password: authUserDraft.password || undefined,
         role: authUserDraft.role,
-        managerId: authUserDraft.managerId || undefined,
+        managerId: authUserDraft.managerId || null,
         displayName: authUserDraft.displayName,
         isActive: authUserDraft.isActive,
         mustChangePassword: authUserDraft.mustChangePassword,
@@ -472,31 +481,30 @@ function App() {
         body: JSON.stringify(payload),
       })
       await readJsonResponse(response, 'Пользователь')
-      setAuthUserDraft({ id: 0, email: '', password: '', role: 'manager', managerId: 0, displayName: '', isActive: true, mustChangePassword: true })
-      setMessage(isEdit ? 'Пользователь обновлён.' : 'Пользователь создан.')
+      setAuthUserDraft({ id: 0, login: '', password: '', role: 'manager', managerId: 0, displayName: '', isActive: true, mustChangePassword: true })
+      setMessage(isEdit ? 'Аккаунт обновлён.' : 'Аккаунт создан.')
       await loadAuthUsers()
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось сохранить пользователя.')
+      setError(error instanceof Error ? error.message : 'Не удалось сохранить аккаунт.')
     } finally {
       setAuthUsersBusy(false)
     }
-  }, [apiFetch, authUserDraft, isAdmin, loadAuthUsers])
+  }, [apiFetch, authUserDraft, authUsers, isAdmin, loadAuthUsers])
 
-  const deleteAuthUser = useCallback(async (id: number) => {
-    if (!isAdmin || !window.confirm('Удалить пользователя? Его активные сессии будут закрыты.')) return
+  const disableAuthUser = useCallback(async (id: number) => {
+    if (!isAdmin || !window.confirm('Отключить этот аккаунт? Его активные сессии будут закрыты.')) return
     setAuthUsersBusy(true)
     try {
       const response = await apiFetch(`/api/auth/users/${id}`, { method: 'DELETE' })
-      await readJsonResponse(response, 'Удаление пользователя')
-      setMessage('Пользователь удалён.')
+      await readJsonResponse(response, 'Отключение аккаунта')
+      setMessage('Аккаунт отключён.')
       await loadAuthUsers()
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось удалить пользователя.')
+      setError(error instanceof Error ? error.message : 'Не удалось отключить аккаунт.')
     } finally {
       setAuthUsersBusy(false)
     }
   }, [apiFetch, isAdmin, loadAuthUsers])
-
 
   const [editorDraft, setEditorDraft] = useState<EditorDraft | null>(null)
   const [inventoryDraft, setInventoryDraft] = useState<InventoryDraft>({
@@ -629,7 +637,7 @@ function App() {
   const [financeMethodDraft, setFinanceMethodDraft] = useState({ id: 0, value: '', sortOrder: '0', isActive: true })
   const [teamEmployees, setTeamEmployees] = useState<TeamEmployee[]>([])
   const [teamBusy, setTeamBusy] = useState(false)
-  const [teamDraft, setTeamDraft] = useState({ id: 0, name: '', role: 'Менеджер', phone: '', colorKey: '#2563EB', hiredAt: formatLocalDateInput(), comment: '', isActive: true })
+  const [teamDraft, setTeamDraft] = useState({ id: 0, name: '', role: 'Менеджер', phone: '', colorKey: '#2563EB', hiredAt: formatLocalDateInput(), comment: '', isActive: true, createAccount: true, login: '', password: '', mustChangePassword: true })
   const [teamRosterView, setTeamRosterView] = useState<'active' | 'former'>('active')
   const [teamFormOpen, setTeamFormOpen] = useState(false)
   const [teamColorEditorId, setTeamColorEditorId] = useState<number | null>(null)
@@ -705,6 +713,7 @@ function App() {
       : null
     return resolveManagerDisplayColor(byName?.colorKey, byName?.id || name || 'manager')
   }
+
 
   useEffect(() => {
     const syncSectorFromHash = () => {
@@ -1367,7 +1376,10 @@ function App() {
   useEffect(() => {
     if (!authReady) return
     if (activeSector === 'team') {
-      void loadTeamEmployees()
+      void Promise.all([
+        loadTeamEmployees(),
+        isAdmin ? loadAuthUsers() : Promise.resolve(),
+      ])
     }
     if (activeSector === 'leads') {
       void loadLeadRecords()
@@ -1383,7 +1395,7 @@ function App() {
     if (activeSector === 'reports') {
       void loadFinanceReports()
     }
-  }, [activeSector, authReady, financeReportType])
+  }, [activeSector, authReady, financeReportType, isAdmin])
 
   useEffect(() => {
     if (!authReady || activeSector !== 'finance' || financeMode !== 'cash') return
@@ -2639,6 +2651,20 @@ function App() {
       return
     }
 
+    const hasLinkedAccount = Boolean(teamDraft.id && authUsers.some((user) => user.managerId === teamDraft.id))
+    const shouldCreateAccount = teamDraft.createAccount !== false && !hasLinkedAccount
+    const requestedLogin = (teamDraft.login || '').trim().toLowerCase()
+    if (shouldCreateAccount) {
+      if (requestedLogin.length < 3) {
+        setError('Для входа укажите логин минимум из 3 символов.')
+        return
+      }
+      if ((teamDraft.password || '').length < 8) {
+        setError('Для нового сотрудника задайте временный пароль минимум из 8 символов.')
+        return
+      }
+    }
+
     setTeamBusy(true)
     setError(null)
     setMessage(null)
@@ -2648,12 +2674,37 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(teamDraft),
       })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'Сотрудник')
+      const data = await readJsonResponse<{ ok?: boolean; message?: string; employeeId?: number }>(response, 'Сотрудник')
       if (!response.ok) throw new Error(data.message || 'Не удалось сохранить сотрудника.')
-      setTeamDraft({ id: 0, name: '', role: 'Менеджер', phone: '', colorKey: '#2563EB', hiredAt: formatLocalDateInput(), comment: '', isActive: true })
-      await Promise.all([loadTeamEmployees(), loadReferencesData(true)])
+      const employeeId = Number(data.employeeId || teamDraft.id || 0)
+
+      if (shouldCreateAccount && employeeId) {
+        const accountResponse = await apiFetch('/api/auth/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            login: requestedLogin,
+            password: teamDraft.password,
+            role: String(teamDraft.role || '').toLowerCase().includes('админ') ? 'admin' : 'manager',
+            managerId: employeeId,
+            displayName: teamDraft.name,
+            isActive: true,
+            mustChangePassword: teamDraft.mustChangePassword !== false,
+          }),
+        })
+        const accountData = await readJsonResponse<{ ok?: boolean; message?: string }>(accountResponse, 'Доступ сотрудника')
+        if (!accountResponse.ok) {
+          await Promise.all([loadTeamEmployees(), loadAuthUsers(), loadReferencesData(true)])
+          setTeamDraft((draft) => ({ ...draft, id: employeeId, login: requestedLogin, createAccount: true }))
+          setError(`Сотрудник создан, но вход не настроен: ${accountData.message || 'не удалось создать аккаунт'}. Исправьте логин или пароль здесь и сохраните ещё раз.`)
+          return
+        }
+      }
+
+      setTeamDraft({ id: 0, name: '', role: 'Менеджер', phone: '', colorKey: '#2563EB', hiredAt: formatLocalDateInput(), comment: '', isActive: true, createAccount: true, login: '', password: '', mustChangePassword: true })
+      await Promise.all([loadTeamEmployees(), isAdmin ? loadAuthUsers() : Promise.resolve(), loadReferencesData(true)])
       setTeamFormOpen(false)
-      setMessage('Сотрудник сохранён.')
+      setMessage(shouldCreateAccount ? `Сотрудник сохранён. Вход @${requestedLogin} создан.` : 'Сотрудник сохранён.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка сохранения сотрудника')
     } finally {
@@ -2720,8 +2771,8 @@ function App() {
       if (teamDraft.id === employee.id) {
         setTeamDraft((draft) => ({ ...draft, isActive }))
       }
-      await Promise.all([loadTeamEmployees(), loadReferencesData(true)])
-      setMessage(data.message || (isActive ? 'Сотрудник возвращён в команду.' : 'Сотрудник отмечен как уволенный.'))
+      await Promise.all([loadTeamEmployees(), isAdmin ? loadAuthUsers() : Promise.resolve(), loadReferencesData(true)])
+      setMessage(data.message || (isActive ? 'Сотрудник возвращён в команду. Доступ в систему включите отдельно, если он нужен.' : 'Сотрудник отмечен как уволенный. Его вход в систему отключён.'))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось изменить статус сотрудника.')
     } finally {
@@ -2743,8 +2794,8 @@ function App() {
       const response = await apiFetch(`/api/team/employees/${employee.id}`, { method: 'DELETE' })
       const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'Удаление сотрудника')
       if (!response.ok) throw new Error(data.message || 'Не удалось удалить сотрудника.')
-      if (teamDraft.id === employee.id) setTeamDraft({ id: 0, name: '', role: 'Менеджер', phone: '', colorKey: '#2563EB', hiredAt: formatLocalDateInput(), comment: '', isActive: true })
-      await Promise.all([loadTeamEmployees(), loadReferencesData(true)])
+      if (teamDraft.id === employee.id) setTeamDraft({ id: 0, name: '', role: 'Менеджер', phone: '', colorKey: '#2563EB', hiredAt: formatLocalDateInput(), comment: '', isActive: true, createAccount: true, login: '', password: '', mustChangePassword: true })
+      await Promise.all([loadTeamEmployees(), isAdmin ? loadAuthUsers() : Promise.resolve(), loadReferencesData(true)])
       setMessage(data.message || 'Сотрудник удалён из команды.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка удаления сотрудника')
@@ -7207,36 +7258,46 @@ function removeDebtPayment(index: number) {
   if (!authUser) {
     return (
       <main className="auth-shell">
-        <form className="auth-card" onSubmit={submitAuth}>
+        <form className="auth-card" onSubmit={submitAuth} method="post" action={authHasUsers ? '/api/auth/login' : '/api/auth/setup'} autoComplete="on">
           <div className="erp-brand auth-brand">
             <div className="erp-brand-mark">S</div>
             <div>
               <div className="erp-brand-title">Система заказов</div>
-              <div className="erp-brand-subtitle">{authHasUsers ? 'Вход по почте и паролю' : 'Первый запуск'}</div>
+              <div className="erp-brand-subtitle">{authHasUsers ? 'Вход по логину и паролю' : 'Первый запуск'}</div>
             </div>
           </div>
           <div>
             <h1>{authHasUsers ? 'Вход' : 'Создать администратора'}</h1>
             <p>
               {authHasUsers
-                ? 'Введите почту и пароль. Роль больше не переключается вручную.'
-                : 'Создайте первый аккаунт администратора. После этого можно будет добавить менеджеров.'}
+                ? 'Введите логин и пароль своего аккаунта.'
+                : 'Подтвердите текущий админ-доступ и создайте первый персональный аккаунт администратора.'}
             </p>
           </div>
           {error ? <div className="app-alert error"><span>{error}</span><button type="button" onClick={() => setError(null)}>×</button></div> : null}
           {!authHasUsers ? (
-            <label>
-              <span>Имя администратора</span>
-              <input value={authDisplayName} onChange={(event) => setAuthDisplayName(event.target.value)} placeholder="Например: Администратор" />
-            </label>
+            <>
+              <label>
+                <span>Текущий админ-логин</span>
+                <input id="auth-bootstrap-username" name="bootstrap-username" value={authBootstrapLogin} onChange={(event) => setAuthBootstrapLogin(event.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} required />
+              </label>
+              <label>
+                <span>Текущий админ-пароль</span>
+                <input id="auth-bootstrap-password" name="bootstrap-password" value={authBootstrapPassword} onChange={(event) => setAuthBootstrapPassword(event.target.value)} type="password" autoComplete="current-password" required />
+              </label>
+              <label>
+                <span>Имя администратора</span>
+                <input value={authDisplayName} onChange={(event) => setAuthDisplayName(event.target.value)} placeholder="Например: Администратор" />
+              </label>
+            </>
           ) : null}
           <label>
-            <span>Почта</span>
-            <input value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} type="email" autoComplete="email" required placeholder="name@example.com" />
+            <span>{authHasUsers ? 'Логин' : 'Новый логин'}</span>
+            <input id="auth-username" name="username" value={authLogin} onChange={(event) => setAuthLogin(event.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} required minLength={3} maxLength={32} placeholder="Например: admin" />
           </label>
           <label>
-            <span>Пароль</span>
-            <input value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} type="password" autoComplete={authHasUsers ? 'current-password' : 'new-password'} required minLength={8} placeholder="Минимум 8 символов" />
+            <span>{authHasUsers ? 'Пароль' : 'Новый пароль'}</span>
+            <input id="auth-password" name="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} type="password" autoComplete={authHasUsers ? 'current-password' : 'new-password'} required minLength={8} placeholder="Минимум 8 символов" />
           </label>
           <button className="primary" type="submit" disabled={authBusy}>
             {authBusy ? 'Проверяю...' : authHasUsers ? 'Войти' : 'Создать администратора'}
@@ -7249,7 +7310,7 @@ function removeDebtPayment(index: number) {
   if (authUser.mustChangePassword) {
     return (
       <main className="auth-shell">
-        <form className="auth-card" onSubmit={submitPasswordChange}>
+        <form className="auth-card" onSubmit={submitPasswordChange} method="post" action="/api/auth/change-password" autoComplete="on">
           <div className="erp-brand auth-brand">
             <div className="erp-brand-mark">S</div>
             <div>
@@ -7263,12 +7324,16 @@ function removeDebtPayment(index: number) {
           </div>
           {error ? <div className="app-alert error"><span>{error}</span><button type="button" onClick={() => setError(null)}>×</button></div> : null}
           <label>
+            <span>Логин</span>
+            <input id="auth-change-username" name="username" value={authUser.login} autoComplete="username" readOnly />
+          </label>
+          <label>
             <span>Текущий временный пароль</span>
-            <input value={passwordChangeDraft.currentPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, currentPassword: event.target.value }))} type="password" autoComplete="current-password" required />
+            <input id="auth-current-password" name="current-password" value={passwordChangeDraft.currentPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, currentPassword: event.target.value }))} type="password" autoComplete="current-password" required />
           </label>
           <label>
             <span>Новый пароль</span>
-            <input value={passwordChangeDraft.newPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, newPassword: event.target.value }))} type="password" autoComplete="new-password" required minLength={8} />
+            <input id="auth-new-password" name="new-password" value={passwordChangeDraft.newPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, newPassword: event.target.value }))} type="password" autoComplete="new-password" required minLength={8} />
           </label>
           <button className="primary" type="submit" disabled={passwordChangeBusy}>
             {passwordChangeBusy ? 'Сохраняю...' : 'Сменить пароль и войти'}
@@ -7320,30 +7385,31 @@ function removeDebtPayment(index: number) {
 
 
         <div className="erp-sidebar-card access-role-card">
-          <div className="card-label">Режим доступа</div>
+          <div className="card-label">Аккаунт</div>
           <div className="access-role-control">
             <div className="auth-user-card">
-              <strong>{isAdmin ? 'Админ режим' : 'Рабочий режим'}</strong>
-              <span>{isAdmin ? 'Доступны настройки, удаления и служебные действия' : 'Обычная работа без входа'}</span>
+              <strong>{authUser.displayName || authUser.managerName || authUser.login}</strong>
+              <span>@{authUser.login}{authUser.managerName ? ` · ${authUser.managerName}` : ''}</span>
               <em>{isAdmin ? 'Администратор' : 'Менеджер'}</em>
             </div>
-            {isAdmin ? (
-              <div className="access-role-actions">
-                <button className="secondary compact" type="button" onClick={storageMaintenance.openPanel}>
-                  Хранилище
-                </button>
-                <button className="secondary compact" type="button" onClick={() => setPasswordChangeOpen(true)}>
-                  Сменить пароль
-                </button>
-                <button className="secondary compact" type="button" onClick={() => void logout()}>
-                  Выйти из админ режима
-                </button>
-              </div>
-            ) : (
-              <button className="primary compact" type="button" onClick={() => setAdminModeOpen(true)}>
-                Войти в админ режим
+            <div className="access-role-actions">
+              {isAdmin ? (
+                <>
+                  <button className="secondary compact" type="button" onClick={storageMaintenance.openPanel}>
+                    Хранилище
+                  </button>
+                  <button className="secondary compact" type="button" onClick={() => { setAuthUsersOpen(true); void loadAuthUsers() }}>
+                    Аккаунты
+                  </button>
+                </>
+              ) : null}
+              <button className="secondary compact" type="button" onClick={() => setPasswordChangeOpen(true)}>
+                Сменить пароль
               </button>
-            )}
+              <button className="secondary compact" type="button" onClick={() => void logout()}>
+                Выйти
+              </button>
+            </div>
           </div>
         </div>
 
@@ -7505,7 +7571,6 @@ function removeDebtPayment(index: number) {
         eventId={returnedItemResolutionEventId}
         apiFetch={apiFetch}
         isAdmin={isAdmin}
-        onRequestAdminMode={() => setAdminModeOpen(true)}
         onClose={() => setReturnedItemResolutionEventId(null)}
         onCompleted={async () => {
           await Promise.allSettled([
@@ -7519,35 +7584,13 @@ function removeDebtPayment(index: number) {
         }}
       />
 
-      {adminModeOpen ? (
-        <div className="modal-backdrop" style={orderCatalogResolutionOrder || returnedItemResolutionEventId ? { zIndex: 1501 } : undefined} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAdminModeOpen(false) }}>
-          <form className="modal-card auth-users-modal" role="dialog" aria-modal="true" aria-label="Админ режим" onSubmit={submitAdminMode}>
-            <div className="modal-head">
-              <div>
-                <div className="card-label">Админ режим</div>
-                <h3>Войти в админ режим</h3>
-                <p>{orderCatalogResolutionOrder ? 'Введите пароль администратора. После входа вы вернётесь к уточнению этого заказа.' : returnedItemResolutionEventId ? 'Введите пароль администратора. После входа вы вернётесь к приёмке этого товара.' : 'Обычная работа доступна без входа. Пароль нужен только для удаления, настроек и служебных действий.'}</p>
-              </div>
-              <button className="secondary compact" type="button" onClick={() => { setAdminModeOpen(false); setAdminModeDraft({ login: 'admin', password: '' }) }}>Закрыть</button>
-            </div>
-            <div className="form-grid compact-form-grid">
-              <label><span>Логин</span><input value={adminModeDraft.login} onChange={(event) => setAdminModeDraft((draft) => ({ ...draft, login: event.target.value }))} autoComplete="username" /></label>
-              <label><span>Пароль</span><input type="password" value={adminModeDraft.password} onChange={(event) => setAdminModeDraft((draft) => ({ ...draft, password: event.target.value }))} autoComplete="current-password" autoFocus /></label>
-            </div>
-            <div className="modal-actions">
-              <button className="primary" type="submit" disabled={adminModeBusy}>{adminModeBusy ? 'Проверяю...' : 'Войти'}</button>
-              <button className="secondary" type="button" onClick={() => setAdminModeOpen(false)} disabled={adminModeBusy}>Отмена</button>
-            </div>
-          </form>
-        </div>
-      ) : null}
+
 
       <Suspense fallback={null}>
       <OrderCatalogResolutionModal
         order={orderCatalogResolutionOrder}
         apiFetch={apiFetch}
         isAdmin={isAdmin}
-        onRequestAdminMode={() => setAdminModeOpen(true)}
         onClose={() => setOrderCatalogResolutionOrder(null)}
         onCompleted={async (resolvedOrder: OrderRecord) => {
           const freshResponse = await apiFetch(`/api/orders/${resolvedOrder.id}`, { cache: 'no-store' })
@@ -7577,7 +7620,7 @@ function removeDebtPayment(index: number) {
 
       {passwordChangeOpen ? (
         <div className="modal-backdrop" role="presentation">
-          <form className="modal-card auth-users-modal" role="dialog" aria-modal="true" aria-label="Смена пароля" onSubmit={submitPasswordChange}>
+          <form className="modal-card auth-users-modal" role="dialog" aria-modal="true" aria-label="Смена пароля" onSubmit={submitPasswordChange} method="post" action="/api/auth/change-password" autoComplete="on">
             <div className="modal-head">
               <div>
                 <div className="card-label">Доступ</div>
@@ -7587,8 +7630,9 @@ function removeDebtPayment(index: number) {
               <button className="secondary compact" type="button" onClick={() => { setPasswordChangeOpen(false); setPasswordChangeDraft({ currentPassword: '', newPassword: '' }) }}>Закрыть</button>
             </div>
             <div className="form-grid compact-form-grid">
-              <label><span>Текущий пароль</span><input type="password" value={passwordChangeDraft.currentPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, currentPassword: event.target.value }))} required /></label>
-              <label><span>Новый пароль</span><input type="password" value={passwordChangeDraft.newPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, newPassword: event.target.value }))} required minLength={8} /></label>
+              <label><span>Логин</span><input name="username" value={authUser.login} autoComplete="username" readOnly /></label>
+              <label><span>Текущий пароль</span><input name="current-password" type="password" autoComplete="current-password" value={passwordChangeDraft.currentPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, currentPassword: event.target.value }))} required /></label>
+              <label><span>Новый пароль</span><input name="new-password" type="password" autoComplete="new-password" value={passwordChangeDraft.newPassword} onChange={(event) => setPasswordChangeDraft((draft) => ({ ...draft, newPassword: event.target.value }))} required minLength={8} /></label>
             </div>
             <div className="modal-actions">
               <button className="primary" type="submit" disabled={passwordChangeBusy}>{passwordChangeBusy ? 'Обновляю...' : 'Обновить пароль'}</button>
@@ -7619,7 +7663,7 @@ function removeDebtPayment(index: number) {
                   </div>
                 </div>
                 <div className="form-grid compact-form-grid">
-                  <label><span>Почта</span><input value={authUserDraft.email} onChange={(event) => setAuthUserDraft((draft) => ({ ...draft, email: event.target.value }))} placeholder="manager@example.com" /></label>
+                  <label><span>Логин</span><input value={authUserDraft.login} onChange={(event) => setAuthUserDraft((draft) => ({ ...draft, login: event.target.value }))} placeholder="Например: asel" minLength={3} maxLength={32} /></label>
                   <label><span>Пароль</span><input type="password" value={authUserDraft.password} onChange={(event) => setAuthUserDraft((draft) => ({ ...draft, password: event.target.value }))} placeholder={authUserDraft.id ? 'Не менять' : 'Минимум 8 символов'} /></label>
                   <label><span>Роль</span><select value={authUserDraft.role} onChange={(event) => setAuthUserDraft((draft) => ({ ...draft, role: normalizeAccessRole(event.target.value) }))}><option value="manager">Менеджер</option><option value="admin">Админ</option></select></label>
                   <label><span>Сотрудник</span><select value={authUserDraft.managerId || 0} onChange={(event) => setAuthUserDraft((draft) => ({ ...draft, managerId: Number(event.target.value) || 0 }))}><option value={0}>Не привязан</option>{teamEmployees.map((employee) => <option key={`auth-employee-${employee.id}`} value={employee.id}>{employee.name}</option>)}</select></label>
@@ -7629,7 +7673,7 @@ function removeDebtPayment(index: number) {
                 </div>
                 <div className="modal-actions">
                   <button className="primary" type="button" onClick={() => void saveAuthUser()} disabled={authUsersBusy}>{authUserDraft.id ? 'Сохранить' : 'Создать'}</button>
-                  {authUserDraft.id ? <button className="secondary" type="button" onClick={() => setAuthUserDraft({ id: 0, email: '', password: '', role: 'manager', managerId: 0, displayName: '', isActive: true, mustChangePassword: true })}>Новый</button> : null}
+                  {authUserDraft.id ? <button className="secondary" type="button" onClick={() => setAuthUserDraft({ id: 0, login: '', password: '', role: 'manager', managerId: 0, displayName: '', isActive: true, mustChangePassword: true })}>Новый</button> : null}
                 </div>
               </section>
 
@@ -7637,7 +7681,7 @@ function removeDebtPayment(index: number) {
                 <div className="mini-panel-head">
                   <div>
                     <h4>Аккаунты</h4>
-                    <p className="mini-panel-note">Показано {authUsers.length}. Удаление закрывает сессии пользователя.</p>
+                    <p className="mini-panel-note">Показано {authUsers.length}. Отключение аккаунта закрывает его активные сессии.</p>
                   </div>
                   <button className="secondary compact" type="button" onClick={() => void loadAuthUsers()}>{authUsersBusy ? 'Загружаю...' : 'Обновить'}</button>
                 </div>
@@ -7645,13 +7689,13 @@ function removeDebtPayment(index: number) {
                   {authUsers.map((user) => (
                     <div className={`auth-user-row ${user.isActive ? '' : 'is-disabled'}`} key={`auth-user-${user.id}`}>
                       <div>
-                        <strong>{user.email}</strong>
+                        <strong>@{user.login}</strong>
                         <span>{user.role === 'admin' ? 'Админ' : 'Менеджер'}{user.managerName ? ` · ${user.managerName}` : ''}</span>
                         <small>{user.mustChangePassword ? 'Нужно сменить временный пароль' : user.lastLoginAt ? `Последний вход: ${formatDateShort(user.lastLoginAt)}` : 'Входов пока нет'}</small>
                       </div>
                       <div className="row-actions">
-                        <button className="secondary compact" type="button" onClick={() => setAuthUserDraft({ id: user.id, email: user.email, password: '', role: user.role, managerId: user.managerId || 0, displayName: user.displayName || '', isActive: user.isActive, mustChangePassword: Boolean(user.mustChangePassword) })}>Править</button>
-                        <button className="danger subtle compact" type="button" onClick={() => void deleteAuthUser(user.id)}>Удалить</button>
+                        <button className="secondary compact" type="button" onClick={() => setAuthUserDraft({ id: user.id, login: user.login, password: '', role: user.role, managerId: user.managerId || 0, displayName: user.displayName || '', isActive: user.isActive, mustChangePassword: Boolean(user.mustChangePassword) })}>Править</button>
+                        <button className="danger subtle compact" type="button" disabled={!user.isActive} onClick={() => void disableAuthUser(user.id)}>Отключить</button>
                       </div>
                     </div>
                   ))}
@@ -7777,7 +7821,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'team'} label="Команда">
-        <TeamSection ctx={{ exportTeamPlanReportWord, formatDateShort, formatLocalDateInput, formatMoney, formatPercent, getTimesheetCalendarSlots, getTimesheetEntriesForDate, getTimesheetWeekdayLabel, isAdmin, loadPlans, loadTeamActivityReport, loadTeamSalaryReport, loadTeamTimesheet, MANAGER_COLOR_OPTIONS, ManagerBadge, planBusy, planFilters, planReport, printTeamPlanReportPdf, removeTeamEmployee, resolveManagerDisplayColor, saveTeamEmployee, saveTeamEmployeeColor, saveTeamTimesheet, sectorStyle, setPlanFilters, setTeamActivityFilters, setTeamColorEditorId, setTeamDraft, setTeamEmployeeEmploymentStatus, setTeamFormOpen, setTeamMode, setTeamRosterView, setTeamSalaryFilters, setTimesheetComment, setTimesheetCurrentMonth, setTimesheetDaysPreset, setTimesheetMonth, setTimesheetSelectedDays, setTimesheetSelectedManagers, setTimesheetWorkUntil, shiftTimesheetMonth, teamActivityBusy, teamActivityFilters, teamActivityLoadFailed, teamActivityReport, teamBusy, teamColorEditorId, teamDraft, teamEmployees, teamFormOpen, teamMode, teamRosterView, teamSalaryFilters, teamSalaryReport, timesheetBusy, timesheetComment, timesheetData, timesheetMonth, timesheetSelectedDays, timesheetSelectedManagers, timesheetWorkUntil, toggleTimesheetDay, toggleTimesheetManager }} />
+        <TeamSection ctx={{ apiFetch, authUsers, authUsersBusy, exportTeamPlanReportWord, formatDateShort, formatLocalDateInput, formatMoney, formatPercent, getTimesheetCalendarSlots, getTimesheetEntriesForDate, getTimesheetWeekdayLabel, isAdmin, loadPlans, loadTeamActivityReport, loadTeamSalaryReport, loadTeamTimesheet, MANAGER_COLOR_OPTIONS, ManagerBadge, loadAuthUsers, planBusy, planFilters, planReport, printTeamPlanReportPdf, removeTeamEmployee, resolveManagerDisplayColor, readJsonResponse, saveTeamEmployee, saveTeamEmployeeColor, saveTeamTimesheet, sectorStyle, setError, setMessage, setPlanFilters, setTeamActivityFilters, setTeamColorEditorId, setTeamDraft, setTeamEmployeeEmploymentStatus, setTeamFormOpen, setTeamMode, setTeamRosterView, setTeamSalaryFilters, setTimesheetComment, setTimesheetCurrentMonth, setTimesheetDaysPreset, setTimesheetMonth, setTimesheetSelectedDays, setTimesheetSelectedManagers, setTimesheetWorkUntil, shiftTimesheetMonth, teamActivityBusy, teamActivityFilters, teamActivityLoadFailed, teamActivityReport, teamBusy, teamColorEditorId, teamDraft, teamEmployees, teamFormOpen, teamMode, teamRosterView, teamSalaryFilters, teamSalaryReport, timesheetBusy, timesheetComment, timesheetData, timesheetMonth, timesheetSelectedDays, timesheetSelectedManagers, timesheetWorkUntil, toggleTimesheetDay, toggleTimesheetManager }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'leads'} label="Лиды">
