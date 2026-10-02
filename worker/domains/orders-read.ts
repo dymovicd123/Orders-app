@@ -5,6 +5,7 @@ import type { OrderListRow } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
 import { canonicalItemProjection, fetchOrderRelations, isOrderPricingFoundationEnabled, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
 import { getOrder } from './orders-write.ts'
+import { ensureOrderItemWorkshopColumn } from './workshop-schema.ts'
 
 export type ArchiveRuleInput = {
   cutoffDate?: unknown;
@@ -274,6 +275,7 @@ export async function findRetainedOrderSummary(db: D1Database, externalId: strin
 
 
 export async function listOrders(db: D1Database, url: URL) {
+  await ensureOrderItemWorkshopColumn(db);
   const limit = Math.min(200, Math.max(20, toInt(url.searchParams.get('limit'), 100)));
   const offset = Math.max(0, toInt(url.searchParams.get('offset'), 0));
   const q = cleanText(url.searchParams.get('q'));
