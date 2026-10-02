@@ -25,7 +25,7 @@ import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
 import { createReferenceValue, deleteReferenceValue, getReferenceData, getReferenceValueCounts, listReferenceValues, normalizeReferenceKind, updateReferenceValue } from './domains/references.ts'
-import { cancelExchange, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createReturn, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
+import { cancelExchange, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createItemizedExchangeBatch, createReturn, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { continueDatabaseStorageCleanup, getDatabaseStorageStatus, startDatabaseStorageCleanup, updateDatabaseStorageCapacity } from './domains/storage.ts'
 import { buildStockResolutionRequired } from './domains/stock-resolution.ts'
 import type { CallCentreInput, DepartmentPlanInput, EmployeeInput, LeadInput, PlanInput, TimesheetInput } from './domains/team.ts'
@@ -1550,6 +1550,39 @@ export default {
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
         try {
           return json(await cancelReturn(env.DB, Number(returnCancelMatch[1]), input));
+        } catch (error) {
+          const criticalResponse = criticalOperationErrorResponse(error);
+          if (criticalResponse) return criticalResponse;
+          throw error;
+        }
+      }
+
+      if (url.pathname === '/api/exchanges/batch' && request.method === 'POST') {
+        const input = await readJson<{
+          requestId?: string;
+          orderId?: number;
+          exchangeDate?: string;
+          expectedOrderTotal?: number;
+          pairs?: Array<{
+            oldItemId?: number;
+            oldQuantity?: number;
+            oldReturnSource?: unknown;
+            oldPhysicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock';
+            newItem?: NonNullable<OrderInput['items']>[number];
+            newSourceWasManuallyChanged?: boolean;
+            expectedOldActiveQuantity?: number;
+            expectedOldUnitPrice?: number;
+            expectedOldLineTotal?: number;
+            expectedOldCatalogPriceSnapshot?: number | null;
+          }>;
+          financialAction?: unknown;
+          financialAmount?: number;
+          paymentMethod?: string;
+          comment?: string;
+        }>(request);
+        input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
+        try {
+          return json(await createItemizedExchangeBatch(env.DB, input), { status: 201 });
         } catch (error) {
           const criticalResponse = criticalOperationErrorResponse(error);
           if (criticalResponse) return criticalResponse;
