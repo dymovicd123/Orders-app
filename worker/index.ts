@@ -31,7 +31,6 @@ import { buildStockResolutionRequired } from './domains/stock-resolution.ts'
 import type { CallCentreInput, DepartmentPlanInput, EmployeeInput, LeadInput, PlanInput, TimesheetInput } from './domains/team.ts'
 import { deleteCallCentreRecord, deleteDepartmentPlanRecord, deleteLeadRecord, deleteManagerPlanRecord, deleteTeamEmployee, listCallCentreRecords, listLeadRecords, listPlans, listTeamActivity, listTeamEmployees, listTeamSalaryPreview, listTeamTimesheet, saveCallCentreRecord, saveDepartmentPlan, saveLeadRecord, saveManagerPlan, saveTeamEmployee, saveTeamTimesheet, setTeamEmployeeActive } from './domains/team.ts'
 import { bulkUpdateWorkshopTasks, listWorkshopTasks, readWorkshopCounts, updateWorkshopTask } from './domains/workshop.ts'
-import { ensureOrderItemWorkshopColumn } from './domains/workshop-schema.ts'
 import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'
 
 // Auth R2: account sessions are authoritative. The legacy simple-admin cookie is no longer a runtime access path.
@@ -42,8 +41,6 @@ export default {
     const url = new URL(request.url);
 
     try {
-      await ensureOrderItemWorkshopColumn(env.DB);
-
       if (url.pathname === '/api/auth/status' && request.method === 'GET') {
         return handleAuthStatus(env.DB, request);
       }
