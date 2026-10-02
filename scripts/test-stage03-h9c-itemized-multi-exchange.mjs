@@ -39,7 +39,7 @@ check(ui.includes('queuedObservedPhysical') && ui.includes('exchangeConfirmedPhy
 check(ui.includes('nextRequestedByOldItem') && ui.includes('nextOldItem'), 'H9C queue does not advance to a remaining old item')
 check(ui.includes("priceOrigin: nextOldItem") && ui.includes('unitPrice: nextOldItem'), 'H9C next itemized row does not seed its own historical sold price')
 
-check(workerIndex.includes("url.pathname === '/api/exchanges/batch'") && workerIndex.includes('createItemizedExchangeBatch'), 'H9C Worker route missing')
+check(workerIndex.includes("url.pathname === '/api/exchanges/batch'") && workerIndex.includes('createItemizedExchangeBatchFromRequest'), 'H9C Worker route missing')
 
 const batchStart = batchWorker.indexOf('export async function createItemizedExchangeBatch')
 check(batchStart >= 0, 'H9C backend batch function boundary missing')
@@ -60,6 +60,7 @@ check(batch.includes('stockGroups') && batch.includes('group.requestedQuantity')
 check(batch.includes('observedAssigned') && batch.includes('observedPhysicalQuantity = null'), 'H9C physical observation is not deduplicated across repeated SKU children')
 check(batch.includes('const childRequestId =') && batch.includes('criticalOperation.requestId') && batch.includes(':p'), 'H9C deterministic child idempotency key missing')
 check(batch.includes('await createExchange(db, {') && batchWorker.includes("from './returns-exchanges.ts'"), 'H9C batch does not reuse the proven single-exchange mutation path')
+check(batchWorker.includes('createItemizedExchangeBatchFromRequest') && batchWorker.includes("readJson<ItemizedExchangeBatchInput>(request)"), 'H9C request adapter must stay outside Worker composition root')
 check(batch.includes('completedPairs}_done') && batch.includes('advanceCriticalOperation(db, criticalOperation'), 'H9C parent progress checkpoint missing')
 check(batch.includes('await completeCriticalOperation(db, criticalOperation, response)'), 'H9C parent completion cache missing')
 
