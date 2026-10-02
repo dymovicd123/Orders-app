@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "revision": "auth-production-port-r2-r6-frontend",
+  "revision": "auth-production-port-r2-r7-frontend",
   "baseMainCommit": "dde6b7298b427381f848fca8cf77853e86eea47b",
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "d0fb089cdfd0a7bb50db7e7c19180a7005f52ad9",
       "beforeLines": 7927,
-      "afterGitBlob": "4753066e1e0fd2250cdb9b95baf6cb3c9fd484ca",
-      "afterLines": 7971,
+      "afterGitBlob": "f86e8735c5d44e565aac3f80e5c696ec7cc3f084",
+      "afterLines": 8040,
       "baselineFixture": "scripts/fixtures/auth-production-port/src/App.tsx"
     },
     "src/app/constants.ts": {
@@ -20,8 +20,8 @@
     "src/app/controllers/useApiClient.ts": {
       "beforeGitBlob": "28074b639dbee0089b1c657c4f3426e8f8f5eb82",
       "beforeLines": 246,
-      "afterGitBlob": "1696e2fa5e8db37b0780ecce62ad81e77be7a54b",
-      "afterLines": 246,
+      "afterGitBlob": "655421a5bb5d5b39d065fcc8bcdb3df9fbf82467",
+      "afterLines": 264,
       "baselineFixture": "scripts/fixtures/auth-production-port/src/app/controllers/useApiClient.ts"
     },
     "src/app/types.ts": {
