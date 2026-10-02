@@ -96,9 +96,9 @@ const createCombination = catalog.slice(createStart, createEnd)
 assert.ok(createCombination.includes('const duplicate = await findCatalogCombinationV3') && createCombination.includes('if (duplicate?.id) return { id: toInt(duplicate.id, 0), created: false }'), 'R10.9: exact duplicate is not checked before insert')
 assert.ok(createCombination.includes('const existing = await findCatalogCombinationV3') && createCombination.includes('created: false'), 'R10.9: concurrent duplicate insert is not re-read safely')
 
-// 10. Manager -> Admin login -> same resolver session.
-assert.ok(modal.includes('onRequestAdminMode?: () => void') && app.includes('onRequestAdminMode={() => setAdminModeOpen(true)}'), 'R10.10: resolver no longer opens Admin in place')
-assert.ok(app.includes('После входа вы вернётесь к уточнению этого заказа.') && app.includes('setSimpleAdminMode(true)') && app.includes('setAdminModeOpen(false)'), 'R10.10: Admin login no longer resumes same resolver context')
+// 10. Manager/Admin boundary: no in-place privilege escalation inside a resolver.
+assert.ok(!modal.includes('onRequestAdminMode') && !app.includes('setAdminModeOpen'), 'R10.10: resolver can still escalate privileges in place')
+assert.ok(modal.includes('под своим аккаунтом') && app.includes("'/api/auth/login'") && app.includes("'/api/auth/logout'"), 'R10.10: resolver no longer preserves the account-owned Admin boundary')
 
 // 11. Double-click / lost response / replay: one resolver write and one physical shipping winner.
 let releaseFirst
