@@ -6,8 +6,8 @@
     "worker/index.ts": {
       "beforeGitBlob": "14dfa551e1d7eb686d9f1102a63af6a18b87df37",
       "beforeLines": 1623,
-      "afterGitBlob": "21e1d7aae5879c4050514031766cc21ea4726fce",
-      "afterLines": 1620,
+      "afterGitBlob": "7bf8fdaec83181b03997c7bb7c281813833bf692",
+      "afterLines": 1631,
       "replacements": [
         {
           "beforeBlock": "import { bulkUpdateWorkshopTasks, listWorkshopTasks, readWorkshopCounts, updateWorkshopTask } from './domains/workshop.ts'\nimport { ensureOrderItemWorkshopColumn } from './domains/workshop-schema.ts'\nimport { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'",
@@ -16,6 +16,14 @@
         {
           "beforeBlock": "    try {\n      await ensureOrderItemWorkshopColumn(env.DB);\n\n      if (url.pathname === '/api/auth/status' && request.method === 'GET') {",
           "afterBlock": "    try {\n      if (url.pathname === '/api/auth/status' && request.method === 'GET') {"
+        },
+        {
+          "beforeBlock": "import { cancelExchange, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createReturn, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'",
+          "afterBlock": "import { cancelExchange, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createReturn, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'\nimport { createItemizedExchangeBatchFromRequest } from './domains/exchange-batch.ts'"
+        },
+        {
+          "beforeBlock": "      if (url.pathname === '/api/exchanges' && request.method === 'POST') {",
+          "afterBlock": "      if (url.pathname === '/api/exchanges/batch' && request.method === 'POST') {\n        try {\n          return json(await createItemizedExchangeBatchFromRequest(env.DB, request), { status: 201 });\n        } catch (error) {\n          const criticalResponse = criticalOperationErrorResponse(error);\n          if (criticalResponse) return criticalResponse;\n          throw error;\n        }\n      }\n\n      if (url.pathname === '/api/exchanges' && request.method === 'POST') {"
         }
       ]
     },

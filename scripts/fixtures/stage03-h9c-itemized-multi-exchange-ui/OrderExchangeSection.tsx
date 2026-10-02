@@ -158,33 +158,10 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
   const exchangeObservationEnabled = Boolean(exchangeDraft.newItem.stockObservationEnabled)
   const exchangeObservedPhysical = exchangeDraft.newItem.observedPhysicalQuantity
   const exchangeRequired = Math.max(1, Number(exchangeDraft.newItem.quantity || 1))
-  const exchangeNewItemKey = (item: any) => [
-    item?.sourceType || 'warehouse',
-    item?.productName || '',
-    item?.audienceType || '',
-    item?.gender || '',
-    item?.color || '',
-    item?.material || '',
-    item?.length || '',
-    item?.size || '',
-  ].map((value) => String(value || '').trim().toUpperCase()).join('|')
-  const currentExchangeNewItemKey = String(exchangeDraft.newItem.productName || '').trim()
-    ? exchangeNewItemKey(exchangeDraft.newItem)
-    : ''
-  const queuedSameNewItems = currentExchangeNewItemKey
-    ? queuedPairs.filter((pair: any) => !pair.saved && exchangeNewItemKey(pair.newItem) === currentExchangeNewItemKey)
-    : []
-  const queuedSameNewQuantity = queuedSameNewItems.reduce((sum: number, pair: any) => sum + Math.max(1, Number(pair.newItem?.quantity || 1)), 0)
-  const queuedObservedPhysical = queuedSameNewItems
-    .map((pair: any) => pair.newItem?.observedPhysicalQuantity)
-    .find((value: any) => value !== null && value !== undefined)
-  const exchangeBatchRequired = exchangeRequired + queuedSameNewQuantity
-  const exchangeConfirmedPhysical = exchangeObservedPhysical ?? queuedObservedPhysical ?? null
-  const exchangeHasPhysicalConfirmation = exchangeObservationEnabled || queuedObservedPhysical !== undefined
   const exchangePhysical = Number(exchangeAvailability?.currentPhysical || 0)
   const exchangeReserved = Math.max(0, Number(exchangeAvailability?.currentReserved || 0))
-  const exchangePhysicalShortage = Boolean(exchangeAvailability?.canObservePhysical && exchangePhysical < exchangeBatchRequired)
-  const exchangeFreeAfterIssue = exchangePhysical - exchangeReserved - exchangeBatchRequired
+  const exchangePhysicalShortage = Boolean(exchangeAvailability?.canObservePhysical && exchangePhysical < exchangeRequired)
+  const exchangeFreeAfterIssue = exchangePhysical - exchangeReserved - exchangeRequired
   const effectiveOldAvailableQuantity = Math.max(0, Number(effectiveOldItem?.operationAvailableQuantity || 0))
   const itemizedSoldPrice = exchangeDraft.newItem.unitPrice == null ? Number.NaN : Number(exchangeDraft.newItem.unitPrice)
   const itemizedCatalogSnapshot = exchangeDraft.newItem.catalogPriceSnapshot == null ? null : Number(exchangeDraft.newItem.catalogPriceSnapshot)
@@ -195,9 +172,9 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
   )
   const currentPairReady = Boolean(effectiveOldItem && effectiveOldAvailableQuantity > 0 && String(exchangeDraft.newItem.productName || '').trim() && itemizedPriceReady)
   const queueCurrentExchangePair = () => {
-    if (!currentPairReady) return
-    if (exchangePhysicalShortage && !exchangeHasPhysicalConfirmation) return
-    if (exchangeHasPhysicalConfirmation && (exchangeConfirmedPhysical === null || !Number.isInteger(Number(exchangeConfirmedPhysical)) || Number(exchangeConfirmedPhysical) < exchangeBatchRequired)) return
+    if (itemizedExchange || !currentPairReady) return
+    if (exchangePhysicalShortage && !exchangeObservationEnabled) return
+    if (exchangeObservationEnabled && (exchangeObservedPhysical === null || exchangeObservedPhysical === undefined || !Number.isInteger(Number(exchangeObservedPhysical)) || Number(exchangeObservedPhysical) < exchangeRequired)) return
     const fresh = createExchangeDraft(exchangeSelectedOrder)
     const pair = {
       draftKey: exchangeDraft.currentPairKey || fresh.currentPairKey,
@@ -209,36 +186,11 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
       newSourceWasManuallyChanged: Boolean(exchangeDraft.newSourceWasManuallyChanged),
       saved: false,
     }
-    const nextQueued = [...queuedPairs, pair]
-    const nextRequestedByOldItem = new Map<number, number>()
-    for (const queued of nextQueued) {
-      if (queued.saved) continue
-      const oldItemId = Number(queued.oldItemId || 0)
-      if (!oldItemId) continue
-      nextRequestedByOldItem.set(oldItemId, (nextRequestedByOldItem.get(oldItemId) || 0) + Math.max(1, Number(queued.oldQuantity || 1)))
-    }
-    const nextOldItem = (exchangeSelectedOrder?.items || []).find((item: any) => (
-      Number(item.id || 0) > 0
-      && Math.max(0, Number(item.availableOperationQuantity ?? item.quantity ?? 0) - (nextRequestedByOldItem.get(Number(item.id || 0)) || 0)) > 0
-    )) || null
-    const nextSource = replacementSourceForItem(nextOldItem)
     setExchangeDraft((current) => ({
       ...fresh,
       orderId: current.orderId,
       exchangeDate: current.exchangeDate,
-      oldItemId: Number(nextOldItem?.id || 0),
-      oldPhysicalState: nextOldItem?.sourceType === 'workshop' ? 'no_stock' : 'pending',
-      newItem: {
-        ...fresh.newItem,
-        sourceType: nextSource,
-        ...(itemizedExchange ? {
-          unitPrice: nextOldItem && Number.isSafeInteger(Number(nextOldItem.unitPrice)) && Number(nextOldItem.unitPrice) >= 0 ? Number(nextOldItem.unitPrice) : undefined,
-          catalogPriceSnapshot: null,
-          priceOrigin: nextOldItem && Number.isSafeInteger(Number(nextOldItem.unitPrice)) && Number(nextOldItem.unitPrice) >= 0 ? 'manual' : 'missing',
-          priceNeedsConfirmation: false,
-        } : {}),
-      },
-      queuedPairs: nextQueued,
+      queuedPairs: [...(current.queuedPairs || []), pair],
       financialAction: current.financialAction,
       financialAmount: current.financialAmount,
       paymentMethod: current.paymentMethod,
@@ -542,13 +494,13 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                               <div className="order-source-availability-body">
                                 {exchangeAvailability.canObservePhysical ? (
                                   <>
-                                    <p><strong>{exchangePhysicalShortage ? `По учёту физически не хватает ${exchangeBatchRequired - exchangePhysical} шт.` : `На месте ${exchangePhysical} шт.`}</strong></p>
+                                    <p><strong>{exchangePhysicalShortage ? `По учёту физически не хватает ${exchangeRequired - exchangePhysical} шт.` : `На месте ${exchangePhysical} шт.`}</strong></p>
                                     <p className="field-hint">
                                       {exchangePhysicalShortage
-                                        ? `Для всех одинаковых новых позиций в этом обмене нужно ${exchangeBatchRequired} шт. Если товар перед вами, не нужно отменять обмен — просто подтвердите фактическое количество ниже.`
+                                        ? `Для немедленной выдачи нужно ${exchangeRequired} шт. Если товар перед вами, не нужно отменять обмен — просто подтвердите фактическое количество ниже.`
                                         : exchangeFreeAfterIssue < 0
                                           ? `Физически товар есть. Уже в заказах ${exchangeReserved} шт.; после этой выдачи свободный запас станет отрицательным на ${Math.abs(exchangeFreeAfterIssue)} шт. Обмен не блокируется, но система сохранит нехватку для существующих резервов.`
-                                          : `Уже в заказах ${exchangeReserved} шт. После всех одинаковых позиций этого обмена свободно останется ${exchangeFreeAfterIssue} шт.`}
+                                          : `Уже в заказах ${exchangeReserved} шт. После выдачи обмена свободно останется ${exchangeFreeAfterIssue} шт.`}
                                     </p>
                                   </>
                                 ) : (
@@ -590,12 +542,12 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                             />
                                           </label>
                                           <div className="order-stock-observation-result">
-                                            <span>Для всех одинаковых позиций этого обмена нужно: <strong>{exchangeBatchRequired}</strong></span>
+                                            <span>Для обмена сейчас нужно: <strong>{exchangeRequired}</strong></span>
                                             {exchangeObservedPhysical === null || exchangeObservedPhysical === undefined
                                               ? <span>Введите количество, которое видите физически.</span>
-                                              : Number(exchangeObservedPhysical) < exchangeBatchRequired
-                                                ? <strong className="is-shortage">Для выдачи не хватает {exchangeBatchRequired - Number(exchangeObservedPhysical)} шт.</strong>
-                                                : <strong>После выдачи физически останется минимум {Number(exchangeObservedPhysical) - exchangeBatchRequired} шт.</strong>}
+                                              : Number(exchangeObservedPhysical) < exchangeRequired
+                                                ? <strong className="is-shortage">Для выдачи не хватает {exchangeRequired - Number(exchangeObservedPhysical)} шт.</strong>
+                                                : <strong>После выдачи физически останется минимум {Number(exchangeObservedPhysical) - exchangeRequired} шт.</strong>}
                                           </div>
                                         </div>
                                       </>
@@ -648,14 +600,11 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                     </div>
     
                     <div className="actions order-create-actions form-bottom-actions">
-                      <button
-                        className="secondary"
-                        type="button"
-                        onClick={queueCurrentExchangePair}
-                        disabled={exchangeBusy || !currentPairReady || (exchangePhysicalShortage && !exchangeHasPhysicalConfirmation) || (exchangeHasPhysicalConfirmation && (exchangeConfirmedPhysical === null || Number(exchangeConfirmedPhysical) < exchangeBatchRequired))}
-                      >
-                        Добавить ещё позицию
-                      </button>
+                      {!itemizedExchange ? (
+                        <button className="secondary" type="button" onClick={queueCurrentExchangePair} disabled={exchangeBusy || !currentPairReady || (exchangePhysicalShortage && !exchangeObservationEnabled)}>
+                          Добавить ещё позицию
+                        </button>
+                      ) : null}
                       <button className="primary" type="button" onClick={() => void saveExchange()} disabled={exchangeBusy || (!queuedPairs.length && !currentPairReady)}>
                         {exchangeBusy ? 'Сохраняю...' : `Оформить обмен${queuedPairs.length ? ` (${queuedPairs.length + (currentPairReady ? 1 : 0)} поз.)` : ''}`}
                       </button>

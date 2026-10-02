@@ -4,6 +4,41 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const h9cWorkerModuleManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h9c-itemized-multi-exchange-worker-module-manifest.json'), 'utf8'))
+if (h9cWorkerModuleManifest?.version !== 1 || h9cWorkerModuleManifest?.revision !== 'stage03-h9c-itemized-multi-exchange-worker-module') throw new Error('H9C Worker module manifest invalid')
+const h9cWorkerModuleBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.H9C_EXCHANGE_BATCH_MODULE_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(h9cWorkerModuleManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (h9cWorkerModuleBlobSha(actual) !== delta.gitBlob || actual.split(/\r?\n/).length !== delta.lines) {
+        throw new Error('H9C Worker module changed beyond exact manifest: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.unlinkSync(absolute)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, H9C_EXCHANGE_BATCH_MODULE_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STAGE03-H9C EXCHANGE BATCH WORKER MODULE STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const branch2SessionHotpathWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/session-hotpath-branch2-worker-manifest.json'), 'utf8'))
 if (branch2SessionHotpathWorkerManifest?.version !== 1 || branch2SessionHotpathWorkerManifest?.revision !== 'branch2-session-hotpath-hotfix-r1') throw new Error('Branch2 session hotpath Worker manifest invalid')
 const branch2SessionHotpathWorkerBlobSha = (value) => {
