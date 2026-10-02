@@ -75,6 +75,8 @@ function verifySource() {
     'scripts/session-hotpath-worker-manifest.json',
     'scripts/session-hotpath-frontend-manifest.json',
     'scripts/test-session-hotpath-hotfix.mjs',
+    'scripts/auth-production-port-worker-manifest.json',
+    'scripts/auth-production-port-frontend-manifest.json',
     'scripts/test-step1906a-worker-modularization.mjs',
     'scripts/test-step1906b-frontend-modularization.mjs',
     'scripts/test-step1906c-dead-code-cleanup.mjs',
@@ -87,6 +89,9 @@ function verifySource() {
     'scripts/test-step191e-runtime-limits-atomicity.mjs',
     'scripts/step191f-admin-session-integrity-manifest.json',
     'scripts/test-step191f-admin-session-integrity.mjs',
+    'scripts/test-auth-production-team-access.mjs',
+    'scripts/test-auth-production-hardening.mjs',
+    'scripts/test-auth-production-password-manager.mjs',
     'scripts/step192a1-warehouse-truth-freshness-manifest.json',
     'scripts/test-step192a1-warehouse-truth-freshness.mjs',
     'scripts/step192a2-catalog-truth-finalizer-manifest.json',
@@ -134,7 +139,7 @@ function verifySource() {
     "typeApiBoundaryCleanup: '1906e'",
     "transferRuntimeSafety: '191d'",
     "runtimeLimitsAtomicity: '191e'",
-    "adminSessionIntegrity: '191f'",
+    "adminSessionIntegrity: 'account-auth-r2'",
     "warehouseTruthFreshness: '192a1'",
     "catalogTruthFinalizer: '192a2'",
     "orderCreateSaveIntegrity: '192b2a4'",
@@ -278,7 +283,10 @@ try {
   run('Step 190.6E type / API boundary tests', process.execPath, [path.join(root, 'scripts/test-step1906e-type-api-boundaries.mjs')])
   run('Step 191D transfer runtime safety tests', process.execPath, [path.join(root, 'scripts/test-step191d-transfer-runtime-safety.mjs')])
   run('Step 191E D1 runtime limits / atomicity tests', process.execPath, [path.join(root, 'scripts/test-step191e-runtime-limits-atomicity.mjs')])
-  run('Step 191F admin session integrity tests', process.execPath, [path.join(root, 'scripts/test-step191f-admin-session-integrity.mjs')])
+  run('Step 191F account-session integrity tests', process.execPath, [path.join(root, 'scripts/test-step191f-admin-session-integrity.mjs')])
+  run('Auth Production Team access UX tests', process.execPath, [path.join(root, 'scripts/test-auth-production-team-access.mjs')])
+  run('Auth Production hardening tests', process.execPath, [path.join(root, 'scripts/test-auth-production-hardening.mjs')])
+  run('Auth Production password-manager tests', process.execPath, [path.join(root, 'scripts/test-auth-production-password-manager.mjs')])
   run('Step 192A1 Warehouse truth / freshness tests', process.execPath, [path.join(root, 'scripts/test-step192a1-warehouse-truth-freshness.mjs')])
   run('Step 192A2 catalog truth finalizer tests', process.execPath, [path.join(root, 'scripts/test-step192a2-catalog-truth-finalizer.mjs')])
   run('Step 192B1 Warehouse truth gates / attention tests', process.execPath, [path.join(root, 'scripts/test-step192b1-warehouse-truth-attention.mjs')])

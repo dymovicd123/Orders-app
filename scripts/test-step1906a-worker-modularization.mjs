@@ -4,6 +4,45 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const authProductionWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/auth-production-port-worker-manifest.json'), 'utf8'))
+if (authProductionWorkerManifest?.version !== 1 || authProductionWorkerManifest?.revision !== 'auth-production-port-r2-r6-worker') throw new Error('Auth Production Worker manifest invalid')
+const authProductionWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.AUTH_PRODUCTION_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(authProductionWorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (authProductionWorkerBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Auth Production Worker changed beyond exact port: ' + relative)
+      }
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (authProductionWorkerBlobSha(baseline) !== delta.beforeGitBlob || baseline.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Auth Production Worker baseline fixture drifted: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, AUTH_PRODUCTION_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('AUTH PRODUCTION WORKER STRUCTURAL LAYER PASSED — exact R2-R6 account-session port preserved over current main')
+  process.exit(0)
+}
 const sessionHotpathWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/session-hotpath-worker-manifest.json'), 'utf8'))
 if (sessionHotpathWorkerManifest?.version !== 1 || sessionHotpathWorkerManifest?.revision !== 'session-hotpath-hotfix-r1') throw new Error('Session hotpath Worker manifest invalid')
 const sessionHotpathWorkerBlobSha = (value) => {

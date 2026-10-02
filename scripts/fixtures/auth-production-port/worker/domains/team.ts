@@ -94,24 +94,6 @@ export function getMonthRange(monthValue: string) {
 }
 
 
-export async function ensureTeamEmployeeCanLoseAccess(db: D1Database, managerId: number) {
-  const [linkedAdmins, activeAdmins] = await Promise.all([
-    db.prepare("SELECT COUNT(*) AS count FROM app_users WHERE manager_id = ? AND role = 'admin' AND is_active = 1")
-      .bind(managerId).first<{ count: number }>(),
-    db.prepare("SELECT COUNT(*) AS count FROM app_users WHERE role = 'admin' AND is_active = 1 AND login IS NOT NULL AND trim(login) <> ''")
-      .first<{ count: number }>(),
-  ]);
-  const linkedCount = toInt(linkedAdmins?.count, 0);
-  if (linkedCount > 0 && toInt(activeAdmins?.count, 0) <= linkedCount) {
-    return json({
-      ok: false,
-      message: 'Нельзя отключить этого сотрудника: его аккаунт — последний активный администратор. Сначала назначьте другого администратора.',
-    }, { status: 409 });
-  }
-  return null;
-}
-
-
 export async function countTeamEmployeeReferences(db: D1Database, id: number) {
   const runD1Bounded = async (tasks: Array<() => Promise<any>>) => {
     const results: any[] = [];
@@ -260,26 +242,12 @@ export async function setTeamEmployeeActive(db: D1Database, id: number, isActive
   if (!employee) return json({ ok: false, message: 'Сотрудник не найден.' }, { status: 404 });
 
   const isActive = isActiveValue === true || Number(isActiveValue) === 1 ? 1 : 0;
-  if (!isActive) {
-    const accessDenied = await ensureTeamEmployeeCanLoseAccess(db, id);
-    if (accessDenied) return accessDenied;
-  }
   const now = new Date().toISOString();
-  const managerUpdate = db.prepare(
+  await db.prepare(
     `UPDATE managers
      SET is_active = ?, dismissed_at = CASE WHEN ? = 1 THEN NULL ELSE ? END, updated_at = ?
      WHERE id = ?`
-  ).bind(isActive, isActive, now.slice(0, 10), now, id);
-
-  if (isActive) {
-    await managerUpdate.run();
-  } else {
-    await db.batch([
-      db.prepare('DELETE FROM app_sessions WHERE user_id IN (SELECT id FROM app_users WHERE manager_id = ?)').bind(id),
-      db.prepare('UPDATE app_users SET is_active = 0, disabled_at = ?, updated_at = ? WHERE manager_id = ?').bind(now, now, id),
-      managerUpdate,
-    ]);
-  }
+  ).bind(isActive, isActive, now.slice(0, 10), now, id).run();
 
   await writeActivityLog(db, {
     eventType: isActive ? 'team_employee_restored' : 'team_employee_dismissed',
@@ -296,8 +264,8 @@ export async function setTeamEmployeeActive(db: D1Database, id: number, isActive
     id,
     isActive: Boolean(isActive),
     message: isActive
-      ? `${cleanText(employee.name)} снова доступен в команде. Доступ в систему при необходимости включите отдельно.`
-      : `${cleanText(employee.name)} перенесён в бывшие сотрудники. История сохранена, вход в систему отключён.`,
+      ? `${cleanText(employee.name)} снова доступен в команде.`
+      : `${cleanText(employee.name)} перенесён в бывшие сотрудники. История сохранена.`,
   });
 }
 
@@ -314,14 +282,8 @@ export async function deleteTeamEmployee(db: D1Database, id: number) {
       message: `Удаление недоступно: у ${cleanText(employee.name)} есть история (${references} связанных записей). Используйте «Уволить».`,
     }, { status: 409 });
   }
-  const accessDenied = await ensureTeamEmployeeCanLoseAccess(db, id);
-  if (accessDenied) return accessDenied;
 
-  await db.batch([
-    db.prepare('DELETE FROM app_sessions WHERE user_id IN (SELECT id FROM app_users WHERE manager_id = ?)').bind(id),
-    db.prepare('DELETE FROM app_users WHERE manager_id = ?').bind(id),
-    db.prepare('DELETE FROM managers WHERE id = ?').bind(id),
-  ]);
+  await db.prepare('DELETE FROM managers WHERE id = ?').bind(id).run();
   await writeActivityLog(db, {
     eventType: 'team_employee_deleted',
     entityType: 'team_employee',

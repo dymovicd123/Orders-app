@@ -1,26 +1,33 @@
 import fs from 'node:fs'
-import path from 'node:path'
 
-const root = process.cwd()
-const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8')
-const check = (ok, message) => { if (!ok) throw new Error(message) }
+const check = (condition, message) => { if (!condition) throw new Error(message) }
+const read = (path) => fs.readFileSync(path, 'utf8')
 
 try {
+  const orderResolver = read('src/features/orders/OrderCatalogResolutionModal.tsx')
+  const returnResolver = read('src/features/orders/ReturnedItemResolutionModal.tsx')
   const app = read('src/App.tsx')
-  const modal = read('src/features/orders/OrderCatalogResolutionModal.tsx')
+  const worker = read('worker/index.ts')
+  const apiClient = read('src/app/controllers/useApiClient.ts')
 
-  check(modal.includes('onRequestAdminMode?: () => void'), 'Resolver does not expose an inline Admin-mode continuation callback')
-  check((modal.match(/Войти как администратор/g) || []).length >= 2, 'Admin-required resolver states do not offer an in-place continuation action')
-  check(modal.includes('Нет такого товара? Попросите администратора добавить его.'), 'Missing-product path does not explain the Admin-owned new-product action')
-  check(modal.includes('>Проверить снова</button>'), 'Reference-value escalation does not let the manager re-check the preserved resolver state')
+  check(!orderResolver.includes('onRequestAdminMode'), 'Order resolver still exposes inline Admin-mode escalation')
+  check(!returnResolver.includes('onRequestAdminMode'), 'Returned-item resolver still exposes inline Admin-mode escalation')
+  check(!orderResolver.includes('Войти как администратор') && !orderResolver.includes('Войти в админ режим'), 'Order resolver still renders an inline Admin login action')
+  check(!returnResolver.includes('Войти как администратор') && !returnResolver.includes('Войти в админ режим'), 'Returned-item resolver still renders an inline Admin login action')
+  check(orderResolver.includes('под своим аккаунтом'), 'Order resolver no longer explains that Admin work must happen under an Admin account')
+  check(returnResolver.includes('под своим аккаунтом'), 'Returned-item resolver no longer explains account-owned Admin continuation')
 
-  check(app.includes('onRequestAdminMode={() => setAdminModeOpen(true)}'), 'Orders resolver is not wired to open Admin mode in place')
-  check(app.includes('style={orderCatalogResolutionOrder || returnedItemResolutionEventId ? { zIndex: 1501 } : undefined}'), 'Admin login cannot reliably appear above the active order or returned-item resolver')
-  check(app.includes('После входа вы вернётесь к уточнению этого заказа.'), 'Admin login does not explain the return-to-order behavior')
-  check(app.includes('setSimpleAdminMode(true)') && app.includes('setAdminModeOpen(false)'), 'Successful Admin login no longer promotes the current resolver session')
+  check(!app.includes('setAdminModeOpen') && !app.includes('submitAdminMode'), 'App still contains runtime Admin-mode promotion UI')
+  check(!app.includes('/api/admin-mode/'), 'App still calls legacy Admin-mode endpoints')
+  check(app.includes("'/api/auth/login'") && app.includes("'/api/auth/logout'"), 'App is not wired to normal account login/logout')
+  check(worker.includes('authUser = await getCurrentAuthUser(env.DB, request);'), 'Worker does not resolve API identity from the account session')
+  check(!worker.includes("url.pathname === '/api/admin-mode/"), 'Worker still exposes legacy Admin-mode routes')
 
-  console.log('ORDER SEND ADMIN RESUME R2 TESTS PASSED — Admin login opens above the resolver and returns to the same order clarification without a Warehouse detour.')
+  check(!apiClient.includes("headers.set('X-Access-Role'"), 'Browser can still assert its own access role')
+  check(!apiClient.includes("headers.set('X-Archive-Actor'"), 'Browser can still assert its own archive actor')
+
+  console.log('AUTH R2 RESOLVER ESCALATION TESTS PASSED — resolvers preserve Admin-only boundaries without in-place password escalation; account sessions own identity and role.')
 } catch (error) {
-  console.error(`ORDER SEND ADMIN RESUME R2 TESTS FAILED: ${error?.message || error}`)
+  console.error(`AUTH R2 RESOLVER ESCALATION TESTS FAILED: ${error?.message || error}`)
   process.exit(1)
 }
