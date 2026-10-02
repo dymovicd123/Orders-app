@@ -207,6 +207,7 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
   const accessEditorAccount = accessEditorEmployee
     ? authUsers.find((user) => user.managerId === accessEditorEmployee.id) || null
     : null
+  const systemAdmins = authUsers.filter((user) => user.role === 'admin' && !user.managerId)
 
   return (
     <article className="card wide sector-team" id="team" style={sectorStyle('team')}>
@@ -489,6 +490,36 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                       </tbody>
                     </table>
                   </div>
+
+                  {isAdmin && systemAdmins.length ? (
+                    <section className="team-system-admins" aria-label="Системные администраторы">
+                      <div className="team-system-admins-head">
+                        <div>
+                          <div className="card-label">Системные администраторы</div>
+                          <h3>Служебные аккаунты без сотрудника</h3>
+                          <p>Эти аккаунты имеют административный доступ, но не привязаны к сотрудникам и не участвуют в заказах, табеле, зарплате или рабочих отчётах.</p>
+                        </div>
+                        <span className="team-system-admins-count">{systemAdmins.length}</span>
+                      </div>
+                      <div className="team-system-admins-list">
+                        {systemAdmins.map((account) => (
+                          <div className="team-system-admin-card" key={account.id}>
+                            <div className="team-system-admin-identity">
+                              <strong>@{account.login}</strong>
+                              <span>{account.displayName || 'Системный администратор'}</span>
+                            </div>
+                            <div className="team-system-admin-meta">
+                              <span className={`team-access-status ${account.isActive ? 'is-active' : 'is-disabled'}`}>
+                                {account.isActive ? 'Вход включён' : 'Вход отключён'}
+                              </span>
+                              {account.mustChangePassword ? <span className="team-system-admin-temporary">Нужно сменить временный пароль</span> : null}
+                              <span>{account.lastLoginAt ? `Последний вход: ${formatDateShort(account.lastLoginAt)}` : 'Входов ещё не было'}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
 
                   {accessEditorEmployee ? (
                     <div
