@@ -3,7 +3,7 @@ import { json, measuredJsonRead, measuredResponseRead, publicApiError, readJson 
 import { cleanText, normalizeDate, normalizeOrderStatus, normalizeShippingStatus, normalizeSourceType, toInt, upperText } from './core/text.ts'
 import type { AuthUser, Env, InventoryItemInput, OrderInput, ReferenceKind } from './core/types.ts'
 import { listActivityLog, listOrdersFinanceSummary, listReturnHistory, writeActivityLog } from './domains/activity.ts'
-import { authUserPayload, createAuthUser, deleteAuthUser, ensureAuthSchema, handleAuthChangePassword, handleAuthLogin, handleAuthLogout, handleAuthSetup, handleAuthStatus, handleSimpleAdminLogin, handleSimpleAdminLogout, handleSimpleAdminPasswordChange, handleSimpleAdminStatus, isDiagnosticsEnabled, listAuthUsers, makeSimpleAccessUser, normalizeAccessRole, publicAuthPath, requireAdminAccess, requireAdminUser, updateAuthUser, withAuthenticatedHeaders } from './domains/auth.ts'
+import { authUserPayload, createAuthUser, deleteAuthUser, getCurrentAuthUser, handleAuthChangePassword, handleAuthLogin, handleAuthLogout, handleAuthSetup, handleAuthStatus, isDiagnosticsEnabled, listAuthUsers, normalizeAccessRole, passwordChangeOnlyPath, publicAuthPath, requireAdminAccess, requireAdminUser, updateAuthUser, withAuthenticatedHeaders } from './domains/auth.ts'
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
 import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, saveCatalogExecutionPrice, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
 import { listCatalogRetirements, previewCatalogRetirement, previewCatalogVariantGroupRetirement, restoreCatalogRetirement, retireCatalogEntity, retireCatalogVariantGroup } from './domains/catalog-retirement.ts'
@@ -33,14 +33,7 @@ import { deleteCallCentreRecord, deleteDepartmentPlanRecord, deleteLeadRecord, d
 import { bulkUpdateWorkshopTasks, listWorkshopTasks, readWorkshopCounts, updateWorkshopTask } from './domains/workshop.ts'
 import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'
 
-// Step 78 keeps old account-auth handlers only as a dormant compatibility fallback.
-// The live application now uses the simple admin mode and does not call them.
-void ensureAuthSchema;
-void handleAuthStatus;
-void handleAuthSetup;
-void handleAuthLogin;
-void handleAuthLogout;
-
+// Auth R2: account sessions are authoritative. The legacy simple-admin cookie is no longer a runtime access path.
 
 
 export default {
@@ -48,48 +41,34 @@ export default {
     const url = new URL(request.url);
 
     try {
-      if (url.pathname === '/api/admin-mode/status' && request.method === 'GET') {
-        return handleSimpleAdminStatus(env, request);
-      }
-
-      if (url.pathname === '/api/admin-mode/login' && request.method === 'POST') {
-        return handleSimpleAdminLogin(env.DB, env, request);
-      }
-
-      if (url.pathname === '/api/admin-mode/logout' && request.method === 'POST') {
-        return handleSimpleAdminLogout(request);
-      }
-
       if (url.pathname === '/api/auth/status' && request.method === 'GET') {
-        return json({ ok: true, hasUsers: false, authDisabled: true, user: null });
+        return handleAuthStatus(env.DB, request);
       }
 
       if (url.pathname === '/api/auth/setup' && request.method === 'POST') {
-        return json({ ok: false, message: 'Авторизация аккаунтами отключена. Используйте простой админ-режим.' }, { status: 410 });
+        return handleAuthSetup(env.DB, env, request);
       }
 
       if (url.pathname === '/api/auth/login' && request.method === 'POST') {
-        return json({ ok: false, message: 'Авторизация аккаунтами отключена. Используйте простой админ-режим.' }, { status: 410 });
+        return handleAuthLogin(env.DB, request);
       }
 
       if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
-        return handleSimpleAdminLogout(request);
+        return handleAuthLogout(env.DB, request);
       }
 
       let authUser: AuthUser | null = null;
       if (url.pathname.startsWith('/api/') && !publicAuthPath(url.pathname)) {
-        authUser = await makeSimpleAccessUser(request, env);
+        authUser = await getCurrentAuthUser(env.DB, request);
+        if (!authUser) return json({ ok: false, message: 'Войдите в систему.' }, { status: 401 });
+        if (authUser.mustChangePassword && !passwordChangeOnlyPath(url.pathname)) {
+          return json({ ok: false, message: 'Перед работой смените временный пароль.', code: 'PASSWORD_CHANGE_REQUIRED' }, { status: 403 });
+        }
         request = withAuthenticatedHeaders(request, authUser) as any;
       }
 
       if (url.pathname === '/api/auth/me' && request.method === 'GET') {
         return json({ ok: true, user: authUser ? authUserPayload(authUser) : null });
-      }
-
-      if (url.pathname === '/api/admin-mode/change-password' && request.method === 'POST') {
-        const denied = requireAdminUser(authUser);
-        if (denied) return denied;
-        return handleSimpleAdminPasswordChange(env.DB, env, request);
       }
 
       if (url.pathname === '/api/admin/storage' && request.method === 'GET') {
@@ -129,7 +108,7 @@ export default {
       if (url.pathname === '/api/auth/users' && request.method === 'POST') {
         const denied = requireAdminUser(authUser);
         if (denied) return denied;
-        return createAuthUser(env.DB, request);
+        return createAuthUser(env.DB, request, authUser as AuthUser);
       }
 
       const authUserMatch = url.pathname.match(/^\/api\/auth\/users\/(\d+)$/);
@@ -172,7 +151,7 @@ export default {
           typeApiBoundaryCleanup: '1906e',
           transferRuntimeSafety: '191d',
           runtimeLimitsAtomicity: '191e',
-          adminSessionIntegrity: '191f',
+          adminSessionIntegrity: 'account-auth-r2',
           warehouseTruthFreshness: '192a1',
           catalogTruthFinalizer: '192a2',
           warehouseAttentionTruthGates: '192b1',
@@ -1015,7 +994,7 @@ export default {
         const input = await readJson<{ requestId?: unknown }>(request);
         const result = await restoreCatalogRetirement(env.DB, toInt(catalogRetirementRestoreMatch[1], 0), {
           requestId: input.requestId,
-          actor: authUser?.displayName || authUser?.managerName || authUser?.email || 'admin',
+          actor: authUser?.displayName || authUser?.managerName || authUser?.login || 'admin',
         });
         try {
           await writeActivityLog(env.DB, {
@@ -1082,7 +1061,7 @@ export default {
         const input = await readJson<{ requestId?: unknown; reason?: unknown }>(request);
         return json(await retireCatalogEntity(env.DB, 'execution', toInt(catalogExecutionRetireMatch[1], 0), {
           ...input,
-          actor: authUser?.displayName || authUser?.managerName || authUser?.email || 'admin',
+          actor: authUser?.displayName || authUser?.managerName || authUser?.login || 'admin',
         }));
       }
 
@@ -1100,7 +1079,7 @@ export default {
         const input = await readJson<{ requestId?: unknown; reason?: unknown }>(request);
         return json(await retireCatalogEntity(env.DB, 'product', toInt(catalogProductRetireMatch[1], 0), {
           ...input,
-          actor: authUser?.displayName || authUser?.managerName || authUser?.email || 'admin',
+          actor: authUser?.displayName || authUser?.managerName || authUser?.login || 'admin',
         }));
       }
 
