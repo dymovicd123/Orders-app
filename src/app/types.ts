@@ -358,7 +358,7 @@ export type AccessRole = 'admin' | 'manager'
 
 export type AuthUser = {
   id: number
-  email: string
+  login: string
   role: AccessRole
   managerId: number | null
   managerName: string | null
@@ -368,11 +368,11 @@ export type AuthUser = {
 
 
 
-export type SimpleAdminStatusResponse = {
+export type AuthStatusResponse = {
   ok: boolean
-  isAdmin: boolean
-  role: AccessRole
-  user?: AuthUser
+  hasUsers: boolean
+  authDisabled?: boolean
+  user?: AuthUser | null
 }
 
 
