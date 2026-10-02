@@ -603,9 +603,23 @@ export async function handleAuthSetup(db: D1Database, env: Env, request: Request
   const passwordHash = await hashPassword(password);
   const now = new Date().toISOString();
   try {
-    const result = await db.prepare('INSERT INTO app_users (email, login, password_hash, role, display_name, is_active, must_change_password, password_updated_at) VALUES (?, ?, ?, ?, ?, 1, 0, ?)')
-      .bind(compatibilityEmailForLogin(login), login, passwordHash, 'admin', displayName, now).run();
+    const result = await db.prepare(`
+      INSERT INTO app_users (email, login, password_hash, role, display_name, is_active, must_change_password, password_updated_at)
+      SELECT ?, ?, ?, ?, ?, 1, 0, ?
+      WHERE NOT EXISTS (
+        SELECT 1 FROM app_users
+        WHERE login IS NOT NULL AND trim(login) <> ''
+      )
+    `).bind(compatibilityEmailForLogin(login), login, passwordHash, 'admin', displayName, now).run();
     const userId = toInt((result.meta as any)?.last_row_id, 0);
+    if (toInt(result.meta?.changes, 0) < 1 || !userId) {
+      return json({
+        ok: false,
+        code: 'AUTH_SETUP_ALREADY_COMPLETED',
+        hasUsers: true,
+        message: 'Первый администратор уже создан.',
+      }, { status: 409 });
+    }
     const token = await createSession(db, userId);
     await writeAuthAuditLog(db, {
       eventType: 'auth_first_admin_created',
