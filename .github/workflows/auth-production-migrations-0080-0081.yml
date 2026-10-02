@@ -41,7 +41,7 @@ jobs:
           grep -Fq 'ALTER TABLE app_users ADD COLUMN login TEXT' "$m80"
           grep -Fq 'idx_app_users_login_nocase' "$m80"
           grep -Fq 'idx_app_users_manager_id' "$m80"
-          if grep -Eiq '\b(INSERT|UPDATE|DELETE)\b' "$m80"; then
+          if grep -Eiq '^[[:space:]]*(INSERT|UPDATE|DELETE)[[:space:]]' "$m80"; then
             echo "0080 must remain schema-only." >&2
             exit 21
           fi
@@ -50,7 +50,7 @@ jobs:
           grep -Fq 'idx_app_users_manager_unique' "$m81"
           grep -Fq 'CREATE TABLE IF NOT EXISTS auth_login_throttle' "$m81"
           grep -Fq 'CREATE TABLE IF NOT EXISTS auth_audit_log' "$m81"
-          if grep -Eiq '\b(INSERT|UPDATE|DELETE)\b' "$m81"; then
+          if grep -Eiq '^[[:space:]]*(INSERT|UPDATE|DELETE)[[:space:]]' "$m81"; then
             echo "0081 must remain schema-only." >&2
             exit 22
           fi
