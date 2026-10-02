@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "revision": "branch2-session-hotpath-frontend-r1",
+  "baseBranch2Commit": "b90593b083a5f3638c2a6a74901a8b7d3d5441ad",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "30a80253f2e76ec3090eefbc70b56aebecea898b",
+      "beforeLines": 7964,
+      "afterGitBlob": "4753066e1e0fd2250cdb9b95baf6cb3c9fd484ca",
+      "afterLines": 7971,
+      "replacements": [
+        {
+          "beforeBlock": "  const refreshAuth = useCallback(async () => {\n    setAuthChecking(true)\n    try {\n      const response = await fetch('/api/auth/status', { credentials: 'include', cache: 'no-store' })\n      const data = await readJsonResponse<AuthStatusResponse>(response, 'Проверка авторизации')\n      setAuthHasUsers(Boolean(data.hasUsers))\n      setAuthUser(data.user || null)\n    } catch (error) {\n      console.error(error)\n      setAuthUser(null)\n    } finally {\n      setAuthChecking(false)\n    }\n  }, [])",
+          "afterBlock": "  const refreshAuth = useCallback(async () => {\n    setAuthChecking(true)\n    const controller = new AbortController()\n    const timeout = window.setTimeout(() => controller.abort(), 8_000)\n    try {\n      const response = await fetch('/api/auth/status', {\n        credentials: 'include',\n        cache: 'no-store',\n        signal: controller.signal,\n      })\n      const data = await readJsonResponse<AuthStatusResponse>(response, 'Проверка авторизации')\n      setAuthHasUsers(Boolean(data.hasUsers))\n      setAuthUser(data.user || null)\n    } catch (error) {\n      console.error(error)\n      setAuthUser(null)\n    } finally {\n      window.clearTimeout(timeout)\n      setAuthChecking(false)\n    }\n  }, [])"
+        }
+      ]
+    }
+  }
+}
