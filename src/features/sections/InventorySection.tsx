@@ -740,7 +740,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     return { total: stocktakeRows.length, filled, unfilled: stocktakeRows.length - filled, differences, recount, shortages }
   }, [stocktakeRows, stocktakeFacts])
 
-  const stocktakeReadyForReview = stocktakeProgress.unfilled === 0 && stocktakeProgress.recount === 0
+  const stocktakeReadyForReview = stocktakeProgress.recount === 0 && stocktakeProgress.filled > 0
   const stocktakeUnsavedCount = useMemo(() => (stocktakeSession?.items || []).filter((item: any) => {
     const raw = stocktakeFacts[String(item.id)] ?? ''
     const persisted = item.countedQuantity === null || item.countedQuantity === undefined ? '' : String(item.countedQuantity)
@@ -1282,16 +1282,17 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       if (!latest) throw new Error('Не удалось перечитать ревизию.')
       adoptStocktakeSession(latest)
       const unfilled = (latest.items || []).filter((item: any) => item.countedQuantity === null || item.countedQuantity === undefined).length
+      const counted = (latest.items || []).length - unfilled
       const recount = (latest.items || []).filter((item: any) => item.status === 'recount_required').length
-      if (unfilled > 0) {
-        setStocktakeNotice(`Сначала пересчитайте ещё ${unfilled} позиций. Если товара нет — укажите 0.`)
-        return
-      }
       if (recount > 0) {
         setStocktakeNotice(`После изменений склада нужно повторно пересчитать ${recount} позиций.`)
         return
       }
-      setStocktakeNotice('')
+      if (counted <= 0) {
+        setStocktakeNotice('Введите фактическое количество хотя бы для одной позиции. Остальные можно оставить пустыми — при завершении они сохранят текущий системный остаток.')
+        return
+      }
+      setStocktakeNotice(unfilled > 0 ? `Пустых позиций: ${unfilled}. При завершении их текущий системный остаток будет сохранён без изменений.` : '')
       setStocktakeReviewMode(true)
     } catch (error) {
       setStocktakeNotice(error instanceof Error ? error.message : 'Не удалось подготовить финальную проверку.')

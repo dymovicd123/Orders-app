@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "revision": "stocktake-safe-defaults-r1",
+  "files": {
+    "src/styles/188e4-stocktake-usability.css": {
+      "beforeGitBlob": "d38c832118cc477f679b2b3ba27ae93116293cb6",
+      "beforeLines": 300,
+      "afterGitBlob": "844fa0396f9f619af3283e78680c46d443055054",
+      "afterLines": 301,
+      "replacements": [
+        {
+          "beforeBlock": ".stocktake-size-label{font-size:11px;font-weight:800;text-align:right;white-space:nowrap;color:#334155}\n.stocktake-size-cell>input{width:58px!important;min-width:0!important;padding:6px 5px!important;text-align:center!important;font-weight:800!important;border-radius:7px}",
+          "afterBlock": ".stocktake-size-label{font-size:11px;font-weight:800;text-align:right;white-space:nowrap;color:#334155}\n.stocktake-size-system{display:block;margin-top:1px;font-size:8px;font-weight:650;line-height:1.15;color:#94a3b8;white-space:nowrap}\n.stocktake-size-cell>input{width:58px!important;min-width:0!important;padding:6px 5px!important;text-align:center!important;font-weight:800!important;border-radius:7px}"
+        }
+      ]
+    }
+  }
+}

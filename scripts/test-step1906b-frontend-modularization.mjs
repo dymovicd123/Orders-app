@@ -27,6 +27,49 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 const root = process.cwd()
+const stocktakeSafeDefaultsManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stocktake-safe-defaults-frontend-manifest.json'), 'utf8'))
+if (stocktakeSafeDefaultsManifest?.version !== 1 || stocktakeSafeDefaultsManifest?.revision !== 'stocktake-safe-defaults-r1') throw new Error('Stocktake safe-default frontend manifest invalid')
+const stocktakeSafeDefaultsBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.STOCKTAKE_SAFE_DEFAULTS_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(stocktakeSafeDefaultsManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (stocktakeSafeDefaultsBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Stocktake safe-default frontend changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Stocktake safe-default after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (stocktakeSafeDefaultsBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Stocktake safe-default predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, STOCKTAKE_SAFE_DEFAULTS_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('STOCKTAKE SAFE-DEFAULT FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const legacyPath = path.join(root, 'scripts/test-step1906b-frontend-modularization-legacy.mjs')
 const manifestPath = path.join(root, 'scripts/order-edit-safe-payment-corrections-frontend-manifest.json')
 const appPath = path.join(root, 'src/App.tsx')

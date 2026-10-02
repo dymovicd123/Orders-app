@@ -6,8 +6,8 @@
     "src/features/sections/InventorySection.tsx": {
       "beforeGitBlob": "59a062fc7d4f06c086754571609ddb11e728a771",
       "beforeLines": 2597,
-      "afterGitBlob": "d1e24283243a472c8ac71f5e9e265ca584f62c61",
-      "afterLines": 2622,
+      "afterGitBlob": "88bfb869f8d0a14c5cbf9fcca7858ad3b3fd5a69",
+      "afterLines": 2623,
       "baselineFixture": "scripts/fixtures/stocktake-navigation-hotfix/src/features/sections/InventorySection.tsx"
     }
   }
