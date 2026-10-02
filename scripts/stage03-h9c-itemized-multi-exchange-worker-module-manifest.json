@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "revision": "stage03-h9c-itemized-multi-exchange-worker-module",
+  "files": {
+    "worker/domains/exchange-batch.ts": {
+      "gitBlob": "f7817ec6296a27c2bedd2bcdcf9a68abdeb6112a",
+      "lines": 517
+    }
+  }
+}
