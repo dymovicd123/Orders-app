@@ -6,8 +6,8 @@
     "src/App.tsx": {
       "beforeGitBlob": "d0fb089cdfd0a7bb50db7e7c19180a7005f52ad9",
       "beforeLines": 7927,
-      "afterGitBlob": "f86e8735c5d44e565aac3f80e5c696ec7cc3f084",
-      "afterLines": 8040,
+      "afterGitBlob": "d71fcd43dea886f7f4642adc9eeb87405c988d67",
+      "afterLines": 8039,
       "baselineFixture": "scripts/fixtures/auth-production-port/src/App.tsx"
     },
     "src/app/constants.ts": {
