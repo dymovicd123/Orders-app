@@ -37,4 +37,13 @@ jobs:
             (SELECT MAX(last_login_at) FROM app_users WHERE login IS NOT NULL AND trim(login) <> '') AS latest_login_at,
             (SELECT COUNT(*) FROM auth_audit_log WHERE event_type='auth_first_admin_created') AS first_admin_events,
             (SELECT MAX(created_at) FROM auth_audit_log WHERE event_type='auth_first_admin_created') AS first_admin_event_at,
-            (SELECT COUNT(*) FROM app_sessions s JOIN app_users u ON u.id=s.user_id WHERE u.login IS NOT NULL AND trim(u.login) <> '') AS provisioned_sessions" --json
+            (SELECT COUNT(*) FROM app_sessions s JOIN app_users u ON u.id=s.user_id WHERE u.login IS NOT NULL AND trim(u.login) <> '') AS provisioned_sessions,
+            (SELECT lower(login) FROM app_users WHERE login IS NOT NULL AND trim(login) <> '' ORDER BY created_at DESC LIMIT 1) AS latest_login_name,
+            (SELECT role FROM app_users WHERE login IS NOT NULL AND trim(login) <> '' ORDER BY created_at DESC LIMIT 1) AS latest_role,
+            (SELECT is_active FROM app_users WHERE login IS NOT NULL AND trim(login) <> '' ORDER BY created_at DESC LIMIT 1) AS latest_active,
+            (SELECT COALESCE(must_change_password,0) FROM app_users WHERE login IS NOT NULL AND trim(login) <> '' ORDER BY created_at DESC LIMIT 1) AS latest_must_change,
+            (SELECT length(password_hash) FROM app_users WHERE login IS NOT NULL AND trim(login) <> '' ORDER BY created_at DESC LIMIT 1) AS password_hash_length,
+            (SELECT CAST(substr(password_hash, instr(password_hash,') + 1, instr(substr(password_hash, instr(password_hash,') + 1),') - 1) AS INTEGER) FROM app_users WHERE login IS NOT NULL AND trim(login) <> '' ORDER BY created_at DESC LIMIT 1) AS password_iterations,
+            (SELECT COUNT(*) FROM auth_login_throttle) AS throttle_rows,
+            (SELECT COALESCE(MAX(failure_count),0) FROM auth_login_throttle) AS max_failure_count,
+            (SELECT COALESCE(MAX(blocked_until_ms),0) FROM auth_login_throttle) AS max_blocked_until_ms" --json
