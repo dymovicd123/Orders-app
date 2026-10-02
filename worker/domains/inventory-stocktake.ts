@@ -1204,6 +1204,7 @@ export async function markInventoryStocktakeConflicts(db: D1Database, sessionId:
            ), 0),
            updated_at = ?
        WHERE session_id = ?
+         AND counted_quantity IS NOT NULL
          AND COALESCE((
            SELECT s.quantity
            FROM inventory_stock s
@@ -1270,6 +1271,10 @@ export async function completeInventoryStocktakeSession(db: D1Database, sessionI
   if (recountRows.length) {
     return { ok: false, code: 'recount_required', message: `Нужно повторно пересчитать ${recountRows.length} позиций после изменения склада.`, session: await serializeInventoryStocktakeSession(db, sessionId) };
   }
+  const explicitlyCountedRows = rows.filter(row => row.counted_quantity !== null && row.counted_quantity !== undefined);
+  if (!explicitlyCountedRows.length) {
+    return { ok: false, code: 'no_counts', message: 'Введите фактическое количество хотя бы для одной позиции. Остальные можно оставить пустыми — они сохранят текущий системный остаток.', session: await serializeInventoryStocktakeSession(db, sessionId) };
+  }
 
   // Blank means “leave the system quantity unchanged”. Only rows explicitly counted
   // by a person are stale-checked against the baseline captured for that fact.
@@ -1290,7 +1295,11 @@ export async function completeInventoryStocktakeSession(db: D1Database, sessionI
   }
 
   const now = new Date().toISOString();
-  const changed = rows.filter(row => Math.max(0, toInt(row.counted_quantity, 0)) !== toInt(row.current_quantity, 0)).length;
+  const changed = rows.filter(row =>
+    row.counted_quantity !== null
+    && row.counted_quantity !== undefined
+    && Math.max(0, toInt(row.counted_quantity, 0)) !== toInt(row.current_quantity, 0)
+  ).length;
   const sourceLabel = source === 'warehouse' ? 'склада' : 'бутика';
   const reference = `stocktake:${sessionId}`;
 
