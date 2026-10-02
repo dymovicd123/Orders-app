@@ -564,13 +564,24 @@ export async function createSession(db: D1Database, userId: number) {
 
 export async function handleAuthStatus(db: D1Database, request: Request) {
   const [userCount, user] = await Promise.all([countAuthUsers(db), getCurrentAuthUser(db, request)]);
-  return json({ ok: true, hasUsers: userCount > 0, authDisabled: false, user: user ? authUserPayload(user) : null });
+  const response = json({ ok: true, hasUsers: userCount > 0, authDisabled: false, user: user ? authUserPayload(user) : null });
+  if (!user && readCookie(request, 'orders_session')) {
+    response.headers.append('Set-Cookie', makeSessionCookie(request, '', 0));
+  }
+  return response;
 }
 
 
 export async function handleAuthSetup(db: D1Database, env: Env, request: Request) {
   const userCount = await countAuthUsers(db);
-  if (userCount > 0) return json({ ok: false, message: 'Первый администратор уже создан.' }, { status: 409 });
+  if (userCount > 0) {
+    return json({
+      ok: false,
+      code: 'AUTH_SETUP_ALREADY_COMPLETED',
+      hasUsers: true,
+      message: 'Первый администратор уже создан.',
+    }, { status: 409 });
+  }
   const input = await readJson<{
     login?: unknown;
     password?: unknown;
@@ -617,8 +628,17 @@ export async function handleAuthSetup(db: D1Database, env: Env, request: Request
     const response = json({ ok: true, user: authUserPayload(user) }, { status: 201 });
     response.headers.append('Set-Cookie', makeSessionCookie(request, token, AUTH_SESSION_MAX_AGE_SECONDS));
     return response;
-  } catch {
-    return json({ ok: false, message: 'Аккаунт с таким логином уже существует.' }, { status: 409 });
+  } catch (error) {
+    const currentUserCount = await countAuthUsers(db);
+    if (currentUserCount > 0) {
+      return json({
+        ok: false,
+        code: 'AUTH_SETUP_ALREADY_COMPLETED',
+        hasUsers: true,
+        message: 'Первый администратор уже создан.',
+      }, { status: 409 });
+    }
+    throw error;
   }
 }
 
@@ -627,6 +647,9 @@ export async function handleAuthLogin(db: D1Database, request: Request) {
   const input = await readJson<{ login?: unknown; password?: unknown }>(request);
   const login = normalizeAuthLogin(input.login);
   const password = cleanText(input.password);
+  if (authLoginError(login) || !password) {
+    return json({ ok: false, message: 'Неверный логин или пароль.', code: 'AUTH_INVALID_CREDENTIALS' }, { status: 401 });
+  }
   const throttle = await getAuthLoginThrottleStatus(db, request, login);
   if (throttle.blocked) {
     const response = json({ ok: false, message: 'Слишком много неудачных попыток. Попробуйте позже.', code: 'AUTH_RATE_LIMITED' }, { status: 429 });
@@ -644,14 +667,14 @@ export async function handleAuthLogin(db: D1Database, request: Request) {
   `).bind(login).first<any>();
   if (!row || !toInt(row.is_active, 0)) {
     await recordAuthLoginFailure(db, throttle.keyHash);
-    return json({ ok: false, message: 'Неверный логин или пароль.' }, { status: 401 });
+    return json({ ok: false, message: 'Неверный логин или пароль.', code: 'AUTH_INVALID_CREDENTIALS' }, { status: 401 });
   }
   if (passwordHashNeedsEdgeReset(cleanText(row.password_hash))) {
     return json({ ok: false, message: 'Пароль этого аккаунта требует сброса администратором.', code: 'PASSWORD_HASH_NEEDS_RESET' }, { status: 409 });
   }
   if (!(await verifyPassword(password, cleanText(row.password_hash)))) {
     await recordAuthLoginFailure(db, throttle.keyHash);
-    return json({ ok: false, message: 'Неверный логин или пароль.' }, { status: 401 });
+    return json({ ok: false, message: 'Неверный логин или пароль.', code: 'AUTH_INVALID_CREDENTIALS' }, { status: 401 });
   }
 
   await clearAuthLoginFailures(db, throttle.keyHash);
@@ -856,7 +879,8 @@ export async function updateAuthUser(db: D1Database, userId: number, request: Re
   } catch {
     return json({ ok: false, message: 'Аккаунт с таким логином уже существует.' }, { status: 409 });
   }
-  if (passwordReset || input.isActive === false || loginChanged || roleChanged) {
+  const forcePasswordChange = input.mustChangePassword === true && currentUser.id !== userId;
+  if (passwordReset || input.isActive === false || loginChanged || roleChanged || forcePasswordChange) {
     await db.prepare('DELETE FROM app_sessions WHERE user_id = ?').bind(userId).run();
   }
   if (changedFields.length) {
