@@ -20,13 +20,13 @@ try {
   check(ordersWrite.includes(") {\n  await ensureOrderItemWorkshopColumn(db);\n  let criticalOperation"), 'Critical Order edit is missing scoped workshop column initialization')
   check(ordersWrite.includes("export async function getOrder(db: D1Database, id: number) {\n  await ensureOrderItemWorkshopColumn(db);"), 'Get Order is missing scoped workshop column initialization')
 
-  check(app.includes('const controller = new AbortController()'), 'Initial session check has no abort controller')
-  check(app.includes('window.setTimeout(() => controller.abort(), 8_000)'), 'Initial session check timeout is missing or changed')
-  check(app.includes("fetch('/api/admin-mode/status', {"), 'Initial admin-mode status request missing')
-  check(app.includes("cache: 'no-store'") && app.includes('signal: controller.signal'), 'Initial session check is not cache-bypassed and abortable')
-  check(app.includes('window.clearTimeout(timeout)'), 'Initial session timeout cleanup missing')
+  check(app.includes('const controller = new AbortController()'), 'Initial auth check has no abort controller')
+  check(app.includes('window.setTimeout(() => controller.abort(), 8_000)'), 'Initial auth check timeout is missing or changed')
+  check(app.includes("fetch('/api/auth/status', {"), 'Initial auth status request missing')
+  check(app.includes("cache: 'no-store'") && app.includes('signal: controller.signal'), 'Initial auth check is not cache-bypassed and abortable')
+  check(app.includes('window.clearTimeout(timeout)'), 'Initial auth timeout cleanup missing')
 
-  console.log('SESSION HOTPATH HOTFIX PASSED — auth/health no longer depend on workshop schema D1 initialization, while order paths retain the legacy schema guard and startup auth cannot wait forever.')
+  console.log('SESSION HOTPATH HOTFIX PASSED — auth status no longer depends on workshop schema initialization and startup auth cannot wait forever.')
 } catch (error) {
   console.error(`SESSION HOTPATH HOTFIX FAILED: ${error?.message || error}`)
   process.exit(1)
