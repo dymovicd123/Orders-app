@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "revision": "session-hotpath-hotfix-r1",
+  "baseMainCommit": "4fe0bb1c246d0ba1b6e664ea544007ddceb06ea9",
+  "files": {
+    "worker/index.ts": {
+      "beforeGitBlob": "7bcb3942d671a81386ea35de67a76cc9ea457f4b",
+      "beforeLines": 1644,
+      "afterGitBlob": "b971fd1aaf2186badd2b2ba34a3dd47136fcfff0",
+      "afterLines": 1641,
+      "replacements": [
+        {
+          "beforeBlock": "import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'\nimport { ensureOrderItemWorkshopColumn } from './domains/workshop-schema.ts'",
+          "afterBlock": "import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'"
+        },
+        {
+          "beforeBlock": "    try {\n      await ensureOrderItemWorkshopColumn(env.DB);\n\n      if (url.pathname === '/api/admin-mode/status' && request.method === 'GET') {",
+          "afterBlock": "    try {\n      if (url.pathname === '/api/admin-mode/status' && request.method === 'GET') {"
+        }
+      ]
+    },
+    "worker/domains/orders-read.ts": {
+      "beforeGitBlob": "d625e4113b95ecc10048c0368fb065a7f796585f",
+      "beforeLines": 810,
+      "afterGitBlob": "98a06ee1856fb36e3b90b239b1d570ab648f1bd4",
+      "afterLines": 812,
+      "replacements": [
+        {
+          "beforeBlock": "import { getOrder } from './orders-write.ts'",
+          "afterBlock": "import { getOrder } from './orders-write.ts'\nimport { ensureOrderItemWorkshopColumn } from './workshop-schema.ts'"
+        },
+        {
+          "beforeBlock": "export async function listOrders(db: D1Database, url: URL) {\n  const limit = Math.min(200, Math.max(20, toInt(url.searchParams.get('limit'), 100)));",
+          "afterBlock": "export async function listOrders(db: D1Database, url: URL) {\n  await ensureOrderItemWorkshopColumn(db);\n  const limit = Math.min(200, Math.max(20, toInt(url.searchParams.get('limit'), 100)));"
+        }
+      ]
+    },
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "bf311618cd8398e83fe93bc02d578ba1460faebc",
+      "beforeLines": 2142,
+      "afterGitBlob": "894425dae4c1385f8fa3ae140d2f31cd07515fe2",
+      "afterLines": 2145,
+      "replacements": [
+        {
+          "beforeBlock": "import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'",
+          "afterBlock": "import { assertWorkshopTaskDetailSchema, ensureOrderItemWorkshopColumn } from './workshop-schema.ts'"
+        },
+        {
+          "beforeBlock": "export async function createOrder(db: D1Database, input: OrderInput, actor?: AuthUser | null) {\n  let criticalOperation: CriticalOperationHandle | null = null;",
+          "afterBlock": "export async function createOrder(db: D1Database, input: OrderInput, actor?: AuthUser | null) {\n  await ensureOrderItemWorkshopColumn(db);\n  let criticalOperation: CriticalOperationHandle | null = null;"
+        },
+        {
+          "beforeBlock": "  options: { lifecycleAction?: 'order_delete' } = {},\n) {\n  let criticalOperation: CriticalOperationHandle | null = null;",
+          "afterBlock": "  options: { lifecycleAction?: 'order_delete' } = {},\n) {\n  await ensureOrderItemWorkshopColumn(db);\n  let criticalOperation: CriticalOperationHandle | null = null;"
+        },
+        {
+          "beforeBlock": "export async function getOrder(db: D1Database, id: number) {\n  const pricingFoundationEnabled = await isOrderPricingFoundationEnabled(db);",
+          "afterBlock": "export async function getOrder(db: D1Database, id: number) {\n  await ensureOrderItemWorkshopColumn(db);\n  const pricingFoundationEnabled = await isOrderPricingFoundationEnabled(db);"
+        }
+      ]
+    }
+  }
+}
