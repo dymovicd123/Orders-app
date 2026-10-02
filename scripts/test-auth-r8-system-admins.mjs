@@ -8,7 +8,7 @@ try {
   const css = read('src/styles/10-workshop-reports-team.css')
 
   check(team.includes("const systemAdmins = authUsers.filter((user) => user.role === 'admin' && !user.managerId)"), 'System-admin classification must require admin role with no employee link')
-  check(team.includes('{isAdmin && systemAdmins.length ? ('), 'System-admin block is not restricted to authenticated admins')
+  check(team.includes('{isAdmin ? (') && team.includes('aria-label="Системные администраторы"'), 'System-admin block is not restricted to authenticated admins')
   check(team.includes('aria-label="Системные администраторы"'), 'System-admin block has no explicit admin-facing identity')
   check(team.includes('не привязаны к сотрудникам') && team.includes('не участвуют в заказах, табеле, зарплате или рабочих отчётах'), 'System-admin isolation copy is missing')
   check(team.includes('@{account.login}') && team.includes("account.displayName || 'Системный администратор'"), 'System-admin identity/status card missing')
