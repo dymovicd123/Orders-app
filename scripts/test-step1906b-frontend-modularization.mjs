@@ -130,6 +130,45 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const mainRuntimeSyncFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/branch2-main-runtime-sync-20261002-frontend-manifest.json'), 'utf8'))
+if (mainRuntimeSyncFrontendManifest?.version !== 1 || mainRuntimeSyncFrontendManifest?.revision !== 'branch2-main-runtime-sync-20261002-frontend') throw new Error('Branch2/main runtime sync frontend manifest invalid')
+const mainRuntimeSyncFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.BRANCH2_MAIN_RUNTIME_SYNC_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(mainRuntimeSyncFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (mainRuntimeSyncFrontendBlobSha(actual) !== delta.afterGitBlob) {
+        throw new Error('Branch2/main runtime sync frontend drifted: ' + relative)
+      }
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (mainRuntimeSyncFrontendBlobSha(baseline) !== delta.beforeGitBlob) {
+        throw new Error('Branch2/main runtime sync frontend predecessor fixture drifted: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, BRANCH2_MAIN_RUNTIME_SYNC_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('BRANCH2 / MAIN RUNTIME SYNC FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const h9cFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h9c-itemized-multi-exchange-frontend-manifest.json'), 'utf8'))
 if (h9cFrontendManifest?.version !== 1 || h9cFrontendManifest?.revision !== 'stage03-h9c-itemized-multi-exchange-frontend') throw new Error('H9C frontend manifest invalid')
 const h9cFrontendBlobSha = (value) => {
