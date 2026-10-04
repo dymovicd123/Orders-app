@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "revision": "branch2-main-runtime-sync-20261002-frontend",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "6611f197ec6c0d8c0a33f54e3da606a468d09018",
+      "afterGitBlob": "bac4ea2d1080bc702574717a7728fbbc8fef329c",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261002/src/App.tsx"
+    },
+    "src/app/controllers/useApiClient.ts": {
+      "beforeGitBlob": "1696e2fa5e8db37b0780ecce62ad81e77be7a54b",
+      "afterGitBlob": "655421a5bb5d5b39d065fcc8bcdb3df9fbf82467",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261002/src/app/controllers/useApiClient.ts"
+    },
+    "src/features/sections/TeamSection.tsx": {
+      "beforeGitBlob": "069dbea7054e07f68323889de825f1f5564d8c67",
+      "afterGitBlob": "c8d330aff9cd45468a448eb8c70e24d55cf1d198",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261002/src/features/sections/TeamSection.tsx"
+    },
+    "src/features/sections/InventorySection.tsx": {
+      "beforeGitBlob": "59a062fc7d4f06c086754571609ddb11e728a771",
+      "afterGitBlob": "88bfb869f8d0a14c5cbf9fcca7858ad3b3fd5a69",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261002/src/features/sections/InventorySection.tsx"
+    },
+    "src/features/inventory/views/renderInventoryStocktakePanel.tsx": {
+      "beforeGitBlob": "b6359a897776b8a394996328708ce9aa0cc614fe",
+      "afterGitBlob": "2355f680c088d35bb9a598602ca4dedb99a55f3e",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261002/src/features/inventory/views/renderInventoryStocktakePanel.tsx"
+    },
+    "src/styles/10-workshop-reports-team.css": {
+      "beforeGitBlob": "44b518d8d2c5ae91dc5627f9cba7406ce3146a05",
+      "afterGitBlob": "49e1a062eff80c5e9edc5466ed649a3083279a5d",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261002/src/styles/10-workshop-reports-team.css"
+    },
+    "src/styles/188e4-stocktake-usability.css": {
+      "beforeGitBlob": "d38c832118cc477f679b2b3ba27ae93116293cb6",
+      "afterGitBlob": "844fa0396f9f619af3283e78680c46d443055054",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261002/src/styles/188e4-stocktake-usability.css"
+    },
+    "src/features/renderers/FinanceReportContentRenderer.tsx": {
+      "beforeGitBlob": "d5beac0346fcd4b463b9f937424245bd919b10f6",
+      "afterGitBlob": "3d7ff45fd4418eefaf5ea9bd94745964ef8fd47a",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261002/src/features/renderers/FinanceReportContentRenderer.tsx"
+    }
+  }
+}
