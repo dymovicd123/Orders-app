@@ -4,6 +4,45 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const mainRuntimeSyncWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/branch2-main-runtime-sync-20261002-worker-manifest.json'), 'utf8'))
+if (mainRuntimeSyncWorkerManifest?.version !== 1 || mainRuntimeSyncWorkerManifest?.revision !== 'branch2-main-runtime-sync-20261002-worker') throw new Error('Branch2/main runtime sync Worker manifest invalid')
+const mainRuntimeSyncWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.BRANCH2_MAIN_RUNTIME_SYNC_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(mainRuntimeSyncWorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (mainRuntimeSyncWorkerBlobSha(actual) !== delta.afterGitBlob) {
+        throw new Error('Branch2/main runtime sync Worker drifted: ' + relative)
+      }
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (mainRuntimeSyncWorkerBlobSha(baseline) !== delta.beforeGitBlob) {
+        throw new Error('Branch2/main runtime sync Worker predecessor fixture drifted: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, BRANCH2_MAIN_RUNTIME_SYNC_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('BRANCH2 / MAIN RUNTIME SYNC WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const h9cWorkerModuleManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h9c-itemized-multi-exchange-worker-module-manifest.json'), 'utf8'))
 if (h9cWorkerModuleManifest?.version !== 1 || h9cWorkerModuleManifest?.revision !== 'stage03-h9c-itemized-multi-exchange-worker-module') throw new Error('H9C Worker module manifest invalid')
 const h9cWorkerModuleBlobSha = (value) => {
