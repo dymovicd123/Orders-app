@@ -573,7 +573,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const [stocktakeActiveSessions, setStocktakeActiveSessions] = useState<InventoryStocktakeSessionSummary[]>([])
   const [stocktakeBusy, setStocktakeBusy] = useState(false)
   const [stocktakeNotice, setStocktakeNotice] = useState('')
-  const [stocktakeProductIndex, setStocktakeProductIndex] = useState(0)
+  const [stocktakeProductIndex, setStocktakeProductIndexState] = useState(0)
   const [stocktakeProductSearch, setStocktakeProductSearch] = useState('')
   const [stocktakeReviewMode, setStocktakeReviewMode] = useState(false)
   const [stocktakeFacts, setStocktakeFacts] = useState<Record<string, string>>({})
@@ -607,6 +607,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const stocktakePendingValues = useRef<Map<number, string>>(new Map())
   const stocktakeLastPersistedValues = useRef<Map<number, string>>(new Map())
   const stocktakeTouchedIds = useRef<Set<number>>(new Set())
+  const stocktakeProductKeyRef = useRef('')
+  const stocktakeSessionIdRef = useRef('')
 
   const stocktakeSourceTitle = (source: StocktakeSource) => source === 'warehouse' ? 'Склад' : 'Бутик'
   const stocktakeSourceGenitive = (source: StocktakeSource) => source === 'warehouse' ? 'склада' : 'бутика'
@@ -624,6 +626,14 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
 
   function adoptStocktakeSession(session: InventoryStocktakeSession | null | undefined) {
     if (!session) return
+    const sameSession = stocktakeSessionIdRef.current === session.id
+    const preferredProductKey = sameSession ? stocktakeProductKeyRef.current : ''
+    const nextProductKeys = Array.from(new Set((session.items || []).map((item: any) =>
+      Number(item.productId || 0) > 0 ? `product:${item.productId}` : `name:${normalizeSuggestion(item.productName)}`
+    )))
+    const preferredIndex = preferredProductKey ? nextProductKeys.indexOf(preferredProductKey) : -1
+    const nextProductIndex = preferredIndex >= 0 ? preferredIndex : 0
+
     setStocktakeSession(session)
     setStocktakeSource(session.source)
     const persistedFacts = Object.fromEntries((session.items || []).map((item: any) => [String(item.id), item.countedQuantity === null || item.countedQuantity === undefined ? '' : String(item.countedQuantity)]))
@@ -631,7 +641,9 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     stocktakeLastPersistedValues.current = new Map((session.items || []).map((item: any) => [Number(item.id), item.countedQuantity === null || item.countedQuantity === undefined ? '' : String(item.countedQuantity)]))
     stocktakePendingValues.current.clear()
     stocktakeTouchedIds.current.clear()
-    setStocktakeProductIndex(0)
+    setStocktakeProductIndexState(nextProductIndex)
+    stocktakeProductKeyRef.current = nextProductKeys[nextProductIndex] || ''
+    stocktakeSessionIdRef.current = session.id
     setStocktakeProductSearch('')
     setStocktakeFoundExecutionKey('')
     setStocktakeFoundVariantId(0)
@@ -689,6 +701,19 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     return Array.from(groups.values())
   }, [stocktakeRows])
 
+  function setStocktakeProductIndex(next: number | ((current: number) => number)) {
+    setStocktakeProductIndexState((current) => {
+      const requested = typeof next === 'function' ? next(current) : next
+      const bounded = stocktakeGroups.length ? Math.max(0, Math.min(stocktakeGroups.length - 1, Number(requested) || 0)) : 0
+      stocktakeProductKeyRef.current = stocktakeGroups[bounded]?.key || ''
+      return bounded
+    })
+  }
+
+  useEffect(() => {
+    stocktakeProductKeyRef.current = stocktakeGroups[stocktakeProductIndex]?.key || ''
+  }, [stocktakeGroups, stocktakeProductIndex])
+
   const filteredStocktakeProductGroups = useMemo(() => {
     const query = normalizeSuggestion(stocktakeProductSearch)
     if (!query) return stocktakeGroups
@@ -715,7 +740,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     return { total: stocktakeRows.length, filled, unfilled: stocktakeRows.length - filled, differences, recount, shortages }
   }, [stocktakeRows, stocktakeFacts])
 
-  const stocktakeReadyForReview = stocktakeProgress.unfilled === 0 && stocktakeProgress.recount === 0
+  const stocktakeReadyForReview = stocktakeProgress.recount === 0 && stocktakeProgress.filled > 0
   const stocktakeUnsavedCount = useMemo(() => (stocktakeSession?.items || []).filter((item: any) => {
     const raw = stocktakeFacts[String(item.id)] ?? ''
     const persisted = item.countedQuantity === null || item.countedQuantity === undefined ? '' : String(item.countedQuantity)
@@ -1257,16 +1282,17 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       if (!latest) throw new Error('Не удалось перечитать ревизию.')
       adoptStocktakeSession(latest)
       const unfilled = (latest.items || []).filter((item: any) => item.countedQuantity === null || item.countedQuantity === undefined).length
+      const counted = (latest.items || []).length - unfilled
       const recount = (latest.items || []).filter((item: any) => item.status === 'recount_required').length
-      if (unfilled > 0) {
-        setStocktakeNotice(`Сначала пересчитайте ещё ${unfilled} позиций. Если товара нет — укажите 0.`)
-        return
-      }
       if (recount > 0) {
         setStocktakeNotice(`После изменений склада нужно повторно пересчитать ${recount} позиций.`)
         return
       }
-      setStocktakeNotice('')
+      if (counted <= 0) {
+        setStocktakeNotice('Введите фактическое количество хотя бы для одной позиции. Остальные можно оставить пустыми — при завершении они сохранят текущий системный остаток.')
+        return
+      }
+      setStocktakeNotice(unfilled > 0 ? `Пустых позиций: ${unfilled}. При завершении их текущий системный остаток будет сохранён без изменений.` : '')
       setStocktakeReviewMode(true)
     } catch (error) {
       setStocktakeNotice(error instanceof Error ? error.message : 'Не удалось подготовить финальную проверку.')
