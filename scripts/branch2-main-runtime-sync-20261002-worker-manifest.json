@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "revision": "branch2-main-runtime-sync-20261002-worker",
+  "files": {
+    "worker/domains/auth.ts": {
+      "beforeGitBlob": "6feafbece4de20ebfb1da09e2c31a6284a0f0d09",
+      "afterGitBlob": "d7bbf4e7dc5d5c86ac1b0b4abaa410e9e7caa9a2",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261002/worker/domains/auth.ts"
+    },
+    "worker/domains/inventory-stocktake.ts": {
+      "beforeGitBlob": "5aa4fdde25c20d3e3707ef93085b6765ce19bc36",
+      "afterGitBlob": "c40f2c4bbd5075aab4412a08e77df8ad76dae0e9",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261002/worker/domains/inventory-stocktake.ts"
+    }
+  }
+}

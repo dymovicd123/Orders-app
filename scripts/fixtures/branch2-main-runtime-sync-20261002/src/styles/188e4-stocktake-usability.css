@@ -86,7 +86,6 @@
 .stocktake-size-grid{display:flex!important;flex-wrap:wrap;align-items:flex-start;gap:4px 7px;padding:3px 0!important;min-width:0}
 .stocktake-size-cell{position:relative;display:grid!important;grid-template-columns:minmax(24px,auto) 58px 18px!important;align-items:center;gap:4px;width:auto;min-width:0;padding:2px!important;border:0!important;border-radius:6px!important;background:transparent!important;cursor:text}
 .stocktake-size-label{font-size:11px;font-weight:800;text-align:right;white-space:nowrap;color:#334155}
-.stocktake-size-system{display:block;margin-top:1px;font-size:8px;font-weight:650;line-height:1.15;color:#94a3b8;white-space:nowrap}
 .stocktake-size-cell>input{width:58px!important;min-width:0!important;padding:6px 5px!important;text-align:center!important;font-weight:800!important;border-radius:7px}
 .stocktake-size-cell.is-filled>input{border-color:#86efac;background:#f0fdf4}
 .stocktake-size-cell.is-saving>input{opacity:.72}

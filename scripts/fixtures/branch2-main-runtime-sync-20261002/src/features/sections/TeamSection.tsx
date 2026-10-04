@@ -80,9 +80,6 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
   const [teamAccessEditorId, setTeamAccessEditorId] = useState<number | null>(null)
   const [teamAccessDraft, setTeamAccessDraft] = useState({ id: 0, login: '', password: '', role: 'manager', isActive: true, mustChangePassword: true })
   const teamAccessLoginRef = useRef<HTMLInputElement | null>(null)
-  const [systemAdminEditorOpen, setSystemAdminEditorOpen] = useState(false)
-  const [systemAdminDraft, setSystemAdminDraft] = useState({ id: 0, login: '', password: '', isActive: true, mustChangePassword: true })
-  const systemAdminLoginRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     if (!teamAccessEditorId) return
@@ -121,86 +118,6 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
 
   function teamAuthUserFor(employeeId: number) {
     return authUsers.find((user) => user.managerId === employeeId) || null
-  }
-
-  function openSystemAdminAccess(account = null) {
-    if (!isAdmin) return
-    setSystemAdminDraft({
-      id: account?.id || 0,
-      login: account?.login || '',
-      password: '',
-      isActive: account?.isActive ?? true,
-      mustChangePassword: account?.mustChangePassword ?? true,
-    })
-    setSystemAdminEditorOpen(true)
-    window.requestAnimationFrame(() => systemAdminLoginRef.current?.focus())
-  }
-
-  function closeSystemAdminAccess() {
-    setSystemAdminEditorOpen(false)
-    setSystemAdminDraft({ id: 0, login: '', password: '', isActive: true, mustChangePassword: true })
-  }
-
-  async function saveSystemAdminAccess() {
-    if (!isAdmin) return
-    const login = String(systemAdminDraft.login || '').trim().toLowerCase()
-    const existingAccount = systemAdminDraft.id ? authUsers.find((user) => user.id === systemAdminDraft.id) || null : null
-    if (login.length < 3) {
-      setError('Логин должен содержать минимум 3 символа.')
-      return
-    }
-    if (!existingAccount && String(systemAdminDraft.password || '').length < 8) {
-      setError('Для системного администратора задайте временный пароль минимум из 8 символов.')
-      return
-    }
-    const duplicateLogin = authUsers.find((user) => user.id !== existingAccount?.id && user.login.toLowerCase() === login)
-    if (duplicateLogin) {
-      setError(`Логин @${login} уже используется.`)
-      return
-    }
-
-    setError(null)
-    setMessage(null)
-    try {
-      const isEdit = Boolean(existingAccount?.id)
-      const password = systemAdminDraft.password || undefined
-      const response = await apiFetch(isEdit ? `/api/auth/users/${existingAccount.id}` : '/api/auth/users', {
-        method: isEdit ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          login,
-          password,
-          role: 'admin',
-          managerId: null,
-          displayName: 'Системный администратор',
-          isActive: systemAdminDraft.isActive,
-          mustChangePassword: password ? true : systemAdminDraft.mustChangePassword,
-        }),
-      })
-      const data = await readJsonResponse(response, 'Системный администратор')
-      if (!response.ok) throw new Error(data.message || 'Не удалось сохранить системного администратора.')
-      await loadAuthUsers()
-      closeSystemAdminAccess()
-      setMessage(isEdit ? `Системный администратор @${login} обновлён.` : `Системный администратор @${login} создан.`)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось сохранить системного администратора.')
-    }
-  }
-
-  async function disableSystemAdminAccess(account) {
-    if (!isAdmin || !account?.id) return
-    if (!window.confirm(`Отключить системного администратора @${account.login}? Активные сессии будут закрыты.`)) return
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/auth/users/${account.id}`, { method: 'DELETE' })
-      const data = await readJsonResponse(response, 'Отключение системного администратора')
-      if (!response.ok) throw new Error(data.message || 'Не удалось отключить системного администратора.')
-      await loadAuthUsers()
-      closeSystemAdminAccess()
-      setMessage(`Системный администратор @${account.login} отключён.`)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось отключить системного администратора.')
-    }
   }
 
   function openTeamEmployeeAccess(employee) {
@@ -290,7 +207,6 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
   const accessEditorAccount = accessEditorEmployee
     ? authUsers.find((user) => user.managerId === accessEditorEmployee.id) || null
     : null
-  const systemAdmins = authUsers.filter((user) => user.role === 'admin' && !user.managerId)
 
   return (
     <article className="card wide sector-team" id="team" style={sectorStyle('team')}>
@@ -573,95 +489,6 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                       </tbody>
                     </table>
                   </div>
-
-                  {isAdmin ? (
-                    <section className="team-system-admins" aria-label="Системные администраторы">
-                      <div className="team-system-admins-head">
-                        <div>
-                          <div className="card-label">Системные администраторы</div>
-                          <h3>Служебные аккаунты без сотрудника</h3>
-                          <p>Эти аккаунты имеют административный доступ, но не привязаны к сотрудникам и не участвуют в заказах, табеле, зарплате или рабочих отчётах.</p>
-                        </div>
-                        <div className="team-system-admins-head-actions">
-                          <span className="team-system-admins-count">{systemAdmins.length}</span>
-                          <button className="primary compact" type="button" onClick={() => openSystemAdminAccess()}>+ Добавить</button>
-                        </div>
-                      </div>
-                      <div className="team-system-admins-list">
-                        {systemAdmins.map((account) => (
-                          <div className="team-system-admin-card" key={account.id}>
-                            <div className="team-system-admin-identity">
-                              <strong>@{account.login}</strong>
-                              <span>{account.displayName || 'Системный администратор'}</span>
-                            </div>
-                            <div className="team-system-admin-card-actions">
-                              <div className="team-system-admin-meta">
-                                <span className={`team-access-status ${account.isActive ? 'is-active' : 'is-disabled'}`}>
-                                  {account.isActive ? 'Вход включён' : 'Вход отключён'}
-                                </span>
-                                {account.mustChangePassword ? <span className="team-system-admin-temporary">Нужно сменить временный пароль</span> : null}
-                                <span>{account.lastLoginAt ? `Последний вход: ${formatDateShort(account.lastLoginAt)}` : 'Входов ещё не было'}</span>
-                              </div>
-                              <button className="secondary compact" type="button" onClick={() => openSystemAdminAccess(account)}>Настроить</button>
-                            </div>
-                          </div>
-                        ))}
-                        {!systemAdmins.length ? <div className="team-system-admin-empty">Системных администраторов пока нет.</div> : null}
-                      </div>
-                    </section>
-                  ) : null}
-
-                  {systemAdminEditorOpen ? (
-                    <div className="modal-backdrop team-access-modal-backdrop" role="presentation" onMouseDown={(event) => {
-                      if (event.target === event.currentTarget) closeSystemAdminAccess()
-                    }}>
-                      <section className="modal-card team-access-modal" role="dialog" aria-modal="true" aria-labelledby="system-admin-modal-title">
-                        <div className="modal-head team-access-modal-head">
-                          <div>
-                            <div className="card-label">Системный доступ</div>
-                            <h3 id="system-admin-modal-title">{systemAdminDraft.id ? 'Настроить системного администратора' : 'Новый системный администратор'}</h3>
-                            <p>Служебный администратор не становится сотрудником и не появляется в рабочих списках.</p>
-                          </div>
-                          <button className="ghost compact" type="button" onClick={closeSystemAdminAccess} aria-label="Закрыть окно">✕</button>
-                        </div>
-                        <div className="team-access-modal-fields">
-                          <label>
-                            <span>Логин</span>
-                            <input ref={systemAdminLoginRef} value={systemAdminDraft.login} onChange={(event) => setSystemAdminDraft((draft) => ({ ...draft, login: event.target.value }))} autoComplete="off" minLength={3} maxLength={32} />
-                            <small>Будет виден только другим администраторам в этом служебном блоке.</small>
-                          </label>
-                          <label>
-                            <span>{systemAdminDraft.id ? 'Новый временный пароль' : 'Временный пароль'}</span>
-                            <input type="text" value={systemAdminDraft.password} onChange={(event) => setSystemAdminDraft((draft) => ({ ...draft, password: event.target.value }))} placeholder={systemAdminDraft.id ? 'Оставьте пустым, если пароль не меняется' : 'Минимум 8 символов'} autoComplete="new-password" />
-                            <small>{systemAdminDraft.id ? 'Заполните только для сброса пароля.' : 'При первом входе система потребует заменить пароль.'}</small>
-                          </label>
-                        </div>
-                        <div className="team-access-modal-options">
-                          <label className="team-access-option">
-                            <input type="checkbox" checked={systemAdminDraft.isActive} onChange={(event) => setSystemAdminDraft((draft) => ({ ...draft, isActive: event.target.checked }))} />
-                            <span><strong>Разрешить вход</strong><small>Отключённый аккаунт не сможет войти в систему.</small></span>
-                          </label>
-                          <label className="team-access-option">
-                            <input type="checkbox" checked={systemAdminDraft.password ? true : systemAdminDraft.mustChangePassword} disabled={Boolean(systemAdminDraft.password)} onChange={(event) => setSystemAdminDraft((draft) => ({ ...draft, mustChangePassword: event.target.checked }))} />
-                            <span><strong>Потребовать смену пароля</strong><small>Для нового или сброшенного пароля это включается автоматически.</small></span>
-                          </label>
-                        </div>
-                        <div className="team-access-editor-help">Этот аккаунт не имеет managerId: он не будет использоваться как менеджер заказа, сотрудник табеля или получатель зарплаты.</div>
-                        <div className="modal-actions team-access-modal-actions">
-                          {systemAdminDraft.id && systemAdminDraft.isActive ? (
-                            <button className="ghost danger" type="button" disabled={authUsersBusy} onClick={() => {
-                              const account = authUsers.find((user) => user.id === systemAdminDraft.id)
-                              if (account) void disableSystemAdminAccess(account)
-                            }}>Отключить вход</button>
-                          ) : <span />}
-                          <div className="button-row">
-                            <button className="secondary" type="button" onClick={closeSystemAdminAccess}>Отмена</button>
-                            <button className="primary" type="button" disabled={authUsersBusy} onClick={() => void saveSystemAdminAccess()}>{authUsersBusy ? 'Сохраняю...' : 'Сохранить'}</button>
-                          </div>
-                        </div>
-                      </section>
-                    </div>
-                  ) : null}
 
                   {accessEditorEmployee ? (
                     <div

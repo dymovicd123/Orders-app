@@ -411,36 +411,53 @@ async function main() {
     color: 'СИНИЙ',
     size: '48',
   })
+  seedVariant(db, {
+    productId: 2,
+    variantId: 202,
+    source: 'boutique',
+    quantity: 4,
+    reserved: 0,
+    name: 'QA РЕВИЗИЯ БУТИК',
+    color: 'СИНИЙ',
+    size: '50',
+  })
 
   const boutiqueStarted = await createInventoryStocktakeSession(db, { source: 'boutique' }, 'qa-manager')
   const boutiqueSessionId = boutiqueStarted.session?.id
-  const boutiqueItemId = Number(boutiqueStarted.session?.items?.[0]?.id)
-  check(Boolean(boutiqueSessionId) && boutiqueItemId > 0, 'Boutique stocktake fixture did not start')
+  const boutiqueItemId = Number(boutiqueStarted.session?.items?.find(item => Number(item.variantId) === 201)?.id)
+  const boutiqueBlankItemId = Number(boutiqueStarted.session?.items?.find(item => Number(item.variantId) === 202)?.id)
+  check(Boolean(boutiqueSessionId) && boutiqueItemId > 0 && boutiqueBlankItemId > 0, 'Boutique stocktake fixture did not start')
 
-  const unfilled = await completeInventoryStocktakeSession(db, boutiqueSessionId)
-  check(unfilled.ok === false && unfilled.code === 'unfilled', 'Completion with unfilled rows must stay blocked')
-  check(db.row(`SELECT status FROM inventory_stocktake_sessions WHERE id = ?`, boutiqueSessionId)?.status === 'active', 'Unfilled completion changed the session state')
-  check(Number(db.row(`SELECT quantity FROM inventory_stock WHERE inventory_source = 'boutique' AND variant_id = 201`)?.quantity) === 7, 'Unfilled completion changed physical stock')
+  const noCounts = await completeInventoryStocktakeSession(db, boutiqueSessionId)
+  check(noCounts.ok === false && noCounts.code === 'no_counts', 'Completion without any human-entered fact must stay blocked')
+  check(db.row(`SELECT status FROM inventory_stocktake_sessions WHERE id = ?`, boutiqueSessionId)?.status === 'active', 'No-count completion changed the session state')
 
   const boutiqueCount = await saveInventoryStocktakeCount(db, boutiqueSessionId, boutiqueItemId, { countedQuantity: 6 })
   check(boutiqueCount.ok, 'Boutique count fixture was not saved')
 
   db.beforeNextBatch = (owner) => {
     owner.run(`UPDATE inventory_stock SET quantity = 8 WHERE inventory_source = 'boutique' AND variant_id = 201`)
+    owner.run(`UPDATE inventory_stock SET quantity = 5 WHERE inventory_source = 'boutique' AND variant_id = 202`)
   }
   const completionRace = await completeInventoryStocktakeSession(db, boutiqueSessionId)
-  check(completionRace.ok === false && completionRace.code === 'recount_required', 'In-transaction stocktake race did not fail closed')
+  check(completionRace.ok === false && completionRace.code === 'recount_required', 'In-transaction stocktake race did not fail closed for the human-entered row')
   check(Number(db.row(`SELECT quantity FROM inventory_stock WHERE inventory_source = 'boutique' AND variant_id = 201`)?.quantity) === 8, 'Stocktake race overwrote the newer physical truth')
+  check(Number(db.row(`SELECT quantity FROM inventory_stock WHERE inventory_source = 'boutique' AND variant_id = 202`)?.quantity) === 5, 'Blank row did not preserve a concurrent system quantity')
   check(Number(db.row(`SELECT COUNT(*) AS qty FROM inventory_movements WHERE reference_type = 'stocktake' AND reference_id = ?`, boutiqueSessionId)?.qty) === 0, 'Failed completion applied a partial stocktake movement')
   const racedItem = db.row(`SELECT baseline_quantity, counted_quantity, status FROM inventory_stocktake_items WHERE id = ?`, boutiqueItemId)
-  check(Number(racedItem?.baseline_quantity) === 8 && racedItem?.counted_quantity === null && racedItem?.status === 'recount_required', 'Completion race did not move only the conflicted row to a fresh recount baseline')
+  check(Number(racedItem?.baseline_quantity) === 8 && racedItem?.counted_quantity === null && racedItem?.status === 'recount_required', 'Completion race did not move the human-entered conflicted row to a fresh recount baseline')
+  const untouchedBlankAfterRace = db.row(`SELECT baseline_quantity, counted_quantity, status FROM inventory_stocktake_items WHERE id = ?`, boutiqueBlankItemId)
+  check(Number(untouchedBlankAfterRace?.baseline_quantity) === 4 && untouchedBlankAfterRace?.counted_quantity === null && untouchedBlankAfterRace?.status === 'pending', 'Blank row was incorrectly forced into recount after a system-side stock change')
 
   const boutiqueRecount = await saveInventoryStocktakeCount(db, boutiqueSessionId, boutiqueItemId, { countedQuantity: 8 })
   check(boutiqueRecount.ok, 'Recount after completion race was not accepted')
   const boutiqueCompleted = await completeInventoryStocktakeSession(db, boutiqueSessionId)
-  check(boutiqueCompleted.ok && boutiqueCompleted.changed === 0, 'Unchanged recount did not complete cleanly')
+  check(boutiqueCompleted.ok && boutiqueCompleted.changed === 0, 'Unchanged recount plus preserved blanks did not complete cleanly')
+  check(Number(db.row(`SELECT quantity FROM inventory_stock WHERE inventory_source = 'boutique' AND variant_id = 202`)?.quantity) === 5, 'Blank row changed physical stock during completion')
+  const completedBlank = db.row(`SELECT baseline_quantity, counted_quantity, counted_at, applied_quantity, status FROM inventory_stocktake_items WHERE id = ?`, boutiqueBlankItemId)
+  check(Number(completedBlank?.baseline_quantity) === 5 && Number(completedBlank?.counted_quantity) === 5 && completedBlank?.counted_at === null && Number(completedBlank?.applied_quantity) === 5 && completedBlank?.status === 'applied', 'Blank row was not finalized as an unchanged system quantity')
   check(Number(db.row(`SELECT COUNT(*) AS qty FROM inventory_movements WHERE reference_type = 'stocktake' AND reference_id = ?`, boutiqueSessionId)?.qty) === 0, 'Unchanged completed stocktake invented a movement')
-  check(Number(db.row(`SELECT COUNT(*) AS qty FROM inventory_stock_checks WHERE reference_type = 'stocktake' AND reference_id = ?`, boutiqueSessionId)?.qty) === 1, 'Unchanged completed stocktake did not retain physical-check evidence')
+  check(Number(db.row(`SELECT COUNT(*) AS qty FROM inventory_stock_checks WHERE reference_type = 'stocktake' AND reference_id = ?`, boutiqueSessionId)?.qty) === 1, 'Blank default incorrectly created physical-check history or human-entered evidence was lost')
 
   seedVariant(db, {
     productId: 1,

@@ -135,7 +135,7 @@ export function FinanceReportContentRenderer(ctx: RendererContext) {
 
     const renderProductReport = () => (
       <>
-        {renderHeader('Товары из заказов с бизнес-датой заказа в выбранном периоде. Товары расположены по количеству проданных единиц. Средняя цена считается по продажам, где цена товара была сохранена отдельно. Старые заказы без цены по позиции в расчёт не входят.')}
+        {renderHeader('Товары расположены по количеству проданных единиц. Средняя цена считается по продажам, где цена товара была сохранена отдельно. Старые заказы без цены по позиции в расчёт не входят.')}
         {renderStatsTable([
           { label: 'Всего единиц', value: financeReport.reports.products.reduce((sum, row) => sum + Number(row.quantity || 0), 0) },
           { label: 'Товаров', value: financeReport.reports.products.length },
