@@ -759,6 +759,7 @@ export type ExchangeHistoryEntry = {
   oldOperationItemId?: number | null
   oldPhysicalTracking?: boolean
   oldPhysicalReceivedAt?: string | null
+  oldWasNotIssued?: boolean
   oldIsWorkshop?: boolean
   oldLifecycleStatus?: 'pending' | 'applied' | 'cancelled' | null | string
   newLifecycleStatus?: 'pending' | 'applied' | 'cancelled' | null | string
