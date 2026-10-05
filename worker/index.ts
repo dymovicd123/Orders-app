@@ -27,6 +27,7 @@ import { createOrder, getOrder, updateOrderCritical } from './domains/orders-wri
 import { createReferenceValue, deleteReferenceValue, getReferenceData, getReferenceValueCounts, listReferenceValues, normalizeReferenceKind, updateReferenceValue } from './domains/references.ts'
 import { cancelExchange, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createReturn, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { createItemizedExchangeBatchFromRequest } from './domains/exchange-batch.ts'
+import { cancelExchangeSetV2, createExchangeSetV2FromRequest, isExchangeSetV2 } from './domains/exchange-set.ts'
 import { continueDatabaseStorageCleanup, getDatabaseStorageStatus, startDatabaseStorageCleanup, updateDatabaseStorageCapacity } from './domains/storage.ts'
 import { buildStockResolutionRequired } from './domains/stock-resolution.ts'
 import type { CallCentreInput, DepartmentPlanInput, EmployeeInput, LeadInput, PlanInput, TimesheetInput } from './domains/team.ts'
@@ -1580,6 +1581,16 @@ export default {
         }
       }
 
+      if (url.pathname === '/api/exchanges/set' && request.method === 'POST') {
+        try {
+          return json(await createExchangeSetV2FromRequest(env.DB, request), { status: 201 });
+        } catch (error) {
+          const criticalResponse = criticalOperationErrorResponse(error);
+          if (criticalResponse) return criticalResponse;
+          throw error;
+        }
+      }
+
       if (url.pathname === '/api/exchanges' && request.method === 'POST') {
         const input = await readJson<{ requestId?: string; orderId?: number; exchangeDate?: string; oldItemId?: number; oldQuantity?: number; oldReturnSource?: unknown; oldPhysicalState?: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'; newItem?: NonNullable<OrderInput['items']>[number]; newSourceWasManuallyChanged?: boolean; financialAction?: unknown; financialAmount?: number; paymentMethod?: string; comment?: string }>(request);
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
@@ -1620,7 +1631,10 @@ export default {
         const input = await readJson<{ requestId?: string; comment?: string }>(request);
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
         try {
-          return json(await cancelExchange(env.DB, Number(exchangeCancelMatch[1]), input));
+          const exchangeId = Number(exchangeCancelMatch[1]);
+          return json(await (await isExchangeSetV2(env.DB, exchangeId)
+            ? cancelExchangeSetV2(env.DB, exchangeId, input)
+            : cancelExchange(env.DB, exchangeId, input)));
         } catch (error) {
           const criticalResponse = criticalOperationErrorResponse(error);
           if (criticalResponse) return criticalResponse;
