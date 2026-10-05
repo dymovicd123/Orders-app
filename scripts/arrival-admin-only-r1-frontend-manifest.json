@@ -37,8 +37,8 @@
     "src/features/sections/InventorySection.tsx": {
       "beforeGitBlob": "88bfb869f8d0a14c5cbf9fcca7858ad3b3fd5a69",
       "beforeLines": 2623,
-      "afterGitBlob": "66ee48198c30a3d8c6c02b2c4c3f0ef10fe993e6",
-      "afterLines": 2624,
+      "afterGitBlob": "c3ba07c011ef9b68b5fa3cb0a52471851877eed8",
+      "afterLines": 2625,
       "replacements": [
         {
           "beforeBlock": "  const selectInventoryOperationMode = (mode: any) => {\n",
@@ -47,6 +47,10 @@
         {
           "beforeBlock": "{ value: 'movement' as const, label: 'Операции', hint: 'Приход, списание и перемещение' },",
           "afterBlock": "{ value: 'movement' as const, label: 'Операции', hint: isAdmin ? 'Приход, списание и перемещение' : 'Списание и перемещение' },"
+        },
+        {
+          "beforeBlock": "        inventoryPanelStyle,\n        movementSourceLoadError,\n",
+          "afterBlock": "        inventoryPanelStyle,\n        isAdmin,\n        movementSourceLoadError,\n"
         }
       ]
     }
