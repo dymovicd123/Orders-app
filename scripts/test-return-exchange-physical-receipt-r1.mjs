@@ -21,10 +21,10 @@ expect(migration.includes('ALTER TABLE exchange_items ADD COLUMN physical_receiv
 expect(migration.includes('DEFAULT 0'), 'legacy rows must remain untracked by default')
 
 expect(domain.includes("physicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock'"), 'return item physicalState contract missing')
-expect(domain.includes("oldPhysicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock'"), 'exchange oldPhysicalState contract missing')
+expect(domain.includes("oldPhysicalState?: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'"), 'exchange oldPhysicalState contract missing')
 expect(domain.includes('physical_tracking, physical_received_at'), 'physical receipt columns are not written by create flows')
 expect(domain.includes("physicalState !== 'pending' ? createdAt : null"), 'return received timestamp semantics missing')
-expect(domain.includes("oldPhysicalState !== 'pending' ? timestamp : null"), 'exchange received timestamp semantics missing')
+expect(domain.includes("oldPhysicalTracking && oldPhysicalState !== 'pending' ? timestamp : null"), 'exchange received timestamp semantics missing')
 expect(domain.includes('physicalTracking ? 1 : 0'), 'return tracking flag is not written')
 expect(domain.includes('oldPhysicalTracking ? 1 : 0'), 'exchange tracking flag is not written')
 expect(domain.includes("physicalState === 'warehouse' || physicalState === 'boutique'"), 'return destination is not derived from physical state')
@@ -33,6 +33,9 @@ expect(domain.includes("oldPhysicalState === 'warehouse' || oldPhysicalState ===
 // Compatibility guard: legacy payloads must still use the existing restock source semantics.
 expect(domain.includes("physicalTracking ? trackedInventorySource : (restockSource !== 'none' && itemRestockRequested ? restockSource : null)"), 'legacy return restock fallback missing')
 expect(domain.includes("oldPhysicalTracking ? trackedOldReturnSource : normalizeExchangeReturnSource(input.oldReturnSource)"), 'legacy exchange restock fallback missing')
+expect(domain.includes("const oldWasNotIssued = oldPhysicalState === 'not_issued'"), 'exchange not-issued branch missing')
+expect(domain.includes("await releaseOrderReservationV2("), 'not-issued exchange does not release the old reservation without touching physical stock')
+expect(domain.includes("oldWasNotIssued ? 'not_issued'"), 'not-issued exchange marker is not persisted in the old snapshot')
 
 // Delayed physical receipt must be a dedicated idempotent operation, not a generic arrival.
 expect(domain.includes('export async function receiveReturnedItem'), 'receiveReturnedItem domain operation missing')
@@ -58,16 +61,17 @@ expect(domain.includes('old_snapshot.physical_tracking AS old_physical_tracking'
 expect(domain.includes('old_snapshot.physical_received_at AS old_physical_received_at'), 'exchange history does not select received timestamp')
 expect(domain.includes('oldPhysicalTracking: Boolean(toInt(row.old_physical_tracking, 0))'), 'exchange history does not map physical tracking')
 expect(domain.includes('oldPhysicalReceivedAt: cleanText(row.old_physical_received_at) || null'), 'exchange history does not map received timestamp')
+expect(domain.includes("oldWasNotIssued: cleanText(row.old_inventory_source) === 'not_issued'"), 'exchange history does not expose not-issued marker')
 
 // Frontend must expose one clear physical-state choice and a compact delayed-receipt action.
 expect(types.includes("physicalState: 'pending' | 'warehouse' | 'boutique' | 'no_stock'"), 'return draft physicalState missing')
-expect(types.includes("oldPhysicalState: 'pending' | 'warehouse' | 'boutique' | 'no_stock'"), 'exchange draft oldPhysicalState missing')
+expect(types.includes("oldPhysicalState: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'"), 'exchange draft oldPhysicalState missing')
 expect(types.includes('physicalTracking?: boolean'), 'return history physicalTracking type missing')
 expect(types.includes('physicalReceivedAt?: string | null'), 'return history physicalReceivedAt type missing')
 expect(types.includes('oldPhysicalTracking?: boolean'), 'exchange history physical tracking type missing')
 expect(types.includes('oldPhysicalReceivedAt?: string | null'), 'exchange history physical received type missing')
 expect(utils.includes("physicalState: (item.sourceType === 'workshop' ? 'no_stock' : 'pending')"), 'return drafts must wait for ordinary stock items and default Workshop-origin items to no-stock')
-expect(utils.includes("oldPhysicalState: firstItem?.sourceType === 'workshop' ? 'no_stock' : 'pending'"), 'exchange drafts must wait for ordinary old items and default Workshop-origin old items to no-stock')
+expect(utils.includes("order?.shipping_status === 'sent'") && utils.includes(": 'not_issued'"), 'unsent exchange drafts must default ordinary old items to the explicit not-issued path')
 expect(app.includes('physicalState: item.physicalState'), 'return save payload does not send physical state')
 expect(app.includes('oldPhysicalState: exchangeDraft.oldPhysicalState'), 'exchange save payload does not send old physical state')
 expect(app.includes('async function receiveReturnedItemAction'), 'frontend receive action missing')
@@ -81,7 +85,8 @@ expect(!returnSection.includes('<span>Куда вернуть товар</span>'
 expect(returnSection.includes('Принять товар'), 'return history delayed receipt button missing')
 expect(returnSection.includes('Старая запись — физическое получение не отслеживалось'), 'return legacy status explanation missing')
 expect(exchangeSection.includes('Старая вещь сейчас'), 'exchange form physical-state field missing')
-expect(exchangeSection.includes('Ещё не пришла'), 'exchange form waiting option missing')
+expect(exchangeSection.includes('Не выдавали клиенту — остаётся на месте'), 'exchange form not-issued option missing')
+expect(exchangeSection.includes('Клиент ещё не вернул'), 'exchange form waiting option missing')
 expect(!exchangeSection.includes('<span>Куда вернуть старую вещь</span>'), 'old ambiguous exchange destination field still shown')
 expect(exchangeSection.includes('Принять товар'), 'exchange history delayed receipt button missing')
 expect(exchangeSection.includes('Старая запись — физическое получение не отслеживалось'), 'exchange legacy status explanation missing')
