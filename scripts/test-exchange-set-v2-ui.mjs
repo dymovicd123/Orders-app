@@ -38,6 +38,7 @@ check(!smart.includes('Сколько пришло'), 'Partial-arrival UI was in
 check(smart.includes('destinationFor(group.entry.id, item)') && smart.includes('group.items.map'), 'Arrival destination is not independent per returned line')
 check(smart.includes("operationType: 'exchange'") && smart.includes('operationItemId: Number(item.id || 0)'), 'Arrival queue is not connected to the existing per-item receive operation')
 
+check(smart.includes("item.sourceType === 'workshop'") && smart.includes('Срочно для цеха') && smart.includes('workshopDueDate') && smart.includes('workshopDueTime'), 'Smart Exchange dropped Workshop urgency/deadline controls')
 check(smart.includes('isSetExchange') && smart.includes('entry.oldItems') && smart.includes('entry.newItems'), 'Set exchange history does not render full old/new collections')
 check(smart.includes('Отменить обмен') && app.includes("apiFetch('/api/exchanges/set'"), 'Smart create/cancel workflow is not connected end-to-end')
 check(css.includes('.exchange-old-card.is-selected') && css.includes('.exchange-return-group') && css.includes('@media(max-width:720px)'), 'Smart Exchange lacks selected-card, intake, or mobile styling')
