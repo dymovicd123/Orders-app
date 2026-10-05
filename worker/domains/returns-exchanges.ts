@@ -2281,6 +2281,20 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
     throw new Error(`Возврат содержит старое складское движение без надёжной canonical identity (${cleanText(unsafeLegacy.product_name_snapshot)}). Автоматическая отмена остановлена, чтобы не изменить неправильный остаток.`);
   }
 
+  const taskSnapshots = await db.prepare(
+    `SELECT rwt.workshop_task_id, rwt.previous_status, rwt.previous_quantity,
+            wt.status AS current_status, wt.quantity AS current_quantity, wt.order_item_id,
+            COALESCE((
+              SELECT SUM(ri.quantity)
+              FROM return_items ri
+              WHERE ri.return_id = ? AND ri.order_item_id = wt.order_item_id
+            ), 0) AS return_quantity
+     FROM return_workshop_task_reversals rwt
+     LEFT JOIN workshop_tasks wt ON wt.id = rwt.workshop_task_id
+     WHERE rwt.return_id = ?
+     ORDER BY rwt.workshop_task_id ASC`
+  ).bind(returnId, returnId).all<Record<string, unknown>>();
+
   let workshopTargets = Array.isArray(operationContext.workshopTargets)
     ? operationContext.workshopTargets as Array<Record<string, unknown>>
     : null;
@@ -2337,20 +2351,6 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
     const result = await cancelInventoryLifecycleEvent(db, toInt(event.id, 0), timestamp, comment);
     if (result?.cancelled) stockReversals.push(result);
   }
-
-  const taskSnapshots = await db.prepare(
-    `SELECT rwt.workshop_task_id, rwt.previous_status, rwt.previous_quantity,
-            wt.status AS current_status, wt.quantity AS current_quantity, wt.order_item_id,
-            COALESCE((
-              SELECT SUM(ri.quantity)
-              FROM return_items ri
-              WHERE ri.return_id = ? AND ri.order_item_id = wt.order_item_id
-            ), 0) AS return_quantity
-     FROM return_workshop_task_reversals rwt
-     LEFT JOIN workshop_tasks wt ON wt.id = rwt.workshop_task_id
-     WHERE rwt.return_id = ?
-     ORDER BY rwt.workshop_task_id ASC`
-  ).bind(returnId, returnId).all<Record<string, unknown>>();
 
   for (const snapshot of taskSnapshots.results || []) {
     const workshopTaskId = toInt(snapshot.workshop_task_id, 0);
