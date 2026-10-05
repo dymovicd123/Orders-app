@@ -1,10 +1,30 @@
 # Система заказов — актуальный continuation
 
-Updated: 2026-09-30  
+Updated: 2026-10-05  
 Repository: `dymovicd123/Orders-app`  
 Branch represented by this file: **branch2**
 
 Этот файл — короткий актуальный checkpoint Branch2. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не являются текущим roadmap без сверки с GitHub.
+
+## STATUS UPDATE — 2026-10-05 — Exchange Set V2 candidate green
+
+Current Exchange redesign is on work branch `w-exchange-set-v2-20261005`, targeting **Branch2 only**.
+
+Green runtime candidate before documentation: `1e73b99649248d388d087f23251296a73d302def`; Quality run **37347886635** passed cumulative regressions, TypeScript, clean build and Wrangler dry-run.
+
+Key change: modern `itemized_v1` Exchange no longer requires artificial old→new pairs. One Exchange owns independent `oldItems[]` and `newItems[]`, derives commercial total from persisted sold prices, derives payment/refund from actual net paid, supports per-old-line never-issued/pending/Warehouse/Boutique/no-stock truth, grouped delayed intake, complete set history and set-wide cancellation. Legacy manual-total Exchange remains on the compatibility path.
+
+Important defects caught during the redesign and already fixed in the candidate:
+- unsent items do not duplicate stock: `not_issued` releases reservation only;
+- delayed multi-item Exchange intake no longer collides on one `exchange:<id>:old` lifecycle key;
+- Set V2 no longer lets the last delayed line overwrite one fake operation-wide return destination;
+- sent Workshop items are recognized as physically issued even though they do not carry stock fulfillment status;
+- grouped delayed intake no longer refreshes heavy Warehouse/history surfaces once per line;
+- cancellation refuses to erase a Set Exchange whose new item has already been consumed by a later active Exchange/Return.
+
+Canonical detailed checkpoint: `docs/continuation/EXCHANGE_SET_V2_20261005.md`.
+
+Next safe action is merge to **branch2** after docs-only Quality, then exact merged-SHA Branch2 validation/deploy and manual acceptance. Production/main remains out of scope. After Exchange acceptance, continue the requested full Return + Exchange UX/business audit.
 
 
 ## STATUS UPDATE — 2026-09-30 — High-risk dev dependency audit closed
