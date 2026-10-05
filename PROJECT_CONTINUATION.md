@@ -6,27 +6,35 @@ Branch represented by this file: **branch2**
 
 Этот файл — короткий актуальный checkpoint Branch2. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не являются текущим roadmap без сверки с GitHub.
 
-## STATUS UPDATE — 2026-10-05 — Exchange Set V2 candidate green
+## STATUS UPDATE — 2026-10-05 — Exchange Set V2 + Return safety merged to Branch2
 
-Exchange Set V2 merged to **branch2** through PR #285 at `d6e08c2a4028ff7fc256884b2496a0204f1611f7`.
-Exact merged-SHA safety run **37348603139** and Cloudflare deploy monitor **37348603110** both passed; the matching native Cloudflare build succeeded and direct fallback was not needed.
+Exchange Set V2 is now on **branch2**:
+- PR #285 merged the independent old/new item-set workflow;
+- PR #286 added post-merge cancellation money/replay safety and repeated-SKU stock guidance;
+- the deployed pre-Return baseline was `ab51960efe8465234f42172be47f79e9e1c9764a`, with Branch2 safety run **37349832156 — success** and Cloudflare deploy monitor **37349832127 — success**.
 
-A focused post-merge safety pass is on `w-exchange-set-v2-postmerge-safety-20261005`. Runtime candidate `9f2678eb6267e0138236ded68c255a9916768457` passed Quality run **37349436746**. It adds retry-safe cancellation quantity targets, a financial dependency guard for later payments/refunds, and aggregate stock guidance for repeated identical replacement SKU rows.
+Return safety/UX follow-up is also merged:
+- PR #287 merged at `b31c2f8a9f4651cae642486a3c6a7955c512d456`;
+- exact PR-head Quality run **37356472772 — success** after cumulative regressions and application build;
+- never-issued goods can no longer be recorded as physical Returns; pre-handover item cancellation is directed to **Edit order**, while money-only refunds remain valid;
+- Workshop delayed intake defaults to no-stock consistently in both queue and history;
+- Return cancellation freezes Workshop baseline/target state, validates dependencies before stock reversal, uses replay-safe compare-and-swap restoration, and repairs derived order state on already-cancelled retries.
 
-Key change: modern `itemized_v1` Exchange no longer requires artificial old→new pairs. One Exchange owns independent `oldItems[]` and `newItems[]`, derives commercial total from persisted sold prices, derives payment/refund from actual net paid, supports per-old-line never-issued/pending/Warehouse/Boutique/no-stock truth, grouped delayed intake, complete set history and set-wide cancellation. Legacy manual-total Exchange remains on the compatibility path.
+Current Exchange business model:
+- modern `itemized_v1` Exchange owns independent `oldItems[]` and `newItems[]`;
+- the order total is recalculated from persisted actual sold prices;
+- payment/refund is derived from the resulting commercial total versus actual net paid;
+- old items independently carry not-issued / pending / Warehouse / Boutique / no-stock physical truth;
+- delayed Exchange intake is grouped as one arrival event but stock disposition remains per old item;
+- cancellation is set-wide, dependency-aware and guarded against later money/Return/Exchange state.
 
-Important defects caught during the redesign and already fixed in the candidate:
-- unsent items do not duplicate stock: `not_issued` releases reservation only;
-- delayed multi-item Exchange intake no longer collides on one `exchange:<id>:old` lifecycle key;
-- Set V2 no longer lets the last delayed line overwrite one fake operation-wide return destination;
-- sent Workshop items are recognized as physically issued even though they do not carry stock fulfillment status;
-- grouped delayed intake no longer refreshes heavy Warehouse/history surfaces once per line;
-- cancellation refuses to erase a Set Exchange whose new item has already been consumed by a later active Exchange/Return.
+Canonical detailed checkpoints:
+- `docs/continuation/EXCHANGE_SET_V2_20261005.md`
+- `docs/continuation/RETURN_EXCHANGE_AUDIT_20261005.md`
 
-Canonical detailed checkpoint: `docs/continuation/EXCHANGE_SET_V2_20261005.md`.
+Production/main remains out of scope. Do not copy Branch2 business data into Production or vice versa.
 
-Next safe action is merge the focused post-merge safety pass to **branch2**, verify its exact merged-SHA Branch2 validation/deploy, then perform manual Exchange acceptance. Production/main remains out of scope. After Exchange acceptance, continue the requested full Return + Exchange UX/business audit.
-
+Next safe action: validate/deploy the current exact Branch2 head, then do manual Branch2 acceptance of Exchange + Return and continue only from concrete UX/business defects found there. Do not return to the legacy pair-exchange design.
 
 ## STATUS UPDATE — 2026-09-30 — High-risk dev dependency audit closed
 
