@@ -357,7 +357,18 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                         ) : null}
                       </div>
                     ) : null}
-                    {item.sourceType === 'workshop' ? <label className="exchange-workshop-note"><span>Комментарий цеху</span><input value={item.workshopComment || ''} onChange={(event) => applyExchangeSetNewItemPatch(index, { workshopComment: event.target.value })} /></label> : null}
+                    {item.sourceType === 'workshop' ? (
+                      <div className="exchange-workshop-fields">
+                        <label className="exchange-workshop-note"><span>Комментарий цеху</span><input value={item.workshopComment || ''} onChange={(event) => applyExchangeSetNewItemPatch(index, { workshopComment: event.target.value })} /></label>
+                        <label className="exchange-workshop-urgent"><input type="checkbox" checked={Boolean(item.workshopUrgent)} onChange={(event) => applyExchangeSetNewItemPatch(index, { workshopUrgent: event.target.checked, ...(event.target.checked ? {} : { workshopDueDate: '', workshopDueTime: '' }) })} /> Срочно для цеха</label>
+                        {item.workshopUrgent ? (
+                          <div className="exchange-workshop-deadline">
+                            <label><span>Срок</span><input type="date" value={item.workshopDueDate || ''} onChange={(event) => applyExchangeSetNewItemPatch(index, { workshopDueDate: event.target.value })} /></label>
+                            <label><span>Время</span><input type="time" value={item.workshopDueTime || ''} onChange={(event) => applyExchangeSetNewItemPatch(index, { workshopDueTime: event.target.value })} /></label>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 )
               })}
