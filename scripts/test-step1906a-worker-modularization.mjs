@@ -5,6 +5,39 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
+const exchangeSetV2WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/exchange-set-v2-20261005-worker-manifest.json'), 'utf8'))
+if (exchangeSetV2WorkerManifest?.version !== 1 || exchangeSetV2WorkerManifest?.revision !== 'exchange-set-v2-20261005-worker') throw new Error('Exchange Set V2 Worker manifest invalid')
+const exchangeSetV2WorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.EXCHANGE_SET_V2_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(exchangeSetV2WorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (exchangeSetV2WorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('Exchange Set V2 Worker drifted: ' + relative)
+      originals.set(relative, actual)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (exchangeSetV2WorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Exchange Set V2 Worker predecessor fixture drifted: ' + relative)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, EXCHANGE_SET_V2_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('EXCHANGE SET V2 WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const mainRuntimeSync20261005WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/branch2-main-runtime-sync-20261005-worker-manifest.json'), 'utf8'))
 if (mainRuntimeSync20261005WorkerManifest?.version !== 1 || mainRuntimeSync20261005WorkerManifest?.revision !== 'branch2-main-runtime-sync-20261005-worker') throw new Error('Branch2/main runtime sync 20261005 Worker manifest invalid')
 const mainRuntimeSync20261005WorkerBlobSha = (value) => {
