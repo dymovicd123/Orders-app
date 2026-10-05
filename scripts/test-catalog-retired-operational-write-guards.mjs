@@ -22,7 +22,8 @@ check(lifecycle.includes("reason: 'safe' | 'retired_identity'"), 'lifecycle canc
 check(lifecycle.includes("reason: 'retired_identity'"), 'lifecycle cancellation does not detect retired Catalog identity')
 
 check(inventory.includes("alias && toInt(alias.is_active, 0) === 1"), 'inventory product alias may still resolve to inactive product')
-check(inventory.includes('if (retiredId) {') && inventory.includes('if (!options.allowRetiredRecreate)'), 'retired product guard is not fail-closed outside Arrival')
+check(inventory.includes('if (retiredId) {') && inventory.includes('Приход не восстанавливает удалённый товар автоматически'), 'retired product guard is not fail-closed for all inventory materialization paths')
+check(!inventory.includes('retiredProductIdsToReactivate'), 'retired product can still be silently reactivated by generic inventory materialization')
 check(inventory.includes('retiredVariantExactKeys') && inventory.includes('retiredVariantSemanticKeys'), 'retired SKU identity set is missing from inventory materializer')
 check(inventory.includes('retiredVariantExactKeys.has(exactKey)') && inventory.includes('!options.allowRetiredRecreate'), 'non-Arrival inventory path can still recreate a retired SKU')
 
