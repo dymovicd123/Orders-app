@@ -126,9 +126,21 @@ The change is additionally wrapped by the existing exact runtime/190.6 structura
 - `scripts/exchange-set-v2-20261005-worker-manifest.json`
 - `scripts/exchange-set-v2-20261005-frontend-manifest.json`
 
+## Post-merge safety audit — 2026-10-05
+
+After PR #285 merged to Branch2, a second focused audit found two edge cases and fixed them on the follow-up branch:
+
+1. **Cancellation after later money movement.** A Set V2 cancellation now freezes a pre-mutation cancellation plan, proves the projected restored order total and projected net paid, and refuses to proceed if cancelling the Exchange would leave unexplained overpayment or refunds greater than retained payments. Old-line restore quantities use frozen baseline/target values, so a lost response/retry cannot add the exchanged quantity twice.
+2. **Repeated identical new SKU rows.** Smart Exchange now aggregates their total physical demand before showing availability. One shared physical observation is propagated across the identical rows, matching the backend's grouped-SKU preflight instead of letting each row appear independently sufficient.
+
+Quality run for the follow-up runtime candidate `9f2678eb6267e0138236ded68c255a9916768457`: **37349436746 — success**.
+
 ## Current checkpoint / next action
 
-Runtime candidate `1e73b99649248d388d087f23251296a73d302def` passed Quality run **37347886635** before this docs-only checkpoint.
+PR #285 runtime was merged to Branch2 at `d6e08c2a4028ff7fc256884b2496a0204f1611f7`.
+Exact merged-SHA safety run **37348603139 — success** and Cloudflare deploy monitor **37348603110 — success**; native Cloudflare build succeeded, so guarded direct fallback was skipped.
+
+Follow-up safety branch: `w-exchange-set-v2-postmerge-safety-20261005`; runtime candidate `9f2678eb6267e0138236ded68c255a9916768457` passed Quality run **37349436746**.
 
 Next:
 1. let the docs-only candidate pass Quality;
