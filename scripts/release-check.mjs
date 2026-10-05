@@ -286,6 +286,7 @@ try {
   run('Exchange Set V2 domain', process.execPath, [path.join(root, 'scripts/test-exchange-set-v2.mjs')])
   run('Exchange Set V2 UI', process.execPath, [path.join(root, 'scripts/test-exchange-set-v2-ui.mjs')])
   run('Stage03-H10 manual Return policy', process.execPath, [path.join(root, 'scripts/test-stage03-h10-manual-return-policy.mjs')])
+  run('Return never-issued physical safety R2', process.execPath, [path.join(root, 'scripts/test-return-unissued-physical-safety-r2.mjs')])
   run('Stage03-H11 product price analytics', process.execPath, [path.join(root, 'scripts/test-stage03-h11-product-price-analytics.mjs')])
   run('Stage03-H12 final end-to-end pricing audit', process.execPath, [path.join(root, 'scripts/test-stage03-h12-final-e2e-audit.mjs')])
   run('Branch2 main Catalog sync safety', process.execPath, [path.join(root, 'scripts/test-branch2-main-catalog-sync-safety.mjs')])
