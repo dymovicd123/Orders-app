@@ -1027,6 +1027,14 @@ export async function reactivateReleasedOrderReservationV2(
 
   if (variantId) {
     await loadCanonicalVariantSnapshot(db, variantId, { activeOnly: true });
+    const stock = await db.prepare(
+      `SELECT id
+       FROM inventory_stock
+       WHERE inventory_source = ? AND variant_id = ?
+       ORDER BY id ASC
+       LIMIT 1`
+    ).bind(source, variantId).first<{ id: number }>();
+    if (!stock?.id) return false;
     statements.push(
       db.prepare(
         `UPDATE inventory_stock
