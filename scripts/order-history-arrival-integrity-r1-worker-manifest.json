@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "revision": "order-history-arrival-integrity-r1-worker",
+  "files": {
+    "worker/index.ts": {
+      "beforeGitBlob": "7bf8fdaec83181b03997c7bb7c281813833bf692",
+      "beforeLines": 1631,
+      "afterGitBlob": "1f2be89a9641288342bc92186105f78bbfaf815a",
+      "afterLines": 1630,
+      "replacements": [
+        {
+          "beforeBlock": "        const movementType = cleanText(input.movementType).toLowerCase();\n        const routineExistingStockOperation = movementType === 'manual_set' || movementType === 'writeoff';\n        const knownArrival = movementType === 'arrival'\n          && Array.isArray(input.items)\n          && input.items.length > 0\n          && input.items.every((item) => toInt(item?.variantId, 0) > 0);\n        if (!routineExistingStockOperation && !knownArrival) {\n          const denied = requireAdminAccess(request);\n          if (denied) return denied;\n        }\n        const returnInventory = url.searchParams.get('returnInventory') !== '0';\n        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));\n        const result = await applyInventoryMovement(env.DB, input, returnInventory, actor);",
+          "afterBlock": "        const movementType = cleanText(input.movementType).toLowerCase();\n        const routineExistingStockOperation = movementType === 'manual_set' || movementType === 'writeoff';\n        const arrivalOperation = movementType === 'arrival';\n        if (!routineExistingStockOperation && !arrivalOperation) {\n          const denied = requireAdminAccess(request);\n          if (denied) return denied;\n        }\n        const returnInventory = url.searchParams.get('returnInventory') !== '0';\n        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));\n        const result = await applyInventoryMovement(env.DB, input, returnInventory, actor, {\n          arrivalCatalogCreationMode: authUser?.role === 'admin' ? 'admin' : 'manager',\n        });"
+        }
+      ]
+    }
+  }
+}
