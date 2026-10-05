@@ -356,6 +356,9 @@ export async function createReturn(
       throw new Error(`Для ${cleanText(orderItem.product_name_snapshot)} доступно только ${maxQuantity} шт., запрошено ${selected.quantity}.`);
     }
     const isWorkshop = Boolean(toInt(orderItem.is_workshop, 0));
+    const stockStatus = cleanText(orderItem.stock_writeoff_status);
+    const sentFallback = cleanText((existing as any).shipping_status) === 'sent' && (isWorkshop || !stockStatus);
+    const issuedToClient = orderItemWasPhysicallyIssued(orderItem) || sentFallback;
     const physicalState = selected.physicalState;
     const physicalTracking = physicalState !== null;
     const trackedInventorySource = physicalState === 'warehouse' || physicalState === 'boutique' ? physicalState : null;
@@ -364,8 +367,10 @@ export async function createReturn(
     const itemRestockRequested = isWorkshop ? selected.restock === true : selected.restock !== false;
     const inventorySource = physicalTracking ? trackedInventorySource : (restockSource !== 'none' && itemRestockRequested ? restockSource : null);
     const wantsRestock = inventorySource !== null;
-    if (humanInventoryModelEnabled && wantsRestock && !isWorkshop && !orderItemWasPhysicallyIssued(orderItem)) {
-      throw new Error(`Позиция «${cleanText(orderItem.product_name_snapshot)}» по учёту ещё не была физически выдана / отправлена. Возвращать её в остаток нельзя — это удвоит товар. Для неотправленного заказа используйте редактирование/удаление заказа либо выберите возврат денег без приёма вещи.`);
+    if (humanInventoryModelEnabled && !issuedToClient) {
+      throw new CriticalOperationConflictError(
+        `Позиция «${cleanText(orderItem.product_name_snapshot)}» не была выдана клиенту. Физический возврат для неё оформлять нельзя: товар уже остаётся у вас. Сначала измените состав заказа; если нужно вернуть только деньги, оформите возврат без выбора товара.`
+      );
     }
     validatedSelectedItems.push({
       selected,
@@ -2247,14 +2252,12 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
     throw new Error(`Этот возврат создан обменом #${linkedExchange.id}. Отмените сам обмен, чтобы склад и деньги откатились вместе.`);
   }
 
-  const operationContext = parseCriticalContext<Record<string, any>>(criticalOperation.row);
+  let operationContext = parseCriticalContext<Record<string, any>>(criticalOperation.row);
   const timestamp = cleanText(operationContext.startedAt) || operationStartedAt;
   const comment = cleanText(input.comment) || `Отмена возврата #${returnId}`;
 
   // Legacy rows that physically changed stock but were not adopted by 0051 are ambiguous by
   // definition. Do not revive the old snapshot guessing path during cancellation.
-  if (criticalOperation.row.step === 'started') await advanceCriticalOperation(db, criticalOperation, 'validated', { targetType: 'return', targetId: returnId });
-
   const unsafeLegacy = await db.prepare(
     `SELECT ri.id, ri.product_name_snapshot
      FROM return_items ri
@@ -2269,6 +2272,43 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
   ).bind(returnId, returnId).first<Record<string, unknown>>();
   if (unsafeLegacy?.id) {
     throw new Error(`Возврат содержит старое складское движение без надёжной canonical identity (${cleanText(unsafeLegacy.product_name_snapshot)}). Автоматическая отмена остановлена, чтобы не изменить неправильный остаток.`);
+  }
+
+  let workshopTargets = Array.isArray(operationContext.workshopTargets)
+    ? operationContext.workshopTargets as Array<Record<string, unknown>>
+    : null;
+  if (!workshopTargets) {
+    workshopTargets = (taskSnapshots.results || []).map((snapshot) => {
+      const returnedTaskQuantity = Math.max(0, toInt(snapshot.return_quantity, 0));
+      const baselineQuantity = Math.max(0, toInt(snapshot.current_quantity, 0));
+      const fallbackQuantity = Math.max(0, toInt(snapshot.previous_quantity, 0));
+      const targetQuantity = returnedTaskQuantity > 0 ? baselineQuantity + returnedTaskQuantity : fallbackQuantity;
+      const baselineStatus = cleanText(snapshot.current_status) || cleanText(snapshot.previous_status) || 'active';
+      const targetStatus = returnedTaskQuantity > 0
+        && normalizeWorkshopTaskStatus(baselineStatus) === 'cancelled'
+        && targetQuantity > 0
+        ? (cleanText(snapshot.previous_status) || 'active')
+        : baselineStatus;
+      return {
+        workshopTaskId: toInt(snapshot.workshop_task_id, 0),
+        baselineQuantity,
+        baselineStatus,
+        targetQuantity,
+        targetStatus,
+      };
+    });
+    operationContext = { ...operationContext, workshopTargets };
+    await advanceCriticalOperation(db, criticalOperation, 'validated', {
+      targetType: 'return',
+      targetId: returnId,
+      context: operationContext,
+    });
+  } else if (criticalOperation.row.step === 'started') {
+    await advanceCriticalOperation(db, criticalOperation, 'validated', {
+      targetType: 'return',
+      targetId: returnId,
+      context: operationContext,
+    });
   }
 
   const lifecycleRows = await db.prepare(
@@ -2306,25 +2346,50 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
   ).bind(returnId, returnId).all<Record<string, unknown>>();
 
   for (const snapshot of taskSnapshots.results || []) {
-    const returnedTaskQuantity = Math.max(0, toInt(snapshot.return_quantity, 0));
-    const currentTaskQuantity = Math.max(0, toInt(snapshot.current_quantity, 0));
-    const fallbackQuantity = Math.max(0, toInt(snapshot.previous_quantity, 0));
-    const nextQuantity = returnedTaskQuantity > 0 ? currentTaskQuantity + returnedTaskQuantity : fallbackQuantity;
-    const currentStatus = normalizeWorkshopTaskStatus(snapshot.current_status || snapshot.previous_status);
-    const nextStatus = returnedTaskQuantity > 0 && currentStatus === 'cancelled' && nextQuantity > 0
-      ? normalizeWorkshopTaskStatus(snapshot.previous_status)
-      : currentStatus;
-    await db.prepare(
+    const workshopTaskId = toInt(snapshot.workshop_task_id, 0);
+    const target = workshopTargets.find((entry) => toInt(entry.workshopTaskId, 0) === workshopTaskId);
+    if (!target) {
+      throw new CriticalOperationConflictError('Не найден безопасный снимок восстановления задачи Цеха. Отмена возврата остановлена.');
+    }
+
+    const currentQuantity = Math.max(0, toInt(snapshot.current_quantity, 0));
+    const currentStatus = cleanText(snapshot.current_status) || cleanText(snapshot.previous_status) || 'active';
+    const baselineQuantity = Math.max(0, toInt(target.baselineQuantity, 0));
+    const baselineStatus = cleanText(target.baselineStatus) || 'active';
+    const targetQuantity = Math.max(0, toInt(target.targetQuantity, 0));
+    const targetStatus = cleanText(target.targetStatus) || baselineStatus;
+
+    if (currentQuantity === targetQuantity && currentStatus === targetStatus) continue;
+    if (currentQuantity !== baselineQuantity || currentStatus !== baselineStatus) {
+      throw new CriticalOperationConflictError(
+        'Задача Цеха изменилась во время отмены возврата. Операция остановлена, чтобы не восстановить количество дважды.'
+      );
+    }
+
+    const update = await db.prepare(
       `UPDATE workshop_tasks
        SET status = ?, quantity = ?, updated_at = ?
-       WHERE id = ? AND order_id = ?`
+       WHERE id = ? AND order_id = ? AND quantity = ? AND status = ?`
     ).bind(
-      nextStatus,
-      nextQuantity,
+      targetStatus,
+      targetQuantity,
       timestamp,
-      toInt(snapshot.workshop_task_id, 0),
+      workshopTaskId,
       toInt(ret.order_id, 0),
+      baselineQuantity,
+      baselineStatus,
     ).run();
+
+    if (toInt(update.meta?.changes, 0) <= 0) {
+      const latest = await db.prepare(
+        `SELECT status, quantity FROM workshop_tasks WHERE id = ? AND order_id = ? LIMIT 1`
+      ).bind(workshopTaskId, toInt(ret.order_id, 0)).first<Record<string, unknown>>();
+      if (Math.max(0, toInt(latest?.quantity, 0)) !== targetQuantity || cleanText(latest?.status) !== targetStatus) {
+        throw new CriticalOperationConflictError(
+          'Задача Цеха изменилась параллельно. Отмена возврата остановлена без повторного прибавления количества.'
+        );
+      }
+    }
   }
 
   const cancelStatements: D1PreparedStatement[] = [
