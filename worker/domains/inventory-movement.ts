@@ -85,7 +85,7 @@ async function assertManagerArrivalCreationSafe(
   if (!rawItems.length) return;
 
   const productIds = Array.from(new Set(rawItems.map((item) => toInt(item.productId, 0)).filter(Boolean)));
-  if (productIds.length !== rawItems.length && rawItems.some((item) => toInt(item.productId, 0) <= 0)) {
+  if (rawItems.some((item) => toInt(item.productId, 0) <= 0)) {
     throw new Error('Новый товар через «Приход» создаёт администратор. Менеджер может добавить новую вариацию только существующего товара.');
   }
 
@@ -106,38 +106,15 @@ async function assertManagerArrivalCreationSafe(
     assertCatalogGenderAllowedForScope(product.gender_scope, item.gender, product.name);
   }
 
-  const executionRows = mapSqlRows(await db.prepare(
-    `SELECT product_id, material, length
-     FROM catalog_stock_positions
-     WHERE is_active = 1
-       AND product_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
-  ).bind(productIdsJson).all<Record<string, unknown>>()) as Array<Record<string, unknown>>;
-  const executionKeys = new Set(executionRows.map((row) => [
-    toInt(row.product_id, 0),
-    canonicalStockPositionValue(row.material),
-    canonicalStockPositionValue(row.length),
-  ].join('¦')));
-
-  for (const item of rawItems) {
-    const executionKey = [
-      toInt(item.productId, 0),
-      canonicalStockPositionValue(item.material),
-      canonicalStockPositionValue(item.length),
-    ].join('¦');
-    if (!executionKeys.has(executionKey)) {
-      throw new Error(`Для «${item.productName}» это новое исполнение материала/длины. Менеджер может создать новую вариацию через «Приход» только внутри уже существующего исполнения; новое исполнение добавляет администратор.`);
-    }
-  }
-
   const [referenceRowsResult, variantRowsResult] = await Promise.all([
     db.prepare(
       `SELECT kind, value
        FROM reference_values
        WHERE is_active = 1
-         AND kind IN ('color', 'size', 'child_age')`
+         AND kind IN ('material', 'length', 'color', 'size', 'child_age')`
     ).all<Record<string, unknown>>(),
     db.prepare(
-      `SELECT product_id, category, color, size_label
+      `SELECT product_id, category, color, material, length, size_label
        FROM catalog_variants
        WHERE is_active = 1
          AND product_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
@@ -145,6 +122,18 @@ async function assertManagerArrivalCreationSafe(
   ]);
   const referenceRows = mapSqlRows(referenceRowsResult) as Array<Record<string, unknown>>;
   const variantRows = mapSqlRows(variantRowsResult) as Array<Record<string, unknown>>;
+  const knownMaterials = new Set(
+    referenceRows
+      .filter((row) => cleanText(row.kind) === 'material')
+      .map((row) => canonicalStockPositionValue(row.value))
+      .filter(Boolean),
+  );
+  const knownLengths = new Set(
+    referenceRows
+      .filter((row) => cleanText(row.kind) === 'length')
+      .map((row) => canonicalStockPositionValue(row.value))
+      .filter(Boolean),
+  );
   const knownColors = new Set(
     referenceRows
       .filter((row) => cleanText(row.kind) === 'color')
@@ -167,9 +156,25 @@ async function assertManagerArrivalCreationSafe(
   for (const item of rawItems) {
     const productId = toInt(item.productId, 0);
     const category = normalizeAudienceCategory(item.category, item.size);
+    const material = canonicalStockPositionValue(item.material);
+    const length = canonicalStockPositionValue(item.length);
     const color = catalogColorIdentity(item.color);
     const size = normalizeCatalogCombinationSize(item.size);
     const sameProductVariants = variantRows.filter((row) => toInt(row.product_id, 0) === productId);
+
+    const materialAlreadyKnown = material === 'СТАНДАРТ'
+      || knownMaterials.has(material)
+      || sameProductVariants.some((row) => canonicalStockPositionValue(row.material) === material);
+    if (!materialAlreadyKnown) {
+      throw new Error(`Материал «${material}» ещё не известен системе. Сначала добавьте значение в справочник, затем создайте вариацию через «Приход».`);
+    }
+
+    const lengthAlreadyKnown = length === 'СТАНДАРТ'
+      || knownLengths.has(length)
+      || sameProductVariants.some((row) => canonicalStockPositionValue(row.length) === length);
+    if (!lengthAlreadyKnown) {
+      throw new Error(`Длина «${length}» ещё не известна системе. Сначала добавьте значение в справочник, затем создайте вариацию через «Приход».`);
+    }
 
     const colorAlreadyKnown = color === 'БЕЗ ЦВЕТА'
       || knownColors.has(color)
