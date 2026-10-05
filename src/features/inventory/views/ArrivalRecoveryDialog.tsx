@@ -23,7 +23,7 @@ export function ArrivalRecoveryDialog({ prompt, busy, error, onConfirm, onClose 
   const title = retiredProduct ? 'Товар раньше был удалён' : 'Выбранный вариант изменился'
   const eyebrow = retiredProduct ? 'Безопасное восстановление' : 'Приход сохранён в форме'
   const primaryLabel = retiredProduct ? 'Восстановить и продолжить' : 'Создать новую вариацию и продолжить'
-  const secondaryLabel = retiredProduct ? 'Пока не восстанавливать' : 'Вернуться и выбрать другой вариант'
+  const secondaryLabel = retiredProduct ? 'Пока не восстанавливать' : 'Пока не продолжать'
 
   return (
     <div className="modal-backdrop arrival-recovery-backdrop" role="presentation" onMouseDown={(event) => {
