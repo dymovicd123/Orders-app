@@ -29,12 +29,12 @@
     },
     "src/features/sections/OrderExchangeSmartSection.tsx": {
       "beforeGitBlob": null,
-      "afterGitBlob": "db95b79fc7db2ef63fd51c7e3c978edde5180769",
+      "afterGitBlob": "835f20e75cdc30c576d2b7b1e3d1add99f32cb6c",
       "absentBefore": true
     },
     "src/styles/193-exchange-set-v2.css": {
       "beforeGitBlob": null,
-      "afterGitBlob": "a36c0a4a556e8fa22a81903a3a55be4b0e41ef5f",
+      "afterGitBlob": "092734cdb1f038f7ada1d93bb1c8a00390a8fb71",
       "absentBefore": true
     }
   }
