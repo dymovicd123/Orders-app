@@ -286,6 +286,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                               onChange={(event) => setReturnDraft((current) => ({ ...current, amount: Number(event.target.value) }))}
                             />
                             <small className="field-hint">Введите фактическую сумму возврата вручную. Система не подставляет цену товара или текущую цену Каталога автоматически.</small>
+                            {returnDraft.items.some((item: any) => item.issuedToClient === false) ? <small className="field-hint">Если это отмена невыданного товара, денежный возврат сам по себе не убирает товар из заказа — сначала используйте «Изменить заказ» ниже.</small> : null}
                           </label>
                           <label>
                             <span>Способ возврата денег {Number(returnDraft.amount || 0) > 0 ? '' : '(не нужен при 0 ₸)'}</span>
@@ -311,7 +312,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                       <div className="mini-item order-payment-card">
                         <div className="mini-item-head">
                           <strong>Какие товары возвращаются</strong>
-                          <span className="muted-small">Выбор товара фиксирует только реальный физический возврат от клиента. Сумма возврата денег указывается отдельно.</span>
+                          <span className="muted-small">Выбор товара фиксирует физический возврат, но не рассчитывает деньги автоматически. Выбирайте товар только если клиент действительно получал его; сумма возврата денег указывается отдельно.</span>
                         </div>
                         {returnDraft.items.some((item: any) => item.issuedToClient === false) ? (
                           <div className="history-note">
