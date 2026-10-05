@@ -1,0 +1,251 @@
+/* Human-first recovery for Arrival conflicts.
+   The dialog keeps the operator in the current workflow instead of sending them through Catalog screens. */
+
+.arrival-recovery-backdrop {
+  z-index: 1400;
+  padding: 20px;
+  background: rgba(17, 34, 56, .34);
+  backdrop-filter: blur(4px);
+}
+
+.arrival-recovery-dialog {
+  width: min(620px, 100%);
+  max-height: min(86vh, 760px);
+  overflow: auto;
+  margin: auto;
+  padding: 0;
+  border: 1px solid #d7e4f4;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(24, 52, 87, .22);
+}
+
+.arrival-recovery-hero {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 15px;
+  align-items: start;
+  padding: 24px 24px 18px;
+  background: linear-gradient(145deg, #f4f9ff 0%, #fff 66%);
+  border-bottom: 1px solid #e4edf7;
+}
+
+.arrival-recovery-icon {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  font-size: 28px;
+  font-weight: 900;
+  box-shadow: inset 0 0 0 1px rgba(48, 98, 157, .08);
+}
+
+.arrival-recovery-icon.is-restore {
+  background: #eaf4ff;
+  color: #245b99;
+}
+
+.arrival-recovery-icon.is-refresh {
+  background: #fff5df;
+  color: #9a6516;
+}
+
+.arrival-recovery-eyebrow {
+  display: inline-block;
+  margin-bottom: 4px;
+  color: #4d6f98;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.arrival-recovery-hero h3 {
+  margin: 0;
+  color: #172b45;
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.arrival-recovery-hero p {
+  margin: 8px 0 0;
+  color: #52657d;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.arrival-recovery-product {
+  display: grid;
+  gap: 3px;
+  margin: 18px 24px 0;
+  padding: 13px 15px;
+  border: 1px solid #dce8f5;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.arrival-recovery-product span {
+  color: #7890aa;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.arrival-recovery-product strong {
+  color: #203b5d;
+  font-size: 15px;
+}
+
+.arrival-recovery-explain {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 12px 24px 0;
+}
+
+.arrival-recovery-explain > div {
+  display: grid;
+  gap: 4px;
+  padding: 13px 14px;
+  border: 1px solid #e4ecf5;
+  border-radius: 13px;
+  background: #fff;
+}
+
+.arrival-recovery-explain strong {
+  color: #2a4667;
+  font-size: 12px;
+}
+
+.arrival-recovery-explain span {
+  color: #687b91;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.arrival-recovery-preserved {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 12px 24px 0;
+  padding: 12px 14px;
+  border: 1px solid #cdebd8;
+  border-radius: 13px;
+  background: #f1fbf5;
+}
+
+.arrival-recovery-preserved > span {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #dff5e7;
+  color: #187744;
+  font-weight: 900;
+}
+
+.arrival-recovery-preserved > div {
+  display: grid;
+  gap: 2px;
+}
+
+.arrival-recovery-preserved strong {
+  color: #1f6642;
+  font-size: 12px;
+}
+
+.arrival-recovery-preserved small {
+  color: #527562;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.arrival-recovery-error {
+  margin: 12px 24px 0;
+  padding: 11px 13px;
+  border: 1px solid #f1c9c9;
+  border-radius: 12px;
+  background: #fff5f5;
+  color: #9b3333;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.arrival-recovery-actions {
+  display: flex;
+  gap: 9px;
+  justify-content: flex-end;
+  padding: 18px 24px 22px;
+}
+
+.arrival-recovery-primary,
+.arrival-recovery-secondary {
+  min-height: 42px;
+  border-radius: 11px;
+  padding-inline: 16px;
+}
+
+.arrival-recovery-primary {
+  min-width: 220px;
+}
+
+@media (max-width: 640px) {
+  .arrival-recovery-backdrop {
+    padding: 10px;
+    align-items: flex-end;
+  }
+
+  .arrival-recovery-dialog {
+    width: 100%;
+    max-height: 92vh;
+    border-radius: 20px 20px 14px 14px;
+  }
+
+  .arrival-recovery-hero {
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 12px;
+    padding: 18px 16px 15px;
+  }
+
+  .arrival-recovery-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 15px;
+    font-size: 24px;
+  }
+
+  .arrival-recovery-hero h3 {
+    font-size: 19px;
+  }
+
+  .arrival-recovery-product,
+  .arrival-recovery-explain,
+  .arrival-recovery-preserved,
+  .arrival-recovery-error {
+    margin-left: 16px;
+    margin-right: 16px;
+  }
+
+  .arrival-recovery-explain {
+    grid-template-columns: 1fr;
+  }
+
+  .arrival-recovery-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    padding: 16px;
+  }
+
+  .arrival-recovery-primary,
+  .arrival-recovery-secondary {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .arrival-recovery-primary {
+    grid-row: 1;
+  }
+}
