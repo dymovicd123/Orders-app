@@ -40,6 +40,12 @@ check(listExchange.includes("GROUP_CONCAT(product_name_snapshot, ' ')"), 'Exchan
 check(listExchange.includes('SELECT SUM(ei.quantity)') && listExchange.includes("ei.role = 'old'") && listExchange.includes('ei.physical_received_at IS NULL'), 'Pending-return summary does not count all set old items')
 check(listExchange.includes('oldItems: itemGroup.oldItems') && listExchange.includes('newItems: itemGroup.newItems'), 'Exchange history does not return complete old/new sets')
 check(listExchange.includes("child.operation_item_id = ei.id"), 'Set history lifecycle status is not linked to the exact exchange item')
+const receiveStart = exchange.indexOf('export async function receiveReturnedItem(')
+const receiveEnd = exchange.indexOf('\n\nexport const noStandaloneReturnSql', receiveStart)
+const receive = exchange.slice(receiveStart, receiveEnd)
+check(receive.includes("AS is_set_exchange"), 'Delayed Exchange intake cannot distinguish Set V2 from legacy')
+check(receive.includes("setExchangeItem") && receive.includes("exchange:\${operationId}:old:\${operationItemId}"), 'Set V2 delayed old-item intake can collide on one lifecycle event key')
+check(receive.includes("operationType === 'exchange' && !setExchangeItem"), 'Set V2 delayed intake can overwrite a fake operation-wide old destination')
 
 const cancelStart = exchange.indexOf('export async function cancelExchangeSetV2(')
 check(cancelStart >= 0, 'Exchange Set V2 cancellation domain is missing')
