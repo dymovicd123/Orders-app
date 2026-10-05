@@ -5,6 +5,39 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
+const sourceDefaultsWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-exchange-source-defaults-20261005-worker-manifest.json'), 'utf8'))
+if (sourceDefaultsWorkerManifest?.version !== 1 || sourceDefaultsWorkerManifest?.revision !== 'return-exchange-source-defaults-20261005-worker') throw new Error('Return/Exchange source-default Worker manifest invalid')
+const sourceDefaultsWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.RETURN_EXCHANGE_SOURCE_DEFAULTS_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(sourceDefaultsWorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (sourceDefaultsWorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('Return/Exchange source-default Worker drifted: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (sourceDefaultsWorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Return/Exchange source-default Worker predecessor fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, RETURN_EXCHANGE_SOURCE_DEFAULTS_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('RETURN / EXCHANGE SOURCE DEFAULTS WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const returnAuditRuntimeManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-ux-audit-20261005-runtime-manifest.json'), 'utf8'))
 if (returnAuditRuntimeManifest?.version !== 1 || returnAuditRuntimeManifest?.revision !== 'return-ux-audit-20261005-runtime') throw new Error('Return UX audit runtime manifest invalid')
 const returnAuditBlobSha = (value) => {
