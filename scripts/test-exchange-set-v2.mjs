@@ -25,6 +25,7 @@ check(settlement.includes('paymentAmount > dueBeforeSettlement'), 'Payment-now i
 check(settlement.includes('refundAmount > 0 && paymentAmount > 0'), 'Exchange can incorrectly receive money and refund money at once')
 
 check(setCreate.includes("physicalState === 'not_issued'") && setCreate.includes('applyNotIssuedReservationReduction'), 'Never-issued old items do not use reservation-only reduction')
+check(setCreate.includes("isWorkshop && cleanText((existing as any).shipping_status) === 'sent'"), 'Sent Workshop items can still be misclassified as never issued')
 check(setCreate.includes("physicalState !== 'pending' ? timestamp : null"), 'Pending customer returns are not kept physically unreceived')
 check(setCreate.includes("plan.returnSource !== 'none'"), 'Per-old-item Warehouse/Boutique/no-stock disposition is missing')
 check(setCreate.includes("physicalState === 'warehouse' || physicalState === 'boutique'"), 'Per-old-item return destination is not explicit')
