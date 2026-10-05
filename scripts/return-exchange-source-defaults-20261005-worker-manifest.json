@@ -4,7 +4,7 @@
   "files": {
     "worker/domains/activity.ts": {
       "beforeGitBlob": "081b4477db92538b94337731349527d0907a73cc",
-      "afterGitBlob": "10d1eead5f97652f505a8d4ad9efc8095444075c",
+      "afterGitBlob": "95840167c07b2a637cb29910963fc21c8f7c265b",
       "baselineFixture": "scripts/fixtures/return-exchange-source-defaults-20261005/worker/domains/activity.ts"
     },
     "worker/domains/returns-exchanges.ts": {
