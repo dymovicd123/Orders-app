@@ -4,7 +4,7 @@
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "9d32bcaa19458b4840bee7ea5e6f79526462ca7d",
-      "afterGitBlob": "49e2a1acc64ddb298e9b3fc7048565a096ff8023",
+      "afterGitBlob": "60b1ea052a8f4ba25d398fee5f90aa59b6cf979d",
       "baselineFixture": "scripts/fixtures/exchange-set-v2-20261005/src/App.tsx"
     },
     "src/app/controllers/useWorkspaceViewModel.tsx": {
@@ -29,7 +29,7 @@
     },
     "src/features/sections/OrderExchangeSmartSection.tsx": {
       "beforeGitBlob": null,
-      "afterGitBlob": "7ca3ea180c1179b28acee6abbd6346e890481371",
+      "afterGitBlob": "1cc6ce7986e515934f77e10322bd101b03d8cb1c",
       "absentBefore": true
     },
     "src/styles/193-exchange-set-v2.css": {
