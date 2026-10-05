@@ -21,8 +21,9 @@ check(route.includes("arrivalCatalogCreationMode: authUser?.role === 'admin' ? '
 check(movement.includes("type ArrivalCatalogCreationMode = 'admin' | 'manager';"), 'Arrival creation policy type missing')
 check(movement.includes('async function assertManagerArrivalCreationSafe('), 'Manager Arrival preflight missing')
 check(movement.includes('Новый товар через «Приход» создаёт администратор.'), 'Manager Arrival can silently create a brand-new product')
-check(movement.includes('FROM catalog_stock_positions') && movement.includes('Менеджер может создать новую вариацию через «Приход» только внутри уже существующего исполнения'), 'Manager Arrival is not constrained to an existing active execution')
-check(movement.includes("kind IN ('color', 'size', 'child_age')"), 'Manager Arrival does not validate variant values against known references')
+check(movement.includes("kind IN ('material', 'length', 'color', 'size', 'child_age')"), 'Manager Arrival does not validate new variant values against known references')
+check(movement.includes("const materialAlreadyKnown = material === 'СТАНДАРТ'"), 'Manager Arrival can create an unrecognized material')
+check(movement.includes("const lengthAlreadyKnown = length === 'СТАНДАРТ'"), 'Manager Arrival can create an unrecognized length')
 check(movement.includes("if (movementType === 'arrival' && options.arrivalCatalogCreationMode === 'manager')"), 'Manager Arrival policy is not applied before catalog materialization')
 check(movement.includes("allowRetiredRecreate: movementType === 'arrival'"), 'Physical Arrival lost safe retired-variant recreation semantics')
 
@@ -30,4 +31,4 @@ check(app.includes("cleanItems.some((item) => !item.variantId && !Number(item.pr
 check(!app.includes("cleanItems.some((item) => !item.variantId)) {\n        throw new Error('Новый товар или новая характеристика требуют админ-режима."), 'Old blanket manager Arrival block returned')
 check(operational.includes("gender: automaticGender || first?.gender || position.gender"), 'Unisex Arrival product selection still erases the concrete existing SKU gender')
 
-console.log('ARRIVAL MANAGER CREATION SAFETY R1 PASSED — managers can receive new variants of existing products while new products/executions and unknown master values stay guarded')
+console.log('ARRIVAL MANAGER CREATION SAFETY R1 PASSED — managers can receive new variants/executions of existing products using known master values while new products and unknown values stay guarded')
