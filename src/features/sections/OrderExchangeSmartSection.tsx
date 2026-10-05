@@ -144,14 +144,28 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
     }
   }
 
-  const setObservedPhysical = (index: number, value: number | null, enabled = true) => setExchangeDraft((current: any) => ({
-    ...current,
-    newItems: (current.newItems || []).map((entry: any, itemIndex: number) =>
-      itemIndex === index
-        ? { ...entry, item: { ...entry.item, stockObservationEnabled: enabled, observedPhysicalQuantity: value } }
-        : entry
-    ),
-  }))
+  const newItemStockIdentityKey = (item: any) => [
+    item?.sourceType || 'warehouse',
+    item?.productName,
+    item?.audienceType,
+    item?.gender,
+    item?.color,
+    item?.material,
+    item?.length,
+    item?.size,
+  ].map((value) => String(value || '').trim().toUpperCase()).join('¦')
+
+  const setObservedPhysicalForGroup = (indexes: number[], value: number | null, enabled = true) => {
+    const selectedIndexes = new Set(indexes)
+    setExchangeDraft((current: any) => ({
+      ...current,
+      newItems: (current.newItems || []).map((entry: any, itemIndex: number) =>
+        selectedIndexes.has(itemIndex)
+          ? { ...entry, item: { ...entry.item, stockObservationEnabled: enabled, observedPhysicalQuantity: value } }
+          : entry
+      ),
+    }))
+  }
 
   const oldHistoryStatus = (item: any) => {
     if (item.wasNotIssued || item.inventorySource === 'not_issued') return 'Не выдавалась клиенту — осталась на месте'
@@ -322,8 +336,20 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
               {(exchangeDraft.newItems || []).map((entry: any, index: number) => {
                 const item = entry.item
                 const required = Math.max(1, Number(item.quantity || 1))
-                const availability = item.sourceType === 'workshop' ? null : getOrderSourceAvailability(item, required)
-                const physicalShortage = Boolean(availability?.canObservePhysical && Number(availability.currentPhysical || 0) < required)
+                const identityKey = newItemStockIdentityKey(item)
+                const matchingIndexes = item.sourceType === 'workshop'
+                  ? [index]
+                  : (exchangeDraft.newItems || [])
+                      .map((candidate: any, candidateIndex: number) => newItemStockIdentityKey(candidate.item) === identityKey ? candidateIndex : -1)
+                      .filter((candidateIndex: number) => candidateIndex >= 0)
+                const batchRequired = matchingIndexes.reduce((sum: number, candidateIndex: number) =>
+                  sum + Math.max(1, Number(exchangeDraft.newItems[candidateIndex]?.item?.quantity || 1)), 0)
+                const groupObserved = matchingIndexes
+                  .map((candidateIndex: number) => exchangeDraft.newItems[candidateIndex]?.item?.observedPhysicalQuantity)
+                  .find((value: unknown) => value !== null && value !== undefined)
+                const availability = item.sourceType === 'workshop' ? null : getOrderSourceAvailability(item, batchRequired)
+                const physicalShortage = Boolean(availability?.canObservePhysical && Number(availability.currentPhysical || 0) < batchRequired)
+                const observationOwner = matchingIndexes[0] === index
                 return (
                   <div className="exchange-new-card" key={entry.draftKey}>
                     <div className="exchange-new-card-head">
@@ -351,8 +377,21 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                         <strong>{availability.label}</strong><span>{availability.note}</span>
                         {physicalShortage ? (
                           <div className="exchange-stock-confirm">
-                            <span>Если товар физически перед вами, подтвердите реальное количество.</span>
-                            <input type="number" min="0" step="1" value={item.observedPhysicalQuantity ?? ''} placeholder="На месте" onChange={(event) => setObservedPhysical(index, event.target.value === '' ? null : Math.max(0, Math.trunc(Number(event.target.value) || 0)), true)} />
+                            <span>{matchingIndexes.length > 1 ? `Для одинаковых новых строк вместе нужно ${batchRequired} шт. ` : ''}Если товар физически перед вами, подтвердите реальное количество.</span>
+                            {observationOwner ? (
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={groupObserved ?? ''}
+                                placeholder="На месте"
+                                onChange={(event) => setObservedPhysicalForGroup(
+                                  matchingIndexes,
+                                  event.target.value === '' ? null : Math.max(0, Math.trunc(Number(event.target.value) || 0)),
+                                  true,
+                                )}
+                              />
+                            ) : <small>Фактическое количество задаётся один раз у первой одинаковой позиции.</small>}
                           </div>
                         ) : null}
                       </div>

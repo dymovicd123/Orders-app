@@ -8,9 +8,10 @@ Branch represented by this file: **branch2**
 
 ## STATUS UPDATE — 2026-10-05 — Exchange Set V2 candidate green
 
-Current Exchange redesign is on work branch `w-exchange-set-v2-20261005`, targeting **Branch2 only**.
+Exchange Set V2 merged to **branch2** through PR #285 at `d6e08c2a4028ff7fc256884b2496a0204f1611f7`.
+Exact merged-SHA safety run **37348603139** and Cloudflare deploy monitor **37348603110** both passed; the matching native Cloudflare build succeeded and direct fallback was not needed.
 
-Green runtime candidate before documentation: `1e73b99649248d388d087f23251296a73d302def`; Quality run **37347886635** passed cumulative regressions, TypeScript, clean build and Wrangler dry-run.
+A focused post-merge safety pass is on `w-exchange-set-v2-postmerge-safety-20261005`. Runtime candidate `9f2678eb6267e0138236ded68c255a9916768457` passed Quality run **37349436746**. It adds retry-safe cancellation quantity targets, a financial dependency guard for later payments/refunds, and aggregate stock guidance for repeated identical replacement SKU rows.
 
 Key change: modern `itemized_v1` Exchange no longer requires artificial old→new pairs. One Exchange owns independent `oldItems[]` and `newItems[]`, derives commercial total from persisted sold prices, derives payment/refund from actual net paid, supports per-old-line never-issued/pending/Warehouse/Boutique/no-stock truth, grouped delayed intake, complete set history and set-wide cancellation. Legacy manual-total Exchange remains on the compatibility path.
 
@@ -24,7 +25,7 @@ Important defects caught during the redesign and already fixed in the candidate:
 
 Canonical detailed checkpoint: `docs/continuation/EXCHANGE_SET_V2_20261005.md`.
 
-Next safe action is merge to **branch2** after docs-only Quality, then exact merged-SHA Branch2 validation/deploy and manual acceptance. Production/main remains out of scope. After Exchange acceptance, continue the requested full Return + Exchange UX/business audit.
+Next safe action is merge the focused post-merge safety pass to **branch2**, verify its exact merged-SHA Branch2 validation/deploy, then perform manual Exchange acceptance. Production/main remains out of scope. After Exchange acceptance, continue the requested full Return + Exchange UX/business audit.
 
 
 ## STATUS UPDATE — 2026-09-30 — High-risk dev dependency audit closed

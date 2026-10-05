@@ -56,5 +56,11 @@ check(cancel.includes('dependentReturn') && cancel.includes('return_items ri'), 
 check(cancel.includes('for (const event of lifecycleRows.results || [])') && cancel.includes('cancelInventoryLifecycleEvent'), 'Set cancellation does not reverse all inventory lifecycle events')
 check(cancel.includes('for (const planItem of plan.oldItems)') && cancel.includes('restoreNotIssuedReservation'), 'Set cancellation does not restore every old position and never-issued reservation state')
 check(cancel.includes("financialAction === 'extra_payment'") && cancel.includes("financialAction === 'refund'"), 'Set cancellation does not reverse both money directions')
+check(cancel.includes('ExchangeSetCancelContext') || exchange.includes('type ExchangeSetCancelContext'), 'Set cancellation lacks a frozen retry context')
+check(cancel.includes("await advanceCriticalOperation(db, criticalOperation, 'validated'") && cancel.includes('oldTargets'), 'Set cancellation does not freeze pre-mutation quantity targets')
+check(cancel.includes('currentQuantity !== target.targetQuantity') && cancel.includes('currentQuantity !== target.baselineQuantity'), 'Set cancellation can restore an old quantity twice after a retry')
+check(cancel.includes('projectedNetPaid > projectedRestoredTotal'), 'Set cancellation can leave an unexplained overpayment after later payments')
+check(cancel.includes('projectedNetPaid < 0'), 'Set cancellation can leave refunds greater than retained payments')
+check(cancel.includes('restoredTotal !== cancelContext.preflight?.projectedRestoredTotal'), 'Set cancellation does not prove the final commercial total before marking the Exchange cancelled')
 
 console.log('EXCHANGE SET V2 DOMAIN PASSED — old/new sets are independent, order money is server-derived, pending returns stay receivable, per-item disposition is preserved, and cancellation covers the whole business operation.')

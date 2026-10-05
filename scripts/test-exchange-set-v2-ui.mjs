@@ -37,6 +37,8 @@ check(app.includes('if (!input.deferRefresh)') && app.includes('invalidateInvent
 check(!smart.includes('Сколько пришло'), 'Partial-arrival UI was introduced against the agreed scope')
 check(smart.includes('destinationFor(group.entry.id, item)') && smart.includes('group.items.map'), 'Arrival destination is not independent per returned line')
 check(smart.includes("operationType: 'exchange'") && smart.includes('operationItemId: Number(item.id || 0)'), 'Arrival queue is not connected to the existing per-item receive operation')
+check(smart.includes('newItemStockIdentityKey') && smart.includes('batchRequired') && smart.includes('matchingIndexes'), 'Repeated replacement rows do not aggregate physical demand before save')
+check(smart.includes('setObservedPhysicalForGroup') && smart.includes('Фактическое количество задаётся один раз у первой одинаковой позиции'), 'Repeated replacement rows can submit conflicting physical observations')
 
 check(smart.includes("item.sourceType === 'workshop'") && smart.includes('Срочно для цеха') && smart.includes('workshopDueDate') && smart.includes('workshopDueTime'), 'Smart Exchange dropped Workshop urgency/deadline controls')
 check(smart.includes('isSetExchange') && smart.includes('entry.oldItems') && smart.includes('entry.newItems'), 'Set exchange history does not render full old/new collections')
