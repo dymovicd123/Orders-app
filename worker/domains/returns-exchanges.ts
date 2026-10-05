@@ -2880,6 +2880,16 @@ type ExchangeSetOperationContext = {
   financesCompleted?: boolean
 }
 
+type ExchangeSetCancelContext = {
+  startedAt?: string
+  preflight?: {
+    projectedRestoredTotal: number
+    projectedNetPaid: number
+    oldTargets: Array<{ orderItemId: number; baselineQuantity: number; targetQuantity: number }>
+    newSnapshots: Array<{ orderItemId: number; quantity: number; unitPrice: number; lineTotal: number }>
+  }
+}
+
 function requiredSafeMoney(value: unknown, label: string, minimum = 0) {
   const number = Number(value)
   if (!Number.isSafeInteger(number) || number < minimum) {
@@ -3917,6 +3927,7 @@ export async function cancelExchangeSetV2(
     criticalOperation = await beginCriticalOperation(db, 'exchange_set_cancel', input.requestId, { exchangeId, ...input }, { startedAt })
     if (criticalOperation.cachedResponse) return criticalOperation.cachedResponse
     if (!exchangeId) throw new Error('exchangeId is required.')
+    let cancelContext = parseCriticalContext<ExchangeSetCancelContext>(criticalOperation.row)
 
     const exchange = await db.prepare(
       `SELECT e.*, o.external_id, o.order_status, o.pricing_mode
@@ -3929,10 +3940,12 @@ export async function cancelExchangeSetV2(
       throw new CriticalOperationConflictError('Это обмен старого формата. Используйте совместимую отмену.')
     }
     if (cleanText(exchange.status) === 'cancelled') {
+      const cancelledOrderId = toInt(exchange.order_id, 0)
+      if (cancelledOrderId) await syncOrderFinancialLedger(db, cancelledOrderId, startedAt)
       const completed = { ok: true, exchangeId, alreadyCancelled: true, refreshRequired: true }
       await completeCriticalOperation(db, criticalOperation, completed)
       let order = null
-      try { order = await getOrder(db, toInt(exchange.order_id, 0)) } catch { order = null }
+      try { order = await getOrder(db, cancelledOrderId) } catch { order = null }
       return order ? { ...completed, order, refreshRequired: false } : completed
     }
 
@@ -3990,6 +4003,99 @@ export async function cancelExchangeSetV2(
       }
     }
 
+    if (!cancelContext.preflight) {
+      const ledger = await readOrderFinancialLedger(db, orderId)
+      const activeTotalRow = await db.prepare(
+        `SELECT COALESCE(SUM(line_total), 0) AS total_amount
+         FROM order_items
+         WHERE order_id = ? AND quantity > 0`
+      ).bind(orderId).first<{ total_amount: number }>()
+      const activeTotal = requiredSafeMoney(activeTotalRow?.total_amount, 'Текущий итог активных позиций')
+      if (activeTotal !== ledger.totalAmount) {
+        throw new CriticalOperationConflictError('Итог заказа уже не совпадает с активными позициями. Отмена обмена остановлена без изменений.')
+      }
+
+      const newSnapshots: Array<{ orderItemId: number; quantity: number; unitPrice: number; lineTotal: number }> = []
+      let removedNewValue = 0
+      for (let index = 0; index < plan.newItems.length; index += 1) {
+        const row = newRows[index]
+        const planItem = plan.newItems[index]
+        const orderItemId = toInt(row?.order_item_id, 0)
+        const quantity = Math.max(0, toInt(row?.current_quantity, 0))
+        const unitPrice = requiredSafeMoney(row?.current_unit_price, `Цена новой позиции ${index + 1}`)
+        const lineTotal = requiredSafeMoney(row?.current_line_total, `Сумма новой позиции ${index + 1}`)
+        const expectedQuantity = Math.max(1, toInt(planItem?.item?.quantity, 1))
+        const expectedUnitPrice = requiredSafeMoney(planItem?.item?.unitPrice, `Исходная цена новой позиции ${index + 1}`)
+        const expectedLineTotal = expectedQuantity * expectedUnitPrice
+        if (!orderItemId
+          || quantity !== expectedQuantity
+          || unitPrice !== expectedUnitPrice
+          || lineTotal !== expectedLineTotal) {
+          throw new CriticalOperationConflictError(
+            `Новая позиция обмена ${index + 1} уже изменилась после проведения. Обновите историю; автоматическая отмена остановлена.`
+          )
+        }
+        removedNewValue += lineTotal
+        if (!Number.isSafeInteger(removedNewValue)) {
+          throw new CriticalOperationConflictError('Стоимость новых позиций слишком велика для безопасной отмены.')
+        }
+        newSnapshots.push({ orderItemId, quantity, unitPrice, lineTotal })
+      }
+
+      const oldRowsByOrderItemId = new Map<number, Record<string, unknown>>()
+      for (const row of oldRows) {
+        const orderItemId = toInt(row.order_item_id, 0)
+        if (orderItemId) oldRowsByOrderItemId.set(orderItemId, row)
+      }
+      const oldTargets: Array<{ orderItemId: number; baselineQuantity: number; targetQuantity: number }> = []
+      for (const [index, planItem] of plan.oldItems.entries()) {
+        const row = oldRowsByOrderItemId.get(planItem.orderItemId)
+        if (!row) throw new CriticalOperationConflictError(`Старая позиция обмена ${index + 1} больше не найдена.`)
+        const currentUnitPrice = requiredSafeMoney(row.current_unit_price, `Цена старой позиции ${index + 1}`)
+        if (currentUnitPrice !== planItem.unitPrice) {
+          throw new CriticalOperationConflictError(
+            `Цена старой позиции обмена ${index + 1} изменилась после проведения. Автоматическая отмена остановлена.`
+          )
+        }
+        const baselineQuantity = Math.max(0, toInt(row.current_quantity, 0))
+        const targetQuantity = baselineQuantity + planItem.quantity
+        if (!Number.isSafeInteger(targetQuantity) || targetQuantity < 0) {
+          throw new CriticalOperationConflictError('Не удалось безопасно рассчитать восстановление старой позиции.')
+        }
+        oldTargets.push({ orderItemId: planItem.orderItemId, baselineQuantity, targetQuantity })
+      }
+
+      const projectedRestoredTotal = activeTotal - removedNewValue + plan.removedValue
+      if (!Number.isSafeInteger(projectedRestoredTotal) || projectedRestoredTotal < 0) {
+        throw new CriticalOperationConflictError('Итог заказа после отмены обмена получился некорректным.')
+      }
+
+      const financialAction = cleanText(exchange.financial_action)
+      const financialAmount = Math.max(0, toInt(exchange.financial_amount, 0))
+      const currentNetPaid = ledger.receivedAmount - ledger.returnAmount
+      const projectedNetPaid = financialAction === 'extra_payment'
+        ? currentNetPaid - financialAmount
+        : financialAction === 'refund'
+          ? currentNetPaid + financialAmount
+          : currentNetPaid
+      if (!Number.isSafeInteger(projectedNetPaid) || projectedNetPaid < 0) {
+        throw new CriticalOperationConflictError(
+          'После отмены обмена возвраты денег превысят оставшиеся оплаты. Сначала отмените или исправьте более позднюю денежную операцию.'
+        )
+      }
+      if (projectedNetPaid > projectedRestoredTotal) {
+        throw new CriticalOperationConflictError(
+          `После отмены обмена останется переплата ${projectedNetPaid - projectedRestoredTotal}. Сначала исправьте или отмените более позднюю оплату/возврат, затем повторите отмену обмена.`
+        )
+      }
+
+      cancelContext = {
+        ...cancelContext,
+        preflight: { projectedRestoredTotal, projectedNetPaid, oldTargets, newSnapshots },
+      }
+      await advanceCriticalOperation(db, criticalOperation, 'validated', { context: cancelContext })
+    }
+
     const lifecycleRows = await db.prepare(
       `SELECT * FROM inventory_lifecycle_events
        WHERE operation_type = 'exchange' AND operation_id = ?
@@ -4029,20 +4135,28 @@ export async function cancelExchangeSetV2(
     for (const planItem of plan.oldItems) {
       const current = await getOrderItemForReturnOrExchange(db, orderId, planItem.orderItemId)
       if (!current) throw new CriticalOperationConflictError('Старая позиция обмена больше не найдена.')
+      const target = cancelContext.preflight?.oldTargets.find((entry) => entry.orderItemId === planItem.orderItemId)
+      if (!target) throw new CriticalOperationConflictError('Не найден снимок восстановления старой позиции. Отмена остановлена.')
       const currentQuantity = Math.max(0, toInt(current.quantity, 0))
-      const nextQuantity = currentQuantity + planItem.quantity
-      if (!Number.isSafeInteger(nextQuantity) || nextQuantity < 0) throw new CriticalOperationConflictError('Не удалось восстановить количество старой позиции.')
-      await db.prepare(
-        `UPDATE order_items
-         SET quantity = ?, line_total = unit_price * ?, stock_writeoff_status = ?
-         WHERE id = ? AND order_id = ?`
-      ).bind(
-        nextQuantity,
-        nextQuantity,
-        planItem.originalStockStatus || (planItem.isWorkshop ? 'workshop' : 'reserved'),
-        planItem.orderItemId,
-        orderId,
-      ).run()
+      if (currentQuantity !== target.targetQuantity) {
+        if (currentQuantity !== target.baselineQuantity) {
+          throw new CriticalOperationConflictError(
+            'Старая позиция изменилась во время отмены обмена. Операция остановлена, чтобы не восстановить количество дважды.'
+          )
+        }
+        await db.prepare(
+          `UPDATE order_items
+           SET quantity = ?, line_total = unit_price * ?, stock_writeoff_status = ?
+           WHERE id = ? AND order_id = ? AND quantity = ?`
+        ).bind(
+          target.targetQuantity,
+          target.targetQuantity,
+          planItem.originalStockStatus || (planItem.isWorkshop ? 'workshop' : 'reserved'),
+          planItem.orderItemId,
+          orderId,
+          target.baselineQuantity,
+        ).run()
+      }
       if (planItem.physicalState === 'not_issued' && !planItem.isWorkshop) {
         await restoreNotIssuedReservation(db, planItem, timestamp, exchangeId)
       }
@@ -4096,6 +4210,9 @@ export async function cancelExchangeSetV2(
        WHERE order_id = ? AND quantity > 0`
     ).bind(orderId).first<{ total_amount: number }>()
     const restoredTotal = Math.max(0, toInt(totalRow?.total_amount, 0))
+    if (restoredTotal !== cancelContext.preflight?.projectedRestoredTotal) {
+      throw new CriticalOperationConflictError('Итог заказа изменился во время отмены. Операция остановлена до финального статуса; обновите данные и повторите.')
+    }
     await db.batch([
       db.prepare(`UPDATE orders SET total_amount = ?, updated_at = ? WHERE id = ?`).bind(restoredTotal, timestamp, orderId),
       db.prepare(
