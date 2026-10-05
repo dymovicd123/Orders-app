@@ -2184,10 +2184,12 @@ export async function listExchanges(db: D1Database, url: URL) {
       oldItemId: row.old_order_item_id, oldProductName: row.old_product_name || itemGroup.oldItems[0]?.productName || '—', oldQuantity: row.old_item_quantity || row.old_quantity || itemGroup.oldItems[0]?.quantity || 0,
       oldGender: row.old_gender_snapshot || itemGroup.oldItems[0]?.gender || '', oldColor: row.old_color_snapshot || itemGroup.oldItems[0]?.color || '', oldMaterial: row.old_material_snapshot || itemGroup.oldItems[0]?.material || '', oldLength: row.old_length_snapshot || itemGroup.oldItems[0]?.length || '', oldSize: row.old_size_snapshot || itemGroup.oldItems[0]?.size || '', oldReturnSource: row.old_inventory_source || row.old_return_source || itemGroup.oldItems[0]?.inventorySource || 'none',
       oldOperationItemId: row.old_operation_item_id == null ? (itemGroup.oldItems[0]?.id || null) : toInt(row.old_operation_item_id, 0) || null,
-      oldPhysicalTracking: Boolean(toInt(row.old_physical_tracking, 0)) || (row.old_physical_tracking == null && Boolean(itemGroup.oldItems[0]?.physicalTracking)),
-      oldPhysicalReceivedAt: cleanText(row.old_physical_received_at) || itemGroup.oldItems[0]?.physicalReceivedAt || null,
-      oldWasNotIssued: cleanText(row.old_inventory_source) === 'not_issued' || Boolean(itemGroup.oldItems[0]?.wasNotIssued),
-      oldIsWorkshop: row.old_is_workshop == null ? Boolean(itemGroup.oldItems[0]?.isWorkshop) : Boolean(toInt(row.old_is_workshop, 0)),
+      // Legacy compatibility fields deliberately remain the exact first-old-item projection.
+      // Set V2 consumers use oldItems[] below, so these fields must not be overloaded with set-wide fallbacks.
+      oldPhysicalTracking: Boolean(toInt(row.old_physical_tracking, 0)),
+      oldPhysicalReceivedAt: cleanText(row.old_physical_received_at) || null,
+      oldWasNotIssued: cleanText(row.old_inventory_source) === 'not_issued',
+      oldIsWorkshop: Boolean(toInt(row.old_is_workshop, 0)),
       newItemId: row.new_order_item_id, newProductName: row.new_product_name || itemGroup.newItems[0]?.productName || '—', newQuantity: row.new_item_quantity || itemGroup.newItems[0]?.quantity || 0,
       newGender: row.new_gender_snapshot || itemGroup.newItems[0]?.gender || '', newColor: row.new_color_snapshot || itemGroup.newItems[0]?.color || '', newMaterial: row.new_material_snapshot || itemGroup.newItems[0]?.material || '', newLength: row.new_length_snapshot || itemGroup.newItems[0]?.length || '', newSize: row.new_size_snapshot || itemGroup.newItems[0]?.size || '', newSourceType: row.new_inventory_source || row.new_source_type || itemGroup.newItems[0]?.inventorySource,
       oldCurrentVariantId: toInt(row.old_current_variant_id, 0) || Number(itemGroup.oldItems[0]?.currentVariantId || 0) || null,
