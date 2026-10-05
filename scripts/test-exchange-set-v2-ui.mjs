@@ -32,6 +32,8 @@ check(smart.includes('Клиенту не выдавалась') && smart.includ
 check(smart.includes("status ? issuedStockStatuses.has(status) : exchangeSelectedOrder?.shipping_status === 'sent'"), 'Smart Exchange does not prefer exact per-item handover truth over broad order shipping status')
 check(smart.includes('Вернуть на Склад') && smart.includes('Вернуть в Бутик') && smart.includes('Не добавлять в остаток'), 'Per-item returned-stock disposition choices are incomplete')
 check(smart.includes('Подтвердить прибытие всех товаров'), 'Pending-return queue does not confirm the whole arrival')
+check(smart.includes('deferRefresh: true') && smart.includes('if (!received) break'), 'Grouped return intake still performs heavy per-line refreshes or continues after a failed line')
+check(app.includes('if (!input.deferRefresh)') && app.includes('invalidateInventoryStockCaches(true)'), 'Grouped intake cannot defer expensive history/inventory refresh while still invalidating stale stock caches')
 check(!smart.includes('Сколько пришло'), 'Partial-arrival UI was introduced against the agreed scope')
 check(smart.includes('destinationFor(group.entry.id, item)') && smart.includes('group.items.map'), 'Arrival destination is not independent per returned line')
 check(smart.includes("operationType: 'exchange'") && smart.includes('operationItemId: Number(item.id || 0)'), 'Arrival queue is not connected to the existing per-item receive operation')
