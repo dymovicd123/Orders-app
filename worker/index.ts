@@ -719,16 +719,13 @@ export default {
         const input = await readJson<{ requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown }>(request);
         const movementType = cleanText(input.movementType).toLowerCase();
         const routineExistingStockOperation = movementType === 'manual_set' || movementType === 'writeoff';
-        const arrivalOperation = movementType === 'arrival';
-        if (!routineExistingStockOperation && !arrivalOperation) {
+        if (!routineExistingStockOperation) {
           const denied = requireAdminAccess(request);
           if (denied) return denied;
         }
         const returnInventory = url.searchParams.get('returnInventory') !== '0';
         const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
-        const result = await applyInventoryMovement(env.DB, input, returnInventory, actor, {
-          arrivalCatalogCreationMode: authUser?.role === 'admin' ? 'admin' : 'manager',
-        });
+        const result = await applyInventoryMovement(env.DB, input, returnInventory, actor);
         if ('code' in result && result.code === 'stock_resolution_required') {
           return json(result, { status: 409 });
         }

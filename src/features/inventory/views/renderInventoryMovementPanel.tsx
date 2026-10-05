@@ -22,6 +22,7 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'inventoryOperationRowSecondary'
   | 'inventoryOperationSearch'
   | 'inventoryPanelStyle'
+  | 'isAdmin'
   | 'movementSourceLoadError'
   | 'movementSourceLoading'
   | 'operationDraftItem'
@@ -71,6 +72,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
     inventoryOperationRowSecondary,
     inventoryOperationSearch,
     inventoryPanelStyle,
+    isAdmin,
     movementSourceLoadError,
     movementSourceLoading,
     operationDraftItem,
@@ -130,7 +132,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                         <summary>Другие действия</summary>
                         <div className="inventory-operation-secondary-actions" role="group" aria-label="Другие складские действия">
                           {[
-                            ['arrival', 'Приход'],
+                            ...(isAdmin ? [['arrival', 'Приход']] : []),
                             ['writeoff', 'Списание'],
                             ['manual_set', 'Исправить количество'],
                           ].map(([mode, title]) => (

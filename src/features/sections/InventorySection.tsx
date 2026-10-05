@@ -1856,6 +1856,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   const selectInventoryOperationMode = (mode: any) => {
+    if (mode === 'arrival' && !isAdmin) return
     resetInventoryOperationSelection()
     setInventoryDraft((current: any) => ({
       ...current,
@@ -2157,7 +2158,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                   {[
                     { value: 'overview' as const, label: 'Остатки', hint: 'Что сейчас есть на складе и в бутике' },
                     ...(isAdmin ? [{ value: 'catalog' as const, label: 'Товары', hint: 'Каталог, цвета, размеры и характеристики' }] : []),
-                    { value: 'movement' as const, label: 'Операции', hint: 'Приход, списание и перемещение' },
+                    { value: 'movement' as const, label: 'Операции', hint: isAdmin ? 'Приход, списание и перемещение' : 'Списание и перемещение' },
                     { value: 'stocktake' as const, label: 'Проверка', hint: 'Физически пересчитать товар' },
                     { value: 'history' as const, label: 'История', hint: 'Что менялось на складе и в бутике' },
                   ].map((entry) => (
@@ -2563,6 +2564,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         inventoryOperationRowSecondary,
         inventoryOperationSearch,
         inventoryPanelStyle,
+        isAdmin,
         movementSourceLoadError,
         movementSourceLoading,
         operationDraftItem,
