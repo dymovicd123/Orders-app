@@ -2811,7 +2811,7 @@ type ExchangeSetOldPlan = {
 
 type ExchangeSetNewPlan = {
   inputIndex: number
-  item: NonNullable<ReturnType<typeof normalizeOrderItems>[number]>
+  item: NonNullable<ReturnType<typeof normalizeOrderItems>[number]> & { catalogPriceSnapshot: number | null }
   productId: number | null
   variantId: number | null
   inventorySource: SourceType | null
@@ -4031,7 +4031,7 @@ export async function cancelExchangeSetV2(
           externalOrderId: cleanText(exchange.external_id),
           timestamp,
           relatedType: 'exchange_extra',
-          reason: 'exchange_set_cancel',
+          reason: 'exchange_cancel',
           comment,
         })
       }
@@ -4054,7 +4054,7 @@ export async function cancelExchangeSetV2(
             relatedType: 'exchange_refund',
             sourceId: exchangeId,
             sourceRef: `exchanges:${exchangeId}`,
-            reason: 'exchange_set_cancel',
+            reason: 'exchange_cancel',
             comment,
           }),
         ])
