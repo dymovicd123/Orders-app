@@ -30,7 +30,7 @@ type OpenArrivalRecoveryInput = {
   makeRequestId: (prefix: string) => string
   normalizeText: (value: unknown) => string
   submitMovement: (items: ArrivalRecoveryItem[]) => Promise<SubmitResult>
-  onPrompt: (prompt: ArrivalRecoveryPrompt) => void
+  onPrompt: (prompt: ArrivalRecoveryPrompt | null) => void
   onError: (message: string) => void
   onBusy: (busy: boolean) => void
   onContinuation: (continuation: (() => Promise<void>) | null) => void
@@ -106,7 +106,7 @@ export async function openArrivalRecoveryFlow(input: OpenArrivalRecoveryInput) {
         throw new Error(retried.result.message || `Inventory save failed: ${retried.response.status}`)
       }
 
-      input.onPrompt(null as unknown as ArrivalRecoveryPrompt)
+      input.onPrompt(null)
       input.onError('')
       input.onContinuation(null)
       await input.onSuccess(retried.result)
