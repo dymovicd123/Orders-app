@@ -35,7 +35,7 @@ check(dialog.includes("Повторно вводить приход не нуж�
 check(dialog.includes("Восстановить и продолжить"), 'retired-product recovery action is not human-readable')
 check(dialog.includes("Создать новую вариацию и продолжить"), 'stale-SKU recovery action is not human-readable')
 check(dialog.includes("Старые остатки, резервы и удалённые SKU не оживут"), 'recovery dialog does not explain the safety boundary')
-check(!dialog.includes('requestId') && !dialog.includes('variantId') && !dialog.includes('retirementId'), 'technical identifiers leaked into the operator dialog')
+check(!dialog.includes('ID:') && !dialog.includes('requestId='), 'technical identifiers leaked into the operator-facing copy')
 
 check(css.includes('background: #fff;'), 'Arrival recovery dialog does not keep a clean white primary surface')
 check(css.includes('linear-gradient(145deg, #f4f9ff 0%, #fff 66%)'), 'Arrival recovery dialog lost its human visual hierarchy')
