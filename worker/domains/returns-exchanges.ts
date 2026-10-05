@@ -3330,7 +3330,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
           unitPrice: priceLine.unitPrice,
           lineTotal: priceLine.lineTotal,
           catalogPriceSnapshot: priceLine.catalogPriceSnapshot,
-        } as NonNullable<ReturnType<typeof normalizeOrderItems>[number]>
+        } as ExchangeSetNewPlan['item']
         addedValue += priceLine.lineTotal
         if (!Number.isSafeInteger(addedValue)) throw new CriticalOperationConflictError('Стоимость новых товаров слишком велика.')
 
