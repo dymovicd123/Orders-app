@@ -14,7 +14,7 @@ export type ItemizedExchangeBatchPairInput = {
   oldItemId?: number;
   oldQuantity?: number;
   oldReturnSource?: unknown;
-  oldPhysicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock';
+  oldPhysicalState?: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock';
   newItem?: NonNullable<OrderInput['items']>[number];
   newSourceWasManuallyChanged?: boolean;
   expectedOldActiveQuantity?: number;
@@ -28,7 +28,7 @@ type ItemizedExchangeBatchExecutionPair = {
   oldItemId: number;
   oldQuantity: number;
   oldReturnSource: unknown;
-  oldPhysicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock';
+  oldPhysicalState?: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock';
   newItem: NonNullable<OrderInput['items']>[number];
   newSourceWasManuallyChanged: boolean;
   expectedOrderTotal: number;
@@ -161,7 +161,7 @@ export async function createItemizedExchangeBatch(
         oldItemId: number;
         oldQuantity: number;
         oldReturnSource: unknown;
-        oldPhysicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock';
+        oldPhysicalState?: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock';
         newItem: NonNullable<OrderInput['items']>[number];
         newSourceWasManuallyChanged: boolean;
         oldInitialQuantity: number;
