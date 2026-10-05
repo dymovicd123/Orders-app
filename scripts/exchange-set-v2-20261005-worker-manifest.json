@@ -14,7 +14,7 @@
     },
     "worker/domains/returns-exchanges.ts": {
       "beforeGitBlob": "5f3fb92b5383709e2791f4f6ddd7dc5d0ad29017",
-      "afterGitBlob": "adcc5c140106057f5a6a472027cdd7c3d2516ca5",
+      "afterGitBlob": "75b1b36bf6fe5e7cea11ebc7e5978dd0ab921dde",
       "baselineFixture": "scripts/fixtures/exchange-set-v2-20261005/worker/domains/returns-exchanges.ts"
     },
     "worker/index.ts": {
