@@ -50,7 +50,8 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
   const historyItemDetails = (item: any) => itemDetails(item)
   const oldLineDefaultState = (item: any) => {
     const status = String(item?.stockWriteoffStatus || '').trim()
-    const issued = status ? issuedStockStatuses.has(status) : exchangeSelectedOrder?.shipping_status === 'sent'
+    const sentWorkshop = item?.sourceType === 'workshop' && exchangeSelectedOrder?.shipping_status === 'sent'
+    const issued = issuedStockStatuses.has(status) || sentWorkshop || (!status && exchangeSelectedOrder?.shipping_status === 'sent')
     return issued ? 'pending' : 'not_issued'
   }
 
@@ -263,7 +264,8 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                 const selected = selectedOldById.get(Number(item.id || 0))
                 const maxQuantity = Math.max(1, Number(item.availableOperationQuantity ?? item.quantity ?? 1))
                 const itemStockStatus = String(item.stockWriteoffStatus || '').trim()
-                const issued = itemStockStatus ? issuedStockStatuses.has(itemStockStatus) : exchangeSelectedOrder.shipping_status === 'sent'
+                const sentWorkshop = item.sourceType === 'workshop' && exchangeSelectedOrder.shipping_status === 'sent'
+                const issued = issuedStockStatuses.has(itemStockStatus) || sentWorkshop || (!itemStockStatus && exchangeSelectedOrder.shipping_status === 'sent')
                 return (
                   <div className={`exchange-old-card${selected ? ' is-selected' : ''}`} key={`old-set-${item.id}`}>
                     <button className="exchange-old-pick" type="button" onClick={() => toggleOldItem(item)}>
