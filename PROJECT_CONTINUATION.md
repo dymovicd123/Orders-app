@@ -6,21 +6,31 @@ Branch represented by this file: **branch2**
 
 Этот файл — короткий актуальный checkpoint Branch2. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не являются текущим roadmap без сверки с GitHub.
 
-## STATUS UPDATE — 2026-10-05 — Exchange Set V2 + Return safety merged to Branch2
+## STATUS UPDATE — 2026-10-05 — Exchange Set V2 + Smart Return UX deployed to Branch2
 
-Exchange Set V2 is now on **branch2**:
+Exchange Set V2 is on **branch2**:
 - PR #285 merged the independent old/new item-set workflow;
 - PR #286 added post-merge cancellation money/replay safety and repeated-SKU stock guidance;
-- the deployed pre-Return baseline was `ab51960efe8465234f42172be47f79e9e1c9764a`, with Branch2 safety run **37349832156 — success** and Cloudflare deploy monitor **37349832127 — success**.
+- the pre-Return deployed baseline `ab51960efe8465234f42172be47f79e9e1c9764a` passed Branch2 safety **37349832156** and Cloudflare deploy monitor **37349832127**.
 
-Return safety/UX follow-up is also merged:
-- PR #287 merged at `b31c2f8a9f4651cae642486a3c6a7955c512d456`;
-- exact PR-head Quality run **37356472772 — success** after cumulative regressions and application build;
-- never-issued goods can no longer be recorded as physical Returns; pre-handover item cancellation is directed to **Edit order**, while money-only refunds remain valid;
-- Workshop delayed intake defaults to no-stock consistently in both queue and history;
-- Return cancellation freezes Workshop baseline/target state, validates dependencies before stock reversal, uses replay-safe compare-and-swap restoration, and repairs derived order state on already-cancelled retries.
+Return safety and operator UX are also on **branch2**:
+- PR #287 added never-issued physical-return protection, consistent Workshop delayed-intake defaults, and replay-safe Workshop Return cancellation;
+- PR #288 replaced the technical Return item table with human-first cards at merged SHA `6f8e6a7e7318c913864869eaaa8828432110ff22`;
+- Smart Return runtime Quality **37358759928 — success** and exact PR-head Quality **37359030619 — success**;
+- exact merged-SHA Branch2 safety **37359280952 — success**;
+- exact merged-SHA Cloudflare deploy monitor **37359280977 — success**; matching native Cloudflare build succeeded and direct fallback was skipped.
 
-Current Exchange business model:
+Current Return behavior:
+- physical goods and refund money stay independent facts;
+- never-issued goods cannot be selected as a physical Return and pre-handover cancellation is directed to **Edit order**;
+- returnable goods are selected as cards, with bounded quantity controls;
+- each selected item asks **«Где товар сейчас?»**: «Ещё едет обратно» or «Уже вернули»;
+- delayed goods stay in the existing intake queue;
+- already returned goods choose Warehouse / Boutique / no-stock per item;
+- Workshop-origin goods default to no-stock unless Warehouse/Boutique is explicitly chosen;
+- money-only refunds and zero-money physical Returns remain valid.
+
+Current Exchange behavior:
 - modern `itemized_v1` Exchange owns independent `oldItems[]` and `newItems[]`;
 - the order total is recalculated from persisted actual sold prices;
 - payment/refund is derived from the resulting commercial total versus actual net paid;
@@ -34,7 +44,7 @@ Canonical detailed checkpoints:
 
 Production/main remains out of scope. Do not copy Branch2 business data into Production or vice versa.
 
-Next safe action: validate/deploy the current exact Branch2 head, then do manual Branch2 acceptance of Exchange + Return and continue only from concrete UX/business defects found there. Do not return to the legacy pair-exchange design.
+Next safe action: manually accept Exchange Set V2 + Smart Return UX in the real Branch2 UI and continue only from concrete business/UX defects found there. Do not return to the legacy pair-exchange design.
 
 ## STATUS UPDATE — 2026-09-30 — High-risk dev dependency audit closed
 
