@@ -1,11 +1,61 @@
 import fs from 'node:fs'
+import path from 'node:path'
 import crypto from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 
 const read = (p) => fs.readFileSync(p, 'utf8')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 const gitBlob = (value) => {
   const bytes = Buffer.from(value)
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+
+const root = process.cwd()
+const exchangeSetManifests = [
+  JSON.parse(fs.readFileSync(path.join(root, 'scripts/exchange-set-v2-20261005-frontend-manifest.json'), 'utf8')),
+  JSON.parse(fs.readFileSync(path.join(root, 'scripts/exchange-set-v2-20261005-worker-manifest.json'), 'utf8')),
+]
+for (const manifest of exchangeSetManifests) {
+  check(manifest?.version === 1 && String(manifest?.revision || '').startsWith('exchange-set-v2-20261005-'), 'Exchange Set V2 runtime manifest invalid')
+}
+if (!process.env.EXCHANGE_SET_V2_BRANCH2_MAIN_SYNC_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const manifest of exchangeSetManifests) {
+      for (const [relative, delta] of Object.entries(manifest.files || {})) {
+        const absolute = path.join(root, relative)
+        const actual = fs.readFileSync(absolute, 'utf8')
+        check(gitBlob(actual) === delta.afterGitBlob, 'Exchange Set V2 runtime drifted before Branch2/main sync check: ' + relative)
+        originals.set(relative, actual)
+        if (delta.absentBefore) {
+          fs.unlinkSync(absolute)
+        } else {
+          const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+          check(gitBlob(baseline) === delta.beforeGitBlob, 'Exchange Set V2 predecessor fixture drifted: ' + relative)
+          fs.writeFileSync(absolute, baseline)
+        }
+      }
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, EXCHANGE_SET_V2_BRANCH2_MAIN_SYNC_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('EXCHANGE SET V2 / BRANCH2 MAIN SYNC PRESERVATION LAYER PASSED')
+  process.exit(0)
 }
 
 const exactMainRuntime = {
