@@ -13,7 +13,15 @@ try {
   const lifecycle = read('worker/domains/lifecycle.ts')
 
   check(utils.includes("physicalState: (item.sourceType === 'workshop' ? 'no_stock' : 'pending')"), 'Workshop Return no longer defaults to no-stock')
-  check(utils.includes("oldPhysicalState: firstItem?.sourceType === 'workshop' ? 'no_stock' : 'pending'"), 'Workshop Exchange no longer defaults to no-stock')
+  const exchangeDraftStart = utils.indexOf('export function createExchangeDraft(')
+  const exchangeDraftBody = exchangeDraftStart >= 0 ? utils.slice(exchangeDraftStart, utils.indexOf('\n}', exchangeDraftStart) + 2) : ''
+  check(
+    exchangeDraftBody.includes("oldPhysicalState: firstItem?.sourceType === 'workshop'") &&
+      exchangeDraftBody.includes("? 'no_stock'") &&
+      exchangeDraftBody.includes("order?.shipping_status === 'sent'") &&
+      exchangeDraftBody.includes(": 'not_issued'"),
+    'Workshop Exchange no longer defaults to no-stock',
+  )
 
   check(!returns.includes("item.sourceType !== 'workshop' ? <option value=\"boutique\">"), 'Return form still hides Boutique for Workshop items')
   check(!returns.includes("!item.isWorkshop ? <option value=\"boutique\">"), 'Return receipt history still hides Boutique for Workshop items')

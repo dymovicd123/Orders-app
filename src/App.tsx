@@ -6853,7 +6853,7 @@ function removeDebtPayment(index: number) {
       selectedOldItem: OrderRecord['items'][number]
       oldQuantity: number
       oldReturnSource: 'none' | 'warehouse' | 'boutique'
-      oldPhysicalState: 'pending' | 'warehouse' | 'boutique' | 'no_stock'
+      oldPhysicalState: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'
       effectiveNewItem: EditorItem
       newSourceWasManuallyChanged: boolean
     }> = []
