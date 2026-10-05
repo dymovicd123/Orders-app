@@ -34,6 +34,7 @@ import { TableDragScrollManager } from './components/tables/TableDragScrollManag
 import { DatabaseStorageModal, DatabaseStorageWarning, useDatabaseStorageMaintenance } from './features/storage/DatabaseStorageMaintenance'
 import { DashboardSection, ClientsSection, ReferencesSection, InventorySection, WorkshopSection, OrdersHeaderSection, OrderFiltersSection, CreateOrderSection, OrderEditorSection, OrdersTableSection, OrderDetailsSection, OrderDebtSection, OrderReturnsSection, OrderExchangeSection, TeamSection, LeadsSection, PlanSection, FinanceSection, ReportsSection, OrderActivitySection, OrderCatalogResolutionModal, StockResolutionConfirmModal, ReturnedItemResolutionModal, DeferredSection } from './app/lazySections'
 import { InventoryStockGroupsRenderer } from './features/renderers/InventoryStockGroupsRenderer'
+import { ArrivalRecoveryDialog, type ArrivalRecoveryPrompt } from './features/inventory/views/ArrivalRecoveryDialog'
 import type { StockResolutionPrompt } from './features/orders/StockResolutionConfirmModal'
 import { useFinanceReportReads } from './features/finance/useFinanceReportReads'
 import { useWorkshopReads } from './features/workshop/useWorkshopReads'
@@ -45,6 +46,7 @@ import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft }
 import { downloadBlobFile, makeExportHtml } from './features/export/documentExport'
 import './styles/1905-small-screen-acceptance.css'
 import './styles/192b1-warehouse-attention.css'
+import './styles/192c-arrival-recovery.css'
 
 
 
