@@ -207,7 +207,7 @@ export async function resolveInventoryCreatableItemsBulk(
   };
 
   const missingProducts = new Map<string, { name: string; category: string; externalId: string }>();
-  let retiredProductConflict: { productId: number; productName: string } | null = null;
+  const retiredProductConflicts: Array<{ productId: number; productName: string }> = [];
   rawItems.forEach((item, index) => {
     if (!item.productName) throw new Error('Product is required for inventory operation.');
     const activeProduct = resolveProduct(item);
@@ -228,11 +228,11 @@ export async function resolveInventoryCreatableItemsBulk(
     const retiredId = toInt(retired?.id, 0);
     if (retiredId) {
       assertKnownProductGender(retired, item);
-      if (!retiredProductConflict) {
-        retiredProductConflict = {
+      if (!retiredProductConflicts.length) {
+        retiredProductConflicts.push({
           productId: retiredId,
           productName: cleanText(retired?.name) || item.productName,
-        };
+        });
       }
       return;
     }
@@ -247,6 +247,7 @@ export async function resolveInventoryCreatableItemsBulk(
     }
   });
 
+  const retiredProductConflict = retiredProductConflicts[0];
   if (retiredProductConflict) {
     const retirementId = await latestCompletedProductRetirementId(db, retiredProductConflict.productId);
     throw new ArrivalRecoveryRequiredError({
