@@ -88,11 +88,12 @@ try {
   const sourceBytes = [...graph].reduce((sum, file) => sum + fs.statSync(file).size, 0)
   // O1 adds one transport helper; Stage03 adds one itemized-pricing helper plus the direct Create/Edit pricing wiring.
   // Auth R7 adds only bounded startup/login/session-recovery logic inside the already-static App/API client.
-  // H9C adds only the multi-position Exchange coordinator to that existing App graph; it does not make
-  // the lazy OrderExchangeSection eager. Keep the measured Production increase explicitly bounded.
+  // H9C adds only the multi-position Exchange coordinator to that existing App graph.
+  // Arrival inline recovery adds only bounded prompt/dispatch glue to App; the dialog and recovery
+  // orchestration remain outside the initial static graph. Keep the measured Production increase tight.
   check(graph.size <= 26, `Initial static source graph regrew: ${graph.size} modules`)
   check(graphRelative.includes('src/app/order-pricing.ts'), 'Stage03 itemized-pricing helper is missing from the expected initial graph')
-  check(sourceBytes <= 687_000, `Initial static source graph regrew beyond the accepted H9C Production allowance: ${sourceBytes} bytes`)
+  check(sourceBytes <= 690_000, `Initial static source graph regrew beyond the accepted Production allowance: ${sourceBytes} bytes`)
   for (const name of lazySections) {
     check(!graphRelative.includes(`src/features/sections/${name}.tsx`), `Lazy section is still initial-static: ${name}`)
   }
