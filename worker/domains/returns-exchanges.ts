@@ -739,6 +739,12 @@ export async function receiveReturnedItem(
                 ei.length_snapshot, ei.size_snapshot, ei.quantity, ei.inventory_source, 0 AS restocked,
                 ei.physical_tracking, ei.physical_received_at, ei.created_at AS operation_item_created_at,
                 e.order_id, COALESCE(e.status, 'completed') AS operation_status,
+                EXISTS(
+                  SELECT 1 FROM critical_operations co
+                  WHERE co.operation_type = 'exchange_set_create'
+                    AND co.target_type = 'exchange'
+                    AND co.target_id = e.id
+                ) AS is_set_exchange,
                 o.external_id, oi.product_id, oi.variant_id, oi.audience_type, oi.is_workshop, oi.source_type
          FROM exchange_items ei
          JOIN exchanges e ON e.id = ei.exchange_id
@@ -790,7 +796,11 @@ export async function receiveReturnedItem(
       }
     }
 
-    if (operationType === 'exchange') {
+    const setExchangeItem = operationType === 'exchange' && Boolean(toInt(item.is_set_exchange, 0));
+    if (operationType === 'exchange' && !setExchangeItem) {
+      // Legacy exchanges have one old item, so the parent field is meaningful there.
+      // Set V2 stores disposition independently on each exchange_item; the last line
+      // received must never overwrite a fake operation-wide destination.
       await db.prepare(`UPDATE exchanges SET old_return_source = ? WHERE id = ? AND COALESCE(status, 'completed') <> 'cancelled'`)
         .bind(destination === 'no_stock' ? 'none' : destination, operationId).run();
     }
@@ -803,7 +813,11 @@ export async function receiveReturnedItem(
     if (destination !== 'no_stock') {
       const resolved = await resolveInventoryLifecycleCandidate(db, item, isWorkshop);
       const event = await insertInventoryLifecycleEvent(db, {
-        eventKey: operationType === 'return' ? `return:${operationId}:item:${operationItemId}` : `exchange:${operationId}:old`,
+        eventKey: operationType === 'return'
+          ? `return:${operationId}:item:${operationItemId}`
+          : setExchangeItem
+            ? `exchange:${operationId}:old:${operationItemId}`
+            : `exchange:${operationId}:old`,
         operationType,
         operationId,
         operationItemId,
