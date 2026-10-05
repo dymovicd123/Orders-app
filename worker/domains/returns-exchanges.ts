@@ -2053,8 +2053,13 @@ export async function listExchanges(db: D1Database, url: URL) {
             SUM(CASE WHEN COALESCE(e.status, 'completed') <> 'cancelled' THEN 1 ELSE 0 END) AS active_count,
             SUM(CASE WHEN COALESCE(e.status, 'completed') = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_count,
             COALESCE(SUM(CASE
-              WHEN COALESCE(e.status, 'completed') <> 'cancelled'
-              THEN COALESCE((
+              WHEN COALESCE(e.status, 'completed') = 'cancelled' THEN 0
+              WHEN EXISTS(
+                SELECT 1 FROM critical_operations co
+                WHERE co.operation_type = 'exchange_set_create'
+                  AND co.target_type = 'exchange'
+                  AND co.target_id = e.id
+              ) THEN COALESCE((
                 SELECT SUM(ei.quantity)
                 FROM exchange_items ei
                 WHERE ei.exchange_id = e.id
@@ -2062,10 +2067,16 @@ export async function listExchanges(db: D1Database, url: URL) {
                   AND COALESCE(ei.physical_tracking, 0) = 1
                   AND ei.physical_received_at IS NULL
               ), 0)
+              WHEN old_summary.physical_tracking = 1
+               AND old_summary.physical_received_at IS NULL
+              THEN COALESCE(old_summary.quantity, e.old_quantity, 0)
               ELSE 0
             END), 0) AS pending_physical_quantity
      FROM exchanges e JOIN orders o ON o.id = e.order_id
      LEFT JOIN managers m ON m.id = e.manager_id LEFT JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN exchange_items old_summary ON old_summary.id = (
+       SELECT ei.id FROM exchange_items ei WHERE ei.exchange_id = e.id AND ei.role = 'old' ORDER BY ei.id ASC LIMIT 1
+     )
      ${whereSql}`
   ).bind(...bindings).first<Record<string, unknown>>();
 
@@ -2173,7 +2184,7 @@ export async function listExchanges(db: D1Database, url: URL) {
       oldItemId: row.old_order_item_id, oldProductName: row.old_product_name || itemGroup.oldItems[0]?.productName || '—', oldQuantity: row.old_item_quantity || row.old_quantity || itemGroup.oldItems[0]?.quantity || 0,
       oldGender: row.old_gender_snapshot || itemGroup.oldItems[0]?.gender || '', oldColor: row.old_color_snapshot || itemGroup.oldItems[0]?.color || '', oldMaterial: row.old_material_snapshot || itemGroup.oldItems[0]?.material || '', oldLength: row.old_length_snapshot || itemGroup.oldItems[0]?.length || '', oldSize: row.old_size_snapshot || itemGroup.oldItems[0]?.size || '', oldReturnSource: row.old_inventory_source || row.old_return_source || itemGroup.oldItems[0]?.inventorySource || 'none',
       oldOperationItemId: row.old_operation_item_id == null ? (itemGroup.oldItems[0]?.id || null) : toInt(row.old_operation_item_id, 0) || null,
-      oldPhysicalTracking: row.old_physical_tracking == null ? Boolean(itemGroup.oldItems[0]?.physicalTracking) : Boolean(toInt(row.old_physical_tracking, 0)),
+      oldPhysicalTracking: Boolean(toInt(row.old_physical_tracking, 0)) || (row.old_physical_tracking == null && Boolean(itemGroup.oldItems[0]?.physicalTracking)),
       oldPhysicalReceivedAt: cleanText(row.old_physical_received_at) || itemGroup.oldItems[0]?.physicalReceivedAt || null,
       oldWasNotIssued: cleanText(row.old_inventory_source) === 'not_issued' || Boolean(itemGroup.oldItems[0]?.wasNotIssued),
       oldIsWorkshop: row.old_is_workshop == null ? Boolean(itemGroup.oldItems[0]?.isWorkshop) : Boolean(toInt(row.old_is_workshop, 0)),
