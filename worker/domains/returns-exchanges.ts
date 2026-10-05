@@ -2332,6 +2332,35 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
     });
   }
 
+  // Prove every Workshop dependency is still either at the frozen baseline or already at
+  // the idempotent target before touching physical stock. A missing/concurrently changed task
+  // must not leave a Return half-cancelled with inventory already reversed.
+  for (const snapshot of taskSnapshots.results || []) {
+    const workshopTaskId = toInt(snapshot.workshop_task_id, 0);
+    if (!workshopTaskId || !cleanText(snapshot.current_status)) {
+      throw new CriticalOperationConflictError(
+        'Связанная задача Цеха больше не найдена. Отмена возврата остановлена до изменения склада.'
+      );
+    }
+    const target = workshopTargets.find((entry) => toInt(entry.workshopTaskId, 0) === workshopTaskId);
+    if (!target) {
+      throw new CriticalOperationConflictError('Не найден безопасный снимок восстановления задачи Цеха. Отмена возврата остановлена.');
+    }
+    const currentQuantity = Math.max(0, toInt(snapshot.current_quantity, 0));
+    const currentStatus = cleanText(snapshot.current_status);
+    const baselineQuantity = Math.max(0, toInt(target.baselineQuantity, 0));
+    const baselineStatus = cleanText(target.baselineStatus) || 'active';
+    const targetQuantity = Math.max(0, toInt(target.targetQuantity, 0));
+    const targetStatus = cleanText(target.targetStatus) || baselineStatus;
+    const atBaseline = currentQuantity === baselineQuantity && currentStatus === baselineStatus;
+    const atTarget = currentQuantity === targetQuantity && currentStatus === targetStatus;
+    if (!atBaseline && !atTarget) {
+      throw new CriticalOperationConflictError(
+        'Задача Цеха изменилась после начала отмены возврата. Склад не менялся; обновите данные и повторите.'
+      );
+    }
+  }
+
   const lifecycleRows = await db.prepare(
     `SELECT * FROM inventory_lifecycle_events WHERE operation_type = 'return' AND operation_id = ? ORDER BY id ASC`
   ).bind(returnId).all<InventoryLifecycleEventRow>();
