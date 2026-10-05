@@ -40,7 +40,7 @@ const invBody = inventory.slice(invStart, invEnd)
 check(invBody.includes('const assertKnownProductGender ='), 'inventory materializer lacks pre-mutation fixed-gender preflight')
 check(invBody.includes('assertKnownProductGender(activeProduct, item)'), 'active fixed product is not checked before inventory materialization')
 check(invBody.includes('assertKnownProductGender(retired, item)'), 'retired fixed product is not checked before Arrival rejects the retired shell')
-check(invBody.indexOf('assertKnownProductGender(retired, item)') < invBody.indexOf('retiredProductConflict ='),
+check(invBody.indexOf('assertKnownProductGender(retired, item)') < invBody.indexOf('retiredProductConflicts.push'),
   'Arrival captures a retired product recovery only after fixed-gender validation')
 check(!invBody.includes('retiredProductIdsToReactivate'), 'Arrival can still schedule a retired product reactivation')
 check(invBody.includes('return assertCatalogGenderAllowedForScope(product?.gender_scope, explicit, product?.name).gender'),
