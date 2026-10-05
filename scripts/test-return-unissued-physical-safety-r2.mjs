@@ -24,7 +24,13 @@ check(ui.includes('Есть товары, которые клиенту не в�
 check(ui.includes('сначала измените состав заказа'), 'Return UI does not direct cancelled-before-handover goods to Order edit')
 check(ui.includes("'Не выдавали'") && ui.includes('Товар остаётся у вас') && ui.includes('disabled={item.issuedToClient === false || returnBusy}'), 'Never-issued Return rows are not visibly blocked from physical intake')
 check(ui.includes('handleEditOrder(returnSelectedOrder)'), 'Return UI does not offer a direct safe Order edit action')
-check(ui.includes("(item.isWorkshop ? 'no_stock' : 'warehouse')"), 'Delayed Workshop Return intake can default to Warehouse from history')
+check(
+  ui.includes('const defaultReturnDestination =')
+    && ui.includes("item.sourceType === 'workshop' || item.isWorkshop")
+    && ui.includes("? 'no_stock'")
+    && ui.includes('defaultReturnDestination(item)'),
+  'Delayed Workshop Return intake can default to Warehouse from history',
+)
 
 const createStart = worker.indexOf('export async function createReturn(')
 const createEnd = worker.indexOf('\n\nexport async function receiveReturnedItem', createStart)
