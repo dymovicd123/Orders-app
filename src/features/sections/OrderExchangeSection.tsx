@@ -86,6 +86,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     if (result?.ok) await loadExchangeHistory()
   }
   const oldReturnLabel = (entry: any) => {
+    if (entry.oldWasNotIssued || entry.oldReturnSource === 'not_issued') return 'Не выдавалась клиенту — осталась на месте'
     if (!entry.oldPhysicalTracking) return 'Старая запись — физическое получение не отслеживалось'
     if (!entry.oldPhysicalReceivedAt) return 'Ещё не пришла'
     if (entry.oldReturnSource !== 'warehouse' && entry.oldReturnSource !== 'boutique') return 'Получена, в остаток не добавляли'
@@ -145,6 +146,12 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     : item?.sourceType === 'boutique'
       ? 'boutique'
       : 'warehouse'
+
+  const defaultOldPhysicalStateForItem = (item: any) => item?.sourceType === 'workshop'
+    ? 'no_stock'
+    : exchangeSelectedOrder?.shipping_status === 'sent'
+      ? 'pending'
+      : 'not_issued'
 
   const resetObservedStock = (item: any, patch: Record<string, unknown>) => ({
     ...item,
@@ -227,7 +234,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
       orderId: current.orderId,
       exchangeDate: current.exchangeDate,
       oldItemId: Number(nextOldItem?.id || 0),
-      oldPhysicalState: nextOldItem?.sourceType === 'workshop' ? 'no_stock' : 'pending',
+      oldPhysicalState: defaultOldPhysicalStateForItem(nextOldItem),
       newItem: {
         ...fresh.newItem,
         sourceType: nextSource,
@@ -253,7 +260,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
   return (
     <article className="card wide sector-orders" id="order-exchange" style={{ ...sectorStyle('orders'), ...orderPanelStyle('exchange') }}>
               <div className="card-label">Обмен товара</div>
-              <div className="card-meta">Обмен открывается из главной таблицы заказов или из активного цеха. Для старой вещи отдельно укажите: она ещё едет или уже физически пришла.</div>
+              <div className="card-meta">Обмен открывается из главной таблицы заказов или из активного цеха. Для старой вещи укажите фактическую ситуацию: её не выдавали клиенту, клиент ещё не вернул её или вещь уже физически приняли.</div>
     
               <section className="mini-panel exchange-start-note">
                 <div className="mini-panel-head">
@@ -403,7 +410,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                   oldItemId,
                                   oldQuantity: 1,
                                   oldReturnSource: 'none',
-                                  oldPhysicalState: selectedItem?.sourceType === 'workshop' ? 'no_stock' : 'pending',
+                                  oldPhysicalState: defaultOldPhysicalStateForItem(selectedItem),
                                   newSourceWasManuallyChanged: false,
                                   newItem: resetObservedStock(current.newItem, {
                                     sourceType: replacementSourceForItem(selectedItem),
@@ -445,7 +452,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                             <select
                               value={exchangeDraft.oldPhysicalState}
                               onChange={(event) => {
-                                const oldPhysicalState = event.target.value as 'pending' | 'warehouse' | 'boutique' | 'no_stock'
+                                const oldPhysicalState = event.target.value as 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'
                                 setExchangeDraft((current) => ({
                                   ...current,
                                   oldPhysicalState,
@@ -453,12 +460,19 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                 }))
                               }}
                             >
-                              <option value="pending">Ещё не пришла</option>
-                              <option value="warehouse">Пришла → Склад</option>
-                              <option value="boutique">Пришла → Бутик</option>
-                              <option value="no_stock">Пришла, в остаток не добавлять</option>
+                              {!effectiveOldItemIsWorkshop ? <option value="not_issued">Не выдавали клиенту — остаётся на месте</option> : null}
+                              <option value="pending">Клиент ещё не вернул</option>
+                              <option value="warehouse">Клиент вернул → Склад</option>
+                              <option value="boutique">Клиент вернул → Бутик</option>
+                              <option value="no_stock">Клиент вернул, в остаток не добавлять</option>
                             </select>
-                            {effectiveOldItemIsWorkshop ? <small className="field-hint">Для вещи из Цеха по умолчанию остаток не создаётся. Если вещь физически принимают в остатки, явно выберите «Склад» или «Бутик»; если она ещё едет — «Ещё не пришла».</small> : null}
+                            {!effectiveOldItemIsWorkshop && exchangeDraft.oldPhysicalState === 'not_issued' ? (
+                              <small className="field-hint">Физический остаток старой вещи не изменится: система только снимет её резерв и заменит позицию в заказе. Никакого фиктивного списания и обратного прихода не будет.</small>
+                            ) : null}
+                            {!effectiveOldItemIsWorkshop && exchangeSelectedOrder?.shipping_status !== 'sent' && exchangeDraft.oldPhysicalState !== 'not_issued' ? (
+                              <small className="field-hint">Заказ не отмечен как отправленный. Если эту вещь фактически не передавали клиенту, выберите «Не выдавали клиенту — остаётся на месте».</small>
+                            ) : null}
+                            {effectiveOldItemIsWorkshop ? <small className="field-hint">Для вещи из Цеха по умолчанию остаток не создаётся. Если вещь физически принимают в остатки, явно выберите «Склад» или «Бутик»; если она ещё у клиента — «Клиент ещё не вернул».</small> : null}
                           </label>
                           <label>
                             <span>Дата обмена</span>
@@ -624,16 +638,27 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                             <div className="subgrid order-payment-grid">
                               <label>
                                 <span>Действие</span>
-                                <select value={exchangeDraft.financialAction} onChange={(event) => setExchangeDraft((current) => ({ ...current, financialAction: event.target.value as ExchangeDraft['financialAction'] }))}>
+                                <select value={exchangeDraft.financialAction} onChange={(event) => {
+                                  const financialAction = event.target.value as ExchangeDraft['financialAction']
+                                  setExchangeDraft((current) => ({
+                                    ...current,
+                                    financialAction,
+                                    ...(financialAction === 'none' ? { financialAmount: 0, paymentMethod: '' } : {}),
+                                  }))
+                                }}>
                                   <option value="none">Без доплаты/возврата</option>
                                   <option value="extra_payment">Клиент доплачивает</option>
                                   <option value="refund">Вернуть клиенту</option>
                                 </select>
                               </label>
-                              <label>
-                                <span>Сумма</span>
-                                <FriendlyNumberInput type="number" min="0" value={exchangeDraft.financialAmount} onChange={(event) => setExchangeDraft((current) => ({ ...current, financialAmount: Math.max(0, Number(event.target.value || 0)) }))} />
-                              </label>
+                              {exchangeDraft.financialAction !== 'none' ? (
+                                <label>
+                                  <span>Сумма</span>
+                                  <FriendlyNumberInput type="number" min="0" value={exchangeDraft.financialAmount} onChange={(event) => setExchangeDraft((current) => ({ ...current, financialAmount: Math.max(0, Number(event.target.value || 0)) }))} />
+                                </label>
+                              ) : (
+                                <div className="field-hint exchange-finance-none-note">Денежного движения по обмену не будет. Итог itemized-заказа определяется ценами новых позиций.</div>
+                              )}
                               {exchangeDraft.financialAction !== 'none' ? (
                                 <label>
                                   <span>{exchangeDraft.financialAction === 'refund' ? 'Способ возврата денег' : 'Способ оплаты'}</span>

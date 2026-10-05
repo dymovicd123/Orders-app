@@ -103,7 +103,7 @@ try {
   check(!returnView.includes("item.sourceType !== 'workshop' ? <option value=\"boutique\">Пришёл → Бутик</option> : null") && returnView.includes('<option value="boutique">Пришёл → Бутик</option>'), 'Return form no longer exposes explicit Boutique for Workshop items')
   check(!returnView.includes("!item.isWorkshop ? <option value=\"boutique\">Бутик</option> : null") && returnView.includes('<option value="boutique">Бутик</option>'), 'Delayed return receipt no longer exposes Boutique for Workshop items')
   check(exchangeView.includes('effectiveOldItemIsWorkshop'), 'Exchange UI no longer distinguishes Workshop old items')
-  check(!exchangeView.includes("!effectiveOldItemIsWorkshop ? <option value=\"boutique\">Пришла → Бутик</option> : null") && exchangeView.includes('<option value="boutique">Пришла → Бутик</option>'), 'Exchange form no longer exposes explicit Boutique for Workshop old items')
+  check(!exchangeView.includes('!effectiveOldItemIsWorkshop ? <option value="boutique">') && exchangeView.includes('<option value="boutique">Клиент вернул → Бутик</option>'), 'Exchange form no longer exposes explicit Boutique for Workshop old items')
   check(!exchangeView.includes('Для вещи из Цеха Бутик недоступен.') && exchangeView.includes('явно выберите «Склад» или «Бутик»'), 'Exchange UI still presents Boutique as forbidden for Workshop returns')
 
   // Cross-workflow safety audit: Workshop task completion is a production-state transition only.

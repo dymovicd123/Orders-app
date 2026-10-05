@@ -140,7 +140,7 @@ export type ExchangePairDraft = {
   oldItemId: number
   oldQuantity: number
   oldReturnSource: 'none' | 'warehouse' | 'boutique'
-  oldPhysicalState: 'pending' | 'warehouse' | 'boutique' | 'no_stock'
+  oldPhysicalState: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'
   newItem: EditorItem
   newSourceWasManuallyChanged: boolean
   saved?: boolean
@@ -154,7 +154,7 @@ export type ExchangeDraft = {
   oldItemId: number
   oldQuantity: number
   oldReturnSource: 'none' | 'warehouse' | 'boutique'
-  oldPhysicalState: 'pending' | 'warehouse' | 'boutique' | 'no_stock'
+  oldPhysicalState: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'
   newItem: EditorItem
   financialAction: 'none' | 'extra_payment' | 'refund'
   financialAmount: number
@@ -759,6 +759,7 @@ export type ExchangeHistoryEntry = {
   oldOperationItemId?: number | null
   oldPhysicalTracking?: boolean
   oldPhysicalReceivedAt?: string | null
+  oldWasNotIssued?: boolean
   oldIsWorkshop?: boolean
   oldLifecycleStatus?: 'pending' | 'applied' | 'cancelled' | null | string
   newLifecycleStatus?: 'pending' | 'applied' | 'cancelled' | null | string

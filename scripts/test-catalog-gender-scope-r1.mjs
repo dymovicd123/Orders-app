@@ -33,7 +33,7 @@ check(resolver.includes('if (enteredGender && fixedProductGender && enteredGende
 check(resolver.includes('if (!gender) {') && resolver.includes('gender = fixedProductGender'), 'Order resolver must still use fixed product scope as fallback when gender is omitted')
 check(workspace.includes("const automaticGender = productGenderScope === 'female' ? 'ЖЕН' : productGenderScope === 'male' ? 'МУЖ' : ''"), 'Order forms must auto-fill fixed scope and leave unisex blank')
 check(workspace.includes("if (productGenderScope === 'unisex' && !normalizedGender) unknownFacts.push('пол')"), 'Availability must ask for unisex gender')
-check(operational.includes("gender: automaticGender"), 'Arrival product pick must use product scope')
+check(operational.includes("gender: automaticGender || first?.gender || position.gender"), 'Arrival product pick must keep a concrete existing SKU gender for unisex products while fixed product scope still wins')
 check(exchange.includes('Выберите для унисекс'), 'Exchange gender must be a controlled choice')
 check(panel.includes('Назначение по полу'), 'Catalog product form must expose scope selector')
 check(panel.includes('Назначение по полу'), 'Catalog product scope must remain explicitly editable so a truly dual-gender product can be changed to unisex before adding the opposite gender')
