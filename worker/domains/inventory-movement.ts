@@ -44,6 +44,49 @@ export function inventoryManualRequestFingerprint(
 }
 
 
+export type ArrivalRecoveryCode = 'arrival_retired_product' | 'arrival_stale_variant';
+
+export class ArrivalRecoveryRequiredError extends Error {
+  status = 409;
+  code: ArrivalRecoveryCode;
+  productId: number;
+  productName: string;
+  retirementId: number;
+  variantId: number;
+
+  constructor(input: {
+    code: ArrivalRecoveryCode;
+    message: string;
+    productId?: number;
+    productName?: string;
+    retirementId?: number;
+    variantId?: number;
+  }) {
+    super(input.message);
+    this.name = 'ArrivalRecoveryRequiredError';
+    this.code = input.code;
+    this.productId = Math.max(0, toInt(input.productId, 0));
+    this.productName = cleanText(input.productName);
+    this.retirementId = Math.max(0, toInt(input.retirementId, 0));
+    this.variantId = Math.max(0, toInt(input.variantId, 0));
+  }
+}
+
+async function latestCompletedProductRetirementId(db: D1Database, productId: number) {
+  if (!productId) return 0;
+  const row = await db.prepare(
+    `SELECT id
+     FROM catalog_retirement_operations
+     WHERE entity_type='product'
+       AND product_id=?
+       AND status='completed'
+     ORDER BY id DESC
+     LIMIT 1`
+  ).bind(productId).first<{ id: number }>();
+  return Math.max(0, toInt(row?.id, 0));
+}
+
+
 export type InventoryOperationStockConfirmation = {
   source: SourceType;
   variantId: number;
@@ -164,6 +207,7 @@ export async function resolveInventoryCreatableItemsBulk(
   };
 
   const missingProducts = new Map<string, { name: string; category: string; externalId: string }>();
+  const retiredProductConflicts: Array<{ productId: number; productName: string }> = [];
   rawItems.forEach((item, index) => {
     if (!item.productName) throw new Error('Product is required for inventory operation.');
     const activeProduct = resolveProduct(item);
@@ -184,7 +228,13 @@ export async function resolveInventoryCreatableItemsBulk(
     const retiredId = toInt(retired?.id, 0);
     if (retiredId) {
       assertKnownProductGender(retired, item);
-      throw new Error(`Товар «${item.productName}» выведен из активного каталога. Приход не восстанавливает удалённый товар автоматически: сначала явно восстановите товар в Каталоге, затем повторите Приход.`);
+      if (!retiredProductConflicts.length) {
+        retiredProductConflicts.push({
+          productId: retiredId,
+          productName: cleanText(retired?.name) || item.productName,
+        });
+      }
+      return;
     }
 
     const newIdentityKey = identityKey || `RAW:${item.productName}`;
@@ -196,6 +246,20 @@ export async function resolveInventoryCreatableItemsBulk(
       });
     }
   });
+
+  const retiredProductConflict = retiredProductConflicts[0];
+  if (retiredProductConflict) {
+    const retirementId = await latestCompletedProductRetirementId(db, retiredProductConflict.productId);
+    throw new ArrivalRecoveryRequiredError({
+      code: 'arrival_retired_product',
+      message: retirementId
+        ? `Товар «${retiredProductConflict.productName}» раньше был удалён. Его можно безопасно восстановить и продолжить этот Приход без потери введённых данных.`
+        : `Товар «${retiredProductConflict.productName}» выведен из активного каталога, но запись удаления не найдена для автоматического восстановления.`,
+      productId: retiredProductConflict.productId,
+      productName: retiredProductConflict.productName,
+      retirementId,
+    });
+  }
 
   if (missingProducts.size) {
     const missingProductsJson = JSON.stringify(Array.from(missingProducts.values()));
@@ -518,6 +582,7 @@ export async function applyInventoryMovement(
   const variantIds = Array.from(new Set(items.map(item => Math.max(0, toInt(item.variantId, 0))).filter(Boolean)));
   const variantIdsJson = JSON.stringify(variantIds);
   const canonicalById = new Map<number, InventoryResolvedItem>();
+  const staleArrivalById = new Map<number, { productId: number; productName: string; productActive: boolean; retirementId: number }>();
 
   if (variantIds.length) {
     const canonicalResult = await db.prepare(
@@ -545,6 +610,37 @@ export async function applyInventoryMovement(
         quantity: 0,
         expectedQuantity: null,
       });
+    }
+
+    if (movementType === 'arrival') {
+      const missingVariantIds = variantIds.filter((variantId) => !canonicalById.has(variantId));
+      if (missingVariantIds.length) {
+        const staleResult = await db.prepare(
+          `SELECT v.id AS variant_id, v.product_id, p.name AS product_name, p.is_active AS product_active,
+                  COALESCE((
+                    SELECT op.id
+                    FROM catalog_retirement_operations op
+                    WHERE op.entity_type='product'
+                      AND op.product_id=v.product_id
+                      AND op.status='completed'
+                    ORDER BY op.id DESC
+                    LIMIT 1
+                  ), 0) AS retirement_id
+           FROM catalog_variants v
+           JOIN catalog_products p ON p.id=v.product_id
+           WHERE v.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
+        ).bind(JSON.stringify(missingVariantIds)).all<Record<string, unknown>>();
+        for (const row of staleResult.results || []) {
+          const variantId = toInt(row.variant_id, 0);
+          if (!variantId) continue;
+          staleArrivalById.set(variantId, {
+            productId: Math.max(0, toInt(row.product_id, 0)),
+            productName: cleanText(row.product_name),
+            productActive: toInt(row.product_active, 0) === 1,
+            retirementId: Math.max(0, toInt(row.retirement_id, 0)),
+          });
+        }
+      }
     }
   }
 
@@ -574,7 +670,26 @@ export async function applyInventoryMovement(
       }
       if (strictOperationName) throw new Error(`${strictOperationName}: выбранный вариант больше не существует. Обновите остатки.`);
       if (movementType === 'arrival') {
-        throw new Error('Приход: выбранный готовый вариант больше не активен. Обновите страницу и выберите вариант заново. Если это действительно новая вариация, добавьте её как новую комбинацию без старого ID.');
+        const stale = staleArrivalById.get(raw.variantId);
+        if (stale && !stale.productActive) {
+          throw new ArrivalRecoveryRequiredError({
+            code: 'arrival_retired_product',
+            message: stale.retirementId
+              ? `Товар «${stale.productName || raw.productName}» был удалён, пока форма Прихода оставалась открытой. Его можно восстановить и сразу продолжить операцию.`
+              : `Товар «${stale.productName || raw.productName}» больше не активен, а запись удаления для автоматического восстановления не найдена.`,
+            productId: stale.productId || raw.productId,
+            productName: stale.productName || raw.productName,
+            retirementId: stale.retirementId,
+            variantId: raw.variantId,
+          });
+        }
+        throw new ArrivalRecoveryRequiredError({
+          code: 'arrival_stale_variant',
+          message: `Выбранный вариант «${raw.productName}» больше не активен. Если именно эта вещь сейчас пришла, можно создать новую рабочую вариацию и продолжить без повторного ввода формы.`,
+          productId: stale?.productId || raw.productId,
+          productName: stale?.productName || raw.productName,
+          variantId: raw.variantId,
+        });
       }
       creatableIndexes.push(index);
       return;

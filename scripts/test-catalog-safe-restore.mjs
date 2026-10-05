@@ -35,7 +35,8 @@ check(retirement.includes("WHERE retirement_id=? AND status='completed'"), 'repe
 check(retirement.includes("pending_rr.retirement_id=op.id AND pending_rr.status='started'") && retirement.includes("completed_rr.retirement_id=op.id AND completed_rr.status='completed'") && retirement.includes(") THEN 0\n           WHEN EXISTS("), 'partial restore can still be reported as working again')
 
 check(inventory.includes("allowRetiredRecreate: movementType === 'arrival'"), 'only Arrival should opt into fresh retired execution/SKU recreation')
-check(inventory.includes('Приход не восстанавливает удалённый товар автоматически'), 'Arrival must require explicit Catalog restore for a retired product shell')
+check(inventory.includes("code: 'arrival_retired_product'"), 'Arrival must surface a recoverable retired-product conflict instead of restoring the shell itself')
+check(inventory.includes('latestCompletedProductRetirementId'), 'Arrival retired-product conflict is not linked to the audited Catalog restore record')
 check(!inventory.includes('retiredProductIdsToReactivate'), 'Arrival must not silently reactivate a retired product shell')
 check(inventory.includes('lookup.byInactiveExact') && inventory.includes('lookup.byInactiveIdentity'), 'Arrival cannot identify and fail closed on a retired product by human identity')
 check(inventory.includes('retiredExecutionKeys.has(key) && !options.allowRetiredRecreate'), 'retired execution guard still blocks Arrival or is removed for all operations')
