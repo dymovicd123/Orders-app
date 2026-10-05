@@ -5212,8 +5212,17 @@ function App() {
         code?: string
         operationType?: string
         items?: StockResolutionRequiredItemView[]
+        productId?: number | null
+        productName?: string | null
+        retirementId?: number | null
+        variantId?: number | null
       }
-      const submitMovement = async (stockConfirmations?: Array<{ source: InventorySourceKey; variantId: number; expectedQuantity: number; operationQuantity: number }>) => {
+      type MovementSubmitItem = (typeof cleanItems)[number]
+
+      const submitMovement = async (
+        stockConfirmations?: Array<{ source: InventorySourceKey; variantId: number; expectedQuantity: number; operationQuantity: number }>,
+        itemsOverride: MovementSubmitItem[] = cleanItems,
+      ) => {
         const response = await apiFetch(isTransfer ? '/api/inventory/transfer?returnInventory=0' : '/api/inventory/movements?returnInventory=0', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -5222,19 +5231,131 @@ function App() {
             fromSource: inventoryDraft.source,
             toSource: inventoryDraft.targetSource,
             comment: inventoryDraft.comment,
-            items: cleanItems,
+            items: itemsOverride,
             stockConfirmations,
           } : {
             requestId: inventoryManualRequestId,
             inventorySource: inventoryDraft.source,
             movementType: inventoryDraft.movementType,
             comment: inventoryDraft.comment,
-            items: cleanItems,
+            items: itemsOverride,
             stockConfirmations,
           }),
         })
         const result = await readJsonResponse<InventoryMovementSaveResponse>(response, 'Сохранение движения склада', { allowHttpError: true })
         return { response, result }
+      }
+
+      const finishMovement = async (result: InventoryMovementSaveResponse) => {
+        const refreshes: Array<Promise<unknown>> = isTransfer
+          ? [
+              loadInventoryData('warehouse', true, '', false),
+              loadInventoryData('boutique', true, '', false),
+            ]
+          : inventoryDraft.movementType === 'arrival'
+            ? [
+                loadInventoryData(inventoryDraft.source, true, '', false),
+                loadCatalogData(true),
+              ]
+            : [
+                loadInventoryData(inventoryDraft.source, true, '', false),
+              ]
+        // The mutation is already committed once the POST returned 2xx. Follow-up reads are
+        // best-effort so a refresh failure cannot invite the employee to submit the operation again.
+        await Promise.allSettled(refreshes)
+        const transferShortage = isTransfer ? (result.warnings || []).reduce((sum, row) => sum + Math.max(0, Number(row.shortageAfter || 0)), 0) : 0
+        setMessage(isTransfer
+          ? `Перемещение ${sourceLabel(inventoryDraft.source)} → ${sourceLabel(inventoryDraft.targetSource)} сохранено${result.externalId ? ` · ${result.externalId}` : ''}.${transferShortage > 0 ? ` В исходной точке после перемещения не хватает ${transferShortage} шт. для активных заказов — резервы сохранены.` : ''}`
+          : inventoryDraft.movementType === 'arrival'
+            ? `Приход на ${sourceLabel(inventoryDraft.source)} сохранён.`
+            : `${sourceLabel(inventoryDraft.source)} обновлён.`)
+        if (isTransfer) setInventoryTransferRequestId(makeCashRequestId('inventory-transfer'))
+        else setInventoryManualRequestId(makeCashRequestId('inventory-manual'))
+        setInventoryDraft((current) => ({
+          ...current,
+          comment: '',
+          items: [createEmptyInventoryItem()],
+        }))
+        if (inventoryDraft.movementType === 'arrival') {
+          setInventoryArrivalPositions([createEmptyArrivalPosition()])
+          setInventoryArrivalVariantOpen({})
+        }
+        resetInventoryOperationSelection()
+        setInventoryMatrix(createEmptyInventoryMatrixDraft())
+        setInventoryMatrixColorToAdd('')
+        setInventoryMatrixSizeToAdd('')
+      }
+
+      const isArrivalRecoveryResult = (result: InventoryMovementSaveResponse) => (
+        result.code === 'arrival_retired_product' || result.code === 'arrival_stale_variant'
+      )
+
+      const openArrivalRecovery = (result: InventoryMovementSaveResponse, retryItems: MovementSubmitItem[]) => {
+        if (!isArrivalRecoveryResult(result)) return
+        const prompt: ArrivalRecoveryPrompt = {
+          code: result.code as ArrivalRecoveryPrompt['code'],
+          message: result.message || 'Приход требует подтверждения перед продолжением.',
+          productId: Math.max(0, Number(result.productId || 0)),
+          productName: String(result.productName || retryItems.find((item) => Number(item.productId || 0) === Number(result.productId || 0))?.productName || 'Выбранный товар'),
+          retirementId: Math.max(0, Number(result.retirementId || 0)),
+          variantId: Math.max(0, Number(result.variantId || 0)),
+        }
+        const restoreRequestId = makeCashRequestId(`arrival-restore-${prompt.productId || 'product'}`)
+        setArrivalRecoveryError('')
+        setArrivalRecoveryPrompt(prompt)
+
+        arrivalRecoveryContinueRef.current = async () => {
+          setInventoryMovementBusy(true)
+          setArrivalRecoveryError('')
+          try {
+            let nextItems = retryItems.map((item) => ({ ...item }))
+
+            if (prompt.code === 'arrival_retired_product') {
+              if (!prompt.retirementId) {
+                throw new Error('Не удалось подготовить безопасное автоматическое восстановление. Форма Прихода сохранена — обновите данные и попробуйте ещё раз.')
+              }
+              const restoreResponse = await apiFetch(`/api/catalog/retirements/${prompt.retirementId}/restore`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requestId: restoreRequestId }),
+              })
+              const restoreResult = await readJsonResponse<{ ok?: boolean; message?: string }>(restoreResponse, 'Восстановление товара', { allowHttpError: true })
+              if (!restoreResponse.ok || restoreResult.ok === false) {
+                throw new Error(restoreResult.message || 'Не удалось безопасно восстановить товар. Введённый Приход не потерян.')
+              }
+              nextItems = nextItems.map((item) => {
+                const sameProduct = prompt.productId > 0
+                  ? Number(item.productId || 0) === prompt.productId
+                  : normalizeSearchText(item.productName) === normalizeSearchText(prompt.productName)
+                return sameProduct ? { ...item, variantId: '' } : item
+              })
+            } else {
+              nextItems = nextItems.map((item) => (
+                prompt.variantId > 0 && Number(item.variantId || 0) === prompt.variantId
+                  ? { ...item, variantId: '' }
+                  : item
+              ))
+            }
+
+            const retried = await submitMovement(undefined, nextItems)
+            if (!retried.response.ok && isArrivalRecoveryResult(retried.result)) {
+              openArrivalRecovery(retried.result, nextItems)
+              return
+            }
+            if (!retried.response.ok) {
+              throw new Error(retried.result.message || `Inventory save failed: ${retried.response.status}`)
+            }
+
+            setArrivalRecoveryPrompt(null)
+            setArrivalRecoveryError('')
+            arrivalRecoveryContinueRef.current = null
+            await finishMovement(retried.result)
+          } catch (error) {
+            setArrivalRecoveryError(error instanceof Error ? error.message : 'Не удалось продолжить Приход. Введённые данные сохранены в форме.')
+          } finally {
+            setInventoryMovementBusy(false)
+          }
+        }
       }
 
       let { response, result } = await submitMovement()
@@ -5271,43 +5392,13 @@ function App() {
         ;({ response, result } = await submitMovement(stockConfirmations))
       }
 
+      if (!response.ok && isArrivalRecoveryResult(result)) {
+        openArrivalRecovery(result, cleanItems)
+        return
+      }
       if (!response.ok) throw new Error(result.message || `Inventory save failed: ${response.status}`)
 
-      const refreshes: Array<Promise<unknown>> = isTransfer
-        ? [
-            loadInventoryData('warehouse', true, '', false),
-            loadInventoryData('boutique', true, '', false),
-          ]
-        : inventoryDraft.movementType === 'arrival'
-          ? [
-              loadInventoryData(inventoryDraft.source, true, '', false),
-              loadCatalogData(true),
-            ]
-          : [
-              loadInventoryData(inventoryDraft.source, true, '', false),
-            ]
-      // The mutation is already committed once the POST returned 2xx. Follow-up reads are
-      // best-effort so a refresh failure cannot invite the employee to submit the operation again.
-      await Promise.allSettled(refreshes)
-      const transferShortage = isTransfer ? (result.warnings || []).reduce((sum, row) => sum + Math.max(0, Number(row.shortageAfter || 0)), 0) : 0
-      setMessage(isTransfer
-        ? `Перемещение ${sourceLabel(inventoryDraft.source)} → ${sourceLabel(inventoryDraft.targetSource)} сохранено${result.externalId ? ` · ${result.externalId}` : ''}.${transferShortage > 0 ? ` В исходной точке после перемещения не хватает ${transferShortage} шт. для активных заказов — резервы сохранены.` : ''}`
-        : `${sourceLabel(inventoryDraft.source)} обновлён.`)
-      if (isTransfer) setInventoryTransferRequestId(makeCashRequestId('inventory-transfer'))
-      else setInventoryManualRequestId(makeCashRequestId('inventory-manual'))
-      setInventoryDraft((current) => ({
-        ...current,
-        comment: '',
-        items: [createEmptyInventoryItem()],
-      }))
-      if (inventoryDraft.movementType === 'arrival') {
-        setInventoryArrivalPositions([createEmptyArrivalPosition()])
-        setInventoryArrivalVariantOpen({})
-      }
-      resetInventoryOperationSelection()
-      setInventoryMatrix(createEmptyInventoryMatrixDraft())
-      setInventoryMatrixColorToAdd('')
-      setInventoryMatrixSizeToAdd('')
+      await finishMovement(result)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
