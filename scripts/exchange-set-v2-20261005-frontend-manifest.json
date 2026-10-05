@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "revision": "exchange-set-v2-20261005-frontend",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "9d32bcaa19458b4840bee7ea5e6f79526462ca7d",
+      "afterGitBlob": "49e2a1acc64ddb298e9b3fc7048565a096ff8023",
+      "baselineFixture": "scripts/fixtures/exchange-set-v2-20261005/src/App.tsx"
+    },
+    "src/app/controllers/useWorkspaceViewModel.tsx": {
+      "beforeGitBlob": "8fbc9e753d7e7561c65ade6e931605e7497c5b69",
+      "afterGitBlob": "dd112696a8375ff03af332fd4a0ef8016f1914e9",
+      "baselineFixture": "scripts/fixtures/exchange-set-v2-20261005/src/app/controllers/useWorkspaceViewModel.tsx"
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "8a5ac22fc94d59a0cc9cf623c9f328a4ae1842eb",
+      "afterGitBlob": "f238b9b06139e6a1c75303c06002e719cb387240",
+      "baselineFixture": "scripts/fixtures/exchange-set-v2-20261005/src/app/types.ts"
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "23c574a853e5483cf94c37eb0afce67e47781034",
+      "afterGitBlob": "8720511e98e70f02b992672aca31bc8fe492956b",
+      "baselineFixture": "scripts/fixtures/exchange-set-v2-20261005/src/app/utils.ts"
+    },
+    "src/features/sections/OrderExchangeSection.tsx": {
+      "beforeGitBlob": "49ae4a303089c3481adc5b0d72980efd668e971f",
+      "afterGitBlob": "b854378c08389a29293a1a1e3e5e603d1e62d721",
+      "baselineFixture": "scripts/fixtures/exchange-set-v2-20261005/src/features/sections/OrderExchangeSection.tsx"
+    },
+    "src/features/sections/OrderExchangeSmartSection.tsx": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "fdfc1e3e94f03d1966615cf251676b6ac8a3ea2f",
+      "absentBefore": true
+    },
+    "src/styles/193-exchange-set-v2.css": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "a36c0a4a556e8fa22a81903a3a55be4b0e41ef5f",
+      "absentBefore": true
+    }
+  }
+}
