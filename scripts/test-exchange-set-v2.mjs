@@ -45,6 +45,7 @@ const cancelStart = exchange.indexOf('export async function cancelExchangeSetV2(
 check(cancelStart >= 0, 'Exchange Set V2 cancellation domain is missing')
 const cancel = exchange.slice(cancelStart)
 check(cancel.includes("WHERE ei.role = 'old'") && cancel.includes('newOrderItemIds'), 'Set cancellation does not guard dependent exchanges across all new items')
+check(cancel.includes('dependentReturn') && cancel.includes('return_items ri'), 'Set cancellation does not block a newer Return that depends on a replacement item')
 check(cancel.includes('for (const event of lifecycleRows.results || [])') && cancel.includes('cancelInventoryLifecycleEvent'), 'Set cancellation does not reverse all inventory lifecycle events')
 check(cancel.includes('for (const planItem of plan.oldItems)') && cancel.includes('restoreNotIssuedReservation'), 'Set cancellation does not restore every old position and never-issued reservation state')
 check(cancel.includes("financialAction === 'extra_payment'") && cancel.includes("financialAction === 'refund'"), 'Set cancellation does not reverse both money directions')
