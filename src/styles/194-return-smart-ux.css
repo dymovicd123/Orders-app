@@ -1,0 +1,35 @@
+/* Return smart UX — keep physical goods, money and intake decisions obvious to operators. */
+.return-smart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+.return-smart-card{border:1px solid #e2e8f0;border-radius:16px;background:#fff;overflow:hidden;transition:.14s ease}
+.return-smart-card.is-selected{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(37,99,235,.08);background:#f8fbff}
+.return-smart-card.is-unissued{background:#f8fafc}
+.return-smart-pick{width:100%;display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:center;padding:13px;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}
+.return-smart-pick:disabled{cursor:default;opacity:1}
+.return-smart-check{width:24px;height:24px;border:2px solid #cbd5e1;border-radius:7px;display:grid;place-items:center;font-weight:900;color:#fff}
+.return-smart-card.is-selected .return-smart-check{border-color:#2563eb;background:#2563eb}
+.return-smart-card.is-unissued .return-smart-check{border-color:#cbd5e1;background:#e2e8f0}
+.return-smart-main{display:grid;gap:3px;min-width:0}.return-smart-main strong{overflow-wrap:anywhere}.return-smart-main small{color:#64748b}
+.return-smart-pick>b{font-size:.76rem;color:#475569;padding:5px 8px;border-radius:999px;background:#f1f5f9;white-space:nowrap}
+.return-smart-card.is-selected .return-smart-pick>b{background:#dbeafe;color:#1d4ed8}
+.return-smart-card.is-unissued .return-smart-pick>b{background:#e2e8f0;color:#64748b}
+.return-smart-controls{display:grid;gap:12px;padding:0 13px 13px}
+.return-smart-one-unit{padding:9px 11px;border-radius:11px;background:#f8fafc;color:#64748b;font-size:.78rem}
+.return-smart-quantity{display:grid;gap:6px}.return-smart-quantity>span,.return-smart-physical>span,.return-smart-physical label>span{font-size:.75rem;font-weight:800;color:#64748b}
+.return-smart-quantity>div{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.return-smart-quantity button{min-width:32px;height:32px;padding:0 10px;border-radius:9px}
+.return-smart-quantity input{width:82px;min-width:82px}
+.return-smart-quantity .return-smart-all{width:auto}
+.return-smart-physical{display:grid;gap:7px;padding-top:10px;border-top:1px solid #e2e8f0}
+.return-smart-choice-row{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.return-smart-choice-row button{border:1px solid #cbd5e1;background:#fff;color:#475569}
+.return-smart-choice-row button.is-active{border-color:#2563eb;background:#eff6ff;color:#1d4ed8}
+.return-smart-physical label{display:grid;gap:5px;padding:10px;border-radius:12px;background:#f8fafc}
+.return-smart-physical small{font-size:.75rem;color:#64748b}
+.return-smart-unissued{display:grid;gap:3px;margin:0 13px 13px;padding:10px 12px;border-radius:12px;background:#f1f5f9;color:#475569}
+.return-smart-unissued span{font-size:.76rem;color:#64748b}
+.return-smart-empty{grid-column:1/-1;padding:18px;border:1px dashed #cbd5e1;border-radius:14px;background:#f8fafc;color:#64748b}
+.return-smart-summary{display:grid;grid-template-columns:minmax(180px,.65fr) minmax(260px,1.35fr);gap:12px;align-items:center;margin-top:12px;padding:12px 14px;border:1px solid #dbeafe;border-radius:14px;background:#f8fbff}
+.return-smart-summary>div{display:grid;gap:2px}.return-smart-summary span{font-size:.72rem;color:#64748b}.return-smart-summary strong{font-size:1.04rem}
+.return-smart-summary p{margin:0;color:#64748b;font-size:.8rem;line-height:1.45}
+@media(max-width:900px){.return-smart-grid{grid-template-columns:1fr}}
+@media(max-width:620px){.return-smart-pick{grid-template-columns:28px minmax(0,1fr)}.return-smart-pick>b{grid-column:2;justify-self:start}.return-smart-choice-row,.return-smart-summary{grid-template-columns:1fr}.return-smart-quantity>div{align-items:stretch}.return-smart-quantity input{flex:1;min-width:74px}}
