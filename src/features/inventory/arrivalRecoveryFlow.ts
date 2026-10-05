@@ -26,7 +26,7 @@ type OpenArrivalRecoveryInput = {
   result: ArrivalRecoveryResponse
   retryItems: ArrivalRecoveryItem[]
   apiFetch: (input: string, init?: RequestInit) => Promise<Response>
-  readJsonResponse: <T>(response: Response, label: string, options?: { allowHttpError?: boolean }) => Promise<T>
+  readJsonResponse: (response: Response, label: string, options?: { allowHttpError?: boolean }) => Promise<{ ok?: boolean; message?: string }>
   makeRequestId: (prefix: string) => string
   normalizeText: (value: unknown) => string
   submitMovement: (items: ArrivalRecoveryItem[]) => Promise<SubmitResult>
@@ -75,7 +75,7 @@ export async function openArrivalRecoveryFlow(input: OpenArrivalRecoveryInput) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ requestId: restoreRequestId }),
         })
-        const restoreResult = await input.readJsonResponse<{ ok?: boolean; message?: string }>(
+        const restoreResult = await input.readJsonResponse(
           restoreResponse,
           'Восстановление товара',
           { allowHttpError: true },
