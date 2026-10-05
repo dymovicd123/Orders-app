@@ -33,6 +33,18 @@
           "afterBlock": "      <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />\n\n      <ArrivalRecoveryDialog\n        prompt={arrivalRecoveryPrompt}\n        busy={inventoryMovementBusy}\n        error={arrivalRecoveryError}\n        onConfirm={() => { void arrivalRecoveryContinueRef.current?.() }}\n        onClose={() => {\n          if (inventoryMovementBusy) return\n          setArrivalRecoveryPrompt(null)\n          setArrivalRecoveryError('')\n          arrivalRecoveryContinueRef.current = null\n        }}\n      />\n\n"
         }
       ]
+    },
+    "src/app/lazySections.tsx": {
+      "beforeGitBlob": "db570fac6fddb7a24219dd8a4fbcaaae12eeee6d",
+      "beforeLines": 66,
+      "afterGitBlob": "fdfa9218e8aeb8ad5aee4c3b90f873d470e11d68",
+      "afterLines": 67,
+      "replacements": [
+        {
+          "beforeBlock": "export const ReturnedItemResolutionModal = namedLazy(() => import('../features/orders/ReturnedItemResolutionModal'), 'ReturnedItemResolutionModal')\n",
+          "afterBlock": "export const ReturnedItemResolutionModal = namedLazy(() => import('../features/orders/ReturnedItemResolutionModal'), 'ReturnedItemResolutionModal')\nexport const ArrivalRecoveryDialog = namedLazy(() => import('../features/inventory/views/ArrivalRecoveryDialog'), 'ArrivalRecoveryDialog')\n"
+        }
+      ]
     }
   }
 }
