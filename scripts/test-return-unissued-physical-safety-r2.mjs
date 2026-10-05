@@ -22,7 +22,7 @@ check(save.includes('если нужно вернуть только деньг�
 
 check(ui.includes('Есть товары, которые клиенту не выдавали'), 'Return UI does not explain the never-issued case')
 check(ui.includes('сначала измените состав заказа'), 'Return UI does not direct cancelled-before-handover goods to Order edit')
-check(ui.includes('Не выдавали клиенту') && ui.includes('Остаётся на месте'), 'Never-issued Return rows are not visibly blocked from physical intake')
+check(ui.includes("'Не выдавали'") && ui.includes('Товар остаётся у вас') && ui.includes('disabled={item.issuedToClient === false || returnBusy}'), 'Never-issued Return rows are not visibly blocked from physical intake')
 check(ui.includes('handleEditOrder(returnSelectedOrder)'), 'Return UI does not offer a direct safe Order edit action')
 check(ui.includes("(item.isWorkshop ? 'no_stock' : 'warehouse')"), 'Delayed Workshop Return intake can default to Warehouse from history')
 

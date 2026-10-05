@@ -28,7 +28,7 @@ check(app.includes('selectedOldItem.availableOperationQuantity ?? selectedOldIte
 check(exchangeView.includes('operationAvailableQuantity'), 'Exchange form does not project current available old quantity')
 check(exchangeView.includes('queuedOldQuantityByItem'), 'Exchange form does not reserve unsaved queued pair quantities locally')
 check(exchangeView.includes('max={effectiveOldAvailableQuantity}'), 'Exchange old-quantity input is not capped by current availability')
-check(returnsView.includes('<th>Доступно к возврату</th>'), 'Return form still labels remaining quantity as original order quantity')
+check(returnsView.includes('доступно {maxQuantity} шт.'), 'Return form no longer labels the backend-derived remaining quantity as available to return')
 
 const marker = '`WITH requested_orders(order_id) AS (VALUES ${requestedOrderValues}),'
 const sqlStartMarker = relations.indexOf(marker)

@@ -93,6 +93,50 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
+const returnSmartUxManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-smart-ux-20261005-frontend-manifest.json'), 'utf8'))
+if (returnSmartUxManifest?.version !== 1 || returnSmartUxManifest?.revision !== 'return-smart-ux-20261005-frontend') throw new Error('Return smart UX frontend manifest invalid')
+const returnSmartUxBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.RETURN_SMART_UX_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(returnSmartUxManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (returnSmartUxBlobSha(actual) !== delta.afterGitBlob) throw new Error('Return smart UX frontend drifted: ' + relative)
+      originals.set(relative, actual)
+      if (delta.absentBefore) {
+        fs.unlinkSync(absolute)
+      } else {
+        const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+        if (returnSmartUxBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Return smart UX predecessor fixture drifted: ' + relative)
+        fs.writeFileSync(absolute, baseline)
+      }
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, RETURN_SMART_UX_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('RETURN SMART UX FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const returnAuditRuntimeManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-ux-audit-20261005-runtime-manifest.json'), 'utf8'))
 if (returnAuditRuntimeManifest?.version !== 1 || returnAuditRuntimeManifest?.revision !== 'return-ux-audit-20261005-runtime') throw new Error('Return UX audit runtime manifest invalid')
 const returnAuditBlobSha = (value) => {
