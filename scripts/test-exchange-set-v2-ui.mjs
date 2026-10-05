@@ -29,7 +29,7 @@ check(!smart.includes('Без доплаты/возврата') && !smart.includ
 
 check(smart.includes('Ещё у клиента') && smart.includes("physicalState: 'pending'"), 'Pending customer return choice is missing')
 check(smart.includes('Клиенту не выдавалась') && smart.includes("return issued ? 'pending' : 'not_issued'"), 'Never-issued automatic disposition is missing')
-check(smart.includes("status ? issuedStockStatuses.has(status) : exchangeSelectedOrder?.shipping_status === 'sent'"), 'Smart Exchange does not prefer exact per-item handover truth over broad order shipping status')
+check(smart.includes("issuedStockStatuses.has(status)") && smart.includes("sentWorkshop") && smart.includes("!status && exchangeSelectedOrder?.shipping_status === 'sent'"), 'Smart Exchange does not combine exact stock handover truth with the Workshop-only sent fallback')
 check(smart.includes('Вернуть на Склад') && smart.includes('Вернуть в Бутик') && smart.includes('Не добавлять в остаток'), 'Per-item returned-stock disposition choices are incomplete')
 check(smart.includes('Подтвердить прибытие всех товаров'), 'Pending-return queue does not confirm the whole arrival')
 check(smart.includes('deferRefresh: true') && smart.includes('if (!received) break'), 'Grouped return intake still performs heavy per-line refreshes or continues after a failed line')
