@@ -7301,6 +7301,7 @@ function removeDebtPayment(index: number) {
     productName: string
     externalId: string
     freshnessDecision?: 'already_counted' | 'arrived_after_check'
+    deferRefresh?: boolean
   }) {
     const destinationLabel = input.destination === 'warehouse' ? 'Склад' : input.destination === 'boutique' ? 'Бутик' : 'без добавления в остаток'
     const setBusy = input.operationType === 'return' ? setReturnBusy : setExchangeBusy
@@ -7368,13 +7369,15 @@ function removeDebtPayment(index: number) {
       }
 
       invalidateInventoryStockCaches(true)
-      await Promise.allSettled([
-        input.operationType === 'return' ? loadReturnHistory() : loadExchangeHistory(),
-        refreshActivityLogIfVisible(),
-        loadInventoryData('warehouse', true, '', false),
-        loadInventoryData('boutique', true, '', false),
-        isAdmin ? loadInventoryLifecycle(true) : Promise.resolve(null),
-      ])
+      if (!input.deferRefresh) {
+        await Promise.allSettled([
+          input.operationType === 'return' ? loadReturnHistory() : loadExchangeHistory(),
+          refreshActivityLogIfVisible(),
+          loadInventoryData('warehouse', true, '', false),
+          loadInventoryData('boutique', true, '', false),
+          isAdmin ? loadInventoryLifecycle(true) : Promise.resolve(null),
+        ])
+      }
       if (input.destination === 'no_stock') {
         setMessage(`«${input.productName}» отмечен как полученный. В остаток товар не добавлялся.`)
       } else if (result.freshnessProtected) {
