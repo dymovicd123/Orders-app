@@ -34,9 +34,10 @@ check(retirement.includes('restoredVariantCount !== snapshots.length'), 'restore
 check(retirement.includes("WHERE retirement_id=? AND status='completed'"), 'repeat restore does not reuse prior completed restore')
 check(retirement.includes("pending_rr.retirement_id=op.id AND pending_rr.status='started'") && retirement.includes("completed_rr.retirement_id=op.id AND completed_rr.status='completed'") && retirement.includes(") THEN 0\n           WHEN EXISTS("), 'partial restore can still be reported as working again')
 
-check(inventory.includes("allowRetiredRecreate: movementType === 'arrival'"), 'only Arrival should opt into retired Catalog recreation')
-check(inventory.includes('retiredProductIdsToReactivate'), 'Arrival cannot revive a retired product shell')
-check(inventory.includes('lookup.byInactiveExact') && inventory.includes('lookup.byInactiveIdentity'), 'Arrival cannot find a retired product by human identity')
+check(inventory.includes("allowRetiredRecreate: movementType === 'arrival'"), 'only Arrival should opt into fresh retired execution/SKU recreation')
+check(inventory.includes('Приход не восстанавливает удалённый товар автоматически'), 'Arrival must require explicit Catalog restore for a retired product shell')
+check(!inventory.includes('retiredProductIdsToReactivate'), 'Arrival must not silently reactivate a retired product shell')
+check(inventory.includes('lookup.byInactiveExact') && inventory.includes('lookup.byInactiveIdentity'), 'Arrival cannot identify and fail closed on a retired product by human identity')
 check(inventory.includes('retiredExecutionKeys.has(key) && !options.allowRetiredRecreate'), 'retired execution guard still blocks Arrival or is removed for all operations')
 check(inventory.includes('INSERT OR IGNORE INTO catalog_stock_positions'), 'Arrival cannot create fresh execution generation')
 check(inventory.includes('PHYS-'), 'Arrival fresh SKU generation does not avoid retired external-id collision')
@@ -52,4 +53,4 @@ check(historyUi.includes('Восстановить'), 'restore action missing fr
 check(historyUi.includes('Восстановление не завершено') && historyUi.includes('Продолжить'), 'partial restore is not represented honestly/resumably in UI')
 check(!historyUi.includes('window.confirm'), 'restore UI fell back to browser confirmation')
 
-console.log('CATALOG SAFE RESTORE PASSED — restore creates a new working generation with clean stock/history isolation, while Arrival may reintroduce retired human variants without reviving old SKU rows')
+console.log('CATALOG SAFE RESTORE PASSED — explicit Catalog restore owns retired product shells; Arrival may create fresh retired execution/SKU generations only after the product is active, without reviving old SKU rows')
