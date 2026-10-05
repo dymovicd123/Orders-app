@@ -27,45 +27,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 const root = process.cwd()
-const mainRuntimeSyncFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/branch2-main-runtime-sync-20261002-frontend-manifest.json'), 'utf8'))
-if (mainRuntimeSyncFrontendManifest?.version !== 1 || mainRuntimeSyncFrontendManifest?.revision !== 'branch2-main-runtime-sync-20261002-frontend') throw new Error('Branch2/main runtime sync frontend manifest invalid')
-const mainRuntimeSyncFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.BRANCH2_MAIN_RUNTIME_SYNC_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(mainRuntimeSyncFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (mainRuntimeSyncFrontendBlobSha(actual) !== delta.afterGitBlob) {
-        throw new Error('Branch2/main runtime sync frontend drifted: ' + relative)
-      }
-      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
-      if (mainRuntimeSyncFrontendBlobSha(baseline) !== delta.beforeGitBlob) {
-        throw new Error('Branch2/main runtime sync frontend predecessor fixture drifted: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, baseline)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, BRANCH2_MAIN_RUNTIME_SYNC_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('BRANCH2 / MAIN RUNTIME SYNC FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
+
 const legacyPath = path.join(root, 'scripts/test-step1906b-frontend-modularization-legacy.mjs')
 const manifestPath = path.join(root, 'scripts/order-edit-safe-payment-corrections-frontend-manifest.json')
 const appPath = path.join(root, 'src/App.tsx')
@@ -130,6 +92,54 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+
+const mainRuntimeSync20261005FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/branch2-main-runtime-sync-20261005-frontend-manifest.json'), 'utf8'))
+if (mainRuntimeSync20261005FrontendManifest?.version !== 1 || mainRuntimeSync20261005FrontendManifest?.revision !== 'branch2-main-runtime-sync-20261005-frontend') throw new Error('Branch2/main runtime sync 20261005 Frontend manifest invalid')
+const mainRuntimeSync20261005FrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.BRANCH2_MAIN_RUNTIME_SYNC_20261005_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(mainRuntimeSync20261005FrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (mainRuntimeSync20261005FrontendBlobSha(actual) !== delta.afterGitBlob) {
+        throw new Error('Branch2/main runtime sync 20261005 Frontend drifted: ' + relative)
+      }
+      originals.set(relative, actual)
+      if (delta.absentBefore) {
+        fs.unlinkSync(absolute)
+      } else {
+        const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+        if (mainRuntimeSync20261005FrontendBlobSha(baseline) !== delta.beforeGitBlob) {
+          throw new Error('Branch2/main runtime sync 20261005 Frontend predecessor fixture drifted: ' + relative)
+        }
+        fs.writeFileSync(absolute, baseline)
+      }
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, BRANCH2_MAIN_RUNTIME_SYNC_20261005_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('BRANCH2 / MAIN RUNTIME SYNC 20261005 FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const mainRuntimeSyncFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/branch2-main-runtime-sync-20261002-frontend-manifest.json'), 'utf8'))
 if (mainRuntimeSyncFrontendManifest?.version !== 1 || mainRuntimeSyncFrontendManifest?.revision !== 'branch2-main-runtime-sync-20261002-frontend') throw new Error('Branch2/main runtime sync frontend manifest invalid')
 const mainRuntimeSyncFrontendBlobSha = (value) => {

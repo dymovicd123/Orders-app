@@ -18,22 +18,21 @@ const block = (text, start, end) => {
   return text.slice(from, to)
 }
 
-// The shared Operations submit button must not reintroduce a blanket admin-only UI gate.
+// Operations remain shared, but Arrival itself is an admin-only operation.
 check(!movement.includes("disabled={inventoryMovementBusy || !isAdmin ||"), 'Operations submit is still blanket admin-only')
-check(movement.includes("disabled={inventoryMovementBusy || (inventoryDraft.movementType === 'arrival' ? inventoryArrivalSummary.rows === 0 : inventoryDraftSummary.rows === 0)}"), 'Operations submit does not use the manager-safe gate')
-check(!movement.includes("| 'isAdmin'"), 'Movement renderer still requests an unused admin flag')
-check(!movement.includes('    isAdmin,'), 'Movement renderer still destructures an unused admin flag')
+check(movement.includes("disabled={inventoryMovementBusy || (inventoryDraft.movementType === 'arrival' ? inventoryArrivalSummary.rows === 0 : inventoryDraftSummary.rows === 0)}"), 'Operations submit gate changed unexpectedly')
+check(movement.includes("| 'isAdmin'"), 'Movement renderer must receive role truth to hide Arrival')
+check(movement.includes('    isAdmin,'), 'Movement renderer must destructure role truth for Arrival visibility')
+check(movement.includes("...(isAdmin ? [['arrival', 'Приход']] : [])"), 'Arrival action is visible to non-admin users')
+check(app.includes("if (!isAdmin && inventoryDraft.movementType === 'arrival')"), 'frontend Arrival admin boundary disappeared')
+check(app.includes('Приход товара доступен только администратору.'), 'Arrival needs a clear admin-only explanation')
 
-// The existing frontend boundary remains responsible for unknown Arrival/master-data rows.
-check(app.includes("if (!isAdmin && inventoryDraft.movementType === 'arrival' && cleanItems.some((item) => !item.variantId))"), 'known-only Arrival manager boundary disappeared')
-check(app.includes('Новый товар или новая характеристика требуют админ-режима'), 'unknown Arrival needs a clear admin explanation')
-
-// Backend permission truth remains the authority: manager-safe existing-stock work, guarded expansion.
+// Backend permission truth remains the authority: routine warehouse work stays manager-safe; Arrival is privileged.
 const movementsRoute = block(worker, "if (url.pathname === '/api/inventory/movements' && request.method === 'POST')", "if (url.pathname === '/api/inventory/transfer' && request.method === 'POST')")
 check(movementsRoute.includes("movementType === 'manual_set' || movementType === 'writeoff'"), 'manager-safe correction/writeoff contract missing')
-check(movementsRoute.includes("movementType === 'arrival'"), 'known Arrival contract missing')
-check(movementsRoute.includes("input.items.every((item) => toInt(item?.variantId, 0) > 0)"), 'known Arrival exact-variant guard missing')
-check(movementsRoute.includes('requireAdminAccess(request)'), 'catalog-expanding movement must remain admin-guarded')
+check(movementsRoute.includes("if (!routineExistingStockOperation)"), 'privileged movement boundary missing')
+check(movementsRoute.includes('requireAdminAccess(request)'), 'Arrival and other privileged inventory movements must remain admin-guarded')
+check(!movementsRoute.includes('arrivalCatalogCreationMode'), 'obsolete manager Arrival role path returned')
 const transferRoute = block(worker, "if (url.pathname === '/api/inventory/transfer' && request.method === 'POST')", "if (url.pathname === '/api/catalog' && request.method === 'GET')")
 check(!transferRoute.includes('requireAdminAccess(request)'), 'known-SKU transfer unexpectedly became admin-only')
 
@@ -56,4 +55,4 @@ check(frontendPreservation.includes('w3WarehouseReliabilityPath') && frontendPre
 check(inventorySection.includes('<div className="inventory-arrival-legacy-workspace">'), 'frozen Arrival workspace changed')
 check(inventorySection.includes('<button className="inventory-arrival-add-position" type="button" onClick={addInventoryArrivalPosition}>+ Добавить позицию</button>'), 'frozen Arrival add-position action changed')
 
-console.log('W3.1A WAREHOUSE RELIABILITY PASSED — manager-safe Operations restored; Attention refreshes are demand-driven; Arrival remains frozen')
+console.log('W3.1A WAREHOUSE RELIABILITY PASSED — manager-safe routine Operations coexist with admin-only Arrival, demand-driven Attention and the frozen Arrival layout')

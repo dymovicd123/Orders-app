@@ -14,13 +14,29 @@ try {
     utils.includes("physicalState: (item.sourceType === 'workshop' ? 'no_stock' : 'pending')"),
     'Workshop Return drafts no longer default to no-stock',
   )
+  const exchangeDraftStart = utils.indexOf('export function createExchangeDraft(')
+  const exchangeDraftBody = exchangeDraftStart >= 0 ? utils.slice(exchangeDraftStart, utils.indexOf('\n}', exchangeDraftStart) + 2) : ''
   check(
-    utils.includes("oldPhysicalState: firstItem?.sourceType === 'workshop' ? 'no_stock' : 'pending'"),
+    exchangeDraftBody.includes("oldPhysicalState: firstItem?.sourceType === 'workshop'") &&
+      exchangeDraftBody.includes("? 'no_stock'") &&
+      exchangeDraftBody.includes("order?.shipping_status === 'sent'") &&
+      exchangeDraftBody.includes(": 'not_issued'"),
     'Workshop Exchange old-item drafts no longer default to no-stock',
   )
+
+  const exchangeDefaultStart = exchange.indexOf('const defaultOldPhysicalStateForItem =')
+  const exchangeDefaultEnd = exchange.indexOf('const resetObservedStock', exchangeDefaultStart)
+  const exchangeDefaultHelper = exchangeDefaultStart >= 0 && exchangeDefaultEnd > exchangeDefaultStart
+    ? exchange.slice(exchangeDefaultStart, exchangeDefaultEnd)
+    : ''
   check(
-    exchange.includes("oldPhysicalState: selectedItem?.sourceType === 'workshop' ? 'no_stock' : 'pending'"),
-    'Changing the Exchange old item can preserve an unsafe stock disposition',
+    exchangeDefaultHelper.includes("item?.sourceType === 'workshop'") &&
+      exchangeDefaultHelper.includes("? 'no_stock'"),
+    'Changing the Exchange old item can preserve an unsafe Workshop stock disposition',
+  )
+  check(
+    exchange.includes('oldPhysicalState: defaultOldPhysicalStateForItem(selectedItem)'),
+    'Changing the Exchange old item no longer uses the guarded physical-state default',
   )
   check(
     returns.includes('Для вещи из Цеха по умолчанию остаток не создаётся') &&

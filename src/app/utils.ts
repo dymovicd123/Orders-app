@@ -779,7 +779,11 @@ export function createExchangeDraft(order?: OrderRecord | null): ExchangeDraft {
     oldItemId: Number(firstItem?.id || 0),
     oldQuantity: 1,
     oldReturnSource: 'none',
-    oldPhysicalState: firstItem?.sourceType === 'workshop' ? 'no_stock' : 'pending',
+    oldPhysicalState: firstItem?.sourceType === 'workshop'
+      ? 'no_stock'
+      : order?.shipping_status === 'sent'
+        ? 'pending'
+        : 'not_issued',
     newItem: {
       ...createEmptyEditorItem(),
       sourceType: inheritedSource,

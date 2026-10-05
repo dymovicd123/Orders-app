@@ -12,7 +12,7 @@ import { applyCanonicalInventoryLifecycleEvent, canAutoApplyFreshWorkshopInbound
 import { buildPaymentAndMoneyEventStatements, financialEventStatement, readOrderFinancialLedger, refundMoneyEventStatement, refundReversalMoneyEventStatement, removeSinglePaymentWithMoneyEvent, syncOrderFinancialLedger } from './money.ts'
 import { normalizeOrderItems } from './order-core.ts'
 import { buildItemizedOrderWritePlan, type ItemizedOrderWritePlan } from './order-pricing.ts'
-import { correctMistakenOrderHandover, fulfillOrderReservationsV2, resolveCatalogProductAndVariantV2 } from './order-reservations.ts'
+import { correctMistakenOrderHandover, fulfillOrderReservationsV2, reactivateReleasedOrderReservationV2, releaseOrderReservationV2, resolveCatalogProductAndVariantV2 } from './order-reservations.ts'
 import { getOrder, insertOrderContent } from './orders-write.ts'
 import { normalizeWorkshopTaskStatus, refreshOrderWorkshopStatusFromTasks } from './workshop.ts'
 import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'
@@ -1045,7 +1045,7 @@ export async function createExchange(
     oldItemId?: number;
     oldQuantity?: number;
     oldReturnSource?: unknown;
-    oldPhysicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock';
+    oldPhysicalState?: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock';
     newItem?: NonNullable<OrderInput['items']>[number];
     newSourceWasManuallyChanged?: boolean;
     expectedOrderTotal?: number;
@@ -1110,17 +1110,25 @@ export async function createExchange(
   const oldQuantity = requestedOldQuantity;
   const oldItemIsWorkshop = Boolean(toInt(oldItem.is_workshop, 0));
   const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
+  const rawOldPhysicalState = cleanText(input.oldPhysicalState);
+  const oldPhysicalState = ['not_issued', 'pending', 'warehouse', 'boutique', 'no_stock'].includes(rawOldPhysicalState)
+    ? rawOldPhysicalState as 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'
+    : null;
+  if (rawOldPhysicalState && !oldPhysicalState) throw new Error('Неизвестный физический статус старой вещи обмена.');
+  const oldWasNotIssued = oldPhysicalState === 'not_issued';
+  const oldWasAlreadyIssued = orderItemWasPhysicallyIssued(oldItem);
+  if (oldWasNotIssued && oldWasAlreadyIssued) {
+    throw new CriticalOperationConflictError(
+      'Эта позиция уже отмечена как выданная клиенту. Нельзя выбрать «Не выдавали клиенту». Если вещь вернулась, укажите, куда её приняли.'
+    );
+  }
   const oldItemNeedsHandoverReconciliation = Boolean(
     !operationContext.baselineCaptured && humanInventoryModelEnabled
     && !oldItemIsWorkshop
-    && !orderItemWasPhysicallyIssued(oldItem)
+    && !oldWasNotIssued
+    && !oldWasAlreadyIssued
   );
-  const rawOldPhysicalState = cleanText(input.oldPhysicalState);
-  const oldPhysicalState = ['pending', 'warehouse', 'boutique', 'no_stock'].includes(rawOldPhysicalState)
-    ? rawOldPhysicalState as 'pending' | 'warehouse' | 'boutique' | 'no_stock'
-    : null;
-  if (rawOldPhysicalState && !oldPhysicalState) throw new Error('Неизвестный физический статус старой вещи обмена.');
-  const oldPhysicalTracking = oldPhysicalState !== null;
+  const oldPhysicalTracking = oldPhysicalState !== null && !oldWasNotIssued;
   const trackedOldReturnSource = oldPhysicalState === 'warehouse' || oldPhysicalState === 'boutique' ? oldPhysicalState : 'none';
   const oldReturnSource = oldPhysicalTracking ? trackedOldReturnSource : normalizeExchangeReturnSource(input.oldReturnSource);
   const rawExchangeDate = cleanText(input.exchangeDate);
@@ -1354,9 +1362,19 @@ export async function createExchange(
     }
   }
 
-  // Emergency exchange recovery: earlier shipping failures could leave a physically issued
-  // customer item as an active reservation. Reconcile only this line before accepting it back,
-  // so the old outbound and the exchange return are both recorded without double-counting stock.
+  if (!operationContext.baselineCaptured && humanInventoryModelEnabled && !oldItemIsWorkshop && oldWasNotIssued) {
+    await releaseOrderReservationV2(
+      db,
+      oldItemId,
+      timestamp,
+      `Обмен без физической выдачи старой позиции ${cleanText((existing as any).external_id)}`,
+    );
+  }
+
+  // Legacy recovery path: if the operator explicitly says that the customer has/returned the item
+  // while the old reservation is still open, reconcile the missing handover before accepting it back.
+  // The explicit "not_issued" state above never enters this path and therefore never performs a fake
+  // stock -1/+1 round trip for an item that physically stayed in the shop.
   if (oldItemNeedsHandoverReconciliation) {
     const handover = await fulfillOrderReservationsV2(
       db,
@@ -1423,7 +1441,7 @@ export async function createExchange(
       exchangeId, oldItemId, cleanText(oldItem.product_name_snapshot), cleanText(oldItem.gender_snapshot) || null,
       cleanText(oldItem.color_snapshot) || null, cleanText(oldItem.material_snapshot) || null,
       cleanText(oldItem.length_snapshot) || null, cleanText(oldItem.size_snapshot) || null, oldQuantity,
-      oldReturnSource === 'none' ? null : oldReturnSource,
+      oldWasNotIssued ? 'not_issued' : (oldReturnSource === 'none' ? null : oldReturnSource),
       oldPhysicalTracking ? 1 : 0, oldPhysicalTracking && oldPhysicalState !== 'pending' ? timestamp : null, timestamp,
     ),
   );
@@ -2076,6 +2094,7 @@ export async function listExchanges(db: D1Database, url: URL) {
       oldGender: row.old_gender_snapshot || '', oldColor: row.old_color_snapshot || '', oldMaterial: row.old_material_snapshot || '', oldLength: row.old_length_snapshot || '', oldSize: row.old_size_snapshot || '', oldReturnSource: row.old_inventory_source || row.old_return_source || 'none',
       oldOperationItemId: row.old_operation_item_id == null ? null : toInt(row.old_operation_item_id, 0) || null,
       oldPhysicalTracking: Boolean(toInt(row.old_physical_tracking, 0)), oldPhysicalReceivedAt: cleanText(row.old_physical_received_at) || null,
+      oldWasNotIssued: cleanText(row.old_inventory_source) === 'not_issued',
       oldIsWorkshop: Boolean(toInt(row.old_is_workshop, 0)),
       newItemId: row.new_order_item_id, newProductName: row.new_product_name || '—', newQuantity: row.new_item_quantity || 0,
       newGender: row.new_gender_snapshot || '', newColor: row.new_color_snapshot || '', newMaterial: row.new_material_snapshot || '', newLength: row.new_length_snapshot || '', newSize: row.new_size_snapshot || '', newSourceType: row.new_inventory_source || row.new_source_type,
@@ -2287,7 +2306,14 @@ export async function cancelExchange(db: D1Database, exchangeId: number, input: 
   let operationContext = parseCriticalContext<Record<string, any>>(criticalOperation.row);
   if (!exchangeId) throw new Error('exchangeId is required.');
   const exchange = await db.prepare(
-    `SELECT e.*, o.external_id, o.order_status, o.pricing_mode
+    `SELECT e.*, o.external_id, o.order_status, o.pricing_mode,
+            EXISTS(
+              SELECT 1
+              FROM exchange_items marker
+              WHERE marker.exchange_id = e.id
+                AND marker.role = 'old'
+                AND marker.inventory_source = 'not_issued'
+            ) AS old_not_issued
      FROM exchanges e
      JOIN orders o ON o.id = e.order_id
      WHERE e.id = ?`
@@ -2506,9 +2532,10 @@ export async function cancelExchange(db: D1Database, exchangeId: number, input: 
   }
 
   const restoredOldQuantity = Math.max(0, toInt(operationContext.restoredOldQuantityTarget, Math.max(0, toInt(oldItem.quantity, 0)) + oldQuantity));
+  const exchangeOldWasNotIssued = Boolean(toInt(exchange.old_not_issued, 0));
   const restoredStockStatus = cleanText(exchange.old_item_stock_writeoff_status)
     || cleanText(oldItem.stock_writeoff_status)
-    || (Boolean(toInt(oldItem.is_workshop, 0)) ? 'none' : 'written_off');
+    || (Boolean(toInt(oldItem.is_workshop, 0)) ? 'none' : exchangeOldWasNotIssued ? 'reservation_released' : 'written_off');
   await db.prepare(
     `UPDATE order_items
      SET quantity = ?, line_total = unit_price * ?, stock_writeoff_status = ?
@@ -2520,6 +2547,20 @@ export async function cancelExchange(db: D1Database, exchangeId: number, input: 
     toInt(exchange.old_order_item_id, 0),
     orderId,
   ).run();
+
+  if (exchangeOldWasNotIssued && !Boolean(toInt(oldItem.is_workshop, 0))) {
+    const reactivated = await reactivateReleasedOrderReservationV2(
+      db,
+      toInt(exchange.old_order_item_id, 0),
+      timestamp,
+      `Отмена обмена #${exchangeId}: восстановление резерва невыданной позиции`,
+    );
+    if (!reactivated) {
+      throw new CriticalOperationConflictError(
+        'Не удалось безопасно восстановить резерв старой невыданной позиции. Отмена остановлена — обновите заказ и повторите.'
+      );
+    }
+  }
 
   const oldWorkshopTaskId = toInt(exchange.old_workshop_task_id, 0);
   if (oldWorkshopTaskId) {

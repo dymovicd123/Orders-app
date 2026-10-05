@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "revision": "branch2-main-runtime-sync-20261005-worker",
+  "files": {
+    "worker/domains/catalog-retirement.ts": {
+      "beforeGitBlob": "ac7d878c9d88d1e66ad492f5308d3389dbd10336",
+      "afterGitBlob": "0a12b6a8f0437085b708417911954ac26b50f993",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261005/worker/domains/catalog-retirement.ts"
+    },
+    "worker/domains/exchange-batch.ts": {
+      "beforeGitBlob": "f7817ec6296a27c2bedd2bcdcf9a68abdeb6112a",
+      "afterGitBlob": "725515005ad9e64d30e6eb2605f974c7947358e3",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261005/worker/domains/exchange-batch.ts"
+    },
+    "worker/domains/inventory-movement.ts": {
+      "beforeGitBlob": "cb76c177b655e66682b6e6f97ca1a26cf5163c31",
+      "afterGitBlob": "3cec27d490be5a7b6dfea57408bd8e3a1c4b4c59",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261005/worker/domains/inventory-movement.ts"
+    },
+    "worker/domains/order-reservations.ts": {
+      "beforeGitBlob": "47c50f20247187c6aa06a29948ea0b109ce4723c",
+      "afterGitBlob": "b27726ebea9546120d1b75a6862bd77b9154714e",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261005/worker/domains/order-reservations.ts"
+    },
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "894425dae4c1385f8fa3ae140d2f31cd07515fe2",
+      "afterGitBlob": "db910492153aa5ed48b56285968aa7dc09d86e81",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261005/worker/domains/orders-write.ts"
+    },
+    "worker/domains/returns-exchanges.ts": {
+      "beforeGitBlob": "bf6baf5b03453c1ed4be2668ac5c6aefe8c3c76c",
+      "afterGitBlob": "5f3fb92b5383709e2791f4f6ddd7dc5d0ad29017",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261005/worker/domains/returns-exchanges.ts"
+    },
+    "worker/index.ts": {
+      "beforeGitBlob": "7bf8fdaec83181b03997c7bb7c281813833bf692",
+      "afterGitBlob": "31262087815423d5ebd13f7b28cd0335ac75470d",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261005/worker/index.ts"
+    }
+  }
+}

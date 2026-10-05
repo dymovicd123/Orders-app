@@ -39,12 +39,13 @@ const invEnd = inventory.indexOf('\n\nexport async function applyInventoryMoveme
 const invBody = inventory.slice(invStart, invEnd)
 check(invBody.includes('const assertKnownProductGender ='), 'inventory materializer lacks pre-mutation fixed-gender preflight')
 check(invBody.includes('assertKnownProductGender(activeProduct, item)'), 'active fixed product is not checked before inventory materialization')
-check(invBody.includes('assertKnownProductGender(retired, item)'), 'retired fixed product is not checked before Arrival reactivation')
-check(invBody.indexOf('assertKnownProductGender(retired, item)') < invBody.indexOf('retiredProductIdsToReactivate.add(retiredId)'),
-  'Arrival can schedule retired product reactivation before fixed-gender validation')
+check(invBody.includes('assertKnownProductGender(retired, item)'), 'retired fixed product is not checked before Arrival rejects the retired shell')
+check(invBody.indexOf('assertKnownProductGender(retired, item)') < invBody.indexOf('retiredProductConflicts.push'),
+  'Arrival captures a retired product recovery only after fixed-gender validation')
+check(!invBody.includes('retiredProductIdsToReactivate'), 'Arrival can still schedule a retired product reactivation')
 check(invBody.includes('return assertCatalogGenderAllowedForScope(product?.gender_scope, explicit, product?.name).gender'),
   'bulk SKU insertion can still use explicit opposite gender')
-check(invBody.indexOf('const assertKnownProductGender =') < invBody.indexOf('UPDATE catalog_products'),
+check(invBody.indexOf('const assertKnownProductGender =') < invBody.indexOf('INSERT OR IGNORE INTO catalog_products'),
   'inventory fixed-gender preflight occurs only after a product mutation')
 
 const reviewStart = review.indexOf('export async function resolveCatalogReview')

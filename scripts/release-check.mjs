@@ -315,7 +315,7 @@ try {
   run('Step 190.3 read/error/cache safety tests', process.execPath, [path.join(root, 'scripts/test-step1903-read-error-cache-safety.mjs')])
   run('Step 190.4 storage/database hygiene tests', process.execPath, [path.join(root, 'scripts/test-step1904-storage-database-hygiene.mjs')])
   run('Step 190.5 UI / small-screen acceptance tests', process.execPath, [path.join(root, 'scripts/test-step1905-ui-small-screen-acceptance.mjs')])
-  run('Branch2 main runtime sync', process.execPath, [path.join(root, 'scripts/test-branch2-main-runtime-sync-20261002.mjs')])
+  run('Branch2 main runtime sync', process.execPath, [path.join(root, 'scripts/test-branch2-main-runtime-sync-20261005.mjs')])
   run('Branch2 session hot-path hotfix tests', process.execPath, [path.join(root, 'scripts/test-session-hotpath-branch2.mjs')])
   run('Step 190.6A Worker modularization tests', process.execPath, [path.join(root, 'scripts/test-step1906a-worker-modularization.mjs')])
   run('Step 190.6B frontend controller modularization tests', process.execPath, [path.join(root, 'scripts/test-step1906b-frontend-modularization.mjs')])

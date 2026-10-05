@@ -1001,6 +1001,85 @@ export async function releaseOrderReservationV2(db: D1Database, orderItemId: num
 }
 
 
+export async function reactivateReleasedOrderReservationV2(
+  db: D1Database,
+  orderItemId: number,
+  timestamp: string,
+  reason = 'Возврат отменённой позиции в заказ',
+) {
+  const reservation = await db.prepare(
+    `SELECT id, inventory_source, variant_id, quantity, status
+     FROM inventory_reservations
+     WHERE order_item_id = ?
+     LIMIT 1`
+  ).bind(orderItemId).first<Record<string, unknown>>();
+  if (!reservation?.id) return false;
+
+  const status = cleanText(reservation.status);
+  if (status === 'active' || status === 'unresolved') return true;
+  if (status !== 'released') return false;
+
+  const reservationId = toInt(reservation.id, 0);
+  const variantId = toInt(reservation.variant_id, 0);
+  const quantity = Math.max(1, toInt(reservation.quantity, 1));
+  const source = normalizeSourceType(reservation.inventory_source);
+  const statements: D1PreparedStatement[] = [];
+
+  if (variantId) {
+    await loadCanonicalVariantSnapshot(db, variantId, { activeOnly: true });
+    const stock = await db.prepare(
+      `SELECT id
+       FROM inventory_stock
+       WHERE inventory_source = ? AND variant_id = ?
+       ORDER BY id ASC
+       LIMIT 1`
+    ).bind(source, variantId).first<{ id: number }>();
+    if (!stock?.id) return false;
+    statements.push(
+      db.prepare(
+        `UPDATE inventory_stock
+         SET reserved_quantity = MAX(0, COALESCE(reserved_quantity, 0) + ?),
+             last_action = 'Резерв восстановлен',
+             last_source_ref = ?,
+             updated_at = ?
+         WHERE inventory_source = ? AND variant_id = ?
+           AND EXISTS (
+             SELECT 1 FROM inventory_reservations
+             WHERE id = ? AND status = 'released'
+           )`
+      ).bind(quantity, `order-item:${orderItemId}`, timestamp, source, variantId, reservationId),
+      db.prepare(
+        `UPDATE inventory_reservations
+         SET status = 'active', released_at = NULL, updated_at = ?
+         WHERE id = ? AND status = 'released'`
+      ).bind(timestamp, reservationId),
+      db.prepare(
+        `UPDATE order_items
+         SET stock_writeoff_status = 'reserved', stock_quantity_before = NULL, stock_quantity_after = NULL
+         WHERE id = ?`
+      ).bind(orderItemId),
+    );
+  } else {
+    statements.push(
+      db.prepare(
+        `UPDATE inventory_reservations
+         SET status = 'unresolved', released_at = NULL, updated_at = ?
+         WHERE id = ? AND status = 'released'`
+      ).bind(timestamp, reservationId),
+      db.prepare(
+        `UPDATE order_items
+         SET stock_writeoff_status = 'catalog_unresolved', stock_quantity_before = NULL, stock_quantity_after = NULL
+         WHERE id = ?`
+      ).bind(orderItemId),
+    );
+  }
+
+  await db.batch(statements);
+  void reason;
+  return true;
+}
+
+
 export async function releaseOrderReservationsV2(db: D1Database, orderId: number, timestamp: string, reason = 'Заказ изменён') {
   const rows = await db.prepare(
     `SELECT id, order_item_id, inventory_source, variant_id, quantity, status
