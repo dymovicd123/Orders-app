@@ -11,6 +11,49 @@ const gitBlob = (value) => {
 }
 
 const root = process.cwd()
+
+const returnAuditManifest = JSON.parse(
+  fs.readFileSync(path.join(root, 'scripts/return-ux-audit-20261005-runtime-manifest.json'), 'utf8'),
+)
+check(
+  returnAuditManifest?.version === 1 && returnAuditManifest?.revision === 'return-ux-audit-20261005-runtime',
+  'Return UX audit runtime manifest invalid',
+)
+
+if (!process.env.RETURN_UX_AUDIT_BRANCH2_MAIN_SYNC_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(returnAuditManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      check(gitBlob(actual) === delta.afterGitBlob, 'Return UX audit runtime drifted before Branch2/main sync check: ' + relative)
+      originals.set(relative, actual)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      check(gitBlob(baseline) === delta.beforeGitBlob, 'Return UX audit predecessor fixture drifted: ' + relative)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, RETURN_UX_AUDIT_BRANCH2_MAIN_SYNC_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('RETURN UX AUDIT / BRANCH2 MAIN SYNC PRESERVATION LAYER PASSED')
+  process.exit(0)
+}
+
 const exchangeSetManifests = [
   JSON.parse(fs.readFileSync(path.join(root, 'scripts/exchange-set-v2-20261005-frontend-manifest.json'), 'utf8')),
   JSON.parse(fs.readFileSync(path.join(root, 'scripts/exchange-set-v2-20261005-worker-manifest.json'), 'utf8')),
