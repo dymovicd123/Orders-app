@@ -7797,6 +7797,21 @@ function removeDebtPayment(index: number) {
 
       <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />
 
+      <ArrivalRecoveryDialog
+        prompt={arrivalRecoveryPrompt}
+        busy={inventoryMovementBusy}
+        error={arrivalRecoveryError}
+        onConfirm={() => { void arrivalRecoveryContinueRef.current?.() }}
+        onClose={() => {
+          if (inventoryMovementBusy) return
+          const shouldRefreshCatalog = arrivalRecoveryPrompt?.code === 'arrival_stale_variant'
+          setArrivalRecoveryPrompt(null)
+          setArrivalRecoveryError('')
+          arrivalRecoveryContinueRef.current = null
+          if (shouldRefreshCatalog) void loadCatalogData(true)
+        }}
+      />
+
       <ReturnedItemResolutionModal
         eventId={returnedItemResolutionEventId}
         apiFetch={apiFetch}
