@@ -1131,7 +1131,8 @@ export async function createExchange(
     : null;
   if (rawOldPhysicalState && !oldPhysicalState) throw new Error('Неизвестный физический статус старой вещи обмена.');
   const oldWasNotIssued = oldPhysicalState === 'not_issued';
-  const oldWasAlreadyIssued = orderItemWasPhysicallyIssued(oldItem);
+  const oldWasAlreadyIssued = orderItemWasPhysicallyIssued(oldItem)
+    || (oldItemIsWorkshop && cleanText((existing as any).shipping_status) === 'sent');
   if (oldWasNotIssued && oldWasAlreadyIssued) {
     throw new CriticalOperationConflictError(
       'Эта позиция уже отмечена как выданная клиенту. Нельзя выбрать «Не выдавали клиенту». Если вещь вернулась, укажите, куда её приняли.'
@@ -3290,6 +3291,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         const physicalState = physicalStateText as ExchangeSetOldPlan['physicalState']
         const isWorkshop = Boolean(toInt(oldItem.is_workshop, 0))
         const wasIssued = orderItemWasPhysicallyIssued(oldItem)
+          || (isWorkshop && cleanText((existing as any).shipping_status) === 'sent')
         if (physicalState === 'not_issued' && wasIssued) {
           throw new CriticalOperationConflictError(`«${cleanText(oldItem.product_name_snapshot)}» уже отмечен как выданный клиенту. Нельзя выбрать «не выдавался».`)
         }
