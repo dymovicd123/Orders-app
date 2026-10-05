@@ -24,7 +24,7 @@
     },
     "worker/domains/returns-exchanges.ts": {
       "beforeGitBlob": "d74e9af8b79c3faa3df825be10a45552286469fe",
-      "afterGitBlob": "5bbed5059e6e47cb7a005fe0bf7938f2b31e50d8",
+      "afterGitBlob": "ae3f5d0e4abbb557abaab2ff23e69786776f6d12",
       "baselineFixture": "scripts/fixtures/return-ux-audit-20261005/worker/domains/returns-exchanges.ts"
     }
   }
