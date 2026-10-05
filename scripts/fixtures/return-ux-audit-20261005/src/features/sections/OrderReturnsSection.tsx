@@ -10,7 +10,6 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     createReturnDraft,
     formatMoney,
     FriendlyNumberInput,
-    handleEditOrder,
     ManagerBadge,
     managerColorFor,
     orderPanelStyle,
@@ -286,7 +285,6 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                               onChange={(event) => setReturnDraft((current) => ({ ...current, amount: Number(event.target.value) }))}
                             />
                             <small className="field-hint">Введите фактическую сумму возврата вручную. Система не подставляет цену товара или текущую цену Каталога автоматически.</small>
-                            {returnDraft.items.some((item: any) => item.issuedToClient === false) ? <small className="field-hint">Если это отмена невыданного товара, денежный возврат сам по себе не убирает товар из заказа — сначала используйте «Изменить заказ» ниже.</small> : null}
                           </label>
                           <label>
                             <span>Способ возврата денег {Number(returnDraft.amount || 0) > 0 ? '' : '(не нужен при 0 ₸)'}</span>
@@ -312,17 +310,8 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                       <div className="mini-item order-payment-card">
                         <div className="mini-item-head">
                           <strong>Какие товары возвращаются</strong>
-                          <span className="muted-small">Выбор товара фиксирует физический возврат, но не рассчитывает деньги автоматически. Выбирайте товар только если клиент действительно получал его; сумма возврата денег указывается отдельно.</span>
+                          <span className="muted-small">Выбор товара фиксирует физический возврат, но не рассчитывает деньги автоматически. Сумму возврата укажите отдельно по фактической договорённости с клиентом.</span>
                         </div>
-                        {returnDraft.items.some((item: any) => item.issuedToClient === false) ? (
-                          <div className="history-note">
-                            <span>Есть товары, которые клиенту не выдавали</span>
-                            <strong>Их нельзя «вернуть на склад»: они и так физически остались у вас. Если позицию отменили до выдачи, сначала измените состав заказа. Если нужно вернуть только деньги, оставьте количество товара 0 и укажите сумму выше.</strong>
-                            <div className="mini-panel-actions">
-                              <button className="secondary compact" type="button" disabled={returnBusy} onClick={() => void handleEditOrder(returnSelectedOrder)}>Изменить заказ</button>
-                            </div>
-                          </div>
-                        ) : null}
                         <div className="table-shell">
                           <table className="data-table return-items-table">
                             <thead>
@@ -342,12 +331,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                   </td>
                                   <td>{item.maxQuantity}</td>
                                   <td>
-                                    {item.issuedToClient === false ? (
-                                      <div>
-                                        <span className="status-pill status-offline">Не выдавали клиенту</span>
-                                        <small className="field-hint">Физического возврата нет — количество здесь не выбирается.</small>
-                                      </div>
-                                    ) : Number(item.maxQuantity || 0) === 1 ? (
+                                    {Number(item.maxQuantity || 0) === 1 ? (
                                       <button
                                         type="button"
                                         className={`return-quantity-choice ${Number(item.quantity || 0) > 0 ? 'is-selected' : ''}`}
@@ -411,12 +395,6 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                     )}
                                   </td>
                                   <td>
-                                    {item.issuedToClient === false ? (
-                                      <div>
-                                        <strong>Остаётся на месте</strong>
-                                        <small className="field-hint">Не выбирайте Склад/Бутик/«не добавлять»: это создало бы ложный физический возврат.</small>
-                                      </div>
-                                    ) : (
                                     <select
                                       value={item.physicalState}
                                       disabled={Number(item.quantity || 0) <= 0}
@@ -435,8 +413,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                       <option value="boutique">Пришёл → Бутик</option>
                                       <option value="no_stock">Пришёл, в остаток не добавлять</option>
                                     </select>
-                                    )}
-                                    {item.issuedToClient !== false && item.sourceType === 'workshop' ? <small className="field-hint">Для вещи из Цеха по умолчанию остаток не создаётся. Если товар физически принимают в остатки, явно выберите «Склад» или «Бутик».</small> : null}
+                                    {item.sourceType === 'workshop' ? <small className="field-hint">Для вещи из Цеха по умолчанию остаток не создаётся. Если товар физически принимают в остатки, явно выберите «Склад» или «Бутик».</small> : null}
                                   </td>
                                 </tr>
                               )) : (
@@ -520,7 +497,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                 {entry.operationType === 'order_return' && entry.status !== 'cancelled' && item.physicalTracking && !item.physicalReceivedAt ? (
                                   <div className="mini-panel-actions">
                                     <select
-                                      value={receiptDestinations[`return:${entry.id}:${item.id}`] || (item.isWorkshop ? 'no_stock' : 'warehouse')}
+                                      value={receiptDestinations[`return:${entry.id}:${item.id}`] || 'warehouse'}
                                       onChange={(event) => setReceiptDestinations((current) => ({ ...current, [`return:${entry.id}:${item.id}`]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
                                       disabled={returnBusy}
                                     >
@@ -536,7 +513,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                         operationType: 'return',
                                         operationId: entry.id,
                                         operationItemId: item.id,
-                                        destination: receiptDestinations[`return:${entry.id}:${item.id}`] || (item.isWorkshop ? 'no_stock' : 'warehouse'),
+                                        destination: receiptDestinations[`return:${entry.id}:${item.id}`] || 'warehouse',
                                         productName: item.productName,
                                         externalId: entry.externalId,
                                       })}

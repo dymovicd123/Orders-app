@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "revision": "return-ux-audit-20261005-runtime",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "60b1ea052a8f4ba25d398fee5f90aa59b6cf979d",
+      "afterGitBlob": "18e3539988a170e802d2fd5d996861c0e352757c",
+      "baselineFixture": "scripts/fixtures/return-ux-audit-20261005/src/App.tsx"
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "f238b9b06139e6a1c75303c06002e719cb387240",
+      "afterGitBlob": "73adadea5e8c5cf8795da8d66b74610c0841a063",
+      "baselineFixture": "scripts/fixtures/return-ux-audit-20261005/src/app/types.ts"
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "a544f4a08b1971b68dff4f31bdd67b7571f2b034",
+      "afterGitBlob": "b9e1db1dac23cddcdfc437ad8c5d21acba5e4d8c",
+      "baselineFixture": "scripts/fixtures/return-ux-audit-20261005/src/app/utils.ts"
+    },
+    "src/features/sections/OrderReturnsSection.tsx": {
+      "beforeGitBlob": "a79b580af2e5a1aaf6fe032f9586c8ac1bd54896",
+      "afterGitBlob": "5e225947aa58f8550e9caf71d0a0c042b88dbe67",
+      "baselineFixture": "scripts/fixtures/return-ux-audit-20261005/src/features/sections/OrderReturnsSection.tsx"
+    },
+    "worker/domains/returns-exchanges.ts": {
+      "beforeGitBlob": "d74e9af8b79c3faa3df825be10a45552286469fe",
+      "afterGitBlob": "87ed104b20a72db6b2f5f7e9a49f55c2c5857562",
+      "baselineFixture": "scripts/fixtures/return-ux-audit-20261005/worker/domains/returns-exchanges.ts"
+    }
+  }
+}

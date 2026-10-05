@@ -6735,14 +6735,6 @@ function removeDebtPayment(index: number) {
       Number(returnSelectedOrder.received_amount || 0) - Number(returnSelectedOrder.return_amount || 0),
     )
 
-    const selectedUnissuedItem = returnDraft.items.find((item) =>
-      Number(item.orderItemId || 0) > 0 && Number(item.quantity || 0) > 0 && !item.issuedToClient
-    )
-    if (selectedUnissuedItem) {
-      setError(`«${selectedUnissuedItem.productName}» не выдавали клиенту. Не оформляйте её как физический возврат: сначала измените состав заказа. Если нужно вернуть только деньги, оставьте количество товара 0.`)
-      return
-    }
-
     const selectedReturnItems = returnDraft.items
       .filter((item) => Number(item.orderItemId || 0) > 0 && Number(item.quantity || 0) > 0)
       .map((item) => ({
@@ -8195,7 +8187,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'returns'} label="Возврат">
-        <OrderReturnsSection ctx={{ cancelReturnEntry, closeReturnForm, createReturnDraft, formatMoney, FriendlyNumberInput, handleEditOrder, isAdmin, loadReturnHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, returnBusy, returnDraft, returnFormRef, returnHistory, returnHistoryBusy, returnHistoryError, returnHistoryFilters, returnHistoryHasMore, returnHistorySummary, returnSelectedOrder, saveReturn, sectorStyle, setOrderPanel, setReturnDraft, setReturnHistoryFilters, SmartPickerInput, suggestionValues }} />
+        <OrderReturnsSection ctx={{ cancelReturnEntry, closeReturnForm, createReturnDraft, formatMoney, FriendlyNumberInput, isAdmin, loadReturnHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, returnBusy, returnDraft, returnFormRef, returnHistory, returnHistoryBusy, returnHistoryError, returnHistoryFilters, returnHistoryHasMore, returnHistorySummary, returnSelectedOrder, saveReturn, sectorStyle, setOrderPanel, setReturnDraft, setReturnHistoryFilters, SmartPickerInput, suggestionValues }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'exchange'} label="Обмен">
