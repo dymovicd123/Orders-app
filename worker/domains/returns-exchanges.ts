@@ -3930,6 +3930,7 @@ export async function cancelExchangeSetV2(
 
     const newOrderItemIds = newRows.map((row) => toInt(row.order_item_id, 0)).filter(Boolean)
     if (newOrderItemIds.length) {
+      const newItemIdJson = JSON.stringify(newOrderItemIds)
       const dependent = await db.prepare(
         `SELECT e.id
          FROM exchange_items ei
@@ -3940,9 +3941,23 @@ export async function cancelExchangeSetV2(
            AND COALESCE(e.status, 'completed') <> 'cancelled'
          ORDER BY e.id DESC
          LIMIT 1`
-      ).bind(JSON.stringify(newOrderItemIds), exchangeId).first<{ id: number }>()
+      ).bind(newItemIdJson, exchangeId).first<{ id: number }>()
       if (dependent?.id) {
         throw new CriticalOperationConflictError(`Одна из новых позиций этого обмена уже использована в обмене #${dependent.id}. Сначала отмените более поздний обмен.`)
+      }
+
+      const dependentReturn = await db.prepare(
+        `SELECT r.id
+         FROM return_items ri
+         JOIN returns r ON r.id = ri.return_id
+         WHERE ri.order_item_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+           AND COALESCE(r.status, 'completed') <> 'cancelled'
+           AND ${noStandaloneReturnSql}
+         ORDER BY r.id DESC
+         LIMIT 1`
+      ).bind(newItemIdJson).first<{ id: number }>()
+      if (dependentReturn?.id) {
+        throw new CriticalOperationConflictError(`Одна из новых позиций этого обмена уже участвовала в возврате #${dependentReturn.id}. Сначала отмените более поздний возврат.`)
       }
     }
 
