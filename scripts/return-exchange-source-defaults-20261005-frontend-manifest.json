@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "revision": "return-exchange-source-defaults-20261005-frontend",
+  "files": {
+    "src/app/types.ts": {
+      "beforeGitBlob": "73adadea5e8c5cf8795da8d66b74610c0841a063",
+      "afterGitBlob": "80ad478c68988e1cf89f4f311fb7a29d1b223c9e",
+      "baselineFixture": "scripts/fixtures/return-exchange-source-defaults-20261005/src/app/types.ts"
+    },
+    "src/features/sections/OrderReturnsSection.tsx": {
+      "beforeGitBlob": "98bb7aa056a84812dc3908cf9b490dee7ead34d2",
+      "afterGitBlob": "7ae10ca9eec0c596b661db31589dfffb6b3d107b",
+      "baselineFixture": "scripts/fixtures/return-exchange-source-defaults-20261005/src/features/sections/OrderReturnsSection.tsx"
+    },
+    "src/features/sections/OrderExchangeSmartSection.tsx": {
+      "beforeGitBlob": "8283c1a4e8fcc82ccfb60f8714a7079c261d2179",
+      "afterGitBlob": "187181a8261c06ff56e7410140c2582cf46d6a9e",
+      "baselineFixture": "scripts/fixtures/return-exchange-source-defaults-20261005/src/features/sections/OrderExchangeSmartSection.tsx"
+    }
+  }
+}

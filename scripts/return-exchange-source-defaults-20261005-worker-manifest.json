@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "revision": "return-exchange-source-defaults-20261005-worker",
+  "files": {
+    "worker/domains/activity.ts": {
+      "beforeGitBlob": "081b4477db92538b94337731349527d0907a73cc",
+      "afterGitBlob": "10d1eead5f97652f505a8d4ad9efc8095444075c",
+      "baselineFixture": "scripts/fixtures/return-exchange-source-defaults-20261005/worker/domains/activity.ts"
+    },
+    "worker/domains/returns-exchanges.ts": {
+      "beforeGitBlob": "87ed104b20a72db6b2f5f7e9a49f55c2c5857562",
+      "afterGitBlob": "af53527b060ec388bbe9058b80df16a564b8af4c",
+      "baselineFixture": "scripts/fixtures/return-exchange-source-defaults-20261005/worker/domains/returns-exchanges.ts"
+    }
+  }
+}
