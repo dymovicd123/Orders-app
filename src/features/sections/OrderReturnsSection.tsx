@@ -461,7 +461,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                             <option value="no_stock">Не добавлять в остаток</option>
                                           </select>
                                           {item.sourceType === 'workshop'
-                                            ? <small>Для вещи из Цеха по умолчанию остаток не создаётся. Склад или Бутик выбирайте только если вещь действительно принимают туда.</small>
+                                            ? <small>Для вещи из Цеха по умолчанию остаток не создаётся. Если товар физически принимают в остатки, явно выберите «Склад» или «Бутик».</small>
                                             : null}
                                         </label>
                                       )}
