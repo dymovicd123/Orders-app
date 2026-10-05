@@ -17,6 +17,8 @@ check(exchangeBackend.includes('oldSourceType: cleanText(row.old_source_type)'),
 check(returnsUi.includes('const defaultReturnDestination =') && returnsUi.includes("item.sourceType === 'boutique'") && returnsUi.includes("? 'boutique'"), 'Return form does not default Boutique-origin goods back to Boutique')
 check(returnsUi.includes('const physicalState = defaultReturnDestination(item)'), 'Return already-arrived action ignores source-aware default')
 check(returnsUi.includes('receiptDestinations[receiptKey] || defaultReturnDestination(item)'), 'Return delayed intake ignores source-aware default')
+check(returnsUi.includes("receiptDestinations[`return:\${entry.id}:\${item.id}`] || defaultReturnDestination(item)"), 'Return history receipt action ignores source-aware default')
+check(!returnsUi.includes("(item.isWorkshop ? 'no_stock' : 'warehouse')"), 'Return UI still contains a Warehouse fallback that ignores Boutique origin')
 
 check(exchangeUi.includes('const defaultReturnedDestination =') && exchangeUi.includes("item.sourceType === 'boutique'") && exchangeUi.includes("? 'boutique'"), 'Exchange does not default Boutique-origin returned goods back to Boutique')
 check(exchangeUi.includes('sourceType: entry.oldSourceType'), 'Legacy pending Exchange queue does not carry old source')
