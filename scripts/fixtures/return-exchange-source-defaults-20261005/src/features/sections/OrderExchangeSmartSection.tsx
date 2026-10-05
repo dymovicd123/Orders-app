@@ -110,7 +110,6 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
             length: entry.oldLength,
             size: entry.oldSize,
             isWorkshop: entry.oldIsWorkshop,
-            sourceType: entry.oldSourceType,
           }]
         : []
     return { entry, items }
@@ -119,15 +118,9 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
   const loadedPendingQuantity = pendingGroups.reduce((sum: number, group: any) =>
     sum + group.items.reduce((itemSum: number, item: any) => itemSum + Math.max(0, Number(item.quantity || 0)), 0), 0)
 
-  const defaultReturnedDestination = (item: any): 'warehouse' | 'boutique' | 'no_stock' =>
-    item.sourceType === 'workshop' || item.isWorkshop
-      ? 'no_stock'
-      : item.sourceType === 'boutique'
-        ? 'boutique'
-        : 'warehouse'
   const receiptKey = (exchangeId: number, itemId: number) => `exchange:${exchangeId}:${itemId}`
   const destinationFor = (exchangeId: number, item: any) =>
-    receiptDestinations[receiptKey(exchangeId, Number(item.id || 0))] || defaultReturnedDestination(item)
+    receiptDestinations[receiptKey(exchangeId, Number(item.id || 0))] || (item.isWorkshop ? 'no_stock' : 'warehouse')
 
   const receiveWholeExchange = async (group: any) => {
     if (!group.items.length) return
@@ -311,7 +304,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                             <span>Где вещь сейчас?</span>
                             <div className="exchange-choice-row">
                               <button type="button" className={selected.physicalState === 'pending' ? 'is-active' : ''} onClick={() => patchOldItem(item.id, { physicalState: 'pending' })}>Ещё у клиента</button>
-                              <button type="button" className={selected.physicalState !== 'pending' ? 'is-active' : ''} onClick={() => patchOldItem(item.id, { physicalState: defaultReturnedDestination(item) })}>Уже вернули</button>
+                              <button type="button" className={selected.physicalState !== 'pending' ? 'is-active' : ''} onClick={() => patchOldItem(item.id, { physicalState: item.sourceType === 'workshop' ? 'no_stock' : 'warehouse' })}>Уже вернули</button>
                             </div>
                             {selected.physicalState === 'pending' ? <small>После обмена позиция появится наверху в «Ожидают возврата».</small> : (
                               <label>

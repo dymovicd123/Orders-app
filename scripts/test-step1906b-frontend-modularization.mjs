@@ -93,6 +93,39 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
+const sourceDefaultsFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-exchange-source-defaults-20261005-frontend-manifest.json'), 'utf8'))
+if (sourceDefaultsFrontendManifest?.version !== 1 || sourceDefaultsFrontendManifest?.revision !== 'return-exchange-source-defaults-20261005-frontend') throw new Error('Return/Exchange source-default frontend manifest invalid')
+const sourceDefaultsFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.RETURN_EXCHANGE_SOURCE_DEFAULTS_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(sourceDefaultsFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (sourceDefaultsFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Return/Exchange source-default frontend drifted: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (sourceDefaultsFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Return/Exchange source-default frontend predecessor fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, RETURN_EXCHANGE_SOURCE_DEFAULTS_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('RETURN / EXCHANGE SOURCE DEFAULTS FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const returnSmartUxManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-smart-ux-20261005-frontend-manifest.json'), 'utf8'))
 if (returnSmartUxManifest?.version !== 1 || returnSmartUxManifest?.revision !== 'return-smart-ux-20261005-frontend') throw new Error('Return smart UX frontend manifest invalid')
 const returnSmartUxBlobSha = (value) => {

@@ -101,12 +101,6 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     : item.sourceType === 'boutique'
       ? 'Бутик'
       : 'Склад'
-  const defaultReturnDestination = (item: any): 'warehouse' | 'boutique' | 'no_stock' =>
-    item.sourceType === 'workshop' || item.isWorkshop
-      ? 'no_stock'
-      : item.sourceType === 'boutique'
-        ? 'boutique'
-        : 'warehouse'
   const selectedReturnLines = (returnDraft.items || []).filter((item: any) => item.issuedToClient !== false && Number(item.quantity || 0) > 0)
   const selectedReturnQuantity = selectedReturnLines.reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
   const patchReturnItem = (orderItemId: number, patch: Record<string, unknown>) => setReturnDraft((current: any) => ({
@@ -121,7 +115,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     patchReturnItem(item.orderItemId, { quantity: selected ? 0 : 1 })
   }
   const markReturnArrived = (item: any) => {
-    const physicalState = defaultReturnDestination(item)
+    const physicalState = item.sourceType === 'workshop' ? 'no_stock' : 'warehouse'
     patchReturnItem(item.orderItemId, {
       physicalState,
       restock: physicalState === 'warehouse' || physicalState === 'boutique',
@@ -190,7 +184,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                             <label className="intake-queue-destination">
                               <span>Куда принять</span>
                               <select
-                                value={receiptDestinations[receiptKey] || defaultReturnDestination(item)}
+                                value={receiptDestinations[receiptKey] || (item.isWorkshop ? 'no_stock' : 'warehouse')}
                                 onChange={(event) => setReceiptDestinations((current) => ({ ...current, [receiptKey]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
                                 disabled={returnBusy}
                               >
@@ -207,7 +201,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                 operationType: 'return',
                                 operationId: entry.id,
                                 operationItemId: item.id,
-                                destination: receiptDestinations[receiptKey] || defaultReturnDestination(item),
+                                destination: receiptDestinations[receiptKey] || (item.isWorkshop ? 'no_stock' : 'warehouse'),
                                 productName: item.productName,
                                 externalId: entry.externalId,
                               })}

@@ -2102,7 +2102,6 @@ export async function listExchanges(db: D1Database, url: URL) {
        old_snapshot.physical_tracking AS old_physical_tracking,
        old_snapshot.physical_received_at AS old_physical_received_at,
        COALESCE(old_item.is_workshop, 0) AS old_is_workshop,
-       old_item.source_type AS old_source_type,
        CASE WHEN new_snapshot.id IS NOT NULL THEN new_snapshot.product_name_snapshot ELSE new_item.product_name_snapshot END AS new_product_name,
        CASE WHEN new_snapshot.id IS NOT NULL THEN new_snapshot.quantity ELSE new_item.quantity END AS new_item_quantity,
        CASE WHEN new_snapshot.id IS NOT NULL THEN new_snapshot.gender_snapshot ELSE new_item.gender_snapshot END AS new_gender_snapshot,
@@ -2128,7 +2127,7 @@ export async function listExchanges(db: D1Database, url: URL) {
   const pageExchangeIds = baseRows.map((row) => toInt(row.id, 0)).filter(Boolean);
   const exchangeItems = pageExchangeIds.length
     ? await db.prepare(
-        `SELECT ei.*, oi.unit_price, oi.catalog_price_snapshot, oi.is_workshop, oi.source_type, oi.variant_id AS current_variant_id,
+        `SELECT ei.*, oi.unit_price, oi.catalog_price_snapshot, oi.is_workshop, oi.variant_id AS current_variant_id,
                 le.id AS lifecycle_id, le.variant_id AS lifecycle_variant_id, le.status AS lifecycle_status
          FROM exchange_items ei
          LEFT JOIN order_items oi ON oi.id = ei.order_item_id
@@ -2165,7 +2164,6 @@ export async function listExchanges(db: D1Database, url: URL) {
       physicalTracking: Boolean(toInt(item.physical_tracking, 0)),
       physicalReceivedAt: cleanText(item.physical_received_at) || null,
       isWorkshop: Boolean(toInt(item.is_workshop, 0)),
-      sourceType: cleanText(item.source_type) || (toInt(item.is_workshop, 0) ? 'workshop' : 'warehouse'),
       unitPrice: Math.max(0, toInt(item.unit_price, 0)),
       catalogPriceSnapshot: item.catalog_price_snapshot == null ? null : Math.max(0, toInt(item.catalog_price_snapshot, 0)),
       currentVariantId: toInt(item.current_variant_id, 0) || null,
@@ -2196,7 +2194,6 @@ export async function listExchanges(db: D1Database, url: URL) {
       oldPhysicalReceivedAt: cleanText(row.old_physical_received_at) || null,
       oldWasNotIssued: cleanText(row.old_inventory_source) === 'not_issued',
       oldIsWorkshop: Boolean(toInt(row.old_is_workshop, 0)),
-      oldSourceType: cleanText(row.old_source_type) || (toInt(row.old_is_workshop, 0) ? 'workshop' : 'warehouse'),
       newItemId: row.new_order_item_id, newProductName: row.new_product_name || itemGroup.newItems[0]?.productName || '—', newQuantity: row.new_item_quantity || itemGroup.newItems[0]?.quantity || 0,
       newGender: row.new_gender_snapshot || itemGroup.newItems[0]?.gender || '', newColor: row.new_color_snapshot || itemGroup.newItems[0]?.color || '', newMaterial: row.new_material_snapshot || itemGroup.newItems[0]?.material || '', newLength: row.new_length_snapshot || itemGroup.newItems[0]?.length || '', newSize: row.new_size_snapshot || itemGroup.newItems[0]?.size || '', newSourceType: row.new_inventory_source || row.new_source_type || itemGroup.newItems[0]?.inventorySource,
       oldCurrentVariantId: toInt(row.old_current_variant_id, 0) || Number(itemGroup.oldItems[0]?.currentVariantId || 0) || null,
