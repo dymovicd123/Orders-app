@@ -100,6 +100,7 @@ try {
   check(!graphRelative.includes('src/features/orders/StockResolutionConfirmModal.tsx'), 'Stock confirmation modal remains initial-static')
   check(!graphRelative.includes('src/features/orders/ReturnedItemResolutionModal.tsx'), 'Returned-item resolver remains initial-static')
   check(!graphRelative.includes('src/features/inventory/views/ArrivalRecoveryDialog.tsx'), 'Arrival recovery dialog remains initial-static')
+  check(!graphRelative.includes('src/features/inventory/arrivalRecoveryFlow.ts'), 'Arrival recovery orchestration remains initial-static')
   check(!graphRelative.includes('src/features/renderers/FinanceDashboardRenderer.tsx'), 'Finance dashboard renderer remains initial-static')
   check(!graphRelative.includes('src/features/renderers/FinanceReportContentRenderer.tsx'), 'Finance report renderer remains initial-static')
 
