@@ -9,7 +9,7 @@
     },
     "src/features/sections/OrderReturnsSection.tsx": {
       "beforeGitBlob": "98bb7aa056a84812dc3908cf9b490dee7ead34d2",
-      "afterGitBlob": "7ae10ca9eec0c596b661db31589dfffb6b3d107b",
+      "afterGitBlob": "82a0558d981ac1e227a28bd423615f4d399b4fb1",
       "baselineFixture": "scripts/fixtures/return-exchange-source-defaults-20261005/src/features/sections/OrderReturnsSection.tsx"
     },
     "src/features/sections/OrderExchangeSmartSection.tsx": {
