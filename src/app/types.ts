@@ -118,6 +118,7 @@ export type ReturnItemDraft = {
   quantity: number
   maxQuantity: number
   sourceType: 'warehouse' | 'boutique' | 'workshop'
+  issuedToClient: boolean
   restock: boolean
   physicalState: 'pending' | 'warehouse' | 'boutique' | 'no_stock'
 }
