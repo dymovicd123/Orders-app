@@ -42,5 +42,7 @@ check(cancelReturn.includes("await advanceCriticalOperation(db, criticalOperatio
 check(cancelReturn.includes('currentQuantity === targetQuantity && currentStatus === targetStatus'), 'Return cancellation retry does not recognize an already-restored Workshop target')
 check(cancelReturn.includes('currentQuantity !== baselineQuantity || currentStatus !== baselineStatus'), 'Return cancellation can add Workshop quantity twice after a lost response')
 check(cancelReturn.includes('AND quantity = ? AND status = ?'), 'Return Workshop restore lacks a CAS guard')
+check(cancelReturn.indexOf('Связанная задача Цеха больше не найдена') < cancelReturn.indexOf('const lifecycleRows = await db.prepare'), 'Return cancellation can touch stock before proving Workshop dependencies still exist')
+check(cancelReturn.includes('const atBaseline =') && cancelReturn.includes('const atTarget ='), 'Return cancellation does not preflight Workshop baseline/target state before stock reversal')
 
 console.log('RETURN UX/SAFETY R2 PASSED — never-issued goods cannot become fake physical returns, money-only refunds remain explicit, Workshop delayed intake defaults safely, and Return cancellation is replay-safe for Workshop quantities.')
