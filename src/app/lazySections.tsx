@@ -30,6 +30,7 @@ export const OrderActivitySection = namedLazy(() => import('../features/sections
 export const OrderCatalogResolutionModal = namedLazy(() => import('../features/orders/OrderCatalogResolutionModal'), 'OrderCatalogResolutionModal')
 export const StockResolutionConfirmModal = namedLazy(() => import('../features/orders/StockResolutionConfirmModal'), 'StockResolutionConfirmModal')
 export const ReturnedItemResolutionModal = namedLazy(() => import('../features/orders/ReturnedItemResolutionModal'), 'ReturnedItemResolutionModal')
+export const ArrivalRecoveryDialog = namedLazy(() => import('../features/inventory/views/ArrivalRecoveryDialog'), 'ArrivalRecoveryDialog')
 
 type DeferredSectionProps = {
   active: boolean
