@@ -80,3 +80,47 @@ Quality run **37354722045 — success**:
 ## Next safe action
 
 Merge this follow-up into **branch2**, validate the exact merged SHA with the Branch2 safety workflow and Cloudflare deploy monitor, then continue the broader Return/Exchange UX review from the deployed Branch2 baseline. Do not merge to main yet.
+
+## STOP CHECKPOINT — 2026-10-06
+
+User asked to stop here and preserve context.
+
+Current work branch: `w-return-exchange-ux-audit-20261005`  
+Current branch HEAD: `fc14165a4fbc44095858621384a61af829658d9d`  
+Latest Quality run on this exact HEAD: **37356472772 — success**.
+
+Current Branch2 HEAD: `3bf3a5ef0f50872541b7bdcee6f5a9af370d14f2`.
+
+Important branch topology at stop:
+- audit branch is **ahead 32 / behind 5** relative to current Branch2;
+- status is **diverged**;
+- therefore **do not merge this audit branch directly into Branch2**.
+
+The Return audit changes themselves are green, but before any merge they must be reconciled onto a fresh candidate from the current Branch2 head. Prefer a fresh Branch2-based candidate and intentional transfer of only the Return-audit delta rather than a wholesale merge/rebase that could drag stale branch history.
+
+### Return-audit changes already implemented and green
+
+- Return draft carries per-item `issuedToClient` truth.
+- Never-issued goods cannot be submitted as physical Return rows, including pending/no-stock loopholes.
+- UI explicitly marks never-issued goods as staying on site and directs pre-handover cancellation to **Edit order**.
+- Money-only refund remains valid with item quantities left at 0.
+- Workshop-origin delayed Return intake defaults to **no_stock** from both top queue and history.
+- Return cancellation freezes Workshop restore targets before mutation and uses compare-and-swap style guards so retry/lost-response cannot restore quantity twice.
+- Missing/concurrently changed Workshop dependencies are checked before stock lifecycle reversal.
+- Already-cancelled retry repairs derived financial/workshop state before returning success.
+- Direct regression: `scripts/test-return-unissued-physical-safety-r2.mjs`.
+- Runtime-delta preservation is layered through `scripts/return-ux-audit-20261005-runtime-manifest.json` and predecessor fixtures.
+
+### Exact next action after resuming
+
+1. Open GitHub and verify current `branch2` HEAD again.
+2. Create a **fresh branch from current Branch2**, not from this diverged audit branch.
+3. Reconcile only the Return-audit runtime/test/doc changes from this checkpoint.
+4. Run cumulative Quality on the fresh candidate.
+5. Only after green Quality, open a Branch2-only PR.
+6. Verify exact merged-SHA Branch2 safety/deploy.
+7. Then do the manual Return acceptance scenarios listed below.
+8. Do not touch main / Production unless separately requested.
+
+Do not continue coding from `fc14165...` without first reconciling against the newer Branch2 head.
+
