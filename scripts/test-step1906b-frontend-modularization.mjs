@@ -27,49 +27,6 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 const root = process.cwd()
-const orderHistoryArrivalIntegrityFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-history-arrival-integrity-r1-frontend-manifest.json'), 'utf8'))
-if (orderHistoryArrivalIntegrityFrontendManifest?.version !== 1 || orderHistoryArrivalIntegrityFrontendManifest?.revision !== 'order-history-arrival-integrity-r1-frontend') throw new Error('Order/Arrival integrity frontend manifest invalid')
-const orderHistoryArrivalIntegrityFrontendBlobSha = (value) => {
-  const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
-}
-if (!process.env.ORDER_HISTORY_ARRIVAL_INTEGRITY_FRONTEND_NORMALIZED) {
-  const originals = new Map()
-  let childStatus = 1
-  try {
-    for (const [relative, delta] of Object.entries(orderHistoryArrivalIntegrityFrontendManifest.files || {})) {
-      const absolute = path.join(root, relative)
-      const actual = fs.readFileSync(absolute, 'utf8')
-      if (orderHistoryArrivalIntegrityFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
-        throw new Error('Order/Arrival integrity frontend changed beyond exact manifest: ' + relative)
-      }
-      let reverted = actual
-      for (const replacement of [...(delta.replacements || [])].reverse()) {
-        if (!reverted.includes(replacement.afterBlock)) throw new Error('Order/Arrival integrity frontend after-block missing: ' + relative)
-        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
-      }
-      if (orderHistoryArrivalIntegrityFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
-        throw new Error('Order/Arrival integrity frontend predecessor reconstruction failed: ' + relative)
-      }
-      originals.set(relative, actual)
-      fs.writeFileSync(absolute, reverted)
-    }
-    const child = spawnSync(process.execPath, [process.argv[1]], {
-      cwd: root,
-      stdio: 'inherit',
-      shell: false,
-      windowsHide: true,
-      env: { ...process.env, ORDER_HISTORY_ARRIVAL_INTEGRITY_FRONTEND_NORMALIZED: '1' },
-    })
-    if (child.error) throw child.error
-    childStatus = child.status ?? 1
-  } finally {
-    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
-  }
-  if (childStatus !== 0) process.exit(childStatus)
-  console.log('ORDER / ARRIVAL INTEGRITY FRONTEND STRUCTURAL LAYER PASSED')
-  process.exit(0)
-}
 const stocktakeSafeDefaultsManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stocktake-safe-defaults-frontend-manifest.json'), 'utf8'))
 if (stocktakeSafeDefaultsManifest?.version !== 1 || stocktakeSafeDefaultsManifest?.revision !== 'stocktake-safe-defaults-r1') throw new Error('Stocktake safe-default frontend manifest invalid')
 const stocktakeSafeDefaultsBlobSha = (value) => {
@@ -177,6 +134,49 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+const orderHistoryArrivalIntegrityFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-history-arrival-integrity-r1-frontend-manifest.json'), 'utf8'))
+if (orderHistoryArrivalIntegrityFrontendManifest?.version !== 1 || orderHistoryArrivalIntegrityFrontendManifest?.revision !== 'order-history-arrival-integrity-r1-frontend') throw new Error('Order/Arrival integrity frontend manifest invalid')
+const orderHistoryArrivalIntegrityFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.ORDER_HISTORY_ARRIVAL_INTEGRITY_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(orderHistoryArrivalIntegrityFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (orderHistoryArrivalIntegrityFrontendBlobSha(actual) !== delta.afterGitBlob || actual.split(/\r?\n/).length !== delta.afterLines) {
+        throw new Error('Order/Arrival integrity frontend changed beyond exact manifest: ' + relative)
+      }
+      let reverted = actual
+      for (const replacement of [...(delta.replacements || [])].reverse()) {
+        if (!reverted.includes(replacement.afterBlock)) throw new Error('Order/Arrival integrity frontend after-block missing: ' + relative)
+        reverted = reverted.replace(replacement.afterBlock, replacement.beforeBlock)
+      }
+      if (orderHistoryArrivalIntegrityFrontendBlobSha(reverted) !== delta.beforeGitBlob || reverted.split(/\r?\n/).length !== delta.beforeLines) {
+        throw new Error('Order/Arrival integrity frontend predecessor reconstruction failed: ' + relative)
+      }
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, reverted)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, ORDER_HISTORY_ARRIVAL_INTEGRITY_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ORDER / ARRIVAL INTEGRITY FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const h9cProductionFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/stage03-h9c-production-frontend-manifest.json'), 'utf8'))
 if (h9cProductionFrontendManifest?.version !== 1 || h9cProductionFrontendManifest?.revision !== 'stage03-h9c-production-frontend') throw new Error('H9C Production frontend manifest invalid')
 const h9cProductionFrontendBlobSha = (value) => {
