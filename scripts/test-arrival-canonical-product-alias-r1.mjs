@@ -17,7 +17,7 @@ const identityPos = body.indexOf('return lookup.byIdentity.get(identityKey) || n
 check(aliasPos >= 0 && exactPos > aliasPos && identityPos > exactPos, 'active alias wins before active exact/identity name lookup for non-explicit arrivals')
 check(body.includes('const aliasTarget = identityKey ? lookup.byAlias.get(identityKey) : null;'), 'inactive canonical alias is examined as retired identity')
 check(body.includes('aliasTarget && toInt(aliasTarget.is_active, 0) !== 1'), 'inactive alias target cannot bypass retired-product handling')
-check(body.includes('Приход не восстанавливает удалённый товар автоматически'), 'retired product must require an explicit Catalog restore before Arrival')
+check(body.includes("code: 'arrival_retired_product'"), 'retired product must require an explicit audited restore decision before Arrival continues')
 check(!body.includes('retiredProductIdsToReactivate.add(retiredId);'), 'Arrival must not silently reactivate a retired product shell')
 check(!body.includes('return lookup.byIdentity.get(identityKey) || lookup.byAlias.get(identityKey) || null;'), 'old alias-last resolver is gone')
 console.log('ARRIVAL CANONICAL PRODUCT ALIAS R1 TESTS PASSED — active aliases resolve directly; retired products require an explicit Catalog restore before Arrival')
