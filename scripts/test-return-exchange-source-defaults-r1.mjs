@@ -11,6 +11,8 @@ const exchangeUi = read('src/features/sections/OrderExchangeSmartSection.tsx')
 
 check(types.includes("sourceType?: 'warehouse' | 'boutique' | 'workshop'"), 'Return/Exchange history types lost original source')
 check(activity.includes('AS return_item_source_type') && activity.includes('sourceType: cleanText(row.return_item_source_type)'), 'Return history does not preserve original order-item source')
+check(activity.includes('LEFT JOIN order_items return_order_item ON return_order_item.id = ri.order_item_id'), 'Return history does not reuse one order-item join for source/workshop/variant facts')
+check(!activity.includes('SELECT oi.source_type FROM order_items oi WHERE oi.id = ri.order_item_id'), 'Return history regressed to an extra per-item source subquery')
 check(exchangeBackend.includes('oi.source_type') && exchangeBackend.includes('sourceType: cleanText(item.source_type)'), 'Set Exchange history does not preserve original old-item source')
 check(exchangeBackend.includes('oldSourceType: cleanText(row.old_source_type)'), 'Legacy Exchange history does not preserve old-item source')
 
