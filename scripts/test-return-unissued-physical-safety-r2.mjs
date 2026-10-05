@@ -31,7 +31,7 @@ const createEnd = worker.indexOf('\n\nexport async function receiveReturnedItem'
 const createReturn = worker.slice(createStart, createEnd)
 check(createReturn.includes('const issuedToClient = orderItemWasPhysicallyIssued(orderItem) || sentFallback'), 'Return backend does not derive physical handover truth')
 check(createReturn.includes("cleanText((existing as any).shipping_status) === 'sent' && (isWorkshop || !stockStatus)"), 'Return backend uses a broad order-level sent fallback')
-check(createReturn.includes('humanInventoryModelEnabled && !issuedToClient'), 'Return backend still allows no-stock/pending loopholes for never-issued goods')
+check(createReturn.includes('if (!issuedToClient)') && !createReturn.includes('humanInventoryModelEnabled && !issuedToClient'), 'Return backend still allows no-stock/pending loopholes for never-issued goods or gates the safety rule behind an inventory feature flag')
 check(createReturn.includes('Физический возврат для неё оформлять нельзя'), 'Return backend guard is not operator-readable')
 
 const cancelStart = worker.indexOf('export async function cancelReturn(')
