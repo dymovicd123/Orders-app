@@ -179,9 +179,9 @@ export async function listReturnHistory(db: D1Database, url: URL) {
             ri.restocked AS return_item_restocked,
             ri.physical_tracking AS return_item_physical_tracking,
             ri.physical_received_at AS return_item_physical_received_at,
-            COALESCE((SELECT oi.is_workshop FROM order_items oi WHERE oi.id = ri.order_item_id), 0) AS return_item_is_workshop,
-            COALESCE((SELECT oi.source_type FROM order_items oi WHERE oi.id = ri.order_item_id), 'warehouse') AS return_item_source_type,
-            COALESCE((SELECT oi.variant_id FROM order_items oi WHERE oi.id = ri.order_item_id), 0) AS return_item_current_variant_id,
+            COALESCE(return_order_item.is_workshop, 0) AS return_item_is_workshop,
+            COALESCE(return_order_item.source_type, 'warehouse') AS return_item_source_type,
+            COALESCE(return_order_item.variant_id, 0) AS return_item_current_variant_id,
             lifecycle.id AS return_item_lifecycle_id,
             lifecycle.variant_id AS return_item_lifecycle_variant_id,
             lifecycle.status AS return_item_lifecycle_status,
@@ -192,6 +192,7 @@ export async function listReturnHistory(db: D1Database, url: URL) {
      LEFT JOIN customers c ON c.id = o.customer_id
      LEFT JOIN exchanges linked_exchange ON linked_exchange.id = (SELECT e.id FROM exchanges e WHERE e.refund_return_id = r.id ORDER BY e.id DESC LIMIT 1)
      LEFT JOIN return_items ri ON ri.return_id = r.id
+     LEFT JOIN order_items return_order_item ON return_order_item.id = ri.order_item_id
      LEFT JOIN inventory_lifecycle_events lifecycle ON lifecycle.id = (
        SELECT e.id FROM inventory_lifecycle_events e WHERE e.operation_type = 'return' AND e.operation_id = r.id AND e.operation_item_id = ri.id ORDER BY e.id DESC LIMIT 1
      )
