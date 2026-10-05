@@ -13,6 +13,7 @@ assert.ok(source.includes('selected.orderItemId, operationReturnId, operationRet
 assert.ok(source.includes('toInt(orderItem.quantity, 0) - alreadyReturnedQuantity'), 'new return must use remaining item quantity');
 assert.ok(source.includes('rawOldQuantity - activeStandaloneReturnedQuantity'), 'exchange must respect prior standalone returns');
 assert.ok(source.includes('const remainingOldQuantity = Math.max(0, rawOldQuantity - oldQuantity);'), 'exchange must not double-subtract prior returns from order_items.quantity');
-assert.ok(source.includes('currentTaskQuantity + returnedTaskQuantity'), 'cancelling one workshop return must add back only that return instead of erasing later operations');
+assert.ok(source.includes('baselineQuantity + returnedTaskQuantity'), 'cancelling one workshop return must add back only that return over the frozen current Workshop baseline instead of erasing later operations');
+assert.ok(source.includes('currentQuantity !== baselineQuantity || currentStatus !== baselineStatus'), 'Workshop Return cancellation must fail closed if a later operation changes the task after the frozen baseline');
 
 console.log('Operational Autonomy R3 return/exchange capacity checks passed.');
