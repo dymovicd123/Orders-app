@@ -1206,10 +1206,14 @@ function App() {
     ])
   }
   const {
+    addExchangeSetNewItem,
     applyCreateProductPick,
     applyEditorProductPick,
     applyExchangeItemPatch,
     applyExchangeProductPick,
+    applyExchangeSetNewItemPatch,
+    applyExchangeSetNewProductPick,
+    removeExchangeSetNewItem,
     arrivalSuggestionValues,
     filteredReferenceItems,
     getOrderSourceAvailability,
@@ -8183,8 +8187,8 @@ function removeDebtPayment(index: number) {
         <OrderReturnsSection ctx={{ cancelReturnEntry, closeReturnForm, createReturnDraft, formatMoney, FriendlyNumberInput, isAdmin, loadReturnHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, returnBusy, returnDraft, returnFormRef, returnHistory, returnHistoryBusy, returnHistoryError, returnHistoryFilters, returnHistoryHasMore, returnHistorySummary, returnSelectedOrder, saveReturn, sectorStyle, setOrderPanel, setReturnDraft, setReturnHistoryFilters, SmartPickerInput, suggestionValues }} />
         </DeferredSection>
 
-        <DeferredSection active={activeSector === 'orders' && orderPanel === 'exchange'} label="Обмен размера">
-        <OrderExchangeSection ctx={{ applyExchangeItemPatch, applyExchangeProductPick, cancelExchangeEntry, closeExchangeForm, correctExchangeFinancialEntry, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />
+        <DeferredSection active={activeSector === 'orders' && orderPanel === 'exchange'} label="Обмен">
+        <OrderExchangeSection ctx={{ addExchangeSetNewItem, applyExchangeItemPatch, applyExchangeProductPick, applyExchangeSetNewItemPatch, applyExchangeSetNewProductPick, cancelExchangeEntry, closeExchangeForm, correctExchangeFinancialEntry, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, removeExchangeSetNewItem, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'team'} label="Команда">
