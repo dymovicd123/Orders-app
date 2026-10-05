@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "revision": "branch2-main-runtime-sync-20261005-frontend",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "bac4ea2d1080bc702574717a7728fbbc8fef329c",
+      "afterGitBlob": "9d32bcaa19458b4840bee7ea5e6f79526462ca7d",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261005/src/App.tsx"
+    },
+    "src/app/controllers/useOperationalViewModel.ts": {
+      "beforeGitBlob": "5461f2e1f6fc81956564b4be8dfbf0dbab2ad452",
+      "afterGitBlob": "656581b35dba35a376574c8e55b81c59ee3e75c8",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261005/src/app/controllers/useOperationalViewModel.ts"
+    },
+    "src/app/lazySections.tsx": {
+      "beforeGitBlob": "db570fac6fddb7a24219dd8a4fbcaaae12eeee6d",
+      "afterGitBlob": "fdfa9218e8aeb8ad5aee4c3b90f873d470e11d68",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261005/src/app/lazySections.tsx"
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "d487433ea1e1ee4257d571cf9a507a9b5525a0cb",
+      "afterGitBlob": "8a5ac22fc94d59a0cc9cf623c9f328a4ae1842eb",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261005/src/app/types.ts"
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "6e20547f7e8825303d79fbc21f37fe8214c4214e",
+      "afterGitBlob": "23c574a853e5483cf94c37eb0afce67e47781034",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261005/src/app/utils.ts"
+    },
+    "src/features/inventory/arrivalRecoveryFlow.ts": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "7f55a363da332435e276d50abab11f1de3f310d2",
+      "absentBefore": true
+    },
+    "src/features/inventory/views/ArrivalRecoveryDialog.tsx": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "ad964ad6d68c092cf60c914ad5711c08cc9b9f32",
+      "absentBefore": true
+    },
+    "src/features/inventory/views/renderInventoryMovementPanel.tsx": {
+      "beforeGitBlob": "16925e91b69ae1b3ad3bef6e941964d95cdfa007",
+      "afterGitBlob": "dc89847d2bac17d53320c3e4097ce4fbfd35e27b",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261005/src/features/inventory/views/renderInventoryMovementPanel.tsx"
+    },
+    "src/features/sections/InventorySection.tsx": {
+      "beforeGitBlob": "88bfb869f8d0a14c5cbf9fcca7858ad3b3fd5a69",
+      "afterGitBlob": "c3ba07c011ef9b68b5fa3cb0a52471851877eed8",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261005/src/features/sections/InventorySection.tsx"
+    },
+    "src/features/sections/OrderExchangeSection.tsx": {
+      "beforeGitBlob": "ee1fa083c38078dec9cc31612ba8665a2424003b",
+      "afterGitBlob": "49ae4a303089c3481adc5b0d72980efd668e971f",
+      "baselineFixture": "scripts/fixtures/branch2-main-runtime-sync-20261005/src/features/sections/OrderExchangeSection.tsx"
+    },
+    "src/styles/192c-arrival-recovery.css": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "37d2803edda7701a9c48b259ccce83c3df3c77e7",
+      "absentBefore": true
+    }
+  }
+}
