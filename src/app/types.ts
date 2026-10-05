@@ -73,6 +73,7 @@ export type ReturnHistoryItem = {
   length?: string | null
   size?: string | null
   inventorySource?: 'warehouse' | 'boutique' | null | string
+  sourceType?: 'warehouse' | 'boutique' | 'workshop' | null | string
   restocked?: boolean
   physicalTracking?: boolean
   physicalReceivedAt?: string | null
@@ -759,6 +760,7 @@ export type ExchangeHistoryItem = {
   length?: string | null
   size?: string | null
   inventorySource?: string | null
+  sourceType?: 'warehouse' | 'boutique' | 'workshop' | null | string
   physicalTracking?: boolean
   physicalReceivedAt?: string | null
   isWorkshop?: boolean
@@ -791,6 +793,7 @@ export type ExchangeHistoryEntry = {
   oldLength?: string | null
   oldSize?: string | null
   oldReturnSource: 'none' | 'warehouse' | 'boutique' | string
+  oldSourceType?: 'warehouse' | 'boutique' | 'workshop' | null | string
   newProductName: string
   newQuantity: number
   newGender?: string | null
