@@ -283,6 +283,8 @@ try {
   run('Stage03-H9A itemized Exchange backend', process.execPath, [path.join(root, 'scripts/test-stage03-h9a-itemized-exchange-backend.mjs')])
   run('Stage03-H9B itemized Exchange UI', process.execPath, [path.join(root, 'scripts/test-stage03-h9b-itemized-exchange-ui.mjs')])
   run('Stage03-H9C itemized multi-Exchange', process.execPath, [path.join(root, 'scripts/test-stage03-h9c-itemized-multi-exchange.mjs')])
+  run('Exchange Set V2 domain', process.execPath, [path.join(root, 'scripts/test-exchange-set-v2.mjs')])
+  run('Exchange Set V2 UI', process.execPath, [path.join(root, 'scripts/test-exchange-set-v2-ui.mjs')])
   run('Stage03-H10 manual Return policy', process.execPath, [path.join(root, 'scripts/test-stage03-h10-manual-return-policy.mjs')])
   run('Stage03-H11 product price analytics', process.execPath, [path.join(root, 'scripts/test-stage03-h11-product-price-analytics.mjs')])
   run('Stage03-H12 final end-to-end pricing audit', process.execPath, [path.join(root, 'scripts/test-stage03-h12-final-e2e-audit.mjs')])

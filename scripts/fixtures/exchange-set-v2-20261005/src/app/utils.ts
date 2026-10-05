@@ -774,20 +774,6 @@ export function createExchangeDraft(order?: OrderRecord | null): ExchangeDraft {
   return {
     orderId: order?.id || null,
     exchangeDate: formatLocalDateInput(),
-    workflowMode: itemizedPricing ? 'set_v2' : 'legacy_pair',
-    oldSelections: [],
-    newItems: itemizedPricing ? [{
-      draftKey: createExchangePairDraftKey(),
-      item: {
-        ...createEmptyEditorItem(),
-        unitPrice: undefined,
-        catalogPriceSnapshot: null,
-        priceOrigin: 'missing',
-        priceNeedsConfirmation: false,
-      },
-    }] : [],
-    paymentAmount: 0,
-    refundMethod: '',
     currentPairKey: createExchangePairDraftKey(),
     queuedPairs: [],
     oldItemId: Number(firstItem?.id || 0),

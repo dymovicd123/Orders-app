@@ -59,8 +59,14 @@ check(ordersWrite.includes("existingPricingMode === 'itemized_v1' && options.lif
 check(ordersWrite.includes('SET unit_price = ?, line_total = ?'), 'Reviewed legacy price-only correction path missing')
 check(!ordersWrite.includes('catalog_execution_prices'), 'Order writes must not reprice from mutable current Catalog')
 
-const exchangeTotalWrites = (returnsExchanges.match(/UPDATE orders SET total_amount = \?, updated_at = \? WHERE id = \?/g) || []).length
-check(exchangeTotalWrites === 3, 'Legacy exchange total mutation surface changed; review required: ' + exchangeTotalWrites)
+const exchangeSetV2Start = returnsExchanges.indexOf('export type ExchangeSetOldInput')
+check(exchangeSetV2Start > 0, 'Exchange Set V2 reviewed boundary marker missing')
+const legacyReturnsExchanges = returnsExchanges.slice(0, exchangeSetV2Start)
+const exchangeSetV2 = returnsExchanges.slice(exchangeSetV2Start)
+const legacyExchangeTotalWrites = (legacyReturnsExchanges.match(/UPDATE orders SET total_amount = \?, updated_at = \? WHERE id = \?/g) || []).length
+const setExchangeTotalWrites = (exchangeSetV2.match(/UPDATE orders SET total_amount = \?, updated_at = \? WHERE id = \?/g) || []).length
+check(legacyExchangeTotalWrites === 3, 'Legacy exchange total mutation surface changed; review required: ' + legacyExchangeTotalWrites)
+check(setExchangeTotalWrites === 2, 'Exchange Set V2 total mutation surface changed; review required: ' + setExchangeTotalWrites)
 const createExchangeStart = returnsExchanges.indexOf('export async function createExchange')
 const createExchangeEnd = returnsExchanges.indexOf('\n\nexport async function', createExchangeStart + 40)
 const createExchange = returnsExchanges.slice(createExchangeStart, createExchangeEnd > createExchangeStart ? createExchangeEnd : returnsExchanges.length)
@@ -76,4 +82,4 @@ for (const [name, source] of [['money', money], ['order-delete', deleteOrder], [
   check(!source.includes('catalog_execution_prices'), name + ' unexpectedly depends on mutable current Catalog pricing')
 }
 
-console.log('STAGE03-H6F COMMERCIAL WRITE SURFACE AUDIT PASSED — commercial order/item SQL writes remain confined to reviewed order Create/Edit/Exchange code; H9A itemized exchange is explicit while legacy zero-price behavior stays isolated; money/delete/shipping paths cannot silently reprice orders')
+console.log('STAGE03-H6F COMMERCIAL WRITE SURFACE AUDIT PASSED — commercial order/item SQL writes remain confined to reviewed order Create/Edit/Exchange code; legacy Exchange keeps its exact surface while Set V2 owns two explicit total writes; money/delete/shipping paths cannot silently reprice orders')

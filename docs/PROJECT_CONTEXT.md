@@ -1,6 +1,6 @@
 # Постоянный контекст проекта «Система заказов»
 
-Updated: 2026-09-26
+Updated: 2026-10-05
 
 Этот файл хранит **долгоживущие архитектурные и инженерные инварианты**. Текущий статус этапов/релизов хранится в корневом `PROJECT_CONTINUATION.md`.
 
@@ -82,6 +82,10 @@ Resolver invariants:
 - Safe corrections preserve history through correction/reversal instead of silent rewrite.
 - Return physical facts and refund amount are independent.
 - Exchange physical change and exchange payment/refund are independent.
+- Modern `itemized_v1` Exchange is a **set operation**, not a list of forced old→new pairs: old items and new items are independent collections.
+- Itemized Exchange commercial total is derived from persisted sold line values; actual payment/refund is derived separately from real net paid.
+- A never-issued exchanged item releases reservation/Workshop obligation without increasing Physical; a customer-held old item may remain pending and be received later per line.
+- Delayed Set Exchange intake keeps a unique lifecycle identity per old exchange item; one group's lines may have different Warehouse/Boutique/no-stock dispositions.
 
 Stage03 pricing model (active on Branch2, not yet fully promoted to Production):
 - `legacy_manual_total` preserves old order-total truth.

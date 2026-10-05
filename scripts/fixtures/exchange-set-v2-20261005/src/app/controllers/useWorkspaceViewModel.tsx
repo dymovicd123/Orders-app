@@ -22,7 +22,6 @@ import { FALLBACK_REFERENCE_DATA, emptyReferenceData, referenceKindOptions } fro
 import {
   canonicalCatalogProductKey,
   canonicalStockPositionValue,
-  createEmptyEditorItem,
   getCatalogVariantCategory,
   inventoryMatrixCellKey,
   isLikelyAdultSizeValue,
@@ -484,90 +483,6 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
         newItem: resolveExchangeItemPricing(pickedItem, current.newItem),
       }
     })
-  }
-
-  const exchangeSetDraftKey = () => globalThis.crypto?.randomUUID?.()
-    || `exchange-new-${Date.now()}-${Math.random().toString(36).slice(2)}`
-
-  function addExchangeSetNewItem() {
-    setExchangeDraft((current) => ({
-      ...current,
-      newItems: [
-        ...(current.newItems || []),
-        {
-          draftKey: exchangeSetDraftKey(),
-          item: {
-            ...createEmptyEditorItem(),
-            unitPrice: undefined,
-            catalogPriceSnapshot: null,
-            priceOrigin: 'missing',
-            priceNeedsConfirmation: false,
-          },
-        },
-      ],
-    }))
-  }
-
-  function removeExchangeSetNewItem(index: number) {
-    setExchangeDraft((current) => ({
-      ...current,
-      newItems: (current.newItems || []).filter((_, itemIndex) => itemIndex !== index),
-    }))
-  }
-
-  function applyExchangeSetNewItemPatch(index: number, patch: Partial<EditorItem>, refreshCatalogPrice = false) {
-    setExchangeDraft((current) => ({
-      ...current,
-      newItems: (current.newItems || []).map((entry, itemIndex) => {
-        if (itemIndex !== index) return entry
-        const patched: EditorItem = {
-          ...entry.item,
-          ...patch,
-          stockObservationEnabled: false,
-          observedPhysicalQuantity: null,
-        }
-        if (!refreshCatalogPrice) return { ...entry, item: patched }
-        const pricing = resolveCatalogOrderSalePrice(catalogData, patched)
-        const keepManualPrice = entry.item.priceOrigin === 'manual'
-          && entry.item.unitPrice !== undefined
-          && entry.item.unitPrice !== null
-        return {
-          ...entry,
-          item: {
-            ...patched,
-            unitPrice: keepManualPrice ? entry.item.unitPrice : pricing.status === 'matched' ? pricing.salePrice : undefined,
-            catalogPriceSnapshot: pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null,
-            priceOrigin: keepManualPrice ? 'manual' : pricing.status === 'matched' ? 'catalog' : 'missing',
-            priceNeedsConfirmation: false,
-          },
-        }
-      }),
-    }))
-  }
-
-  function applyExchangeSetNewProductPick(index: number, productName: string) {
-    setExchangeDraft((current) => ({
-      ...current,
-      newItems: (current.newItems || []).map((entry, itemIndex) => {
-        if (itemIndex !== index) return entry
-        const picked: EditorItem = {
-          ...buildOrderItemFromCatalogPick(entry.item, productName),
-          stockObservationEnabled: false,
-          observedPhysicalQuantity: null,
-        }
-        const pricing = resolveCatalogOrderSalePrice(catalogData, picked)
-        return {
-          ...entry,
-          item: {
-            ...picked,
-            unitPrice: pricing.status === 'matched' ? pricing.salePrice : undefined,
-            catalogPriceSnapshot: pricing.status === 'matched' ? pricing.catalogPriceSnapshot : null,
-            priceOrigin: pricing.status === 'matched' ? 'catalog' : 'missing',
-            priceNeedsConfirmation: false,
-          },
-        }
-      }),
-    }))
   }
 
   function resolveClientCatalogProduct(productName: unknown) {
@@ -1102,12 +1017,8 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
   return {
     applyCreateProductPick,
     applyEditorProductPick,
-    addExchangeSetNewItem,
     applyExchangeItemPatch,
     applyExchangeProductPick,
-    applyExchangeSetNewItemPatch,
-    applyExchangeSetNewProductPick,
-    removeExchangeSetNewItem,
     arrivalSuggestionValues,
     filteredReferenceItems,
     getOrderSourceAvailability,

@@ -1,5 +1,7 @@
 # Stage03 H9 — itemized Exchange
 
+> **Current-status note — 2026-10-05:** H9A/H9B/H9C remain historical compatibility evidence, but their old→new pair/batch UX is superseded for modern `itemized_v1` operations by **Exchange Set V2**. See `docs/continuation/EXCHANGE_SET_V2_20261005.md`. Legacy `legacy_manual_total` Exchange still uses the compatibility flow.
+
 Date: 2026-09-25
 
 Environment: **Branch2 only**. Production/main is not a target. No Production D1 action is allowed in H9A.
