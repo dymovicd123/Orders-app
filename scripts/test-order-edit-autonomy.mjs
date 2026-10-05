@@ -25,6 +25,10 @@ check(orders.includes('nextShippingStatus !== existingShippingStatus'), 'shippin
 check(orders.includes("status = 'fulfilled'"), 'fulfilled reservation physical handover guard missing')
 check(orders.includes('completedOrderOperationCounts'), 'return/exchange edit guard missing')
 check(orders.includes('assertCreateOrderShortageDecisions'), 'inventory shortage guard missing')
+check(orders.includes('const preservesHistoricalManager ='), 'historical manager preservation guard missing')
+check(orders.includes('An inactive/former manager is valid historical ownership for an existing order.'), 'former-manager edit rationale missing')
+check(orders.includes('if (!preservesHistoricalManager) {'), 'manager reassignment must be the only path that requires active-manager resolution')
+check(!orders.includes("if (!nextManagerId) throw new OrderInputValidationError('У заказа должен быть выбран действующий менеджер.');\n      const nextPhone"), 'unchanged historical manager is still blocked by an unconditional active-manager check')
 
 check(!app.includes('Редактирование заказа доступно только администратору.'), 'frontend still blocks ordinary edit at open')
 check(!app.includes('Сохранение редактирования заказа доступно только администратору.'), 'frontend still blocks ordinary edit at save')

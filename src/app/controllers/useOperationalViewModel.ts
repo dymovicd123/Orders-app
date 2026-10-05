@@ -1061,7 +1061,7 @@ const summary = useMemo(() => {
       productId: String(match.id),
       productName: match.name,
       category: first ? getCatalogVariantCategory(first) : (match.category === 'child' ? 'child' : 'adult'),
-      gender: automaticGender,
+      gender: automaticGender || first?.gender || position.gender,
       material: first?.material || position.material || 'СТАНДАРТ',
       length: first?.length || position.length || 'СТАНДАРТ',
     } : position))

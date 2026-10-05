@@ -5164,8 +5164,8 @@ function App() {
         throw new Error('Выберите хотя бы один товар/вариант.')
       }
 
-      if (!isAdmin && inventoryDraft.movementType === 'arrival' && cleanItems.some((item) => !item.variantId)) {
-        throw new Error('Новый товар или новая характеристика требуют админ-режима. В рабочем режиме выберите готовый существующий вариант.')
+      if (!isAdmin && inventoryDraft.movementType === 'arrival' && cleanItems.some((item) => !item.variantId && !Number(item.productId || 0))) {
+        throw new Error('Новый товар через «Приход» добавляет администратор. Для существующего товара можно принять новую вариацию — система проверит её перед сохранением.')
       }
 
       if ((inventoryDraft.movementType === 'writeoff' || inventoryDraft.movementType === 'manual_set') && !inventoryDraft.comment.trim()) {

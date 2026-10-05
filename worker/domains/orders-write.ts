@@ -1284,17 +1284,30 @@ export async function updateOrderCritical(
       }
       const timestamp = new Date().toISOString();
       const nextOrderDate = normalizeDate(input.orderDate ?? existingAny.order_date);
-      const nextManager = input.managerName !== undefined ? upperText(input.managerName) : cleanText(existingAny.manager_name);
       const existingManagerId = toInt(existingAny.manager_id ?? existingAny.managerId, 0) || null;
+      const existingManagerName = cleanText(existingAny.manager_snapshot_name || existingAny.manager_name);
+      const submittedManagerId = input.managerId !== undefined ? (toInt(input.managerId, 0) || null) : undefined;
+      const submittedManagerName = input.managerName !== undefined ? upperText(input.managerName) : undefined;
+      const managerSelectionProvided = input.managerId !== undefined || input.managerName !== undefined;
+      const preservesHistoricalManager = !managerSelectionProvided
+        || (submittedManagerId !== undefined && submittedManagerId === existingManagerId)
+        || (submittedManagerId === undefined
+          && submittedManagerName !== undefined
+          && submittedManagerName === upperText(existingManagerName));
       let nextManagerId: number | null = existingManagerId;
-      try {
-        nextManagerId = input.managerId !== undefined
-          ? await resolveActiveManagerId(db, input.managerId, nextManager)
-          : (input.managerName !== undefined ? await resolveActiveManagerId(db, null, nextManager) : existingManagerId);
-      } catch (error) {
-        throw new OrderInputValidationError(error instanceof Error ? error.message : 'У заказа должен быть выбран действующий менеджер.');
+      let nextManager = existingManagerName;
+
+      // An inactive/former manager is valid historical ownership for an existing order.
+      // Only an actual reassignment must resolve to a currently active manager.
+      if (!preservesHistoricalManager) {
+        try {
+          nextManagerId = await resolveActiveManagerId(db, submittedManagerId, submittedManagerName || '');
+        } catch (error) {
+          throw new OrderInputValidationError(error instanceof Error ? error.message : 'У заказа должен быть выбран действующий менеджер.');
+        }
+        if (!nextManagerId) throw new OrderInputValidationError('У заказа должен быть выбран действующий менеджер.');
+        nextManager = submittedManagerName || existingManagerName;
       }
-      if (!nextManagerId) throw new OrderInputValidationError('У заказа должен быть выбран действующий менеджер.');
       const nextPhone = input.customerPhone !== undefined ? normalizePhone(input.customerPhone) : cleanText(existingAny.customer_phone);
       if (input.customerPhone !== undefined && cleanText(input.customerPhone) && !nextPhone) throw new OrderInputValidationError('Телефон клиента должен содержать цифры.');
       const nextCustomerName = input.customerName !== undefined ? cleanText(input.customerName) : cleanText(existingAny.customer_name);

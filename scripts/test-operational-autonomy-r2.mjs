@@ -37,9 +37,10 @@ check(combination.includes('requireAdminAccess(request)'), 'new stocktake refere
 
 const movements = block(worker, "if (url.pathname === '/api/inventory/movements' && request.method === 'POST')", "if (url.pathname === '/api/inventory/transfer' && request.method === 'POST')")
 check(movements.includes("movementType === 'manual_set' || movementType === 'writeoff'"), 'routine existing-stock movements are not manager-safe')
-check(movements.includes("movementType === 'arrival'"), 'known-arrival boundary missing')
-check(movements.includes("input.items.every((item) => toInt(item?.variantId, 0) > 0)"), 'ordinary arrival must require an existing exact variant')
-check(movements.includes('requireAdminAccess(request)'), 'catalog-expanding movement branch lost its admin guard')
+check(movements.includes("const arrivalOperation = movementType === 'arrival'"), 'Arrival is not treated as a manager-safe warehouse workflow')
+check(movements.includes("if (!routineExistingStockOperation && !arrivalOperation)"), 'non-Arrival catalog-expanding movement boundary was weakened')
+check(movements.includes('requireAdminAccess(request)'), 'non-Arrival privileged movement branch lost its admin guard')
+check(movements.includes("arrivalCatalogCreationMode: authUser?.role === 'admin' ? 'admin' : 'manager'"), 'Arrival does not pass authenticated role into its catalog-integrity guard')
 
 check(block(worker, "const inventoryLifecycleResolveMatch =", "const inventoryLifecycleKnownMatch =").includes('requireAdminAccess(request)'), 'unknown lifecycle identity resolution must remain admin-only')
 check(block(worker, "if (url.pathname === '/api/catalog/products'", 'const productMatch =').includes('requireAdminAccess(request)'), 'catalog product creation must remain admin-only')
@@ -49,8 +50,8 @@ check(!app.includes("Редактирование заказа доступно 
 check(!app.includes("Применить результаты ревизии можно только в админ-режиме."), 'stocktake apply still has a frontend admin blocker')
 check(!app.includes("Ручные операции склада доступны только администратору."), 'inventory movement still has a blanket frontend admin blocker')
 check(app.includes("if (!isAdmin && inventoryPanel === 'catalog') setInventoryPanel('overview')"), 'working-mode inventory navigation must block only master-data catalog')
-check(app.includes("if (!isAdmin && inventoryDraft.movementType === 'arrival' && cleanItems.some((item) => !item.variantId))"), 'known-only Arrival boundary missing in frontend')
-check(app.includes("Новый товар или новая характеристика требуют админ-режима"), 'ordinary user needs a clear master-data boundary message')
+check(app.includes("if (!isAdmin && inventoryDraft.movementType === 'arrival' && cleanItems.some((item) => !item.variantId && !Number(item.productId || 0)))"), 'Arrival must allow a guarded new variant of an existing product while blocking a brand-new product')
+check(app.includes("Новый товар через «Приход» добавляет администратор."), 'ordinary user needs a clear new-product boundary message')
 check(projection.includes('const mutableWorkingOrder = !retainedOnly && !archived && !deleted'), 'deleted/archived order edit protection must remain in shared projection')
 check(projection.includes('canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation && (simpleAdmin || !sent)'), 'sent order manager edit protection must remain in shared projection')
 check(!app.includes("order.order_status !== 'active' || order.shipping_status === 'sent'"), 'closed unshipped orders must remain editable in working mode')
@@ -76,4 +77,4 @@ check(history.includes('entry.row.canReverse && isAdmin'), 'destructive history 
 check(section.includes('<div className="inventory-arrival-legacy-workspace">'), 'frozen Arrival workspace disappeared')
 check(section.includes('<button className="inventory-arrival-add-position" type="button" onClick={addInventoryArrivalPosition}>+ Добавить позицию</button>'), 'frozen Arrival action changed')
 
-console.log('OPERATIONAL AUTONOMY R2 PASSED — routine warehouse work is manager-safe; catalog/master-data and destructive reversals remain admin-only')
+console.log('OPERATIONAL AUTONOMY R2 PASSED — routine warehouse work and guarded Arrival variant creation are manager-safe; new products, unrelated privileged movements and destructive reversals remain protected')
