@@ -7804,11 +7804,9 @@ function removeDebtPayment(index: number) {
         onConfirm={() => { void arrivalRecoveryContinueRef.current?.() }}
         onClose={() => {
           if (inventoryMovementBusy) return
-          const shouldRefreshCatalog = arrivalRecoveryPrompt?.code === 'arrival_stale_variant'
           setArrivalRecoveryPrompt(null)
           setArrivalRecoveryError('')
           arrivalRecoveryContinueRef.current = null
-          if (shouldRefreshCatalog) void loadCatalogData(true)
         }}
       />
 
