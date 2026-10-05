@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "revision": "return-smart-ux-20261005-frontend",
+  "files": {
+    "src/features/sections/OrderReturnsSection.tsx": {
+      "beforeGitBlob": "5e225947aa58f8550e9caf71d0a0c042b88dbe67",
+      "afterGitBlob": "98bb7aa056a84812dc3908cf9b490dee7ead34d2",
+      "baselineFixture": "scripts/fixtures/return-smart-ux-20261005/src/features/sections/OrderReturnsSection.tsx"
+    },
+    "src/styles/194-return-smart-ux.css": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "8654e9efb7a5496f00b0dc976e05bce02e12d4a4",
+      "absentBefore": true
+    }
+  }
+}
