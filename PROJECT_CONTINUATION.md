@@ -6,6 +6,34 @@ Branch represented by this file: **branch2**
 
 Этот файл — короткий актуальный checkpoint Branch2. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не являются текущим roadmap без сверки с GitHub.
 
+
+## STATUS UPDATE — 2026-10-06 — STOP checkpoint: Return audit green, branch diverged
+
+User explicitly stopped the session here.
+
+Current Return-audit work branch: `w-return-exchange-ux-audit-20261005`.  
+Green audit HEAD before this documentation-only stop commit: `fc14165a4fbc44095858621384a61af829658d9d`.  
+Quality run **37356472772 — success**.
+
+Current Branch2 HEAD at stop: `3bf3a5ef0f50872541b7bdcee6f5a9af370d14f2`.
+
+The audit branch is **ahead 32 / behind 5** and therefore diverged from Branch2. **Do not merge it directly.** Resume by creating a fresh candidate from the current Branch2 head and intentionally reconciling only the Return-audit delta.
+
+Return audit currently green and implemented:
+- per-item handover truth in Return draft;
+- never-issued goods blocked from fake physical Return / pending / no-stock paths;
+- pre-handover cancellation directed to Edit order;
+- money-only refund still allowed;
+- Workshop delayed intake defaults to no-stock consistently;
+- Workshop Return cancellation is replay-safe and dependency-preflighted before stock reversal;
+- already-cancelled retry repairs derived order state;
+- direct regression + runtime delta preservation are in place.
+
+Canonical detailed checkpoint: `docs/continuation/RETURN_EXCHANGE_AUDIT_20261005.md`.
+
+Next action after resume: fresh branch from current Branch2 → reconcile Return audit only → cumulative Quality → Branch2-only PR → exact merged-SHA safety/deploy → manual acceptance. Main/Production remains out of scope.
+
+
 ## STATUS UPDATE — 2026-10-05 — Exchange Set V2 candidate green
 
 Exchange Set V2 merged to **branch2** through PR #285 at `d6e08c2a4028ff7fc256884b2496a0204f1611f7`.
