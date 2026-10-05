@@ -13,6 +13,7 @@ check(legacyHost.includes("itemizedExchange && exchangeDraft.workflowMode === 's
 check(app.includes('label="Обмен"') && !app.includes('label="Обмен размера"'), 'Exchange navigation still exposes obsolete size-only wording')
 check(types.includes("workflowMode: 'set_v2' | 'legacy_pair'") && types.includes('oldSelections: ExchangeSetOldDraft[]') && types.includes('newItems: ExchangeSetNewDraft[]'), 'Set draft is not modeled independently')
 check(utils.includes("workflowMode: itemizedPricing ? 'set_v2' : 'legacy_pair'"), 'Modern itemized orders do not default to Set V2')
+check(utils.includes("newItems: itemizedPricing ? [{") && utils.includes("priceOrigin: 'missing'"), 'Set V2 does not open with one ready blank replacement row')
 
 check(smart.includes('1 · Что клиент меняет') && smart.includes('2 · Что клиент получает') && smart.includes('3 · Итог и деньги'), 'Smart Exchange does not present the three human business stages')
 check(smart.includes('oldSelections') && smart.includes('newItems') && !smart.includes('queuedPairs'), 'Smart Exchange leaked old pair queue semantics')
@@ -28,6 +29,7 @@ check(!smart.includes('Без доплаты/возврата') && !smart.includ
 
 check(smart.includes('Ещё у клиента') && smart.includes("physicalState: 'pending'"), 'Pending customer return choice is missing')
 check(smart.includes('Клиенту не выдавалась') && smart.includes("return issued ? 'pending' : 'not_issued'"), 'Never-issued automatic disposition is missing')
+check(smart.includes("status ? issuedStockStatuses.has(status) : exchangeSelectedOrder?.shipping_status === 'sent'"), 'Smart Exchange does not prefer exact per-item handover truth over broad order shipping status')
 check(smart.includes('Вернуть на Склад') && smart.includes('Вернуть в Бутик') && smart.includes('Не добавлять в остаток'), 'Per-item returned-stock disposition choices are incomplete')
 check(smart.includes('Подтвердить прибытие всех товаров'), 'Pending-return queue does not confirm the whole arrival')
 check(!smart.includes('Сколько пришло'), 'Partial-arrival UI was introduced against the agreed scope')
