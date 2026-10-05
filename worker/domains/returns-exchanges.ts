@@ -2057,6 +2057,10 @@ export async function listExchanges(db: D1Database, url: URL) {
 
   const result = await db.prepare(
     `SELECT e.*, o.external_id, o.order_date, m.name AS manager_name, m.color_key AS manager_color, c.phone_normalized AS customer_phone, c.display_name AS customer_name,
+       EXISTS(
+         SELECT 1 FROM critical_operations co
+         WHERE co.operation_type = 'exchange_set_create' AND co.target_type = 'exchange' AND co.target_id = e.id
+       ) AS is_set_exchange,
        CASE WHEN old_snapshot.id IS NOT NULL THEN old_snapshot.product_name_snapshot ELSE old_item.product_name_snapshot END AS old_product_name,
        CASE WHEN old_snapshot.id IS NOT NULL THEN old_snapshot.quantity ELSE e.old_quantity END AS old_item_quantity,
        CASE WHEN old_snapshot.id IS NOT NULL THEN old_snapshot.gender_snapshot ELSE old_item.gender_snapshot END AS old_gender_snapshot,
@@ -2149,7 +2153,7 @@ export async function listExchanges(db: D1Database, url: URL) {
     return {
       id: row.id, orderId: row.order_id, externalId: row.external_id, orderDate: row.order_date,
       manager: row.manager_name || '—', managerColor: cleanText(row.manager_color) || null, customer: row.customer_name || row.customer_phone || '—', exchangeDate: row.exchange_date,
-      isSetExchange: !toInt(row.old_order_item_id, 0) && !toInt(row.new_order_item_id, 0),
+      isSetExchange: Boolean(toInt(row.is_set_exchange, 0)),
       oldItems: itemGroup.oldItems,
       newItems: itemGroup.newItems,
       oldItemId: row.old_order_item_id, oldProductName: row.old_product_name || itemGroup.oldItems[0]?.productName || '—', oldQuantity: row.old_item_quantity || row.old_quantity || itemGroup.oldItems[0]?.quantity || 0,
@@ -3863,12 +3867,14 @@ async function loadSetCreatePlan(db: D1Database, exchangeId: number): Promise<Ex
 
 export async function isExchangeSetV2(db: D1Database, exchangeId: number) {
   const row = await db.prepare(
-    `SELECT old_order_item_id, new_order_item_id
-     FROM exchanges
-     WHERE id = ?
+    `SELECT 1 AS found
+     FROM critical_operations
+     WHERE operation_type = 'exchange_set_create'
+       AND target_type = 'exchange'
+       AND target_id = ?
      LIMIT 1`
-  ).bind(exchangeId).first<Record<string, unknown>>()
-  return Boolean(row && !toInt(row.old_order_item_id, 0) && !toInt(row.new_order_item_id, 0))
+  ).bind(exchangeId).first<{ found: number }>()
+  return Boolean(toInt(row?.found, 0))
 }
 
 export async function cancelExchangeSetV2(
@@ -3890,7 +3896,7 @@ export async function cancelExchangeSetV2(
        WHERE e.id = ?`
     ).bind(exchangeId).first<Record<string, unknown>>()
     if (!exchange) throw new Error('Exchange not found.')
-    if (toInt(exchange.old_order_item_id, 0) || toInt(exchange.new_order_item_id, 0)) {
+    if (!await isExchangeSetV2(db, exchangeId)) {
       throw new CriticalOperationConflictError('Это обмен старого формата. Используйте совместимую отмену.')
     }
     if (cleanText(exchange.status) === 'cancelled') {
