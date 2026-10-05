@@ -76,6 +76,123 @@ export function normalizeInventoryOperationStockConfirmations(input: unknown): I
 }
 
 
+type ArrivalCatalogCreationMode = 'admin' | 'manager';
+
+async function assertManagerArrivalCreationSafe(
+  db: D1Database,
+  rawItems: ReturnType<typeof normalizeInventoryItem>[],
+) {
+  if (!rawItems.length) return;
+
+  const productIds = Array.from(new Set(rawItems.map((item) => toInt(item.productId, 0)).filter(Boolean)));
+  if (productIds.length !== rawItems.length && rawItems.some((item) => toInt(item.productId, 0) <= 0)) {
+    throw new Error('Новый товар через «Приход» создаёт администратор. Менеджер может добавить новую вариацию только существующего товара.');
+  }
+
+  const productIdsJson = JSON.stringify(productIds);
+  const productRows = mapSqlRows(await db.prepare(
+    `SELECT id, name, gender_scope
+     FROM catalog_products
+     WHERE is_active = 1
+       AND id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
+  ).bind(productIdsJson).all<Record<string, unknown>>()) as Array<Record<string, unknown>>;
+  const productById = new Map(productRows.map((row) => [toInt(row.id, 0), row]));
+
+  for (const item of rawItems) {
+    const product = productById.get(toInt(item.productId, 0));
+    if (!product) {
+      throw new Error('Выбранный товар больше не активен в Каталоге. Обновите Приход и выберите существующий товар заново.');
+    }
+    assertCatalogGenderAllowedForScope(product.gender_scope, item.gender, product.name);
+  }
+
+  const executionRows = mapSqlRows(await db.prepare(
+    `SELECT product_id, material, length
+     FROM catalog_stock_positions
+     WHERE is_active = 1
+       AND product_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
+  ).bind(productIdsJson).all<Record<string, unknown>>()) as Array<Record<string, unknown>>;
+  const executionKeys = new Set(executionRows.map((row) => [
+    toInt(row.product_id, 0),
+    canonicalStockPositionValue(row.material),
+    canonicalStockPositionValue(row.length),
+  ].join('¦')));
+
+  for (const item of rawItems) {
+    const executionKey = [
+      toInt(item.productId, 0),
+      canonicalStockPositionValue(item.material),
+      canonicalStockPositionValue(item.length),
+    ].join('¦');
+    if (!executionKeys.has(executionKey)) {
+      throw new Error(`Для «${item.productName}» это новое исполнение материала/длины. Менеджер может создать новую вариацию через «Приход» только внутри уже существующего исполнения; новое исполнение добавляет администратор.`);
+    }
+  }
+
+  const [referenceRowsResult, variantRowsResult] = await Promise.all([
+    db.prepare(
+      `SELECT kind, value
+       FROM reference_values
+       WHERE is_active = 1
+         AND kind IN ('color', 'size', 'child_age')`
+    ).all<Record<string, unknown>>(),
+    db.prepare(
+      `SELECT product_id, category, color, size_label
+       FROM catalog_variants
+       WHERE is_active = 1
+         AND product_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
+    ).bind(productIdsJson).all<Record<string, unknown>>(),
+  ]);
+  const referenceRows = mapSqlRows(referenceRowsResult) as Array<Record<string, unknown>>;
+  const variantRows = mapSqlRows(variantRowsResult) as Array<Record<string, unknown>>;
+  const knownColors = new Set(
+    referenceRows
+      .filter((row) => cleanText(row.kind) === 'color')
+      .map((row) => catalogColorIdentity(row.value))
+      .filter(Boolean),
+  );
+  const knownSizes = new Set(
+    referenceRows
+      .filter((row) => cleanText(row.kind) === 'size')
+      .map((row) => normalizeCatalogCombinationSize(row.value))
+      .filter(Boolean),
+  );
+  const knownChildAges = new Set(
+    referenceRows
+      .filter((row) => cleanText(row.kind) === 'child_age')
+      .map((row) => normalizeCatalogCombinationSize(row.value))
+      .filter(Boolean),
+  );
+
+  for (const item of rawItems) {
+    const productId = toInt(item.productId, 0);
+    const category = normalizeAudienceCategory(item.category, item.size);
+    const color = catalogColorIdentity(item.color);
+    const size = normalizeCatalogCombinationSize(item.size);
+    const sameProductVariants = variantRows.filter((row) => toInt(row.product_id, 0) === productId);
+
+    const colorAlreadyKnown = color === 'БЕЗ ЦВЕТА'
+      || knownColors.has(color)
+      || sameProductVariants.some((row) => catalogColorIdentity(row.color) === color);
+    if (!colorAlreadyKnown) {
+      throw new Error(`Цвет «${normalizeCatalogCombinationColor(item.color)}» ещё не известен системе. Сначала добавьте значение в справочник, затем создайте вариацию через «Приход».`);
+    }
+
+    if (size) {
+      const sizeKnownByReference = category === 'child' ? knownChildAges.has(size) : knownSizes.has(size);
+      const sizeAlreadyKnown = sizeKnownByReference
+        || sameProductVariants.some((row) => (
+          normalizeAudienceCategory(row.category, row.size_label) === category
+          && normalizeCatalogCombinationSize(row.size_label) === size
+        ));
+      if (!sizeAlreadyKnown) {
+        throw new Error(`${category === 'child' ? 'Возраст' : 'Размер'} «${size}» ещё не известен системе. Сначала добавьте значение в справочник, затем создайте вариацию через «Приход».`);
+      }
+    }
+  }
+}
+
+
 export async function resolveInventoryCreatableItemsBulk(
   db: D1Database,
   rawItems: ReturnType<typeof normalizeInventoryItem>[],
@@ -464,6 +581,7 @@ export async function applyInventoryMovement(
   input: { requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown },
   returnInventory = true,
   actor = '',
+  options: { arrivalCatalogCreationMode?: ArrivalCatalogCreationMode } = {},
 ) {
   const inventorySource = normalizeSourceType(input.inventorySource);
   const movementType = cleanText(input.movementType).toLowerCase() as InventoryMovementKind;
@@ -604,6 +722,9 @@ export async function applyInventoryMovement(
 
   if (creatableIndexes.length) {
     const creatableRaw = creatableIndexes.map(index => ({ ...items[index], variantId: 0 }));
+    if (movementType === 'arrival' && options.arrivalCatalogCreationMode === 'manager') {
+      await assertManagerArrivalCreationSafe(db, creatableRaw);
+    }
     const createdResolved = await resolveInventoryCreatableItemsBulk(db, creatableRaw, {
       allowRetiredRecreate: movementType === 'arrival',
     });
