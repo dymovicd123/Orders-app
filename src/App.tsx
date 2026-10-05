@@ -5290,72 +5290,22 @@ function App() {
         result.code === 'arrival_retired_product' || result.code === 'arrival_stale_variant'
       )
 
-      const openArrivalRecovery = (result: InventoryMovementSaveResponse, retryItems: MovementSubmitItem[]) => {
-        if (!isArrivalRecoveryResult(result)) return
-        const prompt: ArrivalRecoveryPrompt = {
-          code: result.code as ArrivalRecoveryPrompt['code'],
-          message: result.message || 'Приход требует подтверждения перед продолжением.',
-          productId: Math.max(0, Number(result.productId || 0)),
-          productName: String(result.productName || retryItems.find((item) => Number(item.productId || 0) === Number(result.productId || 0))?.productName || 'Выбранный товар'),
-          retirementId: Math.max(0, Number(result.retirementId || 0)),
-          variantId: Math.max(0, Number(result.variantId || 0)),
-        }
-        const restoreRequestId = makeCashRequestId(`arrival-restore-${prompt.productId || 'product'}`)
-        setArrivalRecoveryError('')
-        setArrivalRecoveryPrompt(prompt)
-
-        arrivalRecoveryContinueRef.current = async () => {
-          setInventoryMovementBusy(true)
-          setArrivalRecoveryError('')
-          try {
-            let nextItems = retryItems.map((item) => ({ ...item }))
-
-            if (prompt.code === 'arrival_retired_product') {
-              if (!prompt.retirementId) {
-                throw new Error('Не удалось подготовить безопасное автоматическое восстановление. Форма Прихода сохранена — обновите данные и попробуйте ещё раз.')
-              }
-              const restoreResponse = await apiFetch(`/api/catalog/retirements/${prompt.retirementId}/restore`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ requestId: restoreRequestId }),
-              })
-              const restoreResult = await readJsonResponse<{ ok?: boolean; message?: string }>(restoreResponse, 'Восстановление товара', { allowHttpError: true })
-              if (!restoreResponse.ok || restoreResult.ok === false) {
-                throw new Error(restoreResult.message || 'Не удалось безопасно восстановить товар. Введённый Приход не потерян.')
-              }
-              nextItems = nextItems.map((item) => {
-                const sameProduct = prompt.productId > 0
-                  ? Number(item.productId || 0) === prompt.productId
-                  : normalizeSearchText(item.productName) === normalizeSearchText(prompt.productName)
-                return sameProduct ? { ...item, variantId: '' } : item
-              })
-            } else {
-              nextItems = nextItems.map((item) => (
-                prompt.variantId > 0 && Number(item.variantId || 0) === prompt.variantId
-                  ? { ...item, variantId: '' }
-                  : item
-              ))
-            }
-
-            const retried = await submitMovement(undefined, nextItems)
-            if (!retried.response.ok && isArrivalRecoveryResult(retried.result)) {
-              openArrivalRecovery(retried.result, nextItems)
-              return
-            }
-            if (!retried.response.ok) {
-              throw new Error(retried.result.message || `Inventory save failed: ${retried.response.status}`)
-            }
-
-            setArrivalRecoveryPrompt(null)
-            setArrivalRecoveryError('')
-            arrivalRecoveryContinueRef.current = null
-            await finishMovement(retried.result)
-          } catch (error) {
-            setArrivalRecoveryError(error instanceof Error ? error.message : 'Не удалось продолжить Приход. Введённые данные сохранены в форме.')
-          } finally {
-            setInventoryMovementBusy(false)
-          }
-        }
+      const openArrivalRecovery = async (result: InventoryMovementSaveResponse, retryItems: MovementSubmitItem[]) => {
+        const { openArrivalRecoveryFlow } = await import('./features/inventory/arrivalRecoveryFlow')
+        await openArrivalRecoveryFlow({
+          result,
+          retryItems,
+          apiFetch: (input, init) => apiFetch(input, init),
+          readJsonResponse: (response, label, options) => readJsonResponse(response, label, options),
+          makeRequestId: makeCashRequestId,
+          normalizeText: normalizeSearchText,
+          submitMovement: (items) => submitMovement(undefined, items as MovementSubmitItem[]),
+          onPrompt: setArrivalRecoveryPrompt,
+          onError: setArrivalRecoveryError,
+          onBusy: setInventoryMovementBusy,
+          onContinuation: (continuation) => { arrivalRecoveryContinueRef.current = continuation },
+          onSuccess: async (recoveryResult) => { await finishMovement(recoveryResult as InventoryMovementSaveResponse) },
+        })
       }
 
       let { response, result } = await submitMovement()
@@ -5393,7 +5343,7 @@ function App() {
       }
 
       if (!response.ok && isArrivalRecoveryResult(result)) {
-        openArrivalRecovery(result, cleanItems)
+        await openArrivalRecovery(result, cleanItems)
         return
       }
       if (!response.ok) throw new Error(result.message || `Inventory save failed: ${response.status}`)
