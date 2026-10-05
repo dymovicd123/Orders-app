@@ -24,16 +24,18 @@ check(movement.includes("disabled={inventoryMovementBusy || (inventoryDraft.move
 check(!movement.includes("| 'isAdmin'"), 'Movement renderer still requests an unused admin flag')
 check(!movement.includes('    isAdmin,'), 'Movement renderer still destructures an unused admin flag')
 
-// The existing frontend boundary remains responsible for unknown Arrival/master-data rows.
-check(app.includes("if (!isAdmin && inventoryDraft.movementType === 'arrival' && cleanItems.some((item) => !item.variantId))"), 'known-only Arrival manager boundary disappeared')
-check(app.includes('Новый товар или новая характеристика требуют админ-режима'), 'unknown Arrival needs a clear admin explanation')
+// Arrival is a physical intake workflow: managers may create a guarded variant of an existing
+// product, while a completely new product still stays behind the explicit admin boundary.
+check(app.includes("if (!isAdmin && inventoryDraft.movementType === 'arrival' && cleanItems.some((item) => !item.variantId && !Number(item.productId || 0)))"), 'guarded existing-product Arrival creation boundary disappeared')
+check(app.includes('Новый товар через «Приход» добавляет администратор.'), 'new-product Arrival needs a clear admin explanation')
 
-// Backend permission truth remains the authority: manager-safe existing-stock work, guarded expansion.
+// Backend permission truth remains the authority: manager-safe warehouse work, guarded Arrival creation.
 const movementsRoute = block(worker, "if (url.pathname === '/api/inventory/movements' && request.method === 'POST')", "if (url.pathname === '/api/inventory/transfer' && request.method === 'POST')")
 check(movementsRoute.includes("movementType === 'manual_set' || movementType === 'writeoff'"), 'manager-safe correction/writeoff contract missing')
-check(movementsRoute.includes("movementType === 'arrival'"), 'known Arrival contract missing')
-check(movementsRoute.includes("input.items.every((item) => toInt(item?.variantId, 0) > 0)"), 'known Arrival exact-variant guard missing')
-check(movementsRoute.includes('requireAdminAccess(request)'), 'catalog-expanding movement must remain admin-guarded')
+check(movementsRoute.includes("const arrivalOperation = movementType === 'arrival'"), 'manager-safe Arrival contract missing')
+check(movementsRoute.includes("if (!routineExistingStockOperation && !arrivalOperation)"), 'unrelated privileged movement boundary was weakened')
+check(movementsRoute.includes("arrivalCatalogCreationMode: authUser?.role === 'admin' ? 'admin' : 'manager'"), 'Arrival role is not forwarded into its catalog-integrity guard')
+check(movementsRoute.includes('requireAdminAccess(request)'), 'unrelated catalog-expanding movement must remain admin-guarded')
 const transferRoute = block(worker, "if (url.pathname === '/api/inventory/transfer' && request.method === 'POST')", "if (url.pathname === '/api/catalog' && request.method === 'GET')")
 check(!transferRoute.includes('requireAdminAccess(request)'), 'known-SKU transfer unexpectedly became admin-only')
 
@@ -56,4 +58,4 @@ check(frontendPreservation.includes('w3WarehouseReliabilityPath') && frontendPre
 check(inventorySection.includes('<div className="inventory-arrival-legacy-workspace">'), 'frozen Arrival workspace changed')
 check(inventorySection.includes('<button className="inventory-arrival-add-position" type="button" onClick={addInventoryArrivalPosition}>+ Добавить позицию</button>'), 'frozen Arrival add-position action changed')
 
-console.log('W3.1A WAREHOUSE RELIABILITY PASSED — manager-safe Operations restored; Attention refreshes are demand-driven; Arrival remains frozen')
+console.log('W3.1A WAREHOUSE RELIABILITY PASSED — manager-safe Operations and guarded Arrival creation coexist with demand-driven Attention and the frozen Arrival layout')
