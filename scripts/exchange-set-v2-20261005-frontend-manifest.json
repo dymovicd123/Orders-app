@@ -19,7 +19,7 @@
     },
     "src/app/utils.ts": {
       "beforeGitBlob": "23c574a853e5483cf94c37eb0afce67e47781034",
-      "afterGitBlob": "8720511e98e70f02b992672aca31bc8fe492956b",
+      "afterGitBlob": "a544f4a08b1971b68dff4f31bdd67b7571f2b034",
       "baselineFixture": "scripts/fixtures/exchange-set-v2-20261005/src/app/utils.ts"
     },
     "src/features/sections/OrderExchangeSection.tsx": {
@@ -29,7 +29,7 @@
     },
     "src/features/sections/OrderExchangeSmartSection.tsx": {
       "beforeGitBlob": null,
-      "afterGitBlob": "fdfc1e3e94f03d1966615cf251676b6ac8a3ea2f",
+      "afterGitBlob": "7ca3ea180c1179b28acee6abbd6346e890481371",
       "absentBefore": true
     },
     "src/styles/193-exchange-set-v2.css": {
