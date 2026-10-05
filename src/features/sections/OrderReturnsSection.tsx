@@ -563,7 +563,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                 {entry.operationType === 'order_return' && entry.status !== 'cancelled' && item.physicalTracking && !item.physicalReceivedAt ? (
                                   <div className="mini-panel-actions">
                                     <select
-                                      value={receiptDestinations[`return:${entry.id}:${item.id}`] || (item.isWorkshop ? 'no_stock' : 'warehouse')}
+                                      value={receiptDestinations[`return:${entry.id}:${item.id}`] || defaultReturnDestination(item)}
                                       onChange={(event) => setReceiptDestinations((current) => ({ ...current, [`return:${entry.id}:${item.id}`]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
                                       disabled={returnBusy}
                                     >
@@ -579,7 +579,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                         operationType: 'return',
                                         operationId: entry.id,
                                         operationItemId: item.id,
-                                        destination: receiptDestinations[`return:${entry.id}:${item.id}`] || (item.isWorkshop ? 'no_stock' : 'warehouse'),
+                                        destination: receiptDestinations[`return:${entry.id}:${item.id}`] || defaultReturnDestination(item),
                                         productName: item.productName,
                                         externalId: entry.externalId,
                                       })}
