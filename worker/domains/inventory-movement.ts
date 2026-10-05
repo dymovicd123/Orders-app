@@ -164,7 +164,6 @@ export async function resolveInventoryCreatableItemsBulk(
   };
 
   const missingProducts = new Map<string, { name: string; category: string; externalId: string }>();
-  const retiredProductIdsToReactivate = new Set<number>();
   rawItems.forEach((item, index) => {
     if (!item.productName) throw new Error('Product is required for inventory operation.');
     const activeProduct = resolveProduct(item);
@@ -185,11 +184,7 @@ export async function resolveInventoryCreatableItemsBulk(
     const retiredId = toInt(retired?.id, 0);
     if (retiredId) {
       assertKnownProductGender(retired, item);
-      if (!options.allowRetiredRecreate) {
-        throw new Error(`Товар «${item.productName}» был удалён из рабочего каталога. Эта складская операция не может автоматически вернуть его; используйте Приход или восстановление Каталога.`);
-      }
-      retiredProductIdsToReactivate.add(retiredId);
-      return;
+      throw new Error(`Товар «${item.productName}» выведен из активного каталога. Приход не восстанавливает удалённый товар автоматически: сначала явно восстановите товар в Каталоге, затем повторите Приход.`);
     }
 
     const newIdentityKey = identityKey || `RAW:${item.productName}`;
@@ -201,17 +196,6 @@ export async function resolveInventoryCreatableItemsBulk(
       });
     }
   });
-
-  if (retiredProductIdsToReactivate.size) {
-    await db.prepare(
-      `UPDATE catalog_products
-       SET is_active=1, updated_at=?
-       WHERE is_active=0
-         AND id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
-    ).bind(now, JSON.stringify(Array.from(retiredProductIdsToReactivate))).run();
-    products = await loadProducts();
-    lookup = buildProductLookup(products);
-  }
 
   if (missingProducts.size) {
     const missingProductsJson = JSON.stringify(Array.from(missingProducts.values()));
@@ -589,6 +573,9 @@ export async function applyInventoryMovement(
         return;
       }
       if (strictOperationName) throw new Error(`${strictOperationName}: выбранный вариант больше не существует. Обновите остатки.`);
+      if (movementType === 'arrival') {
+        throw new Error('Приход: выбранный готовый вариант больше не активен. Обновите страницу и выберите вариант заново. Если это действительно новая вариация, добавьте её как новую комбинацию без старого ID.');
+      }
       creatableIndexes.push(index);
       return;
     }
