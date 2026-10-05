@@ -332,8 +332,6 @@ export async function createReturn(
     inventorySource: 'warehouse' | 'boutique' | null;
     wantsRestock: boolean;
   }> = [];
-  const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
-
   // Validate every selected row before inserting the return or changing stock.
   // A bad second row must not leave a half-created return behind.
   for (const selected of selectedItems) {
@@ -367,7 +365,7 @@ export async function createReturn(
     const itemRestockRequested = isWorkshop ? selected.restock === true : selected.restock !== false;
     const inventorySource = physicalTracking ? trackedInventorySource : (restockSource !== 'none' && itemRestockRequested ? restockSource : null);
     const wantsRestock = inventorySource !== null;
-    if (humanInventoryModelEnabled && !issuedToClient) {
+    if (!issuedToClient) {
       throw new CriticalOperationConflictError(
         `Позиция «${cleanText(orderItem.product_name_snapshot)}» не была выдана клиенту. Физический возврат для неё оформлять нельзя: товар уже остаётся у вас. Сначала измените состав заказа; если нужно вернуть только деньги, оформите возврат без выбора товара.`
       );
