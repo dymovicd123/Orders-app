@@ -1,6 +1,7 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
 import { useState } from 'react'
 import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
+import '../../styles/194-return-smart-ux.css'
 type SectionContext = Record<string, any>
 
 export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
