@@ -5,8 +5,8 @@
     "src/App.tsx": {
       "beforeGitBlob": "e071008be95f7e6185035cae7583932bcb43588c",
       "beforeLines": 8105,
-      "afterGitBlob": "239d77e383c90327adbe44bc3987eae57a3b194d",
-      "afterLines": 8216,
+      "afterGitBlob": "737277c40856f9752bbc87b9fbbfa720bf16bc3c",
+      "afterLines": 8214,
       "replacements": [
         {
           "beforeBlock": "import { InventoryStockGroupsRenderer } from './features/renderers/InventoryStockGroupsRenderer'",
@@ -26,7 +26,7 @@
         },
         {
           "beforeBlock": "      <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />\n\n",
-          "afterBlock": "      <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />\n\n      <ArrivalRecoveryDialog\n        prompt={arrivalRecoveryPrompt}\n        busy={inventoryMovementBusy}\n        error={arrivalRecoveryError}\n        onConfirm={() => { void arrivalRecoveryContinueRef.current?.() }}\n        onClose={() => {\n          if (inventoryMovementBusy) return\n          const shouldRefreshCatalog = arrivalRecoveryPrompt?.code === 'arrival_stale_variant'\n          setArrivalRecoveryPrompt(null)\n          setArrivalRecoveryError('')\n          arrivalRecoveryContinueRef.current = null\n          if (shouldRefreshCatalog) void loadCatalogData(true)\n        }}\n      />\n\n"
+          "afterBlock": "      <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />\n\n      <ArrivalRecoveryDialog\n        prompt={arrivalRecoveryPrompt}\n        busy={inventoryMovementBusy}\n        error={arrivalRecoveryError}\n        onConfirm={() => { void arrivalRecoveryContinueRef.current?.() }}\n        onClose={() => {\n          if (inventoryMovementBusy) return\n          setArrivalRecoveryPrompt(null)\n          setArrivalRecoveryError('')\n          arrivalRecoveryContinueRef.current = null\n        }}\n      />\n\n"
         }
       ]
     }
