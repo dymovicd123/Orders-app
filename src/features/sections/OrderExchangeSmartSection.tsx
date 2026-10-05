@@ -126,14 +126,16 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
     setReceivingExchangeId(Number(group.entry.id || 0))
     try {
       for (const item of group.items) {
-        await receiveReturnedItemAction({
+        const received = await receiveReturnedItemAction({
           operationType: 'exchange',
           operationId: Number(group.entry.id || 0),
           operationItemId: Number(item.id || 0),
           destination: destinationFor(Number(group.entry.id || 0), item),
           productName: item.productName,
           externalId: group.entry.externalId,
+          deferRefresh: true,
         })
+        if (!received) break
       }
       await loadExchangeHistory()
     } finally {
