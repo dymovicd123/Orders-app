@@ -2230,11 +2230,20 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
   ).bind(returnId).first<Record<string, unknown>>();
   if (!ret) throw new Error('Return not found.');
   if (cleanText(ret.status) === 'cancelled' && criticalOperation.row.step === 'started') {
+    const cancelledOrderId = toInt(ret.order_id, 0);
+    if (cancelledOrderId) {
+      await syncOrderFinancialLedger(db, cancelledOrderId, operationStartedAt);
+      try {
+        await refreshOrderWorkshopStatusFromTasks(db, cancelledOrderId, operationStartedAt);
+      } catch (error) {
+        console.warn('Workshop status refresh failed while recovering already-cancelled Return', error);
+      }
+    }
     const completedResponse = { ok: true, returnId, alreadyCancelled: true, stockReversals: [], restoredWorkshopTasks: 0, refreshRequired: true };
     await completeCriticalOperation(db, criticalOperation, completedResponse);
     let order = null;
     try {
-      order = await getOrder(db, toInt(ret.order_id, 0));
+      order = await getOrder(db, cancelledOrderId);
     } catch (error) {
       console.warn('Order readback after already-cancelled return retry failed', error);
     }
