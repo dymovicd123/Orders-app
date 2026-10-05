@@ -77,6 +77,44 @@ Quality run **37354722045 — success**:
 5. For Workshop-origin item arrival, both the top intake queue and history must default to no-stock.
 6. Cancel a Return containing a Workshop item; retrying the same cancellation must not restore Workshop quantity twice.
 
+## Smart Return UX follow-up
+
+The safety model above is now reflected in a less technical operator interface.
+
+The old Return item table has been replaced with responsive selectable cards:
+
+- a manager clicks the item card instead of editing a technical quantity row;
+- the card shows the current **available-to-return** quantity from backend-derived operation truth;
+- quantity > 1 gets bounded +/- controls and a one-click “all” action;
+- never-issued goods are visibly disabled and say that the item remains on site;
+- a selected physical return asks one simple question: **“Где товар сейчас?”**;
+- “Ещё едет обратно” preserves the existing delayed-intake queue;
+- “Уже вернули” reveals the per-item Warehouse / Boutique / no-stock destination;
+- Workshop-origin goods still default to no-stock and require an explicit Warehouse/Boutique choice to create stock;
+- the form shows selected line/quantity summary while keeping refund money explicitly independent.
+
+New regression: `scripts/test-return-smart-ux-r3.mjs`.
+
+The exact frontend delta is layered over the existing Return audit and Exchange Set V2 structural baselines through `scripts/return-smart-ux-20261005-frontend-manifest.json`; predecessor fixtures are stored under `scripts/fixtures/return-smart-ux-20261005/`.
+
+Green runtime candidate before this docs checkpoint: `efdacc6719fedfc19b3966d906c3048edbce9535`.
+
+Quality run **37358759928 — success**:
+- cumulative release gate: success;
+- Return physical-receipt / availability / Workshop stock-truth regressions: success;
+- TypeScript: success;
+- clean application build: success;
+- Wrangler Branch2 dry-run: success.
+
+## Manual acceptance after smart UX merge
+
+1. Open an issued order with one returnable item: one click should select it; the physical-state choice should be immediately understandable.
+2. Open an issued order with quantity > 1: +/- and “all” must stay within the available remaining quantity.
+3. Select “Ещё едет обратно”, save, and verify the item appears in the top pending-intake queue.
+4. Select “Уже вернули” and verify Warehouse / Boutique / no-stock is chosen per item.
+5. Open a never-issued order: the item card must be visibly disabled and direct the operator to Edit order.
+6. Verify money-only refund and zero-money physical Return remain valid and independent.
+
 ## Next safe action
 
-Merge this follow-up into **branch2**, validate the exact merged SHA with the Branch2 safety workflow and Cloudflare deploy monitor, then continue the broader Return/Exchange UX review from the deployed Branch2 baseline. Do not merge to main yet.
+Merge the Smart Return UX follow-up into **branch2**, validate/deploy the exact merged Branch2 SHA, then manually test Exchange Set V2 and Return together in the real Branch2 UI. Production/main remains out of scope.
