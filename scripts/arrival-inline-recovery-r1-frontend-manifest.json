@@ -5,12 +5,16 @@
     "src/App.tsx": {
       "beforeGitBlob": "e071008be95f7e6185035cae7583932bcb43588c",
       "beforeLines": 8105,
-      "afterGitBlob": "737277c40856f9752bbc87b9fbbfa720bf16bc3c",
+      "afterGitBlob": "cb5cf4d087e2e11a4b05eac14261bf42746edcd4",
       "afterLines": 8214,
       "replacements": [
         {
+          "beforeBlock": "import { DashboardSection, ClientsSection, ReferencesSection, InventorySection, WorkshopSection, OrdersHeaderSection, OrderFiltersSection, CreateOrderSection, OrderEditorSection, OrdersTableSection, OrderDetailsSection, OrderDebtSection, OrderReturnsSection, OrderExchangeSection, TeamSection, LeadsSection, PlanSection, FinanceSection, ReportsSection, OrderActivitySection, OrderCatalogResolutionModal, StockResolutionConfirmModal, ReturnedItemResolutionModal, DeferredSection } from './app/lazySections'",
+          "afterBlock": "import { DashboardSection, ClientsSection, ReferencesSection, InventorySection, WorkshopSection, OrdersHeaderSection, OrderFiltersSection, CreateOrderSection, OrderEditorSection, OrdersTableSection, OrderDetailsSection, OrderDebtSection, OrderReturnsSection, OrderExchangeSection, TeamSection, LeadsSection, PlanSection, FinanceSection, ReportsSection, OrderActivitySection, OrderCatalogResolutionModal, StockResolutionConfirmModal, ReturnedItemResolutionModal, ArrivalRecoveryDialog, DeferredSection } from './app/lazySections'"
+        },
+        {
           "beforeBlock": "import { InventoryStockGroupsRenderer } from './features/renderers/InventoryStockGroupsRenderer'",
-          "afterBlock": "import { InventoryStockGroupsRenderer } from './features/renderers/InventoryStockGroupsRenderer'\nimport { ArrivalRecoveryDialog, type ArrivalRecoveryPrompt } from './features/inventory/views/ArrivalRecoveryDialog'"
+          "afterBlock": "import { InventoryStockGroupsRenderer } from './features/renderers/InventoryStockGroupsRenderer'\nimport type { ArrivalRecoveryPrompt } from './features/inventory/views/ArrivalRecoveryDialog'"
         },
         {
           "beforeBlock": "import './styles/192b1-warehouse-attention.css'",
