@@ -15,7 +15,15 @@ check(ui.includes('const toggleReturnItem') && ui.includes('quantity: selected ?
 check(ui.includes('maxQuantity > 1') && ui.includes('Все {maxQuantity}'), 'Multi-quantity controls are missing')
 check(ui.includes('Где товар сейчас?') && ui.includes('Ещё едет обратно') && ui.includes('Уже вернули'), 'Physical state is not a simple choice')
 check(ui.includes("physicalState: 'pending', restock: false"), 'Pending choice lost delayed-intake semantics')
-check(ui.includes("item.sourceType === 'workshop' ? 'no_stock' : 'warehouse'"), 'Workshop arrived Return no longer defaults to no-stock')
+check(
+  ui.includes('const defaultReturnDestination =')
+    && ui.includes("item.sourceType === 'workshop' || item.isWorkshop")
+    && ui.includes("? 'no_stock'")
+    && ui.includes("item.sourceType === 'boutique'")
+    && ui.includes("? 'boutique'")
+    && ui.includes("const physicalState = defaultReturnDestination(item)"),
+  'Arrived Return no longer defaults by original source with Workshop staying no-stock',
+)
 check(ui.includes('<option value="warehouse">Склад</option>') && ui.includes('<option value="boutique">Бутик</option>') && ui.includes('<option value="no_stock">Не добавлять в остаток</option>'), 'Per-item stock disposition is missing')
 check(ui.includes('selectedReturnLines.length') && ui.includes('selectedReturnQuantity'), 'Selected Return summary is missing')
 check(ui.includes('Товары и деньги учитываются отдельно'), 'Goods and refund money were blurred again')
