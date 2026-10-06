@@ -289,6 +289,7 @@ try {
   run('Return never-issued physical safety R2', process.execPath, [path.join(root, 'scripts/test-return-unissued-physical-safety-r2.mjs')])
   run('Return smart UX R3', process.execPath, [path.join(root, 'scripts/test-return-smart-ux-r3.mjs')])
   run('Return/Exchange source defaults R1', process.execPath, [path.join(root, 'scripts/test-return-exchange-source-defaults-r1.mjs')])
+  run('Arrival child audience R1', process.execPath, [path.join(root, 'scripts/test-arrival-child-audience-r1.mjs')])
   run('Stage03-H11 product price analytics', process.execPath, [path.join(root, 'scripts/test-stage03-h11-product-price-analytics.mjs')])
   run('Stage03-H12 final end-to-end pricing audit', process.execPath, [path.join(root, 'scripts/test-stage03-h12-final-e2e-audit.mjs')])
   run('Branch2 main Catalog sync safety', process.execPath, [path.join(root, 'scripts/test-branch2-main-catalog-sync-safety.mjs')])
