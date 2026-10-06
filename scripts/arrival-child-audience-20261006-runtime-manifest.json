@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "revision": "arrival-child-audience-20261006-runtime",
+  "files": {
+    "src/app/controllers/useOperationalViewModel.ts": {
+      "beforeGitBlob": "656581b35dba35a376574c8e55b81c59ee3e75c8",
+      "afterGitBlob": "200dc8b85d041c795c106a7a8395f407a1ecd544",
+      "baselineFixture": "scripts/fixtures/arrival-child-audience-20261006/src/app/controllers/useOperationalViewModel.ts"
+    },
+    "worker/domains/inventory-movement.ts": {
+      "beforeGitBlob": "3cec27d490be5a7b6dfea57408bd8e3a1c4b4c59",
+      "afterGitBlob": "64ab3852c455834d67a7c61ed54504d26ec9162a",
+      "baselineFixture": "scripts/fixtures/arrival-child-audience-20261006/worker/domains/inventory-movement.ts"
+    }
+  }
+}
