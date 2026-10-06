@@ -4,7 +4,7 @@
   "files": {
     "worker/domains/inventory-movement.ts": {
       "beforeGitBlob": "64ab3852c455834d67a7c61ed54504d26ec9162a",
-      "afterGitBlob": "42761647d50aab160d5658a0a1b0aadd221cd37b",
+      "afterGitBlob": "a5e6ffd5d1039d54dee2b35026ef37a9363408fa",
       "baselineFixture": "scripts/fixtures/arrival-atomic-materialization-20261006/worker/domains/inventory-movement.ts"
     }
   }

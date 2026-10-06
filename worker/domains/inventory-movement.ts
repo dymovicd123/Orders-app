@@ -257,9 +257,9 @@ export async function resolveInventoryCreatableItemsBulk(
   };
 
   const resolveGenderForProduct = (product: ProductRow | null | undefined, item: ReturnType<typeof normalizeInventoryItem>) => {
-    const explicitGender = normalizeCatalogCombinationGender(item.gender);
-    if (explicitGender === 'ЖЕН' || explicitGender === 'МУЖ') {
-      return assertCatalogGenderAllowedForScope(product?.gender_scope, explicitGender, product?.name).gender;
+    const explicit = normalizeCatalogCombinationGender(item.gender);
+    if (explicit === 'ЖЕН' || explicit === 'МУЖ') {
+      return assertCatalogGenderAllowedForScope(product?.gender_scope, explicit, product?.name).gender;
     }
     const scope = cleanText(product?.gender_scope).toLowerCase();
     if (scope === 'female') return 'ЖЕН';
@@ -355,9 +355,25 @@ export async function resolveInventoryCreatableItemsBulk(
   const productForItem = rawItems.map(item => resolveProduct(item));
   if (productForItem.some(row => !row?.id)) throw new Error('Не удалось создать или найти товар для складской операции. Обновите каталог и повторите действие.');
 
-  // Re-check against the post-materialization canonical product in case a concurrent request
-  // resolved the same identity first. This is no longer the first validation boundary.
-  const resolvedGenderForItem = rawItems.map((item, index) => resolveGenderForProduct(productForItem[index], item));
+  const resolvedGenderForItem = rawItems.map((item, index) => {
+    const product = productForItem[index];
+    const explicit = normalizeCatalogCombinationGender(item.gender);
+    if (explicit === 'ЖЕН' || explicit === 'МУЖ') {
+      return assertCatalogGenderAllowedForScope(product?.gender_scope, explicit, product?.name).gender;
+    }
+    const scope = cleanText(product?.gender_scope).toLowerCase();
+    if (scope === 'female') return 'ЖЕН';
+    if (scope === 'male') return 'МУЖ';
+
+    // Child is an audience category, not a third gender. Historical Catalog data legitimately
+    // contains child SKUs with a blank gender (for example СӘУЛЕТ · ХАКИ · age 1). The Arrival
+    // form used to send "ДЕТСКИЙ" through the gender field, which forced a unisex-gender error
+    // and could leave an earlier new product materialized without stock. Keep adult unisex
+    // strict, but allow a neutral child identity.
+    if (normalizeAudienceCategory(item.category, item.size) === 'child') return '';
+
+    throw new Error('Для товара «Унисекс» выберите пол конкретной вещи: ЖЕН или МУЖ.');
+  });
 
   const productIds = Array.from(new Set(productForItem.map(row => toInt(row?.id, 0)).filter(Boolean)));
   const productIdsJson = JSON.stringify(productIds);
