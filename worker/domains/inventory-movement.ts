@@ -285,6 +285,14 @@ export async function resolveInventoryCreatableItemsBulk(
     const scope = cleanText(product?.gender_scope).toLowerCase();
     if (scope === 'female') return 'ЖЕН';
     if (scope === 'male') return 'МУЖ';
+
+    // Child is an audience category, not a third gender. Historical Catalog data legitimately
+    // contains child SKUs with a blank gender (for example СӘУЛЕТ · ХАКИ · age 1). The Arrival
+    // form used to send "ДЕТСКИЙ" through the gender field, which forced a unisex-gender error
+    // and could leave an earlier new product materialized without stock. Keep adult unisex
+    // strict, but allow a neutral child identity.
+    if (normalizeAudienceCategory(item.category, item.size) === 'child') return '';
+
     throw new Error('Для товара «Унисекс» выберите пол конкретной вещи: ЖЕН или МУЖ.');
   });
 
