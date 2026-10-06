@@ -15,7 +15,7 @@ check(types.includes("workflowMode: 'set_v2' | 'legacy_pair'") && types.includes
 check(utils.includes("workflowMode: itemizedPricing ? 'set_v2' : 'legacy_pair'"), 'Modern itemized orders do not default to Set V2')
 check(utils.includes("newItems: itemizedPricing ? [{") && utils.includes("priceOrigin: 'missing'"), 'Set V2 does not open with one ready blank replacement row')
 
-check(smart.includes('1 · Клиент возвращает') && smart.includes('2 · Клиент получает') && smart.includes('3 · Деньги'), 'Smart Exchange does not present the three human business stages')
+check(smart.includes('1 · Старые товары') && smart.includes('Что убираем из заказа') && smart.includes('2 · Клиент получает') && smart.includes('3 · Деньги'), 'Smart Exchange does not present the three human business stages')
 check(smart.includes('oldSelections') && smart.includes('newItems') && !smart.includes('queuedPairs'), 'Smart Exchange leaked old pair queue semantics')
 check(!smart.includes('Соответствие «старый → новый»') && !smart.includes('можно убрать 3 позиции и добавить 2'), 'Smart Exchange still explains internal set mechanics to the operator')
 check(smart.includes('exchange-old-order-info') && smart.includes('{orderQuantity} шт.') && smart.includes('в заказе') && smart.includes('Можно обменять: {maxQuantity} шт.') && smart.includes('Цена:') && smart.includes('Цена продажи'), 'Old order quantity and historic price are not shown as separate facts')
@@ -43,10 +43,13 @@ check(smart.includes('newItemStockIdentityKey') && smart.includes('batchRequired
 check(smart.includes('setObservedPhysicalForGroup') && smart.includes('Фактическое количество задаётся один раз у первой одинаковой позиции'), 'Repeated replacement rows can submit conflicting physical observations')
 check(smart.includes('exchange-new-primary-fields') && smart.includes('Сначала выберите товар — после этого появятся его характеристики и цена.'), 'New-item form still exposes the full technical SKU editor before a product is selected')
 check(smart.includes('saveBlockReason') && smart.includes('Укажите цену продажи для каждого нового товара.') && smart.includes('disabled={exchangeBusy || Boolean(saveBlockReason)}'), 'Exchange save does not explain incomplete manager input before submit')
+check(smart.includes('useEffect(() =>') && smart.includes('draftPaymentAmount > dueBeforeSettlement') && smart.includes("paymentAmount: 0, paymentMethod: ''"), 'Exchange can keep a hidden stale payment after the composition changes')
+check(smart.includes("productName: value, unitPrice: undefined, catalogPriceSnapshot: null, priceOrigin: 'missing'"), 'Free-typing another replacement product can keep the previous product price snapshot')
 
 check(smart.includes("item.sourceType === 'workshop'") && smart.includes('Срочно для цеха') && smart.includes('workshopDueDate') && smart.includes('workshopDueTime'), 'Smart Exchange dropped Workshop urgency/deadline controls')
 check(smart.includes('isSetExchange') && smart.includes('entry.oldItems') && smart.includes('entry.newItems'), 'Set exchange history does not render full old/new collections')
-check(smart.includes('returnedQuantity') && smart.includes('issuedQuantity') && smart.includes('Вернул: {returnedQuantity} шт. · Получил: {issuedQuantity} шт.'), 'Exchange history summary still counts rows instead of real item quantities')
+check(smart.includes('removedHistoryQuantity') && smart.includes('addedHistoryQuantity') && smart.includes('Убрали: {removedHistoryQuantity} шт. · Добавили: {addedHistoryQuantity} шт.'), 'Exchange history summary still counts rows or falsely claims never-issued goods were returned by the client')
+check(smart.includes('Убираем <strong>{removedQuantity} шт.</strong>') && !smart.includes('Возвращает <strong>{removedQuantity} шт.</strong>'), 'Final summary falsely describes never-issued old goods as customer returns')
 check(smart.includes('Отменить обмен') && app.includes("apiFetch('/api/exchanges/set'"), 'Smart create/cancel workflow is not connected end-to-end')
 check(css.includes('.exchange-old-card.is-selected') && css.includes('.exchange-old-order-info') && css.includes('.exchange-new-primary-fields') && css.includes('.exchange-money-result') && css.includes('.exchange-return-group') && css.includes('@media(max-width:720px)'), 'Smart Exchange lacks quantity-first, progressive, settlement, intake, or mobile styling')
 
