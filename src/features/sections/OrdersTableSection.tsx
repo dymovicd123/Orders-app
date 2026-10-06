@@ -22,6 +22,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     markOrderSentToClient,
     openOrderStockHandover,
     normalizeSuggestion,
+    ordinaryOrdersSeparated = false,
     orderFinanceBusy,
     orderFinanceReport,
     orderPanelStyle,
@@ -45,7 +46,11 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     <article className="card wide sector-orders" id="orders" style={{ ...sectorStyle('orders'), ...orderPanelStyle('list') }}>
               <div className="card-label">Таблица заказов</div>
               <div className="card-meta">Строки таблицы меняются по поиску и менеджеру. Финансовая сводка ниже синхронизирована с разделом «Финансы» по выбранному периоду.</div>
-              {filters.deliveryType === 'zammler' ? (
+              {ordinaryOrdersSeparated ? (
+                <div className="orders-current-filter-note">
+                  Обычные заказы · Kaspi вынесен в отдельный раздел · найдено <strong>{summary.count}</strong> · сумма <strong>{formatMoney(summary.total)}</strong> · долг <strong>{formatMoney(summary.debt)}</strong>
+                </div>
+              ) : filters.deliveryType === 'zammler' ? (
                 <div className="orders-current-filter-note">
                   Доставка: ЗАММЛЕР · найдено <strong>{summary.count}</strong> · сумма <strong>{formatMoney(summary.total)}</strong>
                 </div>
