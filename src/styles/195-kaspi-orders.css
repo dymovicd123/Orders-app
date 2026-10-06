@@ -1,0 +1,10 @@
+.kaspi-workspace{display:grid;gap:16px}
+.kaspi-workspace-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.kaspi-state-tabs{display:flex;flex-wrap:wrap;gap:8px}
+.kaspi-filter-row{display:grid;grid-template-columns:minmax(240px,2fr) repeat(2,minmax(150px,1fr));gap:10px}
+.kaspi-filter-row label{display:grid;gap:6px}
+.kaspi-list-summary{display:flex;justify-content:space-between;gap:12px;align-items:center}
+.kaspi-orders-table td>small{display:block;margin-top:4px}
+.kaspi-row-actions{display:flex;flex-wrap:wrap;gap:6px}
+.kaspi-pagination{justify-content:flex-end;align-items:center;gap:10px}
+@media(max-width:900px){.kaspi-workspace-head{display:grid}.kaspi-filter-row{grid-template-columns:1fr}.kaspi-orders-table{min-width:980px}.kaspi-pagination{justify-content:space-between}}
