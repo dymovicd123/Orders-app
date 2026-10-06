@@ -40,13 +40,15 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
   } = ctx
 
   return (
-    <article className="card wide sector-orders" id={zammlerMode ? 'zammler-create' : 'create'} style={{ ...sectorStyle('orders'), ...orderPanelStyle(zammlerMode ? 'zammler' : 'create') }}>
+    <article className="card wide sector-orders" id={zammlerMode ? 'kaspi-create' : 'create'} style={zammlerMode ? sectorStyle('kaspi') : { ...sectorStyle('orders'), ...orderPanelStyle('create') }}>
               <div className="create-hero">
                 <div>
-                  <div className="card-label">{zammlerMode ? 'Новый заказ ЗАММЛЕР' : 'Новый заказ'}</div>
-                  {!zammlerMode ? (
+                  <div className="card-label">{zammlerMode ? 'Новый заказ Kaspi' : 'Новый заказ'}</div>
+                  {zammlerMode ? (
+                    <div className="card-meta">Способ оплаты заказа уже задан как КАСПИ МАГАЗИН. ЗАММЛЕР подставлен как рекомендуемая доставка, но при необходимости его можно изменить.</div>
+                  ) : (
                     <div className="card-meta">Заполняйте заказ сверху вниз: клиент → товары → оплата → проверка. Лишних переключателей наверху нет, источник выбирается только внутри товарных позиций.</div>
-                  ) : null}
+                  )}
                 </div>
                 <div className="orders-workspace-kpis create-kpis">
                   <div>
@@ -109,16 +111,27 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                   </label>
                   <label>
                     <span>Доставка</span>
+                    <SmartPickerInput
+                      value={createDraft.deliveryType}
+                      onChange={(value) => updateCreateDraft('deliveryType', value)}
+                      placeholder={zammlerMode ? 'Рекомендуется ЗАММЛЕР' : 'Выберите доставку'}
+                      options={suggestionValues.deliveryTypes}
+                    />
+                    {zammlerMode ? <small>Для Kaspi по умолчанию предлагается ЗАММЛЕР, но доставка не определяет тип заказа.</small> : null}
+                  </label>
+                  <label>
+                    <span>Способ оплаты заказа</span>
                     {zammlerMode ? (
-                      <input value="ЗАММЛЕР" readOnly aria-label="Доставка ЗАММЛЕР" />
+                      <input value="КАСПИ МАГАЗИН" readOnly aria-label="Способ оплаты заказа КАСПИ МАГАЗИН" />
                     ) : (
                       <SmartPickerInput
-                        value={createDraft.deliveryType}
-                        onChange={(value) => updateCreateDraft('deliveryType', value)}
-                        placeholder="Выберите доставку"
-                        options={suggestionValues.deliveryTypes}
+                        value={createDraft.orderPaymentMethod}
+                        onChange={(value) => updateCreateDraft('orderPaymentMethod', value)}
+                        placeholder="Как клиент будет оплачивать заказ"
+                        options={suggestionValues.paymentMethods}
                       />
                     )}
+                    <small>Определяет рабочий раздел заказа. Фактические поступления денег фиксируются ниже отдельно.</small>
                   </label>
                   <label className="wide-field">
                     <span>Комментарий</span>
