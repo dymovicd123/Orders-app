@@ -26,7 +26,7 @@ export function KaspiOrdersSection({ ctx }: { ctx: SectionContext }) {
   } = ctx
 
   return (
-    <article className="card wide sector-kaspi kaspi-workspace">
+    <article className="card wide sector-kaspi kaspi-workspace" id="kaspi-orders">
       <div className="kaspi-workspace-head">
         <div>
           <div className="card-label">Kaspi Магазин</div>
