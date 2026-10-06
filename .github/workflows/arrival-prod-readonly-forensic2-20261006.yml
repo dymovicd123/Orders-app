@@ -1,0 +1,106 @@
+name: Arrival Production read-only forensic 2 2026-10-06
+
+on:
+  push:
+    branches:
+      - diag-arrival-prod-20261006
+    paths:
+      - '.github/workflows/arrival-prod-readonly-forensic2-20261006.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hard-stop on Production identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "diag-arrival-prod-20261006" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Inspect likely exact products and recent partial writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== LIKELY PRODUCTS ==='
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT id, name, category, gender_scope, is_active, created_at, updated_at
+            FROM catalog_products
+            WHERE UPPER(name) LIKE '%СӘУЛ%'
+               OR UPPER(name) LIKE '%САУЛ%'
+               OR UPPER(name) LIKE '%НАЗ%'
+               OR UPPER(name) LIKE '%КАРДИГАН%'
+               OR UPPER(name) LIKE '%ВОРОТНИК%'
+               OR UPPER(name) LIKE '%СИНИЙ БОМБЕР%'
+            ORDER BY name, id;
+          " --json
+
+          echo '=== LIKELY CHILD VARIANTS ==='
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT v.id, p.name AS product_name, p.gender_scope, v.stock_position_id, v.category,
+                   v.gender, v.color, v.material, v.length, v.size_label, v.is_active,
+                   v.external_id, v.created_at, v.updated_at
+            FROM catalog_variants v
+            JOIN catalog_products p ON p.id=v.product_id
+            WHERE (
+                 UPPER(p.name) LIKE '%СӘУЛ%'
+              OR UPPER(p.name) LIKE '%САУЛ%'
+              OR UPPER(p.name) LIKE '%НАЗ%'
+              OR UPPER(p.name) LIKE '%КАРДИГАН%'
+              OR UPPER(p.name) LIKE '%ВОРОТНИК%'
+              OR UPPER(p.name) LIKE '%СИНИЙ БОМБЕР%'
+            )
+            AND (v.category='child' OR UPPER(TRIM(COALESCE(v.color,'')))='ХАКИ' OR TRIM(COALESCE(v.size_label,''))='1')
+            ORDER BY p.name, v.category, v.gender, v.color, v.size_label, v.id;
+          " --json
+
+          echo '=== RECENT CATALOG VARIANTS ==='
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT v.id, p.name AS product_name, v.stock_position_id, v.category, v.gender, v.color,
+                   v.material, v.length, v.size_label, v.is_active, v.external_id, v.created_at, v.updated_at
+            FROM catalog_variants v
+            JOIN catalog_products p ON p.id=v.product_id
+            WHERE v.created_at >= '2026-10-06T15:00:00'
+               OR v.updated_at >= '2026-10-06T15:00:00'
+            ORDER BY COALESCE(v.updated_at,v.created_at) DESC, v.id DESC
+            LIMIT 100;
+          " --json
+
+          echo '=== RECENT EXECUTIONS ==='
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT sp.id, p.name AS product_name, sp.material, sp.length, sp.is_active,
+                   sp.created_at, sp.updated_at
+            FROM catalog_stock_positions sp
+            JOIN catalog_products p ON p.id=sp.product_id
+            WHERE sp.created_at >= '2026-10-06T15:00:00'
+               OR sp.updated_at >= '2026-10-06T15:00:00'
+            ORDER BY COALESCE(sp.updated_at,sp.created_at) DESC, sp.id DESC
+            LIMIT 100;
+          " --json
+
+          echo '=== RECENT ARRIVAL MOVEMENTS ==='
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT id, inventory_source, movement_type, product_name_snapshot, gender_snapshot,
+                   color_snapshot, material_snapshot, length_snapshot, size_snapshot,
+                   quantity_delta, reference_type, reference_id, created_at
+            FROM inventory_movements
+            WHERE movement_type='arrival'
+              AND created_at >= '2026-10-06T15:00:00'
+            ORDER BY id DESC
+            LIMIT 100;
+          " --json
