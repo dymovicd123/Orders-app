@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "revision": "exchange-final-audit-20261006-frontend",
+  "files": {
+    "src/features/sections/OrderExchangeSmartSection.tsx": {
+      "beforeGitBlob": "8f58e45e0bf38e277393778047067eb0964fdcdf",
+      "afterGitBlob": "efafcca08869eeacff17e38eb693035a870dacd9",
+      "baselineFixture": "scripts/fixtures/exchange-final-audit-20261006/src/features/sections/OrderExchangeSmartSection.tsx"
+    }
+  }
+}
