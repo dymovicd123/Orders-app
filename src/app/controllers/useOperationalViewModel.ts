@@ -1037,7 +1037,13 @@ const summary = useMemo(() => {
       }
       if (field === 'category') {
         const category = value === 'child' ? 'child' : 'adult'
-        return { ...position, category, gender: category === 'child' && !position.gender ? 'ДЕТСКИЙ' : position.gender }
+        const normalizedGender = normalizeSuggestion(position.gender)
+        const canonicalGender = normalizedGender === normalizeSuggestion('ЖЕН')
+          ? 'ЖЕН'
+          : normalizedGender === normalizeSuggestion('МУЖ')
+            ? 'МУЖ'
+            : ''
+        return { ...position, category, gender: canonicalGender }
       }
       return { ...position, [field]: value }
     }))
@@ -1056,12 +1062,16 @@ const summary = useMemo(() => {
     const first = (automaticGender
       ? activeVariants.find((variant) => normalizeSuggestion(variant.gender) === automaticGender)
       : null) || activeVariants[0] || null
+    const firstGender = normalizeSuggestion(first?.gender)
+    const positionGender = normalizeSuggestion(inventoryArrivalPositions.find((position) => position.id === id)?.gender)
+    const canonicalFirstGender = firstGender === normalizeSuggestion('ЖЕН') ? 'ЖЕН' : firstGender === normalizeSuggestion('МУЖ') ? 'МУЖ' : ''
+    const canonicalPositionGender = positionGender === normalizeSuggestion('ЖЕН') ? 'ЖЕН' : positionGender === normalizeSuggestion('МУЖ') ? 'МУЖ' : ''
     setInventoryArrivalPositions((current) => current.map((position) => position.id === id ? {
       ...position,
       productId: String(match.id),
       productName: match.name,
       category: first ? getCatalogVariantCategory(first) : (match.category === 'child' ? 'child' : 'adult'),
-      gender: automaticGender || first?.gender || position.gender,
+      gender: automaticGender || canonicalFirstGender || canonicalPositionGender,
       material: first?.material || position.material || 'СТАНДАРТ',
       length: first?.length || position.length || 'СТАНДАРТ',
     } : position))
