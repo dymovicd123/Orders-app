@@ -284,6 +284,7 @@ export async function listOrders(db: D1Database, url: URL) {
   const deliveryType = cleanText(url.searchParams.get('deliveryType'));
   const orderPaymentMethod = cleanText(url.searchParams.get('orderPaymentMethod')).toUpperCase();
   const excludeOrderPaymentMethod = cleanText(url.searchParams.get('excludeOrderPaymentMethod')).toUpperCase();
+  const debtState = cleanText(url.searchParams.get('debtState')).toLowerCase();
   const manager = cleanText(url.searchParams.get('manager')).toUpperCase();
   const managerId = toInt(url.searchParams.get('managerId'), 0);
   const status = normalizeStatusFilter(url.searchParams.get('status'));
@@ -365,6 +366,11 @@ export async function listOrders(db: D1Database, url: URL) {
   if (excludeOrderPaymentMethod) {
     baseWhereParts.push("UPPER(TRIM(COALESCE(o.order_payment_method, ''))) <> ?");
     baseBindings.push(excludeOrderPaymentMethod);
+  }
+  if (debtState === 'open') {
+    baseWhereParts.push('COALESCE(o.debt_amount, 0) > 0');
+  } else if (debtState === 'paid') {
+    baseWhereParts.push('COALESCE(o.debt_amount, 0) <= 0');
   }
 
   if (managerId > 0) {
