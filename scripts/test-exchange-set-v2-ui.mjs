@@ -30,7 +30,7 @@ check(smart.includes('exchange-money-result') && !smart.includes('exchange-money
 check(!smart.includes('Без доплаты/возврата') && !smart.includes('Клиент доплачивает'), 'Smart Exchange still asks the operator to classify obvious money arithmetic')
 
 check(smart.includes('Ещё у клиента') && smart.includes("physicalState: 'pending'"), 'Pending customer return choice is missing')
-check(smart.includes('Клиенту не выдавалась') && smart.includes("return issued ? 'pending' : 'not_issued'"), 'Never-issued automatic disposition is missing')
+check(smart.includes('Товар клиенту не выдавали') && smart.includes("return issued ? 'pending' : 'not_issued'"), 'Never-issued automatic disposition is missing')
 check(smart.includes("issuedStockStatuses.has(status)") && smart.includes("sentWorkshop") && smart.includes("!status && exchangeSelectedOrder?.shipping_status === 'sent'"), 'Smart Exchange does not combine exact stock handover truth with the Workshop-only sent fallback')
 check(smart.includes('Вернуть на Склад') && smart.includes('Вернуть в Бутик') && smart.includes('Не добавлять в остаток'), 'Per-item returned-stock disposition choices are incomplete')
 check(smart.includes('Подтвердить прибытие всех товаров'), 'Pending-return queue does not confirm the whole arrival')
