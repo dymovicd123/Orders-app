@@ -95,7 +95,7 @@ export function useWorkspaceViewModel({
 }: WorkspaceViewModelArgs) {
 const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector === sector ? undefined : 'none' })
   const orderPanelStyle = (panel: OrderPanel) => ({
-    display: activeSector === 'orders' && orderPanel === panel ? undefined : 'none',
+    display: ((panel === 'zammler' ? activeSector === 'kaspi' : activeSector === 'orders') && orderPanel === panel) ? undefined : 'none',
   })
 
   const pageTitleMap: Record<AppSector, { title: string; subtitle: string }> = {
