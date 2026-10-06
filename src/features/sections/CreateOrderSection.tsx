@@ -40,7 +40,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
   } = ctx
 
   return (
-    <article className="card wide sector-orders" id={zammlerMode ? 'kaspi-create' : 'create'} style={zammlerMode ? sectorStyle('kaspi') : { ...sectorStyle('orders'), ...orderPanelStyle('create') }}>
+    <article className="card wide sector-orders" id={zammlerMode ? 'kaspi-create' : 'create'} style={{ ...sectorStyle(zammlerMode ? 'kaspi' : 'orders'), ...orderPanelStyle(zammlerMode ? 'zammler' : 'create') }}>
               <div className="create-hero">
                 <div>
                   <div className="card-label">{zammlerMode ? 'Новый заказ Kaspi' : 'Новый заказ'}</div>
