@@ -335,6 +335,36 @@ Historical limitation is intentional: старый неоплаченный за
 
 Подробности: `docs/continuation/KASPI_ORDER_SEPARATION_20261006.md`.
 
+## Production Arrival incident / child audience hotfix (2026-10-06)
+
+Клиент в Production получил общий красный error banner при реальном Приходе. В партии были в том числе ЭТНО КАРДИГАН, СӘУЛЕТ ЖИЛЕТ, АЙ-НӘЗІК ЖИЛЕТІ, ВОРОТНИК, СИНИЙ БОМБЕР и детские варианты; отдельно подтверждён сценарий `СӘУЛЕТ ЖИЛЕТ · детский · ХАКИ · возраст 1`.
+
+Read-only forensic Production D1 выполнялся только через отдельную диагностическую ветку `diag-arrival-prod-20261006` с hard-stop на `orders_db_prod`; запросы показали `rows_written=0` / `changed_db=false`. Диагностическую ветку **никогда не merge**.
+
+Корень:
+- Arrival UI ошибочно кодировал audience `ДЕТСКИЙ` в поле gender.
+- Для child SKU audience и gender — разные измерения. В Production у `СӘУЛЕТ ЖИЛЕТ · ХАКИ · 1` уже существуют active child SKU, включая neutral gender.
+- Из-за `ДЕТСКИЙ` exact lookup мог промахнуться по neutral child SKU, а backend unisex guard — отклонить пакет.
+- Forensic также нашёл active `СИНИЙ БОМБЕР` без execution/variant/arrival, что согласуется с остановкой неуспешного Прихода после ранней Catalog materialization. Данные вручную не чистили: активный товар безопасно может получить execution/SKU при следующем корректном Приходе.
+
+Fix:
+- child audience больше не записывается как gender;
+- старые открытые draft со значением `ДЕТСКИЙ` нормализуются к neutral child gender перед exact lookup;
+- fixed female/male product scope всё ещё имеет приоритет;
+- adult unisex остаётся строгим и требует `ЖЕН` / `МУЖ`;
+- layout/UX Прихода не перерабатывался, D1 migration нет, исторические данные не переписывались.
+
+Evidence:
+- Branch2 PR #300, exact-head Quality `37497814696` — success.
+- Branch2 merge `0a3cfd9601b9882a93bd69cb8adb0229bf984cd6`; safety `37498063888` — success; deploy `37498063990` — success.
+- Production PR #301, exact-head Quality `37500952248` — success including dependency audits, cumulative release gate and build.
+- Production merge `da6a95da219220928f6ed6b41c63d1dbebee57ff`.
+- exact Production Cloudflare deploy `37501136513` — success; `cloudflare-deploy/main` status success.
+- Runtime files `src/app/controllers/useOperationalViewModel.ts` and `worker/domains/inventory-movement.ts` are exact-equal between current main and Branch2 for this fix.
+- Quality gate required a narrow dependency-only `sharp 0.35.5` security patch in Production candidate; no business/runtime domain change from that dependency update.
+
+Client can retry the failed Arrival flow. If a new failure appears, preserve the exact batch and inspect the specific safe server reason; do not guess from delivery/order/Kaspi work.
+
 ## Roadmap после Stage03
 
 Настоящий Stage04 ещё не начинался. CLIENT-ZAMMLER не считается Stage04.

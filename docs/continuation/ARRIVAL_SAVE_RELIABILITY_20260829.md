@@ -58,3 +58,61 @@ Production/main:
 ## Resume point
 
 After the Cloudflare monitor for this Production checkpoint is green, the Arrival save reliability incident is closed. Resume the planned warehouse roadmap from the next unfinished phase; do not reopen Arrival UI work unless a new reproducible defect appears.
+
+
+## Incident 2026-10-06 — child audience encoded as gender
+
+### Client symptom
+
+Production client saw:
+
+`Не удалось выполнить операцию. Обновите страницу и повторите действие...`
+
+during a real Arrival batch containing multiple products and child variants. A confirmed row was `СӘУЛЕТ ЖИЛЕТ · ХАКИ · age 1`.
+
+### Read-only Production forensic
+
+A dedicated diagnostic branch queried only `orders_db_prod` with explicit Production identity hard-stops. No mutations were performed.
+
+Important findings:
+- `СӘУЛЕТ ЖИЛЕТ` is active and unisex.
+- For `child · ХАКИ · 1`, Production has three active historical identities: neutral gender, ЖЕН, МУЖ. The neutral child SKU is valid historical Catalog truth.
+- `СИНИЙ БОМБЕР` existed as an active product with zero executions, zero variants and zero Arrival movements. This is consistent with Catalog product materialization occurring before a later failure stopped the operation.
+- Other rows from the same work period later arrived successfully, confirming the incident was identity-specific rather than a total Arrival outage.
+
+### Root cause
+
+The Arrival UI historically auto-filled `ДЕТСКИЙ` into the gender field when the user selected child audience.
+
+That is semantically wrong:
+- `child` is audience/category;
+- gender identity is independent.
+
+The backend for a unisex product expects either an explicit adult concrete gender or, for child audience after this fix, a neutral child identity. Passing `ДЕТСКИЙ` as gender prevented exact matching with an existing neutral child SKU and could reject materialization.
+
+### Fix
+
+Branch2 PR #300 and Production PR #301:
+- stop injecting `ДЕТСКИЙ` as gender;
+- normalize legacy open Arrival drafts carrying `ДЕТСКИЙ` to neutral child gender;
+- backend resolves neutral child identity after fixed female/male product scope, but before the adult-unisex strict guard;
+- fixed-scope female/male products still resolve to their required gender;
+- adult unisex still requires explicit ЖЕН/MУЖ.
+
+No D1 migration and no data rewrite.
+
+### Release evidence
+
+Branch2:
+- PR #300 exact-head Quality: `37497814696` success.
+- merge: `0a3cfd9601b9882a93bd69cb8adb0229bf984cd6`.
+- safety: `37498063888` success.
+- deploy: `37498063990` success.
+
+Production:
+- PR #301 exact-head Quality: `37500952248` success.
+- merge: `da6a95da219220928f6ed6b41c63d1dbebee57ff`.
+- Cloudflare deploy: `37501136513` success.
+- `cloudflare-deploy/main`: success.
+
+The `СИНИЙ БОМБЕР` product row was intentionally not deleted or rewritten. A later valid Arrival can safely materialize its execution/SKU under the existing active product.
