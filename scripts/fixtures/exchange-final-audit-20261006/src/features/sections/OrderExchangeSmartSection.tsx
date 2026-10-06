@@ -1,5 +1,5 @@
 // @ts-nocheck -- Exchange Set V2 is intentionally isolated from the legacy pair view while the old compatibility flow remains available.
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import '../../styles/193-exchange-set-v2.css'
 
 type SectionContext = Record<string, any>
@@ -97,20 +97,8 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
   const projectedTotal = Math.max(0, currentTotal - removedValue + addedValue)
   const dueBeforeSettlement = Math.max(0, projectedTotal - currentNetPaid)
   const refundAmount = Math.max(0, currentNetPaid - projectedTotal)
-  const draftPaymentAmount = Math.max(0, Math.trunc(Number(exchangeDraft.paymentAmount || 0)))
-  const paymentNow = refundAmount > 0 ? 0 : draftPaymentAmount
+  const paymentNow = refundAmount > 0 ? 0 : Math.max(0, Number(exchangeDraft.paymentAmount || 0))
   const remainingDebt = Math.max(0, dueBeforeSettlement - paymentNow)
-
-  useEffect(() => {
-    if (draftPaymentAmount <= 0) return
-    if (refundAmount <= 0 && draftPaymentAmount <= dueBeforeSettlement) return
-    setExchangeDraft((current: any) => {
-      const currentAmount = Math.max(0, Math.trunc(Number(current.paymentAmount || 0)))
-      if (currentAmount <= 0) return current
-      return { ...current, paymentAmount: 0, paymentMethod: '' }
-    })
-  }, [draftPaymentAmount, dueBeforeSettlement, refundAmount, setExchangeDraft])
-
   const filledNewItems = (exchangeDraft.newItems || []).filter((entry: any) => String(entry.item?.productName || '').trim())
   const newPricesReady = filledNewItems.every((entry: any) => {
     const price = entry.item?.unitPrice == null ? Number.NaN : Number(entry.item.unitPrice)
@@ -122,15 +110,11 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
       ? 'Добавьте товар, который клиент получает.'
       : !newPricesReady
         ? 'Укажите цену продажи для каждого нового товара.'
-        : refundAmount > 0 && draftPaymentAmount > 0
-          ? 'После пересчёта доплата больше не нужна. Сумма оплаты будет очищена.'
-          : refundAmount <= 0 && draftPaymentAmount > dueBeforeSettlement
-            ? 'Введённая оплата больше нового долга. Сумма оплаты будет очищена.'
-            : refundAmount > 0 && !String(exchangeDraft.refundMethod || '').trim()
-              ? 'Выберите способ возврата денег.'
-              : paymentNow > 0 && !String(exchangeDraft.paymentMethod || '').trim()
-                ? 'Выберите способ оплаты.'
-                : ''
+        : refundAmount > 0 && !String(exchangeDraft.refundMethod || '').trim()
+          ? 'Выберите способ возврата денег.'
+          : paymentNow > 0 && !String(exchangeDraft.paymentMethod || '').trim()
+            ? 'Выберите способ оплаты.'
+            : ''
 
   const pendingGroups = useMemo(() => (exchangeHistory || []).map((entry: any) => {
     const items = entry.isSetExchange
@@ -225,7 +209,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
         <div>
           <div className="card-label">Обмен</div>
           <h2>Обмен заказа</h2>
-          <p>Сначала выберите, что убираем из заказа, затем — что клиент получает взамен. Сумму и доплату система посчитает сама.</p>
+          <p>Сначала выберите, что клиент возвращает, затем — что получает взамен. Сумму и доплату система посчитает сама.</p>
         </div>
         <button className="secondary compact" type="button" onClick={() => setOrderPanel('list')}>К заказам</button>
       </div>
@@ -313,7 +297,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
 
           <section className="exchange-set-step">
             <div className="exchange-set-section-head">
-              <div><span className="exchange-set-kicker">1 · Старые товары</span><h3>Что убираем из заказа</h3><p>Выберите товары из этого заказа и нужное количество.</p></div>
+              <div><span className="exchange-set-kicker">1 · Клиент возвращает</span><h3>Что клиент возвращает</h3><p>Выберите товары из этого заказа и нужное количество.</p></div>
             </div>
             <div className="exchange-old-grid">
               {exchangeableOldItems.map((item: any) => {
@@ -399,7 +383,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                       <button className="ghost danger compact" type="button" onClick={() => removeExchangeSetNewItem(index)}>Убрать</button>
                     </div>
                     <div className="exchange-new-primary-fields">
-                      <label><span>Товар</span><SmartPickerInput value={item.productName || ''} options={suggestionValues.products} placeholder="Начните вводить название" onChange={(value) => applyExchangeSetNewItemPatch(index, { productName: value, unitPrice: undefined, catalogPriceSnapshot: null, priceOrigin: 'missing', priceNeedsConfirmation: false })} onPick={(value) => applyExchangeSetNewProductPick(index, value)} /></label>
+                      <label><span>Товар</span><SmartPickerInput value={item.productName || ''} options={suggestionValues.products} placeholder="Начните вводить название" onChange={(value) => applyExchangeSetNewItemPatch(index, { productName: value })} onPick={(value) => applyExchangeSetNewProductPick(index, value)} /></label>
                       <label><span>Количество</span><FriendlyNumberInput type="number" min="1" step="1" value={required} onChange={(event) => applyExchangeSetNewItemPatch(index, { quantity: Math.max(1, Math.trunc(Number(event.target.value) || 1)) })} /></label>
                       <label><span>Откуда выдаём</span><select value={item.sourceType || 'warehouse'} onChange={(event) => applyExchangeSetNewItemPatch(index, { sourceType: event.target.value })}><option value="warehouse">Склад</option><option value="boutique">Бутик</option><option value="workshop">Цех</option></select></label>
                     </div>
@@ -494,7 +478,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
           <section className="exchange-final-summary exchange-final-summary-compact">
             <div className="exchange-final-summary-head"><span className="exchange-set-kicker">Готово к сохранению</span><h3>Провести обмен</h3></div>
             <div className="exchange-final-checkline">
-              <span>Убираем <strong>{removedQuantity} шт.</strong></span>
+              <span>Возвращает <strong>{removedQuantity} шт.</strong></span>
               <span>Получает <strong>{addedQuantity} шт.</strong></span>
               <span>Итог заказа <strong>{formatMoney(projectedTotal)}</strong></span>
               <span className={refundAmount > 0 ? 'is-refund' : dueBeforeSettlement > 0 ? 'is-payment' : 'is-even'}>
@@ -533,11 +517,11 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                 {exchangeHistory.map((entry: any) => {
                   const olds = entry.isSetExchange ? (entry.oldItems || []) : [{ id: entry.oldOperationItemId, productName: entry.oldProductName, quantity: entry.oldQuantity, gender: entry.oldGender, color: entry.oldColor, material: entry.oldMaterial, length: entry.oldLength, size: entry.oldSize, inventorySource: entry.oldReturnSource, physicalTracking: entry.oldPhysicalTracking, physicalReceivedAt: entry.oldPhysicalReceivedAt, isWorkshop: entry.oldIsWorkshop, wasNotIssued: entry.oldWasNotIssued, lifecycleStatus: entry.oldLifecycleStatus, lifecycleId: entry.oldLifecycleId, lifecycleVariantId: entry.oldLifecycleVariantId, currentVariantId: entry.oldCurrentVariantId }]
                   const news = entry.isSetExchange ? (entry.newItems || []) : [{ productName: entry.newProductName, quantity: entry.newQuantity, gender: entry.newGender, color: entry.newColor, material: entry.newMaterial, length: entry.newLength, size: entry.newSize, inventorySource: entry.newSourceType, lifecycleStatus: entry.newLifecycleStatus }]
-                  const removedHistoryQuantity = olds.reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
-                  const addedHistoryQuantity = news.reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
+                  const returnedQuantity = olds.reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
+                  const issuedQuantity = news.reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
                   return (
                     <details className={`exchange-history-card-v2${entry.status === 'cancelled' ? ' is-cancelled' : ''}`} key={`exchange-history-v2-${entry.id}`}>
-                      <summary><div><strong>{entry.externalId}</strong><span>{entry.customer || '—'} · {entry.exchangeDate || '—'}</span></div><div><b>Убрали: {removedHistoryQuantity} шт. · Добавили: {addedHistoryQuantity} шт.</b><span>{entry.status === 'cancelled' ? 'Отменён' : 'Проведён'}</span></div><span>Подробнее</span></summary>
+                      <summary><div><strong>{entry.externalId}</strong><span>{entry.customer || '—'} · {entry.exchangeDate || '—'}</span></div><div><b>Вернул: {returnedQuantity} шт. · Получил: {issuedQuantity} шт.</b><span>{entry.status === 'cancelled' ? 'Отменён' : 'Проведён'}</span></div><span>Подробнее</span></summary>
                       <div className="exchange-history-body-v2">
                         <div className="exchange-history-side"><h4>Убрали из заказа</h4>{olds.map((item: any, index: number) => <div className="exchange-history-item-v2" key={`hist-old-${entry.id}-${item.id || index}`}><strong>{item.productName} × {item.quantity}</strong><span>{historyItemDetails(item)}</span><em>{oldHistoryStatus(item)}</em>{entry.status !== 'cancelled' && item.physicalReceivedAt && item.lifecycleStatus === 'pending' && item.lifecycleId && (item.lifecycleVariantId || item.currentVariantId) ? <button className="secondary compact" type="button" onClick={() => void reconcileKnownInventoryLifecycle(Number(item.lifecycleId || 0)).then((result: any) => result?.ok ? loadExchangeHistory() : null)}>Завершить приёмку</button> : null}</div>)}</div>
                         <div className="exchange-history-side"><h4>Добавили в заказ</h4>{news.map((item: any, index: number) => <div className="exchange-history-item-v2" key={`hist-new-${entry.id}-${item.id || index}`}><strong>{item.productName} × {item.quantity}</strong><span>{historyItemDetails(item)}</span><em>{item.inventorySource === 'workshop' ? 'Из цеха' : `Выдали: ${sourceLabel(item.inventorySource || 'warehouse')}`}</em></div>)}</div>
