@@ -20,6 +20,7 @@ const cleanupEnd = source.indexOf('\n\nexport async function resolveInventoryCre
 check(cleanupStart >= 0 && cleanupEnd > cleanupStart, 'Arrival materialization cleanup boundary missing')
 const cleanup = source.slice(cleanupStart, cleanupEnd)
 const productInsert = body.indexOf('INSERT OR IGNORE INTO catalog_products')
+check(productInsert >= 0, 'Arrival product materialization insert boundary missing')
 check(body.indexOf('resolveGenderForProduct(activeProduct, item)') >= 0 && body.indexOf('resolveGenderForProduct(activeProduct, item)') < productInsert, 'Existing adult-unisex validation can still happen after another row materializes')
 check(body.indexOf('resolveGenderForProduct(undefined, item)') >= 0 && body.indexOf('resolveGenderForProduct(undefined, item)') < productInsert, 'New adult-unisex validation can still happen after product creation')
 check(body.includes('arrivalTrace.productExternalIds'), 'Failed Arrival does not track newly planned product shells')
