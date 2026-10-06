@@ -50,15 +50,20 @@ try {
 
   const lazySections = [
     'DashboardSection','ClientsSection','ReferencesSection','InventorySection','WorkshopSection',
-    'OrdersHeaderSection','OrderFiltersSection','CreateOrderSection','OrderEditorSection','OrdersTableSection','KaspiOrdersSection',
+    'OrdersHeaderSection','OrderFiltersSection','CreateOrderSection','OrderEditorSection','OrdersTableSection',
     'OrderDetailsSection','OrderDebtSection','OrderReturnsSection','OrderExchangeSection','TeamSection','LeadsSection',
     'PlanSection','FinanceSection','ReportsSection','OrderActivitySection',
   ]
   const contextualLazyFeatures = ['OrderCatalogResolutionModal','StockResolutionConfirmModal','ReturnedItemResolutionModal','ArrivalRecoveryDialog']
-  const allLazyFeatures = [...lazySections, ...contextualLazyFeatures]
+  const dormantLazyFeatures = ['KaspiOrdersSection']
+  const allLazyFeatures = [...lazySections, ...dormantLazyFeatures, ...contextualLazyFeatures]
   for (const name of lazySections) {
     check(lazy.includes(`export const ${name} = namedLazy(`), `Lazy feature boundary missing: ${name}`)
     check(app.includes(`<${name} `), `App no longer renders lazy feature: ${name}`)
+  }
+  for (const name of dormantLazyFeatures) {
+    check(lazy.includes(`export const ${name} = namedLazy(`), `Dormant lazy compatibility boundary missing: ${name}`)
+    check(!app.includes(`<${name} `), `Dormant legacy feature rendered again: ${name}`)
   }
   for (const name of contextualLazyFeatures) {
     check(lazy.includes(`export const ${name} = namedLazy(`), `Lazy feature boundary missing: ${name}`)
