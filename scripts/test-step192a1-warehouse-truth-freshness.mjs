@@ -98,9 +98,17 @@ try {
   check(app.includes("restock: item.physicalState === 'warehouse' || item.physicalState === 'boutique'"), 'Return frontend no longer derives stock disposition from physical state')
   check(app.includes('physicalState: item.physicalState'), 'Return frontend no longer transmits physical receipt state')
   check(returnUtils.includes('restock: false,'), 'New return draft must not pre-credit inventory before physical receipt')
-  check(returnUtils.includes("physicalState: (item.sourceType === 'workshop' ? 'no_stock' : 'pending')"), 'Return draft must default ordinary items to pending and Workshop-origin items to no-stock')
-  check(returnView.includes('Пришёл → Склад'), 'Return UI lost the explicit physical Workshop-to-Warehouse decision')
-  check(!returnView.includes("item.sourceType !== 'workshop' ? <option value=\"boutique\">Пришёл → Бутик</option> : null") && returnView.includes('<option value="boutique">Пришёл → Бутик</option>'), 'Return form no longer exposes explicit Boutique for Workshop items')
+  check(returnUtils.includes("physicalState: (sourceType === 'workshop' ? 'no_stock' : 'pending')"), 'Return draft must default ordinary items to pending and Workshop-origin items to no-stock')
+  check(
+    returnView.includes('<option value="warehouse">Склад</option>')
+      && returnView.includes('явно выберите «Склад» или «Бутик»'),
+    'Return UI lost the explicit physical Workshop-to-Warehouse decision',
+  )
+  check(
+    !returnView.includes("item.sourceType !== 'workshop' ? <option value=\"boutique\">")
+      && returnView.includes('<option value="boutique">Бутик</option>'),
+    'Return form no longer exposes explicit Boutique for Workshop items',
+  )
   check(!returnView.includes("!item.isWorkshop ? <option value=\"boutique\">Бутик</option> : null") && returnView.includes('<option value="boutique">Бутик</option>'), 'Delayed return receipt no longer exposes Boutique for Workshop items')
   check(exchangeView.includes('effectiveOldItemIsWorkshop'), 'Exchange UI no longer distinguishes Workshop old items')
   check(!exchangeView.includes('!effectiveOldItemIsWorkshop ? <option value="boutique">') && exchangeView.includes('<option value="boutique">Клиент вернул → Бутик</option>'), 'Exchange form no longer exposes explicit Boutique for Workshop old items')

@@ -1,7 +1,6 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
 import { useState } from 'react'
 import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
-import '../../styles/194-return-smart-ux.css'
 type SectionContext = Record<string, any>
 
 export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
@@ -11,7 +10,6 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     createReturnDraft,
     formatMoney,
     FriendlyNumberInput,
-    handleEditOrder,
     ManagerBadge,
     managerColorFor,
     orderPanelStyle,
@@ -96,38 +94,6 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
   ))
   const loadedPendingReturnQuantity = pendingReturnIntake.reduce((sum: number, row: any) => sum + Math.max(0, Number(row.item.quantity || 0)), 0)
 
-  const returnSourceLabel = (item: any) => item.sourceType === 'workshop'
-    ? 'Цех'
-    : item.sourceType === 'boutique'
-      ? 'Бутик'
-      : 'Склад'
-  const defaultReturnDestination = (item: any): 'warehouse' | 'boutique' | 'no_stock' =>
-    item.sourceType === 'workshop' || item.isWorkshop
-      ? 'no_stock'
-      : item.sourceType === 'boutique'
-        ? 'boutique'
-        : 'warehouse'
-  const selectedReturnLines = (returnDraft.items || []).filter((item: any) => item.issuedToClient !== false && Number(item.quantity || 0) > 0)
-  const selectedReturnQuantity = selectedReturnLines.reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
-  const patchReturnItem = (orderItemId: number, patch: Record<string, unknown>) => setReturnDraft((current: any) => ({
-    ...current,
-    items: current.items.map((entry: any) => Number(entry.orderItemId || 0) === Number(orderItemId || 0)
-      ? { ...entry, ...patch }
-      : entry),
-  }))
-  const toggleReturnItem = (item: any) => {
-    if (item.issuedToClient === false) return
-    const selected = Number(item.quantity || 0) > 0
-    patchReturnItem(item.orderItemId, { quantity: selected ? 0 : 1 })
-  }
-  const markReturnArrived = (item: any) => {
-    const physicalState = defaultReturnDestination(item)
-    patchReturnItem(item.orderItemId, {
-      physicalState,
-      restock: physicalState === 'warehouse' || physicalState === 'boutique',
-    })
-  }
-
   return (
     <article className="card wide sector-orders" id="order-returns" style={{ ...sectorStyle('orders'), ...orderPanelStyle('returns') }}>
               <div className="card-label">Возврат</div>
@@ -190,7 +156,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                             <label className="intake-queue-destination">
                               <span>Куда принять</span>
                               <select
-                                value={receiptDestinations[receiptKey] || defaultReturnDestination(item)}
+                                value={receiptDestinations[receiptKey] || (item.isWorkshop ? 'no_stock' : 'warehouse')}
                                 onChange={(event) => setReceiptDestinations((current) => ({ ...current, [receiptKey]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
                                 disabled={returnBusy}
                               >
@@ -207,7 +173,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                 operationType: 'return',
                                 operationId: entry.id,
                                 operationItemId: item.id,
-                                destination: receiptDestinations[receiptKey] || defaultReturnDestination(item),
+                                destination: receiptDestinations[receiptKey] || (item.isWorkshop ? 'no_stock' : 'warehouse'),
                                 productName: item.productName,
                                 externalId: entry.externalId,
                               })}
@@ -319,7 +285,6 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                               onChange={(event) => setReturnDraft((current) => ({ ...current, amount: Number(event.target.value) }))}
                             />
                             <small className="field-hint">Введите фактическую сумму возврата вручную. Система не подставляет цену товара или текущую цену Каталога автоматически.</small>
-                            {returnDraft.items.some((item: any) => item.issuedToClient === false) ? <small className="field-hint">Если это отмена невыданного товара, денежный возврат сам по себе не убирает товар из заказа — сначала используйте «Изменить заказ» ниже.</small> : null}
                           </label>
                           <label>
                             <span>Способ возврата денег {Number(returnDraft.amount || 0) > 0 ? '' : '(не нужен при 0 ₸)'}</span>
@@ -345,148 +310,117 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                       <div className="mini-item order-payment-card">
                         <div className="mini-item-head">
                           <strong>Какие товары возвращаются</strong>
-                          <span className="muted-small">Выбор товара фиксирует физический возврат, но не рассчитывает деньги автоматически. Выбирайте товар только если клиент действительно получал его; сумма возврата денег указывается отдельно.</span>
+                          <span className="muted-small">Выбор товара фиксирует физический возврат, но не рассчитывает деньги автоматически. Сумму возврата укажите отдельно по фактической договорённости с клиентом.</span>
                         </div>
-                        {returnDraft.items.some((item: any) => item.issuedToClient === false) ? (
-                          <div className="history-note">
-                            <span>Есть товары, которые клиенту не выдавали</span>
-                            <strong>Их нельзя «вернуть на склад»: они и так физически остались у вас. Если позицию отменили до выдачи, сначала измените состав заказа. Если нужно вернуть только деньги, оставьте количество товара 0 и укажите сумму выше.</strong>
-                            <div className="mini-panel-actions">
-                              <button className="secondary compact" type="button" disabled={returnBusy} onClick={() => void handleEditOrder(returnSelectedOrder)}>Изменить заказ</button>
-                            </div>
-                          </div>
-                        ) : null}
-                        <div className="return-smart-grid">
-                          {returnDraft.items.length ? returnDraft.items.map((item: any) => {
-                            const selected = Number(item.quantity || 0) > 0
-                            const arrived = item.physicalState !== 'pending'
-                            const maxQuantity = Math.max(0, Number(item.maxQuantity || 0))
-                            return (
-                              <div
-                                className={`return-smart-card ${selected ? 'is-selected' : ''} ${item.issuedToClient === false ? 'is-unissued' : ''}`}
-                                key={`return-item-${item.orderItemId}`}
-                              >
-                                <button
-                                  type="button"
-                                  className="return-smart-pick"
-                                  disabled={item.issuedToClient === false || returnBusy}
-                                  onClick={() => toggleReturnItem(item)}
-                                >
-                                  <span className="return-smart-check">{selected ? '✓' : ''}</span>
-                                  <span className="return-smart-main">
-                                    <strong>{item.productName}</strong>
-                                    <small>{returnSourceLabel(item)} · доступно {maxQuantity} шт.</small>
-                                  </span>
-                                  <b>{item.issuedToClient === false ? 'Не выдавали' : selected ? 'Возвращаем' : 'Выбрать'}</b>
-                                </button>
-
-                                {item.issuedToClient === false ? (
-                                  <div className="return-smart-unissued">
-                                    <strong>Товар остаётся у вас</strong>
-                                    <span>Физического возврата нет. Если позицию отменили до выдачи, измените состав заказа.</span>
-                                  </div>
-                                ) : selected ? (
-                                  <div className="return-smart-controls">
-                                    {maxQuantity > 1 ? (
-                                      <div className="return-smart-quantity">
-                                        <span>Сколько возвращается</span>
-                                        <div>
-                                          <button
-                                            type="button"
-                                            aria-label="Уменьшить количество"
-                                            disabled={returnBusy || Number(item.quantity || 0) <= 1}
-                                            onClick={() => patchReturnItem(item.orderItemId, { quantity: Math.max(1, Number(item.quantity || 0) - 1) })}
-                                          >−</button>
-                                          <FriendlyNumberInput
-                                            type="number"
-                                            min="1"
-                                            max={maxQuantity}
-                                            value={item.quantity}
-                                            onChange={(event) => patchReturnItem(item.orderItemId, {
-                                              quantity: Math.min(maxQuantity, Math.max(1, Number(event.target.value || 1))),
-                                            })}
-                                          />
-                                          <button
-                                            type="button"
-                                            aria-label="Увеличить количество"
-                                            disabled={returnBusy || Number(item.quantity || 0) >= maxQuantity}
-                                            onClick={() => patchReturnItem(item.orderItemId, {
-                                              quantity: Math.min(maxQuantity, Number(item.quantity || 0) + 1),
-                                            })}
-                                          >+</button>
-                                          <button
-                                            type="button"
-                                            className="return-smart-all"
-                                            disabled={returnBusy || Number(item.quantity || 0) === maxQuantity}
-                                            onClick={() => patchReturnItem(item.orderItemId, { quantity: maxQuantity })}
-                                          >Все {maxQuantity}</button>
-                                        </div>
-                                      </div>
+                        <div className="table-shell">
+                          <table className="data-table return-items-table">
+                            <thead>
+                              <tr>
+                                <th>Позиция</th>
+                                <th>Доступно к возврату</th>
+                                <th>Сколько вернуть</th>
+                                <th>Товар физически</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {returnDraft.items.length ? returnDraft.items.map((item, index) => (
+                                <tr key={`return-item-${item.orderItemId}`}>
+                                  <td>
+                                    <div>{item.productName}</div>
+                                    <span className="muted-small">{item.sourceType === 'workshop' ? 'Позиция из Цеха' : item.sourceType === 'boutique' ? 'Была из Бутика' : 'Была со Склада'}</span>
+                                  </td>
+                                  <td>{item.maxQuantity}</td>
+                                  <td>
+                                    {Number(item.maxQuantity || 0) === 1 ? (
+                                      <button
+                                        type="button"
+                                        className={`return-quantity-choice ${Number(item.quantity || 0) > 0 ? 'is-selected' : ''}`}
+                                        onClick={() => setReturnDraft((current) => ({
+                                          ...current,
+                                          items: current.items.map((entry, itemIndex) => itemIndex === index
+                                            ? { ...entry, quantity: Number(entry.quantity || 0) > 0 ? 0 : 1 }
+                                            : entry),
+                                        }))}
+                                      >
+                                        {Number(item.quantity || 0) > 0 ? '✓ Возвращаем 1 шт.' : 'Вернуть 1 шт.'}
+                                      </button>
                                     ) : (
-                                      <div className="return-smart-one-unit">Возвращается 1 шт.</div>
-                                    )}
-
-                                    <div className="return-smart-physical">
-                                      <span>Где товар сейчас?</span>
-                                      <div className="return-smart-choice-row">
+                                      <div className="return-quantity-stepper">
                                         <button
                                           type="button"
-                                          className={!arrived ? 'is-active' : ''}
-                                          disabled={returnBusy}
-                                          onClick={() => patchReturnItem(item.orderItemId, { physicalState: 'pending', restock: false })}
-                                        >
-                                          Ещё едет обратно
-                                        </button>
+                                          aria-label="Уменьшить количество"
+                                          disabled={Number(item.quantity || 0) <= 0}
+                                          onClick={() => setReturnDraft((current) => ({
+                                            ...current,
+                                            items: current.items.map((entry, itemIndex) => itemIndex === index
+                                              ? { ...entry, quantity: Math.max(0, Number(entry.quantity || 0) - 1) }
+                                              : entry),
+                                          }))}
+                                        >−</button>
+                                        <FriendlyNumberInput
+                                          type="number"
+                                          min="0"
+                                          max={item.maxQuantity}
+                                          value={item.quantity}
+                                          onChange={(event) => setReturnDraft((current) => {
+                                            const nextItems = current.items.map((entry, itemIndex) => itemIndex === index
+                                              ? { ...entry, quantity: Math.min(entry.maxQuantity, Math.max(0, Number(event.target.value || 0))) }
+                                              : entry)
+                                            return { ...current, items: nextItems }
+                                          })}
+                                        />
                                         <button
                                           type="button"
-                                          className={arrived ? 'is-active' : ''}
-                                          disabled={returnBusy}
-                                          onClick={() => markReturnArrived(item)}
-                                        >
-                                          Уже вернули
-                                        </button>
+                                          aria-label="Увеличить количество"
+                                          disabled={Number(item.quantity || 0) >= Number(item.maxQuantity || 0)}
+                                          onClick={() => setReturnDraft((current) => ({
+                                            ...current,
+                                            items: current.items.map((entry, itemIndex) => itemIndex === index
+                                              ? { ...entry, quantity: Math.min(Number(entry.maxQuantity || 0), Number(entry.quantity || 0) + 1) }
+                                              : entry),
+                                          }))}
+                                        >+</button>
+                                        <button
+                                          type="button"
+                                          className="return-quantity-all"
+                                          disabled={Number(item.quantity || 0) === Number(item.maxQuantity || 0)}
+                                          onClick={() => setReturnDraft((current) => ({
+                                            ...current,
+                                            items: current.items.map((entry, itemIndex) => itemIndex === index
+                                              ? { ...entry, quantity: Number(entry.maxQuantity || 0) }
+                                              : entry),
+                                          }))}
+                                        >Все {item.maxQuantity}</button>
                                       </div>
-                                      {!arrived ? (
-                                        <small>После оформления позиция появится сверху в очереди «Нужно принять».</small>
-                                      ) : (
-                                        <label>
-                                          <span>Куда принять</span>
-                                          <select
-                                            value={item.physicalState}
-                                            disabled={returnBusy}
-                                            onChange={(event) => {
-                                              const physicalState = event.target.value as 'warehouse' | 'boutique' | 'no_stock'
-                                              patchReturnItem(item.orderItemId, {
-                                                physicalState,
-                                                restock: physicalState === 'warehouse' || physicalState === 'boutique',
-                                              })
-                                            }}
-                                          >
-                                            <option value="warehouse">Склад</option>
-                                            <option value="boutique">Бутик</option>
-                                            <option value="no_stock">Не добавлять в остаток</option>
-                                          </select>
-                                          {item.sourceType === 'workshop'
-                                            ? <small>Для вещи из Цеха по умолчанию остаток не создаётся. Если товар физически принимают в остатки, явно выберите «Склад» или «Бутик».</small>
-                                            : null}
-                                        </label>
-                                      )}
-                                    </div>
-                                  </div>
-                                ) : null}
-                              </div>
-                            )
-                          }) : (
-                            <div className="return-smart-empty">У заказа нет позиций, доступных для возврата.</div>
-                          )}
-                        </div>
-
-                        <div className="return-smart-summary">
-                          <div>
-                            <span>Выбрано товаров</span>
-                            <strong>{selectedReturnLines.length} поз. · {selectedReturnQuantity} шт.</strong>
-                          </div>
-                          <p>Товары и деньги учитываются отдельно: сумма возврата выше должна совпадать с фактической договорённостью с клиентом.</p>
+                                    )}
+                                  </td>
+                                  <td>
+                                    <select
+                                      value={item.physicalState}
+                                      disabled={Number(item.quantity || 0) <= 0}
+                                      onChange={(event) => {
+                                        const physicalState = event.target.value as 'pending' | 'warehouse' | 'boutique' | 'no_stock'
+                                        setReturnDraft((current) => ({
+                                          ...current,
+                                          items: current.items.map((entry, itemIndex) => itemIndex === index
+                                            ? { ...entry, physicalState, restock: physicalState === 'warehouse' || physicalState === 'boutique' }
+                                            : entry),
+                                        }))
+                                      }}
+                                    >
+                                      <option value="pending">Ещё не пришёл</option>
+                                      <option value="warehouse">Пришёл → Склад</option>
+                                      <option value="boutique">Пришёл → Бутик</option>
+                                      <option value="no_stock">Пришёл, в остаток не добавлять</option>
+                                    </select>
+                                    {item.sourceType === 'workshop' ? <small className="field-hint">Для вещи из Цеха по умолчанию остаток не создаётся. Если товар физически принимают в остатки, явно выберите «Склад» или «Бутик».</small> : null}
+                                  </td>
+                                </tr>
+                              )) : (
+                                <tr><td colSpan={4} className="empty-state">У заказа нет позиций для возврата.</td></tr>
+                              )}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                     </div>
@@ -563,7 +497,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                 {entry.operationType === 'order_return' && entry.status !== 'cancelled' && item.physicalTracking && !item.physicalReceivedAt ? (
                                   <div className="mini-panel-actions">
                                     <select
-                                      value={receiptDestinations[`return:${entry.id}:${item.id}`] || (item.isWorkshop ? 'no_stock' : 'warehouse')}
+                                      value={receiptDestinations[`return:${entry.id}:${item.id}`] || 'warehouse'}
                                       onChange={(event) => setReceiptDestinations((current) => ({ ...current, [`return:${entry.id}:${item.id}`]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
                                       disabled={returnBusy}
                                     >
@@ -579,7 +513,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                         operationType: 'return',
                                         operationId: entry.id,
                                         operationItemId: item.id,
-                                        destination: receiptDestinations[`return:${entry.id}:${item.id}`] || (item.isWorkshop ? 'no_stock' : 'warehouse'),
+                                        destination: receiptDestinations[`return:${entry.id}:${item.id}`] || 'warehouse',
                                         productName: item.productName,
                                         externalId: entry.externalId,
                                       })}

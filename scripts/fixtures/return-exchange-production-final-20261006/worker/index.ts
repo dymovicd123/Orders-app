@@ -25,7 +25,7 @@ import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
 import { createReferenceValue, deleteReferenceValue, getReferenceData, getReferenceValueCounts, listReferenceValues, normalizeReferenceKind, updateReferenceValue } from './domains/references.ts'
-import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
+import { cancelExchange, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createReturn, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { createItemizedExchangeBatchFromRequest } from './domains/exchange-batch.ts'
 import { continueDatabaseStorageCleanup, getDatabaseStorageStatus, startDatabaseStorageCleanup, updateDatabaseStorageCapacity } from './domains/storage.ts'
 import { buildStockResolutionRequired } from './domains/stock-resolution.ts'
@@ -1580,16 +1580,6 @@ export default {
         }
       }
 
-      if (url.pathname === '/api/exchanges/set' && request.method === 'POST') {
-        try {
-          return json(await createExchangeSetV2FromRequest(env.DB, request), { status: 201 });
-        } catch (error) {
-          const criticalResponse = criticalOperationErrorResponse(error);
-          if (criticalResponse) return criticalResponse;
-          throw error;
-        }
-      }
-
       if (url.pathname === '/api/exchanges' && request.method === 'POST') {
         const input = await readJson<{ requestId?: string; orderId?: number; exchangeDate?: string; oldItemId?: number; oldQuantity?: number; oldReturnSource?: unknown; oldPhysicalState?: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'; newItem?: NonNullable<OrderInput['items']>[number]; newSourceWasManuallyChanged?: boolean; financialAction?: unknown; financialAmount?: number; paymentMethod?: string; comment?: string }>(request);
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
@@ -1630,10 +1620,7 @@ export default {
         const input = await readJson<{ requestId?: string; comment?: string }>(request);
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
         try {
-          const exchangeId = Number(exchangeCancelMatch[1]);
-          return json(await (await isExchangeSetV2(env.DB, exchangeId)
-            ? cancelExchangeSetV2(env.DB, exchangeId, input)
-            : cancelExchange(env.DB, exchangeId, input)));
+          return json(await cancelExchange(env.DB, Number(exchangeCancelMatch[1]), input));
         } catch (error) {
           const criticalResponse = criticalOperationErrorResponse(error);
           if (criticalResponse) return criticalResponse;

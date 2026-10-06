@@ -1,6 +1,5 @@
 // Step 190.6A: structural module extracted from worker/index.ts.
 // Business behavior is intentionally unchanged.
-import { readJson } from '../core/http.ts'
 import { cleanText, isArchivedOrder, normalizeDate, normalizeExchangeFinancialAction, normalizeExchangeReturnSource, normalizeOrderStatus, normalizeReturnRestockSource, normalizeSourceType, toInt, upperText } from '../core/text.ts'
 import type { OrderInput, OrderItemSourceType, SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
@@ -332,6 +331,8 @@ export async function createReturn(
     inventorySource: 'warehouse' | 'boutique' | null;
     wantsRestock: boolean;
   }> = [];
+  const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
+
   // Validate every selected row before inserting the return or changing stock.
   // A bad second row must not leave a half-created return behind.
   for (const selected of selectedItems) {
@@ -354,9 +355,6 @@ export async function createReturn(
       throw new Error(`Для ${cleanText(orderItem.product_name_snapshot)} доступно только ${maxQuantity} шт., запрошено ${selected.quantity}.`);
     }
     const isWorkshop = Boolean(toInt(orderItem.is_workshop, 0));
-    const stockStatus = cleanText(orderItem.stock_writeoff_status);
-    const sentFallback = cleanText((existing as any).shipping_status) === 'sent' && (isWorkshop || !stockStatus);
-    const issuedToClient = orderItemWasPhysicallyIssued(orderItem) || sentFallback;
     const physicalState = selected.physicalState;
     const physicalTracking = physicalState !== null;
     const trackedInventorySource = physicalState === 'warehouse' || physicalState === 'boutique' ? physicalState : null;
@@ -365,10 +363,8 @@ export async function createReturn(
     const itemRestockRequested = isWorkshop ? selected.restock === true : selected.restock !== false;
     const inventorySource = physicalTracking ? trackedInventorySource : (restockSource !== 'none' && itemRestockRequested ? restockSource : null);
     const wantsRestock = inventorySource !== null;
-    if (!issuedToClient) {
-      throw new CriticalOperationConflictError(
-        `Позиция «${cleanText(orderItem.product_name_snapshot)}» не была выдана клиенту. Физический возврат для неё оформлять нельзя: товар уже остаётся у вас. Сначала измените состав заказа; если нужно вернуть только деньги, оформите возврат без выбора товара.`
-      );
+    if (humanInventoryModelEnabled && wantsRestock && !isWorkshop && !orderItemWasPhysicallyIssued(orderItem)) {
+      throw new Error(`Позиция «${cleanText(orderItem.product_name_snapshot)}» по учёту ещё не была физически выдана / отправлена. Возвращать её в остаток нельзя — это удвоит товар. Для неотправленного заказа используйте редактирование/удаление заказа либо выберите возврат денег без приёма вещи.`);
     }
     validatedSelectedItems.push({
       selected,
@@ -742,12 +738,6 @@ export async function receiveReturnedItem(
                 ei.length_snapshot, ei.size_snapshot, ei.quantity, ei.inventory_source, 0 AS restocked,
                 ei.physical_tracking, ei.physical_received_at, ei.created_at AS operation_item_created_at,
                 e.order_id, COALESCE(e.status, 'completed') AS operation_status,
-                EXISTS(
-                  SELECT 1 FROM critical_operations co
-                  WHERE co.operation_type = 'exchange_set_create'
-                    AND co.target_type = 'exchange'
-                    AND co.target_id = e.id
-                ) AS is_set_exchange,
                 o.external_id, oi.product_id, oi.variant_id, oi.audience_type, oi.is_workshop, oi.source_type
          FROM exchange_items ei
          JOIN exchanges e ON e.id = ei.exchange_id
@@ -799,11 +789,7 @@ export async function receiveReturnedItem(
       }
     }
 
-    const setExchangeItem = operationType === 'exchange' && Boolean(toInt(item.is_set_exchange, 0));
-    if (operationType === 'exchange' && !setExchangeItem) {
-      // Legacy exchanges have one old item, so the parent field is meaningful there.
-      // Set V2 stores disposition independently on each exchange_item; the last line
-      // received must never overwrite a fake operation-wide destination.
+    if (operationType === 'exchange') {
       await db.prepare(`UPDATE exchanges SET old_return_source = ? WHERE id = ? AND COALESCE(status, 'completed') <> 'cancelled'`)
         .bind(destination === 'no_stock' ? 'none' : destination, operationId).run();
     }
@@ -816,11 +802,7 @@ export async function receiveReturnedItem(
     if (destination !== 'no_stock') {
       const resolved = await resolveInventoryLifecycleCandidate(db, item, isWorkshop);
       const event = await insertInventoryLifecycleEvent(db, {
-        eventKey: operationType === 'return'
-          ? `return:${operationId}:item:${operationItemId}`
-          : setExchangeItem
-            ? `exchange:${operationId}:old:${operationItemId}`
-            : `exchange:${operationId}:old`,
+        eventKey: operationType === 'return' ? `return:${operationId}:item:${operationItemId}` : `exchange:${operationId}:old`,
         operationType,
         operationId,
         operationItemId,
@@ -1134,8 +1116,7 @@ export async function createExchange(
     : null;
   if (rawOldPhysicalState && !oldPhysicalState) throw new Error('Неизвестный физический статус старой вещи обмена.');
   const oldWasNotIssued = oldPhysicalState === 'not_issued';
-  const oldWasAlreadyIssued = orderItemWasPhysicallyIssued(oldItem)
-    || (oldItemIsWorkshop && cleanText((existing as any).shipping_status) === 'sent');
+  const oldWasAlreadyIssued = orderItemWasPhysicallyIssued(oldItem);
   if (oldWasNotIssued && oldWasAlreadyIssued) {
     throw new CriticalOperationConflictError(
       'Эта позиция уже отмечена как выданная клиенту. Нельзя выбрать «Не выдавали клиенту». Если вещь вернулась, укажите, куда её приняли.'
@@ -2046,8 +2027,8 @@ export async function listExchanges(db: D1Database, url: URL) {
     where.push(`INSTR(UPPER(
       COALESCE(o.external_id, '') || ' ' || COALESCE(m.name, '') || ' ' || COALESCE(c.display_name, '') || ' ' || COALESCE(c.phone_normalized, '') || ' ' ||
       COALESCE(e.comment, '') || ' ' || COALESCE(e.cancellation_comment, '') || ' ' ||
-      COALESCE((SELECT GROUP_CONCAT(product_name_snapshot, ' ') FROM exchange_items WHERE exchange_id = e.id AND role = 'old'), '') || ' ' ||
-      COALESCE((SELECT GROUP_CONCAT(product_name_snapshot, ' ') FROM exchange_items WHERE exchange_id = e.id AND role = 'new'), '')
+      COALESCE((SELECT product_name_snapshot FROM exchange_items WHERE exchange_id = e.id AND role = 'old' ORDER BY id LIMIT 1), '') || ' ' ||
+      COALESCE((SELECT product_name_snapshot FROM exchange_items WHERE exchange_id = e.id AND role = 'new' ORDER BY id LIMIT 1), '')
     ), ?) > 0`);
     bindings.push(query);
   }
@@ -2057,21 +2038,8 @@ export async function listExchanges(db: D1Database, url: URL) {
             SUM(CASE WHEN COALESCE(e.status, 'completed') <> 'cancelled' THEN 1 ELSE 0 END) AS active_count,
             SUM(CASE WHEN COALESCE(e.status, 'completed') = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_count,
             COALESCE(SUM(CASE
-              WHEN COALESCE(e.status, 'completed') = 'cancelled' THEN 0
-              WHEN EXISTS(
-                SELECT 1 FROM critical_operations co
-                WHERE co.operation_type = 'exchange_set_create'
-                  AND co.target_type = 'exchange'
-                  AND co.target_id = e.id
-              ) THEN COALESCE((
-                SELECT SUM(ei.quantity)
-                FROM exchange_items ei
-                WHERE ei.exchange_id = e.id
-                  AND ei.role = 'old'
-                  AND COALESCE(ei.physical_tracking, 0) = 1
-                  AND ei.physical_received_at IS NULL
-              ), 0)
-              WHEN old_summary.physical_tracking = 1
+              WHEN COALESCE(e.status, 'completed') <> 'cancelled'
+               AND old_summary.physical_tracking = 1
                AND old_summary.physical_received_at IS NULL
               THEN COALESCE(old_summary.quantity, e.old_quantity, 0)
               ELSE 0
@@ -2086,10 +2054,6 @@ export async function listExchanges(db: D1Database, url: URL) {
 
   const result = await db.prepare(
     `SELECT e.*, o.external_id, o.order_date, m.name AS manager_name, m.color_key AS manager_color, c.phone_normalized AS customer_phone, c.display_name AS customer_name,
-       EXISTS(
-         SELECT 1 FROM critical_operations co
-         WHERE co.operation_type = 'exchange_set_create' AND co.target_type = 'exchange' AND co.target_id = e.id
-       ) AS is_set_exchange,
        CASE WHEN old_snapshot.id IS NOT NULL THEN old_snapshot.product_name_snapshot ELSE old_item.product_name_snapshot END AS old_product_name,
        CASE WHEN old_snapshot.id IS NOT NULL THEN old_snapshot.quantity ELSE e.old_quantity END AS old_item_quantity,
        CASE WHEN old_snapshot.id IS NOT NULL THEN old_snapshot.gender_snapshot ELSE old_item.gender_snapshot END AS old_gender_snapshot,
@@ -2102,7 +2066,6 @@ export async function listExchanges(db: D1Database, url: URL) {
        old_snapshot.physical_tracking AS old_physical_tracking,
        old_snapshot.physical_received_at AS old_physical_received_at,
        COALESCE(old_item.is_workshop, 0) AS old_is_workshop,
-       old_item.source_type AS old_source_type,
        CASE WHEN new_snapshot.id IS NOT NULL THEN new_snapshot.product_name_snapshot ELSE new_item.product_name_snapshot END AS new_product_name,
        CASE WHEN new_snapshot.id IS NOT NULL THEN new_snapshot.quantity ELSE new_item.quantity END AS new_item_quantity,
        CASE WHEN new_snapshot.id IS NOT NULL THEN new_snapshot.gender_snapshot ELSE new_item.gender_snapshot END AS new_gender_snapshot,
@@ -2124,91 +2087,23 @@ export async function listExchanges(db: D1Database, url: URL) {
      ${whereSql}
      ORDER BY e.exchange_date DESC, e.id DESC LIMIT ? OFFSET ?`
   ).bind(...bindings, limit, offset).all<Record<string, unknown>>();
-  const baseRows = result.results || [];
-  const pageExchangeIds = baseRows.map((row) => toInt(row.id, 0)).filter(Boolean);
-  const exchangeItems = pageExchangeIds.length
-    ? await db.prepare(
-        `SELECT ei.*, oi.unit_price, oi.catalog_price_snapshot, oi.is_workshop, oi.source_type, oi.variant_id AS current_variant_id,
-                le.id AS lifecycle_id, le.variant_id AS lifecycle_variant_id, le.status AS lifecycle_status
-         FROM exchange_items ei
-         LEFT JOIN order_items oi ON oi.id = ei.order_item_id
-         LEFT JOIN inventory_lifecycle_events le ON le.id = (
-           SELECT child.id
-           FROM inventory_lifecycle_events child
-           WHERE child.operation_type = 'exchange'
-             AND child.operation_id = ei.exchange_id
-             AND child.operation_item_id = ei.id
-           ORDER BY child.id DESC
-           LIMIT 1
-         )
-         WHERE ei.exchange_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
-         ORDER BY ei.exchange_id DESC, ei.role ASC, ei.id ASC`
-      ).bind(JSON.stringify(pageExchangeIds)).all<Record<string, unknown>>()
-    : { results: [] as Record<string, unknown>[] };
-
-  const itemGroups = new Map<number, { oldItems: Record<string, unknown>[]; newItems: Record<string, unknown>[] }>();
-  for (const item of exchangeItems.results || []) {
-    const exchangeId = toInt(item.exchange_id, 0);
-    if (!exchangeId) continue;
-    const group = itemGroups.get(exchangeId) || { oldItems: [], newItems: [] };
-    const serialized = {
-      id: toInt(item.id, 0),
-      orderItemId: toInt(item.order_item_id, 0) || null,
-      productName: cleanText(item.product_name_snapshot) || '—',
-      quantity: Math.max(0, toInt(item.quantity, 0)),
-      gender: cleanText(item.gender_snapshot),
-      color: cleanText(item.color_snapshot),
-      material: cleanText(item.material_snapshot),
-      length: cleanText(item.length_snapshot),
-      size: cleanText(item.size_snapshot),
-      inventorySource: cleanText(item.inventory_source) || null,
-      physicalTracking: Boolean(toInt(item.physical_tracking, 0)),
-      physicalReceivedAt: cleanText(item.physical_received_at) || null,
-      isWorkshop: Boolean(toInt(item.is_workshop, 0)),
-      sourceType: cleanText(item.source_type) || (toInt(item.is_workshop, 0) ? 'workshop' : 'warehouse'),
-      unitPrice: Math.max(0, toInt(item.unit_price, 0)),
-      catalogPriceSnapshot: item.catalog_price_snapshot == null ? null : Math.max(0, toInt(item.catalog_price_snapshot, 0)),
-      currentVariantId: toInt(item.current_variant_id, 0) || null,
-      lifecycleId: toInt(item.lifecycle_id, 0) || null,
-      lifecycleVariantId: toInt(item.lifecycle_variant_id, 0) || null,
-      lifecycleStatus: cleanText(item.lifecycle_status) || null,
-      wasNotIssued: cleanText(item.inventory_source) === 'not_issued',
-    };
-    if (cleanText(item.role) === 'old') group.oldItems.push(serialized);
-    else if (cleanText(item.role) === 'new') group.newItems.push(serialized);
-    itemGroups.set(exchangeId, group);
-  }
-
-  const rows = baseRows.map(row => {
-    const itemGroup = itemGroups.get(toInt(row.id, 0)) || { oldItems: [], newItems: [] };
-    return {
+  const rows = (result.results || []).map(row => ({
       id: row.id, orderId: row.order_id, externalId: row.external_id, orderDate: row.order_date,
       manager: row.manager_name || '—', managerColor: cleanText(row.manager_color) || null, customer: row.customer_name || row.customer_phone || '—', exchangeDate: row.exchange_date,
-      isSetExchange: Boolean(toInt(row.is_set_exchange, 0)),
-      oldItems: itemGroup.oldItems,
-      newItems: itemGroup.newItems,
-      oldItemId: row.old_order_item_id, oldProductName: row.old_product_name || itemGroup.oldItems[0]?.productName || '—', oldQuantity: row.old_item_quantity || row.old_quantity || itemGroup.oldItems[0]?.quantity || 0,
-      oldGender: row.old_gender_snapshot || itemGroup.oldItems[0]?.gender || '', oldColor: row.old_color_snapshot || itemGroup.oldItems[0]?.color || '', oldMaterial: row.old_material_snapshot || itemGroup.oldItems[0]?.material || '', oldLength: row.old_length_snapshot || itemGroup.oldItems[0]?.length || '', oldSize: row.old_size_snapshot || itemGroup.oldItems[0]?.size || '', oldReturnSource: row.old_inventory_source || row.old_return_source || itemGroup.oldItems[0]?.inventorySource || 'none',
-      oldOperationItemId: row.old_operation_item_id == null ? (itemGroup.oldItems[0]?.id || null) : toInt(row.old_operation_item_id, 0) || null,
-      // Legacy compatibility fields deliberately remain the exact first-old-item projection.
-      // Set V2 consumers use oldItems[] below, so these fields must not be overloaded with set-wide fallbacks.
-      oldPhysicalTracking: Boolean(toInt(row.old_physical_tracking, 0)),
-      oldPhysicalReceivedAt: cleanText(row.old_physical_received_at) || null,
+      oldItemId: row.old_order_item_id, oldProductName: row.old_product_name || '—', oldQuantity: row.old_item_quantity || row.old_quantity || 0,
+      oldGender: row.old_gender_snapshot || '', oldColor: row.old_color_snapshot || '', oldMaterial: row.old_material_snapshot || '', oldLength: row.old_length_snapshot || '', oldSize: row.old_size_snapshot || '', oldReturnSource: row.old_inventory_source || row.old_return_source || 'none',
+      oldOperationItemId: row.old_operation_item_id == null ? null : toInt(row.old_operation_item_id, 0) || null,
+      oldPhysicalTracking: Boolean(toInt(row.old_physical_tracking, 0)), oldPhysicalReceivedAt: cleanText(row.old_physical_received_at) || null,
       oldWasNotIssued: cleanText(row.old_inventory_source) === 'not_issued',
       oldIsWorkshop: Boolean(toInt(row.old_is_workshop, 0)),
-      oldSourceType: cleanText(row.old_source_type) || (toInt(row.old_is_workshop, 0) ? 'workshop' : 'warehouse'),
-      newItemId: row.new_order_item_id, newProductName: row.new_product_name || itemGroup.newItems[0]?.productName || '—', newQuantity: row.new_item_quantity || itemGroup.newItems[0]?.quantity || 0,
-      newGender: row.new_gender_snapshot || itemGroup.newItems[0]?.gender || '', newColor: row.new_color_snapshot || itemGroup.newItems[0]?.color || '', newMaterial: row.new_material_snapshot || itemGroup.newItems[0]?.material || '', newLength: row.new_length_snapshot || itemGroup.newItems[0]?.length || '', newSize: row.new_size_snapshot || itemGroup.newItems[0]?.size || '', newSourceType: row.new_inventory_source || row.new_source_type || itemGroup.newItems[0]?.inventorySource,
-      oldCurrentVariantId: toInt(row.old_current_variant_id, 0) || Number(itemGroup.oldItems[0]?.currentVariantId || 0) || null,
-      oldLifecycleId: toInt(row.old_lifecycle_id, 0) || null,
-      oldLifecycleVariantId: toInt(row.old_lifecycle_variant_id, 0) || null,
-      newLifecycleId: toInt(row.new_lifecycle_id, 0) || null,
-      oldLifecycleStatus: cleanText(row.old_lifecycle_status) || String(itemGroup.oldItems[0]?.lifecycleStatus || '') || null,
-      newLifecycleStatus: cleanText(row.new_lifecycle_status) || String(itemGroup.newItems[0]?.lifecycleStatus || '') || null,
+      newItemId: row.new_order_item_id, newProductName: row.new_product_name || '—', newQuantity: row.new_item_quantity || 0,
+      newGender: row.new_gender_snapshot || '', newColor: row.new_color_snapshot || '', newMaterial: row.new_material_snapshot || '', newLength: row.new_length_snapshot || '', newSize: row.new_size_snapshot || '', newSourceType: row.new_inventory_source || row.new_source_type,
+      oldCurrentVariantId: toInt(row.old_current_variant_id, 0) || null,
+      oldLifecycleId: toInt(row.old_lifecycle_id, 0) || null, oldLifecycleVariantId: toInt(row.old_lifecycle_variant_id, 0) || null, newLifecycleId: toInt(row.new_lifecycle_id, 0) || null,
+      oldLifecycleStatus: cleanText(row.old_lifecycle_status) || null, newLifecycleStatus: cleanText(row.new_lifecycle_status) || null,
       financialAction: row.financial_action || 'none', financialAmount: row.financial_amount || 0, paymentMethod: row.payment_method || '',
       status: row.status || 'completed', comment: row.comment || '', cancelledAt: row.cancelled_at || null, cancellationComment: row.cancellation_comment || null,
-    };
-  });
+    }));
   const totalCount = Math.max(0, toInt(summary?.total_count, 0));
   return { ok: true, count: totalCount, offset, limit, hasMore: offset + rows.length < totalCount,
     summary: { activeCount: Math.max(0, toInt(summary?.active_count, 0)), cancelledCount: Math.max(0, toInt(summary?.cancelled_count, 0)), pendingPhysicalQuantity: Math.max(0, toInt(summary?.pending_physical_quantity, 0)) }, exchanges: rows };
@@ -2231,20 +2126,11 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
   ).bind(returnId).first<Record<string, unknown>>();
   if (!ret) throw new Error('Return not found.');
   if (cleanText(ret.status) === 'cancelled' && criticalOperation.row.step === 'started') {
-    const cancelledOrderId = toInt(ret.order_id, 0);
-    if (cancelledOrderId) {
-      await syncOrderFinancialLedger(db, cancelledOrderId, operationStartedAt);
-      try {
-        await refreshOrderWorkshopStatusFromTasks(db, cancelledOrderId, operationStartedAt);
-      } catch (error) {
-        console.warn('Workshop status refresh failed while recovering already-cancelled Return', error);
-      }
-    }
     const completedResponse = { ok: true, returnId, alreadyCancelled: true, stockReversals: [], restoredWorkshopTasks: 0, refreshRequired: true };
     await completeCriticalOperation(db, criticalOperation, completedResponse);
     let order = null;
     try {
-      order = await getOrder(db, cancelledOrderId);
+      order = await getOrder(db, toInt(ret.order_id, 0));
     } catch (error) {
       console.warn('Order readback after already-cancelled return retry failed', error);
     }
@@ -2262,12 +2148,14 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
     throw new Error(`Этот возврат создан обменом #${linkedExchange.id}. Отмените сам обмен, чтобы склад и деньги откатились вместе.`);
   }
 
-  let operationContext = parseCriticalContext<Record<string, any>>(criticalOperation.row);
+  const operationContext = parseCriticalContext<Record<string, any>>(criticalOperation.row);
   const timestamp = cleanText(operationContext.startedAt) || operationStartedAt;
   const comment = cleanText(input.comment) || `Отмена возврата #${returnId}`;
 
   // Legacy rows that physically changed stock but were not adopted by 0051 are ambiguous by
   // definition. Do not revive the old snapshot guessing path during cancellation.
+  if (criticalOperation.row.step === 'started') await advanceCriticalOperation(db, criticalOperation, 'validated', { targetType: 'return', targetId: returnId });
+
   const unsafeLegacy = await db.prepare(
     `SELECT ri.id, ri.product_name_snapshot
      FROM return_items ri
@@ -2282,86 +2170,6 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
   ).bind(returnId, returnId).first<Record<string, unknown>>();
   if (unsafeLegacy?.id) {
     throw new Error(`Возврат содержит старое складское движение без надёжной canonical identity (${cleanText(unsafeLegacy.product_name_snapshot)}). Автоматическая отмена остановлена, чтобы не изменить неправильный остаток.`);
-  }
-
-  const taskSnapshots = await db.prepare(
-    `SELECT rwt.workshop_task_id, rwt.previous_status, rwt.previous_quantity,
-            wt.status AS current_status, wt.quantity AS current_quantity, wt.order_item_id,
-            COALESCE((
-              SELECT SUM(ri.quantity)
-              FROM return_items ri
-              WHERE ri.return_id = ? AND ri.order_item_id = wt.order_item_id
-            ), 0) AS return_quantity
-     FROM return_workshop_task_reversals rwt
-     LEFT JOIN workshop_tasks wt ON wt.id = rwt.workshop_task_id
-     WHERE rwt.return_id = ?
-     ORDER BY rwt.workshop_task_id ASC`
-  ).bind(returnId, returnId).all<Record<string, unknown>>();
-
-  let workshopTargets = Array.isArray(operationContext.workshopTargets)
-    ? operationContext.workshopTargets as Array<Record<string, unknown>>
-    : null;
-  if (!workshopTargets) {
-    workshopTargets = (taskSnapshots.results || []).map((snapshot) => {
-      const returnedTaskQuantity = Math.max(0, toInt(snapshot.return_quantity, 0));
-      const baselineQuantity = Math.max(0, toInt(snapshot.current_quantity, 0));
-      const fallbackQuantity = Math.max(0, toInt(snapshot.previous_quantity, 0));
-      const targetQuantity = returnedTaskQuantity > 0 ? baselineQuantity + returnedTaskQuantity : fallbackQuantity;
-      const baselineStatus = cleanText(snapshot.current_status) || cleanText(snapshot.previous_status) || 'active';
-      const targetStatus = returnedTaskQuantity > 0
-        && normalizeWorkshopTaskStatus(baselineStatus) === 'cancelled'
-        && targetQuantity > 0
-        ? (cleanText(snapshot.previous_status) || 'active')
-        : baselineStatus;
-      return {
-        workshopTaskId: toInt(snapshot.workshop_task_id, 0),
-        baselineQuantity,
-        baselineStatus,
-        targetQuantity,
-        targetStatus,
-      };
-    });
-    operationContext = { ...operationContext, workshopTargets };
-    await advanceCriticalOperation(db, criticalOperation, 'validated', {
-      targetType: 'return',
-      targetId: returnId,
-      context: operationContext,
-    });
-  } else if (criticalOperation.row.step === 'started') {
-    await advanceCriticalOperation(db, criticalOperation, 'validated', {
-      targetType: 'return',
-      targetId: returnId,
-      context: operationContext,
-    });
-  }
-
-  // Prove every Workshop dependency is still either at the frozen baseline or already at
-  // the idempotent target before touching physical stock. A missing/concurrently changed task
-  // must not leave a Return half-cancelled with inventory already reversed.
-  for (const snapshot of taskSnapshots.results || []) {
-    const workshopTaskId = toInt(snapshot.workshop_task_id, 0);
-    if (!workshopTaskId || !cleanText(snapshot.current_status)) {
-      throw new CriticalOperationConflictError(
-        'Связанная задача Цеха больше не найдена. Отмена возврата остановлена до изменения склада.'
-      );
-    }
-    const target = workshopTargets.find((entry) => toInt(entry.workshopTaskId, 0) === workshopTaskId);
-    if (!target) {
-      throw new CriticalOperationConflictError('Не найден безопасный снимок восстановления задачи Цеха. Отмена возврата остановлена.');
-    }
-    const currentQuantity = Math.max(0, toInt(snapshot.current_quantity, 0));
-    const currentStatus = cleanText(snapshot.current_status);
-    const baselineQuantity = Math.max(0, toInt(target.baselineQuantity, 0));
-    const baselineStatus = cleanText(target.baselineStatus) || 'active';
-    const targetQuantity = Math.max(0, toInt(target.targetQuantity, 0));
-    const targetStatus = cleanText(target.targetStatus) || baselineStatus;
-    const atBaseline = currentQuantity === baselineQuantity && currentStatus === baselineStatus;
-    const atTarget = currentQuantity === targetQuantity && currentStatus === targetStatus;
-    if (!atBaseline && !atTarget) {
-      throw new CriticalOperationConflictError(
-        'Задача Цеха изменилась после начала отмены возврата. Склад не менялся; обновите данные и повторите.'
-      );
-    }
   }
 
   const lifecycleRows = await db.prepare(
@@ -2384,51 +2192,40 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
     if (result?.cancelled) stockReversals.push(result);
   }
 
+  const taskSnapshots = await db.prepare(
+    `SELECT rwt.workshop_task_id, rwt.previous_status, rwt.previous_quantity,
+            wt.status AS current_status, wt.quantity AS current_quantity, wt.order_item_id,
+            COALESCE((
+              SELECT SUM(ri.quantity)
+              FROM return_items ri
+              WHERE ri.return_id = ? AND ri.order_item_id = wt.order_item_id
+            ), 0) AS return_quantity
+     FROM return_workshop_task_reversals rwt
+     LEFT JOIN workshop_tasks wt ON wt.id = rwt.workshop_task_id
+     WHERE rwt.return_id = ?
+     ORDER BY rwt.workshop_task_id ASC`
+  ).bind(returnId, returnId).all<Record<string, unknown>>();
+
   for (const snapshot of taskSnapshots.results || []) {
-    const workshopTaskId = toInt(snapshot.workshop_task_id, 0);
-    const target = workshopTargets.find((entry) => toInt(entry.workshopTaskId, 0) === workshopTaskId);
-    if (!target) {
-      throw new CriticalOperationConflictError('Не найден безопасный снимок восстановления задачи Цеха. Отмена возврата остановлена.');
-    }
-
-    const currentQuantity = Math.max(0, toInt(snapshot.current_quantity, 0));
-    const currentStatus = cleanText(snapshot.current_status) || cleanText(snapshot.previous_status) || 'active';
-    const baselineQuantity = Math.max(0, toInt(target.baselineQuantity, 0));
-    const baselineStatus = cleanText(target.baselineStatus) || 'active';
-    const targetQuantity = Math.max(0, toInt(target.targetQuantity, 0));
-    const targetStatus = cleanText(target.targetStatus) || baselineStatus;
-
-    if (currentQuantity === targetQuantity && currentStatus === targetStatus) continue;
-    if (currentQuantity !== baselineQuantity || currentStatus !== baselineStatus) {
-      throw new CriticalOperationConflictError(
-        'Задача Цеха изменилась во время отмены возврата. Операция остановлена, чтобы не восстановить количество дважды.'
-      );
-    }
-
-    const update = await db.prepare(
+    const returnedTaskQuantity = Math.max(0, toInt(snapshot.return_quantity, 0));
+    const currentTaskQuantity = Math.max(0, toInt(snapshot.current_quantity, 0));
+    const fallbackQuantity = Math.max(0, toInt(snapshot.previous_quantity, 0));
+    const nextQuantity = returnedTaskQuantity > 0 ? currentTaskQuantity + returnedTaskQuantity : fallbackQuantity;
+    const currentStatus = normalizeWorkshopTaskStatus(snapshot.current_status || snapshot.previous_status);
+    const nextStatus = returnedTaskQuantity > 0 && currentStatus === 'cancelled' && nextQuantity > 0
+      ? normalizeWorkshopTaskStatus(snapshot.previous_status)
+      : currentStatus;
+    await db.prepare(
       `UPDATE workshop_tasks
        SET status = ?, quantity = ?, updated_at = ?
-       WHERE id = ? AND order_id = ? AND quantity = ? AND status = ?`
+       WHERE id = ? AND order_id = ?`
     ).bind(
-      targetStatus,
-      targetQuantity,
+      nextStatus,
+      nextQuantity,
       timestamp,
-      workshopTaskId,
+      toInt(snapshot.workshop_task_id, 0),
       toInt(ret.order_id, 0),
-      baselineQuantity,
-      baselineStatus,
     ).run();
-
-    if (toInt(update.meta?.changes, 0) <= 0) {
-      const latest = await db.prepare(
-        `SELECT status, quantity FROM workshop_tasks WHERE id = ? AND order_id = ? LIMIT 1`
-      ).bind(workshopTaskId, toInt(ret.order_id, 0)).first<Record<string, unknown>>();
-      if (Math.max(0, toInt(latest?.quantity, 0)) !== targetQuantity || cleanText(latest?.status) !== targetStatus) {
-        throw new CriticalOperationConflictError(
-          'Задача Цеха изменилась параллельно. Отмена возврата остановлена без повторного прибавления количества.'
-        );
-      }
-    }
   }
 
   const cancelStatements: D1PreparedStatement[] = [
@@ -2873,1487 +2670,5 @@ export async function cancelExchange(db: D1Database, exchangeId: number, input: 
   } catch (error) {
     await failCriticalOperation(db, criticalOperation, error);
     throw error;
-  }
-}
-
-
-// Exchange Set V2 — independent old/new item sets with server-derived settlement.
-export type ExchangeSetOldInput = {
-  orderItemId?: number
-  quantity?: number
-  physicalState?: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'
-  expectedActiveQuantity?: number
-  expectedUnitPrice?: number
-  expectedLineTotal?: number
-  expectedCatalogPriceSnapshot?: number | null
-}
-
-export type ExchangeSetNewInput = NonNullable<OrderInput['items']>[number]
-
-export type ExchangeSetInput = {
-  requestId?: string
-  orderId?: number
-  exchangeDate?: string
-  expectedOrderTotal?: number
-  oldItems?: ExchangeSetOldInput[]
-  newItems?: ExchangeSetNewInput[]
-  paymentAmount?: number
-  paymentMethod?: string
-  refundMethod?: string
-  comment?: string
-}
-
-type ReservationSnapshot = {
-  id: number
-  source: SourceType
-  variantId: number | null
-  quantity: number
-  status: string
-  targetQuantity: number
-  targetStatus: string
-}
-
-type WorkshopSnapshot = {
-  id: number
-  quantity: number
-  status: string
-  targetQuantity: number
-  targetStatus: string
-} | null
-
-type ExchangeSetOldPlan = {
-  inputIndex: number
-  orderItemId: number
-  quantity: number
-  physicalState: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'
-  returnSource: 'none' | 'warehouse' | 'boutique'
-  initialQuantity: number
-  targetQuantity: number
-  unitPrice: number
-  lineTotal: number
-  catalogPriceSnapshot: number | null
-  removedValue: number
-  originalStockStatus: string
-  isWorkshop: boolean
-  wasIssued: boolean
-  needsHandoverReconciliation: boolean
-  reservationSnapshot: ReservationSnapshot | null
-  workshopSnapshot: WorkshopSnapshot
-}
-
-type ExchangeSetNewPlan = {
-  inputIndex: number
-  item: NonNullable<ReturnType<typeof normalizeOrderItems>[number]> & { catalogPriceSnapshot: number | null }
-  productId: number | null
-  variantId: number | null
-  inventorySource: SourceType | null
-  stockKey: string | null
-  observedPhysicalQuantity: number | null
-}
-
-type ExchangeSetExecutionPlan = {
-  orderId: number
-  externalOrderId: string
-  exchangeDate: string
-  comment: string
-  baselineTotalAmount: number
-  baselineNetPaid: number
-  removedValue: number
-  addedValue: number
-  finalTotalAmount: number
-  dueBeforeSettlement: number
-  paymentAmount: number
-  paymentMethod: string
-  refundAmount: number
-  refundMethod: string
-  finalNetPaid: number
-  financialAction: 'none' | 'extra_payment' | 'refund'
-  financialAmount: number
-  financialMethod: string
-  oldItems: ExchangeSetOldPlan[]
-  newItems: ExchangeSetNewPlan[]
-  workshopCount: number
-}
-
-type ExchangeSetOperationContext = {
-  startedAt?: string
-  executionPlan?: ExchangeSetExecutionPlan
-  completedOld?: number
-  newContentInserted?: boolean
-  completedNew?: number
-  financesCompleted?: boolean
-}
-
-type ExchangeSetCancelContext = {
-  startedAt?: string
-  preflight?: {
-    projectedRestoredTotal: number
-    projectedNetPaid: number
-    oldTargets: Array<{ orderItemId: number; baselineQuantity: number; targetQuantity: number }>
-    newSnapshots: Array<{ orderItemId: number; quantity: number; unitPrice: number; lineTotal: number }>
-  }
-}
-
-function requiredSafeMoney(value: unknown, label: string, minimum = 0) {
-  const number = Number(value)
-  if (!Number.isSafeInteger(number) || number < minimum) {
-    throw new CriticalOperationConflictError(`${label} должна быть целым числом не меньше ${minimum}.`)
-  }
-  return number
-}
-
-function optionalCatalogPriceSnapshot(value: unknown, label: string) {
-  if (value === null || value === undefined || String(value).trim() === '') return null
-  return requiredSafeMoney(value, label)
-}
-
-async function loadReservationSnapshot(
-  db: D1Database,
-  orderItemId: number,
-  selectedQuantity: number,
-  initialQuantity: number,
-): Promise<ReservationSnapshot | null> {
-  const row = await db.prepare(
-    `SELECT id, inventory_source, variant_id, quantity, status
-     FROM inventory_reservations
-     WHERE order_item_id = ?
-     LIMIT 1`
-  ).bind(orderItemId).first<Record<string, unknown>>()
-  if (!row?.id) return null
-  const status = cleanText(row.status)
-  const quantity = Math.max(0, toInt(row.quantity, 0))
-  const source = normalizeSourceType(row.inventory_source)
-  const variantId = toInt(row.variant_id, 0) || null
-  if (status === 'fulfilled') {
-    throw new CriticalOperationConflictError('Позиция уже отмечена как физически выданная клиенту и не может быть оформлена как «не выдавалась».')
-  }
-  if (!['active', 'unresolved', 'released'].includes(status)) {
-    throw new CriticalOperationConflictError('Резерв старой позиции изменился. Обновите заказ и повторите обмен.')
-  }
-  if (status === 'released') {
-    throw new CriticalOperationConflictError('Резерв старой позиции уже снят другой операцией. Обновите заказ и повторите обмен.')
-  }
-  if (quantity !== initialQuantity) {
-    throw new CriticalOperationConflictError('Количество в резерве старой позиции не совпадает с активным количеством заказа. Обновите заказ.')
-  }
-  const targetQuantity = Math.max(0, quantity - selectedQuantity)
-  return {
-    id: toInt(row.id, 0),
-    source,
-    variantId,
-    quantity,
-    status,
-    targetQuantity,
-    targetStatus: targetQuantity > 0 ? status : 'released',
-  }
-}
-
-async function applyNotIssuedReservationReduction(
-  db: D1Database,
-  plan: ExchangeSetOldPlan,
-  timestamp: string,
-  externalOrderId: string,
-) {
-  const snapshot = plan.reservationSnapshot
-  if (!snapshot) return
-  if (snapshot.targetQuantity <= 0) {
-    const released = await releaseOrderReservationV2(
-      db,
-      plan.orderItemId,
-      timestamp,
-      `Обмен без физической выдачи старой позиции ${externalOrderId}`,
-    )
-    if (!released) {
-      const current = await db.prepare(
-        `SELECT status FROM inventory_reservations WHERE id = ? LIMIT 1`
-      ).bind(snapshot.id).first<{ status: string }>()
-      if (cleanText(current?.status) !== 'released') {
-        throw new CriticalOperationConflictError('Не удалось безопасно снять резерв невыданной позиции. Обновите заказ и повторите.')
-      }
-    }
-    return
-  }
-
-  const current = await db.prepare(
-    `SELECT quantity, status FROM inventory_reservations WHERE id = ? AND order_item_id = ? LIMIT 1`
-  ).bind(snapshot.id, plan.orderItemId).first<Record<string, unknown>>()
-  const currentQuantity = Math.max(0, toInt(current?.quantity, 0))
-  const currentStatus = cleanText(current?.status)
-  if (currentQuantity === snapshot.targetQuantity && currentStatus === snapshot.targetStatus) return
-  if (currentQuantity !== snapshot.quantity || currentStatus !== snapshot.status) {
-    throw new CriticalOperationConflictError('Резерв старой позиции изменился во время обмена. Операция остановлена.')
-  }
-
-  const statements: D1PreparedStatement[] = []
-  if (snapshot.status === 'active' && snapshot.variantId) {
-    statements.push(db.prepare(
-      `UPDATE inventory_stock
-       SET reserved_quantity = MAX(0, COALESCE(reserved_quantity, 0) - ?),
-           last_action = 'Резерв уменьшен обменом',
-           last_source_ref = ?,
-           updated_at = ?
-       WHERE inventory_source = ? AND variant_id = ?`
-    ).bind(
-      plan.quantity,
-      `exchange-set:${externalOrderId}:old:${plan.orderItemId}`,
-      timestamp,
-      snapshot.source,
-      snapshot.variantId,
-    ))
-  }
-  statements.push(
-    db.prepare(
-      `UPDATE inventory_reservations
-       SET quantity = ?, updated_at = ?
-       WHERE id = ? AND order_item_id = ? AND status = ? AND quantity = ?`
-    ).bind(snapshot.targetQuantity, timestamp, snapshot.id, plan.orderItemId, snapshot.status, snapshot.quantity),
-  )
-  await db.batch(statements)
-}
-
-async function restoreNotIssuedReservation(
-  db: D1Database,
-  plan: ExchangeSetOldPlan,
-  timestamp: string,
-  exchangeId: number,
-) {
-  const snapshot = plan.reservationSnapshot
-  if (!snapshot) return
-  if (snapshot.targetQuantity <= 0) {
-    const restored = await reactivateReleasedOrderReservationV2(
-      db,
-      plan.orderItemId,
-      timestamp,
-      `Отмена обмена #${exchangeId}: восстановление резерва невыданной позиции`,
-    )
-    if (!restored) {
-      throw new CriticalOperationConflictError('Не удалось безопасно восстановить резерв невыданной позиции. Обновите заказ.')
-    }
-    return
-  }
-
-  const current = await db.prepare(
-    `SELECT quantity, status FROM inventory_reservations WHERE id = ? AND order_item_id = ? LIMIT 1`
-  ).bind(snapshot.id, plan.orderItemId).first<Record<string, unknown>>()
-  if (!current?.status) throw new CriticalOperationConflictError('Резерв старой позиции больше не найден.')
-  const currentQuantity = Math.max(0, toInt(current.quantity, 0))
-  const currentStatus = cleanText(current.status)
-  if (currentQuantity === snapshot.quantity && currentStatus === snapshot.status) return
-  if (currentQuantity !== snapshot.targetQuantity || currentStatus !== snapshot.targetStatus) {
-    throw new CriticalOperationConflictError('Резерв старой позиции уже изменился после обмена. Автоматическая отмена остановлена.')
-  }
-
-  const statements: D1PreparedStatement[] = []
-  if (snapshot.status === 'active' && snapshot.variantId) {
-    await loadCanonicalVariantSnapshot(db, snapshot.variantId, { activeOnly: true })
-    statements.push(db.prepare(
-      `UPDATE inventory_stock
-       SET reserved_quantity = COALESCE(reserved_quantity, 0) + ?,
-           last_action = 'Резерв восстановлен после отмены обмена',
-           last_source_ref = ?,
-           updated_at = ?
-       WHERE inventory_source = ? AND variant_id = ?`
-    ).bind(
-      plan.quantity,
-      `exchange_cancel:${exchangeId}:old:${plan.orderItemId}`,
-      timestamp,
-      snapshot.source,
-      snapshot.variantId,
-    ))
-  }
-  statements.push(db.prepare(
-    `UPDATE inventory_reservations
-     SET quantity = ?, status = ?, released_at = NULL, updated_at = ?
-     WHERE id = ? AND order_item_id = ? AND quantity = ? AND status = ?`
-  ).bind(snapshot.quantity, snapshot.status, timestamp, snapshot.id, plan.orderItemId, snapshot.targetQuantity, snapshot.targetStatus))
-  await db.batch(statements)
-}
-
-async function loadWorkshopSnapshot(
-  db: D1Database,
-  orderId: number,
-  oldItem: Record<string, unknown>,
-  selectedQuantity: number,
-): Promise<WorkshopSnapshot> {
-  if (!toInt(oldItem.is_workshop, 0)) return null
-  const row = await db.prepare(
-    `SELECT id, status, quantity
-     FROM workshop_tasks
-     WHERE order_id = ?
-       AND (order_item_id = ? OR (
-         order_item_id IS NULL
-         AND product_name_snapshot = ?
-         AND COALESCE(gender_snapshot, '') = COALESCE(?, '')
-         AND COALESCE(color_snapshot, '') = COALESCE(?, '')
-         AND COALESCE(material_snapshot, '') = COALESCE(?, '')
-         AND COALESCE(length_snapshot, '') = COALESCE(?, '')
-         AND COALESCE(size_snapshot, '') = COALESCE(?, '')
-       ))
-     ORDER BY CASE WHEN order_item_id = ? THEN 0 ELSE 1 END,
-              CASE status WHEN 'active' THEN 0 WHEN 'ready' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,
-              id ASC
-     LIMIT 1`
-  ).bind(
-    orderId,
-    toInt(oldItem.id, 0),
-    cleanText(oldItem.product_name_snapshot),
-    cleanText(oldItem.gender_snapshot) || null,
-    cleanText(oldItem.color_snapshot) || null,
-    cleanText(oldItem.material_snapshot) || null,
-    cleanText(oldItem.length_snapshot) || null,
-    cleanText(oldItem.size_snapshot) || null,
-    toInt(oldItem.id, 0),
-  ).first<Record<string, unknown>>()
-  if (!row?.id) return null
-  const quantity = Math.max(0, toInt(row.quantity, 0))
-  const targetQuantity = Math.max(0, quantity - selectedQuantity)
-  return {
-    id: toInt(row.id, 0),
-    quantity,
-    status: cleanText(row.status) || 'active',
-    targetQuantity,
-    targetStatus: targetQuantity <= 0 ? 'cancelled' : (cleanText(row.status) || 'active'),
-  }
-}
-
-async function setWorkshopTarget(db: D1Database, snapshot: WorkshopSnapshot, timestamp: string) {
-  if (!snapshot) return
-  const current = await db.prepare(
-    `SELECT quantity, status FROM workshop_tasks WHERE id = ? LIMIT 1`
-  ).bind(snapshot.id).first<Record<string, unknown>>()
-  if (!current) throw new CriticalOperationConflictError('Цеховая позиция старого товара больше не найдена.')
-  if (toInt(current.quantity, 0) === snapshot.targetQuantity && cleanText(current.status) === snapshot.targetStatus) return
-  if (toInt(current.quantity, 0) !== snapshot.quantity || cleanText(current.status) !== snapshot.status) {
-    throw new CriticalOperationConflictError('Цеховая позиция изменилась во время обмена. Обновите заказ.')
-  }
-  await db.prepare(
-    `UPDATE workshop_tasks SET quantity = ?, status = ?, updated_at = ? WHERE id = ? AND quantity = ? AND status = ?`
-  ).bind(snapshot.targetQuantity, snapshot.targetStatus, timestamp, snapshot.id, snapshot.quantity, snapshot.status).run()
-}
-
-async function restoreWorkshopSnapshot(db: D1Database, snapshot: WorkshopSnapshot, timestamp: string) {
-  if (!snapshot) return
-  const current = await db.prepare(
-    `SELECT quantity, status FROM workshop_tasks WHERE id = ? LIMIT 1`
-  ).bind(snapshot.id).first<Record<string, unknown>>()
-  if (!current) throw new CriticalOperationConflictError('Цеховая позиция старого товара больше не найдена.')
-  if (toInt(current.quantity, 0) === snapshot.quantity && cleanText(current.status) === snapshot.status) return
-  if (toInt(current.quantity, 0) !== snapshot.targetQuantity || cleanText(current.status) !== snapshot.targetStatus) {
-    throw new CriticalOperationConflictError('Цеховая позиция уже изменилась после обмена. Автоматическая отмена остановлена.')
-  }
-  await db.prepare(
-    `UPDATE workshop_tasks SET quantity = ?, status = ?, updated_at = ? WHERE id = ? AND quantity = ? AND status = ?`
-  ).bind(snapshot.quantity, snapshot.status, timestamp, snapshot.id, snapshot.targetQuantity, snapshot.targetStatus).run()
-}
-
-export function deriveExchangeSetSettlement(input: {
-  currentTotalAmount: number
-  currentNetPaid: number
-  removedValue: number
-  addedValue: number
-  paymentAmount: number
-}) {
-  const currentTotalAmount = requiredSafeMoney(input.currentTotalAmount, 'Текущий итог заказа')
-  const currentNetPaid = requiredSafeMoney(input.currentNetPaid, 'Уже оплачено')
-  const removedValue = requiredSafeMoney(input.removedValue, 'Стоимость убираемых товаров')
-  const addedValue = requiredSafeMoney(input.addedValue, 'Стоимость новых товаров')
-  const paymentAmount = requiredSafeMoney(input.paymentAmount, 'Оплата сейчас')
-
-  const finalTotalAmount = currentTotalAmount - removedValue + addedValue
-  if (!Number.isSafeInteger(finalTotalAmount) || finalTotalAmount < 0) {
-    throw new CriticalOperationConflictError('Итог заказа после обмена получился некорректным.')
-  }
-
-  const rawBalance = finalTotalAmount - currentNetPaid
-  const dueBeforeSettlement = Math.max(0, rawBalance)
-  const refundAmount = Math.max(0, -rawBalance)
-  if (refundAmount > 0 && paymentAmount > 0) {
-    throw new CriticalOperationConflictError('После пересчёта клиенту нужно вернуть деньги. Одновременно принимать оплату нельзя.')
-  }
-  if (paymentAmount > dueBeforeSettlement) {
-    throw new CriticalOperationConflictError(`Оплата сейчас (${paymentAmount}) больше долга после обмена (${dueBeforeSettlement}).`)
-  }
-
-  const finalNetPaid = currentNetPaid + paymentAmount - refundAmount
-  if (!Number.isSafeInteger(finalNetPaid) || finalNetPaid < 0 || finalNetPaid > finalTotalAmount) {
-    throw new CriticalOperationConflictError('Денежный итог обмена не сходится с новой стоимостью заказа.')
-  }
-
-  return {
-    finalTotalAmount,
-    dueBeforeSettlement,
-    refundAmount,
-    finalNetPaid,
-    remainingDebt: Math.max(0, finalTotalAmount - finalNetPaid),
-  }
-}
-
-export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInput) {
-  let criticalOperation: CriticalOperationHandle | null = null
-  try {
-    const startedAt = new Date().toISOString()
-    criticalOperation = await beginCriticalOperation(db, 'exchange_set_create', input.requestId, input, { startedAt })
-    if (criticalOperation.cachedResponse) return criticalOperation.cachedResponse
-
-    let operationContext = parseCriticalContext<ExchangeSetOperationContext>(criticalOperation.row)
-    let executionPlan = operationContext.executionPlan
-
-    if (!executionPlan) {
-      const orderId = toInt(input.orderId, 0)
-      if (!orderId) throw new Error('orderId is required.')
-      const rawOldItems = Array.isArray(input.oldItems) ? input.oldItems : []
-      const rawNewItems = Array.isArray(input.newItems) ? input.newItems : []
-      if (!rawOldItems.length) throw new CriticalOperationConflictError('Выберите хотя бы один товар, который клиент меняет.')
-      if (!rawNewItems.length) throw new CriticalOperationConflictError('Добавьте хотя бы один товар, который клиент получит.')
-      if (rawOldItems.length > 20 || rawNewItems.length > 20) {
-        throw new CriticalOperationConflictError('За один обмен можно безопасно обработать не больше 20 старых и 20 новых позиций.')
-      }
-
-      const exchangeDateText = cleanText(input.exchangeDate)
-      if (!exchangeDateText) throw new Error('Укажите дату обмена.')
-      const exchangeDate = normalizeDate(exchangeDateText)
-      const comment = cleanText(input.comment)
-
-      await syncOrderFinancialLedger(db, orderId)
-      const existing = await getOrder(db, orderId)
-      if (!existing) throw new Error('Order not found.')
-      if (cleanText((existing as any).pricing_mode) !== 'itemized_v1') {
-        throw new CriticalOperationConflictError('Новый умный обмен доступен только для заказов с ценой по позициям. Старый заказ пока оформляйте через совместимый режим.')
-      }
-      if (isArchivedOrder(existing)) throw new Error('Нельзя оформлять обмен по архивному заказу.')
-      if (normalizeOrderStatus((existing as any).order_status) === 'deleted') throw new Error('Нельзя оформлять обмен по удалённому заказу.')
-
-      const ledger = await readOrderFinancialLedger(db, orderId)
-      const expectedOrderTotal = requiredSafeMoney(input.expectedOrderTotal, 'Исходный итог заказа')
-      if (expectedOrderTotal !== ledger.totalAmount) {
-        throw new CriticalOperationConflictError('Итог заказа изменился после открытия обмена. Обновите заказ и повторите.')
-      }
-
-      const activePricingRows = await db.prepare(
-        `SELECT id, quantity, unit_price, line_total, catalog_price_snapshot
-         FROM order_items
-         WHERE order_id = ? AND quantity > 0
-         ORDER BY id ASC`
-      ).bind(orderId).all<Record<string, unknown>>()
-      let derivedCurrentTotal = 0
-      const pricingById = new Map<number, Record<string, unknown>>()
-      for (const row of activePricingRows.results || []) {
-        const id = toInt(row.id, 0)
-        const quantity = requiredSafeMoney(row.quantity, 'Количество активной позиции', 1)
-        const unitPrice = requiredSafeMoney(row.unit_price, 'Цена активной позиции')
-        const lineTotal = requiredSafeMoney(row.line_total, 'Сумма активной позиции')
-        if (lineTotal !== quantity * unitPrice) {
-          throw new CriticalOperationConflictError('Сумма одной из позиций заказа не совпадает с количеством и ценой.')
-        }
-        derivedCurrentTotal += lineTotal
-        if (!Number.isSafeInteger(derivedCurrentTotal)) throw new CriticalOperationConflictError('Итог заказа слишком велик для точного расчёта.')
-        pricingById.set(id, row)
-      }
-      if (derivedCurrentTotal !== ledger.totalAmount) {
-        throw new CriticalOperationConflictError('Итог заказа не совпадает с активными позициями. Обмен остановлен без изменений.')
-      }
-
-      const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db)
-      const oldIds = new Set<number>()
-      const oldPlans: ExchangeSetOldPlan[] = []
-      let removedValue = 0
-
-      for (let index = 0; index < rawOldItems.length; index += 1) {
-        const raw = rawOldItems[index] || {}
-        const orderItemId = toInt(raw.orderItemId, 0)
-        if (!orderItemId || oldIds.has(orderItemId)) {
-          throw new CriticalOperationConflictError(`Старая позиция ${index + 1}: выберите уникальный товар заказа.`)
-        }
-        oldIds.add(orderItemId)
-        const pricingRow = pricingById.get(orderItemId)
-        const oldItem = await getOrderItemForReturnOrExchange(db, orderId, orderItemId)
-        if (!pricingRow || !oldItem) {
-          throw new CriticalOperationConflictError(`Старая позиция ${index + 1} больше не активна. Обновите заказ.`)
-        }
-
-        const initialQuantity = requiredSafeMoney(pricingRow.quantity, `Количество старой позиции ${index + 1}`, 1)
-        const unitPrice = requiredSafeMoney(pricingRow.unit_price, `Цена старой позиции ${index + 1}`)
-        const lineTotal = requiredSafeMoney(pricingRow.line_total, `Сумма старой позиции ${index + 1}`)
-        const catalogPriceSnapshot = optionalCatalogPriceSnapshot(pricingRow.catalog_price_snapshot, `Цена Каталога старой позиции ${index + 1}`)
-        const expectedCatalog = optionalCatalogPriceSnapshot(raw.expectedCatalogPriceSnapshot, `Исходная цена Каталога старой позиции ${index + 1}`)
-        if (Number(raw.expectedActiveQuantity) !== initialQuantity
-          || Number(raw.expectedUnitPrice) !== unitPrice
-          || Number(raw.expectedLineTotal) !== lineTotal
-          || expectedCatalog !== catalogPriceSnapshot) {
-          throw new CriticalOperationConflictError(`Старая позиция ${index + 1}: цена или количество изменились после открытия формы.`)
-        }
-
-        const returned = await db.prepare(
-          `SELECT COALESCE(SUM(ri.quantity), 0) AS quantity
-           FROM return_items ri
-           JOIN returns r ON r.id = ri.return_id
-           WHERE r.order_id = ?
-             AND ri.order_item_id = ?
-             AND COALESCE(r.status, 'completed') <> 'cancelled'
-             AND ${noStandaloneReturnSql}`
-        ).bind(orderId, orderItemId).first<{ quantity: number }>()
-        const availableQuantity = Math.max(0, initialQuantity - Math.max(0, toInt(returned?.quantity, 0)))
-        const quantity = Math.max(1, toInt(raw.quantity, 1))
-        if (quantity > availableQuantity) {
-          throw new CriticalOperationConflictError(`Для «${cleanText(oldItem.product_name_snapshot)}» доступно ${availableQuantity} шт., выбрано ${quantity}.`)
-        }
-
-        const physicalStateText = cleanText(raw.physicalState)
-        if (!['not_issued', 'pending', 'warehouse', 'boutique', 'no_stock'].includes(physicalStateText)) {
-          throw new CriticalOperationConflictError(`Для «${cleanText(oldItem.product_name_snapshot)}» выберите фактическое состояние возвращаемой вещи.`)
-        }
-        const physicalState = physicalStateText as ExchangeSetOldPlan['physicalState']
-        const isWorkshop = Boolean(toInt(oldItem.is_workshop, 0))
-        const wasIssued = orderItemWasPhysicallyIssued(oldItem)
-          || (isWorkshop && cleanText((existing as any).shipping_status) === 'sent')
-        if (physicalState === 'not_issued' && wasIssued) {
-          throw new CriticalOperationConflictError(`«${cleanText(oldItem.product_name_snapshot)}» уже отмечен как выданный клиенту. Нельзя выбрать «не выдавался».`)
-        }
-        const reservationSnapshot = physicalState === 'not_issued' && !isWorkshop
-          ? await loadReservationSnapshot(db, orderItemId, quantity, initialQuantity)
-          : null
-        const workshopSnapshot = await loadWorkshopSnapshot(db, orderId, oldItem, quantity)
-        const removed = quantity * unitPrice
-        if (!Number.isSafeInteger(removed) || removed < 0) {
-          throw new CriticalOperationConflictError(`Не удалось рассчитать стоимость старой позиции ${index + 1}.`)
-        }
-        removedValue += removed
-        if (!Number.isSafeInteger(removedValue)) throw new CriticalOperationConflictError('Стоимость выбранных старых товаров слишком велика.')
-
-        oldPlans.push({
-          inputIndex: index,
-          orderItemId,
-          quantity,
-          physicalState,
-          returnSource: physicalState === 'warehouse' || physicalState === 'boutique' ? physicalState : 'none',
-          initialQuantity,
-          targetQuantity: Math.max(0, initialQuantity - quantity),
-          unitPrice,
-          lineTotal,
-          catalogPriceSnapshot,
-          removedValue: removed,
-          originalStockStatus: cleanText(oldItem.stock_writeoff_status) || (isWorkshop ? 'workshop' : ''),
-          isWorkshop,
-          wasIssued,
-          needsHandoverReconciliation: Boolean(
-            humanInventoryModelEnabled && !isWorkshop && physicalState !== 'not_issued' && !wasIssued
-          ),
-          reservationSnapshot,
-          workshopSnapshot,
-        })
-      }
-
-      const normalizedNew = normalizeOrderItems(rawNewItems, normalizeSourceType((existing as any).source_type))
-      if (normalizedNew.length !== rawNewItems.length) {
-        throw new CriticalOperationConflictError('Заполните все новые товары обмена.')
-      }
-      const writePlan = buildItemizedOrderWritePlan(rawNewItems.map((item) => ({
-        quantity: item.quantity ?? 1,
-        unitPrice: item.unitPrice,
-        catalogPriceSnapshot: Object.prototype.hasOwnProperty.call(item, 'catalogPriceSnapshot') ? item.catalogPriceSnapshot ?? null : undefined,
-      })), [])
-      const newPlans: ExchangeSetNewPlan[] = []
-      const stockGroups = new Map<string, { source: SourceType; variantId: number; productName: string; quantity: number; observed: number | null }>()
-      let addedValue = 0
-      let workshopCount = 0
-
-      for (let index = 0; index < normalizedNew.length; index += 1) {
-        const normalized = normalizedNew[index]
-        const priceLine = writePlan.lines[index]
-        const requested = rawNewItems[index]
-        if (!Object.prototype.hasOwnProperty.call(requested, 'unitPrice')
-          || !Object.prototype.hasOwnProperty.call(requested, 'catalogPriceSnapshot')) {
-          throw new CriticalOperationConflictError(`Новая позиция ${index + 1}: цена продажи и снимок цены Каталога должны быть зафиксированы явно.`)
-        }
-        const effectiveItem = {
-          ...normalized,
-          sourceType: normalized.sourceType as OrderItemSourceType,
-          inventorySource: normalized.sourceType === 'boutique' ? 'boutique' : 'warehouse' as SourceType,
-          isWorkshop: normalized.sourceType === 'workshop',
-          unitPrice: priceLine.unitPrice,
-          lineTotal: priceLine.lineTotal,
-          catalogPriceSnapshot: priceLine.catalogPriceSnapshot,
-        } as ExchangeSetNewPlan['item']
-        addedValue += priceLine.lineTotal
-        if (!Number.isSafeInteger(addedValue)) throw new CriticalOperationConflictError('Стоимость новых товаров слишком велика.')
-
-        if (effectiveItem.isWorkshop) {
-          workshopCount += 1
-          newPlans.push({
-            inputIndex: index,
-            item: effectiveItem,
-            productId: null,
-            variantId: null,
-            inventorySource: null,
-            stockKey: null,
-            observedPhysicalQuantity: null,
-          })
-          continue
-        }
-
-        const resolved = await resolveCatalogProductAndVariantV2(db, effectiveItem)
-        const variantId = toInt(resolved.variantId, 0) || null
-        const productId = toInt(resolved.productId, 0) || null
-        const inventorySource: SourceType = effectiveItem.sourceType === 'boutique' ? 'boutique' : 'warehouse'
-        const observedRaw = (requested as any).observedPhysicalQuantity
-        const observed = observedRaw === null || observedRaw === undefined || observedRaw === '' ? null : Number(observedRaw)
-        if (observed !== null && (!Number.isInteger(observed) || observed < 0)) {
-          throw new CriticalOperationConflictError(`Новая позиция ${index + 1}: фактический остаток должен быть целым числом от 0.`)
-        }
-        let stockKey: string | null = null
-        if (variantId) {
-          stockKey = `${inventorySource}:${variantId}`
-          const group = stockGroups.get(stockKey) || {
-            source: inventorySource,
-            variantId,
-            productName: cleanText(effectiveItem.productName),
-            quantity: 0,
-            observed: null,
-          }
-          group.quantity += Math.max(1, toInt(effectiveItem.quantity, 1))
-          if (observed !== null) {
-            if (group.observed !== null && group.observed !== observed) {
-              throw new CriticalOperationConflictError(`Для «${group.productName}» указаны разные фактические остатки.`)
-            }
-            group.observed = observed
-          }
-          stockGroups.set(stockKey, group)
-        }
-        newPlans.push({ inputIndex: index, item: effectiveItem, productId, variantId, inventorySource, stockKey, observedPhysicalQuantity: observed })
-      }
-
-      for (const group of stockGroups.values()) {
-        const stock = await db.prepare(
-          `SELECT quantity FROM inventory_stock WHERE inventory_source = ? AND variant_id = ? ORDER BY id ASC LIMIT 1`
-        ).bind(group.source, group.variantId).first<{ quantity: number }>()
-        const physical = Math.max(0, toInt(stock?.quantity, 0))
-        const effectivePhysical = group.observed === null ? physical : group.observed
-        if (effectivePhysical < group.quantity) {
-          throw new CriticalOperationConflictError(group.observed === null
-            ? `Для «${group.productName}» нужно ${group.quantity} шт., а по учёту физически есть ${physical}. Подтвердите фактическое количество, если товар перед вами.`
-            : `Для «${group.productName}» нужно ${group.quantity} шт., подтверждено только ${group.observed}.`)
-        }
-      }
-
-      const currentNetPaid = Math.max(0, ledger.receivedAmount - ledger.returnAmount)
-      const paymentAmount = Math.max(0, toInt(input.paymentAmount, 0))
-      const settlement = deriveExchangeSetSettlement({
-        currentTotalAmount: ledger.totalAmount,
-        currentNetPaid,
-        removedValue,
-        addedValue,
-        paymentAmount,
-      })
-      const paymentMethod = cleanText(input.paymentMethod)
-      const refundMethod = cleanText(input.refundMethod)
-      if (paymentAmount > 0 && !paymentMethod) throw new CriticalOperationConflictError('Выберите способ оплаты денег, полученных сейчас.')
-      if (settlement.refundAmount > 0 && !refundMethod) throw new CriticalOperationConflictError('Выберите способ возврата денег клиенту.')
-
-      const financialAction: ExchangeSetExecutionPlan['financialAction'] = paymentAmount > 0
-        ? 'extra_payment'
-        : settlement.refundAmount > 0
-          ? 'refund'
-          : 'none'
-      const financialAmount = paymentAmount > 0 ? paymentAmount : settlement.refundAmount
-      const financialMethod = paymentAmount > 0 ? paymentMethod : settlement.refundAmount > 0 ? refundMethod : ''
-
-      executionPlan = {
-        orderId,
-        externalOrderId: cleanText((existing as any).external_id),
-        exchangeDate,
-        comment,
-        baselineTotalAmount: ledger.totalAmount,
-        baselineNetPaid: currentNetPaid,
-        removedValue,
-        addedValue,
-        finalTotalAmount: settlement.finalTotalAmount,
-        dueBeforeSettlement: settlement.dueBeforeSettlement,
-        paymentAmount,
-        paymentMethod,
-        refundAmount: settlement.refundAmount,
-        refundMethod,
-        finalNetPaid: settlement.finalNetPaid,
-        financialAction,
-        financialAmount,
-        financialMethod,
-        oldItems: oldPlans,
-        newItems: newPlans,
-        workshopCount,
-      }
-      operationContext = { ...operationContext, executionPlan, completedOld: 0, newContentInserted: false, completedNew: 0, financesCompleted: false }
-      await advanceCriticalOperation(db, criticalOperation, 'validated', { context: operationContext })
-    }
-
-    const timestamp = cleanText(operationContext.startedAt) || startedAt
-    const managerRow = await db.prepare('SELECT manager_id FROM orders WHERE id = ?').bind(executionPlan.orderId).first<{ manager_id: number | null }>()
-    let exchangeId = toInt(criticalOperation.row.target_id, 0)
-    if (!exchangeId) {
-      const firstNewSource = executionPlan.newItems[0]?.item.sourceType === 'workshop'
-        ? 'workshop'
-        : executionPlan.newItems[0]?.item.sourceType === 'boutique'
-          ? 'boutique'
-          : 'warehouse'
-      exchangeId = await updateCriticalOperationTargetFromLastInsert(
-        db,
-        criticalOperation,
-        'exchange',
-        executionPlan.externalOrderId,
-        db.prepare(
-          `INSERT INTO exchanges (
-             order_id, manager_id, exchange_date, old_order_item_id, old_quantity, old_return_source,
-             new_order_item_id, new_source_type, financial_action, financial_amount, payment_method,
-             status, comment, created_at, old_item_replaced_at
-           ) VALUES (?, ?, ?, NULL, 0, 'none', NULL, ?, ?, ?, ?, 'completed', ?, ?, ?)`
-        ).bind(
-          executionPlan.orderId,
-          managerRow?.manager_id ?? null,
-          executionPlan.exchangeDate,
-          firstNewSource,
-          executionPlan.financialAction,
-          executionPlan.financialAmount,
-          executionPlan.financialMethod || null,
-          executionPlan.comment || null,
-          timestamp,
-          timestamp,
-        ),
-        'exchange_created',
-      )
-    }
-
-    const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db)
-    const stockReturns: unknown[] = []
-    const pendingInventory: unknown[] = []
-    let completedOld = Math.max(0, toInt(operationContext.completedOld, 0))
-
-    for (let index = completedOld; index < executionPlan.oldItems.length; index += 1) {
-      const plan = executionPlan.oldItems[index]
-      let oldItem = await getOrderItemForReturnOrExchange(db, executionPlan.orderId, plan.orderItemId)
-      if (!oldItem) throw new CriticalOperationConflictError('Старая позиция обмена больше не найдена.')
-
-      if (plan.physicalState === 'not_issued' && !plan.isWorkshop) {
-        await applyNotIssuedReservationReduction(db, plan, timestamp, executionPlan.externalOrderId)
-      }
-
-      if (plan.needsHandoverReconciliation) {
-        await fulfillOrderReservationsV2(
-          db,
-          executionPlan.orderId,
-          executionPlan.externalOrderId,
-          timestamp,
-          { orderItemIds: [plan.orderItemId], checkedBy: 'exchange_set_reconciliation' },
-        )
-        oldItem = await getOrderItemForReturnOrExchange(db, executionPlan.orderId, plan.orderItemId)
-        if (!oldItem || !orderItemWasPhysicallyIssued(oldItem)) {
-          throw new CriticalOperationConflictError(`Не удалось безопасно подтвердить выдачу «${cleanText(oldItem?.product_name_snapshot)}». Обмен остановлен.`)
-        }
-      }
-
-      const currentQuantity = Math.max(0, toInt(oldItem.quantity, 0))
-      if (currentQuantity !== plan.targetQuantity) {
-        if (currentQuantity !== plan.initialQuantity) {
-          throw new CriticalOperationConflictError(`Количество «${cleanText(oldItem.product_name_snapshot)}» изменилось во время обмена.`)
-        }
-        await db.prepare(
-          `UPDATE order_items
-           SET quantity = ?, line_total = unit_price * ?,
-               stock_writeoff_status = CASE WHEN ? <= 0 THEN 'exchanged' ELSE stock_writeoff_status END
-           WHERE id = ? AND order_id = ? AND quantity = ?`
-        ).bind(plan.targetQuantity, plan.targetQuantity, plan.targetQuantity, plan.orderItemId, executionPlan.orderId, plan.initialQuantity).run()
-      }
-
-      await setWorkshopTarget(db, plan.workshopSnapshot, timestamp)
-
-      const physicalTracking = plan.physicalState !== 'not_issued'
-      const receivedAt = physicalTracking && plan.physicalState !== 'pending' ? timestamp : null
-      const inventorySource = plan.physicalState === 'not_issued'
-        ? 'not_issued'
-        : plan.returnSource === 'none'
-          ? null
-          : plan.returnSource
-      const mapped = await insertCriticalMappedEntity(
-        db,
-        criticalOperation,
-        'exchange_item',
-        `exchange:set:old:${index + 1}`,
-        db.prepare(
-          `INSERT INTO exchange_items (
-             exchange_id, role, order_item_id, product_name_snapshot, gender_snapshot, color_snapshot,
-             material_snapshot, length_snapshot, size_snapshot, quantity, inventory_source,
-             physical_tracking, physical_received_at, created_at
-           ) VALUES (?, 'old', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        ).bind(
-          exchangeId,
-          plan.orderItemId,
-          cleanText(oldItem.product_name_snapshot),
-          cleanText(oldItem.gender_snapshot) || null,
-          cleanText(oldItem.color_snapshot) || null,
-          cleanText(oldItem.material_snapshot) || null,
-          cleanText(oldItem.length_snapshot) || null,
-          cleanText(oldItem.size_snapshot) || null,
-          plan.quantity,
-          inventorySource,
-          physicalTracking ? 1 : 0,
-          receivedAt,
-          timestamp,
-        ),
-      )
-
-      if (plan.returnSource !== 'none') {
-        const resolved = await resolveInventoryLifecycleCandidate(db, oldItem, plan.isWorkshop)
-        const event = await insertInventoryLifecycleEvent(db, {
-          eventKey: `exchange:${exchangeId}:old:${mapped.id}`,
-          operationType: 'exchange',
-          operationId: exchangeId,
-          operationItemId: mapped.id,
-          orderId: executionPlan.orderId,
-          orderItemId: plan.orderItemId,
-          eventType: 'exchange_old_in',
-          direction: 'in',
-          inventorySource: plan.returnSource,
-          quantity: plan.quantity,
-          item: oldItem,
-          isWorkshop: plan.isWorkshop,
-          productId: resolved.productId,
-          variantId: resolved.variantId,
-          pendingReason: inventoryLifecyclePendingReason(resolved, plan.isWorkshop),
-          timestamp,
-        })
-        const autoApplyWorkshop = Boolean(plan.isWorkshop && resolved.variantId && await canAutoApplyFreshWorkshopInbound(db, event, resolved.variantId))
-        if (resolved.variantId && (!plan.isWorkshop || autoApplyWorkshop)) {
-          stockReturns.push(await applyCanonicalInventoryLifecycleEvent(
-            db,
-            event.id,
-            resolved.variantId,
-            timestamp,
-            executionPlan.comment || `Возврат старой позиции обмена #${exchangeId}`,
-          ))
-        } else {
-          pendingInventory.push({ eventId: event.id, eventType: event.event_type, productName: cleanText(oldItem.product_name_snapshot), source: plan.returnSource })
-        }
-      }
-
-      completedOld = index + 1
-      operationContext = { ...operationContext, completedOld }
-      await advanceCriticalOperation(db, criticalOperation, `old_${completedOld}_done`, { context: operationContext })
-    }
-
-    if (!operationContext.newContentInserted) {
-      const writePlan = buildItemizedOrderWritePlan(executionPlan.newItems.map((plan) => ({
-        quantity: plan.item.quantity,
-        unitPrice: plan.item.unitPrice,
-        catalogPriceSnapshot: plan.item.catalogPriceSnapshot ?? null,
-      })), [])
-      const preResolved = executionPlan.newItems.map((plan) => ({ productId: plan.productId, variantId: plan.variantId }))
-      await insertOrderContent(
-        db,
-        executionPlan.orderId,
-        executionPlan.externalOrderId,
-        executionPlan.newItems.map((plan) => plan.item),
-        [],
-        timestamp,
-        'exchange_new',
-        String(exchangeId),
-        `Новые позиции обмена #${exchangeId}`,
-        preResolved,
-        criticalOperation,
-        'exchange_set_new',
-        undefined,
-        writePlan,
-      )
-      operationContext = { ...operationContext, newContentInserted: true }
-      await advanceCriticalOperation(db, criticalOperation, 'new_content_inserted', { context: operationContext })
-    }
-
-    let completedNew = Math.max(0, toInt(operationContext.completedNew, 0))
-    for (let index = completedNew; index < executionPlan.newItems.length; index += 1) {
-      const plan = executionPlan.newItems[index]
-      const orderItemId = await criticalOperationEntityId(db, criticalOperation.requestId, 'order_item', `exchange_set_new:item:${index + 1}`)
-      if (!orderItemId) throw new Error('Новая позиция обмена не найдена после сохранения.')
-      const inserted = await getOrderItemForReturnOrExchange(db, executionPlan.orderId, orderItemId)
-      if (!inserted) throw new Error('Новая позиция обмена не загрузилась после сохранения.')
-
-      const mapped = await insertCriticalMappedEntity(
-        db,
-        criticalOperation,
-        'exchange_item',
-        `exchange:set:new:${index + 1}`,
-        db.prepare(
-          `INSERT INTO exchange_items (
-             exchange_id, role, order_item_id, product_name_snapshot, gender_snapshot, color_snapshot,
-             material_snapshot, length_snapshot, size_snapshot, quantity, inventory_source, created_at
-           ) VALUES (?, 'new', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        ).bind(
-          exchangeId,
-          orderItemId,
-          cleanText(inserted.product_name_snapshot),
-          cleanText(inserted.gender_snapshot) || null,
-          cleanText(inserted.color_snapshot) || null,
-          cleanText(inserted.material_snapshot) || null,
-          cleanText(inserted.length_snapshot) || null,
-          cleanText(inserted.size_snapshot) || null,
-          Math.max(1, toInt(inserted.quantity, 1)),
-          plan.item.isWorkshop ? 'workshop' : plan.inventorySource,
-          timestamp,
-        ),
-      )
-
-      if (!plan.item.isWorkshop && humanInventoryModelEnabled) {
-        const resolved = await resolveInventoryLifecycleCandidate(db, inserted, false)
-        const event = await insertInventoryLifecycleEvent(db, {
-          eventKey: `exchange:${exchangeId}:new:${mapped.id}`,
-          operationType: 'exchange',
-          operationId: exchangeId,
-          operationItemId: mapped.id,
-          orderId: executionPlan.orderId,
-          orderItemId,
-          eventType: 'exchange_new_out',
-          direction: 'out',
-          inventorySource: plan.inventorySource || 'warehouse',
-          quantity: Math.max(1, toInt(inserted.quantity, 1)),
-          item: inserted,
-          isWorkshop: false,
-          productId: resolved.productId,
-          variantId: resolved.variantId,
-          pendingReason: inventoryLifecyclePendingReason(resolved, false),
-          timestamp,
-        })
-        if (resolved.variantId) {
-          await applyCanonicalInventoryLifecycleEvent(
-            db,
-            event.id,
-            resolved.variantId,
-            timestamp,
-            `Физическое списание новой позиции обмена #${exchangeId}`,
-          )
-        } else {
-          pendingInventory.push({ eventId: event.id, eventType: event.event_type, productName: cleanText(inserted.product_name_snapshot), source: plan.inventorySource })
-        }
-      }
-
-      completedNew = index + 1
-      operationContext = { ...operationContext, completedNew }
-      await advanceCriticalOperation(db, criticalOperation, `new_${completedNew}_done`, { context: operationContext })
-    }
-
-    if (!operationContext.financesCompleted) {
-      let paymentId: number | null = null
-      let refundReturnId: number | null = null
-      if (executionPlan.financialAction === 'extra_payment') {
-        const entityKey = 'exchange:set:payment'
-        paymentId = await criticalOperationEntityId(db, criticalOperation.requestId, 'payment', entityKey)
-        if (!paymentId) {
-          const pair = buildPaymentAndMoneyEventStatements(db, {
-            orderId: executionPlan.orderId,
-            externalOrderId: executionPlan.externalOrderId,
-            paymentDate: executionPlan.exchangeDate,
-            method: executionPlan.paymentMethod,
-            amount: executionPlan.paymentAmount,
-            paymentKind: 'extra',
-            comment: executionPlan.comment || `Оплата при обмене #${exchangeId}`,
-            timestamp,
-            eventType: 'exchange_extra',
-            sourceType: 'exchange',
-            sourceId: exchangeId,
-            sourceRef: `exchanges:${exchangeId}`,
-            reason: 'exchange_set_created',
-            eventKey: `1901:${criticalOperation.requestId}:exchange-set-payment`,
-          })
-          const [insert] = await db.batch([
-            pair.payment,
-            db.prepare(
-              `INSERT INTO critical_operation_entities (request_id, entity_type, entity_key, entity_id, created_at)
-               VALUES (?, 'payment', ?, last_insert_rowid(), ?)
-               ON CONFLICT(request_id, entity_type, entity_key) DO NOTHING`
-            ).bind(criticalOperation.requestId, entityKey, timestamp),
-            pair.event,
-          ])
-          paymentId = await criticalOperationEntityId(db, criticalOperation.requestId, 'payment', entityKey) || toInt(insert.meta?.last_row_id, 0) || null
-        }
-      } else if (executionPlan.financialAction === 'refund') {
-        const entityKey = 'exchange:set:refund'
-        refundReturnId = await criticalOperationEntityId(db, criticalOperation.requestId, 'return', entityKey)
-        if (!refundReturnId) {
-          const [insert] = await db.batch([
-            db.prepare(
-              `INSERT INTO returns (order_id, manager_id, return_date, amount, payment_method, comment, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'completed', ?)`
-            ).bind(
-              executionPlan.orderId,
-              managerRow?.manager_id ?? null,
-              executionPlan.exchangeDate,
-              executionPlan.refundAmount,
-              executionPlan.refundMethod,
-              executionPlan.comment || `Возврат переплаты по обмену #${exchangeId}`,
-              timestamp,
-            ),
-            db.prepare(
-              `INSERT INTO critical_operation_entities (request_id, entity_type, entity_key, entity_id, created_at)
-               VALUES (?, 'return', ?, last_insert_rowid(), ?)
-               ON CONFLICT(request_id, entity_type, entity_key) DO NOTHING`
-            ).bind(criticalOperation.requestId, entityKey, timestamp),
-            refundMoneyEventStatement(db, {
-              eventKey: `1901:${criticalOperation.requestId}:exchange-set-refund`,
-              orderId: executionPlan.orderId,
-              externalOrderId: executionPlan.externalOrderId,
-              returnDate: executionPlan.exchangeDate,
-              amount: executionPlan.refundAmount,
-              paymentMethod: executionPlan.refundMethod,
-              timestamp,
-              eventType: 'exchange_refund',
-              sourceId: exchangeId,
-              sourceRef: `exchanges:${exchangeId}`,
-              comment: executionPlan.comment || `Возврат переплаты по обмену #${exchangeId}`,
-              reason: 'exchange_set_created',
-            }),
-          ])
-          refundReturnId = await criticalOperationEntityId(db, criticalOperation.requestId, 'return', entityKey) || toInt(insert.meta?.last_row_id, 0) || null
-        }
-      }
-
-      await db.batch([
-        db.prepare(`UPDATE orders SET total_amount = ?, updated_at = ? WHERE id = ?`)
-          .bind(executionPlan.finalTotalAmount, timestamp, executionPlan.orderId),
-        db.prepare(
-          `UPDATE exchanges
-           SET financial_action = ?, financial_amount = ?, payment_method = ?, payment_id = ?, refund_return_id = ?
-           WHERE id = ?`
-        ).bind(
-          executionPlan.financialAction,
-          executionPlan.financialAmount,
-          executionPlan.financialMethod || null,
-          paymentId,
-          refundReturnId,
-          exchangeId,
-        ),
-      ])
-      await syncOrderFinancialLedger(db, executionPlan.orderId, timestamp)
-      operationContext = { ...operationContext, financesCompleted: true }
-      await advanceCriticalOperation(db, criticalOperation, 'finances_done', { context: operationContext })
-    }
-
-    try {
-      await refreshOrderWorkshopStatusFromTasks(db, executionPlan.orderId, timestamp)
-    } catch (error) {
-      console.warn('Workshop status refresh failed after set exchange', error)
-    }
-
-    const completedResponse = {
-      ok: true,
-      setExchange: true,
-      exchangeId,
-      oldItemCount: executionPlan.oldItems.length,
-      newItemCount: executionPlan.newItems.length,
-      removedValue: executionPlan.removedValue,
-      addedValue: executionPlan.addedValue,
-      finalTotalAmount: executionPlan.finalTotalAmount,
-      paymentAmount: executionPlan.paymentAmount,
-      refundAmount: executionPlan.refundAmount,
-      finalNetPaid: executionPlan.finalNetPaid,
-      remainingDebt: Math.max(0, executionPlan.finalTotalAmount - executionPlan.finalNetPaid),
-      pendingInventoryCount: pendingInventory.length,
-      workshopCount: executionPlan.workshopCount,
-      refreshRequired: true,
-    }
-    await completeCriticalOperation(db, criticalOperation, completedResponse)
-
-    let order = null
-    try { order = await getOrder(db, executionPlan.orderId) } catch { order = null }
-    try {
-      await writeActivityLog(db, {
-        eventType: 'exchange_created',
-        entityType: 'exchange',
-        entityId: exchangeId,
-        orderId: executionPlan.orderId,
-        externalOrderId: executionPlan.externalOrderId,
-        title: `Оформлен обмен по заказу ${executionPlan.externalOrderId}`,
-        details: `Убрано ${executionPlan.oldItems.length} поз.; добавлено ${executionPlan.newItems.length} поз.; итог заказа ${executionPlan.finalTotalAmount}; деньги: ${executionPlan.financialAction} ${executionPlan.financialAmount}.`,
-        amount: executionPlan.financialAmount,
-        createdAt: timestamp,
-      })
-    } catch (error) {
-      console.warn('Set exchange activity log failed', error)
-    }
-    return order ? { ...completedResponse, order, refreshRequired: false } : completedResponse
-  } catch (error) {
-    await failCriticalOperation(db, criticalOperation, error)
-    throw error
-  }
-}
-
-export async function createExchangeSetV2FromRequest(db: D1Database, request: Request) {
-  const input = await readJson<ExchangeSetInput>(request)
-  input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined
-  return await createExchangeSetV2(db, input)
-}
-
-async function loadSetCreatePlan(db: D1Database, exchangeId: number): Promise<ExchangeSetExecutionPlan> {
-  const row = await db.prepare(
-    `SELECT context_json
-     FROM critical_operations
-     WHERE operation_type = 'exchange_set_create'
-       AND target_type = 'exchange'
-       AND target_id = ?
-     ORDER BY created_at DESC
-     LIMIT 1`
-  ).bind(exchangeId).first<{ context_json: string | null }>()
-  if (!row?.context_json) {
-    throw new CriticalOperationConflictError('Для этого нового обмена не найден безопасный снимок создания. Автоматическая отмена остановлена.')
-  }
-  try {
-    const parsed = JSON.parse(row.context_json) as ExchangeSetOperationContext
-    if (!parsed.executionPlan) throw new Error('missing plan')
-    return parsed.executionPlan
-  } catch {
-    throw new CriticalOperationConflictError('Снимок нового обмена повреждён. Автоматическая отмена остановлена.')
-  }
-}
-
-export async function isExchangeSetV2(db: D1Database, exchangeId: number) {
-  const row = await db.prepare(
-    `SELECT 1 AS found
-     FROM critical_operations
-     WHERE operation_type = 'exchange_set_create'
-       AND target_type = 'exchange'
-       AND target_id = ?
-     LIMIT 1`
-  ).bind(exchangeId).first<{ found: number }>()
-  return Boolean(toInt(row?.found, 0))
-}
-
-export async function cancelExchangeSetV2(
-  db: D1Database,
-  exchangeId: number,
-  input: { requestId?: string; comment?: string },
-) {
-  let criticalOperation: CriticalOperationHandle | null = null
-  try {
-    const startedAt = new Date().toISOString()
-    criticalOperation = await beginCriticalOperation(db, 'exchange_set_cancel', input.requestId, { exchangeId, ...input }, { startedAt })
-    if (criticalOperation.cachedResponse) return criticalOperation.cachedResponse
-    if (!exchangeId) throw new Error('exchangeId is required.')
-    let cancelContext = parseCriticalContext<ExchangeSetCancelContext>(criticalOperation.row)
-
-    const exchange = await db.prepare(
-      `SELECT e.*, o.external_id, o.order_status, o.pricing_mode
-       FROM exchanges e
-       JOIN orders o ON o.id = e.order_id
-       WHERE e.id = ?`
-    ).bind(exchangeId).first<Record<string, unknown>>()
-    if (!exchange) throw new Error('Exchange not found.')
-    if (!await isExchangeSetV2(db, exchangeId)) {
-      throw new CriticalOperationConflictError('Это обмен старого формата. Используйте совместимую отмену.')
-    }
-    if (cleanText(exchange.status) === 'cancelled') {
-      const cancelledOrderId = toInt(exchange.order_id, 0)
-      if (cancelledOrderId) await syncOrderFinancialLedger(db, cancelledOrderId, startedAt)
-      const completed = { ok: true, exchangeId, alreadyCancelled: true, refreshRequired: true }
-      await completeCriticalOperation(db, criticalOperation, completed)
-      let order = null
-      try { order = await getOrder(db, cancelledOrderId) } catch { order = null }
-      return order ? { ...completed, order, refreshRequired: false } : completed
-    }
-
-    const plan = await loadSetCreatePlan(db, exchangeId)
-    const orderId = toInt(exchange.order_id, 0)
-    if (orderId !== plan.orderId) throw new CriticalOperationConflictError('Снимок обмена не совпадает с заказом.')
-    const timestamp = startedAt
-    const comment = cleanText(input.comment) || `Отмена обмена #${exchangeId}`
-
-    const itemRows = await db.prepare(
-      `SELECT ei.*, oi.quantity AS current_quantity, oi.unit_price AS current_unit_price,
-              oi.line_total AS current_line_total, oi.is_workshop AS current_is_workshop,
-              oi.stock_writeoff_status AS current_stock_status
-       FROM exchange_items ei
-       LEFT JOIN order_items oi ON oi.id = ei.order_item_id
-       WHERE ei.exchange_id = ?
-       ORDER BY ei.role ASC, ei.id ASC`
-    ).bind(exchangeId).all<Record<string, unknown>>()
-    const oldRows = (itemRows.results || []).filter((row) => cleanText(row.role) === 'old')
-    const newRows = (itemRows.results || []).filter((row) => cleanText(row.role) === 'new')
-    if (oldRows.length !== plan.oldItems.length || newRows.length !== plan.newItems.length) {
-      throw new CriticalOperationConflictError('Состав обмена не совпадает с исходным безопасным снимком. Отмена остановлена.')
-    }
-
-    const newOrderItemIds = newRows.map((row) => toInt(row.order_item_id, 0)).filter(Boolean)
-    if (newOrderItemIds.length) {
-      const newItemIdJson = JSON.stringify(newOrderItemIds)
-      const dependent = await db.prepare(
-        `SELECT e.id
-         FROM exchange_items ei
-         JOIN exchanges e ON e.id = ei.exchange_id
-         WHERE ei.role = 'old'
-           AND ei.order_item_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
-           AND e.id <> ?
-           AND COALESCE(e.status, 'completed') <> 'cancelled'
-         ORDER BY e.id DESC
-         LIMIT 1`
-      ).bind(newItemIdJson, exchangeId).first<{ id: number }>()
-      if (dependent?.id) {
-        throw new CriticalOperationConflictError(`Одна из новых позиций этого обмена уже использована в обмене #${dependent.id}. Сначала отмените более поздний обмен.`)
-      }
-
-      const dependentReturn = await db.prepare(
-        `SELECT r.id
-         FROM return_items ri
-         JOIN returns r ON r.id = ri.return_id
-         WHERE ri.order_item_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
-           AND COALESCE(r.status, 'completed') <> 'cancelled'
-           AND ${noStandaloneReturnSql}
-         ORDER BY r.id DESC
-         LIMIT 1`
-      ).bind(newItemIdJson).first<{ id: number }>()
-      if (dependentReturn?.id) {
-        throw new CriticalOperationConflictError(`Одна из новых позиций этого обмена уже участвовала в возврате #${dependentReturn.id}. Сначала отмените более поздний возврат.`)
-      }
-    }
-
-    if (!cancelContext.preflight) {
-      const ledger = await readOrderFinancialLedger(db, orderId)
-      const activeTotalRow = await db.prepare(
-        `SELECT COALESCE(SUM(line_total), 0) AS total_amount
-         FROM order_items
-         WHERE order_id = ? AND quantity > 0`
-      ).bind(orderId).first<{ total_amount: number }>()
-      const activeTotal = requiredSafeMoney(activeTotalRow?.total_amount, 'Текущий итог активных позиций')
-      if (activeTotal !== ledger.totalAmount) {
-        throw new CriticalOperationConflictError('Итог заказа уже не совпадает с активными позициями. Отмена обмена остановлена без изменений.')
-      }
-
-      const newSnapshots: Array<{ orderItemId: number; quantity: number; unitPrice: number; lineTotal: number }> = []
-      let removedNewValue = 0
-      for (let index = 0; index < plan.newItems.length; index += 1) {
-        const row = newRows[index]
-        const planItem = plan.newItems[index]
-        const orderItemId = toInt(row?.order_item_id, 0)
-        const quantity = Math.max(0, toInt(row?.current_quantity, 0))
-        const unitPrice = requiredSafeMoney(row?.current_unit_price, `Цена новой позиции ${index + 1}`)
-        const lineTotal = requiredSafeMoney(row?.current_line_total, `Сумма новой позиции ${index + 1}`)
-        const expectedQuantity = Math.max(1, toInt(planItem?.item?.quantity, 1))
-        const expectedUnitPrice = requiredSafeMoney(planItem?.item?.unitPrice, `Исходная цена новой позиции ${index + 1}`)
-        const expectedLineTotal = expectedQuantity * expectedUnitPrice
-        if (!orderItemId
-          || quantity !== expectedQuantity
-          || unitPrice !== expectedUnitPrice
-          || lineTotal !== expectedLineTotal) {
-          throw new CriticalOperationConflictError(
-            `Новая позиция обмена ${index + 1} уже изменилась после проведения. Обновите историю; автоматическая отмена остановлена.`
-          )
-        }
-        removedNewValue += lineTotal
-        if (!Number.isSafeInteger(removedNewValue)) {
-          throw new CriticalOperationConflictError('Стоимость новых позиций слишком велика для безопасной отмены.')
-        }
-        newSnapshots.push({ orderItemId, quantity, unitPrice, lineTotal })
-      }
-
-      const oldRowsByOrderItemId = new Map<number, Record<string, unknown>>()
-      for (const row of oldRows) {
-        const orderItemId = toInt(row.order_item_id, 0)
-        if (orderItemId) oldRowsByOrderItemId.set(orderItemId, row)
-      }
-      const oldTargets: Array<{ orderItemId: number; baselineQuantity: number; targetQuantity: number }> = []
-      for (const [index, planItem] of plan.oldItems.entries()) {
-        const row = oldRowsByOrderItemId.get(planItem.orderItemId)
-        if (!row) throw new CriticalOperationConflictError(`Старая позиция обмена ${index + 1} больше не найдена.`)
-        const currentUnitPrice = requiredSafeMoney(row.current_unit_price, `Цена старой позиции ${index + 1}`)
-        if (currentUnitPrice !== planItem.unitPrice) {
-          throw new CriticalOperationConflictError(
-            `Цена старой позиции обмена ${index + 1} изменилась после проведения. Автоматическая отмена остановлена.`
-          )
-        }
-        const baselineQuantity = Math.max(0, toInt(row.current_quantity, 0))
-        const targetQuantity = baselineQuantity + planItem.quantity
-        if (!Number.isSafeInteger(targetQuantity) || targetQuantity < 0) {
-          throw new CriticalOperationConflictError('Не удалось безопасно рассчитать восстановление старой позиции.')
-        }
-        oldTargets.push({ orderItemId: planItem.orderItemId, baselineQuantity, targetQuantity })
-      }
-
-      const projectedRestoredTotal = activeTotal - removedNewValue + plan.removedValue
-      if (!Number.isSafeInteger(projectedRestoredTotal) || projectedRestoredTotal < 0) {
-        throw new CriticalOperationConflictError('Итог заказа после отмены обмена получился некорректным.')
-      }
-
-      const financialAction = cleanText(exchange.financial_action)
-      const financialAmount = Math.max(0, toInt(exchange.financial_amount, 0))
-      const currentNetPaid = ledger.receivedAmount - ledger.returnAmount
-      const projectedNetPaid = financialAction === 'extra_payment'
-        ? currentNetPaid - financialAmount
-        : financialAction === 'refund'
-          ? currentNetPaid + financialAmount
-          : currentNetPaid
-      if (!Number.isSafeInteger(projectedNetPaid) || projectedNetPaid < 0) {
-        throw new CriticalOperationConflictError(
-          'После отмены обмена возвраты денег превысят оставшиеся оплаты. Сначала отмените или исправьте более позднюю денежную операцию.'
-        )
-      }
-      if (projectedNetPaid > projectedRestoredTotal) {
-        throw new CriticalOperationConflictError(
-          `После отмены обмена останется переплата ${projectedNetPaid - projectedRestoredTotal}. Сначала исправьте или отмените более позднюю оплату/возврат, затем повторите отмену обмена.`
-        )
-      }
-
-      cancelContext = {
-        ...cancelContext,
-        preflight: { projectedRestoredTotal, projectedNetPaid, oldTargets, newSnapshots },
-      }
-      await advanceCriticalOperation(db, criticalOperation, 'validated', { context: cancelContext })
-    }
-
-    const lifecycleRows = await db.prepare(
-      `SELECT * FROM inventory_lifecycle_events
-       WHERE operation_type = 'exchange' AND operation_id = ?
-       ORDER BY id ASC`
-    ).bind(exchangeId).all<InventoryLifecycleEventRow>()
-    for (const event of lifecycleRows.results || []) {
-      if (cleanText(event.status) === 'applied' && toInt(event.variant_id, 0)) {
-        await loadCanonicalVariantSnapshot(db, toInt(event.variant_id, 0))
-      }
-    }
-
-    const stockReversals: unknown[] = []
-    for (const event of lifecycleRows.results || []) {
-      const result = await cancelInventoryLifecycleEvent(db, toInt(event.id, 0), timestamp, comment)
-      if (result?.cancelled) stockReversals.push(result)
-    }
-
-    for (let index = 0; index < newRows.length; index += 1) {
-      const row = newRows[index]
-      const orderItemId = toInt(row.order_item_id, 0)
-      if (!orderItemId) continue
-      if (toInt(row.current_is_workshop, 0)) {
-        await db.prepare(
-          `UPDATE workshop_tasks
-           SET quantity = 0, status = 'cancelled', updated_at = ?
-           WHERE order_id = ? AND order_item_id = ? AND status <> 'cancelled'`
-        ).bind(timestamp, orderId, orderItemId).run()
-      }
-      await releaseOrderReservationV2(db, orderItemId, timestamp, `Отмена обмена #${exchangeId}`)
-      await db.prepare(
-        `UPDATE order_items
-         SET quantity = 0, line_total = 0, stock_writeoff_status = 'cancelled'
-         WHERE id = ? AND order_id = ?`
-      ).bind(orderItemId, orderId).run()
-    }
-
-    for (const planItem of plan.oldItems) {
-      const current = await getOrderItemForReturnOrExchange(db, orderId, planItem.orderItemId)
-      if (!current) throw new CriticalOperationConflictError('Старая позиция обмена больше не найдена.')
-      const target = cancelContext.preflight?.oldTargets.find((entry) => entry.orderItemId === planItem.orderItemId)
-      if (!target) throw new CriticalOperationConflictError('Не найден снимок восстановления старой позиции. Отмена остановлена.')
-      const currentQuantity = Math.max(0, toInt(current.quantity, 0))
-      if (currentQuantity !== target.targetQuantity) {
-        if (currentQuantity !== target.baselineQuantity) {
-          throw new CriticalOperationConflictError(
-            'Старая позиция изменилась во время отмены обмена. Операция остановлена, чтобы не восстановить количество дважды.'
-          )
-        }
-        await db.prepare(
-          `UPDATE order_items
-           SET quantity = ?, line_total = unit_price * ?, stock_writeoff_status = ?
-           WHERE id = ? AND order_id = ? AND quantity = ?`
-        ).bind(
-          target.targetQuantity,
-          target.targetQuantity,
-          planItem.originalStockStatus || (planItem.isWorkshop ? 'workshop' : 'reserved'),
-          planItem.orderItemId,
-          orderId,
-          target.baselineQuantity,
-        ).run()
-      }
-      if (planItem.physicalState === 'not_issued' && !planItem.isWorkshop) {
-        await restoreNotIssuedReservation(db, planItem, timestamp, exchangeId)
-      }
-      await restoreWorkshopSnapshot(db, planItem.workshopSnapshot, timestamp)
-    }
-
-    const financialAction = cleanText(exchange.financial_action)
-    const financialAmount = Math.max(0, toInt(exchange.financial_amount, 0))
-    if (financialAction === 'extra_payment' && financialAmount > 0) {
-      const paymentId = toInt(exchange.payment_id, 0)
-      if (paymentId) {
-        await removeSinglePaymentWithMoneyEvent(db, {
-          paymentId,
-          orderId,
-          externalOrderId: cleanText(exchange.external_id),
-          timestamp,
-          relatedType: 'exchange_extra',
-          reason: 'exchange_cancel',
-          comment,
-        })
-      }
-    } else if (financialAction === 'refund' && financialAmount > 0) {
-      const refundReturnId = toInt(exchange.refund_return_id, 0)
-      if (refundReturnId) {
-        await db.batch([
-          db.prepare(
-            `UPDATE returns
-             SET status = 'cancelled', cancelled_at = ?, cancellation_comment = ?
-             WHERE id = ? AND order_id = ?`
-          ).bind(timestamp, comment, refundReturnId, orderId),
-          refundReversalMoneyEventStatement(db, {
-            eventKey: `189c:exchange-set:${exchangeId}:refund-cancelled`,
-            orderId,
-            externalOrderId: cleanText(exchange.external_id),
-            amount: financialAmount,
-            paymentMethod: cleanText(exchange.payment_method) || null,
-            timestamp,
-            relatedType: 'exchange_refund',
-            sourceId: exchangeId,
-            sourceRef: `exchanges:${exchangeId}`,
-            reason: 'exchange_cancel',
-            comment,
-          }),
-        ])
-      }
-    }
-
-    const totalRow = await db.prepare(
-      `SELECT COALESCE(SUM(line_total), 0) AS total_amount
-       FROM order_items
-       WHERE order_id = ? AND quantity > 0`
-    ).bind(orderId).first<{ total_amount: number }>()
-    const restoredTotal = Math.max(0, toInt(totalRow?.total_amount, 0))
-    if (restoredTotal !== cancelContext.preflight?.projectedRestoredTotal) {
-      throw new CriticalOperationConflictError('Итог заказа изменился во время отмены. Операция остановлена до финального статуса; обновите данные и повторите.')
-    }
-    await db.batch([
-      db.prepare(`UPDATE orders SET total_amount = ?, updated_at = ? WHERE id = ?`).bind(restoredTotal, timestamp, orderId),
-      db.prepare(
-        `UPDATE exchanges
-         SET status = 'cancelled', cancelled_at = ?, cancellation_comment = ?, old_item_replacement_reversed_at = ?
-         WHERE id = ? AND COALESCE(status, 'completed') <> 'cancelled'`
-      ).bind(timestamp, comment, timestamp, exchangeId),
-    ])
-    await syncOrderFinancialLedger(db, orderId, timestamp)
-    try {
-      await refreshOrderWorkshopStatusFromTasks(db, orderId, timestamp)
-    } catch (error) {
-      console.warn('Workshop status refresh failed after set exchange cancellation', error)
-    }
-
-    const completed = { ok: true, exchangeId, setExchange: true, stockReversals, financialAction, financialAmount, refreshRequired: true }
-    await completeCriticalOperation(db, criticalOperation, completed)
-    let order = null
-    try { order = await getOrder(db, orderId) } catch { order = null }
-    try {
-      await writeActivityLog(db, {
-        eventType: 'exchange_cancelled',
-        entityType: 'exchange',
-        entityId: exchangeId,
-        orderId,
-        externalOrderId: cleanText(exchange.external_id),
-        title: `Отменён обмен по заказу ${cleanText(exchange.external_id)}`,
-        details: comment,
-        amount: financialAmount,
-        createdAt: timestamp,
-      })
-    } catch (error) {
-      console.warn('Set exchange cancellation activity log failed', error)
-    }
-    return order ? { ...completed, order, refreshRequired: false } : completed
-  } catch (error) {
-    await failCriticalOperation(db, criticalOperation, error)
-    throw error
   }
 }

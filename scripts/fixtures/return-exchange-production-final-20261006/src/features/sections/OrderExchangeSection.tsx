@@ -1,7 +1,6 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
 import { useState } from 'react'
 import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
-import { OrderExchangeSmartSection } from './OrderExchangeSmartSection'
 type SectionContext = Record<string, any>
 
 export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
@@ -257,10 +256,6 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     ...current,
     queuedPairs: (current.queuedPairs || []).filter((pair: any) => pair.draftKey !== draftKey || pair.saved),
   }))
-
-  if (!exchangeSelectedOrder || (itemizedExchange && exchangeDraft.workflowMode === 'set_v2')) {
-    return <OrderExchangeSmartSection ctx={ctx} />
-  }
 
   return (
     <article className="card wide sector-orders" id="order-exchange" style={{ ...sectorStyle('orders'), ...orderPanelStyle('exchange') }}>

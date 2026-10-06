@@ -73,7 +73,6 @@ export type ReturnHistoryItem = {
   length?: string | null
   size?: string | null
   inventorySource?: 'warehouse' | 'boutique' | null | string
-  sourceType?: 'warehouse' | 'boutique' | 'workshop' | null | string
   restocked?: boolean
   physicalTracking?: boolean
   physicalReceivedAt?: string | null
@@ -119,7 +118,6 @@ export type ReturnItemDraft = {
   quantity: number
   maxQuantity: number
   sourceType: 'warehouse' | 'boutique' | 'workshop'
-  issuedToClient: boolean
   restock: boolean
   physicalState: 'pending' | 'warehouse' | 'boutique' | 'no_stock'
 }
@@ -148,25 +146,9 @@ export type ExchangePairDraft = {
   saved?: boolean
 }
 
-export type ExchangeSetOldDraft = {
-  orderItemId: number
-  quantity: number
-  physicalState: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'
-}
-
-export type ExchangeSetNewDraft = {
-  draftKey: string
-  item: EditorItem
-}
-
 export type ExchangeDraft = {
   orderId: number | null
   exchangeDate: string
-  workflowMode: 'set_v2' | 'legacy_pair'
-  oldSelections: ExchangeSetOldDraft[]
-  newItems: ExchangeSetNewDraft[]
-  paymentAmount: number
-  refundMethod: string
   currentPairKey: string
   queuedPairs: ExchangePairDraft[]
   oldItemId: number
@@ -749,35 +731,8 @@ export type ExchangeHistoryResponse = {
   exchanges: ExchangeHistoryEntry[]
 }
 
-export type ExchangeHistoryItem = {
-  id: number
-  orderItemId?: number | null
-  productName: string
-  quantity: number
-  gender?: string | null
-  color?: string | null
-  material?: string | null
-  length?: string | null
-  size?: string | null
-  inventorySource?: string | null
-  sourceType?: 'warehouse' | 'boutique' | 'workshop' | null | string
-  physicalTracking?: boolean
-  physicalReceivedAt?: string | null
-  isWorkshop?: boolean
-  unitPrice?: number
-  catalogPriceSnapshot?: number | null
-  currentVariantId?: number | null
-  lifecycleId?: number | null
-  lifecycleVariantId?: number | null
-  lifecycleStatus?: string | null
-  wasNotIssued?: boolean
-}
-
 export type ExchangeHistoryEntry = {
   id: number
-  isSetExchange?: boolean
-  oldItems?: ExchangeHistoryItem[]
-  newItems?: ExchangeHistoryItem[]
   orderId: number
   externalId: string
   orderDate: string
@@ -793,7 +748,6 @@ export type ExchangeHistoryEntry = {
   oldLength?: string | null
   oldSize?: string | null
   oldReturnSource: 'none' | 'warehouse' | 'boutique' | string
-  oldSourceType?: 'warehouse' | 'boutique' | 'workshop' | null | string
   newProductName: string
   newQuantity: number
   newGender?: string | null
@@ -870,7 +824,6 @@ export type OrderRecord = {
     size?: string | null
     quantity: number
     availableOperationQuantity?: number
-    stockWriteoffStatus?: string | null
     unitPrice: number
     catalogPriceSnapshot?: number | null
     lineTotal: number

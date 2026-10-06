@@ -733,29 +733,21 @@ export function createDebtClosePayment(orderDate = formatLocalDateInput(), amoun
 
 
 export function createReturnDraft(order?: OrderRecord | null): ReturnDraft {
-  const issuedStockStatuses = new Set(['fulfilled', 'written_off', 'negative'])
   return {
     returnDate: formatLocalDateInput(),
     amount: 0,
     paymentMethod: '',
     comment: '',
     restockSource: 'none',
-    items: (order?.items || []).map((item) => {
-      const sourceType = (item.sourceType === 'workshop' ? 'workshop' : item.sourceType === 'boutique' ? 'boutique' : 'warehouse') as 'warehouse' | 'boutique' | 'workshop'
-      const stockStatus = String(item.stockWriteoffStatus || '').trim()
-      const sentFallback = order?.shipping_status === 'sent' && (sourceType === 'workshop' || !stockStatus)
-      const issuedToClient = issuedStockStatuses.has(stockStatus) || sentFallback
-      return {
-        orderItemId: Number(item.id || 0),
-        productName: item.productName || 'Позиция',
-        quantity: 0,
-        maxQuantity: Math.max(0, Number(item.availableOperationQuantity ?? item.quantity ?? 0)),
-        sourceType,
-        issuedToClient,
-        restock: false,
-        physicalState: (sourceType === 'workshop' ? 'no_stock' : 'pending') as 'pending' | 'no_stock',
-      }
-    }).filter((item) => item.orderItemId > 0 && item.maxQuantity > 0),
+    items: (order?.items || []).map((item) => ({
+      orderItemId: Number(item.id || 0),
+      productName: item.productName || 'Позиция',
+      quantity: 0,
+      maxQuantity: Math.max(0, Number(item.availableOperationQuantity ?? item.quantity ?? 0)),
+      sourceType: (item.sourceType === 'workshop' ? 'workshop' : item.sourceType === 'boutique' ? 'boutique' : 'warehouse') as 'warehouse' | 'boutique' | 'workshop',
+      restock: false,
+      physicalState: (item.sourceType === 'workshop' ? 'no_stock' : 'pending') as 'pending' | 'no_stock',
+    })).filter((item) => item.orderItemId > 0 && item.maxQuantity > 0),
   }
 }
 
@@ -782,20 +774,6 @@ export function createExchangeDraft(order?: OrderRecord | null): ExchangeDraft {
   return {
     orderId: order?.id || null,
     exchangeDate: formatLocalDateInput(),
-    workflowMode: itemizedPricing ? 'set_v2' : 'legacy_pair',
-    oldSelections: [],
-    newItems: itemizedPricing ? [{
-      draftKey: createExchangePairDraftKey(),
-      item: {
-        ...createEmptyEditorItem(),
-        unitPrice: undefined,
-        catalogPriceSnapshot: null,
-        priceOrigin: 'missing',
-        priceNeedsConfirmation: false,
-      },
-    }] : [],
-    paymentAmount: 0,
-    refundMethod: '',
     currentPairKey: createExchangePairDraftKey(),
     queuedPairs: [],
     oldItemId: Number(firstItem?.id || 0),
