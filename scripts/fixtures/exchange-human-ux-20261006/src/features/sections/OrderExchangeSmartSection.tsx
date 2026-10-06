@@ -88,10 +88,6 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
   }, 0)
   const addedValue = (exchangeDraft.newItems || []).reduce((sum: number, entry: any) =>
     sum + Math.max(0, Number(entry.item?.quantity || 0)) * Math.max(0, Number(entry.item?.unitPrice || 0)), 0)
-  const removedQuantity = (exchangeDraft.oldSelections || []).reduce((sum: number, selected: any) =>
-    sum + Math.max(0, Number(selected.quantity || 0)), 0)
-  const addedQuantity = (exchangeDraft.newItems || []).reduce((sum: number, entry: any) =>
-    sum + (String(entry.item?.productName || '').trim() ? Math.max(1, Number(entry.item?.quantity || 1)) : 0), 0)
   const currentTotal = Math.max(0, Number(exchangeSelectedOrder?.total_amount || 0))
   const currentNetPaid = Math.max(0, Number(exchangeSelectedOrder?.received_amount || 0) - Number(exchangeSelectedOrder?.return_amount || 0))
   const projectedTotal = Math.max(0, currentTotal - removedValue + addedValue)
@@ -99,22 +95,6 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
   const refundAmount = Math.max(0, currentNetPaid - projectedTotal)
   const paymentNow = refundAmount > 0 ? 0 : Math.max(0, Number(exchangeDraft.paymentAmount || 0))
   const remainingDebt = Math.max(0, dueBeforeSettlement - paymentNow)
-  const filledNewItems = (exchangeDraft.newItems || []).filter((entry: any) => String(entry.item?.productName || '').trim())
-  const newPricesReady = filledNewItems.every((entry: any) => {
-    const price = entry.item?.unitPrice == null ? Number.NaN : Number(entry.item.unitPrice)
-    return Number.isSafeInteger(price) && price >= 0
-  })
-  const saveBlockReason = !(exchangeDraft.oldSelections || []).length
-    ? 'Выберите хотя бы один товар, который клиент возвращает.'
-    : !filledNewItems.length
-      ? 'Добавьте товар, который клиент получает.'
-      : !newPricesReady
-        ? 'Укажите цену продажи для каждого нового товара.'
-        : refundAmount > 0 && !String(exchangeDraft.refundMethod || '').trim()
-          ? 'Выберите способ возврата денег.'
-          : paymentNow > 0 && !String(exchangeDraft.paymentMethod || '').trim()
-            ? 'Выберите способ оплаты.'
-            : ''
 
   const pendingGroups = useMemo(() => (exchangeHistory || []).map((entry: any) => {
     const items = entry.isSetExchange
@@ -196,7 +176,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
 
   const oldHistoryStatus = (item: any) => {
     if (item.wasNotIssued || item.inventorySource === 'not_issued') return 'Не выдавалась клиенту — осталась на месте'
-    if (!item.physicalTracking) return 'В старой записи возврат товара не отмечался'
+    if (!item.physicalTracking) return 'Физическое получение не отслеживалось'
     if (!item.physicalReceivedAt) return 'Ещё у клиента'
     if (item.inventorySource === 'warehouse') return item.lifecycleStatus === 'pending' ? 'Вернули → Склад · нужно завершить учёт' : 'Вернули → Склад'
     if (item.inventorySource === 'boutique') return item.lifecycleStatus === 'pending' ? 'Вернули → Бутик · нужно завершить учёт' : 'Вернули → Бутик'
@@ -208,8 +188,8 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
       <div className="exchange-set-hero">
         <div>
           <div className="card-label">Обмен</div>
-          <h2>Обмен заказа</h2>
-          <p>Сначала выберите, что клиент возвращает, затем — что получает взамен. Сумму и доплату система посчитает сама.</p>
+          <h2>Меняем состав заказа, а деньги система пересчитывает сама</h2>
+          <p>Выберите, что клиент возвращает, затем независимо добавьте то, что он получает. Соответствие «старый → новый» больше не требуется.</p>
         </div>
         <button className="secondary compact" type="button" onClick={() => setOrderPanel('list')}>К заказам</button>
       </div>
@@ -220,7 +200,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
             <div>
               <span className="exchange-set-kicker">Ожидают возврата</span>
               <h3>Товары ещё у клиентов · {exchangeHistorySummary.pendingPhysicalQuantity} шт.</h3>
-              <p>Когда товары вернутся, укажите, куда принять каждый из них, и подтвердите возврат одной кнопкой.</p>
+              <p>Когда вещи приехали вместе, выберите судьбу каждой позиции и подтвердите весь возврат одной кнопкой.</p>
             </div>
           </div>
           <div className="exchange-return-groups">
@@ -290,19 +270,19 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
               <strong>{exchangeSelectedOrder.external_id}</strong>
               <small>{exchangeSelectedOrder.customer_name || exchangeSelectedOrder.customer_phone || 'Клиент не указан'}</small>
             </div>
-            <div><span>Сумма заказа</span><strong>{formatMoney(currentTotal)}</strong></div>
-            <div><span>Уже оплачено</span><strong>{formatMoney(currentNetPaid)}</strong></div>
-            <div><span>Долг</span><strong>{formatMoney(Math.max(0, currentTotal - currentNetPaid))}</strong></div>
+            <div><span>Сейчас стоит</span><strong>{formatMoney(currentTotal)}</strong></div>
+            <div><span>Оплачено фактически</span><strong>{formatMoney(currentNetPaid)}</strong></div>
+            <div><span>Текущий долг</span><strong>{formatMoney(Math.max(0, currentTotal - currentNetPaid))}</strong></div>
           </div>
 
           <section className="exchange-set-step">
             <div className="exchange-set-section-head">
-              <div><span className="exchange-set-kicker">1 · Клиент возвращает</span><h3>Что клиент возвращает</h3><p>Выберите товары из этого заказа и нужное количество.</p></div>
+              <div><span className="exchange-set-kicker">1 · Что клиент меняет</span><h3>Выберите товары из заказа</h3><p>Цена берётся из самого заказа — текущая цена Каталога старый товар не переписывает.</p></div>
+              <strong className="exchange-set-money-negative">− {formatMoney(removedValue)}</strong>
             </div>
             <div className="exchange-old-grid">
               {exchangeableOldItems.map((item: any) => {
                 const selected = selectedOldById.get(Number(item.id || 0))
-                const orderQuantity = Math.max(0, Number(item.quantity || 0))
                 const maxQuantity = Math.max(1, Number(item.availableOperationQuantity ?? item.quantity ?? 1))
                 const itemStockStatus = String(item.stockWriteoffStatus || '').trim()
                 const sentWorkshop = item.sourceType === 'workshop' && exchangeSelectedOrder.shipping_status === 'sent'
@@ -312,7 +292,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                     <button className="exchange-old-pick" type="button" onClick={() => toggleOldItem(item)}>
                       <span className="exchange-check">{selected ? '✓' : ''}</span>
                       <span className="exchange-old-main"><strong>{item.productName}</strong><small>{itemDetails(item)}</small></span>
-                      <span className="exchange-old-order-info"><strong>{orderQuantity} шт.</strong><small>в заказе</small>{maxQuantity < orderQuantity ? <small>Можно обменять: {maxQuantity} шт.</small> : null}<em>Цена: {formatMoney(Number(item.unitPrice || 0))} / шт.</em></span>
+                      <b>{formatMoney(Number(item.unitPrice || 0))} / шт.</b>
                     </button>
                     {selected ? (
                       <div className="exchange-old-controls">
@@ -325,20 +305,20 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                           </div>
                         ) : <span className="exchange-one-unit">Меняем 1 шт.</span>}
                         {!issued ? (
-                          <div className="exchange-auto-state"><strong>Товар клиенту не выдавали</strong><span>Просто уберём его из заказа — остаток не увеличится.</span></div>
+                          <div className="exchange-auto-state"><strong>Клиенту не выдавалась</strong><span>Система снимет резерв. Физический остаток не увеличится второй раз.</span></div>
                         ) : (
                           <div className="exchange-physical-choice">
-                            <span>Товар уже вернулся?</span>
+                            <span>Где вещь сейчас?</span>
                             <div className="exchange-choice-row">
-                              <button type="button" className={selected.physicalState === 'pending' ? 'is-active' : ''} onClick={() => patchOldItem(item.id, { physicalState: 'pending' })}>Нет, ещё у клиента</button>
-                              <button type="button" className={selected.physicalState !== 'pending' ? 'is-active' : ''} onClick={() => patchOldItem(item.id, { physicalState: defaultReturnedDestination(item) })}>Да, уже у нас</button>
+                              <button type="button" className={selected.physicalState === 'pending' ? 'is-active' : ''} onClick={() => patchOldItem(item.id, { physicalState: 'pending' })}>Ещё у клиента</button>
+                              <button type="button" className={selected.physicalState !== 'pending' ? 'is-active' : ''} onClick={() => patchOldItem(item.id, { physicalState: defaultReturnedDestination(item) })}>Уже вернули</button>
                             </div>
-                            {selected.physicalState === 'pending' ? <small>Когда товар вернётся, он появится в списке ожидающих сверху.</small> : (
+                            {selected.physicalState === 'pending' ? <small>После обмена позиция появится наверху в «Ожидают возврата».</small> : (
                               <label>
-                                <span>Куда вернуть товар</span>
+                                <span>Что сделать с этой позицией</span>
                                 <select value={selected.physicalState} onChange={(event) => patchOldItem(item.id, { physicalState: event.target.value })}>
-                                  <option value="warehouse">На склад</option>
-                                  <option value="boutique">В бутик</option>
+                                  <option value="warehouse">Вернуть на Склад</option>
+                                  <option value="boutique">Вернуть в Бутик</option>
                                   <option value="no_stock">Не добавлять в остаток</option>
                                 </select>
                               </label>
@@ -356,7 +336,8 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
 
           <section className="exchange-set-step">
             <div className="exchange-set-section-head">
-              <div><span className="exchange-set-kicker">2 · Клиент получает</span><h3>Что выдаём взамен</h3><p>Добавьте товар, затем проверьте размер, цвет и количество.</p></div>
+              <div><span className="exchange-set-kicker">2 · Что клиент получает</span><h3>Добавьте новые товары</h3><p>Это отдельный список: можно убрать 3 позиции и добавить 2 — или наоборот.</p></div>
+              <strong className="exchange-set-money-positive">+ {formatMoney(addedValue)}</strong>
             </div>
             <div className="exchange-new-list">
               {(exchangeDraft.newItems || []).map((entry: any, index: number) => {
@@ -379,40 +360,31 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                 return (
                   <div className="exchange-new-card" key={entry.draftKey}>
                     <div className="exchange-new-card-head">
-                      <div><span>Товар {index + 1}</span><strong>{item.productName || 'Выберите товар'}</strong></div>
+                      <div><span>Новая позиция {index + 1}</span><strong>{item.productName || 'Товар ещё не выбран'}</strong></div>
                       <button className="ghost danger compact" type="button" onClick={() => removeExchangeSetNewItem(index)}>Убрать</button>
                     </div>
-                    <div className="exchange-new-primary-fields">
-                      <label><span>Товар</span><SmartPickerInput value={item.productName || ''} options={suggestionValues.products} placeholder="Начните вводить название" onChange={(value) => applyExchangeSetNewItemPatch(index, { productName: value })} onPick={(value) => applyExchangeSetNewProductPick(index, value)} /></label>
+                    <div className="exchange-new-fields">
+                      <label className="wide-field"><span>Товар</span><SmartPickerInput value={item.productName || ''} options={suggestionValues.products} placeholder="Начните вводить товар" onChange={(value) => applyExchangeSetNewItemPatch(index, { productName: value })} onPick={(value) => applyExchangeSetNewProductPick(index, value)} /></label>
+                      <label><span>Источник</span><select value={item.sourceType || 'warehouse'} onChange={(event) => applyExchangeSetNewItemPatch(index, { sourceType: event.target.value })}><option value="warehouse">Склад</option><option value="boutique">Бутик</option><option value="workshop">Цех</option></select></label>
                       <label><span>Количество</span><FriendlyNumberInput type="number" min="1" step="1" value={required} onChange={(event) => applyExchangeSetNewItemPatch(index, { quantity: Math.max(1, Math.trunc(Number(event.target.value) || 1)) })} /></label>
-                      <label><span>Откуда выдаём</span><select value={item.sourceType || 'warehouse'} onChange={(event) => applyExchangeSetNewItemPatch(index, { sourceType: event.target.value })}><option value="warehouse">Склад</option><option value="boutique">Бутик</option><option value="workshop">Цех</option></select></label>
+                      <label><span>Тип</span><select value={item.audienceType || 'ВЗРОСЛЫЙ'} onChange={(event) => applyExchangeSetNewItemPatch(index, { audienceType: event.target.value }, true)}><option value="ВЗРОСЛЫЙ">Взрослый</option><option value="ДЕТСКИЙ">Детский</option></select></label>
+                      <label><span>Пол</span><select value={item.gender || ''} onChange={(event) => applyExchangeSetNewItemPatch(index, { gender: event.target.value })}><option value="">Не указан</option><option value="ЖЕН">Жен</option><option value="МУЖ">Муж</option></select></label>
+                      <label><span>Цвет</span><SmartPickerInput value={item.color || ''} options={suggestionValues.colors} placeholder="Цвет" onChange={(value) => applyExchangeSetNewItemPatch(index, { color: value })} /></label>
+                      <label><span>Материал</span><SmartPickerInput value={item.material || ''} options={suggestionValues.materials} placeholder="Материал" onChange={(value) => applyExchangeSetNewItemPatch(index, { material: value }, true)} /></label>
+                      <label><span>Длина</span><SmartPickerInput value={item.length || ''} options={suggestionValues.lengths} placeholder="Длина" onChange={(value) => applyExchangeSetNewItemPatch(index, { length: value }, true)} /></label>
+                      <label><span>{String(item.audienceType || '').includes('ДЕТ') ? 'Возраст' : 'Размер'}</span><SmartPickerInput value={item.size || ''} options={String(item.audienceType || '').includes('ДЕТ') ? suggestionValues.childAges : suggestionValues.sizes} placeholder="Размер" onChange={(value) => applyExchangeSetNewItemPatch(index, { size: value })} /></label>
                     </div>
-                    {String(item.productName || '').trim() ? (
-                      <>
-                        <div className="exchange-new-details">
-                          <span className="exchange-field-group-title">Характеристики</span>
-                          <div className="exchange-new-fields">
-                            <label><span>Категория</span><select value={item.audienceType || 'ВЗРОСЛЫЙ'} onChange={(event) => applyExchangeSetNewItemPatch(index, { audienceType: event.target.value }, true)}><option value="ВЗРОСЛЫЙ">Взрослый</option><option value="ДЕТСКИЙ">Детский</option></select></label>
-                            <label><span>Пол</span><select value={item.gender || ''} onChange={(event) => applyExchangeSetNewItemPatch(index, { gender: event.target.value })}><option value="">Не указан</option><option value="ЖЕН">Жен</option><option value="МУЖ">Муж</option></select></label>
-                            <label><span>Цвет</span><SmartPickerInput value={item.color || ''} options={suggestionValues.colors} placeholder="Цвет" onChange={(value) => applyExchangeSetNewItemPatch(index, { color: value })} /></label>
-                            <label><span>Материал</span><SmartPickerInput value={item.material || ''} options={suggestionValues.materials} placeholder="Материал" onChange={(value) => applyExchangeSetNewItemPatch(index, { material: value }, true)} /></label>
-                            <label><span>Длина</span><SmartPickerInput value={item.length || ''} options={suggestionValues.lengths} placeholder="Длина" onChange={(value) => applyExchangeSetNewItemPatch(index, { length: value }, true)} /></label>
-                            <label><span>{String(item.audienceType || '').includes('ДЕТ') ? 'Возраст' : 'Размер'}</span><SmartPickerInput value={item.size || ''} options={String(item.audienceType || '').includes('ДЕТ') ? suggestionValues.childAges : suggestionValues.sizes} placeholder={String(item.audienceType || '').includes('ДЕТ') ? 'Возраст' : 'Размер'} onChange={(value) => applyExchangeSetNewItemPatch(index, { size: value })} /></label>
-                          </div>
-                        </div>
-                        <div className="exchange-new-price">
-                          <div><span>Цена по каталогу</span><strong>{item.catalogPriceSnapshot == null ? 'Нет цены' : formatMoney(Number(item.catalogPriceSnapshot || 0))}</strong></div>
-                          <label><span>Цена продажи</span><FriendlyNumberInput type="number" min="0" value={item.unitPrice ?? ''} onChange={(event) => applyExchangeSetNewItemPatch(index, { unitPrice: event.target.value === '' ? undefined : Math.max(0, Math.trunc(Number(event.target.value) || 0)), priceOrigin: 'manual' })} /></label>
-                          <div><span>Итого за позицию</span><strong>{item.unitPrice == null ? '—' : formatMoney(required * Number(item.unitPrice || 0))}</strong></div>
-                        </div>
-                      </>
-                    ) : <div className="exchange-new-hint">Сначала выберите товар — после этого появятся его характеристики и цена.</div>}
+                    <div className="exchange-new-price">
+                      <div><span>Цена Каталога</span><strong>{item.catalogPriceSnapshot == null ? 'Нет однозначной цены' : formatMoney(Number(item.catalogPriceSnapshot || 0))}</strong></div>
+                      <label><span>Цена продажи</span><FriendlyNumberInput type="number" min="0" value={item.unitPrice ?? ''} onChange={(event) => applyExchangeSetNewItemPatch(index, { unitPrice: event.target.value === '' ? undefined : Math.max(0, Math.trunc(Number(event.target.value) || 0)), priceOrigin: 'manual' })} /></label>
+                      <div><span>Сумма позиции</span><strong>{item.unitPrice == null ? '—' : formatMoney(required * Number(item.unitPrice || 0))}</strong></div>
+                    </div>
                     {availability ? (
                       <div className={`exchange-stock-note is-${availability.tone}`}>
                         <strong>{availability.label}</strong><span>{availability.note}</span>
                         {physicalShortage ? (
                           <div className="exchange-stock-confirm">
-                            <span>{matchingIndexes.length > 1 ? `Для этих одинаковых позиций нужно ${batchRequired} шт. ` : ''}В системе товара не хватает. Если он действительно есть у вас, укажите количество на месте.</span>
+                            <span>{matchingIndexes.length > 1 ? `Для одинаковых новых строк вместе нужно ${batchRequired} шт. ` : ''}Если товар физически перед вами, подтвердите реальное количество.</span>
                             {observationOwner ? (
                               <input
                                 type="number"
@@ -451,47 +423,58 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
           </section>
 
           <section className="exchange-set-step exchange-money-step">
-            <div className="exchange-set-section-head"><div><span className="exchange-set-kicker">3 · Деньги</span><h3>Расчёт после обмена</h3><p>Система сравнила новый итог заказа с тем, что клиент уже оплатил.</p></div></div>
-            <div className="exchange-money-result">
-              <div className="exchange-money-result-main"><span>Новый итог заказа</span><strong>{formatMoney(projectedTotal)}</strong></div>
-              <div><span>Было</span><strong>{formatMoney(currentTotal)}</strong></div>
+            <div className="exchange-set-section-head"><div><span className="exchange-set-kicker">3 · Итог и деньги</span><h3>Система пересчитала заказ</h3><p>Стоимость заказа и реальное движение денег — разные факты.</p></div></div>
+            <div className="exchange-money-grid">
+              <div><span>Заказ до обмена</span><strong>{formatMoney(currentTotal)}</strong></div>
+              <div className="is-minus"><span>Убираем товаров</span><strong>− {formatMoney(removedValue)}</strong></div>
+              <div className="is-plus"><span>Добавляем товаров</span><strong>+ {formatMoney(addedValue)}</strong></div>
+              <div className="is-total"><span>Новый итог заказа</span><strong>{formatMoney(projectedTotal)}</strong></div>
               <div><span>Уже оплачено</span><strong>{formatMoney(currentNetPaid)}</strong></div>
             </div>
 
             {refundAmount > 0 ? (
               <div className="exchange-settlement-card is-refund">
-                <div><span>Вернуть клиенту</span><strong>{formatMoney(refundAmount)}</strong><small>Новый итог меньше уже оплаченной суммы.</small></div>
+                <div><span>Нужно вернуть клиенту</span><strong>{formatMoney(refundAmount)}</strong><small>Это реальный денежный расход в дату обмена.</small></div>
                 <label><span>Способ возврата</span><SmartPickerInput value={exchangeDraft.refundMethod || ''} options={suggestionValues.paymentMethods} placeholder="Например, НАЛИЧКА" onChange={(value) => setExchangeDraft((current: any) => ({ ...current, refundMethod: value, paymentAmount: 0 }))} /></label>
               </div>
             ) : dueBeforeSettlement > 0 ? (
               <div className="exchange-settlement-card">
-                <div><span>Нужно доплатить</span><strong>{formatMoney(dueBeforeSettlement)}</strong><small>Можно принять всю сумму сейчас, часть или оставить долг.</small></div>
-                <label><span>Получаем сейчас</span><FriendlyNumberInput type="number" min="0" max={dueBeforeSettlement} value={exchangeDraft.paymentAmount || 0} onChange={(event) => setExchangeDraft((current: any) => ({ ...current, paymentAmount: Math.min(dueBeforeSettlement, Math.max(0, Math.trunc(Number(event.target.value) || 0))) }))} /></label>
+                <div><span>Останется к оплате до платежа сейчас</span><strong>{formatMoney(dueBeforeSettlement)}</strong><small>Можно получить всю сумму сейчас, часть или ничего.</small></div>
+                <label><span>Получено сейчас</span><FriendlyNumberInput type="number" min="0" max={dueBeforeSettlement} value={exchangeDraft.paymentAmount || 0} onChange={(event) => setExchangeDraft((current: any) => ({ ...current, paymentAmount: Math.min(dueBeforeSettlement, Math.max(0, Math.trunc(Number(event.target.value) || 0))) }))} /></label>
                 {paymentNow > 0 ? <label><span>Способ оплаты</span><SmartPickerInput value={exchangeDraft.paymentMethod || ''} options={suggestionValues.paymentMethods} placeholder="Например, KASPI" onChange={(value) => setExchangeDraft((current: any) => ({ ...current, paymentMethod: value }))} /></label> : null}
-                <div className="exchange-debt-after"><span>Останется долг</span><strong>{formatMoney(remainingDebt)}</strong></div>
+                <div className="exchange-debt-after"><span>После обмена останется долг</span><strong>{formatMoney(remainingDebt)}</strong></div>
               </div>
             ) : (
-              <div className="exchange-settlement-card is-even"><strong>Доплата не нужна</strong><span>Клиент уже оплатил ровно новый итог заказа.</span></div>
+              <div className="exchange-settlement-card is-even"><strong>Денежного движения не требуется</strong><span>После изменения состава заказ уже оплачен ровно на нужную сумму.</span></div>
             )}
           </section>
 
-          <section className="exchange-final-summary exchange-final-summary-compact">
-            <div className="exchange-final-summary-head"><span className="exchange-set-kicker">Готово к сохранению</span><h3>Провести обмен</h3></div>
-            <div className="exchange-final-checkline">
-              <span>Возвращает <strong>{removedQuantity} шт.</strong></span>
-              <span>Получает <strong>{addedQuantity} шт.</strong></span>
-              <span>Итог заказа <strong>{formatMoney(projectedTotal)}</strong></span>
-              <span className={refundAmount > 0 ? 'is-refund' : dueBeforeSettlement > 0 ? 'is-payment' : 'is-even'}>
-                {refundAmount > 0 ? <>Вернуть <strong>{formatMoney(refundAmount)}</strong></> : dueBeforeSettlement > 0 ? <>К доплате <strong>{formatMoney(dueBeforeSettlement)}</strong></> : <strong>Доплата не нужна</strong>}
-              </span>
+          <section className="exchange-final-summary">
+            <div className="exchange-final-summary-head"><span className="exchange-set-kicker">Проверка перед сохранением</span><h3>Что произойдёт</h3></div>
+            <div className="exchange-final-grid">
+              <div><span>Уберём</span><strong>{exchangeDraft.oldSelections.length} поз. · {formatMoney(removedValue)}</strong></div>
+              <div><span>Добавим</span><strong>{exchangeDraft.newItems.length} поз. · {formatMoney(addedValue)}</strong></div>
+              <div><span>Новый итог</span><strong>{formatMoney(projectedTotal)}</strong></div>
+              <div><span>Деньги сейчас</span><strong>{refundAmount > 0 ? `− ${formatMoney(refundAmount)}` : paymentNow > 0 ? `+ ${formatMoney(paymentNow)}` : 'Без движения'}</strong></div>
+            </div>
+            <div className="exchange-final-old-list">
+              {(exchangeDraft.oldSelections || []).map((selected: any) => {
+                const item = (exchangeSelectedOrder.items || []).find((candidate: any) => Number(candidate.id || 0) === Number(selected.orderItemId || 0))
+                if (!item) return null
+                const outcome = selected.physicalState === 'not_issued' ? 'не выдавалась · снимем резерв'
+                  : selected.physicalState === 'pending' ? 'ещё у клиента · попадёт в ожидание'
+                    : selected.physicalState === 'warehouse' ? 'уже вернули → Склад'
+                      : selected.physicalState === 'boutique' ? 'уже вернули → Бутик'
+                        : 'уже вернули · без остатка'
+                return <div key={`summary-old-${selected.orderItemId}`}><span>{item.productName} × {selected.quantity}</span><strong>{outcome}</strong></div>
+              })}
             </div>
             <div className="exchange-final-meta">
               <label><span>Дата обмена</span><input type="date" value={exchangeDraft.exchangeDate} onChange={(event) => setExchangeDraft((current: any) => ({ ...current, exchangeDate: event.target.value }))} /></label>
               <label className="wide-field"><span>Комментарий</span><input value={exchangeDraft.comment || ''} onChange={(event) => setExchangeDraft((current: any) => ({ ...current, comment: event.target.value }))} placeholder="Необязательно" /></label>
             </div>
-            {saveBlockReason ? <div className="exchange-final-save-hint">{saveBlockReason}</div> : null}
             <div className="exchange-final-actions">
-              <button className="primary" type="button" disabled={exchangeBusy || Boolean(saveBlockReason)} onClick={() => void saveExchange()}>{exchangeBusy ? 'Провожу обмен…' : 'Провести обмен'}</button>
+              <button className="primary" type="button" disabled={exchangeBusy || !exchangeDraft.oldSelections.length || !exchangeDraft.newItems.length} onClick={() => void saveExchange()}>{exchangeBusy ? 'Провожу обмен…' : 'Провести обмен'}</button>
               <button className="secondary" type="button" disabled={exchangeBusy} onClick={() => closeExchangeForm(true)}>Отменить и вернуться</button>
             </div>
           </section>
@@ -500,7 +483,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
 
       <section className="exchange-history-v2">
         <div className="exchange-set-section-head">
-          <div><span className="exchange-set-kicker">История</span><h3>Проведённые обмены</h3><p>Здесь видно, что клиент вернул и что получил взамен.</p></div>
+          <div><span className="exchange-set-kicker">История</span><h3>Проведённые обмены</h3><p>Новые обмены показываются как два независимых списка: что убрали и что добавили.</p></div>
           <button className="secondary compact" type="button" disabled={exchangeHistoryBusy} onClick={() => void loadExchangeHistory()}>Обновить</button>
         </div>
         <div className="history-filter-bar">
@@ -517,14 +500,12 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                 {exchangeHistory.map((entry: any) => {
                   const olds = entry.isSetExchange ? (entry.oldItems || []) : [{ id: entry.oldOperationItemId, productName: entry.oldProductName, quantity: entry.oldQuantity, gender: entry.oldGender, color: entry.oldColor, material: entry.oldMaterial, length: entry.oldLength, size: entry.oldSize, inventorySource: entry.oldReturnSource, physicalTracking: entry.oldPhysicalTracking, physicalReceivedAt: entry.oldPhysicalReceivedAt, isWorkshop: entry.oldIsWorkshop, wasNotIssued: entry.oldWasNotIssued, lifecycleStatus: entry.oldLifecycleStatus, lifecycleId: entry.oldLifecycleId, lifecycleVariantId: entry.oldLifecycleVariantId, currentVariantId: entry.oldCurrentVariantId }]
                   const news = entry.isSetExchange ? (entry.newItems || []) : [{ productName: entry.newProductName, quantity: entry.newQuantity, gender: entry.newGender, color: entry.newColor, material: entry.newMaterial, length: entry.newLength, size: entry.newSize, inventorySource: entry.newSourceType, lifecycleStatus: entry.newLifecycleStatus }]
-                  const returnedQuantity = olds.reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
-                  const issuedQuantity = news.reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
                   return (
                     <details className={`exchange-history-card-v2${entry.status === 'cancelled' ? ' is-cancelled' : ''}`} key={`exchange-history-v2-${entry.id}`}>
-                      <summary><div><strong>{entry.externalId}</strong><span>{entry.customer || '—'} · {entry.exchangeDate || '—'}</span></div><div><b>Вернул: {returnedQuantity} шт. · Получил: {issuedQuantity} шт.</b><span>{entry.status === 'cancelled' ? 'Отменён' : 'Проведён'}</span></div><span>Подробнее</span></summary>
+                      <summary><div><strong>{entry.externalId}</strong><span>{entry.customer || '—'} · {entry.exchangeDate || '—'}</span></div><div><b>{olds.length} → {news.length} поз.</b><span>{entry.status === 'cancelled' ? 'Отменён' : 'Проведён'}</span></div><span>Подробнее</span></summary>
                       <div className="exchange-history-body-v2">
                         <div className="exchange-history-side"><h4>Убрали из заказа</h4>{olds.map((item: any, index: number) => <div className="exchange-history-item-v2" key={`hist-old-${entry.id}-${item.id || index}`}><strong>{item.productName} × {item.quantity}</strong><span>{historyItemDetails(item)}</span><em>{oldHistoryStatus(item)}</em>{entry.status !== 'cancelled' && item.physicalReceivedAt && item.lifecycleStatus === 'pending' && item.lifecycleId && (item.lifecycleVariantId || item.currentVariantId) ? <button className="secondary compact" type="button" onClick={() => void reconcileKnownInventoryLifecycle(Number(item.lifecycleId || 0)).then((result: any) => result?.ok ? loadExchangeHistory() : null)}>Завершить приёмку</button> : null}</div>)}</div>
-                        <div className="exchange-history-side"><h4>Добавили в заказ</h4>{news.map((item: any, index: number) => <div className="exchange-history-item-v2" key={`hist-new-${entry.id}-${item.id || index}`}><strong>{item.productName} × {item.quantity}</strong><span>{historyItemDetails(item)}</span><em>{item.inventorySource === 'workshop' ? 'Из цеха' : `Выдали: ${sourceLabel(item.inventorySource || 'warehouse')}`}</em></div>)}</div>
+                        <div className="exchange-history-side"><h4>Добавили в заказ</h4>{news.map((item: any, index: number) => <div className="exchange-history-item-v2" key={`hist-new-${entry.id}-${item.id || index}`}><strong>{item.productName} × {item.quantity}</strong><span>{historyItemDetails(item)}</span><em>{item.inventorySource === 'workshop' ? 'Цех' : `Источник: ${sourceLabel(item.inventorySource || 'warehouse')}`}</em></div>)}</div>
                       </div>
                       <div className="exchange-history-footer-v2">
                         <div><span>Деньги</span><strong>{entry.financialAction === 'extra_payment' ? `Получено +${formatMoney(entry.financialAmount)} · ${entry.paymentMethod || '—'}` : entry.financialAction === 'refund' ? `Возвращено −${formatMoney(entry.financialAmount)} · ${entry.paymentMethod || '—'}` : 'Без движения'}</strong></div>
