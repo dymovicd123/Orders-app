@@ -23,7 +23,12 @@ try {
 
   // Neighboring frontend paths must retain their established explicit semantics.
   check(app.includes("paymentKind: 'debt_close' as const") && app.includes("apiFetch('/api/payments'"), 'Dedicated debt-close flow no longer uses the safe payment endpoint')
-  check(app.includes('payments: createDraft.payments.map'), 'Order creation accidentally stopped sending its initial payments')
+  check(
+    app.includes('payments: createDraft.payments.map')
+      || app.includes('payments: isKaspiCreate ? [] : createDraft.payments.map'),
+    'Ordinary order creation accidentally stopped sending its initial payments',
+  )
+  check(app.includes('payments: isKaspiCreate ? [] : createDraft.payments.map'), 'Kaspi Create can still turn a pending marketplace payment into factual money')
   check(worker.includes("url.pathname === '/api/payments' && request.method === 'POST'"), 'Dedicated payment API route disappeared')
   check(money.includes('financialOperationTypeFromPaymentKind(plan.paymentKind)'), 'Manual payment no longer writes semantic immutable financial events')
   check(finance.includes("operationType === 'debt_close' || row.operationType === 'order_extra'") && finance.includes('Закрытие долга (старый тип)'), 'Finance reports do not fold legacy ordinary extra into debt-close semantics')
