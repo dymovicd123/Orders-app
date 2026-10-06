@@ -156,3 +156,39 @@ Next:
 5. after Exchange acceptance, continue the requested full **Return + Exchange** usability/business audit.
 
 Do not promote to Production/main from this checkpoint without a separate explicit release decision.
+
+
+## Manager-first UX follow-up — 2026-10-06
+
+The Set V2 domain model above stays authoritative. This follow-up changes only how a manager sees and completes the workflow.
+
+The old-item cards now separate three facts that previously looked alike:
+- **in the order** — the real `order_items.quantity`;
+- **available to exchange** — shown only when earlier operations reduced the remaining exchange capacity;
+- **price** — the historical sold unit price, explicitly labelled as price.
+
+This fixes the misleading case where an order line with quantity 1 and unit price 0 visually appeared as “0 / шт.” and could be mistaken for zero items or stock. Stock quantity is not presented as the old-order quantity.
+
+The main form now asks only:
+1. what the client returns;
+2. what the client receives;
+3. what happens with money.
+
+New-item entry uses progressive disclosure: product, quantity and source are visible first; characteristics and pricing appear after product selection. Existing Catalog auto-fill, exact variant controls, stock-shortage confirmation and Workshop fields remain available underneath that simpler entry flow.
+
+The money section no longer repeats the full arithmetic twice. It shows the new order total, previous total and already-paid amount, then one outcome: collect money, refund money, or no movement. The final Save area shows a short quantity/total summary and explains missing required input before submission.
+
+History cards now summarize actual returned/issued quantities rather than old/new row counts. Pending-return and legacy-history wording was also rewritten for operators while preserving the same physical/lifecycle state.
+
+Regression/preservation:
+- `scripts/test-exchange-set-v2-ui.mjs` covers quantity-first cards, progressive new-item entry, plain-language money, save readiness and quantity-based history;
+- `scripts/exchange-human-ux-20261006-frontend-manifest.json` plus its predecessor fixtures layer this delta over the already accepted Return/Exchange source-default and Exchange Set V2 baselines;
+- both Branch2/main runtime preservation and the 190.6 frontend structural gate normalize this UX layer explicitly rather than weakening earlier exact checks.
+
+Release evidence:
+- final PR-head Quality `37441517474` — success;
+- PR #291 merged to Branch2 at `3241634f3e99eb136e5bfd3a2637f23a3e7cefb2`;
+- exact merged-SHA Branch2 safety `37441679060` — success;
+- exact merged-SHA Cloudflare deploy monitor `37441678666` — success.
+
+Manual acceptance is the next step. Production/main is still out of scope.

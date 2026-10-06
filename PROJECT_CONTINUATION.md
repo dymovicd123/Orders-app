@@ -1,10 +1,39 @@
 # Система заказов — актуальный continuation
 
-Updated: 2026-10-05  
+Updated: 2026-10-06  
 Repository: `dymovicd123/Orders-app`  
 Branch represented by this file: **branch2**
 
 Этот файл — короткий актуальный checkpoint Branch2. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не являются текущим roadmap без сверки с GitHub.
+
+## STATUS UPDATE — 2026-10-06 — Exchange manager-first UX deployed to Branch2
+
+The Exchange Set V2 business model is unchanged, but the operator surface has now been finished around the actual manager workflow.
+
+Latest Branch2 lineage:
+- PR #289 preserves the original old-item source and uses human defaults on Return/Exchange intake (Warehouse → Warehouse, Boutique → Boutique, Workshop → no-stock);
+- PR #290 narrowly updates transitive dev dependency `source-map-js` 1.2.1 → 1.2.2 so the existing high-risk Quality gate stays intact;
+- PR #291 is the manager-first Exchange UX follow-up, merged at `3241634f3e99eb136e5bfd3a2637f23a3e7cefb2`.
+
+Exchange UX now:
+- old-item cards show **quantity in the order** as the primary fact; historical sold price is explicitly labelled as price, so `0 / шт.` can no longer be mistaken for “0 items”;
+- when previous Return/Exchange activity reduced what can still be exchanged, the card separately says how many units are available for this Exchange;
+- the form is organized as **client returns → client receives → money**;
+- replacement entry starts with product / quantity / source, then reveals characteristics and pricing only after a product is selected;
+- technical pair/set explanations and duplicated arithmetic summaries are removed;
+- money resolves to one human outcome: **no payment**, **collect X**, or **refund X**;
+- Save stays disabled with a concrete human reason while required input is incomplete;
+- history summaries use real item quantities, not row counts;
+- delayed-return intake and history wording were simplified without changing lifecycle semantics.
+
+Validation/deploy evidence:
+- exact final PR-head Quality **37441517474 — success** (cumulative release gate + build);
+- exact merged-SHA Branch2 safety **37441679060 — success**;
+- exact merged-SHA Cloudflare deploy monitor **37441678666 — success**; deploy status for `3241634f3e99eb136e5bfd3a2637f23a3e7cefb2` is success.
+
+No D1 migration or business-data mutation was part of this UX follow-up. Production/main remains out of scope.
+
+Next safe action: manually accept the real Branch2 Exchange screen, especially an order where a line has quantity 1 but sold price 0, multi-quantity old lines, replacement selection, equal-value exchange, extra payment/refund, and delayed returned goods. Continue only from concrete defects found there.
 
 ## STATUS UPDATE — 2026-10-05 — Exchange Set V2 + Smart Return UX deployed to Branch2
 
