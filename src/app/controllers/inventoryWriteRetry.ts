@@ -5,7 +5,8 @@ type CriticalRequestPreparer = (
 
 function managedInventoryWriteMode(method: string, path: string): 'json' | 'empty' | null {
   if (method === 'POST' && (
-    path === '/api/inventory/stocktakes'
+    path === '/api/inventory/movements'
+    || path === '/api/inventory/stocktakes'
     || path === '/api/inventory/stocktakes/quick'
     || path === '/api/inventory/stocktakes/quick-batch'
     || path === '/api/inventory/cycle-counts/apply'
