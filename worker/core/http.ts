@@ -76,6 +76,13 @@ export function publicApiError(error: unknown): PublicApiError {
     };
   }
 
+  // These are controlled, operator-safe messages emitted by the inventory materializer.
+  // Keep status 500 so an idempotent Arrival can retry transient first-attempt failures, but do not
+  // replace the final message with the generic server fallback if all retries are exhausted.
+  if (/^Не удалось (?:создать или найти товар для складской операции|создать исполнение товара|создать складскую комбинацию товара|подготовить все позиции складской операции)/i.test(raw)) {
+    return { status: 500, code: 'inventory_materialization_failed', message: raw };
+  }
+
   const technicalDatabaseError = /\b(d1_error|sqlite_|sql logic error|no such table|no such column|too many sql variables|too many variables|too many terms|constraint failed|syntax error|failed to execute|prepare\(|bindings?\b|database error)\b/i.test(raw);
   if (technicalDatabaseError) {
     return { status: 500, message: 'Не удалось выполнить операцию с данными. Обновите страницу и повторите действие. Если ошибка повторится, сообщите администратору.' };
