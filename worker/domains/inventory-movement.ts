@@ -281,8 +281,9 @@ export async function resolveInventoryCreatableItemsBulk(
     if (!item.productName) throw new Error('Product is required for inventory operation.');
     const activeProduct = resolveProduct(item);
     if (activeProduct) {
-      // Validate every existing row before any new Catalog entity is inserted. Otherwise one
-      // invalid adult-unisex line could leave another valid line half-materialized.
+      // Preserve the fixed-gender preflight contract, then validate missing adult-unisex gender
+      // before any new Catalog entity is inserted for another row in the same Arrival batch.
+      assertKnownProductGender(activeProduct, item);
       resolveGenderForProduct(activeProduct, item);
       return;
     }
