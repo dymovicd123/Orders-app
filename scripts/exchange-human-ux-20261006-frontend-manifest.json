@@ -4,7 +4,7 @@
   "files": {
     "src/features/sections/OrderExchangeSmartSection.tsx": {
       "beforeGitBlob": "187181a8261c06ff56e7410140c2582cf46d6a9e",
-      "afterGitBlob": "d87cdef4cbf397795c5d2b4a428b26b74f616ea1",
+      "afterGitBlob": "2d63564aaba99a3620233495f2e521b369da064d",
       "baselineFixture": "scripts/fixtures/exchange-human-ux-20261006/src/features/sections/OrderExchangeSmartSection.tsx"
     },
     "src/styles/193-exchange-set-v2.css": {
