@@ -1037,8 +1037,7 @@ const summary = useMemo(() => {
       }
       if (field === 'category') {
         const category = value === 'child' ? 'child' : 'adult'
-        const legacyChildGender = normalizeSuggestion(position.gender) === normalizeSuggestion('ДЕТСКИЙ')
-        return { ...position, category, gender: category === 'child' && legacyChildGender ? '' : position.gender }
+        return { ...position, category, gender: category === 'child' && !position.gender ? 'ДЕТСКИЙ' : position.gender }
       }
       return { ...position, [field]: value }
     }))
@@ -1145,12 +1144,9 @@ const summary = useMemo(() => {
         else mergedSizes.set(key, { size: String(line.size || '').trim(), color: String(line.color || '').trim(), quantity })
       }
       for (const line of mergedSizes.values()) {
-        const arrivalGender = position.category === 'child' && normalizeSuggestion(position.gender) === normalizeSuggestion('ДЕТСКИЙ')
-          ? ''
-          : position.gender
         const exactVariant = position.productId ? inventoryArrivalReadyVariants(position).find((variant) => (
           getCatalogVariantCategory(variant) === position.category
-          && normalizeSuggestion(variant.gender) === normalizeSuggestion(arrivalGender)
+          && normalizeSuggestion(variant.gender) === normalizeSuggestion(position.gender)
           && normalizeSuggestion(variant.color) === normalizeSuggestion(line.color)
           && normalizeSuggestion(variant.material) === normalizeSuggestion(position.material)
           && normalizeSuggestion(variant.length) === normalizeSuggestion(position.length)
@@ -1161,7 +1157,7 @@ const summary = useMemo(() => {
           variantId: exactVariant ? String(exactVariant.id) : '',
           productName,
           category: position.category,
-          gender: arrivalGender,
+          gender: position.gender,
           color: line.color,
           material: position.material || 'СТАНДАРТ',
           length: position.length || 'СТАНДАРТ',
