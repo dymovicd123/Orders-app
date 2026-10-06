@@ -57,6 +57,9 @@ check(app.includes("params.set('orderPaymentMethod', 'КАСПИ МАГАЗИН'
 check(app.includes("params.set('excludeOrderPaymentMethod', 'КАСПИ МАГАЗИН')"), 'Ordinary Orders does not exclude Kaspi by default')
 check(app.includes("&& !searchQuery"), 'Ordinary explicit search cannot deliberately cross the Kaspi separation')
 check(!ordersUi.includes('Оплата получена'), 'Kaspi payment action leaked into ordinary Orders table')
+check(ordersUi.includes('ordinaryOrdersSeparated') && ordersUi.includes('Kaspi вынесен в отдельный раздел'), 'Ordinary Orders summary can still imply it includes Kaspi orders')
+check(constants.includes("label: 'Обычные заказы'"), 'Ordinary Orders tab is still misleadingly labeled as all orders')
+check(app.includes("const createdAsKaspi = normalizeSuggestion(orderPaymentMethod)") && app.includes("window.location.hash = '#kaspi'"), 'A Kaspi order created from the ordinary form does not move into the Kaspi workspace')
 
 // Payment confirmation reuses the proven factual payment path and never changes shipping.
 const confirmStart = app.indexOf('async function confirmKaspiPayment(')
