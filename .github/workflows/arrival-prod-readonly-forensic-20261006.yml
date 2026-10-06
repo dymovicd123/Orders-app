@@ -1,0 +1,122 @@
+name: Arrival Production read-only forensic 2026-10-06
+
+on:
+  push:
+    branches:
+      - diag-arrival-prod-20261006
+    paths:
+      - '.github/workflows/arrival-prod-readonly-forensic-20261006.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Hard-stop on Production identity and read-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "diag-arrival-prod-20261006" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders_db_branch2' wrangler.jsonc; then
+            echo "Branch2 D1 detected; refusing forensic." >&2
+            exit 20
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Inspect relevant products and variants
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== PRODUCTS ==='
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT id, name, category, gender_scope, is_active
+            FROM catalog_products
+            WHERE UPPER(name) LIKE '%ЭТНО%'
+               OR UPPER(name) LIKE '%САУЛЕТ%'
+               OR UPPER(name) LIKE '%АЙ-НАЗЫК%'
+               OR UPPER(name) LIKE '%АЙ НАЗЫК%'
+               OR UPPER(name) LIKE '%ВОРОТНИК%'
+               OR UPPER(name) LIKE '%БОМБЕР%'
+            ORDER BY name, id;
+          " --json
+
+          echo '=== EXECUTIONS ==='
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT sp.id, sp.product_id, p.name AS product_name, sp.category, sp.gender_scope,
+                   sp.material, sp.length, sp.is_active
+            FROM catalog_stock_positions sp
+            JOIN catalog_products p ON p.id = sp.product_id
+            WHERE UPPER(p.name) LIKE '%ЭТНО%'
+               OR UPPER(p.name) LIKE '%САУЛЕТ%'
+               OR UPPER(p.name) LIKE '%АЙ-НАЗЫК%'
+               OR UPPER(p.name) LIKE '%АЙ НАЗЫК%'
+               OR UPPER(p.name) LIKE '%ВОРОТНИК%'
+               OR UPPER(p.name) LIKE '%БОМБЕР%'
+            ORDER BY p.name, sp.id;
+          " --json
+
+          echo '=== VARIANTS ==='
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT v.id, v.product_id, p.name AS product_name, v.stock_position_id, v.category,
+                   v.gender, v.color, v.material, v.length, v.size_label, v.is_active, v.external_id
+            FROM catalog_variants v
+            JOIN catalog_products p ON p.id = v.product_id
+            WHERE UPPER(p.name) LIKE '%ЭТНО%'
+               OR UPPER(p.name) LIKE '%САУЛЕТ%'
+               OR UPPER(p.name) LIKE '%АЙ-НАЗЫК%'
+               OR UPPER(p.name) LIKE '%АЙ НАЗЫК%'
+               OR UPPER(p.name) LIKE '%ВОРОТНИК%'
+               OR UPPER(p.name) LIKE '%БОМБЕР%'
+            ORDER BY p.name, v.category, v.gender, v.color, v.size_label, v.id;
+          " --json
+
+      - name: Inspect catalog uniqueness and child references
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== INDEXES catalog_stock_positions ==='
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT name, sql
+            FROM sqlite_master
+            WHERE type='index'
+              AND tbl_name='catalog_stock_positions'
+            ORDER BY name;
+          " --json
+
+          echo '=== INDEXES catalog_variants ==='
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT name, sql
+            FROM sqlite_master
+            WHERE type='index'
+              AND tbl_name='catalog_variants'
+            ORDER BY name;
+          " --json
+
+          echo '=== CHILD AGE / KHAKI REFERENCES ==='
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT id, kind, value, is_active
+            FROM reference_values
+            WHERE kind IN ('child_age','color')
+              AND (
+                (kind='child_age' AND UPPER(TRIM(value))='1')
+                OR (kind='color' AND UPPER(TRIM(value)) LIKE '%ХАКИ%')
+              )
+            ORDER BY kind, id;
+          " --json
