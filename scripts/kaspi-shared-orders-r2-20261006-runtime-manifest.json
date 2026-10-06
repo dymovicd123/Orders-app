@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "revision": "kaspi-shared-orders-r2-20261006-runtime",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "431e88a5b6f5653950ea89dfe1c1a08af731180b",
+      "afterGitBlob": "eb48424dcdbf00f6079f52d0519a46b14883760f",
+      "baselineFixture": "scripts/fixtures/kaspi-shared-orders-r2-20261006/src/App.tsx"
+    },
+    "src/features/sections/CreateOrderSection.tsx": {
+      "beforeGitBlob": "cec20e370152e2eb91aac01d641f82f4ef3274f4",
+      "afterGitBlob": "b0f6d5e272afa652d96ed4c57e912a0bbc267e4d",
+      "baselineFixture": "scripts/fixtures/kaspi-shared-orders-r2-20261006/src/features/sections/CreateOrderSection.tsx"
+    },
+    "src/features/sections/OrdersHeaderSection.tsx": {
+      "beforeGitBlob": "781223ef11d676ac179e99516cac6710bc45bdf0",
+      "afterGitBlob": "41fc280435f6ed97a1696576fc78e8beb571b87b",
+      "baselineFixture": "scripts/fixtures/kaspi-shared-orders-r2-20261006/src/features/sections/OrdersHeaderSection.tsx"
+    },
+    "src/features/sections/OrderFiltersSection.tsx": {
+      "beforeGitBlob": "2b84790c152e114ab04df8f9566f00c987620509",
+      "afterGitBlob": "98365801ddd122a13df4cee90fa4a5b4d8aa63d7",
+      "baselineFixture": "scripts/fixtures/kaspi-shared-orders-r2-20261006/src/features/sections/OrderFiltersSection.tsx"
+    },
+    "src/features/sections/OrdersTableSection.tsx": {
+      "beforeGitBlob": "9a95e0f2917ecbf022c3b7fbe377bbe9a87accda",
+      "afterGitBlob": "724a8d8ef47bfb39f19be94619e45b4d45ab7c55",
+      "baselineFixture": "scripts/fixtures/kaspi-shared-orders-r2-20261006/src/features/sections/OrdersTableSection.tsx"
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "a7e360d6645406c712922de5cf79c3ece90190cb",
+      "afterGitBlob": "b5ffc6537e3446920984e5a1ae1320725cb30554",
+      "baselineFixture": "scripts/fixtures/kaspi-shared-orders-r2-20261006/src/app/types.ts"
+    },
+    "src/app/controllers/useOperationalViewModel.ts": {
+      "beforeGitBlob": "200dc8b85d041c795c106a7a8395f407a1ecd544",
+      "afterGitBlob": "c1945cdcf5a4d507fff8493ea2a4a0cf476da51a",
+      "baselineFixture": "scripts/fixtures/kaspi-shared-orders-r2-20261006/src/app/controllers/useOperationalViewModel.ts"
+    },
+    "worker/domains/orders-read.ts": {
+      "beforeGitBlob": "6e0fc88ba0eb6837b53145ad88bc9beeb4fb6741",
+      "afterGitBlob": "2cb5748339262d465d9743f12184508b8742394e",
+      "baselineFixture": "scripts/fixtures/kaspi-shared-orders-r2-20261006/worker/domains/orders-read.ts"
+    },
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "96286eec75b200e6ed0f8e9a08d567b54cd3042b",
+      "afterGitBlob": "6f470e1023d5479671bf279a802cbc60c616cb6f",
+      "baselineFixture": "scripts/fixtures/kaspi-shared-orders-r2-20261006/worker/domains/orders-write.ts"
+    }
+  }
+}
