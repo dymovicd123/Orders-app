@@ -836,6 +836,7 @@ export function createEmptyOrderDraft(): EditorDraft {
     customerName: '',
     city: '',
     deliveryType: '',
+    orderPaymentMethod: '',
     sourceType: 'warehouse',
     orderTotal: '',
     workshopStatus: 'in_workshop',
@@ -863,6 +864,8 @@ export function sectorFromHash(hash: string): AppSector {
     case 'finance':
     case 'finances':
       return 'finance'
+    case 'kaspi':
+      return 'kaspi'
     case 'clients':
     case 'customers':
       return 'clients'
@@ -961,6 +964,10 @@ export function createEditorDraft(order: OrderRecord): EditorDraft {
     customerName: order.customer_name || '',
     city: order.city || '',
     deliveryType: order.delivery_type || '',
+    orderPaymentMethod: order.order_payment_method
+      || order.payments.find((payment) => String(payment.method || '').trim().toUpperCase() === 'КАСПИ МАГАЗИН')?.method
+      || order.payments.find((payment) => String(payment.method || '').trim())?.method
+      || '',
     sourceType: order.source_type,
     workshopStatus: order.workshop_status as EditorDraft['workshopStatus'],
     orderStatus: order.order_status as EditorDraft['orderStatus'],
