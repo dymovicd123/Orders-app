@@ -1063,18 +1063,21 @@ const summary = useMemo(() => {
       ? activeVariants.find((variant) => normalizeSuggestion(variant.gender) === automaticGender)
       : null) || activeVariants[0] || null
     const firstGender = normalizeSuggestion(first?.gender)
-    const positionGender = normalizeSuggestion(inventoryArrivalPositions.find((position) => position.id === id)?.gender)
     const canonicalFirstGender = firstGender === normalizeSuggestion('ЖЕН') ? 'ЖЕН' : firstGender === normalizeSuggestion('МУЖ') ? 'МУЖ' : ''
-    const canonicalPositionGender = positionGender === normalizeSuggestion('ЖЕН') ? 'ЖЕН' : positionGender === normalizeSuggestion('МУЖ') ? 'МУЖ' : ''
-    setInventoryArrivalPositions((current) => current.map((position) => position.id === id ? {
-      ...position,
-      productId: String(match.id),
-      productName: match.name,
-      category: first ? getCatalogVariantCategory(first) : (match.category === 'child' ? 'child' : 'adult'),
-      gender: automaticGender || canonicalFirstGender || canonicalPositionGender,
-      material: first?.material || position.material || 'СТАНДАРТ',
-      length: first?.length || position.length || 'СТАНДАРТ',
-    } : position))
+    setInventoryArrivalPositions((current) => current.map((position) => {
+      if (position.id !== id) return position
+      const positionGender = normalizeSuggestion(position.gender)
+      const canonicalPositionGender = positionGender === normalizeSuggestion('ЖЕН') ? 'ЖЕН' : positionGender === normalizeSuggestion('МУЖ') ? 'МУЖ' : ''
+      return {
+        ...position,
+        productId: String(match.id),
+        productName: match.name,
+        category: first ? getCatalogVariantCategory(first) : (match.category === 'child' ? 'child' : 'adult'),
+        gender: automaticGender || canonicalFirstGender || canonicalPositionGender,
+        material: first?.material || position.material || 'СТАНДАРТ',
+        length: first?.length || position.length || 'СТАНДАРТ',
+      }
+    }))
   }
 
   function inventoryArrivalReadyVariants(position: InventoryArrivalPosition) {
