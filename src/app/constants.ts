@@ -174,6 +174,7 @@ export const FALLBACK_REFERENCE_DATA = {
 export const workspaceModules: WorkspaceModule[] = [
   { id: 'dashboard', label: 'Инфопанель', icon: '⌂', note: 'Сводка, быстрые действия и состояние базы', href: '#dashboard', status: 'active' },
   { id: 'orders', label: 'Заказы', icon: '▣', note: 'Создание, список и редактирование', href: '#orders', status: 'active' },
+  { id: 'kaspi', label: 'Kaspi', icon: 'K', note: 'Заказы КАСПИ МАГАЗИН и подтверждение поступлений', href: '#kaspi', status: 'active' },
   { id: 'clients', label: 'Клиенты', icon: '☏', note: 'Все клиенты, постоянные, долги и история заказов', href: '#clients', status: 'active' },
   { id: 'workshop', label: 'Цех', icon: '⚒', note: 'Активные позиции цеха и готовность', href: '#workshop', status: 'active' },
   { id: 'inventory', label: 'Склад', icon: '▤', note: 'Склад, бутик, товары и движения', href: '#inventory', status: 'ready' },
@@ -212,7 +213,6 @@ export const orderPanelOptions: Array<{
   help: string
 }> = [
   { kind: 'create', label: 'Создать заказ', help: 'Отдельная форма ввода и сохранения заказа.' },
-  { kind: 'zammler', label: 'Создать заказ ЗАММЛЕР', help: 'Отдельная форма создания заказа с доставкой ЗАММЛЕР и оплатой КАСПИ МАГАЗИН.' },
   { kind: 'list', label: 'Все заказы', help: 'Таблица, фильтры и детали выбранного заказа.' },
   { kind: 'debt', label: 'Закрытие долга', help: 'Отдельная вкладка для закрытых долгов и корректировок.' },
   { kind: 'returns', label: 'Возврат', help: 'Отдельная вкладка для возвратов и их редактирования.' },
