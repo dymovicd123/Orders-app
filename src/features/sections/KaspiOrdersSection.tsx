@@ -13,6 +13,7 @@ export function KaspiOrdersSection({ ctx }: { ctx: SectionContext }) {
     handleEditOrder,
     handleOpenExchange,
     handleOpenReturn,
+    isAdmin,
     kaspiPaymentBusyOrderId,
     kaspiPaymentState,
     ManagerBadge,
@@ -81,7 +82,7 @@ export function KaspiOrdersSection({ ctx }: { ctx: SectionContext }) {
           </thead>
           <tbody>
             {orders.map((order: any) => {
-              const projection = projectOrderOperationalState(order, { isAdmin: true })
+              const projection = projectOrderOperationalState(order, { isAdmin })
               const debt = Math.max(0, Number(order.debt_amount || 0))
               const isPaying = Number(kaspiPaymentBusyOrderId || 0) === Number(order.id || 0)
               return (
