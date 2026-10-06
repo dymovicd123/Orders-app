@@ -12,6 +12,42 @@ const gitBlob = (value) => {
 
 const root = process.cwd()
 
+const arrivalAtomicManifest = JSON.parse(
+  fs.readFileSync(path.join(root, 'scripts/arrival-atomic-materialization-20261006-worker-manifest.json'), 'utf8'),
+)
+check(
+  arrivalAtomicManifest?.version === 1 && arrivalAtomicManifest?.revision === 'arrival-atomic-materialization-20261006-worker',
+  'Arrival atomic materialization runtime manifest invalid',
+)
+if (!process.env.ARRIVAL_ATOMIC_BRANCH2_MAIN_SYNC_NORMALIZED) {
+  const relative = 'worker/domains/inventory-movement.ts'
+  const delta = arrivalAtomicManifest.files?.[relative]
+  check(Boolean(delta), 'Arrival atomic materialization runtime manifest lost inventory-movement.ts')
+  const absolute = path.join(root, relative)
+  const actual = fs.readFileSync(absolute, 'utf8')
+  check(gitBlob(actual) === delta.afterGitBlob, 'Arrival atomic materialization runtime drifted before Branch2/main sync check')
+  const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+  check(gitBlob(baseline) === delta.beforeGitBlob, 'Arrival atomic materialization predecessor fixture drifted')
+  fs.writeFileSync(absolute, baseline)
+  let childStatus = 1
+  try {
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, ARRIVAL_ATOMIC_BRANCH2_MAIN_SYNC_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    fs.writeFileSync(absolute, actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ARRIVAL ATOMIC MATERIALIZATION — BRANCH2 MAIN SYNC PRESERVATION LAYER PASSED')
+  process.exit(0)
+}
+
 const arrivalChildAudienceManifest = JSON.parse(
   fs.readFileSync(path.join(root, 'scripts/arrival-child-audience-20261006-runtime-manifest.json'), 'utf8'),
 )
