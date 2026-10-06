@@ -21,6 +21,7 @@ export type OrderInput = {
   customerName?: string;
   city?: string;
   deliveryType?: string;
+  orderPaymentMethod?: string;
   sourceType?: 'warehouse' | 'boutique';
   orderTotal?: number;
   pricingMode?: 'legacy_manual_total' | 'itemized_v1';
@@ -85,6 +86,7 @@ export type OrderListRow = {
   customer_name: string | null;
   city: string | null;
   delivery_type: string | null;
+  order_payment_method?: string | null;
   source_type: string;
   workshop_status: string;
   order_status: string;
