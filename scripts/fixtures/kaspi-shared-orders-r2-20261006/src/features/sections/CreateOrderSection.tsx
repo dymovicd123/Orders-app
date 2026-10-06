@@ -38,7 +38,6 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
     updateCreatePayment,
     zammlerMode = false,
   } = ctx
-  const isKaspiOrder = normalizeSuggestion(createDraft.orderPaymentMethod) === normalizeSuggestion('КАСПИ МАГАЗИН')
 
   return (
     <article className="card wide sector-orders" id={zammlerMode ? 'kaspi-create' : 'create'} style={{ ...sectorStyle(zammlerMode ? 'kaspi' : 'orders'), ...orderPanelStyle(zammlerMode ? 'zammler' : 'create') }}>
@@ -339,32 +338,59 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                     <div className="order-step-index">3</div>
                     <div>
                       <h3>Оплаты</h3>
-                      <p>{isKaspiOrder ? 'Для Kaspi деньги не записываются при создании заказа. Сначала сохраняется долг, а фактическая оплата подтверждается после уведомления Kaspi.' : 'Можно добавить несколько способов оплаты. Всё, что не покрыто оплатами, система сама оставит в долге.'}</p>
+                      <p>Можно добавить несколько способов оплаты. Всё, что не покрыто оплатами, система сама оставит в долге.</p>
                     </div>
                   </div>
-                  {!isKaspiOrder ? <button className="secondary compact" type="button" onClick={addCreatePayment}>+ Добавить оплату</button> : null}
+                  <button className="secondary compact" type="button" onClick={addCreatePayment}>
+                    + Добавить оплату
+                  </button>
                 </div>
-                {isKaspiOrder ? (
-                  <div className="order-manager-required">
-                    <strong>Сейчас получено: {formatMoney(0)}</strong>
-                    <span>После сохранения весь итог заказа останется долгом. Когда Kaspi подтвердит поступление, откройте заказ в разделе Kaspi и нажмите «Подтвердить оплату».</span>
-                    <small>Способ будущей оплаты: КАСПИ МАГАЗИН. Статус доставки подтверждение денег не изменяет.</small>
-                  </div>
-                ) : (
-                  <div className="stack">
-                    {createDraft.payments.map((payment, index) => (
-                      <div className="mini-item order-payment-card" key={`create-payment-${index}`}>
-                        <div className="mini-item-head"><strong>Оплата {index + 1}</strong><button className="ghost danger compact" type="button" onClick={() => removeCreatePayment(index)}>Удалить</button></div>
-                        <div className="subgrid order-payment-grid">
-                          <label><span>Дата</span><input type="date" value={payment.paymentDate} onChange={(event) => updateCreatePayment(index, 'paymentDate', event.target.value)} /></label>
-                          <label><span>Способ оплаты</span><SmartPickerInput value={payment.method} onChange={(value) => updateCreatePayment(index, 'method', value)} placeholder="Выберите способ" options={suggestionValues.paymentMethods} /></label>
-                          <label><span>Сумма</span><FriendlyNumberInput type="number" min="0" value={payment.amount ?? 0} onChange={(event) => updateCreatePayment(index, 'amount', Number(event.target.value))} /></label>
-                        </div>
+                <div className="stack">
+                  {createDraft.payments.map((payment, index) => (
+                    <div className="mini-item order-payment-card" key={`create-payment-${index}`}>
+                      <div className="mini-item-head">
+                        <strong>Оплата {index + 1}</strong>
+                        <button className="ghost danger compact" type="button" onClick={() => removeCreatePayment(index)}>
+                          Удалить
+                        </button>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </section>    
+                      <div className="subgrid order-payment-grid">
+                        <label>
+                          <span>Дата</span>
+                          <input
+                            type="date"
+                            value={payment.paymentDate}
+                            onChange={(event) => updateCreatePayment(index, 'paymentDate', event.target.value)}
+                          />
+                        </label>
+                        <label>
+                          <span>Способ оплаты</span>
+                          {zammlerMode && index === 0 ? (
+                            <input value="КАСПИ МАГАЗИН" readOnly aria-label="Способ оплаты КАСПИ МАГАЗИН" />
+                          ) : (
+                            <SmartPickerInput
+                              value={payment.method}
+                              onChange={(value) => updateCreatePayment(index, 'method', value)}
+                              placeholder="Выберите способ"
+                              options={suggestionValues.paymentMethods}
+                            />
+                          )}
+                        </label>
+                        <label>
+                          <span>Сумма</span>
+                          <FriendlyNumberInput
+                            type="number"
+                            min="0"
+                            value={payment.amount ?? 0}
+                            onChange={(event) => updateCreatePayment(index, 'amount', Number(event.target.value))}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+    
               <section className="order-step-card">
                 <div className="order-step-head">
                   <div className="order-step-index">4</div>

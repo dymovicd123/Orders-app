@@ -50,15 +50,20 @@ try {
 
   const lazySections = [
     'DashboardSection','ClientsSection','ReferencesSection','InventorySection','WorkshopSection',
-    'OrdersHeaderSection','OrderFiltersSection','CreateOrderSection','OrderEditorSection','OrdersTableSection','KaspiOrdersSection',
+    'OrdersHeaderSection','OrderFiltersSection','CreateOrderSection','OrderEditorSection','OrdersTableSection',
     'OrderDetailsSection','OrderDebtSection','OrderReturnsSection','OrderExchangeSection','TeamSection','LeadsSection',
     'PlanSection','FinanceSection','ReportsSection','OrderActivitySection',
   ]
   const contextualLazyFeatures = ['OrderCatalogResolutionModal','StockResolutionConfirmModal','ReturnedItemResolutionModal','ArrivalRecoveryDialog']
-  const allLazyFeatures = [...lazySections, ...contextualLazyFeatures]
+  const dormantLazyFeatures = ['KaspiOrdersSection']
+  const allLazyFeatures = [...lazySections, ...dormantLazyFeatures, ...contextualLazyFeatures]
   for (const name of lazySections) {
     check(lazy.includes(`export const ${name} = namedLazy(`), `Lazy feature boundary missing: ${name}`)
     check(app.includes(`<${name} `), `App no longer renders lazy feature: ${name}`)
+  }
+  for (const name of dormantLazyFeatures) {
+    check(lazy.includes(`export const ${name} = namedLazy(`), `Dormant lazy compatibility boundary missing: ${name}`)
+    check(!app.includes(`<${name} `), `Dormant legacy feature rendered again: ${name}`)
   }
   for (const name of contextualLazyFeatures) {
     check(lazy.includes(`export const ${name} = namedLazy(`), `Lazy feature boundary missing: ${name}`)
@@ -99,9 +104,9 @@ try {
   check(graphRelative.includes('src/app/order-pricing.ts'), 'H6B/H8 Catalog price resolver is not reachable from the initial Create controller graph')
   check(graph.size <= 26, `Initial static source graph regrew beyond the accepted pricing module set: ${graph.size} modules`)
   // Exchange Set V2 keeps the large visual workspace behind the existing lazy Exchange boundary.
-  // Kaspi also keeps its table behind a lazy boundary; only list-routing, isolated filter state and the
-  // canonical payment-confirmation coordinator stay in the eager App controller.
-  check(sourceBytes <= 713_000, `Initial static source graph regrew beyond the reviewed Kaspi separation allowance: ${sourceBytes} bytes`)
+  // Kaspi R2 reuses the existing lazy Orders table/filter/header surfaces. The eager App delta is only
+  // isolated period/payment filter state plus debt-first Create/payment-confirmation coordination.
+  check(sourceBytes <= 715_500, `Initial static source graph regrew beyond the reviewed Kaspi shared-Orders allowance: ${sourceBytes} bytes`)
   for (const name of lazySections) {
     check(!graphRelative.includes(`src/features/sections/${name}.tsx`), `Lazy section is still initial-static: ${name}`)
   }

@@ -7,6 +7,8 @@ export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
     busy,
     ChoicePills,
     filters,
+    kaspiMode = false,
+    kaspiPaymentState = 'all',
     ManagerPicker,
     orderPanelStyle,
     orderPeriodPreset,
@@ -14,93 +16,61 @@ export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
     resetOrderFilters,
     sectorStyle,
     setFilters,
+    setKaspiPaymentState,
+    workspaceSector = 'orders',
   } = ctx
 
+  const periodOptions = [
+    ...(kaspiMode ? [{ value: 'all', label: 'Весь период' }] : []),
+    { value: 'yesterday', label: 'Вчера' },
+    { value: 'today', label: 'Сегодня' },
+    { value: 'month', label: 'Этот месяц' },
+    { value: 'year', label: 'Год' },
+    { value: 'custom', label: 'Свой период' },
+  ]
+
   return (
-    <article className="card wide sector-orders order-filter-card" id="filters" style={{ ...sectorStyle('orders'), ...orderPanelStyle('list') }}>
+    <article className={`card wide sector-${workspaceSector} order-filter-card`} id={kaspiMode ? 'kaspi-filters' : 'filters'} style={{ ...sectorStyle(workspaceSector), ...(kaspiMode ? {} : orderPanelStyle('list')) }}>
       <div className="orders-filter-panel">
         <div className="orders-period-row">
           <span className="orders-filter-title">Период:</span>
-          <ChoicePills
-            value={orderPeriodPreset}
-            onChange={(value) => applyOrderPeriodPreset(value as OrderPeriodPreset)}
-            options={[
-              { value: 'yesterday', label: 'Вчера' },
-              { value: 'today', label: 'Сегодня' },
-              { value: 'month', label: 'Этот месяц' },
-              { value: 'year', label: 'Год' },
-              { value: 'custom', label: 'Свой период' },
-            ]}
-          />
+          <ChoicePills value={orderPeriodPreset} onChange={(value) => applyOrderPeriodPreset(value)} options={periodOptions} />
           {orderPeriodPreset === 'custom' ? (
             <div className="orders-date-range">
-              <label>
-                <span>Начало периода</span>
-                <input
-                  type="date"
-                  value={filters.dateFrom}
-                  onChange={(event) => setFilters((current) => ({ ...current, dateFrom: event.target.value }))}
-                />
-              </label>
-              <label>
-                <span>Конец периода</span>
-                <input
-                  type="date"
-                  value={filters.dateTo}
-                  onChange={(event) => setFilters((current) => ({ ...current, dateTo: event.target.value }))}
-                />
-              </label>
+              <label><span>Начало периода</span><input type="date" value={filters.dateFrom} onChange={(event) => setFilters((current) => ({ ...current, dateFrom: event.target.value }))} /></label>
+              <label><span>Конец периода</span><input type="date" value={filters.dateTo} onChange={(event) => setFilters((current) => ({ ...current, dateTo: event.target.value }))} /></label>
             </div>
           ) : null}
         </div>
-
+        {kaspiMode ? (
+          <div className="orders-period-row">
+            <span className="orders-filter-title">Оплата:</span>
+            <ChoicePills value={kaspiPaymentState} onChange={(value) => setKaspiPaymentState(value)} options={[
+              { value: 'all', label: 'Все' },
+              { value: 'awaiting', label: 'Ожидают оплату' },
+              { value: 'paid', label: 'Оплачены' },
+            ]} />
+          </div>
+        ) : null}
         <div className="orders-filter-grid orders-filter-grid-simple">
           <label className="order-filter-manager">
             <span>Менеджер</span>
-            <ManagerPicker
-              valueId={filters.managerId}
-              valueName={filters.manager}
-              options={references?.managerOptions || []}
-              placeholder="Все менеджеры"
-              onChange={(manager) => setFilters((current) => ({ ...current, managerId: manager?.id || 0, manager: manager?.name || '' }))}
-            />
+            <ManagerPicker valueId={filters.managerId} valueName={filters.manager} options={references?.managerOptions || []} placeholder="Все менеджеры" onChange={(manager) => setFilters((current) => ({ ...current, managerId: manager?.id || 0, manager: manager?.name || '' }))} />
           </label>
-
           <label className="order-filter-shipping">
             <span>Отправка</span>
-            <select
-              value={filters.shippingStatus}
-              onChange={(event) => setFilters((current) => ({ ...current, shippingStatus: event.target.value }))}
-            >
-              <option value="all">Все</option>
-              <option value="not_sent">Не отправлено</option>
-              <option value="sent">Отправлено</option>
+            <select value={filters.shippingStatus} onChange={(event) => setFilters((current) => ({ ...current, shippingStatus: event.target.value }))}>
+              <option value="all">Все</option><option value="not_sent">Не отправлено</option><option value="sent">Отправлено</option>
             </select>
           </label>
-
           <label className="wide-field order-search-main">
             <span>Поиск</span>
-            <input
-              value={filters.q}
-              onChange={(event) => setFilters((current) => ({ ...current, q: event.target.value }))}
-              placeholder="Заказ, клиент, менеджер, город, товар или комментарий"
-            />
+            <input value={filters.q} onChange={(event) => setFilters((current) => ({ ...current, q: event.target.value }))} placeholder="Заказ, клиент, менеджер, город, товар или комментарий" />
           </label>
         </div>
-
         <div className="actions orders-filter-actions">
-          <button
-            className={`secondary ${filters.deliveryType === 'zammler' ? 'is-active' : ''}`}
-            type="button"
-            aria-pressed={filters.deliveryType === 'zammler'}
-            onClick={() => setFilters((current) => ({ ...current, deliveryType: current.deliveryType === 'zammler' ? 'all' : 'zammler' }))}
-            disabled={busy}
-          >
-            Доставка: ЗАММЛЕР
-          </button>
-          <button className="secondary" type="button" onClick={resetOrderFilters} disabled={busy}>
-            Сбросить фильтр
-          </button>
+          <button className={`secondary ${filters.deliveryType === 'zammler' ? 'is-active' : ''}`} type="button" aria-pressed={filters.deliveryType === 'zammler'} onClick={() => setFilters((current) => ({ ...current, deliveryType: current.deliveryType === 'zammler' ? 'all' : 'zammler' }))} disabled={busy}>Доставка: ЗАММЛЕР</button>
+          <button className="secondary" type="button" onClick={resetOrderFilters} disabled={busy}>Сбросить фильтр</button>
         </div>
       </div>
     </article>

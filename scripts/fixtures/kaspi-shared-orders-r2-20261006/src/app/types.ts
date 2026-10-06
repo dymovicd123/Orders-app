@@ -921,7 +921,6 @@ export type OrderPeriodStats = {
   paymentCount: number | null
   paymentAmount: number
   debtAmount: number
-  debtOrderCount: number
   returnCount: number
   returnAmount: number
   workshopUnits: number

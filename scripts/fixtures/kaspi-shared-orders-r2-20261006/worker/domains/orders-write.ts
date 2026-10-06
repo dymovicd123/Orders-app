@@ -850,9 +850,6 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
             ? { ...payment, paymentDate: orderDate }
             : payment
         ));
-        if (orderPaymentMethod === 'КАСПИ МАГАЗИН' && normalizedPayments.some(payment => payment.amount > 0)) {
-          throw new OrderInputValidationError('Kaspi-заказ создаётся без фактической оплаты. Сохраните заказ с долгом, а поступление подтвердите позже в разделе Kaspi после уведомления Kaspi.');
-        }
 
         for (const item of normalizedItems) {
           if (item.observedPhysicalQuantity === null) continue;

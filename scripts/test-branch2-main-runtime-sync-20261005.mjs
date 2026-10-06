@@ -12,6 +12,47 @@ const gitBlob = (value) => {
 
 const root = process.cwd()
 
+const kaspiSharedOrdersR2RuntimeManifest = JSON.parse(
+  fs.readFileSync(path.join(root, 'scripts/kaspi-shared-orders-r2-20261006-runtime-manifest.json'), 'utf8'),
+)
+check(
+  kaspiSharedOrdersR2RuntimeManifest?.version === 1 && kaspiSharedOrdersR2RuntimeManifest?.revision === 'kaspi-shared-orders-r2-20261006-runtime',
+  'Kaspi shared Orders R2 runtime manifest invalid',
+)
+if (!process.env.KASPI_SHARED_ORDERS_R2_BRANCH2_MAIN_SYNC_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(kaspiSharedOrdersR2RuntimeManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      check(gitBlob(actual) === delta.afterGitBlob, 'Kaspi shared Orders R2 runtime drifted before Branch2/main sync check: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      check(gitBlob(baseline) === delta.beforeGitBlob, 'Kaspi shared Orders R2 predecessor fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, KASPI_SHARED_ORDERS_R2_BRANCH2_MAIN_SYNC_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('KASPI SHARED ORDERS R2 — BRANCH2 MAIN SYNC PRESERVATION LAYER PASSED')
+  process.exit(0)
+}
+
 const arrivalAtomicManifest = JSON.parse(
   fs.readFileSync(path.join(root, 'scripts/arrival-atomic-materialization-20261006-worker-manifest.json'), 'utf8'),
 )
