@@ -12,6 +12,47 @@ const gitBlob = (value) => {
 
 const root = process.cwd()
 
+const exchangeHumanUxManifest = JSON.parse(
+  fs.readFileSync(path.join(root, 'scripts/exchange-human-ux-20261006-frontend-manifest.json'), 'utf8'),
+)
+check(
+  exchangeHumanUxManifest?.version === 1 && exchangeHumanUxManifest?.revision === 'exchange-human-ux-20261006-frontend',
+  'Exchange human UX frontend manifest invalid',
+)
+if (!process.env.EXCHANGE_HUMAN_UX_BRANCH2_MAIN_SYNC_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(exchangeHumanUxManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      check(gitBlob(actual) === delta.afterGitBlob, 'Exchange human UX runtime drifted before Branch2/main sync check: ' + relative)
+      originals.set(relative, actual)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      check(gitBlob(baseline) === delta.beforeGitBlob, 'Exchange human UX predecessor fixture drifted: ' + relative)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, EXCHANGE_HUMAN_UX_BRANCH2_MAIN_SYNC_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('EXCHANGE HUMAN UX — BRANCH2 MAIN SYNC PRESERVATION LAYER PASSED')
+  process.exit(0)
+}
+
 const sourceDefaultManifests = [
   JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-exchange-source-defaults-20261005-frontend-manifest.json'), 'utf8')),
   JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-exchange-source-defaults-20261005-worker-manifest.json'), 'utf8')),
