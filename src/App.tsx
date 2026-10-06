@@ -766,8 +766,8 @@ function App() {
     manager: '',
     managerId: 0,
     archiveMode: 'active' as ArchiveMode,
-    dateFrom: defaultOrderRange.dateFrom,
-    dateTo: defaultOrderRange.dateTo,
+    dateFrom: '',
+    dateTo: '',
     pageSize: '100',
   })
   const closedArchiveMonth = getClosedArchiveMonth()
@@ -3907,7 +3907,7 @@ function App() {
         params.set('orderPaymentMethod', 'КАСПИ МАГАЗИН')
         if (kaspiPaymentState === 'awaiting') params.set('debtState', 'open')
         if (kaspiPaymentState === 'paid') params.set('debtState', 'paid')
-      } else if (activeSector === 'orders' && orderPanel === 'list' && !searchQuery) {
+      } else if (activeSector === 'orders' && orderPanel === 'list') {
         params.set('excludeOrderPaymentMethod', 'КАСПИ МАГАЗИН')
       }
       // R5.9: the visible pagination remains offset/page based, but sequential Next may provide

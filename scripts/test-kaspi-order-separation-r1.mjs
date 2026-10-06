@@ -54,12 +54,16 @@ check(createUi.includes("placeholder={zammlerMode ? 'Рекомендуется 
 check(!createUi.includes('value="ЗАММЛЕР" readOnly'), 'Kaspi delivery is incorrectly immutable')
 check(editorUi.includes('orderPaymentMethod') && editorUi.includes('КАСПИ МАГАЗИН автоматически относит заказ в раздел Kaspi'), 'Editor cannot safely reclassify an order')
 
-// Ordinary daily list stays clean; explicit search may still find a Kaspi order.
+// Ordinary Orders stays strictly separated; Kaspi has its own complete work queue.
 check(app.includes("params.set('orderPaymentMethod', 'КАСПИ МАГАЗИН')"), 'Kaspi workspace does not query its own orders')
 check(app.includes("params.set('excludeOrderPaymentMethod', 'КАСПИ МАГАЗИН')"), 'Ordinary Orders does not exclude Kaspi by default')
 check(app.includes('const [kaspiFilters, setKaspiFilters] = useState({'), 'Kaspi workspace shares hidden ordinary Orders filters')
+const kaspiFilterStart = app.indexOf('const [kaspiFilters, setKaspiFilters] = useState({')
+const kaspiFilterEnd = app.indexOf('\n  const closedArchiveMonth', kaspiFilterStart)
+const kaspiFilterBlock = app.slice(kaspiFilterStart, kaspiFilterEnd)
+check(kaspiFilterBlock.includes("dateFrom: ''") && kaspiFilterBlock.includes("dateTo: ''"), 'Old unpaid Kaspi orders can disappear behind the ordinary monthly date default')
 check(app.includes('void loadDashboard(false, kaspiFilters, 0)') && app.includes('filters: kaspiFilters') && app.includes('setFilters: setKaspiFilters'), 'Kaspi workspace does not consistently use isolated filters')
-check(app.includes("&& !searchQuery"), 'Ordinary explicit search cannot deliberately cross the Kaspi separation')
+check(!app.includes("orderPanel === 'list' && !searchQuery"), 'Ordinary search can still leak Kaspi orders back into the ordinary table')
 check(!ordersUi.includes('Оплата получена'), 'Kaspi payment action leaked into ordinary Orders table')
 check(ordersUi.includes('ordinaryOrdersSeparated') && ordersUi.includes('Kaspi вынесен в отдельный раздел'), 'Ordinary Orders summary can still imply it includes Kaspi orders')
 check(constants.includes("label: 'Обычные заказы'"), 'Ordinary Orders tab is still misleadingly labeled as all orders')

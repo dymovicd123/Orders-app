@@ -4,7 +4,7 @@
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "18e3539988a170e802d2fd5d996861c0e352757c",
-      "afterGitBlob": "02c749ca2f53ce466fad39ef627f2f4a423a594d",
+      "afterGitBlob": "431e88a5b6f5653950ea89dfe1c1a08af731180b",
       "baselineFixture": "scripts/fixtures/kaspi-order-separation-20261006/src/App.tsx"
     },
     "src/app/constants.ts": {
@@ -70,11 +70,6 @@
     "src/styles/195-kaspi-orders.css": {
       "beforeGitBlob": null,
       "afterGitBlob": "2a9232013e7209bbc6ad3c9cf947a574bafd2986",
-      "absentBefore": true
-    },
-    "migrations/0082_v72_kaspi_order_payment_method.sql": {
-      "beforeGitBlob": null,
-      "afterGitBlob": "6123d57b1c8502c065bf5a609d74d45dd2b0336c",
       "absentBefore": true
     }
   }
