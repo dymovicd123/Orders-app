@@ -180,7 +180,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
 
   const oldHistoryStatus = (item: any) => {
     if (item.wasNotIssued || item.inventorySource === 'not_issued') return 'Не выдавалась клиенту — осталась на месте'
-    if (!item.physicalTracking) return 'Физическое получение не отслеживалось'
+    if (!item.physicalTracking) return 'В старой записи возврат товара не отмечался'
     if (!item.physicalReceivedAt) return 'Ещё у клиента'
     if (item.inventorySource === 'warehouse') return item.lifecycleStatus === 'pending' ? 'Вернули → Склад · нужно завершить учёт' : 'Вернули → Склад'
     if (item.inventorySource === 'boutique') return item.lifecycleStatus === 'pending' ? 'Вернули → Бутик · нужно завершить учёт' : 'Вернули → Бутик'
@@ -204,7 +204,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
             <div>
               <span className="exchange-set-kicker">Ожидают возврата</span>
               <h3>Товары ещё у клиентов · {exchangeHistorySummary.pendingPhysicalQuantity} шт.</h3>
-              <p>Когда вещи приехали вместе, выберите судьбу каждой позиции и подтвердите весь возврат одной кнопкой.</p>
+              <p>Когда товары вернутся, укажите, куда принять каждый из них, и подтвердите возврат одной кнопкой.</p>
             </div>
           </div>
           <div className="exchange-return-groups">
@@ -396,7 +396,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                         <strong>{availability.label}</strong><span>{availability.note}</span>
                         {physicalShortage ? (
                           <div className="exchange-stock-confirm">
-                            <span>{matchingIndexes.length > 1 ? `Для одинаковых новых строк вместе нужно ${batchRequired} шт. ` : ''}Если товар физически перед вами, подтвердите реальное количество.</span>
+                            <span>{matchingIndexes.length > 1 ? `Для этих одинаковых позиций нужно ${batchRequired} шт. ` : ''}В системе товара не хватает. Если он действительно есть у вас, укажите количество на месте.</span>
                             {observationOwner ? (
                               <input
                                 type="number"
@@ -483,7 +483,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
 
       <section className="exchange-history-v2">
         <div className="exchange-set-section-head">
-          <div><span className="exchange-set-kicker">История</span><h3>Проведённые обмены</h3><p>Новые обмены показываются как два независимых списка: что убрали и что добавили.</p></div>
+          <div><span className="exchange-set-kicker">История</span><h3>Проведённые обмены</h3><p>Здесь видно, что клиент вернул и что получил взамен.</p></div>
           <button className="secondary compact" type="button" disabled={exchangeHistoryBusy} onClick={() => void loadExchangeHistory()}>Обновить</button>
         </div>
         <div className="history-filter-bar">
@@ -505,7 +505,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                       <summary><div><strong>{entry.externalId}</strong><span>{entry.customer || '—'} · {entry.exchangeDate || '—'}</span></div><div><b>{olds.length} → {news.length} поз.</b><span>{entry.status === 'cancelled' ? 'Отменён' : 'Проведён'}</span></div><span>Подробнее</span></summary>
                       <div className="exchange-history-body-v2">
                         <div className="exchange-history-side"><h4>Убрали из заказа</h4>{olds.map((item: any, index: number) => <div className="exchange-history-item-v2" key={`hist-old-${entry.id}-${item.id || index}`}><strong>{item.productName} × {item.quantity}</strong><span>{historyItemDetails(item)}</span><em>{oldHistoryStatus(item)}</em>{entry.status !== 'cancelled' && item.physicalReceivedAt && item.lifecycleStatus === 'pending' && item.lifecycleId && (item.lifecycleVariantId || item.currentVariantId) ? <button className="secondary compact" type="button" onClick={() => void reconcileKnownInventoryLifecycle(Number(item.lifecycleId || 0)).then((result: any) => result?.ok ? loadExchangeHistory() : null)}>Завершить приёмку</button> : null}</div>)}</div>
-                        <div className="exchange-history-side"><h4>Добавили в заказ</h4>{news.map((item: any, index: number) => <div className="exchange-history-item-v2" key={`hist-new-${entry.id}-${item.id || index}`}><strong>{item.productName} × {item.quantity}</strong><span>{historyItemDetails(item)}</span><em>{item.inventorySource === 'workshop' ? 'Цех' : `Источник: ${sourceLabel(item.inventorySource || 'warehouse')}`}</em></div>)}</div>
+                        <div className="exchange-history-side"><h4>Добавили в заказ</h4>{news.map((item: any, index: number) => <div className="exchange-history-item-v2" key={`hist-new-${entry.id}-${item.id || index}`}><strong>{item.productName} × {item.quantity}</strong><span>{historyItemDetails(item)}</span><em>{item.inventorySource === 'workshop' ? 'Из цеха' : `Выдали: ${sourceLabel(item.inventorySource || 'warehouse')}`}</em></div>)}</div>
                       </div>
                       <div className="exchange-history-footer-v2">
                         <div><span>Деньги</span><strong>{entry.financialAction === 'extra_payment' ? `Получено +${formatMoney(entry.financialAmount)} · ${entry.paymentMethod || '—'}` : entry.financialAction === 'refund' ? `Возвращено −${formatMoney(entry.financialAmount)} · ${entry.paymentMethod || '—'}` : 'Без движения'}</strong></div>
