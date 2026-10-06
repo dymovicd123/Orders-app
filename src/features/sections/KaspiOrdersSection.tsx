@@ -23,10 +23,11 @@ export function KaspiOrdersSection({ ctx }: { ctx: SectionContext }) {
     setFilters,
     setKaspiPaymentState,
     shippingStatusLabel,
+    sectorStyle,
   } = ctx
 
   return (
-    <article className="card wide sector-kaspi kaspi-workspace" id="kaspi-orders">
+    <article className="card wide sector-kaspi kaspi-workspace" id="kaspi-orders" style={sectorStyle('kaspi')}>
       <div className="kaspi-workspace-head">
         <div>
           <div className="card-label">Kaspi Магазин</div>
