@@ -46,6 +46,7 @@ check(smart.includes('saveBlockReason') && smart.includes('Укажите цен
 
 check(smart.includes("item.sourceType === 'workshop'") && smart.includes('Срочно для цеха') && smart.includes('workshopDueDate') && smart.includes('workshopDueTime'), 'Smart Exchange dropped Workshop urgency/deadline controls')
 check(smart.includes('isSetExchange') && smart.includes('entry.oldItems') && smart.includes('entry.newItems'), 'Set exchange history does not render full old/new collections')
+check(smart.includes('returnedQuantity') && smart.includes('issuedQuantity') && smart.includes('Вернул: {returnedQuantity} шт. · Получил: {issuedQuantity} шт.'), 'Exchange history summary still counts rows instead of real item quantities')
 check(smart.includes('Отменить обмен') && app.includes("apiFetch('/api/exchanges/set'"), 'Smart create/cancel workflow is not connected end-to-end')
 check(css.includes('.exchange-old-card.is-selected') && css.includes('.exchange-old-order-info') && css.includes('.exchange-new-primary-fields') && css.includes('.exchange-money-result') && css.includes('.exchange-return-group') && css.includes('@media(max-width:720px)'), 'Smart Exchange lacks quantity-first, progressive, settlement, intake, or mobile styling')
 
