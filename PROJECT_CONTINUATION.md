@@ -284,6 +284,42 @@ Resolver сейчас считается закрытым:
 
 Не продолжать Resolver «на всякий случай». Возвращаться к нему только при конкретном воспроизводимом дефекте.
 
+## Kaspi order separation — Branch2 manual acceptance (2026-10-06)
+
+Kaspi сейчас реализован **только на Branch2** и готов для ручного тестирования. Production/main не менялся.
+
+Бизнес-контракт:
+- Kaspi-заказ остаётся обычным заказом; отдельной таблицы заказов, отдельного склада и отдельного Kaspi ID нет.
+- Авторитетный признак Kaspi — сохранённый способ оплаты заказа `КАСПИ МАГАЗИН`; доставка не используется как доказательство.
+- ЗАММЛЕР — только редактируемый default/recommendation для Kaspi Create.
+- Менеджер заказа остаётся реальным продавцом. Ответственный за Kaspi только ведёт операционную очередь и подтверждает поступления.
+- Фактические деньги остаются обычными payment rows. Нулевая placeholder-оплата не становится финансовым фактом.
+- `Оплата получена` закрывает текущий долг через существующий idempotent `/api/payments` path с методом `КАСПИ МАГАЗИН`; shipping status не меняется.
+- Return / Exchange / cancellation используют существующие домены. Комиссия Kaspi в текущий scope сознательно не входит.
+
+UI:
+- боковая вкладка `Kaspi`;
+- состояния `Ожидают оплату` / `Оплачены` / `Все Kaspi`;
+- ordinary Orders строго исключает Kaspi, включая поиск;
+- Kaspi имеет собственные фильтры; очередь ожидания по умолчанию не ограничена текущим месяцем, чтобы старый неоплаченный заказ не пропал;
+- ordinary Create тоже может классифицировать заказ как Kaspi по `КАСПИ МАГАЗИН`;
+- dedicated Kaspi Create переиспользует обычную форму, предзаполняет `КАСПИ МАГАЗИН` и рекомендует ЗАММЛЕР.
+
+Schema/release evidence:
+- PR #295 → Branch2 SHA `a06775de48815fc72e3350fcd7c3960f5ec69ab5`: additive migration 0082 + Branch2-only rerun-safe migration workflow.
+- migration run `37476926066` — success; column/index and conservative history backfill verified on `orders_db_branch2`.
+- schema safety `37476925892` — success; schema deploy monitor `37476925899` — success.
+- feature exact-head Quality `37477447234` — success.
+- PR #294 → Branch2 runtime SHA `c07fd63439b6cb38e857ce3e6adb849d44f0a5b9`.
+- exact merged-SHA Branch2 safety `37477946140` — success.
+- exact merged-SHA Cloudflare deploy `37477946304` — success.
+
+Historical limitation is intentional: старый неоплаченный заказ без фактической положительной оплаты `КАСПИ МАГАЗИН` не классифицируется автоматически только из-за ЗАММЛЕР. Такие старые заказы нужно при необходимости явно переклассифицировать через Edit; это безопаснее, чем угадывать канал по доставке.
+
+Следующий шаг — ручная приёмка Branch2: создать Kaspi из dedicated form, создать Kaspi из ordinary Create, проверить строгую изоляцию списков, подтвердить оплату и убедиться, что shipping не изменился, затем проверить Return/Exchange. **Не переносить в main без отдельного явного разрешения пользователя.**
+
+Подробности: `docs/continuation/KASPI_ORDER_SEPARATION_20261006.md`.
+
 ## Roadmap после Stage03
 
 Настоящий Stage04 ещё не начинался. CLIENT-ZAMMLER не считается Stage04.
