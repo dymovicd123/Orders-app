@@ -21,7 +21,7 @@ check(app.includes("filters.deliveryType") && app.includes("activeFilters.delive
 check(table.includes("filters.deliveryType === 'zammler'") && table.includes('Доставка: ЗАММЛЕР'), 'CLIENT-ZAMMLER-G: ordinary table still exposes its active ZAMMLER delivery filter')
 check(!create.includes('Доставка — ЗАММЛЕР, оплата — КАСПИ МАГАЗИН.'), 'CLIENT-ZAMMLER-G: obsolete explanatory hero comment returned')
 check(create.includes("placeholder={zammlerMode ? 'Рекомендуется ЗАММЛЕР'"), 'CLIENT-ZAMMLER-G: Kaspi create must preserve the ZAMMLER delivery convenience without making delivery identity')
-check(ordersRead.includes("baseWhereParts.push("COALESCE(o.delivery_type, '') = ?")"), 'CLIENT-ZAMMLER-G: exact server-side delivery filter must remain')
+check(ordersRead.includes(`baseWhereParts.push("COALESCE(o.delivery_type, '') = ?")`), 'CLIENT-ZAMMLER-G: exact server-side delivery filter must remain')
 check(!app.includes('zammler_orders'), 'CLIENT-ZAMMLER-G: no parallel ZAMMLER model is allowed')
 
 console.log('CLIENT-ZAMMLER-G UI CORRECTION PASSED — ZAMMLER remains a delivery concern/filter, while the specialized shared Create form now lives under Kaspi and no parallel order model is introduced')
