@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "revision": "exchange-human-ux-20261006-frontend",
+  "files": {
+    "src/features/sections/OrderExchangeSmartSection.tsx": {
+      "beforeGitBlob": "187181a8261c06ff56e7410140c2582cf46d6a9e",
+      "afterGitBlob": "d87cdef4cbf397795c5d2b4a428b26b74f616ea1",
+      "baselineFixture": "scripts/fixtures/exchange-human-ux-20261006/src/features/sections/OrderExchangeSmartSection.tsx"
+    },
+    "src/styles/193-exchange-set-v2.css": {
+      "beforeGitBlob": "092734cdb1f038f7ada1d93bb1c8a00390a8fb71",
+      "afterGitBlob": "6728780599fbfcdfc6e23acce99e924bd14d1a3f",
+      "baselineFixture": "scripts/fixtures/exchange-human-ux-20261006/src/styles/193-exchange-set-v2.css"
+    }
+  }
+}
