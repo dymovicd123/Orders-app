@@ -48,6 +48,8 @@ check(createUi.includes('Способ оплаты заказа'), 'Ordinary Cre
 check(createUi.includes("onChange={(value) => updateCreateDraft('orderPaymentMethod', value)}"), 'Ordinary Create cannot choose order payment method')
 check(app.includes("normalizeSuggestion(method) === normalizeSuggestion('КАСПИ МАГАЗИН')"), 'Ordinary form does not recognize Kaspi payment method')
 check(app.includes("deliveryType: isKaspi && !String(current.deliveryType || '').trim() ? 'ЗАММЛЕР'"), 'Ordinary form does not recommend ZAMMLER when Kaspi is selected')
+check(app.includes("const orderPaymentMethod = String(createDraft.orderPaymentMethod || '').trim()"), 'Create does not treat the order-level payment method as authoritative')
+check(!app.includes('const kaspiPaymentSelected = createDraft.payments.some'), 'Factual payment rows can still override the authoritative Kaspi identity')
 check(createUi.includes("placeholder={zammlerMode ? 'Рекомендуется ЗАММЛЕР'"), 'Dedicated Kaspi form lost recommended delivery')
 check(!createUi.includes('value="ЗАММЛЕР" readOnly'), 'Kaspi delivery is incorrectly immutable')
 check(editorUi.includes('orderPaymentMethod') && editorUi.includes('КАСПИ МАГАЗИН автоматически относит заказ в раздел Kaspi'), 'Editor cannot safely reclassify an order')
@@ -55,6 +57,8 @@ check(editorUi.includes('orderPaymentMethod') && editorUi.includes('КАСПИ �
 // Ordinary daily list stays clean; explicit search may still find a Kaspi order.
 check(app.includes("params.set('orderPaymentMethod', 'КАСПИ МАГАЗИН')"), 'Kaspi workspace does not query its own orders')
 check(app.includes("params.set('excludeOrderPaymentMethod', 'КАСПИ МАГАЗИН')"), 'Ordinary Orders does not exclude Kaspi by default')
+check(app.includes('const [kaspiFilters, setKaspiFilters] = useState({'), 'Kaspi workspace shares hidden ordinary Orders filters')
+check(app.includes('void loadDashboard(false, kaspiFilters, 0)') && app.includes('filters: kaspiFilters') && app.includes('setFilters: setKaspiFilters'), 'Kaspi workspace does not consistently use isolated filters')
 check(app.includes("&& !searchQuery"), 'Ordinary explicit search cannot deliberately cross the Kaspi separation')
 check(!ordersUi.includes('Оплата получена'), 'Kaspi payment action leaked into ordinary Orders table')
 check(ordersUi.includes('ordinaryOrdersSeparated') && ordersUi.includes('Kaspi вынесен в отдельный раздел'), 'Ordinary Orders summary can still imply it includes Kaspi orders')
