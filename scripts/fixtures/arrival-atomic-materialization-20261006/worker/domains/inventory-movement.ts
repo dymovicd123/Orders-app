@@ -120,66 +120,10 @@ export function normalizeInventoryOperationStockConfirmations(input: unknown): I
 
 
 
-type ArrivalMaterializationTrace = {
-  createdAt: string;
-  productExternalIds: string[];
-  executionKeys: Array<{ productId: number; material: string; length: string }>;
-  variantExternalIds: string[];
-};
-
-async function cleanupArrivalMaterialization(db: D1Database, trace: ArrivalMaterializationTrace | null) {
-  if (!trace?.createdAt) return;
-
-  // Cleanup is intentionally narrow: only identities planned by this failed Arrival and stamped
-  // with its exact creation time are eligible. Existing Catalog truth can never match this filter.
-  for (const externalId of [...trace.variantExternalIds].reverse()) {
-    try {
-      await db.prepare(
-        `DELETE FROM catalog_variants
-         WHERE external_id = ? AND created_at = ? AND is_active = 1`
-      ).bind(externalId, trace.createdAt).run();
-    } catch (error) {
-      console.error(JSON.stringify({ event: 'arrival_materialization_cleanup_variant_failed', externalId, message: cleanText(error instanceof Error ? error.message : error).slice(0, 500) }));
-    }
-  }
-
-  for (const execution of [...trace.executionKeys].reverse()) {
-    try {
-      await db.prepare(
-        `DELETE FROM catalog_stock_positions
-         WHERE product_id = ? AND material = ? AND length = ? AND created_at = ? AND is_active = 1
-           AND NOT EXISTS (
-             SELECT 1 FROM catalog_variants v WHERE v.stock_position_id = catalog_stock_positions.id
-           )`
-      ).bind(execution.productId, execution.material, execution.length, trace.createdAt).run();
-    } catch (error) {
-      console.error(JSON.stringify({ event: 'arrival_materialization_cleanup_execution_failed', productId: execution.productId, message: cleanText(error instanceof Error ? error.message : error).slice(0, 500) }));
-    }
-  }
-
-  for (const externalId of [...trace.productExternalIds].reverse()) {
-    try {
-      await db.prepare(
-        `DELETE FROM catalog_products
-         WHERE external_id = ? AND created_at = ? AND is_active = 1
-           AND NOT EXISTS (
-             SELECT 1 FROM catalog_stock_positions sp WHERE sp.product_id = catalog_products.id
-           )
-           AND NOT EXISTS (
-             SELECT 1 FROM catalog_variants v WHERE v.product_id = catalog_products.id
-           )`
-      ).bind(externalId, trace.createdAt).run();
-    } catch (error) {
-      console.error(JSON.stringify({ event: 'arrival_materialization_cleanup_product_failed', externalId, message: cleanText(error instanceof Error ? error.message : error).slice(0, 500) }));
-    }
-  }
-}
-
-
 export async function resolveInventoryCreatableItemsBulk(
   db: D1Database,
   rawItems: ReturnType<typeof normalizeInventoryItem>[],
-  options: { allowRetiredRecreate?: boolean; arrivalTrace?: ArrivalMaterializationTrace } = {},
+  options: { allowRetiredRecreate?: boolean } = {},
 ): Promise<InventoryResolvedItem[]> {
   if (!rawItems.length) return [];
 
@@ -192,7 +136,6 @@ export async function resolveInventoryCreatableItemsBulk(
   }
 
   const now = new Date().toISOString();
-  if (options.arrivalTrace) options.arrivalTrace.createdAt = now;
   type ProductRow = { id: number; name: string; category: string; external_id?: string | null; is_active?: number; gender_scope?: string | null };
   const loadProducts = async () => mapSqlRows(await db.prepare(
     `SELECT id, name, category, external_id, is_active, gender_scope FROM catalog_products ORDER BY id ASC`
@@ -256,18 +199,6 @@ export async function resolveInventoryCreatableItemsBulk(
     return lookup.byIdentity.get(identityKey) || null;
   };
 
-  const resolveGenderForProduct = (product: ProductRow | null | undefined, item: ReturnType<typeof normalizeInventoryItem>) => {
-    const explicitGender = normalizeCatalogCombinationGender(item.gender);
-    if (explicitGender === 'ЖЕН' || explicitGender === 'МУЖ') {
-      return assertCatalogGenderAllowedForScope(product?.gender_scope, explicitGender, product?.name).gender;
-    }
-    const scope = cleanText(product?.gender_scope).toLowerCase();
-    if (scope === 'female') return 'ЖЕН';
-    if (scope === 'male') return 'МУЖ';
-    if (normalizeAudienceCategory(item.category, item.size) === 'child') return '';
-    throw new Error('Для товара «Унисекс» выберите пол конкретной вещи: ЖЕН или МУЖ.');
-  };
-
   const assertKnownProductGender = (product: ProductRow | null | undefined, item: ReturnType<typeof normalizeInventoryItem>) => {
     if (!product?.id) return;
     const explicitGender = normalizeCatalogCombinationGender(item.gender);
@@ -281,9 +212,7 @@ export async function resolveInventoryCreatableItemsBulk(
     if (!item.productName) throw new Error('Product is required for inventory operation.');
     const activeProduct = resolveProduct(item);
     if (activeProduct) {
-      // Validate every existing row before any new Catalog entity is inserted. Otherwise one
-      // invalid adult-unisex line could leave another valid line half-materialized.
-      resolveGenderForProduct(activeProduct, item);
+      assertKnownProductGender(activeProduct, item);
       return;
     }
 
@@ -307,10 +236,6 @@ export async function resolveInventoryCreatableItemsBulk(
       }
       return;
     }
-
-    // Brand-new products default to unisex, so validate the concrete SKU before scheduling
-    // any Catalog write. A rejected Arrival must not create a product shell.
-    resolveGenderForProduct(undefined, item);
 
     const newIdentityKey = identityKey || `RAW:${item.productName}`;
     if (!missingProducts.has(newIdentityKey)) {
@@ -338,9 +263,6 @@ export async function resolveInventoryCreatableItemsBulk(
 
   if (missingProducts.size) {
     const missingProductsJson = JSON.stringify(Array.from(missingProducts.values()));
-    if (options.arrivalTrace) {
-      options.arrivalTrace.productExternalIds.push(...Array.from(missingProducts.values()).map((row) => row.externalId));
-    }
     await db.prepare(
       `INSERT OR IGNORE INTO catalog_products (name, category, is_active, created_at, updated_at, external_id)
        SELECT CAST(json_extract(j.value, '$.name') AS TEXT), CAST(json_extract(j.value, '$.category') AS TEXT),
@@ -354,9 +276,25 @@ export async function resolveInventoryCreatableItemsBulk(
   const productForItem = rawItems.map(item => resolveProduct(item));
   if (productForItem.some(row => !row?.id)) throw new Error('Не удалось создать или найти товар для складской операции. Обновите каталог и повторите действие.');
 
-  // Re-check against the post-materialization canonical product in case a concurrent request
-  // resolved the same identity first. This is no longer the first validation boundary.
-  const resolvedGenderForItem = rawItems.map((item, index) => resolveGenderForProduct(productForItem[index], item));
+  const resolvedGenderForItem = rawItems.map((item, index) => {
+    const product = productForItem[index];
+    const explicit = normalizeCatalogCombinationGender(item.gender);
+    if (explicit === 'ЖЕН' || explicit === 'МУЖ') {
+      return assertCatalogGenderAllowedForScope(product?.gender_scope, explicit, product?.name).gender;
+    }
+    const scope = cleanText(product?.gender_scope).toLowerCase();
+    if (scope === 'female') return 'ЖЕН';
+    if (scope === 'male') return 'МУЖ';
+
+    // Child is an audience category, not a third gender. Historical Catalog data legitimately
+    // contains child SKUs with a blank gender (for example СӘУЛЕТ · ХАКИ · age 1). The Arrival
+    // form used to send "ДЕТСКИЙ" through the gender field, which forced a unisex-gender error
+    // and could leave an earlier new product materialized without stock. Keep adult unisex
+    // strict, but allow a neutral child identity.
+    if (normalizeAudienceCategory(item.category, item.size) === 'child') return '';
+
+    throw new Error('Для товара «Унисекс» выберите пол конкретной вещи: ЖЕН или МУЖ.');
+  });
 
   const productIds = Array.from(new Set(productForItem.map(row => toInt(row?.id, 0)).filter(Boolean)));
   const productIdsJson = JSON.stringify(productIds);
@@ -404,9 +342,6 @@ export async function resolveInventoryCreatableItemsBulk(
 
   if (missingExecutions.size) {
     const executionJson = JSON.stringify(Array.from(missingExecutions.values()));
-    if (options.arrivalTrace) {
-      options.arrivalTrace.executionKeys.push(...Array.from(missingExecutions.values()).map((row) => ({ ...row })));
-    }
     await db.prepare(
       `INSERT OR IGNORE INTO catalog_stock_positions (
          product_id, category, gender_scope, material, length, is_default, is_active, sort_order, created_at, updated_at
@@ -535,9 +470,6 @@ export async function resolveInventoryCreatableItemsBulk(
 
   if (missingVariants.size) {
     const variantsJson = JSON.stringify(Array.from(missingVariants.values()));
-    if (options.arrivalTrace) {
-      options.arrivalTrace.variantExternalIds.push(...Array.from(missingVariants.values()).map((row) => cleanText(row.externalId)).filter(Boolean));
-    }
     await db.prepare(
       `INSERT OR IGNORE INTO catalog_variants (
          external_id, product_id, stock_position_id, category, gender, color, material, length, size_label,
@@ -659,10 +591,6 @@ export async function applyInventoryMovement(
   const variantIdsJson = JSON.stringify(variantIds);
   const canonicalById = new Map<number, InventoryResolvedItem>();
   const staleArrivalById = new Map<number, { productId: number; productName: string; productActive: boolean; retirementId: number }>();
-  const arrivalMaterializationTrace: ArrivalMaterializationTrace | null = movementType === 'arrival'
-    ? { createdAt: '', productExternalIds: [], executionKeys: [], variantExternalIds: [] }
-    : null;
-  let arrivalMutationCommitted = false;
 
   if (variantIds.length) {
     const canonicalResult = await db.prepare(
@@ -724,8 +652,7 @@ export async function applyInventoryMovement(
     }
   }
 
-  try {
-    const strictOperationName = movementType === 'manual_set' ? 'Корректировка' : (movementType === 'writeoff' || movementType === 'delete') ? 'Списание' : '';
+  const strictOperationName = movementType === 'manual_set' ? 'Корректировка' : (movementType === 'writeoff' || movementType === 'delete') ? 'Списание' : '';
   const creatableIndexes: number[] = [];
   const legacyManualIndexes: number[] = [];
   items.forEach((raw, index) => {
@@ -790,7 +717,6 @@ export async function applyInventoryMovement(
     const creatableRaw = creatableIndexes.map(index => ({ ...items[index], variantId: 0 }));
     const createdResolved = await resolveInventoryCreatableItemsBulk(db, creatableRaw, {
       allowRetiredRecreate: movementType === 'arrival',
-      arrivalTrace: arrivalMaterializationTrace || undefined,
     });
     creatableIndexes.forEach((index, localIndex) => {
       resolvedEntries[index] = { raw: items[index], item: createdResolved[localIndex] };
@@ -1249,7 +1175,6 @@ export async function applyInventoryMovement(
 
   try {
     await db.batch(statements);
-    arrivalMutationCommitted = movementType === 'arrival';
   } catch (error) {
     const raced = await db.prepare(
       `SELECT o.operation_id, o.operation_type, o.source_type, o.status, o.item_count, f.request_fingerprint
@@ -1257,7 +1182,6 @@ export async function applyInventoryMovement(
        WHERE o.operation_id = ? LIMIT 1`
     ).bind(requestId).first<Record<string, unknown>>();
     if (raced?.operation_id && cleanText(raced.request_fingerprint) === requestFingerprint) {
-      await cleanupArrivalMaterialization(db, arrivalMaterializationTrace);
       const duplicate = { ok: true, duplicate: true, source: inventorySource, applied: toInt(raced.item_count, 0), operationId: requestId };
       if (!returnInventory) return duplicate;
       return { ...duplicate, inventory: await listInventory(db, new URL(`https://dummy.local/api/inventory?source=${inventorySource}`)) };
@@ -1265,13 +1189,9 @@ export async function applyInventoryMovement(
     throw new Error('Остатки изменились во время сохранения операции. Ничего не применено. Обновите данные и повторите.');
   }
 
-    const response = { ok: true, duplicate: false, source: inventorySource, applied: prepared.length, operationId: requestId };
-    if (!returnInventory) return response;
-    return { ...response, inventory: await listInventory(db, new URL(`https://dummy.local/api/inventory?source=${inventorySource}`)) };
-  } catch (error) {
-    if (!arrivalMutationCommitted) await cleanupArrivalMaterialization(db, arrivalMaterializationTrace);
-    throw error;
-  }
+  const response = { ok: true, duplicate: false, source: inventorySource, applied: prepared.length, operationId: requestId };
+  if (!returnInventory) return response;
+  return { ...response, inventory: await listInventory(db, new URL(`https://dummy.local/api/inventory?source=${inventorySource}`)) };
 }
 
 

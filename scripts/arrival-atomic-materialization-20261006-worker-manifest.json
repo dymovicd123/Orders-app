@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "revision": "arrival-atomic-materialization-20261006-worker",
+  "files": {
+    "worker/domains/inventory-movement.ts": {
+      "beforeGitBlob": "64ab3852c455834d67a7c61ed54504d26ec9162a",
+      "afterGitBlob": "48c4aa0f980186d89e2d0030a8a2d1bf88d36eb2",
+      "baselineFixture": "scripts/fixtures/arrival-atomic-materialization-20261006/worker/domains/inventory-movement.ts"
+    }
+  }
+}
