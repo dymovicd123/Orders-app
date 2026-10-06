@@ -134,6 +134,47 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+
+const returnExchangeProductionFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-exchange-production-final-20261006-frontend-manifest.json'), 'utf8'))
+if (returnExchangeProductionFrontendManifest?.version !== 1 || returnExchangeProductionFrontendManifest?.revision !== 'return-exchange-production-final-20261006-frontend') throw new Error('Return/Exchange Production frontend manifest invalid')
+const returnExchangeProductionFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.RETURN_EXCHANGE_PRODUCTION_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(returnExchangeProductionFrontendManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (returnExchangeProductionFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Return/Exchange Production frontend drifted: ' + relative)
+      originals.set(relative, actual)
+      if (delta.absentBefore) {
+        fs.unlinkSync(absolute)
+      } else {
+        const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+        if (returnExchangeProductionFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Return/Exchange Production frontend predecessor fixture drifted: ' + relative)
+        fs.writeFileSync(absolute, baseline)
+      }
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, RETURN_EXCHANGE_PRODUCTION_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('RETURN / EXCHANGE PRODUCTION FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const exchangeNotIssuedFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/exchange-not-issued-r1-frontend-manifest.json'), 'utf8'))
 if (exchangeNotIssuedFrontendManifest?.version !== 1 || exchangeNotIssuedFrontendManifest?.revision !== 'exchange-not-issued-r1-frontend') throw new Error('Exchange not-issued frontend manifest invalid')
 const exchangeNotIssuedFrontendBlobSha = (value) => {

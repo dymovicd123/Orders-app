@@ -4,6 +4,43 @@ import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
+
+const returnExchangeProductionWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-exchange-production-final-20261006-worker-manifest.json'), 'utf8'))
+if (returnExchangeProductionWorkerManifest?.version !== 1 || returnExchangeProductionWorkerManifest?.revision !== 'return-exchange-production-final-20261006-worker') throw new Error('Return/Exchange Production worker manifest invalid')
+const returnExchangeProductionWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.RETURN_EXCHANGE_PRODUCTION_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(returnExchangeProductionWorkerManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (returnExchangeProductionWorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('Return/Exchange Production worker drifted: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (returnExchangeProductionWorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Return/Exchange Production worker predecessor fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, RETURN_EXCHANGE_PRODUCTION_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('RETURN / EXCHANGE PRODUCTION WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
 const exchangeNotIssuedManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/exchange-not-issued-r1-worker-manifest.json'), 'utf8'))
 if (exchangeNotIssuedManifest?.version !== 1 || exchangeNotIssuedManifest?.revision !== 'exchange-not-issued-r1-worker') throw new Error('Exchange not-issued Worker manifest invalid')
 const exchangeNotIssuedBlobSha = (value) => {

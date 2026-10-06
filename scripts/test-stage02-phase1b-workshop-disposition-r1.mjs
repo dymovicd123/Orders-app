@@ -11,7 +11,7 @@ try {
   const exchange = read('src/features/sections/OrderExchangeSection.tsx')
 
   check(
-    utils.includes("physicalState: (item.sourceType === 'workshop' ? 'no_stock' : 'pending')"),
+    utils.includes("physicalState: (sourceType === 'workshop' ? 'no_stock' : 'pending')"),
     'Workshop Return drafts no longer default to no-stock',
   )
   const exchangeDraftStart = utils.indexOf('export function createExchangeDraft(')

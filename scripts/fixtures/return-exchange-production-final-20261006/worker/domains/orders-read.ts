@@ -675,7 +675,6 @@ export async function listOrders(db: D1Database, url: URL) {
         ...canonicalItemProjection(item as Record<string, unknown>),
         quantity: (item as any).quantity,
         availableOperationQuantity: orderItemAvailableOperationQuantity(item as Record<string, unknown>),
-        stockWriteoffStatus: cleanText((item as any).stock_writeoff_status) || null,
         unitPrice: (item as any).unit_price,
         catalogPriceSnapshot: (item as any).catalog_price_snapshot == null ? null : Math.max(0, toInt((item as any).catalog_price_snapshot, 0)),
         lineTotal: (item as any).line_total,

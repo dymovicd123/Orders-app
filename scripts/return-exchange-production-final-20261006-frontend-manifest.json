@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "revision": "return-exchange-production-final-20261006-frontend",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "9d32bcaa19458b4840bee7ea5e6f79526462ca7d",
+      "afterGitBlob": "18e3539988a170e802d2fd5d996861c0e352757c",
+      "baselineFixture": "scripts/fixtures/return-exchange-production-final-20261006/src/App.tsx"
+    },
+    "src/app/controllers/useWorkspaceViewModel.tsx": {
+      "beforeGitBlob": "8fbc9e753d7e7561c65ade6e931605e7497c5b69",
+      "afterGitBlob": "dd112696a8375ff03af332fd4a0ef8016f1914e9",
+      "baselineFixture": "scripts/fixtures/return-exchange-production-final-20261006/src/app/controllers/useWorkspaceViewModel.tsx"
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "8a5ac22fc94d59a0cc9cf623c9f328a4ae1842eb",
+      "afterGitBlob": "80ad478c68988e1cf89f4f311fb7a29d1b223c9e",
+      "baselineFixture": "scripts/fixtures/return-exchange-production-final-20261006/src/app/types.ts"
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "23c574a853e5483cf94c37eb0afce67e47781034",
+      "afterGitBlob": "b9e1db1dac23cddcdfc437ad8c5d21acba5e4d8c",
+      "baselineFixture": "scripts/fixtures/return-exchange-production-final-20261006/src/app/utils.ts"
+    },
+    "src/features/sections/OrderExchangeSection.tsx": {
+      "beforeGitBlob": "49ae4a303089c3481adc5b0d72980efd668e971f",
+      "afterGitBlob": "b854378c08389a29293a1a1e3e5e603d1e62d721",
+      "baselineFixture": "scripts/fixtures/return-exchange-production-final-20261006/src/features/sections/OrderExchangeSection.tsx"
+    },
+    "src/features/sections/OrderReturnsSection.tsx": {
+      "beforeGitBlob": "a79b580af2e5a1aaf6fe032f9586c8ac1bd54896",
+      "afterGitBlob": "7ae10ca9eec0c596b661db31589dfffb6b3d107b",
+      "baselineFixture": "scripts/fixtures/return-exchange-production-final-20261006/src/features/sections/OrderReturnsSection.tsx"
+    },
+    "src/features/sections/OrderExchangeSmartSection.tsx": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "efafcca08869eeacff17e38eb693035a870dacd9",
+      "absentBefore": true
+    },
+    "src/styles/193-exchange-set-v2.css": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "42875cc7ddfc0a2a5255240d3cb93886e26c8121",
+      "absentBefore": true
+    },
+    "src/styles/194-return-smart-ux.css": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "8654e9efb7a5496f00b0dc976e05bce02e12d4a4",
+      "absentBefore": true
+    }
+  }
+}

@@ -86,14 +86,21 @@ try {
   const graph = staticSourceGraph(mainRelative)
   const graphRelative = [...graph].map((file) => path.relative(root, file).replace(/\\/g, '/')).sort()
   const sourceBytes = [...graph].reduce((sum, file) => sum + fs.statSync(file).size, 0)
-  // O1 adds one transport helper; Stage03 adds one itemized-pricing helper plus the direct Create/Edit pricing wiring.
-  // Auth R7 adds only bounded startup/login/session-recovery logic inside the already-static App/API client.
-  // H9C adds only the multi-position Exchange coordinator to that existing App graph.
-  // Arrival inline recovery adds only bounded prompt/dispatch glue to App; the dialog and recovery
-  // orchestration remain outside the initial static graph. Keep the measured Production increase tight.
-  check(graph.size <= 26, `Initial static source graph regrew: ${graph.size} modules`)
-  check(graphRelative.includes('src/app/order-pricing.ts'), 'Stage03 itemized-pricing helper is missing from the expected initial graph')
-  check(sourceBytes <= 690_000, `Initial static source graph regrew beyond the accepted Production allowance: ${sourceBytes} bytes`)
+  // O1 added one small transport helper. Stage03-H6B made the tiny pure pricing resolver
+  // reachable. Stage03-H7B activated Create pricing; H8C/H8E added guarded itemized edit controllers.
+  // H9B adds the itemized Exchange stale-snapshot payload/controller wiring to the already-static App
+  // graph. Catalog selection/retirement integrity adds only the reviewed active-only suggestion
+  // canonicalization inside the already-static workspace controller. Retired-order confirmation adds
+  // only the structured Create conflict/retry copy; it introduces no new static module. R7 adds
+  // bounded read-reuse bookkeeping inside the already-static App/Finance controllers, not a new
+  // eager feature boundary. Auth R6 adds only the credential-save helper and password-form semantics.
+  // Branch2 now carries the current main auth/session and H9C coordinators inside the same eager App graph.
+  // OrderExchangeSection remains lazy; keep the bound aligned with the reviewed Production ceiling.
+  check(graphRelative.includes('src/app/order-pricing.ts'), 'H6B/H8 Catalog price resolver is not reachable from the initial Create controller graph')
+  check(graph.size <= 26, `Initial static source graph regrew beyond the accepted pricing module set: ${graph.size} modules`)
+  // Exchange Set V2 keeps the large visual workspace behind the existing lazy Exchange boundary.
+  // Only the save coordinator + Catalog-aware draft helpers are added to the eager controller graph.
+  check(sourceBytes <= 705_000, `Initial static source graph regrew beyond the reviewed Exchange Set V2 allowance: ${sourceBytes} bytes`)
   for (const name of lazySections) {
     check(!graphRelative.includes(`src/features/sections/${name}.tsx`), `Lazy section is still initial-static: ${name}`)
   }
