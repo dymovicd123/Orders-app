@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "revision": "kaspi-order-separation-20261006-runtime",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "18e3539988a170e802d2fd5d996861c0e352757c",
+      "afterGitBlob": "02c749ca2f53ce466fad39ef627f2f4a423a594d",
+      "baselineFixture": "scripts/fixtures/kaspi-order-separation-20261006/src/App.tsx"
+    },
+    "src/app/constants.ts": {
+      "beforeGitBlob": "952ce7a5b6e630f4d657bc4a957ce72f0ce9fac2",
+      "afterGitBlob": "1cf5c177a59cca2c4ea1408fbd132092bb600338",
+      "baselineFixture": "scripts/fixtures/kaspi-order-separation-20261006/src/app/constants.ts"
+    },
+    "src/app/controllers/useWorkspaceViewModel.tsx": {
+      "beforeGitBlob": "dd112696a8375ff03af332fd4a0ef8016f1914e9",
+      "afterGitBlob": "45bd4cc56c2c52a0e518e3400e117397a5410554",
+      "baselineFixture": "scripts/fixtures/kaspi-order-separation-20261006/src/app/controllers/useWorkspaceViewModel.tsx"
+    },
+    "src/app/lazySections.tsx": {
+      "beforeGitBlob": "fdfa9218e8aeb8ad5aee4c3b90f873d470e11d68",
+      "afterGitBlob": "09aa773961bfb69e0b4e97424f3ace64c0f6433d",
+      "baselineFixture": "scripts/fixtures/kaspi-order-separation-20261006/src/app/lazySections.tsx"
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "80ad478c68988e1cf89f4f311fb7a29d1b223c9e",
+      "afterGitBlob": "a7e360d6645406c712922de5cf79c3ece90190cb",
+      "baselineFixture": "scripts/fixtures/kaspi-order-separation-20261006/src/app/types.ts"
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "b9e1db1dac23cddcdfc437ad8c5d21acba5e4d8c",
+      "afterGitBlob": "622efa7c4baec907f398bf4221427a757e7f310f",
+      "baselineFixture": "scripts/fixtures/kaspi-order-separation-20261006/src/app/utils.ts"
+    },
+    "src/features/sections/CreateOrderSection.tsx": {
+      "beforeGitBlob": "29e90a12ff54fc6e7607cbc18b4e46f83bb80a8c",
+      "afterGitBlob": "cec20e370152e2eb91aac01d641f82f4ef3274f4",
+      "baselineFixture": "scripts/fixtures/kaspi-order-separation-20261006/src/features/sections/CreateOrderSection.tsx"
+    },
+    "src/features/sections/OrderEditorSection.tsx": {
+      "beforeGitBlob": "92d3e3b39e882362a7a9363f2396b2bdd313b2f1",
+      "afterGitBlob": "4b0419ce40575f6c0b33809dbb1fb973f0683bbf",
+      "baselineFixture": "scripts/fixtures/kaspi-order-separation-20261006/src/features/sections/OrderEditorSection.tsx"
+    },
+    "src/features/sections/OrdersTableSection.tsx": {
+      "beforeGitBlob": "9339d5474a905b34b4cfbf3e1e36702e78f18ae9",
+      "afterGitBlob": "9a95e0f2917ecbf022c3b7fbe377bbe9a87accda",
+      "baselineFixture": "scripts/fixtures/kaspi-order-separation-20261006/src/features/sections/OrdersTableSection.tsx"
+    },
+    "worker/core/types.ts": {
+      "beforeGitBlob": "b85a4f4fa1c16ec4c08bea24aad65eeb62d559f2",
+      "afterGitBlob": "92017bd14aaa23c262b41ac8112682e32afccc70",
+      "baselineFixture": "scripts/fixtures/kaspi-order-separation-20261006/worker/core/types.ts"
+    },
+    "worker/domains/orders-read.ts": {
+      "beforeGitBlob": "d0ca58b9c48d4ab87199f4a84d9c095da06b36a5",
+      "afterGitBlob": "6e0fc88ba0eb6837b53145ad88bc9beeb4fb6741",
+      "baselineFixture": "scripts/fixtures/kaspi-order-separation-20261006/worker/domains/orders-read.ts"
+    },
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "6965a1c2f1896041f1ac7fa4cf780ccfc73ecf07",
+      "afterGitBlob": "96286eec75b200e6ed0f8e9a08d567b54cd3042b",
+      "baselineFixture": "scripts/fixtures/kaspi-order-separation-20261006/worker/domains/orders-write.ts"
+    },
+    "src/features/sections/KaspiOrdersSection.tsx": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "d9d27047868292318ac4f976b8a5af9a651e2985",
+      "absentBefore": true
+    },
+    "src/styles/195-kaspi-orders.css": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "2a9232013e7209bbc6ad3c9cf947a574bafd2986",
+      "absentBefore": true
+    },
+    "migrations/0082_v72_kaspi_order_payment_method.sql": {
+      "beforeGitBlob": null,
+      "afterGitBlob": "6123d57b1c8502c065bf5a609d74d45dd2b0336c",
+      "absentBefore": true
+    }
+  }
+}

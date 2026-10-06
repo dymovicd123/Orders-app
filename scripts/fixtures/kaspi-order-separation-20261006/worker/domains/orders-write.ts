@@ -1,0 +1,2158 @@
+// Step 190.6A: structural module extracted from worker/index.ts.
+// Business behavior is intentionally unchanged.
+import { cleanText, isArchivedOrder, normalizeDate, normalizeOrderStatus, normalizePhone, normalizeShippingStatus, normalizeSourceType, normalizeWorkshopStatus, toInt, upperText } from '../core/text.ts'
+import type { AuthUser, OrderInput, OrderListRow } from '../core/types.ts'
+import { resolveActiveManagerId, writeActivityLog } from './activity.ts'
+import { isHumanInventoryModelEnabled } from './catalog.ts'
+import type { CriticalOperationHandle } from './critical.ts'
+import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, criticalOperationEntityId, failCriticalOperation, insertCriticalMappedEntity, parseCriticalContext, updateCriticalOperationTargetFromLastInsert } from './critical.ts'
+import { buildPaymentAndMoneyEventStatements, financialEventStatement, financialOperationTypeFromPaymentKind, removeOrderPaymentsWithMoneyEvents } from './money.ts'
+import { assertOrderItemInputs, assertOrderPaymentInputs, assertOrderTotalInput, calculateTotals, completedOrderOperationCounts, normalizeOrderItems, normalizeOrderPayments, OrderInputValidationError, sameNormalizedOrderItemsExceptPriceForEdit, sameNormalizedOrderItemsForEdit, sameNormalizedOrderPaymentsForEdit } from './order-core.ts'
+import { assertItemizedOrderMoneyNotOverpaid, buildItemizedOrderWritePlan, ItemizedPricingValidationError, type ItemizedOrderWritePlan } from './order-pricing.ts'
+import { assertCreateOrderShortageDecisions, catalogOrderInputKey, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, inspectOrderRetiredCatalogIdentityV2, OrderRetiredCatalogConfirmationError, OrderStockShortageError, orderShipmentInventoryBlockerMessage, releaseOrderReservationsV2, reserveOrderItemV2, resolveCatalogProductAndVariant, resolveWorkshopCatalogProductOnly } from './order-reservations.ts'
+import { canonicalItemProjection, fetchOrderRelations, isOrderPricingFoundationEnabled, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
+import { upsertCustomerIdentityForOrderCreate } from './references.ts'
+import { isInventoryAutoWriteoffEnabled, recalculateCustomersAfterStorageCleanup } from './storage.ts'
+import { assertWorkshopTaskDetailSchema, ensureOrderItemWorkshopColumn } from './workshop-schema.ts'
+
+export async function applyOrderStockWriteOff(
+  db: D1Database,
+  orderId: number,
+  externalId: string,
+  item: ReturnType<typeof normalizeOrderItems>[number],
+  productId: number | null,
+  variantId: number | null,
+  timestamp: string,
+  orderItemId?: number | null,
+  referenceType = 'order',
+  referenceId = externalId,
+  movementComment?: string,
+) {
+  if (await isHumanInventoryModelEnabled(db)) {
+    return await reserveOrderItemV2(db, orderId, externalId, item, productId, variantId, timestamp, orderItemId, referenceType, referenceId);
+  }
+  if (orderItemId) {
+    const existingWriteoff = await db.prepare(
+      `SELECT stock_writeoff_status, stock_quantity_before, stock_quantity_after
+       FROM order_items WHERE id = ? AND order_id = ? LIMIT 1`
+    ).bind(orderItemId, orderId).first<Record<string, unknown>>();
+    const existingStatus = cleanText(existingWriteoff?.stock_writeoff_status);
+    if (existingStatus === 'written_off' || existingStatus === 'negative') {
+      return {
+        source: item.inventorySource, productName: item.productName, variantId,
+        quantityBefore: toInt(existingWriteoff?.stock_quantity_before, 0),
+        quantityAfter: toInt(existingWriteoff?.stock_quantity_after, 0),
+        referenceType, referenceId: cleanText(referenceId) || externalId, alreadyApplied: true,
+      };
+    }
+  }
+  const inventorySource = item.inventorySource;
+  const existing = variantId
+    ? await db.prepare(
+      `SELECT id, quantity FROM inventory_stock
+       WHERE inventory_source = ? AND variant_id = ?
+       ORDER BY id ASC LIMIT 1`
+    ).bind(inventorySource, variantId).first<{ id: number; quantity: number }>()
+    : null;
+
+  const quantityBefore = Number(existing?.quantity || 0);
+  const quantityAfter = quantityBefore - item.quantity;
+  const safeReferenceId = cleanText(referenceId) || externalId;
+  const reference = `${referenceType}:${safeReferenceId}`;
+  const stockStatement = existing?.id
+    ? db.prepare(
+      `UPDATE inventory_stock
+       SET product_id = ?, variant_id = ?, product_name_snapshot = ?, gender_snapshot = ?, color_snapshot = ?,
+           material_snapshot = ?, length_snapshot = ?, size_snapshot = ?, quantity = ?,
+           last_action = ?, last_source_ref = ?, updated_at = ?
+       WHERE id = ?`
+    ).bind(
+      productId,
+      variantId,
+      item.productName,
+      item.gender || null,
+      item.color || null,
+      item.material || null,
+      item.length || null,
+      item.size || null,
+      quantityAfter,
+      'Продажа',
+      reference,
+      timestamp,
+      existing.id,
+    )
+    : db.prepare(
+      `INSERT INTO inventory_stock (
+        inventory_source, product_id, variant_id, product_name_snapshot, gender_snapshot, color_snapshot,
+        material_snapshot, length_snapshot, size_snapshot, quantity, reserved_quantity,
+        last_action, last_source_ref, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`
+    ).bind(
+      inventorySource,
+      productId,
+      variantId,
+      item.productName,
+      item.gender || null,
+      item.color || null,
+      item.material || null,
+      item.length || null,
+      item.size || null,
+      quantityAfter,
+      'Продажа',
+      reference,
+      timestamp,
+      timestamp,
+    );
+  const movementStatement = db.prepare(
+    `INSERT INTO inventory_movements (
+      inventory_source, movement_type, product_id, variant_id, product_name_snapshot, gender_snapshot,
+      color_snapshot, material_snapshot, length_snapshot, size_snapshot, quantity_delta, quantity_after,
+      reference_type, reference_id, comment, created_at
+    ) VALUES (?, 'sale', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    inventorySource,
+    productId,
+    variantId,
+    item.productName,
+    item.gender || null,
+    item.color || null,
+    item.material || null,
+    item.length || null,
+    item.size || null,
+    -item.quantity,
+    quantityAfter,
+    referenceType,
+    safeReferenceId,
+    movementComment || `Автосписание по заказу ${externalId}`,
+    timestamp,
+  );
+
+  if (orderItemId) {
+    // Legacy inventory must be retry-safe too. The stock mutation, movement, and item marker are one
+    // D1 transaction so a retry can never apply the physical write-off twice after a partial failure.
+    await db.batch([
+      stockStatement,
+      movementStatement,
+      db.prepare(
+        `UPDATE order_items
+         SET stock_writeoff_status = ?, stock_quantity_before = ?, stock_quantity_after = ?
+         WHERE id = ? AND order_id = ?
+           AND COALESCE(stock_writeoff_status, '') NOT IN ('written_off', 'negative')`
+      ).bind(
+        quantityAfter < 0 ? 'negative' : 'written_off',
+        quantityBefore,
+        quantityAfter,
+        orderItemId,
+        orderId,
+      ),
+    ]);
+  } else {
+    // Historical/manual fallback without a concrete order_item_id. Existing callers in the order
+    // create/edit paths always pass orderItemId, so this branch is retained only for compatibility.
+    await db.batch([
+      stockStatement,
+      movementStatement,
+      db.prepare(
+        `UPDATE order_items
+         SET stock_writeoff_status = ?, stock_quantity_before = ?, stock_quantity_after = ?
+         WHERE order_id = ? AND variant_id IS ? AND product_name_snapshot = ? AND created_at = ?`
+      ).bind(
+        quantityAfter < 0 ? 'negative' : 'written_off',
+        quantityBefore,
+        quantityAfter,
+        orderId,
+        variantId,
+        item.productName,
+        timestamp,
+      ),
+    ]);
+  }
+
+  return {
+    source: inventorySource,
+    productName: item.productName,
+    variantId,
+    quantityBefore,
+    quantityAfter,
+    referenceType,
+    referenceId: safeReferenceId,
+  };
+}
+
+
+export async function reverseOrderStockWriteOffsForEdit(
+  db: D1Database,
+  orderId: number,
+  externalId: string,
+  timestamp: string,
+) {
+  if (await isHumanInventoryModelEnabled(db)) {
+    await releaseOrderReservationsV2(db, orderId, timestamp, `Редактирование заказа ${externalId}`);
+    return [];
+  }
+  const oldItems = await db.prepare(
+    `SELECT id, product_id, variant_id, product_name_snapshot, gender_snapshot, color_snapshot,
+            material_snapshot, length_snapshot, size_snapshot, quantity, source_type, stock_writeoff_status
+     FROM order_items
+     WHERE order_id = ? AND is_workshop = 0`
+  ).bind(orderId).all<Record<string, unknown>>();
+
+  const reversals: Array<{ source: string; productName: string; variantId: number | null; quantityBefore: number; quantityAfter: number }> = [];
+
+  for (const row of oldItems.results || []) {
+    const status = cleanText(row.stock_writeoff_status);
+    const source = normalizeSourceType(row.source_type);
+    const quantity = Math.max(0, toInt(row.quantity, 0));
+    if (!quantity || !['written_off', 'negative', 'pending_writeoff'].includes(status)) {
+      continue;
+    }
+
+    const orderItemId = toInt(row.id, 0);
+    const variantId = toInt(row.variant_id, 0) || null;
+    const productId = toInt(row.product_id, 0) || null;
+    let stockRow = variantId
+      ? await db.prepare(
+        `SELECT id, quantity FROM inventory_stock
+         WHERE inventory_source = ? AND variant_id = ?
+         ORDER BY id ASC LIMIT 1`
+      ).bind(source, variantId).first<{ id: number; quantity: number }>()
+      : null;
+
+    if (!stockRow?.id) {
+      stockRow = await db.prepare(
+        `SELECT id, quantity FROM inventory_stock
+         WHERE inventory_source = ?
+           AND product_name_snapshot = ?
+           AND COALESCE(gender_snapshot, '') = COALESCE(?, '')
+           AND COALESCE(color_snapshot, '') = COALESCE(?, '')
+           AND COALESCE(NULLIF(UPPER(TRIM(material_snapshot)), ''), 'СТАНДАРТ') = COALESCE(NULLIF(UPPER(TRIM(?)), ''), 'СТАНДАРТ')
+           AND COALESCE(NULLIF(UPPER(TRIM(length_snapshot)), ''), 'СТАНДАРТ') = COALESCE(NULLIF(UPPER(TRIM(?)), ''), 'СТАНДАРТ')
+           AND COALESCE(size_snapshot, '') = COALESCE(?, '')
+         ORDER BY id ASC LIMIT 1`
+      ).bind(
+        source,
+        cleanText(row.product_name_snapshot),
+        cleanText(row.gender_snapshot) || null,
+        cleanText(row.color_snapshot) || null,
+        cleanText(row.material_snapshot) || null,
+        cleanText(row.length_snapshot) || null,
+        cleanText(row.size_snapshot) || null,
+      ).first<{ id: number; quantity: number }>();
+    }
+
+    const quantityBefore = Number(stockRow?.quantity || 0);
+    const quantityAfter = quantityBefore + quantity;
+    const ref = `order-edit:${externalId}`;
+    const stockStatement = stockRow?.id
+      ? db.prepare(
+        `UPDATE inventory_stock
+         SET quantity = ?, last_action = ?, last_source_ref = ?, updated_at = ?
+         WHERE id = ?`
+      ).bind(quantityAfter, 'Откат редактирования заказа', ref, timestamp, stockRow.id)
+      : db.prepare(
+        `INSERT INTO inventory_stock (
+          inventory_source, product_id, variant_id, product_name_snapshot, gender_snapshot, color_snapshot,
+          material_snapshot, length_snapshot, size_snapshot, quantity, reserved_quantity,
+          last_action, last_source_ref, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`
+      ).bind(
+        source,
+        productId,
+        variantId,
+        cleanText(row.product_name_snapshot),
+        cleanText(row.gender_snapshot) || null,
+        cleanText(row.color_snapshot) || null,
+        cleanText(row.material_snapshot) || null,
+        cleanText(row.length_snapshot) || null,
+        cleanText(row.size_snapshot) || null,
+        quantityAfter,
+        'Откат редактирования заказа',
+        ref,
+        timestamp,
+        timestamp,
+      );
+    const movementStatement = db.prepare(
+      `INSERT INTO inventory_movements (
+        inventory_source, movement_type, product_id, variant_id, product_name_snapshot, gender_snapshot,
+        color_snapshot, material_snapshot, length_snapshot, size_snapshot, quantity_delta, quantity_after,
+        reference_type, reference_id, comment, created_at
+      ) VALUES (?, 'revision', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'order_edit', ?, ?, ?)`
+    ).bind(
+      source,
+      productId,
+      variantId,
+      cleanText(row.product_name_snapshot),
+      cleanText(row.gender_snapshot) || null,
+      cleanText(row.color_snapshot) || null,
+      cleanText(row.material_snapshot) || null,
+      cleanText(row.length_snapshot) || null,
+      cleanText(row.size_snapshot) || null,
+      quantity,
+      quantityAfter,
+      externalId,
+      `Откат старого списания перед редактированием заказа ${externalId}`,
+      timestamp,
+    );
+
+    // The stock restore, movement, and per-item retry marker are one transaction. A crash after this
+    // batch is harmless: the next retry sees reversed_edit and cannot restore the same units twice.
+    await db.batch([
+      stockStatement,
+      movementStatement,
+      db.prepare(
+        `UPDATE order_items
+         SET stock_writeoff_status = 'reversed_edit', stock_quantity_before = ?, stock_quantity_after = ?
+         WHERE id = ? AND order_id = ?
+           AND stock_writeoff_status IN ('written_off', 'negative', 'pending_writeoff')`
+      ).bind(quantityBefore, quantityAfter, orderItemId, orderId),
+    ]);
+
+    reversals.push({ source, productName: cleanText(row.product_name_snapshot), variantId, quantityBefore, quantityAfter });
+  }
+
+  return reversals;
+}
+
+
+export function inventoryObligationIdentityKey(item: Record<string, unknown>) {
+  const workshop = toInt(item.is_workshop ?? item.isWorkshop, 0) ? 'workshop' : 'stock';
+  const source = workshop === 'workshop' ? 'warehouse' : normalizeSourceType(item.source_type ?? item.sourceType ?? item.inventorySource);
+  const quantity = Math.max(1, toInt(item.quantity, 1));
+  return [
+    workshop, source,
+    upperText(item.product_name_snapshot ?? item.productName),
+    upperText(item.audience_type ?? item.audienceType),
+    upperText(item.gender_snapshot ?? item.gender),
+    upperText(item.color_snapshot ?? item.color),
+    upperText(item.material_snapshot ?? item.material),
+    upperText(item.length_snapshot ?? item.length),
+    upperText(item.size_snapshot ?? item.size),
+    quantity,
+  ].join('|');
+}
+
+
+export async function inventoryObligationLineageForRewrite(
+  db: D1Database,
+  orderId: number,
+  nextItems: ReturnType<typeof normalizeOrderItems>,
+) {
+  const existing = await db.prepare(
+    `SELECT id, product_name_snapshot, audience_type, gender_snapshot, color_snapshot, material_snapshot, length_snapshot,
+            size_snapshot, quantity, is_workshop, source_type, created_at, inventory_obligation_key, inventory_obligation_origin_at
+     FROM order_items WHERE order_id = ? AND quantity > 0 ORDER BY id ASC`
+  ).bind(orderId).all<Record<string, unknown>>();
+  const pools = new Map<string, Array<{ key: string; originAt: string }>>();
+  for (const row of existing.results || []) {
+    const identity = inventoryObligationIdentityKey(row);
+    if (!pools.has(identity)) pools.set(identity, []);
+    pools.get(identity)!.push({
+      key: cleanText(row.inventory_obligation_key) || `legacy-order-item:${toInt(row.id, 0)}`,
+      originAt: cleanText(row.inventory_obligation_origin_at) || cleanText(row.created_at),
+    });
+  }
+  return nextItems.map((item) => {
+    const queue = pools.get(inventoryObligationIdentityKey(item as unknown as Record<string, unknown>));
+    return queue?.length ? queue.shift()! : null;
+  });
+}
+
+
+export async function retireOrderItemsForRewrite(db: D1Database, orderId: number, timestamp: string) {
+  // Step 74: do not DELETE order_items during order editing.
+  // Returns and exchanges keep foreign keys to historical order_items, so deleting rows can break saving
+  // even when the admin only changed a harmless field like the order comment.
+  // Quantity 0 hides replaced rows from active order views because fetchOrderRelations already filters quantity > 0.
+  await db.prepare(
+    `UPDATE order_items
+     SET quantity = 0,
+         unit_price = 0,
+         line_total = 0,
+         is_workshop = 0,
+         workshop_comment = NULL,
+         workshop_urgent = 0,
+         workshop_due_date = NULL,
+         workshop_due_time = NULL,
+         stock_writeoff_status = CASE
+           WHEN COALESCE(stock_writeoff_status, '') IN ('written_off', 'negative', 'pending_writeoff', 'reversed_edit', 'reserved', 'catalog_unresolved', 'reservation_released', 'pending_reservation') THEN 'replaced_edit'
+           WHEN COALESCE(stock_writeoff_status, '') = 'workshop' THEN 'replaced_edit'
+           ELSE COALESCE(NULLIF(stock_writeoff_status, ''), 'replaced_edit')
+         END
+     WHERE order_id = ?
+       AND quantity > 0`
+  ).bind(orderId).run();
+  await db.prepare(
+    `UPDATE workshop_tasks
+     SET status = 'cancelled', updated_at = ?
+     WHERE order_id = ? AND status = 'active'`
+  ).bind(timestamp, orderId).run();
+}
+
+
+export async function insertOrderContent(
+  db: D1Database,
+  orderId: number,
+  externalId: string,
+  items: ReturnType<typeof normalizeOrderItems>,
+  payments: ReturnType<typeof normalizeOrderPayments>,
+  timestamp: string,
+  stockReferenceType = 'order',
+  stockReferenceId = externalId,
+  stockMovementComment?: string,
+  preResolvedCatalog?: Array<{ productId: number | null; variantId: number | null }>,
+  criticalOperation?: CriticalOperationHandle | null,
+  criticalEntityPrefix = 'order_content',
+  inventoryObligationLineage?: Array<{ key: string; originAt: string } | null>,
+  itemizedWritePlan?: ItemizedOrderWritePlan | null,
+) {
+  const stockResults: Array<{ source: string; productName: string; variantId: number | null; quantityBefore: number; quantityAfter: number }> = [];
+  let workshopCount = 0;
+  const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
+  const autoWriteoffEnabled = humanInventoryModelEnabled ? true : await isInventoryAutoWriteoffEnabled(db);
+  if (itemizedWritePlan && itemizedWritePlan.lines.length !== items.length) {
+    throw new CriticalOperationConflictError('Itemized-план заказа не совпадает с количеством сохраняемых позиций. Повторите сохранение после обновления страницы.');
+  }
+
+  for (const [itemIndex, item] of items.entries()) {
+    const resolved = preResolvedCatalog?.[itemIndex]
+      || (item.isWorkshop ? await resolveWorkshopCatalogProductOnly(db, item) : await resolveCatalogProductAndVariant(db, item, timestamp));
+    const commonOrderItemValues = [
+      orderId,
+      resolved.productId,
+      resolved.variantId,
+      item.productName,
+      item.audienceType,
+      item.gender || null,
+      item.color || null,
+      item.material || null,
+      item.length || null,
+      item.size || null,
+      item.quantity,
+      item.unitPrice,
+      item.lineTotal,
+    ];
+    const itemizedLine = itemizedWritePlan?.lines[itemIndex];
+    const orderItemInsert = itemizedWritePlan
+      ? db.prepare(
+        `INSERT INTO order_items (
+          order_id, product_id, variant_id, product_name_snapshot, audience_type,
+          gender_snapshot, color_snapshot, material_snapshot, length_snapshot,
+          size_snapshot, quantity, unit_price, line_total, catalog_price_snapshot, is_workshop,
+          source_type, workshop_comment, workshop_urgent, workshop_due_date, workshop_due_time, stock_writeoff_status, created_at,
+          inventory_obligation_key, inventory_obligation_origin_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        ...commonOrderItemValues,
+        itemizedLine?.catalogPriceSnapshot ?? null,
+        item.isWorkshop ? 1 : 0,
+        item.isWorkshop ? 'warehouse' : item.inventorySource,
+        item.workshopComment || null,
+        item.isWorkshop && item.workshopUrgent ? 1 : 0,
+        item.isWorkshop && item.workshopUrgent ? item.workshopDueDate : null,
+        item.isWorkshop && item.workshopUrgent ? (item.workshopDueTime || null) : null,
+        item.isWorkshop ? 'workshop' : (humanInventoryModelEnabled ? ((!resolved.productId || !resolved.variantId) ? 'catalog_unresolved' : 'pending_reservation') : (autoWriteoffEnabled ? 'pending_writeoff' : 'writeoff_disabled')),
+        timestamp,
+        inventoryObligationLineage?.[itemIndex]?.key || `${externalId}:${stockReferenceType}:${timestamp}:item:${itemIndex + 1}`,
+        inventoryObligationLineage?.[itemIndex]?.originAt || timestamp,
+      )
+      : db.prepare(
+        `INSERT INTO order_items (
+          order_id, product_id, variant_id, product_name_snapshot, audience_type,
+          gender_snapshot, color_snapshot, material_snapshot, length_snapshot,
+          size_snapshot, quantity, unit_price, line_total, is_workshop,
+          source_type, workshop_comment, workshop_urgent, workshop_due_date, workshop_due_time, stock_writeoff_status, created_at,
+          inventory_obligation_key, inventory_obligation_origin_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        ...commonOrderItemValues,
+        item.isWorkshop ? 1 : 0,
+        item.isWorkshop ? 'warehouse' : item.inventorySource,
+        item.workshopComment || null,
+        item.isWorkshop && item.workshopUrgent ? 1 : 0,
+        item.isWorkshop && item.workshopUrgent ? item.workshopDueDate : null,
+        item.isWorkshop && item.workshopUrgent ? (item.workshopDueTime || null) : null,
+        item.isWorkshop ? 'workshop' : (humanInventoryModelEnabled ? ((!resolved.productId || !resolved.variantId) ? 'catalog_unresolved' : 'pending_reservation') : (autoWriteoffEnabled ? 'pending_writeoff' : 'writeoff_disabled')),
+        timestamp,
+        inventoryObligationLineage?.[itemIndex]?.key || `${externalId}:${stockReferenceType}:${timestamp}:item:${itemIndex + 1}`,
+        inventoryObligationLineage?.[itemIndex]?.originAt || timestamp,
+      );
+    let orderItemId: number | null = null;
+    if (criticalOperation) {
+      const mapped = await insertCriticalMappedEntity(
+        db,
+        criticalOperation,
+        'order_item',
+        `${criticalEntityPrefix}:item:${itemIndex + 1}`,
+        orderItemInsert,
+      );
+      orderItemId = mapped.id;
+    } else {
+      const insertedItem = await orderItemInsert.run();
+      orderItemId = Number(insertedItem.meta?.last_row_id || 0) || null;
+    }
+    if (item.isWorkshop) {
+      workshopCount += 1;
+      await createWorkshopTaskForOrderItem(db, orderId, externalId, orderItemId, item, resolved.productId, resolved.variantId, timestamp);
+    } else if (autoWriteoffEnabled) {
+      stockResults.push(await applyOrderStockWriteOff(
+        db,
+        orderId,
+        externalId,
+        item,
+        resolved.productId,
+        resolved.variantId,
+        timestamp,
+        orderItemId,
+        stockReferenceType,
+        stockReferenceId,
+        stockMovementComment,
+      ));
+    }
+  }
+
+  if (criticalOperation) {
+    for (const [paymentIndex, payment] of payments.entries()) {
+      const entityKey = `${criticalEntityPrefix}:payment:${paymentIndex + 1}`;
+      const existingPaymentId = await criticalOperationEntityId(db, criticalOperation.requestId, 'payment', entityKey);
+      if (existingPaymentId) continue;
+      const pair = buildPaymentAndMoneyEventStatements(db, {
+        orderId,
+        externalOrderId: externalId,
+        paymentDate: payment.paymentDate,
+        method: payment.method,
+        amount: payment.amount,
+        paymentKind: payment.paymentKind,
+        comment: payment.comment || null,
+        timestamp,
+        sourceType: stockReferenceType === 'order_edit_new' ? 'order' : 'payment',
+        sourceRef: `${stockReferenceType}:${stockReferenceId}:payment:${paymentIndex + 1}`,
+        reason: stockReferenceType === 'order_edit_new' ? 'order_edit' : 'order_create',
+        eventKey: `1901:${criticalOperation.requestId}:payment:${paymentIndex + 1}`,
+      });
+      await db.batch([
+        pair.payment,
+        db.prepare(
+          `INSERT INTO critical_operation_entities (request_id, entity_type, entity_key, entity_id, created_at)
+           VALUES (?, 'payment', ?, last_insert_rowid(), ?)
+           ON CONFLICT(request_id, entity_type, entity_key) DO NOTHING`
+        ).bind(criticalOperation.requestId, entityKey, timestamp),
+        pair.event,
+      ]);
+    }
+  } else {
+    const paymentStatements = payments.flatMap((payment, paymentIndex) => {
+      const pair = buildPaymentAndMoneyEventStatements(db, {
+        orderId,
+        externalOrderId: externalId,
+        paymentDate: payment.paymentDate,
+        method: payment.method,
+        amount: payment.amount,
+        paymentKind: payment.paymentKind,
+        comment: payment.comment || null,
+        timestamp,
+        sourceType: stockReferenceType === 'order_edit_new' ? 'order' : 'payment',
+        sourceRef: `${stockReferenceType}:${stockReferenceId}:payment:${paymentIndex + 1}`,
+        reason: stockReferenceType === 'order_edit_new' ? 'order_edit' : 'order_create',
+      });
+      return [pair.payment, pair.event];
+    });
+    if (paymentStatements.length) await db.batch(paymentStatements);
+  }
+
+  return { stockResults, workshopCount };
+}
+
+
+export async function createWorkshopTaskForOrderItem(
+  db: D1Database,
+  orderId: number,
+  externalId: string,
+  orderItemId: number | null,
+  item: ReturnType<typeof normalizeOrderItems>[number],
+  productId: number | null,
+  variantId: number | null,
+  timestamp: string,
+) {
+  await assertWorkshopTaskDetailSchema(db);
+  if (orderItemId) {
+    const existingTask = await db.prepare(
+      `SELECT id FROM workshop_tasks WHERE order_id = ? AND order_item_id = ? ORDER BY id ASC LIMIT 1`
+    ).bind(orderId, orderItemId).first<{ id: number }>();
+    if (existingTask?.id) return;
+  }
+  await db.prepare(
+    `INSERT INTO workshop_tasks (
+      order_id, external_order_id, order_item_id, product_id, variant_id, product_name_snapshot,
+      gender_snapshot, color_snapshot, material_snapshot, length_snapshot, size_snapshot,
+      quantity, comment, urgent, due_date, due_time, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`
+  ).bind(
+    orderId,
+    externalId,
+    orderItemId,
+    productId,
+    variantId,
+    item.productName,
+    item.gender || null,
+    item.color || null,
+    item.material || null,
+    item.length || null,
+    item.size || null,
+    item.quantity,
+    item.workshopComment || null,
+    item.workshopUrgent ? 1 : 0,
+    item.workshopUrgent ? item.workshopDueDate : null,
+    item.workshopUrgent ? (item.workshopDueTime || null) : null,
+    timestamp,
+    timestamp,
+  ).run();
+}
+
+
+
+export async function writeOrderManagerAudit(
+  db: D1Database,
+  input: {
+    orderId: number;
+    externalId: string;
+    previousManagerId?: number | null;
+    previousManagerName?: string | null;
+    newManagerId?: number | null;
+    newManagerName?: string | null;
+    action: string;
+    source: string;
+    actor?: AuthUser | null;
+    details?: string | null;
+    createdAt?: string;
+  },
+) {
+  const createdAt = input.createdAt || new Date().toISOString();
+  await db.prepare(
+    `INSERT INTO order_manager_audit (
+      order_id, external_id, previous_manager_id, previous_manager_name,
+      new_manager_id, new_manager_name, action, source,
+      actor_role, actor_label, details, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    input.orderId,
+    input.externalId,
+    input.previousManagerId ?? null,
+    cleanText(input.previousManagerName) || null,
+    input.newManagerId ?? null,
+    cleanText(input.newManagerName) || null,
+    cleanText(input.action) || 'manager_update',
+    cleanText(input.source) || 'worker',
+    input.actor?.role || null,
+    cleanText(input.actor?.displayName || input.actor?.email) || null,
+    cleanText(input.details) || null,
+    createdAt,
+  ).run();
+}
+
+
+async function markCreateCustomerOrderCount(
+  db: D1Database,
+  criticalOperation: CriticalOperationHandle,
+  customerId: number | null,
+  timestamp: string,
+) {
+  if (!customerId) return
+  const entityType = 'customer_order_count'
+  const entityKey = 'order_create'
+  const [updateResult] = await db.batch([
+    db.prepare(
+      `UPDATE customers
+       SET orders_count = COALESCE(orders_count, 0) + 1,
+           first_order_at = CASE WHEN first_order_at IS NULL OR first_order_at > ? THEN ? ELSE first_order_at END,
+           last_order_at = CASE WHEN last_order_at IS NULL OR last_order_at < ? THEN ? ELSE last_order_at END,
+           updated_at = ?
+       WHERE id = ?
+         AND NOT EXISTS (
+           SELECT 1 FROM critical_operation_entities
+           WHERE request_id = ? AND entity_type = ? AND entity_key = ?
+         )`
+    ).bind(timestamp, timestamp, timestamp, timestamp, timestamp, customerId, criticalOperation.requestId, entityType, entityKey),
+    db.prepare(
+      `INSERT INTO critical_operation_entities (request_id, entity_type, entity_key, entity_id, created_at)
+       SELECT ?, ?, ?, id, ? FROM customers WHERE id = ?
+       ON CONFLICT(request_id, entity_type, entity_key) DO NOTHING`
+    ).bind(criticalOperation.requestId, entityType, entityKey, timestamp, customerId),
+  ])
+  if (toInt(updateResult.meta?.changes, 0) > 0) return
+  if (await criticalOperationEntityId(db, criticalOperation.requestId, entityType, entityKey)) return
+  throw new Error('Не удалось обновить статистику клиента для создаваемого заказа.')
+}
+
+
+export async function createOrder(db: D1Database, input: OrderInput, actor?: AuthUser | null) {
+  await ensureOrderItemWorkshopColumn(db);
+  let criticalOperation: CriticalOperationHandle | null = null;
+  try {
+    const requestedAt = new Date().toISOString();
+    const proposedExternalId = cleanText(input.externalId)
+      || `ORD-${requestedAt.replace(/[-:TZ.]/g, '').slice(0, 14)}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+    criticalOperation = await beginCriticalOperation(
+      db,
+      'order_create',
+      input.requestId,
+      input,
+      { externalId: proposedExternalId, createdAt: requestedAt },
+    );
+    if (criticalOperation.cachedResponse) return criticalOperation.cachedResponse;
+
+    let operationContext = parseCriticalContext<Record<string, any>>(criticalOperation.row);
+    let plan = operationContext.plan as Record<string, any> | undefined;
+
+    // Step 192B2A4: freeze the validated create plan before the first order write. A retry after a
+    // partial save must continue the same accepted operation instead of re-running live shortage,
+    // manager, or catalog decisions against state already changed by this very order.
+    if (!plan) {
+      const existingTargetId = toInt(criticalOperation.row.target_id, 0);
+      const legacyInFlight = existingTargetId > 0 && ['order_created', 'content_written'].includes(criticalOperation.row.step);
+
+      if (legacyInFlight) {
+        // Compatibility bridge for operations started by the pre-192B2A4 code. Those rows have an
+        // order target but no persisted plan. Rebuild only from the already-created order + original
+        // fingerprinted request; never run shortage preflight again because this order may already
+        // own active reservations that would otherwise be counted as somebody else's reservation.
+        const existingOrder = await db.prepare(
+          `SELECT id, external_id, order_date, manager_id, manager_snapshot_name, customer_id, city,
+                  delivery_type, source_type, workshop_status, order_status, total_amount,
+                  received_amount, debt_amount, comment, created_at
+           FROM orders WHERE id = ? LIMIT 1`
+        ).bind(existingTargetId).first<Record<string, unknown>>();
+        if (!existingOrder) {
+          throw new CriticalOperationConflictError('Незавершённая операция ссылается на заказ, которого больше нет. Обновите список заказов перед повтором.');
+        }
+
+        const sourceType = normalizeSourceType(existingOrder.source_type);
+        const orderDate = normalizeDate(existingOrder.order_date);
+        const rawItems = Array.isArray(input.items) ? input.items : [];
+        const rawPayments = Array.isArray(input.payments) ? input.payments : [];
+        assertOrderItemInputs(rawItems);
+        assertOrderPaymentInputs(rawPayments);
+        const normalizedItems = normalizeOrderItems(rawItems, sourceType);
+        const normalizedPayments = normalizeOrderPayments(rawPayments, orderDate).map(payment => (
+          payment.paymentKind === 'primary'
+            ? { ...payment, paymentDate: orderDate }
+            : payment
+        ));
+        if (!normalizedItems.length) {
+          throw new CriticalOperationConflictError('Незавершённый заказ не содержит исходных товарных позиций. Обновите страницу и проверьте уже созданный заказ.');
+        }
+        if (normalizedItems.some(item => item.isWorkshop)) await assertWorkshopTaskDetailSchema(db);
+
+        const preResolvedCatalog: Array<{ productId: number | null; variantId: number | null }> = [];
+        for (const [itemIndex, item] of normalizedItems.entries()) {
+          const mappedItemId = await criticalOperationEntityId(
+            db,
+            criticalOperation.requestId,
+            'order_item',
+            `order_create:item:${itemIndex + 1}`,
+          );
+          const mappedItem = mappedItemId
+            ? await db.prepare(`SELECT product_id, variant_id FROM order_items WHERE id = ? AND order_id = ? LIMIT 1`)
+              .bind(mappedItemId, existingTargetId)
+              .first<Record<string, unknown>>()
+            : null;
+          if (mappedItemId && mappedItem) {
+            preResolvedCatalog.push({
+              productId: toInt(mappedItem.product_id, 0) || null,
+              variantId: toInt(mappedItem.variant_id, 0) || null,
+            });
+          } else {
+            preResolvedCatalog.push(item.isWorkshop
+              ? await resolveWorkshopCatalogProductOnly(db, item)
+              : await resolveCatalogProductAndVariant(db, item, cleanText(existingOrder.created_at) || requestedAt));
+          }
+        }
+
+        const totalAmount = Math.max(0, toInt(existingOrder.total_amount, 0));
+        const receivedAmount = Math.max(0, toInt(existingOrder.received_amount, 0));
+        const debtAmount = Math.max(0, toInt(existingOrder.debt_amount, Math.max(0, totalAmount - receivedAmount)));
+        const paymentStatus = debtAmount <= 0 ? 'Оплачено' : receivedAmount > 0 ? 'Частично' : 'Не оплачено';
+        plan = {
+          externalId: cleanText(existingOrder.external_id),
+          createdAt: cleanText(existingOrder.created_at) || requestedAt,
+          orderDate,
+          managerId: toInt(existingOrder.manager_id, 0) || null,
+          managerName: cleanText(existingOrder.manager_snapshot_name),
+          customerId: toInt(existingOrder.customer_id, 0) || null,
+          city: cleanText(existingOrder.city),
+          deliveryType: cleanText(existingOrder.delivery_type),
+          sourceType,
+          workshopStatus: normalizeWorkshopStatus(existingOrder.workshop_status),
+          orderStatus: normalizeOrderStatus(existingOrder.order_status),
+          comment: cleanText(existingOrder.comment),
+          normalizedItems,
+          normalizedPayments,
+          totals: { totalAmount, receivedAmount, debtAmount },
+          paymentStatus,
+          pricingMode: 'legacy_manual_total',
+          itemizedWritePlan: null,
+          preResolvedCatalog,
+        };
+        // Pre-192B2A4 create incremented customers.orders_count before the order target was written.
+        // If a target already exists, that increment has already happened, so seed the new marker
+        // without incrementing again. A post-success exact reconciliation below repairs any older drift.
+        if (plan.customerId) {
+          await db.prepare(
+            `INSERT INTO critical_operation_entities (request_id, entity_type, entity_key, entity_id, created_at)
+             VALUES (?, 'customer_order_count', 'order_create', ?, ?)
+             ON CONFLICT(request_id, entity_type, entity_key) DO NOTHING`
+          ).bind(criticalOperation.requestId, plan.customerId, requestedAt).run();
+        }
+        operationContext = { ...operationContext, plan, recoveredLegacyCreatePlan: true };
+        await advanceCriticalOperation(db, criticalOperation, criticalOperation.row.step, { context: operationContext });
+      } else {
+        const orderDate = normalizeDate(input.orderDate);
+        const externalId = cleanText(operationContext.externalId) || proposedExternalId;
+        const managerName = upperText(input.managerName);
+        let managerId: number | null = null;
+        try {
+          managerId = await resolveActiveManagerId(db, input.managerId, managerName);
+        } catch (error) {
+          throw new OrderInputValidationError(error instanceof Error ? error.message : 'Выберите действующего менеджера перед созданием заказа.');
+        }
+        if (!managerId) throw new OrderInputValidationError('Выберите действующего менеджера перед созданием заказа.');
+
+        const customerPhone = normalizePhone(input.customerPhone);
+        if (cleanText(input.customerPhone) && !customerPhone) {
+          throw new OrderInputValidationError('Телефон клиента должен содержать цифры.');
+        }
+        const customerName = cleanText(input.customerName);
+        const city = cleanText(input.city);
+        const deliveryType = cleanText(input.deliveryType);
+        const sourceType = normalizeSourceType(input.sourceType);
+        const workshopStatus = normalizeWorkshopStatus(input.workshopStatus);
+        const orderStatus = normalizeOrderStatus(input.orderStatus);
+        const comment = cleanText(input.comment);
+        const items = Array.isArray(input.items) ? input.items : [];
+        const payments = Array.isArray(input.payments) ? input.payments : [];
+
+        assertOrderItemInputs(items);
+        assertOrderPaymentInputs(payments);
+        const requestedPricingMode = cleanText(input.pricingMode);
+        if (requestedPricingMode && requestedPricingMode !== 'legacy_manual_total' && requestedPricingMode !== 'itemized_v1') {
+          throw new OrderInputValidationError('Неизвестный режим расчёта заказа.');
+        }
+        const pricingMode = requestedPricingMode === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total';
+        if (pricingMode === 'legacy_manual_total') {
+          assertOrderTotalInput(input.orderTotal);
+        } else if (input.orderTotal !== undefined && input.orderTotal !== null && cleanText(input.orderTotal) !== '') {
+          throw new OrderInputValidationError('Для itemized_v1 итог заказа рассчитывается сервером по позициям. Не передавайте отдельную цену заказа.');
+        }
+        let normalizedItems = normalizeOrderItems(items, sourceType);
+        const normalizedPayments = normalizeOrderPayments(payments, orderDate).map(payment => (
+          payment.paymentKind === 'primary'
+            ? { ...payment, paymentDate: orderDate }
+            : payment
+        ));
+
+        for (const item of normalizedItems) {
+          if (item.observedPhysicalQuantity === null) continue;
+          if (item.isWorkshop) {
+            throw new OrderInputValidationError('Фактический остаток можно уточнить только для Склада или Бутика, не для Цеха.');
+          }
+          if (!Number.isInteger(item.observedPhysicalQuantity) || item.observedPhysicalQuantity < 0) {
+            throw new OrderInputValidationError(`Фактическое количество для «${item.productName}» должно быть целым числом от 0.`);
+          }
+        }
+        if (!normalizedItems.length) throw new OrderInputValidationError('Добавьте хотя бы один товар в заказ.');
+
+        let itemizedWritePlan: ItemizedOrderWritePlan | null = null;
+        let totals: { totalAmount: number; receivedAmount: number; debtAmount: number };
+        if (pricingMode === 'itemized_v1') {
+          if (!await isOrderPricingFoundationEnabled(db)) {
+            throw new CriticalOperationConflictError('Itemized-расчёт пока недоступен: схема цен заказа не подготовлена.');
+          }
+          const itemizedLines = items
+            .filter(item => upperText(item?.productName))
+            .map(item => ({
+              quantity: item?.quantity ?? 1,
+              unitPrice: item?.unitPrice,
+              catalogPriceSnapshot: item?.catalogPriceSnapshot ?? null,
+            }));
+          try {
+            itemizedWritePlan = buildItemizedOrderWritePlan(itemizedLines, normalizedPayments);
+          } catch (error) {
+            if (error instanceof ItemizedPricingValidationError) {
+              throw new OrderInputValidationError(error.message);
+            }
+            throw error;
+          }
+          if (itemizedWritePlan.lines.length !== normalizedItems.length) {
+            throw new CriticalOperationConflictError('Itemized-план не совпадает с нормализованными позициями заказа.');
+          }
+          normalizedItems = normalizedItems.map((item, index) => ({
+            ...item,
+            unitPrice: itemizedWritePlan!.lines[index].unitPrice,
+            lineTotal: itemizedWritePlan!.lines[index].lineTotal,
+          }));
+          totals = {
+            totalAmount: itemizedWritePlan.totalAmount,
+            receivedAmount: itemizedWritePlan.receivedAmount,
+            debtAmount: itemizedWritePlan.debtAmount,
+          };
+        } else {
+          totals = calculateTotals(normalizedItems, normalizedPayments, input.orderTotal);
+          if (totals.receivedAmount > totals.totalAmount) {
+            throw new OrderInputValidationError(`Оплаты (${totals.receivedAmount}) больше цены заказа (${totals.totalAmount}). Исправьте цену или оплаты.`);
+          }
+        }
+        const paymentStatus = totals.debtAmount <= 0
+          ? 'Оплачено'
+          : totals.receivedAmount > 0
+            ? 'Частично'
+            : 'Не оплачено';
+        const createdAt = cleanText(operationContext.createdAt) || requestedAt;
+        if (normalizedItems.some(item => item.isWorkshop)) await assertWorkshopTaskDetailSchema(db);
+
+        const confirmedRetiredKeys = new Set(
+          (Array.isArray(input.retiredCatalogRecreateKeys) ? input.retiredCatalogRecreateKeys : [])
+            .map(cleanText)
+            .filter(Boolean),
+        );
+        const retiredConfirmationItems = [];
+        const retiredCandidateByInputIndex = new Map<number, Awaited<ReturnType<typeof inspectOrderRetiredCatalogIdentityV2>>>();
+        for (const [index, item] of normalizedItems.entries()) {
+          if (item.isWorkshop) continue;
+          const retiredCandidate = await inspectOrderRetiredCatalogIdentityV2(db, item);
+          if (!retiredCandidate) continue;
+          const inputIndex = Math.max(0, toInt(item.inputIndex, index));
+          retiredCandidateByInputIndex.set(inputIndex, retiredCandidate);
+          if (!confirmedRetiredKeys.has(retiredCandidate.confirmationKey)) {
+            retiredConfirmationItems.push({ inputIndex, ...retiredCandidate });
+          }
+        }
+        if (retiredConfirmationItems.length) {
+          throw new OrderRetiredCatalogConfirmationError(retiredConfirmationItems);
+        }
+
+        // A confirmed retired identity starts a fresh generation with Physical=0 and Reserved=0.
+        // If the caller has not supplied/acknowledged a stock decision, stop here before any
+        // Catalog row is recreated. This keeps failed order attempts read-only.
+        const retiredFreshShortages = [];
+        for (const [index, item] of normalizedItems.entries()) {
+          if (item.isWorkshop || item.observedPhysicalQuantity !== null || item.shortageAcknowledged) continue;
+          const inputIndex = Math.max(0, toInt(item.inputIndex, index));
+          const retiredCandidate = retiredCandidateByInputIndex.get(inputIndex);
+          if (!retiredCandidate || !confirmedRetiredKeys.has(retiredCandidate.confirmationKey)) continue;
+          retiredFreshShortages.push({
+            inventorySource: item.inventorySource,
+            variantId: 0,
+            inputIndexes: [inputIndex],
+            productName: item.productName,
+            requestedQuantity: Math.max(1, toInt(item.quantity, 1)),
+            physicalQuantity: 0,
+            reservedQuantity: 0,
+            shortage: Math.max(1, toInt(item.quantity, 1)),
+          });
+        }
+        if (retiredFreshShortages.length) {
+          throw new OrderStockShortageError(retiredFreshShortages);
+        }
+
+        const preResolvedCatalog: Array<{ productId: number | null; variantId: number | null }> = [];
+        const observedByVariant = new Map<string, number>();
+        for (const item of normalizedItems) {
+          const allowRetiredRecreate = !item.isWorkshop && confirmedRetiredKeys.has(catalogOrderInputKey(item));
+          const resolved = item.isWorkshop
+            ? await resolveWorkshopCatalogProductOnly(db, item)
+            : await resolveCatalogProductAndVariant(db, item, createdAt, { allowRetiredRecreate });
+          preResolvedCatalog.push(resolved);
+          if (item.observedPhysicalQuantity === null) continue;
+          if (!resolved.productId || !resolved.variantId) {
+            throw new OrderInputValidationError(`Нельзя подтверждать фактический остаток для «${item.productName}», пока товар или одна из характеристик не распознаны системой.`);
+          }
+          const observationKey = `${item.inventorySource}:${resolved.variantId}`;
+          const previous = observedByVariant.get(observationKey);
+          if (previous !== undefined && previous !== item.observedPhysicalQuantity) {
+            throw new OrderInputValidationError(`Для одной позиции «${item.productName}» указаны разные фактические количества (${previous} и ${item.observedPhysicalQuantity}). Оставьте одно подтверждённое значение.`);
+          }
+          if (previous !== undefined) {
+            item.observedPhysicalQuantity = null;
+          } else {
+            observedByVariant.set(observationKey, item.observedPhysicalQuantity);
+          }
+        }
+
+        await assertCreateOrderShortageDecisions(db, normalizedItems, preResolvedCatalog);
+        const customerId = await upsertCustomerIdentityForOrderCreate(db, customerPhone, customerName, city, createdAt);
+        plan = {
+          externalId,
+          createdAt,
+          orderDate,
+          managerId,
+          managerName,
+          customerId,
+          city,
+          deliveryType,
+          sourceType,
+          workshopStatus,
+          orderStatus,
+          comment,
+          normalizedItems,
+          normalizedPayments,
+          pricingMode,
+          itemizedWritePlan,
+          totals,
+          paymentStatus,
+          preResolvedCatalog,
+        };
+        operationContext = { ...operationContext, plan };
+        await advanceCriticalOperation(db, criticalOperation, 'validated', { context: operationContext });
+      }
+    }
+
+    if (!plan) throw new Error('Не удалось восстановить безопасный план создания заказа.');
+    const externalId = cleanText(plan.externalId);
+    const createdAt = cleanText(plan.createdAt) || requestedAt;
+    const normalizedItems = plan.normalizedItems as ReturnType<typeof normalizeOrderItems>;
+    const normalizedPayments = plan.normalizedPayments as ReturnType<typeof normalizeOrderPayments>;
+    const pricingMode = cleanText(plan.pricingMode) === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total';
+    const itemizedWritePlan = pricingMode === 'itemized_v1' ? plan.itemizedWritePlan as ItemizedOrderWritePlan : null;
+    const preResolvedCatalog = plan.preResolvedCatalog as Array<{ productId: number | null; variantId: number | null }>;
+    const totals = plan.totals as { totalAmount: number; receivedAmount: number; debtAmount: number };
+    const managerId = toInt(plan.managerId, 0) || null;
+    const managerName = cleanText(plan.managerName);
+    const customerId = toInt(plan.customerId, 0) || null;
+    const city = cleanText(plan.city);
+    const deliveryType = cleanText(plan.deliveryType);
+    const sourceType = normalizeSourceType(plan.sourceType);
+    const workshopStatus = normalizeWorkshopStatus(plan.workshopStatus);
+    const orderStatus = normalizeOrderStatus(plan.orderStatus);
+    const comment = cleanText(plan.comment);
+    const orderDate = normalizeDate(plan.orderDate);
+    const paymentStatus = cleanText(plan.paymentStatus) || (totals.debtAmount <= 0 ? 'Оплачено' : totals.receivedAmount > 0 ? 'Частично' : 'Не оплачено');
+
+    let orderId = toInt(criticalOperation.row.target_id, 0);
+    if (!orderId) {
+      if (criticalOperation.row.step !== 'validated') {
+        throw new CriticalOperationConflictError('Безопасное создание заказа остановилось на неожиданном этапе. Повторите сохранение после обновления страницы.');
+      }
+      const orderStatement = pricingMode === 'itemized_v1'
+        ? db.prepare(
+          `INSERT INTO orders (
+            external_id, order_date, manager_id, manager_snapshot_name, customer_id, city,
+            delivery_type, source_type, workshop_status, order_status, pricing_mode, total_amount,
+            received_amount, debt_amount, return_amount, comment, shipping_status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'itemized_v1', ?, ?, ?, 0, ?, 'not_sent', ?, ?)`
+        ).bind(
+          externalId, orderDate, managerId, managerName, customerId, city || null, deliveryType || null,
+          sourceType, workshopStatus, orderStatus, totals.totalAmount, totals.receivedAmount, totals.debtAmount,
+          comment || null, createdAt, createdAt,
+        )
+        : db.prepare(
+          `INSERT INTO orders (
+            external_id, order_date, manager_id, manager_snapshot_name, customer_id, city,
+            delivery_type, source_type, workshop_status, order_status, total_amount,
+            received_amount, debt_amount, return_amount, comment, shipping_status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'not_sent', ?, ?)`
+        ).bind(
+          externalId, orderDate, managerId, managerName, customerId, city || null, deliveryType || null,
+          sourceType, workshopStatus, orderStatus, totals.totalAmount, totals.receivedAmount, totals.debtAmount,
+          comment || null, createdAt, createdAt,
+        );
+      orderId = await updateCriticalOperationTargetFromLastInsert(
+        db, criticalOperation, 'order', externalId, orderStatement, 'order_created',
+      );
+    }
+    if (!orderId) throw new Error('Заказ не был создан в базе.');
+
+    let insertedContent = operationContext.insertedContent as { stockResults?: unknown[]; workshopCount?: number } | undefined;
+    if (criticalOperation.row.step === 'order_created' || (criticalOperation.row.step === 'content_written' && !insertedContent)) {
+      await markCreateCustomerOrderCount(db, criticalOperation, customerId, createdAt);
+      const content = await insertOrderContent(
+        db,
+        orderId,
+        externalId,
+        normalizedItems,
+        normalizedPayments,
+        createdAt,
+        'order',
+        externalId,
+        undefined,
+        preResolvedCatalog,
+        criticalOperation,
+        'order_create',
+        undefined,
+        itemizedWritePlan,
+      );
+      insertedContent = {
+        stockResults: content.stockResults,
+        workshopCount: content.workshopCount,
+      };
+      operationContext = { ...operationContext, insertedContent };
+      await advanceCriticalOperation(db, criticalOperation, 'content_written', { context: operationContext });
+    }
+
+    if (criticalOperation.row.step !== 'content_written') {
+      throw new CriticalOperationConflictError('Безопасное создание заказа остановилось до записи содержимого. Нажмите «Сохранить заказ» ещё раз.');
+    }
+
+    const stockResults = Array.isArray(insertedContent?.stockResults) ? insertedContent.stockResults : [];
+    const workshopCount = Math.max(0, toInt(insertedContent?.workshopCount, normalizedItems.filter(item => item.isWorkshop).length));
+    const response = {
+      ok: true,
+      orderId,
+      externalId,
+      totalAmount: totals.totalAmount,
+      receivedAmount: totals.receivedAmount,
+      debtAmount: totals.debtAmount,
+      paymentStatus,
+      pricingMode,
+      stockWriteOff: stockResults,
+      workshopCount,
+    };
+    await completeCriticalOperation(db, criticalOperation, response);
+
+    // Exact reconciliation is deliberately post-commit: it repairs historical counter drift (including
+    // an old pre-192B2A4 retry that incremented before creating the target) but can never make an
+    // otherwise valid order report failure.
+    if (customerId) {
+      try {
+        await recalculateCustomersAfterStorageCleanup(db, [customerId]);
+      } catch (error) {
+        console.warn('Customer statistics reconciliation after safe create failed', error);
+      }
+    }
+
+    try {
+      const existingCreateAudit = await db.prepare(
+        `SELECT id FROM order_manager_audit WHERE order_id = ? AND action = 'created' AND source = 'order_create' ORDER BY id ASC LIMIT 1`
+      ).bind(orderId).first<{ id: number }>();
+      if (!existingCreateAudit?.id) {
+        await writeOrderManagerAudit(db, {
+          orderId,
+          externalId,
+          previousManagerId: null,
+          previousManagerName: null,
+          newManagerId: managerId,
+          newManagerName: managerName,
+          action: 'created',
+          source: 'order_create',
+          actor,
+          details: 'Менеджер зафиксирован при создании заказа.',
+          createdAt,
+        });
+      }
+    } catch (error) {
+      console.warn('Order manager audit after safe create failed', error);
+    }
+    try {
+      await writeActivityLog(db, {
+        eventType: 'order_created',
+        entityType: 'order',
+        entityId: orderId,
+        orderId,
+        externalOrderId: externalId,
+        title: `Создан заказ ${externalId}`,
+        details: `Позиций: ${normalizedItems.length}; оплат: ${normalizedPayments.length}; цех: ${workshopCount}`,
+        amount: totals.totalAmount,
+        createdAt,
+      });
+    } catch (error) {
+      console.warn('Order activity log after safe create failed', error);
+    }
+    return response;
+  } catch (error) {
+    const contentAlreadyWritten = criticalOperation?.row.status === 'started' && criticalOperation.row.step === 'content_written';
+    if (
+      criticalOperation?.leaseToken
+      && criticalOperation.row.step === 'started'
+      && !criticalOperation.row.target_id
+      && (error instanceof OrderInputValidationError || error instanceof OrderStockShortageError || error instanceof CriticalOperationConflictError)
+    ) {
+      try {
+        const discarded = await db.prepare(
+          `DELETE FROM critical_operations
+           WHERE request_id = ? AND status = 'started' AND step = 'started' AND target_id IS NULL AND lease_token = ?
+             AND NOT EXISTS (SELECT 1 FROM critical_operation_entities e WHERE e.request_id = critical_operations.request_id)`
+        ).bind(criticalOperation.requestId, criticalOperation.leaseToken).run();
+        if (toInt(discarded.meta?.changes, 0) > 0) criticalOperation = null;
+      } catch {
+        // If cleanup fails, failCriticalOperation below still releases the lease for a safe retry.
+      }
+    }
+    await failCriticalOperation(db, criticalOperation, error);
+    if (contentAlreadyWritten) {
+      throw new CriticalOperationConflictError('Основные данные заказа уже записаны, но подтверждение операции не завершилось. Нажмите «Сохранить заказ» ещё раз — повторная отправка безопасно продолжит тот же запрос.');
+    }
+    throw error;
+  }
+}
+
+
+export async function updateOrderCritical(
+  db: D1Database,
+  id: number,
+  input: OrderInput,
+  actor: AuthUser | null,
+  checkedBy: string,
+  options: { lifecycleAction?: 'order_delete' } = {},
+) {
+  await ensureOrderItemWorkshopColumn(db);
+  let criticalOperation: CriticalOperationHandle | null = null;
+  try {
+    criticalOperation = await beginCriticalOperation(db, 'order_edit', input.requestId, { orderId: id, ...input }, { orderId: id });
+    if (criticalOperation.cachedResponse) return criticalOperation.cachedResponse;
+    let operationContext = parseCriticalContext<Record<string, any>>(criticalOperation.row);
+    let plan = operationContext.plan as Record<string, any> | undefined;
+
+    if (!plan) {
+      const existing = await getOrder(db, id);
+      if (!existing) throw new CriticalOperationConflictError('Заказ не найден. Обновите список заказов и повторите действие.');
+      if (isArchivedOrder(existing)) throw new CriticalOperationConflictError(`Заказ ${(existing as any).external_id} находится в архиве. Архивные заказы доступны только для просмотра.`);
+
+      const existingAny = existing as any;
+      const existingPricingMode = cleanText(existingAny.pricing_mode) === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total';
+      type ItemPriceCorrectionInput = {
+        orderItemId?: number;
+        unitPrice?: number;
+        expectedUnitPrice?: number;
+        expectedQuantity?: number;
+        expectedLineTotal?: number;
+        expectedCatalogPriceSnapshot?: number | null;
+      };
+      type ItemContentReplacementExpectedInput = {
+        orderItemId?: number;
+        productName?: string;
+        audienceType?: string;
+        gender?: string | null;
+        color?: string | null;
+        material?: string | null;
+        length?: string | null;
+        size?: string | null;
+        quantity?: number;
+        unitPrice?: number;
+        lineTotal?: number;
+        catalogPriceSnapshot?: number | null;
+        sourceType?: string;
+        workshopComment?: string | null;
+        workshopUrgent?: boolean;
+        workshopDueDate?: string | null;
+        workshopDueTime?: string | null;
+      };
+      type ItemContentReplacementInput = {
+        expectedItems?: ItemContentReplacementExpectedInput[];
+        items?: Array<Record<string, unknown>>;
+      };
+      const itemizedInput = input as OrderInput & {
+        itemPriceCorrections?: ItemPriceCorrectionInput[];
+        itemContentReplacement?: ItemContentReplacementInput;
+      };
+      const rawItemPriceCorrections: ItemPriceCorrectionInput[] = Array.isArray(itemizedInput.itemPriceCorrections)
+        ? itemizedInput.itemPriceCorrections
+        : [];
+      const hasItemContentReplacementField = Object.prototype.hasOwnProperty.call(itemizedInput, 'itemContentReplacement');
+      const rawItemContentReplacement = itemizedInput.itemContentReplacement
+        && typeof itemizedInput.itemContentReplacement === 'object'
+        && !Array.isArray(itemizedInput.itemContentReplacement)
+        ? itemizedInput.itemContentReplacement
+        : null;
+      if (hasItemContentReplacementField && !rawItemContentReplacement) {
+        throw new OrderInputValidationError('Безопасная замена состава передана в неверном формате.');
+      }
+      const itemContentReplacementRequested = rawItemContentReplacement !== null;
+      if (rawItemPriceCorrections.length && existingPricingMode !== 'itemized_v1') {
+        throw new CriticalOperationConflictError('Построчная коррекция цены доступна только для itemized-заказа.');
+      }
+      if (itemContentReplacementRequested && existingPricingMode !== 'itemized_v1') {
+        throw new CriticalOperationConflictError('Безопасная замена состава доступна только для itemized-заказа.');
+      }
+      if ((rawItemPriceCorrections.length || itemContentReplacementRequested) && options.lifecycleAction === 'order_delete') {
+        throw new CriticalOperationConflictError('Исправление цены или состава нельзя совмещать с удалением заказа. Сохраните эти действия отдельно.');
+      }
+      if (itemContentReplacementRequested && rawItemPriceCorrections.length) {
+        throw new CriticalOperationConflictError('Исправление цены и замена состава должны сохраняться отдельными действиями.');
+      }
+      const itemizedMetadataOnlyEdit = existingPricingMode === 'itemized_v1'
+        && options.lifecycleAction !== 'order_delete'
+        && input.externalId === undefined
+        && input.items === undefined
+        && input.payments === undefined
+        && input.orderTotal === undefined
+        && input.pricingMode === undefined
+        && input.sourceType === undefined
+        && input.workshopStatus === undefined
+        && input.orderStatus === undefined
+        && input.shippingStatus === undefined
+        && input.shippingDate === undefined;
+      if (existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete' && !itemizedMetadataOnlyEdit) {
+        throw new CriticalOperationConflictError('Этот заказ использует построчную itemized-цену. Реквизиты, проведённые оплаты, цены продажи и состав можно исправлять из редактора; жизненный цикл меняется отдельными штатными действиями.');
+      }
+      const timestamp = new Date().toISOString();
+      const nextOrderDate = normalizeDate(input.orderDate ?? existingAny.order_date);
+      const existingManagerId = toInt(existingAny.manager_id ?? existingAny.managerId, 0) || null;
+      const existingManagerName = cleanText(existingAny.manager_snapshot_name || existingAny.manager_name);
+      const submittedManagerId = input.managerId !== undefined ? (toInt(input.managerId, 0) || null) : undefined;
+      const submittedManagerName = input.managerName !== undefined ? upperText(input.managerName) : undefined;
+      const managerSelectionProvided = input.managerId !== undefined || input.managerName !== undefined;
+      const preservesHistoricalManager = !managerSelectionProvided
+        || (submittedManagerId !== undefined && submittedManagerId === existingManagerId)
+        || (submittedManagerId === undefined
+          && submittedManagerName !== undefined
+          && submittedManagerName === upperText(existingManagerName));
+      let nextManagerId: number | null = existingManagerId;
+      let nextManager = existingManagerName;
+
+      // An inactive/former manager is valid historical ownership for an existing order.
+      // Only an actual reassignment must resolve to a currently active manager.
+      if (!preservesHistoricalManager) {
+        try {
+          nextManagerId = await resolveActiveManagerId(db, submittedManagerId, submittedManagerName || '');
+        } catch (error) {
+          throw new OrderInputValidationError(error instanceof Error ? error.message : 'У заказа должен быть выбран действующий менеджер.');
+        }
+        if (!nextManagerId) throw new OrderInputValidationError('У заказа должен быть выбран действующий менеджер.');
+        nextManager = submittedManagerName || existingManagerName;
+      }
+      const nextPhone = input.customerPhone !== undefined ? normalizePhone(input.customerPhone) : cleanText(existingAny.customer_phone);
+      if (input.customerPhone !== undefined && cleanText(input.customerPhone) && !nextPhone) throw new OrderInputValidationError('Телефон клиента должен содержать цифры.');
+      const nextCustomerName = input.customerName !== undefined ? cleanText(input.customerName) : cleanText(existingAny.customer_name);
+      const nextCity = input.city !== undefined ? cleanText(input.city) : cleanText(existingAny.city);
+      let nextCustomerId: number | null = null;
+      const nextDelivery = input.deliveryType !== undefined ? cleanText(input.deliveryType) : cleanText(existingAny.delivery_type);
+      const nextSource = input.sourceType ? normalizeSourceType(input.sourceType) : normalizeSourceType(existingAny.source_type);
+      const nextWorkshopStatus = input.workshopStatus ? normalizeWorkshopStatus(input.workshopStatus) : normalizeWorkshopStatus(existingAny.workshop_status);
+      const nextOrderStatus = input.orderStatus ? normalizeOrderStatus(input.orderStatus) : normalizeOrderStatus(existingAny.order_status);
+      const existingOrderStatus = normalizeOrderStatus(existingAny.order_status);
+      const existingWorkshopStatus = normalizeWorkshopStatus(existingAny.workshop_status);
+      const existingShippingStatus = normalizeShippingStatus(existingAny.shipping_status);
+      if (itemContentReplacementRequested && existingShippingStatus === 'sent') {
+        throw new CriticalOperationConflictError('Отправленный заказ нельзя менять по составу. Используйте возврат, обмен или складскую корректировку.');
+      }
+      const workingModeEdit = actor?.role !== 'admin';
+      if (workingModeEdit && (['deleted', 'archived'].includes(existingOrderStatus) || existingShippingStatus === 'sent')) {
+        throw new CriticalOperationConflictError('Отправленный, удалённый или архивный заказ нельзя переписывать в рабочем режиме. Используйте отдельное штатное действие заказа.');
+      }
+      const deletingOrder = existingOrderStatus !== 'deleted' && nextOrderStatus === 'deleted';
+      const finalWorkshopStatus = deletingOrder && nextWorkshopStatus === 'in_workshop' ? 'cancelled' : nextWorkshopStatus;
+      const nextComment = input.comment !== undefined ? cleanText(input.comment) : cleanText(existingAny.comment);
+      const nextShippingStatus = input.shippingStatus !== undefined
+        ? normalizeShippingStatus(input.shippingStatus)
+        : existingShippingStatus;
+      const dedicatedOrderDelete = options.lifecycleAction === 'order_delete'
+        && deletingOrder
+        && nextWorkshopStatus === existingWorkshopStatus
+        && nextShippingStatus === existingShippingStatus;
+      if (workingModeEdit && !dedicatedOrderDelete && (
+        nextOrderStatus !== existingOrderStatus
+        || nextWorkshopStatus !== existingWorkshopStatus
+        || nextShippingStatus !== existingShippingStatus
+      )) {
+        throw new CriticalOperationConflictError('В рабочем режиме редактор исправляет данные заказа, но не меняет его жизненный цикл. Для статуса Цеха, отправки и удаления используйте отдельные штатные действия.');
+      }
+      const nextShippingDate = nextShippingStatus === 'sent'
+        ? normalizeDate(input.shippingDate || existingAny.shipping_date || timestamp)
+        : null;
+
+      const replacementExpectedItems = itemContentReplacementRequested && Array.isArray(rawItemContentReplacement?.expectedItems)
+        ? rawItemContentReplacement.expectedItems
+        : null;
+      const replacementItems = itemContentReplacementRequested && Array.isArray(rawItemContentReplacement?.items)
+        ? rawItemContentReplacement.items
+        : null;
+      if (itemContentReplacementRequested && (!replacementExpectedItems || !replacementItems)) {
+        throw new OrderInputValidationError('Для безопасной замены состава передайте ожидаемый текущий состав и новый состав заказа.');
+      }
+      if (itemContentReplacementRequested && !replacementItems?.length) {
+        throw new OrderInputValidationError('В itemized-заказе должна остаться хотя бы одна товарная позиция.');
+      }
+      if (replacementItems) {
+        for (const [index, replacementItem] of replacementItems.entries()) {
+          const sourceType = cleanText(replacementItem?.sourceType).toLowerCase();
+          if (!['warehouse', 'boutique', 'workshop'].includes(sourceType)) {
+            throw new OrderInputValidationError(`Для позиции ${index + 1} явно укажите источник: Склад, Бутик или Цех.`);
+          }
+          if (!Object.prototype.hasOwnProperty.call(replacementItem, 'catalogPriceSnapshot')) {
+            throw new OrderInputValidationError(`Для позиции ${index + 1} явно передайте исторический снимок цены Каталога или null.`);
+          }
+        }
+      }
+      if (itemContentReplacementRequested && input.items !== undefined) {
+        throw new CriticalOperationConflictError('Безопасную itemized-замену состава нельзя совмещать со старым полем items.');
+      }
+
+      if (Array.isArray(input.items)) assertOrderItemInputs(input.items);
+      if (replacementItems) assertOrderItemInputs(replacementItems as OrderInput['items']);
+      if (Array.isArray(input.payments)) assertOrderPaymentInputs(input.payments);
+      if (input.orderTotal !== undefined) assertOrderTotalInput(input.orderTotal);
+      const requestedItems = replacementItems
+        ? normalizeOrderItems(replacementItems as OrderInput['items'], nextSource)
+        : (Array.isArray(input.items) ? normalizeOrderItems(input.items, nextSource) : null);
+      const requestedPayments = Array.isArray(input.payments) ? normalizeOrderPayments(input.payments, nextOrderDate) : null;
+      const existingItemsForEdit = normalizeOrderItems((existingAny.items || []) as OrderInput['items'], nextSource);
+      const existingPaymentsForEdit = normalizeOrderPayments((existingAny.payments || []) as OrderInput['payments'], nextOrderDate);
+      const replacementOrderSource = itemContentReplacementRequested && requestedItems
+        ? (requestedItems.find((item) => !item.isWorkshop)?.sourceType === 'boutique' ? 'boutique' : 'warehouse')
+        : nextSource;
+      type PaymentCorrectionInput = NonNullable<OrderInput['paymentCorrections']>[number];
+      const rawPaymentCorrections: PaymentCorrectionInput[] = Array.isArray(input.paymentCorrections)
+        ? input.paymentCorrections
+        : (Array.isArray(input.paymentMethodCorrections)
+          ? input.paymentMethodCorrections.map((correction) => ({ paymentId: correction.paymentId, method: correction.method }))
+          : []);
+      const requestedPaymentCorrections = new Map<number, PaymentCorrectionInput>();
+      for (const correction of rawPaymentCorrections) {
+        const paymentId = toInt(correction?.paymentId, 0);
+        if (!paymentId) throw new OrderInputValidationError('Не удалось определить оплату для исправления. Обновите заказ и повторите.');
+        requestedPaymentCorrections.set(paymentId, correction);
+      }
+      const paymentCorrections: Array<Record<string, any>> = [];
+      const isCashPaymentMethod = (value: unknown) => {
+        const method = upperText(value);
+        return method === 'CASH' || method.includes('НАЛИЧ');
+      };
+      const validPaymentDate = (value: string) => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+        const parsed = new Date(`${value}T00:00:00.000Z`);
+        return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+      };
+      for (const [paymentId, requested] of requestedPaymentCorrections) {
+        const payment = await db.prepare(
+          `SELECT p.id, p.payment_date, p.method, p.amount, COALESCE(p.payment_kind, 'primary') AS payment_kind,
+                  p.comment, o.created_at AS order_created_at,
+                  CASE WHEN EXISTS (
+                    SELECT 1 FROM exchanges e
+                    WHERE e.payment_id = p.id AND e.financial_action = 'extra_payment'
+                      AND COALESCE(e.status, 'completed') <> 'cancelled'
+                  ) THEN 1 ELSE 0 END AS is_exchange_extra,
+                  CASE WHEN EXISTS (
+                    SELECT 1 FROM cash_register_entries c
+                    WHERE c.source_key = 'payment:' || p.id
+                       OR (CAST(c.source_id AS TEXT) = CAST(p.id AS TEXT)
+                           AND c.source_type IN ('payment_method_correction', 'payment_correction'))
+                  ) THEN 1 ELSE 0 END AS cash_entry_tracked,
+                  CASE WHEN EXISTS (
+                    SELECT 1 FROM cash_register_settings s
+                    WHERE s.id = 1 AND s.auto_tracking_enabled = 1
+                      AND (
+                        COALESCE(p.payment_kind, 'primary') IN ('debt_close', 'extra')
+                        OR COALESCE(o.created_at, '') >= COALESCE(s.activated_at, '')
+                      )
+                  ) THEN 1 ELSE 0 END AS cash_tracking_eligible
+           FROM payments p
+           JOIN orders o ON o.id = p.order_id
+           WHERE p.id = ? AND p.order_id = ?
+           LIMIT 1`
+        ).bind(paymentId, id).first<Record<string, unknown>>();
+        if (!payment?.id) throw new CriticalOperationConflictError('Одна из оплат заказа уже изменилась или исчезла. Обновите заказ и повторите исправление.');
+
+        const oldPaymentDate = normalizeDate(payment.payment_date || nextOrderDate);
+        const oldMethod = upperText(payment.method);
+        const oldAmount = Math.max(0, toInt(payment.amount, 0));
+        const oldPaymentKind = cleanText(payment.payment_kind) || 'primary';
+        const oldComment = cleanText(payment.comment);
+        const requestedDateText = requested.paymentDate === undefined ? oldPaymentDate : cleanText(requested.paymentDate);
+        if (!validPaymentDate(requestedDateText)) throw new OrderInputValidationError('Укажите корректную фактическую дату оплаты.');
+        const newPaymentDate = requestedDateText;
+        const newMethod = requested.method === undefined ? oldMethod : upperText(requested.method);
+        if (!newMethod) throw new OrderInputValidationError('Способ оплаты не может быть пустым.');
+        const newAmountRaw = requested.amount === undefined ? oldAmount : Number(requested.amount);
+        if (!Number.isInteger(newAmountRaw) || newAmountRaw <= 0) throw new OrderInputValidationError('Сумма проведённой оплаты должна быть целым числом больше нуля.');
+        const newAmount = Number(newAmountRaw);
+        const newPaymentKind = requested.paymentKind === undefined ? oldPaymentKind : cleanText(requested.paymentKind);
+        if (!['primary', 'debt_close', 'extra'].includes(newPaymentKind)) throw new OrderInputValidationError('Не удалось определить смысл оплаты. Обновите заказ и повторите.');
+        const newComment = requested.comment === undefined ? oldComment : cleanText(requested.comment);
+
+        const staleSnapshot = (
+          (requested.expectedPaymentDate !== undefined && normalizeDate(requested.expectedPaymentDate) !== oldPaymentDate)
+          || (requested.expectedMethod !== undefined && upperText(requested.expectedMethod) !== oldMethod)
+          || (requested.expectedAmount !== undefined && Number(requested.expectedAmount) !== oldAmount)
+          || (requested.expectedPaymentKind !== undefined && (cleanText(requested.expectedPaymentKind) || 'primary') !== oldPaymentKind)
+          || (requested.expectedComment !== undefined && cleanText(requested.expectedComment) !== oldComment)
+        );
+        if (staleSnapshot) throw new CriticalOperationConflictError('Эта оплата уже была изменена после открытия редактора. Обновите заказ и повторите исправление, чтобы не перезаписать чужое изменение.');
+
+        const isExchangeExtra = toInt(payment.is_exchange_extra, 0) > 0;
+        const nonMethodChanged = newPaymentDate !== oldPaymentDate
+          || newAmount !== oldAmount
+          || newPaymentKind !== oldPaymentKind
+          || newComment !== oldComment;
+        if (isExchangeExtra && nonMethodChanged) {
+          throw new CriticalOperationConflictError('Эта доплата принадлежит операции обмена. В редакторе заказа можно исправить только способ оплаты; сумму, дату и смысл меняйте через обмен.');
+        }
+        if (!isExchangeExtra && newPaymentKind === 'extra') {
+          throw new OrderInputValidationError('Доплату нельзя превращать в обычную оплату заказа. Доплата создаётся только внутри обмена.');
+        }
+        const changed = nonMethodChanged || newMethod !== oldMethod;
+        if (!changed) continue;
+        const oldRelatedType = isExchangeExtra ? 'exchange_extra' : financialOperationTypeFromPaymentKind(oldPaymentKind);
+        const newRelatedType = isExchangeExtra ? 'exchange_extra' : financialOperationTypeFromPaymentKind(newPaymentKind);
+        paymentCorrections.push({
+          paymentId,
+          oldPaymentDate, newPaymentDate,
+          oldAmount, newAmount,
+          oldPaymentKind, newPaymentKind,
+          oldRelatedType, newRelatedType,
+          oldMethod, newMethod,
+          oldComment, newComment,
+          oldIsCash: isCashPaymentMethod(oldMethod),
+          newIsCash: isCashPaymentMethod(newMethod),
+          cashEntryTracked: toInt(payment.cash_entry_tracked, 0) > 0,
+          cashTrackingEligible: toInt(payment.cash_tracking_eligible, 0) > 0,
+          isExchangeExtra,
+        });
+      }
+      let itemizedRewritePlan: ItemizedOrderWritePlan | null = null;
+      if (itemContentReplacementRequested && replacementExpectedItems && replacementItems && requestedItems) {
+        const currentItems = Array.isArray(existingAny.items) ? existingAny.items as Array<Record<string, unknown>> : [];
+        if (replacementExpectedItems.length !== currentItems.length) {
+          throw new CriticalOperationConflictError('Состав заказа уже изменился после открытия редактора. Обновите заказ и повторите замену.');
+        }
+
+        const currentById = new Map<number, Record<string, unknown>>();
+        for (const currentItem of currentItems) {
+          const currentId = toInt(currentItem?.id, 0);
+          if (!currentId || currentById.has(currentId)) {
+            throw new CriticalOperationConflictError('Не удалось однозначно определить текущие позиции заказа. Обновите заказ и повторите замену.');
+          }
+          currentById.set(currentId, currentItem);
+        }
+
+        const expectedIds = new Set<number>();
+        for (const expected of replacementExpectedItems) {
+          const orderItemId = Number(expected?.orderItemId);
+          if (!Number.isSafeInteger(orderItemId) || orderItemId <= 0 || expectedIds.has(orderItemId)) {
+            throw new OrderInputValidationError('Ожидаемый состав содержит неоднозначную позицию заказа.');
+          }
+          expectedIds.add(orderItemId);
+          const currentItem = currentById.get(orderItemId);
+          if (!currentItem) {
+            throw new CriticalOperationConflictError('Одна из позиций заказа уже изменилась или исчезла. Обновите заказ и повторите замену.');
+          }
+          if (!Object.prototype.hasOwnProperty.call(expected, 'catalogPriceSnapshot') || expected.lineTotal === undefined) {
+            throw new OrderInputValidationError('Для безопасной замены состава не хватает исторического снимка цены позиции.');
+          }
+          const expectedNormalized = normalizeOrderItems([expected as unknown as NonNullable<OrderInput['items']>[number]], nextSource);
+          const currentNormalized = normalizeOrderItems([currentItem as unknown as NonNullable<OrderInput['items']>[number]], nextSource);
+          const currentCatalogSnapshot = currentItem.catalogPriceSnapshot === null || currentItem.catalogPriceSnapshot === undefined
+            ? null
+            : Math.max(0, toInt(currentItem.catalogPriceSnapshot, 0));
+          const expectedCatalogSnapshot = expected.catalogPriceSnapshot === null || expected.catalogPriceSnapshot === undefined
+            ? null
+            : Number(expected.catalogPriceSnapshot);
+          const stale = !sameNormalizedOrderItemsForEdit(currentNormalized, expectedNormalized)
+            || Number(expected.lineTotal) !== Number(currentItem.lineTotal || 0)
+            || expectedCatalogSnapshot !== currentCatalogSnapshot;
+          if (stale) {
+            throw new CriticalOperationConflictError('Одна из позиций заказа уже изменилась после открытия редактора. Обновите заказ и повторите замену.');
+          }
+        }
+        if (expectedIds.size !== currentById.size) {
+          throw new CriticalOperationConflictError('Текущий состав заказа не совпадает с открытым редактором. Обновите заказ и повторите замену.');
+        }
+
+        const nextSeenExistingIds = new Set<number>();
+        for (const [index, rawNextItem] of replacementItems.entries()) {
+          const carriedOrderItemId = Number((rawNextItem as Record<string, unknown>)?.orderItemId || 0);
+          if (carriedOrderItemId) {
+            if (!Number.isSafeInteger(carriedOrderItemId) || carriedOrderItemId <= 0 || nextSeenExistingIds.has(carriedOrderItemId)) {
+              throw new OrderInputValidationError('Новый состав содержит неоднозначную ссылку на старую позицию.');
+            }
+            nextSeenExistingIds.add(carriedOrderItemId);
+            const previousRaw = currentById.get(carriedOrderItemId);
+            if (!previousRaw) {
+              throw new CriticalOperationConflictError('Новый состав ссылается на позицию, которой больше нет в заказе.');
+            }
+            const previousNormalized = normalizeOrderItems([previousRaw as unknown as NonNullable<OrderInput['items']>[number]], nextSource)[0];
+            const nextNormalized = requestedItems[index];
+            const priceKeyUnchanged = previousNormalized.productName === nextNormalized.productName
+              && previousNormalized.audienceType === nextNormalized.audienceType
+              && previousNormalized.material === nextNormalized.material
+              && previousNormalized.length === nextNormalized.length;
+            if (priceKeyUnchanged) {
+              const oldSnapshot = previousRaw.catalogPriceSnapshot === null || previousRaw.catalogPriceSnapshot === undefined
+                ? null
+                : Math.max(0, toInt(previousRaw.catalogPriceSnapshot, 0));
+              const nextSnapshotRaw = (rawNextItem as Record<string, unknown>).catalogPriceSnapshot;
+              const nextSnapshot = nextSnapshotRaw === null || nextSnapshotRaw === undefined || cleanText(nextSnapshotRaw) === ''
+                ? null
+                : Number(nextSnapshotRaw);
+              if (nextSnapshot !== oldSnapshot) {
+                throw new CriticalOperationConflictError('Цена Каталога для неизменённого ценового исполнения является историческим снимком и не может быть переписана.');
+              }
+            }
+          }
+        }
+
+        itemizedRewritePlan = buildItemizedOrderWritePlan(
+          replacementItems.map((item) => ({
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            catalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
+          })),
+          existingPaymentsForEdit,
+        );
+      }
+
+      const itemContentChanged = Boolean(requestedItems && !sameNormalizedOrderItemsForEdit(existingItemsForEdit, requestedItems));
+      const rewriteItems = Boolean(requestedItems && !sameNormalizedOrderItemsExceptPriceForEdit(existingItemsForEdit, requestedItems));
+      if (itemContentReplacementRequested && !rewriteItems) {
+        throw new CriticalOperationConflictError('Состав не изменился. Для исправления только цены используйте отдельную коррекцию цены продажи.');
+      }
+      let priceOnlyItemsEdit = itemContentChanged && !rewriteItems;
+      const priceOnlyItemUpdates: Array<{ orderItemId: number; unitPrice: number; lineTotal: number }> = [];
+      let itemizedPricingRows: Array<Record<string, unknown>> | null = null;
+      if (priceOnlyItemsEdit && requestedItems) {
+        const activeItemRows = await db.prepare(
+          `SELECT id, unit_price
+           FROM order_items
+           WHERE order_id = ? AND quantity > 0
+           ORDER BY id ASC`
+        ).bind(id).all<Record<string, unknown>>();
+        const activeRows = activeItemRows.results || [];
+        if (activeRows.length !== requestedItems.length) {
+          throw new CriticalOperationConflictError('Состав заказа изменился после открытия редактора. Обновите заказ и повторите исправление цены.');
+        }
+        for (const [index, item] of requestedItems.entries()) {
+          const row = activeRows[index];
+          const orderItemId = toInt(row?.id, 0);
+          if (!orderItemId) {
+            throw new CriticalOperationConflictError('Не удалось однозначно определить позицию заказа для исправления цены. Обновите заказ и повторите.');
+          }
+          if (toInt(row?.unit_price, 0) !== item.unitPrice) {
+            priceOnlyItemUpdates.push({ orderItemId, unitPrice: item.unitPrice, lineTotal: item.lineTotal });
+          }
+        }
+      }
+
+      if (rawItemPriceCorrections.length) {
+        const activeItemRows = await db.prepare(
+          `SELECT id, quantity, unit_price, line_total, catalog_price_snapshot
+           FROM order_items
+           WHERE order_id = ? AND quantity > 0
+           ORDER BY id ASC`
+        ).bind(id).all<Record<string, unknown>>();
+        itemizedPricingRows = activeItemRows.results || [];
+        if (!itemizedPricingRows.length) {
+          throw new CriticalOperationConflictError('У заказа нет активных позиций для исправления цены. Обновите заказ и повторите.');
+        }
+
+        const rowsById = new Map<number, Record<string, unknown>>();
+        for (const row of itemizedPricingRows) {
+          const rowId = toInt(row?.id, 0);
+          if (rowId) rowsById.set(rowId, row);
+        }
+        const seenItemIds = new Set<number>();
+        for (const correction of rawItemPriceCorrections) {
+          const orderItemId = Number(correction?.orderItemId);
+          if (!Number.isSafeInteger(orderItemId) || orderItemId <= 0 || seenItemIds.has(orderItemId)) {
+            throw new OrderInputValidationError('Не удалось однозначно определить позицию заказа для исправления цены.');
+          }
+          seenItemIds.add(orderItemId);
+          const row = rowsById.get(orderItemId);
+          if (!row) {
+            throw new CriticalOperationConflictError('Одна из позиций заказа уже изменилась или исчезла. Обновите заказ и повторите исправление цены.');
+          }
+
+          const quantity = toInt(row.quantity, 0);
+          const currentUnitPrice = toInt(row.unit_price, 0);
+          const currentLineTotal = toInt(row.line_total, 0);
+          const currentCatalogSnapshot = row.catalog_price_snapshot === null || row.catalog_price_snapshot === undefined
+            ? null
+            : Math.max(0, toInt(row.catalog_price_snapshot, 0));
+          const nextUnitPrice = Number(correction?.unitPrice);
+          if (!Number.isSafeInteger(nextUnitPrice) || nextUnitPrice < 0) {
+            throw new OrderInputValidationError('Новая цена позиции должна быть целым числом от 0.');
+          }
+          if (quantity <= 0) {
+            throw new CriticalOperationConflictError('Позиция больше не активна. Обновите заказ и повторите исправление цены.');
+          }
+
+          const expectedCatalogSnapshot = correction.expectedCatalogPriceSnapshot === undefined
+            ? undefined
+            : correction.expectedCatalogPriceSnapshot === null
+              ? null
+              : Number(correction.expectedCatalogPriceSnapshot);
+          const staleSnapshot = (
+            (correction.expectedUnitPrice !== undefined && Number(correction.expectedUnitPrice) !== currentUnitPrice)
+            || (correction.expectedQuantity !== undefined && Number(correction.expectedQuantity) !== quantity)
+            || (correction.expectedLineTotal !== undefined && Number(correction.expectedLineTotal) !== currentLineTotal)
+            || (expectedCatalogSnapshot !== undefined && expectedCatalogSnapshot !== currentCatalogSnapshot)
+          );
+          if (staleSnapshot) {
+            throw new CriticalOperationConflictError('Цена или состав этой позиции уже изменились после открытия редактора. Обновите заказ и повторите исправление.');
+          }
+
+          const nextLineTotal = quantity * nextUnitPrice;
+          if (!Number.isSafeInteger(nextLineTotal) || nextLineTotal < 0) {
+            throw new OrderInputValidationError('Сумма позиции слишком велика для точного расчёта.');
+          }
+          if (currentUnitPrice !== nextUnitPrice || currentLineTotal !== nextLineTotal) {
+            priceOnlyItemUpdates.push({ orderItemId, unitPrice: nextUnitPrice, lineTotal: nextLineTotal });
+          }
+        }
+        if (priceOnlyItemUpdates.length) priceOnlyItemsEdit = true;
+      }
+
+      const rewritePayments = !deletingOrder && Boolean(requestedPayments && !sameNormalizedOrderPaymentsForEdit(existingPaymentsForEdit, requestedPayments));
+      if (paymentCorrections.length && (rewritePayments || deletingOrder)) {
+        throw new CriticalOperationConflictError('Исправление проведённой оплаты нельзя совмещать с удалением заказа или полной перезаписью оплат. Сохраните эти действия отдельно.');
+      }
+      const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
+      const deferShippingCommit = humanInventoryModelEnabled && existingShippingStatus !== 'sent' && nextShippingStatus === 'sent';
+      const persistedShippingStatus = deferShippingCommit ? existingShippingStatus : nextShippingStatus;
+      const persistedShippingDate = deferShippingCommit ? (cleanText(existingAny.shipping_date) || null) : nextShippingDate;
+      if (humanInventoryModelEnabled && existingShippingStatus === 'sent' && nextShippingStatus !== 'sent') {
+        throw new CriticalOperationConflictError('Отправленный заказ нельзя вернуть в состояние «не отправлено». Физическое движение товара уже зафиксировано.');
+      }
+      if (humanInventoryModelEnabled && existingShippingStatus === 'sent' && (itemContentChanged || deletingOrder)) {
+        throw new CriticalOperationConflictError('Товар уже был физически выдан / отправлен. Состав такого заказа нельзя переписывать или удалять напрямую — используйте возврат, обмен или складскую корректировку.');
+      }
+      if (humanInventoryModelEnabled && existingShippingStatus !== 'sent' && (itemContentChanged || deletingOrder)) {
+        const issuedBeforeFullShipping = await db.prepare(
+          `SELECT COUNT(*) AS count FROM inventory_reservations WHERE order_id = ? AND status = 'fulfilled'`
+        ).bind(id).first<{ count: number }>();
+        if (toInt(issuedBeforeFullShipping?.count, 0) > 0) {
+          throw new CriticalOperationConflictError('Часть товаров этого заказа уже передана клиенту. Состав заказа нельзя менять или удалять напрямую. Для замены товара используйте «Обмен», для возврата — «Возврат».');
+        }
+      }
+      const nextItems = requestedItems || existingItemsForEdit;
+      const nextPayments = deletingOrder ? existingPaymentsForEdit : (requestedPayments || existingPaymentsForEdit);
+      if (itemContentReplacementRequested) {
+        const operations = await completedOrderOperationCounts(db, id);
+        if (operations.returns > 0 || operations.exchanges > 0) {
+          const parts = [
+            operations.returns > 0 ? `возвратов: ${operations.returns}` : '',
+            operations.exchanges > 0 ? `обменов: ${operations.exchanges}` : '',
+          ].filter(Boolean).join(', ');
+          throw new CriticalOperationConflictError(`У заказа есть действующие операции (${parts}). Замена состава запрещена до их штатной отмены.`);
+        }
+      }
+      if (rewriteItems && nextItems.some(item => item.isWorkshop)) await assertWorkshopTaskDetailSchema(db);
+      const inventoryObligationLineage = rewriteItems
+        ? await inventoryObligationLineageForRewrite(db, id, nextItems)
+        : [];
+      let rewritePreResolvedCatalog: Array<{ productId: number | null; variantId: number | null }> | undefined;
+      if (rewriteItems) {
+        for (const item of nextItems) {
+          if (item.observedPhysicalQuantity === null) continue;
+          if (item.isWorkshop) throw new OrderInputValidationError('Фактический остаток можно уточнить только для Склада или Бутика, не для Цеха.');
+          if (!Number.isInteger(item.observedPhysicalQuantity) || item.observedPhysicalQuantity < 0) {
+            throw new OrderInputValidationError(`Фактическое количество для «${item.productName}» должно быть целым числом от 0.`);
+          }
+        }
+
+        rewritePreResolvedCatalog = [];
+        const observedByVariant = new Map<string, number>();
+        for (const item of nextItems) {
+          const resolved = item.isWorkshop
+            ? await resolveWorkshopCatalogProductOnly(db, item)
+            : await resolveCatalogProductAndVariant(db, item, timestamp);
+          rewritePreResolvedCatalog.push({ productId: resolved.productId, variantId: resolved.variantId });
+          if (item.observedPhysicalQuantity === null) continue;
+          if (!resolved.productId || !resolved.variantId) {
+            throw new OrderInputValidationError(`Нельзя подтверждать фактический остаток для «${item.productName}», пока товар или одна из характеристик не распознаны системой.`);
+          }
+          const observationKey = `${item.inventorySource}:${resolved.variantId}`;
+          const previous = observedByVariant.get(observationKey);
+          if (previous !== undefined && previous !== item.observedPhysicalQuantity) {
+            throw new OrderInputValidationError(`Для одной позиции «${item.productName}» указаны разные фактические количества (${previous} и ${item.observedPhysicalQuantity}). Оставьте одно подтверждённое значение.`);
+          }
+          if (previous !== undefined) {
+            item.observedPhysicalQuantity = null;
+          } else {
+            observedByVariant.set(observationKey, item.observedPhysicalQuantity);
+          }
+        }
+        await assertCreateOrderShortageDecisions(db, nextItems, rewritePreResolvedCatalog, { excludeOrderId: id });
+      }
+      if (humanInventoryModelEnabled && existingShippingStatus !== 'sent' && nextShippingStatus === 'sent') {
+        if (rewriteItems) {
+          const unresolvedNames = nextItems
+            .map((item, index) => ({ item, resolved: rewritePreResolvedCatalog?.[index] }))
+            .filter(({ item, resolved }) => !item.isWorkshop && (!resolved?.productId || !resolved?.variantId))
+            .map(({ item }) => item.productName);
+          if (unresolvedNames.length) {
+            throw new CriticalOperationConflictError(`Нельзя одновременно сохранить состав и отметить заказ отправленным: ${unresolvedNames.length} позици${unresolvedNames.length === 1 ? 'я требует' : 'и требуют'} разбора (${unresolvedNames.slice(0, 3).join(', ')}). Сначала сохраните заказ и разберите неизвестные факты.`);
+          }
+        } else {
+          const blockers = await getOrderShipmentInventoryBlockers(db, id);
+          if (blockers.length) throw new CriticalOperationConflictError(orderShipmentInventoryBlockerMessage(blockers));
+        }
+      }
+      if (!nextItems.length) throw new OrderInputValidationError('В заказе должна быть хотя бы одна позиция.');
+      const calculatedTotals = calculateTotals(nextItems, nextPayments, input.orderTotal !== undefined ? input.orderTotal : existingAny.total_amount);
+      const paymentCorrectionAmountDelta = paymentCorrections.reduce(
+        (sum, correction) => sum + toInt(correction.newAmount, 0) - toInt(correction.oldAmount, 0),
+        0,
+      );
+      const correctedReceivedAmount = calculatedTotals.receivedAmount + paymentCorrectionAmountDelta;
+      let totals = {
+        ...calculatedTotals,
+        receivedAmount: correctedReceivedAmount,
+        debtAmount: Math.max(0, calculatedTotals.totalAmount - correctedReceivedAmount),
+      };
+      if (rawItemPriceCorrections.length) {
+        const updatePriceByItemId = new Map(priceOnlyItemUpdates.map((update) => [update.orderItemId, update.unitPrice]));
+        const itemizedMoney = assertItemizedOrderMoneyNotOverpaid(
+          (itemizedPricingRows || []).map((row) => ({
+            quantity: toInt(row.quantity, 0),
+            unitPrice: updatePriceByItemId.get(toInt(row.id, 0)) ?? toInt(row.unit_price, 0),
+          })),
+          [{ amount: correctedReceivedAmount }],
+        );
+        totals = {
+          totalAmount: itemizedMoney.totalAmount,
+          receivedAmount: itemizedMoney.receivedAmount,
+          debtAmount: itemizedMoney.debtAmount,
+        };
+      }
+      if (itemContentReplacementRequested && itemizedRewritePlan) {
+        totals = {
+          totalAmount: itemizedRewritePlan.totalAmount,
+          receivedAmount: correctedReceivedAmount,
+          debtAmount: Math.max(0, itemizedRewritePlan.totalAmount - correctedReceivedAmount),
+        };
+      }
+      if (totals.receivedAmount > totals.totalAmount) throw new OrderInputValidationError(`Оплаты (${totals.receivedAmount}) больше цены заказа (${totals.totalAmount}). Исправьте цену или оплаты.`);
+      if (itemContentChanged || priceOnlyItemsEdit || rewritePayments || deletingOrder) {
+        const operations = await completedOrderOperationCounts(db, id);
+        if (operations.returns > 0 || operations.exchanges > 0) {
+          const parts = [
+            operations.returns > 0 ? `возвратов: ${operations.returns}` : '',
+            operations.exchanges > 0 ? `обменов: ${operations.exchanges}` : '',
+          ].filter(Boolean).join(', ');
+          throw new CriticalOperationConflictError(`У заказа есть действующие операции (${parts}). Сначала отмените возвраты или обмены, затем редактируйте либо удаляйте заказ.`);
+        }
+      }
+
+      nextCustomerId = await upsertCustomerIdentityForOrderCreate(db, nextPhone, nextCustomerName, nextCity, timestamp);
+
+      plan = {
+        timestamp,
+        externalId: cleanText(existingAny.external_id),
+        existingManagerId, existingCustomerId: toInt(existingAny.customer_id, 0) || null,
+        previousManagerName: cleanText(existingAny.manager_name || existingAny.manager_snapshot_name),
+        nextOrderDate, nextManager, nextManagerId, nextCustomerId, nextCity, nextDelivery, nextSource: replacementOrderSource,
+        finalWorkshopStatus, nextOrderStatus, nextShippingStatus, nextShippingDate,
+        persistedShippingStatus, persistedShippingDate, nextComment,
+        itemContentChanged, rewriteItems, priceOnlyItemsEdit, priceOnlyItemUpdates,
+        rewritePayments, deletingOrder, deferShippingCommit,
+        paymentCorrections,
+        nextItems, nextPayments, totals, rewritePreResolvedCatalog: rewritePreResolvedCatalog || null,
+        itemizedRewritePlan,
+        inventoryObligationLineage, humanInventoryModelEnabled,
+      };
+      operationContext = { ...operationContext, plan };
+      await advanceCriticalOperation(db, criticalOperation, 'validated', { targetType: 'order', targetId: id, targetRef: plan.externalId, context: operationContext });
+    }
+
+    const p = plan!;
+    let stockReversals = Array.isArray(operationContext.stockReversals) ? operationContext.stockReversals : [];
+    if (criticalOperation.row.step === 'validated') {
+      stockReversals = (p.rewriteItems || p.deletingOrder)
+        ? await reverseOrderStockWriteOffsForEdit(db, id, p.externalId, p.timestamp)
+        : [];
+      if (p.deletingOrder) {
+        await db.batch([
+          db.prepare(
+            `UPDATE order_items SET stock_writeoff_status = 'reversed_delete'
+             WHERE order_id = ? AND is_workshop = 0 AND stock_writeoff_status IN ('written_off', 'negative', 'pending_writeoff', 'reversed_edit')`
+          ).bind(id),
+          db.prepare(`UPDATE workshop_tasks SET status = 'cancelled', updated_at = ? WHERE order_id = ? AND status = 'active'`).bind(p.timestamp, id),
+        ]);
+      }
+      if (p.rewriteItems) await retireOrderItemsForRewrite(db, id, p.timestamp);
+      if (p.deletingOrder) {
+        // Deletion is logical for the order and must preserve original payment rows as historical facts.
+        // Append one idempotent reversal per payment; the existing cash order-delete trigger owns physical cash out.
+        await removeOrderPaymentsWithMoneyEvents(db, {
+          orderId: id, externalOrderId: p.externalId, timestamp: p.timestamp,
+          reason: 'order_delete',
+          comment: `Оплаты сняты при удалении заказа ${p.externalId}`,
+          preservePayments: true,
+        });
+      } else if (p.rewritePayments) {
+        await removeOrderPaymentsWithMoneyEvents(db, {
+          orderId: id, externalOrderId: p.externalId, timestamp: p.timestamp,
+          reason: 'order_edit',
+          comment: `Старые оплаты сняты при исправлении заказа ${p.externalId}`,
+        });
+      }
+      operationContext = { ...operationContext, stockReversals };
+      await advanceCriticalOperation(db, criticalOperation, 'old_content_retired', { context: operationContext });
+    }
+
+    if (criticalOperation.row.step === 'old_content_retired') {
+      const orderUpdateStatement = db.prepare(
+        `UPDATE orders SET order_date = ?, manager_id = ?, manager_snapshot_name = ?, customer_id = ?, city = ?,
+            delivery_type = ?, source_type = ?, workshop_status = ?, order_status = ?, shipping_status = ?, shipping_date = ?,
+            total_amount = ?, received_amount = ?, debt_amount = ?, updated_at = ?, comment = ? WHERE id = ?`
+      ).bind(
+        p.nextOrderDate, p.nextManagerId, p.nextManager, p.nextCustomerId, p.nextCity || null, p.nextDelivery || null,
+        p.nextSource, p.finalWorkshopStatus, p.nextOrderStatus, p.persistedShippingStatus, p.persistedShippingDate,
+        p.totals.totalAmount, p.totals.receivedAmount, p.totals.debtAmount, p.timestamp, p.nextComment || null, id,
+      );
+      const priceOnlyItemUpdates = Array.isArray(p.priceOnlyItemUpdates) ? p.priceOnlyItemUpdates : [];
+      if (priceOnlyItemUpdates.length) {
+        await db.batch([
+          orderUpdateStatement,
+          ...priceOnlyItemUpdates.map((update: Record<string, any>) => db.prepare(
+            `UPDATE order_items
+             SET unit_price = ?, line_total = ?
+             WHERE id = ? AND order_id = ? AND quantity > 0`
+          ).bind(
+            Math.max(0, toInt(update.unitPrice, 0)),
+            Math.max(0, toInt(update.lineTotal, 0)),
+            toInt(update.orderItemId, 0),
+            id,
+          )),
+        ]);
+      } else {
+        await orderUpdateStatement.run();
+      }
+      await advanceCriticalOperation(db, criticalOperation, 'order_updated');
+    }
+
+    let insertedContent = operationContext.insertedContent || { stockResults: [], workshopCount: 0 };
+    if (criticalOperation.row.step === 'order_updated') {
+      if (p.rewriteItems || p.rewritePayments) {
+        insertedContent = await insertOrderContent(
+          db, id, p.externalId,
+          p.rewriteItems ? p.nextItems : [], p.rewritePayments ? p.nextPayments : [], p.timestamp,
+          'order_edit_new', p.externalId,
+          p.rewriteItems ? `Новый резерв после редактирования заказа ${p.externalId}` : undefined,
+          p.rewriteItems && Array.isArray(p.rewritePreResolvedCatalog) ? p.rewritePreResolvedCatalog : undefined,
+          criticalOperation, 'order_edit',
+          Array.isArray(p.inventoryObligationLineage) ? p.inventoryObligationLineage : undefined,
+          p.itemizedRewritePlan || null,
+        );
+      }
+      operationContext = { ...operationContext, insertedContent };
+      await advanceCriticalOperation(db, criticalOperation, 'new_content_written', { context: operationContext });
+    }
+
+    let inventoryDelivery = operationContext.inventoryDelivery || null;
+    if (criticalOperation.row.step === 'new_content_written') {
+      inventoryDelivery = p.deferShippingCommit
+        ? await fulfillOrderReservationsV2(db, id, p.externalId, p.timestamp, { shippingDate: p.nextShippingDate, checkedBy })
+        : null;
+      operationContext = { ...operationContext, inventoryDelivery };
+      await advanceCriticalOperation(db, criticalOperation, 'shipping_committed', { context: operationContext });
+    }
+
+    const paymentCorrectionCount = Array.isArray(p.paymentCorrections) ? p.paymentCorrections.length : 0;
+    if (criticalOperation.row.step === 'shipping_committed' && paymentCorrectionCount) {
+      for (const correction of p.paymentCorrections as Array<Record<string, any>>) {
+        const oldAmount = Math.abs(toInt(correction.oldAmount, 0));
+        const newAmount = Math.abs(toInt(correction.newAmount, 0));
+        const eventSourceRef = `payments:${correction.paymentId}:correction:${criticalOperation.requestId}`;
+        const changedFields = [
+          correction.oldPaymentDate !== correction.newPaymentDate ? `дата ${correction.oldPaymentDate} → ${correction.newPaymentDate}` : '',
+          correction.oldAmount !== correction.newAmount ? `сумма ${correction.oldAmount} → ${correction.newAmount}` : '',
+          correction.oldMethod !== correction.newMethod ? `способ ${correction.oldMethod} → ${correction.newMethod}` : '',
+          correction.oldPaymentKind !== correction.newPaymentKind ? `смысл ${correction.oldPaymentKind} → ${correction.newPaymentKind}` : '',
+          correction.oldComment !== correction.newComment ? 'комментарий' : '',
+        ].filter(Boolean).join('; ');
+        const auditComment = `Исправлена проведённая оплата #${correction.paymentId}: ${changedFields || 'уточнены данные'}`;
+        const statements: D1PreparedStatement[] = [];
+        if (oldAmount > 0) {
+          statements.push(financialEventStatement(db, {
+            eventKey: `1901:${criticalOperation.requestId}:payment-correction:${correction.paymentId}:old`,
+            orderId: id,
+            externalOrderId: p.externalId,
+            eventDate: correction.oldPaymentDate,
+            eventAt: p.timestamp,
+            eventType: 'payment_reversal',
+            relatedType: correction.oldRelatedType,
+            amountDelta: -oldAmount,
+            paymentMethod: correction.oldMethod,
+            sourceType: 'payment',
+            sourceId: correction.paymentId,
+            sourceRef: eventSourceRef,
+            reason: 'payment_correction',
+            comment: auditComment,
+          }));
+        }
+        if (newAmount > 0) {
+          statements.push(financialEventStatement(db, {
+            eventKey: `1901:${criticalOperation.requestId}:payment-correction:${correction.paymentId}:new`,
+            orderId: id,
+            externalOrderId: p.externalId,
+            eventDate: correction.newPaymentDate,
+            eventAt: p.timestamp,
+            eventType: correction.newRelatedType,
+            amountDelta: newAmount,
+            paymentMethod: correction.newMethod,
+            sourceType: 'payment',
+            sourceId: correction.paymentId,
+            sourceRef: eventSourceRef,
+            reason: 'payment_correction',
+            comment: auditComment,
+          }));
+        }
+        statements.push(
+          db.prepare(`UPDATE payments SET payment_date = ?, method = ?, amount = ?, payment_kind = ?, comment = ? WHERE id = ? AND order_id = ?`)
+            .bind(correction.newPaymentDate, correction.newMethod, newAmount, correction.newPaymentKind, correction.newComment || null, correction.paymentId, id),
+        );
+        const oldTrackedCashAmount = correction.oldIsCash && correction.cashEntryTracked ? oldAmount : 0;
+        const newCashShouldTrack = correction.newIsCash && (correction.cashEntryTracked || correction.cashTrackingEligible);
+        const newTrackedCashAmount = newCashShouldTrack ? newAmount : 0;
+        const cashDelta = newTrackedCashAmount - oldTrackedCashAmount;
+        if (cashDelta !== 0) {
+          const cashDirection = cashDelta > 0 ? 'in' : 'out';
+          statements.push(db.prepare(
+            `INSERT OR IGNORE INTO cash_register_entries (
+              occurred_at, business_date, direction, amount, entry_type,
+              source_type, source_id, source_key, order_id, external_order_id,
+              payment_method, comment, created_by, created_at
+            ) VALUES (?, date('now', '+5 hours'), ?, ?, 'payment_correction',
+                      'payment_correction', ?, ?, ?, ?, ?, ?, ?, ?)`
+          ).bind(
+            p.timestamp, cashDirection, Math.abs(cashDelta), String(correction.paymentId),
+            `payment-correction:${criticalOperation.requestId}:${correction.paymentId}:cash-delta`,
+            id, p.externalId, correction.newMethod, auditComment, cleanText(checkedBy) || 'admin', p.timestamp,
+          ));
+        }
+        await db.batch(statements);
+      }
+    }
+
+    const completedResponse = {
+      ok: true,
+      refreshRequired: true,
+      stockReversals: operationContext.stockReversals || stockReversals,
+      stockWriteOff: operationContext.insertedContent?.stockResults || insertedContent.stockResults || [],
+      workshopCount: operationContext.insertedContent?.workshopCount ?? insertedContent.workshopCount ?? 0,
+      inventoryDelivery: operationContext.inventoryDelivery ?? inventoryDelivery,
+      paymentCorrectionCount,
+    };
+    await completeCriticalOperation(db, criticalOperation, completedResponse);
+
+    try {
+      await recalculateCustomersAfterStorageCleanup(db, [p.existingCustomerId, p.nextCustomerId].map((value) => toInt(value, 0)).filter(Boolean));
+    } catch (error) {
+      console.warn('Customer statistics reconciliation after safe edit failed', error);
+    }
+
+    let updatedOrder = null;
+    try {
+      updatedOrder = await getOrder(db, id);
+    } catch (error) {
+      console.warn('Order readback after safe edit failed', error);
+    }
+    const response = updatedOrder
+      ? { ...completedResponse, order: updatedOrder, refreshRequired: false }
+      : completedResponse;
+
+    if (p.existingManagerId !== p.nextManagerId || upperText(p.previousManagerName) !== upperText(p.nextManager)) {
+      try {
+        await writeOrderManagerAudit(db, {
+          orderId: id, externalId: p.externalId, previousManagerId: p.existingManagerId,
+          previousManagerName: p.previousManagerName, newManagerId: p.nextManagerId, newManagerName: p.nextManager,
+          action: 'changed', source: 'admin_order_edit', actor,
+          details: 'Менеджер исправлен через полное редактирование заказа.', createdAt: p.timestamp,
+        });
+      } catch (error) { console.warn('Order manager audit after safe edit failed', error); }
+    }
+    try {
+      await writeActivityLog(db, {
+        eventType: 'order_updated', entityType: 'order', entityId: id, orderId: id, externalOrderId: p.externalId,
+        title: `Изменён заказ ${p.externalId}`,
+        details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.priceOnlyItemsEdit ? 'Цены позиций исправлены без движения склада; ' : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}${paymentCorrectionCount ? `оплаты исправлены: ${paymentCorrectionCount}; ` : ''}статус отправки: ${p.nextShippingStatus}`,
+        amount: p.totals.totalAmount, createdAt: p.timestamp,
+      });
+    } catch (error) {
+      console.warn('Order activity log after safe edit failed', error);
+    }
+    return response;
+  } catch (error) {
+    const editAlreadyWritten = criticalOperation?.row.status === 'started' && criticalOperation.row.step === 'shipping_committed';
+    if (criticalOperation?.leaseToken && criticalOperation.row.step === 'started' && !criticalOperation.row.target_id && (error instanceof OrderInputValidationError || error instanceof OrderStockShortageError || error instanceof CriticalOperationConflictError)) {
+      try {
+        const discarded = await db.prepare(
+          `DELETE FROM critical_operations
+           WHERE request_id = ? AND status = 'started' AND step = 'started' AND target_id IS NULL AND lease_token = ?
+             AND NOT EXISTS (SELECT 1 FROM critical_operation_entities e WHERE e.request_id = critical_operations.request_id)`
+        ).bind(criticalOperation.requestId, criticalOperation.leaseToken).run();
+        if (toInt(discarded.meta?.changes, 0) > 0) criticalOperation = null;
+      } catch {
+        // If cleanup fails, failCriticalOperation below still releases the lease for a safe retry.
+      }
+    }
+    await failCriticalOperation(db, criticalOperation, error);
+    if (editAlreadyWritten) {
+      throw new CriticalOperationConflictError('Изменения заказа уже записаны, но подтверждение операции не завершилось. Нажмите «Сохранить» ещё раз — повторная отправка безопасно продолжит тот же запрос.');
+    }
+    throw error;
+  }
+}
+
+
+export async function getOrder(db: D1Database, id: number) {
+  await ensureOrderItemWorkshopColumn(db);
+  const pricingFoundationEnabled = await isOrderPricingFoundationEnabled(db);
+  const pricingModeSelect = pricingFoundationEnabled
+    ? 'o.pricing_mode'
+    : "'legacy_manual_total' AS pricing_mode";
+  const order = await db.prepare(
+    `SELECT
+      o.id, o.external_id, o.order_date, o.manager_id, o.customer_id,
+      CASE WHEN m.id IS NOT NULL THEN m.name WHEN NULLIF(TRIM(COALESCE(o.manager_snapshot_name, '')), '') IS NOT NULL THEN o.manager_snapshot_name || ' · исторический менеджер' ELSE 'Менеджер требует уточнения' END AS manager_name,
+      o.manager_snapshot_name,
+      COALESCE(m.color_key, '#64748B') AS manager_color,
+      c.phone_normalized AS customer_phone, c.display_name AS customer_name,
+      o.city, o.delivery_type, o.source_type, o.workshop_status, o.order_status,
+      ${pricingModeSelect},
+      o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment, o.shipping_status, o.shipping_date,
+      o.archived_at, o.archived_by, o.archive_reason, o.archive_batch_id, o.created_at, o.updated_at
+     FROM orders o
+     LEFT JOIN managers m ON m.id = o.manager_id
+     LEFT JOIN customers c ON c.id = o.customer_id
+     WHERE o.id = ?`
+  ).bind(id).first<OrderListRow & { pricing_mode?: 'legacy_manual_total' | 'itemized_v1'; created_at: string; updated_at: string }>();
+
+  if (!order) {
+    return null;
+  }
+
+  const relations = await fetchOrderRelations(db, [id]);
+  return {
+    ...order,
+    pricing_mode: order.pricing_mode === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total',
+    committed_return_count: (relations.returnsByOrderId.get(id) || []).filter(ret => cleanText((ret as any).status || 'completed').toLowerCase() !== 'cancelled').length,
+    committed_exchange_count: relations.committedExchangeCountByOrderId.get(id) || 0,
+    has_committed_item_return: relations.hasCommittedItemReturnByOrderId.get(id) || false,
+    items: (relations.itemsByOrderId.get(id) || []).map(item => ({
+      id: (item as any).id,
+      ...canonicalItemProjection(item as Record<string, unknown>),
+      quantity: (item as any).quantity,
+      availableOperationQuantity: orderItemAvailableOperationQuantity(item as Record<string, unknown>),
+      stockWriteoffStatus: cleanText((item as any).stock_writeoff_status) || null,
+      unitPrice: (item as any).unit_price,
+      catalogPriceSnapshot: (item as any).catalog_price_snapshot == null ? null : Math.max(0, toInt((item as any).catalog_price_snapshot, 0)),
+      lineTotal: (item as any).line_total,
+      sourceType: (item as any).is_workshop ? 'workshop' : (item as any).source_type,
+      isWorkshop: Boolean((item as any).is_workshop),
+      workshopComment: (item as any).workshop_comment,
+      workshopUrgent: Boolean((item as any).workshop_urgent),
+      workshopDueDate: (item as any).workshop_due_date || '',
+      workshopDueTime: (item as any).workshop_due_time || '',
+      workshopTaskStatus: workshopTaskStatusForOrderItem(
+        item as Record<string, unknown>,
+        relations.workshopTasksByOrderId.get(id) || [],
+      ),
+    })),
+    payments: (relations.paymentsByOrderId.get(id) || []).map(payment => ({
+      id: (payment as any).id,
+      paymentDate: (payment as any).payment_date,
+      method: (payment as any).method,
+      amount: (payment as any).amount,
+      paymentKind: (payment as any).payment_kind,
+      comment: (payment as any).comment,
+    })),
+    returns: (relations.returnsByOrderId.get(id) || []).map(ret => ({
+      id: (ret as any).id,
+      returnDate: (ret as any).return_date,
+      amount: (ret as any).amount,
+      comment: (ret as any).comment,
+      status: (ret as any).status || 'completed',
+      cancelledAt: (ret as any).cancelled_at || null,
+      cancellationComment: (ret as any).cancellation_comment || null,
+    })),
+  };
+}
