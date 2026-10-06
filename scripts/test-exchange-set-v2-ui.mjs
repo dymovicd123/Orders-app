@@ -18,7 +18,7 @@ check(utils.includes("newItems: itemizedPricing ? [{") && utils.includes("priceO
 check(smart.includes('1 · Клиент возвращает') && smart.includes('2 · Клиент получает') && smart.includes('3 · Деньги'), 'Smart Exchange does not present the three human business stages')
 check(smart.includes('oldSelections') && smart.includes('newItems') && !smart.includes('queuedPairs'), 'Smart Exchange leaked old pair queue semantics')
 check(!smart.includes('Соответствие «старый → новый»') && !smart.includes('можно убрать 3 позиции и добавить 2'), 'Smart Exchange still explains internal set mechanics to the operator')
-check(smart.includes('exchange-old-order-info') && smart.includes('{maxQuantity} шт.') && smart.includes('в заказе') && smart.includes('Цена:') && smart.includes('Цена продажи'), 'Old order quantity and historic price are not shown as separate facts')
+check(smart.includes('exchange-old-order-info') && smart.includes('{orderQuantity} шт.') && smart.includes('в заказе') && smart.includes('Можно обменять: {maxQuantity} шт.') && smart.includes('Цена:') && smart.includes('Цена продажи'), 'Old order quantity and historic price are not shown as separate facts')
 check(workspace.includes('resolveCatalogOrderSalePrice(catalogData, picked)') && workspace.includes("priceOrigin: pricing.status === 'matched' ? 'catalog' : 'missing'"), 'Catalog recommendation is not automatically offered for new Exchange items')
 
 check(smart.includes('currentTotal - removedValue + addedValue'), 'Smart Exchange does not preview the new order total from item values')
