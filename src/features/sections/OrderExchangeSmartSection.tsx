@@ -356,7 +356,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
 
           <section className="exchange-set-step">
             <div className="exchange-set-section-head">
-              <div><span className="exchange-set-kicker">2 · Клиент получает</span><h3>Что выдаём взамен</h3><p>Добавьте новые товары, выберите нужную вариацию и количество.</p></div>
+              <div><span className="exchange-set-kicker">2 · Клиент получает</span><h3>Что выдаём взамен</h3><p>Добавьте товар, затем проверьте размер, цвет и количество.</p></div>
             </div>
             <div className="exchange-new-list">
               {(exchangeDraft.newItems || []).map((entry: any, index: number) => {
@@ -401,7 +401,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                           </div>
                         </div>
                         <div className="exchange-new-price">
-                          <div><span>Рекомендовано</span><strong>{item.catalogPriceSnapshot == null ? 'Не найдена' : formatMoney(Number(item.catalogPriceSnapshot || 0))}</strong></div>
+                          <div><span>Цена по каталогу</span><strong>{item.catalogPriceSnapshot == null ? 'Нет цены' : formatMoney(Number(item.catalogPriceSnapshot || 0))}</strong></div>
                           <label><span>Цена продажи</span><FriendlyNumberInput type="number" min="0" value={item.unitPrice ?? ''} onChange={(event) => applyExchangeSetNewItemPatch(index, { unitPrice: event.target.value === '' ? undefined : Math.max(0, Math.trunc(Number(event.target.value) || 0)), priceOrigin: 'manual' })} /></label>
                           <div><span>Итого за позицию</span><strong>{item.unitPrice == null ? '—' : formatMoney(required * Number(item.unitPrice || 0))}</strong></div>
                         </div>
@@ -517,9 +517,11 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                 {exchangeHistory.map((entry: any) => {
                   const olds = entry.isSetExchange ? (entry.oldItems || []) : [{ id: entry.oldOperationItemId, productName: entry.oldProductName, quantity: entry.oldQuantity, gender: entry.oldGender, color: entry.oldColor, material: entry.oldMaterial, length: entry.oldLength, size: entry.oldSize, inventorySource: entry.oldReturnSource, physicalTracking: entry.oldPhysicalTracking, physicalReceivedAt: entry.oldPhysicalReceivedAt, isWorkshop: entry.oldIsWorkshop, wasNotIssued: entry.oldWasNotIssued, lifecycleStatus: entry.oldLifecycleStatus, lifecycleId: entry.oldLifecycleId, lifecycleVariantId: entry.oldLifecycleVariantId, currentVariantId: entry.oldCurrentVariantId }]
                   const news = entry.isSetExchange ? (entry.newItems || []) : [{ productName: entry.newProductName, quantity: entry.newQuantity, gender: entry.newGender, color: entry.newColor, material: entry.newMaterial, length: entry.newLength, size: entry.newSize, inventorySource: entry.newSourceType, lifecycleStatus: entry.newLifecycleStatus }]
+                  const returnedQuantity = olds.reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
+                  const issuedQuantity = news.reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
                   return (
                     <details className={`exchange-history-card-v2${entry.status === 'cancelled' ? ' is-cancelled' : ''}`} key={`exchange-history-v2-${entry.id}`}>
-                      <summary><div><strong>{entry.externalId}</strong><span>{entry.customer || '—'} · {entry.exchangeDate || '—'}</span></div><div><b>{olds.length} → {news.length} поз.</b><span>{entry.status === 'cancelled' ? 'Отменён' : 'Проведён'}</span></div><span>Подробнее</span></summary>
+                      <summary><div><strong>{entry.externalId}</strong><span>{entry.customer || '—'} · {entry.exchangeDate || '—'}</span></div><div><b>Вернул: {returnedQuantity} шт. · Получил: {issuedQuantity} шт.</b><span>{entry.status === 'cancelled' ? 'Отменён' : 'Проведён'}</span></div><span>Подробнее</span></summary>
                       <div className="exchange-history-body-v2">
                         <div className="exchange-history-side"><h4>Убрали из заказа</h4>{olds.map((item: any, index: number) => <div className="exchange-history-item-v2" key={`hist-old-${entry.id}-${item.id || index}`}><strong>{item.productName} × {item.quantity}</strong><span>{historyItemDetails(item)}</span><em>{oldHistoryStatus(item)}</em>{entry.status !== 'cancelled' && item.physicalReceivedAt && item.lifecycleStatus === 'pending' && item.lifecycleId && (item.lifecycleVariantId || item.currentVariantId) ? <button className="secondary compact" type="button" onClick={() => void reconcileKnownInventoryLifecycle(Number(item.lifecycleId || 0)).then((result: any) => result?.ok ? loadExchangeHistory() : null)}>Завершить приёмку</button> : null}</div>)}</div>
                         <div className="exchange-history-side"><h4>Добавили в заказ</h4>{news.map((item: any, index: number) => <div className="exchange-history-item-v2" key={`hist-new-${entry.id}-${item.id || index}`}><strong>{item.productName} × {item.quantity}</strong><span>{historyItemDetails(item)}</span><em>{item.inventorySource === 'workshop' ? 'Из цеха' : `Выдали: ${sourceLabel(item.inventorySource || 'warehouse')}`}</em></div>)}</div>
