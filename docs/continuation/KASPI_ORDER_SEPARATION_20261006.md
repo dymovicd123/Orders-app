@@ -171,3 +171,57 @@ The feature has explicit regressions for:
 ## Next step
 
 Do not promote to `main` until manual Branch2 acceptance is complete and the user explicitly authorizes Production promotion.
+
+
+## Manual acceptance feedback — current UI is not final
+
+The user manually tested the deployed Branch2 implementation and rejected the dedicated simplified Kaspi table as the final UX.
+
+Problems observed:
+- it duplicates the Orders table instead of reusing the already-polished Orders UI;
+- it lacks the same reporting/context available in Orders;
+- the create action feels hidden;
+- paid/unpaid are presented as separate views that require navigation; the user wants all Kaspi visible by default and payment state as a normal filter;
+- most importantly, both dedicated Kaspi Create and ordinary Create can currently let a manager select `КАСПИ МАГАЗИН` and enter a factual payment equal to the order total. That immediately makes the order paid even though, operationally, Kaspi money must only be confirmed after the client receives the order and Kaspi sends the notification.
+
+### Required redesign contract
+
+Keep the schema/business truth already implemented:
+- authoritative Kaspi identity remains `orders.order_payment_method = 'КАСПИ МАГАЗИН'`;
+- delivery is not authoritative;
+- ZAMMLER remains only a suggested/default delivery;
+- manager ownership stays the actual selling manager;
+- shipping and money remain independent;
+- existing Return/Exchange/cancellation domains remain authoritative;
+- no Kaspi commission accounting.
+
+Change the UX/creation semantics:
+
+1. **Shared Orders UI**
+   - Kaspi should render the same mature Orders table/header/filter/reporting surfaces instead of `KaspiOrdersSection` being a second reduced table implementation.
+   - Kaspi mode scopes reads to `order_payment_method = КАСПИ МАГАЗИН`.
+   - Ordinary Orders continues to exclude Kaspi.
+
+2. **Default = all Kaspi**
+   - Default payment-state filter is `Все`.
+   - `Все / Ожидают / Оплачены` is a filter, not separate navigation.
+
+3. **Create cannot accidentally receive Kaspi money**
+   - When order-level payment method is `КАСПИ МАГАЗИН`, Create must not create a factual Kaspi payment row from an entered amount.
+   - This applies equally when the form was opened from Kaspi and when a manager selects `КАСПИ МАГАЗИН` in ordinary Create.
+   - For a new 500 ₸ Kaspi order with no other real payment: total 500, received 0, debt 500.
+   - Prefer replacing/disabling the factual payment amount editor with an informational Kaspi block showing the amount expected after delivery/notification.
+   - Do **not** create a separate pending-money ledger/state.
+
+4. **Explicit factual confirmation later**
+   - After the Kaspi notification, the operator uses `Подтвердить оплату` / `Оплата получена`.
+   - Show a confirmation with order, total/current debt, amount about to be recorded, method `КАСПИ МАГАЗИН`, and explicit note that shipping status will not change.
+   - On confirmation use the existing canonical idempotent payment path.
+
+5. **Reporting**
+   - Reuse the same reporting layout as Orders, scoped to Kaspi.
+   - Useful values: Kaspi sales/order count/average check, factual received amount, current Kaspi debt / count awaiting payment.
+
+The currently deployed Branch2 PR #294 runtime is therefore **a prototype, not a Production candidate**. Do not promote it to main as-is.
+
+Next Kaspi task after the Arrival incident is closed: implement this redesign in Branch2, run cumulative regressions, then repeat manual acceptance.
