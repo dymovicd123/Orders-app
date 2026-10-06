@@ -286,6 +286,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
             <div className="exchange-old-grid">
               {exchangeableOldItems.map((item: any) => {
                 const selected = selectedOldById.get(Number(item.id || 0))
+                const orderQuantity = Math.max(0, Number(item.quantity || 0))
                 const maxQuantity = Math.max(1, Number(item.availableOperationQuantity ?? item.quantity ?? 1))
                 const itemStockStatus = String(item.stockWriteoffStatus || '').trim()
                 const sentWorkshop = item.sourceType === 'workshop' && exchangeSelectedOrder.shipping_status === 'sent'
@@ -295,7 +296,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                     <button className="exchange-old-pick" type="button" onClick={() => toggleOldItem(item)}>
                       <span className="exchange-check">{selected ? '✓' : ''}</span>
                       <span className="exchange-old-main"><strong>{item.productName}</strong><small>{itemDetails(item)}</small></span>
-                      <span className="exchange-old-order-info"><strong>{maxQuantity} шт.</strong><small>в заказе</small><em>Цена: {formatMoney(Number(item.unitPrice || 0))} / шт.</em></span>
+                      <span className="exchange-old-order-info"><strong>{orderQuantity} шт.</strong><small>в заказе</small>{maxQuantity < orderQuantity ? <small>Можно обменять: {maxQuantity} шт.</small> : null}<em>Цена: {formatMoney(Number(item.unitPrice || 0))} / шт.</em></span>
                     </button>
                     {selected ? (
                       <div className="exchange-old-controls">
