@@ -9,7 +9,7 @@ const arrivalAtomicWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, '
 if (arrivalAtomicWorkerManifest?.version !== 1 || arrivalAtomicWorkerManifest?.revision !== 'arrival-atomic-materialization-20261006-worker') throw new Error('Arrival atomic materialization Worker manifest invalid')
 const arrivalAtomicWorkerBlobSha = (value) => {
   const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\\0`)).update(bytes).digest('hex')
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 if (!process.env.ARRIVAL_ATOMIC_MATERIALIZATION_WORKER_NORMALIZED) {
   const relative = 'worker/domains/inventory-movement.ts'
