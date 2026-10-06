@@ -50,7 +50,7 @@ try {
 
   const lazySections = [
     'DashboardSection','ClientsSection','ReferencesSection','InventorySection','WorkshopSection',
-    'OrdersHeaderSection','OrderFiltersSection','CreateOrderSection','OrderEditorSection','OrdersTableSection',
+    'OrdersHeaderSection','OrderFiltersSection','CreateOrderSection','OrderEditorSection','OrdersTableSection','KaspiOrdersSection',
     'OrderDetailsSection','OrderDebtSection','OrderReturnsSection','OrderExchangeSection','TeamSection','LeadsSection',
     'PlanSection','FinanceSection','ReportsSection','OrderActivitySection',
   ]
