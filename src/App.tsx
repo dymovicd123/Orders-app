@@ -8281,7 +8281,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'list'} label="Kaspi">
-        <KaspiOrdersSection ctx={{ busy, changeOrderPage, confirmKaspiPayment, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenExchange, handleOpenReturn, kaspiPaymentBusyOrderId, kaspiPaymentState, ManagerBadge, managerColorFor, openKaspiCreate, orderPageInfo, orders, setFilters, setKaspiPaymentState, shippingStatusLabel }} />
+        <KaspiOrdersSection ctx={{ busy, changeOrderPage, confirmKaspiPayment, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenExchange, handleOpenReturn, kaspiPaymentBusyOrderId, kaspiPaymentState, ManagerBadge, managerColorFor, openKaspiCreate, orderPageInfo, orders, sectorStyle, setFilters, setKaspiPaymentState, shippingStatusLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'zammler'} label="Создание Kaspi-заказа">
