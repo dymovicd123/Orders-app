@@ -175,6 +175,7 @@ try {
   acceptedAdditiveMigrations.push('0079_v72_catalog_granular_retirement_history.sql')
   acceptedAdditiveMigrations.push('0080_v72_auth_login_identity.sql')
   acceptedAdditiveMigrations.push('0081_v72_auth_hardening.sql')
+  acceptedAdditiveMigrations.push('0082_v72_kaspi_order_payment_method.sql')
   const historicalMigrationFiles = migrationFiles.filter((name) => !acceptedAdditiveMigrations.includes(name))
   const aggregate = historicalMigrationFiles.map((name) => `${sha(fs.readFileSync(path.join(migrationDir, name)))}  migrations/${name}\n`).join('')
   check(historicalMigrationFiles.length === manifest.migrationCount, `Historical migration count changed: ${historicalMigrationFiles.length}/${manifest.migrationCount}`)
