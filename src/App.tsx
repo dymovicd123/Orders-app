@@ -4493,9 +4493,14 @@ function App() {
       setSelectedOrderId(createdOrder.id)
       setEditorDraft(createEditorDraft(createdOrder))
       setEditorOpen(false)
+      const createdAsKaspi = normalizeSuggestion(orderPaymentMethod) === normalizeSuggestion('КАСПИ МАГАЗИН')
+      if (createdAsKaspi) {
+        setActiveSector('kaspi')
+        window.location.hash = '#kaspi'
+      }
       setOrderPanel('list')
       resetCreateOrderDraft()
-      if (activeSector === 'orders' && orderPanel === 'list') void loadOrdersFinanceSummary(filters, true)
+      if (!createdAsKaspi && activeSector === 'orders' && orderPanel === 'list') void loadOrdersFinanceSummary(filters, true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
@@ -8281,7 +8286,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'list'} label="Kaspi">
-        <KaspiOrdersSection ctx={{ busy, changeOrderPage, confirmKaspiPayment, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenExchange, handleOpenReturn, kaspiPaymentBusyOrderId, kaspiPaymentState, ManagerBadge, managerColorFor, openKaspiCreate, orderPageInfo, orders, sectorStyle, setFilters, setKaspiPaymentState, shippingStatusLabel }} />
+        <KaspiOrdersSection ctx={{ busy, changeOrderPage, confirmKaspiPayment, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenExchange, handleOpenReturn, isAdmin, kaspiPaymentBusyOrderId, kaspiPaymentState, ManagerBadge, managerColorFor, openKaspiCreate, orderPageInfo, orders, sectorStyle, setFilters, setKaspiPaymentState, shippingStatusLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'zammler'} label="Создание Kaspi-заказа">
@@ -8293,7 +8298,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Детали заказа">
