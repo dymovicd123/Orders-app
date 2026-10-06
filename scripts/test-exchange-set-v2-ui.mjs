@@ -42,6 +42,7 @@ check(smart.includes("operationType: 'exchange'") && smart.includes('operationIt
 check(smart.includes('newItemStockIdentityKey') && smart.includes('batchRequired') && smart.includes('matchingIndexes'), 'Repeated replacement rows do not aggregate physical demand before save')
 check(smart.includes('setObservedPhysicalForGroup') && smart.includes('Фактическое количество задаётся один раз у первой одинаковой позиции'), 'Repeated replacement rows can submit conflicting physical observations')
 check(smart.includes('exchange-new-primary-fields') && smart.includes('Сначала выберите товар — после этого появятся его характеристики и цена.'), 'New-item form still exposes the full technical SKU editor before a product is selected')
+check(smart.includes('saveBlockReason') && smart.includes('Укажите цену продажи для каждого нового товара.') && smart.includes('disabled={exchangeBusy || Boolean(saveBlockReason)}'), 'Exchange save does not explain incomplete manager input before submit')
 
 check(smart.includes("item.sourceType === 'workshop'") && smart.includes('Срочно для цеха') && smart.includes('workshopDueDate') && smart.includes('workshopDueTime'), 'Smart Exchange dropped Workshop urgency/deadline controls')
 check(smart.includes('isSetExchange') && smart.includes('entry.oldItems') && smart.includes('entry.newItems'), 'Set exchange history does not render full old/new collections')
