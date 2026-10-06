@@ -299,6 +299,7 @@ try {
   run('CLIENT-ZAMMLER-E All Orders filter', process.execPath, [path.join(root, 'scripts/test-client-zammler-e-order-list.mjs')])
   run('CLIENT-ZAMMLER-F Workshop invoice separation', process.execPath, [path.join(root, 'scripts/test-client-zammler-f-workshop-invoice.mjs')])
   run('CLIENT-ZAMMLER-G UI correction', process.execPath, [path.join(root, 'scripts/test-client-zammler-g-ui-polish.mjs')])
+  run('Kaspi order separation R1', process.execPath, [path.join(root, 'scripts/test-kaspi-order-separation-r1.mjs')])
   run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])
