@@ -1,0 +1,157 @@
+name: Production arrival read-only diagnostic
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/prod-arrival-readonly-diag-20261006.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Read-only Production D1 arrival forensic
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on exact Production binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders_db_branch2' wrangler.jsonc || grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc; then
+            echo "Branch2 binding detected; refusing Production diagnostic." >&2
+            exit 20
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Catalog product identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT id, name, category, gender_scope, is_active, created_at, updated_at
+            FROM catalog_products
+            WHERE UPPER(name) LIKE '%САУЛЕТ%'
+               OR UPPER(name) LIKE '%ЭТНО%КАРДИГАН%'
+               OR UPPER(name) LIKE '%АЙ%НАЗЫК%'
+               OR UPPER(name) LIKE '%ВОРОТНИК%'
+               OR UPPER(name) LIKE '%БОМБЕР%'
+            ORDER BY name, id;
+          " --json
+
+      - name: Relevant executions and variants
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT p.name AS product_name, p.is_active AS product_active, p.gender_scope,
+                   sp.id AS execution_id, sp.material, sp.length, sp.is_active AS execution_active,
+                   v.id AS variant_id, v.category, v.gender, v.color, v.size_label,
+                   v.is_active AS variant_active, v.external_id, v.created_at, v.updated_at
+            FROM catalog_products p
+            LEFT JOIN catalog_stock_positions sp ON sp.product_id = p.id
+            LEFT JOIN catalog_variants v ON v.product_id = p.id AND v.stock_position_id = sp.id
+            WHERE UPPER(p.name) LIKE '%САУЛЕТ%'
+               OR UPPER(p.name) LIKE '%ЭТНО%КАРДИГАН%'
+               OR UPPER(p.name) LIKE '%АЙ%НАЗЫК%'
+               OR UPPER(p.name) LIKE '%ВОРОТНИК%'
+               OR UPPER(p.name) LIKE '%БОМБЕР%'
+            ORDER BY p.name, sp.id, v.category, v.gender, v.color, v.size_label, v.id;
+          " --json
+
+      - name: Relevant reference values
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT id, kind, value, is_active
+            FROM reference_values
+            WHERE kind IN ('color','child_age','size','material','length')
+              AND (
+                UPPER(TRIM(value)) IN ('ХАКИ','1','ВЕЛЮР','СТАНДАРТ')
+                OR UPPER(value) LIKE '%ХАКИ%'
+                OR UPPER(value) LIKE '%ВЕЛЮР%'
+              )
+            ORDER BY kind, value, id;
+          " --json
+
+      - name: Today catalog materialization for relevant products
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT p.name AS product_name, v.id AS variant_id, v.category, v.gender, v.color,
+                   v.material, v.length, v.size_label, v.is_active, v.external_id, v.created_at, v.updated_at
+            FROM catalog_variants v
+            JOIN catalog_products p ON p.id = v.product_id
+            WHERE (DATE(v.created_at) = '2026-10-06' OR DATE(v.updated_at) = '2026-10-06')
+              AND (
+                UPPER(p.name) LIKE '%САУЛЕТ%'
+                OR UPPER(p.name) LIKE '%ЭТНО%КАРДИГАН%'
+                OR UPPER(p.name) LIKE '%АЙ%НАЗЫК%'
+                OR UPPER(p.name) LIKE '%ВОРОТНИК%'
+                OR UPPER(p.name) LIKE '%БОМБЕР%'
+              )
+            ORDER BY v.updated_at DESC, v.id DESC;
+          " --json
+
+      - name: Recent successful arrival operations
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT operation_id, source_type, status, item_count, total_quantity, created_at, completed_at
+            FROM inventory_operations
+            WHERE operation_type = 'arrival'
+            ORDER BY created_at DESC
+            LIMIT 20;
+          " --json
+
+      - name: Recent relevant arrival movements
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT id, created_at, inventory_source, movement_type, product_id, variant_id,
+                   product_name_snapshot, gender_snapshot, color_snapshot, material_snapshot,
+                   length_snapshot, size_snapshot, quantity_delta, quantity_after, reference_id
+            FROM inventory_movements
+            WHERE movement_type='arrival'
+              AND (
+                UPPER(product_name_snapshot) LIKE '%САУЛЕТ%'
+                OR UPPER(product_name_snapshot) LIKE '%ЭТНО%КАРДИГАН%'
+                OR UPPER(product_name_snapshot) LIKE '%АЙ%НАЗЫК%'
+                OR UPPER(product_name_snapshot) LIKE '%ВОРОТНИК%'
+                OR UPPER(product_name_snapshot) LIKE '%БОМБЕР%'
+              )
+            ORDER BY created_at DESC, id DESC
+            LIMIT 100;
+          " --json
+
+      - name: Variant uniqueness constraints
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "PRAGMA index_list('catalog_variants');" --json
+
+      - name: Finish
+        run: echo "READ-ONLY PRODUCTION ARRIVAL DIAGNOSTIC COMPLETE"
