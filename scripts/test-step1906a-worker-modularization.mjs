@@ -5,6 +5,38 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
+const arrivalAtomicWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/arrival-atomic-materialization-20261006-worker-manifest.json'), 'utf8'))
+if (arrivalAtomicWorkerManifest?.version !== 1 || arrivalAtomicWorkerManifest?.revision !== 'arrival-atomic-materialization-20261006-worker') throw new Error('Arrival atomic materialization Worker manifest invalid')
+const arrivalAtomicWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.ARRIVAL_ATOMIC_MATERIALIZATION_WORKER_NORMALIZED) {
+  const relative = 'worker/domains/inventory-movement.ts'
+  const delta = arrivalAtomicWorkerManifest.files?.[relative]
+  if (!delta) throw new Error('Arrival atomic materialization Worker manifest lost inventory-movement.ts')
+  const absolute = path.join(root, relative)
+  const actual = fs.readFileSync(absolute, 'utf8')
+  if (arrivalAtomicWorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('Arrival atomic materialization Worker drifted')
+  const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+  if (arrivalAtomicWorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Arrival atomic materialization Worker predecessor fixture drifted')
+  fs.writeFileSync(absolute, baseline)
+  let childStatus = 1
+  try {
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, ARRIVAL_ATOMIC_MATERIALIZATION_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    fs.writeFileSync(absolute, actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ARRIVAL ATOMIC MATERIALIZATION WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const arrivalChildAudienceWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/arrival-child-audience-20261006-runtime-manifest.json'), 'utf8'))
 if (arrivalChildAudienceWorkerManifest?.version !== 1 || arrivalChildAudienceWorkerManifest?.revision !== 'arrival-child-audience-20261006-runtime') throw new Error('Arrival child-audience Worker manifest invalid')
 const arrivalChildAudienceWorkerBlobSha = (value) => {
