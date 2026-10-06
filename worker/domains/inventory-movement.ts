@@ -199,11 +199,15 @@ export async function resolveInventoryCreatableItemsBulk(
     return lookup.byIdentity.get(identityKey) || null;
   };
 
-  const assertKnownProductGender = (product: ProductRow | null | undefined, item: ReturnType<typeof normalizeInventoryItem>) => {
-    if (!product?.id) return;
+  const resolveRequiredGender = (product: ProductRow | null | undefined, item: ReturnType<typeof normalizeInventoryItem>) => {
     const explicitGender = normalizeCatalogCombinationGender(item.gender);
-    if (explicitGender !== 'ЖЕН' && explicitGender !== 'МУЖ') return;
-    assertCatalogGenderAllowedForScope(product.gender_scope, explicitGender, product.name);
+    if (explicitGender === 'ЖЕН' || explicitGender === 'МУЖ') {
+      return assertCatalogGenderAllowedForScope(product?.gender_scope, explicitGender, product?.name || item.productName).gender;
+    }
+    const scope = cleanText(product?.gender_scope).toLowerCase();
+    if (scope === 'female') return 'ЖЕН';
+    if (scope === 'male') return 'МУЖ';
+    throw new Error(`Для товара «${cleanText(product?.name) || item.productName}» выберите пол конкретной вещи: ЖЕН или МУЖ.`);
   };
 
   const missingProducts = new Map<string, { name: string; category: string; externalId: string }>();
@@ -212,7 +216,7 @@ export async function resolveInventoryCreatableItemsBulk(
     if (!item.productName) throw new Error('Product is required for inventory operation.');
     const activeProduct = resolveProduct(item);
     if (activeProduct) {
-      assertKnownProductGender(activeProduct, item);
+      resolveRequiredGender(activeProduct, item);
       return;
     }
 
@@ -227,7 +231,7 @@ export async function resolveInventoryCreatableItemsBulk(
           || (identityKey ? lookup.byInactiveIdentity.get(identityKey) : null);
     const retiredId = toInt(retired?.id, 0);
     if (retiredId) {
-      assertKnownProductGender(retired, item);
+      resolveRequiredGender(retired, item);
       if (!retiredProductConflicts.length) {
         retiredProductConflicts.push({
           productId: retiredId,
@@ -237,6 +241,9 @@ export async function resolveInventoryCreatableItemsBulk(
       return;
     }
 
+    // Validate the canonical gender before creating any Catalog shell. This keeps an invalid
+    // child/unisex Arrival from leaving a product behind when the operation itself cannot continue.
+    resolveRequiredGender(null, item);
     const newIdentityKey = identityKey || `RAW:${item.productName}`;
     if (!missingProducts.has(newIdentityKey)) {
       missingProducts.set(newIdentityKey, {
@@ -276,17 +283,7 @@ export async function resolveInventoryCreatableItemsBulk(
   const productForItem = rawItems.map(item => resolveProduct(item));
   if (productForItem.some(row => !row?.id)) throw new Error('Не удалось создать или найти товар для складской операции. Обновите каталог и повторите действие.');
 
-  const resolvedGenderForItem = rawItems.map((item, index) => {
-    const product = productForItem[index];
-    const explicit = normalizeCatalogCombinationGender(item.gender);
-    if (explicit === 'ЖЕН' || explicit === 'МУЖ') {
-      return assertCatalogGenderAllowedForScope(product?.gender_scope, explicit, product?.name).gender;
-    }
-    const scope = cleanText(product?.gender_scope).toLowerCase();
-    if (scope === 'female') return 'ЖЕН';
-    if (scope === 'male') return 'МУЖ';
-    throw new Error('Для товара «Унисекс» выберите пол конкретной вещи: ЖЕН или МУЖ.');
-  });
+  const resolvedGenderForItem = rawItems.map((item, index) => resolveRequiredGender(productForItem[index], item));
 
   const productIds = Array.from(new Set(productForItem.map(row => toInt(row?.id, 0)).filter(Boolean)));
   const productIdsJson = JSON.stringify(productIds);
