@@ -4003,7 +4003,7 @@ function App() {
     if (nextOffset === orderPageInfo.offset) return
     const lastOrder = direction === 'next' && orders.length ? orders[orders.length - 1] : null
     await loadDashboard(false, filters, nextOffset, { afterOrderDate: lastOrder?.order_date || '', afterOrderId: Number(lastOrder?.id || 0), reusePeriodStats: true })
-    window.setTimeout(() => document.getElementById('orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
+    window.setTimeout(() => document.getElementById(activeSector === 'kaspi' ? 'kaspi-orders' : 'orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
   }
 
   function applyOrderPeriodPreset(preset: OrderPeriodPreset) {
@@ -5755,6 +5755,62 @@ function removeDebtPayment(index: number) {
   async function getOrderOperationalProjection(order: OrderRecord) {
     const { projectOrderOperationalState } = await import('./app/orderOperationalProjection')
     return projectOrderOperationalState(order, { isAdmin })
+  }
+
+  function openKaspiCreate() {
+    setActiveSector('kaspi')
+    setOrderPanel('zammler')
+    setCreateDraft(createZammlerOrderDraftWithDefaultManager())
+    setSelectedOrderId(null)
+    setEditorOpen(false)
+    window.location.hash = '#kaspi'
+  }
+
+  async function confirmKaspiPayment(order: OrderRecord) {
+    const debt = Math.max(0, Number(order.debt_amount || 0))
+    if (!debt || kaspiPaymentBusyOrderId) return
+    const projection = await getOrderOperationalProjection(order)
+    if (!projection.canOpenDebt) {
+      setMessage(debt <= 0 ? 'Этот Kaspi-заказ уже полностью оплачен.' : 'Этот заказ сейчас нельзя закрыть оплатой.')
+      return
+    }
+    const confirmed = window.confirm(`Подтвердить поступление ${formatMoney(debt)} по заказу ${order.external_id} через КАСПИ МАГАЗИН?\n\nСтатус доставки при этом не изменится.`)
+    if (!confirmed) return
+
+    setKaspiPaymentBusyOrderId(order.id)
+    setError(null)
+    setMessage(null)
+    try {
+      const payload = {
+        orderId: order.id,
+        paymentDate: formatLocalDateInput(),
+        method: 'КАСПИ МАГАЗИН',
+        amount: debt,
+        paymentKind: 'debt_close' as const,
+        comment: 'Поступление подтверждено в разделе Kaspi',
+      }
+      const criticalKey = `kaspi-payment:${order.id}`
+      const critical = prepareCriticalRequest(criticalKey, payload)
+      const response = await apiFetch('/api/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
+        body: JSON.stringify(critical.payload),
+      })
+      const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord; debtClosed?: boolean; refreshRequired?: boolean }>(response, 'Kaspi · получение оплаты')
+      if (!response.ok) throw new Error(result.message || `Payment failed: ${response.status}`)
+      completeCriticalRequest(criticalKey, critical.requestId)
+      if (result.order) upsertOrderInState(result.order)
+      setMessage(`Оплата по заказу ${order.external_id} подтверждена. Доставка не изменялась.`)
+      await Promise.allSettled([
+        loadDashboard(false, filters, 0),
+        refreshFinanceReportsIfVisible(),
+        loadAllOpenDebtOrders(),
+      ])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось подтвердить оплату Kaspi.')
+    } finally {
+      setKaspiPaymentBusyOrderId(null)
+    }
   }
 
   async function handleOpenDebt(order: OrderRecord) {
@@ -8224,7 +8280,11 @@ function removeDebtPayment(index: number) {
         <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createPricing, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment }} />
         </DeferredSection>
 
-        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label="Создание заказа ЗАММЛЕР">
+        <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'list'} label="Kaspi">
+        <KaspiOrdersSection ctx={{ busy, changeOrderPage, confirmKaspiPayment, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenExchange, handleOpenReturn, kaspiPaymentBusyOrderId, kaspiPaymentState, ManagerBadge, managerColorFor, openKaspiCreate, orderPageInfo, orders, setFilters, setKaspiPaymentState, shippingStatusLabel }} />
+        </DeferredSection>
+
+        <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'zammler'} label="Создание Kaspi-заказа">
         <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createPricing, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment, zammlerMode: true }} />
         </DeferredSection>
 
