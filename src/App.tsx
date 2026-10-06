@@ -757,6 +757,19 @@ function App() {
     dateTo: defaultOrderRange.dateTo,
     pageSize: '100',
   })
+  const [kaspiFilters, setKaspiFilters] = useState({
+    q: '',
+    status: 'all',
+    shippingStatus: 'all',
+    deliveryType: 'all',
+    source: 'all',
+    manager: '',
+    managerId: 0,
+    archiveMode: 'active' as ArchiveMode,
+    dateFrom: defaultOrderRange.dateFrom,
+    dateTo: defaultOrderRange.dateTo,
+    pageSize: '100',
+  })
   const closedArchiveMonth = getClosedArchiveMonth()
   const [archiveDraft, setArchiveDraft] = useState({
     month: closedArchiveMonth.value,
@@ -886,13 +899,22 @@ function App() {
   }, [activeSector, authReady, clientMode, clientQuery])
 
   useEffect(() => {
-    if (!authReady || (activeSector !== 'orders' && activeSector !== 'kaspi') || orderPanel !== 'list') return
+    if (!authReady || activeSector !== 'orders' || orderPanel !== 'list') return
     const timer = window.setTimeout(() => {
       setOrderPageOffset(0)
       void loadDashboard(false, filters, 0)
     }, filters.q.trim() ? 380 : 120)
     return () => window.clearTimeout(timer)
-  }, [activeSector, authReady, orderPanel, kaspiPaymentState, filters.q, filters.status, filters.shippingStatus, filters.deliveryType, filters.archiveMode, filters.manager, filters.managerId, filters.dateFrom, filters.dateTo])
+  }, [activeSector, authReady, orderPanel, filters.q, filters.status, filters.shippingStatus, filters.deliveryType, filters.archiveMode, filters.manager, filters.managerId, filters.dateFrom, filters.dateTo])
+
+  useEffect(() => {
+    if (!authReady || activeSector !== 'kaspi' || orderPanel !== 'list') return
+    const timer = window.setTimeout(() => {
+      setOrderPageOffset(0)
+      void loadDashboard(false, kaspiFilters, 0)
+    }, kaspiFilters.q.trim() ? 380 : 120)
+    return () => window.clearTimeout(timer)
+  }, [activeSector, authReady, orderPanel, kaspiPaymentState, kaspiFilters.q, kaspiFilters.dateFrom, kaspiFilters.dateTo])
 
   useEffect(() => {
     if (!authReady || activeSector !== 'orders' || orderPanel !== 'debt') return
@@ -3976,9 +3998,8 @@ function App() {
         setMessage(`Заказы загружены из базы. Временно не обновились: ${softWarnings.join(', ')}.`)
       }
 
-      if (activeSector === 'orders' && orderPanel === 'list') {
-        void loadOrdersFinanceSummary(activeFilters)
-      }
+      // Kaspi separation keeps the ordinary list lightweight; the old finance card is no longer
+      // rendered on this table, so do not spend a second D1 summary read here.
     } catch (err) {
       const hasPreviousData = orders.length > 0 || Boolean(orderPeriodStats)
       if (hasPreviousData && isTransientApiError(err)) {
@@ -4002,7 +4023,8 @@ function App() {
       : Math.max(0, orderPageInfo.offset - step)
     if (nextOffset === orderPageInfo.offset) return
     const lastOrder = direction === 'next' && orders.length ? orders[orders.length - 1] : null
-    await loadDashboard(false, filters, nextOffset, { afterOrderDate: lastOrder?.order_date || '', afterOrderId: Number(lastOrder?.id || 0), reusePeriodStats: true })
+    const activeListFilters = activeSector === 'kaspi' ? kaspiFilters : filters
+    await loadDashboard(false, activeListFilters, nextOffset, { afterOrderDate: lastOrder?.order_date || '', afterOrderId: Number(lastOrder?.id || 0), reusePeriodStats: true })
     window.setTimeout(() => document.getElementById(activeSector === 'kaspi' ? 'kaspi-orders' : 'orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
   }
 
@@ -4050,10 +4072,14 @@ function App() {
       }
       if (key === 'orderPaymentMethod') {
         const method = String(value || '').trim()
+        const previousMethod = String(current.orderPaymentMethod || '').trim()
         const isKaspi = normalizeSuggestion(method) === normalizeSuggestion('КАСПИ МАГАЗИН')
-        const payments = current.payments.map((payment, index) => (
-          index === 0 && !String(payment.method || '').trim() ? { ...payment, method } : payment
-        ))
+        const payments = current.payments.map((payment, index) => {
+          if (index !== 0 || Number(payment.amount || 0) > 0) return payment
+          const paymentMethod = String(payment.method || '').trim()
+          const followedOrderMethod = !paymentMethod || (previousMethod && normalizeSuggestion(paymentMethod) === normalizeSuggestion(previousMethod))
+          return followedOrderMethod ? { ...payment, method } : payment
+        })
         return {
           ...current,
           orderPaymentMethod: method,
@@ -4149,14 +4175,13 @@ function App() {
       ))
       if (field === 'method') {
         const method = String(value || '').trim()
-        const isKaspi = normalizeSuggestion(method) === normalizeSuggestion('КАСПИ МАГАЗИН')
-        const nextOrderPaymentMethod = isKaspi
-          ? 'КАСПИ МАГАЗИН'
-          : (current.orderPaymentMethod || (index === 0 ? method : ''))
+        const shouldSeedOrderMethod = index === 0 && !String(current.orderPaymentMethod || '').trim()
+        const nextOrderPaymentMethod = shouldSeedOrderMethod ? method : current.orderPaymentMethod
+        const isKaspiOrder = normalizeSuggestion(nextOrderPaymentMethod || '') === normalizeSuggestion('КАСПИ МАГАЗИН')
         return {
           ...current,
           orderPaymentMethod: nextOrderPaymentMethod,
-          deliveryType: isKaspi && !String(current.deliveryType || '').trim() ? 'ЗАММЛЕР' : current.deliveryType,
+          deliveryType: isKaspiOrder && !String(current.deliveryType || '').trim() ? 'ЗАММЛЕР' : current.deliveryType,
           payments: nextPayments,
         }
       }
@@ -4258,10 +4283,8 @@ function App() {
         throw new Error('Проверьте цены позиций и оплаты перед сохранением заказа.')
       }
       const pricedLineByInputIndex = new Map(pricingReadiness.lines.map((line) => [line.itemIndex, line]))
-      const kaspiPaymentSelected = createDraft.payments.some((payment) => normalizeSuggestion(payment.method || '') === normalizeSuggestion('КАСПИ МАГАЗИН'))
-      const orderPaymentMethod = kaspiPaymentSelected
-        ? 'КАСПИ МАГАЗИН'
-        : (String(createDraft.orderPaymentMethod || '').trim() || String(createDraft.payments.find((payment) => String(payment.method || '').trim())?.method || '').trim())
+      const orderPaymentMethod = String(createDraft.orderPaymentMethod || '').trim()
+        || String(createDraft.payments.find((payment) => String(payment.method || '').trim())?.method || '').trim()
 
       const payload = {
         orderDate: createDraft.orderDate,
@@ -5807,7 +5830,7 @@ function removeDebtPayment(index: number) {
       if (result.order) upsertOrderInState(result.order)
       setMessage(`Оплата по заказу ${order.external_id} подтверждена. Доставка не изменялась.`)
       await Promise.allSettled([
-        loadDashboard(false, filters, 0),
+        loadDashboard(false, kaspiFilters, 0),
         refreshFinanceReportsIfVisible(),
         loadAllOpenDebtOrders(),
       ])
@@ -8286,7 +8309,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'list'} label="Kaspi">
-        <KaspiOrdersSection ctx={{ busy, changeOrderPage, confirmKaspiPayment, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenExchange, handleOpenReturn, isAdmin, kaspiPaymentBusyOrderId, kaspiPaymentState, ManagerBadge, managerColorFor, openKaspiCreate, orderPageInfo, orders, sectorStyle, setFilters, setKaspiPaymentState, shippingStatusLabel }} />
+        <KaspiOrdersSection ctx={{ busy, changeOrderPage, confirmKaspiPayment, filters: kaspiFilters, formatDateShort, formatMoney, handleEditOrder, handleOpenExchange, handleOpenReturn, isAdmin, kaspiPaymentBusyOrderId, kaspiPaymentState, ManagerBadge, managerColorFor, openKaspiCreate, orderPageInfo, orders, sectorStyle, setFilters: setKaspiFilters, setKaspiPaymentState, shippingStatusLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'zammler'} label="Создание Kaspi-заказа">
