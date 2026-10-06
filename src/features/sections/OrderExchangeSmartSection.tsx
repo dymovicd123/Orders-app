@@ -99,6 +99,22 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
   const refundAmount = Math.max(0, currentNetPaid - projectedTotal)
   const paymentNow = refundAmount > 0 ? 0 : Math.max(0, Number(exchangeDraft.paymentAmount || 0))
   const remainingDebt = Math.max(0, dueBeforeSettlement - paymentNow)
+  const filledNewItems = (exchangeDraft.newItems || []).filter((entry: any) => String(entry.item?.productName || '').trim())
+  const newPricesReady = filledNewItems.every((entry: any) => {
+    const price = entry.item?.unitPrice == null ? Number.NaN : Number(entry.item.unitPrice)
+    return Number.isSafeInteger(price) && price >= 0
+  })
+  const saveBlockReason = !(exchangeDraft.oldSelections || []).length
+    ? 'Выберите хотя бы один товар, который клиент возвращает.'
+    : !filledNewItems.length
+      ? 'Добавьте товар, который клиент получает.'
+      : !newPricesReady
+        ? 'Укажите цену продажи для каждого нового товара.'
+        : refundAmount > 0 && !String(exchangeDraft.refundMethod || '').trim()
+          ? 'Выберите способ возврата денег.'
+          : paymentNow > 0 && !String(exchangeDraft.paymentMethod || '').trim()
+            ? 'Выберите способ оплаты.'
+            : ''
 
   const pendingGroups = useMemo(() => (exchangeHistory || []).map((entry: any) => {
     const items = entry.isSetExchange
@@ -473,8 +489,9 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
               <label><span>Дата обмена</span><input type="date" value={exchangeDraft.exchangeDate} onChange={(event) => setExchangeDraft((current: any) => ({ ...current, exchangeDate: event.target.value }))} /></label>
               <label className="wide-field"><span>Комментарий</span><input value={exchangeDraft.comment || ''} onChange={(event) => setExchangeDraft((current: any) => ({ ...current, comment: event.target.value }))} placeholder="Необязательно" /></label>
             </div>
+            {saveBlockReason ? <div className="exchange-final-save-hint">{saveBlockReason}</div> : null}
             <div className="exchange-final-actions">
-              <button className="primary" type="button" disabled={exchangeBusy || !exchangeDraft.oldSelections.length || !exchangeDraft.newItems.length} onClick={() => void saveExchange()}>{exchangeBusy ? 'Провожу обмен…' : 'Провести обмен'}</button>
+              <button className="primary" type="button" disabled={exchangeBusy || Boolean(saveBlockReason)} onClick={() => void saveExchange()}>{exchangeBusy ? 'Провожу обмен…' : 'Провести обмен'}</button>
               <button className="secondary" type="button" disabled={exchangeBusy} onClick={() => closeExchangeForm(true)}>Отменить и вернуться</button>
             </div>
           </section>
