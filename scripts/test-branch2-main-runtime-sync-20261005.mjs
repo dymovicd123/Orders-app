@@ -12,6 +12,47 @@ const gitBlob = (value) => {
 
 const root = process.cwd()
 
+const arrivalChildAudienceManifest = JSON.parse(
+  fs.readFileSync(path.join(root, 'scripts/arrival-child-audience-20261006-runtime-manifest.json'), 'utf8'),
+)
+check(
+  arrivalChildAudienceManifest?.version === 1 && arrivalChildAudienceManifest?.revision === 'arrival-child-audience-20261006-runtime',
+  'Arrival child-audience runtime manifest invalid',
+)
+if (!process.env.ARRIVAL_CHILD_AUDIENCE_BRANCH2_MAIN_SYNC_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(arrivalChildAudienceManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      check(gitBlob(actual) === delta.afterGitBlob, 'Arrival child-audience runtime drifted before Branch2/main sync check: ' + relative)
+      originals.set(relative, actual)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      check(gitBlob(baseline) === delta.beforeGitBlob, 'Arrival child-audience predecessor fixture drifted: ' + relative)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, ARRIVAL_CHILD_AUDIENCE_BRANCH2_MAIN_SYNC_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ARRIVAL CHILD AUDIENCE — BRANCH2 MAIN SYNC PRESERVATION LAYER PASSED')
+  process.exit(0)
+}
+
 const kaspiSeparationRuntimeManifest = JSON.parse(
   fs.readFileSync(path.join(root, 'scripts/kaspi-order-separation-20261006-runtime-manifest.json'), 'utf8'),
 )

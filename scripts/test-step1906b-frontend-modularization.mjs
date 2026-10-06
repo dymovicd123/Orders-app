@@ -93,6 +93,38 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
+const arrivalChildAudienceFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/arrival-child-audience-20261006-runtime-manifest.json'), 'utf8'))
+if (arrivalChildAudienceFrontendManifest?.version !== 1 || arrivalChildAudienceFrontendManifest?.revision !== 'arrival-child-audience-20261006-runtime') throw new Error('Arrival child-audience frontend manifest invalid')
+const arrivalChildAudienceFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.ARRIVAL_CHILD_AUDIENCE_FRONTEND_NORMALIZED) {
+  const relative = 'src/app/controllers/useOperationalViewModel.ts'
+  const delta = arrivalChildAudienceFrontendManifest.files?.[relative]
+  if (!delta) throw new Error('Arrival child-audience frontend manifest lost useOperationalViewModel.ts')
+  const absolute = path.join(root, relative)
+  const actual = fs.readFileSync(absolute, 'utf8')
+  if (arrivalChildAudienceFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Arrival child-audience frontend drifted')
+  const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+  if (arrivalChildAudienceFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Arrival child-audience frontend predecessor fixture drifted')
+  fs.writeFileSync(absolute, baseline)
+  let childStatus = 1
+  try {
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, ARRIVAL_CHILD_AUDIENCE_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    fs.writeFileSync(absolute, actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ARRIVAL CHILD AUDIENCE FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const kaspiSeparationFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-order-separation-20261006-runtime-manifest.json'), 'utf8'))
 if (kaspiSeparationFrontendManifest?.version !== 1 || kaspiSeparationFrontendManifest?.revision !== 'kaspi-order-separation-20261006-runtime') throw new Error('Kaspi order separation frontend manifest invalid')
 const kaspiSeparationFrontendBlobSha = (value) => {
