@@ -1,0 +1,44 @@
+name: Refresh sharp security lock
+
+on:
+  push:
+    branches:
+      - w-security-sharp-0355-20261006
+    paths:
+      - '.github/workflows/refresh-sharp-security-lock.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: w-security-sharp-0355-20261006
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Refresh only the vulnerable sharp transitive dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm pkg set overrides.sharp=0.35.5
+          npm install --package-lock-only --ignore-scripts
+          npm ci --ignore-scripts
+          npm audit --audit-level=high
+          node -e "const p=require('./package-lock.json'); const s=p.packages?.['node_modules/sharp']; if(s?.version!=='0.35.5') throw new Error('sharp not pinned to 0.35.5'); console.log('sharp', s.version)"
+      - name: Commit generated lock and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/refresh-sharp-security-lock.yml
+          git add package.json package-lock.json
+          git diff --cached --stat
+          git commit -m "Security: patch sharp advisory"
+          git push origin HEAD:w-security-sharp-0355-20261006
