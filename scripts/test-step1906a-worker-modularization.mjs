@@ -5,6 +5,40 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
+const kaspiSeparationWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-order-separation-20261006-runtime-manifest.json'), 'utf8'))
+if (kaspiSeparationWorkerManifest?.version !== 1 || kaspiSeparationWorkerManifest?.revision !== 'kaspi-order-separation-20261006-runtime') throw new Error('Kaspi order separation Worker manifest invalid')
+const kaspiSeparationWorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.KASPI_ORDER_SEPARATION_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(kaspiSeparationWorkerManifest.files || {})) {
+      if (!relative.startsWith('worker/')) continue
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (kaspiSeparationWorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('Kaspi order separation Worker drifted: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (kaspiSeparationWorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Kaspi order separation Worker predecessor fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, KASPI_ORDER_SEPARATION_WORKER_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('KASPI ORDER SEPARATION WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const sourceDefaultsWorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/return-exchange-source-defaults-20261005-worker-manifest.json'), 'utf8'))
 if (sourceDefaultsWorkerManifest?.version !== 1 || sourceDefaultsWorkerManifest?.revision !== 'return-exchange-source-defaults-20261005-worker') throw new Error('Return/Exchange source-default Worker manifest invalid')
 const sourceDefaultsWorkerBlobSha = (value) => {

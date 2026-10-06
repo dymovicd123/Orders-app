@@ -93,6 +93,48 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
+const kaspiSeparationFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-order-separation-20261006-runtime-manifest.json'), 'utf8'))
+if (kaspiSeparationFrontendManifest?.version !== 1 || kaspiSeparationFrontendManifest?.revision !== 'kaspi-order-separation-20261006-runtime') throw new Error('Kaspi order separation frontend manifest invalid')
+const kaspiSeparationFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.KASPI_ORDER_SEPARATION_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(kaspiSeparationFrontendManifest.files || {})) {
+      if (!relative.startsWith('src/')) continue
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (kaspiSeparationFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Kaspi order separation frontend drifted: ' + relative)
+      originals.set(relative, actual)
+      if (delta.absentBefore) {
+        fs.unlinkSync(absolute)
+      } else {
+        const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+        if (kaspiSeparationFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Kaspi order separation frontend predecessor fixture drifted: ' + relative)
+        fs.writeFileSync(absolute, baseline)
+      }
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, KASPI_ORDER_SEPARATION_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('KASPI ORDER SEPARATION FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const exchangeFinalAuditFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/exchange-final-audit-20261006-frontend-manifest.json'), 'utf8'))
 if (exchangeFinalAuditFrontendManifest?.version !== 1 || exchangeFinalAuditFrontendManifest?.revision !== 'exchange-final-audit-20261006-frontend') throw new Error('Exchange final audit frontend manifest invalid')
 const exchangeFinalAuditFrontendBlobSha = (value) => {

@@ -17,7 +17,6 @@ export const OrderFiltersSection = namedLazy(() => import('../features/sections/
 export const CreateOrderSection = namedLazy(() => import('../features/sections/CreateOrderSection'), 'CreateOrderSection')
 export const OrderEditorSection = namedLazy(() => import('../features/sections/OrderEditorSection'), 'OrderEditorSection')
 export const OrdersTableSection = namedLazy(() => import('../features/sections/OrdersTableSection'), 'OrdersTableSection')
-export const KaspiOrdersSection = namedLazy(() => import('../features/sections/KaspiOrdersSection'), 'KaspiOrdersSection')
 export const OrderDetailsSection = namedLazy(() => import('../features/sections/OrderDetailsSection'), 'OrderDetailsSection')
 export const OrderDebtSection = namedLazy(() => import('../features/sections/OrderDebtSection'), 'OrderDebtSection')
 export const OrderReturnsSection = namedLazy(() => import('../features/sections/OrderReturnsSection'), 'OrderReturnsSection')

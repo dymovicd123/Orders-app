@@ -831,7 +831,6 @@ export type OrderRecord = {
   customer_name: string | null
   city: string | null
   delivery_type: string | null
-  order_payment_method?: string | null
   source_type: 'warehouse' | 'boutique'
   workshop_status: string
   order_status: string
@@ -1077,7 +1076,7 @@ export type OrderPanel = 'create' | 'zammler' | 'list' | 'edit' | 'debt' | 'retu
 export type FinanceReportType = 'payments' | 'managers' | 'products' | 'cities' | 'returns' | 'debts' | 'leads' | 'callCentre'
 
 
-export type AppSector = 'overview' | 'orders' | 'kaspi' | 'clients' | 'workshop' | 'inventory' | 'finance' | 'references' | 'reports' | 'leads' | 'plan' | 'team'
+export type AppSector = 'overview' | 'orders' | 'clients' | 'workshop' | 'inventory' | 'finance' | 'references' | 'reports' | 'leads' | 'plan' | 'team'
 
 
 export type InventoryPanel = 'overview' | 'attention' | 'stocktake' | 'movement' | 'settings' | 'exact' | 'warehouse' | 'boutique' | 'catalog' | 'history' | 'audit'
@@ -1632,7 +1631,6 @@ export type EditorDraft = {
   customerName: string
   city: string
   deliveryType: string
-  orderPaymentMethod: string
   sourceType: 'warehouse' | 'boutique'
   orderTotal: string
   workshopStatus: 'in_workshop' | 'ready' | 'shipped' | 'cancelled'

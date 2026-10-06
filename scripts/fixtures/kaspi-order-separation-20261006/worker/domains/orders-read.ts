@@ -234,7 +234,6 @@ export function retainedOrderSummaryPayload(row: Record<string, unknown>) {
     customer_name: cleanText(row.customer_name) || null,
     city: cleanText(row.city) || null,
     delivery_type: cleanText(row.delivery_type) || null,
-    order_payment_method: null,
     source_type: cleanText(row.source_type) || 'warehouse',
     workshop_status: '',
     order_status: 'archived',
@@ -282,9 +281,6 @@ export async function listOrders(db: D1Database, url: URL) {
   const q = cleanText(url.searchParams.get('q'));
   const source = cleanText(url.searchParams.get('source')).toLowerCase();
   const deliveryType = cleanText(url.searchParams.get('deliveryType'));
-  const orderPaymentMethod = cleanText(url.searchParams.get('orderPaymentMethod')).toUpperCase();
-  const excludeOrderPaymentMethod = cleanText(url.searchParams.get('excludeOrderPaymentMethod')).toUpperCase();
-  const debtState = cleanText(url.searchParams.get('debtState')).toLowerCase();
   const manager = cleanText(url.searchParams.get('manager')).toUpperCase();
   const managerId = toInt(url.searchParams.get('managerId'), 0);
   const status = normalizeStatusFilter(url.searchParams.get('status'));
@@ -357,20 +353,6 @@ export async function listOrders(db: D1Database, url: URL) {
   if (deliveryType) {
     baseWhereParts.push("COALESCE(o.delivery_type, '') = ?");
     baseBindings.push(deliveryType);
-  }
-
-  if (orderPaymentMethod) {
-    baseWhereParts.push("UPPER(TRIM(COALESCE(o.order_payment_method, ''))) = ?");
-    baseBindings.push(orderPaymentMethod);
-  }
-  if (excludeOrderPaymentMethod) {
-    baseWhereParts.push("UPPER(TRIM(COALESCE(o.order_payment_method, ''))) <> ?");
-    baseBindings.push(excludeOrderPaymentMethod);
-  }
-  if (debtState === 'open') {
-    baseWhereParts.push('COALESCE(o.debt_amount, 0) > 0');
-  } else if (debtState === 'paid') {
-    baseWhereParts.push('COALESCE(o.debt_amount, 0) <= 0');
   }
 
   if (managerId > 0) {
@@ -490,7 +472,7 @@ export async function listOrders(db: D1Database, url: URL) {
       o.id, o.external_id, o.order_date, o.manager_id,
       CASE WHEN m.id IS NOT NULL THEN m.name WHEN NULLIF(TRIM(COALESCE(o.manager_snapshot_name, '')), '') IS NOT NULL THEN o.manager_snapshot_name || ' · исторический менеджер' ELSE 'Менеджер требует уточнения' END AS manager_name,
       o.manager_snapshot_name, COALESCE(m.color_key, '#64748B') AS manager_color, c.phone_normalized AS customer_phone, c.display_name AS customer_name,
-      o.city, o.delivery_type, o.order_payment_method, o.source_type, o.workshop_status, o.order_status,
+      o.city, o.delivery_type, o.source_type, o.workshop_status, o.order_status,
       o.shipping_status, o.shipping_date,
       ${pricingModeSelect},
       o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment,

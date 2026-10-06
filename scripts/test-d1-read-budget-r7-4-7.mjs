@@ -154,7 +154,7 @@ check(appSource.includes('const inventorySnapshotLoadedAt = useRef<Record<Invent
 check(appSource.includes('snapshotAgeMs <= INVENTORY_FORM_SNAPSHOT_TTL_MS'), 'R7.5 inventory cache is not time-bounded')
 check(appSource.includes("if (!query.trim()) inventorySnapshotLoadedAt.current[source] = Date.now()"), 'R7.5 filtered searches must not mark the full inventory snapshot fresh')
 check(appSource.includes('inventorySnapshotLoadedAt.current = { warehouse: 0, boutique: 0 }'), 'R7.5 stock mutation invalidation must clear snapshot freshness')
-const orderFormEffectMarker = "activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'zammler' || orderPanel === 'edit' || orderPanel === 'exchange')"
+const orderFormEffectMarker = "(activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'edit' || orderPanel === 'exchange')) || (activeSector === 'kaspi' && orderPanel === 'zammler')"
 const orderFormEffectStart = appSource.indexOf(orderFormEffectMarker)
 const orderFormEffectEnd = appSource.indexOf('\n    }', orderFormEffectStart)
 const orderFormEffect = appSource.slice(orderFormEffectStart, orderFormEffectEnd)

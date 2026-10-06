@@ -32,7 +32,7 @@ import { createDebtClosePayment, createEditorDraft, createEmptyEditorItem, creat
 import { ChoicePills, FriendlyNumberInput, ManagerBadge, ManagerPicker, SmartPickerInput, resolveManagerDisplayColor } from './components'
 import { TableDragScrollManager } from './components/tables/TableDragScrollManager'
 import { DatabaseStorageModal, DatabaseStorageWarning, useDatabaseStorageMaintenance } from './features/storage/DatabaseStorageMaintenance'
-import { DashboardSection, ClientsSection, ReferencesSection, InventorySection, WorkshopSection, OrdersHeaderSection, OrderFiltersSection, CreateOrderSection, OrderEditorSection, OrdersTableSection, KaspiOrdersSection, OrderDetailsSection, OrderDebtSection, OrderReturnsSection, OrderExchangeSection, TeamSection, LeadsSection, PlanSection, FinanceSection, ReportsSection, OrderActivitySection, OrderCatalogResolutionModal, StockResolutionConfirmModal, ReturnedItemResolutionModal, ArrivalRecoveryDialog, DeferredSection } from './app/lazySections'
+import { DashboardSection, ClientsSection, ReferencesSection, InventorySection, WorkshopSection, OrdersHeaderSection, OrderFiltersSection, CreateOrderSection, OrderEditorSection, OrdersTableSection, OrderDetailsSection, OrderDebtSection, OrderReturnsSection, OrderExchangeSection, TeamSection, LeadsSection, PlanSection, FinanceSection, ReportsSection, OrderActivitySection, OrderCatalogResolutionModal, StockResolutionConfirmModal, ReturnedItemResolutionModal, ArrivalRecoveryDialog, DeferredSection } from './app/lazySections'
 import { InventoryStockGroupsRenderer } from './features/renderers/InventoryStockGroupsRenderer'
 import type { ArrivalRecoveryPrompt } from './features/inventory/views/ArrivalRecoveryDialog'
 import type { StockResolutionPrompt } from './features/orders/StockResolutionConfirmModal'
@@ -47,7 +47,6 @@ import { downloadBlobFile, makeExportHtml } from './features/export/documentExpo
 import './styles/1905-small-screen-acceptance.css'
 import './styles/192b1-warehouse-attention.css'
 import './styles/192c-arrival-recovery.css'
-import './styles/195-kaspi-orders.css'
 
 
 
@@ -210,7 +209,7 @@ function App() {
   const [clientDetails, setClientDetails] = useState<ClientDetailsResponse | null>(null)
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null)
   const [editorOrderOverride, setEditorOrderOverride] = useState<OrderRecord | null>(null)
-  const [editorReturnSector, setEditorReturnSector] = useState<'orders' | 'workshop' | 'kaspi'>('orders')
+  const [editorReturnSector, setEditorReturnSector] = useState<'orders' | 'workshop'>('orders')
   const [editorOpen, setEditorOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [orderBusy, setOrderBusy] = useState(false)
@@ -648,8 +647,6 @@ function App() {
   const [referenceStatusFilter, setReferenceStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
   const [referenceBusy, setReferenceBusy] = useState(false)
   const [orderPanel, setOrderPanel] = useState<OrderPanel>('list')
-  const [kaspiPaymentState, setKaspiPaymentState] = useState<'awaiting' | 'paid' | 'all'>('awaiting')
-  const [kaspiPaymentBusyOrderId, setKaspiPaymentBusyOrderId] = useState<number | null>(null)
   const [orderPeriodPreset, setOrderPeriodPreset] = useState<OrderPeriodPreset>('month')
   const defaultOrderRange = getPeriodRange('month')
   const [debtFilters, setDebtFilters] = useState({
@@ -757,19 +754,6 @@ function App() {
     dateTo: defaultOrderRange.dateTo,
     pageSize: '100',
   })
-  const [kaspiFilters, setKaspiFilters] = useState({
-    q: '',
-    status: 'all',
-    shippingStatus: 'all',
-    deliveryType: 'all',
-    source: 'all',
-    manager: '',
-    managerId: 0,
-    archiveMode: 'active' as ArchiveMode,
-    dateFrom: '',
-    dateTo: '',
-    pageSize: '100',
-  })
   const closedArchiveMonth = getClosedArchiveMonth()
   const [archiveDraft, setArchiveDraft] = useState({
     month: closedArchiveMonth.value,
@@ -824,8 +808,6 @@ function App() {
 
   useEffect(() => {
     setMobileNavOpen(false)
-    if (activeSector === 'kaspi' && orderPanel !== 'list' && orderPanel !== 'zammler') setOrderPanel('list')
-    if (activeSector === 'orders' && orderPanel === 'zammler') setOrderPanel('list')
   }, [activeSector])
 
   useEffect(() => {
@@ -906,15 +888,6 @@ function App() {
     }, filters.q.trim() ? 380 : 120)
     return () => window.clearTimeout(timer)
   }, [activeSector, authReady, orderPanel, filters.q, filters.status, filters.shippingStatus, filters.deliveryType, filters.archiveMode, filters.manager, filters.managerId, filters.dateFrom, filters.dateTo])
-
-  useEffect(() => {
-    if (!authReady || activeSector !== 'kaspi' || orderPanel !== 'list') return
-    const timer = window.setTimeout(() => {
-      setOrderPageOffset(0)
-      void loadDashboard(false, kaspiFilters, 0)
-    }, kaspiFilters.q.trim() ? 380 : 120)
-    return () => window.clearTimeout(timer)
-  }, [activeSector, authReady, orderPanel, kaspiPaymentState, kaspiFilters.q, kaspiFilters.dateFrom, kaspiFilters.dateTo])
 
   useEffect(() => {
     if (!authReady || activeSector !== 'orders' || orderPanel !== 'debt') return
@@ -1443,7 +1416,7 @@ function App() {
       if (!isAdmin && inventoryPanel === 'catalog') setInventoryPanel('overview')
       if (isAdmin && !inventoryAdminPanels.includes(inventoryPanel)) setInventoryPanel('overview')
     }
-    if ((activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'edit' || orderPanel === 'exchange')) || (activeSector === 'kaspi' && orderPanel === 'zammler')) {
+    if (activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'zammler' || orderPanel === 'edit' || orderPanel === 'exchange')) {
       // R7.5: order forms may reuse a very recent stock snapshot instead of rescanning both sources
       // on every panel transition. The server still performs the authoritative stock/CAS validation
       // on every write, and committed inventory mutations invalidate this snapshot explicitly.
@@ -3903,13 +3876,6 @@ function App() {
         includePaymentCount: activeFilters.archiveMode === 'active' && !activeFilters.dateFrom && !activeFilters.dateTo ? '0' : '1',
       })
       if (activeFilters.deliveryType === 'zammler') params.set('deliveryType', 'ЗАММЛЕР')
-      if (activeSector === 'kaspi') {
-        params.set('orderPaymentMethod', 'КАСПИ МАГАЗИН')
-        if (kaspiPaymentState === 'awaiting') params.set('debtState', 'open')
-        if (kaspiPaymentState === 'paid') params.set('debtState', 'paid')
-      } else if (activeSector === 'orders' && orderPanel === 'list') {
-        params.set('excludeOrderPaymentMethod', 'КАСПИ МАГАЗИН')
-      }
       // R5.9: the visible pagination remains offset/page based, but sequential Next may provide
       // the last loaded row as an internal seek cursor. The Worker keeps offset as the logical page.
       if (overrideOffset > 0 && pageReadOptions?.afterOrderDate && Number(pageReadOptions.afterOrderId || 0) > 0) {
@@ -3998,8 +3964,9 @@ function App() {
         setMessage(`Заказы загружены из базы. Временно не обновились: ${softWarnings.join(', ')}.`)
       }
 
-      // Kaspi separation keeps the ordinary list lightweight; the old finance card is no longer
-      // rendered on this table, so do not spend a second D1 summary read here.
+      if (activeSector === 'orders' && orderPanel === 'list') {
+        void loadOrdersFinanceSummary(activeFilters)
+      }
     } catch (err) {
       const hasPreviousData = orders.length > 0 || Boolean(orderPeriodStats)
       if (hasPreviousData && isTransientApiError(err)) {
@@ -4023,9 +3990,8 @@ function App() {
       : Math.max(0, orderPageInfo.offset - step)
     if (nextOffset === orderPageInfo.offset) return
     const lastOrder = direction === 'next' && orders.length ? orders[orders.length - 1] : null
-    const activeListFilters = activeSector === 'kaspi' ? kaspiFilters : filters
-    await loadDashboard(false, activeListFilters, nextOffset, { afterOrderDate: lastOrder?.order_date || '', afterOrderId: Number(lastOrder?.id || 0), reusePeriodStats: true })
-    window.setTimeout(() => document.getElementById(activeSector === 'kaspi' ? 'kaspi-orders' : 'orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
+    await loadDashboard(false, filters, nextOffset, { afterOrderDate: lastOrder?.order_date || '', afterOrderId: Number(lastOrder?.id || 0), reusePeriodStats: true })
+    window.setTimeout(() => document.getElementById('orders')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
   }
 
   function applyOrderPeriodPreset(preset: OrderPeriodPreset) {
@@ -4068,23 +4034,6 @@ function App() {
               ? { ...payment, paymentDate: orderDate || payment.paymentDate }
               : payment
           )),
-        }
-      }
-      if (key === 'orderPaymentMethod') {
-        const method = String(value || '').trim()
-        const previousMethod = String(current.orderPaymentMethod || '').trim()
-        const isKaspi = normalizeSuggestion(method) === normalizeSuggestion('КАСПИ МАГАЗИН')
-        const payments = current.payments.map((payment, index) => {
-          if (index !== 0 || Number(payment.amount || 0) > 0) return payment
-          const paymentMethod = String(payment.method || '').trim()
-          const followedOrderMethod = !paymentMethod || (previousMethod && normalizeSuggestion(paymentMethod) === normalizeSuggestion(previousMethod))
-          return followedOrderMethod ? { ...payment, method } : payment
-        })
-        return {
-          ...current,
-          orderPaymentMethod: method,
-          deliveryType: isKaspi && !String(current.deliveryType || '').trim() ? 'ЗАММЛЕР' : current.deliveryType,
-          payments,
         }
       }
       return { ...current, [key]: value }
@@ -4173,18 +4122,6 @@ function App() {
       const nextPayments = current.payments.map((payment, paymentIndex) => (
         paymentIndex === index ? { ...payment, [field]: value } : payment
       ))
-      if (field === 'method') {
-        const method = String(value || '').trim()
-        const shouldSeedOrderMethod = index === 0 && !String(current.orderPaymentMethod || '').trim()
-        const nextOrderPaymentMethod = shouldSeedOrderMethod ? method : current.orderPaymentMethod
-        const isKaspiOrder = normalizeSuggestion(nextOrderPaymentMethod || '') === normalizeSuggestion('КАСПИ МАГАЗИН')
-        return {
-          ...current,
-          orderPaymentMethod: nextOrderPaymentMethod,
-          deliveryType: isKaspiOrder && !String(current.deliveryType || '').trim() ? 'ЗАММЛЕР' : current.deliveryType,
-          payments: nextPayments,
-        }
-      }
       return { ...current, payments: nextPayments }
     })
   }
@@ -4232,7 +4169,6 @@ function App() {
     return {
       ...draft,
       deliveryType: 'ЗАММЛЕР',
-      orderPaymentMethod: 'КАСПИ МАГАЗИН',
       payments: [{
         ...createEmptyEditorPayment(draft.orderDate),
         method: 'КАСПИ МАГАЗИН',
@@ -4283,8 +4219,6 @@ function App() {
         throw new Error('Проверьте цены позиций и оплаты перед сохранением заказа.')
       }
       const pricedLineByInputIndex = new Map(pricingReadiness.lines.map((line) => [line.itemIndex, line]))
-      const orderPaymentMethod = String(createDraft.orderPaymentMethod || '').trim()
-        || String(createDraft.payments.find((payment) => String(payment.method || '').trim())?.method || '').trim()
 
       const payload = {
         orderDate: createDraft.orderDate,
@@ -4294,7 +4228,6 @@ function App() {
         customerName: createDraft.customerName,
         city: createDraft.city,
         deliveryType: createDraft.deliveryType,
-        orderPaymentMethod,
         sourceType: deriveOrderSourceType(createDraft.items),
         pricingMode: 'itemized_v1' as const,
         ...(retiredCatalogRecreateKeys.length ? { retiredCatalogRecreateKeys } : {}),
@@ -4435,9 +4368,10 @@ function App() {
         } else {
           setMessage('Заказ сохранён. Обновляю список заказов.')
         }
+        if (orderPanel === 'zammler') setFilters((current) => ({ ...current, deliveryType: 'zammler' }))
         setOrderPanel('list')
         resetCreateOrderDraft()
-        void loadDashboard(false, filters, 0)
+        void loadDashboard(false, orderPanel === 'zammler' ? { ...filters, deliveryType: 'zammler' } : filters, 0)
         void loadWorkshopData()
         return
       }
@@ -4453,7 +4387,6 @@ function App() {
         customer_name: createDraft.customerName || null,
         city: createDraft.city || null,
         delivery_type: createDraft.deliveryType || null,
-        order_payment_method: orderPaymentMethod || null,
         source_type: deriveOrderSourceType(createDraft.items),
         pricing_mode: 'itemized_v1',
         workshop_status: createDraft.workshopStatus,
@@ -4516,14 +4449,10 @@ function App() {
       setSelectedOrderId(createdOrder.id)
       setEditorDraft(createEditorDraft(createdOrder))
       setEditorOpen(false)
-      const createdAsKaspi = normalizeSuggestion(orderPaymentMethod) === normalizeSuggestion('КАСПИ МАГАЗИН')
-      if (createdAsKaspi) {
-        setActiveSector('kaspi')
-        window.location.hash = '#kaspi'
-      }
+      if (orderPanel === 'zammler') setFilters((current) => ({ ...current, deliveryType: 'zammler' }))
       setOrderPanel('list')
       resetCreateOrderDraft()
-      if (!createdAsKaspi && activeSector === 'orders' && orderPanel === 'list') void loadOrdersFinanceSummary(filters, true)
+      if (activeSector === 'orders' && orderPanel === 'list') void loadOrdersFinanceSummary(filters, true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
@@ -5785,62 +5714,6 @@ function removeDebtPayment(index: number) {
     return projectOrderOperationalState(order, { isAdmin })
   }
 
-  function openKaspiCreate() {
-    setActiveSector('kaspi')
-    setOrderPanel('zammler')
-    setCreateDraft(createZammlerOrderDraftWithDefaultManager())
-    setSelectedOrderId(null)
-    setEditorOpen(false)
-    window.location.hash = '#kaspi'
-  }
-
-  async function confirmKaspiPayment(order: OrderRecord) {
-    const debt = Math.max(0, Number(order.debt_amount || 0))
-    if (!debt || kaspiPaymentBusyOrderId) return
-    const projection = await getOrderOperationalProjection(order)
-    if (!projection.canOpenDebt) {
-      setMessage(debt <= 0 ? 'Этот Kaspi-заказ уже полностью оплачен.' : 'Этот заказ сейчас нельзя закрыть оплатой.')
-      return
-    }
-    const confirmed = window.confirm(`Подтвердить поступление ${formatMoney(debt)} по заказу ${order.external_id} через КАСПИ МАГАЗИН?\n\nСтатус доставки при этом не изменится.`)
-    if (!confirmed) return
-
-    setKaspiPaymentBusyOrderId(order.id)
-    setError(null)
-    setMessage(null)
-    try {
-      const payload = {
-        orderId: order.id,
-        paymentDate: formatLocalDateInput(),
-        method: 'КАСПИ МАГАЗИН',
-        amount: debt,
-        paymentKind: 'debt_close' as const,
-        comment: 'Поступление подтверждено в разделе Kaspi',
-      }
-      const criticalKey = `kaspi-payment:${order.id}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch('/api/payments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord; debtClosed?: boolean; refreshRequired?: boolean }>(response, 'Kaspi · получение оплаты')
-      if (!response.ok) throw new Error(result.message || `Payment failed: ${response.status}`)
-      completeCriticalRequest(criticalKey, critical.requestId)
-      if (result.order) upsertOrderInState(result.order)
-      setMessage(`Оплата по заказу ${order.external_id} подтверждена. Доставка не изменялась.`)
-      await Promise.allSettled([
-        loadDashboard(false, kaspiFilters, 0),
-        refreshFinanceReportsIfVisible(),
-        loadAllOpenDebtOrders(),
-      ])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось подтвердить оплату Kaspi.')
-    } finally {
-      setKaspiPaymentBusyOrderId(null)
-    }
-  }
-
   async function handleOpenDebt(order: OrderRecord) {
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canOpenDebt) {
@@ -5894,10 +5767,6 @@ function removeDebtPayment(index: number) {
     if (editorReturnSector === 'workshop') {
       setActiveSector('workshop')
       window.location.hash = '#workshop'
-    } else if (editorReturnSector === 'kaspi') {
-      setActiveSector('kaspi')
-      setOrderPanel('list')
-      window.location.hash = '#kaspi'
     } else {
       setActiveSector('orders')
       setOrderPanel('list')
@@ -5906,7 +5775,7 @@ function removeDebtPayment(index: number) {
     setEditorReturnSector('orders')
   }
 
-  async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' | 'kaspi' = 'orders') {
+  async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' = 'orders') {
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
       setSelectedOrderId(order.id)
@@ -6147,7 +6016,6 @@ function removeDebtPayment(index: number) {
         customerName: nextDraft.customerName,
         city: nextDraft.city,
         deliveryType: nextDraft.deliveryType,
-        orderPaymentMethod: nextDraft.orderPaymentMethod,
         comment: nextDraft.comment,
         paymentCorrections,
         itemContentReplacement,
@@ -6159,7 +6027,6 @@ function removeDebtPayment(index: number) {
         customerName: nextDraft.customerName,
         city: nextDraft.city,
         deliveryType: nextDraft.deliveryType,
-        orderPaymentMethod: nextDraft.orderPaymentMethod,
         comment: nextDraft.comment,
         paymentCorrections,
         itemPriceCorrections,
@@ -6171,7 +6038,6 @@ function removeDebtPayment(index: number) {
         customerName: nextDraft.customerName,
         city: nextDraft.city,
         deliveryType: nextDraft.deliveryType,
-        orderPaymentMethod: nextDraft.orderPaymentMethod,
         sourceType: deriveOrderSourceType(nextDraft.items),
         orderTotal: nextDraft.orderTotal ? Number(nextDraft.orderTotal) : undefined,
         workshopStatus: nextDraft.workshopStatus,
@@ -8308,11 +8174,7 @@ function removeDebtPayment(index: number) {
         <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createPricing, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment }} />
         </DeferredSection>
 
-        <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'list'} label="Kaspi">
-        <KaspiOrdersSection ctx={{ busy, changeOrderPage, confirmKaspiPayment, filters: kaspiFilters, formatDateShort, formatMoney, handleEditOrder, handleOpenExchange, handleOpenReturn, isAdmin, kaspiPaymentBusyOrderId, kaspiPaymentState, ManagerBadge, managerColorFor, openKaspiCreate, orderPageInfo, orders, sectorStyle, setFilters: setKaspiFilters, setKaspiPaymentState, shippingStatusLabel }} />
-        </DeferredSection>
-
-        <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'zammler'} label="Создание Kaspi-заказа">
+        <DeferredSection active={activeSector === 'orders' && orderPanel === 'zammler'} label="Создание заказа ЗАММЛЕР">
         <CreateOrderSection ctx={{ addCreateItem, addCreatePayment, applyCreateProductPick, ChoicePills, createDraft, createOrderFromDraft, createPricing, createTotals, resetCreateOrderDraft, formatMoney, formatOrderItemDetails, formatOrderItemTitle, FriendlyNumberInput, ManagerPicker, normalizeAudienceTypeValue, normalizeSuggestion, orderBusy, orderPanelStyle, references, removeCreateItem, removeCreatePayment, renderOrderSizeSelect, renderOrderSourceAvailability, sectorStyle, setCreateDraft, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues, updateCreateDraft, updateCreateItem, updateCreatePayment, zammlerMode: true }} />
         </DeferredSection>
 
@@ -8321,7 +8183,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Детали заказа">

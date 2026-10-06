@@ -50,7 +50,7 @@ try {
 
   const lazySections = [
     'DashboardSection','ClientsSection','ReferencesSection','InventorySection','WorkshopSection',
-    'OrdersHeaderSection','OrderFiltersSection','CreateOrderSection','OrderEditorSection','OrdersTableSection',
+    'OrdersHeaderSection','OrderFiltersSection','CreateOrderSection','OrderEditorSection','OrdersTableSection','KaspiOrdersSection',
     'OrderDetailsSection','OrderDebtSection','OrderReturnsSection','OrderExchangeSection','TeamSection','LeadsSection',
     'PlanSection','FinanceSection','ReportsSection','OrderActivitySection',
   ]
@@ -99,8 +99,9 @@ try {
   check(graphRelative.includes('src/app/order-pricing.ts'), 'H6B/H8 Catalog price resolver is not reachable from the initial Create controller graph')
   check(graph.size <= 26, `Initial static source graph regrew beyond the accepted pricing module set: ${graph.size} modules`)
   // Exchange Set V2 keeps the large visual workspace behind the existing lazy Exchange boundary.
-  // Only the save coordinator + Catalog-aware draft helpers are added to the eager controller graph.
-  check(sourceBytes <= 705_000, `Initial static source graph regrew beyond the reviewed Exchange Set V2 allowance: ${sourceBytes} bytes`)
+  // Kaspi also keeps its table behind a lazy boundary; only list-routing, isolated filter state and the
+  // canonical payment-confirmation coordinator stay in the eager App controller.
+  check(sourceBytes <= 713_000, `Initial static source graph regrew beyond the reviewed Kaspi separation allowance: ${sourceBytes} bytes`)
   for (const name of lazySections) {
     check(!graphRelative.includes(`src/features/sections/${name}.tsx`), `Lazy section is still initial-static: ${name}`)
   }
