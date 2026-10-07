@@ -27,7 +27,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
     workshopData,
     workshopDetailRows,
     workshopFilters,
-    workshopInvoiceIsKaspi,
+    workshopInvoiceIsZammler,
     workshopInvoiceMode,
     workshopInvoiceRows,
     workshopScopeTasks,
@@ -128,8 +128,8 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
               </div>
     
               <div className={`workshop-mode-note workshop-mode-${workshopFilters.view}`}>
-                <strong>{workshopFilters.view === 'active' ? 'Активные позиции' : workshopFilters.view === 'urgent' ? 'Срочные активные позиции' : workshopFilters.view === 'done' ? 'Готовые позиции' : workshopInvoiceIsKaspi ? 'Накладная КАСПИ МАГАЗИН' : 'Накладная цеха'}</strong>
-                <span>{workshopFilters.view === 'active' ? 'Список отсортирован только по дате: сначала ранние или сначала поздние. Срочные вынесены в отдельную вкладку.' : workshopFilters.view === 'urgent' ? 'Показываются только срочные и ещё не готовые позиции. Заказы КАСПИ МАГАЗИН вынесены в отдельную накладную.' : workshopFilters.view === 'done' ? 'Здесь позиции, которые уже отмечены готовыми. Их можно вернуть обратно в активные.' : workshopInvoiceIsKaspi ? 'Только активные позиции заказов КАСПИ МАГАЗИН. Каждая строка остаётся привязана к своему заказу и сроку.' : 'Срочные заказы всегда сверху и целиком, затем заказы с комментариями, обычные одинаковые изделия объединяются. КАСПИ МАГАЗИН вынесен отдельно.'}</span>
+                <strong>{workshopFilters.view === 'active' ? 'Активные позиции' : workshopFilters.view === 'urgent' ? 'Срочные активные позиции' : workshopFilters.view === 'done' ? 'Готовые позиции' : workshopInvoiceIsZammler ? 'Накладная ЗАММЛЕР' : 'Накладная цеха'}</strong>
+                <span>{workshopFilters.view === 'active' ? 'Список отсортирован только по дате: сначала ранние или сначала поздние. Срочные вынесены в отдельную вкладку.' : workshopFilters.view === 'urgent' ? 'Показываются только срочные и ещё не готовые позиции. В обычную срочную накладную ЗАММЛЕР не входит.' : workshopFilters.view === 'done' ? 'Здесь позиции, которые уже отмечены готовыми. Их можно вернуть обратно в активные.' : workshopInvoiceIsZammler ? 'Только активные позиции заказов с доставкой ЗАММЛЕР. Каждая строка остаётся привязана к своему заказу и сроку.' : 'Срочные заказы всегда сверху и целиком, затем заказы с комментариями, обычные одинаковые изделия объединяются. ЗАММЛЕР вынесен отдельно.'}</span>
               </div>
     
               <div className="workshop-kpis">
@@ -166,8 +166,8 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
                 <div className="workshop-invoice-summary">
                   <div className="workshop-invoice-summary-head">
                     <div>
-                      <strong>{workshopInvoiceIsKaspi ? 'Накладная КАСПИ МАГАЗИН' : workshopFilters.view === 'urgent' ? 'Срочная накладная' : 'Накладная таблицей'}</strong>
-                      <span>{workshopInvoiceIsKaspi ? 'Только активные позиции КАСПИ МАГАЗИН: товар, характеристики, количество, срок, комментарий и заказ.' : workshopFilters.view === 'urgent' ? 'Только срочные активные позиции без КАСПИ МАГАЗИН за выбранный период.' : 'Сначала срочные заказы целиком, затем заказы с комментариями, затем обычные суммированные позиции. КАСПИ МАГАЗИН сюда не входит.'}</span>
+                      <strong>{workshopInvoiceIsZammler ? 'Накладная ЗАММЛЕР' : workshopFilters.view === 'urgent' ? 'Срочная накладная' : 'Накладная таблицей'}</strong>
+                      <span>{workshopInvoiceIsZammler ? 'Только активные ЗАММЛЕР-позиции: товар, характеристики, количество, срок, комментарий и заказ.' : workshopFilters.view === 'urgent' ? 'Только срочные активные позиции без ЗАММЛЕР за выбранный период.' : 'Сначала срочные заказы целиком, затем заказы с комментариями, затем обычные суммированные позиции. ЗАММЛЕР сюда не входит.'}</span>
                     </div>
                     <span>{workshopInvoiceRows.length} строк · {workshopScopeTasks.reduce((sum, task) => sum + Number(task.quantity || 0), 0)} шт.</span>
                   </div>
@@ -207,10 +207,10 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
                       }}
                     >Срочные за период</button>
                     <button
-                      className={`secondary compact ${workshopInvoiceIsKaspi ? 'is-active' : ''}`}
+                      className={`secondary compact ${workshopInvoiceIsZammler ? 'is-active' : ''}`}
                       type="button"
                       onClick={() => {
-                        setWorkshopInvoiceMode('kaspi')
+                        setWorkshopInvoiceMode('zammler')
                         const fallback = getPeriodRange('month')
                         const next = {
                           ...workshopFilters,
@@ -222,8 +222,8 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
                         }
                         setWorkshopFilters(next)
                       }}
-                    >КАСПИ МАГАЗИН</button>
-                    <span>{workshopInvoiceIsKaspi ? 'Только заказы КАСПИ МАГАЗИН. Срок берётся из даты и времени Цеха.' : workshopFilters.view === 'urgent' ? 'Берутся только срочные активные позиции без КАСПИ МАГАЗИН. Период можно выбрать сверху.' : 'Дата управляется кнопками Сегодня / Вчера / Месяц / Период. КАСПИ МАГАЗИН вынесен в отдельную накладную.'}</span>
+                    >ЗАММЛЕР</button>
+                    <span>{workshopInvoiceIsZammler ? 'Только заказы ЗАММЛЕР. Срок берётся из даты и времени Цеха.' : workshopFilters.view === 'urgent' ? 'Берутся только срочные активные позиции без ЗАММЛЕР. Период можно выбрать сверху.' : 'Дата управляется кнопками Сегодня / Вчера / Месяц / Период. ЗАММЛЕР вынесен в отдельную накладную.'}</span>
                   </div>
                   <div className="table-shell">
                     <table className="data-table workshop-simple-invoice-table">
@@ -232,7 +232,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
                           <th>Изделие</th>
                           <th>Характеристики</th>
                           <th>Кол-во</th>
-                          <th>{workshopInvoiceIsKaspi ? 'Срок' : 'Срочность'}</th>
+                          <th>{workshopInvoiceIsZammler ? 'Срок' : 'Срочность'}</th>
                           <th>Комментарий</th>
                           <th>Заказ</th>
                         </tr>
@@ -243,12 +243,12 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
                             <td><strong>{row.productName}</strong></td>
                             <td>{row.characteristics || '—'}</td>
                             <td>{row.quantity} шт.</td>
-                            <td>{workshopInvoiceIsKaspi ? getWorkshopInvoiceDeadlineLabel(row) : getWorkshopInvoiceImportanceLabel(row)}</td>
+                            <td>{workshopInvoiceIsZammler ? getWorkshopInvoiceDeadlineLabel(row) : getWorkshopInvoiceImportanceLabel(row)}</td>
                             <td>{row.comment || '—'}</td>
                             <td>{row.orderRef || '—'}</td>
                           </tr>
                         )) : (
-                          <tr><td colSpan={6} className="empty-state">{workshopInvoiceIsKaspi ? 'Нет активных позиций КАСПИ МАГАЗИН за выбранный период.' : 'Нет позиций для накладной.'}</td></tr>
+                          <tr><td colSpan={6} className="empty-state">{workshopInvoiceIsZammler ? 'Нет активных позиций ЗАММЛЕР за выбранный период.' : 'Нет позиций для накладной.'}</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -302,7 +302,6 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
                         <td>
                           <div className="workshop-special-stack">
                             <span className={task.urgent ? 'urgent-pill' : 'normal-pill'}>{task.urgent ? 'Срочно' : 'Обычно'}</span>
-                            {task.orderPaymentMethod === 'КАСПИ МАГАЗИН' ? <span className="status-pill status-info">КАСПИ МАГАЗИН</span> : null}
                             {task.exchangeId ? <span className="status-pill status-info">Обмен #{task.exchangeId}</span> : null}
                             {task.dueDate ? <span className="muted-small">до {formatDateShort(task.dueDate)}</span> : null}
                             {task.comment ? <span className="workshop-comment">{task.comment}</span> : null}
