@@ -122,6 +122,11 @@ jobs:
               fi
             else
               echo "Waiting for Cloudflare build for $GITHUB_SHA (attempt $attempt/48)..."
+              if [[ "$GITHUB_REF_NAME" == "branch2" && "$attempt" -ge 12 ]]; then
+                echo "fallback_required=true" >> "$GITHUB_OUTPUT"
+                echo "No matching native Cloudflare build appeared for Branch2 after 2 minutes; switching to the guarded direct Branch2 deploy fallback."
+                exit 0
+              fi
             fi
             sleep 10
           done
