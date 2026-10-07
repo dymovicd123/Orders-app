@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "revision": "kaspi-workshop-invoice-r1",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "c4436749dd71db81652a2f8ebf47c8d60fb3db71",
+      "afterGitBlob": "ab28a9a1d22063f4d972200b3fc88f4c5569841b",
+      "baselineFixture": "scripts/fixtures/kaspi-workshop-invoice-r1/src/App.tsx"
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "b5ffc6537e3446920984e5a1ae1320725cb30554",
+      "afterGitBlob": "fde6d8d206862a6ae33dea95088bb84ea0d6fc26",
+      "baselineFixture": "scripts/fixtures/kaspi-workshop-invoice-r1/src/app/types.ts"
+    },
+    "src/app/controllers/useOperationalViewModel.ts": {
+      "beforeGitBlob": "c1945cdcf5a4d507fff8493ea2a4a0cf476da51a",
+      "afterGitBlob": "7f4c56f3d275613d9772e8708887065904c0327d",
+      "baselineFixture": "scripts/fixtures/kaspi-workshop-invoice-r1/src/app/controllers/useOperationalViewModel.ts"
+    },
+    "src/features/sections/WorkshopSection.tsx": {
+      "beforeGitBlob": "02a57347123f0f1da8074a07670fd78dcc839266",
+      "afterGitBlob": "68c4bb3d2afc1aef84cdb2dda1c0e40ca9c18659",
+      "baselineFixture": "scripts/fixtures/kaspi-workshop-invoice-r1/src/features/sections/WorkshopSection.tsx"
+    },
+    "worker/domains/workshop.ts": {
+      "beforeGitBlob": "4c27e0cc51bcd0ba2f66701d2993f6b16b971cd4",
+      "afterGitBlob": "1b057ee0e8757c8d5d1657f22fab67d59826b51d",
+      "baselineFixture": "scripts/fixtures/kaspi-workshop-invoice-r1/worker/domains/workshop.ts"
+    }
+  }
+}

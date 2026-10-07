@@ -5,6 +5,37 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
+const kaspiWorkshopInvoiceR1WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-workshop-invoice-r1-runtime-manifest.json'), 'utf8'))
+if (kaspiWorkshopInvoiceR1WorkerManifest?.version !== 1 || kaspiWorkshopInvoiceR1WorkerManifest?.revision !== 'kaspi-workshop-invoice-r1') throw new Error('Kaspi Workshop invoice R1 Worker manifest invalid')
+const kaspiWorkshopInvoiceR1WorkerBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.KASPI_WORKSHOP_INVOICE_R1_WORKER_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(kaspiWorkshopInvoiceR1WorkerManifest.files || {})) {
+      if (!relative.startsWith('worker/')) continue
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (kaspiWorkshopInvoiceR1WorkerBlobSha(actual) !== delta.afterGitBlob) throw new Error('Kaspi Workshop invoice R1 Worker drifted: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (kaspiWorkshopInvoiceR1WorkerBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Kaspi Workshop invoice R1 Worker predecessor fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], { cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, KASPI_WORKSHOP_INVOICE_R1_WORKER_NORMALIZED: '1' } })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('KASPI WORKSHOP INVOICE R1 WORKER STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const kaspiSharedOrdersR2WorkerManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-shared-orders-r2-20261006-runtime-manifest.json'), 'utf8'))
 if (kaspiSharedOrdersR2WorkerManifest?.version !== 1 || kaspiSharedOrdersR2WorkerManifest?.revision !== 'kaspi-shared-orders-r2-20261006-runtime') throw new Error('Kaspi shared Orders R2 Worker manifest invalid')
 const kaspiSharedOrdersR2WorkerBlobSha = (value) => {

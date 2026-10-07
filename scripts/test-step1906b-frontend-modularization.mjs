@@ -93,6 +93,37 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
+const kaspiWorkshopInvoiceR1FrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-workshop-invoice-r1-runtime-manifest.json'), 'utf8'))
+if (kaspiWorkshopInvoiceR1FrontendManifest?.version !== 1 || kaspiWorkshopInvoiceR1FrontendManifest?.revision !== 'kaspi-workshop-invoice-r1') throw new Error('Kaspi Workshop invoice R1 frontend manifest invalid')
+const kaspiWorkshopInvoiceR1FrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.KASPI_WORKSHOP_INVOICE_R1_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(kaspiWorkshopInvoiceR1FrontendManifest.files || {})) {
+      if (!relative.startsWith('src/')) continue
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (kaspiWorkshopInvoiceR1FrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Kaspi Workshop invoice R1 frontend drifted: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (kaspiWorkshopInvoiceR1FrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Kaspi Workshop invoice R1 frontend predecessor fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], { cwd: root, stdio: 'inherit', shell: false, windowsHide: true, env: { ...process.env, KASPI_WORKSHOP_INVOICE_R1_FRONTEND_NORMALIZED: '1' } })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('KASPI WORKSHOP INVOICE R1 FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const kaspiMainParityFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-main-parity-20261007-frontend-manifest.json'), 'utf8'))
 if (kaspiMainParityFrontendManifest?.version !== 1 || kaspiMainParityFrontendManifest?.revision !== 'kaspi-main-parity-20261007-frontend') throw new Error('Kaspi main parity frontend manifest invalid')
 const kaspiMainParityBlobSha = (value) => {

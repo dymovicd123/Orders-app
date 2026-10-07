@@ -44,7 +44,7 @@ try {
   check(
     app.includes("'Изделие | Характеристики | Кол-во | Срочность | Комментарий | Заказ'")
       || (
-        app.includes("return workshopInvoiceIsZammler ? 'Срок' : 'Срочность'")
+        app.includes("return workshopInvoiceIsKaspi ? 'Срок' : 'Срочность'")
         && app.includes('`Изделие | Характеристики | Кол-во | ${workshopInvoiceTimingHeader()} | Комментарий | Заказ`')
       ),
     'Workshop text export header is not humanized',
