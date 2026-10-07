@@ -1,0 +1,1084 @@
+/* Workshop, returns, reports and team foundations. Preserves original cascade order. */
+/* Step 04 — workshop dashboard */
+.workshop-toolbar,
+.workshop-filters,
+.workshop-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+  margin-top: 14px;
+}
+
+.compact-tabs {
+  margin: 0;
+}
+
+.workshop-filters {
+  padding: 12px;
+  border: 1px solid rgba(37, 99, 235, 0.1);
+  border-radius: 18px;
+  background: #f8fbff;
+}
+
+.workshop-filters label {
+  display: grid;
+  gap: 6px;
+  min-width: 170px;
+}
+
+.workshop-checkbox-filter {
+  display: inline-flex !important;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  min-width: 150px !important;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid #dbeafe;
+}
+
+.workshop-checkbox-filter input,
+.workshop-urgent-editor input {
+  width: auto;
+}
+
+.workshop-kpis > div {
+  display: grid;
+  min-width: 120px;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+}
+
+.workshop-kpis strong {
+  font-size: 1.35rem;
+  color: #0f172a;
+}
+
+.workshop-kpis span,
+.muted-small {
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.workshop-invoice-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px dashed #93c5fd;
+  border-radius: 18px;
+  background: #f8fbff;
+}
+
+.workshop-table-row.is-urgent {
+  border-color: rgba(249, 115, 22, 0.35);
+  background: linear-gradient(180deg, #fff7ed, #fff);
+}
+
+.workshop-comment {
+  color: #92400e !important;
+  font-weight: 700;
+}
+
+.workshop-urgency-cell {
+  display: grid;
+  gap: 5px;
+  justify-items: start;
+}
+
+.urgent-pill,
+.normal-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.urgent-pill {
+  color: #9a3412;
+  background: #ffedd5;
+  border: 1px solid #fed7aa;
+}
+
+.normal-pill {
+  color: #475569;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+}
+
+.workshop-urgent-editor {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+  padding: 10px 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 14px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-weight: 800;
+}
+
+.wide-field small {
+  display: block;
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+@media (max-width: 1100px) {
+  .workshop-filters label,
+  .workshop-checkbox-filter {
+    min-width: 100% !important;
+  }
+}
+
+/* Step 05 — workshop invoice and bulk completion polish */
+.workshop-bulk-panel {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #eff6ff, #ffffff);
+}
+
+.workshop-bulk-main {
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+}
+
+.workshop-bulk-main span {
+  color: #64748b;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.workshop-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.workshop-table-row.is-selected {
+  outline: 2px solid #2563eb;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
+}
+
+.workshop-row-check {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 7px !important;
+  width: fit-content;
+  padding: 4px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #475569;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.workshop-row-check input {
+  width: auto;
+}
+
+.workshop-invoice-summary {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 18px;
+  background: #fff7ed;
+}
+
+.workshop-invoice-summary-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.workshop-invoice-summary-head > div {
+  display: grid;
+  gap: 3px;
+}
+
+.workshop-invoice-summary-head span {
+  color: #9a3412;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.workshop-product-totals {
+  display: grid;
+  gap: 7px;
+}
+
+.workshop-product-totals > div {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.workshop-product-totals > div.is-urgent {
+  border-color: #fb923c;
+  background: #ffedd5;
+}
+
+.workshop-product-totals span {
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+@media (max-width: 920px) {
+  .workshop-bulk-panel,
+  .workshop-invoice-summary-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workshop-bulk-actions {
+    justify-content: stretch;
+  }
+
+  .workshop-bulk-actions .compact,
+  .workshop-product-totals > div {
+    width: 100%;
+  }
+
+  .workshop-product-totals > div {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Step 06 — returns/exchange tables */
+.return-items-table input[type="number"] {
+  min-width: 86px;
+}
+
+.inline-check {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 7px !important;
+  width: fit-content;
+  font-weight: 800;
+}
+
+.inline-check input {
+  width: auto;
+}
+
+.workshop-simple-invoice-table tr.is-urgent td {
+  background: #fff7ed;
+  font-weight: 700;
+}
+
+.workshop-simple-invoice-table tr.has-comment td {
+  background: #f8fafc;
+}
+
+/* Step 12 — отчёты как в старой системе: один выбранный отчёт, а не длинная каша */
+.reports-workspace-panel {
+  margin-bottom: 18px;
+}
+
+.reports-filter-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.reports-period-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.reports-main-filter-grid {
+  grid-template-columns: minmax(220px, 1.4fr) minmax(160px, 1fr) minmax(160px, 1fr) auto;
+  align-items: end;
+}
+
+.selected-report-shell {
+  display: grid;
+  gap: 16px;
+}
+
+.selected-report-panel {
+  margin-top: 0;
+}
+
+.report-overview-strip {
+  margin-bottom: 0;
+}
+
+@media (max-width: 920px) {
+  .reports-filter-header,
+  .reports-period-buttons {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .reports-main-filter-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.team-mode-tabs {
+  margin: 14px 0 18px;
+  flex-wrap: wrap;
+}
+
+.reference-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.chip-button {
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 999px;
+  background: #fff;
+  padding: 8px 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chip-button.is-active {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
+}
+
+/* Step 14 — понятный табель, рабочая активность команды, Word/PDF exports */
+.timesheet-control-panel-v2 {
+  padding: 18px;
+}
+
+.timesheet-month-switcher input[type="month"] {
+  min-width: 155px;
+  max-width: 180px;
+  height: 38px;
+}
+
+.timesheet-selection-summary-v2 {
+  margin: 12px 0 16px;
+  padding: 12px 14px;
+  border: 1px dashed rgba(37, 99, 235, 0.28);
+  border-radius: 16px;
+  background: rgba(37, 99, 235, 0.05);
+  color: #1e3a8a;
+}
+
+.timesheet-action-grid-v2 {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(280px, 1.4fr) minmax(260px, 1fr);
+  gap: 14px;
+}
+
+.timesheet-panel-v2 {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 18px;
+  background: #fff;
+  padding: 14px;
+}
+
+.timesheet-section-label {
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #334155;
+  margin-bottom: 10px;
+}
+
+.compact-wrap {
+  flex-wrap: wrap;
+}
+
+.timesheet-time-panel-v2 label {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-weight: 800;
+}
+
+.timesheet-employee-chips-v2 {
+  max-height: 170px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.timesheet-calendar-v2 {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(120px, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.timesheet-weekday-v2 {
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 900;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.timesheet-day-v2 {
+  min-height: 132px;
+  text-align: left;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 18px;
+  background: #fff;
+  padding: 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: 0.15s ease;
+}
+
+.timesheet-day-v2:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+}
+
+.timesheet-day-v2.selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+
+.timesheet-day-v2.weekend {
+  background: #f8fafc;
+}
+
+.timesheet-day-v2.has-work {
+  background: #f0fdf4;
+  border-color: rgba(22, 163, 74, 0.22);
+}
+
+.timesheet-day-v2.is-empty {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.timesheet-day-head-v2 {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.timesheet-day-head-v2 strong {
+  font-size: 1.35rem;
+}
+
+.timesheet-day-head-v2 em {
+  font-style: normal;
+  color: #64748b;
+  font-weight: 800;
+}
+
+.timesheet-day-assignments-v2 {
+  display: grid;
+  gap: 6px;
+}
+
+.timesheet-assignment-pill-v2 {
+  display: block;
+  padding: 6px 8px;
+  border-radius: 12px;
+  background: #dcfce7;
+  color: #166534;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.timesheet-empty-note-v2 {
+  margin-top: auto;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.report-export-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 1100px) {
+  .timesheet-action-grid-v2 {
+    grid-template-columns: 1fr;
+  }
+
+  .timesheet-calendar-v2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .timesheet-calendar-v2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+
+/* Auth R3 — human-first account setup inside Team. */
+.team-access-onboarding {
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+}
+
+.team-access-onboarding {
+  display: grid;
+  gap: 14px;
+  padding: 14px 16px;
+}
+
+.team-access-onboarding-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.team-access-onboarding-head > div {
+  display: grid;
+  gap: 4px;
+}
+
+.team-access-onboarding-head strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.team-access-onboarding-head span,
+.team-access-off-note,
+.team-access-editor-help {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.team-access-toggle {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  font-weight: 800;
+  color: #1d4ed8;
+}
+
+.team-access-toggle input,
+.team-force-password-change input,
+.team-access-option input {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.team-access-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.team-access-fields label {
+  display: grid;
+  gap: 6px;
+}
+
+.team-access-fields small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.team-access-fields small b {
+  color: #1d4ed8;
+}
+
+.team-force-password-change {
+  margin: 0;
+}
+
+.team-roster-table .team-access-cell {
+  min-width: 180px;
+}
+
+.team-access-cell {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+.team-access-identity {
+  display: grid;
+  gap: 3px;
+}
+
+.team-access-identity strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.team-access-identity > span:not(.team-access-status) {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.team-access-status {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.team-access-status.is-active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.team-access-status.is-disabled {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.team-access-identity.is-missing strong {
+  color: #64748b;
+}
+
+.team-access-create-button {
+  white-space: nowrap;
+}
+
+.team-access-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.46);
+  backdrop-filter: blur(3px);
+}
+
+.team-access-modal {
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(760px, calc(100dvh - 48px));
+  overflow-y: auto;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.24);
+}
+
+.team-access-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.team-access-modal-head > div {
+  display: grid;
+  gap: 5px;
+}
+
+.team-access-modal-head h3 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.team-access-modal-head p {
+  margin: 0;
+  max-width: 620px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.team-access-modal-head > button {
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0;
+  border-radius: 12px;
+  font-size: 16px;
+}
+
+.team-access-modal-employee {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 24px 0;
+  padding: 12px 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.team-access-modal-employee > div:last-child {
+  display: grid;
+  gap: 2px;
+}
+
+.team-access-modal-employee strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.team-access-modal-employee span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.team-access-modal-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px 24px 0;
+}
+
+.team-access-modal-fields > label {
+  display: grid;
+  gap: 6px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.team-access-modal-fields > label:last-child {
+  grid-column: 1 / -1;
+}
+
+.team-access-modal-fields input,
+.team-access-modal-fields select {
+  width: 100%;
+  min-height: 42px;
+}
+
+.team-access-modal-fields small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.team-access-modal-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px 24px 0;
+}
+
+.team-access-option {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+  cursor: pointer;
+}
+
+.team-access-option > span {
+  display: grid;
+  gap: 3px;
+}
+
+.team-access-option strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.team-access-option small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.team-access-editor-help {
+  margin: 16px 24px 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #334155;
+}
+
+.team-access-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 16px 24px 22px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.team-access-modal-actions .button-row {
+  margin-left: auto;
+}
+
+@media (max-width: 720px) {
+  .team-access-onboarding-head {
+    display: grid;
+  }
+
+  .team-access-toggle {
+    white-space: normal;
+  }
+
+  .team-access-fields,
+  .team-access-modal-fields,
+  .team-access-modal-options {
+    grid-template-columns: 1fr;
+  }
+
+  .team-access-modal-backdrop {
+    align-items: flex-end;
+    padding: 10px;
+  }
+
+  .team-access-modal {
+    width: 100%;
+    max-height: calc(100dvh - 20px);
+    border-radius: 18px 18px 10px 10px;
+  }
+
+  .team-access-modal-head {
+    padding: 18px 16px 14px;
+  }
+
+  .team-access-modal-employee {
+    margin: 14px 16px 0;
+  }
+
+  .team-access-modal-fields {
+    padding: 14px 16px 0;
+  }
+
+  .team-access-modal-options {
+    padding: 14px 16px 0;
+  }
+
+  .team-access-editor-help {
+    margin: 14px 16px 0;
+  }
+
+  .team-access-modal-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+    padding: 14px 16px 16px;
+  }
+
+  .team-access-modal-actions .button-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .team-access-modal-actions > .danger {
+    width: 100%;
+  }
+
+  .team-roster-table .team-access-cell {
+    min-width: 150px;
+  }
+}
+
+
+
+/* Auth R8 — system administrators are visible only inside the admin Team workspace. */
+.team-system-admins {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid rgba(99, 102, 241, 0.18);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fafaff 0%, #ffffff 100%);
+}
+
+.team-system-admins-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.team-system-admins-head > div {
+  display: grid;
+  gap: 4px;
+}
+
+.team-system-admins-head h3,
+.team-system-admins-head p {
+  margin: 0;
+}
+
+.team-system-admins-head h3 {
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.team-system-admins-head p {
+  max-width: 760px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.team-system-admins-count {
+  min-width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4338ca;
+  font-weight: 900;
+}
+
+.team-system-admins-list {
+  display: grid;
+  gap: 10px;
+}
+
+.team-system-admin-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 12px 14px;
+  border: 1px solid rgba(99, 102, 241, 0.12);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.team-system-admin-identity,
+.team-system-admin-meta {
+  display: grid;
+  gap: 4px;
+}
+
+.team-system-admin-identity strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.team-system-admin-identity span,
+.team-system-admin-meta > span:not(.team-access-status):not(.team-system-admin-temporary) {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.team-system-admin-meta {
+  justify-items: end;
+  text-align: right;
+}
+
+.team-system-admin-temporary {
+  color: #92400e;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+@media (max-width: 720px) {
+  .team-system-admin-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .team-system-admin-meta {
+    justify-items: start;
+    text-align: left;
+  }
+}
+
+
+/* Auth R8B — admin-only management controls for unlinked system accounts. */
+.team-system-admins-head-actions,
+.team-system-admin-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.team-system-admin-card-actions {
+  justify-content: flex-end;
+}
+
+.team-system-admin-empty {
+  padding: 12px 14px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 14px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .team-system-admins-head {
+    display: grid;
+  }
+
+  .team-system-admins-head-actions {
+    justify-content: space-between;
+  }
+
+  .team-system-admin-card-actions {
+    width: 100%;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .team-system-admin-card-actions > button {
+    width: 100%;
+  }
+}
