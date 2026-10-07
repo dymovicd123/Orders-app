@@ -28,11 +28,13 @@ check(controller.includes("dueTime: (workshopInvoiceIsKaspi || task.urgent)"), '
 check(controller.includes("return `до ${deadline}`") && !controller.includes('Просрочено ·'), 'KASPI-WORKSHOP-R1: deadline wording must remain neutral')
 
 check(types.includes('isKaspi: boolean') && types.includes('dueTime: string'), 'KASPI-WORKSHOP-R1: invoice row type is missing Kaspi/deadline fields')
-check(ui.includes('>КАСПИ МАГАЗИН</button>'), 'KASPI-WORKSHOP-R1: Workshop invoice needs a clear Kaspi switch')
+check(ui.includes("type WorkshopChannel = 'regular' | 'kaspi'"), 'KASPI-WORKSHOP-R1: Workshop must expose separate ordinary/Kaspi workspaces')
+check(ui.includes('>Kaspi магазин</span>') && ui.includes('>Обычные заказы</span>'), 'KASPI-WORKSHOP-R1: Workshop top-level channel switch is missing')
 check(!ui.includes('>ЗАММЛЕР</button>'), 'KASPI-WORKSHOP-R1: old ZAMMLER invoice switch must be retired')
-check(ui.includes("task.orderPaymentMethod === 'КАСПИ МАГАЗИН'"), 'KASPI-WORKSHOP-R1: Workshop table must visibly mark Kaspi orders')
+check(ui.includes("String(task.orderPaymentMethod || '').trim().toUpperCase() === 'КАСПИ МАГАЗИН'"), 'KASPI-WORKSHOP-R1: Workshop order queues must use canonical Kaspi identity')
+check(ui.includes('workshopChannel === \'kaspi\' ? <span className="status-pill status-info">КАСПИ МАГАЗИН</span> : null'), 'KASPI-WORKSHOP-R1: Kaspi rows must stay visibly marked')
 check(ui.includes("workshopInvoiceIsKaspi ? 'Срок' : 'Срочность'"), 'KASPI-WORKSHOP-R1: Kaspi invoice must keep the deadline column')
-check(ui.includes('КАСПИ МАГАЗИН вынесен отдельно'), 'KASPI-WORKSHOP-R1: ordinary invoice separation must be visible to staff')
+check(ui.includes("setWorkshopInvoiceMode(workshopChannel === 'kaspi' ? 'kaspi' : 'period')"), 'KASPI-WORKSHOP-R1: Kaspi and ordinary invoices must remain separate')
 check(!controller.includes('kaspi_invoice_items') && !app.includes('kaspi_invoice_items'), 'KASPI-WORKSHOP-R1: no parallel Kaspi invoice database model is allowed')
 
 console.log('KASPI WORKSHOP INVOICE R1 PASSED — former ZAMMLER invoice is now canonical Kaspi-shop scope, separate and deadline-aware')

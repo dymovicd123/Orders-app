@@ -299,6 +299,7 @@ try {
   run('CLIENT-ZAMMLER-C create form', process.execPath, [path.join(root, 'scripts/test-stage04-zammler-c-create-form.mjs')])
   run('CLIENT-ZAMMLER-E All Orders filter', process.execPath, [path.join(root, 'scripts/test-client-zammler-e-order-list.mjs')])
   run('CLIENT-ZAMMLER-F Workshop invoice separation', process.execPath, [path.join(root, 'scripts/test-client-zammler-f-workshop-invoice.mjs')])
+  run('Workshop UI R1', process.execPath, [path.join(root, 'scripts/test-workshop-ui-r1.mjs')])
   run('CLIENT-ZAMMLER-G UI correction', process.execPath, [path.join(root, 'scripts/test-client-zammler-g-ui-polish.mjs')])
   run('Kaspi schema R1', process.execPath, [path.join(root, 'scripts/test-kaspi-schema-r1.mjs')])
   run('Kaspi order separation R1', process.execPath, [path.join(root, 'scripts/test-kaspi-order-separation-r1.mjs')])
