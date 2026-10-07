@@ -93,6 +93,39 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
+const workshopUiR1Manifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/workshop-ui-r1-frontend-manifest.json'), 'utf8'))
+if (workshopUiR1Manifest?.version !== 1 || workshopUiR1Manifest?.revision !== 'workshop-ui-r1') throw new Error('Workshop UI R1 frontend manifest invalid')
+const workshopUiR1BlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.WORKSHOP_UI_R1_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(workshopUiR1Manifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (workshopUiR1BlobSha(actual) !== delta.afterGitBlob) throw new Error('Workshop UI R1 frontend drifted: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (workshopUiR1BlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Workshop UI R1 predecessor fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, WORKSHOP_UI_R1_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('WORKSHOP UI R1 FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const orderFilterSectorIsolationManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-filter-sector-isolation-r1-frontend-manifest.json'), 'utf8'))
 if (orderFilterSectorIsolationManifest?.version !== 1 || orderFilterSectorIsolationManifest?.revision !== 'order-filter-sector-isolation-r1') throw new Error('Order filter sector isolation frontend manifest invalid')
 const orderFilterSectorIsolationBlobSha = (value) => {

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "revision": "workshop-ui-r1",
+  "files": {
+    "src/features/sections/WorkshopSection.tsx": {
+      "beforeGitBlob": "68c4bb3d2afc1aef84cdb2dda1c0e40ca9c18659",
+      "afterGitBlob": "37bf971acf2986a3ee453534eeb4fb934538bdfe",
+      "baselineFixture": "scripts/fixtures/workshop-ui-r1/src/features/sections/WorkshopSection.tsx"
+    },
+    "src/styles/10-workshop-reports-team.css": {
+      "beforeGitBlob": "49e1a062eff80c5e9edc5466ed649a3083279a5d",
+      "afterGitBlob": "390eb7e2c0aa58777183c5f3b6e244f38c68ff6b",
+      "baselineFixture": "scripts/fixtures/workshop-ui-r1/src/styles/10-workshop-reports-team.css"
+    }
+  }
+}

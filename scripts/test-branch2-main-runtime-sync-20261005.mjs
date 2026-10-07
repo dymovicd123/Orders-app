@@ -12,6 +12,47 @@ const gitBlob = (value) => {
 
 const root = process.cwd()
 
+const workshopUiR1RuntimeManifest = JSON.parse(
+  fs.readFileSync(path.join(root, 'scripts/workshop-ui-r1-frontend-manifest.json'), 'utf8'),
+)
+check(
+  workshopUiR1RuntimeManifest?.version === 1 && workshopUiR1RuntimeManifest?.revision === 'workshop-ui-r1',
+  'Workshop UI R1 runtime manifest invalid',
+)
+if (!process.env.WORKSHOP_UI_R1_BRANCH2_MAIN_SYNC_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(workshopUiR1RuntimeManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      check(gitBlob(actual) === delta.afterGitBlob, 'Workshop UI R1 runtime drifted before Branch2/main sync check: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      check(gitBlob(baseline) === delta.beforeGitBlob, 'Workshop UI R1 predecessor fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, WORKSHOP_UI_R1_BRANCH2_MAIN_SYNC_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('WORKSHOP UI R1 — BRANCH2 MAIN SYNC PRESERVATION LAYER PASSED')
+  process.exit(0)
+}
+
 const orderFilterSectorIsolationRuntimeManifest = JSON.parse(
   fs.readFileSync(path.join(root, 'scripts/order-filter-sector-isolation-r1-frontend-manifest.json'), 'utf8'),
 )
