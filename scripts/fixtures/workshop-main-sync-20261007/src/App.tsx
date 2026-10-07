@@ -244,7 +244,7 @@ function App() {
     q: '',
   })
   const [selectedWorkshopTaskIds, setSelectedWorkshopTaskIds] = useState<number[]>([])
-  const [workshopInvoiceMode, setWorkshopInvoiceMode] = useState<'urgent' | 'period' | 'kaspi'>('period')
+  const [workshopInvoiceMode, setWorkshopInvoiceMode] = useState<'urgent' | 'period' | 'zammler'>('period')
   const [workshopSortDirection, setWorkshopSortDirection] = useState<'oldest' | 'newest'>('oldest')
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -1079,7 +1079,7 @@ function App() {
     updateInventoryArrivalSize,
     variantsForProduct,
     visibleCatalogProducts,
-    workshopInvoiceIsKaspi,
+    workshopInvoiceIsZammler,
     workshopInvoiceRows,
     workshopScopeTasks,
   } = useOperationalViewModel({
@@ -3526,19 +3526,19 @@ function App() {
   }
 
   function workshopInvoiceDocumentTitle() {
-    return workshopInvoiceIsKaspi ? 'Накладная КАСПИ МАГАЗИН' : 'Накладная цеха'
+    return workshopInvoiceIsZammler ? 'Накладная ЗАММЛЕР' : 'Накладная цеха'
   }
 
   function workshopInvoiceTimingHeader() {
-    return workshopInvoiceIsKaspi ? 'Срок' : 'Срочность'
+    return workshopInvoiceIsZammler ? 'Срок' : 'Срочность'
   }
 
   function workshopInvoiceTimingLabel(row: WorkshopInvoiceRow) {
-    return workshopInvoiceIsKaspi ? getWorkshopInvoiceDeadlineLabel(row) : getWorkshopInvoiceImportanceLabel(row)
+    return workshopInvoiceIsZammler ? getWorkshopInvoiceDeadlineLabel(row) : getWorkshopInvoiceImportanceLabel(row)
   }
 
   function workshopInvoiceFileStem() {
-    return workshopInvoiceIsKaspi ? 'workshop-kaspi-invoice' : 'workshop-invoice'
+    return workshopInvoiceIsZammler ? 'workshop-zammler-invoice' : 'workshop-invoice'
   }
 
   function buildWorkshopInvoiceText() {
@@ -8388,7 +8388,7 @@ function removeDebtPayment(index: number) {
         </section>
 
         <DeferredSection active={activeSector === 'workshop'} label="Цех">
-        <WorkshopSection ctx={{ activeWorkshopTasks, applyWorkshopPeriodPreset, copyWorkshopInvoiceText, downloadWorkshopInvoicePdf, exportWorkshopInvoiceWord, formatDateShort, getPeriodRange, getWorkshopInvoiceDeadlineLabel, getWorkshopInvoiceImportanceLabel, isAdmin, markWorkshopTaskDone, openWorkshopExchange, openWorkshopOrderEditor, printWorkshopInvoice, restoreWorkshopTaskActive, sectorStyle, setWorkshopFilters, setWorkshopInvoiceMode, setWorkshopSortDirection, workshopBusy, workshopCustomerIdentity, workshopData, workshopDetailRows, workshopFilters, workshopInvoiceIsKaspi, workshopInvoiceMode, workshopInvoiceRows, workshopScopeTasks, workshopSortDirection }} />
+        <WorkshopSection ctx={{ activeWorkshopTasks, applyWorkshopPeriodPreset, copyWorkshopInvoiceText, downloadWorkshopInvoicePdf, exportWorkshopInvoiceWord, formatDateShort, getPeriodRange, getWorkshopInvoiceDeadlineLabel, getWorkshopInvoiceImportanceLabel, isAdmin, markWorkshopTaskDone, openWorkshopExchange, openWorkshopOrderEditor, printWorkshopInvoice, restoreWorkshopTaskActive, sectorStyle, setWorkshopFilters, setWorkshopInvoiceMode, setWorkshopSortDirection, workshopBusy, workshopCustomerIdentity, workshopData, workshopDetailRows, workshopFilters, workshopInvoiceIsZammler, workshopInvoiceMode, workshopInvoiceRows, workshopScopeTasks, workshopSortDirection }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders'} label="Заказы">

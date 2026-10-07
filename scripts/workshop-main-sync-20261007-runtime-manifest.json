@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "revision": "workshop-main-sync-20261007",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "78c343638deda5c3874e1a7baa86b277582b4881",
+      "afterGitBlob": "e10688279ebce28469d7b82fc37c8a0a1f9250fd",
+      "baselineFixture": "scripts/fixtures/workshop-main-sync-20261007/src/App.tsx"
+    },
+    "src/app/controllers/useOperationalViewModel.ts": {
+      "beforeGitBlob": "c1945cdcf5a4d507fff8493ea2a4a0cf476da51a",
+      "afterGitBlob": "7f4c56f3d275613d9772e8708887065904c0327d",
+      "baselineFixture": "scripts/fixtures/workshop-main-sync-20261007/src/app/controllers/useOperationalViewModel.ts"
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "b5ffc6537e3446920984e5a1ae1320725cb30554",
+      "afterGitBlob": "fde6d8d206862a6ae33dea95088bb84ea0d6fc26",
+      "baselineFixture": "scripts/fixtures/workshop-main-sync-20261007/src/app/types.ts"
+    },
+    "src/features/sections/OrderFiltersSection.tsx": {
+      "beforeGitBlob": "db6a9776b04e56b8add42acf064fdc6f2b3f8462",
+      "afterGitBlob": "8094bea6bac3152c3f41978617febeff54d73c82",
+      "baselineFixture": "scripts/fixtures/workshop-main-sync-20261007/src/features/sections/OrderFiltersSection.tsx"
+    },
+    "src/features/sections/OrdersTableSection.tsx": {
+      "beforeGitBlob": "800ec0aaaac5f334b5a3ac153581216f712df164",
+      "afterGitBlob": "45088dbd1b594fa165f9ea7cfdc35109e2be3417",
+      "baselineFixture": "scripts/fixtures/workshop-main-sync-20261007/src/features/sections/OrdersTableSection.tsx"
+    },
+    "src/features/sections/WorkshopSection.tsx": {
+      "beforeGitBlob": "02a57347123f0f1da8074a07670fd78dcc839266",
+      "afterGitBlob": "d21020d65f3469997a3a579d9233362a026a5336",
+      "baselineFixture": "scripts/fixtures/workshop-main-sync-20261007/src/features/sections/WorkshopSection.tsx"
+    },
+    "src/styles/10-workshop-reports-team.css": {
+      "beforeGitBlob": "49e1a062eff80c5e9edc5466ed649a3083279a5d",
+      "afterGitBlob": "2e00943f077b869ebb8019fb68eef77ea3ee8f97",
+      "baselineFixture": "scripts/fixtures/workshop-main-sync-20261007/src/styles/10-workshop-reports-team.css"
+    },
+    "worker/domains/workshop.ts": {
+      "beforeGitBlob": "4c27e0cc51bcd0ba2f66701d2993f6b16b971cd4",
+      "afterGitBlob": "1b057ee0e8757c8d5d1657f22fab67d59826b51d",
+      "baselineFixture": "scripts/fixtures/workshop-main-sync-20261007/worker/domains/workshop.ts"
+    }
+  }
+}

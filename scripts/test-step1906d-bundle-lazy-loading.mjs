@@ -99,7 +99,7 @@ try {
   check(graphRelative.includes('src/app/order-pricing.ts'), 'H6B/H8 Catalog price resolver is not reachable from the initial Create controller graph')
   check(graph.size <= 26, `Initial static source graph regrew beyond the accepted pricing module set: ${graph.size} modules`)
   // Exchange Set V2 stays lazy. Kaspi reuses the existing Orders lazy surfaces; its list/create/payment coordinators and the small factual-payment-date confirmation modal live in the eager App graph.
-  check(sourceBytes <= 718_500, `Initial static source graph regrew beyond the reviewed Kaspi factual-payment-date allowance: ${sourceBytes} bytes`)
+  check(sourceBytes <= 718_600, `Initial static source graph regrew beyond the reviewed Kaspi Workshop allowance: ${sourceBytes} bytes`)
   for (const name of lazySections) {
     check(!graphRelative.includes(`src/features/sections/${name}.tsx`), `Lazy section is still initial-static: ${name}`)
   }

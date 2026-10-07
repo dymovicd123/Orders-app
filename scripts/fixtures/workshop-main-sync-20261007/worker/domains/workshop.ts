@@ -545,7 +545,6 @@ export async function listWorkshopTasks(db: D1Database, url: URL) {
       c.display_name AS customer_name,
       o.city,
       o.delivery_type,
-      o.order_payment_method,
       ex.id AS exchange_id,
       ex.exchange_date
     FROM workshop_tasks wt
@@ -577,7 +576,6 @@ export async function listWorkshopTasks(db: D1Database, url: URL) {
         row.customer_name,
         row.city,
         row.delivery_type,
-        row.order_payment_method,
         row.workshop_effective_date,
         row.original_order_date,
       ].map(part => cleanText(part).toLowerCase()).join(' ');
@@ -625,7 +623,6 @@ export async function listWorkshopTasks(db: D1Database, url: URL) {
       customerName: cleanText(row.customer_name),
       city: cleanText(row.city),
       deliveryType: cleanText(row.delivery_type),
-      orderPaymentMethod: cleanText(row.order_payment_method),
       totalAmount: toInt(row.total_amount, 0),
       receivedAmount: toInt(row.received_amount, 0),
       debtAmount: toInt(row.debt_amount, 0),

@@ -1458,7 +1458,6 @@ export type WorkshopTaskRecord = {
   customerName: string
   city: string
   deliveryType: string
-  orderPaymentMethod: string
   totalAmount: number
   receivedAmount: number
   debtAmount: number
@@ -1594,7 +1593,7 @@ export type WorkshopInvoiceRow = {
   urgent: boolean
   hasComment: boolean
   isSpecialOrder: boolean
-  isKaspi: boolean
+  isZammler: boolean
   orderId: number
   orderDate: string
   productName: string
