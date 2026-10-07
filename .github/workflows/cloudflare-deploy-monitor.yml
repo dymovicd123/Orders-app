@@ -187,7 +187,7 @@ jobs:
         if: steps.wait.outputs.fallback_required == 'true' && github.ref_name == 'branch2'
         run: npm ci
 
-      - name: Verify and deploy exact Branch2 commit via guarded fallback
+      - name: Verify and deploy exact Branch2 commit after native skip
         if: steps.wait.outputs.fallback_required == 'true' && github.ref_name == 'branch2'
         shell: bash
         env:
