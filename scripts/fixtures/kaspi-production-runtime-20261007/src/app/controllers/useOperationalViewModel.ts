@@ -146,12 +146,10 @@ const summary = useMemo(() => {
     const active = orders.filter((order) => order.order_status === 'active').length
     const loadedWorkshop = orders.reduce((sum, order) => sum + (order.items || []).reduce((itemSum, item) => itemSum + (item.isWorkshop ? Math.max(1, Number(item.quantity || 1)) : 0), 0), 0)
     const paid = orders.filter((order) => Number(order.debt_amount || 0) <= 0).length
-    const loadedDebtOrders = orders.filter((order) => Number(order.debt_amount || 0) > 0).length
     return {
       total: orderPeriodStats?.totalAmount ?? loadedTotal,
       received: orderPeriodStats?.paymentAmount ?? loadedReceived,
       debt: orderPeriodStats?.debtAmount ?? loadedDebt,
-      debtOrders: orderPeriodStats?.debtOrderCount ?? loadedDebtOrders,
       returns: orderPeriodStats?.returnAmount ?? loadedReturns,
       count: orderPeriodStats?.orderCount ?? orders.length,
       active,

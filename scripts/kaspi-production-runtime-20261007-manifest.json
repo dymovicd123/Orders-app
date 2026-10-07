@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "revision": "kaspi-production-runtime-20261007",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "18e3539988a170e802d2fd5d996861c0e352757c",
+      "afterGitBlob": "f6f9029c74d60c20cef218a3e2428af0012fcf02",
+      "baselineFixture": "scripts/fixtures/kaspi-production-runtime-20261007/src/App.tsx"
+    },
+    "src/app/constants.ts": {
+      "beforeGitBlob": "952ce7a5b6e630f4d657bc4a957ce72f0ce9fac2",
+      "afterGitBlob": "1cf5c177a59cca2c4ea1408fbd132092bb600338",
+      "baselineFixture": "scripts/fixtures/kaspi-production-runtime-20261007/src/app/constants.ts"
+    },
+    "src/app/controllers/useWorkspaceViewModel.tsx": {
+      "beforeGitBlob": "dd112696a8375ff03af332fd4a0ef8016f1914e9",
+      "afterGitBlob": "74e13c339069c7a63b4df578af51a675777fe371",
+      "baselineFixture": "scripts/fixtures/kaspi-production-runtime-20261007/src/app/controllers/useWorkspaceViewModel.tsx"
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "80ad478c68988e1cf89f4f311fb7a29d1b223c9e",
+      "afterGitBlob": "b5ffc6537e3446920984e5a1ae1320725cb30554",
+      "baselineFixture": "scripts/fixtures/kaspi-production-runtime-20261007/src/app/types.ts"
+    },
+    "src/app/utils.ts": {
+      "beforeGitBlob": "b9e1db1dac23cddcdfc437ad8c5d21acba5e4d8c",
+      "afterGitBlob": "622efa7c4baec907f398bf4221427a757e7f310f",
+      "baselineFixture": "scripts/fixtures/kaspi-production-runtime-20261007/src/app/utils.ts"
+    },
+    "src/features/sections/CreateOrderSection.tsx": {
+      "beforeGitBlob": "29e90a12ff54fc6e7607cbc18b4e46f83bb80a8c",
+      "afterGitBlob": "6649dc8d68c54ec1de7a1f1a4a2283ac3af68665",
+      "baselineFixture": "scripts/fixtures/kaspi-production-runtime-20261007/src/features/sections/CreateOrderSection.tsx"
+    },
+    "src/features/sections/OrderEditorSection.tsx": {
+      "beforeGitBlob": "92d3e3b39e882362a7a9363f2396b2bdd313b2f1",
+      "afterGitBlob": "4b0419ce40575f6c0b33809dbb1fb973f0683bbf",
+      "baselineFixture": "scripts/fixtures/kaspi-production-runtime-20261007/src/features/sections/OrderEditorSection.tsx"
+    },
+    "src/features/sections/OrdersTableSection.tsx": {
+      "beforeGitBlob": "9339d5474a905b34b4cfbf3e1e36702e78f18ae9",
+      "afterGitBlob": "800ec0aaaac5f334b5a3ac153581216f712df164",
+      "baselineFixture": "scripts/fixtures/kaspi-production-runtime-20261007/src/features/sections/OrdersTableSection.tsx"
+    },
+    "src/features/sections/OrdersHeaderSection.tsx": {
+      "beforeGitBlob": "781223ef11d676ac179e99516cac6710bc45bdf0",
+      "afterGitBlob": "d246548c5c6555e25411ac6bf125442c48b56fda",
+      "baselineFixture": "scripts/fixtures/kaspi-production-runtime-20261007/src/features/sections/OrdersHeaderSection.tsx"
+    },
+    "src/features/sections/OrderFiltersSection.tsx": {
+      "beforeGitBlob": "2b84790c152e114ab04df8f9566f00c987620509",
+      "afterGitBlob": "db6a9776b04e56b8add42acf064fdc6f2b3f8462",
+      "baselineFixture": "scripts/fixtures/kaspi-production-runtime-20261007/src/features/sections/OrderFiltersSection.tsx"
+    },
+    "src/app/controllers/useOperationalViewModel.ts": {
+      "beforeGitBlob": "200dc8b85d041c795c106a7a8395f407a1ecd544",
+      "afterGitBlob": "c1945cdcf5a4d507fff8493ea2a4a0cf476da51a",
+      "baselineFixture": "scripts/fixtures/kaspi-production-runtime-20261007/src/app/controllers/useOperationalViewModel.ts"
+    },
+    "worker/core/types.ts": {
+      "beforeGitBlob": "b85a4f4fa1c16ec4c08bea24aad65eeb62d559f2",
+      "afterGitBlob": "92017bd14aaa23c262b41ac8112682e32afccc70",
+      "baselineFixture": "scripts/fixtures/kaspi-production-runtime-20261007/worker/core/types.ts"
+    },
+    "worker/domains/orders-read.ts": {
+      "beforeGitBlob": "d0ca58b9c48d4ab87199f4a84d9c095da06b36a5",
+      "afterGitBlob": "2cb5748339262d465d9743f12184508b8742394e",
+      "baselineFixture": "scripts/fixtures/kaspi-production-runtime-20261007/worker/domains/orders-read.ts"
+    },
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "6965a1c2f1896041f1ac7fa4cf780ccfc73ecf07",
+      "afterGitBlob": "6f470e1023d5479671bf279a802cbc60c616cb6f",
+      "baselineFixture": "scripts/fixtures/kaspi-production-runtime-20261007/worker/domains/orders-write.ts"
+    }
+  }
+}

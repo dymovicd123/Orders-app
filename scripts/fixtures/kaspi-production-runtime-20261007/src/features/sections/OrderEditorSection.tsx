@@ -173,16 +173,6 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                         options={suggestionValues.deliveryTypes}
                       />
                     </label>
-                    <label>
-                      <span>Способ оплаты заказа</span>
-                      <SmartPickerInput
-                        value={editorDraft.orderPaymentMethod}
-                        onChange={(value) => updateEditorDraft('orderPaymentMethod', value)}
-                        placeholder="Как клиент оплачивает заказ"
-                        options={suggestionValues.paymentMethods}
-                      />
-                      <small>КАСПИ МАГАЗИН автоматически относит заказ в раздел Kaspi. Это не создаёт оплату само по себе.</small>
-                    </label>
                     {itemizedMode ? (
                       <div className="field-block">
                         <span>Итого заказа</span>

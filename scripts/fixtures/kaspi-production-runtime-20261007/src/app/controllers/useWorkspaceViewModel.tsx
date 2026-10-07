@@ -95,7 +95,7 @@ export function useWorkspaceViewModel({
 }: WorkspaceViewModelArgs) {
 const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector === sector ? undefined : 'none' })
   const orderPanelStyle = (panel: OrderPanel) => ({
-    display: ((panel === 'zammler' ? activeSector === 'kaspi' : activeSector === 'orders') && orderPanel === panel) ? undefined : 'none',
+    display: activeSector === 'orders' && orderPanel === panel ? undefined : 'none',
   })
 
   const pageTitleMap: Record<AppSector, { title: string; subtitle: string }> = {
@@ -105,11 +105,7 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
     },
     orders: {
       title: 'Заказы',
-      subtitle: 'Создание заказов, список, долги, возвраты и обмены.',
-    },
-    kaspi: {
-      title: 'Kaspi',
-      subtitle: 'Заказы Kaspi, статусы оплаты и подтверждение поступлений.',
+      subtitle: 'Отдельные карточки для ввода, таблицы, долгов, возвратов и обмена. Ничего не смешивается в одну массу.',
     },
     clients: {
       title: 'Клиенты',

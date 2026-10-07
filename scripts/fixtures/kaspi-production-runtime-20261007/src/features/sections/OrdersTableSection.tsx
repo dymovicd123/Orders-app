@@ -18,17 +18,12 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     handleOpenExchange,
     handleOpenReturn,
     isAdmin,
-    kaspiMode = false,
-    kaspiPaymentBusyOrderId,
-    confirmKaspiPayment,
     ManagerBadge,
     markOrderSentToClient,
     openOrderStockHandover,
     normalizeSuggestion,
-    ordinaryOrdersSeparated = false,
     orderFinanceBusy,
     orderFinanceReport,
-    orderPanel,
     orderPanelStyle,
     orders,
     restoreArchivedOrder,
@@ -44,39 +39,15 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     busy,
     changeOrderPage,
     orderPageInfo,
-    workspaceSector = 'orders',
   } = ctx
 
-  const kaspiAverageCheck = summary.count > 0 ? Math.round(summary.total / summary.count) : 0
-
   return (
-    <article className={`card wide sector-${workspaceSector}`} id={kaspiMode ? 'kaspi-orders' : 'orders'} style={{ ...sectorStyle(workspaceSector), ...(kaspiMode ? { display: orderPanel === 'list' ? undefined : 'none' } : orderPanelStyle('list')) }}>
-              <div className="card-label">{kaspiMode ? 'Kaspi-заказы' : 'Таблица заказов'}</div>
-              <div className="card-meta">{kaspiMode ? 'Заказы Kaspi по выбранным фильтрам.' : 'Заказы по выбранному периоду и фильтрам.'}</div>
-              {kaspiMode ? (
-                <div className="orders-finance-summary-shell">
-                  <div className="orders-finance-summary-head">
-                    <div><strong>Kaspi · сводка</strong><span>{filters.dateFrom || filters.dateTo ? `${filters.dateFrom ? formatDateShort(filters.dateFrom) : 'начало'} — ${filters.dateTo ? formatDateShort(filters.dateTo) : 'сегодня'}` : 'Весь период'}</span></div>
-                    <span className="soft-badge success-soft">Только КАСПИ МАГАЗИН</span>
-                  </div>
-                  <div className="orders-finance-summary-grid">
-                    <article className="orders-finance-summary-card is-sales">
-                      <div className="orders-finance-summary-card-head"><span>Продажи</span><small>по текущим фильтрам</small></div><div className="orders-finance-summary-main">{formatMoney(summary.total)}</div>
-                      <div className="orders-finance-summary-lines"><div><span>Заказов</span><strong>{summary.count}</strong></div><div><span>Средний чек</span><strong>{formatMoney(kaspiAverageCheck)}</strong></div></div>
-                    </article>
-                    <article className="orders-finance-summary-card is-money">
-                      <div className="orders-finance-summary-card-head"><span>Получено</span><small>подтверждённые оплаты</small></div><div className="orders-finance-summary-main">{formatMoney(summary.received)}</div>
-                      <div className="orders-finance-summary-lines"><div><span>Возвращено</span><strong>{formatMoney(summary.returns)}</strong></div><div><span>Оплата</span><strong>КАСПИ МАГАЗИН</strong></div></div>
-                    </article>
-                    <article className="orders-finance-summary-card is-current">
-                      <div className="orders-finance-summary-card-head"><span>Ожидаем оплату</span><small>текущий долг</small></div><div className="orders-finance-summary-main">{formatMoney(summary.debt)}</div>
-                      <div className="orders-finance-summary-lines"><div><span>Заказов с долгом</span><strong>{summary.debtOrders}</strong></div><div><span>Доставка</span><strong>считается отдельно</strong></div></div>
-                    </article>
-                  </div>
-                </div>
-              ) : ordinaryOrdersSeparated ? (
+    <article className="card wide sector-orders" id="orders" style={{ ...sectorStyle('orders'), ...orderPanelStyle('list') }}>
+              <div className="card-label">Таблица заказов</div>
+              <div className="card-meta">Строки таблицы меняются по поиску и менеджеру. Финансовая сводка ниже синхронизирована с разделом «Финансы» по выбранному периоду.</div>
+              {filters.deliveryType === 'zammler' ? (
                 <div className="orders-current-filter-note">
-                  Найдено <strong>{summary.count}</strong> · сумма <strong>{formatMoney(summary.total)}</strong> · долг <strong>{formatMoney(summary.debt)}</strong>
+                  Доставка: ЗАММЛЕР · найдено <strong>{summary.count}</strong> · сумма <strong>{formatMoney(summary.total)}</strong>
                 </div>
               ) : orderFinanceReport && orderFinanceReport.startDate === filters.dateFrom && orderFinanceReport.endDate === filters.dateTo ? (() => {
                 const grossReceived = Number(orderFinanceReport.overview.grossReceived ?? orderFinanceReport.overview.totalReceived ?? 0)
@@ -89,7 +60,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         <strong>Понятная сводка</strong>
                         <span>{formatDateShort(orderFinanceReport.startDate)} — {formatDateShort(orderFinanceReport.endDate)}</span>
                       </div>
-                      {orderFinanceBusy ? <span className="soft-badge">Обновляю...</span> : <span className="soft-badge success-soft">Актуальные данные</span>}
+                      {orderFinanceBusy ? <span className="soft-badge">Обновляю...</span> : <span className="soft-badge success-soft">Синхронизировано с финансами</span>}
                     </div>
                     <div className="orders-finance-summary-grid">
                       <article className="orders-finance-summary-card is-sales">
@@ -360,13 +331,16 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                               </div>
                             ) : null}
                             {projection.canOpenDebt ? (
-                              kaspiMode ? (
-                                <button className="primary compact debt-action-button" type="button" disabled={Number(kaspiPaymentBusyOrderId || 0) === Number(order.id || 0)} onClick={(event) => { event.stopPropagation(); void confirmKaspiPayment(order) }}>
-                                  {Number(kaspiPaymentBusyOrderId || 0) === Number(order.id || 0) ? 'Сохраняю…' : 'Подтвердить оплату'}
-                                </button>
-                              ) : (
-                                <button className="secondary compact debt-action-button" type="button" onClick={(event) => { event.stopPropagation(); handleOpenDebt(order) }}>Закрыть долг</button>
-                              )
+                              <button
+                                className="secondary compact debt-action-button"
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  handleOpenDebt(order)
+                                }}
+                              >
+                                Закрыть долг
+                              </button>
                             ) : null}
                             {projection.canOpenReturn ? (
                               <button
@@ -409,7 +383,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation()
-                                  handleEditOrder(order, kaspiMode ? 'kaspi' : 'orders')
+                                  handleEditOrder(order)
                                 }}
                               >
                                 Редактировать
