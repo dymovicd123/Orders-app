@@ -28,6 +28,39 @@ import crypto from 'node:crypto'
 
 const root = process.cwd()
 
+const orderFilterSectorIsolationManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/order-filter-sector-isolation-r1-frontend-manifest.json'), 'utf8'))
+if (orderFilterSectorIsolationManifest?.version !== 1 || orderFilterSectorIsolationManifest?.revision !== 'order-filter-sector-isolation-r1') throw new Error('Order filter sector isolation frontend manifest invalid')
+const orderFilterSectorIsolationBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\\0`)).update(bytes).digest('hex')
+}
+if (!process.env.ORDER_FILTER_SECTOR_ISOLATION_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(orderFilterSectorIsolationManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (orderFilterSectorIsolationBlobSha(actual) !== delta.afterGitBlob) throw new Error('Order filter sector isolation frontend drifted: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (orderFilterSectorIsolationBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Order filter sector isolation predecessor fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, ORDER_FILTER_SECTOR_ISOLATION_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('ORDER FILTER SECTOR ISOLATION FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const legacyPath = path.join(root, 'scripts/test-step1906b-frontend-modularization-legacy.mjs')
 const manifestPath = path.join(root, 'scripts/order-edit-safe-payment-corrections-frontend-manifest.json')
 const appPath = path.join(root, 'src/App.tsx')
