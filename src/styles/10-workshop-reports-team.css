@@ -1521,3 +1521,9 @@
     width: 100%;
   }
 }
+
+/* Workshop UX R1.1 — hide the old internal "special order" marker from the human-facing invoice. */
+.workshop-workspace .workshop-simple-invoice-table tr.is-special-order td:first-child::after {
+  content: none;
+  display: none;
+}

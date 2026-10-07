@@ -65,6 +65,9 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
     setWorkshopFilters((current: any) => ({
       ...current,
       view: 'active' as WorkshopView,
+      period: 'all' as WorkshopPeriodPreset,
+      dateFrom: '',
+      dateTo: '',
       urgentOnly: false,
     }))
     setWorkshopSortDirection('oldest')
@@ -172,7 +175,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
           onClick={() => changeChannel('kaspi')}
         >
           <span>Kaspi магазин</span>
-          <small>Приоритетная очередь · срок до 20:00</small>
+          <small>Отдельная приоритетная очередь</small>
         </button>
       </div>
 
