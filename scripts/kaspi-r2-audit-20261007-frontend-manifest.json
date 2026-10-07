@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "revision": "kaspi-r2-audit-20261007-frontend",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "eb48424dcdbf00f6079f52d0519a46b14883760f",
+      "afterGitBlob": "3eeb42e28d63968d6ceb7a3c87e824ccc86ab46f",
+      "baselineFixture": "scripts/fixtures/kaspi-r2-audit-20261007/src/App.tsx"
+    },
+    "src/features/sections/OrderFiltersSection.tsx": {
+      "beforeGitBlob": "98365801ddd122a13df4cee90fa4a5b4d8aa63d7",
+      "afterGitBlob": "1dd152d91524852ecdc5fcd12084d29d7940ebed",
+      "baselineFixture": "scripts/fixtures/kaspi-r2-audit-20261007/src/features/sections/OrderFiltersSection.tsx"
+    },
+    "src/features/sections/OrdersTableSection.tsx": {
+      "beforeGitBlob": "724a8d8ef47bfb39f19be94619e45b4d45ab7c55",
+      "afterGitBlob": "249c7d3dbbeacea3abd9ba12ccb2677ef32a5262",
+      "baselineFixture": "scripts/fixtures/kaspi-r2-audit-20261007/src/features/sections/OrdersTableSection.tsx"
+    }
+  }
+}

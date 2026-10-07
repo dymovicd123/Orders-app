@@ -3867,7 +3867,7 @@ function App() {
     }
   }
 
-  async function loadDashboard(forceReferences = false, overrideFilters: typeof filters = activeSector === 'kaspi' ? kaspiFilters : filters, overrideOffset = orderPageOffset, pageReadOptions: { afterOrderDate?: string; afterOrderId?: number; reusePeriodStats?: boolean } | null = null) {
+  async function loadDashboard(forceReferences = false, overrideFilters: typeof filters = filters, overrideOffset = orderPageOffset, pageReadOptions: { afterOrderDate?: string; afterOrderId?: number; reusePeriodStats?: boolean } | null = null) {
     const activeFilters = overrideFilters
     const searchQuery = activeFilters.q.trim()
     if (searchQuery && Array.from(searchQuery).length < 3) {
@@ -4458,13 +4458,9 @@ function App() {
         } else {
           setMessage('Заказ сохранён. Обновляю список заказов.')
         }
-        if (isKaspiCreate) {
-          setActiveSector('kaspi')
-          window.location.hash = '#kaspi'
-        }
         setOrderPanel('list')
         resetCreateOrderDraft()
-        if (!isKaspiCreate) void loadDashboard(false, filters, 0)
+        void loadDashboard(false, filters, 0)
         void loadWorkshopData()
         return
       }
@@ -6326,7 +6322,7 @@ function removeDebtPayment(index: number) {
         closeOrderEditor()
       }
       if (result.refreshRequired || !result.order) {
-        if (editorReturnSector !== 'kaspi') void loadDashboard(false)
+        void loadDashboard(false)
         void loadWorkshopData()
       }
       return null
