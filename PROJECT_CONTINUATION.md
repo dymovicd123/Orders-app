@@ -532,3 +532,36 @@ Kaspi использует визуальную модель сводки Orders
 ### Важно
 Не возвращаться к идее отдельной Kaspi-таблицы, отдельного Kaspi manager, отдельной shipping model или отдельной pending-payment таблицы без нового бизнес-требования. Текущая цель — **одни и те же обычные заказы и действия, только отдельная выборка Kaspi + отдельное подтверждение факта оплаты**.
 
+## CHECKPOINT 2026-10-07 — Kaspi R2 audit после ручной проверки
+
+Пользователь вручную проверил Kaspi R2 и сообщил, что основной сценарий выглядит нормально. По его просьбе убран лишний ZAMMLER quick-filter из **обычных Заказов** и проведён дополнительный аудит Kaspi/shared Orders.
+
+### Runtime
+- PR **#305 — “Kaspi R2 audit: remove ordinary ZAMMLER filter and harden refresh”** merged в `branch2`.
+- Runtime merge SHA: `c755999d6dbbde7e080f6eac85d688fc141b4147`.
+- Exact candidate Quality run **37596629258** — success (cumulative regression + build).
+- Branch2 safety run **37596839259** — success.
+- Branch2 Cloudflare deploy run **37596839257** — success.
+- Production/`main` не трогался; на момент проверки main = `5f4f7f9e592aa9684c84abfd8cb19048bd859784`.
+- Migration/D1 write/data rewrite для этого follow-up не было.
+
+### Что изменено
+- В обычном разделе **Обычные заказы** кнопка-фильтр `Доставка: ЗАММЛЕР` больше не показывается.
+- В Kaspi этот delivery-filter пока сохранён как опциональный фильтр доставки.
+- Удалена мёртвая ветка ZAMMLER-summary из общей таблицы Orders.
+- Исправлена скрытая ошибка shared UI: bare `loadDashboard()` в Kaspi раньше мог взять обычные `filters` вместо `kaspiFilters`. Это затрагивало ручное «Обновить» и вторичные refresh после некоторых действий (shipping/correction/delete/restore/readback fallback). Теперь default filters выбираются по активному workspace.
+- Исправлен degraded-success Kaspi Create: если сервер уже сохранил заказ, но secondary readback не вернул нормальный id/externalId, UI всё равно возвращается в Kaspi и не запускает ordinary Orders refresh.
+- Исправлен degraded-success edit из Kaspi: перед возвратом в Kaspi больше не запускается лишний ordinary Orders refresh.
+
+### Что перепроверено аудитом
+- Kaspi identity остаётся только `order_payment_method = 'КАСПИ МАГАЗИН'`.
+- Новый Kaspi-заказ остаётся debt-first: factual payment = 0, полный итог идёт в debt.
+- Worker по-прежнему отклоняет попытку создать новый Kaspi-заказ с положительной factual payment.
+- Подтверждение оплаты идёт через существующий idempotent `POST /api/payments`, `paymentKind='debt_close'`, сумма = актуальный долг.
+- Payment confirmation не меняет shipping.
+- Ordinary Orders по-прежнему исключает Kaspi server-side; Kaspi включает только exact Kaspi identity.
+- Pagination, isolated Kaspi filters, debt-state filters и Kaspi reporting regression остаются зелёными.
+- Backend exact delivery filter сохранён; убран только лишний ordinary UI quick-filter.
+
+Следующий шаг по Kaspi: только если пользователь найдёт конкретный UX/business defect. Не переносить в Production автоматически без отдельного решения пользователя.
+
