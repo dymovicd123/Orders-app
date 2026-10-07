@@ -4,7 +4,7 @@
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "18e3539988a170e802d2fd5d996861c0e352757c",
-      "afterGitBlob": "f6f9029c74d60c20cef218a3e2428af0012fcf02",
+      "afterGitBlob": "31e26900ac237f6d09d483a6649947d902ca2938",
       "baselineFixture": "scripts/fixtures/kaspi-production-runtime-20261007/src/App.tsx"
     },
     "src/app/constants.ts": {
