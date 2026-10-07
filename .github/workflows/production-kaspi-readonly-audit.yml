@@ -282,3 +282,43 @@ jobs:
             ORDER BY o.order_date DESC, o.id DESC;
           " --json
 
+      - name: Post-runtime Production classification audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "===== PROD KASPI AUDIT / POST-RUNTIME PARTITION ====="
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              COUNT(*) AS active_total,
+              SUM(CASE WHEN UPPER(TRIM(COALESCE(order_payment_method, ''))) = 'КАСПИ МАГАЗИН' THEN 1 ELSE 0 END) AS active_kaspi,
+              SUM(CASE WHEN UPPER(TRIM(COALESCE(order_payment_method, ''))) <> 'КАСПИ МАГАЗИН' THEN 1 ELSE 0 END) AS active_ordinary,
+              SUM(CASE WHEN UPPER(TRIM(COALESCE(order_payment_method, ''))) = 'КАСПИ МАГАЗИН' AND COALESCE(debt_amount, 0) > 0 THEN 1 ELSE 0 END) AS kaspi_awaiting,
+              SUM(CASE WHEN UPPER(TRIM(COALESCE(order_payment_method, ''))) = 'КАСПИ МАГАЗИН' AND COALESCE(debt_amount, 0) <= 0 THEN 1 ELSE 0 END) AS kaspi_paid
+            FROM orders
+            WHERE order_status NOT IN ('deleted', 'archived');
+          " --json
+
+          echo "===== PROD KASPI AUDIT / RECENT CLASSIFIED KASPI ====="
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              id, external_id, order_date, total_amount, received_amount, debt_amount,
+              delivery_type, shipping_status, order_status, order_payment_method
+            FROM orders
+            WHERE order_status NOT IN ('deleted', 'archived')
+              AND UPPER(TRIM(COALESCE(order_payment_method, ''))) = 'КАСПИ МАГАЗИН'
+            ORDER BY order_date DESC, id DESC
+            LIMIT 12;
+          " --json
+
+          echo "===== PROD KASPI AUDIT / MIXED ORDER CLASSIFICATION ====="
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              o.id, o.external_id, o.order_date, o.total_amount, o.received_amount, o.debt_amount,
+              o.delivery_type, o.shipping_status, o.order_status, o.order_payment_method,
+              GROUP_CONCAT(DISTINCT CASE WHEN COALESCE(p.amount,0) > 0 THEN UPPER(TRIM(COALESCE(p.method,''))) END) AS positive_methods
+            FROM orders o
+            LEFT JOIN payments p ON p.order_id = o.id
+            WHERE o.external_id = 'ORD-20260710-180208-8607'
+            GROUP BY o.id;
+          " --json
+
