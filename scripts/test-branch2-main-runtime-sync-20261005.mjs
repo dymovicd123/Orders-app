@@ -12,6 +12,47 @@ const gitBlob = (value) => {
 
 const root = process.cwd()
 
+const kaspiMainParityRuntimeManifest = JSON.parse(
+  fs.readFileSync(path.join(root, 'scripts/kaspi-main-parity-20261007-frontend-manifest.json'), 'utf8'),
+)
+check(
+  kaspiMainParityRuntimeManifest?.version === 1 && kaspiMainParityRuntimeManifest?.revision === 'kaspi-main-parity-20261007-frontend',
+  'Kaspi main parity runtime manifest invalid',
+)
+if (!process.env.KASPI_MAIN_PARITY_BRANCH2_MAIN_SYNC_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(kaspiMainParityRuntimeManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      check(gitBlob(actual) === delta.afterGitBlob, 'Kaspi main parity runtime drifted before Branch2/main sync check: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      check(gitBlob(baseline) === delta.beforeGitBlob, 'Kaspi main parity predecessor fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root,
+      stdio: 'inherit',
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, KASPI_MAIN_PARITY_BRANCH2_MAIN_SYNC_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) {
+      const absolute = path.join(root, relative)
+      fs.mkdirSync(path.dirname(absolute), { recursive: true })
+      fs.writeFileSync(absolute, actual)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('KASPI MAIN PARITY — BRANCH2 MAIN SYNC PRESERVATION LAYER PASSED')
+  process.exit(0)
+}
+
 const kaspiCreateTabRuntimeManifest = JSON.parse(
   fs.readFileSync(path.join(root, 'scripts/kaspi-create-tab-ux-20261007-frontend-manifest.json'), 'utf8'),
 )

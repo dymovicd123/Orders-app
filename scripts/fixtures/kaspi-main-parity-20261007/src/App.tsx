@@ -650,8 +650,7 @@ function App() {
   const [orderPanel, setOrderPanel] = useState<OrderPanel>('list')
   const [kaspiPaymentState, setKaspiPaymentState] = useState<'awaiting' | 'paid' | 'all'>('all')
   const [kaspiPaymentBusyOrderId, setKaspiPaymentBusyOrderId] = useState<number | null>(null)
-  const [kaspiPaymentDraft, setKaspiPaymentDraft] = useState<{ order: OrderRecord; paymentDate: string } | null>(null)
-  const [kaspiPeriodPreset, setKaspiPeriodPreset] = useState<OrderPeriodPreset | 'all'>('month')
+  const [kaspiPeriodPreset, setKaspiPeriodPreset] = useState<OrderPeriodPreset | 'all'>('all')
   const [orderPeriodPreset, setOrderPeriodPreset] = useState<OrderPeriodPreset>('month')
   const defaultOrderRange = getPeriodRange('month')
   const [debtFilters, setDebtFilters] = useState({
@@ -768,8 +767,8 @@ function App() {
     manager: '',
     managerId: 0,
     archiveMode: 'active' as ArchiveMode,
-    dateFrom: defaultOrderRange.dateFrom,
-    dateTo: defaultOrderRange.dateTo,
+    dateFrom: '',
+    dateTo: '',
     pageSize: '100',
   })
   const closedArchiveMonth = getClosedArchiveMonth()
@@ -4069,11 +4068,11 @@ function App() {
   }
 
   function resetKaspiFilters() {
-    setKaspiPeriodPreset('month')
+    setKaspiPeriodPreset('all')
     setKaspiPaymentState('all')
     setKaspiFilters({
       q: '', status: 'all', shippingStatus: 'all', deliveryType: 'all', source: 'all',
-      manager: '', managerId: 0, archiveMode: 'active', dateFrom: defaultOrderRange.dateFrom, dateTo: defaultOrderRange.dateTo, pageSize: '100',
+      manager: '', managerId: 0, archiveMode: 'active', dateFrom: '', dateTo: '', pageSize: '100',
     })
   }
 
@@ -5831,35 +5830,8 @@ function removeDebtPayment(index: number) {
       setMessage(debt <= 0 ? 'Этот Kaspi-заказ уже полностью оплачен.' : 'Этот заказ сейчас нельзя закрыть оплатой.')
       return
     }
-    setError(null)
-    setMessage(null)
-    setKaspiPaymentDraft({ order, paymentDate: formatLocalDateInput() })
-  }
-
-  async function submitKaspiPayment() {
-    const draft = kaspiPaymentDraft
-    if (!draft || kaspiPaymentBusyOrderId) return
-    const order = draft.order
-    const debt = Math.max(0, Number(order.debt_amount || 0))
-    const paymentDate = String(draft.paymentDate || '').trim()
-    const today = formatLocalDateInput()
-    if (!debt) {
-      setKaspiPaymentDraft(null)
-      setMessage('Этот Kaspi-заказ уже полностью оплачен.')
-      return
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(paymentDate)) {
-      setError('Укажите дату поступления оплаты.')
-      return
-    }
-    if (paymentDate > today) {
-      setError('Дата поступления не может быть в будущем.')
-      return
-    }
-    if (order.order_date && paymentDate < order.order_date) {
-      setError('Дата поступления не может быть раньше даты заказа.')
-      return
-    }
+    const confirmed = window.confirm(`Подтвердить оплату Kaspi?\n\nЗаказ: ${order.external_id}\nИтого: ${formatMoney(order.total_amount)}\nТекущий долг: ${formatMoney(debt)}\nБудет записано: ${formatMoney(debt)}\nСпособ: КАСПИ МАГАЗИН\n\nСтатус доставки не изменится.`)
+    if (!confirmed) return
 
     setKaspiPaymentBusyOrderId(order.id)
     setError(null)
@@ -5867,7 +5839,7 @@ function removeDebtPayment(index: number) {
     try {
       const payload = {
         orderId: order.id,
-        paymentDate,
+        paymentDate: formatLocalDateInput(),
         method: 'КАСПИ МАГАЗИН',
         amount: debt,
         paymentKind: 'debt_close' as const,
@@ -5884,8 +5856,7 @@ function removeDebtPayment(index: number) {
       if (!response.ok) throw new Error(result.message || `Payment failed: ${response.status}`)
       completeCriticalRequest(criticalKey, critical.requestId)
       if (result.order) upsertOrderInState(result.order)
-      setKaspiPaymentDraft(null)
-      setMessage(`Оплата по заказу ${order.external_id} подтверждена датой ${formatDateShort(paymentDate)}. Доставка не изменялась.`)
+      setMessage(`Оплата по заказу ${order.external_id} подтверждена. Доставка не изменялась.`)
       await Promise.allSettled([
         loadDashboard(false, kaspiFilters, 0),
         refreshFinanceReportsIfVisible(),
@@ -8190,45 +8161,6 @@ function removeDebtPayment(index: number) {
       </Suspense>
 
       <DatabaseStorageModal maintenance={storageMaintenance} onOpenReports={openStorageMonthReports} />
-
-      {kaspiPaymentDraft ? (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
-          if (event.target === event.currentTarget && !kaspiPaymentBusyOrderId) setKaspiPaymentDraft(null)
-        }}>
-          <form className="modal-card auth-users-modal" role="dialog" aria-modal="true" aria-label="Подтверждение оплаты Kaspi" onSubmit={(event) => { event.preventDefault(); void submitKaspiPayment() }}>
-            <div className="modal-head">
-              <div>
-                <div className="card-label">Kaspi · подтверждение оплаты</div>
-                <h3>{kaspiPaymentDraft.order.external_id}</h3>
-                <p>Укажите фактическую дату поступления денег. Именно на эту дату оплата попадёт в финансовый отчёт.</p>
-              </div>
-              <button className="secondary compact" type="button" onClick={() => setKaspiPaymentDraft(null)} disabled={Boolean(kaspiPaymentBusyOrderId)}>Закрыть</button>
-            </div>
-            <div className="form-grid compact-form-grid">
-              <label>
-                <span>Дата поступления</span>
-                <input
-                  type="date"
-                  min={kaspiPaymentDraft.order.order_date || undefined}
-                  max={formatLocalDateInput()}
-                  value={kaspiPaymentDraft.paymentDate}
-                  onChange={(event) => setKaspiPaymentDraft((current) => current ? { ...current, paymentDate: event.target.value } : current)}
-                  required
-                />
-              </label>
-              <label><span>Сумма</span><input value={formatMoney(Math.max(0, Number(kaspiPaymentDraft.order.debt_amount || 0)))} readOnly /></label>
-              <label><span>Способ оплаты</span><input value="КАСПИ МАГАЗИН" readOnly /></label>
-            </div>
-            <p className="mini-panel-note">Продажа останется на дате заказа. Поступление и закрытие долга будут учтены по выбранной дате. Статус доставки не изменится.</p>
-            <div className="modal-actions">
-              <button className="primary" type="submit" disabled={Boolean(kaspiPaymentBusyOrderId)}>
-                {kaspiPaymentBusyOrderId ? 'Сохраняю...' : 'Подтвердить оплату'}
-              </button>
-              <button className="secondary" type="button" onClick={() => setKaspiPaymentDraft(null)} disabled={Boolean(kaspiPaymentBusyOrderId)}>Отмена</button>
-            </div>
-          </form>
-        </div>
-      ) : null}
 
       {passwordChangeOpen ? (
         <div className="modal-backdrop" role="presentation">

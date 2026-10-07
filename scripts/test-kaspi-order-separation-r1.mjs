@@ -95,7 +95,7 @@ const confirmEnd = app.indexOf('\n\n  async function handleOpenDebt', confirmSta
 const confirm = app.slice(confirmStart, confirmEnd)
 check(confirm.includes("apiFetch('/api/payments'") && confirm.includes("method: 'КАСПИ МАГАЗИН'") && confirm.includes("paymentKind: 'debt_close'"), 'Kaspi factual payment path drifted')
 check(confirm.includes("'X-Idempotency-Key': critical.requestId"), 'Kaspi payment is not retry-safe')
-check(confirm.includes('Итого:') && confirm.includes('Текущий долг:') && confirm.includes('Статус доставки не изменится'), 'Kaspi confirmation is unclear')
+check(confirm.includes("setKaspiPaymentDraft({ order, paymentDate: formatLocalDateInput() })") && app.includes('aria-label="Подтверждение оплаты Kaspi"') && app.includes('Именно на эту дату оплата попадёт в финансовый отчёт.') && app.includes('Статус доставки не изменится.'), 'Kaspi confirmation is unclear')
 check(!confirm.includes('markOrderSentToClient'), 'Kaspi payment mutates shipping')
 check(ordersUi.includes('Подтвердить оплату') && ordersUi.includes("handleEditOrder(order, kaspiMode ? 'kaspi' : 'orders')"), 'Shared table lacks Kaspi actions')
 
