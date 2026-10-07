@@ -97,7 +97,7 @@ const kaspiWorkshopInvoiceR1FrontendManifest = JSON.parse(fs.readFileSync(path.j
 if (kaspiWorkshopInvoiceR1FrontendManifest?.version !== 1 || kaspiWorkshopInvoiceR1FrontendManifest?.revision !== 'kaspi-workshop-invoice-r1') throw new Error('Kaspi Workshop invoice R1 frontend manifest invalid')
 const kaspiWorkshopInvoiceR1FrontendBlobSha = (value) => {
   const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\\0`)).update(bytes).digest('hex')
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 if (!process.env.KASPI_WORKSHOP_INVOICE_R1_FRONTEND_NORMALIZED) {
   const originals = new Map()

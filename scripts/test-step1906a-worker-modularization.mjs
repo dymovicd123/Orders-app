@@ -9,7 +9,7 @@ const kaspiWorkshopInvoiceR1WorkerManifest = JSON.parse(fs.readFileSync(path.joi
 if (kaspiWorkshopInvoiceR1WorkerManifest?.version !== 1 || kaspiWorkshopInvoiceR1WorkerManifest?.revision !== 'kaspi-workshop-invoice-r1') throw new Error('Kaspi Workshop invoice R1 Worker manifest invalid')
 const kaspiWorkshopInvoiceR1WorkerBlobSha = (value) => {
   const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\\0`)).update(bytes).digest('hex')
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 if (!process.env.KASPI_WORKSHOP_INVOICE_R1_WORKER_NORMALIZED) {
   const originals = new Map()
