@@ -98,9 +98,8 @@ try {
   // OrderExchangeSection remains lazy; keep the bound aligned with the reviewed Production ceiling.
   check(graphRelative.includes('src/app/order-pricing.ts'), 'H6B/H8 Catalog price resolver is not reachable from the initial Create controller graph')
   check(graph.size <= 26, `Initial static source graph regrew beyond the accepted pricing module set: ${graph.size} modules`)
-  // Exchange Set V2 keeps the large visual workspace behind the existing lazy Exchange boundary.
-  // Only the save coordinator + Catalog-aware draft helpers are added to the eager controller graph.
-  check(sourceBytes <= 705_000, `Initial static source graph regrew beyond the reviewed Exchange Set V2 allowance: ${sourceBytes} bytes`)
+  // Exchange Set V2 stays lazy. Kaspi reuses the existing Orders lazy surfaces; only its list/create/payment coordinators live in the eager App graph.
+  check(sourceBytes <= 715_500, `Initial static source graph regrew beyond the reviewed Kaspi Production allowance: ${sourceBytes} bytes`)
   for (const name of lazySections) {
     check(!graphRelative.includes(`src/features/sections/${name}.tsx`), `Lazy section is still initial-static: ${name}`)
   }

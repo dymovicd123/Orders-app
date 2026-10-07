@@ -717,7 +717,7 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         // own active reservations that would otherwise be counted as somebody else's reservation.
         const existingOrder = await db.prepare(
           `SELECT id, external_id, order_date, manager_id, manager_snapshot_name, customer_id, city,
-                  delivery_type, order_payment_method, source_type, workshop_status, order_status, total_amount,
+                  delivery_type, source_type, workshop_status, order_status, total_amount,
                   received_amount, debt_amount, comment, created_at
            FROM orders WHERE id = ? LIMIT 1`
         ).bind(existingTargetId).first<Record<string, unknown>>();
@@ -780,7 +780,6 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
           customerId: toInt(existingOrder.customer_id, 0) || null,
           city: cleanText(existingOrder.city),
           deliveryType: cleanText(existingOrder.delivery_type),
-          orderPaymentMethod: upperText(existingOrder.order_payment_method),
           sourceType,
           workshopStatus: normalizeWorkshopStatus(existingOrder.workshop_status),
           orderStatus: normalizeOrderStatus(existingOrder.order_status),
@@ -824,7 +823,6 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         const customerName = cleanText(input.customerName);
         const city = cleanText(input.city);
         const deliveryType = cleanText(input.deliveryType);
-        const orderPaymentMethod = upperText(input.orderPaymentMethod);
         const sourceType = normalizeSourceType(input.sourceType);
         const workshopStatus = normalizeWorkshopStatus(input.workshopStatus);
         const orderStatus = normalizeOrderStatus(input.orderStatus);
@@ -850,9 +848,6 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
             ? { ...payment, paymentDate: orderDate }
             : payment
         ));
-        if (orderPaymentMethod === 'КАСПИ МАГАЗИН' && normalizedPayments.some(payment => payment.amount > 0)) {
-          throw new OrderInputValidationError('Kaspi-заказ создаётся без фактической оплаты. Сохраните заказ с долгом, а поступление подтвердите позже в разделе Kaspi после уведомления Kaspi.');
-        }
 
         for (const item of normalizedItems) {
           if (item.observedPhysicalQuantity === null) continue;
@@ -993,7 +988,6 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
           customerId,
           city,
           deliveryType,
-          orderPaymentMethod,
           sourceType,
           workshopStatus,
           orderStatus,
@@ -1025,7 +1019,6 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
     const customerId = toInt(plan.customerId, 0) || null;
     const city = cleanText(plan.city);
     const deliveryType = cleanText(plan.deliveryType);
-    const orderPaymentMethod = upperText(plan.orderPaymentMethod);
     const sourceType = normalizeSourceType(plan.sourceType);
     const workshopStatus = normalizeWorkshopStatus(plan.workshopStatus);
     const orderStatus = normalizeOrderStatus(plan.orderStatus);
@@ -1042,22 +1035,22 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         ? db.prepare(
           `INSERT INTO orders (
             external_id, order_date, manager_id, manager_snapshot_name, customer_id, city,
-            delivery_type, order_payment_method, source_type, workshop_status, order_status, pricing_mode, total_amount,
+            delivery_type, source_type, workshop_status, order_status, pricing_mode, total_amount,
             received_amount, debt_amount, return_amount, comment, shipping_status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'itemized_v1', ?, ?, ?, 0, ?, 'not_sent', ?, ?)`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'itemized_v1', ?, ?, ?, 0, ?, 'not_sent', ?, ?)`
         ).bind(
-          externalId, orderDate, managerId, managerName, customerId, city || null, deliveryType || null, orderPaymentMethod || null,
+          externalId, orderDate, managerId, managerName, customerId, city || null, deliveryType || null,
           sourceType, workshopStatus, orderStatus, totals.totalAmount, totals.receivedAmount, totals.debtAmount,
           comment || null, createdAt, createdAt,
         )
         : db.prepare(
           `INSERT INTO orders (
             external_id, order_date, manager_id, manager_snapshot_name, customer_id, city,
-            delivery_type, order_payment_method, source_type, workshop_status, order_status, total_amount,
+            delivery_type, source_type, workshop_status, order_status, total_amount,
             received_amount, debt_amount, return_amount, comment, shipping_status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'not_sent', ?, ?)`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'not_sent', ?, ?)`
         ).bind(
-          externalId, orderDate, managerId, managerName, customerId, city || null, deliveryType || null, orderPaymentMethod || null,
+          externalId, orderDate, managerId, managerName, customerId, city || null, deliveryType || null,
           sourceType, workshopStatus, orderStatus, totals.totalAmount, totals.receivedAmount, totals.debtAmount,
           comment || null, createdAt, createdAt,
         );
@@ -1321,9 +1314,6 @@ export async function updateOrderCritical(
       const nextCity = input.city !== undefined ? cleanText(input.city) : cleanText(existingAny.city);
       let nextCustomerId: number | null = null;
       const nextDelivery = input.deliveryType !== undefined ? cleanText(input.deliveryType) : cleanText(existingAny.delivery_type);
-      const nextOrderPaymentMethod = input.orderPaymentMethod !== undefined
-        ? upperText(input.orderPaymentMethod)
-        : upperText(existingAny.order_payment_method);
       const nextSource = input.sourceType ? normalizeSourceType(input.sourceType) : normalizeSourceType(existingAny.source_type);
       const nextWorkshopStatus = input.workshopStatus ? normalizeWorkshopStatus(input.workshopStatus) : normalizeWorkshopStatus(existingAny.workshop_status);
       const nextOrderStatus = input.orderStatus ? normalizeOrderStatus(input.orderStatus) : normalizeOrderStatus(existingAny.order_status);
@@ -1837,7 +1827,7 @@ export async function updateOrderCritical(
         externalId: cleanText(existingAny.external_id),
         existingManagerId, existingCustomerId: toInt(existingAny.customer_id, 0) || null,
         previousManagerName: cleanText(existingAny.manager_name || existingAny.manager_snapshot_name),
-        nextOrderDate, nextManager, nextManagerId, nextCustomerId, nextCity, nextDelivery, nextOrderPaymentMethod, nextSource: replacementOrderSource,
+        nextOrderDate, nextManager, nextManagerId, nextCustomerId, nextCity, nextDelivery, nextSource: replacementOrderSource,
         finalWorkshopStatus, nextOrderStatus, nextShippingStatus, nextShippingDate,
         persistedShippingStatus, persistedShippingDate, nextComment,
         itemContentChanged, rewriteItems, priceOnlyItemsEdit, priceOnlyItemUpdates,
@@ -1890,10 +1880,10 @@ export async function updateOrderCritical(
     if (criticalOperation.row.step === 'old_content_retired') {
       const orderUpdateStatement = db.prepare(
         `UPDATE orders SET order_date = ?, manager_id = ?, manager_snapshot_name = ?, customer_id = ?, city = ?,
-            delivery_type = ?, order_payment_method = ?, source_type = ?, workshop_status = ?, order_status = ?, shipping_status = ?, shipping_date = ?,
+            delivery_type = ?, source_type = ?, workshop_status = ?, order_status = ?, shipping_status = ?, shipping_date = ?,
             total_amount = ?, received_amount = ?, debt_amount = ?, updated_at = ?, comment = ? WHERE id = ?`
       ).bind(
-        p.nextOrderDate, p.nextManagerId, p.nextManager, p.nextCustomerId, p.nextCity || null, p.nextDelivery || null, p.nextOrderPaymentMethod || null,
+        p.nextOrderDate, p.nextManagerId, p.nextManager, p.nextCustomerId, p.nextCity || null, p.nextDelivery || null,
         p.nextSource, p.finalWorkshopStatus, p.nextOrderStatus, p.persistedShippingStatus, p.persistedShippingDate,
         p.totals.totalAmount, p.totals.receivedAmount, p.totals.debtAmount, p.timestamp, p.nextComment || null, id,
       );
@@ -2106,7 +2096,7 @@ export async function getOrder(db: D1Database, id: number) {
       o.manager_snapshot_name,
       COALESCE(m.color_key, '#64748B') AS manager_color,
       c.phone_normalized AS customer_phone, c.display_name AS customer_name,
-      o.city, o.delivery_type, o.order_payment_method, o.source_type, o.workshop_status, o.order_status,
+      o.city, o.delivery_type, o.source_type, o.workshop_status, o.order_status,
       ${pricingModeSelect},
       o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment, o.shipping_status, o.shipping_date,
       o.archived_at, o.archived_by, o.archive_reason, o.archive_batch_id, o.created_at, o.updated_at

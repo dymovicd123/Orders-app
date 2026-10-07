@@ -266,6 +266,7 @@ try {
   run('Return smart UX Production', process.execPath, [path.join(root, 'scripts/test-return-smart-ux-r3.mjs')])
   run('Return/Exchange source defaults Production', process.execPath, [path.join(root, 'scripts/test-return-exchange-source-defaults-r1.mjs')])
   run('CLIENT-ZAMMLER Production runtime', process.execPath, [path.join(root, 'scripts/test-client-zammler-production-runtime.mjs')])
+  run('Kaspi Production runtime', process.execPath, [path.join(root, 'scripts/test-kaspi-production-runtime.mjs')])
   run('Finance day transparency focused regression', process.execPath, [path.join(root, 'scripts/test-finance-day-transparency.mjs')])
   run('Step 189A.2 SQL safety tests', process.execPath, [path.join(root, 'scripts/test-step189a2-sql.mjs')])
   run('Step 189B history visibility tests', process.execPath, [path.join(root, 'scripts/test-step189b-history.mjs')])
