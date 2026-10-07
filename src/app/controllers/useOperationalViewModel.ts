@@ -86,7 +86,7 @@ type OperationalViewModelArgs = {
   setSelectedWorkshopTaskIds: Dispatch<SetStateAction<number[]>>
   workshopData: WorkshopResponse | null
   workshopFilters: { view: WorkshopView; period: WorkshopPeriodPreset; dateFrom: string; dateTo: string; urgentOnly: boolean; q: string }
-  workshopInvoiceMode: 'urgent' | 'period' | 'zammler'
+  workshopInvoiceMode: 'urgent' | 'period' | 'kaspi'
   workshopSortDirection: 'oldest' | 'newest'
 }
 
@@ -258,7 +258,7 @@ const summary = useMemo(() => {
     if (!query) return tasks
     return tasks.filter((task) => [
       task.externalOrderId, task.productName, task.gender, task.color, task.material, task.length, task.size,
-      task.comment, task.managerName, task.customerPhone, task.customerName, task.city, task.deliveryType,
+      task.comment, task.managerName, task.customerPhone, task.customerName, task.city, task.deliveryType, task.orderPaymentMethod,
       task.orderDate, task.exchangeDate,
     ].map((part) => String(part || '').toLowerCase()).join(' ').includes(query))
   }, [workshopData, workshopFilters.q])
@@ -271,17 +271,17 @@ const summary = useMemo(() => {
     () => activeWorkshopTasks.filter((task) => selectedWorkshopTaskSet.has(task.id)),
     [activeWorkshopTasks, selectedWorkshopTaskSet],
   )
-  const workshopInvoiceIsZammler = workshopFilters.view === 'invoice' && workshopInvoiceMode === 'zammler'
+  const workshopInvoiceIsKaspi = workshopFilters.view === 'invoice' && workshopInvoiceMode === 'kaspi'
   const workshopBaseScopeTasks = selectedWorkshopTasks.length ? selectedWorkshopTasks : activeWorkshopTasks
   const workshopScopeTasks = useMemo(() => {
-    if (workshopInvoiceIsZammler) {
-      return workshopBaseScopeTasks.filter((task) => normalizeSuggestion(task.deliveryType) === 'ЗАММЛЕР')
+    if (workshopInvoiceIsKaspi) {
+      return workshopBaseScopeTasks.filter((task) => normalizeSuggestion(task.orderPaymentMethod) === 'КАСПИ МАГАЗИН')
     }
     if (workshopFilters.view === 'invoice' || workshopFilters.view === 'urgent') {
-      return workshopBaseScopeTasks.filter((task) => normalizeSuggestion(task.deliveryType) !== 'ЗАММЛЕР')
+      return workshopBaseScopeTasks.filter((task) => normalizeSuggestion(task.orderPaymentMethod) !== 'КАСПИ МАГАЗИН')
     }
     return workshopBaseScopeTasks
-  }, [workshopBaseScopeTasks, workshopFilters.view, workshopInvoiceIsZammler])
+  }, [workshopBaseScopeTasks, workshopFilters.view, workshopInvoiceIsKaspi])
   const workshopInvoiceRows = useMemo<WorkshopInvoiceRow[]>(() => {
     // Step 72: в накладной важность считается на уровне всего заказа.
     // Если в заказе есть хотя бы одна срочная позиция — все позиции этого заказа идут сверху и не суммируются.
@@ -300,13 +300,13 @@ const summary = useMemo(() => {
     workshopScopeTasks.forEach((task) => {
       const comment = String(task.comment || '').trim()
       const priority = orderPriority.get(task.orderId) ?? 2
-      const isSpecialOrder = workshopInvoiceIsZammler || priority < 2
+      const isSpecialOrder = workshopInvoiceIsKaspi || priority < 2
       const urgent = priority === 0
       const hasComment = priority === 1 || Boolean(comment)
       const productTitle = workshopInvoiceProductTitle(task)
       const characteristics = workshopInvoiceCharacteristics(task)
-      const key = workshopInvoiceIsZammler
-        ? `zammler|${task.orderId}|${task.id}`
+      const key = workshopInvoiceIsKaspi
+        ? `kaspi|${task.orderId}|${task.id}`
         : isSpecialOrder
           ? `order|${task.orderId}|${task.id}`
           : `normal|${productTitle}|${characteristics}`
@@ -316,7 +316,7 @@ const summary = useMemo(() => {
         urgent,
         hasComment,
         isSpecialOrder,
-        isZammler: workshopInvoiceIsZammler,
+        isKaspi: workshopInvoiceIsKaspi,
         orderId: isSpecialOrder ? task.orderId : 0,
         orderDate: task.orderDate || '',
         productName: productTitle,
@@ -324,19 +324,19 @@ const summary = useMemo(() => {
         quantity: 0,
         orderRef: isSpecialOrder ? task.externalOrderId : '',
         comment,
-        dueDate: (workshopInvoiceIsZammler || task.urgent) ? (task.dueDate || '') : '',
-        dueTime: (workshopInvoiceIsZammler || task.urgent) ? (task.dueTime || '') : '',
+        dueDate: (workshopInvoiceIsKaspi || task.urgent) ? (task.dueDate || '') : '',
+        dueTime: (workshopInvoiceIsKaspi || task.urgent) ? (task.dueTime || '') : '',
       }
       current.quantity += Number(task.quantity || 0)
       if (!current.comment && comment) current.comment = comment
-      if (!current.dueDate && (workshopInvoiceIsZammler || task.urgent) && task.dueDate) current.dueDate = task.dueDate
-      if (!current.dueTime && (workshopInvoiceIsZammler || task.urgent) && task.dueTime) current.dueTime = task.dueTime
+      if (!current.dueDate && (workshopInvoiceIsKaspi || task.urgent) && task.dueDate) current.dueDate = task.dueDate
+      if (!current.dueTime && (workshopInvoiceIsKaspi || task.urgent) && task.dueTime) current.dueTime = task.dueTime
       grouped.set(key, current)
     })
 
     const direction = workshopSortDirection === 'newest' ? -1 : 1
     return Array.from(grouped.values()).sort((a, b) => {
-      if (workshopInvoiceIsZammler) {
+      if (workshopInvoiceIsKaspi) {
         const aDue = a.dueDate ? `${a.dueDate}T${a.dueTime || '23:59'}` : '9999-12-31T23:59'
         const bDue = b.dueDate ? `${b.dueDate}T${b.dueTime || '23:59'}` : '9999-12-31T23:59'
         const byDue = aDue.localeCompare(bDue)
@@ -355,7 +355,7 @@ const summary = useMemo(() => {
       if (byProduct) return byProduct
       return a.orderRef.localeCompare(b.orderRef, 'ru')
     })
-  }, [workshopScopeTasks, workshopSortDirection, workshopInvoiceIsZammler])
+  }, [workshopScopeTasks, workshopSortDirection, workshopInvoiceIsKaspi])
 
   const getWorkshopInvoiceImportanceLabel = (row: WorkshopInvoiceRow) => {
     if (row.priority === 0) return `Срочный заказ${row.dueDate ? ` · до ${formatDateShort(row.dueDate)}` : ''}`
@@ -1290,7 +1290,7 @@ const summary = useMemo(() => {
     updateInventoryArrivalSize,
     variantsForProduct,
     visibleCatalogProducts,
-    workshopInvoiceIsZammler,
+    workshopInvoiceIsKaspi,
     workshopInvoiceRows,
     workshopScopeTasks,
   }
