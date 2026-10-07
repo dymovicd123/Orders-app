@@ -135,6 +135,40 @@ import { spawnSync } from 'node:child_process'
 
 const root = process.cwd()
 
+const workshopMainSyncManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/workshop-main-sync-20261007-runtime-manifest.json'), 'utf8'))
+if (workshopMainSyncManifest?.version !== 1 || workshopMainSyncManifest?.revision !== 'workshop-main-sync-20261007') throw new Error('Workshop main sync frontend manifest invalid')
+const workshopMainSyncFrontendBlobSha = (value) => {
+  const bytes = Buffer.from(value)
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
+}
+if (!process.env.WORKSHOP_MAIN_SYNC_FRONTEND_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(workshopMainSyncManifest.files || {})) {
+      if (!relative.startsWith('src/')) continue
+      const absolute = path.join(root, relative)
+      const actual = fs.readFileSync(absolute, 'utf8')
+      if (workshopMainSyncFrontendBlobSha(actual) !== delta.afterGitBlob) throw new Error('Workshop main sync frontend drifted: ' + relative)
+      const baseline = fs.readFileSync(path.join(root, delta.baselineFixture), 'utf8')
+      if (workshopMainSyncFrontendBlobSha(baseline) !== delta.beforeGitBlob) throw new Error('Workshop main sync frontend predecessor fixture drifted: ' + relative)
+      originals.set(relative, actual)
+      fs.writeFileSync(absolute, baseline)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: { ...process.env, WORKSHOP_MAIN_SYNC_FRONTEND_NORMALIZED: '1' },
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, actual] of originals) fs.writeFileSync(path.join(root, relative), actual)
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('WORKSHOP MAIN SYNC FRONTEND STRUCTURAL LAYER PASSED')
+  process.exit(0)
+}
+
 const kaspiProductionFrontendManifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts/kaspi-production-runtime-20261007-manifest.json'), 'utf8'))
 if (kaspiProductionFrontendManifest?.version !== 1 || kaspiProductionFrontendManifest?.revision !== 'kaspi-production-runtime-20261007') throw new Error('Kaspi Production frontend manifest invalid')
 const kaspiProductionFrontendBlobSha = (value) => {
