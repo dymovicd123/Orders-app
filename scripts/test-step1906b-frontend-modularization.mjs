@@ -97,7 +97,7 @@ const workshopUiR1Manifest = JSON.parse(fs.readFileSync(path.join(root, 'scripts
 if (workshopUiR1Manifest?.version !== 1 || workshopUiR1Manifest?.revision !== 'workshop-ui-r1') throw new Error('Workshop UI R1 frontend manifest invalid')
 const workshopUiR1BlobSha = (value) => {
   const bytes = Buffer.from(value)
-  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\\0`)).update(bytes).digest('hex')
+  return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 if (!process.env.WORKSHOP_UI_R1_FRONTEND_NORMALIZED) {
   const originals = new Map()
