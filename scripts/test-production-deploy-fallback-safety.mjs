@@ -9,8 +9,11 @@ check(wrangler.includes('"database_name": "orders_db_prod"'), 'Production fallba
 check(wrangler.includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"'), 'Production fallback test: Production D1 id missing')
 check(!wrangler.includes('orders_db_branch2') && !wrangler.includes('40065052-854e-44b8-bcd5-251bdd488301'), 'Production fallback test: Branch2 D1 identity leaked into main')
 
-check(workflow.includes('if [[ "$outcome" == "skipped" && "$GITHUB_REF_NAME" == "main" ]]; then'), 'Production fallback must activate only after a skipped native main build')
+check(workflow.includes('if [[ "$outcome" == "skipped" && "$GITHUB_REF_NAME" == "main" ]]; then'), 'Skipped native-build fallback must stay main-only')
 check(workflow.includes('echo "fallback_required=true" >> "$GITHUB_OUTPUT"'), 'Production fallback requirement is not exported')
+check(workflow.includes('"$GITHUB_REF_NAME" == "main" && "$attempt" -ge 12'), 'Missing-build fallback must wait for the bounded main observation window')
+check(workflow.includes('No matching native Cloudflare build appeared for main after 2 minutes'), 'Missing-build Production fallback marker missing')
+check(workflow.includes('if [[ "$GITHUB_REF_NAME" == "main" && "$stale_build_token" == "true" ]]; then'), 'Stale Cloudflare build-token fallback must stay main-only')
 check(workflow.includes("if: steps.wait.outputs.fallback_required == 'true' && github.ref_name == 'main'"), 'Production direct deploy fallback is not hard-scoped to main')
 
 const start = workflow.indexOf('- name: Verify and deploy exact main commit after native skip')
@@ -30,4 +33,4 @@ check(!fallback.includes('wrangler d1 execute') && !fallback.includes('migration
 const skippedDecision = workflow.slice(workflow.indexOf('if [[ "$outcome" == "skipped"'), workflow.indexOf('if [[ "$outcome" != "success"'))
 check(skippedDecision.includes('"main"') && !skippedDecision.includes('"branch2"'), 'This main workflow fallback must not deploy Branch2')
 
-console.log('PRODUCTION DEPLOY FALLBACK SAFETY PASSED — only skipped native main builds may use the direct path; exact SHA, Production Worker and Production D1 are hard-locked, Branch2 identities are rejected, and full release verification precedes deploy')
+console.log('PRODUCTION DEPLOY FALLBACK SAFETY PASSED — only main native-skip, bounded missing-build, or stale-build-token infrastructure cases may use the direct path; exact SHA, Production Worker and Production D1 are hard-locked, Branch2 identities are rejected, and full release verification precedes deploy')
