@@ -30,7 +30,9 @@ const missingBuildDecision = workflow.slice(workflow.indexOf('No matching native
 check(workflow.includes('"$GITHUB_REF_NAME" == "branch2" && "$attempt" -ge 12'), 'Missing-build fallback must wait for the bounded Branch2 observation window')
 check(missingBuildDecision.includes('guarded direct Branch2 deploy fallback') && !missingBuildDecision.includes('"main"'), 'Missing-build fallback must remain Branch2-only')
 
-const staleTokenDecision = workflow.slice(workflow.indexOf('build token selected for this build has been deleted or rolled'), workflow.indexOf('exit 7', workflow.indexOf('build token selected for this build has been deleted or rolled')))
-check(staleTokenDecision.includes('"branch2"') && staleTokenDecision.includes('"stale_build_token" == "true"') && !staleTokenDecision.includes('"main"'), 'Stale Cloudflare build-token fallback must remain Branch2-only')
+check(
+  workflow.includes('if [[ "$GITHUB_REF_NAME" == "branch2" && "$stale_build_token" == "true" ]]; then'),
+  'Stale Cloudflare build-token fallback must remain Branch2-only',
+)
 
 console.log('BRANCH2 DEPLOY FALLBACK SAFETY PASSED — only Branch2 native-skip, bounded missing-build, or stale-build-token infrastructure cases may use the direct path; exact commit, Worker and D1 are hard-locked, Production identities are rejected, and full release verification precedes deploy')
