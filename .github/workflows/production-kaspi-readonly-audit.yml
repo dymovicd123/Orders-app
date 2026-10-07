@@ -202,3 +202,83 @@ jobs:
             ORDER BY o.order_date DESC, o.id DESC
             LIMIT 50;
           " --json
+
+      - name: Refined migration visibility and exceptions
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "===== PROD KASPI AUDIT / MIGRATION VISIBILITY ====="
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            WITH per_order AS (
+              SELECT
+                o.id, o.external_id, o.order_date, o.total_amount, o.received_amount, o.debt_amount,
+                o.delivery_type, o.shipping_status, o.order_status,
+                COALESCE(SUM(CASE WHEN UPPER(TRIM(COALESCE(p.method, ''))) = 'КАСПИ МАГАЗИН' AND COALESCE(p.amount, 0) > 0 THEN p.amount ELSE 0 END), 0) AS kaspi_amount,
+                COALESCE(SUM(CASE WHEN UPPER(TRIM(COALESCE(p.method, ''))) <> 'КАСПИ МАГАЗИН' AND COALESCE(p.amount, 0) > 0 THEN p.amount ELSE 0 END), 0) AS other_amount,
+                GROUP_CONCAT(DISTINCT CASE WHEN COALESCE(p.amount, 0) > 0 THEN UPPER(TRIM(COALESCE(p.method, ''))) END) AS positive_methods
+              FROM orders o
+              LEFT JOIN payments p ON p.order_id = o.id
+              GROUP BY o.id
+            )
+            SELECT
+              SUM(CASE WHEN kaspi_amount > 0 AND other_amount = 0 THEN 1 ELSE 0 END) AS safe_total,
+              SUM(CASE WHEN kaspi_amount > 0 AND other_amount = 0 AND order_status NOT IN ('deleted','archived') THEN 1 ELSE 0 END) AS safe_visible_active,
+              SUM(CASE WHEN kaspi_amount > 0 AND other_amount = 0 AND order_status = 'deleted' THEN 1 ELSE 0 END) AS safe_deleted,
+              SUM(CASE WHEN kaspi_amount > 0 AND other_amount = 0 AND order_status = 'archived' THEN 1 ELSE 0 END) AS safe_archived,
+              MIN(CASE WHEN kaspi_amount > 0 AND other_amount = 0 THEN order_date END) AS safe_oldest_date,
+              MAX(CASE WHEN kaspi_amount > 0 AND other_amount = 0 THEN order_date END) AS safe_newest_date
+            FROM per_order;
+          " --json
+
+          echo "===== PROD KASPI AUDIT / PROVABLE DELIVERY DISTRIBUTION ====="
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            WITH per_order AS (
+              SELECT o.id, o.delivery_type,
+                SUM(CASE WHEN UPPER(TRIM(COALESCE(p.method, ''))) = 'КАСПИ МАГАЗИН' AND COALESCE(p.amount, 0) > 0 THEN 1 ELSE 0 END) AS kaspi_rows
+              FROM orders o LEFT JOIN payments p ON p.order_id=o.id
+              GROUP BY o.id
+            )
+            SELECT COALESCE(NULLIF(TRIM(delivery_type), ''), '(ПУСТО)') AS delivery_type, COUNT(*) AS orders
+            FROM per_order
+            WHERE kaspi_rows > 0
+            GROUP BY COALESCE(NULLIF(TRIM(delivery_type), ''), '(ПУСТО)')
+            ORDER BY orders DESC, delivery_type;
+          " --json
+
+          echo "===== PROD KASPI AUDIT / MIXED EXCEPTION ====="
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            WITH per_order AS (
+              SELECT
+                o.id, o.external_id, o.order_date, o.total_amount, o.received_amount, o.debt_amount,
+                o.delivery_type, o.shipping_status, o.order_status,
+                COALESCE(SUM(CASE WHEN UPPER(TRIM(COALESCE(p.method, ''))) = 'КАСПИ МАГАЗИН' AND COALESCE(p.amount, 0) > 0 THEN p.amount ELSE 0 END), 0) AS kaspi_amount,
+                COALESCE(SUM(CASE WHEN UPPER(TRIM(COALESCE(p.method, ''))) <> 'КАСПИ МАГАЗИН' AND COALESCE(p.amount, 0) > 0 THEN p.amount ELSE 0 END), 0) AS other_amount,
+                GROUP_CONCAT(DISTINCT CASE WHEN COALESCE(p.amount, 0) > 0 THEN UPPER(TRIM(COALESCE(p.method, ''))) END) AS positive_methods
+              FROM orders o LEFT JOIN payments p ON p.order_id=o.id
+              GROUP BY o.id
+            )
+            SELECT * FROM per_order
+            WHERE kaspi_amount > 0 AND other_amount > 0
+            ORDER BY order_date DESC, id DESC;
+          " --json
+
+          echo "===== PROD KASPI AUDIT / ZAMMLER WITHOUT KASPI PAYMENT METHODS ====="
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              o.id, o.external_id, o.order_date, o.total_amount, o.received_amount, o.debt_amount,
+              o.shipping_status, o.order_status,
+              GROUP_CONCAT(DISTINCT CASE WHEN COALESCE(p.amount, 0) > 0 THEN UPPER(TRIM(COALESCE(p.method, ''))) END) AS positive_methods,
+              COALESCE(SUM(CASE WHEN COALESCE(p.amount, 0) > 0 THEN p.amount ELSE 0 END),0) AS positive_amount
+            FROM orders o
+            LEFT JOIN payments p ON p.order_id=o.id
+            WHERE UPPER(TRIM(COALESCE(o.delivery_type, ''))) = 'ЗАММЛЕР'
+              AND NOT EXISTS (
+                SELECT 1 FROM payments kp
+                WHERE kp.order_id=o.id
+                  AND UPPER(TRIM(COALESCE(kp.method, '')))='КАСПИ МАГАЗИН'
+                  AND COALESCE(kp.amount,0)>0
+              )
+            GROUP BY o.id
+            ORDER BY o.order_date DESC, o.id DESC;
+          " --json
+
