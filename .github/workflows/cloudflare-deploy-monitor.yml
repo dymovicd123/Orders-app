@@ -122,6 +122,11 @@ jobs:
               fi
             else
               echo "Waiting for Cloudflare build for $GITHUB_SHA (attempt $attempt/48)..."
+              if [[ "$GITHUB_REF_NAME" == "main" && "$attempt" -ge 12 ]]; then
+                echo "fallback_required=true" >> "$GITHUB_OUTPUT"
+                echo "No matching native Cloudflare build appeared for main after 2 minutes; switching to the guarded direct Production deploy fallback."
+                exit 0
+              fi
             fi
             sleep 10
           done
@@ -149,18 +154,30 @@ jobs:
             echo "Cloudflare build failed with outcome: ${outcome:-unknown}" >&2
             echo "----- Cloudflare build log -----"
             cursor=""
+            stale_build_token=false
             for page in $(seq 1 20); do
               url="$CF_API/accounts/$CF_ACCOUNT_ID/builds/builds/$build_uuid/logs"
               if [[ -n "$cursor" ]]; then
                 url="$url?cursor=$(printf '%s' "$cursor" | jq -sRr @uri)"
               fi
               logs_json="$(curl --fail-with-body -sS "${AUTH[@]}" "$url")"
-              jq -r '.result.lines[]? | if type == "array" then (map(tostring) | join(" ")) else tostring end' <<<"$logs_json"
+              page_log="$(jq -r '.result.lines[]? | if type == "array" then (map(tostring) | join(" ")) else tostring end' <<<"$logs_json")"
+              printf '%s\n' "$page_log"
+              if grep -Fq 'build token selected for this build has been deleted or rolled' <<<"$page_log"; then
+                stale_build_token=true
+              fi
               truncated="$(jq -r '.result.truncated // false' <<<"$logs_json")"
               cursor="$(jq -r '.result.cursor // empty' <<<"$logs_json")"
               [[ "$truncated" == "true" && -n "$cursor" ]] || break
             done
             echo "----- end Cloudflare build log -----"
+
+            if [[ "$GITHUB_REF_NAME" == "main" && "$stale_build_token" == "true" ]]; then
+              echo "fallback_required=true" >> "$GITHUB_OUTPUT"
+              echo "Cloudflare native build token is unavailable for main; switching to the guarded direct Production deploy fallback."
+              exit 0
+            fi
+
             exit 7
           fi
 
