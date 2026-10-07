@@ -46,9 +46,9 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                 <div>
                   <div className="card-label">{zammlerMode ? 'Новый заказ Kaspi' : 'Новый заказ'}</div>
                   {zammlerMode ? (
-                    <div className="card-meta">Доставка по умолчанию — ЗАММЛЕР. При необходимости выберите другую.</div>
+                    <div className="card-meta">Способ оплаты заказа уже задан как КАСПИ МАГАЗИН. ЗАММЛЕР подставлен как рекомендуемая доставка, но при необходимости его можно изменить.</div>
                   ) : (
-                    <div className="card-meta">Заполните данные клиента, товары и оплату.</div>
+                    <div className="card-meta">Заполняйте заказ сверху вниз: клиент → товары → оплата → проверка. Лишних переключателей наверху нет, источник выбирается только внутри товарных позиций.</div>
                   )}
                 </div>
                 <div className="orders-workspace-kpis create-kpis">
@@ -118,7 +118,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                       placeholder={zammlerMode ? 'Рекомендуется ЗАММЛЕР' : 'Выберите доставку'}
                       options={suggestionValues.deliveryTypes}
                     />
-                    {zammlerMode ? <small>При необходимости выберите другой способ доставки.</small> : null}
+                    {zammlerMode ? <small>Для Kaspi по умолчанию предлагается ЗАММЛЕР, но доставка не определяет тип заказа.</small> : null}
                   </label>
                   <label>
                     <span>Способ оплаты заказа</span>
@@ -132,7 +132,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                         options={suggestionValues.paymentMethods}
                       />
                     )}
-                    <small>{zammlerMode ? 'Оплату отметьте после уведомления Kaspi.' : 'Выберите способ, которым клиент будет оплачивать заказ.'}</small>
+                    <small>Определяет рабочий раздел заказа. Фактические поступления денег фиксируются ниже отдельно.</small>
                   </label>
                   <label className="wide-field">
                     <span>Комментарий</span>
@@ -339,7 +339,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                     <div className="order-step-index">3</div>
                     <div>
                       <h3>Оплаты</h3>
-                      <p>{isKaspiOrder ? 'Оплата Kaspi подтверждается после уведомления о поступлении.' : 'Можно добавить несколько способов оплаты. Неоплаченная часть останется в долге.'}</p>
+                      <p>{isKaspiOrder ? 'Для Kaspi деньги не записываются при создании заказа. Сначала сохраняется долг, а фактическая оплата подтверждается после уведомления Kaspi.' : 'Можно добавить несколько способов оплаты. Всё, что не покрыто оплатами, система сама оставит в долге.'}</p>
                     </div>
                   </div>
                   {!isKaspiOrder ? <button className="secondary compact" type="button" onClick={addCreatePayment}>+ Добавить оплату</button> : null}
@@ -347,7 +347,8 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                 {isKaspiOrder ? (
                   <div className="order-manager-required">
                     <strong>Сейчас получено: {formatMoney(0)}</strong>
-                    <span>При создании вся сумма останется в долге. После поступления денег нажмите «Подтвердить оплату».</span>
+                    <span>После сохранения весь итог заказа останется долгом. Когда Kaspi подтвердит поступление, откройте заказ в разделе Kaspi и нажмите «Подтвердить оплату».</span>
+                    <small>Способ будущей оплаты: КАСПИ МАГАЗИН. Статус доставки подтверждение денег не изменяет.</small>
                   </div>
                 ) : (
                   <div className="stack">

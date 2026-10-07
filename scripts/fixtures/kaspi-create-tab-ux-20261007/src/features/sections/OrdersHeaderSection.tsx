@@ -18,21 +18,12 @@ export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
   return (
     <article className={`card wide sector-${workspaceSector} orders-workspace-header`} id={kaspiMode ? 'kaspi-orders-tabs' : 'orders-tabs'} style={sectorStyle(workspaceSector)}>
       {kaspiMode ? (
-        <div className="order-panel-tabs" role="tablist" aria-label="Разделы Kaspi">
-          <button
-            className={`secondary compact ${orderPanel === 'zammler' ? 'is-active' : ''}`}
-            type="button"
-            onClick={openKaspiCreate}
-          >
-            Создать заказ
-          </button>
-          <button
-            className={`secondary compact ${orderPanel === 'list' ? 'is-active' : ''}`}
-            type="button"
-            onClick={() => setOrderPanel('list')}
-          >
-            Kaspi-заказы
-          </button>
+        <div className="create-hero">
+          <div>
+            <div className="card-label">Kaspi Магазин</div>
+            <div className="card-meta">Те же заказы и действия, что в обычном разделе, но здесь показываются только заказы со способом оплаты КАСПИ МАГАЗИН. Оплата подтверждается отдельно и не меняет доставку.</div>
+          </div>
+          <button className="primary" type="button" onClick={openKaspiCreate}>+ Новый Kaspi-заказ</button>
         </div>
       ) : (
         <div className="order-panel-tabs" role="tablist" aria-label="Разделы заказов">

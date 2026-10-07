@@ -28,7 +28,6 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     ordinaryOrdersSeparated = false,
     orderFinanceBusy,
     orderFinanceReport,
-    orderPanel,
     orderPanelStyle,
     orders,
     restoreArchivedOrder,
@@ -50,9 +49,9 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   const kaspiAverageCheck = summary.count > 0 ? Math.round(summary.total / summary.count) : 0
 
   return (
-    <article className={`card wide sector-${workspaceSector}`} id={kaspiMode ? 'kaspi-orders' : 'orders'} style={{ ...sectorStyle(workspaceSector), ...(kaspiMode ? { display: orderPanel === 'list' ? undefined : 'none' } : orderPanelStyle('list')) }}>
+    <article className={`card wide sector-${workspaceSector}`} id={kaspiMode ? 'kaspi-orders' : 'orders'} style={{ ...sectorStyle(workspaceSector), ...(kaspiMode ? {} : orderPanelStyle('list')) }}>
               <div className="card-label">{kaspiMode ? 'Kaspi-заказы' : 'Таблица заказов'}</div>
-              <div className="card-meta">{kaspiMode ? 'Заказы Kaspi по выбранным фильтрам.' : 'Заказы по выбранному периоду и фильтрам.'}</div>
+              <div className="card-meta">{kaspiMode ? 'Это та же рабочая таблица заказов: товары, доставка, оплаты и действия сохранены. Отличается только выборка — здесь только КАСПИ МАГАЗИН.' : 'Строки таблицы меняются по поиску и менеджеру. Финансовая сводка ниже синхронизирована с разделом «Финансы» по выбранному периоду.'}</div>
               {kaspiMode ? (
                 <div className="orders-finance-summary-shell">
                   <div className="orders-finance-summary-head">
@@ -65,7 +64,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                       <div className="orders-finance-summary-lines"><div><span>Заказов</span><strong>{summary.count}</strong></div><div><span>Средний чек</span><strong>{formatMoney(kaspiAverageCheck)}</strong></div></div>
                     </article>
                     <article className="orders-finance-summary-card is-money">
-                      <div className="orders-finance-summary-card-head"><span>Получено</span><small>подтверждённые оплаты</small></div><div className="orders-finance-summary-main">{formatMoney(summary.received)}</div>
+                      <div className="orders-finance-summary-card-head"><span>Фактически получено</span><small>обычные денежные события</small></div><div className="orders-finance-summary-main">{formatMoney(summary.received)}</div>
                       <div className="orders-finance-summary-lines"><div><span>Возвращено</span><strong>{formatMoney(summary.returns)}</strong></div><div><span>Оплата</span><strong>КАСПИ МАГАЗИН</strong></div></div>
                     </article>
                     <article className="orders-finance-summary-card is-current">
@@ -76,7 +75,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                 </div>
               ) : ordinaryOrdersSeparated ? (
                 <div className="orders-current-filter-note">
-                  Найдено <strong>{summary.count}</strong> · сумма <strong>{formatMoney(summary.total)}</strong> · долг <strong>{formatMoney(summary.debt)}</strong>
+                  Обычные заказы · Kaspi вынесен в отдельный раздел · найдено <strong>{summary.count}</strong> · сумма <strong>{formatMoney(summary.total)}</strong> · долг <strong>{formatMoney(summary.debt)}</strong>
                 </div>
               ) : orderFinanceReport && orderFinanceReport.startDate === filters.dateFrom && orderFinanceReport.endDate === filters.dateTo ? (() => {
                 const grossReceived = Number(orderFinanceReport.overview.grossReceived ?? orderFinanceReport.overview.totalReceived ?? 0)
@@ -89,7 +88,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         <strong>Понятная сводка</strong>
                         <span>{formatDateShort(orderFinanceReport.startDate)} — {formatDateShort(orderFinanceReport.endDate)}</span>
                       </div>
-                      {orderFinanceBusy ? <span className="soft-badge">Обновляю...</span> : <span className="soft-badge success-soft">Актуальные данные</span>}
+                      {orderFinanceBusy ? <span className="soft-badge">Обновляю...</span> : <span className="soft-badge success-soft">Синхронизировано с финансами</span>}
                     </div>
                     <div className="orders-finance-summary-grid">
                       <article className="orders-finance-summary-card is-sales">

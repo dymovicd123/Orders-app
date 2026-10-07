@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "revision": "kaspi-create-tab-ux-20261007-frontend",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "3eeb42e28d63968d6ceb7a3c87e824ccc86ab46f",
+      "afterGitBlob": "2bef645ddd582dc66fa99740283d9c9af9163a74",
+      "baselineFixture": "scripts/fixtures/kaspi-create-tab-ux-20261007/src/App.tsx"
+    },
+    "src/features/sections/OrdersHeaderSection.tsx": {
+      "beforeGitBlob": "41fc280435f6ed97a1696576fc78e8beb571b87b",
+      "afterGitBlob": "d246548c5c6555e25411ac6bf125442c48b56fda",
+      "baselineFixture": "scripts/fixtures/kaspi-create-tab-ux-20261007/src/features/sections/OrdersHeaderSection.tsx"
+    },
+    "src/features/sections/OrderFiltersSection.tsx": {
+      "beforeGitBlob": "1dd152d91524852ecdc5fcd12084d29d7940ebed",
+      "afterGitBlob": "db6a9776b04e56b8add42acf064fdc6f2b3f8462",
+      "baselineFixture": "scripts/fixtures/kaspi-create-tab-ux-20261007/src/features/sections/OrderFiltersSection.tsx"
+    },
+    "src/features/sections/OrdersTableSection.tsx": {
+      "beforeGitBlob": "249c7d3dbbeacea3abd9ba12ccb2677ef32a5262",
+      "afterGitBlob": "800ec0aaaac5f334b5a3ac153581216f712df164",
+      "baselineFixture": "scripts/fixtures/kaspi-create-tab-ux-20261007/src/features/sections/OrdersTableSection.tsx"
+    },
+    "src/features/sections/CreateOrderSection.tsx": {
+      "beforeGitBlob": "b0f6d5e272afa652d96ed4c57e912a0bbc267e4d",
+      "afterGitBlob": "6649dc8d68c54ec1de7a1f1a4a2283ac3af68665",
+      "baselineFixture": "scripts/fixtures/kaspi-create-tab-ux-20261007/src/features/sections/CreateOrderSection.tsx"
+    },
+    "src/app/controllers/useWorkspaceViewModel.tsx": {
+      "beforeGitBlob": "45bd4cc56c2c52a0e518e3400e117397a5410554",
+      "afterGitBlob": "74e13c339069c7a63b4df578af51a675777fe371",
+      "baselineFixture": "scripts/fixtures/kaspi-create-tab-ux-20261007/src/app/controllers/useWorkspaceViewModel.tsx"
+    }
+  }
+}

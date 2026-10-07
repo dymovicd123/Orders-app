@@ -61,18 +61,20 @@ check(app.includes("params.set('excludeOrderPaymentMethod', 'КАСПИ МАГА
 check(app.includes("useState<'awaiting' | 'paid' | 'all'>('all')"), 'Kaspi must open on all orders')
 check(app.includes("applyOrderPeriodPreset: applyKaspiPeriodPreset") && app.includes("resetOrderFilters: resetKaspiFilters"), 'Kaspi shared filters lost isolated state')
 check(app.includes("overrideFilters: typeof filters = activeSector === 'kaspi' ? kaspiFilters : filters"), 'Bare refresh/action in Kaspi can fall back to ordinary Orders filters')
-check(headerUi.includes('kaspiMode') && headerUi.includes('+ Новый Kaspi-заказ'), 'Shared header lacks Kaspi mode')
+check(headerUi.includes('aria-label="Разделы Kaspi"') && headerUi.includes('Создать заказ') && headerUi.includes('Kaspi-заказы'), 'Kaspi header is not a real two-tab workspace')
 check(filtersUi.includes('kaspiPaymentState') && filtersUi.includes("{ value: 'all', label: 'Все' }") && filtersUi.includes('Ожидают оплату') && filtersUi.includes('Оплачены'), 'Shared filters lack Kaspi payment filter')
 const filterActionsStart = filtersUi.indexOf('<div className="actions orders-filter-actions">')
 const filterActionsEnd = filtersUi.indexOf('</div>', filterActionsStart)
 const filterActions = filtersUi.slice(filterActionsStart, filterActionsEnd)
 check(filterActions.includes('{kaspiMode ? (') && filterActions.includes('Доставка: ЗАММЛЕР'), 'ZAMMLER quick filter leaked back into ordinary Orders instead of staying Kaspi-only')
 check(app.includes("kaspiMode: true") && app.includes("workspaceSector: 'kaspi'"), 'Kaspi does not reuse Orders surfaces')
+check(app.includes("orderPanel, orderPanelStyle") && filtersUi.includes("orderPanel === 'list' ? undefined : 'none'") && ordersUi.includes("orderPanel === 'list' ? undefined : 'none'"), 'Activated Kaspi list remains visible underneath the Create tab')
+check(app.includes("document.getElementById('kaspi-create')?.scrollIntoView"), 'Kaspi Create tab does not bring the form into view')
 check(!app.includes('<KaspiOrdersSection'), 'Reduced Kaspi table is still rendered')
 check(constants.includes("label: 'Обычные заказы'"), 'Ordinary Orders label drifted')
 
 check(createUi.includes("const isKaspiOrder = normalizeSuggestion(createDraft.orderPaymentMethod)"), 'Create does not recognize Kaspi identity')
-check(createUi.includes('Для Kaspi деньги не записываются при создании заказа'), 'Kaspi Create still accepts factual money')
+check(createUi.includes('Оплата Kaspi подтверждается после уведомления о поступлении.'), 'Kaspi Create lost the payment timing guidance')
 check(createUi.includes('Сейчас получено: {formatMoney(0)}'), 'Kaspi Create does not show zero receipt')
 const createStart = app.indexOf('async function createOrderFromDraft')
 const createEnd = app.indexOf('\n  function preferredInventoryMatrixValue', createStart)
@@ -101,5 +103,15 @@ check(ordersRead.includes('debt_order_count'), 'Period stats lack awaiting count
 check(appTypes.includes('debtOrderCount: number'), 'Frontend period stats lack awaiting count')
 check(ordersUi.includes('orders-finance-summary-shell') && ordersUi.includes('Kaspi · сводка') && ordersUi.includes('summary.debtOrders') && ordersUi.includes('Средний чек'), 'Kaspi reporting is incomplete')
 check(!ordersUi.includes("filters.deliveryType === 'zammler'"), 'Ordinary Orders table still carries retired ZAMMLER-only summary logic')
+for (const technicalCopy of [
+  'Те же заказы и действия, что в обычном разделе',
+  'Это та же рабочая таблица заказов',
+  'Kaspi вынесен в отдельный раздел',
+  'Определяет рабочий раздел заказа',
+  'доставка не определяет тип заказа',
+  'обычные денежные события',
+]) {
+  check(!headerUi.includes(technicalCopy) && !createUi.includes(technicalCopy) && !ordersUi.includes(technicalCopy), 'Developer-facing Kaspi copy leaked into operator UI: ' + technicalCopy)
+}
 
 console.log('KASPI ORDER SEPARATION R2 PASSED — shared Orders UI, all-Kaspi default, debt-first Create, explicit payment, independent shipping')

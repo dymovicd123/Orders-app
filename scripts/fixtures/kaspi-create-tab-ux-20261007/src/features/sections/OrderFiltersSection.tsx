@@ -10,7 +10,6 @@ export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
     kaspiMode = false,
     kaspiPaymentState = 'all',
     ManagerPicker,
-    orderPanel,
     orderPanelStyle,
     orderPeriodPreset,
     references,
@@ -31,7 +30,7 @@ export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
   ]
 
   return (
-    <article className={`card wide sector-${workspaceSector} order-filter-card`} id={kaspiMode ? 'kaspi-filters' : 'filters'} style={{ ...sectorStyle(workspaceSector), ...(kaspiMode ? { display: orderPanel === 'list' ? undefined : 'none' } : orderPanelStyle('list')) }}>
+    <article className={`card wide sector-${workspaceSector} order-filter-card`} id={kaspiMode ? 'kaspi-filters' : 'filters'} style={{ ...sectorStyle(workspaceSector), ...(kaspiMode ? {} : orderPanelStyle('list')) }}>
       <div className="orders-filter-panel">
         <div className="orders-period-row">
           <span className="orders-filter-title">Период:</span>
