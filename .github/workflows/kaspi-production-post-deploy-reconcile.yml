@@ -1,0 +1,129 @@
+name: Kaspi Production post-deploy reconcile
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/kaspi-production-runtime-20261007-manifest.json'
+      - '.github/workflows/kaspi-production-post-deploy-reconcile.yml'
+
+permissions:
+  contents: read
+  statuses: read
+
+jobs:
+  reconcile:
+    name: Reconcile Kaspi history after exact Production deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout exact main commit
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on Production identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "main" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders_db_branch2' wrangler.jsonc || grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc; then
+            echo "Branch2 identity detected. Refusing Production Kaspi reconcile." >&2
+            exit 30
+          fi
+
+      - name: Wait for exact main Worker deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          state="pending"
+          for attempt in $(seq 1 72); do
+            payload="$(curl -fsSL               -H "Authorization: Bearer $GH_TOKEN"               -H "Accept: application/vnd.github+json"               "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status")"
+            state="$(jq -r '[.statuses[] | select(.context == "cloudflare-deploy/main")][0].state // "pending"' <<<"$payload")"
+            echo "cloudflare-deploy/main = $state (attempt $attempt)"
+            if [[ "$state" == "success" ]]; then
+              break
+            fi
+            if [[ "$state" == "failure" || "$state" == "error" ]]; then
+              echo "Exact Production deploy failed; refusing post-deploy D1 reconcile." >&2
+              exit 31
+            fi
+            sleep 10
+          done
+          [[ "$state" == "success" ]] || {
+            echo "Timed out waiting for exact Production deploy success." >&2
+            exit 32
+          }
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Reconcile safe Kaspi history
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            UPDATE orders
+            SET order_payment_method = 'КАСПИ МАГАЗИН'
+            WHERE COALESCE(TRIM(order_payment_method), '') = ''
+              AND EXISTS (
+                SELECT 1 FROM payments p
+                WHERE p.order_id = orders.id
+                  AND UPPER(TRIM(COALESCE(p.method, ''))) = 'КАСПИ МАГАЗИН'
+                  AND COALESCE(p.amount, 0) > 0
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM payments p
+                WHERE p.order_id = orders.id
+                  AND COALESCE(p.amount, 0) > 0
+                  AND UPPER(TRIM(COALESCE(p.method, ''))) <> 'КАСПИ МАГАЗИН'
+              );
+          "
+
+      - name: Verify post-deploy classification
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM pragma_table_info('orders') WHERE name = 'order_payment_method') AS column_exists,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_orders_order_payment_method_status_date') AS index_exists,
+              (SELECT COUNT(*)
+               FROM orders o
+               WHERE EXISTS (
+                 SELECT 1 FROM payments p
+                 WHERE p.order_id = o.id
+                   AND UPPER(TRIM(COALESCE(p.method, ''))) = 'КАСПИ МАГАЗИН'
+                   AND COALESCE(p.amount, 0) > 0
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM payments p
+                 WHERE p.order_id = o.id
+                   AND COALESCE(p.amount, 0) > 0
+                   AND UPPER(TRIM(COALESCE(p.method, ''))) <> 'КАСПИ МАГАЗИН'
+               )
+               AND UPPER(TRIM(COALESCE(o.order_payment_method, ''))) <> 'КАСПИ МАГАЗИН') AS missing_backfill,
+              (SELECT COUNT(*) FROM orders WHERE UPPER(TRIM(COALESCE(order_payment_method, ''))) = 'КАСПИ МАГАЗИН') AS classified_total,
+              (SELECT COUNT(*) FROM orders WHERE UPPER(TRIM(COALESCE(order_payment_method, ''))) = 'КАСПИ МАГАЗИН' AND order_status NOT IN ('deleted','archived')) AS classified_active
+          " --json)"
+          echo "$result"
+          column_exists="$(jq -r '.[0].results[0].column_exists // 0' <<<"$result")"
+          index_exists="$(jq -r '.[0].results[0].index_exists // 0' <<<"$result")"
+          missing_backfill="$(jq -r '.[0].results[0].missing_backfill // -1' <<<"$result")"
+          [[ "$column_exists" == "1" && "$index_exists" == "1" && "$missing_backfill" == "0" ]] || {
+            echo "Kaspi post-deploy reconciliation verification failed." >&2
+            exit 33
+          }
+          echo "Kaspi post-deploy classification verified."
