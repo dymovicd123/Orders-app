@@ -69,9 +69,7 @@ export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
           </label>
         </div>
         <div className="actions orders-filter-actions">
-          {kaspiMode ? (
-            <button className={`secondary ${filters.deliveryType === 'zammler' ? 'is-active' : ''}`} type="button" aria-pressed={filters.deliveryType === 'zammler'} onClick={() => setFilters((current) => ({ ...current, deliveryType: current.deliveryType === 'zammler' ? 'all' : 'zammler' }))} disabled={busy}>Доставка: ЗАММЛЕР</button>
-          ) : null}
+          <button className={`secondary ${filters.deliveryType === 'zammler' ? 'is-active' : ''}`} type="button" aria-pressed={filters.deliveryType === 'zammler'} onClick={() => setFilters((current) => ({ ...current, deliveryType: current.deliveryType === 'zammler' ? 'all' : 'zammler' }))} disabled={busy}>Доставка: ЗАММЛЕР</button>
           <button className="secondary" type="button" onClick={resetOrderFilters} disabled={busy}>Сбросить фильтр</button>
         </div>
       </div>

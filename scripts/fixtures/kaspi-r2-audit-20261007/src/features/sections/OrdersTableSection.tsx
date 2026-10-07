@@ -77,6 +77,10 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                 <div className="orders-current-filter-note">
                   Обычные заказы · Kaspi вынесен в отдельный раздел · найдено <strong>{summary.count}</strong> · сумма <strong>{formatMoney(summary.total)}</strong> · долг <strong>{formatMoney(summary.debt)}</strong>
                 </div>
+              ) : filters.deliveryType === 'zammler' ? (
+                <div className="orders-current-filter-note">
+                  Доставка: ЗАММЛЕР · найдено <strong>{summary.count}</strong> · сумма <strong>{formatMoney(summary.total)}</strong>
+                </div>
               ) : orderFinanceReport && orderFinanceReport.startDate === filters.dateFrom && orderFinanceReport.endDate === filters.dateTo ? (() => {
                 const grossReceived = Number(orderFinanceReport.overview.grossReceived ?? orderFinanceReport.overview.totalReceived ?? 0)
                 const totalReturned = Number(orderFinanceReport.overview.totalReturned ?? orderFinanceReport.overview.totalReturns ?? 0)
