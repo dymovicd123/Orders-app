@@ -5819,7 +5819,6 @@ function removeDebtPayment(index: number) {
     setSelectedOrderId(null)
     setEditorOpen(false)
     window.location.hash = '#kaspi'
-    window.setTimeout(() => document.getElementById('kaspi-create')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
   }
 
   async function confirmKaspiPayment(order: OrderRecord) {
@@ -8337,15 +8336,15 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi'} label="Kaspi">
-        <OrdersHeaderSection ctx={{ kaspiMode: true, openKaspiCreate, orderPanel, sectorStyle, setOrderPanel, workspaceSector: 'kaspi' }} />
+        <OrdersHeaderSection ctx={{ kaspiMode: true, openKaspiCreate, orderPanel, sectorStyle, workspaceSector: 'kaspi' }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'list'} label="Фильтры Kaspi">
-        <OrderFiltersSection ctx={{ applyOrderPeriodPreset: applyKaspiPeriodPreset, busy, ChoicePills, filters: kaspiFilters, kaspiMode: true, kaspiPaymentState, ManagerPicker, orderPanel, orderPanelStyle, orderPeriodPreset: kaspiPeriodPreset, references, resetOrderFilters: resetKaspiFilters, sectorStyle, setFilters: setKaspiFilters, setKaspiPaymentState, workspaceSector: 'kaspi' }} />
+        <OrderFiltersSection ctx={{ applyOrderPeriodPreset: applyKaspiPeriodPreset, busy, ChoicePills, filters: kaspiFilters, kaspiMode: true, kaspiPaymentState, ManagerPicker, orderPanelStyle, orderPeriodPreset: kaspiPeriodPreset, references, resetOrderFilters: resetKaspiFilters, sectorStyle, setFilters: setKaspiFilters, setKaspiPaymentState, workspaceSector: 'kaspi' }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'list'} label="Kaspi-заказы">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters: kaspiFilters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, kaspiMode: true, kaspiPaymentBusyOrderId, confirmKaspiPayment, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: false, orderFinanceReport: null, orderPanel, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel, workspaceSector: 'kaspi' }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters: kaspiFilters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, kaspiMode: true, kaspiPaymentBusyOrderId, confirmKaspiPayment, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: false, orderFinanceReport: null, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel, workspaceSector: 'kaspi' }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'zammler'} label="Создание Kaspi-заказа">
