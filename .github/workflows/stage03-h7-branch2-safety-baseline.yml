@@ -8,6 +8,13 @@ on:
 permissions:
   contents: read
 
+# Branch2 checks are read-only with respect to business data. If several
+# commits land quickly, only the newest branch head is relevant, so cancel
+# the obsolete in-flight safety run instead of paying for both.
+concurrency:
+  group: branch2-safety-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   safety:
     name: Branch2-only pricing activation safety
