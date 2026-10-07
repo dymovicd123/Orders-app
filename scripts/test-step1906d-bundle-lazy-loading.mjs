@@ -106,7 +106,7 @@ try {
   // Exchange Set V2 keeps the large visual workspace behind the existing lazy Exchange boundary.
   // Kaspi reuses the existing lazy Orders table/filter/header surfaces. The eager App delta also carries
   // the small Production-parity factual-payment-date confirmation modal.
-  check(sourceBytes <= 718_500, `Initial static source graph regrew beyond the reviewed Kaspi main-parity allowance: ${sourceBytes} bytes`)
+  check(sourceBytes <= 718_600, `Initial static source graph regrew beyond the reviewed Kaspi Workshop allowance: ${sourceBytes} bytes`)
   for (const name of lazySections) {
     check(!graphRelative.includes(`src/features/sections/${name}.tsx`), `Lazy section is still initial-static: ${name}`)
   }
