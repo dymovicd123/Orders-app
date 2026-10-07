@@ -1,5 +1,7 @@
 name: Cloudflare deploy monitor
 
+# Branch2 deploy monitoring keeps the guarded fallback for native Cloudflare infrastructure failures.
+
 on:
   push:
     branches:
