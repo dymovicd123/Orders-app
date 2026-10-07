@@ -68,7 +68,12 @@ const filterActionsEnd = filtersUi.indexOf('</div>', filterActionsStart)
 const filterActions = filtersUi.slice(filterActionsStart, filterActionsEnd)
 check(filterActions.includes('{kaspiMode ? (') && filterActions.includes('Доставка: ЗАММЛЕР'), 'ZAMMLER quick filter leaked back into ordinary Orders instead of staying Kaspi-only')
 check(app.includes("kaspiMode: true") && app.includes("workspaceSector: 'kaspi'"), 'Kaspi does not reuse Orders surfaces')
-check(app.includes("orderPanel, orderPanelStyle") && filtersUi.includes("orderPanel === 'list' ? undefined : 'none'") && ordersUi.includes("orderPanel === 'list' ? undefined : 'none'"), 'Activated Kaspi list remains visible underneath the Create tab')
+check(
+  app.includes("orderPanel, orderPanelStyle")
+    && filtersUi.includes("orderPanel === 'list' ? {} : { display: 'none' }")
+    && ordersUi.includes("orderPanel === 'list' ? {} : { display: 'none' }"),
+  'Activated Kaspi list must hide under Create without overriding sector-level visibility',
+)
 check(app.includes("document.getElementById('kaspi-create')?.scrollIntoView"), 'Kaspi Create tab does not bring the form into view')
 check(!app.includes('<KaspiOrdersSection'), 'Reduced Kaspi table is still rendered')
 check(constants.includes("label: 'Обычные заказы'"), 'Ordinary Orders label drifted')

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "revision": "order-filter-sector-isolation-r1",
+  "files": {
+    "src/features/sections/OrderFiltersSection.tsx": {
+      "beforeGitBlob": "db6a9776b04e56b8add42acf064fdc6f2b3f8462",
+      "afterGitBlob": "8094bea6bac3152c3f41978617febeff54d73c82",
+      "baselineFixture": "scripts/fixtures/order-filter-sector-isolation-r1/src/features/sections/OrderFiltersSection.tsx"
+    },
+    "src/features/sections/OrdersTableSection.tsx": {
+      "beforeGitBlob": "800ec0aaaac5f334b5a3ac153581216f712df164",
+      "afterGitBlob": "45088dbd1b594fa165f9ea7cfdc35109e2be3417",
+      "baselineFixture": "scripts/fixtures/order-filter-sector-isolation-r1/src/features/sections/OrdersTableSection.tsx"
+    }
+  }
+}
