@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "revision": "kaspi-main-parity-20261007-frontend",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "2bef645ddd582dc66fa99740283d9c9af9163a74",
+      "afterGitBlob": "c4436749dd71db81652a2f8ebf47c8d60fb3db71",
+      "baselineFixture": "scripts/fixtures/kaspi-main-parity-20261007/src/App.tsx"
+    }
+  }
+}
