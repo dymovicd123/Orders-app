@@ -4,7 +4,7 @@
   "files": {
     "src/features/sections/WorkshopSection.tsx": {
       "beforeGitBlob": "68c4bb3d2afc1aef84cdb2dda1c0e40ca9c18659",
-      "afterGitBlob": "68865e0092d65cf69d10ff495c1e3579c124f1e8",
+      "afterGitBlob": "37bf971acf2986a3ee453534eeb4fb934538bdfe",
       "baselineFixture": "scripts/fixtures/workshop-ui-r1/src/features/sections/WorkshopSection.tsx"
     }
   }
