@@ -1,0 +1,204 @@
+name: Production Kaspi read-only audit
+
+on:
+  push:
+    branches:
+      - audit-prod-kaspi-readonly-20261007
+    paths:
+      - '.github/workflows/production-kaspi-readonly-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Read-only Production Kaspi forensic
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout exact audit branch
+        uses: actions/checkout@v4
+
+      - name: Hard-stop on scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "audit-prod-kaspi-readonly-20261007" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders_db_branch2' wrangler.jsonc || grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc; then
+            echo "Branch2 identity leaked into Production audit branch." >&2
+            exit 10
+          fi
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Schema and payment-method inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "===== PROD KASPI AUDIT / SCHEMA ====="
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM pragma_table_info('orders') WHERE name = 'order_payment_method') AS order_payment_method_column_exists,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_orders_order_payment_method_status_date') AS kaspi_index_exists;
+          " --json
+
+          echo "===== PROD KASPI AUDIT / PAYMENT METHODS ====="
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              UPPER(TRIM(COALESCE(method, ''))) AS method,
+              COUNT(*) AS payment_rows,
+              SUM(CASE WHEN COALESCE(amount, 0) > 0 THEN 1 ELSE 0 END) AS positive_rows,
+              COALESCE(SUM(CASE WHEN COALESCE(amount, 0) > 0 THEN amount ELSE 0 END), 0) AS positive_amount
+            FROM payments
+            GROUP BY UPPER(TRIM(COALESCE(method, '')))
+            ORDER BY positive_amount DESC, payment_rows DESC;
+          " --json
+
+      - name: Provable Kaspi order summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "===== PROD KASPI AUDIT / SUMMARY ====="
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            WITH per_order AS (
+              SELECT
+                o.id,
+                o.external_id,
+                o.order_date,
+                o.total_amount,
+                o.received_amount,
+                o.debt_amount,
+                o.delivery_type,
+                o.shipping_status,
+                o.order_status,
+                COALESCE(SUM(CASE
+                  WHEN UPPER(TRIM(COALESCE(p.method, ''))) = 'КАСПИ МАГАЗИН'
+                    AND COALESCE(p.amount, 0) > 0
+                  THEN p.amount ELSE 0 END), 0) AS kaspi_positive_amount,
+                COALESCE(SUM(CASE
+                  WHEN UPPER(TRIM(COALESCE(p.method, ''))) <> 'КАСПИ МАГАЗИН'
+                    AND COALESCE(p.amount, 0) > 0
+                  THEN p.amount ELSE 0 END), 0) AS other_positive_amount,
+                SUM(CASE
+                  WHEN UPPER(TRIM(COALESCE(p.method, ''))) = 'КАСПИ МАГАЗИН'
+                    AND COALESCE(p.amount, 0) > 0
+                  THEN 1 ELSE 0 END) AS kaspi_positive_rows
+              FROM orders o
+              LEFT JOIN payments p ON p.order_id = o.id
+              GROUP BY o.id
+            )
+            SELECT
+              COUNT(*) AS orders_with_positive_kaspi_payment,
+              SUM(CASE WHEN other_positive_amount = 0 THEN 1 ELSE 0 END) AS safe_backfill_candidates,
+              SUM(CASE WHEN other_positive_amount > 0 THEN 1 ELSE 0 END) AS mixed_payment_orders,
+              SUM(CASE WHEN COALESCE(debt_amount, 0) > 0 THEN 1 ELSE 0 END) AS currently_with_debt,
+              COALESCE(SUM(kaspi_positive_amount), 0) AS kaspi_positive_amount_total
+            FROM per_order
+            WHERE kaspi_positive_rows > 0;
+          " --json
+
+      - name: Provable Kaspi orders
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "===== PROD KASPI AUDIT / ORDERS ====="
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            WITH per_order AS (
+              SELECT
+                o.id,
+                o.external_id,
+                o.order_date,
+                o.total_amount,
+                o.received_amount,
+                o.debt_amount,
+                o.delivery_type,
+                o.shipping_status,
+                o.order_status,
+                COALESCE(SUM(CASE
+                  WHEN UPPER(TRIM(COALESCE(p.method, ''))) = 'КАСПИ МАГАЗИН'
+                    AND COALESCE(p.amount, 0) > 0
+                  THEN p.amount ELSE 0 END), 0) AS kaspi_positive_amount,
+                COALESCE(SUM(CASE
+                  WHEN UPPER(TRIM(COALESCE(p.method, ''))) <> 'КАСПИ МАГАЗИН'
+                    AND COALESCE(p.amount, 0) > 0
+                  THEN p.amount ELSE 0 END), 0) AS other_positive_amount,
+                GROUP_CONCAT(DISTINCT CASE WHEN COALESCE(p.amount, 0) > 0 THEN UPPER(TRIM(COALESCE(p.method, ''))) END) AS positive_methods
+              FROM orders o
+              LEFT JOIN payments p ON p.order_id = o.id
+              GROUP BY o.id
+            )
+            SELECT
+              id,
+              external_id,
+              order_date,
+              total_amount,
+              received_amount,
+              debt_amount,
+              delivery_type,
+              shipping_status,
+              order_status,
+              kaspi_positive_amount,
+              other_positive_amount,
+              positive_methods,
+              CASE WHEN other_positive_amount = 0 THEN 'SAFE_BACKFILL' ELSE 'MIXED_REVIEW' END AS migration_class
+            FROM per_order
+            WHERE kaspi_positive_amount > 0
+            ORDER BY order_date DESC, id DESC;
+          " --json
+
+      - name: ZAMMLER ambiguity inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "===== PROD KASPI AUDIT / ZAMMLER AMBIGUITY ====="
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            WITH kaspi_paid AS (
+              SELECT DISTINCT order_id
+              FROM payments
+              WHERE UPPER(TRIM(COALESCE(method, ''))) = 'КАСПИ МАГАЗИН'
+                AND COALESCE(amount, 0) > 0
+            )
+            SELECT
+              COUNT(*) AS zammler_orders_total,
+              SUM(CASE WHEN k.order_id IS NOT NULL THEN 1 ELSE 0 END) AS zammler_with_positive_kaspi_payment,
+              SUM(CASE WHEN k.order_id IS NULL THEN 1 ELSE 0 END) AS zammler_without_positive_kaspi_payment
+            FROM orders o
+            LEFT JOIN kaspi_paid k ON k.order_id = o.id
+            WHERE UPPER(TRIM(COALESCE(o.delivery_type, ''))) = 'ЗАММЛЕР';
+          " --json
+
+          echo "===== PROD KASPI AUDIT / RECENT AMBIGUOUS ZAMMLLER ====="
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              o.id,
+              o.external_id,
+              o.order_date,
+              o.total_amount,
+              o.received_amount,
+              o.debt_amount,
+              o.shipping_status,
+              o.order_status
+            FROM orders o
+            WHERE UPPER(TRIM(COALESCE(o.delivery_type, ''))) = 'ЗАММЛЕР'
+              AND NOT EXISTS (
+                SELECT 1 FROM payments p
+                WHERE p.order_id = o.id
+                  AND UPPER(TRIM(COALESCE(p.method, ''))) = 'КАСПИ МАГАЗИН'
+                  AND COALESCE(p.amount, 0) > 0
+              )
+            ORDER BY o.order_date DESC, o.id DESC
+            LIMIT 50;
+          " --json
