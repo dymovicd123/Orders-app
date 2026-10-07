@@ -649,7 +649,7 @@ function App() {
   const [orderPanel, setOrderPanel] = useState<OrderPanel>('list')
   const [kaspiPaymentState, setKaspiPaymentState] = useState<'awaiting' | 'paid' | 'all'>('all')
   const [kaspiPaymentBusyOrderId, setKaspiPaymentBusyOrderId] = useState<number | null>(null)
-  const [kaspiPeriodPreset, setKaspiPeriodPreset] = useState<OrderPeriodPreset | 'all'>('all')
+  const [kaspiPeriodPreset, setKaspiPeriodPreset] = useState<OrderPeriodPreset | 'all'>('month')
   const [orderPeriodPreset, setOrderPeriodPreset] = useState<OrderPeriodPreset>('month')
   const defaultOrderRange = getPeriodRange('month')
   const [debtFilters, setDebtFilters] = useState({
@@ -766,8 +766,8 @@ function App() {
     manager: '',
     managerId: 0,
     archiveMode: 'active' as ArchiveMode,
-    dateFrom: '',
-    dateTo: '',
+    dateFrom: defaultOrderRange.dateFrom,
+    dateTo: defaultOrderRange.dateTo,
     pageSize: '100',
   })
   const closedArchiveMonth = getClosedArchiveMonth()
@@ -4067,11 +4067,11 @@ function App() {
   }
 
   function resetKaspiFilters() {
-    setKaspiPeriodPreset('all')
+    setKaspiPeriodPreset('month')
     setKaspiPaymentState('all')
     setKaspiFilters({
       q: '', status: 'all', shippingStatus: 'all', deliveryType: 'all', source: 'all',
-      manager: '', managerId: 0, archiveMode: 'active', dateFrom: '', dateTo: '', pageSize: '100',
+      manager: '', managerId: 0, archiveMode: 'active', dateFrom: defaultOrderRange.dateFrom, dateTo: defaultOrderRange.dateTo, pageSize: '100',
     })
   }
 
