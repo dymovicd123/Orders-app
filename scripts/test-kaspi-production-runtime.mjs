@@ -55,7 +55,7 @@ check(confirm.includes("apiFetch('/api/payments'") && confirm.includes("method: 
 check(confirm.includes("'X-Idempotency-Key': critical.requestId"), 'Kaspi confirmation is not idempotent')
 check(confirm.includes("setKaspiPaymentDraft({ order, paymentDate: formatLocalDateInput() })") && confirm.includes("const paymentDate = String(draft.paymentDate || '').trim()") && confirm.includes("paymentDate,"), 'Kaspi confirmation does not preserve the chosen factual payment date')
 check(app.includes('aria-label="Подтверждение оплаты Kaspi"') && app.includes('type="date"') && app.includes('Именно на эту дату оплата попадёт в финансовый отчёт.') && !confirm.includes('window.confirm'), 'Kaspi factual-payment-date UI is missing or still browser-confirm based')
-check(confirm.includes('Статус доставки не изменится') && !confirm.includes('markOrderSentToClient'), 'Kaspi payment can mutate shipping')
+check(confirm.includes('Доставка не изменялась.') && !confirm.includes('markOrderSentToClient'), 'Kaspi payment can mutate shipping')
 check(ordersRead.includes('debt_order_count') && appTypes.includes('debtOrderCount: number'), 'Kaspi awaiting count incomplete')
 check(ordersUi.includes('Kaspi · сводка') && ordersUi.includes('summary.debtOrders') && ordersUi.includes('Средний чек'), 'Kaspi reporting incomplete')
 check(ordersUi.includes('Подтвердить оплату') && ordersUi.includes("handleEditOrder(order, kaspiMode ? 'kaspi' : 'orders')"), 'Shared Orders table lacks Kaspi actions')
