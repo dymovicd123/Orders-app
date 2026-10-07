@@ -1,18 +1,31 @@
 name: Quality check
 
 on:
+  # Full CI is no longer tied to every intermediate work-branch push.
+  # Normal development is verified when it becomes a PR; ci-* remains
+  # an explicit escape hatch for a full pre-PR run.
   push:
     branches:
-      - 'w*'
+      - 'ci-*'
   pull_request:
     branches:
+      - branch2
       - main
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   verify:
+    # Draft PRs do not consume a full runner. The same complete gate starts
+    # automatically when the PR becomes ready for review.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: release-check-and-build
     runs-on: ubuntu-latest
     timeout-minutes: 15
