@@ -565,3 +565,31 @@ Kaspi использует визуальную модель сводки Orders
 
 Следующий шаг по Kaspi: только если пользователь найдёт конкретный UX/business defect. Не переносить в Production автоматически без отдельного решения пользователя.
 
+## CHECKPOINT 2026-10-07 — Kaspi Create стал отдельной вкладкой
+
+После ручной проверки пользователь указал UX-проблему: в Kaspi кнопка создания не работала как отдельная вкладка. Из-за поведения `DeferredSection` уже активированные list/filter chunks остаются mounted; Kaspi list/filter ранее не имели panel-level `display:none`, поэтому после открытия Create таблица оставалась видимой, а форма появлялась ниже неё без явного перехода.
+
+### Исправление
+- PR **#306 — “Kaspi UX: make Create a real tab”** merged в `branch2`.
+- Runtime merge SHA: `0a43d3b863e6ff0bd4fd71494e95d0733894f8b2`.
+- Exact-head Quality run **37598934005** — success.
+- Branch2 safety run **37599171687** — success.
+- Branch2 Cloudflare deploy run **37599171686** — success.
+- Production/`main` не трогался; main = `5f4f7f9e592aa9684c84abfd8cb19048bd859784`.
+
+Теперь верх Kaspi оформлен тем же tab pattern, что и обычные Orders:
+- **Создать заказ**
+- **Kaspi-заказы**
+
+При выборе Create:
+- создаётся свежий Kaspi draft;
+- list/filter surfaces скрываются, хотя остаются mounted для сохранения состояния;
+- форма становится единственным рабочим экраном под tabs;
+- UI прокручивает форму в видимую область.
+
+При возврате в **Kaspi-заказы** сохранённые фильтры/list state снова показываются.
+
+Также убраны developer-facing/внутренние пояснения из операторского UI: фразы про “тот же интерфейс”, “Kaspi вынесен”, “рабочий раздел”, “доставка не определяет тип заказа”, “обычные денежные события” и подобные формулировки заменены короткими рабочими подсказками. Бизнес-логика Kaspi не менялась: debt-first Create, отдельное подтверждение factual payment, независимость shipping и ZAMMLER как editable default сохранены.
+
+Migration/D1 write/data rewrite для этого UX follow-up не было.
+
