@@ -99,6 +99,10 @@ assert.ok(section.indexOf('references-layout') < section.indexOf('id="reference-
  'Daily list/editor must appear before the full merge and duplicate-check workspaces')
 assert.ok(section.includes("showMaintenance('merge')") && section.includes("showMaintenance('duplicates')"),
  'Visible one-click shortcuts must remain available above the daily list')
+assert.ok(section.includes('initialKind={referenceKind}'),
+ 'Opening merge from a reference list must preselect that kind')
+assert.ok(page.includes('initialKind') && page.includes('setKind(initialKind)'),
+ 'Merge workspace should follow the active reference category')
 assert.ok(section.includes("maintenanceView === 'merge' ? (") && section.includes("maintenanceView === 'duplicates' ? ("),
  'Expensive maintenance components must mount only when requested')
 assert.ok(section.includes('Проверка и объединение дублей доступны администратору'),
