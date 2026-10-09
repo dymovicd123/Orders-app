@@ -81,7 +81,7 @@
     "migrations/0094_v72_reference_payment_method_merges.sql": "fd6d34164f59ac3856b113701e47a81e681e95f7",
     "worker/domains/reference-merge-history.ts": "3e32522f40c45bfe41eee517297b82dbd450abdc",
     "scripts/test-reference-merge-history.mjs": "cd5940072ec22f9edb27892138beb0745f8b12ff",
-    "worker/domains/reference-characteristic-impact.ts": "a4ed2f64540d9de5ac7099cf8a400d1231f723d2",
+    "worker/domains/reference-characteristic-impact.ts": "3631d48e40b815ab8ab61d6f83b618991e8eacc9",
     "scripts/test-reference-characteristic-impact.mjs": "f9d6c10783225a3f96c10856437ff06a0f47313d"
   }
 }
