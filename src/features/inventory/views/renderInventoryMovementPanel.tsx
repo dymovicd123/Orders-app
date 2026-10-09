@@ -1,5 +1,6 @@
 import type { InventoryRenderContext } from './types'
 import { partitionTransferVariantRows, refineMovementPickerContext } from '../movementPickerB2B'
+import { WriteoffReview } from './WriteoffReview'
 import '../../../styles/192b2b-movement-picker.css'
 import '../../../styles/w4-human-operations.css'
 
@@ -105,51 +106,55 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
     Boolean(String(inventoryExistingVariantSearch || '').trim()),
   )
   const renderedOperationRows = inventoryDraft.movementType === 'transfer' ? transferPartition.primary : operationVisibleRows
+  const writeoffReviewLines = inventoryDraft.movementType === 'writeoff'
+    ? selectedOperationDraftItems.filter(({item}:any)=>Number(item?.quantity||0)>0).map(({item,row}:any)=>({
+      variantId: Number(item.variantId||0),
+      productName: String(item.productName||row?.productName||'Товар'),
+      detail: [item.color,item.size,item.material,item.length].filter(Boolean).join(' · '),
+      requested: Number(item.quantity||0),
+      physical: Number(row?.quantity ?? item.expectedQuantity ?? 0),
+      reserved: Number(row?.reservedQuantity||0),
+    })) : []
 
   return (
     <div className="inventory-movement-panel inventory-operations-v182" style={inventoryPanelStyle('movement')} data-step182-operations="human-workflow">
                     <div className="inventory-panel-headline inventory-operations-headline">
                       <div>
                         <h3>Операции</h3>
-                        <p>Обычная работа здесь — переместить реальный товар между складом и бутиком. Редкие действия убраны ниже.</p>
+                        <p>Выберите действие: переместить товар или списать повреждённые и утраченные вещи. Остальные операции доступны отдельно.</p>
                       </div>
                     </div>
     
                     <div className="inventory-operation-entry-actions">
-                      <button
-                        type="button"
-                        className={`inventory-operation-main-action ${inventoryDraft.movementType === 'transfer' ? 'is-active' : ''}`}
-                        disabled={inventoryMovementBusy}
-                        onClick={() => selectInventoryOperationMode('transfer')}
-                      >
-                        <span>
-                          <strong>Переместить товар</strong>
-                          <small>Склад ↔ Бутик · основной сценарий</small>
-                        </span>
+                      <button type="button"
+                        className={`inventory-operation-main-action ${inventoryDraft.movementType==='transfer'?'is-active':''}`}
+                        disabled={inventoryMovementBusy} onClick={()=>selectInventoryOperationMode('transfer')}>
+                        <span><strong>Переместить товар</strong><small>Между складом и бутиком</small></span>
+                        <b>Открыть</b>
+                      </button>
+                      <button type="button"
+                        className={`inventory-operation-main-action inventory-operation-writeoff-action ${inventoryDraft.movementType==='writeoff'?'is-active':''}`}
+                        disabled={inventoryMovementBusy} onClick={()=>selectInventoryOperationMode('writeoff')}>
+                        <span><strong>Списать товар</strong><small>Повреждение, потеря или другая причина</small></span>
                         <b>Открыть</b>
                       </button>
                       <details className="inventory-operation-more-actions">
                         <summary>Другие действия</summary>
                         <div className="inventory-operation-secondary-actions" role="group" aria-label="Другие складские действия">
                           {[
-                            ...(isAdmin ? [['arrival', 'Приход']] : []),
-                            ['writeoff', 'Списание'],
-                            ['manual_set', 'Исправить количество'],
-                          ].map(([mode, title]) => (
-                            <button
-                              key={mode}
-                              type="button"
-                              className={inventoryDraft.movementType === mode ? 'is-active' : ''}
-                              disabled={inventoryMovementBusy}
-                              onClick={() => selectInventoryOperationMode(mode)}
-                            >
+                            ...(isAdmin ? [['arrival','Приход']] : []),
+                            ['manual_set','Исправить количество'],
+                          ].map(([mode,title])=>(
+                            <button key={mode} type="button"
+                              className={inventoryDraft.movementType===mode?'is-active':''}
+                              disabled={inventoryMovementBusy} onClick={()=>selectInventoryOperationMode(mode)}>
                               {title}
                             </button>
                           ))}
                         </div>
                       </details>
                     </div>
-    
+
                     <div className={`mini-panel inventory-operation-card inventory-operation-card-${inventoryDraft.movementType}`}>
                       <div className="mini-panel-head inventory-operation-clean-head">
                         <div>
@@ -462,7 +467,16 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                         </div>
                       )}
     
-                      <div className="inventory-submit-bar inventory-submit-bar-v182">
+                      {inventoryDraft.movementType==='writeoff' ? (
+                        <WriteoffReview source={sourceLabel(inventoryDraft.source)}
+                          reason={inventoryDraft.comment}
+                          lines={writeoffReviewLines}
+                          busy={inventoryMovementBusy}
+                          sourceLoading={movementSourceLoading || Boolean(movementSourceLoadError)}
+                          onConfirm={()=>void saveInventoryMovement()}
+                        />
+                      ) : null}
+                                            <div className="inventory-submit-bar inventory-submit-bar-v182">
                         <div>
                           <strong>{inventoryMovementText.button}</strong>
                           <span>{inventoryDraft.movementType === 'arrival'
@@ -472,14 +486,16 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                               : `${inventoryDraftSummary.rows} позиций · ${inventoryDraftSummary.totalQuantity} шт. · ${sourceLabel(inventoryDraft.source)}${inventoryDraft.movementType === 'transfer' ? ` → ${sourceLabel(inventoryDraft.targetSource)}` : ''}`}</span>
                         </div>
                         <div className="actions">
-                          <button
-                            className="primary"
-                            type="button"
-                            disabled={inventoryMovementBusy || (inventoryDraft.movementType === 'arrival' ? inventoryArrivalSummary.rows === 0 : inventoryDraftSummary.rows === 0)}
-                            onClick={() => void saveInventoryMovement()}
-                          >
-                            {inventoryMovementBusy ? 'Сохраняю…' : inventoryMovementText.button}
-                          </button>
+                          {inventoryDraft.movementType!=='writeoff' ? (
+                            <button
+                              className="primary"
+                              type="button"
+                              disabled={inventoryMovementBusy || (inventoryDraft.movementType === 'arrival' ? inventoryArrivalSummary.rows === 0 : inventoryDraftSummary.rows === 0)}
+                              onClick={() => void saveInventoryMovement()}
+                            >
+                              {inventoryMovementBusy ? 'Сохраняю…' : inventoryMovementText.button}
+                            </button>
+                          ) : null}
                           <button className="secondary" type="button" disabled={inventoryMovementBusy} onClick={() => {
                             setInventoryDraft((current) => ({ ...current, items: [createEmptyInventoryItem()], comment: '' }))
                             if (inventoryDraft.movementType === 'arrival') resetInventoryArrivalForm()
