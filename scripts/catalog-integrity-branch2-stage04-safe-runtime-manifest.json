@@ -69,9 +69,9 @@
     "migrations/0092_v72_catalog_variant_reservation_consolidation.sql": "894164a039a76abfdf8d7ac8a49109329b9bc66d",
     "src/styles/reference-integrity-entry.css": "1b5c89737e553ba65bd7e28c7c55cb916dc61634",
     "scripts/test-reference-duplicates-discovery-r1.mjs": "963f169c9526f2942ef0ebc25355abb55e251d60",
-    "worker/domains/reference-merge-preview.ts": "8762ad6fe505d19e0b9a86faa3c972d5868a040f",
-    "src/features/sections/ReferenceMergeWorkspace.tsx": "0239d2b57ca3daacb3681303798787be04ad46f6",
+    "worker/domains/reference-merge-preview.ts": "2c4357b64e800924c89d922f5e44fc6974455e43",
+    "src/features/sections/ReferenceMergeWorkspace.tsx": "cabc884f8c817dba7ed514f3a2acf33e55684b9c",
     "src/styles/reference-merge-workspace.css": "0b98fc09835b26d4dfa99ac481a51de89dfb6e0f",
-    "scripts/test-reference-merge-choice-preview.mjs": "0a0239d52fbc72401831df193fc581b715b4b9df"
+    "scripts/test-reference-merge-choice-preview.mjs": "249f577a1ddd6d3da44e39c0744ae712cde6a2af"
   }
 }
