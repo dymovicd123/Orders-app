@@ -23,6 +23,26 @@ export function businessMonthRange(date: Date = new Date()) {
 }
 
 type Summary = { current: number; older: number }
+
+async function countAffectedPaymentOrders(db:D1Database, source:string, from:string,to:string):Promise<Summary>{
+  // An order can store the payment method either on the order itself or only in
+  // one of its payment/financial relations. Count distinct affected orders.
+  const result=await db.prepare(`SELECT
+    COUNT(CASE WHEN o.order_date>=? AND o.order_date<? THEN 1 END) AS current,
+    COUNT(CASE WHEN o.order_date<? THEN 1 END) AS older
+    FROM orders o
+    WHERE o.order_status <> 'deleted'
+      AND (
+        UPPER(TRIM(COALESCE(o.order_payment_method,'')))=UPPER(?)
+        OR EXISTS(SELECT 1 FROM payments p WHERE p.order_id=o.id AND UPPER(TRIM(p.method))=UPPER(?))
+        OR EXISTS(SELECT 1 FROM financial_events fe WHERE fe.order_id=o.id AND UPPER(TRIM(COALESCE(fe.payment_method,'')))=UPPER(?))
+        OR EXISTS(SELECT 1 FROM cash_register_entries ce WHERE ce.order_id=o.id AND UPPER(TRIM(COALESCE(ce.payment_method,'')))=UPPER(?))
+        OR EXISTS(SELECT 1 FROM returns r WHERE r.order_id=o.id AND UPPER(TRIM(COALESCE(r.payment_method,'')))=UPPER(?))
+        OR EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id=o.id AND UPPER(TRIM(COALESCE(e.payment_method,'')))=UPPER(?))
+      )`
+  ).bind(from,to,from,source,source,source,source,source,source).first<Summary>()
+  return {current:toInt(result?.current,0),older:toInt(result?.older,0)}
+}
 async function countOrderColumn(db: D1Database, field: string, source: string, from: string, to: string): Promise<Summary> {
   if (!Object.values(orderFields).includes(field)) throw new Error('Unsupported order column')
   const x = await db.prepare(`SELECT
@@ -44,7 +64,8 @@ async function countRelatedPaymentRows(db: D1Database, table: 'payments'|'financ
     COUNT(CASE WHEN o.order_date>=? AND o.order_date<? THEN 1 END) AS current,
     COUNT(CASE WHEN o.order_date<? THEN 1 END) AS older
     FROM ${table} r JOIN orders o ON o.id=r.order_id
-    WHERE UPPER(TRIM(COALESCE(r.${methodField},'')))=UPPER(?)`
+    WHERE UPPER(TRIM(COALESCE(r.${methodField},'')))=UPPER(?)
+      AND o.order_status<>'deleted'`
   ).bind(from,to,from,source).first<Summary>()
   return {current:toInt(x?.current,0),older:toInt(x?.older,0)}
 }
@@ -82,7 +103,11 @@ export async function previewUserSelectedReferenceMerge(
   const month=businessMonthRange(now)
   const summary={current:0,older:0}
   const field=orderFields[source.kind]
-  if (field) Object.assign(summary,await countOrderColumn(db,field,source.value,month.from,month.toExclusive))
+  if (source.kind==='payment_method'){
+    Object.assign(summary,await countAffectedPaymentOrders(db,source.value,month.from,month.toExclusive))
+  } else if (field) {
+    Object.assign(summary,await countOrderColumn(db,field,source.value,month.from,month.toExclusive))
+  }
   const finance = {
     payments:{current:0,older:0},financialEvents:{current:0,older:0},
     cashEntries:{current:0,older:0},returns:{current:0,older:0},exchanges:{current:0,older:0},
