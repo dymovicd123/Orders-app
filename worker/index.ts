@@ -26,7 +26,7 @@ import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, resto
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
 import { createReferenceValue, deleteReferenceValue, getReferenceData, getReferenceValueCounts, listReferenceValues, normalizeReferenceKind, updateReferenceValue } from './domains/references.ts'
 import { hideUnusedEquivalentReference, listReferenceDuplicateGroups, previewReferenceConsolidation } from './domains/reference-integrity.ts'
-import { consolidateUnusedCatalogVariant, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
+import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
 import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { createItemizedExchangeBatchFromRequest } from './domains/exchange-batch.ts'
 import { continueDatabaseStorageCleanup, getDatabaseStorageStatus, startDatabaseStorageCleanup, updateDatabaseStorageCapacity } from './domains/storage.ts'
@@ -193,6 +193,12 @@ export default {
         const denied = requireAdminUser(authUser, 'Проверка дублей доступна только администратору.');
         if (denied) return denied;
         return json(await listReferenceDuplicateGroups(env.DB));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-history' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'История объединений доступна только администратору.');
+        if (denied) return denied;
+        return json(await listRecentCatalogVariantConsolidations(env.DB));
       }
 
       if (url.pathname === '/api/catalog/variants/consolidation-preview' && request.method === 'GET') {
