@@ -29,7 +29,7 @@
     },
     "src/features/sections/ReferencesSection.tsx": {
       "beforeGitBlob": "f23c6133fa66a22d9986141b6b4cbd43678480b6",
-      "afterGitBlob": "622fb52ea709138daa35cbc0aff09a6b1df27a4d",
+      "afterGitBlob": "ef98605f4d2cf5641fd36efe33c60f7fce508015",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/features/sections/ReferencesSection.tsx"
     },
     "worker/index.ts": {
@@ -70,7 +70,7 @@
     "src/styles/reference-integrity-entry.css": "ca5ca534c7183bb522742c28c5168c84d2da7583",
     "scripts/test-reference-duplicates-discovery-r1.mjs": "eed84d04581f550aa8936d6bcee5f5ca06b7ec25",
     "worker/domains/reference-merge-preview.ts": "177c191bc51d2a29cd26b98b04f3646ac7e30ed6",
-    "src/features/sections/ReferenceMergeWorkspace.tsx": "fb1ebbd65ff989d762e7e4f85404099e94eada1a",
+    "src/features/sections/ReferenceMergeWorkspace.tsx": "d9c7ff63933efce8b7ee7bf27134f588ed64c11c",
     "src/styles/reference-merge-workspace.css": "21ccd3b321e4ffe138f1a106ce1a5dc643c9da18",
     "scripts/test-reference-merge-choice-preview.mjs": "088826e9169b91c17b8514611394196364ad9de4",
     "worker/domains/reference-merge-apply.ts": "b0b85be1b6f8964ad7e7414ba178e1a7d371c4db",
