@@ -82,6 +82,6 @@
     "worker/domains/reference-merge-history.ts": "3e32522f40c45bfe41eee517297b82dbd450abdc",
     "scripts/test-reference-merge-history.mjs": "cd5940072ec22f9edb27892138beb0745f8b12ff",
     "worker/domains/reference-characteristic-impact.ts": "1536f8e30942b461079cea7e045863d5b9f4d980",
-    "scripts/test-reference-characteristic-impact.mjs": "b4b818e3996d0ea92ffe146ff4c5b8685813270f"
+    "scripts/test-reference-characteristic-impact.mjs": "66b9bc03eb1545682c4bd12d99451f397c455d66"
   }
 }
