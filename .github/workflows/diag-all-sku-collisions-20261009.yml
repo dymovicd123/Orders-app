@@ -1,0 +1,81 @@
+name: Read-only Production catalog semantic collision audit
+
+on:
+  push:
+    branches: [diag-ethno-stock-readonly-20261009]
+    paths: ['.github/workflows/diag-all-sku-collisions-20261009.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  forensic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout isolated diagnostic branch
+        uses: actions/checkout@v4
+      - name: Validate environment and read-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == 'diag-ethno-stock-readonly-20261009' ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders_db_branch2' wrangler.jsonc; then echo 'Wrong binding' >&2; exit 20; fi
+          test -n "$CLOUDFLARE_ACCOUNT_ID" && test -n "$CLOUDFLARE_API_TOKEN"
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Count duplicate active business combinations across all products (SELECT only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "
+            WITH canonical AS (
+              SELECT v.product_id, p.name AS product_name,
+                COALESCE(v.stock_position_id,0) AS execution_id,
+                COALESCE(v.category,'adult') AS audience,
+                COALESCE(v.gender,'') AS gender,
+                COALESCE(v.size_label,'') AS size,
+                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                  TRIM(COALESCE(v.color,'')), '‐',''), '‑',''), '‒',''), '–',''), '—',''), '-',''), ' ','') AS color_key,
+                v.id AS variant_id, v.color, v.is_active,
+                COALESCE((SELECT SUM(s.quantity) FROM inventory_stock s WHERE s.variant_id=v.id),0) AS physical,
+                COALESCE((SELECT SUM(s.reserved_quantity) FROM inventory_stock s WHERE s.variant_id=v.id),0) AS reserved
+              FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
+              WHERE v.is_active=1
+            )
+            SELECT product_id, product_name, execution_id,audience,gender,size,color_key,
+              COUNT(*) AS variants,
+              GROUP_CONCAT(variant_id || ':' || color || ':stock=' || physical || ':reserved=' || reserved) AS instances,
+              SUM(physical) AS total_stock, SUM(reserved) AS total_reserved
+            FROM canonical
+            GROUP BY product_id, execution_id,audience,gender,size,color_key
+            HAVING COUNT(*)>1
+            ORDER BY product_name,execution_id,color_key,size
+            LIMIT 120
+          " | jq -c '{rows:(.[0].results // []),count:((.[0].results // [])|length)}'
+      - name: Inspect retired variants with live quantities (SELECT only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "
+            SELECT p.name AS product_name, v.id AS variant_id, v.is_active,
+              v.color,v.size_label AS size,v.material,v.length,
+              s.inventory_source,s.quantity,s.reserved_quantity
+            FROM inventory_stock s
+            JOIN catalog_variants v ON v.id=s.variant_id
+            JOIN catalog_products p ON p.id=v.product_id
+            WHERE v.is_active=0 AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0)
+            ORDER BY p.name,v.id
+            LIMIT 90
+          " | jq -c '{rows:(.[0].results // []),count:((.[0].results // [])|length)}'
