@@ -29,12 +29,12 @@
     },
     "src/features/sections/ReferencesSection.tsx": {
       "beforeGitBlob": "f23c6133fa66a22d9986141b6b4cbd43678480b6",
-      "afterGitBlob": "bafdaa8101e8b35938d5333aeccc519f9f690925",
+      "afterGitBlob": "a5d8e1e2fa05e536ac39848678ebde78a3cfe16c",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/features/sections/ReferencesSection.tsx"
     },
     "worker/index.ts": {
       "beforeGitBlob": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
-      "afterGitBlob": "0360cabd63981d67cf0e44d5a1614694ae0296d1",
+      "afterGitBlob": "3f183356c5d70b7a40148059c22540a4c986ef44",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/index.ts"
     },
     "worker/domains/catalog.ts": {
@@ -68,6 +68,18 @@
     "migrations/0091_v72_catalog_variant_stock_consolidation.sql": "3bf9bf2496145aa19a919a3468d3fb3d0a13d1c7",
     "migrations/0092_v72_catalog_variant_reservation_consolidation.sql": "894164a039a76abfdf8d7ac8a49109329b9bc66d",
     "src/styles/reference-integrity-entry.css": "1b5c89737e553ba65bd7e28c7c55cb916dc61634",
-    "scripts/test-reference-duplicates-discovery-r1.mjs": "963f169c9526f2942ef0ebc25355abb55e251d60"
+    "scripts/test-reference-duplicates-discovery-r1.mjs": "eed84d04581f550aa8936d6bcee5f5ca06b7ec25",
+    "worker/domains/reference-merge-preview.ts": "177c191bc51d2a29cd26b98b04f3646ac7e30ed6",
+    "src/features/sections/ReferenceMergeWorkspace.tsx": "fb1ebbd65ff989d762e7e4f85404099e94eada1a",
+    "src/styles/reference-merge-workspace.css": "21ccd3b321e4ffe138f1a106ce1a5dc643c9da18",
+    "scripts/test-reference-merge-choice-preview.mjs": "088826e9169b91c17b8514611394196364ad9de4",
+    "worker/domains/reference-merge-apply.ts": "b0b85be1b6f8964ad7e7414ba178e1a7d371c4db",
+    "scripts/test-reference-merge-monthly-apply.mjs": "67297b49ef49a41a7457c17b42be82c751bf7a55",
+    "migrations/0093_v72_reference_value_choice_merges.sql": "d3afb62545f1cca2fc195244db13d42ac7b6471b",
+    "worker/domains/reference-payment-merge.ts": "17aed8caa17f1978b0e2b658b270a9b5e37168d2",
+    "scripts/test-reference-payment-merge.mjs": "015cb3ce422a84c50d68e1bce5b099141e9b3930",
+    "migrations/0094_v72_reference_payment_method_merges.sql": "fd6d34164f59ac3856b113701e47a81e681e95f7",
+    "worker/domains/reference-merge-history.ts": "3e32522f40c45bfe41eee517297b82dbd450abdc",
+    "scripts/test-reference-merge-history.mjs": "cd5940072ec22f9edb27892138beb0745f8b12ff"
   }
 }

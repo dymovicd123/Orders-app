@@ -1,0 +1,38 @@
+name: Reference consolidation choice preview (Branch2-safe)
+on:
+  push:
+    branches: [branch2-reference-merge-ux-20261009]
+  pull_request:
+    branches: [branch2]
+    paths: ['src/features/sections/ReferenceMergeWorkspace.tsx', 'worker/domains/reference-merge-preview.ts', 'scripts/test-reference-merge-choice-preview.mjs']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Stage04 and read-only reference-merge preview
+        run: |
+          set -euo pipefail
+          node scripts/test-branch2-environment.mjs
+          node scripts/test-stage04a-workshop-settlements.mjs
+          node scripts/test-stage04b-workshop-status-capture.mjs
+          node --experimental-strip-types scripts/test-reference-merge-choice-preview.mjs
+          node --experimental-strip-types scripts/test-reference-merge-monthly-apply.mjs
+          node --experimental-strip-types scripts/test-reference-payment-merge.mjs
+          node --experimental-strip-types scripts/test-reference-merge-history.mjs
+          node --experimental-strip-types scripts/test-catalog-integrity-r2-sku-consolidation.mjs
+          node --experimental-strip-types scripts/test-inventory-writeoff-review.mjs
+      - name: Full historical Branch2 regression gate
+        run: npm run release:check
+      - name: TypeScript build
+        run: npm run build

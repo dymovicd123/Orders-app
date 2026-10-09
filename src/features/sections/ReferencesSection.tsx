@@ -1,5 +1,6 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
 import { ReferenceIntegrityPanel } from './ReferenceIntegrityPanel'
+import { ReferenceMergeWorkspace } from './ReferenceMergeWorkspace'
 import '../../styles/reference-integrity-entry.css'
 type SectionContext = Record<string, any>
 
@@ -62,13 +63,22 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                 </div>
               </div>
     
+              <ReferenceMergeWorkspace apiFetch={apiFetch} isAdmin={isAdmin}
+                onMerged={async () => {
+                  await Promise.all([
+                    ctx.loadReferencesData(true),
+                    ctx.loadReferenceItems(ctx.referenceKind,true),
+                    ctx.loadReferenceKindCounts(ctx.referenceGroups.map((group:any)=>group.kind),true),
+                  ])
+                }} />
+
               <details className="reference-integrity-entry" data-feature="reference-duplicates">
                 <summary className="reference-integrity-entry-summary">
                   <span className="reference-integrity-entry-copy">
-                    <strong>Проверка дублей</strong>
+                    <strong>Найти похожие записи и варианты товаров</strong>
                     <small>Найти одинаковые значения справочников и варианты товаров, проверить остатки и связи перед объединением.</small>
                   </span>
-                  <span className="reference-integrity-entry-open">Открыть проверку</span>
+                  <span className="reference-integrity-entry-open">Посмотреть совпадения</span>
                 </summary>
                 {isAdmin ? (
                   <ReferenceIntegrityPanel
@@ -234,10 +244,12 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                                   type="button"
                                   onClick={(event) => {
                                     event.stopPropagation()
-                                    void removeReferenceEntry(item.id)
+                                    if (window.confirm('Удалить «' + item.value + '» из списка выбора? Ранее оформленные заказы сохранятся. Если нужно заменить название в заказах текущего месяца, сначала используйте объединение.')) {
+                                      void removeReferenceEntry(item.id)
+                                    }
                                   }}
                                 >
-                                  Убрать
+                                  Удалить из списка
                                 </button>
                               </div>
                             ) : null}
