@@ -29,12 +29,12 @@
     },
     "src/features/sections/ReferencesSection.tsx": {
       "beforeGitBlob": "f23c6133fa66a22d9986141b6b4cbd43678480b6",
-      "afterGitBlob": "0f505d12aa656407585e146464a7de2f41b235b7",
+      "afterGitBlob": "a5d8e1e2fa05e536ac39848678ebde78a3cfe16c",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/features/sections/ReferencesSection.tsx"
     },
     "worker/index.ts": {
       "beforeGitBlob": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
-      "afterGitBlob": "bc0835cd28869511f5aa4378b177d078984a0a97",
+      "afterGitBlob": "3f9923636fb0281235b7248bdc757159111ba4b3",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/index.ts"
     },
     "worker/domains/catalog.ts": {
@@ -69,9 +69,12 @@
     "migrations/0092_v72_catalog_variant_reservation_consolidation.sql": "894164a039a76abfdf8d7ac8a49109329b9bc66d",
     "src/styles/reference-integrity-entry.css": "1b5c89737e553ba65bd7e28c7c55cb916dc61634",
     "scripts/test-reference-duplicates-discovery-r1.mjs": "963f169c9526f2942ef0ebc25355abb55e251d60",
-    "worker/domains/reference-merge-preview.ts": "2c4357b64e800924c89d922f5e44fc6974455e43",
-    "src/features/sections/ReferenceMergeWorkspace.tsx": "cabc884f8c817dba7ed514f3a2acf33e55684b9c",
+    "worker/domains/reference-merge-preview.ts": "7b9bc4873670f358b2c8b13a5057f314e3b48b1b",
+    "src/features/sections/ReferenceMergeWorkspace.tsx": "f509b7b64469058602a3dab92d214e82f3a95b81",
     "src/styles/reference-merge-workspace.css": "0b98fc09835b26d4dfa99ac481a51de89dfb6e0f",
-    "scripts/test-reference-merge-choice-preview.mjs": "249f577a1ddd6d3da44e39c0744ae712cde6a2af"
+    "scripts/test-reference-merge-choice-preview.mjs": "fca90654cbb211a1187fb1989ea5b7ba2b12e66c",
+    "worker/domains/reference-merge-apply.ts": "b0b85be1b6f8964ad7e7414ba178e1a7d371c4db",
+    "scripts/test-reference-merge-monthly-apply.mjs": "692749aab2860d40e2876b356d9e88134b62237a",
+    "migrations/0093_v72_reference_value_choice_merges.sql": "d3afb62545f1cca2fc195244db13d42ac7b6471b"
   }
 }
