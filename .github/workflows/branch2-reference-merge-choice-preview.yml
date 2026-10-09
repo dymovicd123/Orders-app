@@ -27,6 +27,7 @@ jobs:
           node scripts/test-stage04a-workshop-settlements.mjs
           node scripts/test-stage04b-workshop-status-capture.mjs
           node --experimental-strip-types scripts/test-reference-merge-choice-preview.mjs
+          node --experimental-strip-types scripts/test-reference-merge-monthly-apply.mjs
           node --experimental-strip-types scripts/test-catalog-integrity-r2-sku-consolidation.mjs
           node --experimental-strip-types scripts/test-inventory-writeoff-review.mjs
       - name: TypeScript build
