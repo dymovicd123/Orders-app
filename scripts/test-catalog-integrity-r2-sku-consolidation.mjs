@@ -33,7 +33,7 @@ sqlite.exec(`
  CREATE TABLE return_items(id INTEGER PRIMARY KEY,order_item_id INTEGER);
  CREATE TABLE exchanges(id INTEGER PRIMARY KEY,old_order_item_id INTEGER,new_order_item_id INTEGER);
  CREATE TABLE exchange_items(id INTEGER PRIMARY KEY,order_item_id INTEGER);
- CREATE TABLE orders(id INTEGER PRIMARY KEY,order_status TEXT,shipping_status TEXT);
+ CREATE TABLE orders(id INTEGER PRIMARY KEY,order_status TEXT,shipping_status TEXT,order_date TEXT NOT NULL DEFAULT (date('now','+5 hours')));
  CREATE TABLE order_items(
    id INTEGER PRIMARY KEY,order_id INTEGER,variant_id INTEGER,product_id INTEGER,
    quantity INTEGER,is_workshop INTEGER DEFAULT 0, source_type TEXT DEFAULT 'warehouse',
@@ -51,7 +51,7 @@ sqlite.exec(`
   (9,100,31,'adult','ЖЕН','СВЕТЛО СЕРЫЙ','52','ШЕРСТЬ','СТАНДАРТ',1,'before'),
   (10,100,30,'adult','ЖЕН','СВЕТЛО СЕРЫЙ','54','ДРАП','СТАНДАРТ',1,'before');
  INSERT INTO inventory_stock(id,variant_id,quantity,reserved_quantity) VALUES (10,7,0,0),(11,8,2,0);
- INSERT INTO orders VALUES(1,'active','sent');
+ INSERT INTO orders(id,order_status,shipping_status) VALUES(1,'active','sent');
  INSERT INTO order_items(id,order_id,variant_id,quantity) VALUES(21,1,7,1);
 `)
 sqlite.exec(fs.readFileSync('migrations/0090_v72_catalog_variant_consolidations.sql','utf8'))
@@ -182,7 +182,7 @@ sqlite.exec(`
         (13,100,30,'adult','ЖЕН','ТЕМНО СИНИЙ','52','ДРАП','СТАНДАРТ',1,'before');
  INSERT INTO inventory_stock(id,inventory_source,variant_id,quantity,reserved_quantity)
  VALUES(120,'warehouse',12,3,2),(121,'warehouse',13,5,1),(122,'boutique',12,4,1);
- INSERT INTO orders VALUES (2,'active','not_sent'),(3,'active','not_sent'),(4,'active','not_sent');
+ INSERT INTO orders(id,order_status,shipping_status) VALUES(2,'active','not_sent'),(3,'active','not_sent'),(4,'active','not_sent');
  INSERT INTO order_items(id,order_id,variant_id,product_id,quantity,source_type,product_name_snapshot,unit_price)
  VALUES(22,2,13,100,1,'warehouse','Тёмно синий',1000),
        (23,3,12,100,2,'warehouse','Снимок СТАРОГО цвета',2500),
@@ -192,6 +192,17 @@ sqlite.exec(`
        (3,3,23,'warehouse',100,12,2,'active','before'),
        (4,4,24,'boutique',100,12,1,'active','before');
 `)
+// An open order outside the current Kazakhstan business month keeps its SKU.
+sqlite.exec("UPDATE orders SET order_date='2020-01-01' WHERE id=3")
+const historyBlocked=await previewCatalogVariantConsolidation(db,12,13)
+assert.equal(historyBlocked.canConsolidate,false)
+assert.ok(historyBlocked.blockers.some(reason=>reason.includes('других месяцев')))
+await assert.rejects(
+ ()=>consolidateUnusedCatalogVariant(db,12,13,'admin',historyBlocked.stateToken),
+ /других месяцев/,
+)
+assert.equal(active(12),1)
+sqlite.exec("UPDATE orders SET order_date=date('now','+5 hours') WHERE id=3")
 let p=await previewCatalogVariantConsolidation(db,12,13)
 assert.equal(p.canConsolidate,true,'Valid stocked SKU can be merged')
 assert.equal(p.transferQuantity,7)
