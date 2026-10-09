@@ -1,0 +1,128 @@
+/* Warehouse: human-readable manual writeoff preview and explicit confirmation. */
+.inventory-operation-entry-actions .inventory-operation-writeoff-action.is-active {
+  border-color: #f0b5ad;
+  background: #fff8f6;
+}
+.inventory-operation-entry-actions .inventory-operation-writeoff-action:hover {
+  border-color: #e7a096;
+}
+.inventory-writeoff-review {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #dbe5ef;
+  border-radius: 14px;
+  background: #fbfcfe;
+}
+.inventory-writeoff-review-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.inventory-writeoff-review-heading > div {
+  display: grid;
+  gap: 5px;
+}
+.inventory-writeoff-review-heading strong {
+  color: #17253a;
+  font-size: 1.03rem;
+}
+.inventory-writeoff-review-heading p,
+.inventory-writeoff-review-hint {
+  margin: 0;
+  color: #64748b;
+  font-size: .84rem;
+  line-height: 1.45;
+}
+.inventory-writeoff-review-heading > span {
+  flex: 0 0 auto;
+  font-size: .83rem;
+  font-weight: 750;
+  color: #334155;
+}
+.inventory-writeoff-review-empty {
+  margin: 0;
+  color: #64748b;
+  padding: 13px 0;
+}
+.inventory-writeoff-review-items {
+  display: grid;
+  gap: 8px;
+}
+.inventory-writeoff-review-row {
+  display: grid;
+  grid-template-columns: minmax(175px, 2fr) repeat(4,minmax(65px,.65fr));
+  gap: 10px;
+  align-items: center;
+  padding: 13px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: white;
+}
+.inventory-writeoff-review-row > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.inventory-writeoff-review-row strong {
+  color: #17253a;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.inventory-writeoff-review-row small {
+  color: #64748b;
+  font-size: .75rem;
+  line-height: 1.4;
+}
+.inventory-writeoff-review-caution {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 8px 10px;
+  background: #fff8ed;
+  border-radius: 8px;
+  color: #92400e;
+  font-size: .8rem;
+  line-height: 1.45;
+}
+.inventory-writeoff-review-warning {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #f1d8ae;
+  background: #fffaf0;
+  color: #854d0e;
+  border-radius: 9px;
+  font-size: .84rem;
+  line-height: 1.5;
+}
+.inventory-writeoff-review-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.inventory-writeoff-review-confirmation {
+  flex: 1 1 240px;
+  display: grid;
+  gap: 4px;
+}
+.inventory-writeoff-review-confirmation strong {
+  color: #17253a;
+}
+.inventory-writeoff-review-confirmation span {
+  color: #64748b;
+  font-size: .82rem;
+}
+@media (max-width:900px) {
+  .inventory-writeoff-review-row {
+    grid-template-columns: repeat(4,minmax(0,1fr));
+    gap: 10px;
+  }
+  .inventory-writeoff-review-item-name { grid-column:1/-1; }
+  .inventory-writeoff-review-heading { flex-direction:column; }
+}
+@media (max-width:540px) {
+  .inventory-writeoff-review { padding:12px; }
+  .inventory-writeoff-review-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .inventory-writeoff-review-actions > button { width:100%; }
+}
