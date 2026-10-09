@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import '../../styles/reference-merge-workspace.css'
 
 type Value = { id: number; value: string; isActive: boolean }
+type MergeHistoryItem={id:number;kind:string;source:string;target:string;affected:number;actor:string;createdAt:string;sourceId:number;targetId:number}
 type Counts = { current:number; older:number }
 type Impact = {
   ok:boolean;
@@ -48,6 +49,9 @@ export function ReferenceMergeWorkspace({
   const [saving,setSaving]=useState(false)
   const [notice,setNotice]=useState('')
   const [error,setError]=useState('')
+  const [history,setHistory]=useState<MergeHistoryItem[]|null>(null)
+  const [historyBusy,setHistoryBusy]=useState(false)
+  const [historyError,setHistoryError]=useState('')
   useEffect(()=>{
     let valid=true
     setValues([]);setSourceId(0);setTargetId(0);setImpact(null);setError('')
@@ -82,6 +86,18 @@ export function ReferenceMergeWorkspace({
     finally{setChecking(false)}
   }
 
+  async function loadHistory(){
+    if (!isAdmin || historyBusy) return
+    setHistoryBusy(true);setHistoryError('')
+    try {
+      const res=await apiFetch('/api/reference-values/merge-history')
+      const body=await res.json() as {ok?:boolean;items?:MergeHistoryItem[];message?:string}
+      if (!res.ok||!body.ok) throw new Error(body.message||'Не удалось загрузить историю.')
+      setHistory(body.items||[])
+    }catch(err){setHistoryError(err instanceof Error?err.message:'Не удалось загрузить историю.')}
+    finally{setHistoryBusy(false)}
+  }
+
   async function apply(){
     if (!impact?.canApply || !impact.stateToken || saving) return
     const confirmed=window.confirm(
@@ -102,6 +118,7 @@ export function ReferenceMergeWorkspace({
       setValues(old=>old.filter(v=>v.id!==impact.source.id))
       setSourceId(0);setTargetId(0);setImpact(null)
       setNotice('Готово. Обновлено заказов: '+Number(result.ordersUpdated||0)+'. Старые заказы сохранены.')
+      if (history!==null) void loadHistory()
     }catch(err){setError(err instanceof Error?err.message:'Не удалось сохранить изменения.')}
     finally{setSaving(false)}
   }
@@ -152,6 +169,25 @@ export function ReferenceMergeWorkspace({
         </div>
         {sourceId&&targetId&&sourceId===targetId? <p className="reference-merge-notice">Выберите разные значения.</p>:null}
         {error?<p className="reference-merge-error" role="alert">{error}</p>:null}
+        <div className="reference-merge-history">
+          <button type="button" className="secondary compact" disabled={historyBusy}
+            onClick={()=>void loadHistory()}>
+            {historyBusy?'Загружаю…':history===null?'Посмотреть историю объединений':'Обновить историю'}
+          </button>
+          {historyError?<p className="reference-merge-error" role="alert">{historyError}</p>:null}
+          {history!==null?(
+            <div className="reference-merge-history-items">
+              {history.length===0?<p>Пока ничего не объединяли.</p>:history.map((item,index)=>(
+                <div className="reference-merge-history-item" key={item.kind+':'+item.id+':'+index}>
+                  <div><strong><s>{item.source}</s> → {item.target}</strong>
+                    <small>{dictionaries.find(d=>d.kind===(item.kind==='payment_method'?'paymentMethods':item.kind==='city'?'cities':'deliveryTypes'))?.label||'Справочник'}</small>
+                  </div>
+                  <span>{item.actor} · {new Date(item.createdAt).toLocaleString('ru-RU')} · записей {item.affected}</span>
+                </div>
+              ))}
+            </div>
+          ):null}
+        </div>
         {impact&&source?.id===impact.source.id&&target?.id===impact.target.id?(
           <div className="reference-merge-impact">
             <h4>Что произойдёт с записями?</h4>
