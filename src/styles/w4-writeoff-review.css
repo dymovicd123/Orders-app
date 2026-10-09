@@ -1,3 +1,13 @@
+/* Primary warehouse actions stay visible side by side on wide screens. */
+.inventory-operation-entry-actions {
+  grid-template-columns: repeat(2,minmax(0,1fr));
+}
+.inventory-operation-entry-actions .inventory-operation-more-actions {
+  grid-column: 1 / -1;
+}
+@media (max-width:640px) {
+  .inventory-operation-entry-actions { grid-template-columns:1fr; }
+}
 /* Warehouse: human-readable manual writeoff preview and explicit confirmation. */
 .inventory-operation-entry-actions .inventory-operation-writeoff-action.is-active {
   border-color: #f0b5ad;
