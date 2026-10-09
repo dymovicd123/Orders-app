@@ -3766,19 +3766,14 @@ function App() {
       throw new Error(result.message || 'Не удалось сохранить справочник.')
     }
 
-    const outcome = await readJsonResponse<{ ok?: boolean; value?: string; reused?: boolean; restored?: boolean }>(response, 'Справочник')
     setReferenceDraft({ id: 0, value: '', sortOrder: '0', isActive: true })
     await Promise.all([
       loadReferencesData(true),
       loadReferenceItems(referenceKind, true),
       loadReferenceKindCounts([referenceKind], true),
     ])
-    setMessage(outcome.reused
-      ? `Значение «${outcome.value || value}» уже существует — используем его, дубль не создавали.`
-      : outcome.restored
-        ? `Значение «${outcome.value || value}» восстановлено в справочнике.`
-        : 'Справочник обновлён.')
-    return outcome
+    setMessage('Справочник обновлён.')
+    return readJsonResponse(response, 'Справочник')
   }
 
   async function removeReferenceEntry(id: number) {
@@ -3794,8 +3789,7 @@ function App() {
       body: JSON.stringify({ kind: referenceKind }),
     })
     if (!response.ok) {
-      const problem = await readJsonResponse<{ message?: string }>(response, 'Справочник')
-      throw new Error(problem.message || 'Не удалось отключить значение.')
+      throw new Error('Не удалось отключить значение.')
     }
     if (referenceDraft.id === id) {
       setReferenceDraft({ id: 0, value: '', sortOrder: '0', isActive: true })
@@ -8356,7 +8350,7 @@ function removeDebtPayment(index: number) {
 
 
         <DeferredSection active={activeSector === 'references'} label="Справочники">
-        <ReferencesSection ctx={{ apiFetch, loadReferencesData, loadReferenceKindCounts, filteredReferenceItems, formatDateShort, FriendlyNumberInput, isAdmin, loadReferenceItems, normalizeSuggestion, referenceBusy, referenceDraft, referenceGroups, referenceItems, referenceKind, referenceSearch, referenceStats, referenceStatusFilter, removeReferenceEntry, resolveCatalogReviewItem, resetReferenceDraft, saveReferenceEntry, sectorStyle, selectedReferenceKindConfig, selectReferenceKind, setReferenceDraft, setReferenceSearch, setReferenceStatusFilter }} />
+        <ReferencesSection ctx={{ filteredReferenceItems, formatDateShort, FriendlyNumberInput, isAdmin, loadReferenceItems, normalizeSuggestion, referenceBusy, referenceDraft, referenceGroups, referenceItems, referenceKind, referenceSearch, referenceStats, referenceStatusFilter, removeReferenceEntry, resolveCatalogReviewItem, resetReferenceDraft, saveReferenceEntry, sectorStyle, selectedReferenceKindConfig, selectReferenceKind, setReferenceDraft, setReferenceSearch, setReferenceStatusFilter }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'inventory'} label="Склад">

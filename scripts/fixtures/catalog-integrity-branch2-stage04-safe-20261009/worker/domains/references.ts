@@ -5,7 +5,6 @@ import { mapSqlRows } from '../core/sql.ts'
 import { canonicalStockPositionValue, cleanText, normalizePhone, toInt, upperText } from '../core/text.ts'
 import type { ReferenceKind, ReferenceValueRecord } from '../core/types.ts'
 import { normalizeManagerColor } from './activity.ts'
-import { catalogColorIdentity } from './catalog.ts'
 
 export async function getPendingInventoryWriteoffCount(db: D1Database) {
   const row = await db.prepare(
@@ -200,32 +199,26 @@ export async function assertReferenceValueCanChange(db: D1Database, dbKind: stri
 }
 
 
-// Share the Catalog/Arrival/Stocktake rule: hyphens and whitespace cannot
-// manufacture a second business identity.
 export function referenceValueIdentityKey(value: unknown) {
-  const text = upperText(value).replace(/[‐‑‒–—-]+/g, ' ');
-  return text ? catalogColorIdentity(text) : '';
+  return upperText(value)
+    .replace(/[‐‑‒–—-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-
-type EquivalentReferenceValue = { id: number; value: string; is_active: number };
-
-export async function findEquivalentReferenceValue(db: D1Database, dbKind: string, value: string, excludeId = 0) {
-  const identity = referenceValueIdentityKey(value);
-  if (!identity) return null;
-  const rows = await db.prepare(
-    `SELECT id, value, is_active FROM reference_values WHERE kind = ? AND id <> ?
-     ORDER BY is_active DESC, id ASC`
-  ).bind(dbKind, excludeId).all<EquivalentReferenceValue>();
-  return (rows.results || []).find((row) => referenceValueIdentityKey(row.value) === identity) || null;
-}
 
 export async function assertNoEquivalentReferenceValue(db: D1Database, dbKind: string, value: string, excludeId = 0) {
-  const duplicate = await findEquivalentReferenceValue(db, dbKind, value, excludeId);
+  const identity = referenceValueIdentityKey(value);
+  if (!identity) return;
+  const rows = await db.prepare(
+    `SELECT id, value FROM reference_values WHERE kind = ? AND id <> ? ORDER BY is_active DESC, id ASC`
+  ).bind(dbKind, excludeId).all<{ id: number; value: string }>();
+  const duplicate = (rows.results || []).find((row) => referenceValueIdentityKey(row.value) === identity);
   if (duplicate?.id) {
-    throw new Error(`Такое значение уже есть: «${cleanText(duplicate.value)}». Используйте существующее значение вместо создания дубля.`);
+    throw new Error(`Такое значение уже есть: «${cleanText(duplicate.value)}». Используйте существующий вариант вместо создания дубликата.`);
   }
 }
+
 
 export async function upsertReferenceValue(db: D1Database, input: { kind?: unknown; value?: unknown; sortOrder?: unknown; isActive?: unknown }, id?: number) {
   const kind = normalizeReferenceKind(input.kind);
@@ -264,7 +257,7 @@ export async function upsertReferenceValue(db: D1Database, input: { kind?: unkno
     const current = await db.prepare(
       `SELECT value FROM reference_values WHERE id = ? AND kind = ? LIMIT 1`
     ).bind(id, dbKind).first<{ value: string }>();
-    if (!current || referenceValueIdentityKey(current.value) !== referenceValueIdentityKey(value) || upperText(current.value) !== value) {
+    if (!current || referenceValueIdentityKey(current.value) !== referenceValueIdentityKey(value)) {
       await assertNoEquivalentReferenceValue(db, dbKind, value, id);
     }
     await assertReferenceValueCanChange(db, dbKind, id, value, isActive);
@@ -274,32 +267,15 @@ export async function upsertReferenceValue(db: D1Database, input: { kind?: unkno
        WHERE id = ?`
     ).bind(value, isActive, sortOrder, now, id).run();
   } else {
-    const equivalent = await findEquivalentReferenceValue(db, dbKind, value);
-    if (equivalent?.id) {
-      if (toInt(equivalent.is_active, 0) === 1) {
-        return { ok: true, kind, id: equivalent.id, value: equivalent.value, reused: true };
-      }
-      if (isActive === 1) {
-        await db.prepare(
-          'UPDATE reference_values SET is_active = 1, updated_at = ? WHERE id = ? AND kind = ? AND is_active = 0'
-        ).bind(now, equivalent.id, dbKind).run();
-        return { ok: true, kind, id: equivalent.id, value: equivalent.value, restored: true };
-      }
-      return { ok: true, kind, id: equivalent.id, value: equivalent.value, reused: true };
-    }
     await assertNoEquivalentReferenceValue(db, dbKind, value, 0);
-    const inserted = await db.prepare(
+    await db.prepare(
       `INSERT INTO reference_values (kind, value, is_active, sort_order, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(kind, value) DO NOTHING`
+       ON CONFLICT(kind, value) DO UPDATE SET
+         is_active = excluded.is_active,
+         sort_order = excluded.sort_order,
+         updated_at = excluded.updated_at`
     ).bind(dbKind, value, isActive, sortOrder, now, now).run();
-    if (!toInt(inserted.meta?.changes, 0)) {
-      const winner = await findEquivalentReferenceValue(db, dbKind, value);
-      if (winner?.id) {
-        return { ok: true, kind, id: winner.id, value: winner.value, reused: true };
-      }
-      throw new Error('Справочник изменился одновременно. Обновите список и повторите действие.');
-    }
   }
 
   return { ok: true, kind, value };

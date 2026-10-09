@@ -1,0 +1,55 @@
+name: Branch2 Stage04-safe Catalog Integrity integration gate
+
+on:
+  push:
+    branches: [branch2-catalog-integrity-stage04-safe-20261009]
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'worker/index.ts'
+      - 'worker/domains/catalog-variant-consolidation.ts'
+      - 'worker/domains/reference-integrity.ts'
+      - 'src/features/sections/ReferenceIntegrityPanel.tsx'
+      - 'src/features/inventory/**'
+      - 'migrations/009*.sql'
+      - '.github/workflows/branch2-catalog-integrity-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Validate Branch2 identity and Stage04 intact
+        run: |
+          set -euo pipefail
+          node scripts/test-branch2-environment.mjs
+          node scripts/test-stage04a-workshop-settlements.mjs
+          node scripts/test-stage04b-workshop-status-capture.mjs
+          test -f migrations/0083_v72_workshop_settlement_foundation.sql
+          test -f migrations/0084_v72_workshop_settlement_status_capture.sql
+          test -f migrations/0090_v72_catalog_variant_consolidations.sql
+          test -f migrations/0091_v72_catalog_variant_stock_consolidation.sql
+          test -f migrations/0092_v72_catalog_variant_reservation_consolidation.sql
+      - name: Catalog and writeoff regressions
+        run: |
+          set -euo pipefail
+          node scripts/test-catalog-integrity-r1-references.mjs
+          node --experimental-strip-types scripts/test-catalog-integrity-r2-preview.mjs
+          node --experimental-strip-types scripts/test-catalog-integrity-r2-hide.mjs
+          node --experimental-strip-types scripts/test-catalog-integrity-r2-sku-consolidation.mjs
+          node --experimental-strip-types scripts/test-inventory-writeoff-review.mjs
+          node scripts/test-catalog-resolver-r12-catalog-consistency.mjs
+          node scripts/test-catalog-resolver-r13-known-facts.mjs
+          node scripts/test-catalog-semantic-sku-identity.mjs
+      - name: TypeScript Vite production build
+        run: npm run build

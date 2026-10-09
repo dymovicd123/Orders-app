@@ -1068,7 +1068,7 @@ export type ReferenceData = {
 
 
 
-export type ReferenceKind = 'cities' | 'deliveryTypes' | 'paymentMethods' | 'colors' | 'materials' | 'lengths' | 'sizes' | 'childAges' | 'returnReasons' | 'writeoffReasons'
+export type ReferenceKind = 'cities' | 'deliveryTypes' | 'colors' | 'materials' | 'lengths' | 'sizes' | 'childAges' | 'returnReasons' | 'writeoffReasons'
 
 
 

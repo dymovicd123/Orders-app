@@ -298,16 +298,9 @@ export async function catalogReferenceValueExists(db: D1Database, kind: 'color' 
   const row = await db.prepare(
     `SELECT id FROM reference_values WHERE kind = ? AND is_active = 1 AND UPPER(TRIM(value)) = ? LIMIT 1`
   ).bind(kind, normalized).first<{ id: number }>();
-  if (row?.id) return true;
-  if (kind !== 'color') return false;
-  // Legacy colors can differ only in dash/space spelling. Reuse the canonical
-  // Catalog color identity to recognize them instead of rejecting valid input.
-  const candidates = await db.prepare(
-    'SELECT value FROM reference_values WHERE kind = ? AND is_active = 1 ORDER BY id ASC'
-  ).bind(kind).all<{ value: string }>();
-  const identity = catalogColorIdentity(normalized);
-  return (candidates.results || []).some((candidate) => catalogColorIdentity(candidate.value) === identity);
+  return Boolean(row?.id);
 }
+
 
 export async function findCatalogExecutionV3(db: D1Database, productId: number, material: unknown, length: unknown) {
   const normalizedMaterial = canonicalStockPositionValue(material);

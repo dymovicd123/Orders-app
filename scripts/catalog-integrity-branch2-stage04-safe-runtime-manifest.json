@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "revision": "catalog-integrity-branch2-stage04-safe-20261009",
+  "files": {
+    "src/App.tsx": {
+      "beforeGitBlob": "ab28a9a1d22063f4d972200b3fc88f4c5569841b",
+      "afterGitBlob": "5d758d71285dad94d0d90152a3505dee05a1e11a",
+      "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/App.tsx"
+    },
+    "src/app/constants.ts": {
+      "beforeGitBlob": "1cf5c177a59cca2c4ea1408fbd132092bb600338",
+      "afterGitBlob": "8175cd21630318ebd9ebc339db3296482d43b83d",
+      "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/app/constants.ts"
+    },
+    "src/app/types.ts": {
+      "beforeGitBlob": "fde6d8d206862a6ae33dea95088bb84ea0d6fc26",
+      "afterGitBlob": "899cbe472f527ffa993411c44b6825b3f8fcc570",
+      "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/app/types.ts"
+    },
+    "src/app/controllers/useOperationalViewModel.ts": {
+      "beforeGitBlob": "7f4c56f3d275613d9772e8708887065904c0327d",
+      "afterGitBlob": "3b0ebdc1b92213e5cab73a5bf493c7d34cfd6b95",
+      "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/app/controllers/useOperationalViewModel.ts"
+    },
+    "src/features/inventory/views/renderInventoryMovementPanel.tsx": {
+      "beforeGitBlob": "dc89847d2bac17d53320c3e4097ce4fbfd35e27b",
+      "afterGitBlob": "56d57de87526c1560fa2078d8b950ed8f201efc8",
+      "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/features/inventory/views/renderInventoryMovementPanel.tsx"
+    },
+    "src/features/sections/ReferencesSection.tsx": {
+      "beforeGitBlob": "f23c6133fa66a22d9986141b6b4cbd43678480b6",
+      "afterGitBlob": "2305c53d0529b8c056dd0a792e85d3930ff74d4f",
+      "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/features/sections/ReferencesSection.tsx"
+    },
+    "worker/index.ts": {
+      "beforeGitBlob": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
+      "afterGitBlob": "0360cabd63981d67cf0e44d5a1614694ae0296d1",
+      "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/index.ts"
+    },
+    "worker/domains/catalog.ts": {
+      "beforeGitBlob": "a2b6f66afa0e9b624ef3ae35171607b7037e2833",
+      "afterGitBlob": "09abbebf7b77cfbaf8b53042770ba1fa9916d6c9",
+      "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/domains/catalog.ts"
+    },
+    "worker/domains/references.ts": {
+      "beforeGitBlob": "b46c37cb84dbf6e31909799a4cbb87d0b9481c9d",
+      "afterGitBlob": "a097bda610fe8404363fd68fb8dd03cd0a572440",
+      "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/domains/references.ts"
+    },
+    "package.json": {
+      "beforeGitBlob": "7b1e908edffcf10ddc1537c4692e5589c017bb9f",
+      "afterGitBlob": "7f57884cca246755f08735078fdf4dfa882348cd",
+      "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/package.json"
+    }
+  },
+  "stage04Files": {
+    "migrations/0083_v72_workshop_settlement_foundation.sql": "d73a92f86317a9068a9a381742d55e5c96804879",
+    "migrations/0084_v72_workshop_settlement_status_capture.sql": "2e3f51ab0b055d5b82d6b542cec28cf661359003"
+  },
+  "addedFiles": {
+    "worker/domains/catalog-variant-consolidation.ts": "5adaad56532ba504cb63d49aa9e3b571c0f1c298",
+    "worker/domains/reference-integrity.ts": "392e2ec31161a6e31844c7d057a6d81625d9645b",
+    "src/features/sections/ReferenceIntegrityPanel.tsx": "e74c3a5cc8e1be7c237d523d32cb331eb0c07e14",
+    "src/features/inventory/writeoffReview.ts": "c7dc6cfb6981e979204c59808268dd332f0e1e08",
+    "src/features/inventory/views/WriteoffReview.tsx": "62257dbcc7af7200f3e60671bfe5a7395baccb79",
+    "src/styles/w4-writeoff-review.css": "37e3bce75eab3001edf7e47c2d8ef6d0f2737635",
+    "migrations/0090_v72_catalog_variant_consolidations.sql": "b4405429db17fbca0f7e212b3dd47cc6ca800ae8",
+    "migrations/0091_v72_catalog_variant_stock_consolidation.sql": "3bf9bf2496145aa19a919a3468d3fb3d0a13d1c7",
+    "migrations/0092_v72_catalog_variant_reservation_consolidation.sql": "894164a039a76abfdf8d7ac8a49109329b9bc66d"
+  }
+}
