@@ -123,12 +123,12 @@ sqlite.exec('DELETE FROM inventory_stocktake_items')
 sqlite.exec('DELETE FROM inventory_stocktake_sessions')
 
 beforeUpdate=()=>{ beforeUpdate=()=>{}; sqlite.exec('UPDATE inventory_stock SET quantity=4 WHERE id=10') }
-await assert.rejects(() => consolidateUnusedCatalogVariant(db,7,8),/изменились во время проверки/)
+await assert.rejects(() => consolidateUnusedCatalogVariant(db,7,8,'admin-test',(await previewCatalogVariantConsolidation(db,7,8)).stateToken),/изменились во время проверки/)
 assert.equal(active(7),1, 'Stock race must not deactivate')
 assert.equal(activity(),0,'Stock race must not log successful merge')
 sqlite.exec('UPDATE inventory_stock SET quantity=0 WHERE id=10')
 beforeUpdate=()=>{ beforeUpdate=()=>{}; sqlite.exec("UPDATE catalog_variants SET color='КРАСНЫЙ',updated_at='changed' WHERE id=8") }
-await assert.rejects(() => consolidateUnusedCatalogVariant(db,7,8),/изменились во время проверки/)
+await assert.rejects(() => consolidateUnusedCatalogVariant(db,7,8,'admin-test',(await previewCatalogVariantConsolidation(db,7,8)).stateToken),/изменились во время проверки/)
 assert.equal(active(7),1,'Keeper rename race must not deactivate')
 assert.equal(activity(),0)
 sqlite.exec("UPDATE catalog_variants SET color='СВЕТЛО СЕРЫЙ',updated_at='before' WHERE id=8")
@@ -136,7 +136,13 @@ assert.equal((await previewCatalogVariantConsolidation(db,7,8)).canConsolidate,t
 
 const beforeStock=sqlite.prepare('SELECT * FROM inventory_stock ORDER BY id').all()
 const beforeOrder=sqlite.prepare('SELECT * FROM order_items ORDER BY id').all()
-const result=await consolidateUnusedCatalogVariant(db,7,8,'admin-test')
+await assert.rejects(
+  () => consolidateUnusedCatalogVariant(db,7,8,'admin-test'),
+  /требует подтверждённого предпросмотра/,
+)
+assert.equal(active(7),1,'No-token zero-stock merge must fail without any mutation')
+const zeroStockPreview=await previewCatalogVariantConsolidation(db,7,8)
+const result=await consolidateUnusedCatalogVariant(db,7,8,'admin-test',zeroStockPreview.stateToken)
 assert.equal(result.consolidated,true)
 assert.equal(result.historicalOrdersPreserved,1)
 assert.equal(active(7),0)
@@ -183,7 +189,7 @@ assert.equal(p.transferQuantity,7)
 assert.equal(p.reservationCount,2)
 assert.equal(p.sourceImpact.reserved,3)
 assert.deepEqual(p.stockBreakdown.map(x=>x.combinedPhysical),[8,4])
-await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin'),/не подтверждены/)
+await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin'),/требует подтверждённого предпросмотра/)
 
 // Applied transfers must remain reversible, so cannot retire their live variant.
 sqlite.exec("INSERT INTO inventory_transfer_documents VALUES (1,'applied')")
