@@ -12,6 +12,13 @@ on:
       - 'worker/domains/catalog-variant-consolidation.ts'
       - 'scripts/test-catalog-integrity-r2-sku-consolidation.mjs'
       - 'migrations/0083_v72_catalog_variant_consolidations.sql'
+      - 'migrations/0084_v72_catalog_variant_stock_consolidation.sql'
+      - 'migrations/0085_v72_catalog_variant_reservation_consolidation.sql'
+      - 'src/features/inventory/writeoffReview.ts'
+      - 'src/features/inventory/views/WriteoffReview.tsx'
+      - 'src/features/inventory/views/renderInventoryMovementPanel.tsx'
+      - 'src/styles/w4-writeoff-review.css'
+      - 'scripts/test-inventory-writeoff-review.mjs'
       - 'scripts/test-catalog-integrity-r2-preview.mjs'
       - 'scripts/test-catalog-integrity-r2-hide.mjs'
       - 'worker/domains/catalog.ts'
@@ -45,6 +52,7 @@ jobs:
           node --experimental-strip-types scripts/test-catalog-integrity-r2-preview.mjs
           node --experimental-strip-types scripts/test-catalog-integrity-r2-hide.mjs
           node --experimental-strip-types scripts/test-catalog-integrity-r2-sku-consolidation.mjs
+          node --experimental-strip-types scripts/test-inventory-writeoff-review.mjs
           node scripts/test-catalog-resolver-r12-catalog-consistency.mjs
           node scripts/test-catalog-resolver-r13-known-facts.mjs
           node scripts/test-catalog-semantic-sku-identity.mjs
