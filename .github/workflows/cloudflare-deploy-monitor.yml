@@ -183,6 +183,23 @@ jobs:
             exit 7
           fi
 
+          # A successful Cloudflare build is not evidence that the publicly served
+          # lazy-loaded frontend chunks were updated. This gate specifically
+          # protects the distinct Branch2 Worker, never the Production Worker.
+          if [[ "$GITHUB_REF_NAME" == "branch2" ]]; then
+            for check_attempt in $(seq 1 10); do
+              if node scripts/verify-branch2-live-ui.mjs; then
+                echo "Branch2 published frontend verified."
+                exit 0
+              fi
+              echo "Branch2 public UI is still stale (check $check_attempt/10)."
+              sleep 6
+            done
+            echo "fallback_required=true" >> "$GITHUB_OUTPUT"
+            echo "Native build succeeded but is serving stale assets. Use the existing guarded Branch2-only direct deploy."
+            exit 0
+          fi
+
       - name: Setup Node 24 for Branch2 direct deploy fallback
         if: steps.wait.outputs.fallback_required == 'true' && github.ref_name == 'branch2'
         uses: actions/setup-node@v4
@@ -213,6 +230,23 @@ jobs:
           fi
           npm run release:check
           npm run deploy
+
+      - name: Verify exact public Branch2 frontend after repair
+        if: success() && github.ref_name == 'branch2'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            if node scripts/verify-branch2-live-ui.mjs; then
+              echo "Branch2 public site serves the expected Catalog Integrity interface."
+              exit 0
+            fi
+            echo "Waiting for public frontend asset propagation ($attempt/12)..."
+            sleep 5
+          done
+          echo "Branch2 frontend still stale even after deployment; do not declare deploy successful." >&2
+          exit 32
+
       - name: Mark deploy success
         if: success()
         env:
