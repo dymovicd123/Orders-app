@@ -9,6 +9,9 @@ on:
       - 'worker/domains/references.ts'
       - 'worker/domains/reference-integrity.ts'
       - 'src/features/sections/ReferenceIntegrityPanel.tsx'
+      - 'worker/domains/catalog-variant-consolidation.ts'
+      - 'scripts/test-catalog-integrity-r2-sku-consolidation.mjs'
+      - 'migrations/0083_v72_catalog_variant_consolidations.sql'
       - 'scripts/test-catalog-integrity-r2-preview.mjs'
       - 'scripts/test-catalog-integrity-r2-hide.mjs'
       - 'worker/domains/catalog.ts'
@@ -41,6 +44,7 @@ jobs:
           node scripts/test-catalog-integrity-r1-references.mjs
           node --experimental-strip-types scripts/test-catalog-integrity-r2-preview.mjs
           node --experimental-strip-types scripts/test-catalog-integrity-r2-hide.mjs
+          node --experimental-strip-types scripts/test-catalog-integrity-r2-sku-consolidation.mjs
           node scripts/test-catalog-resolver-r12-catalog-consistency.mjs
           node scripts/test-catalog-resolver-r13-known-facts.mjs
           node scripts/test-catalog-semantic-sku-identity.mjs
