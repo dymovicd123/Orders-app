@@ -38,6 +38,7 @@ let beforeUpdate = () => {}
 const db = {
   prepare(sql) {
     return {
+      async all() { return { results: sqlite.prepare(sql).all() } },
       bind(...values) {
         return {
           async first() { return sqlite.prepare(sql).get(...values) || null },
