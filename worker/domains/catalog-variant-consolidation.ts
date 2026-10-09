@@ -221,11 +221,13 @@ export async function consolidateUnusedCatalogVariant(
     throw new Error('Эта вариация уже объединена с другой. Обновите список.')
   }
   const preview = await previewCatalogVariantConsolidation(db,sourceId,targetId)
-  if (expectedToken && expectedToken !== preview.stateToken) {
-    throw new Error('Данные склада или заказов изменились после проверки. Обновите предпросмотр объединения.')
+  // Even a zero-stock SKU can have live order, lifecycle or identity references.
+  // No write is allowed without an explicit preview token for this exact pair.
+  if (!expectedToken) {
+    throw new Error('Объединение требует подтверждённого предпросмотра. Проверьте связанные заказы и склад заново.')
   }
-  if ((preview.transferQuantity > 0 || preview.reservationCount > 0) && !expectedToken) {
-    throw new Error('Остатки или резервы не подтверждены. Обновите предпросмотр объединения.')
+  if (expectedToken !== preview.stateToken) {
+    throw new Error('Данные склада или заказов изменились после проверки. Обновите предпросмотр объединения.')
   }
   if (!preview.canConsolidate) throw new Error('Объединение пока невозможно: '+preview.blockers.join('; '))
 
