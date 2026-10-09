@@ -10,13 +10,19 @@ assert.deepEqual(businessMonthRange(new Date('2026-10-31T18:30:00Z')),
 const sql=new DatabaseSync(':memory:')
 sql.exec(`
  CREATE TABLE reference_values(id INTEGER PRIMARY KEY,kind TEXT,value TEXT,is_active INTEGER,updated_at TEXT DEFAULT 'seed');
- CREATE TABLE orders(id INTEGER PRIMARY KEY,order_date TEXT,order_status TEXT,order_payment_method TEXT,delivery_type TEXT,city TEXT,updated_at TEXT DEFAULT 'seed');
+ CREATE TABLE orders(id INTEGER PRIMARY KEY,order_date TEXT,order_status TEXT,order_payment_method TEXT,delivery_type TEXT,city TEXT,shipping_status TEXT DEFAULT 'not_sent',updated_at TEXT DEFAULT 'seed');
  CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,method TEXT);
  CREATE TABLE financial_events(id INTEGER PRIMARY KEY,order_id INTEGER,payment_method TEXT);
  CREATE TABLE cash_register_entries(id INTEGER PRIMARY KEY,order_id INTEGER,payment_method TEXT);
  CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,payment_method TEXT);
  CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,payment_method TEXT);
- CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,is_active INTEGER,color TEXT,material TEXT,length TEXT,category TEXT,size_label TEXT);
+ CREATE TABLE catalog_products(id INTEGER PRIMARY KEY,name TEXT,is_active INTEGER);
+ CREATE TABLE catalog_stock_positions(id INTEGER PRIMARY KEY,material TEXT,length TEXT,is_active INTEGER);
+ CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,is_active INTEGER,color TEXT,material TEXT,length TEXT,category TEXT,size_label TEXT,product_id INTEGER,stock_position_id INTEGER,gender TEXT);
+ CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,variant_id INTEGER,inventory_source TEXT,quantity INTEGER,reserved_quantity INTEGER);
+ CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,variant_id INTEGER,status TEXT,quantity INTEGER);
+ CREATE TABLE workshop_tasks(id INTEGER PRIMARY KEY,variant_id INTEGER,status TEXT);
+ CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,variant_id INTEGER,quantity INTEGER);
  INSERT INTO reference_values(id,kind,value,is_active) VALUES
   (1,'payment_method','ТЕРМИНАЛ',1),
   (2,'payment_method','KASPI PAY',1),
@@ -39,7 +45,11 @@ sql.exec(`
  INSERT INTO cash_register_entries VALUES (1,10,'ТЕРМИНАЛ');
  INSERT INTO returns VALUES (1,10,'ТЕРМИНАЛ');
  INSERT INTO exchanges VALUES (1,10,'ТЕРМИНАЛ');
- INSERT INTO catalog_variants VALUES(1,1,'СВЕТЛЫЙ','','','adult','52');
+ INSERT INTO catalog_products VALUES(1,'ЖИЛЕТ',1);
+ INSERT INTO catalog_variants(id,is_active,color,material,length,category,size_label,product_id) VALUES(1,1,'СВЕТЛЫЙ','','','adult','52',1);
+ INSERT INTO inventory_stock VALUES(1,1,'warehouse',3,1);
+ INSERT INTO inventory_reservations VALUES(1,1,'active',1);
+ INSERT INTO order_items VALUES(1,10,1,1);
 `)
 
 sql.exec("ALTER TABLE payments ADD COLUMN payment_date TEXT DEFAULT '2026-10-09'")
@@ -78,7 +88,15 @@ assert.match(deliveries.stateToken,/^[a-f0-9]{64}$/)
 assert.equal(deliveries.finance.payments.current,0)
 const colors=await previewUserSelectedReferenceMerge(db,8,9,new Date('2026-10-09T11:00:00Z'))
 assert.equal(colors.activeCatalogVariants,1)
-assert.equal(colors.ordersCovered,false,'Do not pretend an untracked dictionary has zero affected orders')
+assert.equal(colors.ordersCovered,false,'SKU-linked orders are not the same as order-label coverage')
+assert.equal(colors.catalogImpact.source.activeVariants,1)
+assert.equal(colors.catalogImpact.source.physical,3)
+assert.equal(colors.catalogImpact.source.reserved,1)
+assert.equal(colors.catalogImpact.source.currentOrderLines,1)
+assert.equal(colors.catalogImpact.source.activeReservations,1)
+assert.equal(colors.catalogImpact.target.variants,0)
+assert.equal(colors.catalogImpact.canAutomaticallyConsolidate,false)
+assert.ok(colors.catalogImpact.warnings.length>0)
 await assert.rejects(()=>previewUserSelectedReferenceMerge(db,1,4),/одного справочника/)
 await assert.rejects(()=>previewUserSelectedReferenceMerge(db,1,1),/два разных/)
 await assert.rejects(()=>previewUserSelectedReferenceMerge(db,1,10),/действующим/)
