@@ -46,6 +46,11 @@
       "beforeGitBlob": "b46c37cb84dbf6e31909799a4cbb87d0b9481c9d",
       "afterGitBlob": "a097bda610fe8404363fd68fb8dd03cd0a572440",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/domains/references.ts"
+    },
+    "package.json": {
+      "beforeGitBlob": "7b1e908edffcf10ddc1537c4692e5589c017bb9f",
+      "afterGitBlob": "7f57884cca246755f08735078fdf4dfa882348cd",
+      "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/package.json"
     }
   },
   "stage04Files": {

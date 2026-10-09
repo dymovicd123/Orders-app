@@ -67,7 +67,7 @@ try{
   }
   console.log('Running complete unmodified historical release gate against frozen Branch2 baseline...')
   const npm=process.platform==='win32'?'npm.cmd':'npm'
-  run(npm,['run','release:check:baseline'],'Historical cumulative Branch2 regression gate',
+  run(npm,['run','release:check'],'Historical cumulative Branch2 regression gate',
     {CATALOG_INTEGRITY_STAGE04_BRANCH2_BASELINE_NORMALIZED:'1'})
 }finally{
   for(const [full,content] of saved)fs.writeFileSync(full,content)
