@@ -2,7 +2,7 @@ name: Catalog integrity R1 focused verification
 
 on:
   push:
-    branches: [ci-catalog-integrity-r1-20261009]
+    branches: [catalog-integrity-r2-20261009]
     paths:
       - '.github/workflows/catalog-integrity-r1-check.yml'
       - 'src/app/types.ts'

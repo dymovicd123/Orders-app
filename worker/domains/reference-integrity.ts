@@ -1,6 +1,6 @@
 // Catalog Integrity R2 — bounded, read-only admin inspection before any merge.
 import { cleanText, toInt } from '../core/text.ts'
-import { referenceKindToDbKind, referenceValueIdentityKey } from './references.ts'
+import { referenceValueIdentityKey } from './references.ts'
 
 type ReferenceRow = { id: number; kind: string; value: string; is_active: number }
 type VariantRow = {
@@ -82,8 +82,8 @@ export async function previewReferenceConsolidation(db: D1Database, sourceId: nu
       const key = dbKind === 'material' ? 'material' : 'length'
       const positions = await db.prepare(
         `SELECT COUNT(*) AS n FROM catalog_stock_positions
-         WHERE is_active=1 AND UPPER(TRIM(COALESCE(${key},''))) IN (?, ?)`
-      ).bind(cleanText(source.value).toUpperCase(), cleanText(target.value).toUpperCase()).first<{ n: number }>()
+         WHERE is_active=1 AND UPPER(TRIM(COALESCE(${key},''))) = ?`
+      ).bind(cleanText(source.value).toUpperCase()).first<{ n: number }>()
       activeExecutions = toInt(positions?.n, 0)
     }
   }
@@ -97,15 +97,17 @@ export async function previewReferenceConsolidation(db: D1Database, sourceId: nu
       ? 'source' : 'target',
   }))
   const sourceActiveVariants = variants.filter(v => v.belongsTo === 'source' && v.active).length
+  const sourcePhysical = variants.filter(v => v.belongsTo === 'source').reduce((n, v) => n + v.physical, 0)
+  const sourceReserved = variants.filter(v => v.belongsTo === 'source').reduce((n, v) => n + v.reserved, 0)
   const physical = variants.reduce((n, v) => n + v.physical, 0)
   const reserved = variants.reduce((n, v) => n + v.reserved, 0)
-  const requiresCatalogReview = sourceActiveVariants > 0 || activeExecutions > 0
+  const requiresCatalogReview = sourceActiveVariants > 0 || activeExecutions > 0 || sourcePhysical !== 0 || sourceReserved !== 0
   return {
     ok: true,
     source: { id: source.id, kind: dbKind, value: source.value, isActive: Boolean(source.is_active) },
     target: { id: target.id, kind: dbKind, value: target.value, isActive: Boolean(target.is_active) },
     summary: {
-      matchedVariantCount: variants.length, sourceActiveVariants, activeExecutions,
+      matchedVariantCount: variants.length, sourceActiveVariants, activeExecutions, sourcePhysical, sourceReserved,
       physical, reserved, variantLimitReached: linked.length >= 400,
       requiresCatalogReview,
     },
@@ -113,6 +115,6 @@ export async function previewReferenceConsolidation(db: D1Database, sourceId: nu
     safeToHideSource: !requiresCatalogReview && linked.length < 400,
     explanation: requiresCatalogReview
       ? 'Это значение участвует в Каталоге. Сначала нужно безопасно объединить связанные варианты и проверить остатки; здесь ничего не изменено.'
-      : 'Активных связей с Каталогом для удаляемого значения не найдено. Историю можно сохранить, а лишнее значение убрать из выбора.',
+      : 'Активных связей и остатков у лишнего значения не найдено. После окончательной проверки его можно будет убрать из выбора, сохранив историю.',
   }
 }

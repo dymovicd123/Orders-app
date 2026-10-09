@@ -14,3 +14,5 @@ Source: `main` at `c840feb0bc`. Branch: `ci-catalog-integrity-r1-20261009`, sepa
 - Added `Порядок в справочниках` in centralized references: explicit user-triggered scan and per-duplicate preview, avoiding heavy reads on page load.
 - **No endpoint for merging yet**, no write SQL in preview module; never silently transfer inventory, modify orders, rewrite history or collapse actual different materials.
 - Current catalog products may have two active variants with same business identity: safe reference removal must wait until a verified SKU merge workflow exists.
+
+R2 work continues on branch `catalog-integrity-r2-20261009` to prevent redundant full CI on every incremental `ci-*` push. The original R1 branch is preserved. Historical exact-SHA CI gate currently fails with intentional newer source edits; focused test/build does not replace full gate.
