@@ -1,0 +1,98 @@
+name: Read-only Ethno Cardigan production stock forensics
+
+on:
+  push:
+    branches: [diag-ethno-stock-readonly-20261009]
+    paths: ['.github/workflows/diag-ethno-stock-20261009.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  forensic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout isolated diagnostic branch
+        uses: actions/checkout@v4
+      - name: Verify branch and Production identity read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == 'diag-ethno-stock-readonly-20261009' ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders_db_branch2' wrangler.jsonc || grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc; then exit 20; fi
+          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Read grey-cardigan variant IDs and current stock (SELECT only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "
+            SELECT p.id AS product_id, p.name AS product_name,
+                   v.id AS variant_id, v.is_active AS variant_active,
+                   v.stock_position_id AS execution_id, sp.is_active AS execution_active,
+                   v.category,v.gender,v.color,v.size_label AS size,
+                   v.material,v.length,
+                   COALESCE(s.inventory_source,'none') AS location,
+                   s.id AS stock_id, s.quantity AS physical, s.reserved_quantity AS reserved
+            FROM catalog_variants v
+            JOIN catalog_products p ON p.id=v.product_id
+            LEFT JOIN catalog_stock_positions sp ON sp.id=v.stock_position_id
+            LEFT JOIN inventory_stock s ON s.variant_id=v.id
+            WHERE p.name LIKE '%КАРДИГАН%'
+              AND (v.color LIKE '%СЕР%' OR v.color LIKE '%сер%')
+            ORDER BY p.id, v.color, v.size_label, v.gender, v.id, s.inventory_source
+            LIMIT 260
+          " | jq -c '{rows:(.[0].results // []), count:((.[0].results // [])|length)}'
+      - name: Read same-identity active and retired collisions (SELECT only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "
+            WITH sku AS (
+              SELECT p.name AS product_name, v.id, v.is_active,
+                v.stock_position_id, v.category,
+                COALESCE(v.gender,'') AS gender, COALESCE(v.size_label,'') AS size,
+                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                  TRIM(COALESCE(v.color,'')), '-',''), ' ',''), '–',''), '‑',''), '—','') AS color_key,
+                v.color AS raw_color
+              FROM catalog_variants v
+              JOIN catalog_products p ON p.id=v.product_id
+              WHERE p.name LIKE '%КАРДИГАН%'
+            )
+            SELECT product_name, stock_position_id, category, gender, color_key, size,
+              COUNT(*) AS all_variants,
+              SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) AS active_variants,
+              GROUP_CONCAT(id || ':' || raw_color || ':active=' || is_active) AS ids
+            FROM sku
+            GROUP BY product_name,stock_position_id,category,gender,color_key,size
+            HAVING COUNT(*) > 1
+            ORDER BY active_variants DESC, color_key, size
+            LIMIT 180
+          " | jq -c '{rows:(.[0].results // []), count:((.[0].results // [])|length)}'
+      - name: Read unlinked cardigan stock snapshots (SELECT only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "
+            SELECT id, inventory_source, product_id, variant_id,
+                   product_name_snapshot, color_snapshot, size_snapshot,
+                   quantity, reserved_quantity
+            FROM inventory_stock
+            WHERE product_name_snapshot LIKE '%КАРДИГАН%'
+              AND variant_id IS NULL
+            ORDER BY inventory_source, color_snapshot, size_snapshot, id
+            LIMIT 150
+          " | jq -c '{rows:(.[0].results // []), count:((.[0].results // [])|length)}'
