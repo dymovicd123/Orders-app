@@ -120,8 +120,10 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
     <div className="inventory-movement-panel inventory-operations-v182" style={inventoryPanelStyle('movement')} data-step182-operations="human-workflow">
                     <div className="inventory-panel-headline inventory-operations-headline">
                       <div>
-                        <h3>Операции</h3>
-                        <p>Выберите действие: переместить товар или списать повреждённые и утраченные вещи. Остальные операции доступны отдельно.</p>
+                        <h3>{inventoryDraft.movementType === 'writeoff' ? 'Списание товаров' : 'Операции со складом'}</h3>
+                        <p>{inventoryDraft.movementType === 'writeoff'
+                          ? 'Укажите место хранения, причину и товары. Перед списанием система покажет остатки, резервы заказов и последствия.'
+                          : 'Выберите перемещение или списание товара. Приход и исправление количества доступны в дополнительных действиях.'}</p>
                       </div>
                     </div>
     
@@ -155,6 +157,15 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                       </details>
                     </div>
 
+                    {inventoryDraft.movementType === 'writeoff' ? (
+                      <div className="inventory-writeoff-intro" role="note">
+                        <span className="inventory-writeoff-step">Шаг 1 из 2</span>
+                        <div>
+                          <strong>Выберите товары для списания</strong>
+                          <p>Склад или бутик, причина и количество каждого варианта. Ничего не изменится до окончательного подтверждения.</p>
+                        </div>
+                      </div>
+                    ) : null}
                     <div className={`mini-panel inventory-operation-card inventory-operation-card-${inventoryDraft.movementType}`}>
                       <div className="mini-panel-head inventory-operation-clean-head">
                         <div>
