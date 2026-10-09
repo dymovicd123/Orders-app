@@ -7,3 +7,10 @@ Source: `main` at `c840feb0bc`. Branch: `ci-catalog-integrity-r1-20261009`, sepa
 **Not done in R1:** applying any DB migration, silent merging of existing SKU/reference duplicates, touching stock/orders/payments, redesigning Writeoff, or deploying Production. Current Production audit: one reference duplicate color (`СВЕТЛО СЕРЫЙ` / `СВЕТЛО-СЕРЫЙ`), two semantic duplicate Ethno Cardigan SKU pairs (drap, 52 and 54), both pairs have zero physical stock now; separate drap from wool. Production uniqueness still compares raw spelling and requires a later schema migration after safe cleanup.
 
 **Next:** build an administrator-friendly impact preview for reference and SKU merges, then safe transactional consolidation with stable survivor identity, conflict detection, history and post-operation invariants. Finally enforce canonical uniqueness in D1 after reconciliation. Keep operator flows non-blocking for obvious equivalent spellings. Writeoff UI postponed as requested.
+
+## R2 read-only reference consolidation preview
+- Added admin-only endpoint `GET /api/reference-values/duplicates`. Group existing same-kind entries by exactly the shared punctuation/whitespace identity key, even if inactive.
+- Added admin-only endpoint `GET /api/reference-values/consolidation-preview?sourceId=...&targetId=...`: check canonical identity, target active, inspect affected catalog variants, material/length executions, current physical and reserved quantities. Bounded result and explicit truncated warning.
+- Added `Порядок в справочниках` in centralized references: explicit user-triggered scan and per-duplicate preview, avoiding heavy reads on page load.
+- **No endpoint for merging yet**, no write SQL in preview module; never silently transfer inventory, modify orders, rewrite history or collapse actual different materials.
+- Current catalog products may have two active variants with same business identity: safe reference removal must wait until a verified SKU merge workflow exists.

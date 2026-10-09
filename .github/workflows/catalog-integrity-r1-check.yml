@@ -35,6 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/test-catalog-integrity-r1-references.mjs
+          node --experimental-strip-types scripts/test-catalog-integrity-r2-preview.mjs
           node scripts/test-catalog-resolver-r12-catalog-consistency.mjs
           node scripts/test-catalog-resolver-r13-known-facts.mjs
           node scripts/test-catalog-semantic-sku-identity.mjs

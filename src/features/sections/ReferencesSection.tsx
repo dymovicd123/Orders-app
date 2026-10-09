@@ -1,8 +1,10 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
+import { ReferenceIntegrityPanel } from './ReferenceIntegrityPanel'
 type SectionContext = Record<string, any>
 
 export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
   const {
+    apiFetch,
     filteredReferenceItems,
     formatDateShort,
     FriendlyNumberInput,
@@ -30,6 +32,7 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
 
   return (
     <section className="card wide sector-references" id="references" style={sectorStyle('references')}>
+              <ReferenceIntegrityPanel apiFetch={apiFetch} isAdmin={isAdmin} />
               <div className="references-hero">
                 <div className="references-hero-main">
                   <div className="card-label">Справочники</div>
