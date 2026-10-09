@@ -1,6 +1,7 @@
 // Catalog Integrity R2 — bounded, read-only admin inspection before any merge.
 import { cleanText, toInt } from '../core/text.ts'
 import { referenceValueIdentityKey } from './references.ts'
+import { catalogColorIdentity, normalizeCatalogCombinationSize } from './catalog.ts'
 
 type ReferenceRow = { id: number; kind: string; value: string; is_active: number }
 type VariantRow = {
@@ -31,12 +32,64 @@ export function groupEquivalentReferenceValues(rows: ReferenceRow[]) {
   }).sort((a, b) => a.kind.localeCompare(b.kind) || a.identity.localeCompare(b.identity))
 }
 
+export type CatalogCollisionRow = {
+  id: number; product_id: number; stock_position_id: number | null;
+  category: string; gender: string | null; color: string | null; size_label: string | null;
+  material: string | null; length: string | null; product_name: string;
+  physical: number; reserved: number;
+}
+
+export function groupEquivalentCatalogVariants(rows: CatalogCollisionRow[]) {
+  const groups = new Map<string, CatalogCollisionRow[]>()
+  for (const row of rows) {
+    // SKU identity includes execution (material+length), category, gender and size.
+    // Distinct physical executions such as ДРАП and ШЕРСТЬ never merge.
+    const execution = row.stock_position_id != null
+      ? 'position:' + row.stock_position_id
+      : 'legacy:' + cleanText(row.material).toUpperCase() + '/' + cleanText(row.length).toUpperCase()
+    const key = [row.product_id, execution, row.category || 'adult', row.gender || '',
+      catalogColorIdentity(row.color), normalizeCatalogCombinationSize(row.size_label)].join('\u001f')
+    const list = groups.get(key) || []
+    list.push(row)
+    groups.set(key, list)
+  }
+  return [...groups.values()].filter(rows => rows.length > 1)
+    .map(rows => ({
+      productId: rows[0].product_id, productName: rows[0].product_name,
+      category: rows[0].category, gender: rows[0].gender,
+      color: catalogColorIdentity(rows[0].color), size: normalizeCatalogCombinationSize(rows[0].size_label),
+      material: rows[0].material, length: rows[0].length, stockPositionId: rows[0].stock_position_id,
+      variants: rows.map(x => ({
+        id: x.id, color: x.color, size: x.size_label,
+        material: x.material, length: x.length, physical: toInt(x.physical,0), reserved: toInt(x.reserved,0),
+      })),
+    }))
+    .sort((a,b) => a.productName.localeCompare(b.productName) || a.color.localeCompare(b.color) || a.size.localeCompare(b.size))
+}
+
 export async function listReferenceDuplicateGroups(db: D1Database) {
   const result = await db.prepare(
     'SELECT id, kind, value, is_active FROM reference_values ORDER BY kind, is_active DESC, id ASC LIMIT 1500'
   ).all<ReferenceRow>()
   const groups = groupEquivalentReferenceValues(result.results || [])
-  return { ok: true, groups, limited: (result.results || []).length >= 1500 }
+  const catalog = await db.prepare(
+    `SELECT v.id, v.product_id, v.stock_position_id, v.category, v.gender,
+       v.color, v.size_label, v.material, v.length, p.name AS product_name,
+       COALESCE(SUM(s.quantity),0) AS physical, COALESCE(SUM(s.reserved_quantity),0) AS reserved
+     FROM catalog_variants v
+     JOIN catalog_products p ON p.id=v.product_id
+     LEFT JOIN inventory_stock s ON s.variant_id=v.id
+     WHERE v.is_active=1
+     GROUP BY v.id
+     ORDER BY v.product_id,v.stock_position_id,v.id
+     LIMIT 2000`
+  ).all<CatalogCollisionRow>()
+  const skuGroups = groupEquivalentCatalogVariants(catalog.results || [])
+  return {
+    ok: true, groups, skuGroups,
+    limited: (result.results || []).length >= 1500,
+    skuLimited: (catalog.results || []).length >= 2000,
+  }
 }
 
 function supportedCatalogKind(dbKind: string) {
