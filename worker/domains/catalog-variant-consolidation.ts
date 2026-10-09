@@ -13,10 +13,36 @@ type Sku = {
 type SkuImpact = {
   id: number; physical: number; reserved: number; nonzeroStockRows: number;
   activeReservations: number; activeOrders: number; historicalOrders: number;
-  activeWorkshop: number; pendingLifecycle: number; activeStocktake: number; appliedTransfers: number; reversibleMovements: number;
+  activeWorkshop: number; pendingLifecycle: number; activeStocktake: number; appliedTransfers: number; reversibleMovements: number; returnExchangeLinks: number;
 }
 const safeId = (n: number) => Number.isSafeInteger(n) && n > 0
 type StockRow = { id: number; inventory_source: string; variant_id: number; quantity: number; reserved_quantity: number }
+type ReservationRow = {
+  id: number; order_id: number; order_item_id: number; inventory_source: string;
+  product_id: number | null; variant_id: number; quantity: number; updated_at: string;
+  order_variant_id: number | null; order_product_id: number | null; order_quantity: number;
+  order_source: string; stock_status: string; is_workshop: number;
+  order_status: string; shipping_status: string;
+}
+async function readActiveReservations(db: D1Database, sourceId: number, targetId: number) {
+  const result = await db.prepare(
+    `SELECT r.id,r.order_id,r.order_item_id,r.inventory_source,r.product_id,r.variant_id,
+       r.quantity,r.updated_at,oi.variant_id AS order_variant_id,
+       oi.product_id AS order_product_id,oi.quantity AS order_quantity,oi.source_type AS order_source,
+       oi.stock_writeoff_status AS stock_status,COALESCE(oi.is_workshop,0) AS is_workshop,
+       o.order_status,o.shipping_status
+     FROM inventory_reservations r
+     LEFT JOIN order_items oi ON oi.id=r.order_item_id
+     LEFT JOIN orders o ON o.id=r.order_id
+     WHERE r.variant_id IN (?,?) AND r.status='active'
+     ORDER BY r.id ASC`
+  ).bind(sourceId,targetId).all<ReservationRow>()
+  return result.results || []
+}
+function reservationSnapshotJson(rows: ReservationRow[]) {
+  return JSON.stringify(rows.map(r=>[r.id,r.order_id,r.order_item_id,r.inventory_source,
+    r.variant_id,r.quantity,r.updated_at]))
+}
 
 async function readStocks(db: D1Database, sourceId: number, targetId: number) {
   const result = await db.prepare(
@@ -25,11 +51,12 @@ async function readStocks(db: D1Database, sourceId: number, targetId: number) {
   ).bind(sourceId, targetId).all<StockRow>()
   return result.results || []
 }
-function snapshotToken(source: Sku, target: Sku, stocks: StockRow[]) {
+function snapshotToken(source: Sku, target: Sku, stocks: StockRow[], reservations: ReservationRow[]) {
   return JSON.stringify({
     source: [source.id,source.updated_at,source.color,source.size_label],
     target: [target.id,target.updated_at,target.color,target.size_label],
     stocks: stocks.map(x=>[x.id,x.inventory_source,x.variant_id,x.quantity,x.reserved_quantity]),
+    reservations: reservationSnapshotJson(reservations),
   })
 }
 function stockSnapshotJson(stocks: StockRow[]) {
@@ -70,8 +97,12 @@ async function readImpact(db: D1Database, id: number): Promise<SkuImpact> {
       (SELECT COUNT(*) FROM inventory_movements m
         WHERE m.variant_id=? AND LOWER(TRIM(COALESCE(m.reference_type,''))) IN ('manual','transfer_in','transfer_out')
           AND NOT EXISTS (SELECT 1 FROM inventory_movement_reversals rev WHERE rev.original_movement_id=m.id)
-      ) AS reversibleMovements`
-  ).bind(id,id,id,id,id,id,id,id,id,id,id).first<Omit<SkuImpact,'id'>>()
+      ) AS reversibleMovements,
+      (SELECT COUNT(*) FROM order_items oi WHERE oi.variant_id=? AND (
+         EXISTS(SELECT 1 FROM return_items ri WHERE ri.order_item_id=oi.id)
+         OR EXISTS(SELECT 1 FROM exchanges e WHERE e.old_order_item_id=oi.id OR e.new_order_item_id=oi.id)
+       )) AS returnExchangeLinks`
+  ).bind(id,id,id,id,id,id,id,id,id,id,id,id).first<Omit<SkuImpact,'id'>>()
   return {
     id, physical: toInt(row?.physical,0), reserved: toInt(row?.reserved,0), nonzeroStockRows: toInt(row?.nonzeroStockRows,0),
     activeReservations: toInt(row?.activeReservations,0),
@@ -79,6 +110,7 @@ async function readImpact(db: D1Database, id: number): Promise<SkuImpact> {
     activeWorkshop: toInt(row?.activeWorkshop,0),
     pendingLifecycle: toInt(row?.pendingLifecycle,0), activeStocktake: toInt(row?.activeStocktake,0),
     appliedTransfers: toInt(row?.appliedTransfers,0), reversibleMovements: toInt(row?.reversibleMovements,0),
+    returnExchangeLinks: toInt(row?.returnExchangeLinks,0),
   }
 }
 
@@ -107,8 +139,9 @@ export async function previewCatalogVariantConsolidation(db: D1Database, sourceI
   if (!target.is_active || !source.product_active || !source.position_active) {
     throw new Error('Основной вариант, товар и исполнение должны оставаться активными.')
   }
-  const [sourceImpact, targetImpact, stocks] = await Promise.all([
+  const [sourceImpact, targetImpact, stocks, reservations] = await Promise.all([
     readImpact(db, sourceId), readImpact(db, targetId), readStocks(db, sourceId, targetId),
+    readActiveReservations(db, sourceId, targetId),
   ])
   const stockBreakdown = ['warehouse', 'boutique'].map(location => {
     const sourceStock = stocks.find(s => s.variant_id === sourceId && s.inventory_source === location)
@@ -128,24 +161,48 @@ export async function previewCatalogVariantConsolidation(db: D1Database, sourceI
   if (stocks.some(s => stocks.filter(x => x.variant_id===s.variant_id && x.inventory_source===s.inventory_source).length>1)) {
     blockers.push('Есть несколько складских записей одной позиции: нужна проверка')
   }
-  if (sourceImpact.reserved !== 0 || sourceImpact.activeReservations) blockers.push('у лишнего варианта есть действующие резервы')
-  if (sourceImpact.activeOrders) blockers.push('есть активные неотправленные заказы')
+  const sourceReservations = reservations.filter(r=>r.variant_id===sourceId)
+  const activeReservationQuantity = sourceReservations.reduce((n,r)=>n+r.quantity,0)
+  if (sourceImpact.activeOrders !== sourceReservations.length) {
+    blockers.push('не все открытые позиции заказов связаны с корректными резервами')
+  }
+  if (sourceReservations.some(r=>r.order_variant_id!==sourceId
+    || r.order_product_id!==source.product_id || r.product_id!==source.product_id
+    || r.order_quantity!==r.quantity || r.quantity<=0 || r.is_workshop!==0
+    || r.order_source!==r.inventory_source
+    || r.stock_status!=='reserved'
+    || r.order_status!=='active' || r.shipping_status==='sent'
+    || !['warehouse','boutique'].includes(r.inventory_source))) {
+    blockers.push('часть резервов не совпадает с действующими строками заказов или уже отправлена')
+  }
+  if (sourceImpact.activeReservations!==sourceReservations.length) blockers.push('неполные данные о действующих резервах')
+  for (const place of stockBreakdown) {
+    const totalSource = sourceReservations.filter(r=>r.inventory_source===place.location).reduce((n,r)=>n+r.quantity,0)
+    const totalKeeper = reservations.filter(r=>r.variant_id===targetId && r.inventory_source===place.location).reduce((n,r)=>n+r.quantity,0)
+    if (totalSource!==place.sourceReserved || totalKeeper!==place.targetReserved) {
+      blockers.push('резервы склада/бутика не совпадают с действующими заказами — нужна сверка')
+      break
+    }
+  }
+  if (sourceImpact.reserved!==activeReservationQuantity) blockers.push('резерв исходного варианта требует сверки')
   if (sourceImpact.activeWorkshop) blockers.push('есть незавершённые задачи Цеха')
   if (sourceImpact.pendingLifecycle) blockers.push('есть незавершённая приёмка или возврат')
   if (sourceImpact.activeStocktake || targetImpact.activeStocktake) blockers.push('один из вариантов участвует в действующей ревизии')
   if (sourceImpact.appliedTransfers) blockers.push('у лишнего варианта есть перемещение, которое ещё можно отменить')
   if (sourceImpact.reversibleMovements) blockers.push('есть складское движение, отмена которого вернёт количество на старый вариант')
+  if (sourceImpact.returnExchangeLinks) blockers.push('есть возвраты или обмены, при отмене которых может восстановиться исходный вариант')
   return {
     ok: true,
     source: { id: source.id, color: source.color, size: source.size_label, active: Boolean(source.is_active) },
     target: { id: target.id, color: target.color, size: target.size_label, active: Boolean(target.is_active) },
     productName: source.product_name, material: source.execution_material, length: source.execution_length,
-    sourceImpact, targetImpact, stockBreakdown, stateToken: snapshotToken(source,target,stocks),
+    sourceImpact, targetImpact, stockBreakdown, reservationCount: sourceReservations.length,
+    stateToken: snapshotToken(source,target,stocks,reservations),
     transferQuantity: stockBreakdown.reduce((sum,r)=>sum + r.sourcePhysical,0),
     blockers, canConsolidate: blockers.length === 0,
     explanation: blockers.length
       ? 'Система не будет менять заказы, резервы и историю. Проверьте указанные связи; не списывайте товар ради очистки.'
-      : 'Физические остатки будут перенесены на основной вариант отдельно по складу и бутику, без фиктивного списания. Старый вариант и все исторические документы сохранятся.',
+      : 'Остатки и действующие резервы будут объединены по месту хранения. Открытые позиции заказов перейдут на основной SKU; названия, цены и другие снимки истории останутся прежними. Фиктивного списания нет.',
   }
 }
 
