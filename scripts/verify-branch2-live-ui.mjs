@@ -13,13 +13,14 @@ const entrySource=await get(base+entry[1])
 const referenceChunk=entrySource.match(/ReferencesSection-[A-Za-z0-9_-]+\.js/)
 if(!referenceChunk)throw new Error('Public index.js does not link ReferencesSection')
 const references=await get(base+'/assets/'+referenceChunk[0])
-const expected=['Все рабочие справочники','Проверка дублей']
+const expected=['Все рабочие справочники','Проверка дублей','Объединить значения','Убираем лишнее название','Оставляем правильное название']
 const missing=expected.filter(text=>!references.includes(text))
 console.log('Branch2 entry:',entry[1])
 console.log('Branch2 references chunk:',referenceChunk[0])
 console.log('New references title:',references.includes(expected[0]))
 console.log('Duplicates entry:',references.includes(expected[1]))
-console.log('New integrity component:',references.includes(expected[2]))
+console.log('Manual reference merging:',references.includes(expected[2]))
+console.log('Source and keeper selectors:',references.includes(expected[3]) && references.includes(expected[4]))
 if(missing.length) {
   throw new Error('PUBLIC BRANCH2 SERVES STALE ASSETS: '+missing.join(', '))
 }
