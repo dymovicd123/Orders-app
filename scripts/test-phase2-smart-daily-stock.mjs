@@ -52,6 +52,12 @@ try {
   check(overview.includes('Короткая проверка') && overview.includes('его можно закончить за пару минут'), 'Routine helper copy is not employee-facing')
   check(overview.includes('needsIndependentCount') && overview.includes('Сначала посчитайте физически'), 'Risky routine counts no longer switch to independent physical counting')
   check(css.includes('.inventory-cycle-count-name small.is-warning') && css.includes('.inventory-routine-cycle-refresh'), 'Routine hierarchy styles are missing')
-  check(String(pkg.scripts?.['release:check'] || '').includes('test-phase2-smart-daily-stock.mjs'), 'Phase 2 regression is not wired into release:check')
+  const releaseCheck = String(pkg.scripts?.['release:check'] || '')
+  const baselineCheck = String(pkg.scripts?.['release:check:baseline'] || '')
+  const wrapped = releaseCheck.includes('catalog-integrity-branch2-preserved-gate.mjs')
+    && baselineCheck.includes('test-phase2-smart-daily-stock.mjs')
+    && read('scripts/catalog-integrity-branch2-preserved-gate.mjs').includes("run(npm,['run','release:check:baseline']")
+  check(releaseCheck.includes('test-phase2-smart-daily-stock.mjs') || wrapped,
+    'Phase 2 regression is not wired into release:check')
   console.log('PHASE 2 SMART DAILY STOCK TRUTH TESTS PASSED — routine count/revision paths are manager-safe while CAS/session freshness guards remain enforced')
 } catch (error) { console.error(`PHASE 2 SMART DAILY STOCK TRUTH TESTS FAILED: ${error?.message || error}`); process.exit(1) }
