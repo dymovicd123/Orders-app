@@ -29,7 +29,7 @@
     },
     "src/features/sections/ReferencesSection.tsx": {
       "beforeGitBlob": "f23c6133fa66a22d9986141b6b4cbd43678480b6",
-      "afterGitBlob": "a5d8e1e2fa05e536ac39848678ebde78a3cfe16c",
+      "afterGitBlob": "ef98605f4d2cf5641fd36efe33c60f7fce508015",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/features/sections/ReferencesSection.tsx"
     },
     "worker/index.ts": {
@@ -67,12 +67,12 @@
     "migrations/0090_v72_catalog_variant_consolidations.sql": "b4405429db17fbca0f7e212b3dd47cc6ca800ae8",
     "migrations/0091_v72_catalog_variant_stock_consolidation.sql": "3bf9bf2496145aa19a919a3468d3fb3d0a13d1c7",
     "migrations/0092_v72_catalog_variant_reservation_consolidation.sql": "894164a039a76abfdf8d7ac8a49109329b9bc66d",
-    "src/styles/reference-integrity-entry.css": "1b5c89737e553ba65bd7e28c7c55cb916dc61634",
-    "scripts/test-reference-duplicates-discovery-r1.mjs": "eed84d04581f550aa8936d6bcee5f5ca06b7ec25",
+    "src/styles/reference-integrity-entry.css": "ca5ca534c7183bb522742c28c5168c84d2da7583",
+    "scripts/test-reference-duplicates-discovery-r1.mjs": "2e73ea331b25a8589b21c32b38136a7e2c5378d6",
     "worker/domains/reference-merge-preview.ts": "177c191bc51d2a29cd26b98b04f3646ac7e30ed6",
-    "src/features/sections/ReferenceMergeWorkspace.tsx": "fb1ebbd65ff989d762e7e4f85404099e94eada1a",
+    "src/features/sections/ReferenceMergeWorkspace.tsx": "d9c7ff63933efce8b7ee7bf27134f588ed64c11c",
     "src/styles/reference-merge-workspace.css": "21ccd3b321e4ffe138f1a106ce1a5dc643c9da18",
-    "scripts/test-reference-merge-choice-preview.mjs": "088826e9169b91c17b8514611394196364ad9de4",
+    "scripts/test-reference-merge-choice-preview.mjs": "dab29094bdd310bc00b24a476814d7c746a95b0e",
     "worker/domains/reference-merge-apply.ts": "b0b85be1b6f8964ad7e7414ba178e1a7d371c4db",
     "scripts/test-reference-merge-monthly-apply.mjs": "67297b49ef49a41a7457c17b42be82c751bf7a55",
     "migrations/0093_v72_reference_value_choice_merges.sql": "d3afb62545f1cca2fc195244db13d42ac7b6471b",

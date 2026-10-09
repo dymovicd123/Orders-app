@@ -33,13 +33,17 @@ const dictionaries = [
 ] as const
 
 export function ReferenceMergeWorkspace({
-  apiFetch,isAdmin,onMerged,
+  apiFetch,isAdmin,onMerged,initialKind='paymentMethods',
 }: {
   apiFetch:(input:string,init?:RequestInit)=>Promise<Response>;
   isAdmin:boolean;
   onMerged:()=>Promise<void>;
+  initialKind?:string;
 }) {
-  const [kind,setKind]=useState('paymentMethods')
+  const [kind,setKind]=useState(() => dictionaries.some(x => x.kind === initialKind) ? initialKind : 'paymentMethods')
+  useEffect(() => {
+    if (dictionaries.some(x => x.kind === initialKind)) setKind(initialKind)
+  }, [initialKind])
   const [values,setValues]=useState<Value[]>([])
   const [loading,setLoading]=useState(false)
   const [sourceId,setSourceId]=useState(0)

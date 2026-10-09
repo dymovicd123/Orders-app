@@ -46,3 +46,28 @@
   .reference-integrity-entry-summary { flex-direction: column; align-items: stretch; padding: 14px; }
   .reference-integrity-entry-open { width: fit-content; }
 }
+
+/* Daily use comes first; maintenance stays discoverable without dominating the page. */
+.reference-maintenance-shortcuts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin: 13px 0 8px;
+  padding: 10px 0;
+  border-top: 1px solid #e4ebf1;
+  color: #5a697a;
+  font-size: .86rem;
+}
+.reference-maintenance-shortcut-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.reference-maintenance-shortcut-actions .secondary { font-size: .83rem; }
+.reference-maintenance { margin-top: 22px; padding-top: 20px; border-top: 1px solid #dde6ee; }
+.reference-maintenance-heading h3 { margin: 0 0 5px; font-size: 1.06rem; }
+.reference-maintenance-heading p { margin: 0 0 13px; color: #627181; font-size: .88rem; line-height: 1.5; }
+.reference-maintenance > .reference-integrity-entry { margin: 10px 0; background: #f9fbfd; }
+.reference-maintenance > .reference-integrity-entry[open] { background: #fff; }
+.reference-merge-entry > .reference-merge-workspace { margin: 0 12px 12px; }
+@media (max-width: 640px) {
+  .reference-maintenance-shortcuts { align-items: flex-start; flex-direction: column; }
+}

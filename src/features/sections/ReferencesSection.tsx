@@ -1,4 +1,5 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
+import { useState } from 'react'
 import { ReferenceIntegrityPanel } from './ReferenceIntegrityPanel'
 import { ReferenceMergeWorkspace } from './ReferenceMergeWorkspace'
 import '../../styles/reference-integrity-entry.css'
@@ -32,6 +33,16 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
     setReferenceStatusFilter,
   } = ctx
 
+  // Keep the daily reference list first; maintenance tools load only on request.
+  const [maintenanceView, setMaintenanceView] = useState<'duplicates' | 'merge' | null>(null)
+  const showMaintenance = (view: 'duplicates' | 'merge') => {
+    setMaintenanceView(view)
+    const id = view === 'merge' ? 'reference-merge-actions' : 'reference-duplicates-actions'
+    const entry = document.getElementById(id)
+    entry?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    entry?.querySelector<HTMLElement>('summary')?.focus({ preventScroll: true })
+  }
+
   return (
     <section className="card wide sector-references" id="references" style={sectorStyle('references')}>
               <div className="references-hero">
@@ -63,42 +74,6 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                 </div>
               </div>
     
-              <ReferenceMergeWorkspace apiFetch={apiFetch} isAdmin={isAdmin}
-                onMerged={async () => {
-                  await Promise.all([
-                    ctx.loadReferencesData(true),
-                    ctx.loadReferenceItems(ctx.referenceKind,true),
-                    ctx.loadReferenceKindCounts(ctx.referenceGroups.map((group:any)=>group.kind),true),
-                  ])
-                }} />
-
-              <details className="reference-integrity-entry" data-feature="reference-duplicates">
-                <summary className="reference-integrity-entry-summary">
-                  <span className="reference-integrity-entry-copy">
-                    <strong>Найти похожие записи и варианты товаров</strong>
-                    <small>Найти одинаковые значения справочников и варианты товаров, проверить остатки и связи перед объединением.</small>
-                  </span>
-                  <span className="reference-integrity-entry-open">Посмотреть совпадения</span>
-                </summary>
-                {isAdmin ? (
-                  <ReferenceIntegrityPanel
-                    apiFetch={apiFetch}
-                    isAdmin={isAdmin}
-                    onHidden={async () => {
-                      await Promise.all([
-                        ctx.loadReferencesData(true),
-                        ctx.loadReferenceItems(ctx.referenceKind, true),
-                        ctx.loadReferenceKindCounts(ctx.referenceGroups.map((group: any) => group.kind), true),
-                      ])
-                    }}
-                  />
-                ) : (
-                  <p className="reference-integrity-entry-restricted">
-                    Проверка и объединение дублей доступны администратору. Войдите с административной учётной записью.
-                  </p>
-                )}
-              </details>
-
               <div className="reference-routing-note">
                 <span><strong>Справочники</strong> — центральное место для значений.</span>
                 <span><strong>Склад → Товары</strong> — быстрый доступ к характеристикам.</span>
@@ -122,6 +97,18 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                 ))}
               </div>
     
+              <div className="reference-maintenance-shortcuts" aria-label="Дополнительные действия со справочниками">
+                <span>Нужно исправить повторяющиеся значения?</span>
+                <div className="reference-maintenance-shortcut-actions">
+                  <button className="secondary compact" type="button" onClick={() => showMaintenance('duplicates')}>
+                    Найти дубли
+                  </button>
+                  <button className="secondary compact" type="button" onClick={() => showMaintenance('merge')}>
+                    Объединить значения
+                  </button>
+                </div>
+              </div>
+
               <div className="references-toolbar">
                 <label className="inventory-search">
                   <span>Поиск</span>
@@ -316,6 +303,70 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                   </div>
                 </section>
               </div>
+              <section className="reference-maintenance" id="reference-maintenance" aria-label="Дополнительные действия со справочниками">
+                <div className="reference-maintenance-heading">
+                  <h3>Дополнительные действия</h3>
+                  <p>Для повседневной работы используйте список и форму выше. Здесь можно найти повторы и объединить значения, когда это действительно нужно.</p>
+                </div>
+                <details
+                  className="reference-integrity-entry"
+                  id="reference-duplicates-actions"
+                  data-feature="reference-duplicates"
+                  open={maintenanceView === 'duplicates'}
+                >
+                  <summary className="reference-integrity-entry-summary"
+                    onClick={(event) => { event.preventDefault(); setMaintenanceView(current => current === 'duplicates' ? null : 'duplicates') }}>
+                    <span className="reference-integrity-entry-copy">
+                      <strong>Найти похожие записи и варианты товаров</strong>
+                      <small>Проверить совпадения, остатки и связанные заказы, прежде чем убирать лишнее.</small>
+                    </span>
+                    <span className="reference-integrity-entry-open">{maintenanceView === 'duplicates' ? 'Свернуть' : 'Посмотреть совпадения'}</span>
+                  </summary>
+                  {maintenanceView === 'duplicates' ? (
+                    isAdmin ? (
+                      <ReferenceIntegrityPanel
+                        apiFetch={apiFetch}
+                        isAdmin={isAdmin}
+                        onHidden={async () => {
+                          await Promise.all([
+                            ctx.loadReferencesData(true),
+                            ctx.loadReferenceItems(ctx.referenceKind, true),
+                            ctx.loadReferenceKindCounts(ctx.referenceGroups.map((group: any) => group.kind), true),
+                          ])
+                        }}
+                      />
+                    ) : (
+                      <p className="reference-integrity-entry-restricted">
+                        Проверка и объединение дублей доступны администратору. Войдите с административной учётной записью.
+                      </p>
+                    )
+                  ) : null}
+                </details>
+                <details
+                  className="reference-integrity-entry reference-merge-entry"
+                  id="reference-merge-actions"
+                  open={maintenanceView === 'merge'}
+                >
+                  <summary className="reference-integrity-entry-summary"
+                    onClick={(event) => { event.preventDefault(); setMaintenanceView(current => current === 'merge' ? null : 'merge') }}>
+                    <span className="reference-integrity-entry-copy">
+                      <strong>Объединить значения</strong>
+                      <small>Выбрать, какое название убрать и какое сохранить. Перед изменениями система покажет последствия.</small>
+                    </span>
+                    <span className="reference-integrity-entry-open">{maintenanceView === 'merge' ? 'Свернуть' : 'Открыть объединение'}</span>
+                  </summary>
+                  {maintenanceView === 'merge' ? (
+                    <ReferenceMergeWorkspace apiFetch={apiFetch} isAdmin={isAdmin} initialKind={referenceKind}
+                      onMerged={async () => {
+                        await Promise.all([
+                          ctx.loadReferencesData(true),
+                          ctx.loadReferenceItems(ctx.referenceKind, true),
+                          ctx.loadReferenceKindCounts(ctx.referenceGroups.map((group: any) => group.kind), true),
+                        ])
+                      }} />
+                  ) : null}
+                </details>
+              </section>
             </section>
   )
 }
