@@ -34,7 +34,7 @@
     },
     "worker/index.ts": {
       "beforeGitBlob": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
-      "afterGitBlob": "3f9923636fb0281235b7248bdc757159111ba4b3",
+      "afterGitBlob": "15b00e99acb0356804d9af981bf798db706f93e6",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/index.ts"
     },
     "worker/domains/catalog.ts": {
@@ -69,12 +69,15 @@
     "migrations/0092_v72_catalog_variant_reservation_consolidation.sql": "894164a039a76abfdf8d7ac8a49109329b9bc66d",
     "src/styles/reference-integrity-entry.css": "1b5c89737e553ba65bd7e28c7c55cb916dc61634",
     "scripts/test-reference-duplicates-discovery-r1.mjs": "eed84d04581f550aa8936d6bcee5f5ca06b7ec25",
-    "worker/domains/reference-merge-preview.ts": "7b9bc4873670f358b2c8b13a5057f314e3b48b1b",
-    "src/features/sections/ReferenceMergeWorkspace.tsx": "f509b7b64469058602a3dab92d214e82f3a95b81",
+    "worker/domains/reference-merge-preview.ts": "b47ff2766ebfa474c3be63886643eb4f9a9f7e64",
+    "src/features/sections/ReferenceMergeWorkspace.tsx": "ab3559c354d41c9447e44313bfa0ae5b9af0233b",
     "src/styles/reference-merge-workspace.css": "0b98fc09835b26d4dfa99ac481a51de89dfb6e0f",
-    "scripts/test-reference-merge-choice-preview.mjs": "fca90654cbb211a1187fb1989ea5b7ba2b12e66c",
+    "scripts/test-reference-merge-choice-preview.mjs": "088826e9169b91c17b8514611394196364ad9de4",
     "worker/domains/reference-merge-apply.ts": "b0b85be1b6f8964ad7e7414ba178e1a7d371c4db",
-    "scripts/test-reference-merge-monthly-apply.mjs": "692749aab2860d40e2876b356d9e88134b62237a",
-    "migrations/0093_v72_reference_value_choice_merges.sql": "d3afb62545f1cca2fc195244db13d42ac7b6471b"
+    "scripts/test-reference-merge-monthly-apply.mjs": "67297b49ef49a41a7457c17b42be82c751bf7a55",
+    "migrations/0093_v72_reference_value_choice_merges.sql": "d3afb62545f1cca2fc195244db13d42ac7b6471b",
+    "worker/domains/reference-payment-merge.ts": "17aed8caa17f1978b0e2b658b270a9b5e37168d2",
+    "scripts/test-reference-payment-merge.mjs": "015cb3ce422a84c50d68e1bce5b099141e9b3930",
+    "migrations/0094_v72_reference_payment_method_merges.sql": "fd6d34164f59ac3856b113701e47a81e681e95f7"
   }
 }
