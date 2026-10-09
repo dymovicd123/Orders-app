@@ -4,6 +4,21 @@ import '../../styles/reference-merge-workspace.css'
 type Value = { id: number; value: string; isActive: boolean }
 type MergeHistoryItem={id:number;kind:string;source:string;target:string;affected:number;actor:string;createdAt:string;sourceId:number;targetId:number}
 type Counts = { current:number; older:number }
+type CharacteristicSummary = {
+  variants:number;activeVariants:number;physical:number;reserved:number;
+  currentOrderLines:number;olderOrderLines:number;activeUnsentLines:number;
+  activeReservations:number;reservedUnits:number;activeWorkshopTasks:number;
+}
+type CatalogImpact = {
+  source:CharacteristicSummary;target:CharacteristicSummary;
+  sourceExecutions:number;
+  byLocation:{side:'source'|'target';location:string;physical:number;reserved:number}[];
+  sampleVariants:{id:number;side:'source'|'target';productName:string;category:string;
+    color:string;material:string;length:string;size:string;active:boolean;
+    physical:number;reserved:number}[];
+  sampleTruncated:boolean;indistinguishable:boolean;warnings:string[];
+  status:'requires_catalog_review'|'unused_or_historical';canAutomaticallyConsolidate:boolean;
+}
 type Impact = {
   ok:boolean;
   kind:string;
@@ -14,6 +29,7 @@ type Impact = {
   ordersCovered:boolean;
   finance:{payments:Counts;financialEvents:Counts;cashEntries:Counts;returns:Counts;exchanges:Counts};
   activeCatalogVariants:number;
+  catalogImpact?:CatalogImpact|null;
   canApply:boolean;
   stateToken:string;
   paymentSafety?:{blockers:string[];affectedOrders:number;cashRegisterRecords:number}|null;
@@ -201,7 +217,91 @@ export function ReferenceMergeWorkspace({
                 <div><span>Заказы за {impact.month.label}</span><strong>{impact.orders.current}</strong><small>Требуют обновления</small></div>
                 <div><span>Заказы за предыдущие месяцы</span><strong>{impact.orders.older}</strong><small>Останутся в истории без изменений</small></div>
               </div>
-            ) : <p className="reference-merge-notice">Связи этого списка с документами ещё проверяются. Количество затронутых записей пока не определено.</p>}
+            ) : impact.catalogImpact
+              ? <p className="reference-merge-next">Ниже показаны связи с товарными вариантами и заказами. Исторические документы остаются без изменений.</p>
+              : <p className="reference-merge-notice">Связи этого списка с документами ещё проверяются. Количество затронутых записей пока не определено.</p>}
+            {impact.catalogImpact ? (
+              <div className="reference-merge-catalog-impact" aria-label="Связанные товары и склад">
+                <h4>Товары, остатки и заказы</h4>
+                <p className="mini-panel-note">
+                  Считаются связанные варианты товаров, а не сами названия в справочнике.
+                  Исторические снимки остаются на своих местах.
+                </p>
+                <div className="reference-merge-stats">
+                  <div>
+                    <span>С названием, которое убираем</span>
+                    <strong>{impact.catalogImpact.source.variants}</strong>
+                    <small>Действующих вариантов: {impact.catalogImpact.source.activeVariants}</small>
+                  </div>
+                  <div>
+                    <span>С названием, которое оставляем</span>
+                    <strong>{impact.catalogImpact.target.variants}</strong>
+                    <small>Действующих вариантов: {impact.catalogImpact.target.activeVariants}</small>
+                  </div>
+                </div>
+                <div className="reference-merge-catalog-metrics">
+                  <div><strong>Лишнее значение</strong>
+                    <span>На месте: {impact.catalogImpact.source.physical} шт. · В резервах: {impact.catalogImpact.source.reserved} шт.</span>
+                    <span>Строки заказов этого месяца: {impact.catalogImpact.source.currentOrderLines}</span>
+                    <span>Строки прошлых заказов: {impact.catalogImpact.source.olderOrderLines}</span>
+                    <span>Неотправленные активные позиции: {impact.catalogImpact.source.activeUnsentLines}</span>
+                    <span>Активные резервы: {impact.catalogImpact.source.activeReservations} ({impact.catalogImpact.source.reservedUnits} шт.)</span>
+                    <span>Активные задачи цеха: {impact.catalogImpact.source.activeWorkshopTasks}</span>
+                    {impact.catalogImpact.sourceExecutions>0 ? (
+                      <span>Действующие исполнения: {impact.catalogImpact.sourceExecutions}</span>
+                    ) : null}
+                  </div>
+                  <div><strong>Основное значение</strong>
+                    <span>На месте: {impact.catalogImpact.target.physical} шт. · В резервах: {impact.catalogImpact.target.reserved} шт.</span>
+                    <span>Строки заказов этого месяца: {impact.catalogImpact.target.currentOrderLines}</span>
+                    <span>Строки прошлых заказов: {impact.catalogImpact.target.olderOrderLines}</span>
+                    <span>Неотправленные активные позиции: {impact.catalogImpact.target.activeUnsentLines}</span>
+                    <span>Активные резервы: {impact.catalogImpact.target.activeReservations} ({impact.catalogImpact.target.reservedUnits} шт.)</span>
+                    <span>Активные задачи цеха: {impact.catalogImpact.target.activeWorkshopTasks}</span>
+                  </div>
+                </div>
+                {impact.catalogImpact.byLocation.length ? (
+                  <div className="reference-merge-linked">
+                    <strong>Где находятся вещи</strong>
+                    <div className="reference-merge-linked-grid">
+                      {impact.catalogImpact.byLocation.map((x,index)=>(
+                        <span key={x.side+':'+x.location+':'+index}>
+                          {x.side==='source'?'Лишнее':'Основное'} · {x.location==='warehouse'?'Склад':x.location==='boutique'?'Бутик':x.location}:
+                          {' '}{x.physical} шт. · резерв {x.reserved}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {impact.catalogImpact.warnings.length ? (
+                  <div className="reference-merge-notice" role="status">
+                    <strong>Что нужно учесть перед объединением</strong>
+                    <ul>{impact.catalogImpact.warnings.map((warning,index)=><li key={index}>{warning}</li>)}</ul>
+                  </div>
+                ) : null}
+                {impact.catalogImpact.sampleVariants.length ? (
+                  <details className="reference-merge-catalog-samples">
+                    <summary>Посмотреть связанные варианты ({impact.catalogImpact.sampleVariants.length}{impact.catalogImpact.sampleTruncated?'+':''})</summary>
+                    <div>
+                      {impact.catalogImpact.sampleVariants.map(v=>(
+                        <div className="reference-merge-catalog-sample" key={v.id}>
+                          <strong>{v.productName}</strong>
+                          <span>{v.material||'Без материала'} · {v.length||'Стандарт'} · {v.color||'Без цвета'} · {v.size||'Без размера'}</span>
+                          <small>{v.side==='source'?'Лишнее значение':'Основное значение'} · {v.active?'Действует':'Архив'} · На месте {v.physical} шт. · Резерв {v.reserved}</small>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ) : null}
+                {impact.catalogImpact.sampleTruncated ? (
+                  <p className="reference-merge-next">Показаны первые 12 вариантов. Общие показатели выше рассчитаны для всех совпадений.</p>
+                ) : null}
+                <p className="reference-merge-next">
+                  Объединение характеристик пока не выполняется автоматически: сначала необходимо согласовать
+                  совпадающие варианты, их исполнение и действующие резервы. Списание или перенос остатков здесь не происходит.
+                </p>
+              </div>
+            ) : null}
             {impact.kind==='payment_method'?(
               <div className="reference-merge-linked">
                 <strong>Дополнительно связаны с оплатами</strong>
