@@ -1,0 +1,76 @@
+name: Read-only production reference integrity audit
+
+on:
+  push:
+    branches: [diag-ethno-stock-readonly-20261009]
+    paths: ['.github/workflows/diag-reference-integrity-20261009.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout isolated diagnostic branch
+        uses: actions/checkout@v4
+      - name: Hard stop on environment drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == 'diag-ethno-stock-readonly-20261009' ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders_db_branch2' wrangler.jsonc; then exit 20; fi
+          test -n "$CLOUDFLARE_ACCOUNT_ID" && test -n "$CLOUDFLARE_API_TOKEN"
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Reference counts by kind and status (SELECT only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "
+            SELECT kind, COUNT(*) AS total, SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) AS active,
+              SUM(CASE WHEN is_active=0 THEN 1 ELSE 0 END) AS inactive
+            FROM reference_values GROUP BY kind ORDER BY kind
+          " | jq -c '{rows:(.[0].results // []),count:((.[0].results // [])|length)}'
+      - name: Exact meaning collisions by punctuation and spacing (SELECT only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "
+            WITH normalized AS (
+              SELECT id,kind,value,is_active,
+                UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                  TRIM(COALESCE(value,'')), '‐',' '), '‑',' '), '‒',' '),
+                  '–',' '), '—',' '), '-', ' '), '  ',' ')) AS key
+              FROM reference_values
+            )
+            SELECT kind,key,COUNT(*) AS copies,
+              SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) AS active_copies,
+              GROUP_CONCAT(id || ':' || value || ':active=' || is_active) AS instances
+            FROM normalized
+            GROUP BY kind,key HAVING COUNT(*) > 1
+            ORDER BY kind,key LIMIT 130
+          " | jq -c '{rows:(.[0].results // []),count:((.[0].results // [])|length)}'
+      - name: Active references sharing trim case identity (SELECT only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "
+            SELECT kind, UPPER(TRIM(value)) AS key, COUNT(*) AS copies,
+              GROUP_CONCAT(id || ':' || value) AS instances
+            FROM reference_values WHERE is_active=1
+            GROUP BY kind,UPPER(TRIM(value)) HAVING COUNT(*)>1
+            ORDER BY kind,key LIMIT 80
+          " | jq -c '{rows:(.[0].results // []),count:((.[0].results // [])|length)}'
