@@ -2,11 +2,12 @@ import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import {
  countCatalogReferenceUsage, assertReferenceValueCanChange,
+ upsertReferenceValue, disableReferenceValue,
 } from '../worker/domains/references.ts'
 
 const sql=new DatabaseSync(':memory:')
 sql.exec(`
-CREATE TABLE reference_values(id INTEGER PRIMARY KEY,kind TEXT,value TEXT,is_active INTEGER);
+CREATE TABLE reference_values(id INTEGER PRIMARY KEY,kind TEXT,value TEXT,is_active INTEGER,sort_order INTEGER DEFAULT 0,updated_at TEXT);
 CREATE TABLE catalog_stock_positions(id INTEGER PRIMARY KEY,material TEXT,length TEXT,is_active INTEGER);
 CREATE TABLE catalog_variants(
  id INTEGER PRIMARY KEY, category TEXT, color TEXT, material TEXT,
@@ -16,14 +17,18 @@ CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,variant_id INTEGER,quantity 
 INSERT INTO reference_values VALUES
  (1,'material','КОСТЮМНЫЙ',1),(2,'length','ДЛИННЫЙ',1),
  (3,'color','СИНИЙ',1),(4,'size','52',1),(5,'child_age','1',1),
- (6,'material','НЕИСПОЛЬЗУЕМЫЙ',1);
+ (6,'material','НЕИСПОЛЬЗУЕМЫЙ',1),(7,'color','СВОБОДНЫЙ',1);
 INSERT INTO catalog_stock_positions VALUES(1,'КОСТЮМНЫЙ','ДЛИННЫЙ',1);
 `)
+let beforeReferenceWrite=()=>{}
 const db={prepare(q){return{
  bind(...args){return{
   async first(){return sql.prepare(q).get(...args)||null},
   async all(){return {results:sql.prepare(q).all(...args)}},
-  async run(){return {meta:sql.prepare(q).run(...args)}},
+  async run(){
+   if(q.includes('UPDATE reference_values'))beforeReferenceWrite()
+   return {meta:sql.prepare(q).run(...args)}
+  },
  }},
 }}}
 // No active variant exists but execution is a live catalog business identity.
@@ -73,4 +78,30 @@ assert.equal(await countCatalogReferenceUsage(db,'size','52'),1,
  'Adult sizes and child ages must never be conflated')
 assert.equal(await countCatalogReferenceUsage(db,'size','1'),0)
 assert.equal(await countCatalogReferenceUsage(db,'child_age','52'),0)
+
+// A new execution can be created after the preflight. Only a database-side
+// NOT EXISTS check can prevent the concurrent reference rename.
+beforeReferenceWrite=()=>{
+ beforeReferenceWrite=()=>{}
+ sql.exec("INSERT INTO catalog_stock_positions VALUES(90,'НЕИСПОЛЬЗУЕМЫЙ','КОРОТКИЙ',1)")
+}
+await assert.rejects(
+ ()=>upsertReferenceValue(db,{kind:'materials',value:'ДРАП'},6),
+ /связи изменились одновременно/,
+)
+assert.equal(sql.prepare('SELECT value FROM reference_values WHERE id=6').get().value,'НЕИСПОЛЬЗУЕМЫЙ')
+assert.equal(sql.prepare('SELECT material FROM catalog_stock_positions WHERE id=90').get().material,'НЕИСПОЛЬЗУЕМЫЙ')
+beforeReferenceWrite=()=>{
+ beforeReferenceWrite=()=>{}
+ sql.exec("INSERT INTO catalog_variants VALUES(77,'adult','СВОБОДНЫЙ','','','54',1)")
+}
+await assert.rejects(()=>disableReferenceValue(db,'colors',7),/изменились одновременно/)
+assert.equal(sql.prepare('SELECT is_active FROM reference_values WHERE id=7').get().is_active,1)
+sql.exec("DELETE FROM catalog_variants WHERE id=77")
+const removed=await disableReferenceValue(db,'colors',7)
+assert.equal(removed.ok,true)
+assert.equal(sql.prepare('SELECT is_active FROM reference_values WHERE id=7').get().is_active,0)
+const replay=await disableReferenceValue(db,'colors',7)
+assert.equal(replay.alreadyHidden,true)
+
 console.log('REFERENCE CRUD INTEGRITY PASSED — detached executions, dormant stock/reserve, adult/child split, zero-impact edits')
