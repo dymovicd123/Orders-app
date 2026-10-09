@@ -220,13 +220,13 @@ export async function consolidateUnusedCatalogVariant(
   }
   const preview = await previewCatalogVariantConsolidation(db,sourceId,targetId)
   if (!preview.canConsolidate) throw new Error('Объединение пока невозможно: '+preview.blockers.join('; '))
-  if (preview.transferQuantity > 0 && (!expectedToken || expectedToken !== preview.stateToken)) {
+  if ((preview.transferQuantity > 0 || preview.reservationCount > 0) && (!expectedToken || expectedToken !== preview.stateToken)) {
     throw new Error('Остатки изменились или не подтверждены. Обновите предпросмотр объединения.')
   }
   if (expectedToken && expectedToken !== preview.stateToken) throw new Error('Данные изменились после проверки. Проверьте остатки заново.')
 
-  const [source,target,stocks] = await Promise.all([readSku(db,sourceId),readSku(db,targetId),readStocks(db,sourceId,targetId)])
-  if (!source || !target || !sameBusinessIdentity(source,target) || snapshotToken(source,target,stocks)!==preview.stateToken) {
+  const [source,target,stocks,reservations] = await Promise.all([readSku(db,sourceId),readSku(db,targetId),readStocks(db,sourceId,targetId),readActiveReservations(db,sourceId,targetId)])
+  if (!source || !target || !sameBusinessIdentity(source,target) || snapshotToken(source,target,stocks,reservations)!==preview.stateToken) {
     throw new Error('Каталог изменился после проверки. Обновите предпросмотр.')
   }
   const stamp = new Date().toISOString()
@@ -246,6 +246,7 @@ export async function consolidateUnusedCatalogVariant(
   const journalExists = `EXISTS (SELECT 1 FROM catalog_variant_consolidations c
     WHERE c.source_variant_id=? AND c.target_variant_id=? AND c.created_at=?)`
   const beforeStock = stockSnapshotJson(stocks)
+  const beforeReservations = reservationSnapshotJson(reservations)
   const statements = [
     db.prepare(
       `INSERT INTO catalog_variant_consolidations (
@@ -254,7 +255,7 @@ export async function consolidateUnusedCatalogVariant(
         source_reserved_quantity,created_by,created_at)
       SELECT v.id,t.id,v.product_id,v.color,t.color,sp.material,sp.length,v.category,v.gender,v.size_label,
         COALESCE((SELECT SUM(s.quantity) FROM inventory_stock s WHERE s.variant_id=v.id),0),
-        0,?,?
+        COALESCE((SELECT SUM(s.reserved_quantity) FROM inventory_stock s WHERE s.variant_id=v.id),0),?,?
       FROM catalog_variants v
       JOIN catalog_variants t ON t.id=? AND t.is_active=1 AND t.product_id=v.product_id AND t.stock_position_id=v.stock_position_id
       JOIN catalog_products p ON p.id=v.product_id AND p.is_active=1
@@ -277,11 +278,43 @@ export async function consolidateUnusedCatalogVariant(
         AND NOT EXISTS (SELECT 1 FROM inventory_stock s WHERE s.variant_id IN (v.id,t.id)
           AND (s.quantity<0 OR s.reserved_quantity<0 OR s.quantity IS NULL OR s.reserved_quantity IS NULL
             OR s.inventory_source NOT IN ('warehouse','boutique')))
-        AND NOT EXISTS (SELECT 1 FROM inventory_stock s WHERE s.variant_id=v.id AND s.reserved_quantity<>0)
-        AND NOT EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.variant_id=v.id AND r.status='active')
+        AND (SELECT COUNT(*) FROM inventory_reservations r WHERE r.variant_id IN (v.id,t.id) AND r.status='active')=json_array_length(?)
+        AND NOT EXISTS (
+          SELECT 1 FROM inventory_reservations r
+          WHERE r.variant_id IN (v.id,t.id) AND r.status='active'
+            AND NOT EXISTS (SELECT 1 FROM json_each(?) j
+              WHERE CAST(json_extract(j.value,'$[0]') AS INTEGER)=r.id
+                AND CAST(json_extract(j.value,'$[1]') AS INTEGER)=r.order_id
+                AND CAST(json_extract(j.value,'$[2]') AS INTEGER)=r.order_item_id
+                AND json_extract(j.value,'$[3]')=r.inventory_source
+                AND CAST(json_extract(j.value,'$[4]') AS INTEGER)=r.variant_id
+                AND CAST(json_extract(j.value,'$[5]') AS INTEGER)=r.quantity
+                AND json_extract(j.value,'$[6]')=r.updated_at)
+        )
+        AND NOT EXISTS (SELECT 1 FROM inventory_reservations r
+          LEFT JOIN order_items oi ON oi.id=r.order_item_id
+          LEFT JOIN orders o ON o.id=r.order_id
+          WHERE r.variant_id=v.id AND r.status='active'
+            AND (oi.id IS NULL OR o.id IS NULL OR oi.order_id<>r.order_id
+              OR oi.variant_id<>v.id OR oi.product_id<>v.product_id OR r.product_id<>v.product_id
+              OR oi.quantity<>r.quantity OR oi.quantity<=0 OR COALESCE(oi.is_workshop,0)<>0
+              OR oi.source_type<>r.inventory_source OR oi.stock_writeoff_status<>'reserved'
+              OR o.order_status<>'active' OR o.shipping_status='sent'
+              OR r.inventory_source NOT IN ('warehouse','boutique')))
         AND NOT EXISTS (SELECT 1 FROM order_items oi JOIN orders o ON o.id=oi.order_id
           WHERE oi.variant_id=v.id AND COALESCE(o.order_status,'active')='active'
-            AND COALESCE(o.shipping_status,'not_sent')<>'sent' AND oi.quantity>0)
+            AND COALESCE(o.shipping_status,'not_sent')<>'sent' AND oi.quantity>0
+            AND NOT EXISTS (SELECT 1 FROM inventory_reservations r
+              WHERE r.order_item_id=oi.id AND r.variant_id=v.id AND r.status='active'
+                AND r.quantity=oi.quantity))
+        AND NOT EXISTS (SELECT 1 FROM inventory_stock st WHERE st.variant_id IN (v.id,t.id)
+          AND st.reserved_quantity<>COALESCE((SELECT SUM(r.quantity)
+            FROM inventory_reservations r WHERE r.variant_id=st.variant_id
+              AND r.inventory_source=st.inventory_source AND r.status='active'),0))
+        AND NOT EXISTS (SELECT 1 FROM inventory_reservations r
+          WHERE r.variant_id IN (v.id,t.id) AND r.status='active'
+            AND NOT EXISTS (SELECT 1 FROM inventory_stock st
+              WHERE st.variant_id=r.variant_id AND st.inventory_source=r.inventory_source))
         AND NOT EXISTS (SELECT 1 FROM workshop_tasks wt WHERE wt.variant_id=v.id AND wt.status='active')
         AND NOT EXISTS (SELECT 1 FROM inventory_lifecycle_events e WHERE e.variant_id=v.id AND e.status='pending')
         AND NOT EXISTS (SELECT 1 FROM inventory_stocktake_items i
@@ -293,32 +326,46 @@ export async function consolidateUnusedCatalogVariant(
         AND NOT EXISTS (SELECT 1 FROM inventory_movements m
           WHERE m.variant_id=v.id
             AND LOWER(TRIM(COALESCE(m.reference_type,''))) IN ('manual','transfer_in','transfer_out')
-            AND NOT EXISTS (SELECT 1 FROM inventory_movement_reversals rev WHERE rev.original_movement_id=m.id))`
-    ).bind(actor||null,stamp,targetId,sourceId,...sourceFields,...targetFields,beforeStock,beforeStock),
+            AND NOT EXISTS (SELECT 1 FROM inventory_movement_reversals rev WHERE rev.original_movement_id=m.id))
+        AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.variant_id=v.id AND (
+          EXISTS(SELECT 1 FROM return_items ri WHERE ri.order_item_id=oi.id)
+          OR EXISTS(SELECT 1 FROM exchanges e WHERE e.old_order_item_id=oi.id OR e.new_order_item_id=oi.id)))`
+    ).bind(actor||null,stamp,targetId,sourceId,...sourceFields,...targetFields,beforeStock,beforeStock,beforeReservations,beforeReservations),
     db.prepare(
       `INSERT INTO catalog_variant_consolidation_stock_rows (
         consolidation_id,inventory_source,source_stock_id,target_stock_id_before,
-        source_quantity_before,target_quantity_before,target_reserved_before,combined_quantity_after)
+        source_quantity_before,target_quantity_before,target_reserved_before,combined_quantity_after,source_reserved_before)
       SELECT c.id,s.inventory_source,s.id,t.id,s.quantity,COALESCE(t.quantity,0),
-        COALESCE(t.reserved_quantity,0),s.quantity+COALESCE(t.quantity,0)
+        COALESCE(t.reserved_quantity,0),s.quantity+COALESCE(t.quantity,0),s.reserved_quantity
       FROM catalog_variant_consolidations c
       JOIN inventory_stock s ON s.variant_id=c.source_variant_id
       LEFT JOIN inventory_stock t ON t.variant_id=c.target_variant_id AND t.inventory_source=s.inventory_source
       WHERE c.source_variant_id=? AND c.target_variant_id=? AND c.created_at=?`
     ).bind(sourceId,targetId,stamp),
     db.prepare(
+      `INSERT INTO catalog_variant_consolidation_reservation_rows (
+        consolidation_id,reservation_id,order_id,order_item_id,inventory_source,
+        original_variant_id,keeper_variant_id,quantity)
+      SELECT c.id,r.id,r.order_id,r.order_item_id,r.inventory_source,
+        c.source_variant_id,c.target_variant_id,r.quantity
+      FROM catalog_variant_consolidations c
+      JOIN inventory_reservations r ON r.variant_id=c.source_variant_id AND r.status='active'
+      WHERE c.source_variant_id=? AND c.target_variant_id=? AND c.created_at=?`
+    ).bind(sourceId,targetId,stamp),
+        db.prepare(
       `INSERT INTO inventory_stock (
         inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,
         material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity,
         last_action,last_source_ref,created_at,updated_at,external_product_id,external_variant_id)
       SELECT s.inventory_source,v.product_id,v.id,p.name,NULLIF(v.gender,''),NULLIF(v.color,''),
         COALESCE(NULLIF(v.material,''),'СТАНДАРТ'),COALESCE(NULLIF(v.length,''),'СТАНДАРТ'),
-        NULLIF(v.size_label,''),s.quantity,0,'Объединение вариаций',?,?,?,p.external_id,v.external_id
+        NULLIF(v.size_label,''),s.quantity,s.reserved_quantity,'Объединение вариаций',?,?,?,p.external_id,v.external_id
       FROM inventory_stock s JOIN catalog_variants v ON v.id=?
       JOIN catalog_products p ON p.id=v.product_id
-      WHERE s.variant_id=? AND s.quantity>0 AND ${journalExists}
+      WHERE s.variant_id=? AND (s.quantity>0 OR s.reserved_quantity>0) AND ${journalExists}
       ON CONFLICT(inventory_source,variant_id) WHERE variant_id IS NOT NULL
       DO UPDATE SET quantity=inventory_stock.quantity+excluded.quantity,
+        reserved_quantity=inventory_stock.reserved_quantity+excluded.reserved_quantity,
         last_action='Объединение вариаций',last_source_ref=excluded.last_source_ref,
         updated_at=excluded.updated_at`
     ).bind(ref,stamp,stamp,targetId,sourceId,sourceId,targetId,stamp),
@@ -328,6 +375,22 @@ export async function consolidateUnusedCatalogVariant(
       WHERE variant_id=? AND ${journalExists}`
     ).bind(ref,stamp,sourceId,sourceId,targetId,stamp),
     db.prepare(
+      `UPDATE inventory_reservations SET variant_id=?, updated_at=?
+      WHERE variant_id=? AND status='active'
+        AND EXISTS (SELECT 1 FROM catalog_variant_consolidation_reservation_rows a
+          JOIN catalog_variant_consolidations c ON c.id=a.consolidation_id
+          WHERE a.reservation_id=inventory_reservations.id AND c.source_variant_id=?
+            AND c.target_variant_id=? AND c.created_at=?)`
+    ).bind(targetId,stamp,sourceId,sourceId,targetId,stamp),
+    db.prepare(
+      `UPDATE order_items SET variant_id=?
+      WHERE variant_id=? AND EXISTS (
+        SELECT 1 FROM catalog_variant_consolidation_reservation_rows a
+        JOIN catalog_variant_consolidations c ON c.id=a.consolidation_id
+        WHERE a.order_item_id=order_items.id
+          AND c.source_variant_id=? AND c.target_variant_id=? AND c.created_at=?)`
+    ).bind(targetId,sourceId,sourceId,targetId,stamp),
+        db.prepare(
       `UPDATE catalog_variants SET is_active=0,updated_at=?
       WHERE id=? AND is_active=1 AND ${journalExists}`
     ).bind(stamp,sourceId,sourceId,targetId,stamp),
@@ -341,7 +404,7 @@ export async function consolidateUnusedCatalogVariant(
         WHERE l.consolidation_id=c.id AND (
           s.id IS NULL OR s.quantity<>0 OR s.reserved_quantity<>0
           OR COALESCE(dest.quantity,0)<>l.combined_quantity_after
-          OR COALESCE(dest.reserved_quantity,0)<>l.target_reserved_before
+          OR COALESCE(dest.reserved_quantity,0)<>l.target_reserved_before+l.source_reserved_before
           OR (l.source_quantity_before>0 AND dest.id IS NULL)
         )
       ) THEN 1 ELSE 0 END,?
@@ -350,16 +413,48 @@ export async function consolidateUnusedCatalogVariant(
       JOIN catalog_variants t ON t.id=c.target_variant_id
       WHERE c.source_variant_id=? AND c.target_variant_id=? AND c.created_at=?`
     ).bind(stamp,sourceId,targetId,stamp),
+    db.prepare(
+      `INSERT INTO catalog_variant_consolidation_reservation_validations (consolidation_id,passed,checked_at)
+      SELECT c.id,CASE WHEN
+        (SELECT COUNT(*) FROM catalog_variant_consolidation_reservation_rows a WHERE a.consolidation_id=c.id)
+          = (SELECT COUNT(*) FROM inventory_reservations r
+               JOIN catalog_variant_consolidation_reservation_rows a ON a.reservation_id=r.id
+               WHERE a.consolidation_id=c.id)
+        AND NOT EXISTS (
+          SELECT 1 FROM catalog_variant_consolidation_reservation_rows a
+          LEFT JOIN inventory_reservations r ON r.id=a.reservation_id
+          LEFT JOIN order_items oi ON oi.id=a.order_item_id
+          WHERE a.consolidation_id=c.id AND (
+            r.id IS NULL OR oi.id IS NULL OR r.variant_id<>c.target_variant_id
+            OR oi.variant_id<>c.target_variant_id OR r.status<>'active'
+            OR r.order_item_id<>a.order_item_id OR r.order_id<>a.order_id
+            OR r.inventory_source<>a.inventory_source OR r.quantity<>a.quantity
+          )
+        )
+        AND NOT EXISTS (SELECT 1 FROM inventory_reservations r
+          WHERE r.variant_id=c.source_variant_id AND r.status='active')
+        AND NOT EXISTS (SELECT 1 FROM order_items oi JOIN orders o ON o.id=oi.order_id
+          WHERE oi.variant_id=c.source_variant_id AND o.order_status='active'
+            AND o.shipping_status<>'sent' AND oi.quantity>0)
+        AND NOT EXISTS (SELECT 1 FROM inventory_stock st WHERE st.variant_id IN (c.source_variant_id,c.target_variant_id)
+          AND st.reserved_quantity<>COALESCE((SELECT SUM(r.quantity)
+            FROM inventory_reservations r WHERE r.variant_id=st.variant_id
+              AND r.inventory_source=st.inventory_source AND r.status='active'),0))
+        THEN 1 ELSE 0 END,?
+      FROM catalog_variant_consolidations c
+      WHERE c.source_variant_id=? AND c.target_variant_id=? AND c.created_at=?`
+    ).bind(stamp,sourceId,targetId,stamp),
   ]
   const results = await db.batch(statements)
   if (toInt(results[0].meta?.changes,0)!==1
-    || toInt(results[4].meta?.changes,0)!==1
-    || toInt(results[5].meta?.changes,0)!==1) {
+    || toInt(results[7].meta?.changes,0)!==1
+    || toInt(results[8].meta?.changes,0)!==1
+    || toInt(results[9].meta?.changes,0)!==1) {
     throw new Error('Склад или Каталог изменились во время проверки. Обновите данные и повторите.')
   }
   return {
     ok:true, consolidated:true, sourceId,targetId,
-    transferredQuantity:preview.transferQuantity, stockBreakdown:preview.stockBreakdown,
+    transferredQuantity:preview.transferQuantity, transferredReservations:preview.reservationCount, stockBreakdown:preview.stockBreakdown,
     historicalOrdersPreserved:preview.sourceImpact.historicalOrders,
   }
 }
