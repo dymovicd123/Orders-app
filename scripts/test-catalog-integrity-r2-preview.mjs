@@ -12,11 +12,10 @@ const data=[
 {id:7,kind:'city',value:'АЛМАТЫ',is_active:0},
 ]
 const groups=groupEquivalentReferenceValues(data)
-assert.equal(groups.length,2)
-assert.equal(groups[0].kind,'city')
-assert.equal(groups[0].items[0].id,6)
-assert.equal(groups[1].kind,'color')
-assert.deepEqual(groups[1].items.map(x=>x.id),[1,2])
+assert.equal(groups.length,1,'Only duplicated active values should need attention')
+assert.equal(groups[0].kind,'color')
+assert.deepEqual(groups[0].items.map(x=>x.id),[1,2])
+assert.ok(!groups.some(g=>g.kind==='city'),'Resolved inactive duplicate must not be flagged')
 assert.ok(!groups.some(g=>g.kind==='material'),'Different materials must not merge')
 const skuGroups=groupEquivalentCatalogVariants([
  {id:1,product_id:4,stock_position_id:40,category:'adult',gender:'ЖЕН',color:'СВЕТЛО СЕРЫЙ',size_label:'52',material:'ДРАП',length:'СТАНДАРТ',product_name:'ЭТНО КАРДИГАН',physical:0,reserved:0},
