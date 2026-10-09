@@ -15,6 +15,7 @@ type Impact = {
   activeCatalogVariants:number;
   canApply:boolean;
   stateToken:string;
+  paymentSafety?:{blockers:string[];affectedOrders:number;cashRegisterRecords:number}|null;
   explanation:string;
 }
 const dictionaries = [
@@ -174,6 +175,15 @@ export function ReferenceMergeWorkspace({
                 </div>
               </div>
             ):null}
+            {impact.paymentSafety?.blockers?.length ? (
+              <div className="reference-merge-notice" role="status">
+                <strong>Почему сейчас нельзя объединить:</strong>
+                <ul>{impact.paymentSafety.blockers.map(x=><li key={x}>{x}</li>)}</ul>
+              </div>
+            ) : null}
+            {impact.kind==='payment_method' && impact.canApply ? (
+              <p className="reference-merge-notice">Платежи этого месяца получат выбранное название. Суммы, даты и наличные не изменятся. История прежнего названия будет сохранена.</p>
+            ) : null}
             {impact.activeCatalogVariants>0?(
               <p className="reference-merge-notice">Название используется в {impact.activeCatalogVariants} вариантах товаров. Их нельзя менять без проверки.</p>
             ):null}
