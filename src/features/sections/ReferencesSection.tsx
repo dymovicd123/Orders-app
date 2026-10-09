@@ -1,5 +1,6 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
 import { ReferenceIntegrityPanel } from './ReferenceIntegrityPanel'
+import { ReferenceMergeWorkspace } from './ReferenceMergeWorkspace'
 import '../../styles/reference-integrity-entry.css'
 type SectionContext = Record<string, any>
 
@@ -62,13 +63,15 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                 </div>
               </div>
     
+              <ReferenceMergeWorkspace apiFetch={apiFetch} isAdmin={isAdmin} />
+
               <details className="reference-integrity-entry" data-feature="reference-duplicates">
                 <summary className="reference-integrity-entry-summary">
                   <span className="reference-integrity-entry-copy">
-                    <strong>Проверка дублей</strong>
+                    <strong>Найти похожие записи и варианты товаров</strong>
                     <small>Найти одинаковые значения справочников и варианты товаров, проверить остатки и связи перед объединением.</small>
                   </span>
-                  <span className="reference-integrity-entry-open">Открыть проверку</span>
+                  <span className="reference-integrity-entry-open">Посмотреть совпадения</span>
                 </summary>
                 {isAdmin ? (
                   <ReferenceIntegrityPanel
