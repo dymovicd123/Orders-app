@@ -82,6 +82,31 @@ jobs:
             ORDER BY active_variants DESC, color_key, size
             LIMIT 180
           " | jq -c '{rows:(.[0].results // []), count:((.[0].results // [])|length)}'
+      - name: Inspect exact old/new duplicate provenance and live references (SELECT only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "
+            SELECT v.id AS variant_id, v.color, v.size_label AS size,
+              v.material, v.length, v.is_active AS active,
+              v.created_at, v.updated_at,
+              (SELECT COUNT(*) FROM order_items oi WHERE oi.variant_id=v.id) AS order_item_links,
+              (SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id=oi.order_id
+                WHERE oi.variant_id=v.id AND o.order_status='active') AS active_order_items,
+              (SELECT COUNT(*) FROM workshop_tasks wt WHERE wt.variant_id=v.id
+                AND wt.status IN ('active','ready')) AS active_workshop_tasks,
+              (SELECT COALESCE(SUM(r.quantity),0) FROM inventory_reservations r
+                WHERE r.variant_id=v.id AND r.status='active') AS active_reserved,
+              (SELECT COUNT(*) FROM inventory_lifecycle_events e WHERE e.variant_id=v.id
+                AND e.status='pending') AS pending_lifecycle,
+              (SELECT COUNT(*) FROM inventory_stocktake_items i
+                JOIN inventory_stocktake_sessions s ON s.id=i.session_id
+                WHERE i.variant_id=v.id AND s.status='active') AS active_stocktake_items,
+              (SELECT COUNT(*) FROM inventory_movements m WHERE m.variant_id=v.id) AS historical_movements
+            FROM catalog_variants v
+            WHERE v.id IN (1277,1278,1279,1303,1280,1281,1532,1533,1438,1436,1441,1473)
+            ORDER BY v.size_label,v.id
+          " | jq -c '{rows:(.[0].results // []), count:((.[0].results // [])|length)}'
       - name: Read unlinked cardigan stock snapshots (SELECT only)
         shell: bash
         run: |
