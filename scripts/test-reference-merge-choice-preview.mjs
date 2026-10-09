@@ -41,6 +41,16 @@ sql.exec(`
  INSERT INTO exchanges VALUES (1,10,'ТЕРМИНАЛ');
  INSERT INTO catalog_variants VALUES(1,1,'СВЕТЛЫЙ','','','adult','52');
 `)
+
+sql.exec("ALTER TABLE payments ADD COLUMN payment_date TEXT DEFAULT '2026-10-09'")
+sql.exec("ALTER TABLE payments ADD COLUMN amount INTEGER DEFAULT 0")
+sql.exec("ALTER TABLE financial_events ADD COLUMN event_date TEXT DEFAULT '2026-10-09'")
+sql.exec("ALTER TABLE financial_events ADD COLUMN amount_delta INTEGER DEFAULT 0")
+sql.exec("ALTER TABLE returns ADD COLUMN return_date TEXT DEFAULT '2026-10-09'")
+sql.exec("ALTER TABLE returns ADD COLUMN amount INTEGER DEFAULT 0")
+sql.exec("ALTER TABLE exchanges ADD COLUMN exchange_date TEXT DEFAULT '2026-10-09'")
+sql.exec("ALTER TABLE exchanges ADD COLUMN financial_amount INTEGER DEFAULT 0")
+
 const db={prepare(q){return {bind(...args){return {
  async first(){return sql.prepare(q).get(...args)||null},
  async all(){return {results:sql.prepare(q).all(...args)}},
