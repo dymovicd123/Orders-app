@@ -70,7 +70,7 @@
     "src/styles/reference-integrity-entry.css": "ca5ca534c7183bb522742c28c5168c84d2da7583",
     "scripts/test-reference-duplicates-discovery-r1.mjs": "2e73ea331b25a8589b21c32b38136a7e2c5378d6",
     "worker/domains/reference-merge-preview.ts": "a94548ae819a0cb2f907f30c8bdd360c22383d75",
-    "src/features/sections/ReferenceMergeWorkspace.tsx": "e16f5e2bf841e5e4ccc14a9f593ee8848697b600",
+    "src/features/sections/ReferenceMergeWorkspace.tsx": "047b3aeb43fbfb390848357b4aa710ca7d228176",
     "src/styles/reference-merge-workspace.css": "bd52b80c9727d20c00b4763230e6074fea450649",
     "scripts/test-reference-merge-choice-preview.mjs": "e0709f56747234237f7ceea7e2d4e84bfaa00feb",
     "worker/domains/reference-merge-apply.ts": "b0b85be1b6f8964ad7e7414ba178e1a7d371c4db",
