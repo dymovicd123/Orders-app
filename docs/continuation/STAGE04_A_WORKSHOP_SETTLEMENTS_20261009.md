@@ -25,8 +25,11 @@ unpaid residue, and overpayments/advances need to remain legible without extra a
 - Schema test executes migration twice in in-memory SQLite, proves constraints and old row integrity,
   and is executed by Branch2 safety workflow.
 
-**This step adds the migration file only; it does not apply it to D1 and does not change runtime/UI.**
-Before any D1 application, use a guarded Branch2-only migration workflow and fingerprint existing balances.
+**04-A has no runtime/UI changes.** Applying the empty schema is handled by a single-purpose
+Branch2-only workflow triggered when its own workflow file is first committed. It verifies
+Branch2 identity, snapshots existing orders/payments/workshop metrics, applies 0083 if absent,
+checks zero backfill and immutability triggers, and compares existing business data before/after.
+If the workflow fails, 04-A must be treated as not activated until its logs are inspected.
 Do not activate automatic charging until the Workshop price source/cutover procedure is confirmed.
 
 ## Next slice: 04-B
