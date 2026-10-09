@@ -388,6 +388,9 @@ export function ReferenceMergeWorkspace({
                 {impact.catalogImpact.sampleTruncated ? (
                   <p className="reference-merge-next">Показаны первые 12 вариантов. Общие показатели выше рассчитаны для всех совпадений.</p>
                 ) : null}
+                {impact.catalogImpact.skuPairsLimited && !impact.catalogImpact.skuPairs?.length ? (
+                  <p className="reference-merge-notice">Вариантов слишком много для полного безопасного поиска совпадений за один проход. Ни одно объединение автоматически не выполняется.</p>
+                ) : null}
                 {impact.catalogImpact.skuPairs?.length ? (
                   <div className="reference-merge-sku-guidance">
                     <h4>Найдены одинаковые варианты товаров</h4>
@@ -496,7 +499,9 @@ export function ReferenceMergeWorkspace({
                 </button>
                 <span>Предыдущие месяцы останутся без изменений.</span>
               </div>
-            ):<p className="reference-merge-next">Сохранение пока недоступно: сначала нужно проверить все связанные записи, чтобы не нарушить историю заказов и отчёты.</p>}
+            ):<p className="reference-merge-next">{impact.catalogImpact
+              ? 'Полное объединение значения пока недоступно. Проверенные пары вариантов можно обработать отдельно выше; остальные связи требуют дополнительной проверки.'
+              : 'Сохранение пока недоступно: сначала нужно проверить все связанные записи, чтобы не нарушить историю заказов и отчёты.'}</p>}
           </div>
         ):null}
       </>
