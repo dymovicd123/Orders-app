@@ -43,6 +43,7 @@ const tests=[
   ['scripts/test-catalog-integrity-r2-sku-consolidation.mjs',true],
   ['scripts/test-inventory-writeoff-review.mjs',true],
   ['scripts/test-reference-duplicates-discovery-r1.mjs',false],
+  ['scripts/test-reference-merge-choice-preview.mjs',true],
 ]
 for(const [file,stripTypes] of tests){
   run(process.execPath,[...(stripTypes?['--experimental-strip-types']:[]),file],file)

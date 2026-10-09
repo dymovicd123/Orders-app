@@ -29,12 +29,12 @@
     },
     "src/features/sections/ReferencesSection.tsx": {
       "beforeGitBlob": "f23c6133fa66a22d9986141b6b4cbd43678480b6",
-      "afterGitBlob": "bafdaa8101e8b35938d5333aeccc519f9f690925",
+      "afterGitBlob": "0f505d12aa656407585e146464a7de2f41b235b7",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/features/sections/ReferencesSection.tsx"
     },
     "worker/index.ts": {
       "beforeGitBlob": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
-      "afterGitBlob": "0360cabd63981d67cf0e44d5a1614694ae0296d1",
+      "afterGitBlob": "bc0835cd28869511f5aa4378b177d078984a0a97",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/index.ts"
     },
     "worker/domains/catalog.ts": {
@@ -68,6 +68,10 @@
     "migrations/0091_v72_catalog_variant_stock_consolidation.sql": "3bf9bf2496145aa19a919a3468d3fb3d0a13d1c7",
     "migrations/0092_v72_catalog_variant_reservation_consolidation.sql": "894164a039a76abfdf8d7ac8a49109329b9bc66d",
     "src/styles/reference-integrity-entry.css": "1b5c89737e553ba65bd7e28c7c55cb916dc61634",
-    "scripts/test-reference-duplicates-discovery-r1.mjs": "963f169c9526f2942ef0ebc25355abb55e251d60"
+    "scripts/test-reference-duplicates-discovery-r1.mjs": "963f169c9526f2942ef0ebc25355abb55e251d60",
+    "worker/domains/reference-merge-preview.ts": "8762ad6fe505d19e0b9a86faa3c972d5868a040f",
+    "src/features/sections/ReferenceMergeWorkspace.tsx": "0239d2b57ca3daacb3681303798787be04ad46f6",
+    "src/styles/reference-merge-workspace.css": "0b98fc09835b26d4dfa99ac481a51de89dfb6e0f",
+    "scripts/test-reference-merge-choice-preview.mjs": "0a0239d52fbc72401831df193fc581b715b4b9df"
   }
 }
