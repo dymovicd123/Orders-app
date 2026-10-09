@@ -13,9 +13,9 @@ const gitBlob = (value) => {
 const check=(condition,message)=>{if(!condition)throw new Error(message)}
 const manifest=JSON.parse(fs.readFileSync('scripts/catalog-integrity-branch2-stage04-safe-runtime-manifest.json','utf8'))
 check(manifest.version===1 && manifest.revision==='catalog-integrity-branch2-stage04-safe-20261009','Invalid integration manifest')
-const run=(command,args,context)=>{
+const run=(command,args,context,extraEnv={})=>{
   const x=spawnSync(command,args,{cwd:process.cwd(),stdio:'inherit',shell:false,
-    windowsHide:true,env:{...process.env, CATALOG_INTEGRITY_PORT_CHECK:'1'}})
+    windowsHide:true,env:{...process.env, CATALOG_INTEGRITY_PORT_CHECK:'1',...extraEnv}})
   if(x.error)throw x.error
   check(x.status===0,`${context} failed: ${x.status}`)
 }
@@ -51,7 +51,8 @@ try{
   }
   console.log('Running complete unmodified historical release gate against frozen Branch2 baseline...')
   const npm=process.platform==='win32'?'npm.cmd':'npm'
-  run(npm,['run','release:check:baseline'],'Historical cumulative Branch2 regression gate')
+  run(npm,['run','release:check:baseline'],'Historical cumulative Branch2 regression gate',
+    {CATALOG_INTEGRITY_STAGE04_BRANCH2_BASELINE_NORMALIZED:'1'})
 }finally{
   for(const [full,content] of saved)fs.writeFileSync(full,content)
 }
