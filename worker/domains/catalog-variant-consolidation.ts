@@ -182,3 +182,23 @@ export async function consolidateUnusedCatalogVariant(
   }
   return { ok: true, consolidated: true, sourceId, targetId, historicalOrdersPreserved: preview.sourceImpact.historicalOrders }
 }
+
+
+export async function listRecentCatalogVariantConsolidations(db: D1Database) {
+  const res = await db.prepare(
+    `SELECT h.id, h.source_variant_id AS sourceId, h.target_variant_id AS targetId,
+       p.name AS productName, h.source_color AS sourceColor, h.target_color AS targetColor,
+       h.material, h.length, h.size_label AS size, h.category, h.gender,
+       h.created_by AS createdBy, h.created_at AS createdAt
+     FROM catalog_variant_consolidations h
+     JOIN catalog_products p ON p.id=h.product_id
+     ORDER BY h.id DESC LIMIT 30`
+  ).all<{
+    id: number; sourceId: number; targetId: number; productName: string;
+    sourceColor: string | null; targetColor: string | null;
+    material: string | null; length: string | null; size: string | null;
+    category: string | null; gender: string | null;
+    createdBy: string | null; createdAt: string;
+  }>()
+  return { ok: true, items: res.results || [] }
+}
