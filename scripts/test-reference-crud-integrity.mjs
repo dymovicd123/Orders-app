@@ -14,7 +14,7 @@ CREATE TABLE catalog_variants(
  length TEXT, size_label TEXT, is_active INTEGER
 );
 CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,variant_id INTEGER,quantity INTEGER,reserved_quantity INTEGER);
-INSERT INTO reference_values VALUES
+INSERT INTO reference_values(id,kind,value,is_active) VALUES
  (1,'material','КОСТЮМНЫЙ',1),(2,'length','ДЛИННЫЙ',1),
  (3,'color','СИНИЙ',1),(4,'size','52',1),(5,'child_age','1',1),
  (6,'material','НЕИСПОЛЬЗУЕМЫЙ',1),(7,'color','СВОБОДНЫЙ',1);
