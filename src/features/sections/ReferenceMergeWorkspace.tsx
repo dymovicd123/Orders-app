@@ -16,9 +16,19 @@ type CatalogImpact = {
   sampleVariants:{id:number;side:'source'|'target';productName:string;category:string;
     color:string;material:string;length:string;size:string;active:boolean;
     physical:number;reserved:number}[];
+  skuPairs:{sourceVariantId:number;targetVariantId:number;productName:string;description:string}[];
+  skuPairsLimited:boolean;canReviewReferenceCleanup:boolean;
   sampleTruncated:boolean;indistinguishable:boolean;warnings:string[];
   status:'requires_catalog_review'|'unused_or_historical';canAutomaticallyConsolidate:boolean;
 }
+type PairPreview = {
+  ok:boolean;source:{id:number;color:string;size:string;active:boolean};
+  target:{id:number;color:string;size:string;active:boolean};
+  stockBreakdown:{location:string;sourcePhysical:number;targetPhysical:number;combinedPhysical:number;sourceReserved:number;targetReserved:number}[];
+  reservationCount:number;transferQuantity:number;stateToken:string;
+  blockers:string[];canConsolidate:boolean;explanation:string;
+}
+type PairReview = {sourceVariantId:number;targetVariantId:number;preview:PairPreview}
 type Impact = {
   ok:boolean;
   kind:string;
@@ -71,6 +81,9 @@ export function ReferenceMergeWorkspace({
   const [error,setError]=useState('')
   const [history,setHistory]=useState<MergeHistoryItem[]|null>(null)
   const [historyBusy,setHistoryBusy]=useState(false)
+  const [pairReview,setPairReview]=useState<PairReview|null>(null)
+  const [pairBusy,setPairBusy]=useState(false)
+  const [cleanup,setCleanup]=useState<{safeToHideSource:boolean;explanation:string}|null>(null)
   const [historyError,setHistoryError]=useState('')
   useEffect(()=>{
     let valid=true
@@ -88,14 +101,14 @@ export function ReferenceMergeWorkspace({
     return ()=>{valid=false}
   },[kind,isAdmin,apiFetch])
 
-  const chooseSource=(id:number)=>{setSourceId(id);setImpact(null);setError('');setNotice('')}
-  const chooseTarget=(id:number)=>{setTargetId(id);setImpact(null);setError('');setNotice('')}
+  const chooseSource=(id:number)=>{setSourceId(id);setImpact(null);setPairReview(null);setCleanup(null);setError('');setNotice('')}
+  const chooseTarget=(id:number)=>{setTargetId(id);setImpact(null);setPairReview(null);setCleanup(null);setError('');setNotice('')}
   const canInspect=sourceId>0&&targetId>0&&sourceId!==targetId&&!loading&&!checking
   const source=values.find(v=>v.id===sourceId)
   const target=values.find(v=>v.id===targetId)
   async function inspect(){
     if(!canInspect)return
-    setChecking(true);setError('');setImpact(null)
+    setChecking(true);setError('');setImpact(null);setPairReview(null);setCleanup(null)
     try{
       const query=new URLSearchParams({sourceId:String(sourceId),targetId:String(targetId)})
       const res=await apiFetch('/api/reference-values/merge-preview?'+query.toString())
@@ -104,6 +117,85 @@ export function ReferenceMergeWorkspace({
       setImpact(data)
     }catch(err){setError(err instanceof Error?err.message:'Не удалось проверить изменения.')}
     finally{setChecking(false)}
+  }
+
+
+  async function inspectSkuPair(sourceVariantId:number,targetVariantId:number) {
+    if (pairBusy || saving) return
+    setPairBusy(true);setPairReview(null);setError('')
+    try {
+      const query=new URLSearchParams({sourceId:String(sourceVariantId),targetId:String(targetVariantId)})
+      const response=await apiFetch('/api/catalog/variants/consolidation-preview?'+query.toString())
+      const body=await response.json() as PairPreview & {message?:string}
+      if(!response.ok||!body.ok)throw new Error(body.message||'Не удалось проверить варианты товара.')
+      setPairReview({sourceVariantId,targetVariantId,preview:body})
+    } catch(e) { setError(e instanceof Error?e.message:'Не удалось проверить варианты.') }
+    finally {setPairBusy(false)}
+  }
+
+  async function applySkuPair() {
+    if(!pairReview?.preview.canConsolidate || !pairReview.preview.stateToken || pairBusy || saving) return
+    const {sourceVariantId,targetVariantId,preview}=pairReview
+    const stillShown=impact?.catalogImpact?.skuPairs.some(p=>
+      p.sourceVariantId===sourceVariantId && p.targetVariantId===targetVariantId)
+    if(!stillShown) {setError('Список изменился. Повторите проверку характеристик.');return}
+    if(!window.confirm(
+      'Объединить выбранные варианты товара? Склад и бутик сохранят свои количества, '
+      +'действующие резервы будут согласованы с заказами. Исторические документы останутся без изменений.'
+    ))return
+    setPairBusy(true);setError('')
+    try {
+      const response=await apiFetch('/api/catalog/variants/consolidate-unused',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({sourceId:sourceVariantId,targetId:targetVariantId,expectedToken:preview.stateToken}),
+      })
+      const result=await response.json() as {ok?:boolean;message?:string;transferredQuantity?:number}
+      if(!response.ok||!result.ok)throw new Error(result.message||'Не удалось объединить варианты.')
+      setPairReview(null)
+      setNotice('Варианты объединены. Остатки перенесены внутри каждого места хранения; исторические заказы сохранены. Другие варианты пока не менялись.')
+      try { await onMerged() } catch {
+        setNotice('Варианты объединены, но обновление списков не удалось. Обновите страницу для просмотра результата.')
+      }
+      await inspect()
+    }catch(e) {
+      setError(e instanceof Error?e.message:'Не удалось объединить варианты.')
+    }finally {setPairBusy(false)}
+  }
+
+
+  async function inspectReferenceCleanup() {
+    if(!impact?.catalogImpact?.canReviewReferenceCleanup || pairBusy || saving) return
+    setPairBusy(true);setCleanup(null);setError('')
+    try {
+      const query=new URLSearchParams({sourceId:String(impact.source.id),targetId:String(impact.target.id)})
+      const response=await apiFetch('/api/reference-values/consolidation-preview?'+query.toString())
+      const result=await response.json() as {ok?:boolean;safeToHideSource:boolean;explanation:string;message?:string}
+      if(!response.ok||!result.ok)throw new Error(result.message||'Не удалось проверить связи названия.')
+      setCleanup({safeToHideSource:result.safeToHideSource,explanation:result.explanation})
+    }catch(e){setError(e instanceof Error?e.message:'Не удалось проверить название.')}
+    finally{setPairBusy(false)}
+  }
+
+  async function hideReferenceAlias() {
+    if(!cleanup?.safeToHideSource || !impact?.catalogImpact?.canReviewReferenceCleanup || pairBusy || saving) return
+    const oldId=impact.source.id, keptId=impact.target.id
+    if(!window.confirm('Убрать лишнее название из новых списков выбора? Исторические товары и заказы останутся без изменений.'))return
+    setPairBusy(true);setError('')
+    try {
+      const response=await apiFetch('/api/reference-values/hide-unused-duplicate',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({sourceId:oldId,targetId:keptId}),
+      })
+      const result=await response.json() as {ok?:boolean;message?:string}
+      if(!response.ok||!result.ok)throw new Error(result.message||'Не удалось убрать лишнее название.')
+      setValues(old=>old.filter(v=>v.id!==oldId))
+      setSourceId(0);setTargetId(0);setImpact(null);setCleanup(null);setPairReview(null)
+      setNotice('Лишнее название отключено для новых операций. Старые заказы и варианты не удалены.')
+      try{await onMerged()}catch{
+        setNotice('Лишнее название отключено. Если список не обновился, перезагрузите страницу.')
+      }
+    }catch(e){setError(e instanceof Error?e.message:'Не удалось обновить справочник.')}
+    finally{setPairBusy(false)}
   }
 
   async function loadHistory(){
@@ -158,14 +250,14 @@ export function ReferenceMergeWorkspace({
       <>
         <label className="reference-merge-kind">
           <span>Какой список приводим в порядок?</span>
-          <select value={kind} onChange={e=>setKind(e.target.value)} disabled={loading||checking}>
+          <select value={kind} onChange={e=>setKind(e.target.value)} disabled={loading||checking||pairBusy}>
             {dictionaries.map(x=><option key={x.kind} value={x.kind}>{x.label}</option>)}
           </select>
         </label>
         <div className="reference-merge-pair">
           <label className="reference-merge-choice">
             <span className="reference-merge-step">1. Убираем лишнее название</span>
-            <select value={sourceId} onChange={e=>chooseSource(Number(e.target.value))} disabled={loading||checking}>
+            <select value={sourceId} onChange={e=>chooseSource(Number(e.target.value))} disabled={loading||checking||pairBusy}>
               <option value={0}>Выберите значение</option>
               {values.filter(v=>v.id!==targetId).map(v=><option key={v.id} value={v.id}>{v.value}</option>)}
             </select>
@@ -174,7 +266,7 @@ export function ReferenceMergeWorkspace({
           <span className="reference-merge-arrow" aria-hidden="true">→</span>
           <label className="reference-merge-choice reference-merge-primary">
             <span className="reference-merge-step">2. Оставляем правильное название</span>
-            <select value={targetId} onChange={e=>chooseTarget(Number(e.target.value))} disabled={loading||checking}>
+            <select value={targetId} onChange={e=>chooseTarget(Number(e.target.value))} disabled={loading||checking||pairBusy}>
               <option value={0}>Выберите значение</option>
               {values.filter(v=>v.id!==sourceId).map(v=><option key={v.id} value={v.id}>{v.value}</option>)}
             </select>
@@ -182,7 +274,7 @@ export function ReferenceMergeWorkspace({
           </label>
         </div>
         <div className="reference-merge-action-row">
-          <button type="button" className="primary" disabled={!canInspect} onClick={()=>void inspect()}>
+          <button type="button" className="primary" disabled={!canInspect||pairBusy} onClick={()=>void inspect()}>
             {checking?'Проверяю записи…':'Посмотреть, что изменится'}
           </button>
           {loading?<span>Загружаю значения…</span>:!values.length?<span>В этом списке нет действующих значений.</span>:null}
@@ -296,9 +388,81 @@ export function ReferenceMergeWorkspace({
                 {impact.catalogImpact.sampleTruncated ? (
                   <p className="reference-merge-next">Показаны первые 12 вариантов. Общие показатели выше рассчитаны для всех совпадений.</p>
                 ) : null}
+                {impact.catalogImpact.skuPairsLimited && !impact.catalogImpact.skuPairs?.length ? (
+                  <p className="reference-merge-notice">Вариантов слишком много для полного безопасного поиска совпадений за один проход. Ни одно объединение автоматически не выполняется.</p>
+                ) : null}
+                {impact.catalogImpact.skuPairs?.length ? (
+                  <div className="reference-merge-sku-guidance">
+                    <h4>Найдены одинаковые варианты товаров</h4>
+                    <p className="mini-panel-note">Система нашла точные совпадения по товару, исполнению, полу, цвету и размеру. Можно проверить и объединить каждую пару отдельно. Выбранное основное значение сохранится.</p>
+                    {impact.catalogImpact.skuPairs.map(pair=>(
+                      <div className="reference-merge-sku-pair" key={pair.sourceVariantId+':'+pair.targetVariantId}>
+                        <div>
+                          <strong>{pair.productName}</strong>
+                          <small>{pair.description}</small>
+                        </div>
+                        <button className="secondary compact" type="button" disabled={pairBusy||checking||saving}
+                          onClick={()=>void inspectSkuPair(pair.sourceVariantId,pair.targetVariantId)}>
+                          {pairBusy ? 'Проверяю…':'Проверить пару'}
+                        </button>
+                      </div>
+                    ))}
+                    {impact.catalogImpact.skuPairsLimited ? (
+                      <p className="reference-merge-notice">Показана только часть возможных совпадений. Не выполняйте массовую замену: после каждой операции проверяйте список заново.</p>
+                    ):null}
+                    {pairReview ? (
+                      <div className="reference-merge-sku-review">
+                        <strong>Проверка выбранной пары</strong>
+                        <p>{pairReview.preview.explanation}</p>
+                        <p>Резервов действующих заказов: {pairReview.preview.reservationCount}.</p>
+                        {pairReview.preview.stockBreakdown.map(place=>(
+                          <p key={place.location}>
+                            {place.location==='warehouse'?'Склад':'Бутик'}:
+                            {' '}{place.sourcePhysical} + {place.targetPhysical} = {place.combinedPhysical} шт.;
+                            резерв {place.sourceReserved} + {place.targetReserved}
+                          </p>
+                        ))}
+                        {pairReview.preview.blockers.length ? (
+                          <div className="reference-merge-notice" role="status">
+                            <strong>Объединение пока невозможно:</strong>
+                            <ul>{pairReview.preview.blockers.map((reason,i)=><li key={i}>{reason}</li>)}</ul>
+                          </div>
+                        ):null}
+                        {pairReview.preview.canConsolidate ? (
+                          <button className="primary compact" type="button" disabled={pairBusy||checking||saving}
+                            onClick={()=>void applySkuPair()}>
+                            {pairBusy?'Сохраняю…':'Объединить выбранную пару'}
+                          </button>
+                        ):null}
+                      </div>
+                    ):null}
+                  </div>
+                ) : null}
+                {impact.catalogImpact.canReviewReferenceCleanup ? (
+                  <div className="reference-merge-sku-guidance">
+                    <strong>Закончить очистку справочника</strong>
+                    <p className="mini-panel-note">Когда все действующие дубли разобраны, лишнее название можно убрать из новых форм без удаления старых документов.</p>
+                    <button type="button" className="secondary compact" disabled={pairBusy||checking||saving}
+                      onClick={()=>void inspectReferenceCleanup()}>
+                      {pairBusy?'Проверяю…':'Проверить, можно ли убрать лишнее название'}
+                    </button>
+                    {cleanup ? (
+                      <div className="reference-merge-sku-review">
+                        <p>{cleanup.explanation}</p>
+                        {cleanup.safeToHideSource ? (
+                          <button type="button" className="primary compact" disabled={pairBusy||checking||saving}
+                            onClick={()=>void hideReferenceAlias()}>
+                            Убрать лишнее название из выбора
+                          </button>
+                        ) : <p className="reference-merge-notice">Пока остаются связанные действующие товары, складские остатки или исполнения.</p>}
+                      </div>
+                    ):null}
+                  </div>
+                ):null}
                 <p className="reference-merge-next">
-                  Объединение характеристик пока не выполняется автоматически: сначала необходимо согласовать
-                  совпадающие варианты, их исполнение и действующие резервы. Списание или перенос остатков здесь не происходит.
+                  Доступно только безопасное объединение точных дублей SKU, по одному после проверки.
+                  Другие цвета, размеры и исполнения автоматически не приравниваются.
+                  Полное объединение значения справочника пока недоступно, пока существуют связанные варианты.
                 </p>
               </div>
             ) : null}
@@ -335,7 +499,9 @@ export function ReferenceMergeWorkspace({
                 </button>
                 <span>Предыдущие месяцы останутся без изменений.</span>
               </div>
-            ):<p className="reference-merge-next">Сохранение пока недоступно: сначала нужно проверить все связанные записи, чтобы не нарушить историю заказов и отчёты.</p>}
+            ):<p className="reference-merge-next">{impact.catalogImpact
+              ? 'Полное объединение значения пока недоступно. Проверенные пары вариантов можно обработать отдельно выше; остальные связи требуют дополнительной проверки.'
+              : 'Сохранение пока недоступно: сначала нужно проверить все связанные записи, чтобы не нарушить историю заказов и отчёты.'}</p>}
           </div>
         ):null}
       </>

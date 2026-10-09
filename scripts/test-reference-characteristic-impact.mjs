@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
+import fs from 'node:fs'
 import { previewCharacteristicImpact } from '../worker/domains/reference-characteristic-impact.ts'
 
 const sql=new DatabaseSync(':memory:')
@@ -94,4 +95,47 @@ assert.deepEqual(sql.prepare('SELECT * FROM catalog_variants ORDER BY id').all()
 assert.deepEqual(sql.prepare('SELECT * FROM inventory_stock ORDER BY id').all(),before.stocks)
 assert.deepEqual(sql.prepare('SELECT * FROM inventory_reservations ORDER BY id').all(),before.reservations)
 assert.deepEqual(sql.prepare('SELECT * FROM orders ORDER BY id').all(),before.orders)
+
+// A deliberately equivalent spelling can point to an existing keeper SKU.
+// Both variants must belong to the same physical execution and audience.
+sql.exec(`
+ INSERT INTO catalog_variants VALUES
+  (15,1,1,'adult','','СВЕТЛО-СЕРЫЙ','ДРАП','СТАНДАРТ','52',1),
+  (16,1,2,'adult','','СВЕТЛО-СЕРЫЙ','ДРАП','СТАНДАРТ','52',1),
+  (17,1,1,'adult','','СВЕТЛО-СЕРЫЙ','ДРАП','СТАНДАРТ','56',1);
+ INSERT INTO inventory_stock VALUES (5,15,'warehouse',7,0);
+`)
+const synonyms=await previewCharacteristicImpact(
+ db,{kind:'color',value:'СВЕТЛО-СЕРЫЙ'},{kind:'color',value:'СВЕТЛО СЕРЫЙ'},month)
+assert.deepEqual(synonyms.skuPairs.map(p=>[p.sourceVariantId,p.targetVariantId]),[[15,10]],
+ 'Only matching execution, size, and product can share existing SKU consolidation')
+assert.equal(synonyms.skuPairsLimited,false)
+assert.equal(synonyms.canAutomaticallyConsolidate,false,'Never permit a wholesale reference rewrite')
+const different=await previewCharacteristicImpact(
+ db,{kind:'color',value:'СВЕТЛО-СЕРЫЙ'},{kind:'color',value:'СЕРЫЙ'},month)
+assert.equal(different.skuPairs.length,0,'Different business colors must NOT be merged as identical SKUs')
+const otherSize=await previewCharacteristicImpact(
+ db,{kind:'size',value:'52'},{kind:'size',value:'54'},month)
+assert.equal(otherSize.skuPairs.length,0,'Different physical sizes cannot use duplicate-SKU consolidation')
+// The keeper must be unambiguous. Two candidates with the same identity
+// must not be auto-selected by first ID.
+sql.exec("INSERT INTO catalog_variants VALUES (18,1,1,'adult','','СВЕТЛО СЕРЫЙ','ДРАП','СТАНДАРТ','52',1)")
+const ambiguous=await previewCharacteristicImpact(
+ db,{kind:'color',value:'СВЕТЛО-СЕРЫЙ'},{kind:'color',value:'СВЕТЛО СЕРЫЙ'},month)
+assert.equal(ambiguous.skuPairs.length,0,'Multiple keeper SKUs require manual catalog review')
+const ui = fs.readFileSync('src/features/sections/ReferenceMergeWorkspace.tsx','utf8')
+const api = fs.readFileSync('worker/index.ts','utf8')
+for(const path of [
+ '/api/catalog/variants/consolidation-preview',
+ '/api/catalog/variants/consolidate-unused',
+ '/api/reference-values/consolidation-preview',
+ '/api/reference-values/hide-unused-duplicate',
+])assert.ok(ui.includes(path), 'UI must call guarded endpoint '+path)
+assert.ok(ui.includes('reference-merge-sku-guidance'))
+assert.ok(ui.includes('expectedToken:preview.stateToken'))
+assert.ok(ui.includes('pairReview.preview.canConsolidate'))
+assert.ok(ui.includes('cleanup.safeToHideSource'))
+assert.ok(api.includes("requireAdminUser(authUser, 'Объединение вариантов"))
+console.log('CHARACTERISTIC SKU GUIDANCE PASSED — equivalent colors only, exact position/size, ambiguous keeper blocked')
+
 console.log('CHARACTERISTIC MERGE IMPACT PASSED — source/keeper choice, material executions, warehouse/boutique, active/historical orders, reserves, ambiguity, read-only')
