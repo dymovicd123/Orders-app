@@ -46,6 +46,7 @@ sqlite.exec(fs.readFileSync('migrations/0083_v72_catalog_variant_consolidations.
 sqlite.exec(fs.readFileSync('migrations/0084_v72_catalog_variant_stock_consolidation.sql','utf8'))
 
 let beforeUpdate = () => {}
+let beforeValidation = () => {}
 const db = {
   prepare(sql) {
     return {
@@ -56,6 +57,7 @@ const db = {
           async all() { return { results: sqlite.prepare(sql).all(...values) } },
           async run() {
             if (sql.startsWith('INSERT INTO catalog_variant_consolidations')) beforeUpdate()
+            if (sql.startsWith('INSERT INTO catalog_variant_consolidation_validations')) beforeValidation()
             return { meta: { changes: Number(sqlite.prepare(sql).run(...values).changes) } }
           },
         }
@@ -144,6 +146,68 @@ const replay=await consolidateUnusedCatalogVariant(db,7,8,'admin-test')
 assert.equal(replay.alreadyConsolidated,true)
 assert.equal(activity(),1,'Idempotent replay must not duplicate journal entries')
 await assert.rejects(() => consolidateUnusedCatalogVariant(db,7,9),/отличаются/)
+
+
+// R3 — current physical balance is carried over *per location*, not written off.
+sqlite.exec(`
+ INSERT INTO catalog_variants(id,product_id,stock_position_id,category,gender,color,size_label,material,length,is_active,updated_at)
+ VALUES (12,100,30,'adult','ЖЕН','ТЕМНО-СИНИЙ','52','ДРАП','СТАНДАРТ',1,'before'),
+        (13,100,30,'adult','ЖЕН','ТЕМНО СИНИЙ','52','ДРАП','СТАНДАРТ',1,'before');
+ INSERT INTO inventory_stock(id,inventory_source,variant_id,quantity,reserved_quantity)
+ VALUES(120,'warehouse',12,3,0),(121,'warehouse',13,5,1),(122,'boutique',12,4,0);
+`)
+let p=await previewCatalogVariantConsolidation(db,12,13)
+assert.equal(p.canConsolidate,true,'Valid stocked SKU can be merged')
+assert.equal(p.transferQuantity,7)
+assert.deepEqual(p.stockBreakdown.map(x=>x.combinedPhysical),[8,4])
+await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin'),/не подтверждены/)
+
+// Applied transfers must remain reversible, so cannot retire their live variant.
+sqlite.exec("INSERT INTO inventory_transfer_documents VALUES (1,'applied')")
+sqlite.exec("INSERT INTO inventory_transfer_items VALUES (1,1,12)")
+assert.equal((await previewCatalogVariantConsolidation(db,12,13)).canConsolidate,false,'Applied transfer blocks')
+sqlite.exec("UPDATE inventory_transfer_documents SET status='reversed' WHERE id=1")
+p=await previewCatalogVariantConsolidation(db,12,13)
+assert.equal(p.canConsolidate,true)
+
+// Stale browser preview never quietly moves a newly observed quantity.
+sqlite.exec('UPDATE inventory_stock SET quantity=6 WHERE id=120')
+await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken),/изменились/)
+sqlite.exec('UPDATE inventory_stock SET quantity=3 WHERE id=120')
+p=await previewCatalogVariantConsolidation(db,12,13)
+
+// Atomic SQL guard catches a concurrent target change after application preview.
+beforeUpdate=()=>{ beforeUpdate=()=>{}; sqlite.exec('UPDATE inventory_stock SET quantity=6 WHERE id=121') }
+await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken),/изменились во время проверки/)
+assert.equal(active(12),1)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM catalog_variant_consolidations WHERE source_variant_id=12').get().n,0)
+sqlite.exec('UPDATE inventory_stock SET quantity=5 WHERE id=121')
+p=await previewCatalogVariantConsolidation(db,12,13)
+
+// Failed post-transfer conservation assertion must roll back all stock changes.
+beforeValidation=()=>{ beforeValidation=()=>{}; sqlite.exec('UPDATE inventory_stock SET quantity=999 WHERE id=121') }
+await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken),/CHECK constraint/)
+assert.equal(active(12),1,'Failed postcondition rolls back source deactivation')
+assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE id=120').get().quantity,3)
+assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE id=121').get().quantity,5)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM catalog_variant_consolidations WHERE source_variant_id=12').get().n,0)
+
+p=await previewCatalogVariantConsolidation(db,12,13)
+const stocked=await consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken)
+assert.equal(stocked.transferredQuantity,7)
+assert.equal(active(12),0)
+assert.equal(active(13),1)
+assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE id=120').get().quantity,0)
+assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE id=122').get().quantity,0)
+assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE id=121').get().quantity,8)
+assert.equal(sqlite.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=121').get().reserved_quantity,1)
+assert.equal(sqlite.prepare("SELECT quantity FROM inventory_stock WHERE variant_id=13 AND inventory_source='boutique'").get().quantity,4)
+const receipt=sqlite.prepare('SELECT id,source_physical_quantity FROM catalog_variant_consolidations WHERE source_variant_id=12').get()
+assert.equal(receipt.source_physical_quantity,7)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM catalog_variant_consolidation_stock_rows WHERE consolidation_id=?').get(receipt.id).n,2)
+assert.equal(sqlite.prepare('SELECT passed FROM catalog_variant_consolidation_validations WHERE consolidation_id=?').get(receipt.id).passed,1)
+assert.equal((await consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken)).alreadyConsolidated,true)
+assert.equal(sqlite.prepare('SELECT variant_id FROM order_items WHERE id=21').get().variant_id,7,'Old order history unchanged')
 
 const api=fs.readFileSync('worker/index.ts','utf8')
 const ui=fs.readFileSync('src/features/sections/ReferenceIntegrityPanel.tsx','utf8')
