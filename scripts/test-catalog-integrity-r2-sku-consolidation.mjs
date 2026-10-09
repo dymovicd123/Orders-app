@@ -6,14 +6,24 @@ import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations
 const sqlite = new DatabaseSync(':memory:')
 sqlite.exec(`
  PRAGMA foreign_keys=ON;
- CREATE TABLE catalog_products(id INTEGER PRIMARY KEY,name TEXT,is_active INTEGER);
+ CREATE TABLE catalog_products(id INTEGER PRIMARY KEY,name TEXT,is_active INTEGER,external_id TEXT);
  CREATE TABLE catalog_stock_positions(id INTEGER PRIMARY KEY,product_id INTEGER,material TEXT,length TEXT,is_active INTEGER);
  CREATE TABLE catalog_variants(
    id INTEGER PRIMARY KEY,product_id INTEGER,stock_position_id INTEGER,
    category TEXT,gender TEXT,color TEXT,size_label TEXT,material TEXT,length TEXT,
-   is_active INTEGER,updated_at TEXT
+   is_active INTEGER,updated_at TEXT,external_id TEXT
  );
- CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,variant_id INTEGER,quantity INTEGER,reserved_quantity INTEGER);
+ CREATE TABLE inventory_stock(
+   id INTEGER PRIMARY KEY, variant_id INTEGER, inventory_source TEXT NOT NULL DEFAULT 'warehouse',
+   product_id INTEGER,product_name_snapshot TEXT,gender_snapshot TEXT,color_snapshot TEXT,
+   material_snapshot TEXT,length_snapshot TEXT,size_snapshot TEXT,
+   quantity INTEGER,reserved_quantity INTEGER,
+   last_action TEXT,last_source_ref TEXT, created_at TEXT,updated_at TEXT,
+   external_product_id TEXT,external_variant_id TEXT
+ );
+ CREATE UNIQUE INDEX idx_inventory_stock_variant_unique ON inventory_stock(inventory_source,variant_id) WHERE variant_id IS NOT NULL;
+ CREATE TABLE inventory_transfer_documents(id INTEGER PRIMARY KEY,status TEXT);
+ CREATE TABLE inventory_transfer_items(id INTEGER PRIMARY KEY,transfer_id INTEGER,variant_id INTEGER);
  CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,variant_id INTEGER,quantity INTEGER,status TEXT);
  CREATE TABLE orders(id INTEGER PRIMARY KEY,order_status TEXT,shipping_status TEXT);
  CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,variant_id INTEGER,quantity INTEGER);
@@ -21,18 +31,19 @@ sqlite.exec(`
  CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,variant_id INTEGER,status TEXT);
  CREATE TABLE inventory_stocktake_sessions(id TEXT PRIMARY KEY,status TEXT);
  CREATE TABLE inventory_stocktake_items(id INTEGER PRIMARY KEY,session_id TEXT,variant_id INTEGER);
- INSERT INTO catalog_products VALUES(100,'ЭТНО КАРДИГАН',1);
+ INSERT INTO catalog_products(id,name,is_active) VALUES(100,'ЭТНО КАРДИГАН',1);
  INSERT INTO catalog_stock_positions VALUES(30,100,'ДРАП','СТАНДАРТ',1),(31,100,'ШЕРСТЬ','СТАНДАРТ',1);
- INSERT INTO catalog_variants VALUES
+ INSERT INTO catalog_variants(id,product_id,stock_position_id,category,gender,color,size_label,material,length,is_active,updated_at) VALUES
   (7,100,30,'adult','ЖЕН','СВЕТЛО-СЕРЫЙ','52','ДРАП','СТАНДАРТ',1,'before'),
   (8,100,30,'adult','ЖЕН','СВЕТЛО СЕРЫЙ','52','ДРАП','СТАНДАРТ',1,'before'),
   (9,100,31,'adult','ЖЕН','СВЕТЛО СЕРЫЙ','52','ШЕРСТЬ','СТАНДАРТ',1,'before'),
   (10,100,30,'adult','ЖЕН','СВЕТЛО СЕРЫЙ','54','ДРАП','СТАНДАРТ',1,'before');
- INSERT INTO inventory_stock VALUES (10,7,0,0),(11,8,2,0);
+ INSERT INTO inventory_stock(id,variant_id,quantity,reserved_quantity) VALUES (10,7,0,0),(11,8,2,0);
  INSERT INTO orders VALUES(1,'active','sent');
  INSERT INTO order_items VALUES(21,1,7,1);
 `)
 sqlite.exec(fs.readFileSync('migrations/0083_v72_catalog_variant_consolidations.sql','utf8'))
+sqlite.exec(fs.readFileSync('migrations/0084_v72_catalog_variant_stock_consolidation.sql','utf8'))
 
 let beforeUpdate = () => {}
 const db = {
@@ -44,7 +55,7 @@ const db = {
           async first() { return sqlite.prepare(sql).get(...values) || null },
           async all() { return { results: sqlite.prepare(sql).all(...values) } },
           async run() {
-            if (sql.startsWith('UPDATE catalog_variants AS v')) beforeUpdate()
+            if (sql.startsWith('INSERT INTO catalog_variant_consolidations')) beforeUpdate()
             return { meta: { changes: Number(sqlite.prepare(sql).run(...values).changes) } }
           },
         }
@@ -75,16 +86,8 @@ assert.equal(impact.canConsolidate,true, 'Zero-stock SKU with old shipped order 
 assert.equal(impact.sourceImpact.historicalOrders,1)
 assert.equal(impact.targetImpact.physical,2)
 
-sqlite.exec('UPDATE inventory_stock SET quantity=3 WHERE id=10')
-impact=await previewCatalogVariantConsolidation(db,7,8)
-assert.equal(impact.canConsolidate,false)
-assert.match(impact.blockers.join(' '),/остаток/)
-await assert.rejects(() => consolidateUnusedCatalogVariant(db,7,8),/невозможно/)
-sqlite.exec('INSERT INTO inventory_stock VALUES(12,7,-3,0)')
-assert.equal((await previewCatalogVariantConsolidation(db,7,8)).canConsolidate,false,
-  'Compensating nonzero warehouse rows must not look like an empty SKU')
-sqlite.exec('DELETE FROM inventory_stock WHERE id=12')
-sqlite.exec('UPDATE inventory_stock SET quantity=0,reserved_quantity=1 WHERE id=10')
+// Physical stock moves have separate R3 tests; this suite covers legacy zero-stock retirement.
+sqlite.exec('UPDATE inventory_stock SET reserved_quantity=1 WHERE id=10')
 assert.equal((await previewCatalogVariantConsolidation(db,7,8)).canConsolidate,false, 'Stock reserve blocks')
 sqlite.exec('UPDATE inventory_stock SET reserved_quantity=0 WHERE id=10')
 sqlite.exec("INSERT INTO inventory_reservations VALUES(1,7,1,'active')")
@@ -125,7 +128,10 @@ assert.equal(result.historicalOrdersPreserved,1)
 assert.equal(active(7),0)
 assert.equal(active(8),1)
 assert.equal(active(9),1)
-assert.deepEqual(sqlite.prepare('SELECT * FROM inventory_stock ORDER BY id').all(),beforeStock)
+assert.deepEqual(
+  sqlite.prepare('SELECT id,variant_id,quantity,reserved_quantity FROM inventory_stock ORDER BY id').all(),
+  beforeStock.map(({id,variant_id,quantity,reserved_quantity})=>({id,variant_id,quantity,reserved_quantity}))
+)
 assert.deepEqual(sqlite.prepare('SELECT * FROM order_items ORDER BY id').all(),beforeOrder)
 assert.equal(activity(),1)
 const history=await listRecentCatalogVariantConsolidations(db)
@@ -150,6 +156,6 @@ assert.match(ui,/Убрать дублирующий вариант/)
 assert.match(ui,/История объединений вариантов/)
 assert.match(api,/\/api\/catalog\/variants\/consolidation-history/)
 assert.match(moduleText,/AND NOT EXISTS \(SELECT 1 FROM inventory_reservations/)
-assert.doesNotMatch(moduleText,/\b(?:UPDATE|DELETE FROM)\s+(?:inventory_stock|order_items|inventory_movements|inventory_reservations|payments)\b/i)
+assert.doesNotMatch(moduleText,/\b(?:UPDATE|DELETE FROM)\s+(?:order_items|inventory_movements|inventory_reservations|payments)\b/i)
 sqlite.close()
 console.log('CATALOG INTEGRITY R2 SKU CONSOLIDATION PASSED — distinct material/size, blockers, concurrent races, zero-stock retirement, history and replay')
