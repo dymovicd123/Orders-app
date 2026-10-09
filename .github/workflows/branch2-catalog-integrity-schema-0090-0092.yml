@@ -1,0 +1,147 @@
+name: Branch2 Catalog Integrity schema 0090-0092
+
+on:
+  push:
+    branches: [branch2]
+    paths: ['.github/workflows/branch2-catalog-integrity-schema-0090-0092.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    name: Add catalog consolidation tables only to Branch2 D1
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Validate isolated Branch2 Worker, original Stage04 and additive-only migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "branch2" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo "PRODUCTION D1 BINDING DETECTED — ABORT" >&2
+            exit 40
+          fi
+          [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]] || exit 41
+          [[ "$(git hash-object migrations/0083_v72_workshop_settlement_foundation.sql)" == "d73a92f86317a9068a9a381742d55e5c96804879" ]] || exit 42
+          [[ "$(git hash-object migrations/0084_v72_workshop_settlement_status_capture.sql)" == "2e3f51ab0b055d5b82d6b542cec28cf661359003" ]] || exit 43
+          test -f migrations/0090_v72_catalog_variant_consolidations.sql
+          test -f migrations/0091_v72_catalog_variant_stock_consolidation.sql
+          test -f migrations/0092_v72_catalog_variant_reservation_consolidation.sql
+          grep -Fq 'CREATE TABLE IF NOT EXISTS catalog_variant_consolidations' migrations/0090_v72_catalog_variant_consolidations.sql
+          grep -Fq 'catalog_variant_consolidation_validations' migrations/0091_v72_catalog_variant_stock_consolidation.sql
+          grep -Fq 'ALTER TABLE catalog_variant_consolidation_stock_rows ADD COLUMN source_reserved_before' migrations/0092_v72_catalog_variant_reservation_consolidation.sql
+          for file in migrations/009{0,1,2}_v72_catalog_variant_*.sql; do
+            if grep -Eiq '^[[:space:]]*(UPDATE|DELETE|REPLACE|DROP|TRUNCATE)[[:space:]]' "$file"; then
+              echo "Business data mutation forbidden: $file" >&2
+              exit 44
+            fi
+          done
+      - run: npm ci
+      - name: Verify Stage04 regressions before touching schema
+        run: |
+          set -euo pipefail
+          node scripts/test-branch2-environment.mjs
+          node scripts/test-stage04a-workshop-settlements.mjs
+          node scripts/test-stage04b-workshop-status-capture.mjs
+      - name: Capture Stage04 and operational data fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          summary="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+              (SELECT COUNT(*) FROM order_items) AS items_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock_total,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_total,
+              (SELECT COUNT(*) FROM inventory_reservations) AS reservation_rows,
+              (SELECT COUNT(*) FROM workshop_tasks) AS workshop_tasks,
+              (SELECT COUNT(*) FROM workshop_settlement_events) AS stage04_events,
+              (SELECT enabled FROM workshop_settlement_capture_control WHERE id=1) AS stage04_capture
+          " --json)"
+          jq -cS '.[0].results[0]' <<<"$summary" > /tmp/catalog-before.json
+          [[ -s /tmp/catalog-before.json ]] || exit 45
+          schema="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table'
+                AND name IN ('catalog_variant_consolidations','catalog_variant_consolidation_stock_rows',
+                  'catalog_variant_consolidation_validations',
+                  'catalog_variant_consolidation_reservation_rows',
+                  'catalog_variant_consolidation_reservation_validations')) AS count,
+              (SELECT COUNT(*) FROM pragma_table_info('catalog_variant_consolidation_stock_rows')
+                WHERE name='source_reserved_before') AS column_count,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger'
+                AND name IN ('trg_workshop_settlement_completion','trg_workshop_settlement_completion_reversal')) AS stage04_triggers
+          " --json)"
+          count="$(jq -r '.[0].results[0].count // -1' <<<"$schema")"
+          col="$(jq -r '.[0].results[0].column_count // -1' <<<"$schema")"
+          [[ "$count" == "0" && "$col" == "0" || "$count" == "5" && "$col" == "1" ]] || {
+            echo "Partial/mixed catalog schema; manual review needed." >&2; exit 46
+          }
+          [[ "$(jq -r '.[0].results[0].stage04_triggers // -1' <<<"$schema")" == "2" ]] || exit 47
+          echo "$count" > /tmp/catalog-schema-count
+      - name: Apply only new catalog tables on isolated Branch2 D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(cat /tmp/catalog-schema-count)" == "0" ]]; then
+            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file migrations/0090_v72_catalog_variant_consolidations.sql
+            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file migrations/0091_v72_catalog_variant_stock_consolidation.sql
+            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file migrations/0092_v72_catalog_variant_reservation_consolidation.sql
+          else
+            echo "Existing validated schema found; no migration writes."
+          fi
+      - name: Prove schema and Stage04 operational data preserved
+        shell: bash
+        run: |
+          set -euo pipefail
+          schema="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table'
+                AND name IN ('catalog_variant_consolidations','catalog_variant_consolidation_stock_rows',
+                  'catalog_variant_consolidation_validations',
+                  'catalog_variant_consolidation_reservation_rows',
+                  'catalog_variant_consolidation_reservation_validations')) AS count,
+              (SELECT COUNT(*) FROM pragma_table_info('catalog_variant_consolidation_stock_rows')
+                WHERE name='source_reserved_before') AS column_count,
+              (SELECT COUNT(*) FROM catalog_variant_consolidations) AS new_operations,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger'
+                AND name IN ('trg_workshop_settlement_completion','trg_workshop_settlement_completion_reversal')) AS stage04_triggers
+          " --json)"
+          [[ "$(jq -r '.[0].results[0].count // -1' <<<"$schema")" == "5" ]] || exit 50
+          [[ "$(jq -r '.[0].results[0].column_count // -1' <<<"$schema")" == "1" ]] || exit 51
+          [[ "$(jq -r '.[0].results[0].new_operations // -1' <<<"$schema")" == "0" ]] || exit 52
+          [[ "$(jq -r '.[0].results[0].stage04_triggers // -1' <<<"$schema")" == "2" ]] || exit 53
+          summary="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+              (SELECT COUNT(*) FROM order_items) AS items_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock_total,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_total,
+              (SELECT COUNT(*) FROM inventory_reservations) AS reservation_rows,
+              (SELECT COUNT(*) FROM workshop_tasks) AS workshop_tasks,
+              (SELECT COUNT(*) FROM workshop_settlement_events) AS stage04_events,
+              (SELECT enabled FROM workshop_settlement_capture_control WHERE id=1) AS stage04_capture
+          " --json)"
+          [[ "$(jq -cS '.[0].results[0]' <<<"$summary")" == "$(cat /tmp/catalog-before.json)" ]] || {
+            echo "Stage04 or business data changed during additive schema migration; manual investigation required." >&2; exit 54
+          }
+          echo "CATALOG 0090-0092 BRANCH2 SCHEMA PASSED — Stage04 code, triggers, events and balances preserved. No Production D1 access."
