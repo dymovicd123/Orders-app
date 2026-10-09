@@ -125,15 +125,17 @@ const ambiguous=await previewCharacteristicImpact(
 assert.equal(ambiguous.skuPairs.length,0,'Multiple keeper SKUs require manual catalog review')
 const ui = fs.readFileSync('src/features/sections/ReferenceMergeWorkspace.tsx','utf8')
 const api = fs.readFileSync('worker/index.ts','utf8')
-assert.match(ui,/reference-merge-sku-guidance/)
-assert.match(ui,/api\\/catalog\\/variants\\/consolidation-preview/)
-assert.match(ui,/api\\/catalog\\/variants\\/consolidate-unused/)
-assert.match(ui,/expectedToken:preview\\.stateToken/)
-assert.ok(ui.includes('/api/reference-values/consolidation-preview'))
-assert.ok(ui.includes('/api/reference-values/hide-unused-duplicate'))
+for(const path of [
+ '/api/catalog/variants/consolidation-preview',
+ '/api/catalog/variants/consolidate-unused',
+ '/api/reference-values/consolidation-preview',
+ '/api/reference-values/hide-unused-duplicate',
+])assert.ok(ui.includes(path), 'UI must call guarded endpoint '+path)
+assert.ok(ui.includes('reference-merge-sku-guidance'))
+assert.ok(ui.includes('expectedToken:preview.stateToken'))
+assert.ok(ui.includes('pairReview.preview.canConsolidate'))
 assert.ok(ui.includes('cleanup.safeToHideSource'))
-assert.match(ui,/pairReview\\.preview\\.canConsolidate/)
-assert.match(api,/requireAdminUser\\(authUser, 'Объединение вариантов/)
+assert.ok(api.includes("requireAdminUser(authUser, 'Объединение вариантов"))
 console.log('CHARACTERISTIC SKU GUIDANCE PASSED — equivalent colors only, exact position/size, ambiguous keeper blocked')
 
 console.log('CHARACTERISTIC MERGE IMPACT PASSED — source/keeper choice, material executions, warehouse/boutique, active/historical orders, reserves, ambiguity, read-only')
