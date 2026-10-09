@@ -264,7 +264,7 @@ export async function upsertReferenceValue(db: D1Database, input: { kind?: unkno
     const current = await db.prepare(
       `SELECT value FROM reference_values WHERE id = ? AND kind = ? LIMIT 1`
     ).bind(id, dbKind).first<{ value: string }>();
-    if (!current || upperText(current.value) !== value) {
+    if (!current || referenceValueIdentityKey(current.value) !== referenceValueIdentityKey(value) || upperText(current.value) !== value) {
       await assertNoEquivalentReferenceValue(db, dbKind, value, id);
     }
     await assertReferenceValueCanChange(db, dbKind, id, value, isActive);
