@@ -26,3 +26,13 @@
 .reference-merge-next{background:#f0f5fa;color:#425771}
 .reference-merge-error{margin:0;color:#b42318;padding:11px;border-radius:8px;background:#fff0ed}
 @media(max-width:700px){.reference-merge-workspace{padding:14px}.reference-merge-pair{grid-template-columns:1fr}.reference-merge-arrow{transform:rotate(90deg)}.reference-merge-stats{grid-template-columns:1fr}}
+
+.reference-merge-history{display:grid;gap:11px;margin-top:3px;padding-top:13px;border-top:1px solid #e3eaf0}
+.reference-merge-history>button{width:fit-content}
+.reference-merge-history-items{display:grid;gap:8px}
+.reference-merge-history-item{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 13px;border:1px solid #e2e8f0;border-radius:10px;background:#fbfdff}
+.reference-merge-history-item>div{display:grid;gap:3px}
+.reference-merge-history-item strong{color:#204467}
+.reference-merge-history-item strong s{color:#768698;font-weight:500}
+.reference-merge-history-item small,.reference-merge-history-item>span{font-size:.8rem;color:#64748b}
+@media(max-width:700px){.reference-merge-history-item{align-items:flex-start;flex-direction:column}}
