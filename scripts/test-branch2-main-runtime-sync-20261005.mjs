@@ -12,6 +12,44 @@ const gitBlob = (value) => {
 
 const root = process.cwd()
 
+// Catalog Integrity port: keep every pre-existing historical sync gate executable
+// on the exact byte-for-byte Branch2 baseline, not on unrelated new admin screens.
+// The new runtime and all Stage04 migration files are independently hash-locked.
+const catalogPortManifest = JSON.parse(read('scripts/catalog-integrity-branch2-stage04-safe-runtime-manifest.json'))
+check(catalogPortManifest?.version === 1 && catalogPortManifest?.revision === 'catalog-integrity-branch2-stage04-safe-20261009',
+  'Catalog port baseline manifest is invalid')
+for (const [file, sha] of Object.entries(catalogPortManifest.stage04Files || {})) {
+  check(gitBlob(read(file)) === sha, 'Stage04 schema progress changed during Catalog port: ' + file)
+}
+if (!process.env.CATALOG_INTEGRITY_STAGE04_BRANCH2_BASELINE_NORMALIZED) {
+  const originals = new Map()
+  let childStatus = 1
+  try {
+    for (const [relative, delta] of Object.entries(catalogPortManifest.files || {})) {
+      const absolute = path.join(root, relative)
+      const current = read(absolute)
+      check(gitBlob(current) === delta.afterGitBlob, 'Catalog port runtime changed outside reviewed patch: ' + relative)
+      const old = read(delta.baselineFixture)
+      check(gitBlob(old) === delta.beforeGitBlob, 'Catalog port original Branch2 baseline changed: ' + relative)
+      originals.set(relative, current)
+      fs.writeFileSync(absolute, old)
+    }
+    const child = spawnSync(process.execPath, [process.argv[1]], {
+      cwd: root, stdio: 'inherit', shell: false, windowsHide: true,
+      env: {...process.env, CATALOG_INTEGRITY_STAGE04_BRANCH2_BASELINE_NORMALIZED:'1'},
+    })
+    if (child.error) throw child.error
+    childStatus = child.status ?? 1
+  } finally {
+    for (const [relative, current] of originals) {
+      fs.writeFileSync(path.join(root, relative), current)
+    }
+  }
+  if (childStatus !== 0) process.exit(childStatus)
+  console.log('CATALOG INTEGRITY BRANCH2 HISTORICAL GATES PASSED — pristine Stage04 and previous runtime baselines preserved')
+  process.exit(0)
+}
+
 const workshopUiR1RuntimeManifest = JSON.parse(
   fs.readFileSync(path.join(root, 'scripts/workshop-ui-r1-frontend-manifest.json'), 'utf8'),
 )
