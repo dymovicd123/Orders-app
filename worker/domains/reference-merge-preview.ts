@@ -1,5 +1,6 @@
 import { cleanText, toInt } from '../core/text.ts'
 import { previewPaymentMethodMerge } from './reference-payment-merge.ts'
+import { previewCharacteristicImpact } from './reference-characteristic-impact.ts'
 
 export type Reference = { id: number; kind: string; value: string; is_active: number; updated_at:string }
 const supported = new Set([
@@ -149,7 +150,11 @@ export async function previewUserSelectedReferenceMerge(
     ])
     Object.assign(finance,{payments,financialEvents:events,cashEntries:cash,returns,exchanges})
   }
-  const activeCatalogVariants=await countCatalogReferences(db,source.kind,source.value)
+  const catalogImpact = ['color','material','length','size','child_age'].includes(source.kind)
+    ? await previewCharacteristicImpact(db, source, target, month)
+    : null
+  const activeCatalogVariants = catalogImpact?.source.activeVariants
+    ?? await countCatalogReferences(db,source.kind,source.value)
   const isMoney=source.kind==='payment_method'
   const mergeableKind=source.kind==='city'||source.kind==='delivery_type'
   const currentRows=mergeableKind
@@ -172,6 +177,7 @@ export async function previewUserSelectedReferenceMerge(
     ordersCovered: Boolean(field),
     finance,
     activeCatalogVariants,
+    catalogImpact,
     canApply,
     stateToken,
     matchedCurrentOrders:currentRows.length,
@@ -180,6 +186,8 @@ export async function previewUserSelectedReferenceMerge(
       ? paymentSafety?.canApply
         ? 'Способ оплаты будет заменён только в заказах этого месяца и связанных безналичных операциях. Суммы и даты останутся прежними, исходные названия будут сохранены в истории объединения.'
         : paymentSafety?.blockers[0] || 'Способ оплаты требует дополнительной проверки денежных операций.'
+      : catalogImpact
+        ? 'Проверены варианты, текущие остатки, резервы, задачи цеха и связанные строки заказов. Это только предпросмотр: изменения характеристик и SKU пока не выполняются.'
       : activeCatalogVariants>0
         ? 'Это значение используется в товарах. При объединении нужно также проверить их варианты и остатки. Пока ничего не изменено.'
         : canApply
