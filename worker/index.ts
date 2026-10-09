@@ -27,6 +27,7 @@ import { createOrder, getOrder, updateOrderCritical } from './domains/orders-wri
 import { createReferenceValue, deleteReferenceValue, getReferenceData, getReferenceValueCounts, listReferenceValues, normalizeReferenceKind, updateReferenceValue } from './domains/references.ts'
 import { hideUnusedEquivalentReference, listReferenceDuplicateGroups, previewReferenceConsolidation } from './domains/reference-integrity.ts'
 import { previewUserSelectedReferenceMerge } from './domains/reference-merge-preview.ts'
+import { applyMonthBoundReferenceMerge } from './domains/reference-merge-apply.ts'
 import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
 import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { createItemizedExchangeBatchFromRequest } from './domains/exchange-batch.ts'
@@ -188,6 +189,16 @@ export default {
 
       if (url.pathname === '/api/reference-data' && request.method === 'GET') {
         return json(await getReferenceData(env.DB));
+      }
+
+      if (url.pathname === '/api/reference-values/merge' && request.method === 'POST') {
+        const denied = requireAdminUser(authUser, 'Объединение значений доступно администратору.');
+        if (denied) return denied;
+        const data=await readJson<{sourceId?:number;targetId?:number;expectedToken?:string}>(request);
+        return json(await applyMonthBoundReferenceMerge(
+          env.DB,Number(data.sourceId),Number(data.targetId),
+          cleanText(data.expectedToken),authUser?.login||'',
+        ));
       }
 
       if (url.pathname === '/api/reference-values/merge-preview' && request.method === 'GET') {
