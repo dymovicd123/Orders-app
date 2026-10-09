@@ -30,5 +30,7 @@ jobs:
           node --experimental-strip-types scripts/test-reference-merge-monthly-apply.mjs
           node --experimental-strip-types scripts/test-catalog-integrity-r2-sku-consolidation.mjs
           node --experimental-strip-types scripts/test-inventory-writeoff-review.mjs
+      - name: Full historical Branch2 regression gate
+        run: npm run release:check
       - name: TypeScript build
         run: npm run build
