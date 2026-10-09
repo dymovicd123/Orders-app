@@ -27,3 +27,13 @@
 ## Проверки
 
 `scripts/test-reference-merge-choice-preview.mjs` и `scripts/test-reference-merge-monthly-apply.mjs` на SQLite с искусственными заказами, хранением прежних значений, запросами с устаревшим предпросмотром, rollback, повторным запросом и блокировкой изменения способов оплаты. CI также проверяет Stage04-A/B, изоляцию D1, Catalog SKU и сборку TypeScript/Vite.
+
+## R2 payment-method consolidation (development branch; 2026-10-09)
+
+- `0094_v72_reference_payment_method_merges.sql`: additive audit, per-record original values and validated transaction result. **Not applied** on any D1.
+- For **ТЕРМИНАЛ → KASPI PAY** and other explicitly supported ordinary noncash pairs, administrator picks source and keeper. Preview counts affected order records, payments, immutable-in-amount financial events, returns and exchanges. Active cash-register entries using the source method, cash methods, Kaspi **магазин**, older-period financial events, and oversize batches **block** merging.
+- Atomic one-batch operation changes **only method labels** for records attached to *current calendar month's orders*. Amounts, cash-register entries, payment dates, event dates and older-month orders are not changed. Each original label (including the previous label of a financial event) is written to an append-only audit row before updating. Transactional fingerprints validate the exact set of rows and their amounts/dates. Postcondition checks cause full rollback on disagreement.
+- Finance consumers group on method labels in both payment rows and financial events; updating them together prevents mismatched classifications. We deliberately do **not** generate new positive/negative financial events for a spelling correction because money has not moved. This is an audited classification correction, not a money operation. Method changes to a cash method or Kaspi магазин require a separate business flow, not silent remapping.
+- Orders with blank intended `orders.order_payment_method` and a Terminal payment retain their blank intended payment method (we only correct the factual payment row); do not infer intent when an order might have mixed payments.
+- `GET /api/reference-values/merge-history` lists cross-kind recent merges with original value, keeper, date and actor. Browser receives counts and a review token, **not** the original per-payment snapshot.
+- Focused SQLite tests: `test-reference-payment-merge.mjs`, `test-reference-merge-history.mjs`, plus Stage04-A/B and full historical release gate. Must rehearse complete migrations `0093` then `0094` on an isolated DB with real existing schema before merging the PR. **No deployment** to branch2/main/production yet. Writeoff remains deferred.
