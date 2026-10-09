@@ -199,10 +199,19 @@ export async function consolidateUnusedCatalogVariant(
       JOIN catalog_stock_positions sp ON sp.id=v.stock_position_id AND sp.is_active=1
       WHERE v.id=? AND v.is_active=1 AND ${identityPredicate('v')} AND ${identityPredicate('t')}
         AND NOT EXISTS (SELECT 1 FROM catalog_variant_consolidations c WHERE c.source_variant_id=v.id)
-        AND (SELECT COALESCE(json_group_array(json_array(z.id,z.inventory_source,z.variant_id,
-              z.quantity,z.reserved_quantity)),'[]')
-          FROM (SELECT id,inventory_source,variant_id,quantity,reserved_quantity FROM inventory_stock
-            WHERE variant_id IN (v.id,t.id) ORDER BY id) z) = ?
+        AND (SELECT COUNT(*) FROM inventory_stock z WHERE z.variant_id IN (v.id,t.id))=json_array_length(?)
+        AND NOT EXISTS (
+          SELECT 1 FROM inventory_stock z
+          WHERE z.variant_id IN (v.id,t.id)
+            AND NOT EXISTS (
+              SELECT 1 FROM json_each(?) j
+              WHERE CAST(json_extract(j.value,'$[0]') AS INTEGER)=z.id
+                AND json_extract(j.value,'$[1]')=z.inventory_source
+                AND CAST(json_extract(j.value,'$[2]') AS INTEGER)=z.variant_id
+                AND CAST(json_extract(j.value,'$[3]') AS INTEGER)=z.quantity
+                AND CAST(json_extract(j.value,'$[4]') AS INTEGER)=z.reserved_quantity
+            )
+        )
         AND NOT EXISTS (SELECT 1 FROM inventory_stock s WHERE s.variant_id IN (v.id,t.id)
           AND (s.quantity<0 OR s.reserved_quantity<0 OR s.quantity IS NULL OR s.reserved_quantity IS NULL
             OR s.inventory_source NOT IN ('warehouse','boutique')))
@@ -219,7 +228,7 @@ export async function consolidateUnusedCatalogVariant(
         AND NOT EXISTS (SELECT 1 FROM inventory_transfer_items i
           JOIN inventory_transfer_documents d ON d.id=i.transfer_id
           WHERE i.variant_id=v.id AND d.status='applied')`
-    ).bind(actor||null,stamp,targetId,sourceId,...sourceFields,...targetFields,beforeStock),
+    ).bind(actor||null,stamp,targetId,sourceId,...sourceFields,...targetFields,beforeStock,beforeStock),
     db.prepare(
       `INSERT INTO catalog_variant_consolidation_stock_rows (
         consolidation_id,inventory_source,source_stock_id,target_stock_id_before,
