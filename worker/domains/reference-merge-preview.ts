@@ -156,6 +156,7 @@ export async function previewUserSelectedReferenceMerge(
     ? await readCurrentReferenceOrderRows(db,source.kind as 'city'|'delivery_type',source.value,month.from,month.toExclusive)
     : []
   const paymentSafety=isMoney ? await previewPaymentMethodMerge(db,source,target,month) : null
+  const publicPaymentSafety=paymentSafety ? { ...paymentSafety, snapshot:undefined } : null
   const canApply=paymentSafety
     ? paymentSafety.canApply
     : mergeableKind && currentRows.length<=5000 && currentRows.length===summary.current
@@ -174,7 +175,7 @@ export async function previewUserSelectedReferenceMerge(
     canApply,
     stateToken,
     matchedCurrentOrders:currentRows.length,
-    paymentSafety,
+    paymentSafety:publicPaymentSafety,
     explanation: isMoney
       ? paymentSafety?.canApply
         ? 'Способ оплаты будет заменён только в заказах этого месяца и связанных безналичных операциях. Суммы и даты останутся прежними, исходные названия будут сохранены в истории объединения.'
