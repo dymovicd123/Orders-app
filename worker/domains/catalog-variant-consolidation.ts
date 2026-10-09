@@ -219,11 +219,13 @@ export async function consolidateUnusedCatalogVariant(
     throw new Error('Эта вариация уже объединена с другой. Обновите список.')
   }
   const preview = await previewCatalogVariantConsolidation(db,sourceId,targetId)
-  if (!preview.canConsolidate) throw new Error('Объединение пока невозможно: '+preview.blockers.join('; '))
-  if ((preview.transferQuantity > 0 || preview.reservationCount > 0) && (!expectedToken || expectedToken !== preview.stateToken)) {
-    throw new Error('Остатки изменились или не подтверждены. Обновите предпросмотр объединения.')
+  if (expectedToken && expectedToken !== preview.stateToken) {
+    throw new Error('Данные склада или заказов изменились после проверки. Обновите предпросмотр объединения.')
   }
-  if (expectedToken && expectedToken !== preview.stateToken) throw new Error('Данные изменились после проверки. Проверьте остатки заново.')
+  if ((preview.transferQuantity > 0 || preview.reservationCount > 0) && !expectedToken) {
+    throw new Error('Остатки или резервы не подтверждены. Обновите предпросмотр объединения.')
+  }
+  if (!preview.canConsolidate) throw new Error('Объединение пока невозможно: '+preview.blockers.join('; '))
 
   const [source,target,stocks,reservations] = await Promise.all([readSku(db,sourceId),readSku(db,targetId),readStocks(db,sourceId,targetId),readActiveReservations(db,sourceId,targetId)])
   if (!source || !target || !sameBusinessIdentity(source,target) || snapshotToken(source,target,stocks,reservations)!==preview.stateToken) {
