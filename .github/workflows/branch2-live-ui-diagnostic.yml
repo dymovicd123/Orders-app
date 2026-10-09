@@ -51,10 +51,10 @@ jobs:
               print('ENTRY',item,'code',code,'bytes',len(source))
               files.append((item,source))
               found=set(re.findall(r'[^"\s]{0,60}ReferencesSection[^"\s]{0,65}\.js',source))
-              all_js=set(re.findall(r'[A-Za-z0-9_./-]+\\.js',source))
+              all_js=set(re.findall(r'[A-Za-z0-9_./-]+\.js',source))
               candidates={u for u in all_js if any(t in u.lower() for t in ('reference','inventory','section','app-','catalog','writeoff','chunk'))}
               print('CANDIDATES',sorted(candidates)[:70],flush=True)
-              for path in sorted(all_js)[:350]:
+              for path in sorted(candidates)[:100]:
                 if path.startswith('http'): continue
                 path='/assets/'+path.split('/')[-1]
                 if '/index-' in path or 'rolldown-' in path: continue
