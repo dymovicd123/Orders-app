@@ -1,4 +1,5 @@
 import { cleanText, toInt } from '../core/text.ts'
+import { previewPaymentMethodMerge } from './reference-payment-merge.ts'
 
 export type Reference = { id: number; kind: string; value: string; is_active: number; updated_at:string }
 const supported = new Set([
@@ -154,8 +155,12 @@ export async function previewUserSelectedReferenceMerge(
   const currentRows=mergeableKind
     ? await readCurrentReferenceOrderRows(db,source.kind as 'city'|'delivery_type',source.value,month.from,month.toExclusive)
     : []
-  const canApply=mergeableKind && currentRows.length<=5000 && currentRows.length===summary.current
-  const stateToken=canApply ? await referenceMergeToken(source,target,month,currentRows) : ''
+  const paymentSafety=isMoney ? await previewPaymentMethodMerge(db,source,target,month) : null
+  const canApply=paymentSafety
+    ? paymentSafety.canApply
+    : mergeableKind && currentRows.length<=5000 && currentRows.length===summary.current
+  const stateToken=paymentSafety?.stateToken ||
+    (canApply ? await referenceMergeToken(source,target,month,currentRows) : '')
   return {
     ok:true,
     kind:source.kind,
@@ -169,8 +174,11 @@ export async function previewUserSelectedReferenceMerge(
     canApply,
     stateToken,
     matchedCurrentOrders:currentRows.length,
+    paymentSafety,
     explanation: isMoney
-      ? 'Способ оплаты связан с заказами и финансовыми записями. Сначала сверим все связи, чтобы переименование не исказило отчёты. Пока ничего не изменено.'
+      ? paymentSafety?.canApply
+        ? 'Способ оплаты будет заменён только в заказах этого месяца и связанных безналичных операциях. Суммы и даты останутся прежними, исходные названия будут сохранены в истории объединения.'
+        : paymentSafety?.blockers[0] || 'Способ оплаты требует дополнительной проверки денежных операций.'
       : activeCatalogVariants>0
         ? 'Это значение используется в товарах. При объединении нужно также проверить их варианты и остатки. Пока ничего не изменено.'
         : canApply
