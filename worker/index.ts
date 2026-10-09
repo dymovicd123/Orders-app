@@ -29,6 +29,7 @@ import { hideUnusedEquivalentReference, listReferenceDuplicateGroups, previewRef
 import { previewUserSelectedReferenceMerge } from './domains/reference-merge-preview.ts'
 import { applyMonthBoundReferenceMerge } from './domains/reference-merge-apply.ts'
 import { applyPaymentMethodMerge } from './domains/reference-payment-merge.ts'
+import { listRecentReferenceValueMerges } from './domains/reference-merge-history.ts'
 import { businessMonthRange } from './domains/reference-merge-preview.ts'
 import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
 import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
@@ -191,6 +192,12 @@ export default {
 
       if (url.pathname === '/api/reference-data' && request.method === 'GET') {
         return json(await getReferenceData(env.DB));
+      }
+
+      if (url.pathname === '/api/reference-values/merge-history' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'История объединений доступна администратору.');
+        if(denied)return denied;
+        return json(await listRecentReferenceValueMerges(env.DB));
       }
 
       if (url.pathname === '/api/reference-values/merge' && request.method === 'POST') {
