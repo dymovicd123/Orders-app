@@ -237,10 +237,12 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                                   type="button"
                                   onClick={(event) => {
                                     event.stopPropagation()
-                                    void removeReferenceEntry(item.id)
+                                    if (window.confirm('Удалить «' + item.value + '» из списка выбора? Ранее оформленные заказы сохранятся. Если нужно заменить название в заказах текущего месяца, сначала используйте объединение.')) {
+                                      void removeReferenceEntry(item.id)
+                                    }
                                   }}
                                 >
-                                  Убрать
+                                  Удалить из списка
                                 </button>
                               </div>
                             ) : null}
