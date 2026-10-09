@@ -123,12 +123,14 @@ sqlite.exec('DELETE FROM inventory_stocktake_items')
 sqlite.exec('DELETE FROM inventory_stocktake_sessions')
 
 beforeUpdate=()=>{ beforeUpdate=()=>{}; sqlite.exec('UPDATE inventory_stock SET quantity=4 WHERE id=10') }
-await assert.rejects(() => consolidateUnusedCatalogVariant(db,7,8,'admin-test',(await previewCatalogVariantConsolidation(db,7,8)).stateToken),/изменились во время проверки/)
+const stockRacePreview=await previewCatalogVariantConsolidation(db,7,8)
+await assert.rejects(() => consolidateUnusedCatalogVariant(db,7,8,'admin-test',stockRacePreview.stateToken),/изменились во время проверки/)
 assert.equal(active(7),1, 'Stock race must not deactivate')
 assert.equal(activity(),0,'Stock race must not log successful merge')
 sqlite.exec('UPDATE inventory_stock SET quantity=0 WHERE id=10')
 beforeUpdate=()=>{ beforeUpdate=()=>{}; sqlite.exec("UPDATE catalog_variants SET color='КРАСНЫЙ',updated_at='changed' WHERE id=8") }
-await assert.rejects(() => consolidateUnusedCatalogVariant(db,7,8,'admin-test',(await previewCatalogVariantConsolidation(db,7,8)).stateToken),/изменились во время проверки/)
+const keeperRacePreview=await previewCatalogVariantConsolidation(db,7,8)
+await assert.rejects(() => consolidateUnusedCatalogVariant(db,7,8,'admin-test',keeperRacePreview.stateToken),/изменились во время проверки/)
 assert.equal(active(7),1,'Keeper rename race must not deactivate')
 assert.equal(activity(),0)
 sqlite.exec("UPDATE catalog_variants SET color='СВЕТЛО СЕРЫЙ',updated_at='before' WHERE id=8")
