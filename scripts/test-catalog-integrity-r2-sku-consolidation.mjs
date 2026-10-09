@@ -53,9 +53,9 @@ sqlite.exec(`
  INSERT INTO orders VALUES(1,'active','sent');
  INSERT INTO order_items(id,order_id,variant_id,quantity) VALUES(21,1,7,1);
 `)
-sqlite.exec(fs.readFileSync('migrations/0083_v72_catalog_variant_consolidations.sql','utf8'))
-sqlite.exec(fs.readFileSync('migrations/0084_v72_catalog_variant_stock_consolidation.sql','utf8'))
-sqlite.exec(fs.readFileSync('migrations/0085_v72_catalog_variant_reservation_consolidation.sql','utf8'))
+sqlite.exec(fs.readFileSync('migrations/0090_v72_catalog_variant_consolidations.sql','utf8'))
+sqlite.exec(fs.readFileSync('migrations/0091_v72_catalog_variant_stock_consolidation.sql','utf8'))
+sqlite.exec(fs.readFileSync('migrations/0092_v72_catalog_variant_reservation_consolidation.sql','utf8'))
 
 let beforeUpdate = () => {}
 let beforeValidation = () => {}

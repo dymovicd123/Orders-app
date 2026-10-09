@@ -8350,7 +8350,7 @@ function removeDebtPayment(index: number) {
 
 
         <DeferredSection active={activeSector === 'references'} label="Справочники">
-        <ReferencesSection ctx={{ filteredReferenceItems, formatDateShort, FriendlyNumberInput, isAdmin, loadReferenceItems, normalizeSuggestion, referenceBusy, referenceDraft, referenceGroups, referenceItems, referenceKind, referenceSearch, referenceStats, referenceStatusFilter, removeReferenceEntry, resolveCatalogReviewItem, resetReferenceDraft, saveReferenceEntry, sectorStyle, selectedReferenceKindConfig, selectReferenceKind, setReferenceDraft, setReferenceSearch, setReferenceStatusFilter }} />
+        <ReferencesSection ctx={{ apiFetch, loadReferencesData, loadReferenceKindCounts, filteredReferenceItems, formatDateShort, FriendlyNumberInput, isAdmin, loadReferenceItems, normalizeSuggestion, referenceBusy, referenceDraft, referenceGroups, referenceItems, referenceKind, referenceSearch, referenceStats, referenceStatusFilter, removeReferenceEntry, resolveCatalogReviewItem, resetReferenceDraft, saveReferenceEntry, sectorStyle, selectedReferenceKindConfig, selectReferenceKind, setReferenceDraft, setReferenceSearch, setReferenceStatusFilter }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'inventory'} label="Склад">
