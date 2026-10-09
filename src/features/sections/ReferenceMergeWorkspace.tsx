@@ -10,6 +10,7 @@ type Impact = {
   target:{id:number;value:string};
   month:{from:string;toExclusive:string;label:string};
   orders:Counts;
+  ordersCovered:boolean;
   finance:{payments:Counts;financialEvents:Counts;cashEntries:Counts;returns:Counts;exchanges:Counts};
   activeCatalogVariants:number;
   canApply:boolean;
@@ -125,10 +126,12 @@ export function ReferenceMergeWorkspace({
           <div className="reference-merge-impact">
             <h4>Что произойдёт с записями?</h4>
             <p className="reference-merge-transform"><s>{impact.source.value}</s><span aria-hidden="true">→</span><strong>{impact.target.value}</strong></p>
-            <div className="reference-merge-stats">
-              <div><span>Заказы за {impact.month.label}</span><strong>{impact.orders.current}</strong><small>Требуют обновления</small></div>
-              <div><span>Заказы за предыдущие месяцы</span><strong>{impact.orders.older}</strong><small>Останутся в истории без изменений</small></div>
-            </div>
+            {impact.ordersCovered ? (
+              <div className="reference-merge-stats">
+                <div><span>Заказы за {impact.month.label}</span><strong>{impact.orders.current}</strong><small>Требуют обновления</small></div>
+                <div><span>Заказы за предыдущие месяцы</span><strong>{impact.orders.older}</strong><small>Останутся в истории без изменений</small></div>
+              </div>
+            ) : <p className="reference-merge-notice">Связи этого списка с документами ещё проверяются. Количество затронутых записей пока не определено.</p>}
             {impact.kind==='payment_method'?(
               <div className="reference-merge-linked">
                 <strong>Дополнительно связаны с оплатами</strong>
