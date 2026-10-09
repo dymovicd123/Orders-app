@@ -3,7 +3,15 @@ name: Catalog integrity R1 focused verification
 on:
   push:
     branches: [ci-catalog-integrity-r1-20261009]
-    paths: ['.github/workflows/catalog-integrity-r1-check.yml']
+    paths:
+      - '.github/workflows/catalog-integrity-r1-check.yml'
+      - 'src/app/types.ts'
+      - 'worker/domains/references.ts'
+      - 'worker/domains/catalog.ts'
+      - 'src/app/controllers/useOperationalViewModel.ts'
+      - 'src/features/sections/ReferencesSection.tsx'
+      - 'src/App.tsx'
+      - 'scripts/test-catalog-integrity-r1-references.mjs'
 
 permissions:
   contents: read
