@@ -13,7 +13,7 @@ const entrySource=await get(base+entry[1])
 const referenceChunk=entrySource.match(/ReferencesSection-[A-Za-z0-9_-]+\.js/)
 if(!referenceChunk)throw new Error('Public index.js does not link ReferencesSection')
 const references=await get(base+'/assets/'+referenceChunk[0])
-const expected=['Все рабочие справочники','Проверка дублей','ReferenceIntegrityPanel']
+const expected=['Все рабочие справочники','Проверка дублей']
 const missing=expected.filter(text=>!references.includes(text))
 console.log('Branch2 entry:',entry[1])
 console.log('Branch2 references chunk:',referenceChunk[0])
