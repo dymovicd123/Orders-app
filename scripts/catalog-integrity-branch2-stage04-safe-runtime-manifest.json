@@ -51,5 +51,16 @@
   "stage04Files": {
     "migrations/0083_v72_workshop_settlement_foundation.sql": "d73a92f86317a9068a9a381742d55e5c96804879",
     "migrations/0084_v72_workshop_settlement_status_capture.sql": "2e3f51ab0b055d5b82d6b542cec28cf661359003"
+  },
+  "addedFiles": {
+    "worker/domains/catalog-variant-consolidation.ts": "5adaad56532ba504cb63d49aa9e3b571c0f1c298",
+    "worker/domains/reference-integrity.ts": "392e2ec31161a6e31844c7d057a6d81625d9645b",
+    "src/features/sections/ReferenceIntegrityPanel.tsx": "e74c3a5cc8e1be7c237d523d32cb331eb0c07e14",
+    "src/features/inventory/writeoffReview.ts": "c7dc6cfb6981e979204c59808268dd332f0e1e08",
+    "src/features/inventory/views/WriteoffReview.tsx": "62257dbcc7af7200f3e60671bfe5a7395baccb79",
+    "src/styles/w4-writeoff-review.css": "37e3bce75eab3001edf7e47c2d8ef6d0f2737635",
+    "migrations/0090_v72_catalog_variant_consolidations.sql": "b4405429db17fbca0f7e212b3dd47cc6ca800ae8",
+    "migrations/0091_v72_catalog_variant_stock_consolidation.sql": "3bf9bf2496145aa19a919a3468d3fb3d0a13d1c7",
+    "migrations/0092_v72_catalog_variant_reservation_consolidation.sql": "894164a039a76abfdf8d7ac8a49109329b9bc66d"
   }
 }

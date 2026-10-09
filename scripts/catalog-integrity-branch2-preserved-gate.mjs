@@ -3,6 +3,7 @@
 // independently. No test is removed, and Stage04 SQL is byte-for-byte protected.
 import fs from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
 import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
@@ -21,6 +22,9 @@ const run=(command,args,context,extraEnv={})=>{
 }
 for(const [file,expected] of Object.entries(manifest.stage04Files)){
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Stage04 migration changed: '+file)
+}
+for(const [file,expected] of Object.entries(manifest.addedFiles || {})){
+  check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Catalog port new file drifted: '+file)
 }
 for(const [file,delta] of Object.entries(manifest.files)){
   check(gitBlob(fs.readFileSync(file,'utf8'))===delta.afterGitBlob,'Unreviewed Catalog runtime drift: '+file)
@@ -43,7 +47,19 @@ for(const [file,stripTypes] of tests){
   run(process.execPath,[...(stripTypes?['--experimental-strip-types']:[]),file],file)
 }
 const saved=new Map()
+const staged=fs.mkdtempSync(path.join(os.tmpdir(),'branch2-catalog-baseline-'))
+const hidden=[]
 try{
+  // The historical size/count checks must see exactly the original Branch2
+  // source tree; new modules are tested above against their own current code.
+  for(const [relative,expected] of Object.entries(manifest.addedFiles || {})){
+    const from=path.resolve(relative)
+    check(gitBlob(fs.readFileSync(from,'utf8'))===expected,'New module drifted: '+relative)
+    const to=path.join(staged,relative)
+    fs.mkdirSync(path.dirname(to),{recursive:true})
+    fs.renameSync(from,to)
+    hidden.push({relative,from,to,expected})
+  }
   for(const [relative,delta] of Object.entries(manifest.files)){
     const full=path.resolve(relative)
     saved.set(full,fs.readFileSync(full,'utf8'))
@@ -55,6 +71,12 @@ try{
     {CATALOG_INTEGRITY_STAGE04_BRANCH2_BASELINE_NORMALIZED:'1'})
 }finally{
   for(const [full,content] of saved)fs.writeFileSync(full,content)
+  for(const entry of hidden.reverse()){
+    fs.renameSync(entry.to,entry.from)
+    check(gitBlob(fs.readFileSync(entry.from,'utf8'))===entry.expected,
+      'New Catalog module not restored after historical checks: '+entry.relative)
+  }
+  fs.rmSync(staged,{recursive:true,force:true})
 }
 for(const [relative,delta] of Object.entries(manifest.files)){
   check(gitBlob(fs.readFileSync(relative,'utf8'))===delta.afterGitBlob,'Failed to restore new runtime: '+relative)
