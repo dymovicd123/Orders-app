@@ -5,7 +5,7 @@ const panel=fs.readFileSync('src/features/sections/ReferenceIntegrityPanel.tsx',
 const movement=fs.readFileSync('src/features/inventory/views/renderInventoryMovementPanel.tsx','utf8')
 const review=fs.readFileSync('src/features/inventory/views/WriteoffReview.tsx','utf8')
 assert.match(refs, /<details className="reference-integrity-entry"/)
-assert.match(refs, /<strong>Проверка дублей<\/strong>/)
+assert.ok(refs.includes('<strong>Найти похожие записи и варианты товаров</strong>'))
 assert.ok(refs.indexOf('reference-integrity-entry-summary') < refs.indexOf('{isAdmin ?'),
   'A user of any role must see the feature entry, even when merging requires admin role')
 assert.match(refs, /Проверка и объединение дублей доступны администратору/)
