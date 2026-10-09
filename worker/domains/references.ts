@@ -254,6 +254,34 @@ export async function assertNoEquivalentReferenceValue(db: D1Database, dbKind: s
   }
 }
 
+// Database-side guard against a SKU/stock-position appearing between a
+// reference preflight and its UPDATE. Column names come from a fixed allowlist.
+export function referenceCharacteristicWriteGuard(dbKind: string) {
+  if (!isCatalogCharacteristicDbKind(dbKind)) return '';
+  const column = dbKind === 'size' || dbKind === 'child_age' ? 'size_label' : dbKind;
+  const scope = dbKind === 'size' ? "AND COALESCE(v.category,'adult')<>'child'"
+    : dbKind === 'child_age' ? "AND COALESCE(v.category,'adult')='child'" : '';
+  const expression = dbKind === 'material' || dbKind === 'length'
+    ? `COALESCE(NULLIF(UPPER(TRIM(v.${column})),''),'СТАНДАРТ')`
+    : `UPPER(TRIM(COALESCE(v.${column},'')))`;
+  const matchingReference = dbKind === 'material' || dbKind === 'length'
+    ? "COALESCE(NULLIF(UPPER(TRIM(reference_values.value)),''),'СТАНДАРТ')"
+    : "UPPER(TRIM(COALESCE(reference_values.value,'')))";
+  const executionGuard = dbKind === 'material' || dbKind === 'length' ? `
+    AND NOT EXISTS (SELECT 1 FROM catalog_stock_positions sp
+       WHERE sp.is_active=1
+         AND COALESCE(NULLIF(UPPER(TRIM(sp.${column})),''),'СТАНДАРТ')=${matchingReference})` : '';
+  return ` AND NOT EXISTS (
+      SELECT 1 FROM catalog_variants v WHERE
+        ${expression}=${matchingReference} ${scope}
+        AND (v.is_active=1 OR EXISTS (
+          SELECT 1 FROM inventory_stock st WHERE st.variant_id=v.id
+            AND (COALESCE(st.quantity,0)<>0 OR COALESCE(st.reserved_quantity,0)<>0)
+        ))
+     ) ${executionGuard}`;
+}
+
+
 export async function upsertReferenceValue(db: D1Database, input: { kind?: unknown; value?: unknown; sortOrder?: unknown; isActive?: unknown }, id?: number) {
   const kind = normalizeReferenceKind(input.kind);
   if (!kind) {
@@ -295,11 +323,18 @@ export async function upsertReferenceValue(db: D1Database, input: { kind?: unkno
       await assertNoEquivalentReferenceValue(db, dbKind, value, id);
     }
     await assertReferenceValueCanChange(db, dbKind, id, value, isActive);
-    await db.prepare(
+    const oldValue = current?.value;
+    if (oldValue === undefined) throw new Error('Значение не найдено. Обновите справочник.');
+    const needsUsageGuard = upperText(oldValue) !== value || isActive === 0;
+    const guard = needsUsageGuard ? referenceCharacteristicWriteGuard(dbKind) : '';
+    const updated = await db.prepare(
       `UPDATE reference_values
        SET value = ?, is_active = ?, sort_order = ?, updated_at = ?
-       WHERE id = ?`
-    ).bind(value, isActive, sortOrder, now, id).run();
+       WHERE id = ? AND kind = ? AND value = ? ${guard}`
+    ).bind(value, isActive, sortOrder, now, id, dbKind, oldValue).run();
+    if (toInt(updated.meta?.changes, 0) !== 1) {
+      throw new Error('Значение или его связи изменились одновременно. Обновите справочник и проверьте действие заново.');
+    }
   } else {
     const equivalent = await findEquivalentReferenceValue(db, dbKind, value);
     if (equivalent?.id) {
@@ -341,8 +376,20 @@ export async function disableReferenceValue(db: D1Database, kind: ReferenceKind,
   }
 
   const dbKind = referenceKindToDbKind(kind);
+  const current = await db.prepare(
+    'SELECT value, is_active FROM reference_values WHERE id=? AND kind=?'
+  ).bind(id,dbKind).first<{value:string;is_active:number}>();
+  if (!current) throw new Error('Значение справочника не найдено. Обновите страницу.');
+  if (toInt(current.is_active,0) !== 1) return { ok:true,alreadyHidden:true };
   await assertReferenceValueCanChange(db, dbKind, id, undefined, 0);
-  await db.prepare('UPDATE reference_values SET is_active = 0, updated_at = ? WHERE id = ?').bind(now, id).run();
+  const updated = await db.prepare(
+    `UPDATE reference_values SET is_active=0,updated_at=?
+     WHERE id=? AND kind=? AND value=? AND is_active=1
+       ${referenceCharacteristicWriteGuard(dbKind)}`
+  ).bind(now,id,dbKind,current.value).run();
+  if (toInt(updated.meta?.changes,0)!==1) {
+    throw new Error('Справочник или связанные товары изменились одновременно. Обновите страницу и повторите проверку.');
+  }
   return { ok: true };
 }
 
