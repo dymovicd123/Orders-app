@@ -44,7 +44,7 @@
     },
     "worker/domains/references.ts": {
       "beforeGitBlob": "b46c37cb84dbf6e31909799a4cbb87d0b9481c9d",
-      "afterGitBlob": "a097bda610fe8404363fd68fb8dd03cd0a572440",
+      "afterGitBlob": "cffced0127d4bb4e43443c2ce60a7d191c15f1f2",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/domains/references.ts"
     },
     "package.json": {
@@ -58,7 +58,7 @@
     "migrations/0084_v72_workshop_settlement_status_capture.sql": "2e3f51ab0b055d5b82d6b542cec28cf661359003"
   },
   "addedFiles": {
-    "worker/domains/catalog-variant-consolidation.ts": "5adaad56532ba504cb63d49aa9e3b571c0f1c298",
+    "worker/domains/catalog-variant-consolidation.ts": "ad57471a03a64f98720b77d649c50fca934b7875",
     "worker/domains/reference-integrity.ts": "392e2ec31161a6e31844c7d057a6d81625d9645b",
     "src/features/sections/ReferenceIntegrityPanel.tsx": "b06f982d124390bbb24dc386af7e16f58e4864cf",
     "src/features/inventory/writeoffReview.ts": "c7dc6cfb6981e979204c59808268dd332f0e1e08",
@@ -82,6 +82,8 @@
     "worker/domains/reference-merge-history.ts": "3e32522f40c45bfe41eee517297b82dbd450abdc",
     "scripts/test-reference-merge-history.mjs": "cd5940072ec22f9edb27892138beb0745f8b12ff",
     "worker/domains/reference-characteristic-impact.ts": "1536f8e30942b461079cea7e045863d5b9f4d980",
-    "scripts/test-reference-characteristic-impact.mjs": "66b9bc03eb1545682c4bd12d99451f397c455d66"
+    "scripts/test-reference-characteristic-impact.mjs": "66b9bc03eb1545682c4bd12d99451f397c455d66",
+    "scripts/test-catalog-integrity-r2-sku-consolidation.mjs": "ba8a6cba68325543a486289441b4b8492d6c99d2",
+    "scripts/test-reference-crud-integrity.mjs": "32c37466b2b5194c8edcec7d1e726ffeff10ef8f"
   }
 }

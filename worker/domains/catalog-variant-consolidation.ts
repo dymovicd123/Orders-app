@@ -102,6 +102,7 @@ async function readImpact(db: D1Database, id: number): Promise<SkuImpact> {
       (SELECT COUNT(*) FROM order_items oi WHERE oi.variant_id=? AND (
          EXISTS(SELECT 1 FROM return_items ri WHERE ri.order_item_id=oi.id)
          OR EXISTS(SELECT 1 FROM exchanges e WHERE e.old_order_item_id=oi.id OR e.new_order_item_id=oi.id)
+         OR EXISTS(SELECT 1 FROM exchange_items ei WHERE ei.order_item_id=oi.id)
        )) AS returnExchangeLinks`
   ).bind(id,id,id,id,id,id,id,id,id,id,id,id,id).first<Omit<SkuImpact,'id'>>()
   return {
@@ -221,11 +222,13 @@ export async function consolidateUnusedCatalogVariant(
     throw new Error('Эта вариация уже объединена с другой. Обновите список.')
   }
   const preview = await previewCatalogVariantConsolidation(db,sourceId,targetId)
-  if (expectedToken && expectedToken !== preview.stateToken) {
-    throw new Error('Данные склада или заказов изменились после проверки. Обновите предпросмотр объединения.')
+  // Even a zero-stock SKU can have live order, lifecycle or identity references.
+  // No write is allowed without an explicit preview token for this exact pair.
+  if (!expectedToken) {
+    throw new Error('Объединение требует подтверждённого предпросмотра. Проверьте связанные заказы и склад заново.')
   }
-  if ((preview.transferQuantity > 0 || preview.reservationCount > 0) && !expectedToken) {
-    throw new Error('Остатки или резервы не подтверждены. Обновите предпросмотр объединения.')
+  if (expectedToken !== preview.stateToken) {
+    throw new Error('Данные склада или заказов изменились после проверки. Обновите предпросмотр объединения.')
   }
   if (!preview.canConsolidate) throw new Error('Объединение пока невозможно: '+preview.blockers.join('; '))
 
@@ -333,7 +336,8 @@ export async function consolidateUnusedCatalogVariant(
             AND NOT EXISTS (SELECT 1 FROM inventory_movement_reversals rev WHERE rev.original_movement_id=m.id))
         AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.variant_id=v.id AND (
           EXISTS(SELECT 1 FROM return_items ri WHERE ri.order_item_id=oi.id)
-          OR EXISTS(SELECT 1 FROM exchanges e WHERE e.old_order_item_id=oi.id OR e.new_order_item_id=oi.id)))`
+          OR EXISTS(SELECT 1 FROM exchanges e WHERE e.old_order_item_id=oi.id OR e.new_order_item_id=oi.id)
+         OR EXISTS(SELECT 1 FROM exchange_items ei WHERE ei.order_item_id=oi.id)))`
     ).bind(actor||null,stamp,targetId,sourceId,...sourceFields,...targetFields,beforeStock,beforeStock,beforeReservations,beforeReservations),
     db.prepare(
       `INSERT INTO catalog_variant_consolidation_stock_rows (

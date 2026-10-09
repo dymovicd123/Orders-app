@@ -28,6 +28,7 @@ jobs:
           node scripts/test-stage04b-workshop-status-capture.mjs
           node --experimental-strip-types scripts/test-reference-merge-choice-preview.mjs
           node --experimental-strip-types scripts/test-reference-characteristic-impact.mjs
+          node --experimental-strip-types scripts/test-reference-crud-integrity.mjs
           node --experimental-strip-types scripts/test-reference-merge-monthly-apply.mjs
           node --experimental-strip-types scripts/test-reference-payment-merge.mjs
           node --experimental-strip-types scripts/test-reference-merge-history.mjs
