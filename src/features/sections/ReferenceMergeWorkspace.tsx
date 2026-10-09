@@ -14,6 +14,7 @@ type Impact = {
   finance:{payments:Counts;financialEvents:Counts;cashEntries:Counts;returns:Counts;exchanges:Counts};
   activeCatalogVariants:number;
   canApply:boolean;
+  stateToken:string;
   explanation:string;
 }
 const dictionaries = [
@@ -30,10 +31,11 @@ const dictionaries = [
 ] as const
 
 export function ReferenceMergeWorkspace({
-  apiFetch,isAdmin,
+  apiFetch,isAdmin,onMerged,
 }: {
   apiFetch:(input:string,init?:RequestInit)=>Promise<Response>;
   isAdmin:boolean;
+  onMerged:()=>Promise<void>;
 }) {
   const [kind,setKind]=useState('paymentMethods')
   const [values,setValues]=useState<Value[]>([])
@@ -42,6 +44,8 @@ export function ReferenceMergeWorkspace({
   const [targetId,setTargetId]=useState(0)
   const [impact,setImpact]=useState<Impact|null>(null)
   const [checking,setChecking]=useState(false)
+  const [saving,setSaving]=useState(false)
+  const [notice,setNotice]=useState('')
   const [error,setError]=useState('')
   useEffect(()=>{
     let valid=true
@@ -59,8 +63,8 @@ export function ReferenceMergeWorkspace({
     return ()=>{valid=false}
   },[kind,isAdmin,apiFetch])
 
-  const chooseSource=(id:number)=>{setSourceId(id);setImpact(null);setError('')}
-  const chooseTarget=(id:number)=>{setTargetId(id);setImpact(null);setError('')}
+  const chooseSource=(id:number)=>{setSourceId(id);setImpact(null);setError('');setNotice('')}
+  const chooseTarget=(id:number)=>{setTargetId(id);setImpact(null);setError('');setNotice('')}
   const canInspect=sourceId>0&&targetId>0&&sourceId!==targetId&&!loading&&!checking
   const source=values.find(v=>v.id===sourceId)
   const target=values.find(v=>v.id===targetId)
@@ -77,6 +81,30 @@ export function ReferenceMergeWorkspace({
     finally{setChecking(false)}
   }
 
+  async function apply(){
+    if (!impact?.canApply || !impact.stateToken || saving) return
+    const confirmed=window.confirm(
+      'Объединить «'+impact.source.value+'» с «'+impact.target.value+'»? '
+      +'Будут обновлены '+impact.orders.current+' заказов за '+impact.month.label+'. '
+      +'Заказы предыдущих месяцев и история останутся без изменений.'
+    )
+    if (!confirmed)return
+    setSaving(true);setError('')
+    try{
+      const response=await apiFetch('/api/reference-values/merge',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({sourceId:impact.source.id,targetId:impact.target.id,expectedToken:impact.stateToken}),
+      })
+      const result=await response.json() as {ok?:boolean;message?:string;ordersUpdated?:number}
+      if (!response.ok||!result.ok)throw new Error(result.message||'Не удалось сохранить объединение.')
+      await onMerged()
+      setValues(old=>old.filter(v=>v.id!==impact.source.id))
+      setSourceId(0);setTargetId(0);setImpact(null)
+      setNotice('Готово. Обновлено заказов: '+Number(result.ordersUpdated||0)+'. Старые заказы сохранены.')
+    }catch(err){setError(err instanceof Error?err.message:'Не удалось сохранить изменения.')}
+    finally{setSaving(false)}
+  }
+
   return <section className="reference-merge-workspace" aria-label="Объединить значения справочников">
     <div className="reference-merge-heading">
       <div>
@@ -85,6 +113,7 @@ export function ReferenceMergeWorkspace({
         <p>Вы сами решаете, какое название оставить. Остальное система проверит перед сохранением.</p>
       </div>
     </div>
+    {notice?<p className="reference-merge-success" role="status">{notice}</p>:null}
     {!isAdmin ? (
       <p className="reference-merge-notice">Для объединения или удаления значений войдите как администратор.</p>
     ) : (
@@ -149,7 +178,14 @@ export function ReferenceMergeWorkspace({
               <p className="reference-merge-notice">Название используется в {impact.activeCatalogVariants} вариантах товаров. Их нельзя менять без проверки.</p>
             ):null}
             <p className="reference-merge-notice">{impact.explanation}</p>
-            {!impact.canApply?<p className="reference-merge-next">Объединение пока не подтверждается: сначала необходимо согласовать изменение связанных записей, чтобы не нарушить историю заказов и отчёты.</p>:null}
+            {impact.canApply?(
+              <div className="reference-merge-action-row">
+                <button type="button" className="primary" disabled={saving} onClick={()=>void apply()}>
+                  {saving?'Сохраняю…':'Объединить значения'}
+                </button>
+                <span>Предыдущие месяцы останутся без изменений.</span>
+              </div>
+            ):<p className="reference-merge-next">Сохранение пока недоступно: сначала нужно проверить все связанные записи, чтобы не нарушить историю заказов и отчёты.</p>}
           </div>
         ):null}
       </>
