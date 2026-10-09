@@ -25,6 +25,7 @@ import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
 import { createReferenceValue, deleteReferenceValue, getReferenceData, getReferenceValueCounts, listReferenceValues, normalizeReferenceKind, updateReferenceValue } from './domains/references.ts'
+import { listReferenceDuplicateGroups, previewReferenceConsolidation } from './domains/reference-integrity.ts'
 import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { createItemizedExchangeBatchFromRequest } from './domains/exchange-batch.ts'
 import { continueDatabaseStorageCleanup, getDatabaseStorageStatus, startDatabaseStorageCleanup, updateDatabaseStorageCapacity } from './domains/storage.ts'
@@ -185,6 +186,20 @@ export default {
 
       if (url.pathname === '/api/reference-data' && request.method === 'GET') {
         return json(await getReferenceData(env.DB));
+      }
+
+      if (url.pathname === '/api/reference-values/duplicates' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'Проверка дублей доступна только администратору.');
+        if (denied) return denied;
+        return json(await listReferenceDuplicateGroups(env.DB));
+      }
+
+      if (url.pathname === '/api/reference-values/consolidation-preview' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'Проверка объединения доступна только администратору.');
+        if (denied) return denied;
+        const source = Number(url.searchParams.get('sourceId'));
+        const target = Number(url.searchParams.get('targetId'));
+        return json(await previewReferenceConsolidation(env.DB, source, target));
       }
 
       if (url.pathname === '/api/reference-values/counts' && request.method === 'GET') {
