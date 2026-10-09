@@ -13,9 +13,28 @@ type Sku = {
 type SkuImpact = {
   id: number; physical: number; reserved: number; nonzeroStockRows: number;
   activeReservations: number; activeOrders: number; historicalOrders: number;
-  activeWorkshop: number; pendingLifecycle: number; activeStocktake: number;
+  activeWorkshop: number; pendingLifecycle: number; activeStocktake: number; appliedTransfers: number;
 }
 const safeId = (n: number) => Number.isSafeInteger(n) && n > 0
+type StockRow = { id: number; inventory_source: string; variant_id: number; quantity: number; reserved_quantity: number }
+
+async function readStocks(db: D1Database, sourceId: number, targetId: number) {
+  const result = await db.prepare(
+    `SELECT id, inventory_source, variant_id, quantity, reserved_quantity
+     FROM inventory_stock WHERE variant_id IN (?, ?) ORDER BY id ASC`
+  ).bind(sourceId, targetId).all<StockRow>()
+  return result.results || []
+}
+function snapshotToken(source: Sku, target: Sku, stocks: StockRow[]) {
+  return JSON.stringify({
+    source: [source.id,source.updated_at,source.color,source.size_label],
+    target: [target.id,target.updated_at,target.color,target.size_label],
+    stocks: stocks.map(x=>[x.id,x.inventory_source,x.variant_id,x.quantity,x.reserved_quantity]),
+  })
+}
+function stockSnapshotJson(stocks: StockRow[]) {
+  return JSON.stringify(stocks.map(x=>[x.id,x.inventory_source,x.variant_id,x.quantity,x.reserved_quantity]))
+}
 
 async function readSku(db: D1Database, id: number) {
   return await db.prepare(
@@ -45,14 +64,17 @@ async function readImpact(db: D1Database, id: number): Promise<SkuImpact> {
       (SELECT COUNT(*) FROM workshop_tasks wt WHERE wt.variant_id=? AND wt.status='active') AS activeWorkshop,
       (SELECT COUNT(*) FROM inventory_lifecycle_events e WHERE e.variant_id=? AND e.status='pending') AS pendingLifecycle,
       (SELECT COUNT(*) FROM inventory_stocktake_items i JOIN inventory_stocktake_sessions s ON s.id=i.session_id
-        WHERE i.variant_id=? AND s.status='active') AS activeStocktake`
-  ).bind(id,id,id,id,id,id,id,id,id).first<Omit<SkuImpact,'id'>>()
+        WHERE i.variant_id=? AND s.status='active') AS activeStocktake,
+      (SELECT COUNT(*) FROM inventory_transfer_items i JOIN inventory_transfer_documents d ON d.id=i.transfer_id
+        WHERE i.variant_id=? AND d.status='applied') AS appliedTransfers`
+  ).bind(id,id,id,id,id,id,id,id,id,id).first<Omit<SkuImpact,'id'>>()
   return {
     id, physical: toInt(row?.physical,0), reserved: toInt(row?.reserved,0), nonzeroStockRows: toInt(row?.nonzeroStockRows,0),
     activeReservations: toInt(row?.activeReservations,0),
     activeOrders: toInt(row?.activeOrders,0), historicalOrders: toInt(row?.historicalOrders,0),
     activeWorkshop: toInt(row?.activeWorkshop,0),
     pendingLifecycle: toInt(row?.pendingLifecycle,0), activeStocktake: toInt(row?.activeStocktake,0),
+    appliedTransfers: toInt(row?.appliedTransfers,0),
   }
 }
 
@@ -81,25 +103,44 @@ export async function previewCatalogVariantConsolidation(db: D1Database, sourceI
   if (!target.is_active || !source.product_active || !source.position_active) {
     throw new Error('Основной вариант, товар и исполнение должны оставаться активными.')
   }
-  const [sourceImpact, targetImpact] = await Promise.all([readImpact(db, sourceId), readImpact(db, targetId)])
+  const [sourceImpact, targetImpact, stocks] = await Promise.all([
+    readImpact(db, sourceId), readImpact(db, targetId), readStocks(db, sourceId, targetId),
+  ])
+  const stockBreakdown = ['warehouse', 'boutique'].map(location => {
+    const sourceStock = stocks.find(s => s.variant_id === sourceId && s.inventory_source === location)
+    const targetStock = stocks.find(s => s.variant_id === targetId && s.inventory_source === location)
+    const sourcePhysical = Number(sourceStock?.quantity || 0)
+    const targetPhysical = Number(targetStock?.quantity || 0)
+    return { location, sourcePhysical, targetPhysical, combinedPhysical: sourcePhysical + targetPhysical,
+      sourceReserved: Number(sourceStock?.reserved_quantity || 0),
+      targetReserved: Number(targetStock?.reserved_quantity || 0) }
+  })
   const blockers: string[] = []
   if (!source.is_active) blockers.push('Лишний вариант уже неактивен.')
-  if (sourceImpact.nonzeroStockRows) blockers.push(`у лишнего варианта есть незакрытые складские строки (остаток: ${sourceImpact.physical} шт., резерв: ${sourceImpact.reserved} шт.)`)
+  if (stocks.some(s => !['warehouse','boutique'].includes(s.inventory_source))) blockers.push('Обнаружено неизвестное место хранения')
+  if (stocks.some(s => !Number.isSafeInteger(s.quantity) || s.quantity < 0 || !Number.isSafeInteger(s.reserved_quantity) || s.reserved_quantity < 0)) {
+    blockers.push('Складские количества некорректны: требуется сверка')
+  }
+  if (stocks.some(s => stocks.filter(x => x.variant_id===s.variant_id && x.inventory_source===s.inventory_source).length>1)) {
+    blockers.push('Есть несколько складских записей одной позиции: нужна проверка')
+  }
   if (sourceImpact.reserved !== 0 || sourceImpact.activeReservations) blockers.push('у лишнего варианта есть действующие резервы')
   if (sourceImpact.activeOrders) blockers.push('есть активные неотправленные заказы')
   if (sourceImpact.activeWorkshop) blockers.push('есть незавершённые задачи Цеха')
   if (sourceImpact.pendingLifecycle) blockers.push('есть незавершённая приёмка или возврат')
   if (sourceImpact.activeStocktake || targetImpact.activeStocktake) blockers.push('один из вариантов участвует в действующей ревизии')
+  if (sourceImpact.appliedTransfers) blockers.push('у лишнего варианта есть перемещение, которое ещё можно отменить')
   return {
     ok: true,
     source: { id: source.id, color: source.color, size: source.size_label, active: Boolean(source.is_active) },
     target: { id: target.id, color: target.color, size: target.size_label, active: Boolean(target.is_active) },
     productName: source.product_name, material: source.execution_material, length: source.execution_length,
-    sourceImpact, targetImpact, blockers,
-    canConsolidate: blockers.length === 0,
+    sourceImpact, targetImpact, stockBreakdown, stateToken: snapshotToken(source,target,stocks),
+    transferQuantity: stockBreakdown.reduce((sum,r)=>sum + r.sourcePhysical,0),
+    blockers, canConsolidate: blockers.length === 0,
     explanation: blockers.length
-      ? 'Система не будет списывать остатки, менять заказы или переносить резервы. Сначала разберите перечисленные связи.'
-      : 'Будет отключён только лишний вариант для новых операций. Основной останется активным; остатки и все исторические документы сохранят прежние ID.',
+      ? 'Система не будет менять заказы, резервы и историю. Проверьте указанные связи; не списывайте товар ради очистки.'
+      : 'Физические остатки будут перенесены на основной вариант отдельно по складу и бутику, без фиктивного списания. Старый вариант и все исторические документы сохранятся.',
   }
 }
 
