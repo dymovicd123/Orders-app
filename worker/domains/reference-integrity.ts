@@ -21,7 +21,7 @@ export function groupEquivalentReferenceValues(rows: ReferenceRow[]) {
     group.push(row)
     groups.set(groupKey, group)
   }
-  return [...groups].filter(([, rows]) => rows.length > 1).map(([key, values]) => {
+  return [...groups].filter(([, rows]) => rows.filter(x => x.is_active).length > 1).map(([key, values]) => {
     const sorted = [...values].sort((a, b) => Number(b.is_active) - Number(a.is_active) || a.id - b.id)
     const canonical = sorted[0]
     return {
@@ -170,4 +170,63 @@ export async function previewReferenceConsolidation(db: D1Database, sourceId: nu
       ? 'Это значение участвует в Каталоге. Сначала нужно безопасно объединить связанные варианты и проверить остатки; здесь ничего не изменено.'
       : 'Активных связей и остатков у лишнего значения не найдено. После окончательной проверки его можно будет убрать из выбора, сохранив историю.',
   }
+}
+
+/**
+ * Safe self-service cleanup: retire only an unused equivalent reference value.
+ * This is NOT a SKU/stock merge. The conditional UPDATE is atomic, protects
+ * against concurrent creation, and never rewrites historical order snapshots.
+ */
+export async function hideUnusedEquivalentReference(db: D1Database, sourceId: number, targetId: number) {
+  const preview = await previewReferenceConsolidation(db, sourceId, targetId)
+  if (!preview.source.isActive) {
+    return { ok: true, alreadyHidden: true, sourceId, targetId }
+  }
+  if (!preview.safeToHideSource) {
+    throw new Error('Значение используется в Каталоге или имеет остатки. Сначала проверьте и объедините варианты товара.')
+  }
+  const kind = preview.source.kind
+  const name = cleanText(preview.source.value)
+  let restrictions = ''
+  const bindings: unknown[] = [
+    new Date().toISOString(),
+    sourceId, kind, name,
+    targetId, kind, cleanText(preview.target.value),
+  ]
+  if (supportedCatalogKind(kind)) {
+    const column = kind === 'color' ? 'color'
+      : kind === 'material' ? 'material'
+      : kind === 'length' ? 'length' : 'size_label'
+    const audience = kind === 'size' ? " AND COALESCE(v.category,'adult') <> 'child'"
+      : kind === 'child_age' ? " AND COALESCE(v.category,'adult') = 'child'" : ''
+    // Recheck ALL matching variants and stock during the final DB write.
+    // A stale preview cannot turn into a destructive change.
+    restrictions += ` AND NOT EXISTS (
+      SELECT 1 FROM catalog_variants v
+      WHERE v.is_active=1 AND UPPER(TRIM(COALESCE(v.${column},''))) = ?${audience}
+    ) AND NOT EXISTS (
+      SELECT 1 FROM catalog_variants v JOIN inventory_stock s ON s.variant_id=v.id
+      WHERE UPPER(TRIM(COALESCE(v.${column},''))) = ?${audience}
+        AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0)
+    )`
+    bindings.push(name.toUpperCase(), name.toUpperCase())
+    if (kind === 'material' || kind === 'length') {
+      restrictions += ` AND NOT EXISTS (
+        SELECT 1 FROM catalog_stock_positions sp
+        WHERE sp.is_active=1 AND UPPER(TRIM(COALESCE(sp.${column},''))) = ?
+      )`
+      bindings.push(name.toUpperCase())
+    }
+  }
+  const result = await db.prepare(
+    `UPDATE reference_values SET is_active=0,updated_at=?
+     WHERE id=? AND kind=? AND value=? AND is_active=1
+       AND EXISTS (SELECT 1 FROM reference_values t
+                   WHERE t.id=? AND t.kind=? AND t.value=? AND t.is_active=1)
+       ${restrictions}`
+  ).bind(...bindings).run()
+  if (toInt(result.meta?.changes, 0) !== 1) {
+    throw new Error('Справочник изменился после проверки. Обновите список и проверьте объединение заново.')
+  }
+  return { ok: true, sourceId, targetId, hidden: true, value: name }
 }
