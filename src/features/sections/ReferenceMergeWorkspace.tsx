@@ -17,7 +17,7 @@ type CatalogImpact = {
     color:string;material:string;length:string;size:string;active:boolean;
     physical:number;reserved:number}[];
   skuPairs:{sourceVariantId:number;targetVariantId:number;productName:string;description:string}[];
-  skuPairsLimited:boolean;
+  skuPairsLimited:boolean;canReviewReferenceCleanup:boolean;
   sampleTruncated:boolean;indistinguishable:boolean;warnings:string[];
   status:'requires_catalog_review'|'unused_or_historical';canAutomaticallyConsolidate:boolean;
 }
@@ -83,6 +83,7 @@ export function ReferenceMergeWorkspace({
   const [historyBusy,setHistoryBusy]=useState(false)
   const [pairReview,setPairReview]=useState<PairReview|null>(null)
   const [pairBusy,setPairBusy]=useState(false)
+  const [cleanup,setCleanup]=useState<{safeToHideSource:boolean;explanation:string}|null>(null)
   const [historyError,setHistoryError]=useState('')
   useEffect(()=>{
     let valid=true
@@ -100,14 +101,14 @@ export function ReferenceMergeWorkspace({
     return ()=>{valid=false}
   },[kind,isAdmin,apiFetch])
 
-  const chooseSource=(id:number)=>{setSourceId(id);setImpact(null);setPairReview(null);setError('');setNotice('')}
-  const chooseTarget=(id:number)=>{setTargetId(id);setImpact(null);setPairReview(null);setError('');setNotice('')}
+  const chooseSource=(id:number)=>{setSourceId(id);setImpact(null);setPairReview(null);setCleanup(null);setError('');setNotice('')}
+  const chooseTarget=(id:number)=>{setTargetId(id);setImpact(null);setPairReview(null);setCleanup(null);setError('');setNotice('')}
   const canInspect=sourceId>0&&targetId>0&&sourceId!==targetId&&!loading&&!checking
   const source=values.find(v=>v.id===sourceId)
   const target=values.find(v=>v.id===targetId)
   async function inspect(){
     if(!canInspect)return
-    setChecking(true);setError('');setImpact(null);setPairReview(null)
+    setChecking(true);setError('');setImpact(null);setPairReview(null);setCleanup(null)
     try{
       const query=new URLSearchParams({sourceId:String(sourceId),targetId:String(targetId)})
       const res=await apiFetch('/api/reference-values/merge-preview?'+query.toString())
@@ -159,6 +160,42 @@ export function ReferenceMergeWorkspace({
     }catch(e) {
       setError(e instanceof Error?e.message:'Не удалось объединить варианты.')
     }finally {setPairBusy(false)}
+  }
+
+
+  async function inspectReferenceCleanup() {
+    if(!impact?.catalogImpact?.canReviewReferenceCleanup || pairBusy || saving) return
+    setPairBusy(true);setCleanup(null);setError('')
+    try {
+      const query=new URLSearchParams({sourceId:String(impact.source.id),targetId:String(impact.target.id)})
+      const response=await apiFetch('/api/reference-values/consolidation-preview?'+query.toString())
+      const result=await response.json() as {ok?:boolean;safeToHideSource:boolean;explanation:string;message?:string}
+      if(!response.ok||!result.ok)throw new Error(result.message||'Не удалось проверить связи названия.')
+      setCleanup({safeToHideSource:result.safeToHideSource,explanation:result.explanation})
+    }catch(e){setError(e instanceof Error?e.message:'Не удалось проверить название.')}
+    finally{setPairBusy(false)}
+  }
+
+  async function hideReferenceAlias() {
+    if(!cleanup?.safeToHideSource || !impact?.catalogImpact?.canReviewReferenceCleanup || pairBusy || saving) return
+    const oldId=impact.source.id, keptId=impact.target.id
+    if(!window.confirm('Убрать лишнее название из новых списков выбора? Исторические товары и заказы останутся без изменений.'))return
+    setPairBusy(true);setError('')
+    try {
+      const response=await apiFetch('/api/reference-values/hide-unused-duplicate',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({sourceId:oldId,targetId:keptId}),
+      })
+      const result=await response.json() as {ok?:boolean;message?:string}
+      if(!response.ok||!result.ok)throw new Error(result.message||'Не удалось убрать лишнее название.')
+      setValues(old=>old.filter(v=>v.id!==oldId))
+      setSourceId(0);setTargetId(0);setImpact(null);setCleanup(null);setPairReview(null)
+      setNotice('Лишнее название отключено для новых операций. Старые заказы и варианты не удалены.')
+      try{await onMerged()}catch{
+        setNotice('Лишнее название отключено. Если список не обновился, перезагрузите страницу.')
+      }
+    }catch(e){setError(e instanceof Error?e.message:'Не удалось обновить справочник.')}
+    finally{setPairBusy(false)}
   }
 
   async function loadHistory(){
@@ -398,6 +435,27 @@ export function ReferenceMergeWorkspace({
                     ):null}
                   </div>
                 ) : null}
+                {impact.catalogImpact.canReviewReferenceCleanup ? (
+                  <div className="reference-merge-sku-guidance">
+                    <strong>Закончить очистку справочника</strong>
+                    <p className="mini-panel-note">Когда все действующие дубли разобраны, лишнее название можно убрать из новых форм без удаления старых документов.</p>
+                    <button type="button" className="secondary compact" disabled={pairBusy||checking||saving}
+                      onClick={()=>void inspectReferenceCleanup()}>
+                      {pairBusy?'Проверяю…':'Проверить, можно ли убрать лишнее название'}
+                    </button>
+                    {cleanup ? (
+                      <div className="reference-merge-sku-review">
+                        <p>{cleanup.explanation}</p>
+                        {cleanup.safeToHideSource ? (
+                          <button type="button" className="primary compact" disabled={pairBusy||checking||saving}
+                            onClick={()=>void hideReferenceAlias()}>
+                            Убрать лишнее название из выбора
+                          </button>
+                        ) : <p className="reference-merge-notice">Пока остаются связанные действующие товары, складские остатки или исполнения.</p>}
+                      </div>
+                    ):null}
+                  </div>
+                ):null}
                 <p className="reference-merge-next">
                   Доступно только безопасное объединение точных дублей SKU, по одному после проверки.
                   Другие цвета, размеры и исполнения автоматически не приравниваются.
