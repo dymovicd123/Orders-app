@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
-import { consolidateUnusedCatalogVariant, previewCatalogVariantConsolidation } from '../worker/domains/catalog-variant-consolidation.ts'
+import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations, previewCatalogVariantConsolidation } from '../worker/domains/catalog-variant-consolidation.ts'
 
 const sqlite = new DatabaseSync(':memory:')
 sqlite.exec(`
@@ -127,6 +127,11 @@ assert.equal(active(9),1)
 assert.deepEqual(sqlite.prepare('SELECT * FROM inventory_stock ORDER BY id').all(),beforeStock)
 assert.deepEqual(sqlite.prepare('SELECT * FROM order_items ORDER BY id').all(),beforeOrder)
 assert.equal(activity(),1)
+const history=await listRecentCatalogVariantConsolidations(db)
+assert.equal(history.items.length,1)
+assert.equal(history.items[0].sourceId,7)
+assert.equal(history.items[0].targetId,8)
+assert.equal(history.items[0].createdBy,'admin-test')
 assert.equal(query('SELECT target_variant_id FROM catalog_variant_consolidations').target_variant_id,8)
 const replay=await consolidateUnusedCatalogVariant(db,7,8,'admin-test')
 assert.equal(replay.alreadyConsolidated,true)
@@ -141,6 +146,8 @@ assert.match(api,/\/api\/catalog\/variants\/consolidate-unused/)
 assert.match(api,/requireAdminUser\(authUser, 'Объединение вариантов/)
 assert.match(ui,/Проверить объединение/)
 assert.match(ui,/Убрать дублирующий вариант/)
+assert.match(ui,/История объединений вариантов/)
+assert.match(api,/\/api\/catalog\/variants\/consolidation-history/)
 assert.match(moduleText,/AND NOT EXISTS \(SELECT 1 FROM inventory_reservations/)
 assert.doesNotMatch(moduleText,/\b(?:UPDATE|DELETE FROM)\s+(?:inventory_stock|order_items|inventory_movements|inventory_reservations|payments)\b/i)
 sqlite.close()
