@@ -72,7 +72,7 @@
     "worker/domains/reference-merge-preview.ts": "177c191bc51d2a29cd26b98b04f3646ac7e30ed6",
     "src/features/sections/ReferenceMergeWorkspace.tsx": "d9c7ff63933efce8b7ee7bf27134f588ed64c11c",
     "src/styles/reference-merge-workspace.css": "21ccd3b321e4ffe138f1a106ce1a5dc643c9da18",
-    "scripts/test-reference-merge-choice-preview.mjs": "088826e9169b91c17b8514611394196364ad9de4",
+    "scripts/test-reference-merge-choice-preview.mjs": "dab29094bdd310bc00b24a476814d7c746a95b0e",
     "worker/domains/reference-merge-apply.ts": "b0b85be1b6f8964ad7e7414ba178e1a7d371c4db",
     "scripts/test-reference-merge-monthly-apply.mjs": "67297b49ef49a41a7457c17b42be82c751bf7a55",
     "migrations/0093_v72_reference_value_choice_merges.sql": "d3afb62545f1cca2fc195244db13d42ac7b6471b",
