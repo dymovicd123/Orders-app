@@ -24,6 +24,8 @@ sqlite.exec(`
  CREATE UNIQUE INDEX idx_inventory_stock_variant_unique ON inventory_stock(inventory_source,variant_id) WHERE variant_id IS NOT NULL;
  CREATE TABLE inventory_transfer_documents(id INTEGER PRIMARY KEY,status TEXT);
  CREATE TABLE inventory_transfer_items(id INTEGER PRIMARY KEY,transfer_id INTEGER,variant_id INTEGER);
+ CREATE TABLE inventory_movements(id INTEGER PRIMARY KEY,variant_id INTEGER,reference_type TEXT);
+ CREATE TABLE inventory_movement_reversals(original_movement_id INTEGER PRIMARY KEY);
  CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,variant_id INTEGER,quantity INTEGER,status TEXT);
  CREATE TABLE orders(id INTEGER PRIMARY KEY,order_status TEXT,shipping_status TEXT);
  CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,variant_id INTEGER,quantity INTEGER);
@@ -167,6 +169,10 @@ sqlite.exec("INSERT INTO inventory_transfer_documents VALUES (1,'applied')")
 sqlite.exec("INSERT INTO inventory_transfer_items VALUES (1,1,12)")
 assert.equal((await previewCatalogVariantConsolidation(db,12,13)).canConsolidate,false,'Applied transfer blocks')
 sqlite.exec("UPDATE inventory_transfer_documents SET status='reversed' WHERE id=1")
+sqlite.exec("INSERT INTO inventory_movements VALUES(1,12,'manual')")
+assert.equal((await previewCatalogVariantConsolidation(db,12,13)).canConsolidate,false,
+  'An old manual operation can still be reversed into a retired SKU')
+sqlite.exec('INSERT INTO inventory_movement_reversals VALUES(1)')
 p=await previewCatalogVariantConsolidation(db,12,13)
 assert.equal(p.canConsolidate,true)
 
@@ -207,6 +213,9 @@ assert.equal(receipt.source_physical_quantity,7)
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM catalog_variant_consolidation_stock_rows WHERE consolidation_id=?').get(receipt.id).n,2)
 assert.equal(sqlite.prepare('SELECT passed FROM catalog_variant_consolidation_validations WHERE consolidation_id=?').get(receipt.id).passed,1)
 assert.equal((await consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken)).alreadyConsolidated,true)
+assert.equal(sqlite.prepare('SELECT variant_id FROM inventory_movements WHERE id=1').get().variant_id,12,
+  'Historical manual movement keeps its original variant')
+
 assert.equal(sqlite.prepare('SELECT variant_id FROM order_items WHERE id=21').get().variant_id,7,'Old order history unchanged')
 
 const api=fs.readFileSync('worker/index.ts','utf8')
