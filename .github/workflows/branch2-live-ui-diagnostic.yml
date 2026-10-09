@@ -1,0 +1,64 @@
+name: Branch2 live UI identity diagnostic
+
+on:
+  push:
+    branches:
+      - branch2-duplicate-writeoff-visibility-20261009
+    paths:
+      - '.github/workflows/branch2-live-ui-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Read-only inspect production and preview hosts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import urllib.request, urllib.error, re, gzip, zlib
+          hosts = [
+            'https://orders-app-branch2.orders-clothes.workers.dev',
+            'https://branch2-orders-app.orders-clothes.workers.dev',
+            'https://orders-app.orders-clothes.workers.dev',
+          ]
+          for host in hosts:
+            print('HOST', host, flush=True)
+            def get(url):
+              req=urllib.request.Request(url,headers={'User-Agent':'Orders-app readonly diagnostic','Accept-Encoding':'identity','Cache-Control':'no-cache'})
+              try:
+                with urllib.request.urlopen(req,timeout=18) as response:
+                  result=response.read()
+                  return result.decode('utf-8',errors='replace'),response.status,dict(response.headers)
+              except Exception as e:
+                print('ERROR',type(e).__name__,str(e)[:270],flush=True)
+                return '',0,{}
+            html,status,headers=get(host+'/?diagnostic=20261009')
+            print('HTTP',status,'Content-Length',len(html),'CF-Cache',headers.get('CF-Cache-Status'),flush=True)
+            print('HTML src',re.findall(r'(?:src|href)="([^"]+)"',html)[:12],flush=True)
+            urls=set(re.findall(r'(?:src|href)="([^"]+\.js[^"]*)"',html))
+            files=[]
+            for item in urls:
+              if item.startswith('//'): item='https:'+item
+              elif item.startswith('/'): item=host+item
+              elif not item.startswith('http'): item=host+'/'+item
+              source,code,_=get(item)
+              print('ENTRY',item,'code',code,'bytes',len(source))
+              files.append((item,source))
+              found=set(re.findall(r'[^"\s]{0,60}ReferencesSection[^"\s]{0,65}\.js',source))
+              found.update(re.findall(r'\/assets\/[^"\s]+\.js',source))
+              for path in list(found)[:160]:
+                path=path.strip('",\\\'')
+                if path.startswith('/') and path.endswith('.js'):
+                  chunk,c,_=get(host+path)
+                  if c==200:files.append((path,chunk))
+            for token in ['Чистые вспомогательные списки','Все рабочие справочники','Проверка дублей','Шаг 1 из 2','Списать товар']:
+              matches=[name for name,source in files if token in source]
+              print('MARKER',repr(token),'FOUND_IN',matches[:8],flush=True)
+            print('---',flush=True)
+          PY
