@@ -43,3 +43,14 @@ Only after this can 04-C payments and 04-D the shared Workshop finance tab be ac
 
 No changes to `main`, `orders-app`, `orders_db_prod`, production migrations, or
 historical row data are permitted without separate explicit approval.
+
+## Stage04-B: server-owned Workshop completion capture
+
+- Migration 0084 adds SQL status-transition hooks for both individual and bulk Workshop status updates.
+- Captures only transitions into ready/done, never repeated writes or ready-to-done conversions.
+- A subsequent active/cancelled transition produces an immutable compensating reversal linked to the completion event.
+- Completion records freeze product, characteristics and quantity; cost and amount remain NULL pending a confirmed price. Null is never counted as zero-cost work.
+- Kazakhstan business date uses the current UTC+05 day; technical timestamps remain UTC.
+- Crucially, **capture is disabled by default**, even after deployment. A future deliberate cutover must explicitly activate it only after the price flow and user-visible UI are ready.
+- Existing historical workshop statuses are not backfilled, and customer order/payments/inventory fields are not changed.
+- 0084 applies only to isolated Branch2 D1 through a guarded workflow and read-only business fingerprints.

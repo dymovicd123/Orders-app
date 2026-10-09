@@ -1,0 +1,101 @@
+name: Stage04 Branch2 Workshop capture schema 0084
+
+on:
+  push:
+    branches: [branch2]
+    paths: ['.github/workflows/stage04-branch2-migration-0084.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: Branch2-only inert status capture triggers
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout exact Branch2 SHA
+        uses: actions/checkout@v4
+      - name: Hard stop on environment / D1 drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "branch2" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo 'Production D1 is forbidden in Branch2 migration.' >&2; exit 20
+          fi
+          test -n "$CLOUDFLARE_ACCOUNT_ID" && test -n "$CLOUDFLARE_API_TOKEN"
+          grep -Fq 'CREATE TRIGGER IF NOT EXISTS trg_workshop_settlement_completion' migrations/0084_v72_workshop_settlement_status_capture.sql
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Test schema contracts locally
+        run: |
+          node scripts/test-branch2-environment.mjs
+          node scripts/test-stage04a-workshop-settlements.mjs
+          node scripts/test-stage04b-workshop-status-capture.mjs
+      - name: Record business schema fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          summary="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM workshop_tasks) AS workshop_tasks_count,
+              (SELECT COUNT(*) FROM workshop_settlement_events) AS events_count
+          " --json)"
+          jq -cS '.[0].results[0]' <<<"$summary" > /tmp/stage04b-before.json
+          [[ -s /tmp/stage04b-before.json ]] || exit 21
+          existing="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT COUNT(*) AS trigger_count FROM sqlite_master WHERE type='trigger'
+            AND name IN ('trg_workshop_settlement_completion','trg_workshop_settlement_completion_reversal')
+          " --json)"
+          count="$(jq -r '.[0].results[0].trigger_count // -1' <<<"$existing")"
+          [[ "$count" == "0" || "$count" == "2" ]] || exit 22
+          echo "$count" > /tmp/stage04b-before-triggers
+      - name: Apply 0084 to Branch2 D1 only when absent
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(cat /tmp/stage04b-before-triggers)" == "0" ]]; then
+            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file migrations/0084_v72_workshop_settlement_status_capture.sql
+          else
+            echo 'Existing status triggers found. Skipping reapplication.'
+          fi
+      - name: Verify schema fingerprint unchanged and capture stays off
+        shell: bash
+        run: |
+          set -euo pipefail
+          schema="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger'
+                AND name IN ('trg_workshop_settlement_completion','trg_workshop_settlement_completion_reversal')) AS trigger_count,
+              (SELECT COUNT(*) FROM workshop_settlement_capture_control WHERE id=1 AND enabled=0) AS disabled_count
+          " --json)"
+          [[ "$(jq -r '.[0].results[0].trigger_count // 0' <<<"$schema")" == "2" ]] || exit 23
+          [[ "$(jq -r '.[0].results[0].disabled_count // 0' <<<"$schema")" == "1" ]] || exit 24
+          summary="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM workshop_tasks) AS workshop_tasks_count,
+              (SELECT COUNT(*) FROM workshop_settlement_events) AS events_count
+          " --json)"
+          after="$(jq -cS '.[0].results[0]' <<<"$summary")"
+          [[ "$after" == "$(cat /tmp/stage04b-before.json)" ]] || {
+            echo 'Business or financial row fingerprint changed.' >&2; exit 25
+          }
+          echo 'STAGE04-B BRANCH2 SCHEMA FINGERPRINT PASSED — inert status triggers; no history backfill; capture off.'
