@@ -182,7 +182,34 @@ export async function countCatalogReferenceUsage(db: D1Database, dbKind: string,
   else sql = `SELECT COUNT(*) AS count FROM catalog_variants WHERE is_active = 1 AND COALESCE(category,'adult') = 'child' AND UPPER(TRIM(COALESCE(size_label,''))) = ?`;
   const normalized = (dbKind === 'material' || dbKind === 'length') ? (canonicalStockPositionValue(value) || 'СТАНДАРТ') : value;
   const row = await db.prepare(sql).bind(normalized).first<{ count: number }>();
-  return Math.max(0, toInt(row?.count, 0));
+  const activeVariants = Math.max(0, toInt(row?.count, 0));
+  // An execution (material + length) exists independently of variants.
+  // Editing its reference label while it is still in use would create a
+  // different stock identity even when no active SKU currently points to it.
+  const executions = dbKind === 'material' || dbKind === 'length'
+    ? await db.prepare(
+      `SELECT COUNT(*) AS count FROM catalog_stock_positions
+        WHERE is_active=1 AND COALESCE(NULLIF(UPPER(TRIM(${dbKind})),''),'СТАНДАРТ')=?`
+    ).bind(normalized).first<{ count:number }>()
+    : null;
+  // Retired SKUs can still carry stock/reserves after an interrupted
+  // operation. Do not silently hide their characteristic in that state.
+  const stockColumn = dbKind === 'size' || dbKind === 'child_age' ? 'size_label' : dbKind;
+  const categoryScope = dbKind === 'size'
+    ? " AND COALESCE(v.category,'adult')<>'child'"
+    : dbKind === 'child_age' ? " AND COALESCE(v.category,'adult')='child'" : '';
+  const stockValue = dbKind === 'material' || dbKind === 'length'
+    ? `COALESCE(NULLIF(UPPER(TRIM(v.${stockColumn})),''),'СТАНДАРТ')`
+    : `UPPER(TRIM(COALESCE(v.${stockColumn},'')))`;
+  const orphaned = await db.prepare(
+    `SELECT COUNT(DISTINCT v.id) AS count FROM catalog_variants v
+      JOIN inventory_stock st ON st.variant_id=v.id
+      WHERE v.is_active<>1 AND (COALESCE(st.quantity,0)<>0 OR COALESCE(st.reserved_quantity,0)<>0)
+        AND ${stockValue}=? ${categoryScope}`
+  ).bind(normalized).first<{count:number}>();
+  return activeVariants
+    + Math.max(0,toInt(executions?.count,0))
+    + Math.max(0,toInt(orphaned?.count,0));
 }
 
 
@@ -196,7 +223,7 @@ export async function assertReferenceValueCanChange(db: D1Database, dbKind: stri
   if (!valueChanges && !disables) return;
   const usage = await countCatalogReferenceUsage(db, dbKind, currentValue);
   if (!usage) return;
-  throw new Error(`Значение «${currentValue}» используется в ${usage} активн${usage === 1 ? 'ом варианте' : 'ых вариантах'} каталога. Простое переименование/отключение разорвёт справочник и варианты. Добавьте новое значение отдельно; объединение используемых значений выполняется только контролируемой миграцией каталога.`);
+  throw new Error(`Значение «${currentValue}» используется в связанных записях каталога (варианты, исполнения или складские остатки: ${usage}). Переименование или удаление из списка разорвёт связи. Сначала выполните безопасную проверку и объединение.`);
 }
 
 
