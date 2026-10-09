@@ -182,7 +182,7 @@ sqlite.exec(`
         (13,100,30,'adult','ЖЕН','ТЕМНО СИНИЙ','52','ДРАП','СТАНДАРТ',1,'before');
  INSERT INTO inventory_stock(id,inventory_source,variant_id,quantity,reserved_quantity)
  VALUES(120,'warehouse',12,3,2),(121,'warehouse',13,5,1),(122,'boutique',12,4,1);
- INSERT INTO orders VALUES (2,'active','not_sent'),(3,'active','not_sent'),(4,'active','not_sent');
+ INSERT INTO orders(id,order_status,shipping_status) VALUES(2,'active','not_sent'),(3,'active','not_sent'),(4,'active','not_sent');
  INSERT INTO order_items(id,order_id,variant_id,product_id,quantity,source_type,product_name_snapshot,unit_price)
  VALUES(22,2,13,100,1,'warehouse','Тёмно синий',1000),
        (23,3,12,100,2,'warehouse','Снимок СТАРОГО цвета',2500),
