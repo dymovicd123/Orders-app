@@ -1,6 +1,7 @@
 // Catalog Integrity R2 — retire an identical, unused SKU without rewriting operational history.
 import { canonicalStockPositionValue, toInt } from '../core/text.ts'
 import { catalogColorIdentity, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize } from './catalog.ts'
+import { businessMonthRange } from './reference-merge-preview.ts'
 
 type Sku = {
   id: number; product_id: number; stock_position_id: number | null;
@@ -51,12 +52,13 @@ async function readStocks(db: D1Database, sourceId: number, targetId: number) {
   ).bind(sourceId, targetId).all<StockRow>()
   return result.results || []
 }
-function snapshotToken(source: Sku, target: Sku, stocks: StockRow[], reservations: ReservationRow[]) {
+function snapshotToken(source: Sku, target: Sku, stocks: StockRow[], reservations: ReservationRow[], month: {from:string;toExclusive:string}) {
   return JSON.stringify({
     source: [source.id,source.updated_at,source.color,source.size_label],
     target: [target.id,target.updated_at,target.color,target.size_label],
     stocks: stocks.map(x=>[x.id,x.inventory_source,x.variant_id,x.quantity,x.reserved_quantity]),
     reservations: reservationSnapshotJson(reservations),
+    month: [month.from,month.toExclusive],
   })
 }
 function stockSnapshotJson(stocks: StockRow[]) {
@@ -154,7 +156,19 @@ export async function previewCatalogVariantConsolidation(db: D1Database, sourceI
       sourceReserved: Number(sourceStock?.reserved_quantity || 0),
       targetReserved: Number(targetStock?.reserved_quantity || 0) }
   })
+  const month=businessMonthRange()
+  // A still-open past/future order must keep its historical SKU. It cannot be
+  // silently re-pointed as part of current-month catalog cleanup.
+  const outOfMonth = await db.prepare(
+    `SELECT COUNT(*) AS n FROM order_items oi JOIN orders o ON o.id=oi.order_id
+       WHERE oi.variant_id=? AND oi.quantity>0 AND o.order_status='active'
+         AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+         AND (COALESCE(o.order_date,'')<? OR o.order_date>=?)`
+  ).bind(sourceId,month.from,month.toExclusive).first<{n:number}>()
   const blockers: string[] = []
+  if (toInt(outOfMonth?.n,0)>0) {
+    blockers.push('Есть незавершённые заказы других месяцев. Их SKU нельзя менять задним числом.')
+  }
   if (!source.is_active) blockers.push('Лишний вариант уже неактивен.')
   if (stocks.some(s => !['warehouse','boutique'].includes(s.inventory_source))) blockers.push('Обнаружено неизвестное место хранения')
   if (stocks.some(s => !Number.isSafeInteger(s.quantity) || s.quantity < 0 || !Number.isSafeInteger(s.reserved_quantity) || s.reserved_quantity < 0)) {
@@ -199,8 +213,8 @@ export async function previewCatalogVariantConsolidation(db: D1Database, sourceI
     source: { id: source.id, color: source.color, size: source.size_label, active: Boolean(source.is_active) },
     target: { id: target.id, color: target.color, size: target.size_label, active: Boolean(target.is_active) },
     productName: source.product_name, material: source.execution_material, length: source.execution_length,
-    sourceImpact, targetImpact, stockBreakdown, reservationCount: sourceReservations.length,
-    stateToken: snapshotToken(source,target,stocks,reservations),
+    sourceImpact, targetImpact, stockBreakdown, month, reservationCount: sourceReservations.length,
+    stateToken: snapshotToken(source,target,stocks,reservations,month),
     transferQuantity: stockBreakdown.reduce((sum,r)=>sum + r.sourcePhysical,0),
     blockers, canConsolidate: blockers.length === 0,
     explanation: blockers.length
@@ -233,7 +247,7 @@ export async function consolidateUnusedCatalogVariant(
   if (!preview.canConsolidate) throw new Error('Объединение пока невозможно: '+preview.blockers.join('; '))
 
   const [source,target,stocks,reservations] = await Promise.all([readSku(db,sourceId),readSku(db,targetId),readStocks(db,sourceId,targetId),readActiveReservations(db,sourceId,targetId)])
-  if (!source || !target || !sameBusinessIdentity(source,target) || snapshotToken(source,target,stocks,reservations)!==preview.stateToken) {
+  if (!source || !target || !sameBusinessIdentity(source,target) || snapshotToken(source,target,stocks,reservations,businessMonthRange())!==preview.stateToken) {
     throw new Error('Каталог изменился после проверки. Обновите предпросмотр.')
   }
   const stamp = new Date().toISOString()
@@ -337,8 +351,14 @@ export async function consolidateUnusedCatalogVariant(
         AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.variant_id=v.id AND (
           EXISTS(SELECT 1 FROM return_items ri WHERE ri.order_item_id=oi.id)
           OR EXISTS(SELECT 1 FROM exchanges e WHERE e.old_order_item_id=oi.id OR e.new_order_item_id=oi.id)
-         OR EXISTS(SELECT 1 FROM exchange_items ei WHERE ei.order_item_id=oi.id)))`
-    ).bind(actor||null,stamp,targetId,sourceId,...sourceFields,...targetFields,beforeStock,beforeStock,beforeReservations,beforeReservations),
+         OR EXISTS(SELECT 1 FROM exchange_items ei WHERE ei.order_item_id=oi.id)))
+        AND NOT EXISTS (
+          SELECT 1 FROM order_items oi JOIN orders o ON o.id=oi.order_id
+          WHERE oi.variant_id=v.id AND oi.quantity>0 AND o.order_status='active'
+            AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+            AND (COALESCE(o.order_date,'')<? OR o.order_date>=?)
+        )`
+    ).bind(actor||null,stamp,targetId,sourceId,...sourceFields,...targetFields,beforeStock,beforeStock,beforeReservations,beforeReservations,preview.month.from,preview.month.toExclusive),
     db.prepare(
       `INSERT INTO catalog_variant_consolidation_stock_rows (
         consolidation_id,inventory_source,source_stock_id,target_stock_id_before,
