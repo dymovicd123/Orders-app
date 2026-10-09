@@ -190,6 +190,10 @@ sqlite.exec("INSERT INTO inventory_transfer_documents VALUES (1,'applied')")
 sqlite.exec("INSERT INTO inventory_transfer_items VALUES (1,1,12)")
 assert.equal((await previewCatalogVariantConsolidation(db,12,13)).canConsolidate,false,'Applied transfer blocks')
 sqlite.exec("UPDATE inventory_transfer_documents SET status='reversed' WHERE id=1")
+sqlite.exec("INSERT INTO inventory_lifecycle_events VALUES (2,12,'applied')")
+assert.equal((await previewCatalogVariantConsolidation(db,12,13)).canConsolidate,false,
+  'An applied return or exchange can still be reversed into an inactive variant')
+sqlite.exec('DELETE FROM inventory_lifecycle_events WHERE id=2')
 sqlite.exec("INSERT INTO inventory_movements VALUES(1,12,'manual')")
 assert.equal((await previewCatalogVariantConsolidation(db,12,13)).canConsolidate,false,
   'An old manual operation can still be reversed into a retired SKU')
