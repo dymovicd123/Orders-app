@@ -203,7 +203,7 @@ export async function assertReferenceValueCanChange(db: D1Database, dbKind: stri
 // Share the Catalog/Arrival/Stocktake rule: hyphens and whitespace cannot
 // manufacture a second business identity.
 export function referenceValueIdentityKey(value: unknown) {
-  const text = upperText(value);
+  const text = upperText(value).replace(/[‐‑‒–—-]+/g, ' ');
   return text ? catalogColorIdentity(text) : '';
 }
 
@@ -287,6 +287,7 @@ export async function upsertReferenceValue(db: D1Database, input: { kind?: unkno
       }
       return { ok: true, kind, id: equivalent.id, value: equivalent.value, reused: true };
     }
+    await assertNoEquivalentReferenceValue(db, dbKind, value, 0);
     const inserted = await db.prepare(
       `INSERT INTO reference_values (kind, value, is_active, sort_order, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
