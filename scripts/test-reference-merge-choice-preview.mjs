@@ -9,15 +9,15 @@ assert.deepEqual(businessMonthRange(new Date('2026-10-31T18:30:00Z')),
  {from:'2026-10-01',toExclusive:'2026-11-01',label:'октябрь 2026 г.'})
 const sql=new DatabaseSync(':memory:')
 sql.exec(`
- CREATE TABLE reference_values(id INTEGER PRIMARY KEY,kind TEXT,value TEXT,is_active INTEGER);
- CREATE TABLE orders(id INTEGER PRIMARY KEY,order_date TEXT,order_status TEXT,order_payment_method TEXT,delivery_type TEXT,city TEXT);
+ CREATE TABLE reference_values(id INTEGER PRIMARY KEY,kind TEXT,value TEXT,is_active INTEGER,updated_at TEXT DEFAULT 'seed');
+ CREATE TABLE orders(id INTEGER PRIMARY KEY,order_date TEXT,order_status TEXT,order_payment_method TEXT,delivery_type TEXT,city TEXT,updated_at TEXT DEFAULT 'seed');
  CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,method TEXT);
  CREATE TABLE financial_events(id INTEGER PRIMARY KEY,order_id INTEGER,payment_method TEXT);
  CREATE TABLE cash_register_entries(id INTEGER PRIMARY KEY,order_id INTEGER,payment_method TEXT);
  CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,payment_method TEXT);
  CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,payment_method TEXT);
  CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,is_active INTEGER,color TEXT,material TEXT,length TEXT,category TEXT,size_label TEXT);
- INSERT INTO reference_values VALUES
+ INSERT INTO reference_values(id,kind,value,is_active) VALUES
   (1,'payment_method','ТЕРМИНАЛ',1),
   (2,'payment_method','KASPI PAY',1),
   (3,'payment_method','НАЛИЧНЫЕ',1),
@@ -28,7 +28,7 @@ sql.exec(`
   (8,'color','СВЕТЛЫЙ',1),
   (9,'color','ТЁМНЫЙ',1),
   (10,'payment_method','СТАРОЕ',0);
- INSERT INTO orders VALUES
+ INSERT INTO orders(id,order_date,order_status,order_payment_method,delivery_type,city) VALUES
   (10,'2026-10-08','active','ТЕРМИНАЛ','САМОВЫВОЗ','АЛМАТЫ'),
   (11,'2026-09-09','archived','ТЕРМИНАЛ','САМОВЫВОЗ','АЛМАТЫ'),
   (12,'2026-10-08','active','KASPI PAY','ДОСТАВКА','АСТАНА'),
@@ -63,6 +63,8 @@ assert.deepEqual(sql.prepare('SELECT * FROM orders ORDER BY id').all(),before,
 const deliveries=await previewUserSelectedReferenceMerge(db,4,5,new Date('2026-10-09T11:00:00Z'))
 assert.equal(deliveries.orders.current,1)
 assert.equal(deliveries.orders.older,1)
+assert.equal(deliveries.canApply,true)
+assert.match(deliveries.stateToken,/^[a-f0-9]{64}$/)
 assert.equal(deliveries.finance.payments.current,0)
 const colors=await previewUserSelectedReferenceMerge(db,8,9,new Date('2026-10-09T11:00:00Z'))
 assert.equal(colors.activeCatalogVariants,1)
