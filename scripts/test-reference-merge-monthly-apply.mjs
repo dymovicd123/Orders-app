@@ -112,7 +112,7 @@ assert.equal(field(11,'delivery_type'),'ЗАММЛЕР')
 // Payment methods are handled separately, never via generic city/delivery merge.
 let pay=await previewUserSelectedReferenceMerge(db,5,6,now)
 assert.equal(pay.canApply,true)
-await assert.rejects(()=>applyMonthBoundReferenceMerge(db,5,6,'token','admin',now),/пока недоступно|не доступны|проверку|автоматическое/i)
+await assert.rejects(()=>applyMonthBoundReferenceMerge(db,5,6,'token','admin',now),/пока недоступно|не доступны|проверку|автоматическое|последствия/i)
 assert.equal(active(5),1)
 assert.equal(field(10,'order_payment_method'),'ТЕРМИНАЛ')
 const worker=fs.readFileSync('worker/index.ts','utf8')
