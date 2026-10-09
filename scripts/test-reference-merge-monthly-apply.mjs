@@ -29,14 +29,14 @@ sqlite.exec(`
 `)
 sqlite.exec(fs.readFileSync('migrations/0093_v72_reference_value_choice_merges.sql','utf8'))
 
-sql.exec("ALTER TABLE payments ADD COLUMN payment_date TEXT DEFAULT '2026-10-09'")
-sql.exec("ALTER TABLE payments ADD COLUMN amount INTEGER DEFAULT 0")
-sql.exec("ALTER TABLE financial_events ADD COLUMN event_date TEXT DEFAULT '2026-10-09'")
-sql.exec("ALTER TABLE financial_events ADD COLUMN amount_delta INTEGER DEFAULT 0")
-sql.exec("ALTER TABLE returns ADD COLUMN return_date TEXT DEFAULT '2026-10-09'")
-sql.exec("ALTER TABLE returns ADD COLUMN amount INTEGER DEFAULT 0")
-sql.exec("ALTER TABLE exchanges ADD COLUMN exchange_date TEXT DEFAULT '2026-10-09'")
-sql.exec("ALTER TABLE exchanges ADD COLUMN financial_amount INTEGER DEFAULT 0")
+sqlite.exec("ALTER TABLE payments ADD COLUMN payment_date TEXT DEFAULT '2026-10-09'")
+sqlite.exec("ALTER TABLE payments ADD COLUMN amount INTEGER DEFAULT 0")
+sqlite.exec("ALTER TABLE financial_events ADD COLUMN event_date TEXT DEFAULT '2026-10-09'")
+sqlite.exec("ALTER TABLE financial_events ADD COLUMN amount_delta INTEGER DEFAULT 0")
+sqlite.exec("ALTER TABLE returns ADD COLUMN return_date TEXT DEFAULT '2026-10-09'")
+sqlite.exec("ALTER TABLE returns ADD COLUMN amount INTEGER DEFAULT 0")
+sqlite.exec("ALTER TABLE exchanges ADD COLUMN exchange_date TEXT DEFAULT '2026-10-09'")
+sqlite.exec("ALTER TABLE exchanges ADD COLUMN financial_amount INTEGER DEFAULT 0")
 
 let beforeValidation=()=>{}
 const db={
