@@ -356,7 +356,7 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                     <span className="reference-integrity-entry-open">{maintenanceView === 'merge' ? 'Свернуть' : 'Открыть объединение'}</span>
                   </summary>
                   {maintenanceView === 'merge' ? (
-                    <ReferenceMergeWorkspace apiFetch={apiFetch} isAdmin={isAdmin}
+                    <ReferenceMergeWorkspace apiFetch={apiFetch} isAdmin={isAdmin} initialKind={referenceKind}
                       onMerged={async () => {
                         await Promise.all([
                           ctx.loadReferencesData(true),
