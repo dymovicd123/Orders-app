@@ -63,7 +63,14 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                 </div>
               </div>
     
-              <ReferenceMergeWorkspace apiFetch={apiFetch} isAdmin={isAdmin} />
+              <ReferenceMergeWorkspace apiFetch={apiFetch} isAdmin={isAdmin}
+                onMerged={async () => {
+                  await Promise.all([
+                    ctx.loadReferencesData(true),
+                    ctx.loadReferenceItems(ctx.referenceKind,true),
+                    ctx.loadReferenceKindCounts(ctx.referenceGroups.map((group:any)=>group.kind),true),
+                  ])
+                }} />
 
               <details className="reference-integrity-entry" data-feature="reference-duplicates">
                 <summary className="reference-integrity-entry-summary">
