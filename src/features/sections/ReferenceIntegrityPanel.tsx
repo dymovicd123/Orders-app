@@ -5,6 +5,15 @@ type DuplicateGroup = { kind: string; identity: string; suggestedTargetId: numbe
 type SkuDuplicate = { productId: number; productName: string; category: string; gender: string;
   material: string; length: string; color: string; size: string;
   variants: Array<{ id: number; color: string; physical: number; reserved: number; material: string; length: string }> }
+type SkuPreview = {
+  ok: boolean;
+  source: { id: number; color: string; size: string; active: boolean };
+  target: { id: number; color: string; size: string; active: boolean };
+  productName: string; material: string; length: string;
+  sourceImpact: { physical: number; reserved: number; historicalOrders: number; activeOrders: number; activeReservations: number };
+  targetImpact: { physical: number; reserved: number; historicalOrders: number };
+  blockers: string[]; canConsolidate: boolean; explanation: string;
+}
 type DuplicateResponse = { ok?: boolean; groups?: DuplicateGroup[]; skuGroups?: SkuDuplicate[];
   limited?: boolean; skuLimited?: boolean; message?: string }
 type Preview = {
@@ -41,6 +50,10 @@ export function ReferenceIntegrityPanel({
   const [limited, setLimited] = useState(false)
   const [skuGroups, setSkuGroups] = useState<SkuDuplicate[] | null>(null)
   const [skuLimited, setSkuLimited] = useState(false)
+  const [skuKeeper, setSkuKeeper] = useState<Record<string, number>>({})
+  const [skuSelected, setSkuSelected] = useState('')
+  const [skuPreview, setSkuPreview] = useState<SkuPreview | null>(null)
+  const [skuPreviewBusy, setSkuPreviewBusy] = useState(false)
   const [loading, setLoading] = useState(false)
   const [previewBusy, setPreviewBusy] = useState(false)
   const [actionBusy, setActionBusy] = useState(false)
@@ -56,6 +69,7 @@ export function ReferenceIntegrityPanel({
     setLoading(true)
     setError('')
     setPreview(null)
+    setSkuPreview(null)
     setSelected('')
     try {
       const response = await apiFetch('/api/reference-values/duplicates')
@@ -76,6 +90,7 @@ export function ReferenceIntegrityPanel({
     if (previewBusy) return
     setPreviewBusy(true)
     setPreview(null)
+    setSkuPreview(null)
     setError('')
     setSelected(group.kind + ':' + sourceId)
     try {
@@ -88,6 +103,53 @@ export function ReferenceIntegrityPanel({
       setError(e instanceof Error ? e.message : 'Проверка связей временно недоступна.')
     } finally {
       setPreviewBusy(false)
+    }
+  }
+
+  async function inspectSku(sourceId: number, targetId: number) {
+    if (skuPreviewBusy || actionBusy) return
+    setSkuPreviewBusy(true)
+    setSkuPreview(null)
+    setPreview(null)
+    setSkuSelected(sourceId + ':' + targetId)
+    setError('')
+    try {
+      const qs = new URLSearchParams({ sourceId: String(sourceId), targetId: String(targetId) })
+      const response = await apiFetch('/api/catalog/variants/consolidation-preview?' + qs.toString())
+      const data = await response.json() as SkuPreview & { message?: string }
+      if (!response.ok || !data.ok) throw new Error(data.message || 'Не удалось проверить варианты.')
+      setSkuPreview(data)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Проверка вариантов временно недоступна.')
+    } finally {
+      setSkuPreviewBusy(false)
+    }
+  }
+
+  async function consolidateSku() {
+    if (!skuPreview?.canConsolidate || actionBusy) return
+    const { source, target } = skuPreview
+    if (!window.confirm(
+      'Сделать вариант #' + target.id + ' основным и убрать дублирующий #' + source.id
+      + ' из рабочего Каталога? История, заказы и остатки не изменятся.'
+    )) return
+    setActionBusy(true)
+    setError('')
+    try {
+      const response = await apiFetch('/api/catalog/variants/consolidate-unused', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceId: source.id, targetId: target.id }),
+      })
+      const data = await response.json() as { ok?: boolean; message?: string }
+      if (!response.ok || !data.ok) throw new Error(data.message || 'Не удалось объединить варианты.')
+      await onHidden()
+      await scan()
+      setNotice('Дублирующий вариант убран из рабочих списков. Его история и складские данные сохранены.')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Объединение временно недоступно.')
+    } finally {
+      setActionBusy(false)
     }
   }
 
@@ -166,24 +228,77 @@ export function ReferenceIntegrityPanel({
               <p className="mini-panel-note">
                 Найдено совпадающих комбинаций: <strong>{skuGroups.length}</strong>. Материалы и длины учитываются отдельно.
               </p>
-              {skuGroups.map((group, index) => (
-                <div className="reference-integrity-group" key={group.productId + ':' + index}>
-                  <strong>{group.productName} · {group.material || 'Стандарт'} · {group.length || 'Стандарт'}</strong>
-                  <p className="mini-panel-note">{group.color} · {group.size || 'Без размера'} · {group.gender || 'Без указания пола'}</p>
-                  <div className="reference-integrity-items">
-                    {group.variants.map(variant => (
-                      <div className="reference-integrity-item" key={variant.id}>
-                        <span>{variant.color} · вариант #{variant.id}</span>
-                        <span>{variant.physical} шт. · резерв {variant.reserved}</span>
-                      </div>
-                    ))}
+              {skuGroups.map((group, index) => {
+                const key = group.productId + ':' + index
+                const preferred = [...group.variants].sort((a, b) =>
+                  (Math.abs(b.physical) + Math.abs(b.reserved)) - (Math.abs(a.physical) + Math.abs(a.reserved)) || a.id - b.id
+                )[0]
+                const keeperId = skuKeeper[key] && group.variants.some(v => v.id === skuKeeper[key])
+                  ? skuKeeper[key] : preferred?.id
+                return (
+                  <div className="reference-integrity-group" key={key}>
+                    <strong>{group.productName} · {group.material || 'Стандарт'} · {group.length || 'Стандарт'}</strong>
+                    <p className="mini-panel-note">{group.color} · {group.size || 'Без размера'} · {group.gender || 'Без указания пола'}</p>
+                    <label className="mini-panel-note">
+                      Основной вариант:{' '}
+                      <select value={keeperId} disabled={actionBusy || skuPreviewBusy}
+                        onChange={e => {
+                          setSkuKeeper(old => ({ ...old, [key]: Number(e.target.value) }))
+                          setSkuPreview(null)
+                        }}>
+                        {group.variants.map(variant => (
+                          <option key={variant.id} value={variant.id}>#{variant.id} · {variant.color}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="reference-integrity-items">
+                      {group.variants.map(variant => (
+                        <div className="reference-integrity-item" key={variant.id}>
+                          <span>{variant.color} · вариант #{variant.id}{variant.id === keeperId ? ' · основной' : ''}</span>
+                          <span>{variant.physical} шт. · резерв {variant.reserved}</span>
+                          {variant.id !== keeperId ? (
+                            <button type="button" className="secondary compact" disabled={skuPreviewBusy || actionBusy}
+                              onClick={() => void inspectSku(variant.id, keeperId)}>
+                              {skuPreviewBusy && skuSelected === variant.id + ':' + keeperId ? 'Проверяю…' : 'Проверить объединение'}
+                            </button>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </>
           )}
           {skuLimited ? <p className="mini-panel-note">Каталог большой: показана только часть возможных совпадений.</p> : null}
-          <p className="mini-panel-note">Объединение вариантов с заказами и складской историей пока недоступно. Не пытайтесь списывать дубли ради их удаления.</p>
+          <p className="mini-panel-note">Сначала выберите, какой вариант сохранить. При ненулевых остатках, резервах и незавершённых операциях система не выполнит объединение. Не списывайте товары ради очистки.</p>
+        </div>
+      ) : null}
+      {skuPreview ? (
+        <div className="reference-integrity-preview">
+          <h4>Проверка объединения вариантов</h4>
+          <p><strong>{skuPreview.productName}</strong> · {skuPreview.material} · {skuPreview.length}</p>
+          <p>Вариант #{skuPreview.source.id} → основной вариант #{skuPreview.target.id}</p>
+          <p>{skuPreview.explanation}</p>
+          <p className="mini-panel-note">
+            Лишний вариант: {skuPreview.sourceImpact.physical} шт., резерв {skuPreview.sourceImpact.reserved},
+            исторических строк заказов {skuPreview.sourceImpact.historicalOrders}.
+            Основной вариант: {skuPreview.targetImpact.physical} шт., резерв {skuPreview.targetImpact.reserved}.
+          </p>
+          {skuPreview.blockers.length ? (
+            <div className="notice" role="status">
+              <strong>Пока нельзя выполнить:</strong>
+              <ul>{skuPreview.blockers.map(reason => <li key={reason}>{reason}</li>)}</ul>
+            </div>
+          ) : null}
+          {skuPreview.canConsolidate ? (
+            <div className="actions">
+              <button className="primary compact" type="button" disabled={actionBusy} onClick={() => void consolidateSku()}>
+                {actionBusy ? 'Проверяю и сохраняю…' : 'Убрать дублирующий вариант'}
+              </button>
+            </div>
+          ) : null}
+          <p className="mini-panel-note">Действие не переписывает историю, не переносит остатки и не создаёт списание.</p>
         </div>
       ) : null}
       {preview ? (
