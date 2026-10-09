@@ -46,11 +46,11 @@ export async function previewCharacteristicImpact(
   const bindValue = (value: string) => execution ? [value, value] : [value]
   const sourceValue = cleanText(source.value).toUpperCase()
   const targetValue = cleanText(target.value).toUpperCase()
-  const match = (side: string) => execution
+  const match = () => execution
     ? `(${primary}=? OR ${execution}=?)`
     : `${primary}=?`
-  const sourceMatch = match('source')
-  const targetMatch = match('target')
+  const sourceMatch = match()
+  const targetMatch = match()
   const audience = kind === 'size'
     ? "AND COALESCE(v.category,'adult')<>'child'"
     : kind === 'child_age'
