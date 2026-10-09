@@ -13,7 +13,7 @@ type SkuPreview = {
   sourceImpact: { physical: number; reserved: number; historicalOrders: number; activeOrders: number; activeReservations: number };
   targetImpact: { physical: number; reserved: number; historicalOrders: number };
   stockBreakdown: Array<{ location: string; sourcePhysical: number; targetPhysical: number; combinedPhysical: number; sourceReserved: number; targetReserved: number }>;
-  stateToken: string; transferQuantity: number;
+  stateToken: string; transferQuantity: number; reservationCount: number;
   blockers: string[]; canConsolidate: boolean; explanation: string;
 }
 type SkuMergeHistory = {
@@ -159,7 +159,10 @@ export function ReferenceIntegrityPanel({
       + (skuPreview.transferQuantity > 0
         ? 'Будет перенесено ' + skuPreview.transferQuantity + ' шт. между идентичными вариантами по их местам хранения. '
         : 'Физические остатки не требуют переноса. ')
-      + 'История заказов и складских движений сохранится, списания не будет.'
+      + (skuPreview.reservationCount
+        ? 'Действующие резервы ' + skuPreview.reservationCount + ' строк заказов перейдут на основной вариант. '
+        : '')
+      + 'Цены, названия в истории и складские движения сохранятся, списания не будет.'
     )) return
     setActionBusy(true)
     setError('')
@@ -300,7 +303,7 @@ export function ReferenceIntegrityPanel({
             </>
           )}
           {skuLimited ? <p className="mini-panel-note">Каталог большой: показана только часть возможных совпадений.</p> : null}
-          <p className="mini-panel-note">Сначала выберите основной вариант. Физические остатки переносятся автоматически, отдельно на складе и в бутике; незавершённые операции и действующие резервы требуют предварительной проверки. Ничего списывать ради очистки не нужно.</p>
+          <p className="mini-panel-note">Сначала выберите основной вариант. Система объединит физические остатки и согласованные резервы по складу и бутику. Если действующие заказы или обратимые операции требуют отдельной проверки, она объяснит причину без списания.</p>
         </div>
       ) : null}
       <div className="reference-integrity-results">
@@ -331,7 +334,7 @@ export function ReferenceIntegrityPanel({
           <p>{skuPreview.explanation}</p>
           <p className="mini-panel-note">
             Лишний вариант: {skuPreview.sourceImpact.physical} шт., резерв {skuPreview.sourceImpact.reserved},
-            исторических строк заказов {skuPreview.sourceImpact.historicalOrders}.
+            связанных действующих резервов {skuPreview.reservationCount}, исторических строк заказов {skuPreview.sourceImpact.historicalOrders}.
             Основной вариант: {skuPreview.targetImpact.physical} шт., резерв {skuPreview.targetImpact.reserved}.
           </p>
           <div className="reference-integrity-items">
@@ -339,7 +342,7 @@ export function ReferenceIntegrityPanel({
               <div className="reference-integrity-item" key={place.location}>
                 <strong>{place.location === 'warehouse' ? 'Склад' : 'Бутик'}</strong>
                 <span>{place.sourcePhysical} + {place.targetPhysical} = {place.combinedPhysical} шт. после объединения</span>
-                <span>Резерв основного: {place.targetReserved} шт.{place.sourceReserved ? ' · резерв лишнего: '+place.sourceReserved : ''}</span>
+                <span>Резервы: {place.sourceReserved} + {place.targetReserved} = {place.sourceReserved + place.targetReserved} шт.</span>
               </div>
             ))}
           </div>
@@ -352,11 +355,11 @@ export function ReferenceIntegrityPanel({
           {skuPreview.canConsolidate ? (
             <div className="actions">
               <button className="primary compact" type="button" disabled={actionBusy} onClick={() => void consolidateSku()}>
-                {actionBusy ? 'Проверяю и сохраняю…' : skuPreview.transferQuantity > 0 ? 'Объединить и сохранить остатки' : 'Убрать дублирующий вариант'}
+                {actionBusy ? 'Проверяю и сохраняю…' : skuPreview.transferQuantity > 0 || skuPreview.reservationCount > 0 ? 'Объединить варианты и резервы' : 'Убрать дублирующий вариант'}
               </button>
             </div>
           ) : null}
-          <p className="mini-panel-note">Остатки переносятся только между идентичными вариантами в пределах одного места хранения. Исторические заказы и движения не переписываются; фиктивного списания нет.</p>
+          <p className="mini-panel-note">Остатки и действующие резервы сохраняются в своих местах хранения. Текущие заказы получают основной вариант, но цены, названия, оплаты и исторические складские движения не переписываются.</p>
         </div>
       ) : null}
       {preview ? (
