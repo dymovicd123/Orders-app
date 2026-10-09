@@ -15,7 +15,8 @@ Date: 2026-10-09. **Priority: correct mechanisms and code first; existing refere
 1. All SKU consolidations now require a confirmed state token **even with zero physical stock and zero reservations**. Reject API calls with no token.
 2. Material and length edits/deletions now account for active standalone stock executions, and inactive variants still carrying physical/reserved stock block reference changes.
 3. Characteristic CRUD updates and deletion have SQL-side matching-value, kind, active-state and linked-SKU/stock-position conditions to stop new-link races between preflight and commit.
-4. Added focused SQLite regression and cumulative Stage04 gate; do not weaken these gates for deployment.
+4. Exchange batch rows (`exchange_items.order_item_id`) are now included in both the read-only SKU impact and atomic blocking SQL; otherwise a future exchange cancellation could restore stock against a retired SKU.
+5. Added focused SQLite regression and cumulative Stage04 gate; do not weaken these gates for deployment.
 
 ## Still unsupported — must NOT be advertised as solved
 
