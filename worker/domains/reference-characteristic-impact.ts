@@ -1,4 +1,5 @@
-import { cleanText, toInt } from '../core/text.ts'
+import { canonicalStockPositionValue, cleanText, toInt } from '../core/text.ts'
+import { catalogColorIdentity, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize } from './catalog.ts'
 
 // Read-only analysis for a user-selected source and keeper. No catalog writes.
 // Material/length may be stored on either the variant or its execution.
@@ -23,6 +24,49 @@ type SampleVariant = {
   material: string; length: string; color: string; size: string
   active: boolean; physical: number; reserved: number
 }
+
+type PairCandidate = { sourceVariantId:number; targetVariantId:number; productName:string; description:string }
+type PairCandidateVariant = {
+  id:number; side:CharacteristicSide; product_id:number; stock_position_id:number|null;
+  category:string|null; gender:string|null; color:string|null; size_label:string|null;
+  material:string|null; length:string|null; product_name:string; is_active:number;
+}
+/**
+ * Only classify truly identical business SKUs as merge candidates. User-defined
+ * reclassification to a DIFFERENT color/size is not a SKU identity cleanup.
+ * The existing guarded Catalog consolidation endpoint remains the sole writer.
+ */
+export function matchingCharacteristicSkuPairs(
+  kind:string, rows:PairCandidateVariant[], sourceLabel:string, targetLabel:string,
+): PairCandidate[] {
+  if (kind !== 'color' || catalogColorIdentity(sourceLabel) !== catalogColorIdentity(targetLabel)
+    || cleanText(sourceLabel).toUpperCase() === cleanText(targetLabel).toUpperCase()) return []
+  const key = (v:PairCandidateVariant) => [
+    v.product_id, v.stock_position_id ?? 'missing-position',
+    v.category || 'adult', normalizeCatalogCombinationGender(v.gender),
+    catalogColorIdentity(v.color), normalizeCatalogCombinationSize(v.size_label),
+    canonicalStockPositionValue(v.material), canonicalStockPositionValue(v.length),
+  ].join('\\u001f')
+  const targets=new Map<string,PairCandidateVariant[]>()
+  for(const v of rows) {
+    if(v.side!=='target'||v.is_active!==1||v.stock_position_id===null)continue
+    const identity=key(v);targets.set(identity,[...(targets.get(identity)||[]),v])
+  }
+  const pairs:PairCandidate[]=[]
+  for(const v of rows) {
+    if(v.side!=='source'||v.is_active!==1||v.stock_position_id===null)continue
+    const possible=(targets.get(key(v))||[]).filter(t=>t.id!==v.id)
+    if(possible.length!==1)continue // no ambiguous keeper picked automatically
+    pairs.push({
+      sourceVariantId:v.id,targetVariantId:possible[0].id,
+      productName:v.product_name,
+      description:[v.material||'Стандарт',v.length||'Стандарт',v.color||'Без цвета',
+        v.size_label||'Без размера'].join(' · '),
+    })
+  }
+  return pairs
+}
+
 const empty = (side: CharacteristicSide): CountSummary => ({
   side, variants: 0, activeVariants: 0, physical: 0, reserved: 0,
   currentOrderLines: 0, olderOrderLines: 0, activeUnsentLines: 0,
@@ -159,6 +203,22 @@ export async function previewCharacteristicImpact(
         WHERE ${sourceMatch} AND ${targetMatch} ${audience}`)
       .bind(...bindValue(sourceValue),...bindValue(targetValue)).first<{n:number}>()
     : null
+  // The only safe self-service SKU step at present is exact-business-identity
+  // duplicate cleanup. The list is bounded; never silently truncate work.
+  const canLookForPairs = kind === 'color'
+    && catalogColorIdentity(sourceValue) === catalogColorIdentity(targetValue)
+    && sourceValue !== targetValue
+  const candidateRows = canLookForPairs
+    ? await grouped<PairCandidateVariant>(
+      `SELECT a.id,a.side,a.product_id,a.stock_position_id,a.category,a.gender,
+         a.color,a.size_label,a.material,a.length,a.product_name,a.is_active
+        FROM affected a WHERE a.is_active=1 ORDER BY a.id LIMIT 401`)
+    : []
+  const pairCandidates = canLookForPairs && candidateRows.length <= 400
+    ? matchingCharacteristicSkuPairs(kind,candidateRows,sourceValue,targetValue)
+    : []
+  const skuPairs = pairCandidates.slice(0,8)
+  const skuPairsLimited = candidateRows.length>400 || pairCandidates.length>8
   const indistinguishable = sourceValue === targetValue
   const sourceUsed = summary.source.activeVariants>0 || summary.source.physical!==0
     || summary.source.reserved!==0 || summary.source.activeReservations>0
@@ -185,10 +245,12 @@ export async function previewCharacteristicImpact(
   return {
     kind, source: summary.source, target: summary.target,
     sourceExecutions, byLocation, sampleVariants,
+    skuPairs,skuPairsLimited,
     sampleTruncated: samples.length>12,
     indistinguishable, warnings,
     canAutomaticallyConsolidate: false,
-    // Until a SKU-aware transactional writer exists, this endpoint is ONLY a preview.
+    // This endpoint remains read-only. Any selected SKU pair must pass the
+    // existing exact-identity Catalog preview AND transactional apply guards.
     status: sourceUsed || indistinguishable ? 'requires_catalog_review' : 'unused_or_historical',
   }
 }
