@@ -130,9 +130,9 @@ assert.equal(result.historicalOrdersPreserved,1)
 assert.equal(active(7),0)
 assert.equal(active(8),1)
 assert.equal(active(9),1)
-assert.deepEqual(
-  sqlite.prepare('SELECT id,variant_id,quantity,reserved_quantity FROM inventory_stock ORDER BY id').all(),
-  beforeStock.map(({id,variant_id,quantity,reserved_quantity})=>({id,variant_id,quantity,reserved_quantity}))
+assert.equal(
+  JSON.stringify(sqlite.prepare('SELECT id,variant_id,quantity,reserved_quantity FROM inventory_stock ORDER BY id').all()),
+  JSON.stringify(beforeStock.map(({id,variant_id,quantity,reserved_quantity})=>({id,variant_id,quantity,reserved_quantity})))
 )
 assert.deepEqual(sqlite.prepare('SELECT * FROM order_items ORDER BY id').all(),beforeOrder)
 assert.equal(activity(),1)
