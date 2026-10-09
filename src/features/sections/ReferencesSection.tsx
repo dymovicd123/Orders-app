@@ -33,10 +33,10 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
               <div className="references-hero">
                 <div className="references-hero-main">
                   <div className="card-label">Справочники</div>
-                  <h2>Чистые вспомогательные списки</h2>
+                  <h2>Все рабочие справочники</h2>
                   <p>
-                    Здесь остались только общие списки заказов: города, доставка и причины возврата.
-                    Характеристики одежды теперь редактируются там, где ими пользуются: «Склад → Товары».
+                    Единое место для городов, доставки, способов оплаты, цветов, материалов, длин,
+                    размеров и причин операций. Эти значения доступны и в соответствующих рабочих формах.
                   </p>
                   <div className="reference-hero-badges">
                     <span className="status-pill status-online">Активных: {referenceStats.active}</span>
@@ -60,9 +60,9 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
               </div>
     
               <div className="reference-routing-note">
-                <span><strong>Команда</strong> управляет менеджерами.</span>
-                <span><strong>Склад → Товары</strong> управляет товарами, цветами, материалами, длинами и размерами.</span>
-                <span><strong>Финансы</strong> управляют способами оплаты.</span>
+                <span><strong>Справочники</strong> — центральное место для значений.</span>
+                <span><strong>Склад → Товары</strong> — быстрый доступ к характеристикам.</span>
+                <span><strong>Команда</strong> — сотрудники и их доступ.</span>
               </div>
     
               <div className="reference-kind-grid">
