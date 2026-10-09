@@ -13,7 +13,7 @@ type Sku = {
 type SkuImpact = {
   id: number; physical: number; reserved: number; nonzeroStockRows: number;
   activeReservations: number; activeOrders: number; historicalOrders: number;
-  activeWorkshop: number; pendingLifecycle: number; activeStocktake: number; appliedTransfers: number;
+  activeWorkshop: number; pendingLifecycle: number; activeStocktake: number; appliedTransfers: number; reversibleMovements: number;
 }
 const safeId = (n: number) => Number.isSafeInteger(n) && n > 0
 type StockRow = { id: number; inventory_source: string; variant_id: number; quantity: number; reserved_quantity: number }
@@ -66,15 +66,19 @@ async function readImpact(db: D1Database, id: number): Promise<SkuImpact> {
       (SELECT COUNT(*) FROM inventory_stocktake_items i JOIN inventory_stocktake_sessions s ON s.id=i.session_id
         WHERE i.variant_id=? AND s.status='active') AS activeStocktake,
       (SELECT COUNT(*) FROM inventory_transfer_items i JOIN inventory_transfer_documents d ON d.id=i.transfer_id
-        WHERE i.variant_id=? AND d.status='applied') AS appliedTransfers`
-  ).bind(id,id,id,id,id,id,id,id,id,id).first<Omit<SkuImpact,'id'>>()
+        WHERE i.variant_id=? AND d.status='applied') AS appliedTransfers,
+      (SELECT COUNT(*) FROM inventory_movements m
+        WHERE m.variant_id=? AND LOWER(TRIM(COALESCE(m.reference_type,''))) IN ('manual','transfer_in','transfer_out')
+          AND NOT EXISTS (SELECT 1 FROM inventory_movement_reversals rev WHERE rev.original_movement_id=m.id)
+      ) AS reversibleMovements`
+  ).bind(id,id,id,id,id,id,id,id,id,id,id).first<Omit<SkuImpact,'id'>>()
   return {
     id, physical: toInt(row?.physical,0), reserved: toInt(row?.reserved,0), nonzeroStockRows: toInt(row?.nonzeroStockRows,0),
     activeReservations: toInt(row?.activeReservations,0),
     activeOrders: toInt(row?.activeOrders,0), historicalOrders: toInt(row?.historicalOrders,0),
     activeWorkshop: toInt(row?.activeWorkshop,0),
     pendingLifecycle: toInt(row?.pendingLifecycle,0), activeStocktake: toInt(row?.activeStocktake,0),
-    appliedTransfers: toInt(row?.appliedTransfers,0),
+    appliedTransfers: toInt(row?.appliedTransfers,0), reversibleMovements: toInt(row?.reversibleMovements,0),
   }
 }
 
@@ -130,6 +134,7 @@ export async function previewCatalogVariantConsolidation(db: D1Database, sourceI
   if (sourceImpact.pendingLifecycle) blockers.push('есть незавершённая приёмка или возврат')
   if (sourceImpact.activeStocktake || targetImpact.activeStocktake) blockers.push('один из вариантов участвует в действующей ревизии')
   if (sourceImpact.appliedTransfers) blockers.push('у лишнего варианта есть перемещение, которое ещё можно отменить')
+  if (sourceImpact.reversibleMovements) blockers.push('есть складское движение, отмена которого вернёт количество на старый вариант')
   return {
     ok: true,
     source: { id: source.id, color: source.color, size: source.size_label, active: Boolean(source.is_active) },
@@ -227,7 +232,11 @@ export async function consolidateUnusedCatalogVariant(
           WHERE i.variant_id IN (v.id,t.id) AND sess.status='active')
         AND NOT EXISTS (SELECT 1 FROM inventory_transfer_items i
           JOIN inventory_transfer_documents d ON d.id=i.transfer_id
-          WHERE i.variant_id=v.id AND d.status='applied')`
+          WHERE i.variant_id=v.id AND d.status='applied')
+        AND NOT EXISTS (SELECT 1 FROM inventory_movements m
+          WHERE m.variant_id=v.id
+            AND LOWER(TRIM(COALESCE(m.reference_type,''))) IN ('manual','transfer_in','transfer_out')
+            AND NOT EXISTS (SELECT 1 FROM inventory_movement_reversals rev WHERE rev.original_movement_id=m.id))`
     ).bind(actor||null,stamp,targetId,sourceId,...sourceFields,...targetFields,beforeStock,beforeStock),
     db.prepare(
       `INSERT INTO catalog_variant_consolidation_stock_rows (
