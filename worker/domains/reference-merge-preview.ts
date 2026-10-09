@@ -1,11 +1,11 @@
 import { cleanText, toInt } from '../core/text.ts'
 
-type Reference = { id: number; kind: string; value: string; is_active: number }
+export type Reference = { id: number; kind: string; value: string; is_active: number; updated_at:string }
 const supported = new Set([
   'city', 'delivery_type', 'payment_method', 'return_reason', 'writeoff_reason',
   'color', 'material', 'length', 'size', 'child_age',
 ])
-const orderFields: Record<string,string> = {
+export const orderFields: Record<string,string> = {
   city: 'city', delivery_type: 'delivery_type', payment_method: 'order_payment_method',
 }
 
@@ -23,6 +23,32 @@ export function businessMonthRange(date: Date = new Date()) {
 }
 
 type Summary = { current: number; older: number }
+export type MergeOrderRow={ id:number; original_value:string; updated_at:string }
+export async function readCurrentReferenceOrderRows(
+  db:D1Database,field:'city'|'delivery_type',source:string,from:string,to:string,
+) {
+  const allowed=['city','delivery_type']
+  if (!allowed.includes(field)) throw new Error('Неизвестное поле для объединения.')
+  const response=await db.prepare(`SELECT id, ${field} AS original_value, COALESCE(updated_at,'') AS updated_at
+    FROM orders WHERE order_date>=? AND order_date<? AND order_status<>'deleted'
+      AND UPPER(TRIM(COALESCE(${field},'')))=UPPER(?)
+    ORDER BY id LIMIT 5001`
+  ).bind(from,to,source).all<MergeOrderRow>()
+  return response.results||[]
+}
+export function currentOrderSnapshot(rows:MergeOrderRow[]) {
+  return JSON.stringify(rows.map(row=>[row.id,row.updated_at]))
+}
+async function sha256(text:string) {
+  const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))
+  return Array.from(new Uint8Array(bytes)).map(x=>x.toString(16).padStart(2,'0')).join('')
+}
+export async function referenceMergeToken(
+  source:Reference,target:Reference,month:{from:string;toExclusive:string},rows:MergeOrderRow[],
+) {
+  return sha256(JSON.stringify([source.id,source.kind,source.value,source.updated_at,
+    target.id,target.value,target.updated_at,month.from,month.toExclusive,currentOrderSnapshot(rows)]))
+}
 
 async function countAffectedPaymentOrders(db:D1Database, source:string, from:string,to:string):Promise<Summary>{
   // An order can store the payment method either on the order itself or only in
@@ -89,7 +115,7 @@ export async function previewUserSelectedReferenceMerge(
     throw new Error('Выберите два разных значения: какое убрать и какое оставить.')
   }
   const values=await db.prepare(
-    'SELECT id,kind,value,is_active FROM reference_values WHERE id IN (?,?)'
+    'SELECT id,kind,value,is_active,updated_at FROM reference_values WHERE id IN (?,?)'
   ).bind(sourceId,targetId).all<Reference>()
   const rows=values.results||[]
   const source=rows.find(v=>v.id===sourceId), target=rows.find(v=>v.id===targetId)
@@ -124,6 +150,12 @@ export async function previewUserSelectedReferenceMerge(
   }
   const activeCatalogVariants=await countCatalogReferences(db,source.kind,source.value)
   const isMoney=source.kind==='payment_method'
+  const mergeableKind=source.kind==='city'||source.kind==='delivery_type'
+  const currentRows=mergeableKind
+    ? await readCurrentReferenceOrderRows(db,source.kind as 'city'|'delivery_type',source.value,month.from,month.toExclusive)
+    : []
+  const canApply=mergeableKind && currentRows.length<=5000 && currentRows.length===summary.current
+  const stateToken=canApply ? await referenceMergeToken(source,target,month,currentRows) : ''
   return {
     ok:true,
     kind:source.kind,
@@ -134,13 +166,17 @@ export async function previewUserSelectedReferenceMerge(
     ordersCovered: Boolean(field),
     finance,
     activeCatalogVariants,
-    canApply:false,
+    canApply,
+    stateToken,
+    matchedCurrentOrders:currentRows.length,
     explanation: isMoney
       ? 'Способ оплаты связан с заказами и финансовыми записями. Сначала сверим все связи, чтобы переименование не исказило отчёты. Пока ничего не изменено.'
       : activeCatalogVariants>0
         ? 'Это значение используется в товарах. При объединении нужно также проверить их варианты и остатки. Пока ничего не изменено.'
-        : field
-          ? 'Вы выбрали, что убрать и что оставить. Перед сохранением будут обновлены данные текущего месяца, а прежние заказы останутся без изменений. Пока ничего не изменено.'
-          : 'Эта категория используется в рабочих документах. Проверка всех связанных записей ещё не завершена — сейчас сохранять изменения нельзя.',
+        : canApply
+          ? 'Обновятся только заказы текущего месяца. Ранее оформленные заказы останутся без изменений. Название, которое вы убираете, исчезнет из дальнейшего выбора.'
+          : mergeableKind
+            ? 'Слишком много записей либо данные изменились во время проверки. Повторите проверку позже.'
+            : 'Эта категория используется в рабочих документах. Проверка всех связанных записей ещё не завершена — сейчас сохранять изменения нельзя.',
   }
 }
