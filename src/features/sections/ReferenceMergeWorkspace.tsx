@@ -213,14 +213,14 @@ export function ReferenceMergeWorkspace({
       <>
         <label className="reference-merge-kind">
           <span>Какой список приводим в порядок?</span>
-          <select value={kind} onChange={e=>setKind(e.target.value)} disabled={loading||checking}>
+          <select value={kind} onChange={e=>setKind(e.target.value)} disabled={loading||checking||pairBusy}>
             {dictionaries.map(x=><option key={x.kind} value={x.kind}>{x.label}</option>)}
           </select>
         </label>
         <div className="reference-merge-pair">
           <label className="reference-merge-choice">
             <span className="reference-merge-step">1. Убираем лишнее название</span>
-            <select value={sourceId} onChange={e=>chooseSource(Number(e.target.value))} disabled={loading||checking}>
+            <select value={sourceId} onChange={e=>chooseSource(Number(e.target.value))} disabled={loading||checking||pairBusy}>
               <option value={0}>Выберите значение</option>
               {values.filter(v=>v.id!==targetId).map(v=><option key={v.id} value={v.id}>{v.value}</option>)}
             </select>
@@ -229,7 +229,7 @@ export function ReferenceMergeWorkspace({
           <span className="reference-merge-arrow" aria-hidden="true">→</span>
           <label className="reference-merge-choice reference-merge-primary">
             <span className="reference-merge-step">2. Оставляем правильное название</span>
-            <select value={targetId} onChange={e=>chooseTarget(Number(e.target.value))} disabled={loading||checking}>
+            <select value={targetId} onChange={e=>chooseTarget(Number(e.target.value))} disabled={loading||checking||pairBusy}>
               <option value={0}>Выберите значение</option>
               {values.filter(v=>v.id!==sourceId).map(v=><option key={v.id} value={v.id}>{v.value}</option>)}
             </select>
@@ -237,7 +237,7 @@ export function ReferenceMergeWorkspace({
           </label>
         </div>
         <div className="reference-merge-action-row">
-          <button type="button" className="primary" disabled={!canInspect} onClick={()=>void inspect()}>
+          <button type="button" className="primary" disabled={!canInspect||pairBusy} onClick={()=>void inspect()}>
             {checking?'Проверяю записи…':'Посмотреть, что изменится'}
           </button>
           {loading?<span>Загружаю значения…</span>:!values.length?<span>В этом списке нет действующих значений.</span>:null}
