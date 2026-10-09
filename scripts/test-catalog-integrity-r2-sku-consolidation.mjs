@@ -145,7 +145,7 @@ assert.equal(query('SELECT target_variant_id FROM catalog_variant_consolidations
 const replay=await consolidateUnusedCatalogVariant(db,7,8,'admin-test')
 assert.equal(replay.alreadyConsolidated,true)
 assert.equal(activity(),1,'Idempotent replay must not duplicate journal entries')
-await assert.rejects(() => consolidateUnusedCatalogVariant(db,7,9),/отличаются/)
+await assert.rejects(() => consolidateUnusedCatalogVariant(db,7,9),/уже объединена/)
 
 
 // R3 — current physical balance is carried over *per location*, not written off.
