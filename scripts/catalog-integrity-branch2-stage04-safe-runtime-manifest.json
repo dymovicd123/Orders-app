@@ -83,7 +83,7 @@
     "scripts/test-reference-merge-history.mjs": "cd5940072ec22f9edb27892138beb0745f8b12ff",
     "worker/domains/reference-characteristic-impact.ts": "1536f8e30942b461079cea7e045863d5b9f4d980",
     "scripts/test-reference-characteristic-impact.mjs": "66b9bc03eb1545682c4bd12d99451f397c455d66",
-    "scripts/test-catalog-integrity-r2-sku-consolidation.mjs": "06f0aede0e0346c87cfedb4e2940a5924cfd79c0",
+    "scripts/test-catalog-integrity-r2-sku-consolidation.mjs": "6ad62ac1a54be9f517478d410f476e4a65f976c5",
     "scripts/test-reference-crud-integrity.mjs": "32c37466b2b5194c8edcec7d1e726ffeff10ef8f"
   }
 }
