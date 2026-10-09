@@ -14,6 +14,11 @@ type SkuPreview = {
   targetImpact: { physical: number; reserved: number; historicalOrders: number };
   blockers: string[]; canConsolidate: boolean; explanation: string;
 }
+type SkuMergeHistory = {
+  id: number; sourceId: number; targetId: number; productName: string;
+  sourceColor: string; targetColor: string; material: string; length: string;
+  size: string; category: string; gender: string; createdBy: string; createdAt: string;
+}
 type DuplicateResponse = { ok?: boolean; groups?: DuplicateGroup[]; skuGroups?: SkuDuplicate[];
   limited?: boolean; skuLimited?: boolean; message?: string }
 type Preview = {
@@ -54,6 +59,8 @@ export function ReferenceIntegrityPanel({
   const [skuSelected, setSkuSelected] = useState('')
   const [skuPreview, setSkuPreview] = useState<SkuPreview | null>(null)
   const [skuPreviewBusy, setSkuPreviewBusy] = useState(false)
+  const [mergeHistory, setMergeHistory] = useState<SkuMergeHistory[] | null>(null)
+  const [historyBusy, setHistoryBusy] = useState(false)
   const [loading, setLoading] = useState(false)
   const [previewBusy, setPreviewBusy] = useState(false)
   const [actionBusy, setActionBusy] = useState(false)
@@ -106,6 +113,22 @@ export function ReferenceIntegrityPanel({
     }
   }
 
+  async function loadMergeHistory() {
+    if (historyBusy) return
+    setHistoryBusy(true)
+    setError('')
+    try {
+      const response = await apiFetch('/api/catalog/variants/consolidation-history')
+      const data = await response.json() as { ok?: boolean; items?: SkuMergeHistory[]; message?: string }
+      if (!response.ok || !data.ok) throw new Error(data.message || 'Не удалось загрузить историю.')
+      setMergeHistory(Array.isArray(data.items) ? data.items : [])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'История пока недоступна.')
+    } finally {
+      setHistoryBusy(false)
+    }
+  }
+
   async function inspectSku(sourceId: number, targetId: number) {
     if (skuPreviewBusy || actionBusy) return
     setSkuPreviewBusy(true)
@@ -145,6 +168,7 @@ export function ReferenceIntegrityPanel({
       if (!response.ok || !data.ok) throw new Error(data.message || 'Не удалось объединить варианты.')
       await onHidden()
       await scan()
+      setMergeHistory(null)
       setNotice('Дублирующий вариант убран из рабочих списков. Его история и складские данные сохранены.')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Объединение временно недоступно.')
@@ -274,6 +298,26 @@ export function ReferenceIntegrityPanel({
           <p className="mini-panel-note">Сначала выберите, какой вариант сохранить. При ненулевых остатках, резервах и незавершённых операциях система не выполнит объединение. Не списывайте товары ради очистки.</p>
         </div>
       ) : null}
+      <div className="reference-integrity-results">
+        <button className="secondary compact" type="button" disabled={historyBusy} onClick={() => void loadMergeHistory()}>
+          {historyBusy ? 'Загружаю историю…' : mergeHistory === null ? 'История объединений вариантов' : 'Обновить историю объединений'}
+        </button>
+        {mergeHistory !== null ? (
+          <div className="reference-integrity-items">
+            {!mergeHistory.length ? <p className="mini-panel-note">Варианты ещё не объединялись.</p> : null}
+            {mergeHistory.map(item => (
+              <div className="reference-integrity-item" key={item.id}>
+                <span>
+                  <strong>{item.productName}</strong> · {item.material || 'Стандарт'} · {item.length || 'Стандарт'} ·
+                  {' '}{item.sourceColor || 'Без цвета'} · {item.size || 'Без размера'}
+                </span>
+                <span>Вариант #{item.sourceId} → #{item.targetId} · {item.createdBy || 'Администратор'} · {new Date(item.createdAt).toLocaleString('ru-RU')}</span>
+              </div>
+            ))}
+            {mergeHistory.length >= 30 ? <p className="mini-panel-note">Показаны 30 последних объединений.</p> : null}
+          </div>
+        ) : null}
+      </div>
       {skuPreview ? (
         <div className="reference-integrity-preview">
           <h4>Проверка объединения вариантов</h4>
