@@ -32,6 +32,7 @@ sqlite.exec(`
     status TEXT,updated_at TEXT);
  CREATE TABLE return_items(id INTEGER PRIMARY KEY,order_item_id INTEGER);
  CREATE TABLE exchanges(id INTEGER PRIMARY KEY,old_order_item_id INTEGER,new_order_item_id INTEGER);
+ CREATE TABLE exchange_items(id INTEGER PRIMARY KEY,order_item_id INTEGER);
  CREATE TABLE orders(id INTEGER PRIMARY KEY,order_status TEXT,shipping_status TEXT);
  CREATE TABLE order_items(
    id INTEGER PRIMARY KEY,order_id INTEGER,variant_id INTEGER,product_id INTEGER,
@@ -116,6 +117,12 @@ sqlite.exec('DELETE FROM workshop_tasks')
 sqlite.exec("INSERT INTO inventory_lifecycle_events VALUES(1,7,'pending')")
 assert.equal((await previewCatalogVariantConsolidation(db,7,8)).canConsolidate,false, 'Pending return/arrival blocks')
 sqlite.exec('DELETE FROM inventory_lifecycle_events')
+// Batch exchange item-only references must block cancellation-sensitive SKU identity.
+sqlite.exec("INSERT INTO exchange_items VALUES(99,21)")
+const batchExchangeImpact=await previewCatalogVariantConsolidation(db,7,8)
+assert.equal(batchExchangeImpact.canConsolidate,false,'Batch exchange item must block a reversible SKU retirement')
+assert.equal(batchExchangeImpact.sourceImpact.returnExchangeLinks,1)
+sqlite.exec("DELETE FROM exchange_items WHERE id=99")
 sqlite.exec("INSERT INTO inventory_stocktake_sessions VALUES('rev','active')")
 sqlite.exec("INSERT INTO inventory_stocktake_items VALUES(1,'rev',8)")
 assert.equal((await previewCatalogVariantConsolidation(db,7,8)).canConsolidate,false, 'Keeper active stocktake blocks')
