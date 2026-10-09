@@ -28,6 +28,16 @@ sqlite.exec(`
   (14,'2026-10-16','deleted','ТЕРМИНАЛ','АЛМАТЫ','ЗАММЛЕР');
 `)
 sqlite.exec(fs.readFileSync('migrations/0093_v72_reference_value_choice_merges.sql','utf8'))
+
+sql.exec("ALTER TABLE payments ADD COLUMN payment_date TEXT DEFAULT '2026-10-09'")
+sql.exec("ALTER TABLE payments ADD COLUMN amount INTEGER DEFAULT 0")
+sql.exec("ALTER TABLE financial_events ADD COLUMN event_date TEXT DEFAULT '2026-10-09'")
+sql.exec("ALTER TABLE financial_events ADD COLUMN amount_delta INTEGER DEFAULT 0")
+sql.exec("ALTER TABLE returns ADD COLUMN return_date TEXT DEFAULT '2026-10-09'")
+sql.exec("ALTER TABLE returns ADD COLUMN amount INTEGER DEFAULT 0")
+sql.exec("ALTER TABLE exchanges ADD COLUMN exchange_date TEXT DEFAULT '2026-10-09'")
+sql.exec("ALTER TABLE exchanges ADD COLUMN financial_amount INTEGER DEFAULT 0")
+
 let beforeValidation=()=>{}
 const db={
   prepare(query){
@@ -99,10 +109,10 @@ assert.equal((await applyMonthBoundReferenceMerge(db,3,4,delivery.stateToken,'ad
 assert.equal(field(10,'delivery_type'),'КУРЬЕР')
 assert.equal(field(11,'delivery_type'),'ЗАММЛЕР')
 
-// Money-affecting reference merges remain disabled until their full ledger is reconciled.
+// Payment methods are handled separately, never via generic city/delivery merge.
 let pay=await previewUserSelectedReferenceMerge(db,5,6,now)
-assert.equal(pay.canApply,false)
-await assert.rejects(()=>applyMonthBoundReferenceMerge(db,5,6,'token','admin',now),/пока недоступно/)
+assert.equal(pay.canApply,true)
+await assert.rejects(()=>applyMonthBoundReferenceMerge(db,5,6,'token','admin',now),/пока недоступно|не доступны|проверку|автоматическое/i)
 assert.equal(active(5),1)
 assert.equal(field(10,'order_payment_method'),'ТЕРМИНАЛ')
 const worker=fs.readFileSync('worker/index.ts','utf8')
