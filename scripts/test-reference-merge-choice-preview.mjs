@@ -93,6 +93,16 @@ assert.match(section,/Удалить из списка/)
 assert.match(section,/Ранее оформленные заказы сохранятся/)
 assert.match(page,/paymentMethods/)
 assert.ok(section.includes('<ReferenceMergeWorkspace apiFetch={apiFetch} isAdmin={isAdmin}'))
+assert.ok(section.indexOf('reference-kind-grid') < section.indexOf('reference-maintenance-shortcuts'),
+ 'Choose a reference kind before auxiliary maintenance tools')
+assert.ok(section.indexOf('references-layout') < section.indexOf('id="reference-maintenance"'),
+ 'Daily list/editor must appear before the full merge and duplicate-check workspaces')
+assert.ok(section.includes("showMaintenance('merge')") && section.includes("showMaintenance('duplicates')"),
+ 'Visible one-click shortcuts must remain available above the daily list')
+assert.ok(section.includes("maintenanceView === 'merge' ? (") && section.includes("maintenanceView === 'duplicates' ? ("),
+ 'Expensive maintenance components must mount only when requested')
+assert.ok(section.includes('Проверка и объединение дублей доступны администратору'),
+ 'Restricted users should see a readable explanation instead of a hidden tool')
 assert.match(api,/api\/reference-values\/merge-preview/)
 assert.match(api,/requireAdminUser\(authUser, 'Наведение порядка/)
 const worker=fs.readFileSync('worker/domains/reference-merge-preview.ts','utf8')
