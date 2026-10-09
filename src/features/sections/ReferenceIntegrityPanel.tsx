@@ -234,7 +234,7 @@ export function ReferenceIntegrityPanel({
                   (Math.abs(b.physical) + Math.abs(b.reserved)) - (Math.abs(a.physical) + Math.abs(a.reserved)) || a.id - b.id
                 )[0]
                 const keeperId = skuKeeper[key] && group.variants.some(v => v.id === skuKeeper[key])
-                  ? skuKeeper[key] : preferred?.id
+                  ? skuKeeper[key] : (preferred?.id || 0)
                 return (
                   <div className="reference-integrity-group" key={key}>
                     <strong>{group.productName} · {group.material || 'Стандарт'} · {group.length || 'Стандарт'}</strong>
