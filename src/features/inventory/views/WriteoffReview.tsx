@@ -1,5 +1,6 @@
+import '../../../styles/w4-writeoff-review.css'
 import { useState } from 'react'
-import { summarizeWriteoff, type WriteoffReviewInput } from '../writeoffReview.ts'
+import { summarizeWriteoff, type WriteoffReviewInput } from '../writeoffReview'
 
 type Props = {
   source: string;
