@@ -68,7 +68,7 @@
     "migrations/0091_v72_catalog_variant_stock_consolidation.sql": "3bf9bf2496145aa19a919a3468d3fb3d0a13d1c7",
     "migrations/0092_v72_catalog_variant_reservation_consolidation.sql": "894164a039a76abfdf8d7ac8a49109329b9bc66d",
     "src/styles/reference-integrity-entry.css": "ca5ca534c7183bb522742c28c5168c84d2da7583",
-    "scripts/test-reference-duplicates-discovery-r1.mjs": "5747bcf18b1238a422065e9e04aa695d7d7c8285",
+    "scripts/test-reference-duplicates-discovery-r1.mjs": "2e73ea331b25a8589b21c32b38136a7e2c5378d6",
     "worker/domains/reference-merge-preview.ts": "177c191bc51d2a29cd26b98b04f3646ac7e30ed6",
     "src/features/sections/ReferenceMergeWorkspace.tsx": "d9c7ff63933efce8b7ee7bf27134f588ed64c11c",
     "src/styles/reference-merge-workspace.css": "21ccd3b321e4ffe138f1a106ce1a5dc643c9da18",
