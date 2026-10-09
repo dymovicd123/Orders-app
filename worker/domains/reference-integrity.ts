@@ -67,22 +67,22 @@ export async function previewReferenceConsolidation(db: D1Database, sourceId: nu
     const audience = dbKind === 'size' ? " AND COALESCE(v.category,'adult') <> 'child'"
       : dbKind === 'child_age' ? " AND COALESCE(v.category,'adult') = 'child'" : ''
     const fetched = await db.prepare(
-      \`SELECT v.id,v.product_id,v.stock_position_id,v.is_active,v.category,v.gender,v.color,
+      `SELECT v.id,v.product_id,v.stock_position_id,v.is_active,v.category,v.gender,v.color,
         v.size_label,v.material,v.length,p.name AS product_name,
         COALESCE((SELECT SUM(s.quantity) FROM inventory_stock s WHERE s.variant_id=v.id),0) AS physical,
         COALESCE((SELECT SUM(s.reserved_quantity) FROM inventory_stock s WHERE s.variant_id=v.id),0) AS reserved
        FROM catalog_variants v
        JOIN catalog_products p ON p.id=v.product_id
-       WHERE UPPER(TRIM(COALESCE(\${column},''))) IN (?, ?)\${audience}
+       WHERE UPPER(TRIM(COALESCE(${column},''))) IN (?, ?)${audience}
        ORDER BY v.is_active DESC, p.name, v.id
-       LIMIT 400\`
+       LIMIT 400`
     ).bind(cleanText(source.value).toUpperCase(), cleanText(target.value).toUpperCase()).all<VariantRow>()
     linked = fetched.results || []
     if (dbKind === 'material' || dbKind === 'length') {
       const key = dbKind === 'material' ? 'material' : 'length'
       const positions = await db.prepare(
-        \`SELECT COUNT(*) AS n FROM catalog_stock_positions
-         WHERE is_active=1 AND UPPER(TRIM(COALESCE(\${key},''))) IN (?, ?)\`
+        `SELECT COUNT(*) AS n FROM catalog_stock_positions
+         WHERE is_active=1 AND UPPER(TRIM(COALESCE(${key},''))) IN (?, ?)`
       ).bind(cleanText(source.value).toUpperCase(), cleanText(target.value).toUpperCase()).first<{ n: number }>()
       activeExecutions = toInt(positions?.n, 0)
     }
