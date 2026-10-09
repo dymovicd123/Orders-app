@@ -28,6 +28,8 @@ import { createReferenceValue, deleteReferenceValue, getReferenceData, getRefere
 import { hideUnusedEquivalentReference, listReferenceDuplicateGroups, previewReferenceConsolidation } from './domains/reference-integrity.ts'
 import { previewUserSelectedReferenceMerge } from './domains/reference-merge-preview.ts'
 import { applyMonthBoundReferenceMerge } from './domains/reference-merge-apply.ts'
+import { applyPaymentMethodMerge } from './domains/reference-payment-merge.ts'
+import { businessMonthRange } from './domains/reference-merge-preview.ts'
 import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
 import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { createItemizedExchangeBatchFromRequest } from './domains/exchange-batch.ts'
@@ -195,9 +197,17 @@ export default {
         const denied = requireAdminUser(authUser, 'Объединение значений доступно администратору.');
         if (denied) return denied;
         const data=await readJson<{sourceId?:number;targetId?:number;expectedToken?:string}>(request);
+        const sourceId=Number(data.sourceId),targetId=Number(data.targetId)
+        const choice=await env.DB.prepare('SELECT kind FROM reference_values WHERE id=?')
+          .bind(sourceId).first<{kind:string}>()
+        if (choice?.kind==='payment_method') {
+          return json(await applyPaymentMethodMerge(
+            env.DB,sourceId,targetId,cleanText(data.expectedToken),
+            authUser?.login||'',businessMonthRange(),
+          ))
+        }
         return json(await applyMonthBoundReferenceMerge(
-          env.DB,Number(data.sourceId),Number(data.targetId),
-          cleanText(data.expectedToken),authUser?.login||'',
+          env.DB,sourceId,targetId,cleanText(data.expectedToken),authUser?.login||'',
         ));
       }
 
