@@ -16,9 +16,19 @@ type CatalogImpact = {
   sampleVariants:{id:number;side:'source'|'target';productName:string;category:string;
     color:string;material:string;length:string;size:string;active:boolean;
     physical:number;reserved:number}[];
+  skuPairs:{sourceVariantId:number;targetVariantId:number;productName:string;description:string}[];
+  skuPairsLimited:boolean;
   sampleTruncated:boolean;indistinguishable:boolean;warnings:string[];
   status:'requires_catalog_review'|'unused_or_historical';canAutomaticallyConsolidate:boolean;
 }
+type PairPreview = {
+  ok:boolean;source:{id:number;color:string;size:string;active:boolean};
+  target:{id:number;color:string;size:string;active:boolean};
+  stockBreakdown:{location:string;sourcePhysical:number;targetPhysical:number;combinedPhysical:number;sourceReserved:number;targetReserved:number}[];
+  reservationCount:number;transferQuantity:number;stateToken:string;
+  blockers:string[];canConsolidate:boolean;explanation:string;
+}
+type PairReview = {sourceVariantId:number;targetVariantId:number;preview:PairPreview}
 type Impact = {
   ok:boolean;
   kind:string;
@@ -71,6 +81,8 @@ export function ReferenceMergeWorkspace({
   const [error,setError]=useState('')
   const [history,setHistory]=useState<MergeHistoryItem[]|null>(null)
   const [historyBusy,setHistoryBusy]=useState(false)
+  const [pairReview,setPairReview]=useState<PairReview|null>(null)
+  const [pairBusy,setPairBusy]=useState(false)
   const [historyError,setHistoryError]=useState('')
   useEffect(()=>{
     let valid=true
@@ -88,14 +100,14 @@ export function ReferenceMergeWorkspace({
     return ()=>{valid=false}
   },[kind,isAdmin,apiFetch])
 
-  const chooseSource=(id:number)=>{setSourceId(id);setImpact(null);setError('');setNotice('')}
-  const chooseTarget=(id:number)=>{setTargetId(id);setImpact(null);setError('');setNotice('')}
+  const chooseSource=(id:number)=>{setSourceId(id);setImpact(null);setPairReview(null);setError('');setNotice('')}
+  const chooseTarget=(id:number)=>{setTargetId(id);setImpact(null);setPairReview(null);setError('');setNotice('')}
   const canInspect=sourceId>0&&targetId>0&&sourceId!==targetId&&!loading&&!checking
   const source=values.find(v=>v.id===sourceId)
   const target=values.find(v=>v.id===targetId)
   async function inspect(){
     if(!canInspect)return
-    setChecking(true);setError('');setImpact(null)
+    setChecking(true);setError('');setImpact(null);setPairReview(null)
     try{
       const query=new URLSearchParams({sourceId:String(sourceId),targetId:String(targetId)})
       const res=await apiFetch('/api/reference-values/merge-preview?'+query.toString())
@@ -104,6 +116,49 @@ export function ReferenceMergeWorkspace({
       setImpact(data)
     }catch(err){setError(err instanceof Error?err.message:'Не удалось проверить изменения.')}
     finally{setChecking(false)}
+  }
+
+
+  async function inspectSkuPair(sourceVariantId:number,targetVariantId:number) {
+    if (pairBusy || saving) return
+    setPairBusy(true);setPairReview(null);setError('')
+    try {
+      const query=new URLSearchParams({sourceId:String(sourceVariantId),targetId:String(targetVariantId)})
+      const response=await apiFetch('/api/catalog/variants/consolidation-preview?'+query.toString())
+      const body=await response.json() as PairPreview & {message?:string}
+      if(!response.ok||!body.ok)throw new Error(body.message||'Не удалось проверить варианты товара.')
+      setPairReview({sourceVariantId,targetVariantId,preview:body})
+    } catch(e) { setError(e instanceof Error?e.message:'Не удалось проверить варианты.') }
+    finally {setPairBusy(false)}
+  }
+
+  async function applySkuPair() {
+    if(!pairReview?.preview.canConsolidate || !pairReview.preview.stateToken || pairBusy || saving) return
+    const {sourceVariantId,targetVariantId,preview}=pairReview
+    const stillShown=impact?.catalogImpact?.skuPairs.some(p=>
+      p.sourceVariantId===sourceVariantId && p.targetVariantId===targetVariantId)
+    if(!stillShown) {setError('Список изменился. Повторите проверку характеристик.');return}
+    if(!window.confirm(
+      'Объединить выбранные варианты товара? Склад и бутик сохранят свои количества, '
+      +'действующие резервы будут согласованы с заказами. Исторические документы останутся без изменений.'
+    ))return
+    setPairBusy(true);setError('')
+    try {
+      const response=await apiFetch('/api/catalog/variants/consolidate-unused',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({sourceId:sourceVariantId,targetId:targetVariantId,expectedToken:preview.stateToken}),
+      })
+      const result=await response.json() as {ok?:boolean;message?:string;transferredQuantity?:number}
+      if(!response.ok||!result.ok)throw new Error(result.message||'Не удалось объединить варианты.')
+      setPairReview(null)
+      setNotice('Варианты объединены. Остатки перенесены внутри каждого места хранения; исторические заказы сохранены. Другие варианты пока не менялись.')
+      try { await onMerged() } catch {
+        setNotice('Варианты объединены, но обновление списков не удалось. Обновите страницу для просмотра результата.')
+      }
+      await inspect()
+    }catch(e) {
+      setError(e instanceof Error?e.message:'Не удалось объединить варианты.')
+    }finally {setPairBusy(false)}
   }
 
   async function loadHistory(){
@@ -296,9 +351,57 @@ export function ReferenceMergeWorkspace({
                 {impact.catalogImpact.sampleTruncated ? (
                   <p className="reference-merge-next">Показаны первые 12 вариантов. Общие показатели выше рассчитаны для всех совпадений.</p>
                 ) : null}
+                {impact.catalogImpact.skuPairs?.length ? (
+                  <div className="reference-merge-sku-guidance">
+                    <h4>Найдены одинаковые варианты товаров</h4>
+                    <p className="mini-panel-note">Система нашла точные совпадения по товару, исполнению, полу, цвету и размеру. Можно проверить и объединить каждую пару отдельно. Выбранное основное значение сохранится.</p>
+                    {impact.catalogImpact.skuPairs.map(pair=>(
+                      <div className="reference-merge-sku-pair" key={pair.sourceVariantId+':'+pair.targetVariantId}>
+                        <div>
+                          <strong>{pair.productName}</strong>
+                          <small>{pair.description}</small>
+                        </div>
+                        <button className="secondary compact" type="button" disabled={pairBusy||checking||saving}
+                          onClick={()=>void inspectSkuPair(pair.sourceVariantId,pair.targetVariantId)}>
+                          {pairBusy ? 'Проверяю…':'Проверить пару'}
+                        </button>
+                      </div>
+                    ))}
+                    {impact.catalogImpact.skuPairsLimited ? (
+                      <p className="reference-merge-notice">Показана только часть возможных совпадений. Не выполняйте массовую замену: после каждой операции проверяйте список заново.</p>
+                    ):null}
+                    {pairReview ? (
+                      <div className="reference-merge-sku-review">
+                        <strong>Проверка выбранной пары</strong>
+                        <p>{pairReview.preview.explanation}</p>
+                        <p>Резервов действующих заказов: {pairReview.preview.reservationCount}.</p>
+                        {pairReview.preview.stockBreakdown.map(place=>(
+                          <p key={place.location}>
+                            {place.location==='warehouse'?'Склад':'Бутик'}:
+                            {' '}{place.sourcePhysical} + {place.targetPhysical} = {place.combinedPhysical} шт.;
+                            резерв {place.sourceReserved} + {place.targetReserved}
+                          </p>
+                        ))}
+                        {pairReview.preview.blockers.length ? (
+                          <div className="reference-merge-notice" role="status">
+                            <strong>Объединение пока невозможно:</strong>
+                            <ul>{pairReview.preview.blockers.map((reason,i)=><li key={i}>{reason}</li>)}</ul>
+                          </div>
+                        ):null}
+                        {pairReview.preview.canConsolidate ? (
+                          <button className="primary compact" type="button" disabled={pairBusy||checking||saving}
+                            onClick={()=>void applySkuPair()}>
+                            {pairBusy?'Сохраняю…':'Объединить выбранную пару'}
+                          </button>
+                        ):null}
+                      </div>
+                    ):null}
+                  </div>
+                ) : null}
                 <p className="reference-merge-next">
-                  Объединение характеристик пока не выполняется автоматически: сначала необходимо согласовать
-                  совпадающие варианты, их исполнение и действующие резервы. Списание или перенос остатков здесь не происходит.
+                  Доступно только безопасное объединение точных дублей SKU, по одному после проверки.
+                  Другие цвета, размеры и исполнения автоматически не приравниваются.
+                  Полное объединение значения справочника пока недоступно, пока существуют связанные варианты.
                 </p>
               </div>
             ) : null}
