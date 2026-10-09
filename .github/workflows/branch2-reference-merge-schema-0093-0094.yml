@@ -1,0 +1,146 @@
+name: Branch2 reference merge schema 0093-0094
+
+on:
+  push:
+    branches: [branch2]
+    paths: ['.github/workflows/branch2-reference-merge-schema-0093-0094.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  apply-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify Branch2-only database, Stage04 and additive migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "branch2" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo 'PRODUCTION BINDING — ABORT' >&2; exit 41
+          fi
+          [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]] || exit 42
+          [[ "$(git hash-object migrations/0083_v72_workshop_settlement_foundation.sql)" == "d73a92f86317a9068a9a381742d55e5c96804879" ]] || exit 43
+          [[ "$(git hash-object migrations/0084_v72_workshop_settlement_status_capture.sql)" == "2e3f51ab0b055d5b82d6b542cec28cf661359003" ]] || exit 44
+          for file in migrations/009{3,4}_v72_reference_*.sql; do
+            test -f "$file"
+            if grep -Eiq '^[[:space:]]*(UPDATE|DELETE|REPLACE|DROP|TRUNCATE)[[:space:]]' "$file"; then
+              echo "Business mutation in migration $file" >&2; exit 45
+            fi
+          done
+          grep -Fq 'CREATE TABLE IF NOT EXISTS reference_value_merge_orders' migrations/0093_v72_reference_value_choice_merges.sql
+          grep -Fq 'CREATE TABLE IF NOT EXISTS reference_payment_merge_lines' migrations/0094_v72_reference_payment_method_merges.sql
+      - run: npm ci
+      - name: Verify original Stage04 and dedicated merge acceptance
+        run: |
+          set -euo pipefail
+          node scripts/test-branch2-environment.mjs
+          node scripts/test-stage04a-workshop-settlements.mjs
+          node scripts/test-stage04b-workshop-status-capture.mjs
+      - name: Read original stock, money and Stage04 state
+        shell: bash
+        run: |
+          set -euo pipefail
+          summary="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COALESCE(SUM(amount),0) FROM payments) AS payments_amount,
+              (SELECT COUNT(*) FROM financial_events) AS money_events,
+              (SELECT COALESCE(SUM(amount_delta),0) FROM financial_events) AS money_total,
+              (SELECT COUNT(*) FROM cash_register_entries) AS cash_entries,
+              (SELECT COALESCE(SUM(CASE WHEN direction='out' THEN -amount ELSE amount END),0) FROM cash_register_entries) AS cash_total,
+              (SELECT COUNT(*) FROM returns) AS returns_count,
+              (SELECT COUNT(*) FROM exchanges) AS exchanges_count,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock_total,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserves_total,
+              (SELECT COUNT(*) FROM reference_values) AS reference_values,
+              (SELECT COUNT(*) FROM workshop_settlement_events) AS stage04_events,
+              (SELECT enabled FROM workshop_settlement_capture_control WHERE id=1) AS stage04_capture
+          " --json)"
+          jq -ce '.[0].results[0]' <<<"$summary" | jq -cS . > /tmp/reference-merge-before.json
+          [[ -s /tmp/reference-merge-before.json ]] || exit 46
+          schema="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table'
+                AND name IN ('reference_value_merges','reference_value_merge_orders',
+                 'reference_value_merge_validations','reference_payment_method_merges',
+                 'reference_payment_merge_lines','reference_payment_merge_validations')) AS tables_count,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger'
+                AND name IN ('trg_workshop_settlement_completion','trg_workshop_settlement_completion_reversal')) AS stage04_triggers
+          " --json)"
+          count="$(jq -r '.[0].results[0].tables_count // -1' <<<"$schema")"
+          [[ "$count" == "0" || "$count" == "6" ]] || {
+            echo "Partial reference merge schema; manual intervention required." >&2; exit 47
+          }
+          [[ "$(jq -r '.[0].results[0].stage04_triggers // -1' <<<"$schema")" == "2" ]] || exit 48
+          echo "$count" > /tmp/reference-schema-before
+      - name: Add only reference merge audit tables to Branch2 D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(cat /tmp/reference-schema-before)" == "0" ]]; then
+            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file migrations/0093_v72_reference_value_choice_merges.sql
+            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file migrations/0094_v72_reference_payment_method_merges.sql
+          else
+            echo 'Both migrations already present; no writes.'
+          fi
+      - name: Ensure operational records, money, stock and Stage04 unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          schema="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table'
+                AND name IN ('reference_value_merges','reference_value_merge_orders',
+                 'reference_value_merge_validations','reference_payment_method_merges',
+                 'reference_payment_merge_lines','reference_payment_merge_validations')) AS tables_count,
+              (SELECT COUNT(*) FROM reference_value_merges) AS simple_merges,
+              (SELECT COUNT(*) FROM reference_payment_method_merges) AS payment_merges,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger'
+                AND name IN ('trg_workshop_settlement_completion','trg_workshop_settlement_completion_reversal')) AS stage04_triggers
+          " --json)"
+          [[ "$(jq -r '.[0].results[0].tables_count // -1' <<<"$schema")" == "6" ]] || exit 51
+          [[ "$(jq -r '.[0].results[0].stage04_triggers // -1' <<<"$schema")" == "2" ]] || exit 52
+          if [[ "$(cat /tmp/reference-schema-before)" == "0" ]]; then
+            [[ "$(jq -r '.[0].results[0].simple_merges // -1' <<<"$schema")" == "0" ]] || exit 53
+            [[ "$(jq -r '.[0].results[0].payment_merges // -1' <<<"$schema")" == "0" ]] || exit 54
+          fi
+          summary="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COALESCE(SUM(amount),0) FROM payments) AS payments_amount,
+              (SELECT COUNT(*) FROM financial_events) AS money_events,
+              (SELECT COALESCE(SUM(amount_delta),0) FROM financial_events) AS money_total,
+              (SELECT COUNT(*) FROM cash_register_entries) AS cash_entries,
+              (SELECT COALESCE(SUM(CASE WHEN direction='out' THEN -amount ELSE amount END),0) FROM cash_register_entries) AS cash_total,
+              (SELECT COUNT(*) FROM returns) AS returns_count,
+              (SELECT COUNT(*) FROM exchanges) AS exchanges_count,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock_total,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserves_total,
+              (SELECT COUNT(*) FROM reference_values) AS reference_values,
+              (SELECT COUNT(*) FROM workshop_settlement_events) AS stage04_events,
+              (SELECT enabled FROM workshop_settlement_capture_control WHERE id=1) AS stage04_capture
+          " --json)"
+          [[ "$(jq -ce '.[0].results[0]' <<<"$summary" | jq -cS .)" == "$(cat /tmp/reference-merge-before.json)" ]] || {
+            echo 'Operational/Stage04 fingerprint changed during schema-only migration.' >&2; exit 55
+          }
+          echo 'REFERENCE MERGE SCHEMA PASSED — only empty audit tables added in isolated Branch2 D1'
