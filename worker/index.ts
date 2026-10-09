@@ -212,9 +212,9 @@ export default {
       if (url.pathname === '/api/catalog/variants/consolidate-unused' && request.method === 'POST') {
         const denied = requireAdminUser(authUser, 'Объединение вариантов доступно только администратору.');
         if (denied) return denied;
-        const data = await readJson<{ sourceId?: number; targetId?: number }>(request);
+        const data = await readJson<{ sourceId?: number; targetId?: number; expectedToken?: string }>(request);
         return json(await consolidateUnusedCatalogVariant(
-          env.DB, Number(data.sourceId), Number(data.targetId), authUser?.login || '',
+          env.DB, Number(data.sourceId), Number(data.targetId), authUser?.login || '', cleanText(data.expectedToken),
         ));
       }
 
