@@ -5,7 +5,7 @@ const panel=fs.readFileSync('src/features/sections/ReferenceIntegrityPanel.tsx',
 const movement=fs.readFileSync('src/features/inventory/views/renderInventoryMovementPanel.tsx','utf8')
 const review=fs.readFileSync('src/features/inventory/views/WriteoffReview.tsx','utf8')
 const duplicateEntry = refs.slice(refs.indexOf('id="reference-duplicates-actions"'))
-assert.match(duplicateEntry, /className="reference-integrity-entry"/)
+assert.match(refs, /className="reference-integrity-entry"\s+id="reference-duplicates-actions"/)
 assert.ok(duplicateEntry.includes('<strong>Найти похожие записи и варианты товаров</strong>'))
 assert.ok(duplicateEntry.indexOf('reference-integrity-entry-summary') < duplicateEntry.indexOf('isAdmin ? ('),
   'The duplicate-check entry must stay visible to everyone, with the interactive panel restricted to admin')
