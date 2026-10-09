@@ -32,7 +32,17 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
 
   return (
     <section className="card wide sector-references" id="references" style={sectorStyle('references')}>
-              <ReferenceIntegrityPanel apiFetch={apiFetch} isAdmin={isAdmin} />
+              <ReferenceIntegrityPanel
+                apiFetch={apiFetch}
+                isAdmin={isAdmin}
+                onHidden={async () => {
+                  await Promise.all([
+                    ctx.loadReferencesData(true),
+                    ctx.loadReferenceItems(ctx.referenceKind, true),
+                    ctx.loadReferenceKindCounts(ctx.referenceGroups.map((group: any) => group.kind), true),
+                  ])
+                }}
+              />
               <div className="references-hero">
                 <div className="references-hero-main">
                   <div className="card-label">Справочники</div>

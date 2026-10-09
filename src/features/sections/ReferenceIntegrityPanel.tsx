@@ -31,9 +31,11 @@ const titles: Record<string, string> = {
 export function ReferenceIntegrityPanel({
   apiFetch,
   isAdmin,
+  onHidden,
 }: {
   apiFetch: (input: string, init?: RequestInit) => Promise<Response>;
   isAdmin: boolean;
+  onHidden: () => Promise<void>;
 }) {
   const [groups, setGroups] = useState<DuplicateGroup[] | null>(null)
   const [limited, setLimited] = useState(false)
@@ -41,6 +43,8 @@ export function ReferenceIntegrityPanel({
   const [skuLimited, setSkuLimited] = useState(false)
   const [loading, setLoading] = useState(false)
   const [previewBusy, setPreviewBusy] = useState(false)
+  const [actionBusy, setActionBusy] = useState(false)
+  const [notice, setNotice] = useState('')
   const [preview, setPreview] = useState<Preview | null>(null)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState('')
@@ -87,6 +91,31 @@ export function ReferenceIntegrityPanel({
     }
   }
 
+  async function hideSafeSource() {
+    if (actionBusy || !preview?.safeToHideSource) return
+    if (!window.confirm('Убрать «' + preview.source.value + '» из рабочих списков? Действующие товары, остатки и история не изменятся.')) return
+    setActionBusy(true)
+    setError('')
+    const targetId = preview.target.id
+    const sourceId = preview.source.id
+    try {
+      const response = await apiFetch('/api/reference-values/hide-unused-duplicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceId, targetId }),
+      })
+      const data = await response.json() as { ok?: boolean; message?: string }
+      if (!response.ok || !data.ok) throw new Error(data.message || 'Не удалось убрать значение.')
+      await onHidden()
+      await scan()
+      setNotice('Лишнее значение отключено, действующие товары и складская история сохранены.')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось обновить справочник.')
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
   return (
     <section className="mini-panel reference-integrity-panel" aria-label="Порядок в справочниках">
       <div className="mini-panel-head">
@@ -99,6 +128,7 @@ export function ReferenceIntegrityPanel({
         </button>
       </div>
       {error ? <div className="notice error" role="alert">{error}</div> : null}
+      {notice ? <div className="notice" role="status">{notice}</div> : null}
       {groups !== null ? (
         <div className="reference-integrity-results">
           {!groups.length ? <p className="mini-panel-note">Совпадений по пробелам, дефисам и регистру не найдено.</p> : (
@@ -179,7 +209,14 @@ export function ReferenceIntegrityPanel({
               ))}
             </div>
           ) : null}
-          <p className="mini-panel-note">Результат только для ознакомления. Автоматический перенос остатков и истории не выполняется.</p>
+          {preview.safeToHideSource && preview.source.isActive ? (
+            <div className="actions">
+              <button className="primary compact" type="button" disabled={actionBusy} onClick={() => void hideSafeSource()}>
+                {actionBusy ? 'Проверяю и сохраняю…' : 'Убрать лишнее значение из выбора'}
+              </button>
+            </div>
+          ) : null}
+          <p className="mini-panel-note">Складские остатки и история никогда не переносятся этим действием.</p>
         </div>
       ) : null}
     </section>
