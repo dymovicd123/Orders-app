@@ -2,7 +2,11 @@ import { useState } from 'react'
 
 type DuplicateValue = { id: number; value: string; isActive: boolean }
 type DuplicateGroup = { kind: string; identity: string; suggestedTargetId: number; items: DuplicateValue[] }
-type DuplicateResponse = { ok?: boolean; groups?: DuplicateGroup[]; limited?: boolean; message?: string }
+type SkuDuplicate = { productId: number; productName: string; category: string; gender: string;
+  material: string; length: string; color: string; size: string;
+  variants: Array<{ id: number; color: string; physical: number; reserved: number; material: string; length: string }> }
+type DuplicateResponse = { ok?: boolean; groups?: DuplicateGroup[]; skuGroups?: SkuDuplicate[];
+  limited?: boolean; skuLimited?: boolean; message?: string }
 type Preview = {
   source: DuplicateValue; target: DuplicateValue;
   summary: {
@@ -33,6 +37,8 @@ export function ReferenceIntegrityPanel({
 }) {
   const [groups, setGroups] = useState<DuplicateGroup[] | null>(null)
   const [limited, setLimited] = useState(false)
+  const [skuGroups, setSkuGroups] = useState<SkuDuplicate[] | null>(null)
+  const [skuLimited, setSkuLimited] = useState(false)
   const [loading, setLoading] = useState(false)
   const [previewBusy, setPreviewBusy] = useState(false)
   const [preview, setPreview] = useState<Preview | null>(null)
@@ -53,6 +59,8 @@ export function ReferenceIntegrityPanel({
       if (!response.ok || !data.ok) throw new Error(data.message || 'Не удалось проверить справочники.')
       setGroups(Array.isArray(data.groups) ? data.groups : [])
       setLimited(Boolean(data.limited))
+      setSkuGroups(Array.isArray(data.skuGroups) ? data.skuGroups : [])
+      setSkuLimited(Boolean(data.skuLimited))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Проверка временно недоступна.')
     } finally {
@@ -116,6 +124,36 @@ export function ReferenceIntegrityPanel({
             </>
           )}
           {limited ? <p className="mini-panel-note">Список большой. Нужна дополнительная проверка остальных значений.</p> : null}
+        </div>
+      ) : null}
+      {skuGroups !== null ? (
+        <div className="reference-integrity-sku-results">
+          <h4>Повторяющиеся варианты товаров</h4>
+          {!skuGroups.length ? (
+            <p className="mini-panel-note">Среди проверенных активных вариантов одинаковых комбинаций не найдено.</p>
+          ) : (
+            <>
+              <p className="mini-panel-note">
+                Найдено совпадающих комбинаций: <strong>{skuGroups.length}</strong>. Материалы и длины учитываются отдельно.
+              </p>
+              {skuGroups.map((group, index) => (
+                <div className="reference-integrity-group" key={group.productId + ':' + index}>
+                  <strong>{group.productName} · {group.material || 'Стандарт'} · {group.length || 'Стандарт'}</strong>
+                  <p className="mini-panel-note">{group.color} · {group.size || 'Без размера'} · {group.gender || 'Без указания пола'}</p>
+                  <div className="reference-integrity-items">
+                    {group.variants.map(variant => (
+                      <div className="reference-integrity-item" key={variant.id}>
+                        <span>{variant.color} · вариант #{variant.id}</span>
+                        <span>{variant.physical} шт. · резерв {variant.reserved}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+          {skuLimited ? <p className="mini-panel-note">Каталог большой: показана только часть возможных совпадений.</p> : null}
+          <p className="mini-panel-note">Объединение вариантов с заказами и складской историей пока недоступно. Не пытайтесь списывать дубли ради их удаления.</p>
         </div>
       ) : null}
       {preview ? (

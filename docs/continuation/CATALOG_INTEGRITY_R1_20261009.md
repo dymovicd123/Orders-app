@@ -16,3 +16,5 @@ Source: `main` at `c840feb0bc`. Branch: `ci-catalog-integrity-r1-20261009`, sepa
 - Current catalog products may have two active variants with same business identity: safe reference removal must wait until a verified SKU merge workflow exists.
 
 R2 work continues on branch `catalog-integrity-r2-20261009` to prevent redundant full CI on every incremental `ci-*` push. The original R1 branch is preserved. Historical exact-SHA CI gate currently fails with intentional newer source edits; focused test/build does not replace full gate.
+
+R2 also lists active Catalog SKU duplicates using exact product, execution ID, category, gender, canonical color, and size. Read current stock and reserved quantities without modifying them. Ethno cardigan drap and wool never merge by this check. This is read-only and user-initiated to conserve D1 rows.
