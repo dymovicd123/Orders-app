@@ -144,26 +144,28 @@ export async function previewCatalogVariantConsolidation(db: D1Database, sourceI
   }
 }
 
-// Guard the final UPDATE against stale previews, concurrent stock changes and
-// edits to *either* SKU. D1 batch is atomic with the matching audit INSERT.
+// The D1 batch is atomic. A guarded audit INSERT permits every stock write;
+// a failing CHECK(passed=1) validation INSERT rolls back the entire batch.
 export async function consolidateUnusedCatalogVariant(
-  db: D1Database, sourceId: number, targetId: number, actor = '',
+  db: D1Database, sourceId: number, targetId: number, actor = '', expectedToken = '',
 ) {
-  const preview = await previewCatalogVariantConsolidation(db, sourceId, targetId)
-  if (!preview.source.active) {
-    const prior = await db.prepare(
-      'SELECT target_variant_id FROM catalog_variant_consolidations WHERE source_variant_id=?'
-    ).bind(sourceId).first<{ target_variant_id: number }>()
-    if (toInt(prior?.target_variant_id,0) === targetId) {
-      return { ok: true, alreadyConsolidated: true, sourceId, targetId }
-    }
-    throw new Error('Этот вариант уже отключён. Обновите список.')
+  const prior = await db.prepare(
+    'SELECT target_variant_id FROM catalog_variant_consolidations WHERE source_variant_id=?'
+  ).bind(sourceId).first<{ target_variant_id: number }>()
+  if (prior) {
+    if (toInt(prior.target_variant_id,0) === targetId) return { ok:true, alreadyConsolidated:true, sourceId,targetId }
+    throw new Error('Эта вариация уже объединена с другой. Обновите список.')
   }
-  if (!preview.canConsolidate) throw new Error('Объединение пока невозможно: ' + preview.blockers.join('; '))
+  const preview = await previewCatalogVariantConsolidation(db,sourceId,targetId)
+  if (!preview.canConsolidate) throw new Error('Объединение пока невозможно: '+preview.blockers.join('; '))
+  if (preview.transferQuantity > 0 && (!expectedToken || expectedToken !== preview.stateToken)) {
+    throw new Error('Остатки изменились или не подтверждены. Обновите предпросмотр объединения.')
+  }
+  if (expectedToken && expectedToken !== preview.stateToken) throw new Error('Данные изменились после проверки. Проверьте остатки заново.')
 
-  const [source, target] = await Promise.all([readSku(db, sourceId), readSku(db, targetId)])
-  if (!source || !target || !sameBusinessIdentity(source, target)) {
-    throw new Error('Варианты изменились. Обновите проверку и повторите.')
+  const [source,target,stocks] = await Promise.all([readSku(db,sourceId),readSku(db,targetId),readStocks(db,sourceId,targetId)])
+  if (!source || !target || !sameBusinessIdentity(source,target) || snapshotToken(source,target,stocks)!==preview.stateToken) {
+    throw new Error('Каталог изменился после проверки. Обновите предпросмотр.')
   }
   const stamp = new Date().toISOString()
   const sourceFields = [
@@ -177,53 +179,115 @@ export async function consolidateUnusedCatalogVariant(
   const identityPredicate = (alias: string) => [
     'product_id=?', 'stock_position_id=?', 'category IS ?', 'gender IS ?',
     'color IS ?', 'size_label IS ?', 'material IS ?', 'length IS ?', 'updated_at IS ?',
-  ].map(x => alias + '.' + x).join(' AND ')
-
-  const results = await db.batch([
+  ].map(x=>alias+'.'+x).join(' AND ')
+  const ref = 'catalog-consolidation:'+sourceId+'->'+targetId
+  const journalExists = `EXISTS (SELECT 1 FROM catalog_variant_consolidations c
+    WHERE c.source_variant_id=? AND c.target_variant_id=? AND c.created_at=?)`
+  const beforeStock = stockSnapshotJson(stocks)
+  const statements = [
     db.prepare(
-      `UPDATE catalog_variants AS v SET is_active=0, updated_at=?
-       WHERE v.id=? AND v.is_active=1 AND ${identityPredicate('v')}
-         AND EXISTS (
-           SELECT 1 FROM catalog_variants t
-           JOIN catalog_products p ON p.id=t.product_id AND p.is_active=1
-           JOIN catalog_stock_positions sp ON sp.id=t.stock_position_id AND sp.is_active=1
-           WHERE t.id=? AND t.is_active=1
-             AND t.product_id=v.product_id AND t.stock_position_id=v.stock_position_id
-             AND ${identityPredicate('t')}
-         )
-         AND NOT EXISTS (
-           SELECT 1 FROM inventory_stock s WHERE s.variant_id=v.id
-             AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0)
-         )
-         AND NOT EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.variant_id=v.id AND r.status='active')
-         AND NOT EXISTS (SELECT 1 FROM order_items oi JOIN orders o ON o.id=oi.order_id
-           WHERE oi.variant_id=v.id AND COALESCE(o.order_status,'active')='active'
-             AND COALESCE(o.shipping_status,'not_sent')<>'sent' AND COALESCE(oi.quantity,0)>0)
-         AND NOT EXISTS (SELECT 1 FROM workshop_tasks wt WHERE wt.variant_id=v.id AND wt.status='active')
-         AND NOT EXISTS (SELECT 1 FROM inventory_lifecycle_events e WHERE e.variant_id=v.id AND e.status='pending')
-         AND NOT EXISTS (SELECT 1 FROM inventory_stocktake_items i
-           JOIN inventory_stocktake_sessions s ON s.id=i.session_id
-           WHERE i.variant_id IN (v.id, ?) AND s.status='active')`
-    ).bind(stamp, sourceId, ...sourceFields, targetId, ...targetFields, targetId),
+      `INSERT INTO catalog_variant_consolidations (
+        source_variant_id,target_variant_id,product_id,source_color,target_color,
+        material,length,category,gender,size_label,source_physical_quantity,
+        source_reserved_quantity,created_by,created_at)
+      SELECT v.id,t.id,v.product_id,v.color,t.color,sp.material,sp.length,v.category,v.gender,v.size_label,
+        COALESCE((SELECT SUM(s.quantity) FROM inventory_stock s WHERE s.variant_id=v.id),0),
+        0,?,?
+      FROM catalog_variants v
+      JOIN catalog_variants t ON t.id=? AND t.is_active=1 AND t.product_id=v.product_id AND t.stock_position_id=v.stock_position_id
+      JOIN catalog_products p ON p.id=v.product_id AND p.is_active=1
+      JOIN catalog_stock_positions sp ON sp.id=v.stock_position_id AND sp.is_active=1
+      WHERE v.id=? AND v.is_active=1 AND ${identityPredicate('v')} AND ${identityPredicate('t')}
+        AND NOT EXISTS (SELECT 1 FROM catalog_variant_consolidations c WHERE c.source_variant_id=v.id)
+        AND (SELECT COALESCE(json_group_array(json_array(z.id,z.inventory_source,z.variant_id,
+              z.quantity,z.reserved_quantity)),'[]')
+          FROM (SELECT id,inventory_source,variant_id,quantity,reserved_quantity FROM inventory_stock
+            WHERE variant_id IN (v.id,t.id) ORDER BY id) z) = ?
+        AND NOT EXISTS (SELECT 1 FROM inventory_stock s WHERE s.variant_id IN (v.id,t.id)
+          AND (s.quantity<0 OR s.reserved_quantity<0 OR s.quantity IS NULL OR s.reserved_quantity IS NULL
+            OR s.inventory_source NOT IN ('warehouse','boutique')))
+        AND NOT EXISTS (SELECT 1 FROM inventory_stock s WHERE s.variant_id=v.id AND s.reserved_quantity<>0)
+        AND NOT EXISTS (SELECT 1 FROM inventory_reservations r WHERE r.variant_id=v.id AND r.status='active')
+        AND NOT EXISTS (SELECT 1 FROM order_items oi JOIN orders o ON o.id=oi.order_id
+          WHERE oi.variant_id=v.id AND COALESCE(o.order_status,'active')='active'
+            AND COALESCE(o.shipping_status,'not_sent')<>'sent' AND oi.quantity>0)
+        AND NOT EXISTS (SELECT 1 FROM workshop_tasks wt WHERE wt.variant_id=v.id AND wt.status='active')
+        AND NOT EXISTS (SELECT 1 FROM inventory_lifecycle_events e WHERE e.variant_id=v.id AND e.status='pending')
+        AND NOT EXISTS (SELECT 1 FROM inventory_stocktake_items i
+          JOIN inventory_stocktake_sessions sess ON sess.id=i.session_id
+          WHERE i.variant_id IN (v.id,t.id) AND sess.status='active')
+        AND NOT EXISTS (SELECT 1 FROM inventory_transfer_items i
+          JOIN inventory_transfer_documents d ON d.id=i.transfer_id
+          WHERE i.variant_id=v.id AND d.status='applied')`
+    ).bind(actor||null,stamp,targetId,sourceId,...sourceFields,...targetFields,beforeStock),
     db.prepare(
-      `INSERT INTO catalog_variant_consolidations
-        (source_variant_id,target_variant_id,product_id,source_color,target_color,
-         material,length,category,gender,size_label,source_physical_quantity,
-         source_reserved_quantity,created_by,created_at)
-       SELECT v.id,?,?,?,?,?,?,?,?,?,0,0,?,?
-       FROM catalog_variants v WHERE v.id=? AND v.is_active=0 AND v.updated_at=?`
-    ).bind(
-      targetId,source.product_id,source.color,target.color,source.execution_material,
-      source.execution_length,source.category,source.gender,source.size_label,
-      actor,stamp,sourceId,stamp,
-    ),
-  ])
-  if (toInt(results[0].meta?.changes,0) !== 1 || toInt(results[1].meta?.changes,0) !== 1) {
-    throw new Error('Каталог или склад изменились во время проверки. Обновите список и повторите действие.')
+      `INSERT INTO catalog_variant_consolidation_stock_rows (
+        consolidation_id,inventory_source,source_stock_id,target_stock_id_before,
+        source_quantity_before,target_quantity_before,target_reserved_before,combined_quantity_after)
+      SELECT c.id,s.inventory_source,s.id,t.id,s.quantity,COALESCE(t.quantity,0),
+        COALESCE(t.reserved_quantity,0),s.quantity+COALESCE(t.quantity,0)
+      FROM catalog_variant_consolidations c
+      JOIN inventory_stock s ON s.variant_id=c.source_variant_id
+      LEFT JOIN inventory_stock t ON t.variant_id=c.target_variant_id AND t.inventory_source=s.inventory_source
+      WHERE c.source_variant_id=? AND c.target_variant_id=? AND c.created_at=?`
+    ).bind(sourceId,targetId,stamp),
+    db.prepare(
+      `INSERT INTO inventory_stock (
+        inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,
+        material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity,
+        last_action,last_source_ref,created_at,updated_at,external_product_id,external_variant_id)
+      SELECT s.inventory_source,v.product_id,v.id,p.name,NULLIF(v.gender,''),NULLIF(v.color,''),
+        COALESCE(NULLIF(v.material,''),'СТАНДАРТ'),COALESCE(NULLIF(v.length,''),'СТАНДАРТ'),
+        NULLIF(v.size_label,''),s.quantity,0,'Объединение вариаций',?,?,?,p.external_id,v.external_id
+      FROM inventory_stock s JOIN catalog_variants v ON v.id=?
+      JOIN catalog_products p ON p.id=v.product_id
+      WHERE s.variant_id=? AND s.quantity>0 AND ${journalExists}
+      ON CONFLICT(inventory_source,variant_id) WHERE variant_id IS NOT NULL
+      DO UPDATE SET quantity=inventory_stock.quantity+excluded.quantity,
+        last_action='Объединение вариаций',last_source_ref=excluded.last_source_ref,
+        updated_at=excluded.updated_at`
+    ).bind(ref,stamp,stamp,targetId,sourceId,sourceId,targetId,stamp),
+    db.prepare(
+      `UPDATE inventory_stock SET quantity=0,reserved_quantity=0,
+        last_action='Объединение вариаций',last_source_ref=?,updated_at=?
+      WHERE variant_id=? AND ${journalExists}`
+    ).bind(ref,stamp,sourceId,sourceId,targetId,stamp),
+    db.prepare(
+      `UPDATE catalog_variants SET is_active=0,updated_at=?
+      WHERE id=? AND is_active=1 AND ${journalExists}`
+    ).bind(stamp,sourceId,sourceId,targetId,stamp),
+    // CHECK constraint failure aborts all writes in this D1 batch.
+    db.prepare(
+      `INSERT INTO catalog_variant_consolidation_validations(consolidation_id,passed,checked_at)
+      SELECT c.id,CASE WHEN v.is_active=0 AND t.is_active=1 AND NOT EXISTS (
+        SELECT 1 FROM catalog_variant_consolidation_stock_rows l
+        LEFT JOIN inventory_stock s ON s.id=l.source_stock_id
+        LEFT JOIN inventory_stock dest ON dest.inventory_source=l.inventory_source AND dest.variant_id=c.target_variant_id
+        WHERE l.consolidation_id=c.id AND (
+          s.id IS NULL OR s.quantity<>0 OR s.reserved_quantity<>0
+          OR COALESCE(dest.quantity,0)<>l.combined_quantity_after
+          OR COALESCE(dest.reserved_quantity,0)<>l.target_reserved_before
+          OR (l.source_quantity_before>0 AND dest.id IS NULL)
+        )
+      ) THEN 1 ELSE 0 END,?
+      FROM catalog_variant_consolidations c
+      JOIN catalog_variants v ON v.id=c.source_variant_id
+      JOIN catalog_variants t ON t.id=c.target_variant_id
+      WHERE c.source_variant_id=? AND c.target_variant_id=? AND c.created_at=?`
+    ).bind(stamp,sourceId,targetId,stamp),
+  ]
+  const results = await db.batch(statements)
+  if (toInt(results[0].meta?.changes,0)!==1
+    || toInt(results[4].meta?.changes,0)!==1
+    || toInt(results[5].meta?.changes,0)!==1) {
+    throw new Error('Склад или Каталог изменились во время проверки. Обновите данные и повторите.')
   }
-  return { ok: true, consolidated: true, sourceId, targetId, historicalOrdersPreserved: preview.sourceImpact.historicalOrders }
+  return {
+    ok:true, consolidated:true, sourceId,targetId,
+    transferredQuantity:preview.transferQuantity, stockBreakdown:preview.stockBreakdown,
+    historicalOrdersPreserved:preview.sourceImpact.historicalOrders,
+  }
 }
-
 
 export async function listRecentCatalogVariantConsolidations(db: D1Database) {
   const res = await db.prepare(
