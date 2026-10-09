@@ -246,6 +246,7 @@ export async function previewCharacteristicImpact(
     kind, source: summary.source, target: summary.target,
     sourceExecutions, byLocation, sampleVariants,
     skuPairs,skuPairsLimited,
+    canReviewReferenceCleanup: canLookForPairs,
     sampleTruncated: samples.length>12,
     indistinguishable, warnings,
     canAutomaticallyConsolidate: false,
