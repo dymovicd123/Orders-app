@@ -20,3 +20,5 @@ R2 work continues on branch `catalog-integrity-r2-20261009` to prevent redundant
 R2 also lists active Catalog SKU duplicates using exact product, execution ID, category, gender, canonical color, and size. Read current stock and reserved quantities without modifying them. Ethno cardigan drap and wool never merge by this check. This is read-only and user-initiated to conserve D1 rows.
 
 R2 guarded admin action: only a reference value with **no active Catalog variants, no material/length executions, no physical stock or reservation** may be marked inactive in reference_values using a single atomic conditional UPDATE that rechecks targets and current source usage. Historical orders/variants, materialized inventory, quantities and customer money are never changed by this operation. Duplicate cleanup is reversible by normal admin reference activation. Full SKU merges remain a separate stage.
+
+R2 executable SQLite acceptance covers active SKU, inactive SKU with nonzero stock, active material execution, stale-preview concurrent SKU creation, idempotent replay and preserved stock/variant rows. No existing business data is modified by the test.

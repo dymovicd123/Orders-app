@@ -10,6 +10,7 @@ on:
       - 'worker/domains/reference-integrity.ts'
       - 'src/features/sections/ReferenceIntegrityPanel.tsx'
       - 'scripts/test-catalog-integrity-r2-preview.mjs'
+      - 'scripts/test-catalog-integrity-r2-hide.mjs'
       - 'worker/domains/catalog.ts'
       - 'src/app/controllers/useOperationalViewModel.ts'
       - 'src/features/sections/ReferencesSection.tsx'
@@ -39,6 +40,7 @@ jobs:
           set -euo pipefail
           node scripts/test-catalog-integrity-r1-references.mjs
           node --experimental-strip-types scripts/test-catalog-integrity-r2-preview.mjs
+          node --experimental-strip-types scripts/test-catalog-integrity-r2-hide.mjs
           node scripts/test-catalog-resolver-r12-catalog-consistency.mjs
           node scripts/test-catalog-resolver-r13-known-facts.mjs
           node scripts/test-catalog-semantic-sku-identity.mjs
