@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
+import fs from 'node:fs'
 import { previewCharacteristicImpact } from '../worker/domains/reference-characteristic-impact.ts'
 
 const sql=new DatabaseSync(':memory:')
@@ -122,6 +123,14 @@ sql.exec("INSERT INTO catalog_variants VALUES (18,1,1,'adult','','СВЕТЛО �
 const ambiguous=await previewCharacteristicImpact(
  db,{kind:'color',value:'СВЕТЛО-СЕРЫЙ'},{kind:'color',value:'СВЕТЛО СЕРЫЙ'},month)
 assert.equal(ambiguous.skuPairs.length,0,'Multiple keeper SKUs require manual catalog review')
+const ui = fs.readFileSync('src/features/sections/ReferenceMergeWorkspace.tsx','utf8')
+const api = fs.readFileSync('worker/index.ts','utf8')
+assert.match(ui,/reference-merge-sku-guidance/)
+assert.match(ui,/api\\/catalog\\/variants\\/consolidation-preview/)
+assert.match(ui,/api\\/catalog\\/variants\\/consolidate-unused/)
+assert.match(ui,/expectedToken:preview\\.stateToken/)
+assert.match(ui,/pairReview\\.preview\\.canConsolidate/)
+assert.match(api,/requireAdminUser\\(authUser, 'Объединение вариантов/)
 console.log('CHARACTERISTIC SKU GUIDANCE PASSED — equivalent colors only, exact position/size, ambiguous keeper blocked')
 
 console.log('CHARACTERISTIC MERGE IMPACT PASSED — source/keeper choice, material executions, warehouse/boutique, active/historical orders, reserves, ambiguity, read-only')
