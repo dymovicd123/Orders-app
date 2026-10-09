@@ -12,6 +12,8 @@ type SkuPreview = {
   productName: string; material: string; length: string;
   sourceImpact: { physical: number; reserved: number; historicalOrders: number; activeOrders: number; activeReservations: number };
   targetImpact: { physical: number; reserved: number; historicalOrders: number };
+  stockBreakdown: Array<{ location: string; sourcePhysical: number; targetPhysical: number; combinedPhysical: number; sourceReserved: number; targetReserved: number }>;
+  stateToken: string; transferQuantity: number;
   blockers: string[]; canConsolidate: boolean; explanation: string;
 }
 type SkuMergeHistory = {
@@ -153,8 +155,11 @@ export function ReferenceIntegrityPanel({
     if (!skuPreview?.canConsolidate || actionBusy) return
     const { source, target } = skuPreview
     if (!window.confirm(
-      'Сделать вариант #' + target.id + ' основным и убрать дублирующий #' + source.id
-      + ' из рабочего Каталога? История, заказы и остатки не изменятся.'
+      'Объединить вариант #' + source.id + ' с основным #' + target.id + '? '
+      + (skuPreview.transferQuantity > 0
+        ? 'Будет перенесено ' + skuPreview.transferQuantity + ' шт. между идентичными вариантами по их местам хранения. '
+        : 'Физические остатки не требуют переноса. ')
+      + 'История заказов и складских движений сохранится, списания не будет.'
     )) return
     setActionBusy(true)
     setError('')
@@ -162,14 +167,14 @@ export function ReferenceIntegrityPanel({
       const response = await apiFetch('/api/catalog/variants/consolidate-unused', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sourceId: source.id, targetId: target.id }),
+        body: JSON.stringify({ sourceId: source.id, targetId: target.id, expectedToken: skuPreview.stateToken }),
       })
       const data = await response.json() as { ok?: boolean; message?: string }
       if (!response.ok || !data.ok) throw new Error(data.message || 'Не удалось объединить варианты.')
       await onHidden()
       await scan()
       setMergeHistory(null)
-      setNotice('Дублирующий вариант убран из рабочих списков. Его история и складские данные сохранены.')
+      setNotice('Варианты объединены: остатки сохранены и закреплены за основным вариантом. Исторические документы не менялись.')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Объединение временно недоступно.')
     } finally {
@@ -295,7 +300,7 @@ export function ReferenceIntegrityPanel({
             </>
           )}
           {skuLimited ? <p className="mini-panel-note">Каталог большой: показана только часть возможных совпадений.</p> : null}
-          <p className="mini-panel-note">Сначала выберите, какой вариант сохранить. При ненулевых остатках, резервах и незавершённых операциях система не выполнит объединение. Не списывайте товары ради очистки.</p>
+          <p className="mini-panel-note">Сначала выберите основной вариант. Физические остатки переносятся автоматически, отдельно на складе и в бутике; незавершённые операции и действующие резервы требуют предварительной проверки. Ничего списывать ради очистки не нужно.</p>
         </div>
       ) : null}
       <div className="reference-integrity-results">
@@ -329,7 +334,16 @@ export function ReferenceIntegrityPanel({
             исторических строк заказов {skuPreview.sourceImpact.historicalOrders}.
             Основной вариант: {skuPreview.targetImpact.physical} шт., резерв {skuPreview.targetImpact.reserved}.
           </p>
-          {skuPreview.blockers.length ? (
+          <div className="reference-integrity-items">
+            {skuPreview.stockBreakdown.map(place => (
+              <div className="reference-integrity-item" key={place.location}>
+                <strong>{place.location === 'warehouse' ? 'Склад' : 'Бутик'}</strong>
+                <span>{place.sourcePhysical} + {place.targetPhysical} = {place.combinedPhysical} шт. после объединения</span>
+                <span>Резерв основного: {place.targetReserved} шт.{place.sourceReserved ? ' · резерв лишнего: '+place.sourceReserved : ''}</span>
+              </div>
+            ))}
+          </div>
+                    {skuPreview.blockers.length ? (
             <div className="notice" role="status">
               <strong>Пока нельзя выполнить:</strong>
               <ul>{skuPreview.blockers.map(reason => <li key={reason}>{reason}</li>)}</ul>
@@ -338,11 +352,11 @@ export function ReferenceIntegrityPanel({
           {skuPreview.canConsolidate ? (
             <div className="actions">
               <button className="primary compact" type="button" disabled={actionBusy} onClick={() => void consolidateSku()}>
-                {actionBusy ? 'Проверяю и сохраняю…' : 'Убрать дублирующий вариант'}
+                {actionBusy ? 'Проверяю и сохраняю…' : skuPreview.transferQuantity > 0 ? 'Объединить и сохранить остатки' : 'Убрать дублирующий вариант'}
               </button>
             </div>
           ) : null}
-          <p className="mini-panel-note">Действие не переписывает историю, не переносит остатки и не создаёт списание.</p>
+          <p className="mini-panel-note">Остатки переносятся только между идентичными вариантами в пределах одного места хранения. Исторические заказы и движения не переписываются; фиктивного списания нет.</p>
         </div>
       ) : null}
       {preview ? (
