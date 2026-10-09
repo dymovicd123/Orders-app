@@ -107,6 +107,18 @@ jobs:
             WHERE v.id IN (1277,1278,1279,1303,1280,1281,1532,1533,1438,1436,1441,1473)
             ORDER BY v.size_label,v.id
           " | jq -c '{rows:(.[0].results // []), count:((.[0].results // [])|length)}'
+      - name: Trace newly created duplicate movement origin (SELECT only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command "
+            SELECT m.id, m.variant_id, m.inventory_source AS location,
+              m.movement_type, m.quantity_delta, m.quantity_after,
+              m.reference_type, m.reference_id, m.created_at
+            FROM inventory_movements m
+            WHERE m.variant_id IN (1280,1281,1532,1533)
+            ORDER BY m.id DESC LIMIT 90
+          " | jq -c '{rows:(.[0].results // []), count:((.[0].results // [])|length)}'
       - name: Read unlinked cardigan stock snapshots (SELECT only)
         shell: bash
         run: |
