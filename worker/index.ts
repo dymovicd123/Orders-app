@@ -26,6 +26,7 @@ import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, resto
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
 import { createReferenceValue, deleteReferenceValue, getReferenceData, getReferenceValueCounts, listReferenceValues, normalizeReferenceKind, updateReferenceValue } from './domains/references.ts'
 import { hideUnusedEquivalentReference, listReferenceDuplicateGroups, previewReferenceConsolidation } from './domains/reference-integrity.ts'
+import { consolidateUnusedCatalogVariant, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
 import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { createItemizedExchangeBatchFromRequest } from './domains/exchange-batch.ts'
 import { continueDatabaseStorageCleanup, getDatabaseStorageStatus, startDatabaseStorageCleanup, updateDatabaseStorageCapacity } from './domains/storage.ts'
@@ -192,6 +193,23 @@ export default {
         const denied = requireAdminUser(authUser, 'Проверка дублей доступна только администратору.');
         if (denied) return denied;
         return json(await listReferenceDuplicateGroups(env.DB));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-preview' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'Объединение вариантов доступно только администратору.');
+        if (denied) return denied;
+        return json(await previewCatalogVariantConsolidation(
+          env.DB, Number(url.searchParams.get('sourceId')), Number(url.searchParams.get('targetId')),
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidate-unused' && request.method === 'POST') {
+        const denied = requireAdminUser(authUser, 'Объединение вариантов доступно только администратору.');
+        if (denied) return denied;
+        const data = await readJson<{ sourceId?: number; targetId?: number }>(request);
+        return json(await consolidateUnusedCatalogVariant(
+          env.DB, Number(data.sourceId), Number(data.targetId), authUser?.login || '',
+        ));
       }
 
       if (url.pathname === '/api/reference-values/hide-unused-duplicate' && request.method === 'POST') {
