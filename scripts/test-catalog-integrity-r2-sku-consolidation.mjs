@@ -26,9 +26,18 @@ sqlite.exec(`
  CREATE TABLE inventory_transfer_items(id INTEGER PRIMARY KEY,transfer_id INTEGER,variant_id INTEGER);
  CREATE TABLE inventory_movements(id INTEGER PRIMARY KEY,variant_id INTEGER,reference_type TEXT);
  CREATE TABLE inventory_movement_reversals(original_movement_id INTEGER PRIMARY KEY);
- CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,variant_id INTEGER,quantity INTEGER,status TEXT);
+ CREATE TABLE inventory_reservations(
+    id INTEGER PRIMARY KEY,order_id INTEGER,order_item_id INTEGER,
+    inventory_source TEXT,product_id INTEGER,variant_id INTEGER,quantity INTEGER,
+    status TEXT,updated_at TEXT);
+ CREATE TABLE return_items(id INTEGER PRIMARY KEY,order_item_id INTEGER);
+ CREATE TABLE exchanges(id INTEGER PRIMARY KEY,old_order_item_id INTEGER,new_order_item_id INTEGER);
  CREATE TABLE orders(id INTEGER PRIMARY KEY,order_status TEXT,shipping_status TEXT);
- CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,variant_id INTEGER,quantity INTEGER);
+ CREATE TABLE order_items(
+   id INTEGER PRIMARY KEY,order_id INTEGER,variant_id INTEGER,product_id INTEGER,
+   quantity INTEGER,is_workshop INTEGER DEFAULT 0, source_type TEXT DEFAULT 'warehouse',
+   stock_writeoff_status TEXT DEFAULT 'reserved',product_name_snapshot TEXT DEFAULT 'Снимок товара',
+   unit_price INTEGER DEFAULT 1000);
  CREATE TABLE workshop_tasks(id INTEGER PRIMARY KEY,variant_id INTEGER,status TEXT);
  CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,variant_id INTEGER,status TEXT);
  CREATE TABLE inventory_stocktake_sessions(id TEXT PRIMARY KEY,status TEXT);
@@ -42,10 +51,11 @@ sqlite.exec(`
   (10,100,30,'adult','ЖЕН','СВЕТЛО СЕРЫЙ','54','ДРАП','СТАНДАРТ',1,'before');
  INSERT INTO inventory_stock(id,variant_id,quantity,reserved_quantity) VALUES (10,7,0,0),(11,8,2,0);
  INSERT INTO orders VALUES(1,'active','sent');
- INSERT INTO order_items VALUES(21,1,7,1);
+ INSERT INTO order_items(id,order_id,variant_id,quantity) VALUES(21,1,7,1);
 `)
 sqlite.exec(fs.readFileSync('migrations/0083_v72_catalog_variant_consolidations.sql','utf8'))
 sqlite.exec(fs.readFileSync('migrations/0084_v72_catalog_variant_stock_consolidation.sql','utf8'))
+sqlite.exec(fs.readFileSync('migrations/0085_v72_catalog_variant_reservation_consolidation.sql','utf8'))
 
 let beforeUpdate = () => {}
 let beforeValidation = () => {}
@@ -94,7 +104,7 @@ assert.equal(impact.targetImpact.physical,2)
 sqlite.exec('UPDATE inventory_stock SET reserved_quantity=1 WHERE id=10')
 assert.equal((await previewCatalogVariantConsolidation(db,7,8)).canConsolidate,false, 'Stock reserve blocks')
 sqlite.exec('UPDATE inventory_stock SET reserved_quantity=0 WHERE id=10')
-sqlite.exec("INSERT INTO inventory_reservations VALUES(1,7,1,'active')")
+sqlite.exec("INSERT INTO inventory_reservations(id,variant_id,quantity,status,inventory_source,updated_at) VALUES(1,7,1,'active','warehouse','t')")
 assert.equal((await previewCatalogVariantConsolidation(db,7,8)).canConsolidate,false, 'Active reservation blocks')
 sqlite.exec("DELETE FROM inventory_reservations")
 sqlite.exec("UPDATE orders SET shipping_status='not_sent' WHERE id=1")
@@ -156,11 +166,22 @@ sqlite.exec(`
  VALUES (12,100,30,'adult','ЖЕН','ТЕМНО-СИНИЙ','52','ДРАП','СТАНДАРТ',1,'before'),
         (13,100,30,'adult','ЖЕН','ТЕМНО СИНИЙ','52','ДРАП','СТАНДАРТ',1,'before');
  INSERT INTO inventory_stock(id,inventory_source,variant_id,quantity,reserved_quantity)
- VALUES(120,'warehouse',12,3,0),(121,'warehouse',13,5,1),(122,'boutique',12,4,0);
+ VALUES(120,'warehouse',12,3,2),(121,'warehouse',13,5,1),(122,'boutique',12,4,1);
+ INSERT INTO orders VALUES (2,'active','not_sent'),(3,'active','not_sent'),(4,'active','not_sent');
+ INSERT INTO order_items(id,order_id,variant_id,product_id,quantity,source_type,product_name_snapshot,unit_price)
+ VALUES(22,2,13,100,1,'warehouse','Тёмно синий',1000),
+       (23,3,12,100,2,'warehouse','Снимок СТАРОГО цвета',2500),
+       (24,4,12,100,1,'boutique','Снимок БУТИКА',3000);
+ INSERT INTO inventory_reservations(id,order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,updated_at)
+ VALUES(2,2,22,'warehouse',100,13,1,'active','before'),
+       (3,3,23,'warehouse',100,12,2,'active','before'),
+       (4,4,24,'boutique',100,12,1,'active','before');
 `)
 let p=await previewCatalogVariantConsolidation(db,12,13)
 assert.equal(p.canConsolidate,true,'Valid stocked SKU can be merged')
 assert.equal(p.transferQuantity,7)
+assert.equal(p.reservationCount,2)
+assert.equal(p.sourceImpact.reserved,3)
 assert.deepEqual(p.stockBreakdown.map(x=>x.combinedPhysical),[8,4])
 await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin'),/не подтверждены/)
 
@@ -180,6 +201,11 @@ assert.equal(p.canConsolidate,true)
 sqlite.exec('UPDATE inventory_stock SET quantity=6 WHERE id=120')
 await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken),/изменились/)
 sqlite.exec('UPDATE inventory_stock SET quantity=3 WHERE id=120')
+p=await previewCatalogVariantConsolidation(db,12,13)
+// Concurrency: an order is edited while the browser displays a preflight.
+sqlite.exec('UPDATE inventory_reservations SET quantity=5,updated_at=\'race\' WHERE id=3')
+await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken),/изменились/)
+sqlite.exec("UPDATE inventory_reservations SET quantity=2,updated_at='before' WHERE id=3")
 p=await previewCatalogVariantConsolidation(db,12,13)
 
 // Atomic SQL guard catches a concurrent target change after application preview.
@@ -206,12 +232,23 @@ assert.equal(active(13),1)
 assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE id=120').get().quantity,0)
 assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE id=122').get().quantity,0)
 assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE id=121').get().quantity,8)
-assert.equal(sqlite.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=121').get().reserved_quantity,1)
+assert.equal(sqlite.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=121').get().reserved_quantity,3)
 assert.equal(sqlite.prepare("SELECT quantity FROM inventory_stock WHERE variant_id=13 AND inventory_source='boutique'").get().quantity,4)
+assert.equal(sqlite.prepare("SELECT reserved_quantity FROM inventory_stock WHERE variant_id=13 AND inventory_source='boutique'").get().reserved_quantity,1)
+assert.equal(stocked.transferredReservations,2)
+assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM inventory_reservations WHERE variant_id=12 AND status='active'").get().n,0)
+assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM inventory_reservations WHERE variant_id=13 AND status='active'").get().n,3)
+assert.equal(sqlite.prepare('SELECT variant_id FROM order_items WHERE id=23').get().variant_id,13)
+assert.equal(sqlite.prepare('SELECT variant_id FROM order_items WHERE id=24').get().variant_id,13)
+assert.equal(sqlite.prepare('SELECT unit_price FROM order_items WHERE id=23').get().unit_price,2500)
+assert.equal(sqlite.prepare('SELECT product_name_snapshot FROM order_items WHERE id=23').get().product_name_snapshot,'Снимок СТАРОГО цвета')
+assert.equal(sqlite.prepare('SELECT product_name_snapshot FROM order_items WHERE id=24').get().product_name_snapshot,'Снимок БУТИКА')
 const receipt=sqlite.prepare('SELECT id,source_physical_quantity FROM catalog_variant_consolidations WHERE source_variant_id=12').get()
 assert.equal(receipt.source_physical_quantity,7)
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM catalog_variant_consolidation_stock_rows WHERE consolidation_id=?').get(receipt.id).n,2)
 assert.equal(sqlite.prepare('SELECT passed FROM catalog_variant_consolidation_validations WHERE consolidation_id=?').get(receipt.id).passed,1)
+assert.equal(sqlite.prepare('SELECT passed FROM catalog_variant_consolidation_reservation_validations WHERE consolidation_id=?').get(receipt.id).passed,1)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM catalog_variant_consolidation_reservation_rows WHERE consolidation_id=?').get(receipt.id).n,2)
 assert.equal((await consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken)).alreadyConsolidated,true)
 assert.equal(sqlite.prepare('SELECT variant_id FROM inventory_movements WHERE id=1').get().variant_id,12,
   'Historical manual movement keeps its original variant')
