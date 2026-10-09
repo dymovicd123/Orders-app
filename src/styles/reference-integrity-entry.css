@@ -1,0 +1,48 @@
+/* Always-visible entry to catalog/reference duplicate checks, including a clear role restriction. */
+.reference-integrity-entry {
+  margin: 16px 0;
+  border: 1px solid #ceddec;
+  border-radius: 14px;
+  background: #f7fafc;
+}
+.reference-integrity-entry[open] { background: #fff; }
+.reference-integrity-entry-summary {
+  cursor: pointer;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 17px 20px;
+  list-style: none;
+}
+.reference-integrity-entry-summary::-webkit-details-marker { display: none; }
+.reference-integrity-entry-summary:focus-visible { outline: 3px solid #7eabdd; outline-offset: 2px; }
+.reference-integrity-entry-copy { display: grid; gap: 4px; }
+.reference-integrity-entry-copy strong { color: #183a59; font-size: 1rem; }
+.reference-integrity-entry-copy small { font-size: .86rem; color: #526579; line-height: 1.4; }
+.reference-integrity-entry-open {
+  flex: 0 0 auto;
+  color: #164877;
+  font-size: .84rem;
+  font-weight: 700;
+  border: 1px solid #a6c5dd;
+  border-radius: 9px;
+  padding: 9px 12px;
+  background: #fff;
+}
+.reference-integrity-entry[open] .reference-integrity-entry-open { background: #eaf3fa; }
+.reference-integrity-entry > .reference-integrity-panel {
+  margin: 0 12px 12px;
+}
+.reference-integrity-entry-restricted {
+  margin: 0 18px 18px;
+  padding: 13px;
+  background: #f1f5f9;
+  border-radius: 8px;
+  color: #475569;
+  font-size: .87rem;
+}
+@media (max-width: 640px) {
+  .reference-integrity-entry-summary { flex-direction: column; align-items: stretch; padding: 14px; }
+  .reference-integrity-entry-open { width: fit-content; }
+}

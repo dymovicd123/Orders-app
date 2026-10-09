@@ -1,5 +1,6 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
 import { ReferenceIntegrityPanel } from './ReferenceIntegrityPanel'
+import '../../styles/reference-integrity-entry.css'
 type SectionContext = Record<string, any>
 
 export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
@@ -32,17 +33,6 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
 
   return (
     <section className="card wide sector-references" id="references" style={sectorStyle('references')}>
-              <ReferenceIntegrityPanel
-                apiFetch={apiFetch}
-                isAdmin={isAdmin}
-                onHidden={async () => {
-                  await Promise.all([
-                    ctx.loadReferencesData(true),
-                    ctx.loadReferenceItems(ctx.referenceKind, true),
-                    ctx.loadReferenceKindCounts(ctx.referenceGroups.map((group: any) => group.kind), true),
-                  ])
-                }}
-              />
               <div className="references-hero">
                 <div className="references-hero-main">
                   <div className="card-label">Справочники</div>
@@ -72,6 +62,33 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                 </div>
               </div>
     
+              <details className="reference-integrity-entry" data-feature="reference-duplicates">
+                <summary className="reference-integrity-entry-summary">
+                  <span className="reference-integrity-entry-copy">
+                    <strong>Проверка дублей</strong>
+                    <small>Найти одинаковые значения справочников и варианты товаров, проверить остатки и связи перед объединением.</small>
+                  </span>
+                  <span className="reference-integrity-entry-open">Открыть проверку</span>
+                </summary>
+                {isAdmin ? (
+                  <ReferenceIntegrityPanel
+                    apiFetch={apiFetch}
+                    isAdmin={isAdmin}
+                    onHidden={async () => {
+                      await Promise.all([
+                        ctx.loadReferencesData(true),
+                        ctx.loadReferenceItems(ctx.referenceKind, true),
+                        ctx.loadReferenceKindCounts(ctx.referenceGroups.map((group: any) => group.kind), true),
+                      ])
+                    }}
+                  />
+                ) : (
+                  <p className="reference-integrity-entry-restricted">
+                    Проверка и объединение дублей доступны администратору. Войдите с административной учётной записью.
+                  </p>
+                )}
+              </details>
+
               <div className="reference-routing-note">
                 <span><strong>Справочники</strong> — центральное место для значений.</span>
                 <span><strong>Склад → Товары</strong> — быстрый доступ к характеристикам.</span>

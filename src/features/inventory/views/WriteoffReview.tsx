@@ -22,7 +22,7 @@ export function WriteoffReview({source,reason,lines,busy,sourceLoading,onConfirm
   return <section className="inventory-writeoff-review" aria-label="Подтверждение списания">
     <div className="inventory-writeoff-review-heading">
       <div>
-        <strong>Перед списанием</strong>
+        <strong>Шаг 2 из 2 — проверка списания</strong>
         <p>Проверьте количество и последствия для заказов. Это реальное списание товара, а не исправление количества и не очистка дублей.</p>
       </div>
       <span>{summary.rows.length} поз. · {summary.totalRequested} шт.</span>

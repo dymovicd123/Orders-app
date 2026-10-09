@@ -48,6 +48,7 @@ jobs:
           node --experimental-strip-types scripts/test-catalog-integrity-r2-hide.mjs
           node --experimental-strip-types scripts/test-catalog-integrity-r2-sku-consolidation.mjs
           node --experimental-strip-types scripts/test-inventory-writeoff-review.mjs
+          node scripts/test-reference-duplicates-discovery-r1.mjs
           node scripts/test-catalog-resolver-r12-catalog-consistency.mjs
           node scripts/test-catalog-resolver-r13-known-facts.mjs
           node scripts/test-catalog-semantic-sku-identity.mjs

@@ -211,10 +211,10 @@ export function ReferenceIntegrityPanel({
   }
 
   return (
-    <section className="mini-panel reference-integrity-panel" aria-label="Порядок в справочниках">
+    <section className="mini-panel reference-integrity-panel" aria-label="Проверка дублей товаров и справочников">
       <div className="mini-panel-head">
         <div>
-          <h3>Порядок в справочниках</h3>
+          <h3>Проверка дублей товаров и справочников</h3>
           <p className="mini-panel-note">Найдём одинаковые значения и проверим последствия их объединения. Пока ничего не меняем.</p>
         </div>
         <button className="secondary compact" type="button" disabled={loading || previewBusy} onClick={() => void scan()}>

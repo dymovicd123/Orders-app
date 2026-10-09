@@ -24,12 +24,12 @@
     },
     "src/features/inventory/views/renderInventoryMovementPanel.tsx": {
       "beforeGitBlob": "dc89847d2bac17d53320c3e4097ce4fbfd35e27b",
-      "afterGitBlob": "56d57de87526c1560fa2078d8b950ed8f201efc8",
+      "afterGitBlob": "c469ea45ecbda26877f15f32e4de496f853ba31d",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/features/inventory/views/renderInventoryMovementPanel.tsx"
     },
     "src/features/sections/ReferencesSection.tsx": {
       "beforeGitBlob": "f23c6133fa66a22d9986141b6b4cbd43678480b6",
-      "afterGitBlob": "2305c53d0529b8c056dd0a792e85d3930ff74d4f",
+      "afterGitBlob": "bafdaa8101e8b35938d5333aeccc519f9f690925",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/features/sections/ReferencesSection.tsx"
     },
     "worker/index.ts": {
@@ -60,12 +60,14 @@
   "addedFiles": {
     "worker/domains/catalog-variant-consolidation.ts": "5adaad56532ba504cb63d49aa9e3b571c0f1c298",
     "worker/domains/reference-integrity.ts": "392e2ec31161a6e31844c7d057a6d81625d9645b",
-    "src/features/sections/ReferenceIntegrityPanel.tsx": "e74c3a5cc8e1be7c237d523d32cb331eb0c07e14",
+    "src/features/sections/ReferenceIntegrityPanel.tsx": "b06f982d124390bbb24dc386af7e16f58e4864cf",
     "src/features/inventory/writeoffReview.ts": "c7dc6cfb6981e979204c59808268dd332f0e1e08",
-    "src/features/inventory/views/WriteoffReview.tsx": "62257dbcc7af7200f3e60671bfe5a7395baccb79",
-    "src/styles/w4-writeoff-review.css": "37e3bce75eab3001edf7e47c2d8ef6d0f2737635",
+    "src/features/inventory/views/WriteoffReview.tsx": "efa0608b8836993f13dc6d8536a93ed195d1bc63",
+    "src/styles/w4-writeoff-review.css": "261d5e7508a99b5de52284125bd7637440f771cc",
     "migrations/0090_v72_catalog_variant_consolidations.sql": "b4405429db17fbca0f7e212b3dd47cc6ca800ae8",
     "migrations/0091_v72_catalog_variant_stock_consolidation.sql": "3bf9bf2496145aa19a919a3468d3fb3d0a13d1c7",
-    "migrations/0092_v72_catalog_variant_reservation_consolidation.sql": "894164a039a76abfdf8d7ac8a49109329b9bc66d"
+    "migrations/0092_v72_catalog_variant_reservation_consolidation.sql": "894164a039a76abfdf8d7ac8a49109329b9bc66d",
+    "src/styles/reference-integrity-entry.css": "1b5c89737e553ba65bd7e28c7c55cb916dc61634",
+    "scripts/test-reference-duplicates-discovery-r1.mjs": "963f169c9526f2942ef0ebc25355abb55e251d60"
   }
 }

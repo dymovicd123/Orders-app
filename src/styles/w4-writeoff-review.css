@@ -136,3 +136,31 @@
   .inventory-writeoff-review-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .inventory-writeoff-review-actions > button { width:100%; }
 }
+
+/* Clearly staged writeoff without changing the accepted stock mutation handler. */
+.inventory-writeoff-intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin: 12px 0;
+  padding: 16px 18px;
+  border: 1px solid #e7d8c2;
+  border-radius: 13px;
+  background: #fffaf1;
+}
+.inventory-writeoff-intro > div { display: grid; gap: 5px; }
+.inventory-writeoff-intro strong { color: #563d25; }
+.inventory-writeoff-intro p { margin: 0; color: #795f43; font-size: .86rem; line-height: 1.5; }
+.inventory-writeoff-step {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: #f8e7ce;
+  color: #6e4620;
+  font-size: .78rem;
+  font-weight: 750;
+}
+.inventory-operation-card-writeoff { border-color: #e7d8c2; }
+@media (max-width: 600px) {
+  .inventory-writeoff-intro { flex-direction: column; padding: 13px; }
+}
