@@ -11,7 +11,7 @@ type Sku = {
   execution_material: string | null; execution_length: string | null;
 }
 type SkuImpact = {
-  id: number; physical: number; reserved: number;
+  id: number; physical: number; reserved: number; nonzeroStockRows: number;
   activeReservations: number; activeOrders: number; historicalOrders: number;
   activeWorkshop: number; pendingLifecycle: number; activeStocktake: number;
 }
@@ -36,6 +36,7 @@ async function readImpact(db: D1Database, id: number): Promise<SkuImpact> {
     `SELECT
       COALESCE((SELECT SUM(COALESCE(s.quantity,0)) FROM inventory_stock s WHERE s.variant_id=?),0) AS physical,
       COALESCE((SELECT SUM(COALESCE(s.reserved_quantity,0)) FROM inventory_stock s WHERE s.variant_id=?),0) AS reserved,
+      (SELECT COUNT(*) FROM inventory_stock s WHERE s.variant_id=? AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0)) AS nonzeroStockRows,
       (SELECT COUNT(*) FROM inventory_reservations r WHERE r.variant_id=? AND r.status='active') AS activeReservations,
       (SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id=oi.order_id
         WHERE oi.variant_id=? AND COALESCE(o.order_status,'active')='active'
@@ -45,9 +46,9 @@ async function readImpact(db: D1Database, id: number): Promise<SkuImpact> {
       (SELECT COUNT(*) FROM inventory_lifecycle_events e WHERE e.variant_id=? AND e.status='pending') AS pendingLifecycle,
       (SELECT COUNT(*) FROM inventory_stocktake_items i JOIN inventory_stocktake_sessions s ON s.id=i.session_id
         WHERE i.variant_id=? AND s.status='active') AS activeStocktake`
-  ).bind(id,id,id,id,id,id,id,id).first<Omit<SkuImpact,'id'>>()
+  ).bind(id,id,id,id,id,id,id,id,id).first<Omit<SkuImpact,'id'>>()
   return {
-    id, physical: toInt(row?.physical,0), reserved: toInt(row?.reserved,0),
+    id, physical: toInt(row?.physical,0), reserved: toInt(row?.reserved,0), nonzeroStockRows: toInt(row?.nonzeroStockRows,0),
     activeReservations: toInt(row?.activeReservations,0),
     activeOrders: toInt(row?.activeOrders,0), historicalOrders: toInt(row?.historicalOrders,0),
     activeWorkshop: toInt(row?.activeWorkshop,0),
@@ -83,7 +84,7 @@ export async function previewCatalogVariantConsolidation(db: D1Database, sourceI
   const [sourceImpact, targetImpact] = await Promise.all([readImpact(db, sourceId), readImpact(db, targetId)])
   const blockers: string[] = []
   if (!source.is_active) blockers.push('Лишний вариант уже неактивен.')
-  if (sourceImpact.physical !== 0) blockers.push(`у лишнего варианта есть остаток: ${sourceImpact.physical} шт.`)
+  if (sourceImpact.nonzeroStockRows) blockers.push(`у лишнего варианта есть незакрытые складские строки (остаток: ${sourceImpact.physical} шт., резерв: ${sourceImpact.reserved} шт.)`)
   if (sourceImpact.reserved !== 0 || sourceImpact.activeReservations) blockers.push('у лишнего варианта есть действующие резервы')
   if (sourceImpact.activeOrders) blockers.push('есть активные неотправленные заказы')
   if (sourceImpact.activeWorkshop) blockers.push('есть незавершённые задачи Цеха')
