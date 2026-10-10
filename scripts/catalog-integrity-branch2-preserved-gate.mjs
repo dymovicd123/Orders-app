@@ -61,6 +61,7 @@ const tests=[
   ['scripts/test-catalog-complex-undo-pages.mjs',true],
   ['scripts/test-catalog-complex-undo-workplan.mjs',true],
   ['scripts/test-catalog-complex-undo-human-ui.mjs',false],
+  ['scripts/test-reference-visual-qa-branch2.mjs',true],
   ['scripts/test-catalog-complex-undo-pages.mjs',true],
   ['scripts/test-catalog-positive-stock-undo.mjs',true],
   ['scripts/test-catalog-corrected-undo-review.mjs',true],
