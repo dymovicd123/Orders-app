@@ -34,6 +34,7 @@ import { businessMonthRange } from './domains/reference-merge-preview.ts'
 import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
 import { previewCatalogConsolidationUndo } from './domains/catalog-consolidation-undo-preview.ts'
 import { undoUnusedCatalogConsolidation } from './domains/catalog-zero-stock-undo.ts'
+import { previewPositiveStockConsolidationUndo, undoPositiveStockCatalogConsolidation } from './domains/catalog-positive-stock-undo.ts'
 import { previewZeroStockReMerge, reMergeZeroStockCatalogVariant } from './domains/catalog-zero-stock-remerge.ts'
 import { recentCatalogStockReconciliations } from './domains/catalog-stock-reconciliation-write.ts'
 import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
@@ -234,6 +235,23 @@ export default {
         const denied = requireAdminUser(authUser, 'Проверка дублей доступна только администратору.');
         if (denied) return denied;
         return json(await listReferenceDuplicateGroups(env.DB));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-positive-stock-preview' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'Отмена объединения с остатками доступна только администратору.');
+        if(denied)return denied;
+        return json(await previewPositiveStockConsolidationUndo(
+          env.DB,Number(url.searchParams.get('consolidationId'))
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-positive-stock' && request.method === 'POST') {
+        const denied=requireAdminUser(authUser,'Отмена объединения с остатками доступна только администратору.');
+        if(denied)return denied;
+        const data=await readJson<{consolidationId:number;reason:string;expectedToken:string}>(request);
+        return json(await undoPositiveStockCatalogConsolidation(
+          env.DB,Number(data.consolidationId),authUser?.login||'',data.reason,data.expectedToken
+        ));
       }
 
       if (url.pathname === '/api/catalog/variants/consolidation-undo-zero-stock' && request.method === 'POST') {

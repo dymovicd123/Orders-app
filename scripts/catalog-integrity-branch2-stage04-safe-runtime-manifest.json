@@ -34,7 +34,7 @@
     },
     "worker/index.ts": {
       "beforeGitBlob": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
-      "afterGitBlob": "bab54db7e68632a7d6ff2371c6c9c3b9b13027ea",
+      "afterGitBlob": "16e8009c1b49f6cbeabc6270837ab890efae550f",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/index.ts"
     },
     "worker/domains/catalog.ts": {
@@ -117,6 +117,8 @@
     "migrations/0101_v72_catalog_zero_stock_remerge_validation.sql": "2750280cd66f4a8bf41aa19351fcd1a28fa0f1f3",
     "worker/domains/catalog-zero-stock-remerge.ts": "8d942763caf8ea0f703f6b87c5f168d15edf0012",
     "migrations/0102_v72_catalog_positive_stock_undo_validation.sql": "9c26b192223a32d068d3e0e1cefebbe29959fdda",
-    "scripts/test-catalog-positive-undo-proof-schema.mjs": "55320cc56ef2d759356a146908161d6768b37ffd"
+    "scripts/test-catalog-positive-undo-proof-schema.mjs": "55320cc56ef2d759356a146908161d6768b37ffd",
+    "worker/domains/catalog-positive-stock-undo.ts": "1e2042f13dd62472266733024afc230410cb46b8",
+    "scripts/test-catalog-positive-stock-undo.mjs": "73ee8e895601be2dd39b04d2fce0bf4ca620c6fa"
   }
 }
