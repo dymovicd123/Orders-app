@@ -149,6 +149,14 @@ sqlite.exec("DELETE FROM inventory_reservations WHERE id=44")
 sqlite.exec("UPDATE inventory_stock SET quantity=8 WHERE id=11")
 assert.equal((await previewPositiveStockConsolidationUndo(db,1)).canUndoPositiveStock,false,'Keeper changed after merge')
 sqlite.exec("UPDATE inventory_stock SET quantity=7 WHERE id=11")
+sqlite.exec("UPDATE catalog_variant_consolidations SET created_at='not-a-date' WHERE id=1")
+assert.equal((await previewPositiveStockConsolidationUndo(db,1)).canUndoPositiveStock,false,
+  'Corrupt merge timestamp may not imply no later activity')
+sqlite.exec("UPDATE catalog_variant_consolidations SET created_at='2026-10-10T07:00:00Z' WHERE id=1")
+sqlite.exec("UPDATE inventory_stock SET updated_at='2026-10-10T08:00:00Z' WHERE id=11")
+assert.equal((await previewPositiveStockConsolidationUndo(db,1)).canUndoPositiveStock,false,
+  'A touched keeper row blocks, even when quantity was restored to the same number')
+sqlite.exec("UPDATE inventory_stock SET updated_at='2026-10-10T07:00:00Z' WHERE id=11")
 const checked=await previewPositiveStockConsolidationUndo(db,1)
 assert.equal(checked.canUndoPositiveStock,true,JSON.stringify(checked.blockers))
 beforeBatch=()=>sqlite.exec(`
