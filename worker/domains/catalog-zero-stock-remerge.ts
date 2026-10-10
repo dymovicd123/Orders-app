@@ -235,6 +235,10 @@ export async function reMergeZeroStockCatalogVariant(
           AND s.updated_at=?
           AND json_array(k.id,k.product_id,k.stock_position_id,k.category,k.gender,k.color,k.size_label,
             k.material,k.length,k.is_active,k.updated_at)=?
+          AND EXISTS(SELECT 1 FROM catalog_stock_positions position
+            JOIN catalog_products p ON p.id=s.product_id
+            WHERE position.id=s.stock_position_id
+              AND json_array(p.id,p.is_active,position.id,position.is_active,position.material,position.length)=?)
           AND ${sourceDependenciesSafe}
           AND (SELECT COALESCE(json_group_array(json_array(
             id,inventory_source,variant_id,quantity,reserved_quantity,updated_at,last_source_ref
@@ -249,7 +253,7 @@ export async function reMergeZeroStockCatalogVariant(
     JOIN catalog_variants k ON k.id=e.target_variant_id
     WHERE e.root_consolidation_id=? AND e.source_variant_id=? AND e.target_variant_id=?
       AND e.generation=3 AND e.event_kind='merge' AND e.created_at=?
-  `).bind(stamp,state.targetIdentity,state.stockFingerprint,actor.trim(),stamp,
+  `).bind(stamp,state.targetIdentity,state.executionIdentity,state.stockFingerprint,actor.trim(),stamp,
     state.undoEventId,state.rootId,sourceId,keeperId,stamp)
   let results:D1Result[]
   try{results=await db.batch([insert,retire,proof])}
