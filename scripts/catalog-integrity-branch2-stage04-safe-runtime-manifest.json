@@ -34,7 +34,7 @@
     },
     "worker/index.ts": {
       "beforeGitBlob": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
-      "afterGitBlob": "cfdfd907576bfb9ce65715df4ebd33524b47104d",
+      "afterGitBlob": "de2401e51f9aefbe9394076823ad22b5859354e7",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/index.ts"
     },
     "worker/domains/catalog.ts": {
@@ -51,6 +51,11 @@
       "beforeGitBlob": "7b1e908edffcf10ddc1537c4692e5589c017bb9f",
       "afterGitBlob": "7f57884cca246755f08735078fdf4dfa882348cd",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/package.json"
+    },
+    "worker/domains/orders-write.ts": {
+      "beforeGitBlob": "6f470e1023d5479671bf279a802cbc60c616cb6f",
+      "afterGitBlob": "25c787d32f5789ad39a128e554890acc0a9bca4e",
+      "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/domains/orders-write.ts"
     }
   },
   "stage04Files": {
@@ -90,6 +95,9 @@
     "worker/domains/catalog-stock-reconciliation-write.ts": "b3af017fb3f469f2bb885e2444317ed0d6262bfe",
     "scripts/test-catalog-stock-reconciliation-write.mjs": "5acdf296d8e00cfeabf58e1b147b45a8557e9a3c",
     "migrations/0095_v72_catalog_stock_reconciliation_journal.sql": "0a35ae87effae25fd1e5d0d5befafd9aff0270f1",
-    "migrations/0096_v72_catalog_atomic_stock_finalization.sql": "0f6cde970b9cb535d28e762e4002a87820625a2e"
+    "migrations/0096_v72_catalog_atomic_stock_finalization.sql": "0f6cde970b9cb535d28e762e4002a87820625a2e",
+    "worker/domains/catalog-merged-identity.ts": "2692f480944421230c0f430ef76ddc3ed77ce4d5",
+    "migrations/0097_v72_consolidated_sku_active_order_guard.sql": "7e443eceb367cb1c7aa6ab795c22f3e2d19e0e1d",
+    "scripts/test-catalog-stale-order-merge-bridge.mjs": "d79278d21a44b0fe2e4d4d07925c8db692b8a7f6"
   }
 }
