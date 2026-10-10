@@ -1,0 +1,103 @@
+name: Branch2 reference reason audit schema 0105
+
+on:
+  push:
+    branches: [branch2]
+    paths: ['.github/workflows/branch2-reference-reason-schema-0105.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  branch2-reason-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Strict Branch2 identity and additive-only schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "branch2" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo 'Production binding present; refusing schema execution' >&2; exit 31
+          fi
+          [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]] || exit 32
+          [[ "$(git hash-object migrations/0083_v72_workshop_settlement_foundation.sql)" == "d73a92f86317a9068a9a381742d55e5c96804879" ]] || exit 33
+          [[ "$(git hash-object migrations/0084_v72_workshop_settlement_status_capture.sql)" == "2e3f51ab0b055d5b82d6b542cec28cf661359003" ]] || exit 34
+          ! grep -Eiq '^[[:space:]]*(UPDATE|DELETE|REPLACE|DROP|ALTER)[[:space:]]' migrations/0105_v72_reference_reason_choice_merges.sql || exit 35
+      - run: npm ci
+      - name: Test immutable schema and Stage04 preserved
+        run: |
+          node scripts/test-reference-reason-choice-schema.mjs
+          node scripts/test-stage04a-workshop-settlements.mjs
+          node scripts/test-stage04b-workshop-status-capture.mjs
+      - name: Baseline read-only fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql="SELECT
+            (SELECT COUNT(*) FROM orders) orders_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) orders_total,
+            (SELECT COUNT(*) FROM payments) payments_count,
+            (SELECT COALESCE(SUM(amount),0) FROM payments) payments_total,
+            (SELECT COUNT(*) FROM returns) returns_count,
+            (SELECT COUNT(*) FROM exchanges) exchanges_count,
+            (SELECT COUNT(*) FROM inventory_stock) stock_rows,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) stock_qty,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) stock_reserved,
+            (SELECT COUNT(*) FROM reference_values) references_count,
+            (SELECT SUM(is_active) FROM reference_values) references_active,
+            (SELECT COUNT(*) FROM workshop_settlement_events) stage04_events,
+            (SELECT enabled FROM workshop_settlement_capture_control WHERE id=1) stage04_capture"
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "$sql" --json | jq -ce '.[0].results[0]' | jq -cS . > /tmp/reason0105-before.json
+          [[ -s /tmp/reason0105-before.json ]]
+          schema="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name IN ('reference_reason_choice_merges','reference_reason_choice_validations')" --json)"
+          n="$(jq -r '.[0].results[0].n // -1' <<<"$schema")"
+          [[ "$n" == 0 || "$n" == 2 ]] || { echo 'Partial reason audit schema found' >&2; exit 40; }
+          echo "$n" > /tmp/reason0105-before-tables
+      - name: Apply EMPTY 0105 schema only if absent
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(cat /tmp/reason0105-before-tables)" == 0 ]]; then
+            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file migrations/0105_v72_reference_reason_choice_merges.sql
+          else
+            echo 'Schema already installed; no writes.'
+          fi
+      - name: Compare unchanged operational fingerprint and audit emptiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql="SELECT
+            (SELECT COUNT(*) FROM orders) orders_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) orders_total,
+            (SELECT COUNT(*) FROM payments) payments_count,
+            (SELECT COALESCE(SUM(amount),0) FROM payments) payments_total,
+            (SELECT COUNT(*) FROM returns) returns_count,
+            (SELECT COUNT(*) FROM exchanges) exchanges_count,
+            (SELECT COUNT(*) FROM inventory_stock) stock_rows,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) stock_qty,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) stock_reserved,
+            (SELECT COUNT(*) FROM reference_values) references_count,
+            (SELECT SUM(is_active) FROM reference_values) references_active,
+            (SELECT COUNT(*) FROM workshop_settlement_events) stage04_events,
+            (SELECT enabled FROM workshop_settlement_capture_control WHERE id=1) stage04_capture"
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "$sql" --json | jq -ce '.[0].results[0]' | jq -cS . > /tmp/reason0105-after.json
+          diff -u /tmp/reason0105-before.json /tmp/reason0105-after.json
+          check="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('reference_reason_choice_merges','reference_reason_choice_validations')) tables_count,(SELECT COUNT(*) FROM reference_reason_choice_merges) merges_count,(SELECT COUNT(*) FROM reference_reason_choice_validations) validations_count,(SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name LIKE 'trg_reference_reason_choice_%') trigger_count" --json)"
+          jq -e '.[0].results[0] | .tables_count==2 and .trigger_count==4' <<<"$check"
+          if [[ "$(cat /tmp/reason0105-before-tables)" == 0 ]]; then
+            jq -e '.[0].results[0] | .merges_count==0 and .validations_count==0' <<<"$check"
+          fi
+          echo 'REFERENCE 0105 BRANCH2-ONLY SCHEMA VERIFIED; operational data unchanged'
