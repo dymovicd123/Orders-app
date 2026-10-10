@@ -9,7 +9,7 @@ type Root = {
   original_reserved:number; undo_proven:number; root_stock_rows:number;
   stock_proven:number; reservation_proven:number; original_reservation_rows:number;
 }
-type PairSnapshot={ source_identity:string; target_identity:string; stock_fingerprint:string }
+type PairSnapshot={ source_identity:string; target_identity:string; execution_identity:string; stock_fingerprint:string }
 const validId=(value:number)=>Number.isSafeInteger(value)&&value>0
 const humanReason=(value:string)=>typeof value==='string' && value.trim().length>=12 && value.trim().length<=500
 
@@ -66,6 +66,7 @@ const pairSnapshotSql=`SELECT
    s.material,s.length,s.is_active,s.updated_at) AS source_identity,
  json_array(k.id,k.product_id,k.stock_position_id,k.category,k.gender,k.color,k.size_label,
    k.material,k.length,k.is_active,k.updated_at) AS target_identity,
+ json_array(p.id,p.is_active,position.id,position.is_active,position.material,position.length) AS execution_identity,
  (SELECT COALESCE(json_group_array(json_array(
     id,inventory_source,variant_id,quantity,reserved_quantity,updated_at,last_source_ref
   )),'[]') FROM (
@@ -73,6 +74,8 @@ const pairSnapshotSql=`SELECT
     FROM inventory_stock WHERE variant_id IN (s.id,k.id) ORDER BY id
   )) AS stock_fingerprint
  FROM catalog_variants s JOIN catalog_variants k ON k.id=?
+ JOIN catalog_products p ON p.id=s.product_id
+ JOIN catalog_stock_positions position ON position.id=s.stock_position_id
  WHERE s.id=?`
 
 async function readRoot(db:D1Database,sourceId:number):Promise<Root|null>{
@@ -140,6 +143,7 @@ export async function previewZeroStockReMerge(db:D1Database,sourceId:number,keep
     rootId:root?.root_id??null,undoEventId:root?.undo_event_id??null,
     sourceIdentity:snapshot?.source_identity??null,targetIdentity:snapshot?.target_identity??null,
     stockFingerprint:snapshot?.stock_fingerprint??null,
+    executionIdentity:snapshot?.execution_identity??null,
     originalPreviewToken:base.stateToken,
     blockers,
   })
@@ -162,7 +166,7 @@ export async function reMergeZeroStockCatalogVariant(
   if(!preview.canReMerge)throw new Error('Повторное объединение пока недоступно: '+preview.blockers.join('; '))
   if(expectedToken!==preview.stateToken) throw new Error('Данные изменились. Обновите проверку объединения.')
   const state=JSON.parse(expectedToken) as {
-    rootId:number;undoEventId:number;sourceIdentity:string;targetIdentity:string;stockFingerprint:string
+    rootId:number;undoEventId:number;sourceIdentity:string;targetIdentity:string;stockFingerprint:string;executionIdentity:string
   }
   const stamp=new Date().toISOString()
   const insert=db.prepare(`INSERT INTO catalog_variant_merge_generation_events
@@ -179,6 +183,11 @@ export async function reMergeZeroStockCatalogVariant(
    WHERE c.id=? AND s.id=? AND s.is_active=1 AND k.is_active=1
      AND s.product_id=c.product_id AND k.product_id=c.product_id
      AND c.source_physical_quantity=0 AND c.source_reserved_quantity=0
+     AND s.stock_position_id=k.stock_position_id
+     AND EXISTS(SELECT 1 FROM catalog_stock_positions position
+       JOIN catalog_products p ON p.id=s.product_id
+       WHERE position.id=s.stock_position_id
+         AND json_array(p.id,p.is_active,position.id,position.is_active,position.material,position.length)=?)
      AND EXISTS(SELECT 1 FROM catalog_variant_consolidation_validations v
        WHERE v.consolidation_id=c.id AND v.passed=1)
      AND EXISTS(SELECT 1 FROM catalog_variant_consolidation_reservation_validations v
@@ -199,7 +208,7 @@ export async function reMergeZeroStockCatalogVariant(
        FROM inventory_stock WHERE variant_id IN (s.id,k.id) ORDER BY id
      ))=?
   `).bind(reason.trim(),actor.trim(),stamp,keeperId,state.undoEventId,state.rootId,sourceId,
-    state.sourceIdentity,state.targetIdentity,state.stockFingerprint)
+    state.executionIdentity,state.sourceIdentity,state.targetIdentity,state.stockFingerprint)
   const retire=db.prepare(`UPDATE catalog_variants SET is_active=0,updated_at=?
     WHERE id=? AND is_active=1
       AND json_array(id,product_id,stock_position_id,category,gender,color,size_label,
