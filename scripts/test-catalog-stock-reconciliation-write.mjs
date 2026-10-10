@@ -196,7 +196,7 @@ await assert.rejects(
 sqlite.exec("DELETE FROM order_items WHERE id=22")
 sqlite.exec("DELETE FROM orders WHERE id=2")
 // Active stocktake session with no line registered still blocks an adjustment.
-sqlite.exec("INSERT INTO inventory_stocktake_sessions VALUES('rev','active')")
+sqlite.exec("INSERT INTO inventory_stocktake_sessions(id,status) VALUES('rev','active')")
 sqlite.exec("UPDATE inventory_stock SET quantity=2 WHERE id=10")
 token=(await previewCatalogVariantConsolidation(db,7,8)).stateToken
 await assert.rejects(
