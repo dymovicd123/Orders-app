@@ -58,7 +58,7 @@
     "migrations/0084_v72_workshop_settlement_status_capture.sql": "2e3f51ab0b055d5b82d6b542cec28cf661359003"
   },
   "addedFiles": {
-    "worker/domains/catalog-variant-consolidation.ts": "b6dde9719a58af0af8bf3c4c14b32637ea150f0e",
+    "worker/domains/catalog-variant-consolidation.ts": "eedc2d777a18f66280c9dcbf56c6725931e6933a",
     "worker/domains/reference-integrity.ts": "392e2ec31161a6e31844c7d057a6d81625d9645b",
     "src/features/sections/ReferenceIntegrityPanel.tsx": "b06f982d124390bbb24dc386af7e16f58e4864cf",
     "src/features/inventory/writeoffReview.ts": "c7dc6cfb6981e979204c59808268dd332f0e1e08",
