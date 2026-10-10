@@ -22,7 +22,8 @@ type SkuMergeHistory = {
   size: string; category: string; gender: string; createdBy: string; createdAt: string;
 }
 type DuplicateResponse = { ok?: boolean; groups?: DuplicateGroup[]; skuGroups?: SkuDuplicate[];
-  limited?: boolean; skuLimited?: boolean; message?: string }
+  limited?: boolean; skuLimited?: boolean; referenceScanned?: number; skuScanned?: number;
+  crossPageSnapshot?: boolean; message?: string }
 type Preview = {
   source: DuplicateValue; target: DuplicateValue;
   summary: {
@@ -57,6 +58,7 @@ export function ReferenceIntegrityPanel({
   const [limited, setLimited] = useState(false)
   const [skuGroups, setSkuGroups] = useState<SkuDuplicate[] | null>(null)
   const [skuLimited, setSkuLimited] = useState(false)
+  const [scanCounts, setScanCounts] = useState<{references:number;sku:number}|null>(null)
   const [skuKeeper, setSkuKeeper] = useState<Record<string, number>>({})
   const [skuSelected, setSkuSelected] = useState('')
   const [skuPreview, setSkuPreview] = useState<SkuPreview | null>(null)
@@ -79,6 +81,7 @@ export function ReferenceIntegrityPanel({
     setError('')
     setPreview(null)
     setSkuPreview(null)
+    setSkuKeeper({})
     setSelected('')
     try {
       const response = await apiFetch('/api/reference-values/duplicates')
@@ -88,6 +91,10 @@ export function ReferenceIntegrityPanel({
       setLimited(Boolean(data.limited))
       setSkuGroups(Array.isArray(data.skuGroups) ? data.skuGroups : [])
       setSkuLimited(Boolean(data.skuLimited))
+      setScanCounts({
+        references: Number(data.referenceScanned)||0,
+        sku: Number(data.skuScanned)||0,
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Проверка временно недоступна.')
     } finally {
@@ -132,7 +139,8 @@ export function ReferenceIntegrityPanel({
   }
 
   async function inspectSku(sourceId: number, targetId: number) {
-    if (skuPreviewBusy || actionBusy) return
+    if (skuPreviewBusy || actionBusy || !Number.isSafeInteger(targetId) || targetId<=0
+      || !Number.isSafeInteger(sourceId) || sourceId<=0 || targetId===sourceId) return
     setSkuPreviewBusy(true)
     setSkuPreview(null)
     setPreview(null)
@@ -247,7 +255,7 @@ export function ReferenceIntegrityPanel({
               ))}
             </>
           )}
-          {limited ? <p className="mini-panel-note">Список большой. Нужна дополнительная проверка остальных значений.</p> : null}
+          {limited ? <p className="mini-panel-note" role="status">Проверено {scanCounts?.references || 0} значений. Список неполный: оставшиеся совпадения не исключены.</p> : null}
         </div>
       ) : null}
       {skuGroups !== null ? (
@@ -261,23 +269,24 @@ export function ReferenceIntegrityPanel({
                 Найдено совпадающих комбинаций: <strong>{skuGroups.length}</strong>. Материалы и длины учитываются отдельно.
               </p>
               {skuGroups.map((group, index) => {
-                const key = group.productId + ':' + index
-                const preferred = [...group.variants].sort((a, b) =>
-                  (Math.abs(b.physical) + Math.abs(b.reserved)) - (Math.abs(a.physical) + Math.abs(a.reserved)) || a.id - b.id
-                )[0]
+                // Selection belongs to the administrator, never to stock counts.
+                // A default keeper would silently make a destructive business choice.
+                const key = group.productId + ':' + (group.variants[0]?.id || index)
                 const keeperId = skuKeeper[key] && group.variants.some(v => v.id === skuKeeper[key])
-                  ? skuKeeper[key] : (preferred?.id || 0)
+                  ? skuKeeper[key] : 0
                 return (
                   <div className="reference-integrity-group" key={key}>
                     <strong>{group.productName} · {group.material || 'Стандарт'} · {group.length || 'Стандарт'}</strong>
                     <p className="mini-panel-note">{group.color} · {group.size || 'Без размера'} · {group.gender || 'Без указания пола'}</p>
                     <label className="mini-panel-note">
                       Основной вариант:{' '}
-                      <select value={keeperId} disabled={actionBusy || skuPreviewBusy}
+                      <select value={keeperId || ''} disabled={actionBusy || skuPreviewBusy}
                         onChange={e => {
-                          setSkuKeeper(old => ({ ...old, [key]: Number(e.target.value) }))
+                          setSkuKeeper(old => ({ ...old, [key]: Number(e.target.value) || 0 }))
                           setSkuPreview(null)
+                          setSkuSelected('')
                         }}>
+                        <option value="">— Выберите основной вариант —</option>
                         {group.variants.map(variant => (
                           <option key={variant.id} value={variant.id}>#{variant.id} · {variant.color}</option>
                         ))}
@@ -288,7 +297,7 @@ export function ReferenceIntegrityPanel({
                         <div className="reference-integrity-item" key={variant.id}>
                           <span>{variant.color} · вариант #{variant.id}{variant.id === keeperId ? ' · основной' : ''}</span>
                           <span>{variant.physical} шт. · резерв {variant.reserved}</span>
-                          {variant.id !== keeperId ? (
+                          {keeperId>0 && variant.id !== keeperId ? (
                             <button type="button" className="secondary compact" disabled={skuPreviewBusy || actionBusy}
                               onClick={() => void inspectSku(variant.id, keeperId)}>
                               {skuPreviewBusy && skuSelected === variant.id + ':' + keeperId ? 'Проверяю…' : 'Проверить объединение'}
@@ -302,8 +311,8 @@ export function ReferenceIntegrityPanel({
               })}
             </>
           )}
-          {skuLimited ? <p className="mini-panel-note">Каталог большой: показана только часть возможных совпадений.</p> : null}
-          {skuGroups.length > 0 ? <p className="mini-panel-note">Сначала выберите основной вариант. Система объединит физические остатки и согласованные резервы по складу и бутику. Если действующие заказы или обратимые операции требуют отдельной проверки, она объяснит причину без списания.</p> : null}
+          {skuLimited ? <p className="mini-panel-note" role="status">Проверено {scanCounts?.sku || 0} вариантов товара. Каталог больше проверенного объёма; совпадения за его пределами ещё не исключены.</p> : null}
+          {skuGroups.length > 0 ? <p className="mini-panel-note">Сначала выберите основной вариант. Система не будет выбирать его по остаткам за вас. Если действующие заказы, физические остатки или обратимые операции требуют отдельной проверки, она объяснит причину без списания.</p> : null}
         </div>
       ) : null}
       <div className="reference-integrity-results">
