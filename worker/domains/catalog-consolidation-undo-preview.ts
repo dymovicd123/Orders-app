@@ -67,7 +67,7 @@ export async function previewCatalogConsolidationUndo(db:D1Database,consolidatio
         WHERE r.variant_id IN (?,?) AND julianday(r.updated_at)>=julianday(?)) AS postMergeReservations,
       (SELECT COUNT(*) FROM inventory_movements m WHERE m.variant_id IN (?,?)
         AND julianday(m.created_at)>=julianday(?) AND NOT (
-          m.reference_type='catalog_stock_finalization' AND m.reference_id=CAST(? AS TEXT))) AS postMergeMovements,
+          m.reference_type='catalog_stock_finalization' AND m.reference_id=?)) AS postMergeMovements,
       (SELECT COUNT(*) FROM inventory_stock_checks c
         WHERE c.variant_id IN (?,?) AND julianday(c.checked_at)>=julianday(?)) AS postMergeStockChecks,
       (SELECT COUNT(*) FROM workshop_tasks wt WHERE wt.variant_id IN (?,?) AND wt.status='active') AS activeWorkshop,
@@ -98,7 +98,7 @@ export async function previewCatalogConsolidationUndo(db:D1Database,consolidatio
       (SELECT COUNT(*) FROM catalog_variant_consolidation_reservation_validations v
         WHERE v.consolidation_id=? AND v.passed=1) AS reservationValidation,
       (SELECT COUNT(*) FROM inventory_movements m
-        WHERE m.reference_type='catalog_stock_finalization' AND m.reference_id=CAST(? AS TEXT)) AS correctionMovements,
+        WHERE m.reference_type='catalog_stock_finalization' AND m.reference_id=?) AS correctionMovements,
       (SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id=oi.order_id
         WHERE oi.variant_id IN (?,?) AND
           (julianday(oi.created_at) IS NULL OR julianday(o.updated_at) IS NULL))
@@ -112,11 +112,11 @@ export async function previewCatalogConsolidationUndo(db:D1Database,consolidatio
     `).bind(
        sourceId,keeperId,sourceId,keeperId,
        sourceId,keeperId,receipt.created_at,sourceId,keeperId,receipt.created_at,
-       sourceId,keeperId,receipt.created_at,consolidationId,
+       sourceId,keeperId,receipt.created_at,String(consolidationId),
        sourceId,keeperId,receipt.created_at,sourceId,keeperId,
        sourceId,keeperId,sourceId,keeperId,sourceId,keeperId,sourceId,keeperId,
        sourceId,keeperId,keeperId,consolidationId,sourceId,keeperId,
-       consolidationId,consolidationId,consolidationId,consolidationId,
+       consolidationId,consolidationId,consolidationId,String(consolidationId),
        sourceId,keeperId,sourceId,keeperId,sourceId,keeperId,sourceId,keeperId,
     ).first<Counts>()
   ])
