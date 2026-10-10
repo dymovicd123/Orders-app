@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {previewCharacteristicSkuMapping} from '../worker/domains/reference-characteristic-sku-mapping.ts'
+import {publicApiError} from '../worker/core/http.ts'
 const sql=new DatabaseSync(':memory:')
 sql.exec(`
  CREATE TABLE reference_values(id INTEGER PRIMARY KEY,kind TEXT,value TEXT,is_active INTEGER);
@@ -57,6 +58,13 @@ for(const args of [[0,2,0,20],[1,1,0,20],[1,9,0,20],[1,4,0,20],
  [1,10,0,20]]){
  await assert.rejects(()=>previewCharacteristicSkuMapping(db,...args))
 }
+await assert.rejects(()=>previewCharacteristicSkuMapping(db,1,10,0,20),error=>{
+ const response=publicApiError(error)
+ assert.equal(response.status,400)
+ assert.equal(response.code,'characteristic_mapping_indistinguishable')
+ assert.match(response.message,/одинаковое название/)
+ return true
+})
 assert.equal(sql.prepare('SELECT total_changes() AS n').get().n,first)
 let cursor=0,ids=[],firstPage=null
 for(let page=0;page<25;page++){
