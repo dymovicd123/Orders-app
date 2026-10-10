@@ -34,7 +34,7 @@
     },
     "worker/index.ts": {
       "beforeGitBlob": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
-      "afterGitBlob": "84f29bbb0a250c82b8137f5ce977f978f13eb063",
+      "afterGitBlob": "bab54db7e68632a7d6ff2371c6c9c3b9b13027ea",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/index.ts"
     },
     "worker/domains/catalog.ts": {
@@ -111,9 +111,10 @@
     "migrations/0099_v72_catalog_merge_generation_events.sql": "af2d04967b27f750384a62ba7513ff8ff17e69db",
     "scripts/test-catalog-merge-generation-foundation.mjs": "ffe9350f04e09e867ce6d1c15300034bc8495c23",
     "worker/domains/catalog-zero-stock-undo.ts": "f71b0879fbb7bc239e203da4a83783013ad2c57a",
-    "scripts/test-catalog-zero-stock-undo.mjs": "5dbb22713ee4cdfc103e148b832a1a007e15562a",
+    "scripts/test-catalog-zero-stock-undo.mjs": "3404301844c6c2032ae45a4c3b934b5d0584987c",
     "migrations/0100_v72_catalog_zero_stock_undo_validation.sql": "94937dd3b455e11742bc363ddfd267fc0c2dd466",
     "scripts/test-catalog-zero-stock-remerge-schema.mjs": "073fc6f3b6a7dd1569baf3cb7eb87692a6ad2c32",
-    "migrations/0101_v72_catalog_zero_stock_remerge_validation.sql": "2750280cd66f4a8bf41aa19351fcd1a28fa0f1f3"
+    "migrations/0101_v72_catalog_zero_stock_remerge_validation.sql": "2750280cd66f4a8bf41aa19351fcd1a28fa0f1f3",
+    "worker/domains/catalog-zero-stock-remerge.ts": "a21dae03d8c443630308805a3fec315dc90bd6c9"
   }
 }
