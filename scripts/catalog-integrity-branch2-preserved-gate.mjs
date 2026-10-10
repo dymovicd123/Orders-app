@@ -69,6 +69,7 @@ const tests=[
   ['scripts/test-inventory-writeoff-review.mjs',true],
   ['scripts/test-reference-duplicates-discovery-r1.mjs',false],
   ['scripts/test-reference-exhaustive-duplicates.mjs',true],
+  ['scripts/test-reference-sku-verified-stock-ui.mjs',true],
   ['scripts/test-reference-merge-choice-preview.mjs',true],
   ['scripts/test-reference-reason-choice-schema.mjs',false],
   ['scripts/test-reference-reason-merge.mjs',true],

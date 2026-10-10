@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { confirmedSkuStockDecisions, type VerifiedSkuLocation } from './verifiedSkuStockDecision'
 
 type DuplicateValue = { id: number; value: string; isActive: boolean }
 type DuplicateGroup = { kind: string; identity: string; suggestedTargetId: number; items: DuplicateValue[] }
@@ -14,7 +15,8 @@ type SkuPreview = {
   targetImpact: { physical: number; reserved: number; historicalOrders: number };
   stockBreakdown: Array<{ location: string; sourcePhysical: number; targetPhysical: number; combinedPhysical: number; sourceReserved: number; targetReserved: number }>;
   stateToken: string; transferQuantity: number; reservationCount: number;
-  blockers: string[]; canConsolidate: boolean; explanation: string;
+  blockers: string[]; canConsolidate: boolean; canConsolidateAfterVerifiedSum: boolean;
+  stockReconciliation:{locations:VerifiedSkuLocation[]}; explanation: string;
 }
 type SkuMergeHistory = {
   id: number; sourceId: number; targetId: number; productName: string;
@@ -63,6 +65,7 @@ export function ReferenceIntegrityPanel({
   const [skuSelected, setSkuSelected] = useState('')
   const [skuPreview, setSkuPreview] = useState<SkuPreview | null>(null)
   const [skuPreviewBusy, setSkuPreviewBusy] = useState(false)
+  const [verifiedLocations, setVerifiedLocations] = useState<Record<string,boolean>>({})
   const [mergeHistory, setMergeHistory] = useState<SkuMergeHistory[] | null>(null)
   const [historyBusy, setHistoryBusy] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -81,6 +84,7 @@ export function ReferenceIntegrityPanel({
     setError('')
     setPreview(null)
     setSkuPreview(null)
+    setVerifiedLocations({})
     setSkuKeeper({})
     setSelected('')
     try {
@@ -143,6 +147,7 @@ export function ReferenceIntegrityPanel({
       || !Number.isSafeInteger(sourceId) || sourceId<=0 || targetId===sourceId) return
     setSkuPreviewBusy(true)
     setSkuPreview(null)
+    setVerifiedLocations({})
     setPreview(null)
     setSkuSelected(sourceId + ':' + targetId)
     setError('')
@@ -160,13 +165,17 @@ export function ReferenceIntegrityPanel({
   }
 
   async function consolidateSku() {
-    if (!skuPreview?.canConsolidate || actionBusy) return
+    if (!skuPreview || actionBusy) return
+    const verifiedStockDecisions=confirmedSkuStockDecisions(skuPreview,verifiedLocations)
+    if(verifiedStockDecisions===null)return
     const { source, target } = skuPreview
     if (!window.confirm(
       'Объединить вариант #' + source.id + ' с основным #' + target.id + '? '
-      + (skuPreview.transferQuantity > 0
-        ? 'Будет перенесено ' + skuPreview.transferQuantity + ' шт. между идентичными вариантами по их местам хранения. '
-        : 'Физические остатки не требуют переноса. ')
+      + (verifiedStockDecisions.length
+        ? 'Вы отдельно подтвердили, что учётные остатки представляют РАЗНЫЕ физические экземпляры в '
+          +verifiedStockDecisions.map(d=>d.location==='warehouse'?'складе':'бутике').join(' и ')
+          +'. Они будут сложены именно в проверенных местах хранения. '
+        : 'У исходного варианта нет физического остатка для переноса. ')
       + (skuPreview.reservationCount
         ? 'Действующие резервы ' + skuPreview.reservationCount + ' строк заказов перейдут на основной вариант. '
         : '')
@@ -178,7 +187,10 @@ export function ReferenceIntegrityPanel({
       const response = await apiFetch('/api/catalog/variants/consolidate-unused', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sourceId: source.id, targetId: target.id, expectedToken: skuPreview.stateToken }),
+        body: JSON.stringify({
+          sourceId: source.id,targetId: target.id,expectedToken: skuPreview.stateToken,
+          verifiedStockDecisions,
+        }),
       })
       const data = await response.json() as { ok?: boolean; message?: string }
       if (!response.ok || !data.ok) throw new Error(data.message || 'Не удалось объединить варианты.')
@@ -284,6 +296,7 @@ export function ReferenceIntegrityPanel({
                         onChange={e => {
                           setSkuKeeper(old => ({ ...old, [key]: Number(e.target.value) || 0 }))
                           setSkuPreview(null)
+                          setVerifiedLocations({})
                           setSkuSelected('')
                         }}>
                         <option value="">— Выберите основной вариант —</option>
@@ -341,6 +354,28 @@ export function ReferenceIntegrityPanel({
           <p><strong>{skuPreview.productName}</strong> · {skuPreview.material} · {skuPreview.length}</p>
           <p>Вариант #{skuPreview.source.id} → основной вариант #{skuPreview.target.id}</p>
           <p>{skuPreview.explanation}</p>
+          {skuPreview.stockReconciliation.locations.some(place=>place.requiresDecision) ? (
+            <div className="reference-integrity-stock-confirmation">
+              <strong>Сверка физического товара — отдельно по каждому месту</strong>
+              <p className="mini-panel-note">Подтверждайте только если действительно проверили, что исходный и основной остатки — разные физические единицы, а не два учёта одного товара. Это не простая правка названия.</p>
+              {skuPreview.stockReconciliation.locations.filter(place=>place.requiresDecision).map(place=>(
+                <label key={place.location} className="reference-integrity-stock-location">
+                  <input type="checkbox" disabled={actionBusy||skuPreview.blockers.length>0}
+                    checked={verifiedLocations[place.location]===true}
+                    onChange={event=>setVerifiedLocations(old=>({...old,[place.location]:event.target.checked}))}/>
+                  <span>
+                    <strong>{place.location==='warehouse'?'Склад':'Бутик'}:</strong>
+                    {' '}{place.sourcePhysical} + {place.keeperPhysical} = {place.combinedPhysical} шт.
+                    {' '}(резерв: {place.reservedTotal}).
+                    {' '}Я сверил физически: это разные экземпляры, их можно сложить.
+                  </span>
+                </label>
+              ))}
+              {skuPreview.stockReconciliation.locations.some(place=>place.needsInvestigation) ? (
+                <p className="mini-panel-note">Есть остатки на обеих карточках. Особенно важно исключить двойной учёт одних и тех же вещей.</p>
+              ) : null}
+            </div>
+          ) : null}
           <p className="mini-panel-note">
             Лишний вариант: {skuPreview.sourceImpact.physical} шт., резерв {skuPreview.sourceImpact.reserved},
             связанных действующих резервов {skuPreview.reservationCount}, исторических строк заказов {skuPreview.sourceImpact.historicalOrders}.
@@ -361,9 +396,11 @@ export function ReferenceIntegrityPanel({
               <ul>{skuPreview.blockers.map(reason => <li key={reason}>{reason}</li>)}</ul>
             </div>
           ) : null}
-          {skuPreview.canConsolidate ? (
+          {skuPreview.canConsolidateAfterVerifiedSum ? (
             <div className="actions">
-              <button className="primary compact" type="button" disabled={actionBusy} onClick={() => void consolidateSku()}>
+              <button className="primary compact" type="button"
+                disabled={actionBusy || confirmedSkuStockDecisions(skuPreview,verifiedLocations)===null}
+                onClick={() => void consolidateSku()}>
                 {actionBusy ? 'Проверяю и сохраняю…' : skuPreview.transferQuantity > 0 || skuPreview.reservationCount > 0 ? 'Объединить варианты и резервы' : 'Убрать дублирующий вариант'}
               </button>
             </div>

@@ -70,14 +70,14 @@
   "addedFiles": {
     "worker/domains/catalog-variant-consolidation.ts": "7a69c78d2c7c65e1b7b676b619e8d16b8db9d447",
     "worker/domains/reference-integrity.ts": "b562f84f7ee9d706132486ea048b51bc4bdcac57",
-    "src/features/sections/ReferenceIntegrityPanel.tsx": "d2de1bc4d505b990fbac6130fa78505fe8efc063",
+    "src/features/sections/ReferenceIntegrityPanel.tsx": "0919e36475801db2d215a9faa9e1b29f2c5eb3c4",
     "src/features/inventory/writeoffReview.ts": "c7dc6cfb6981e979204c59808268dd332f0e1e08",
     "src/features/inventory/views/WriteoffReview.tsx": "efa0608b8836993f13dc6d8536a93ed195d1bc63",
     "src/styles/w4-writeoff-review.css": "261d5e7508a99b5de52284125bd7637440f771cc",
     "migrations/0090_v72_catalog_variant_consolidations.sql": "b4405429db17fbca0f7e212b3dd47cc6ca800ae8",
     "migrations/0091_v72_catalog_variant_stock_consolidation.sql": "3bf9bf2496145aa19a919a3468d3fb3d0a13d1c7",
     "migrations/0092_v72_catalog_variant_reservation_consolidation.sql": "894164a039a76abfdf8d7ac8a49109329b9bc66d",
-    "src/styles/reference-integrity-entry.css": "ca5ca534c7183bb522742c28c5168c84d2da7583",
+    "src/styles/reference-integrity-entry.css": "bfaf5adf3585d51ea0c8842079409149ddb8535a",
     "scripts/test-reference-duplicates-discovery-r1.mjs": "2e73ea331b25a8589b21c32b38136a7e2c5378d6",
     "worker/domains/reference-merge-preview.ts": "659537a2da42ffca38275c2b099fa976ed7b1700",
     "src/features/sections/ReferenceMergeWorkspace.tsx": "5115e75647506e2dfc0e9764ef3887e1927a6140",
@@ -151,6 +151,8 @@
     ".github/workflows/branch2-reference-reason-schema-0105.yml": "5394b2f0e8830e043a83be7d700903304dbfe3f9",
     "worker/domains/reference-reason-merge.ts": "ab74aa08b426ae00bbc6f1c5280b5e7cc82e7a0f",
     "scripts/test-reference-reason-merge.mjs": "37f00701cd750bba2290b9c3743c4bbe8ff70b33",
-    "scripts/test-reference-exhaustive-duplicates.mjs": "6f7612c7bfc458b1981e3979fceba4ee3550b879"
+    "scripts/test-reference-exhaustive-duplicates.mjs": "6f7612c7bfc458b1981e3979fceba4ee3550b879",
+    "src/features/sections/verifiedSkuStockDecision.ts": "d08081dae36cac7ef3213f36117a0441ae28f582",
+    "scripts/test-reference-sku-verified-stock-ui.mjs": "0adc511d6a678dad16cffebfc45a5e379d101c67"
   }
 }
