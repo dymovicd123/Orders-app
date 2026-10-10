@@ -34,7 +34,7 @@
     },
     "worker/index.ts": {
       "beforeGitBlob": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
-      "afterGitBlob": "54f2cc0b858f419161beb53e7746cff86419ce22",
+      "afterGitBlob": "85c0f851973c932090ed208b21b649013d1e1f71",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/index.ts"
     },
     "worker/domains/catalog.ts": {
@@ -129,6 +129,9 @@
     "worker/domains/catalog-complex-undo-case.ts": "c2a141185f567c6a6f1ce17e94b89370429740fe",
     "scripts/test-catalog-complex-undo-case.mjs": "ba22437722421d9810333f262d12a1059878f8a0",
     "migrations/0104_v72_catalog_reserved_undo_validation.sql": "5a03ea7ab8bc51afe90b18de502e2053b427c90d",
-    "scripts/test-catalog-reserved-undo-proof-schema.mjs": "047105f9d189e9f0685ca42e98289921c0ddab15"
+    "scripts/test-catalog-reserved-undo-proof-schema.mjs": "047105f9d189e9f0685ca42e98289921c0ddab15",
+    "worker/domains/catalog-reserved-undo-preview.ts": "b515e8a4c7a74cc66a3262cba387d1645a78cc92",
+    "worker/domains/catalog-reserved-stock-undo.ts": "42365e4120c3d6a2ad70173e60cde24f8a9a5d9b",
+    "scripts/test-catalog-reserved-stock-undo.mjs": "8fc119f3405d74584f7e1bfc5c866a97016a9e4d"
   }
 }
