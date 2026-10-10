@@ -123,6 +123,8 @@ INSERT INTO inventory_movements
  (id,variant_id,inventory_source,quantity_delta,quantity_after,reference_type,reference_id,created_at)
  VALUES(111,8,'warehouse',1,3,'catalog_stock_finalization','1','2026-10-10T07:00:00Z');
 `)
+console.log('CORRECTION FIXTURE DEBUG',JSON.stringify(sqlite.prepare('SELECT id,reference_type,reference_id,typeof(reference_id) AS ref_type,inventory_source,created_at FROM inventory_movements ORDER BY id').all()))
+console.log('PARAM MATCH DEBUG',JSON.stringify({bind:sqlite.prepare("SELECT CAST(? AS TEXT) AS value").get(1),literal:sqlite.prepare("SELECT COUNT(*) AS n FROM inventory_movements WHERE reference_id='1'").get(),byType:sqlite.prepare("SELECT COUNT(*) AS n FROM inventory_movements WHERE reference_type='catalog_stock_finalization'").get()}))
 assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM inventory_movements WHERE reference_type='catalog_stock_finalization' AND reference_id=CAST(? AS TEXT)").get(1).n,1,'Correction fixture must have one matching journal movement')
 const underlying=await previewCatalogConsolidationUndo(db,1)
 assert.equal(underlying.impact.postMergeMovements,0,'Own merge-time physical correction is not a later stock movement')
