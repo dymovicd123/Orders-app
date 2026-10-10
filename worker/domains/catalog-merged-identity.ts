@@ -1,4 +1,4 @@
-// Resolve stale order drafts after an audited exact-SKU consolidation.
+// Resolve stale order/arrival drafts using the CURRENT audited generation of each exact-SKU consolidation.
 // No catalog resurrection, new variant creation or physical stock mutation.
 type VariantIdentity = { id: number; product_id: number; is_active: number }
 type ConsolidationIdentity = { source_variant_id: number; target_variant_id: number; product_id: number }
@@ -35,7 +35,7 @@ export async function resolveConsolidatedOrderWriteVariant(
       return {productId,variantId:current,redirected:false}
     }
     const merge = await db.prepare(
-      'SELECT source_variant_id,target_variant_id,product_id FROM catalog_variant_consolidations WHERE source_variant_id=?'
+      'SELECT source_variant_id,target_variant_id,product_id FROM catalog_variant_effective_merge_lineage WHERE source_variant_id=?'
     ).bind(current).first<ConsolidationIdentity>()
     if (!merge || merge.source_variant_id !== current || merge.product_id !== productId
       || !Number.isSafeInteger(merge.target_variant_id) || merge.target_variant_id <= 0) {
