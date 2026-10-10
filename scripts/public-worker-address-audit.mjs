@@ -1,6 +1,7 @@
 const hosts = [
   'https://orders-app-branch2.orders-clothes.workers.dev',
-  'https://branch2-orders-app.orders-clothes.workers.dev'
+  'https://branch2-orders-app.orders-clothes.workers.dev',
+  'https://nonexistent-worker-20261010-check.orders-clothes.workers.dev'
 ];
 async function read(url) {
   const res = await fetch(url, {
@@ -11,7 +12,7 @@ async function read(url) {
   const text = await res.text();
   return {status:res.status,url:res.url,text,cacheControl:res.headers.get('cache-control'),
     cfCache:res.headers.get('cf-cache-status'),contentType:res.headers.get('content-type'),
-    server:res.headers.get('server')};
+    server:res.headers.get('server'),age:res.headers.get('age'),etag:res.headers.get('etag'),ray:res.headers.get('cf-ray')};
 }
 for (const base of hosts) {
   console.log('=== ORIGIN '+base+' ===');
@@ -20,7 +21,7 @@ for (const base of hosts) {
     const file = index.text.match(/src=["'](\/assets\/index-[^"']+\.js)["']/);
     console.log(JSON.stringify({htmlStatus:index.status,canonicalUrl:index.url,
       htmlBytes:index.text.length,indexAsset:file?.[1]||null,cacheControl:index.cacheControl,
-      cfCache:index.cfCache,server:index.server,contentType:index.contentType,
+      cfCache:index.cfCache,server:index.server,age:index.age,etag:index.etag,ray:index.ray,contentType:index.contentType,
       title:(index.text.match(/<title>([^<]+)/)||[])[1]||null}));
     if (!file) continue;
     const js = await read(base+file[1]);
