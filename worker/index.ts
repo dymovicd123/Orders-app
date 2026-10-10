@@ -33,6 +33,7 @@ import { listRecentReferenceValueMerges } from './domains/reference-merge-histor
 import { businessMonthRange } from './domains/reference-merge-preview.ts'
 import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
 import { previewCatalogConsolidationUndo } from './domains/catalog-consolidation-undo-preview.ts'
+import { previewCorrectedCatalogConsolidationUndo } from './domains/catalog-corrected-undo-review.ts'
 import { undoUnusedCatalogConsolidation } from './domains/catalog-zero-stock-undo.ts'
 import { previewPositiveStockConsolidationUndo, undoPositiveStockCatalogConsolidation } from './domains/catalog-positive-stock-undo.ts'
 import { previewZeroStockReMerge, reMergeZeroStockCatalogVariant } from './domains/catalog-zero-stock-remerge.ts'
@@ -235,6 +236,14 @@ export default {
         const denied = requireAdminUser(authUser, 'Проверка дублей доступна только администратору.');
         if (denied) return denied;
         return json(await listReferenceDuplicateGroups(env.DB));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-corrected-review' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'Разбор сложной отмены объединения доступен только администратору.');
+        if(denied)return denied;
+        return json(await previewCorrectedCatalogConsolidationUndo(
+          env.DB,Number(url.searchParams.get('consolidationId'))
+        ));
       }
 
       if (url.pathname === '/api/catalog/variants/consolidation-undo-positive-stock-preview' && request.method === 'GET') {
