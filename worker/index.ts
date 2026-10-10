@@ -30,6 +30,7 @@ import { previewUserSelectedReferenceMerge } from './domains/reference-merge-pre
 import { previewCharacteristicSkuMapping } from './domains/reference-characteristic-sku-mapping.ts'
 import { applyMonthBoundReferenceMerge } from './domains/reference-merge-apply.ts'
 import { applyPaymentMethodMerge } from './domains/reference-payment-merge.ts'
+import { applyReasonChoiceMerge } from './domains/reference-reason-merge.ts'
 import { listRecentReferenceValueMerges } from './domains/reference-merge-history.ts'
 import { businessMonthRange } from './domains/reference-merge-preview.ts'
 import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
@@ -220,6 +221,11 @@ export default {
         const sourceId=Number(data.sourceId),targetId=Number(data.targetId)
         const choice=await env.DB.prepare('SELECT kind FROM reference_values WHERE id=?')
           .bind(sourceId).first<{kind:string}>()
+        if (choice?.kind==='return_reason'||choice?.kind==='writeoff_reason') {
+          return json(await applyReasonChoiceMerge(
+            env.DB,sourceId,targetId,cleanText(data.expectedToken),authUser?.login||'',
+          ))
+        }
         if (choice?.kind==='payment_method') {
           return json(await applyPaymentMethodMerge(
             env.DB,sourceId,targetId,cleanText(data.expectedToken),
