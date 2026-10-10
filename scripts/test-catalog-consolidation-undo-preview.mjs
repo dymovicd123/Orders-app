@@ -42,12 +42,12 @@ sqlite.exec(`
  CREATE TABLE return_items(id INTEGER PRIMARY KEY,order_item_id INTEGER);
  CREATE TABLE exchanges(id INTEGER PRIMARY KEY,old_order_item_id INTEGER,new_order_item_id INTEGER);
  CREATE TABLE exchange_items(id INTEGER PRIMARY KEY,order_item_id INTEGER);
- CREATE TABLE orders(id INTEGER PRIMARY KEY,order_status TEXT,shipping_status TEXT,order_date TEXT NOT NULL DEFAULT (date('now','+5 hours')));
+ CREATE TABLE orders(id INTEGER PRIMARY KEY,order_status TEXT,shipping_status TEXT,order_date TEXT NOT NULL DEFAULT (date('now','+5 hours')), updated_at TEXT NOT NULL DEFAULT '2026-10-09 07:00:00');
  CREATE TABLE order_items(
    id INTEGER PRIMARY KEY,order_id INTEGER,variant_id INTEGER,product_id INTEGER,
    quantity INTEGER,is_workshop INTEGER DEFAULT 0, source_type TEXT DEFAULT 'warehouse',
    stock_writeoff_status TEXT DEFAULT 'reserved',product_name_snapshot TEXT DEFAULT 'Снимок товара',
-   unit_price INTEGER DEFAULT 1000,created_at TEXT);
+   unit_price INTEGER DEFAULT 1000,created_at TEXT NOT NULL DEFAULT '2026-10-09 07:00:00');
  CREATE TABLE workshop_tasks(id INTEGER PRIMARY KEY,variant_id INTEGER,status TEXT);
  CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,variant_id INTEGER,status TEXT);
  CREATE TABLE inventory_stocktake_sessions(id TEXT PRIMARY KEY,status TEXT);
@@ -123,19 +123,44 @@ assert.equal(result.potentialCompensationCandidate,false)
 assert.ok(result.blockers.some(b=>b.code==='later_inventory_activity'))
 assert.equal(result.impact.postMergeMovements,1)
 sqlite.exec('DELETE FROM inventory_movements')
+sqlite.exec(`INSERT INTO inventory_movements
+ (id,variant_id,created_at,reference_type,reference_id)
+ VALUES(1,8,'2026-10-10 08:00:00','sale','sale-2')`)
+result=await diag()
+assert.ok(result.blockers.some(b=>b.code==='later_inventory_activity'),
+ 'Space-separated SQLite datetime MUST compare correctly with ISO merge timestamp')
+sqlite.exec('DELETE FROM inventory_movements')
 sqlite.exec(`INSERT INTO order_items(id,order_id,variant_id,quantity,created_at)
  VALUES(90,1,8,1,'2026-10-10T08:00:00Z')`)
 result=await diag()
 assert.ok(result.blockers.some(b=>b.code==='later_order_activity'))
 sqlite.exec('DELETE FROM order_items WHERE id=90')
+sqlite.exec("UPDATE orders SET updated_at='2026-10-10 09:00:00' WHERE id=1")
+result=await diag()
+assert.ok(result.blockers.some(b=>b.code==='later_order_activity'),
+ 'Editing a previously created order after the merge must block an automatic reversal')
+sqlite.exec("UPDATE orders SET updated_at='2026-10-09 07:00:00' WHERE id=1")
 sqlite.exec(`INSERT INTO inventory_stock_checks(id,variant_id,inventory_source,
  counted_quantity,checked_at,check_type)
  VALUES(44,8,'warehouse',2,'2026-10-10T08:00:00Z','full_stocktake')`)
 assert.ok((await diag()).blockers.some(b=>b.code==='later_inventory_activity'))
 sqlite.exec('DELETE FROM inventory_stock_checks')
+sqlite.exec(`INSERT INTO inventory_movements
+ (id,variant_id,created_at,reference_type,reference_id)
+ VALUES(1,8,'not-a-date','sale','ambiguous')`)
+result=await diag()
+assert.ok(result.blockers.some(b=>b.code==='event_time_unknown'),
+ 'Invalid timestamp must never be treated as evidence of no activity')
+assert.equal(result.impact.invalidEventDates,1)
+sqlite.exec('DELETE FROM inventory_movements')
 sqlite.exec('UPDATE inventory_stock SET quantity=3 WHERE id=11')
 assert.ok((await diag()).blockers.some(b=>b.code==='location_mismatch_warehouse'))
 sqlite.exec('UPDATE inventory_stock SET quantity=2 WHERE id=11')
+sqlite.exec("INSERT INTO inventory_stock(id,variant_id,quantity,reserved_quantity,inventory_source) VALUES (98,8,0,0,'boutique')")
+result=await diag()
+assert.ok(result.blockers.some(b=>b.code==='keeper_only_location_unverified'),
+ 'Keeper-only location absent from original audit must not be implicitly reversible')
+sqlite.exec('DELETE FROM inventory_stock WHERE id=98')
 sqlite.exec(`INSERT INTO inventory_reservations
  (id,variant_id,status,updated_at)
  VALUES(90,8,'active','2026-10-10T09:00:00Z')`)

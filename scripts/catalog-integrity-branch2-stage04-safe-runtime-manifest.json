@@ -106,7 +106,7 @@
     "scripts/test-catalog-stale-order-merge-bridge.mjs": "d79278d21a44b0fe2e4d4d07925c8db692b8a7f6",
     "migrations/0098_v72_consolidated_sku_stock_guard.sql": "700db59c2b37e6db43f3b9a9dc378b44b96858c6",
     "scripts/test-arrival-merged-sku-safety.mjs": "5fe210622f8157899fbd46691260733424f1b05a",
-    "worker/domains/catalog-consolidation-undo-preview.ts": "7a8419002f2a03e741eac7019562e8a8a36321b0",
-    "scripts/test-catalog-consolidation-undo-preview.mjs": "5b54a52155c5bb107bdd25f5b3b7e90388e33a7f"
+    "worker/domains/catalog-consolidation-undo-preview.ts": "b499fafbb855b90de04f06f62225828eb31bd5c8",
+    "scripts/test-catalog-consolidation-undo-preview.mjs": "045d6a250ecaf91a00cf7ca50290eae5a8b30f11"
   }
 }
