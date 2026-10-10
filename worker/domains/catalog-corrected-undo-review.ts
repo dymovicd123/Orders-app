@@ -26,8 +26,8 @@ export async function previewCorrectedCatalogConsolidationUndo(db:D1Database,con
       .bind(original.sourceId,original.keeperId).all<Stock>(),
     db.prepare(`SELECT id,inventory_source,variant_id,quantity_delta,quantity_after,
         reference_type,reference_id,created_at FROM inventory_movements
-      WHERE reference_type='catalog_stock_finalization' AND reference_id=CAST(? AS TEXT)
-      ORDER BY id`).bind(consolidationId).all<CorrectionMovement>(),
+      WHERE reference_type='catalog_stock_finalization' AND reference_id=?
+      ORDER BY id`).bind(String(consolidationId)).all<CorrectionMovement>(),
     db.prepare(`SELECT generation,event_kind FROM catalog_variant_merge_generation_events
       WHERE source_variant_id IN (?,?) ORDER BY source_variant_id,generation`)
       .bind(original.sourceId,original.keeperId).all<Generation>(),
