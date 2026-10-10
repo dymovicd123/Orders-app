@@ -216,6 +216,17 @@ export async function previewCatalogConsolidationUndo(db:D1Database,consolidatio
       && !ledger.some(l=>l.inventory_source===r.inventory_source&&l.target_stock_id_before===r.id))){
     blockers.push(reason('unexpected_stock_rows','Складские записи после объединения отличаются от исходной топологии.'))
   }
+  // Identity-only undo is a distinct, very narrow operation: it restores no
+  // physical quantity and moves no reservation or customer order pointer.
+  const zeroStockIdentityEligible = ledger.length>0
+    && ledger.every(l=>l.source_quantity_before===0&&l.source_reserved_before===0
+      && l.target_reserved_before===0&&l.target_stock_id_before!==null)
+    && choices.length===ledger.length
+    && choices.every(c=>c.adjustment_quantity===0)
+  if(!zeroStockIdentityEligible) {
+    blockers.push(reason('physical_undo_requires_accounting',
+      'Это объединение меняло физическое количество или резерв. Требуется отдельная подтверждённая компенсация склада.'))
+  }
   const uniqueBlockers=[...new Map(blockers.map(b=>[b.code,b])).values()]
   return {
     ok:true,consolidationId,
@@ -232,6 +243,14 @@ export async function previewCatalogConsolidationUndo(db:D1Database,consolidatio
       returnsOrExchanges:n('returnExchangeLinks'),
     },
     blockers:uniqueBlockers,
+    zeroStockIdentityEligible,
+    canUndoZeroStockIdentity:zeroStockIdentityEligible&&uniqueBlockers.length===0,
+    undoStateToken:JSON.stringify({
+      receipt:[consolidationId,sourceId,keeperId,receipt.created_at],
+      variants:[source?.updated_at??null,keeper?.updated_at??null],
+      locations,impact,
+      blockers:uniqueBlockers,
+    }),
     potentialCompensationCandidate:uniqueBlockers.length===0,
     canUndoNow:false,
     explanation:uniqueBlockers.length

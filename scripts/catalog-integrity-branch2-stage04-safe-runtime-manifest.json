@@ -34,7 +34,7 @@
     },
     "worker/index.ts": {
       "beforeGitBlob": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
-      "afterGitBlob": "89291b0ef161524212f37df7cb8e3aab95981f8e",
+      "afterGitBlob": "84f29bbb0a250c82b8137f5ce977f978f13eb063",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/index.ts"
     },
     "worker/domains/catalog.ts": {
@@ -106,9 +106,12 @@
     "scripts/test-catalog-stale-order-merge-bridge.mjs": "29e283e96ddbfb7feede9a141a89281aa847b991",
     "migrations/0098_v72_consolidated_sku_stock_guard.sql": "700db59c2b37e6db43f3b9a9dc378b44b96858c6",
     "scripts/test-arrival-merged-sku-safety.mjs": "cbfa0d9c77841fbd4edc84ce480f5fcf510803fa",
-    "worker/domains/catalog-consolidation-undo-preview.ts": "b499fafbb855b90de04f06f62225828eb31bd5c8",
+    "worker/domains/catalog-consolidation-undo-preview.ts": "a8fda9cc75201a9edc23ffce6a35186444a2bdb5",
     "scripts/test-catalog-consolidation-undo-preview.mjs": "045d6a250ecaf91a00cf7ca50290eae5a8b30f11",
     "migrations/0099_v72_catalog_merge_generation_events.sql": "af2d04967b27f750384a62ba7513ff8ff17e69db",
-    "scripts/test-catalog-merge-generation-foundation.mjs": "ffe9350f04e09e867ce6d1c15300034bc8495c23"
+    "scripts/test-catalog-merge-generation-foundation.mjs": "ffe9350f04e09e867ce6d1c15300034bc8495c23",
+    "worker/domains/catalog-zero-stock-undo.ts": "f71b0879fbb7bc239e203da4a83783013ad2c57a",
+    "scripts/test-catalog-zero-stock-undo.mjs": "5dbb22713ee4cdfc103e148b832a1a007e15562a",
+    "migrations/0100_v72_catalog_zero_stock_undo_validation.sql": "94937dd3b455e11742bc363ddfd267fc0c2dd466"
   }
 }
