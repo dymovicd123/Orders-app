@@ -12,6 +12,11 @@ async function api(path){
 }
 const accountSubdomain=await api('/workers/subdomain')
 console.log('ACCOUNT WORKERS SUBDOMAIN',JSON.stringify(accountSubdomain))
+const scripts=await api('/workers/scripts')
+if(scripts){
+ const ids=(Array.isArray(scripts)?scripts:[]).map(x=>x.id||x.name).filter(x=>x&&/orders|branch2|app-/.test(x))
+ console.log('ACCOUNT WORKER NAMES',JSON.stringify(ids))
+}
 for(const name of ['orders-app-branch2','branch2-orders-app']){
  console.log('=== SCRIPT '+name+' ===')
  const subdomain=await api('/workers/scripts/'+encodeURIComponent(name)+'/subdomain')
