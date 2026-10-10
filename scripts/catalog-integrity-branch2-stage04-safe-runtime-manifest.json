@@ -34,7 +34,7 @@
     },
     "worker/index.ts": {
       "beforeGitBlob": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
-      "afterGitBlob": "16e8009c1b49f6cbeabc6270837ab890efae550f",
+      "afterGitBlob": "afd74fa66db9075b02f0e20770acc1eae300ea03",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/index.ts"
     },
     "worker/domains/catalog.ts": {
@@ -119,6 +119,8 @@
     "migrations/0102_v72_catalog_positive_stock_undo_validation.sql": "9c26b192223a32d068d3e0e1cefebbe29959fdda",
     "scripts/test-catalog-positive-undo-proof-schema.mjs": "55320cc56ef2d759356a146908161d6768b37ffd",
     "worker/domains/catalog-positive-stock-undo.ts": "1e2042f13dd62472266733024afc230410cb46b8",
-    "scripts/test-catalog-positive-stock-undo.mjs": "73ee8e895601be2dd39b04d2fce0bf4ca620c6fa"
+    "scripts/test-catalog-positive-stock-undo.mjs": "73ee8e895601be2dd39b04d2fce0bf4ca620c6fa",
+    "worker/domains/catalog-corrected-undo-review.ts": "7154d8465d16595e65ea6653ff2fe9fe9c716cdf",
+    "scripts/test-catalog-corrected-undo-review.mjs": "8e522da0abd744810cfbda3ddfd9f693063724bd"
   }
 }
