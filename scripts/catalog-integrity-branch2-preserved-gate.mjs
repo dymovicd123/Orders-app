@@ -49,6 +49,7 @@ const tests=[
   ['scripts/test-catalog-consolidation-undo-preview.mjs',true],
   ['scripts/test-catalog-merge-generation-foundation.mjs',true],
   ['scripts/test-catalog-zero-stock-undo.mjs',true],
+  ['scripts/test-catalog-zero-stock-remerge-schema.mjs',false],
   ['scripts/test-inventory-writeoff-review.mjs',true],
   ['scripts/test-reference-duplicates-discovery-r1.mjs',false],
   ['scripts/test-reference-merge-choice-preview.mjs',true],
