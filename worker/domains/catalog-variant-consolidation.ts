@@ -260,7 +260,9 @@ export async function previewCatalogVariantConsolidation(db: D1Database, sourceI
 // a failing CHECK(passed=1) validation INSERT rolls back the entire batch.
 export async function consolidateUnusedCatalogVariant(
   db: D1Database, sourceId: number, targetId: number, actor = '', expectedToken = '',
-  verifiedStockDecisions: Array<{location:string; method:string; physicallyVerified:boolean}> = [],
+  verifiedStockDecisions: Array<{
+    location:string; method:string; physicallyVerified:boolean; countedQuantity?:number; reason?:string
+  }> = [],
 ) {
   const prior = await db.prepare(
     'SELECT target_variant_id FROM catalog_variant_consolidations WHERE source_variant_id=?'
@@ -279,35 +281,69 @@ export async function consolidateUnusedCatalogVariant(
     throw new Error('Данные склада или заказов изменились после проверки. Обновите предпросмотр объединения.')
   }
   if (preview.blockers.length) throw new Error('Объединение пока невозможно: '+preview.blockers.join('; '))
-  // No implicit physical sum, even if the caller bypasses the current UI.
-  // Independently confirm only the locations with actual source quantity.
-  // Other methods need a separate auditable stock adjustment and remain blocked.
-  const requiredLocations: string[]=preview.stockReconciliation.locations
-    .filter(location=>location.requiresDecision).map(location=>location.location)
-  if (requiredLocations.length) {
-    const approved=new Set<string>()
-    if (!Array.isArray(verifiedStockDecisions)) {
-      throw new Error('Для объединения остатков нужно отдельно подтвердить каждое место хранения.')
+  // Preview is advisory, but approval is per actual location and validated
+  // again against authoritative state in the same atomic D1 batch.
+  type LocalChoice={location:string;method:string;final:number;reason:string}
+  if(!Array.isArray(verifiedStockDecisions)){
+    throw new Error('Укажите решение отдельно для каждого места хранения.')
+  }
+  const positive=preview.stockReconciliation.locations.filter(place=>place.requiresDecision)
+  const requiredLocations=new Set<string>(positive.map(place=>place.location))
+  const chosen=new Map<string,LocalChoice>()
+  for(const decision of verifiedStockDecisions){
+    if(!decision || !requiredLocations.has(decision.location) || chosen.has(decision.location)
+      || decision.physicallyVerified!==true
+      || !['sum','keep_source','keep_keeper','physical_count'].includes(decision.method)){
+      throw new Error('Недопустимое решение по остаткам. Для каждой точки требуется отдельная проверка.')
     }
-    for (const decision of verifiedStockDecisions) {
-      if (!decision || !requiredLocations.includes(decision.location)
-        || approved.has(decision.location) || decision.method!=='sum'
-        || decision.physicallyVerified !== true) {
-        throw new Error('Недопустимое решение по остаткам. Для каждой точки требуется отдельная проверка.')
-      }
-      approved.add(decision.location)
+    const place=positive.find(p=>p.location===decision.location)!
+    const total=place.sourcePhysical+place.keeperPhysical
+    const final=decision.method==='sum'?total
+      :decision.method==='keep_source'?place.sourcePhysical
+      :decision.method==='keep_keeper'?place.keeperPhysical
+      :decision.countedQuantity
+    if(typeof final!=='number'||!Number.isSafeInteger(final)||final<0
+      || (decision.method==='physical_count' && !Number.isSafeInteger(decision.countedQuantity))
+      || (decision.method!=='physical_count' && decision.countedQuantity!==undefined)){
+      throw new Error('Фактическое количество неверно: используйте целое неотрицательное число.')
     }
-    if (approved.size!==requiredLocations.length) {
-      throw new Error('Нельзя автоматически складывать остатки. Подтвердите их физическую независимость отдельно для склада и бутика.')
+    const reason=(decision.reason||'').trim()
+    if(decision.method!=='sum' && (reason.length<12 || reason.length>500)){
+      throw new Error('Для изменения физического количества укажите причину не менее 12 символов.')
     }
-  } else if (verifiedStockDecisions.length) {
-    throw new Error('Подтверждение остатков устарело. Обновите предпросмотр.')
+    if(final < place.reservedTotal){
+      throw new Error('Итоговый остаток меньше действующих резервов. Сначала урегулируйте заказы.')
+    }
+    chosen.set(decision.location,{location:decision.location,method:decision.method,final,reason})
+  }
+  if(chosen.size!==requiredLocations.size){
+    throw new Error('Нельзя автоматически складывать остатки. Подтвердите их физическую независимость отдельно для склада и бутика.')
+  }
+  const hasPhysicalCorrection=[...chosen.values()].some(c=>c.method!=='sum')
+  if(hasPhysicalCorrection){
+    const impacts=[preview.sourceImpact,preview.targetImpact]
+    if(impacts.some(i=>i.activeOrders||i.activeReservations||i.reserved
+      ||i.activeWorkshop||i.pendingLifecycle||i.appliedLifecycle||i.activeStocktake
+      ||i.appliedTransfers||i.reversibleMovements||i.returnExchangeLinks)){
+      throw new Error('Корректировка физического остатка при активных заказах, резервах или обратимых операциях запрещена.')
+    }
   }
 
   const [source,target,stocks,reservations] = await Promise.all([readSku(db,sourceId),readSku(db,targetId),readStocks(db,sourceId,targetId),readActiveReservations(db,sourceId,targetId)])
   if (!source || !target || !sameBusinessIdentity(source,target) || snapshotToken(source,target,stocks,reservations,businessMonthRange())!==preview.stateToken) {
     throw new Error('Каталог изменился после проверки. Обновите предпросмотр.')
   }
+  const decisions=stocks.filter(st=>st.variant_id===sourceId).map(st=>{
+    const keeper=stocks.find(k=>k.variant_id===targetId && k.inventory_source===st.inventory_source)
+    const c=chosen.get(st.inventory_source)
+    const final=c?.final ?? st.quantity+(keeper?.quantity??0)
+    if(!Number.isSafeInteger(final)||final<0){
+      throw new Error('Количество выходит за безопасные пределы.')
+    }
+    return {location:st.inventory_source,method:c?.method??'sum',
+      final,reason:c?.reason??''}
+  })
+  const decisionJson=JSON.stringify(decisions)
   const stamp = new Date().toISOString()
   const sourceFields = [
     source.product_id, source.stock_position_id, source.category, source.gender,
@@ -394,6 +430,31 @@ export async function consolidateUnusedCatalogVariant(
           WHERE r.variant_id IN (v.id,t.id) AND r.status='active'
             AND NOT EXISTS (SELECT 1 FROM inventory_stock st
               WHERE st.variant_id=r.variant_id AND st.inventory_source=r.inventory_source))
+        AND (?=0 OR (
+          NOT EXISTS (SELECT 1 FROM inventory_reservations r
+            WHERE r.variant_id IN (v.id,t.id) AND r.status='active')
+          AND NOT EXISTS (SELECT 1 FROM inventory_stock st
+            WHERE st.variant_id IN (v.id,t.id) AND st.reserved_quantity<>0)
+          AND NOT EXISTS (SELECT 1 FROM order_items oi JOIN orders o ON o.id=oi.order_id
+            WHERE oi.variant_id IN (v.id,t.id) AND oi.quantity>0
+              AND o.order_status='active' AND COALESCE(o.shipping_status,'not_sent')<>'sent')
+          AND NOT EXISTS (SELECT 1 FROM workshop_tasks wt
+            WHERE wt.variant_id IN (v.id,t.id) AND wt.status='active')
+          AND NOT EXISTS (SELECT 1 FROM inventory_lifecycle_events e
+            WHERE e.variant_id IN (v.id,t.id) AND e.status IN ('pending','applied'))
+          AND NOT EXISTS (SELECT 1 FROM inventory_transfer_items i
+            JOIN inventory_transfer_documents d ON d.id=i.transfer_id
+            WHERE i.variant_id IN (v.id,t.id) AND d.status='applied')
+          AND NOT EXISTS (SELECT 1 FROM inventory_movements m
+            WHERE m.variant_id IN (v.id,t.id)
+              AND LOWER(TRIM(COALESCE(m.reference_type,''))) IN ('manual','transfer_in','transfer_out')
+              AND NOT EXISTS(SELECT 1 FROM inventory_movement_reversals r WHERE r.original_movement_id=m.id))
+          AND NOT EXISTS (SELECT 1 FROM order_items oi
+            WHERE oi.variant_id IN (v.id,t.id) AND (
+              EXISTS (SELECT 1 FROM return_items ri WHERE ri.order_item_id=oi.id)
+              OR EXISTS (SELECT 1 FROM exchanges e WHERE e.old_order_item_id=oi.id OR e.new_order_item_id=oi.id)
+              OR EXISTS (SELECT 1 FROM exchange_items ei WHERE ei.order_item_id=oi.id)))
+        ))
         AND NOT EXISTS (SELECT 1 FROM workshop_tasks wt WHERE wt.variant_id=v.id AND wt.status='active')
         AND NOT EXISTS (SELECT 1 FROM inventory_lifecycle_events e WHERE e.variant_id=v.id AND e.status IN ('pending','applied'))
         AND NOT EXISTS (SELECT 1 FROM inventory_stocktake_items i
@@ -416,16 +477,34 @@ export async function consolidateUnusedCatalogVariant(
             AND COALESCE(o.shipping_status,'not_sent')<>'sent'
             AND (COALESCE(o.order_date,'')<? OR o.order_date>=?)
         )`
-    ).bind(actor||null,stamp,targetId,sourceId,...sourceFields,...targetFields,beforeStock,beforeStock,beforeReservations,beforeReservations,preview.month.from,preview.month.toExclusive),
+    ).bind(actor||null,stamp,targetId,sourceId,...sourceFields,...targetFields,beforeStock,beforeStock,beforeReservations,beforeReservations,hasPhysicalCorrection?1:0,preview.month.from,preview.month.toExclusive),
+    db.prepare(
+      `INSERT INTO catalog_variant_consolidation_stock_decisions(
+        consolidation_id,inventory_source,source_stock_id,keeper_stock_id_before,
+        decision_method,source_quantity_before,keeper_quantity_before,final_quantity,
+        adjustment_quantity,reason,created_by,created_at)
+      SELECT c.id,s.inventory_source,s.id,t.id,
+        json_extract(j.value,'$.method'),s.quantity,COALESCE(t.quantity,0),
+        CAST(json_extract(j.value,'$.final') AS INTEGER),
+        CAST(json_extract(j.value,'$.final') AS INTEGER)-s.quantity-COALESCE(t.quantity,0),
+        json_extract(j.value,'$.reason'),?,?
+      FROM catalog_variant_consolidations c
+      JOIN inventory_stock s ON s.variant_id=c.source_variant_id
+      LEFT JOIN inventory_stock t ON t.variant_id=c.target_variant_id AND t.inventory_source=s.inventory_source
+      JOIN json_each(?) j ON json_extract(j.value,'$.location')=s.inventory_source
+      WHERE c.source_variant_id=? AND c.target_variant_id=? AND c.created_at=?`
+    ).bind(actor,stamp,decisionJson,sourceId,targetId,stamp),
     db.prepare(
       `INSERT INTO catalog_variant_consolidation_stock_rows (
         consolidation_id,inventory_source,source_stock_id,target_stock_id_before,
         source_quantity_before,target_quantity_before,target_reserved_before,combined_quantity_after,source_reserved_before)
       SELECT c.id,s.inventory_source,s.id,t.id,s.quantity,COALESCE(t.quantity,0),
-        COALESCE(t.reserved_quantity,0),s.quantity+COALESCE(t.quantity,0),s.reserved_quantity
+        COALESCE(t.reserved_quantity,0),d.final_quantity,s.reserved_quantity
       FROM catalog_variant_consolidations c
       JOIN inventory_stock s ON s.variant_id=c.source_variant_id
       LEFT JOIN inventory_stock t ON t.variant_id=c.target_variant_id AND t.inventory_source=s.inventory_source
+      JOIN catalog_variant_consolidation_stock_decisions d
+        ON d.consolidation_id=c.id AND d.inventory_source=s.inventory_source
       WHERE c.source_variant_id=? AND c.target_variant_id=? AND c.created_at=?`
     ).bind(sourceId,targetId,stamp),
     db.prepare(
@@ -445,16 +524,35 @@ export async function consolidateUnusedCatalogVariant(
         last_action,last_source_ref,created_at,updated_at,external_product_id,external_variant_id)
       SELECT s.inventory_source,v.product_id,v.id,p.name,NULLIF(v.gender,''),NULLIF(v.color,''),
         COALESCE(NULLIF(v.material,''),'СТАНДАРТ'),COALESCE(NULLIF(v.length,''),'СТАНДАРТ'),
-        NULLIF(v.size_label,''),s.quantity,s.reserved_quantity,'Объединение вариаций',?,?,?,p.external_id,v.external_id
+        NULLIF(v.size_label,''),d.final_quantity,s.reserved_quantity,'Объединение вариаций',?,?,?,p.external_id,v.external_id
       FROM inventory_stock s JOIN catalog_variants v ON v.id=?
       JOIN catalog_products p ON p.id=v.product_id
+      JOIN catalog_variant_consolidations c ON c.source_variant_id=s.variant_id
+      JOIN catalog_variant_consolidation_stock_decisions d
+        ON d.consolidation_id=c.id AND d.inventory_source=s.inventory_source
       WHERE s.variant_id=? AND (s.quantity>0 OR s.reserved_quantity>0) AND ${journalExists}
       ON CONFLICT(inventory_source,variant_id) WHERE variant_id IS NOT NULL
-      DO UPDATE SET quantity=inventory_stock.quantity+excluded.quantity,
+      DO UPDATE SET quantity=excluded.quantity,
         reserved_quantity=inventory_stock.reserved_quantity+excluded.reserved_quantity,
         last_action='Объединение вариаций',last_source_ref=excluded.last_source_ref,
         updated_at=excluded.updated_at`
     ).bind(ref,stamp,stamp,targetId,sourceId,sourceId,targetId,stamp),
+    db.prepare(
+      `INSERT INTO inventory_movements (
+        inventory_source,movement_type,product_id,variant_id,product_name_snapshot,
+        gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,
+        quantity_delta,quantity_after,reference_type,reference_id,comment,created_at)
+      SELECT d.inventory_source,'revision',v.product_id,v.id,p.name,
+        v.gender,v.color,v.material,v.length,v.size_label,d.adjustment_quantity,d.final_quantity,
+        'catalog_stock_finalization',CAST(c.id AS TEXT),
+        'Корректировка при объединении SKU: '||d.decision_method||'. '||COALESCE(d.reason,''),?
+      FROM catalog_variant_consolidations c
+      JOIN catalog_variant_consolidation_stock_decisions d ON d.consolidation_id=c.id
+      JOIN catalog_variants v ON v.id=c.target_variant_id
+      JOIN catalog_products p ON p.id=v.product_id
+      WHERE c.source_variant_id=? AND c.target_variant_id=? AND c.created_at=?
+        AND d.adjustment_quantity<>0`
+    ).bind(stamp,sourceId,targetId,stamp),
     db.prepare(
       `UPDATE inventory_stock SET quantity=0,reserved_quantity=0,
         last_action='Объединение вариаций',last_source_ref=?,updated_at=?
@@ -483,7 +581,14 @@ export async function consolidateUnusedCatalogVariant(
     // CHECK constraint failure aborts all writes in this D1 batch.
     db.prepare(
       `INSERT INTO catalog_variant_consolidation_validations(consolidation_id,passed,checked_at)
-      SELECT c.id,CASE WHEN v.is_active=0 AND t.is_active=1 AND NOT EXISTS (
+      SELECT c.id,CASE WHEN v.is_active=0 AND t.is_active=1
+        AND (SELECT COUNT(*) FROM catalog_variant_consolidation_stock_decisions d WHERE d.consolidation_id=c.id)
+          =(SELECT COUNT(*) FROM inventory_stock s WHERE s.variant_id=c.source_variant_id)
+        AND (SELECT COUNT(*) FROM inventory_movements m
+            WHERE m.reference_type='catalog_stock_finalization' AND m.reference_id=CAST(c.id AS TEXT))
+          =(SELECT COUNT(*) FROM catalog_variant_consolidation_stock_decisions d
+            WHERE d.consolidation_id=c.id AND d.adjustment_quantity<>0)
+        AND NOT EXISTS (
         SELECT 1 FROM catalog_variant_consolidation_stock_rows l
         LEFT JOIN inventory_stock s ON s.id=l.source_stock_id
         LEFT JOIN inventory_stock dest ON dest.inventory_source=l.inventory_source AND dest.variant_id=c.target_variant_id
@@ -533,14 +638,15 @@ export async function consolidateUnusedCatalogVariant(
   ]
   const results = await db.batch(statements)
   if (toInt(results[0].meta?.changes,0)!==1
-    || toInt(results[7].meta?.changes,0)!==1
-    || toInt(results[8].meta?.changes,0)!==1
-    || toInt(results[9].meta?.changes,0)!==1) {
+    || toInt(results[9].meta?.changes,0)!==1
+    || toInt(results[10].meta?.changes,0)!==1
+    || toInt(results[11].meta?.changes,0)!==1) {
     throw new Error('Склад или Каталог изменились во время проверки. Обновите данные и повторите.')
   }
   return {
     ok:true, consolidated:true, sourceId,targetId,
     transferredQuantity:preview.transferQuantity, transferredReservations:preview.reservationCount, stockBreakdown:preview.stockBreakdown,
+    stockDecisions:decisions,
     historicalOrdersPreserved:preview.sourceImpact.historicalOrders,
   }
 }
