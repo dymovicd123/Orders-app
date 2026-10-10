@@ -36,7 +36,10 @@ export async function previewCatalogConsolidationUndo(db:D1Database,consolidatio
     `SELECT id,source_variant_id,target_variant_id,product_id,created_at,created_by
        FROM catalog_variant_consolidations WHERE id=?`
   ).bind(consolidationId).first<Receipt>()
-  if(!receipt)throw new Error('Объединение с таким номером не найдено.')
+  if(!receipt)throw Object.assign(new Error('Объединение с таким номером не найдено.'), {
+    status: 404,
+    code: 'catalog_merge_not_found',
+  })
   const sourceId=receipt.source_variant_id,keeperId=receipt.target_variant_id
   const [skus,ledgerResult,choicesResult,stockResult,impact]=await Promise.all([
     db.prepare('SELECT id,product_id,is_active,updated_at FROM catalog_variants WHERE id IN (?,?)')
