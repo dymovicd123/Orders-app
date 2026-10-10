@@ -75,6 +75,8 @@ function errorMessage(e:unknown){
 }
 async function jsonGet<T>(apiFetch:Props['apiFetch'],path:string){
  const response=await apiFetch(path,{cache:'no-store'})
+ if(response.headers.get('X-Orders-App-Stale')==='1')
+  throw new Error('Связь с сервером нестабильна. Нельзя сверять объединение по сохранённой копии данных. Повторите проверку при восстановлении соединения.')
  const data=await response.json() as T & {ok?:boolean;message?:string}
  if(!response.ok||data.ok!==true)throw new Error(data.message||'Сведения временно недоступны.')
  return data
