@@ -1,0 +1,362 @@
+{
+  "version": 1,
+  "scope": "Catalog/References only; no Stage04",
+  "mainBaseline": "c840feb0bc422af1faeea52c369a6daccf9f2c69",
+  "modified": [
+    {
+      "path": "package.json",
+      "oldSha": "dca840f9516de40acb878562b9b03900b67e491c",
+      "newSha": "6704ecffe7139119f982732584bb1b981a6df118"
+    },
+    {
+      "path": "src/App.tsx",
+      "oldSha": "e10688279ebce28469d7b82fc37c8a0a1f9250fd",
+      "newSha": "217c37ce52e8f1c5a57addc6dfa8f38f18b42a3e"
+    },
+    {
+      "path": "src/app/constants.ts",
+      "oldSha": "1cf5c177a59cca2c4ea1408fbd132092bb600338",
+      "newSha": "8175cd21630318ebd9ebc339db3296482d43b83d"
+    },
+    {
+      "path": "src/app/controllers/useOperationalViewModel.ts",
+      "oldSha": "7f4c56f3d275613d9772e8708887065904c0327d",
+      "newSha": "3b0ebdc1b92213e5cab73a5bf493c7d34cfd6b95"
+    },
+    {
+      "path": "src/app/types.ts",
+      "oldSha": "fde6d8d206862a6ae33dea95088bb84ea0d6fc26",
+      "newSha": "899cbe472f527ffa993411c44b6825b3f8fcc570"
+    },
+    {
+      "path": "src/features/sections/ReferencesSection.tsx",
+      "oldSha": "f23c6133fa66a22d9986141b6b4cbd43678480b6",
+      "newSha": "6993fb7f12dc0bc7cdf02b0de11b6b5a60fc4532"
+    },
+    {
+      "path": "worker/domains/catalog.ts",
+      "oldSha": "a2b6f66afa0e9b624ef3ae35171607b7037e2833",
+      "newSha": "6cad58ed7d7e9b81ccfdb4b4a6018783eb4c3d5f"
+    },
+    {
+      "path": "worker/domains/inventory-movement.ts",
+      "oldSha": "a5e6ffd5d1039d54dee2b35026ef37a9363408fa",
+      "newSha": "78ed3642479e9b961c01f063fb6900a041b9f0b5"
+    },
+    {
+      "path": "worker/domains/orders-write.ts",
+      "oldSha": "6f470e1023d5479671bf279a802cbc60c616cb6f",
+      "newSha": "25c787d32f5789ad39a128e554890acc0a9bca4e"
+    },
+    {
+      "path": "worker/domains/references.ts",
+      "oldSha": "b46c37cb84dbf6e31909799a4cbb87d0b9481c9d",
+      "newSha": "cffced0127d4bb4e43443c2ce60a7d191c15f1f2"
+    },
+    {
+      "path": "worker/index.ts",
+      "oldSha": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
+      "newSha": "db6f0fd226af33f9f6fcbfb152e38a3fdf44d841"
+    }
+  ],
+  "added": [
+    {
+      "path": "migrations/0090_v72_catalog_variant_consolidations.sql",
+      "sha": "b4405429db17fbca0f7e212b3dd47cc6ca800ae8"
+    },
+    {
+      "path": "migrations/0091_v72_catalog_variant_stock_consolidation.sql",
+      "sha": "3bf9bf2496145aa19a919a3468d3fb3d0a13d1c7"
+    },
+    {
+      "path": "migrations/0092_v72_catalog_variant_reservation_consolidation.sql",
+      "sha": "894164a039a76abfdf8d7ac8a49109329b9bc66d"
+    },
+    {
+      "path": "migrations/0093_v72_reference_value_choice_merges.sql",
+      "sha": "d3afb62545f1cca2fc195244db13d42ac7b6471b"
+    },
+    {
+      "path": "migrations/0094_v72_reference_payment_method_merges.sql",
+      "sha": "fd6d34164f59ac3856b113701e47a81e681e95f7"
+    },
+    {
+      "path": "migrations/0095_v72_catalog_stock_reconciliation_journal.sql",
+      "sha": "0a35ae87effae25fd1e5d0d5befafd9aff0270f1"
+    },
+    {
+      "path": "migrations/0096_v72_catalog_atomic_stock_finalization.sql",
+      "sha": "0f6cde970b9cb535d28e762e4002a87820625a2e"
+    },
+    {
+      "path": "migrations/0097_v72_consolidated_sku_active_order_guard.sql",
+      "sha": "7e443eceb367cb1c7aa6ab795c22f3e2d19e0e1d"
+    },
+    {
+      "path": "migrations/0098_v72_consolidated_sku_stock_guard.sql",
+      "sha": "700db59c2b37e6db43f3b9a9dc378b44b96858c6"
+    },
+    {
+      "path": "migrations/0099_v72_catalog_merge_generation_events.sql",
+      "sha": "af2d04967b27f750384a62ba7513ff8ff17e69db"
+    },
+    {
+      "path": "migrations/0100_v72_catalog_zero_stock_undo_validation.sql",
+      "sha": "94937dd3b455e11742bc363ddfd267fc0c2dd466"
+    },
+    {
+      "path": "migrations/0101_v72_catalog_zero_stock_remerge_validation.sql",
+      "sha": "2750280cd66f4a8bf41aa19351fcd1a28fa0f1f3"
+    },
+    {
+      "path": "migrations/0102_v72_catalog_positive_stock_undo_validation.sql",
+      "sha": "9c26b192223a32d068d3e0e1cefebbe29959fdda"
+    },
+    {
+      "path": "migrations/0103_v72_catalog_counted_undo_validation.sql",
+      "sha": "ce925e9d87473a5490f4bbb5e9652d5c10d194e3"
+    },
+    {
+      "path": "migrations/0104_v72_catalog_reserved_undo_validation.sql",
+      "sha": "5a03ea7ab8bc51afe90b18de502e2053b427c90d"
+    },
+    {
+      "path": "migrations/0105_v72_reference_reason_choice_merges.sql",
+      "sha": "6a3314e903349049740ccbe661f60f896a6e8a5b"
+    },
+    {
+      "path": "scripts/test-arrival-merged-sku-safety.mjs",
+      "sha": "cbfa0d9c77841fbd4edc84ce480f5fcf510803fa"
+    },
+    {
+      "path": "scripts/test-catalog-exhaustive-sku-identity.mjs",
+      "sha": "3daad0539899bf4ea9ed764e9c858bd2eb3cf13c"
+    },
+    {
+      "path": "scripts/test-catalog-integrity-r2-sku-consolidation.mjs",
+      "sha": "90fa7d5ebdb9b5f3f6f5738853247fb8a786b307"
+    },
+    {
+      "path": "scripts/test-catalog-positive-stock-undo.mjs",
+      "sha": "73ee8e895601be2dd39b04d2fce0bf4ca620c6fa"
+    },
+    {
+      "path": "scripts/test-catalog-reserved-stock-undo.mjs",
+      "sha": "8fc119f3405d74584f7e1bfc5c866a97016a9e4d"
+    },
+    {
+      "path": "scripts/test-catalog-stale-order-merge-bridge.mjs",
+      "sha": "29e283e96ddbfb7feede9a141a89281aa847b991"
+    },
+    {
+      "path": "scripts/test-catalog-zero-stock-undo.mjs",
+      "sha": "ded516075ec6cff6ef660dd38163f81f8d5ff7cb"
+    },
+    {
+      "path": "scripts/test-characteristic-sku-map-ui.mjs",
+      "sha": "7cc6e841d138387d8126b2ab5798e3d111559a92"
+    },
+    {
+      "path": "scripts/test-characteristic-sku-mapping.mjs",
+      "sha": "68be04e0e0105a516dcdf433efe6a5930c310b9f"
+    },
+    {
+      "path": "scripts/test-reference-characteristic-impact.mjs",
+      "sha": "66b9bc03eb1545682c4bd12d99451f397c455d66"
+    },
+    {
+      "path": "scripts/test-reference-crud-integrity.mjs",
+      "sha": "32c37466b2b5194c8edcec7d1e726ffeff10ef8f"
+    },
+    {
+      "path": "scripts/test-reference-duplicates-discovery-r1.mjs",
+      "sha": "2e73ea331b25a8589b21c32b38136a7e2c5378d6"
+    },
+    {
+      "path": "scripts/test-reference-exhaustive-duplicates.mjs",
+      "sha": "6f7612c7bfc458b1981e3979fceba4ee3550b879"
+    },
+    {
+      "path": "scripts/test-reference-merge-choice-preview.mjs",
+      "sha": "e0709f56747234237f7ceea7e2d4e84bfaa00feb"
+    },
+    {
+      "path": "scripts/test-reference-merge-history.mjs",
+      "sha": "9e73a05ee34176b5705765d28d57669075f1febe"
+    },
+    {
+      "path": "scripts/test-reference-merge-monthly-apply.mjs",
+      "sha": "67297b49ef49a41a7457c17b42be82c751bf7a55"
+    },
+    {
+      "path": "scripts/test-reference-payment-merge.mjs",
+      "sha": "015cb3ce422a84c50d68e1bce5b099141e9b3930"
+    },
+    {
+      "path": "scripts/test-reference-reason-choice-schema.mjs",
+      "sha": "570e2a06a142eaa8a9e3d4e1e99001f634277c5b"
+    },
+    {
+      "path": "scripts/test-reference-reason-merge.mjs",
+      "sha": "37f00701cd750bba2290b9c3743c4bbe8ff70b33"
+    },
+    {
+      "path": "scripts/test-reference-sku-verified-stock-ui.mjs",
+      "sha": "cdee8f61a9a188dcb6092601bd43bd9a39455a1e"
+    },
+    {
+      "path": "src/features/sections/CatalogUndoCases.tsx",
+      "sha": "a1685813b779d847cafc894635869213d1985269"
+    },
+    {
+      "path": "src/features/sections/CharacteristicSkuMapReview.tsx",
+      "sha": "a052acc80f7b6b984164f50a513bb75fb04bfd3f"
+    },
+    {
+      "path": "src/features/sections/ReferenceIntegrityPanel.tsx",
+      "sha": "b37a51c5c1775fc63db3ef8f598b36ff35a74401"
+    },
+    {
+      "path": "src/features/sections/ReferenceMergeWorkspace.tsx",
+      "sha": "5115e75647506e2dfc0e9764ef3887e1927a6140"
+    },
+    {
+      "path": "src/features/sections/verifiedSkuStockDecision.ts",
+      "sha": "2999d66f8cf3a2911ed939add828b3e8b9a69514"
+    },
+    {
+      "path": "src/styles/reference-characteristic-sku-map.css",
+      "sha": "d8a242fa475807840d49595aeeb817e53a7b0085"
+    },
+    {
+      "path": "src/styles/reference-integrity-entry.css",
+      "sha": "5d08b45a56aa10b68911edafe6caba609e847b3f"
+    },
+    {
+      "path": "src/styles/reference-merge-workspace.css",
+      "sha": "bd52b80c9727d20c00b4763230e6074fea450649"
+    },
+    {
+      "path": "src/styles/reference-undo-cases.css",
+      "sha": "0dd6eb479f452be3e10db012afcb215aebac39fd"
+    },
+    {
+      "path": "worker/domains/catalog-complex-undo-case.ts",
+      "sha": "5887c81fc306a34141dbd0ab80bd7c490fed8943"
+    },
+    {
+      "path": "worker/domains/catalog-complex-undo-details.ts",
+      "sha": "039dd6f627389ec2a9d39925f2b4039161d1f8ba"
+    },
+    {
+      "path": "worker/domains/catalog-complex-undo-workplan.ts",
+      "sha": "895426882e5338b9bb8adeef898658376ad1941e"
+    },
+    {
+      "path": "worker/domains/catalog-consolidation-undo-preview.ts",
+      "sha": "cb0d06362e72ad08d682b5e9f5bbae88a5842015"
+    },
+    {
+      "path": "worker/domains/catalog-corrected-undo-review.ts",
+      "sha": "8d9779a39fad11a86e607cd7e0ad764e8527981b"
+    },
+    {
+      "path": "worker/domains/catalog-counted-stock-undo.ts",
+      "sha": "47abbafb03d66a0baf49ce191a795e066a25fc00"
+    },
+    {
+      "path": "worker/domains/catalog-merged-identity.ts",
+      "sha": "f06c13b0738bdf989a85234597c1e6ec68a15294"
+    },
+    {
+      "path": "worker/domains/catalog-positive-stock-undo.ts",
+      "sha": "1e2042f13dd62472266733024afc230410cb46b8"
+    },
+    {
+      "path": "worker/domains/catalog-reserved-stock-undo.ts",
+      "sha": "42365e4120c3d6a2ad70173e60cde24f8a9a5d9b"
+    },
+    {
+      "path": "worker/domains/catalog-reserved-undo-preview.ts",
+      "sha": "b515e8a4c7a74cc66a3262cba387d1645a78cc92"
+    },
+    {
+      "path": "worker/domains/catalog-stock-reconciliation-write.ts",
+      "sha": "b3af017fb3f469f2bb885e2444317ed0d6262bfe"
+    },
+    {
+      "path": "worker/domains/catalog-stock-reconciliation.ts",
+      "sha": "2d6e82270c805740b8b2ffd66a1503b0427db4b8"
+    },
+    {
+      "path": "worker/domains/catalog-variant-consolidation.ts",
+      "sha": "7a69c78d2c7c65e1b7b676b619e8d16b8db9d447"
+    },
+    {
+      "path": "worker/domains/catalog-zero-stock-remerge.ts",
+      "sha": "8d942763caf8ea0f703f6b87c5f168d15edf0012"
+    },
+    {
+      "path": "worker/domains/catalog-zero-stock-undo.ts",
+      "sha": "f71b0879fbb7bc239e203da4a83783013ad2c57a"
+    },
+    {
+      "path": "worker/domains/reference-characteristic-impact.ts",
+      "sha": "1536f8e30942b461079cea7e045863d5b9f4d980"
+    },
+    {
+      "path": "worker/domains/reference-characteristic-sku-mapping.ts",
+      "sha": "5b46af91ff8743aeb6eb7e854f8e9a50abdfde78"
+    },
+    {
+      "path": "worker/domains/reference-integrity.ts",
+      "sha": "b562f84f7ee9d706132486ea048b51bc4bdcac57"
+    },
+    {
+      "path": "worker/domains/reference-merge-apply.ts",
+      "sha": "b0b85be1b6f8964ad7e7414ba178e1a7d371c4db"
+    },
+    {
+      "path": "worker/domains/reference-merge-history.ts",
+      "sha": "b6f60b825fa84b881da5c1af1bd9f362cd24c537"
+    },
+    {
+      "path": "worker/domains/reference-merge-preview.ts",
+      "sha": "659537a2da42ffca38275c2b099fa976ed7b1700"
+    },
+    {
+      "path": "worker/domains/reference-payment-merge.ts",
+      "sha": "17aed8caa17f1978b0e2b658b270a9b5e37168d2"
+    },
+    {
+      "path": "worker/domains/reference-reason-merge.ts",
+      "sha": "ab74aa08b426ae00bbc6f1c5280b5e7cc82e7a0f"
+    },
+    {
+      "path": "scripts/main-catalog-selective-gate.mjs",
+      "sha": "95a9b11aa793eb5e84f9b9852c87a21844655fdd"
+    }
+  ],
+  "currentTests": [
+    "scripts/test-reference-crud-integrity.mjs",
+    "scripts/test-reference-duplicates-discovery-r1.mjs",
+    "scripts/test-reference-exhaustive-duplicates.mjs",
+    "scripts/test-reference-merge-choice-preview.mjs",
+    "scripts/test-reference-merge-monthly-apply.mjs",
+    "scripts/test-reference-payment-merge.mjs",
+    "scripts/test-reference-reason-choice-schema.mjs",
+    "scripts/test-reference-reason-merge.mjs",
+    "scripts/test-reference-merge-history.mjs",
+    "scripts/test-reference-characteristic-impact.mjs",
+    "scripts/test-characteristic-sku-mapping.mjs",
+    "scripts/test-characteristic-sku-map-ui.mjs",
+    "scripts/test-reference-sku-verified-stock-ui.mjs",
+    "scripts/test-catalog-exhaustive-sku-identity.mjs",
+    "scripts/test-catalog-integrity-r2-sku-consolidation.mjs",
+    "scripts/test-catalog-stale-order-merge-bridge.mjs",
+    "scripts/test-arrival-merged-sku-safety.mjs",
+    "scripts/test-catalog-zero-stock-undo.mjs",
+    "scripts/test-catalog-positive-stock-undo.mjs",
+    "scripts/test-catalog-reserved-stock-undo.mjs"
+  ]
+}

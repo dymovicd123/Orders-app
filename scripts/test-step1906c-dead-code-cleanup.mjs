@@ -151,49 +151,6 @@ try {
   acceptedAdditiveMigrations.push('0080_v72_auth_login_identity.sql')
   acceptedAdditiveMigrations.push('0081_v72_auth_hardening.sql')
   acceptedAdditiveMigrations.push('0082_v72_kaspi_order_payment_method.sql')
-  // Approved catalog/reference schema 0090–0105: neither Stage04 (0083/0084)
-  // nor any replacement/removal of the immutable pre-1906C migration history.
-  acceptedAdditiveMigrations.push('0090_v72_catalog_variant_consolidations.sql')
-  acceptedAdditiveMigrations.push('0091_v72_catalog_variant_stock_consolidation.sql')
-  acceptedAdditiveMigrations.push('0092_v72_catalog_variant_reservation_consolidation.sql')
-  acceptedAdditiveMigrations.push('0093_v72_reference_value_choice_merges.sql')
-  acceptedAdditiveMigrations.push('0094_v72_reference_payment_method_merges.sql')
-  acceptedAdditiveMigrations.push('0095_v72_catalog_stock_reconciliation_journal.sql')
-  acceptedAdditiveMigrations.push('0096_v72_catalog_atomic_stock_finalization.sql')
-  acceptedAdditiveMigrations.push('0097_v72_consolidated_sku_active_order_guard.sql')
-  acceptedAdditiveMigrations.push('0098_v72_consolidated_sku_stock_guard.sql')
-  acceptedAdditiveMigrations.push('0099_v72_catalog_merge_generation_events.sql')
-  acceptedAdditiveMigrations.push('0100_v72_catalog_zero_stock_undo_validation.sql')
-  acceptedAdditiveMigrations.push('0101_v72_catalog_zero_stock_remerge_validation.sql')
-  acceptedAdditiveMigrations.push('0102_v72_catalog_positive_stock_undo_validation.sql')
-  acceptedAdditiveMigrations.push('0103_v72_catalog_counted_undo_validation.sql')
-  acceptedAdditiveMigrations.push('0104_v72_catalog_reserved_undo_validation.sql')
-  acceptedAdditiveMigrations.push('0105_v72_reference_reason_choice_merges.sql')
-  const gitBlob = value => {
-    const bytes=Buffer.from(value)
-    return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\\0`)).update(bytes).digest('hex')
-  }
-  for(const [file,expected] of [
-  ['0090_v72_catalog_variant_consolidations.sql','b4405429db17fbca0f7e212b3dd47cc6ca800ae8'],
-  ['0091_v72_catalog_variant_stock_consolidation.sql','3bf9bf2496145aa19a919a3468d3fb3d0a13d1c7'],
-  ['0092_v72_catalog_variant_reservation_consolidation.sql','894164a039a76abfdf8d7ac8a49109329b9bc66d'],
-  ['0093_v72_reference_value_choice_merges.sql','d3afb62545f1cca2fc195244db13d42ac7b6471b'],
-  ['0094_v72_reference_payment_method_merges.sql','fd6d34164f59ac3856b113701e47a81e681e95f7'],
-  ['0095_v72_catalog_stock_reconciliation_journal.sql','0a35ae87effae25fd1e5d0d5befafd9aff0270f1'],
-  ['0096_v72_catalog_atomic_stock_finalization.sql','0f6cde970b9cb535d28e762e4002a87820625a2e'],
-  ['0097_v72_consolidated_sku_active_order_guard.sql','7e443eceb367cb1c7aa6ab795c22f3e2d19e0e1d'],
-  ['0098_v72_consolidated_sku_stock_guard.sql','700db59c2b37e6db43f3b9a9dc378b44b96858c6'],
-  ['0099_v72_catalog_merge_generation_events.sql','af2d04967b27f750384a62ba7513ff8ff17e69db'],
-  ['0100_v72_catalog_zero_stock_undo_validation.sql','94937dd3b455e11742bc363ddfd267fc0c2dd466'],
-  ['0101_v72_catalog_zero_stock_remerge_validation.sql','2750280cd66f4a8bf41aa19351fcd1a28fa0f1f3'],
-  ['0102_v72_catalog_positive_stock_undo_validation.sql','9c26b192223a32d068d3e0e1cefebbe29959fdda'],
-  ['0103_v72_catalog_counted_undo_validation.sql','ce925e9d87473a5490f4bbb5e9652d5c10d194e3'],
-  ['0104_v72_catalog_reserved_undo_validation.sql','5a03ea7ab8bc51afe90b18de502e2053b427c90d'],
-  ['0105_v72_reference_reason_choice_merges.sql','6a3314e903349049740ccbe661f60f896a6e8a5b']
-  ]){
-    check(gitBlob(read('migrations/'+file))===expected,'Catalog schema migration drifted: '+file)
-  }
-  check(!migrationFiles.some(x=>/^008[34]_/.test(x)),'Stage04 migrations are excluded from the catalog-only main port')
   const historicalMigrationFiles = migrationFiles.filter((name) => !acceptedAdditiveMigrations.includes(name))
   const aggregate = historicalMigrationFiles.map((name) => `${sha(fs.readFileSync(path.join(migrationDir, name)))}  migrations/${name}\n`).join('')
   check(historicalMigrationFiles.length === manifest.migrationCount, `Historical migration count changed: ${historicalMigrationFiles.length}/${manifest.migrationCount}`)
