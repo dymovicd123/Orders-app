@@ -13,7 +13,7 @@ for(let page=0;page<5;page++){
  const rows=(json.result?.lines||[]).map(x=>Array.isArray(x)?x.map(String).join(' '):String(x));
  const relevant=rows.filter(x=>/commit|branch|build|vite|wrangler|cache|version|deploy|upload|github|checkout|checkout|asset|root directory|npm|source|clon/i.test(x));
  console.log('BUILD LOG PAGE '+page,'total',rows.length,'filtered',relevant.length);
- for(const line of relevant.slice(-130))console.log(line.replace(/(Bearer|token|secret|password)=?[^ ]*/ig,'[REDACTED]'));
+ for(const line of [...rows.slice(0,90),...relevant.slice(-30)])console.log(line.replace(/(Bearer|token|secret|password)=?[^ ]*/ig,'[REDACTED]'));
  if(!json.result?.truncated||!json.result?.cursor)break;
  cursor=json.result.cursor;
 }
