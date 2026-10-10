@@ -7,9 +7,6 @@ on:
     branches:
       - branch2
       - main
-  # A deliberately manual fallback when GitHub skips the branch2 push event
-  # after an API-mediated merge. Do not enable manual production deploys.
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,8 +14,6 @@ permissions:
 
 jobs:
   monitor:
-    # Manual recovery is deliberately branch2-only; main remains push-only.
-    if: github.event_name != 'workflow_dispatch' || github.ref_name == 'branch2'
     name: Cloudflare deploy / ${{ github.ref_name }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
