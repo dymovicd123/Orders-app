@@ -29,7 +29,9 @@ sql.exec(fs.readFileSync('migrations/0105_v72_reference_reason_choice_merges.sql
 let beforeFinal=()=>{}
 const db={
  prepare(query){
-  return {bind(...args){
+  return {
+   async all(){return {results:sql.prepare(query).all()}},
+   bind(...args){
    const st=sql.prepare(query)
    return {
     async first(){return st.get(...args)||null},
