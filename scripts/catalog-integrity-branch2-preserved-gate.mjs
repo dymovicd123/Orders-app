@@ -68,6 +68,7 @@ const tests=[
   ['scripts/test-catalog-corrected-undo-review.mjs',true],
   ['scripts/test-inventory-writeoff-review.mjs',true],
   ['scripts/test-reference-duplicates-discovery-r1.mjs',false],
+  ['scripts/test-reference-exhaustive-duplicates.mjs',true],
   ['scripts/test-reference-merge-choice-preview.mjs',true],
   ['scripts/test-reference-reason-choice-schema.mjs',false],
   ['scripts/test-reference-reason-merge.mjs',true],
