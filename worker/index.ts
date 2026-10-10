@@ -34,6 +34,8 @@ import { businessMonthRange } from './domains/reference-merge-preview.ts'
 import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
 import { previewCatalogConsolidationUndo } from './domains/catalog-consolidation-undo-preview.ts'
 import { previewComplexCatalogUndoCase } from './domains/catalog-complex-undo-case.ts'
+import { listComplexUndoEvidence } from './domains/catalog-complex-undo-details.ts'
+import { getComplexUndoWorkplan } from './domains/catalog-complex-undo-workplan.ts'
 import { previewUntouchedReservationUndo } from './domains/catalog-reserved-undo-preview.ts'
 import { undoUntouchedReservationConsolidation } from './domains/catalog-reserved-stock-undo.ts'
 import { previewCorrectedCatalogConsolidationUndo } from './domains/catalog-corrected-undo-review.ts'
@@ -277,6 +279,28 @@ export default {
         const data=await readJson<{consolidationId:number;reason:string;expectedToken:string}>(request);
         return json(await undoUntouchedReservationConsolidation(
           env.DB,Number(data.consolidationId),authUser?.login||'',data.reason,data.expectedToken
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-case-workplan' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'План урегулирования объединения доступен только администратору.');
+        if(denied)return denied;
+        return json(await getComplexUndoWorkplan(
+          env.DB,Number(url.searchParams.get('consolidationId'))
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-case-details' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'Полная история сложной отмены доступна только администратору.');
+        if(denied)return denied;
+        const afterId=url.searchParams.get('afterId');
+        const limit=url.searchParams.get('limit');
+        return json(await listComplexUndoEvidence(
+          env.DB,
+          Number(url.searchParams.get('consolidationId')),
+          url.searchParams.get('section') as 'reservations'|'orders'|'movements'|'checks',
+          afterId===null?0:Number(afterId),
+          limit===null?25:Number(limit)
         ));
       }
 

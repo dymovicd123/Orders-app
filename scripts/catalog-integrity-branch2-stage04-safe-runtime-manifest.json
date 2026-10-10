@@ -34,7 +34,7 @@
     },
     "worker/index.ts": {
       "beforeGitBlob": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
-      "afterGitBlob": "85c0f851973c932090ed208b21b649013d1e1f71",
+      "afterGitBlob": "716028ebf1e78359e6e3cce228fa9818e6320b6e",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/index.ts"
     },
     "worker/domains/catalog.ts": {
@@ -126,12 +126,16 @@
     "scripts/test-catalog-counted-undo-proof-schema.mjs": "6b5a3dbbd3257a8dbe4984a5a3de518fc5d3729a",
     "worker/domains/catalog-counted-stock-undo.ts": "47abbafb03d66a0baf49ce191a795e066a25fc00",
     "scripts/test-catalog-counted-stock-undo.mjs": "d0d02e7e4177df16380fb5e9335059f279fb456e",
-    "worker/domains/catalog-complex-undo-case.ts": "c2a141185f567c6a6f1ce17e94b89370429740fe",
+    "worker/domains/catalog-complex-undo-case.ts": "5887c81fc306a34141dbd0ab80bd7c490fed8943",
     "scripts/test-catalog-complex-undo-case.mjs": "ba22437722421d9810333f262d12a1059878f8a0",
     "migrations/0104_v72_catalog_reserved_undo_validation.sql": "5a03ea7ab8bc51afe90b18de502e2053b427c90d",
     "scripts/test-catalog-reserved-undo-proof-schema.mjs": "047105f9d189e9f0685ca42e98289921c0ddab15",
     "worker/domains/catalog-reserved-undo-preview.ts": "b515e8a4c7a74cc66a3262cba387d1645a78cc92",
     "worker/domains/catalog-reserved-stock-undo.ts": "42365e4120c3d6a2ad70173e60cde24f8a9a5d9b",
-    "scripts/test-catalog-reserved-stock-undo.mjs": "8fc119f3405d74584f7e1bfc5c866a97016a9e4d"
+    "scripts/test-catalog-reserved-stock-undo.mjs": "8fc119f3405d74584f7e1bfc5c866a97016a9e4d",
+    "worker/domains/catalog-complex-undo-details.ts": "039dd6f627389ec2a9d39925f2b4039161d1f8ba",
+    "scripts/test-catalog-complex-undo-pages.mjs": "74dd2027aed58bfe6c19414491fcad971bb1128a",
+    "worker/domains/catalog-complex-undo-workplan.ts": "895426882e5338b9bb8adeef898658376ad1941e",
+    "scripts/test-catalog-complex-undo-workplan.mjs": "6cf244f915acf8bb608747a70c56ae81747d889f"
   }
 }

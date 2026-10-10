@@ -14,7 +14,7 @@ async function page<T>(db:D1Database,select:string,where:string,sort:string,valu
   return {totalCount,shownCount:Math.min(rows.length,MAX_ROWS),truncated:totalCount>MAX_ROWS,
     rows:rows.slice(0,MAX_ROWS)}
 }
-type Reservation={
+export type Reservation={
  reservation_id:number;order_id:number;order_item_id:number;inventory_source:string;
  original_variant_id:number;keeper_variant_id:number;quantity:number;
  now_variant_id:number|null;now_status:string|null;now_quantity:number|null;
@@ -40,7 +40,7 @@ type CountRow={
  id:number;variant_id:number|null;inventory_source:string|null;
  counted_quantity:number|null;checked_at:string|null;check_type:string|null;time_state:string
 }
-function situation(r:Reservation){
+export function situation(r:Reservation){
   if(r.now_variant_id===null || r.item_variant_id===null || r.order_status===null){
     return {kind:'missing_link',label:'Связанный резерв или заказ отсутствует',risk:'critical'}
   }
