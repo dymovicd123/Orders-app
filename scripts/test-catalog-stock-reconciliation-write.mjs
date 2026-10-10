@@ -53,7 +53,7 @@ sqlite.exec(`
    unit_price INTEGER DEFAULT 1000);
  CREATE TABLE workshop_tasks(id INTEGER PRIMARY KEY,variant_id INTEGER,status TEXT);
  CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,variant_id INTEGER,status TEXT);
- CREATE TABLE inventory_stocktake_sessions(id TEXT PRIMARY KEY,status TEXT);
+ CREATE TABLE inventory_stocktake_sessions(id TEXT PRIMARY KEY,status TEXT,inventory_source TEXT NOT NULL DEFAULT 'warehouse');
  CREATE TABLE inventory_stocktake_items(id INTEGER PRIMARY KEY,session_id TEXT,variant_id INTEGER);
  INSERT INTO catalog_products(id,name,is_active) VALUES(100,'ЭТНО КАРДИГАН',1);
  INSERT INTO catalog_stock_positions VALUES(30,100,'ДРАП','СТАНДАРТ',1),(31,100,'ШЕРСТЬ','СТАНДАРТ',1);
