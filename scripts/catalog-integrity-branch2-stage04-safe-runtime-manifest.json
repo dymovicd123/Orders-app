@@ -128,7 +128,7 @@
     "scripts/test-catalog-counted-stock-undo.mjs": "d0d02e7e4177df16380fb5e9335059f279fb456e",
     "worker/domains/catalog-complex-undo-case.ts": "c2a141185f567c6a6f1ce17e94b89370429740fe",
     "scripts/test-catalog-complex-undo-case.mjs": "ba22437722421d9810333f262d12a1059878f8a0",
-    "migrations/0104_v72_catalog_reserved_undo_validation.sql": "f9ec73a4b912fe97020b403e0d1f2a74303e000e",
+    "migrations/0104_v72_catalog_reserved_undo_validation.sql": "5a03ea7ab8bc51afe90b18de502e2053b427c90d",
     "scripts/test-catalog-reserved-undo-proof-schema.mjs": "047105f9d189e9f0685ca42e98289921c0ddab15"
   }
 }
