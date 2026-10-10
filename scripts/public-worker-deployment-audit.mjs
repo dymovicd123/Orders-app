@@ -10,6 +10,8 @@ async function api(path){
   return data.result
  }catch(e){console.log('API request exception',e.message);return null}
 }
+const accountSubdomain=await api('/workers/subdomain')
+console.log('ACCOUNT WORKERS SUBDOMAIN',JSON.stringify(accountSubdomain))
 for(const name of ['orders-app-branch2','branch2-orders-app']){
  console.log('=== SCRIPT '+name+' ===')
  const subdomain=await api('/workers/scripts/'+encodeURIComponent(name)+'/subdomain')
@@ -28,6 +30,9 @@ for(const name of ['orders-app-branch2','branch2-orders-app']){
   const version=await api('/workers/scripts/'+encodeURIComponent(name)+
   '/versions/'+deployments[0].versions[0].version_id)
   if(version)console.log('ACTIVE VERSION',JSON.stringify({id:version.id,created:version.created_on,
-     metadata:version.metadata,annotations:version.annotations}))
+     metadata:version.metadata,annotations:version.annotations,
+     resources:version.resources?Object.keys(version.resources):null,
+     has_assets:Boolean(version.resources?.script?.assets||version.resources?.assets),
+     script_keys:version.resources?.script?Object.keys(version.resources.script):null}))
  }
 }
