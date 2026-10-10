@@ -245,7 +245,7 @@ await assert.rejects(
 )
 await assert.rejects(
  ()=>consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken,
- [{location:'warehouse',method:'keep_source',physicallyVerified:true},verifiedSum[1]]),
+ [{location:'warehouse',method:'defer',physicallyVerified:true},verifiedSum[1]]),
  /Недопустимое решение/,
 )
 
