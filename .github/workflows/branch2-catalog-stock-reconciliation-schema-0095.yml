@@ -1,0 +1,129 @@
+name: Branch2 Catalog Stock Reconciliation schema 0095
+
+on:
+  push:
+    branches: [branch2]
+    paths: ['.github/workflows/branch2-catalog-stock-reconciliation-schema-0095.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Guard isolated Branch2 D1 and immutable Stage04 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == 'branch2' ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo 'Production binding detected: abort' >&2; exit 41
+          fi
+          [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]] || exit 42
+          [[ "$(git hash-object migrations/0083_v72_workshop_settlement_foundation.sql)" == "d73a92f86317a9068a9a381742d55e5c96804879" ]] || exit 43
+          [[ "$(git hash-object migrations/0084_v72_workshop_settlement_status_capture.sql)" == "2e3f51ab0b055d5b82d6b542cec28cf661359003" ]] || exit 44
+          [[ "$(git hash-object migrations/0095_v72_catalog_stock_reconciliation_journal.sql)" == "0a35ae87effae25fd1e5d0d5befafd9aff0270f1" ]] || exit 45
+          if grep -Eiq '^[[:space:]]*(UPDATE|DELETE|REPLACE|DROP|TRUNCATE)[[:space:]]' migrations/0095_v72_catalog_stock_reconciliation_journal.sql; then
+            echo 'Migration is not additive-only' >&2; exit 46
+          fi
+      - run: npm ci
+      - name: Verify isolated environment, Stage04 and new reconciliation contract
+        run: |
+          set -euo pipefail
+          node scripts/test-branch2-environment.mjs
+          node scripts/test-stage04a-workshop-settlements.mjs
+          node scripts/test-stage04b-workshop-status-capture.mjs
+          node --experimental-strip-types scripts/test-catalog-stock-reconciliation-write.mjs
+      - name: Capture stock, money and Stage04 read-only fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          state="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+          SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM payments) AS payment_rows,
+            (SELECT COALESCE(SUM(amount),0) FROM payments) AS payment_amount,
+            (SELECT COUNT(*) FROM financial_events) AS money_events,
+            (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_total,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_total,
+            (SELECT COUNT(*) FROM inventory_reservations) AS reservation_rows,
+            (SELECT COUNT(*) FROM inventory_movements) AS movements,
+            (SELECT COUNT(*) FROM inventory_stock_checks) AS physical_checks,
+            (SELECT COUNT(*) FROM catalog_variant_consolidations) AS sku_merges,
+            (SELECT COUNT(*) FROM workshop_settlement_events) AS stage04_events,
+            (SELECT enabled FROM workshop_settlement_capture_control WHERE id=1) AS stage04_capture
+          " --json)"
+          jq -cSe '.[0].results[0]' <<<"$state" > /tmp/catalog-stock-reconciliation-before.json
+          schema="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT COUNT(*) AS tables_count FROM sqlite_master WHERE type='table'
+              AND name IN ('catalog_stock_reconciliation_journal','catalog_stock_reconciliation_validations');
+          " --json)"
+          count="$(jq -r '.[0].results[0].tables_count // -1' <<<"$schema")"
+          [[ "$count" == "0" || "$count" == "2" ]] || {
+            echo 'Partial reconciliation audit schema found; manual review required' >&2; exit 47
+          }
+          echo "$count" > /tmp/catalog-stock-reconciliation-schema-count
+      - name: Apply empty audit schema only to isolated Branch2 D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(cat /tmp/catalog-stock-reconciliation-schema-count)" == "0" ]]; then
+            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file migrations/0095_v72_catalog_stock_reconciliation_journal.sql
+          else
+            echo 'Validated pre-existing audit schema; no migration writes'
+          fi
+      - name: Verify audit tables, historical state and exact Stage04 fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          schema="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table'
+                AND name IN ('catalog_stock_reconciliation_journal','catalog_stock_reconciliation_validations')) AS tables_count,
+              (SELECT COUNT(*) FROM catalog_stock_reconciliation_journal) AS receipts,
+              (SELECT COUNT(*) FROM catalog_stock_reconciliation_validations) AS validations
+          " --json)"
+          [[ "$(jq -r '.[0].results[0].tables_count // -1' <<<"$schema")" == '2' ]] || exit 51
+          if [[ "$(cat /tmp/catalog-stock-reconciliation-schema-count)" == '0' ]]; then
+            [[ "$(jq -r '.[0].results[0].receipts // -1' <<<"$schema")" == '0' ]] || exit 52
+            [[ "$(jq -r '.[0].results[0].validations // -1' <<<"$schema")" == '0' ]] || exit 53
+          fi
+          state="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+          SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM payments) AS payment_rows,
+            (SELECT COALESCE(SUM(amount),0) FROM payments) AS payment_amount,
+            (SELECT COUNT(*) FROM financial_events) AS money_events,
+            (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_total,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_total,
+            (SELECT COUNT(*) FROM inventory_reservations) AS reservation_rows,
+            (SELECT COUNT(*) FROM inventory_movements) AS movements,
+            (SELECT COUNT(*) FROM inventory_stock_checks) AS physical_checks,
+            (SELECT COUNT(*) FROM catalog_variant_consolidations) AS sku_merges,
+            (SELECT COUNT(*) FROM workshop_settlement_events) AS stage04_events,
+            (SELECT enabled FROM workshop_settlement_capture_control WHERE id=1) AS stage04_capture
+          " --json)"
+          current="$(jq -cSe '.[0].results[0]' <<<"$state")"
+          [[ "$current" == "$(cat /tmp/catalog-stock-reconciliation-before.json)" ]] || {
+            echo 'Business data changed during schema-only migration; needs review' >&2; exit 54
+          }
+          echo 'CATALOG STOCK RECONCILIATION 0095 PASSED — isolated empty audit schema, unchanged stock/money/Stage04'
