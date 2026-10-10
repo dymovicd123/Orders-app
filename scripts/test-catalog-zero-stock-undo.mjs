@@ -169,6 +169,16 @@ sqlite.exec('UPDATE inventory_stock SET quantity=0 WHERE id=10')
 const recheck=await previewZeroStockReMerge(db,7,99)
 assert.equal(recheck.canReMerge,true,JSON.stringify(recheck.blockers))
 await assert.rejects(()=>reMergeZeroStockCatalogVariant(db,7,99,'admin',reason,'stale'),/изменились/)
+// Execution metadata must be locked to the confirmed preview even if a
+// concurrent administrator edits the shared catalog position.
+beforeBatch=()=>sqlite.exec("UPDATE catalog_stock_positions SET material='ПРОВЕРКА ГОНКИ' WHERE id=30")
+await assert.rejects(
+ ()=>reMergeZeroStockCatalogVariant(db,7,99,'admin',reason,recheck.stateToken),
+ /не применено|изменились/
+)
+assert.equal(sku(7),1)
+assert.equal(cnt('catalog_variant_merge_generation_events'),1)
+sqlite.exec("UPDATE catalog_stock_positions SET material='ДРАП' WHERE id=30")
 const stockBeforeRemerge=JSON.stringify(sqlite.prepare('SELECT id,variant_id,quantity,reserved_quantity FROM inventory_stock ORDER BY id').all())
 beforeBatch=()=>{
   const later=new Date(Date.now()+60000).toISOString()
