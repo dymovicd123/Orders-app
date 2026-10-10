@@ -232,9 +232,9 @@ export function CharacteristicSkuMapReview({ apiFetch, kind, sourceId, targetId 
                         ))}
                       </div>
                       <div className="reference-characteristic-map-obligations">
-                        <span>Исходный SKU — открытые позиции заказов: <strong>{quantity(item.activeOrderLines)}</strong> · резервы: <strong>{quantity(item.activeReservations)}</strong></span>
+                        <span>Исходный SKU — открытые позиции заказов: <strong>{quantity(item.activeOrderLines)}</strong> · действующие резервы (записей): <strong>{quantity(item.activeReservations)}</strong></span>
                         {item.keeperActiveOrderLines !== null && item.keeperActiveReservations !== null ? (
-                          <span>Возможный основной SKU — открытые позиции заказов: <strong>{quantity(item.keeperActiveOrderLines)}</strong> · резервы: <strong>{quantity(item.keeperActiveReservations)}</strong></span>
+                          <span>Возможный основной SKU — открытые позиции заказов: <strong>{quantity(item.keeperActiveOrderLines)}</strong> · действующие резервы (записей): <strong>{quantity(item.keeperActiveReservations)}</strong></span>
                         ) : null}
                       </div>
                       {item.reviewReasons.length ? (
