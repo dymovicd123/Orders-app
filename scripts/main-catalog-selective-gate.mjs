@@ -38,6 +38,14 @@ console.log('CURRENT CATALOG/REFERENCE REGRESSION PASSED:',manifest.currentTests
 const staging=fs.mkdtempSync(path.join(os.tmpdir(),'prod-catalog-baseline-'))
 const moved=[],saved=[]
 try{
+ // The production schema migration has already been installed, so its
+ // post-schema migration verifier remains intact in the released code.
+ // Only the isolated historical fixture uses the exact pre-schema verifier.
+ const legacyVerifier='scripts/test-step1906c-dead-code-cleanup.mjs'
+ const prev=fs.readFileSync(legacyVerifier)
+ const frozen=fs.readFileSync('scripts/fixtures/main-catalog-preport-20261010/'+legacyVerifier)
+ saved.push({path:legacyVerifier,current:prev,sha:blob(legacyVerifier)})
+ fs.writeFileSync(legacyVerifier,frozen)
  for(const f of manifest.added.filter(x=>/^(src|worker|migrations)\//.test(x.path))){
   const dst=path.join(staging,f.path)
   fs.mkdirSync(path.dirname(dst),{recursive:true})
