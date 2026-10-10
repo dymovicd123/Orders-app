@@ -1,5 +1,5 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ReferenceIntegrityPanel } from './ReferenceIntegrityPanel'
 import { ReferenceMergeWorkspace } from './ReferenceMergeWorkspace'
 import { CatalogUndoCases } from './CatalogUndoCases'
@@ -35,14 +35,31 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
   } = ctx
 
   // Keep the daily reference list first; maintenance tools load only on request.
-  const [maintenanceView, setMaintenanceView] = useState<'duplicates' | 'merge' | 'cases' | null>(null)
-  const showMaintenance = (view: 'duplicates' | 'merge' | 'cases') => {
+  type MaintenanceView = 'duplicates' | 'merge' | 'cases'
+  const [maintenanceView, setMaintenanceView] = useState<MaintenanceView | null>(null)
+  const [navigationRequest, setNavigationRequest] = useState<{ view: MaintenanceView; sequence: number } | null>(null)
+  const showMaintenance = (view: MaintenanceView) => {
     setMaintenanceView(view)
-    const id = view === 'merge' ? 'reference-merge-actions' : view === 'cases' ? 'reference-undo-cases-actions' : 'reference-duplicates-actions'
-    const entry = document.getElementById(id)
-    entry?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    entry?.querySelector<HTMLElement>('summary')?.focus({ preventScroll: true })
+    // Increment even when already open: every shortcut click must navigate.
+    setNavigationRequest(previous => ({ view, sequence: (previous?.sequence ?? 0) + 1 }))
   }
+  useEffect(() => {
+    if (!navigationRequest) return
+    // Wait until React has opened the target details and laid out its contents.
+    const frame = window.requestAnimationFrame(() => {
+      const id = navigationRequest.view === 'merge' ? 'reference-merge-actions'
+        : navigationRequest.view === 'cases' ? 'reference-undo-cases-actions'
+        : 'reference-duplicates-actions'
+      const summary = document.getElementById(id)?.querySelector<HTMLElement>('summary')
+      if (!summary) return
+      summary.focus({ preventScroll: true })
+      summary.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: 'start',
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [navigationRequest])
 
   return (
     <section className="card wide sector-references" id="references" style={sectorStyle('references')}>
@@ -57,8 +74,8 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                   <div className="reference-hero-badges">
                     <span className="status-pill status-online">Активных: {referenceStats.active}</span>
                     <span className="status-pill status-offline">Отключённых: {referenceStats.inactive}</span>
-                    <span className="status-pill">Всего: {referenceStats.total}</span>
-                    <span className="status-pill">Списков: {referenceStats.kinds}</span>
+                    <span className="status-pill">Всего в выбранном списке: {referenceStats.total}</span>
+                    <span className="status-pill">Списков всего: {referenceStats.kinds}</span>
                   </div>
                 </div>
                 <div className="references-hero-aside">

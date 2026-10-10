@@ -29,7 +29,7 @@
     },
     "src/features/sections/ReferencesSection.tsx": {
       "beforeGitBlob": "f23c6133fa66a22d9986141b6b4cbd43678480b6",
-      "afterGitBlob": "9622ad507d2b8802be56bb1877a05cd38e1e9f16",
+      "afterGitBlob": "6993fb7f12dc0bc7cdf02b0de11b6b5a60fc4532",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/features/sections/ReferencesSection.tsx"
     },
     "worker/index.ts": {
@@ -70,7 +70,7 @@
   "addedFiles": {
     "worker/domains/catalog-variant-consolidation.ts": "7a69c78d2c7c65e1b7b676b619e8d16b8db9d447",
     "worker/domains/reference-integrity.ts": "392e2ec31161a6e31844c7d057a6d81625d9645b",
-    "src/features/sections/ReferenceIntegrityPanel.tsx": "b06f982d124390bbb24dc386af7e16f58e4864cf",
+    "src/features/sections/ReferenceIntegrityPanel.tsx": "eb20c1752833c9d2e4167aa775ca24cab8d7e6aa",
     "src/features/inventory/writeoffReview.ts": "c7dc6cfb6981e979204c59808268dd332f0e1e08",
     "src/features/inventory/views/WriteoffReview.tsx": "efa0608b8836993f13dc6d8536a93ed195d1bc63",
     "src/styles/w4-writeoff-review.css": "261d5e7508a99b5de52284125bd7637440f771cc",
@@ -106,7 +106,7 @@
     "scripts/test-catalog-stale-order-merge-bridge.mjs": "29e283e96ddbfb7feede9a141a89281aa847b991",
     "migrations/0098_v72_consolidated_sku_stock_guard.sql": "700db59c2b37e6db43f3b9a9dc378b44b96858c6",
     "scripts/test-arrival-merged-sku-safety.mjs": "cbfa0d9c77841fbd4edc84ce480f5fcf510803fa",
-    "worker/domains/catalog-consolidation-undo-preview.ts": "86674acafd356f1395fcc8e56b24ffc788508953",
+    "worker/domains/catalog-consolidation-undo-preview.ts": "cb0d06362e72ad08d682b5e9f5bbae88a5842015",
     "scripts/test-catalog-consolidation-undo-preview.mjs": "045d6a250ecaf91a00cf7ca50290eae5a8b30f11",
     "migrations/0099_v72_catalog_merge_generation_events.sql": "af2d04967b27f750384a62ba7513ff8ff17e69db",
     "scripts/test-catalog-merge-generation-foundation.mjs": "ffe9350f04e09e867ce6d1c15300034bc8495c23",
@@ -137,7 +137,7 @@
     "scripts/test-catalog-complex-undo-pages.mjs": "74dd2027aed58bfe6c19414491fcad971bb1128a",
     "worker/domains/catalog-complex-undo-workplan.ts": "895426882e5338b9bb8adeef898658376ad1941e",
     "scripts/test-catalog-complex-undo-workplan.mjs": "6cf244f915acf8bb608747a70c56ae81747d889f",
-    "src/features/sections/CatalogUndoCases.tsx": "ab1ecc9ae1deef1332be7f31b9dd819f70893d38",
+    "src/features/sections/CatalogUndoCases.tsx": "a1685813b779d847cafc894635869213d1985269",
     "src/styles/reference-undo-cases.css": "0dd6eb479f452be3e10db012afcb215aebac39fd",
     "scripts/test-catalog-complex-undo-human-ui.mjs": "50922483f6bc06c8c04c483cb80e205936dcd4ba",
     "scripts/test-catalog-exhaustive-sku-identity.mjs": "3daad0539899bf4ea9ed764e9c858bd2eb3cf13c",
