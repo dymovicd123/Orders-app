@@ -143,7 +143,7 @@
     "scripts/test-catalog-exhaustive-sku-identity.mjs": "3daad0539899bf4ea9ed764e9c858bd2eb3cf13c",
     "worker/domains/reference-characteristic-sku-mapping.ts": "5b46af91ff8743aeb6eb7e854f8e9a50abdfde78",
     "scripts/test-characteristic-sku-mapping.mjs": "68be04e0e0105a516dcdf433efe6a5930c310b9f",
-    "src/features/sections/CharacteristicSkuMapReview.tsx": "1666b84e4a5f430997e07eceba5b027cc68516d0",
+    "src/features/sections/CharacteristicSkuMapReview.tsx": "a052acc80f7b6b984164f50a513bb75fb04bfd3f",
     "src/styles/reference-characteristic-sku-map.css": "d8a242fa475807840d49595aeeb817e53a7b0085",
     "scripts/test-characteristic-sku-map-ui.mjs": "7cc6e841d138387d8126b2ab5798e3d111559a92"
   }
