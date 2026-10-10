@@ -139,6 +139,8 @@ export async function applyCatalogStockReconciliation(
     AND NOT EXISTS (SELECT 1 FROM workshop_tasks wt WHERE wt.variant_id IN (v.id,k.id) AND wt.status='active')
     AND NOT EXISTS (SELECT 1 FROM inventory_lifecycle_events e
       WHERE e.variant_id IN (v.id,k.id) AND e.status IN ('pending','applied'))
+    AND NOT EXISTS (SELECT 1 FROM inventory_stocktake_sessions sess
+      WHERE sess.inventory_source=s.inventory_source AND sess.status='active')
     AND NOT EXISTS (SELECT 1 FROM inventory_stocktake_items i
       JOIN inventory_stocktake_sessions sess ON sess.id=i.session_id
       WHERE i.variant_id IN (v.id,k.id) AND sess.status='active')
@@ -160,9 +162,6 @@ export async function applyCatalogStockReconciliation(
   ].map(name=>alias+'.'+name+' IS ?').join(' AND ')
   const asValues=(row:Sku)=>[row.product_id,row.stock_position_id,row.category,row.gender,
     row.color,row.size_label,row.material,row.length,row.is_active,row.updated_at]
-  const correlation=[input.requestId,input.method,finalQuantity,user,reason,stamp,
-    source.id,keeper.id,input.location,source.quantity,keeper.quantity,
-    ...asValues(v),...asValues(k)]
   const guard=db.prepare(
     `INSERT INTO catalog_stock_reconciliation_journal (
       request_id,source_variant_id,keeper_variant_id,inventory_source,decision_method,
@@ -184,7 +183,6 @@ export async function applyCatalogStockReconciliation(
   ).bind(input.requestId,input.method,finalQuantity,finalQuantity,reason,user,stamp,
     keeper.id,input.keeperId,source.id,input.location,source.quantity,keeper.quantity,
     ...asValues(v),...asValues(k))
-  const predicate=(alias:string)=>`${journalCheck} AND ${alias}.id=?`
   const sourceUpdate=db.prepare(
     `UPDATE inventory_stock SET quantity=0,last_action='Корректировка при объединении',
       last_source_ref=?,updated_at=?
