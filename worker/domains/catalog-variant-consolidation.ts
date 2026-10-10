@@ -2,6 +2,8 @@
 import { canonicalStockPositionValue, toInt } from '../core/text.ts'
 import { catalogColorIdentity, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize } from './catalog.ts'
 import { businessMonthRange } from './reference-merge-preview.ts'
+import { buildStockReconciliationPlan } from './catalog-stock-reconciliation.ts'
+import type { StockCheckEvidence } from './catalog-stock-reconciliation.ts'
 
 type Sku = {
   id: number; product_id: number; stock_position_id: number | null;
@@ -60,6 +62,27 @@ function snapshotToken(source: Sku, target: Sku, stocks: StockRow[], reservation
     reservations: reservationSnapshotJson(reservations),
     month: [month.from,month.toExclusive],
   })
+}
+async function readLatestPhysicalChecks(db: D1Database, sourceId: number, keeperId: number): Promise<StockCheckEvidence[]> {
+  const result = await db.prepare(
+    `WITH ranked AS (
+      SELECT variant_id, inventory_source, counted_quantity, checked_at, check_type, checked_by,
+        ROW_NUMBER() OVER (
+          PARTITION BY variant_id, inventory_source ORDER BY datetime(checked_at) DESC, id DESC
+        ) AS rank
+      FROM inventory_stock_checks WHERE variant_id IN (?,?)
+    )
+    SELECT variant_id, inventory_source, counted_quantity, checked_at, check_type, checked_by
+    FROM ranked WHERE rank=1`
+  ).bind(sourceId,keeperId).all<{
+    variant_id:number;inventory_source:string;counted_quantity:number;checked_at:string;
+    check_type:string;checked_by:string|null
+  }>()
+  return (result.results||[]).map(row=>({
+    variantId:Number(row.variant_id),location:row.inventory_source,
+    countedQuantity:Number(row.counted_quantity),checkedAt:row.checked_at,
+    checkType:row.check_type,checkedBy:row.checked_by,
+  }))
 }
 function stockSnapshotJson(stocks: StockRow[]) {
   return JSON.stringify(stocks.map(x=>[x.id,x.inventory_source,x.variant_id,x.quantity,x.reserved_quantity]))
@@ -156,6 +179,8 @@ export async function previewCatalogVariantConsolidation(db: D1Database, sourceI
       sourceReserved: Number(sourceStock?.reserved_quantity || 0),
       targetReserved: Number(targetStock?.reserved_quantity || 0) }
   })
+  const recentPhysicalChecks=await readLatestPhysicalChecks(db,sourceId,targetId)
+  const stockReconciliation=buildStockReconciliationPlan(stockBreakdown,recentPhysicalChecks,sourceId,targetId)
   const month=businessMonthRange()
   // A still-open past/future order must keep its historical SKU. It cannot be
   // silently re-pointed as part of current-month catalog cleanup.
@@ -213,7 +238,7 @@ export async function previewCatalogVariantConsolidation(db: D1Database, sourceI
     source: { id: source.id, color: source.color, size: source.size_label, active: Boolean(source.is_active) },
     target: { id: target.id, color: target.color, size: target.size_label, active: Boolean(target.is_active) },
     productName: source.product_name, material: source.execution_material, length: source.execution_length,
-    sourceImpact, targetImpact, stockBreakdown, month, reservationCount: sourceReservations.length,
+    sourceImpact, targetImpact, stockBreakdown, stockReconciliation, month, reservationCount: sourceReservations.length,
     stateToken: snapshotToken(source,target,stocks,reservations,month),
     transferQuantity: stockBreakdown.reduce((sum,r)=>sum + r.sourcePhysical,0),
     blockers, canConsolidate: blockers.length === 0,
