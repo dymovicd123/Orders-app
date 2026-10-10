@@ -258,7 +258,7 @@ assert.equal((await previewCatalogVariantConsolidation(db,12,13)).canConsolidate
   'An old manual operation can still be reversed into a retired SKU')
 sqlite.exec('INSERT INTO inventory_movement_reversals VALUES(1)')
 p=await previewCatalogVariantConsolidation(db,12,13)
-assert.equal(p.canConsolidate,true)
+assert.equal(p.canConsolidateAfterVerifiedSum,true)
 
 // Stale browser preview never quietly moves a newly observed quantity.
 sqlite.exec('UPDATE inventory_stock SET quantity=6 WHERE id=120')
