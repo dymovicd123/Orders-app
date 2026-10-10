@@ -145,6 +145,9 @@
     "scripts/test-characteristic-sku-mapping.mjs": "68be04e0e0105a516dcdf433efe6a5930c310b9f",
     "src/features/sections/CharacteristicSkuMapReview.tsx": "a052acc80f7b6b984164f50a513bb75fb04bfd3f",
     "src/styles/reference-characteristic-sku-map.css": "d8a242fa475807840d49595aeeb817e53a7b0085",
-    "scripts/test-characteristic-sku-map-ui.mjs": "7cc6e841d138387d8126b2ab5798e3d111559a92"
+    "scripts/test-characteristic-sku-map-ui.mjs": "7cc6e841d138387d8126b2ab5798e3d111559a92",
+    "migrations/0105_v72_reference_reason_choice_merges.sql": "6a3314e903349049740ccbe661f60f896a6e8a5b",
+    "scripts/test-reference-reason-choice-schema.mjs": "570e2a06a142eaa8a9e3d4e1e99001f634277c5b",
+    ".github/workflows/branch2-reference-reason-schema-0105.yml": "5394b2f0e8830e043a83be7d700903304dbfe3f9"
   }
 }
