@@ -40,6 +40,7 @@ const tests=[
   ['scripts/test-catalog-integrity-r1-references.mjs',false],
   ['scripts/test-reference-crud-integrity.mjs',true],
   ['scripts/test-catalog-stock-reconciliation.mjs',true],
+  ['scripts/test-catalog-stock-reconciliation-write.mjs',true],
   ['scripts/test-catalog-integrity-r2-preview.mjs',true],
   ['scripts/test-catalog-integrity-r2-hide.mjs',true],
   ['scripts/test-catalog-integrity-r2-sku-consolidation.mjs',true],
