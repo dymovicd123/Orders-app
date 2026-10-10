@@ -42,7 +42,7 @@ append(1,7,9,3,'merge')
 assert.deepEqual(mappings(),[
  {source:7,keeper:9,generation:3},{source:11,keeper:8,generation:1}
 ], 'Reremerge can choose a different keeper while original root receipt remains immutable')
-assert.throws(()=>db.exec('UPDATE catalog_variant_merge_generation_events SET reason="tamper" WHERE id=1'),/cannot be modified/)
+assert.throws(()=>db.exec(`UPDATE catalog_variant_merge_generation_events SET reason='tamper' WHERE id=1`),/cannot be modified/)
 assert.throws(()=>db.exec('DELETE FROM catalog_variant_merge_generation_events WHERE id=1'),/cannot be deleted/)
 assert.throws(()=>append(1,7,9,3,'merge'),/UNIQUE constraint|must follow/)
 const original={...db.prepare('SELECT source_variant_id,target_variant_id FROM catalog_variant_consolidations WHERE id=1').get()}
