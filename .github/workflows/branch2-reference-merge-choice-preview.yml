@@ -35,6 +35,7 @@ jobs:
           node --experimental-strip-types scripts/test-reference-payment-merge.mjs
           node --experimental-strip-types scripts/test-reference-merge-history.mjs
           node --experimental-strip-types scripts/test-catalog-integrity-r2-sku-consolidation.mjs
+          node --experimental-strip-types scripts/test-catalog-stale-order-merge-bridge.mjs
           node --experimental-strip-types scripts/test-inventory-writeoff-review.mjs
       - name: Full historical Branch2 regression gate
         run: npm run release:check
