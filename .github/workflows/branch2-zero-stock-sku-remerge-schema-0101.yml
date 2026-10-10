@@ -1,0 +1,126 @@
+name: Branch2 zero-stock SKU re-merge proof schema 0101
+
+on:
+  push:
+    branches: [branch2]
+    paths: ['.github/workflows/branch2-zero-stock-sku-remerge-schema-0101.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Enforce isolated Branch2 D1, audited additive schema, frozen Stage04
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == 'branch2' ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo 'Production binding detected' >&2; exit 41
+          fi
+          [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]] || exit 42
+          [[ "$(git hash-object migrations/0083_v72_workshop_settlement_foundation.sql)" == "d73a92f86317a9068a9a381742d55e5c96804879" ]] || exit 43
+          [[ "$(git hash-object migrations/0084_v72_workshop_settlement_status_capture.sql)" == "2e3f51ab0b055d5b82d6b542cec28cf661359003" ]] || exit 44
+          [[ "$(git hash-object migrations/0101_v72_catalog_zero_stock_remerge_validation.sql)" == "2957d4f9570ca728b38f4614ba09631c4daa1a0c" ]] || exit 45
+          if grep -Eiq '^[[:space:]]*(UPDATE|DELETE|REPLACE|DROP|TRUNCATE|ALTER)[[:space:]]' migrations/0101_v72_catalog_zero_stock_remerge_validation.sql; then
+            echo 'Schema must be additive-only' >&2; exit 46
+          fi
+      - run: npm ci
+      - name: Check Branch2 identity and Stage04
+        run: |
+          set -euo pipefail
+          node scripts/test-branch2-environment.mjs
+          node scripts/test-stage04a-workshop-settlements.mjs
+          node scripts/test-stage04b-workshop-status-capture.mjs
+          node --experimental-strip-types scripts/test-catalog-zero-stock-undo.mjs
+      - name: Read exact stock, orders, finance, Stage04 fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          state="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+              (SELECT COUNT(*) FROM order_items) AS order_items_count,
+              (SELECT COUNT(*) FROM payments) AS payment_rows,
+              (SELECT COALESCE(SUM(amount),0) FROM payments) AS payment_amount,
+              (SELECT COUNT(*) FROM financial_events) AS money_events,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_total,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_total,
+              (SELECT COUNT(*) FROM inventory_reservations) AS reservation_rows,
+              (SELECT COUNT(*) FROM inventory_movements) AS movements,
+              (SELECT COUNT(*) FROM inventory_stock_checks) AS checks,
+              (SELECT COUNT(*) FROM catalog_variant_consolidations) AS original_merges,
+              (SELECT COUNT(*) FROM catalog_variant_merge_generation_events) AS generation_events,
+              (SELECT COUNT(*) FROM workshop_settlement_events) AS stage04_events,
+              (SELECT enabled FROM workshop_settlement_capture_control WHERE id=1) AS stage04_capture
+          " --json)"
+          jq -cSe '.[0].results[0]' <<<"$state" > /tmp/remerge-before.json
+          schema="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT COUNT(*) AS n FROM sqlite_master
+            WHERE type='table' AND name='catalog_variant_zero_stock_remerge_validations'
+          " --json)"
+          jq -r '.[0].results[0].n' <<<"$schema" > /tmp/remerge-schema-before
+          [[ "$(cat /tmp/remerge-schema-before)" == "0" || "$(cat /tmp/remerge-schema-before)" == "1" ]] || exit 47
+      - name: Apply only 0101 to Branch2 isolated D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(cat /tmp/remerge-schema-before)" == '0' ]]; then
+            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file migrations/0101_v72_catalog_zero_stock_remerge_validation.sql
+          else
+            echo '0101 table exists; validating existing schema without rewriting business rows'
+          fi
+      - name: Verify 0101 proof triggers and unchanged business fingerprints
+        shell: bash
+        run: |
+          set -euo pipefail
+          schema="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master
+                WHERE type='table' AND name='catalog_variant_zero_stock_remerge_validations') AS table_count,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger'
+                AND name IN ('trg_catalog_zero_stock_remerge_proof',
+                  'trg_catalog_zero_stock_remerge_immutable_update',
+                  'trg_catalog_zero_stock_remerge_immutable_delete')) AS trigger_count
+          " --json)"
+          [[ "$(jq -r '.[0].results[0].table_count' <<<"$schema")" == '1' ]] || exit 51
+          [[ "$(jq -r '.[0].results[0].trigger_count' <<<"$schema")" == '3' ]] || exit 52
+          state="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+              (SELECT COUNT(*) FROM order_items) AS order_items_count,
+              (SELECT COUNT(*) FROM payments) AS payment_rows,
+              (SELECT COALESCE(SUM(amount),0) FROM payments) AS payment_amount,
+              (SELECT COUNT(*) FROM financial_events) AS money_events,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_total,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_total,
+              (SELECT COUNT(*) FROM inventory_reservations) AS reservation_rows,
+              (SELECT COUNT(*) FROM inventory_movements) AS movements,
+              (SELECT COUNT(*) FROM inventory_stock_checks) AS checks,
+              (SELECT COUNT(*) FROM catalog_variant_consolidations) AS original_merges,
+              (SELECT COUNT(*) FROM catalog_variant_merge_generation_events) AS generation_events,
+              (SELECT COUNT(*) FROM workshop_settlement_events) AS stage04_events,
+              (SELECT enabled FROM workshop_settlement_capture_control WHERE id=1) AS stage04_capture
+          " --json)"
+          [[ "$(jq -cSe '.[0].results[0]' <<<"$state")" == "$(cat /tmp/remerge-before.json)" ]] || {
+            echo 'Business data changed during schema migration' >&2; exit 53
+          }
+          echo 'RE-MERGE 0101 PASSED: isolated append-only proof, no stock/order/money/Stage04 differences'
