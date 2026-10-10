@@ -180,6 +180,11 @@ assert.equal(history.items[0].sourceId,7)
 assert.equal(history.items[0].targetId,8)
 assert.equal(history.items[0].createdBy,'admin-test')
 
+assert.equal(query('SELECT target_variant_id FROM catalog_variant_consolidations').target_variant_id,8)
+const replay=await consolidateUnusedCatalogVariant(db,7,8,'admin-test')
+assert.equal(replay.alreadyConsolidated,true)
+assert.equal(activity(),1,'Idempotent replay must not duplicate journal entries')
+await assert.rejects(() => consolidateUnusedCatalogVariant(db,7,9),/уже объединена|История объединений/)
 // R5: an original receipt must never masquerade as a successful re-merge
 // after a guarded undo; idempotency follows the LATEST effective generation.
 const rootOne=Number(sqlite.prepare('SELECT id FROM catalog_variant_consolidations WHERE source_variant_id=7').get().id)
@@ -217,11 +222,6 @@ assert.equal(Number(sqlite.prepare('SELECT target_variant_id FROM catalog_varian
 assert.deepEqual(sqlite.prepare('SELECT * FROM order_items ORDER BY id').all(),beforeOrder,
  'Shipped order history must not change during lifecycle detection')
 
-assert.equal(query('SELECT target_variant_id FROM catalog_variant_consolidations').target_variant_id,8)
-const replay=await consolidateUnusedCatalogVariant(db,7,8,'admin-test')
-assert.equal(replay.alreadyConsolidated,true)
-assert.equal(activity(),1,'Idempotent replay must not duplicate journal entries')
-await assert.rejects(() => consolidateUnusedCatalogVariant(db,7,9),/уже объединена/)
  
 // R3 — current physical balance is carried over *per location*, not written off.
 sqlite.exec(`
