@@ -183,7 +183,7 @@ export const workspaceModules: WorkspaceModule[] = [
   { id: 'leads', label: 'Лиды', icon: '◎', note: 'Лиды и Call Centre как в старой системе', href: '#leads', status: 'active' },
   { id: 'plan', label: 'План', icon: '◈', note: 'Планы менеджеров, план отдела и выполнение', href: '#plan', status: 'active' },
   { id: 'reports', label: 'Отчёты', icon: '▥', note: 'Сводные отчёты отдельной вкладкой', href: '#reports', status: 'active' },
-  { id: 'directory', label: 'Справочники', icon: '▦', note: 'Все значения, характеристики одежды и порядок в данных', href: '#references', status: 'ready' },
+  { id: 'directory', label: 'Справочники', icon: '▦', note: 'Города, доставка и причины возврата', href: '#references', status: 'ready' },
 ]
 
 
@@ -196,7 +196,6 @@ export const referenceKindOptions: Array<{
 }> = [
   { kind: 'cities', label: 'Города', placeholder: 'Например: АЛМАТЫ', help: 'Подсказки для поля города при создании и редактировании заказа.' },
   { kind: 'deliveryTypes', label: 'Доставка', placeholder: 'Например: ПОЕЗД', help: 'Способы доставки для заказа. Не хранит финансы.' },
-  { kind: 'paymentMethods', label: 'Способы оплаты', placeholder: 'Например: КАСПИ', help: 'Подсказки способов оплаты; не меняют историю платежей.' },
   { kind: 'colors', label: 'Цвета', placeholder: 'Например: БЕЖЕВЫЙ', help: 'Характеристики вариантов в заказах, складе и бутике.' },
   { kind: 'materials', label: 'Материалы', placeholder: 'Например: БАРХАТ', help: 'Материалы для карточек товаров и складских вариантов.' },
   { kind: 'lengths', label: 'Длины', placeholder: 'Например: ҰЗЫН', help: 'Длина изделия для вариантов и поиска.' },

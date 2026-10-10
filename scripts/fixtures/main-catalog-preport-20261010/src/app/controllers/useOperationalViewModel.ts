@@ -222,7 +222,6 @@ const summary = useMemo(() => {
   const allReferenceGroups = useMemo(() => ([
     { kind: 'cities' as const, label: 'Города', count: referenceCount('cities', referenceSummary.cities), help: 'Подсказки для города при создании и редактировании заказа.' },
     { kind: 'deliveryTypes' as const, label: 'Доставка', count: referenceCount('deliveryTypes', referenceSummary.deliveryTypes), help: 'Способы доставки для формы заказа и отчётов.' },
-    { kind: 'paymentMethods' as const, label: 'Способы оплаты', count: referenceCount('paymentMethods', references?.paymentMethods?.length || 0), help: 'Варианты оплаты для заказов; история платежей сохраняется отдельно.' },
     { kind: 'colors' as const, label: 'Цвета', count: referenceCount('colors', referenceSummary.colors), help: 'Цвета вариантов товаров в заказах, складе и бутике.' },
     { kind: 'materials' as const, label: 'Материалы', count: referenceCount('materials', referenceSummary.materials), help: 'Материалы вариантов товаров для склада и цеха.' },
     { kind: 'lengths' as const, label: 'Длины', count: referenceCount('lengths', referenceSummary.lengths), help: 'Длины изделий для товарных вариантов.' },
@@ -232,8 +231,10 @@ const summary = useMemo(() => {
     { kind: 'writeoffReasons' as const, label: 'Причины списания', count: referenceCount('writeoffReasons', referenceSummary.writeoffReasons), help: 'Быстрый выбор причины при ручном списании.' },
   ]), [referenceSummary, referenceKindCounts])
 
-  // One administrative entry point; contextual shortcuts still share these records.
-  const referenceGroups = allReferenceGroups
+  const referenceGroups = useMemo(
+    () => allReferenceGroups.filter((group) => ['cities', 'deliveryTypes', 'returnReasons'].includes(group.kind)),
+    [allReferenceGroups],
+  )
   const inventoryProductReferenceGroups = useMemo(
     () => allReferenceGroups.filter((group) => ['colors', 'materials', 'lengths', 'sizes', 'childAges'].includes(group.kind)),
     [allReferenceGroups],
