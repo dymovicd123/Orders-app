@@ -21,6 +21,7 @@ sqlite.exec(`
 INSERT INTO catalog_variant_consolidations(source_variant_id,target_variant_id,product_id,created_at)
 VALUES(7,8,100,'2026-10-10T12:00:00Z');
 `)
+sqlite.exec(fs.readFileSync('migrations/0099_v72_catalog_merge_generation_events.sql','utf8'))
 sqlite.exec(fs.readFileSync('migrations/0098_v72_consolidated_sku_stock_guard.sql','utf8'))
 const db={prepare(text){return{bind(...values){return{async first(){return sqlite.prepare(text).get(...values)||null}}}}}}
 const mapped=await resolveConsolidatedOrderWriteVariant(db,100,7)
