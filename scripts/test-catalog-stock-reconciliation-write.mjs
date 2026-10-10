@@ -201,7 +201,7 @@ sqlite.exec("UPDATE inventory_stock SET quantity=2 WHERE id=10")
 token=(await previewCatalogVariantConsolidation(db,7,8)).stateToken
 await assert.rejects(
  ()=>applyCatalogStockReconciliation(db,request('keep_keeper','reconcile-active-rev-20261010',{expectedToken:token}),'admin'),
- /отменена целиком|изменились|Корректировка пока невозможна/,
+ /отменена целиком|изменились|Корректировка пока невозможна|Корректировка не применена/,
 )
 sqlite.exec("DELETE FROM inventory_stocktake_sessions WHERE id='rev'")
 // Explicit concurrent quantity change between preview and D1 batch is caught
