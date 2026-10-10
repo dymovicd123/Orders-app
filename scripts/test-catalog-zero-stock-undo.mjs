@@ -251,6 +251,17 @@ assert.equal(sqlite.prepare('SELECT variant_id FROM order_items WHERE id=901').g
 sqlite.exec('DELETE FROM order_items WHERE id=901; DELETE FROM orders WHERE id=901')
 const previewReMerge=await previewZeroStockReMerge(db,7,99)
 assert.equal(previewReMerge.canReMerge,true,JSON.stringify(previewReMerge.blockers))
+// Any stock mutation inside the atomic batch must abort *both* the
+// generation event and retirement; the counterparty stock remains intact.
+onStatement=(i)=>{if(i===2){onStatement=null;sqlite.exec('UPDATE inventory_stock SET quantity=7 WHERE id=199')}}
+await assert.rejects(
+ ()=>reMergeZeroStockCatalogVariant(db,7,99,'admin',reason,previewReMerge.stateToken),
+ /не применено/,
+ 'Final immutable stock proof must rollback the entire D1 transaction'
+)
+assert.equal(sku(7),1)
+assert.equal(cnt('catalog_variant_merge_generation_events'),1)
+assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE id=199').get().quantity,6)
 const reMerged=await reMergeZeroStockCatalogVariant(db,7,99,'admin',reason,previewReMerge.stateToken)
 assert.equal(reMerged.reMerged,true)
 assert.equal(reMerged.generation,3)
