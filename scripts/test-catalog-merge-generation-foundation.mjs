@@ -16,7 +16,7 @@ db.exec(`INSERT INTO catalog_variant_consolidations
  VALUES (1,7,8,1,'2026-10-10T07:30:00Z'),
         (2,11,8,1,'2026-10-10T07:30:01Z');`)
 db.exec(fs.readFileSync('migrations/0099_v72_catalog_merge_generation_events.sql','utf8'))
-const mappings=()=>db.prepare('SELECT source_variant_id AS source,target_variant_id AS keeper,generation FROM catalog_variant_effective_merge_lineage ORDER BY source_variant_id').all()
+const mappings=()=>db.prepare('SELECT source_variant_id AS source,target_variant_id AS keeper,generation FROM catalog_variant_effective_merge_lineage ORDER BY source_variant_id').all().map(row=>({...row}))
 assert.deepEqual(mappings(),[
  {source:7,keeper:8,generation:1},{source:11,keeper:8,generation:1}
 ], 'Legacy receipts must retain current canonical meaning without any data backfill')
@@ -45,9 +45,9 @@ assert.deepEqual(mappings(),[
 assert.throws(()=>db.exec('UPDATE catalog_variant_merge_generation_events SET reason="tamper" WHERE id=1'),/cannot be modified/)
 assert.throws(()=>db.exec('DELETE FROM catalog_variant_merge_generation_events WHERE id=1'),/cannot be deleted/)
 assert.throws(()=>append(1,7,9,3,'merge'),/UNIQUE constraint|must follow/)
-const original=db.prepare('SELECT source_variant_id,target_variant_id FROM catalog_variant_consolidations WHERE id=1').get()
+const original={...db.prepare('SELECT source_variant_id,target_variant_id FROM catalog_variant_consolidations WHERE id=1').get()}
 assert.deepEqual(original,{source_variant_id:7,target_variant_id:8})
-const events=db.prepare('SELECT generation,event_kind,target_variant_id FROM catalog_variant_merge_generation_events WHERE source_variant_id=7 ORDER BY generation').all()
+const events=db.prepare('SELECT generation,event_kind,target_variant_id FROM catalog_variant_merge_generation_events WHERE source_variant_id=7 ORDER BY generation').all().map(row=>({...row}))
 assert.deepEqual(events,[{generation:2,event_kind:'undo',target_variant_id:8},{generation:3,event_kind:'merge',target_variant_id:9}])
 assert.equal(db.prepare('SELECT COUNT(*) AS n FROM catalog_variant_merge_generation_events WHERE source_variant_id=11').get().n,0)
 console.log('CATALOG MERGE GENERATIONS PASSED — immutable root, append-only undo/remerge alternation, same-product checks, current effective lineage and legacy compatibility')
