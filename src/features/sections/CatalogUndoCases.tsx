@@ -71,7 +71,12 @@ const date=(value:string|null|undefined)=>{
  return Number.isFinite(t)?new Date(t).toLocaleString('ru-RU'):'Дата неизвестна'
 }
 function errorMessage(e:unknown){
- return e instanceof Error?e.message:'Не удалось получить сведения. Повторите попытку.'
+ if(e instanceof Error){
+  return e.message === 'Объединение с таким номером не найдено.'
+   ? 'Объединение с таким номером не найдено. Проверьте номер в истории объединений.'
+   : e.message
+ }
+ return 'Не удалось получить сведения. Повторите попытку.'
 }
 async function jsonGet<T>(apiFetch:Props['apiFetch'],path:string){
  const response=await apiFetch(path,{cache:'no-store'})
