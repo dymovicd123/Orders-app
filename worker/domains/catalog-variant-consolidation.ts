@@ -302,7 +302,7 @@ export async function consolidateUnusedCatalogVariant(
       :decision.method==='keep_source'?place.sourcePhysical
       :decision.method==='keep_keeper'?place.keeperPhysical
       :decision.countedQuantity
-    if(!Number.isSafeInteger(final)||final<0
+    if(typeof final!=='number'||!Number.isSafeInteger(final)||final<0
       || (decision.method==='physical_count' && !Number.isSafeInteger(decision.countedQuantity))
       || (decision.method!=='physical_count' && decision.countedQuantity!==undefined)){
       throw new Error('Фактическое количество неверно: используйте целое неотрицательное число.')
