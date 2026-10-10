@@ -120,7 +120,7 @@
     "scripts/test-catalog-positive-undo-proof-schema.mjs": "55320cc56ef2d759356a146908161d6768b37ffd",
     "worker/domains/catalog-positive-stock-undo.ts": "1e2042f13dd62472266733024afc230410cb46b8",
     "scripts/test-catalog-positive-stock-undo.mjs": "73ee8e895601be2dd39b04d2fce0bf4ca620c6fa",
-    "worker/domains/catalog-corrected-undo-review.ts": "7154d8465d16595e65ea6653ff2fe9fe9c716cdf",
+    "worker/domains/catalog-corrected-undo-review.ts": "8d9779a39fad11a86e607cd7e0ad764e8527981b",
     "scripts/test-catalog-corrected-undo-review.mjs": "ab5ffc2a379b2b3c90d5392f849ffff51ec9ff76"
   }
 }
