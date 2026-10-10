@@ -150,6 +150,61 @@ assert.equal(sqlite.prepare('SELECT event_kind FROM catalog_variant_merge_genera
 await assert.rejects(()=>undoUnusedCatalogConsolidation(db,1,'admin',reason,baseline.undoStateToken),/Нельзя автоматически/)
 assert.equal(cnt('catalog_variant_merge_generation_events'),1)
 
+// Reset the fixture to a merged source for testing raced writes, leaving the
+// original event in place as immutable evidence, but use a second fresh receipt.
+sqlite.exec(`
+ INSERT INTO catalog_variants(id,product_id,stock_position_id,category,gender,color,size_label,
+ material,length,is_active,updated_at) VALUES
+ (17,100,30,'adult','ЖЕН','ПЕПЕЛЬНЫЙ','50','ДРАП','СТАНДАРТ',0,'before'),
+ (18,100,30,'adult','ЖЕН','ПЕПЕЛЬНЫЙ','50','ДРАП','СТАНДАРТ',1,'before');
+ INSERT INTO inventory_stock(id,variant_id,quantity,reserved_quantity,inventory_source,last_source_ref)
+ VALUES (117,17,0,0,'warehouse','catalog-consolidation:17->18'),
+        (118,18,3,0,'warehouse',NULL);
+ INSERT INTO catalog_variant_consolidations(
+ id,source_variant_id,target_variant_id,product_id,source_physical_quantity,source_reserved_quantity,
+ created_by,created_at)
+ VALUES (2,17,18,100,0,0,'admin','2026-10-10T07:00:00Z');
+ INSERT INTO catalog_variant_consolidation_stock_rows (
+ consolidation_id,inventory_source,source_stock_id,target_stock_id_before,source_quantity_before,
+ target_quantity_before,target_reserved_before,combined_quantity_after,source_reserved_before)
+ VALUES (2,'warehouse',117,118,0,3,0,3,0);
+ INSERT INTO catalog_variant_consolidation_stock_decisions (
+ consolidation_id,inventory_source,source_stock_id,keeper_stock_id_before,decision_method,
+ source_quantity_before,keeper_quantity_before,final_quantity,adjustment_quantity,
+ reason,created_by,created_at)
+ VALUES(2,'warehouse',117,118,'sum',0,3,3,0,'','admin','2026-10-10T07:00:00Z');
+ INSERT INTO catalog_variant_consolidation_validations VALUES(2,1,'2026-10-10T07:00:00Z');
+ INSERT INTO catalog_variant_consolidation_reservation_validations VALUES(2,1,'2026-10-10T07:00:00Z');
+`)
+const p2=await previewCatalogConsolidationUndo(db,2)
+assert.equal(p2.canUndoZeroStockIdentity,true,JSON.stringify(p2.blockers))
+// Concurrent live order wins: stale administrative undo must not restore SKU.
+beforeBatch=()=>sqlite.exec(`
+ INSERT INTO orders(id,order_status,shipping_status,updated_at)
+ VALUES(99,'active','sent','2026-10-10 08:00:00');
+ INSERT INTO order_items(id,order_id,variant_id,quantity,created_at)
+ VALUES(99,99,18,1,'2026-10-10 08:00:00');
+`)
+await assert.rejects(()=>undoUnusedCatalogConsolidation(db,2,'admin',reason,p2.undoStateToken),/Условия|устарели/)
+assert.equal(sku(17),0)
+assert.equal(cnt('catalog_variant_merge_generation_events'),1)
+sqlite.exec('DELETE FROM order_items WHERE id=99; DELETE FROM orders WHERE id=99')
+// Failed final proof must rollback the journal and attempted source activation.
+const p3=await previewCatalogConsolidationUndo(db,2)
+assert.equal(p3.canUndoZeroStockIdentity,true)
+onStatement=(i)=>{if(i===1){onStatement=null;sqlite.exec("UPDATE catalog_variants SET updated_at='changed' WHERE id=17")}}
+await assert.rejects(()=>undoUnusedCatalogConsolidation(db,2,'admin',reason,p3.undoStateToken),/Отмена не применена/)
+assert.equal(sku(17),0)
+assert.equal(sqlite.prepare('SELECT updated_at FROM catalog_variants WHERE id=17').get().updated_at,'before')
+assert.equal(cnt('catalog_variant_merge_generation_events'),1)
+assert.equal(cnt('catalog_variant_zero_stock_undo_validations'),1)
+// A previously nonzero source must not be silently reconstructed even if the
+// two stock rows now happen to resemble the zero source fixture.
+sqlite.exec("UPDATE catalog_variant_consolidation_stock_rows SET source_quantity_before=2 WHERE consolidation_id=2")
+const unsafe=await previewCatalogConsolidationUndo(db,2)
+assert.equal(unsafe.canUndoZeroStockIdentity,false)
+assert.ok(unsafe.blockers.some(x=>x.code==='physical_undo_requires_accounting'))
+await assert.rejects(()=>undoUnusedCatalogConsolidation(db,2,'admin',reason,unsafe.undoStateToken),/Нельзя автоматически/)
 // Generation 3: after confirmed zero-stock undo, restore an immutable
 // source->NEW keeper mapping without touching stock, shipped history or money.
 sqlite.exec(`
@@ -214,61 +269,6 @@ await assert.rejects(
 )
 assert.equal(cnt('catalog_variant_merge_generation_events'),2)
 
-// Reset the fixture to a merged source for testing raced writes, leaving the
-// original event in place as immutable evidence, but use a second fresh receipt.
-sqlite.exec(`
- INSERT INTO catalog_variants(id,product_id,stock_position_id,category,gender,color,size_label,
- material,length,is_active,updated_at) VALUES
- (17,100,30,'adult','ЖЕН','ПЕПЕЛЬНЫЙ','50','ДРАП','СТАНДАРТ',0,'before'),
- (18,100,30,'adult','ЖЕН','ПЕПЕЛЬНЫЙ','50','ДРАП','СТАНДАРТ',1,'before');
- INSERT INTO inventory_stock(id,variant_id,quantity,reserved_quantity,inventory_source,last_source_ref)
- VALUES (117,17,0,0,'warehouse','catalog-consolidation:17->18'),
-        (118,18,3,0,'warehouse',NULL);
- INSERT INTO catalog_variant_consolidations(
- id,source_variant_id,target_variant_id,product_id,source_physical_quantity,source_reserved_quantity,
- created_by,created_at)
- VALUES (2,17,18,100,0,0,'admin','2026-10-10T07:00:00Z');
- INSERT INTO catalog_variant_consolidation_stock_rows (
- consolidation_id,inventory_source,source_stock_id,target_stock_id_before,source_quantity_before,
- target_quantity_before,target_reserved_before,combined_quantity_after,source_reserved_before)
- VALUES (2,'warehouse',117,118,0,3,0,3,0);
- INSERT INTO catalog_variant_consolidation_stock_decisions (
- consolidation_id,inventory_source,source_stock_id,keeper_stock_id_before,decision_method,
- source_quantity_before,keeper_quantity_before,final_quantity,adjustment_quantity,
- reason,created_by,created_at)
- VALUES(2,'warehouse',117,118,'sum',0,3,3,0,'','admin','2026-10-10T07:00:00Z');
- INSERT INTO catalog_variant_consolidation_validations VALUES(2,1,'2026-10-10T07:00:00Z');
- INSERT INTO catalog_variant_consolidation_reservation_validations VALUES(2,1,'2026-10-10T07:00:00Z');
-`)
-const p2=await previewCatalogConsolidationUndo(db,2)
-assert.equal(p2.canUndoZeroStockIdentity,true,JSON.stringify(p2.blockers))
-// Concurrent live order wins: stale administrative undo must not restore SKU.
-beforeBatch=()=>sqlite.exec(`
- INSERT INTO orders(id,order_status,shipping_status,updated_at)
- VALUES(99,'active','sent','2026-10-10 08:00:00');
- INSERT INTO order_items(id,order_id,variant_id,quantity,created_at)
- VALUES(99,99,18,1,'2026-10-10 08:00:00');
-`)
-await assert.rejects(()=>undoUnusedCatalogConsolidation(db,2,'admin',reason,p2.undoStateToken),/Условия|устарели/)
-assert.equal(sku(17),0)
-assert.equal(cnt('catalog_variant_merge_generation_events'),1)
-sqlite.exec('DELETE FROM order_items WHERE id=99; DELETE FROM orders WHERE id=99')
-// Failed final proof must rollback the journal and attempted source activation.
-const p3=await previewCatalogConsolidationUndo(db,2)
-assert.equal(p3.canUndoZeroStockIdentity,true)
-onStatement=(i)=>{if(i===1){onStatement=null;sqlite.exec("UPDATE catalog_variants SET updated_at='changed' WHERE id=17")}}
-await assert.rejects(()=>undoUnusedCatalogConsolidation(db,2,'admin',reason,p3.undoStateToken),/Отмена не применена/)
-assert.equal(sku(17),0)
-assert.equal(sqlite.prepare('SELECT updated_at FROM catalog_variants WHERE id=17').get().updated_at,'before')
-assert.equal(cnt('catalog_variant_merge_generation_events'),1)
-assert.equal(cnt('catalog_variant_zero_stock_undo_validations'),1)
-// A previously nonzero source must not be silently reconstructed even if the
-// two stock rows now happen to resemble the zero source fixture.
-sqlite.exec("UPDATE catalog_variant_consolidation_stock_rows SET source_quantity_before=2 WHERE consolidation_id=2")
-const unsafe=await previewCatalogConsolidationUndo(db,2)
-assert.equal(unsafe.canUndoZeroStockIdentity,false)
-assert.ok(unsafe.blockers.some(x=>x.code==='physical_undo_requires_accounting'))
-await assert.rejects(()=>undoUnusedCatalogConsolidation(db,2,'admin',reason,unsafe.undoStateToken),/Нельзя автоматически/)
 const api=fs.readFileSync('worker/index.ts','utf8')
 assert.ok(api.includes('/api/catalog/variants/consolidation-undo-zero-stock'))
 assert.ok(api.includes('requireAdminUser(authUser'))
