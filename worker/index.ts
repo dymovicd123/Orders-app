@@ -34,6 +34,7 @@ import { businessMonthRange } from './domains/reference-merge-preview.ts'
 import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
 import { previewCatalogConsolidationUndo } from './domains/catalog-consolidation-undo-preview.ts'
 import { previewCorrectedCatalogConsolidationUndo } from './domains/catalog-corrected-undo-review.ts'
+import { previewCountedCatalogUndo, undoCountedCatalogConsolidation } from './domains/catalog-counted-stock-undo.ts'
 import { undoUnusedCatalogConsolidation } from './domains/catalog-zero-stock-undo.ts'
 import { previewPositiveStockConsolidationUndo, undoPositiveStockCatalogConsolidation } from './domains/catalog-positive-stock-undo.ts'
 import { previewZeroStockReMerge, reMergeZeroStockCatalogVariant } from './domains/catalog-zero-stock-remerge.ts'
@@ -236,6 +237,27 @@ export default {
         const denied = requireAdminUser(authUser, 'Проверка дублей доступна только администратору.');
         if (denied) return denied;
         return json(await listReferenceDuplicateGroups(env.DB));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-counted-preview' && request.method === 'POST') {
+        const denied=requireAdminUser(authUser,'Подтверждённая отмена доступна только администратору.');
+        if(denied)return denied;
+        const data=await readJson<{consolidationId:number;allocations:Array<{
+          location:string;sourceQuantity:number;keeperQuantity:number;physicallyVerified:boolean
+        }>}>(request);
+        return json(await previewCountedCatalogUndo(env.DB,Number(data.consolidationId),data.allocations));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-counted' && request.method === 'POST') {
+        const denied=requireAdminUser(authUser,'Подтверждённая отмена доступна только администратору.');
+        if(denied)return denied;
+        const data=await readJson<{consolidationId:number;reason:string;expectedToken:string;allocations:Array<{
+          location:string;sourceQuantity:number;keeperQuantity:number;physicallyVerified:boolean
+        }>}>(request);
+        return json(await undoCountedCatalogConsolidation(
+          env.DB,Number(data.consolidationId),authUser?.login||'',data.reason,
+          data.expectedToken,data.allocations
+        ));
       }
 
       if (url.pathname === '/api/catalog/variants/consolidation-undo-corrected-review' && request.method === 'GET') {
