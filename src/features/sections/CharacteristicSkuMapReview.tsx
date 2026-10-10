@@ -105,8 +105,9 @@ export function CharacteristicSkuMapReview({ apiFetch, kind, sourceId, targetId 
         && data.pageSize === PAGE_SIZE && data.afterVariantId === after
         && Array.isArray(data.rows) && data.shownCount === data.rows.length
         && Number.isSafeInteger(data.totalSourceVariants) && data.totalSourceVariants >= 0
-        && data.rows.every(row => row.canAutomaticallyMerge === false
-          && Number.isSafeInteger(row.sourceVariantId) && row.sourceVariantId > after)
+        && data.rows.every((row, index) => row.canAutomaticallyMerge === false
+          && Number.isSafeInteger(row.sourceVariantId)
+          && row.sourceVariantId > (index ? data.rows[index - 1].sourceVariantId : after))
         && (!data.hasMore || (Number.isSafeInteger(data.nextCursor)
           && Number(data.nextCursor) > after
           && Number(data.nextCursor) === data.rows[data.rows.length - 1]?.sourceVariantId))
@@ -137,6 +138,8 @@ export function CharacteristicSkuMapReview({ apiFetch, kind, sourceId, targetId 
         <button type="button" className="secondary compact" disabled={busy}
           onClick={() => {
             if (!expanded) {
+              setPage(null)
+              setRows([])
               setExpanded(true)
               void load(0)
             } else {
@@ -164,7 +167,9 @@ export function CharacteristicSkuMapReview({ apiFetch, kind, sourceId, targetId 
             <>
               <div className="reference-characteristic-map-progress" role="status">
                 Показано <strong>{rows.length}</strong> из <strong>{page.totalSourceVariants}</strong> вариантов исходного названия
-                {page.hasMore ? ' · есть ещё' : ' · список просмотрен полностью'}
+                {page.hasMore ? ' · есть ещё'
+                  : rows.length === page.totalSourceVariants ? ' · список просмотрен полностью'
+                  : ' · каталог мог измениться, проверьте заново'}
               </div>
               {rows.length === 0 ? (
                 <p className="mini-panel-note">С этим названием вариантов товара не найдено. Нечего сопоставлять.</p>
@@ -178,6 +183,8 @@ export function CharacteristicSkuMapReview({ apiFetch, kind, sourceId, targetId 
                           <span>
                             {textOr(item.color, 'Без цвета')} · {textOr(item.material, 'Без материала')}
                             {' · '}{textOr(item.length, 'Без длины')} · {textOr(item.size, 'Без размера')}
+                            {' · '}{item.category === 'child' ? 'Детский' : 'Взрослый'}
+                            {' · '}{textOr(item.gender, 'Пол не указан')}
                           </span>
                         </div>
                         <span className="reference-characteristic-map-status">{statusLabels[item.status] || 'Требуется проверка'}</span>
