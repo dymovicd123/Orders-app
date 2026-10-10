@@ -153,6 +153,7 @@
     "scripts/test-reference-reason-merge.mjs": "37f00701cd750bba2290b9c3743c4bbe8ff70b33",
     "scripts/test-reference-exhaustive-duplicates.mjs": "6f7612c7bfc458b1981e3979fceba4ee3550b879",
     "src/features/sections/verifiedSkuStockDecision.ts": "2999d66f8cf3a2911ed939add828b3e8b9a69514",
-    "scripts/test-reference-sku-verified-stock-ui.mjs": "cdee8f61a9a188dcb6092601bd43bd9a39455a1e"
+    "scripts/test-reference-sku-verified-stock-ui.mjs": "cdee8f61a9a188dcb6092601bd43bd9a39455a1e",
+    "scripts/test-reference-current-runtime-cross-domain.mjs": "15237313b3efa185d9aba17473dc620f44aab7b0"
   }
 }

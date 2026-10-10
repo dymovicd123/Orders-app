@@ -77,6 +77,7 @@ const tests=[
   ['scripts/test-reference-merge-monthly-apply.mjs',true],
   ['scripts/test-reference-payment-merge.mjs',true],
   ['scripts/test-reference-merge-history.mjs',true],
+  ['scripts/test-reference-current-runtime-cross-domain.mjs',false],
 ]
 for(const [file,stripTypes] of tests){
   run(process.execPath,[...(stripTypes?['--experimental-strip-types']:[]),file],file)
