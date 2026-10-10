@@ -110,4 +110,22 @@ try{
 for(const [relative,delta] of Object.entries(manifest.files)){
   check(gitBlob(fs.readFileSync(relative,'utf8'))===delta.afterGitBlob,'Failed to restore new runtime: '+relative)
 }
+// The frozen historical suite builds the *old* frontend while baseline files
+// are temporarily staged. Cloudflare Workers Builds uses release:check as its
+// build command and deploys dist/ immediately afterwards. Without a fresh build
+// here, its perfectly successful deploy silently overwrites the current UI
+// with the historical test fixture. Always rebuild from restored current code.
+console.log('Rebuilding current Branch2 frontend after restoring historical Stage04 test fixtures...')
+fs.rmSync(path.resolve('dist'), { recursive: true, force: true })
+const npmCurrent=process.platform==='win32'?'npm.cmd':'npm'
+run(npmCurrent,['run','build'],'Current Branch2 frontend/Worker build after preserved Stage04 tests')
+const assetsDir=path.resolve('dist/client/assets')
+check(fs.existsSync(assetsDir),'Current Branch2 build did not produce client assets')
+const referencesChunks=fs.readdirSync(assetsDir).filter(name=>/^ReferencesSection-[A-Za-z0-9_-]+\.js$/.test(name))
+check(referencesChunks.length===1,'Current Branch2 build has missing or multiple ReferencesSection chunks')
+const chunk=fs.readFileSync(path.join(assetsDir,referencesChunks[0]),'utf8')
+for(const marker of ['Все рабочие справочники','Проверка дублей','Объединить значения','Разобрать прежнее объединение товаров']){
+  check(chunk.includes(marker),'Refusing historical frontend deployment: missing '+marker)
+}
+console.log('CURRENT BRANCH2 BUILD VERIFIED — fresh ReferencesSection:',referencesChunks[0])
 console.log('CATALOG PORT AND BRANCH2 HISTORICAL GATES PASSED — Stage04 preserved, new runtime checked, baseline suite unchanged')
