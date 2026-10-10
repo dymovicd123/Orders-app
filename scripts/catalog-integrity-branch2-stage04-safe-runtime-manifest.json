@@ -90,7 +90,7 @@
     "scripts/test-reference-payment-merge.mjs": "015cb3ce422a84c50d68e1bce5b099141e9b3930",
     "migrations/0094_v72_reference_payment_method_merges.sql": "fd6d34164f59ac3856b113701e47a81e681e95f7",
     "worker/domains/reference-merge-history.ts": "b6f60b825fa84b881da5c1af1bd9f362cd24c537",
-    "scripts/test-reference-merge-history.mjs": "cd5940072ec22f9edb27892138beb0745f8b12ff",
+    "scripts/test-reference-merge-history.mjs": "9e73a05ee34176b5705765d28d57669075f1febe",
     "worker/domains/reference-characteristic-impact.ts": "1536f8e30942b461079cea7e045863d5b9f4d980",
     "scripts/test-reference-characteristic-impact.mjs": "66b9bc03eb1545682c4bd12d99451f397c455d66",
     "scripts/test-catalog-integrity-r2-sku-consolidation.mjs": "90fa7d5ebdb9b5f3f6f5738853247fb8a786b307",
