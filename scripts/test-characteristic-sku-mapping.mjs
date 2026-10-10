@@ -15,14 +15,14 @@ sql.exec(`
  CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,variant_id INTEGER);
  INSERT INTO reference_values VALUES
   (1,'color','ХАКИ',1),(2,'color','ЗЕЛЁНЫЙ',1),
-  (3,'material','ДРАП',1),(4,'material','ШЕРСТЬ',1),
+  (3,'material','АЛЬПАКА',1),(4,'material','ШЕРСТЬ',1),
   (5,'child_age','1',1),(6,'child_age','2',1),
   (7,'size','M',1),(8,'size','L',1),
   (9,'color','ЧЁРНЫЙ',0);
  INSERT INTO catalog_products VALUES(100,'КАФТАН',1),(200,'ПАЛЬТО',1),(300,'ДЕТСКИЙ ЖИЛЕТ',1);
  INSERT INTO catalog_stock_positions VALUES
   (11,100,'ДРАП','СТАНДАРТ',1),
-  (19,200,'ДРАП','СТАНДАРТ',1),
+  (19,200,'АЛЬПАКА','СТАНДАРТ',1),
   (20,200,'ШЕРСТЬ','СТАНДАРТ',1),
   (30,300,'СТАНДАРТ','СТАНДАРТ',1);
 `)
@@ -32,9 +32,9 @@ put.run(9001,100,11,'adult','ЖЕН','ЗЕЛЁНЫЙ','ДРАП','СТАНДАР
 put.run(9002,100,11,'adult','ЖЕН','ЗЕЛЁНЫЙ','ДРАП','СТАНДАРТ','SIZE-2',1)
 put.run(9003,100,11,'adult','ЖЕН','ЗЕЛЁНЫЙ','ДРАП','СТАНДАРТ','SIZE-2',1)
 put.run(9004,100,11,'adult','МУЖ','ЗЕЛЁНЫЙ','ДРАП','СТАНДАРТ','SIZE-3',1)
-put.run(3001,200,19,'adult','ЖЕН','БЕЛЫЙ','ДРАП','СТАНДАРТ','M',1)
+put.run(3001,200,19,'adult','ЖЕН','БЕЛЫЙ','АЛЬПАКА','СТАНДАРТ','M',1)
 put.run(3002,200,20,'adult','ЖЕН','БЕЛЫЙ','ШЕРСТЬ','СТАНДАРТ','M',1)
-put.run(3003,200,null,'adult','ЖЕН','БЕЛЫЙ','ДРАП','СТАНДАРТ','L',1)
+put.run(3003,200,null,'adult','ЖЕН','БЕЛЫЙ','АЛЬПАКА','СТАНДАРТ','L',1)
 put.run(4001,300,30,'child','ЖЕН','БЕЛЫЙ','СТАНДАРТ','СТАНДАРТ','1',1)
 put.run(4002,300,30,'child','ЖЕН','БЕЛЫЙ','СТАНДАРТ','СТАНДАРТ','2',1)
 sql.exec(`
@@ -97,7 +97,7 @@ assert.equal(age.rows[0].sourceVariantId,4001)
 assert.equal(age.rows[0].proposedKeeperId,4002)
 assert.equal(age.rows[0].canAutomaticallyMerge,false)
 const nothing=await previewCharacteristicSkuMapping(db,7,8)
-assert.equal(nothing.totalSourceVariants,1)
+assert.equal(nothing.totalSourceVariants,2)
 assert.equal(nothing.rows[0].status,'no_keeper')
 assert.equal(sql.prepare('SELECT total_changes() AS n').get().n,first,'Preview must never modify business data')
 const router=fs.readFileSync('worker/index.ts','utf8')
