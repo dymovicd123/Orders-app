@@ -1,7 +1,9 @@
 const hosts = [
   'https://orders-app-branch2.orders-clothes.workers.dev',
   'https://branch2-orders-app.orders-clothes.workers.dev',
-  'https://nonexistent-worker-20261010-check.orders-clothes.workers.dev'
+  'https://nonexistent-worker-20261010-check.orders-clothes.workers.dev',
+  'https://25b03713-orders-app-branch2.orders-clothes.workers.dev',
+  'https://d7eddfbe-orders-app-branch2.orders-clothes.workers.dev'
 ];
 async function read(url) {
   const res = await fetch(url, {
