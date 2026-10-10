@@ -30,6 +30,7 @@ jobs:
           node --experimental-strip-types scripts/test-reference-characteristic-impact.mjs
           node --experimental-strip-types scripts/test-reference-crud-integrity.mjs
           node --experimental-strip-types scripts/test-catalog-stock-reconciliation.mjs
+          node --experimental-strip-types scripts/test-catalog-stock-reconciliation-write.mjs
           node --experimental-strip-types scripts/test-reference-merge-monthly-apply.mjs
           node --experimental-strip-types scripts/test-reference-payment-merge.mjs
           node --experimental-strip-types scripts/test-reference-merge-history.mjs
